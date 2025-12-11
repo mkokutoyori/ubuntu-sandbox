@@ -5,6 +5,7 @@ import { executeCommand } from '@/terminal/commands';
 import { TerminalState, OutputLine, EditorState } from '@/terminal/types';
 import { NanoEditor } from './editors/NanoEditor';
 import { VimEditor } from './editors/VimEditor';
+import { parseAnsi, AnsiSegment } from '@/terminal/ansiParser';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -230,6 +231,27 @@ export const Terminal: React.FC = () => {
     setEditorMode(null);
   }, []);
 
+  // Render ANSI-formatted text with proper styling
+  const renderAnsiText = (text: string, key?: string) => {
+    const segments = parseAnsi(text);
+
+    return (
+      <>
+        {segments.map((segment, index) => {
+          const hasStyles = Object.keys(segment.styles).length > 0;
+          if (!hasStyles) {
+            return <span key={`${key}-${index}`}>{segment.text}</span>;
+          }
+          return (
+            <span key={`${key}-${index}`} style={segment.styles}>
+              {segment.text}
+            </span>
+          );
+        })}
+      </>
+    );
+  };
+
   const renderLine = (line: OutputLine) => {
     const colorClass = {
       input: 'text-foreground',
@@ -250,7 +272,7 @@ export const Terminal: React.FC = () => {
 
     return (
       <pre key={line.id} className={`${colorClass} whitespace-pre-wrap break-all`}>
-        {line.content}
+        {renderAnsiText(line.content, line.id)}
       </pre>
     );
   };
