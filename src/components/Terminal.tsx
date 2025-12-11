@@ -103,6 +103,10 @@ export const Terminal: React.FC = () => {
   const [tutorialMode, setTutorialMode] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
 
+  // Python REPL mode
+  const [pythonMode, setPythonMode] = useState(false);
+  const [pythonPrompt, setPythonPrompt] = useState('>>> ');
+
   // Achievements
   const [achievements, setAchievements] = useState<string[]>(savedAchievements);
   const [newAchievement, setNewAchievement] = useState<Achievement | null>(null);
@@ -199,13 +203,18 @@ export const Terminal: React.FC = () => {
   }, [input, state.history, historySearchMode]);
 
   const getPrompt = useCallback(() => {
+    // Python REPL prompt
+    if (pythonMode) {
+      return pythonPrompt;
+    }
+
     const user = state.currentUser;
     const host = state.hostname;
     const path = state.currentPath === `/home/${user}` ? '~' :
                  state.currentPath.replace(`/home/${user}`, '~');
     const symbol = state.isRoot || user === 'root' ? '#' : '$';
     return `${user}@${host}:${path}${symbol}`;
-  }, [state.currentUser, state.hostname, state.currentPath, state.isRoot]);
+  }, [state.currentUser, state.hostname, state.currentPath, state.isRoot, pythonMode, pythonPrompt]);
 
   const updateStats = useCallback((cmd: string, result: any) => {
     setStats(prev => {
@@ -241,6 +250,34 @@ export const Terminal: React.FC = () => {
         history: [...prev.history, cmd],
         historyIndex: -1,
       }));
+    }
+
+    // Handle Python REPL mode
+    if (pythonMode) {
+      const result = executeCommand(`__pythonExec ${cmd}`, state, fileSystem, packageManager);
+
+      if ((result as any).exitPythonMode) {
+        setPythonMode(false);
+        setPythonPrompt('>>> ');
+        setInput('');
+        return;
+      }
+
+      if ((result as any).pythonPrompt) {
+        setPythonPrompt((result as any).pythonPrompt);
+      }
+
+      if (result.output) {
+        setOutput(prev => [...prev, {
+          id: generateId(),
+          type: 'output',
+          content: result.output,
+          timestamp: new Date(),
+        }]);
+      }
+
+      setInput('');
+      return;
     }
 
     // Handle special commands
@@ -355,6 +392,12 @@ export const Terminal: React.FC = () => {
       setEditorMode(result.editorMode);
     }
 
+    // Check if we're entering Python mode
+    if ((result as any).enterPythonMode) {
+      setPythonMode(true);
+      setPythonPrompt('>>> ');
+    }
+
     setState(prev => ({
       ...prev,
       currentPath: result.newPath || prev.currentPath,
@@ -372,7 +415,7 @@ export const Terminal: React.FC = () => {
     setInput('');
     setSuggestion('');
     setShowCompletions(false);
-  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats]);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // History search mode
@@ -532,15 +575,26 @@ export const Terminal: React.FC = () => {
       setHistorySearchResults(state.history.slice().reverse());
       setHistorySearchIndex(0);
     } else if (e.key === 'd' && e.ctrlKey) {
-      // Exit (like Ctrl+D)
+      // Exit Python mode or logout
       e.preventDefault();
       if (input === '') {
-        setOutput(prev => [...prev, {
-          id: generateId(),
-          type: 'system',
-          content: 'logout',
-          timestamp: new Date(),
-        }]);
+        if (pythonMode) {
+          setPythonMode(false);
+          setPythonPrompt('>>> ');
+          setOutput(prev => [...prev, {
+            id: generateId(),
+            type: 'system',
+            content: '',
+            timestamp: new Date(),
+          }]);
+        } else {
+          setOutput(prev => [...prev, {
+            id: generateId(),
+            type: 'system',
+            content: 'logout',
+            timestamp: new Date(),
+          }]);
+        }
       }
     } else if (e.key === 'Escape') {
       setShowCompletions(false);
@@ -548,7 +602,7 @@ export const Terminal: React.FC = () => {
     } else {
       setShowCompletions(false);
     }
-  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex]);
+  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex, pythonMode]);
 
   // Handle history search input
   const handleHistorySearchInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -659,6 +713,11 @@ export const Terminal: React.FC = () => {
         {tutorialMode && (
           <span className="ml-auto text-terminal-amber text-sm">
             📚 Tutorial ({tutorialStep + 1}/{TUTORIAL_STEPS.length})
+          </span>
+        )}
+        {pythonMode && (
+          <span className="ml-auto text-terminal-green text-sm">
+            🐍 Python 3.11 REPL (exit() or Ctrl+D to exit)
           </span>
         )}
       </div>
