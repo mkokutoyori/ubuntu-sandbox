@@ -1,6 +1,83 @@
 import { CommandRegistry } from './index';
+import { createPythonSession, executeLine, executeScript, executeCommand as executePythonCommand } from '../python';
+
+// Store Python sessions for interactive mode
+const pythonSessions = new Map<string, ReturnType<typeof createPythonSession>>();
 
 export const miscCommands: CommandRegistry = {
+  python: (args, state, fs, pm) => {
+    // Handle python -c "code"
+    if (args[0] === '-c' && args.length > 1) {
+      const code = args.slice(1).join(' ').replace(/^["']|["']$/g, '');
+      const result = executePythonCommand(code);
+      if (result.error) {
+        return { output: result.output, error: result.error, exitCode: 1 };
+      }
+      return { output: result.output, exitCode: 0 };
+    }
+
+    // Handle python script.py
+    if (args.length > 0 && args[0].endsWith('.py')) {
+      const filePath = fs.resolvePath(args[0], state.currentPath);
+      const node = fs.getNode(filePath);
+
+      if (!node) {
+        return { output: '', error: `python: can't open file '${args[0]}': [Errno 2] No such file or directory`, exitCode: 2 };
+      }
+
+      if (node.type !== 'file') {
+        return { output: '', error: `python: can't open file '${args[0]}': [Errno 21] Is a directory`, exitCode: 1 };
+      }
+
+      const result = executeScript(node.content || '');
+      if (result.error) {
+        return { output: result.output, error: result.error, exitCode: 1 };
+      }
+      return { output: result.output, exitCode: 0 };
+    }
+
+    // Interactive mode - return special flag to enter Python REPL
+    return {
+      output: `Python 3.11.0 (Python Simulator)
+Type "help", "copyright", "credits" or "license" for more information.`,
+      exitCode: 0,
+      enterPythonMode: true,
+    } as any;
+  },
+
+  python3: (args, state, fs, pm) => {
+    return miscCommands.python(args, state, fs, pm);
+  },
+
+  // Python REPL line execution (called from Terminal component)
+  __pythonExec: (args, state) => {
+    const sessionId = state.currentUser;
+    let session = pythonSessions.get(sessionId);
+
+    if (!session) {
+      session = createPythonSession();
+      pythonSessions.set(sessionId, session);
+    }
+
+    const line = args.join(' ');
+    const result = executeLine(session, line);
+
+    if (result.exit) {
+      pythonSessions.delete(sessionId);
+      return {
+        output: '',
+        exitCode: 0,
+        exitPythonMode: true,
+      } as any;
+    }
+
+    return {
+      output: result.output,
+      exitCode: 0,
+      pythonPrompt: result.prompt,
+    } as any;
+  },
+
   man: (args) => {
     if (args.length === 0) {
       return { output: 'What manual page do you want?', exitCode: 1 };
