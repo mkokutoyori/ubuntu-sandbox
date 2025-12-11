@@ -50,43 +50,61 @@ const ANSI_BG_COLORS: Record<number, string> = {
   107: '#ffffff', // Bright White
 };
 
+// ESC character (ASCII 27, hex 0x1B)
+const ESC = '\x1b';
+const ESC_CODE = 27;
+
 export function parseAnsi(text: string): AnsiSegment[] {
   const segments: AnsiSegment[] = [];
-  // Match ANSI escape sequences: ESC[ followed by params and ending with 'm'
-  const ansiRegex = /\x1b\[([0-9;]*)m/g;
-
-  let lastIndex = 0;
   let currentStyles: AnsiSegment['styles'] = {};
-  let match: RegExpExecArray | null;
+  let currentText = '';
+  let i = 0;
 
-  while ((match = ansiRegex.exec(text)) !== null) {
-    // Add text before this escape sequence
-    if (match.index > lastIndex) {
-      const textSegment = text.substring(lastIndex, match.index);
-      if (textSegment) {
-        segments.push({
-          text: textSegment,
-          styles: { ...currentStyles },
-        });
+  while (i < text.length) {
+    const charCode = text.charCodeAt(i);
+
+    // Check for ESC character (ASCII 27)
+    if (charCode === ESC_CODE) {
+      // Check if next char is '[' (CSI - Control Sequence Introducer)
+      if (i + 1 < text.length && text[i + 1] === '[') {
+        // Found start of ANSI sequence, save any accumulated text
+        if (currentText) {
+          segments.push({ text: currentText, styles: { ...currentStyles } });
+          currentText = '';
+        }
+
+        // Parse the sequence parameters
+        let j = i + 2; // Skip ESC and '['
+        let params = '';
+
+        // Read until we hit 'm' or another letter, or end of string
+        while (j < text.length && /[0-9;]/.test(text[j])) {
+          params += text[j];
+          j++;
+        }
+
+        // Check if this ends with 'm' (SGR - Select Graphic Rendition)
+        if (j < text.length && text[j] === 'm') {
+          // Apply the style parameters
+          const paramList = params.split(';').map(p => parseInt(p, 10) || 0);
+          currentStyles = applyAnsiParams(paramList, currentStyles);
+          i = j + 1; // Move past the 'm'
+          continue;
+        }
       }
     }
 
-    // Parse the escape sequence parameters
-    const params = match[1].split(';').map(p => parseInt(p, 10) || 0);
-    currentStyles = applyAnsiParams(params, currentStyles);
-
-    lastIndex = ansiRegex.lastIndex;
+    // Regular character, add to current text
+    currentText += text[i];
+    i++;
   }
 
-  // Add remaining text after last escape sequence
-  if (lastIndex < text.length) {
-    segments.push({
-      text: text.substring(lastIndex),
-      styles: { ...currentStyles },
-    });
+  // Add any remaining text
+  if (currentText) {
+    segments.push({ text: currentText, styles: { ...currentStyles } });
   }
 
-  // If no escape sequences found, return the whole text
+  // If nothing was parsed, return the original text
   if (segments.length === 0 && text) {
     segments.push({ text, styles: {} });
   }
@@ -139,5 +157,10 @@ function applyAnsiParams(params: number[], currentStyles: AnsiSegment['styles'])
 
 // Check if text contains ANSI escape codes
 export function hasAnsiCodes(text: string): boolean {
-  return /\x1b\[[0-9;]*m/.test(text);
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === ESC_CODE && i + 1 < text.length && text[i + 1] === '[') {
+      return true;
+    }
+  }
+  return false;
 }
