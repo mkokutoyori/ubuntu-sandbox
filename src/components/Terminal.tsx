@@ -1,20 +1,65 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { fileSystem } from '@/terminal/filesystem';
 import { packageManager } from '@/terminal/packages';
-import { executeCommand } from '@/terminal/commands';
+import { executeCommand, commands } from '@/terminal/commands';
 import { TerminalState, OutputLine, EditorState } from '@/terminal/types';
 import { NanoEditor } from './editors/NanoEditor';
 import { VimEditor } from './editors/VimEditor';
-import { parseAnsi, AnsiSegment } from '@/terminal/ansiParser';
+import { parseAnsi } from '@/terminal/ansiParser';
+import {
+  getCommandCompletions,
+  getPathCompletions,
+  searchHistory,
+  ACHIEVEMENTS,
+  Achievement,
+  CommandStats,
+  TUTORIAL_STEPS,
+  TutorialStep,
+} from '@/terminal/shellUtils';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// LocalStorage keys
+const STORAGE_KEYS = {
+  HISTORY: 'terminal_history',
+  ACHIEVEMENTS: 'terminal_achievements',
+  STATS: 'terminal_stats',
+  VARIABLES: 'terminal_variables',
+};
+
+// Load from localStorage
+function loadFromStorage<T>(key: string, defaultValue: T): T {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error(`Error loading ${key} from storage:`, e);
+  }
+  return defaultValue;
+}
+
+// Save to localStorage
+function saveToStorage(key: string, value: any): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error(`Error saving ${key} to storage:`, e);
+  }
+}
+
 export const Terminal: React.FC = () => {
+  // Load history from localStorage
+  const savedHistory = loadFromStorage<string[]>(STORAGE_KEYS.HISTORY, []);
+  const savedAchievements = loadFromStorage<string[]>(STORAGE_KEYS.ACHIEVEMENTS, []);
+  const savedVariables = loadFromStorage<Record<string, string>>(STORAGE_KEYS.VARIABLES, {});
+
   const [state, setState] = useState<TerminalState>({
     currentUser: 'user',
     currentPath: '/home/user',
     hostname: 'ubuntu-terminal',
-    history: [],
+    history: savedHistory,
     historyIndex: -1,
     env: {
       HOME: '/home/user',
@@ -24,6 +69,7 @@ export const Terminal: React.FC = () => {
       PWD: '/home/user',
       TERM: 'xterm-256color',
       LANG: 'en_US.UTF-8',
+      ...savedVariables,
     },
     aliases: {
       'll': 'ls -alF',
@@ -40,6 +86,38 @@ export const Terminal: React.FC = () => {
   const [input, setInput] = useState('');
   const [editorMode, setEditorMode] = useState<EditorState | null>(null);
   const [booted, setBooted] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+
+  // Auto-suggestions
+  const [suggestion, setSuggestion] = useState('');
+  const [showCompletions, setShowCompletions] = useState(false);
+  const [completions, setCompletions] = useState<string[]>([]);
+
+  // History search mode (Ctrl+R)
+  const [historySearchMode, setHistorySearchMode] = useState(false);
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historySearchResults, setHistorySearchResults] = useState<string[]>([]);
+  const [historySearchIndex, setHistorySearchIndex] = useState(0);
+
+  // Tutorial mode
+  const [tutorialMode, setTutorialMode] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+
+  // Achievements
+  const [achievements, setAchievements] = useState<string[]>(savedAchievements);
+  const [newAchievement, setNewAchievement] = useState<Achievement | null>(null);
+  const [stats, setStats] = useState<CommandStats>({
+    commandsExecuted: 0,
+    uniqueCommands: new Set<string>(),
+    filesCreated: 0,
+    filesDeleted: 0,
+    directoriesCreated: 0,
+    pipesUsed: 0,
+    sudoUsed: 0,
+    errorsEncountered: 0,
+    sessionStart: new Date(),
+  });
+
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +131,8 @@ export const Terminal: React.FC = () => {
     '[    1.234567] systemd[1]: Started Session 1 of user user.',
     '',
     'Ubuntu 22.04.3 LTS ubuntu-terminal tty1',
+    '',
+    'Type "tutorial" to start the interactive tutorial, or "achievements" to see your progress.',
     '',
   ];
 
@@ -84,18 +164,69 @@ export const Terminal: React.FC = () => {
     }
   }, [booted, editorMode, output]);
 
+  // Save history to localStorage when it changes
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.HISTORY, state.history.slice(-1000)); // Keep last 1000 commands
+  }, [state.history]);
+
+  // Save achievements to localStorage
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.ACHIEVEMENTS, achievements);
+  }, [achievements]);
+
+  // Check for new achievements
+  useEffect(() => {
+    ACHIEVEMENTS.forEach(achievement => {
+      if (!achievements.includes(achievement.id) && achievement.condition(stats)) {
+        setAchievements(prev => [...prev, achievement.id]);
+        setNewAchievement(achievement);
+        setTimeout(() => setNewAchievement(null), 5000);
+      }
+    });
+  }, [stats, achievements]);
+
+  // Auto-suggestions based on history
+  useEffect(() => {
+    if (input && !historySearchMode) {
+      const match = state.history
+        .slice()
+        .reverse()
+        .find(cmd => cmd.startsWith(input) && cmd !== input);
+      setSuggestion(match ? match.slice(input.length) : '');
+    } else {
+      setSuggestion('');
+    }
+  }, [input, state.history, historySearchMode]);
+
   const getPrompt = useCallback(() => {
     const user = state.currentUser;
     const host = state.hostname;
-    const path = state.currentPath === `/home/${user}` ? '~' : 
+    const path = state.currentPath === `/home/${user}` ? '~' :
                  state.currentPath.replace(`/home/${user}`, '~');
     const symbol = state.isRoot || user === 'root' ? '#' : '$';
     return `${user}@${host}:${path}${symbol}`;
   }, [state.currentUser, state.hostname, state.currentPath, state.isRoot]);
 
+  const updateStats = useCallback((cmd: string, result: any) => {
+    setStats(prev => {
+      const newStats = { ...prev };
+      newStats.commandsExecuted++;
+      newStats.uniqueCommands = new Set([...prev.uniqueCommands, cmd.split(' ')[0]]);
+
+      if (cmd.includes('|')) newStats.pipesUsed++;
+      if (cmd.startsWith('sudo')) newStats.sudoUsed++;
+      if (result.error) newStats.errorsEncountered++;
+      if (cmd.startsWith('touch') || cmd.includes('> ')) newStats.filesCreated++;
+      if (cmd.startsWith('rm ')) newStats.filesDeleted++;
+      if (cmd.startsWith('mkdir')) newStats.directoriesCreated++;
+
+      return newStats;
+    });
+  }, []);
+
   const handleCommand = useCallback((cmd: string) => {
     const prompt = getPrompt();
-    
+
     setOutput(prev => [...prev, {
       id: generateId(),
       type: 'input',
@@ -112,7 +243,92 @@ export const Terminal: React.FC = () => {
       }));
     }
 
+    // Handle special commands
+    if (cmd.trim() === 'tutorial') {
+      setTutorialMode(true);
+      setTutorialStep(0);
+      const step = TUTORIAL_STEPS[0];
+      setOutput(prev => [...prev, {
+        id: generateId(),
+        type: 'system',
+        content: `\n=== TUTORIEL: ${step.title} ===\n${step.description}\n\nCommande: ${step.command}\nAstuce: ${step.hint}\n`,
+        timestamp: new Date(),
+      }]);
+      setInput('');
+      return;
+    }
+
+    if (cmd.trim() === 'achievements') {
+      const unlockedAchievements = ACHIEVEMENTS.filter(a => achievements.includes(a.id));
+      const lockedAchievements = ACHIEVEMENTS.filter(a => !achievements.includes(a.id));
+
+      let output = '\n=== ACHIEVEMENTS ===\n\n';
+      output += `Débloqués (${unlockedAchievements.length}/${ACHIEVEMENTS.length}):\n`;
+      unlockedAchievements.forEach(a => {
+        output += `  ${a.icon} ${a.name} - ${a.description}\n`;
+      });
+      output += '\nVerrouillés:\n';
+      lockedAchievements.forEach(a => {
+        output += `  🔒 ${a.name} - ${a.description}\n`;
+      });
+      output += `\nStatistiques:\n`;
+      output += `  Commandes exécutées: ${stats.commandsExecuted}\n`;
+      output += `  Commandes uniques: ${stats.uniqueCommands.size}\n`;
+      output += `  Pipes utilisés: ${stats.pipesUsed}\n`;
+
+      setOutput(prev => [...prev, {
+        id: generateId(),
+        type: 'output',
+        content: output,
+        timestamp: new Date(),
+      }]);
+      setInput('');
+      return;
+    }
+
+    // Tutorial mode validation
+    if (tutorialMode && tutorialStep < TUTORIAL_STEPS.length) {
+      const step = TUTORIAL_STEPS[tutorialStep];
+      if (step.validator(cmd, '')) {
+        const nextStep = tutorialStep + 1;
+        if (nextStep < TUTORIAL_STEPS.length) {
+          setTutorialStep(nextStep);
+          const next = TUTORIAL_STEPS[nextStep];
+          setTimeout(() => {
+            setOutput(prev => [...prev, {
+              id: generateId(),
+              type: 'success',
+              content: `\n✓ Correct!\n\n=== TUTORIEL: ${next.title} ===\n${next.description}\n\nCommande: ${next.command}\nAstuce: ${next.hint}\n`,
+              timestamp: new Date(),
+            }]);
+          }, 500);
+        } else {
+          setTutorialMode(false);
+          setTimeout(() => {
+            setOutput(prev => [...prev, {
+              id: generateId(),
+              type: 'success',
+              content: '\n🎉 Félicitations ! Vous avez terminé le tutoriel !\n',
+              timestamp: new Date(),
+            }]);
+          }, 500);
+        }
+      }
+    }
+
     const result = executeCommand(cmd, state, fileSystem, packageManager);
+
+    // Update stats
+    updateStats(cmd, result);
+
+    // Handle environment variable updates
+    if ((result as any).envUpdate) {
+      setState(prev => ({
+        ...prev,
+        env: { ...prev.env, ...(result as any).envUpdate },
+      }));
+      saveToStorage(STORAGE_KEYS.VARIABLES, { ...state.env, ...(result as any).envUpdate });
+    }
 
     if (result.clearScreen) {
       setOutput([]);
@@ -149,20 +365,51 @@ export const Terminal: React.FC = () => {
         ...prev.env,
         PWD: result.newPath || prev.currentPath,
         OLDPWD: prev.currentPath,
+        '?': result.exitCode.toString(),
       },
     }));
 
     setInput('');
-  }, [state, getPrompt]);
+    setSuggestion('');
+    setShowCompletions(false);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // History search mode
+    if (historySearchMode) {
+      if (e.key === 'Escape') {
+        setHistorySearchMode(false);
+        setHistorySearchQuery('');
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (historySearchResults[historySearchIndex]) {
+          setInput(historySearchResults[historySearchIndex]);
+        }
+        setHistorySearchMode(false);
+        setHistorySearchQuery('');
+        return;
+      }
+      if (e.key === 'ArrowUp' || (e.key === 'r' && e.ctrlKey)) {
+        e.preventDefault();
+        setHistorySearchIndex(prev => Math.min(prev + 1, historySearchResults.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHistorySearchIndex(prev => Math.max(prev - 1, 0));
+        return;
+      }
+      return;
+    }
+
     if (e.key === 'Enter') {
       handleCommand(input);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (state.history.length > 0) {
-        const newIndex = state.historyIndex === -1 
-          ? state.history.length - 1 
+        const newIndex = state.historyIndex === -1
+          ? state.history.length - 1
           : Math.max(0, state.historyIndex - 1);
         setState(prev => ({ ...prev, historyIndex: newIndex }));
         setInput(state.history[newIndex] || '');
@@ -181,26 +428,61 @@ export const Terminal: React.FC = () => {
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      // Tab completion
+
+      // Accept auto-suggestion with Tab
+      if (suggestion) {
+        setInput(input + suggestion);
+        setSuggestion('');
+        return;
+      }
+
       const parts = input.split(' ');
       const lastPart = parts[parts.length - 1];
-      if (lastPart) {
-        const dir = lastPart.includes('/') 
-          ? fileSystem.resolvePath(lastPart.substring(0, lastPart.lastIndexOf('/')), state.currentPath)
-          : state.currentPath;
-        const prefix = lastPart.includes('/') ? lastPart.substring(lastPart.lastIndexOf('/') + 1) : lastPart;
-        const node = fileSystem.getNode(dir);
-        if (node && node.type === 'directory' && node.children) {
-          const matches = Array.from(node.children.keys()).filter(name => name.startsWith(prefix));
-          if (matches.length === 1) {
-            parts[parts.length - 1] = lastPart.includes('/') 
-              ? lastPart.substring(0, lastPart.lastIndexOf('/') + 1) + matches[0]
-              : matches[0];
-            setInput(parts.join(' '));
+
+      // Command completion (first word)
+      if (parts.length === 1) {
+        const cmdCompletions = getCommandCompletions(lastPart);
+        if (cmdCompletions.length === 1) {
+          setInput(cmdCompletions[0] + ' ');
+          setShowCompletions(false);
+        } else if (cmdCompletions.length > 1) {
+          setCompletions(cmdCompletions);
+          setShowCompletions(true);
+        }
+        return;
+      }
+
+      // Path completion
+      const pathCompletions = getPathCompletions(lastPart, state.currentPath, fileSystem);
+
+      if (pathCompletions.length === 1) {
+        parts[parts.length - 1] = pathCompletions[0];
+        setInput(parts.join(' '));
+        setShowCompletions(false);
+      } else if (pathCompletions.length > 1) {
+        // Find common prefix
+        let commonPrefix = pathCompletions[0];
+        for (const completion of pathCompletions) {
+          while (!completion.startsWith(commonPrefix)) {
+            commonPrefix = commonPrefix.slice(0, -1);
           }
         }
+        if (commonPrefix.length > lastPart.length) {
+          parts[parts.length - 1] = commonPrefix;
+          setInput(parts.join(' '));
+        }
+        setCompletions(pathCompletions);
+        setShowCompletions(true);
+      }
+    } else if (e.key === 'ArrowRight') {
+      // Accept suggestion with Right Arrow at end of input
+      if (suggestion && inputRef.current?.selectionStart === input.length) {
+        e.preventDefault();
+        setInput(input + suggestion);
+        setSuggestion('');
       }
     } else if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
       setOutput(prev => [...prev, {
         id: generateId(),
         type: 'input',
@@ -209,11 +491,73 @@ export const Terminal: React.FC = () => {
         prompt: getPrompt(),
       }]);
       setInput('');
+      setSuggestion('');
+      setHistorySearchMode(false);
     } else if (e.key === 'l' && e.ctrlKey) {
       e.preventDefault();
       setOutput([]);
+    } else if (e.key === 'a' && e.ctrlKey) {
+      // Go to beginning of line
+      e.preventDefault();
+      inputRef.current?.setSelectionRange(0, 0);
+    } else if (e.key === 'e' && e.ctrlKey) {
+      // Go to end of line
+      e.preventDefault();
+      inputRef.current?.setSelectionRange(input.length, input.length);
+    } else if (e.key === 'w' && e.ctrlKey) {
+      // Delete word backward
+      e.preventDefault();
+      const cursorPos = inputRef.current?.selectionStart || input.length;
+      const beforeCursor = input.slice(0, cursorPos);
+      const afterCursor = input.slice(cursorPos);
+      const newBefore = beforeCursor.replace(/\S+\s*$/, '');
+      setInput(newBefore + afterCursor);
+      setTimeout(() => inputRef.current?.setSelectionRange(newBefore.length, newBefore.length), 0);
+    } else if (e.key === 'u' && e.ctrlKey) {
+      // Delete from cursor to beginning
+      e.preventDefault();
+      const cursorPos = inputRef.current?.selectionStart || 0;
+      setInput(input.slice(cursorPos));
+      setTimeout(() => inputRef.current?.setSelectionRange(0, 0), 0);
+    } else if (e.key === 'k' && e.ctrlKey) {
+      // Delete from cursor to end
+      e.preventDefault();
+      const cursorPos = inputRef.current?.selectionStart || input.length;
+      setInput(input.slice(0, cursorPos));
+    } else if (e.key === 'r' && e.ctrlKey) {
+      // Reverse history search
+      e.preventDefault();
+      setHistorySearchMode(true);
+      setHistorySearchQuery('');
+      setHistorySearchResults(state.history.slice().reverse());
+      setHistorySearchIndex(0);
+    } else if (e.key === 'd' && e.ctrlKey) {
+      // Exit (like Ctrl+D)
+      e.preventDefault();
+      if (input === '') {
+        setOutput(prev => [...prev, {
+          id: generateId(),
+          type: 'system',
+          content: 'logout',
+          timestamp: new Date(),
+        }]);
+      }
+    } else if (e.key === 'Escape') {
+      setShowCompletions(false);
+      setSuggestion('');
+    } else {
+      setShowCompletions(false);
     }
-  }, [input, state, handleCommand, getPrompt]);
+  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex]);
+
+  // Handle history search input
+  const handleHistorySearchInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setHistorySearchQuery(query);
+    const results = searchHistory(state.history, query);
+    setHistorySearchResults(results);
+    setHistorySearchIndex(0);
+  }, [state.history]);
 
   const handleEditorSave = useCallback((content: string, filePath: string) => {
     if (filePath) {
@@ -285,10 +629,24 @@ export const Terminal: React.FC = () => {
   }
 
   return (
-    <div 
+    <div
       className="h-screen w-full bg-background crt-effect terminal-flicker overflow-hidden flex flex-col"
       onClick={() => inputRef.current?.focus()}
     >
+      {/* Achievement notification */}
+      {newAchievement && (
+        <div className="fixed top-4 right-4 bg-terminal-green/20 border border-terminal-green p-4 rounded-lg animate-pulse z-50">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">{newAchievement.icon}</span>
+            <div>
+              <div className="text-terminal-green font-bold">Achievement Débloqué!</div>
+              <div className="text-terminal-green">{newAchievement.name}</div>
+              <div className="text-terminal-green-dim text-sm">{newAchievement.description}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-muted/50 px-4 py-2 flex items-center gap-2 border-b border-border">
         <div className="flex gap-1.5">
           <div className="w-3 h-3 rounded-full bg-terminal-red" />
@@ -298,15 +656,35 @@ export const Terminal: React.FC = () => {
         <span className="text-muted-foreground text-sm font-mono ml-4">
           {state.currentUser}@{state.hostname}: {state.currentPath}
         </span>
+        {tutorialMode && (
+          <span className="ml-auto text-terminal-amber text-sm">
+            📚 Tutorial ({tutorialStep + 1}/{TUTORIAL_STEPS.length})
+          </span>
+        )}
       </div>
 
-      <div 
+      <div
         ref={terminalRef}
         className="flex-1 overflow-y-auto p-4 font-mono text-sm scrollbar-terminal"
       >
         {output.map(renderLine)}
-        
-        {booted && (
+
+        {/* History search mode */}
+        {historySearchMode && (
+          <div className="flex items-center text-terminal-amber">
+            <span>(reverse-i-search)`</span>
+            <input
+              type="text"
+              value={historySearchQuery}
+              onChange={handleHistorySearchInput}
+              className="bg-transparent text-terminal-amber outline-none w-32"
+              autoFocus
+            />
+            <span>': {historySearchResults[historySearchIndex] || ''}</span>
+          </div>
+        )}
+
+        {booted && !historySearchMode && (
           <div className="flex items-center">
             <span className="text-terminal-amber terminal-glow-amber mr-2">{getPrompt()}</span>
             <div className="flex-1 relative">
@@ -321,7 +699,23 @@ export const Terminal: React.FC = () => {
                 autoComplete="off"
                 autoFocus
               />
+              {/* Auto-suggestion overlay */}
+              {suggestion && (
+                <span className="absolute left-0 top-0 text-muted-foreground pointer-events-none">
+                  <span className="invisible">{input}</span>
+                  <span className="text-muted-foreground/50">{suggestion}</span>
+                </span>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* Tab completion suggestions */}
+        {showCompletions && completions.length > 0 && (
+          <div className="text-muted-foreground mt-1 flex flex-wrap gap-4">
+            {completions.map((c, i) => (
+              <span key={i} className="text-terminal-cyan">{c}</span>
+            ))}
           </div>
         )}
       </div>
