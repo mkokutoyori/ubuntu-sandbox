@@ -1,12 +1,23 @@
 import { CommandResult, TerminalState, EditorState } from '../types';
 import { FileSystem } from '../filesystem';
 import { PackageManager } from '../packages';
+import {
+  expandGlobArgs,
+  expandCommandSubstitution,
+  expandVariables,
+  isVariableAssignment,
+  parseVariableAssignment,
+  splitByOperators,
+  isBackgroundJob,
+  parseHereDocument,
+} from '../shellUtils';
 
 export type CommandFunction = (
   args: string[],
   state: TerminalState,
   fs: FileSystem,
-  pm: PackageManager
+  pm: PackageManager,
+  stdin?: string
 ) => CommandResult;
 
 export interface CommandRegistry {
@@ -47,10 +58,22 @@ export function parseCommand(input: string): { command: string; args: string[] }
   let current = '';
   let inQuote = false;
   let quoteChar = '';
+  let escape = false;
 
   for (let i = 0; i < input.length; i++) {
     const char = input[i];
-    
+
+    if (escape) {
+      current += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\' && !inQuote) {
+      escape = true;
+      continue;
+    }
+
     if ((char === '"' || char === "'") && !inQuote) {
       inQuote = true;
       quoteChar = char;
@@ -66,7 +89,7 @@ export function parseCommand(input: string): { command: string; args: string[] }
       current += char;
     }
   }
-  
+
   if (current) {
     tokens.push(current);
   }
@@ -77,7 +100,7 @@ export function parseCommand(input: string): { command: string; args: string[] }
   };
 }
 
-// Execute command
+// Main execute command function
 export function executeCommand(
   input: string,
   state: TerminalState,
@@ -85,29 +108,121 @@ export function executeCommand(
   pm: PackageManager
 ): CommandResult {
   const trimmed = input.trim();
-  
+
   if (!trimmed) {
     return { output: '', exitCode: 0 };
   }
 
-  // Handle aliases
-  let processedInput = trimmed;
-  const firstWord = trimmed.split(' ')[0];
-  if (state.aliases[firstWord]) {
-    processedInput = trimmed.replace(firstWord, state.aliases[firstWord]);
+  // Handle variable assignment (VAR=value)
+  if (isVariableAssignment(trimmed) && !trimmed.includes(' ')) {
+    const assignment = parseVariableAssignment(trimmed);
+    if (assignment) {
+      return {
+        output: '',
+        exitCode: 0,
+        envUpdate: { [assignment.name]: assignment.value }
+      } as CommandResult & { envUpdate?: Record<string, string> };
+    }
   }
 
+  // Handle logical operators (&&, ||, ;)
+  const chains = splitByOperators(trimmed);
+  if (chains.length > 1) {
+    return handleChainedCommands(chains, state, fs, pm);
+  }
+
+  // Handle background jobs (&)
+  const { command: bgCommand, isBackground } = isBackgroundJob(trimmed);
+  if (isBackground) {
+    const result = executeSingleCommand(bgCommand, state, fs, pm);
+    return {
+      ...result,
+      output: `[1] ${Math.floor(Math.random() * 10000) + 1000}\n${result.output}`,
+    };
+  }
+
+  return executeSingleCommand(trimmed, state, fs, pm);
+}
+
+// Handle chained commands with &&, ||, ;
+function handleChainedCommands(
+  chains: { command: string; operator: '&&' | '||' | ';' | null }[],
+  state: TerminalState,
+  fs: FileSystem,
+  pm: PackageManager
+): CommandResult {
+  let combinedOutput = '';
+  let combinedError = '';
+  let lastExitCode = 0;
+  let newPath = state.currentPath;
+  let newUser = state.currentUser;
+
+  for (let i = 0; i < chains.length; i++) {
+    const { command, operator } = chains[i];
+    const prevOperator = i > 0 ? chains[i - 1].operator : null;
+
+    // Check if we should skip this command based on previous result
+    if (prevOperator === '&&' && lastExitCode !== 0) {
+      continue; // Skip on && if previous failed
+    }
+    if (prevOperator === '||' && lastExitCode === 0) {
+      continue; // Skip on || if previous succeeded
+    }
+
+    const result = executeSingleCommand(command, { ...state, currentPath: newPath, currentUser: newUser }, fs, pm);
+
+    if (result.output) {
+      combinedOutput += (combinedOutput ? '\n' : '') + result.output;
+    }
+    if (result.error) {
+      combinedError += (combinedError ? '\n' : '') + result.error;
+    }
+
+    lastExitCode = result.exitCode;
+    newPath = result.newPath || newPath;
+    newUser = result.newUser || newUser;
+
+    if (result.clearScreen) {
+      return result;
+    }
+  }
+
+  return {
+    output: combinedOutput,
+    error: combinedError || undefined,
+    exitCode: lastExitCode,
+    newPath: newPath !== state.currentPath ? newPath : undefined,
+    newUser: newUser !== state.currentUser ? newUser : undefined,
+  };
+}
+
+// Execute a single command
+function executeSingleCommand(
+  input: string,
+  state: TerminalState,
+  fs: FileSystem,
+  pm: PackageManager
+): CommandResult {
+  let processedInput = input;
+
+  // Handle aliases
+  const firstWord = processedInput.split(' ')[0];
+  if (state.aliases[firstWord]) {
+    processedInput = processedInput.replace(firstWord, state.aliases[firstWord]);
+  }
+
+  // Expand command substitution $(cmd) and `cmd`
+  processedInput = expandCommandSubstitution(processedInput, state, fs, pm, executeCommand);
+
   // Handle environment variable expansion
-  processedInput = processedInput.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, name) => {
-    return state.env[name] || '';
-  });
+  processedInput = expandVariables(processedInput, state.env);
 
   // Handle ~ expansion
   const user = fs.getUser(state.currentUser);
   processedInput = processedInput.replace(/~/g, user?.home || '/home/' + state.currentUser);
 
-  // Handle pipes (basic implementation)
-  if (processedInput.includes('|')) {
+  // Handle pipes (extended implementation)
+  if (processedInput.includes('|') && !processedInput.includes('||')) {
     return handlePipe(processedInput, state, fs, pm);
   }
 
@@ -116,15 +231,23 @@ export function executeCommand(
     return handleRedirection(processedInput, state, fs, pm);
   }
 
+  // Handle input redirection
+  if (processedInput.includes('<')) {
+    return handleInputRedirection(processedInput, state, fs, pm);
+  }
+
   const { command, args } = parseCommand(processedInput);
+
+  // Expand glob patterns in arguments
+  const expandedArgs = expandGlobArgs(args, state.currentPath, fs);
 
   // Handle sudo
   if (command === 'sudo') {
-    return handleSudo(args, state, fs, pm);
+    return handleSudo(expandedArgs, state, fs, pm);
   }
 
   const commandFn = commands[command];
-  
+
   if (!commandFn) {
     return {
       output: '',
@@ -134,7 +257,7 @@ export function executeCommand(
   }
 
   try {
-    return commandFn(args, state, fs, pm);
+    return commandFn(expandedArgs, state, fs, pm);
   } catch (error) {
     return {
       output: '',
@@ -175,58 +298,274 @@ function handleSudo(args: string[], state: TerminalState, fs: FileSystem, pm: Pa
   return executeCommand(args.join(' '), rootState, fs, pm);
 }
 
+// Extended pipe handling - supports all commands
 function handlePipe(input: string, state: TerminalState, fs: FileSystem, pm: PackageManager): CommandResult {
-  const commands = input.split('|').map(c => c.trim());
+  const pipeCommands = input.split('|').map(c => c.trim());
   let currentOutput = '';
+  let lastExitCode = 0;
 
-  for (const cmd of commands) {
-    // For grep, pass the previous output as stdin
+  for (let i = 0; i < pipeCommands.length; i++) {
+    const cmd = pipeCommands[i];
     const { command, args } = parseCommand(cmd);
-    
-    if (command === 'grep' && currentOutput) {
-      const pattern = args[0];
-      const lines = currentOutput.split('\n');
-      const matches = lines.filter(line => line.toLowerCase().includes(pattern?.toLowerCase() || ''));
-      currentOutput = matches.join('\n');
-    } else if (command === 'wc') {
-      const lines = currentOutput.split('\n').filter(l => l);
-      if (args.includes('-l')) {
-        currentOutput = `${lines.length}`;
-      } else if (args.includes('-w')) {
-        currentOutput = `${currentOutput.split(/\s+/).filter(w => w).length}`;
-      } else if (args.includes('-c')) {
-        currentOutput = `${currentOutput.length}`;
-      } else {
-        currentOutput = `${lines.length} ${currentOutput.split(/\s+/).filter(w => w).length} ${currentOutput.length}`;
+
+    // Expand glob patterns
+    const expandedArgs = expandGlobArgs(args, state.currentPath, fs);
+
+    const commandFn = commands[command];
+
+    if (!commandFn) {
+      return {
+        output: '',
+        error: `${command}: command not found`,
+        exitCode: 127,
+      };
+    }
+
+    // Special handling for commands that can process stdin
+    if (i > 0 && currentOutput) {
+      // Commands that can process piped input
+      switch (command) {
+        case 'grep': {
+          const pattern = expandedArgs[0] || '';
+          const flags = expandedArgs.filter(a => a.startsWith('-')).join('');
+          const ignoreCase = flags.includes('i');
+          const invertMatch = flags.includes('v');
+          const showLineNumbers = flags.includes('n');
+          const countOnly = flags.includes('c');
+
+          const lines = currentOutput.split('\n');
+          let matches = lines.filter((line, idx) => {
+            const searchLine = ignoreCase ? line.toLowerCase() : line;
+            const searchPattern = ignoreCase ? pattern.toLowerCase() : pattern;
+            const found = searchLine.includes(searchPattern);
+            return invertMatch ? !found : found;
+          });
+
+          if (countOnly) {
+            currentOutput = matches.length.toString();
+          } else if (showLineNumbers) {
+            currentOutput = matches.map((line, idx) => `${idx + 1}:${line}`).join('\n');
+          } else {
+            currentOutput = matches.join('\n');
+          }
+          break;
+        }
+
+        case 'wc': {
+          const lines = currentOutput.split('\n').filter(l => l);
+          if (expandedArgs.includes('-l')) {
+            currentOutput = `${lines.length}`;
+          } else if (expandedArgs.includes('-w')) {
+            currentOutput = `${currentOutput.split(/\s+/).filter(w => w).length}`;
+          } else if (expandedArgs.includes('-c')) {
+            currentOutput = `${currentOutput.length}`;
+          } else {
+            const words = currentOutput.split(/\s+/).filter(w => w).length;
+            currentOutput = `      ${lines.length}      ${words}    ${currentOutput.length}`;
+          }
+          break;
+        }
+
+        case 'head': {
+          const nIdx = expandedArgs.indexOf('-n');
+          const n = nIdx !== -1 ? parseInt(expandedArgs[nIdx + 1]) || 10 : 10;
+          currentOutput = currentOutput.split('\n').slice(0, n).join('\n');
+          break;
+        }
+
+        case 'tail': {
+          const nIdx = expandedArgs.indexOf('-n');
+          const n = nIdx !== -1 ? parseInt(expandedArgs[nIdx + 1]) || 10 : 10;
+          const lines = currentOutput.split('\n');
+          currentOutput = lines.slice(-n).join('\n');
+          break;
+        }
+
+        case 'sort': {
+          const lines = currentOutput.split('\n');
+          if (expandedArgs.includes('-n')) {
+            lines.sort((a, b) => parseFloat(a) - parseFloat(b));
+          } else {
+            lines.sort();
+          }
+          if (expandedArgs.includes('-r')) lines.reverse();
+          if (expandedArgs.includes('-u')) {
+            currentOutput = [...new Set(lines)].join('\n');
+          } else {
+            currentOutput = lines.join('\n');
+          }
+          break;
+        }
+
+        case 'uniq': {
+          const lines = currentOutput.split('\n');
+          if (expandedArgs.includes('-c')) {
+            const counts = new Map<string, number>();
+            lines.forEach(line => counts.set(line, (counts.get(line) || 0) + 1));
+            currentOutput = Array.from(counts.entries())
+              .map(([line, count]) => `      ${count} ${line}`)
+              .join('\n');
+          } else if (expandedArgs.includes('-d')) {
+            const seen = new Set<string>();
+            const duplicates = new Set<string>();
+            lines.forEach(line => {
+              if (seen.has(line)) duplicates.add(line);
+              seen.add(line);
+            });
+            currentOutput = [...duplicates].join('\n');
+          } else {
+            currentOutput = [...new Set(lines)].join('\n');
+          }
+          break;
+        }
+
+        case 'tr': {
+          if (expandedArgs.length >= 2) {
+            const from = expandedArgs[0].replace(/'/g, '').replace(/"/g, '');
+            const to = expandedArgs[1].replace(/'/g, '').replace(/"/g, '');
+            if (expandedArgs.includes('-d')) {
+              // Delete characters
+              const chars = new Set(from.split(''));
+              currentOutput = currentOutput.split('').filter(c => !chars.has(c)).join('');
+            } else {
+              // Translate characters
+              for (let i = 0; i < from.length && i < to.length; i++) {
+                currentOutput = currentOutput.split(from[i]).join(to[i]);
+              }
+            }
+          }
+          break;
+        }
+
+        case 'cut': {
+          const dIdx = expandedArgs.indexOf('-d');
+          const fIdx = expandedArgs.indexOf('-f');
+          const delimiter = dIdx !== -1 ? expandedArgs[dIdx + 1]?.replace(/'/g, '') || '\t' : '\t';
+          const fields = fIdx !== -1 ? expandedArgs[fIdx + 1]?.split(',').map(f => parseInt(f) - 1) || [0] : [0];
+
+          currentOutput = currentOutput.split('\n').map(line => {
+            const parts = line.split(delimiter);
+            return fields.map(f => parts[f] || '').join(delimiter);
+          }).join('\n');
+          break;
+        }
+
+        case 'awk': {
+          // Simple awk implementation for print $N
+          const printMatch = expandedArgs.join(' ').match(/\{.*print\s+(\$\d+(?:\s*,\s*\$\d+)*)/);
+          if (printMatch) {
+            const fields = printMatch[1].match(/\$(\d+)/g)?.map(f => parseInt(f.slice(1))) || [0];
+            currentOutput = currentOutput.split('\n').map(line => {
+              const parts = line.split(/\s+/);
+              return fields.map(f => f === 0 ? line : parts[f - 1] || '').join(' ');
+            }).join('\n');
+          }
+          break;
+        }
+
+        case 'sed': {
+          // Simple sed s/pattern/replacement/ support
+          const sedMatch = expandedArgs.join(' ').match(/s\/([^\/]*)\/([^\/]*)\/([gi]*)/);
+          if (sedMatch) {
+            const [, pattern, replacement, flags] = sedMatch;
+            const global = flags.includes('g');
+            const ignoreCase = flags.includes('i');
+            const regex = new RegExp(pattern, (global ? 'g' : '') + (ignoreCase ? 'i' : ''));
+            currentOutput = currentOutput.split('\n').map(line =>
+              line.replace(regex, replacement)
+            ).join('\n');
+          }
+          break;
+        }
+
+        case 'tee': {
+          // Write to file and continue
+          const files = expandedArgs.filter(a => !a.startsWith('-'));
+          const append = expandedArgs.includes('-a');
+          for (const file of files) {
+            const fullPath = fs.resolvePath(file, state.currentPath);
+            const existing = fs.getNode(fullPath);
+            if (existing) {
+              if (append) {
+                fs.updateFile(fullPath, (existing.content || '') + currentOutput);
+              } else {
+                fs.updateFile(fullPath, currentOutput);
+              }
+            } else {
+              fs.createNode(fullPath, 'file', state.currentUser, currentOutput);
+            }
+          }
+          // tee passes through the input unchanged
+          break;
+        }
+
+        case 'xargs': {
+          // Simple xargs - run command for each line
+          const xargsCmd = expandedArgs.join(' ') || 'echo';
+          const results: string[] = [];
+          currentOutput.split('\n').filter(l => l.trim()).forEach(line => {
+            const result = executeCommand(`${xargsCmd} ${line}`, state, fs, pm);
+            if (result.output) results.push(result.output);
+          });
+          currentOutput = results.join('\n');
+          break;
+        }
+
+        case 'cat': {
+          // cat with no args just passes through
+          if (expandedArgs.length === 0) {
+            // Keep currentOutput as is
+          } else {
+            const result = commandFn(expandedArgs, state, fs, pm);
+            currentOutput = result.output;
+            lastExitCode = result.exitCode;
+          }
+          break;
+        }
+
+        case 'rev': {
+          currentOutput = currentOutput.split('\n').map(line =>
+            line.split('').reverse().join('')
+          ).join('\n');
+          break;
+        }
+
+        case 'nl': {
+          currentOutput = currentOutput.split('\n').map((line, idx) =>
+            `     ${idx + 1}\t${line}`
+          ).join('\n');
+          break;
+        }
+
+        default: {
+          // For other commands, execute normally and use their output
+          const result = commandFn(expandedArgs, state, fs, pm, currentOutput);
+          currentOutput = result.output;
+          lastExitCode = result.exitCode;
+          if (result.error) {
+            return result;
+          }
+        }
       }
-    } else if (command === 'head') {
-      const n = args.includes('-n') ? parseInt(args[args.indexOf('-n') + 1]) || 10 : 10;
-      currentOutput = currentOutput.split('\n').slice(0, n).join('\n');
-    } else if (command === 'tail') {
-      const n = args.includes('-n') ? parseInt(args[args.indexOf('-n') + 1]) || 10 : 10;
-      const lines = currentOutput.split('\n');
-      currentOutput = lines.slice(-n).join('\n');
-    } else if (command === 'sort') {
-      const lines = currentOutput.split('\n');
-      lines.sort();
-      if (args.includes('-r')) lines.reverse();
-      currentOutput = lines.join('\n');
-    } else if (command === 'uniq') {
-      const lines = currentOutput.split('\n');
-      currentOutput = [...new Set(lines)].join('\n');
     } else {
-      const result = executeCommand(cmd, state, fs, pm);
+      // First command in pipe or no previous output
+      const result = commandFn(expandedArgs, state, fs, pm);
       if (result.error) return result;
       currentOutput = result.output;
+      lastExitCode = result.exitCode;
     }
   }
 
-  return { output: currentOutput, exitCode: 0 };
+  return { output: currentOutput, exitCode: lastExitCode };
 }
 
 function handleRedirection(input: string, state: TerminalState, fs: FileSystem, pm: PackageManager): CommandResult {
-  const append = input.includes('>>');
-  const parts = input.split(append ? '>>' : '>');
+  // Handle 2>&1 (stderr to stdout)
+  const hasStderrRedirect = input.includes('2>&1');
+  let processedInput = input.replace('2>&1', '').trim();
+
+  const append = processedInput.includes('>>');
+  const parts = processedInput.split(append ? '>>' : '>');
   const command = parts[0].trim();
   const filePath = parts[1]?.trim();
 
@@ -235,8 +574,6 @@ function handleRedirection(input: string, state: TerminalState, fs: FileSystem, 
   }
 
   const result = executeCommand(command, state, fs, pm);
-  
-  if (result.error) return result;
 
   const fullPath = fs.resolvePath(filePath, state.currentPath);
   const existingNode = fs.getNode(fullPath);
@@ -245,15 +582,50 @@ function handleRedirection(input: string, state: TerminalState, fs: FileSystem, 
     return { output: '', error: `${filePath}: Is a directory`, exitCode: 1 };
   }
 
+  const content = hasStderrRedirect
+    ? (result.output || '') + (result.error || '')
+    : result.output;
+
   if (existingNode) {
     if (append) {
-      fs.updateFile(fullPath, (existingNode.content || '') + result.output + '\n');
+      fs.updateFile(fullPath, (existingNode.content || '') + content + '\n');
     } else {
-      fs.updateFile(fullPath, result.output + '\n');
+      fs.updateFile(fullPath, content + '\n');
     }
   } else {
-    fs.createNode(fullPath, 'file', state.currentUser, result.output + '\n');
+    fs.createNode(fullPath, 'file', state.currentUser, content + '\n');
   }
 
-  return { output: '', exitCode: 0 };
+  return { output: '', exitCode: hasStderrRedirect ? 0 : result.exitCode, error: hasStderrRedirect ? undefined : result.error };
+}
+
+function handleInputRedirection(input: string, state: TerminalState, fs: FileSystem, pm: PackageManager): CommandResult {
+  const parts = input.split('<');
+  const command = parts[0].trim();
+  const filePath = parts[1]?.trim();
+
+  if (!filePath) {
+    return { output: '', error: 'syntax error near unexpected token `newline\'', exitCode: 1 };
+  }
+
+  const fullPath = fs.resolvePath(filePath, state.currentPath);
+  const node = fs.getNode(fullPath);
+
+  if (!node) {
+    return { output: '', error: `${filePath}: No such file or directory`, exitCode: 1 };
+  }
+
+  if (node.type !== 'file') {
+    return { output: '', error: `${filePath}: Is a directory`, exitCode: 1 };
+  }
+
+  // Execute command with file content as stdin
+  const { command: cmd, args } = parseCommand(command);
+  const commandFn = commands[cmd];
+
+  if (!commandFn) {
+    return { output: '', error: `${cmd}: command not found`, exitCode: 127 };
+  }
+
+  return commandFn(args, state, fs, pm, node.content || '');
 }
