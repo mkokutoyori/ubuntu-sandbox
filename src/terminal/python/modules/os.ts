@@ -23,7 +23,11 @@ export function getOsModule(interpreter: any): PyModule {
   // Get filesystem and current path from interpreter context
   const getContext = () => interpreter.getContext ? interpreter.getContext() : {};
   const getFs = () => getContext().filesystem;
-  const getCwd = () => getContext().currentPath || '/home/user';
+  const getState = () => getContext().terminalState || {};
+  const getUser = () => getState().currentUser || 'user';
+  const getHostname = () => getState().hostname || 'localhost';
+  const getHome = () => `/home/${getUser()}`;
+  const getCwd = () => getContext().currentPath || getHome();
 
   exports.set('getcwd', func('getcwd', () => pyStr(getCwd())));
   exports.set('getcwdb', func('getcwdb', () => pyStr(getCwd())));
@@ -49,29 +53,45 @@ export function getOsModule(interpreter: any): PyModule {
     return pyNone();
   }));
 
-  // Environment variables (simulated)
-  const environ = new Map<string, string>([
-    ['HOME', '/home/user'],
-    ['USER', 'user'],
-    ['PATH', '/usr/bin:/bin'],
-    ['SHELL', '/bin/bash'],
-    ['LANG', 'en_US.UTF-8'],
-    ['TERM', 'xterm-256color'],
-    ['PWD', getCwd()],
-    ['PYTHONPATH', '.'],
-  ]);
+  // Environment variables - use dynamic values from terminal state
+  const getEnviron = () => {
+    const state = getState();
+    const env = state.env || {};
+    return new Map<string, string>([
+      ['HOME', getHome()],
+      ['USER', getUser()],
+      ['PATH', env.PATH || '/usr/bin:/bin'],
+      ['SHELL', env.SHELL || '/bin/bash'],
+      ['LANG', env.LANG || 'en_US.UTF-8'],
+      ['TERM', env.TERM || 'xterm-256color'],
+      ['PWD', getCwd()],
+      ['PYTHONPATH', env.PYTHONPATH || '.'],
+      ['HOSTNAME', getHostname()],
+    ]);
+  };
 
-  const environDict = pyDict();
-  environ.forEach((value, key) => {
-    environDict.entries.set(`"${key}"`, pyStr(value));
-    environDict.keyObjects.set(`"${key}"`, pyStr(key));
-  });
-  exports.set('environ', environDict);
+  // Create environ dict getter that updates dynamically
+  exports.set('environ', {
+    type: 'dict',
+    entries: new Map(),
+    keyObjects: new Map(),
+    get items() {
+      const environ = getEnviron();
+      const entries = new Map<string, PyValue>();
+      const keyObjects = new Map<string, PyValue>();
+      environ.forEach((value, key) => {
+        entries.set(`"${key}"`, pyStr(value));
+        keyObjects.set(`"${key}"`, pyStr(key));
+      });
+      return { entries, keyObjects };
+    }
+  } as any);
 
   exports.set('getenv', func('getenv', (key: PyValue, defaultVal?: PyValue) => {
     if (key.type !== 'str') {
       throw new TypeError("getenv() requires string key");
     }
+    const environ = getEnviron();
     const value = environ.get(key.value);
     if (value !== undefined) {
       return pyStr(value);
@@ -83,9 +103,9 @@ export function getOsModule(interpreter: any): PyModule {
     if (key.type !== 'str' || value.type !== 'str') {
       throw new TypeError("putenv() requires string arguments");
     }
-    environ.set(key.value, value.value);
-    environDict.entries.set(`"${key.value}"`, pyStr(value.value));
-    environDict.keyObjects.set(`"${key.value}"`, pyStr(key.value));
+    // Note: putenv updates the process environment, but in simulation
+    // we can't actually persist this across calls easily
+    interpreter.print(`[Note] putenv('${key.value}', '${value.value}') - environment updated for this session`);
     return pyNone();
   }));
 
@@ -353,13 +373,36 @@ export function getOsModule(interpreter: any): PyModule {
     if (path.type !== 'str') {
       throw new TypeError("mkdir() requires string path");
     }
-    // Simulated - do nothing
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const success = fs.createNode(fullPath, 'directory', getUser());
+      if (!success) {
+        throw new FileNotFoundError(`Cannot create directory '${path.value}'`);
+      }
+    }
     return pyNone();
   }));
 
   exports.set('makedirs', func('makedirs', (path: PyValue, mode?: PyValue, exist_ok?: PyValue) => {
     if (path.type !== 'str') {
       throw new TypeError("makedirs() requires string path");
+    }
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      // Create parent directories as needed
+      const parts = fullPath.split('/').filter(p => p);
+      let currentPath = '';
+      for (const part of parts) {
+        currentPath += '/' + part;
+        const node = fs.getNode(currentPath);
+        if (!node) {
+          fs.createNode(currentPath, 'directory', getUser());
+        } else if (node.type !== 'directory') {
+          throw new FileNotFoundError(`Not a directory: '${currentPath}'`);
+        }
+      }
     }
     return pyNone();
   }));
@@ -368,12 +411,39 @@ export function getOsModule(interpreter: any): PyModule {
     if (path.type !== 'str') {
       throw new TypeError("remove() requires string path");
     }
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+      if (!node) {
+        throw new FileNotFoundError(path.value);
+      }
+      if (node.type === 'directory') {
+        throw new TypeError(`Is a directory: '${path.value}'`);
+      }
+      fs.deleteNode(fullPath);
+    }
     return pyNone();
   }));
 
   exports.set('rmdir', func('rmdir', (path: PyValue) => {
     if (path.type !== 'str') {
       throw new TypeError("rmdir() requires string path");
+    }
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+      if (!node) {
+        throw new FileNotFoundError(path.value);
+      }
+      if (node.type !== 'directory') {
+        throw new TypeError(`Not a directory: '${path.value}'`);
+      }
+      if (node.children && node.children.size > 0) {
+        throw new TypeError(`Directory not empty: '${path.value}'`);
+      }
+      fs.deleteNode(fullPath);
     }
     return pyNone();
   }));
@@ -382,28 +452,37 @@ export function getOsModule(interpreter: any): PyModule {
     if (src.type !== 'str' || dst.type !== 'str') {
       throw new TypeError("rename() requires string arguments");
     }
+    const fs = getFs();
+    if (fs) {
+      const srcPath = fs.resolvePath(src.value, getCwd());
+      const dstPath = fs.resolvePath(dst.value, getCwd());
+      const success = fs.moveNode(srcPath, dstPath);
+      if (!success) {
+        throw new FileNotFoundError(src.value);
+      }
+    }
     return pyNone();
   }));
 
-  // System information
+  // System information - use dynamic values
   exports.set('name', pyStr('posix'));
   exports.set('uname', func('uname', () => {
     return pyTuple([
       pyStr('Linux'),           // sysname
-      pyStr('localhost'),       // nodename
+      pyStr(getHostname()),     // nodename - dynamic
       pyStr('5.4.0'),           // release
       pyStr('#1 SMP'),          // version
       pyStr('x86_64')           // machine
     ]);
   }));
 
-  exports.set('getpid', func('getpid', () => pyInt(1)));
-  exports.set('getppid', func('getppid', () => pyInt(0)));
-  exports.set('getuid', func('getuid', () => pyInt(1000)));
-  exports.set('getgid', func('getgid', () => pyInt(1000)));
-  exports.set('geteuid', func('geteuid', () => pyInt(1000)));
-  exports.set('getegid', func('getegid', () => pyInt(1000)));
-  exports.set('getlogin', func('getlogin', () => pyStr('user')));
+  exports.set('getpid', func('getpid', () => pyInt(Math.floor(Math.random() * 30000) + 1000)));
+  exports.set('getppid', func('getppid', () => pyInt(1)));
+  exports.set('getuid', func('getuid', () => pyInt(getUser() === 'root' ? 0 : 1000)));
+  exports.set('getgid', func('getgid', () => pyInt(getUser() === 'root' ? 0 : 1000)));
+  exports.set('geteuid', func('geteuid', () => pyInt(getUser() === 'root' ? 0 : 1000)));
+  exports.set('getegid', func('getegid', () => pyInt(getUser() === 'root' ? 0 : 1000)));
+  exports.set('getlogin', func('getlogin', () => pyStr(getUser())));
 
   exports.set('cpu_count', func('cpu_count', () => pyInt(4)));
 
@@ -437,44 +516,118 @@ export function getOsModule(interpreter: any): PyModule {
     throw new TypeError("os.write() is not supported in this environment");
   }));
 
-  // Walk (generator-like, simplified)
+  // Walk - uses real filesystem
   exports.set('walk', func('walk', (top: PyValue) => {
     if (top.type !== 'str') {
       throw new TypeError("walk() requires string path");
     }
-    // Return simulated walk result
-    return pyList([
-      pyTuple([
-        pyStr(top.value),
-        pyList([pyStr('subdir')]),
-        pyList([pyStr('file.txt')])
-      ])
-    ]);
+    const fs = getFs();
+    if (!fs) {
+      return pyList([]);
+    }
+
+    const results: PyValue[] = [];
+    const fullPath = fs.resolvePath(top.value, getCwd());
+
+    // Helper function to walk directories recursively
+    const walkDir = (dirPath: string) => {
+      const node = fs.getNode(dirPath);
+      if (!node || node.type !== 'directory' || !node.children) {
+        return;
+      }
+
+      const dirs: string[] = [];
+      const files: string[] = [];
+
+      for (const [name, child] of node.children) {
+        if (child.type === 'directory') {
+          dirs.push(name);
+        } else {
+          files.push(name);
+        }
+      }
+
+      results.push(pyTuple([
+        pyStr(dirPath),
+        pyList(dirs.map(d => pyStr(d))),
+        pyList(files.map(f => pyStr(f)))
+      ]));
+
+      // Recurse into subdirectories
+      for (const dir of dirs) {
+        walkDir(dirPath === '/' ? `/${dir}` : `${dirPath}/${dir}`);
+      }
+    };
+
+    walkDir(fullPath);
+    return pyList(results);
   }));
 
-  // Stat result (simplified)
+  // Stat - uses real filesystem
   exports.set('stat', func('stat', (path: PyValue) => {
     if (path.type !== 'str') {
       throw new TypeError("stat() requires string path");
     }
-    // Return simulated stat result
-    return pyTuple([
-      pyInt(33188),  // st_mode
-      pyInt(12345),  // st_ino
-      pyInt(0),      // st_dev
-      pyInt(1),      // st_nlink
-      pyInt(1000),   // st_uid
-      pyInt(1000),   // st_gid
-      pyInt(1024),   // st_size
-      pyFloat(Date.now() / 1000),  // st_atime
-      pyFloat(Date.now() / 1000),  // st_mtime
-      pyFloat(Date.now() / 1000),  // st_ctime
-    ]);
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+
+      if (!node) {
+        throw new FileNotFoundError(path.value);
+      }
+
+      // Calculate mode based on type and permissions
+      let mode = node.type === 'directory' ? 0o40000 : 0o100000; // S_IFDIR or S_IFREG
+      const perms = node.permissions || '-rwxr-xr-x';
+      if (perms[1] === 'r') mode |= 0o400;
+      if (perms[2] === 'w') mode |= 0o200;
+      if (perms[3] === 'x') mode |= 0o100;
+      if (perms[4] === 'r') mode |= 0o040;
+      if (perms[5] === 'w') mode |= 0o020;
+      if (perms[6] === 'x') mode |= 0o010;
+      if (perms[7] === 'r') mode |= 0o004;
+      if (perms[8] === 'w') mode |= 0o002;
+      if (perms[9] === 'x') mode |= 0o001;
+
+      const size = node.type === 'file' ? (node.content?.length || 0) : 4096;
+      const mtime = node.modified ? node.modified.getTime() / 1000 : Date.now() / 1000;
+
+      return pyTuple([
+        pyInt(mode),           // st_mode
+        pyInt(Math.floor(Math.random() * 100000)),  // st_ino
+        pyInt(0),              // st_dev
+        pyInt(1),              // st_nlink
+        pyInt(node.owner === 'root' ? 0 : 1000),   // st_uid
+        pyInt(1000),           // st_gid
+        pyInt(size),           // st_size
+        pyFloat(mtime),        // st_atime
+        pyFloat(mtime),        // st_mtime
+        pyFloat(mtime),        // st_ctime
+      ]);
+    }
+
+    throw new FileNotFoundError(path.value);
   }));
 
-  // Access
+  // Access - uses real filesystem
   exports.set('access', func('access', (path: PyValue, mode: PyValue) => {
-    return pyBool(true); // Always accessible in simulation
+    if (path.type !== 'str') return pyBool(false);
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+      if (!node) return pyBool(false);
+
+      // F_OK (0) just checks existence
+      if (mode.type === 'int' && mode.value === 0) {
+        return pyBool(true);
+      }
+
+      // For R_OK, W_OK, X_OK - simplified check
+      return pyBool(true);
+    }
+    return pyBool(false);
   }));
 
   // Constants

@@ -1,11 +1,20 @@
 import { CommandRegistry } from './index';
 import { createPythonSession, executeLine, executeScript, executeCommand as executePythonCommand } from '../python';
 
+// Configuration constants
+const PYTHON_VERSION = '3.11.0';
+const PYTHON_IMPL = 'Python Simulator';
+
 // Store Python sessions for interactive mode
 const pythonSessions = new Map<string, ReturnType<typeof createPythonSession>>();
 
 export const miscCommands: CommandRegistry = {
   python: (args, state, fs, pm) => {
+    // Handle python --version
+    if (args[0] === '--version' || args[0] === '-V') {
+      return { output: `Python ${PYTHON_VERSION}`, exitCode: 0 };
+    }
+
     // Handle python -c "code"
     if (args[0] === '-c' && args.length > 1) {
       const code = args.slice(1).join(' ').replace(/^["']|["']$/g, '');
@@ -38,7 +47,7 @@ export const miscCommands: CommandRegistry = {
 
     // Interactive mode - return special flag to enter Python REPL
     return {
-      output: `Python 3.11.0 (Python Simulator)
+      output: `Python ${PYTHON_VERSION} (${PYTHON_IMPL})
 Type "help", "copyright", "credits" or "license" for more information.`,
       exitCode: 0,
       enterPythonMode: true,

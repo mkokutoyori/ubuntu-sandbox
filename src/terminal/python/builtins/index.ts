@@ -577,6 +577,13 @@ export function getBuiltins(interpreter: any): { [name: string]: PyValue } {
         return pyNone();
       }
 
+      // Handle invalid/undefined objects
+      if (!obj.type) {
+        interpreter.print("Help on unknown object:");
+        interpreter.print("  No documentation available.");
+        return pyNone();
+      }
+
       if (obj.type === 'function') {
         interpreter.print(`Help on function ${obj.name}:`);
         interpreter.print(`  ${obj.name}(...)`);
