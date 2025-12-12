@@ -24,6 +24,10 @@ import {
 
 // Built-in functions
 import { getBuiltins } from './builtins';
+import { getStringMethod, getListMethod, getDictMethod } from './builtins/methods';
+import { getModule } from './modules';
+import { Lexer } from './lexer';
+import { Parser } from './parser';
 
 const MAX_RECURSION_DEPTH = 1000;
 
@@ -187,10 +191,7 @@ export class Interpreter {
         }
 
         const expr = template.slice(i + 1, j - 1);
-        // Parse and evaluate expression
-        const { Lexer } = require('./lexer');
-        const { Parser } = require('./parser');
-
+        // Parse and evaluate expression (using static imports from top of file)
         try {
           const tokens = new Lexer(expr).tokenize();
           const parser = new Parser(tokens);
@@ -898,9 +899,7 @@ export class Interpreter {
   }
 
   private getMethod(obj: PyValue, name: string): PyFunction | null {
-    // Import string and list methods
-    const { getStringMethod, getListMethod, getDictMethod } = require('./builtins/methods');
-
+    // Use static imports from top of file for string and list methods
     switch (obj.type) {
       case 'str':
         return getStringMethod(obj, name, this);
@@ -1527,8 +1526,7 @@ export class Interpreter {
   // === Imports ===
 
   private evalImport(node: any): PyValue {
-    const { getModule } = require('./modules');
-
+    // Use static import from top of file
     for (const { name, alias } of node.names) {
       const module = getModule(name, this);
       this.env.scope.set(alias || name, module);
@@ -1538,8 +1536,7 @@ export class Interpreter {
   }
 
   private evalImportFrom(node: any): PyValue {
-    const { getModule } = require('./modules');
-
+    // Use static import from top of file
     const module = getModule(node.module, this);
 
     if (module.type !== 'module') {

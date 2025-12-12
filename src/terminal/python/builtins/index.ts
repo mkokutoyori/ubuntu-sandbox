@@ -12,6 +12,10 @@ import {
   TypeError, ValueError, StopIteration
 } from '../errors';
 
+// Static imports for eval function
+import { Lexer } from '../lexer';
+import { Parser } from '../parser';
+
 export function getBuiltins(interpreter: any): { [name: string]: PyValue } {
   // Helper to create builtin function
   const builtin = (name: string, fn: (...args: PyValue[]) => PyValue): PyFunction => ({
@@ -709,9 +713,7 @@ export function getBuiltins(interpreter: any): { [name: string]: PyValue } {
         throw new TypeError("eval() arg must be a string");
       }
 
-      const { Lexer } = require('../lexer');
-      const { Parser } = require('../parser');
-
+      // Use static imports from top of file
       const tokens = new Lexer(code.value).tokenize();
       const parser = new Parser(tokens);
       const ast = parser.parseSingle();
