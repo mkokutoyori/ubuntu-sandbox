@@ -766,13 +766,13 @@ export class Interpreter {
 
   private evalSubscript(node: Subscript): PyValue {
     const obj = this.evaluate(node.object);
-    const index = this.evaluate(node.index);
-
-    // Slice
-    if (index.type === 'Slice' || (node.index.type === 'Slice')) {
-      return this.slice(obj, node.index as any);
+    
+    // Slice handling - check the AST node type, not the evaluated result
+    if (node.index.type === 'Slice') {
+      return this.slice(obj, node.index as Slice);
     }
-
+    
+    const index = this.evaluate(node.index);
     return this.getItem(obj, index);
   }
 

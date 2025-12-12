@@ -3,9 +3,9 @@
  */
 
 import {
-  PyValue, PyFunction, PyStr, PyList, PyDict,
+  PyValue, PyFunction, PyStr, PyList, PyDict, PySet,
   pyInt, pyFloat, pyStr, pyBool, pyNone, pyList, pyTuple,
-  pyRepr, pyStr_value, pyValueToString
+  pyRepr, pyStr_value, pyValueToString, pyEqual
 } from '../types';
 
 import { TypeError, ValueError, IndexError, KeyError } from '../errors';

@@ -237,7 +237,7 @@ export function getOsModule(interpreter: any): PyModule {
     if (path.value.startsWith('/')) {
       return path;
     }
-    return pyStr(cwd + '/' + path.value);
+    return pyStr(getCwd() + '/' + path.value);
   }));
 
   pathExports.set('normpath', func('normpath', (path: PyValue) => {
@@ -283,6 +283,7 @@ export function getOsModule(interpreter: any): PyModule {
       throw new TypeError("expandvars() requires string argument");
     }
     let result = path.value;
+    const environ = getEnviron();
     environ.forEach((value, key) => {
       result = result.replace(new RegExp(`\\$${key}|\\$\\{${key}\\}`, 'g'), value);
     });
@@ -361,8 +362,8 @@ export function getOsModule(interpreter: any): PyModule {
       if (!children) {
         return pyList([]);
       }
-      const names = Array.from(children.keys());
-      return pyList(names.map(name => pyStr(name)));
+      const names: string[] = Array.from(children.keys());
+      return pyList(names.map((name: string) => pyStr(name)));
     }
 
     // Fallback for no filesystem
