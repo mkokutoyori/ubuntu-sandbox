@@ -4,12 +4,14 @@
  * Will use device-specific terminals for other equipment types
  */
 
+import { useEffect } from 'react';
 import { X, Minus, Square } from 'lucide-react';
 import { BaseDevice } from '@/devices';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { CiscoTerminal } from '@/components/CiscoTerminal';
 import { DeviceFactory } from '@/devices/DeviceFactory';
+import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
 
 interface TerminalModalProps {
@@ -28,6 +30,14 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
   const isWindowsDevice = osType === 'windows';
   const isCiscoDevice = osType === 'cisco-ios';
   const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
+  const isDatabaseDevice = deviceType.startsWith('db-');
+
+  // Pre-install database packages for database devices
+  useEffect(() => {
+    if (isDatabaseDevice) {
+      preInstallForDevice(deviceType);
+    }
+  }, [deviceType, isDatabaseDevice]);
 
   if (!isPoweredOn) {
     return (
@@ -110,7 +120,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
             <span className="text-xs text-white/40">
               [{deviceType}]
             </span>
-            {isLinuxDevice && (
+            {isLinuxDevice && !isDatabaseDevice && (
               <span className="text-xs text-green-400/60 ml-2">
                 Ubuntu Linux
               </span>
@@ -123,6 +133,14 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
             {isCiscoDevice && (
               <span className="text-xs text-cyan-400/60 ml-2">
                 Cisco IOS
+              </span>
+            )}
+            {isDatabaseDevice && (
+              <span className="text-xs text-orange-400/60 ml-2">
+                {deviceType === 'db-oracle' ? 'Oracle Database Server' :
+                 deviceType === 'db-mysql' ? 'MySQL Server' :
+                 deviceType === 'db-postgres' ? 'PostgreSQL Server' :
+                 deviceType === 'db-sqlserver' ? 'SQL Server' : 'Database Server'}
               </span>
             )}
           </div>

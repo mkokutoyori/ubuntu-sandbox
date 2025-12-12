@@ -36,6 +36,7 @@ import { processCommands } from './process';
 import { archiveCommands } from './archive';
 import { miscCommands } from './misc';
 import { editorCommands } from './editors';
+import { databaseCommands } from './database';
 
 // Combine all commands
 export const commands: CommandRegistry = {
@@ -50,6 +51,7 @@ export const commands: CommandRegistry = {
   ...archiveCommands,
   ...miscCommands,
   ...editorCommands,
+  ...databaseCommands,
 };
 
 // Command parser
