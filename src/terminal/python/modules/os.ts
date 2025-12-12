@@ -20,17 +20,32 @@ function func(name: string, fn: (...args: PyValue[]) => PyValue): PyFunction {
 export function getOsModule(interpreter: any): PyModule {
   const exports = new Map<string, PyValue>();
 
-  // Current working directory (simulated)
-  let cwd = '/home/user';
+  // Get filesystem and current path from interpreter context
+  const getContext = () => interpreter.getContext ? interpreter.getContext() : {};
+  const getFs = () => getContext().filesystem;
+  const getCwd = () => getContext().currentPath || '/home/user';
 
-  exports.set('getcwd', func('getcwd', () => pyStr(cwd)));
-  exports.set('getcwdb', func('getcwdb', () => pyStr(cwd)));
+  exports.set('getcwd', func('getcwd', () => pyStr(getCwd())));
+  exports.set('getcwdb', func('getcwdb', () => pyStr(getCwd())));
 
   exports.set('chdir', func('chdir', (path: PyValue) => {
     if (path.type !== 'str') {
       throw new TypeError("chdir: path should be string");
     }
-    cwd = path.value;
+    const fs = getFs();
+    if (fs) {
+      const targetPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(targetPath);
+      if (!node) {
+        throw new FileNotFoundError(path.value);
+      }
+      if (node.type !== 'directory') {
+        throw new TypeError("Not a directory");
+      }
+      if (interpreter.setCurrentPath) {
+        interpreter.setCurrentPath(targetPath);
+      }
+    }
     return pyNone();
   }));
 
@@ -42,7 +57,7 @@ export function getOsModule(interpreter: any): PyModule {
     ['SHELL', '/bin/bash'],
     ['LANG', 'en_US.UTF-8'],
     ['TERM', 'xterm-256color'],
-    ['PWD', cwd],
+    ['PWD', getCwd()],
     ['PYTHONPATH', '.'],
   ]);
 
@@ -158,20 +173,36 @@ export function getOsModule(interpreter: any): PyModule {
   }));
 
   pathExports.set('exists', func('exists', (path: PyValue) => {
-    // In simulation, always return true for simplicity
-    return pyBool(true);
+    if (path.type !== 'str') return pyBool(false);
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+      return pyBool(node !== null && node !== undefined);
+    }
+    return pyBool(false);
   }));
 
   pathExports.set('isfile', func('isfile', (path: PyValue) => {
     if (path.type !== 'str') return pyBool(false);
-    // Check if path has extension (simplified check)
-    return pyBool(path.value.includes('.'));
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+      return pyBool(node !== null && node !== undefined && node.type === 'file');
+    }
+    return pyBool(false);
   }));
 
   pathExports.set('isdir', func('isdir', (path: PyValue) => {
     if (path.type !== 'str') return pyBool(false);
-    // Assume no extension means directory (simplified)
-    return pyBool(!path.value.includes('.') || path.value.endsWith('/'));
+    const fs = getFs();
+    if (fs) {
+      const fullPath = fs.resolvePath(path.value, getCwd());
+      const node = fs.getNode(fullPath);
+      return pyBool(node !== null && node !== undefined && node.type === 'directory');
+    }
+    return pyBool(false);
   }));
 
   pathExports.set('isabs', func('isabs', (path: PyValue) => {
@@ -287,14 +318,32 @@ export function getOsModule(interpreter: any): PyModule {
     exports: pathExports
   } as PyModule);
 
-  // File operations (simulated/stubs)
+  // File operations - uses real filesystem when available
   exports.set('listdir', func('listdir', (path?: PyValue) => {
-    // Return simulated directory listing
-    return pyList([
-      pyStr('file1.txt'),
-      pyStr('file2.py'),
-      pyStr('directory'),
-    ]);
+    const fs = getFs();
+    const targetPath = path?.type === 'str' ? path.value : '.';
+
+    if (fs) {
+      // Resolve the path relative to current directory
+      const fullPath = fs.resolvePath(targetPath, getCwd());
+      const node = fs.getNode(fullPath);
+
+      if (!node) {
+        throw new FileNotFoundError(targetPath);
+      }
+
+      if (node.type !== 'directory') {
+        throw new TypeError(`Not a directory: '${targetPath}'`);
+      }
+
+      // Return list of children names
+      const children = node.children || {};
+      const names = Object.keys(children);
+      return pyList(names.map(name => pyStr(name)));
+    }
+
+    // Fallback for no filesystem
+    return pyList([]);
   }));
 
   exports.set('mkdir', func('mkdir', (path: PyValue, mode?: PyValue) => {

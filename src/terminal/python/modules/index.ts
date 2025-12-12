@@ -13,9 +13,6 @@ import { getSysModule } from './sys';
 import { getOsModule } from './os';
 import { getStringModule } from './string';
 
-// Module cache
-const moduleCache = new Map<string, PyModule>();
-
 // Module factory functions
 const moduleFactories: { [name: string]: (interpreter: any) => PyModule } = {
   'math': getMathModule,
@@ -28,10 +25,14 @@ const moduleFactories: { [name: string]: (interpreter: any) => PyModule } = {
   'string': getStringModule,
 };
 
+// Modules that don't need filesystem context can be cached globally
+const staticModuleCache = new Map<string, PyModule>();
+const staticModules = new Set(['math', 'random', 'datetime', 'json', 'string']);
+
 export function getModule(name: string, interpreter: any): PyModule {
-  // Check cache
-  if (moduleCache.has(name)) {
-    return moduleCache.get(name)!;
+  // Check if this is a static module that can be cached
+  if (staticModules.has(name) && staticModuleCache.has(name)) {
+    return staticModuleCache.get(name)!;
   }
 
   // Check if module exists
@@ -39,13 +40,17 @@ export function getModule(name: string, interpreter: any): PyModule {
     throw new ModuleNotFoundError(name);
   }
 
-  // Create and cache module
+  // Create module
   const module = moduleFactories[name](interpreter);
-  moduleCache.set(name, module);
+
+  // Cache static modules only
+  if (staticModules.has(name)) {
+    staticModuleCache.set(name, module);
+  }
 
   return module;
 }
 
 export function clearModuleCache(): void {
-  moduleCache.clear();
+  staticModuleCache.clear();
 }

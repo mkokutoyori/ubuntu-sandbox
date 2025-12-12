@@ -12,21 +12,30 @@ import { Environment, Scope } from './scope';
 import { PyValue, pyNone, pyRepr, pyStr_value } from './types';
 import { PyError, SyntaxError, SystemExit } from './errors';
 
+// Context interface for filesystem access
+export interface PythonContext {
+  filesystem?: any;  // FileSystem instance
+  currentPath?: string;
+  terminalState?: any;
+}
+
 export interface PythonSession {
   interpreter: Interpreter;
   isMultiLine: boolean;
   buffer: string;
   prompt: string;
+  context: PythonContext;
 }
 
-// Create a new Python session
-export function createPythonSession(): PythonSession {
-  const interpreter = new Interpreter();
+// Create a new Python session with optional context
+export function createPythonSession(context: PythonContext = {}): PythonSession {
+  const interpreter = new Interpreter(undefined, context);
   return {
     interpreter,
     isMultiLine: false,
     buffer: '',
-    prompt: '>>> '
+    prompt: '>>> ',
+    context
   };
 }
 
