@@ -1,3 +1,7 @@
+/**
+ * Toolbar - Top toolbar for network designer
+ */
+
 import { Save, FolderOpen, Download, Upload, Play, Pause, RotateCcw, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

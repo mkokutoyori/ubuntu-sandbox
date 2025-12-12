@@ -1,6 +1,10 @@
+/**
+ * DevicePalette - Sidebar with draggable device types
+ */
+
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
-import { DEVICE_CATEGORIES, DeviceType } from '../types';
+import { DEVICE_CATEGORIES, DeviceType } from '@/devices/common/types';
 import { DeviceIcon } from './DeviceIcon';
 import { cn } from '@/lib/utils';
 
@@ -15,7 +19,7 @@ export function DevicePalette({ onDragStart }: DevicePaletteProps) {
 
   const toggleCategory = (id: string) => {
     setExpandedCategories(prev =>
-      prev.includes(id) 
+      prev.includes(id)
         ? prev.filter(c => c !== id)
         : [...prev, id]
     );
@@ -27,7 +31,7 @@ export function DevicePalette({ onDragStart }: DevicePaletteProps) {
         <h2 className="text-sm font-semibold text-foreground/90">Equipment</h2>
         <p className="text-xs text-muted-foreground mt-1">Drag to canvas</p>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {DEVICE_CATEGORIES.map(category => (
           <div key={category.id} className="rounded-lg overflow-hidden">
@@ -46,7 +50,7 @@ export function DevicePalette({ onDragStart }: DevicePaletteProps) {
               )}
               <span className="font-medium">{category.name}</span>
             </button>
-            
+
             {expandedCategories.includes(category.id) && (
               <div className="pl-2 pb-2 space-y-1">
                 {category.devices.map(device => (
