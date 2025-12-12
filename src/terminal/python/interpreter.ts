@@ -31,14 +31,33 @@ import { Parser } from './parser';
 
 const MAX_RECURSION_DEPTH = 1000;
 
+// Context for filesystem access
+export interface InterpreterContext {
+  filesystem?: any;
+  currentPath?: string;
+  terminalState?: any;
+}
+
 export class Interpreter {
   private env: Environment;
   private recursionDepth: number = 0;
   private modules: Map<string, PyValue> = new Map();
+  private context: InterpreterContext;
 
-  constructor(env?: Environment) {
+  constructor(env?: Environment, context: InterpreterContext = {}) {
     this.env = env || new Environment();
+    this.context = context;
     this.initBuiltins();
+  }
+
+  // Get context for modules
+  getContext(): InterpreterContext {
+    return this.context;
+  }
+
+  // Update current path
+  setCurrentPath(path: string): void {
+    this.context.currentPath = path;
   }
 
   private initBuiltins(): void {

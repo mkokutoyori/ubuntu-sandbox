@@ -16,7 +16,7 @@ import {
   TUTORIAL_STEPS,
   TutorialStep,
 } from '@/terminal/shellUtils';
-import { createPythonSession, executeLine, PythonSession } from '@/terminal/python';
+import { createPythonSession, executeLine, PythonSession, PythonContext } from '@/terminal/python';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -259,9 +259,16 @@ export const Terminal: React.FC = () => {
       // Initialize session if needed
       let session = pythonSession;
       if (!session) {
-        session = createPythonSession();
+        const context: PythonContext = {
+          filesystem: fileSystem,
+          currentPath: state.currentPath,
+          terminalState: state
+        };
+        session = createPythonSession(context);
         setPythonSession(session);
       }
+      // Update current path in session context
+      session.context.currentPath = state.currentPath;
 
       // Execute Python code directly (bypassing shell parser to preserve quotes)
       const result = executeLine(session, cmd);
@@ -407,7 +414,12 @@ export const Terminal: React.FC = () => {
     if ((result as any).enterPythonMode) {
       setPythonMode(true);
       setPythonPrompt('>>> ');
-      setPythonSession(createPythonSession());
+      const context: PythonContext = {
+        filesystem: fileSystem,
+        currentPath: state.currentPath,
+        terminalState: state
+      };
+      setPythonSession(createPythonSession(context));
     }
 
     setState(prev => ({
