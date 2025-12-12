@@ -4,7 +4,7 @@
  */
 
 import { BaseDevice } from '../common/BaseDevice';
-import { DeviceConfig, CommandResult, NetworkInterfaceConfig } from '../common/types';
+import { DeviceConfig, CommandResult, NetworkInterfaceConfig, generateMacAddress } from '../common/types';
 import { NetworkStack } from '../common/NetworkStack';
 import {
   Packet,
@@ -19,7 +19,9 @@ import {
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
 
-export interface LinuxPCConfig extends DeviceConfig {
+export interface LinuxPCConfig extends Omit<DeviceConfig, 'type' | 'osType'> {
+  type?: 'linux-pc' | 'linux-server';
+  osType?: 'linux';
   // Additional Linux-specific config
   distribution?: string;
   kernelVersion?: string;
@@ -522,13 +524,14 @@ export function createLinuxPC(config: Partial<LinuxPCConfig> & { id: string; nam
     id: config.id,
     name: config.name,
     hostname: config.hostname || config.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+    type: 'linux-pc',
     osType: 'linux',
     interfaces: config.interfaces || [
       {
         id: `${config.id}-eth0`,
         name: 'eth0',
         type: 'ethernet',
-        macAddress: generateMACAddress(),
+        macAddress: generateMacAddress(),
         isUp: false,
         speed: '1Gbps',
         duplex: 'auto'
@@ -538,18 +541,4 @@ export function createLinuxPC(config: Partial<LinuxPCConfig> & { id: string; nam
     distribution: config.distribution,
     kernelVersion: config.kernelVersion
   });
-}
-
-// Helper function to generate MAC address
-function generateMACAddress(): string {
-  const hexDigits = '0123456789ABCDEF';
-  let mac = '00';  // Start with locally administered address
-
-  for (let i = 0; i < 5; i++) {
-    mac += ':';
-    mac += hexDigits[Math.floor(Math.random() * 16)];
-    mac += hexDigits[Math.floor(Math.random() * 16)];
-  }
-
-  return mac;
 }

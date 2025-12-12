@@ -1,15 +1,19 @@
-import { 
-  Monitor, 
-  Server, 
-  Database, 
-  Router, 
-  Shield, 
-  Wifi, 
+/**
+ * DeviceIcon - Icons for different device types
+ */
+
+import {
+  Monitor,
+  Server,
+  Database,
+  Router,
+  Shield,
+  Wifi,
   Cloud,
   HardDrive,
   Laptop
 } from 'lucide-react';
-import { DeviceType } from '../types';
+import { DeviceType } from '@/devices/common/types';
 import { cn } from '@/lib/utils';
 
 interface DeviceIconProps {
@@ -20,14 +24,14 @@ interface DeviceIconProps {
 
 export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
   const iconProps = { size, className: cn('transition-all', className) };
-  
+
   switch (type) {
     case 'linux-pc':
       return (
         <div className="relative">
           <Monitor {...iconProps} />
           <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-orange-500 text-white rounded px-0.5">
-            🐧
+            L
           </span>
         </div>
       );
@@ -36,7 +40,7 @@ export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
         <div className="relative">
           <Monitor {...iconProps} />
           <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-blue-500 text-white rounded px-0.5">
-            ⊞
+            W
           </span>
         </div>
       );
@@ -45,7 +49,7 @@ export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
         <div className="relative">
           <Laptop {...iconProps} />
           <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-gray-800 text-white rounded px-0.5">
-            
+            M
           </span>
         </div>
       );
@@ -54,7 +58,7 @@ export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
         <div className="relative">
           <Server {...iconProps} />
           <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-orange-500 text-white rounded px-0.5">
-            🐧
+            L
           </span>
         </div>
       );
@@ -63,7 +67,7 @@ export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
         <div className="relative">
           <Server {...iconProps} />
           <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-blue-500 text-white rounded px-0.5">
-            ⊞
+            W
           </span>
         </div>
       );

@@ -2,7 +2,7 @@
  * BaseDevice - Abstract base class for all network devices
  */
 
-import { DeviceConfig, CommandResult, NetworkInterfaceConfig, PacketSender } from './types';
+import { DeviceConfig, CommandResult, NetworkInterfaceConfig, PacketSender, DeviceType, DeviceOSType } from './types';
 import { NetworkStack } from './NetworkStack';
 import { Packet } from '../../core/network/packet';
 
@@ -10,15 +10,23 @@ export abstract class BaseDevice {
   protected id: string;
   protected name: string;
   protected hostname: string;
+  protected deviceType: DeviceType;
+  protected osType: DeviceOSType;
   protected isPoweredOn: boolean;
   protected networkStack: NetworkStack;
   protected packetSender: PacketSender | null = null;
+  protected positionX: number;
+  protected positionY: number;
 
   constructor(config: DeviceConfig) {
     this.id = config.id;
     this.name = config.name;
     this.hostname = config.hostname;
+    this.deviceType = config.type;
+    this.osType = config.osType;
     this.isPoweredOn = config.isPoweredOn;
+    this.positionX = config.x || 0;
+    this.positionY = config.y || 0;
 
     this.networkStack = new NetworkStack({
       interfaces: config.interfaces,
@@ -42,12 +50,30 @@ export abstract class BaseDevice {
     return this.name;
   }
 
+  setName(name: string): void {
+    this.name = name;
+  }
+
   getHostname(): string {
     return this.hostname;
   }
 
   setHostname(hostname: string): void {
     this.hostname = hostname;
+  }
+
+  getDeviceType(): DeviceType {
+    return this.deviceType;
+  }
+
+  // Position management for UI
+  getPosition(): { x: number; y: number } {
+    return { x: this.positionX, y: this.positionY };
+  }
+
+  setPosition(x: number, y: number): void {
+    this.positionX = x;
+    this.positionY = y;
   }
 
   // Power management
@@ -61,6 +87,10 @@ export abstract class BaseDevice {
 
   getIsPoweredOn(): boolean {
     return this.isPoweredOn;
+  }
+
+  togglePower(): void {
+    this.isPoweredOn = !this.isPoweredOn;
   }
 
   // Network stack access
@@ -87,6 +117,11 @@ export abstract class BaseDevice {
     return this.networkStack.getInterfaces();
   }
 
+  // Get specific interface
+  getInterface(interfaceId: string): NetworkInterfaceConfig | undefined {
+    return this.networkStack.getInterface(interfaceId);
+  }
+
   // Configure an interface
   configureInterface(interfaceId: string, config: Partial<NetworkInterfaceConfig>): boolean {
     return this.networkStack.configureInterface(interfaceId, config);
@@ -108,9 +143,12 @@ export abstract class BaseDevice {
       id: this.id,
       name: this.name,
       hostname: this.hostname,
-      osType: this.getOSType() as any,
+      type: this.deviceType,
+      osType: this.osType,
       interfaces: this.getInterfaces(),
-      isPoweredOn: this.isPoweredOn
+      isPoweredOn: this.isPoweredOn,
+      x: this.positionX,
+      y: this.positionY
     };
   }
 }

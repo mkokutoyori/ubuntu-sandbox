@@ -1,21 +1,26 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
+/**
+ * NetworkCanvas - Main canvas for network topology design
+ */
+
+import { useRef, useCallback, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Trash2, X } from 'lucide-react';
-import { useNetworkStore } from '../store';
+import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
-import { DeviceType, NetworkDevice as NetworkDeviceType } from '../types';
+import { DeviceType } from '@/devices/common/types';
+import { BaseDevice } from '@/devices';
 import { cn } from '@/lib/utils';
 
 interface NetworkCanvasProps {
-  onOpenTerminal?: (device: NetworkDeviceType) => void;
+  onOpenTerminal?: (device: BaseDevice) => void;
 }
 
 export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  
+
   const {
-    devices,
+    getDevices,
     connections,
     zoom,
     panX,
@@ -29,6 +34,8 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     cancelConnecting,
     connectionSource
   } = useNetworkStore();
+
+  const devices = getDevices();
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
@@ -57,13 +64,13 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     setMousePos({
       x: (e.clientX - rect.left) / zoom,
       y: (e.clientY - rect.top) / zoom
     });
-    
+
     if (isPanning) {
       setPan(e.clientX - startPan.x, e.clientY - startPan.y);
     }
@@ -76,14 +83,14 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
-    
+
     const deviceType = e.dataTransfer.getData('deviceType') as DeviceType;
     if (!deviceType || !canvasRef.current) return;
-    
+
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left - panX) / zoom;
     const y = (e.clientY - rect.top - panY) / zoom;
-    
+
     addDevice(deviceType, x, y);
   }, [zoom, panX, panY, addDevice]);
 
@@ -97,14 +104,14 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   }, []);
 
   // Get connection source device for drawing line
-  const sourceDevice = connectionSource 
+  const sourceDevice = connectionSource
     ? devices.find(d => d.id === connectionSource.deviceId)
     : null;
 
   return (
     <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Grid background */}
-      <div 
+      <div
         className="absolute inset-0 opacity-20"
         style={{
           backgroundImage: `
@@ -115,7 +122,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           backgroundPosition: `${panX}px ${panY}px`
         }}
       />
-      
+
       {/* Drop zone indicator */}
       {isDraggingOver && (
         <div className="absolute inset-4 border-2 border-dashed border-primary/50 rounded-xl bg-primary/5 pointer-events-none z-10 flex items-center justify-center">
@@ -165,13 +172,13 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           {/* Connections SVG layer */}
           <svg className="absolute inset-0 w-full h-full pointer-events-auto" style={{ overflow: 'visible' }}>
             {connections.map(connection => (
-              <ConnectionLine 
-                key={connection.id} 
+              <ConnectionLine
+                key={connection.id}
                 connection={connection}
                 devices={devices}
               />
             ))}
-            
+
             {/* Drawing connection line */}
             {isConnecting && sourceDevice && (
               <line
@@ -189,8 +196,8 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
 
           {/* Devices layer */}
           {devices.map(device => (
-            <NetworkDevice 
-              key={device.id} 
+            <NetworkDevice
+              key={device.id}
               device={device}
               zoom={zoom}
               onOpenTerminal={onOpenTerminal}
