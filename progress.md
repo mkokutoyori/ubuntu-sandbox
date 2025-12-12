@@ -71,11 +71,17 @@ The `src/network/` directory contained UI components with their own type definit
    - Stores actual device class instances
    - Provides `NetworkDeviceUI` interface for rendering
 
-4. **Device Terminal**
-   - Created `src/components/network/DeviceTerminal.tsx`
-   - Connects to `BaseDevice.executeCommand()`
-   - Shows device-specific prompts
-   - Supports command history and ANSI colors
+4. **Terminal Integration**
+   - Uses the **existing Linux terminal** (`src/components/Terminal.tsx`) for Linux devices
+   - Full-featured terminal with:
+     - Complete bash command set
+     - Python REPL interpreter
+     - Nano and Vim editors
+     - Filesystem simulation
+     - Command history and auto-completion
+     - Tutorial mode and achievements
+   - Non-implemented device types show a placeholder message
+   - Future sprints will add Cisco IOS, Windows cmd/PowerShell, etc.
 
 5. **UI Components Migration**
    - Moved components from `src/network/` to `src/components/network/`
