@@ -566,18 +566,107 @@ export function getBuiltins(interpreter: any): { [name: string]: PyValue } {
       if (!obj) {
         interpreter.print("Welcome to Python help!");
         interpreter.print("Type help(object) for help about an object.");
+        interpreter.print("");
+        interpreter.print("Available modules:");
+        interpreter.print("  math, random, datetime, json, os, sys, string");
+        interpreter.print("");
+        interpreter.print("Built-in functions:");
+        interpreter.print("  print, len, range, type, str, int, float, bool, list, dict, tuple, set");
+        interpreter.print("  abs, max, min, sum, sorted, reversed, enumerate, zip, map, filter");
+        interpreter.print("  input, open, round, pow, divmod, bin, hex, oct, ord, chr, repr");
         return pyNone();
       }
 
       if (obj.type === 'function') {
         interpreter.print(`Help on function ${obj.name}:`);
         interpreter.print(`  ${obj.name}(...)`);
+        if (obj.isBuiltin) {
+          interpreter.print(`  Built-in function`);
+        }
       } else if (obj.type === 'class') {
         interpreter.print(`Help on class ${obj.name}:`);
         interpreter.print(`  class ${obj.name}`);
+        if ((obj as any).methods) {
+          interpreter.print(`  Methods:`);
+          for (const [name] of (obj as any).methods) {
+            interpreter.print(`    ${name}(...)`);
+          }
+        }
+      } else if (obj.type === 'module') {
+        interpreter.print(`Help on module '${obj.name}':`);
+        interpreter.print("");
+        interpreter.print("NAME");
+        interpreter.print(`    ${obj.name}`);
+        interpreter.print("");
+
+        // List all functions and attributes in the module
+        if (obj.exports && obj.exports.size > 0) {
+          const functions: string[] = [];
+          const constants: string[] = [];
+          const submodules: string[] = [];
+
+          for (const [name, value] of obj.exports) {
+            if (value.type === 'function') {
+              functions.push(name);
+            } else if (value.type === 'module') {
+              submodules.push(name);
+            } else {
+              constants.push(name);
+            }
+          }
+
+          if (functions.length > 0) {
+            interpreter.print("FUNCTIONS");
+            for (const name of functions.sort()) {
+              interpreter.print(`    ${name}(...)`);
+            }
+            interpreter.print("");
+          }
+
+          if (submodules.length > 0) {
+            interpreter.print("SUBMODULES");
+            for (const name of submodules.sort()) {
+              interpreter.print(`    ${name}`);
+            }
+            interpreter.print("");
+          }
+
+          if (constants.length > 0) {
+            interpreter.print("DATA");
+            for (const name of constants.sort()) {
+              interpreter.print(`    ${name}`);
+            }
+            interpreter.print("");
+          }
+        }
+      } else if (obj.type === 'str') {
+        interpreter.print("Help on class str:");
+        interpreter.print("  str(object='') -> str");
+        interpreter.print("");
+        interpreter.print("Methods:");
+        interpreter.print("  upper(), lower(), strip(), split(), join(), replace()");
+        interpreter.print("  startswith(), endswith(), find(), count(), format()");
+        interpreter.print("  isalpha(), isdigit(), isalnum(), isspace()");
+      } else if (obj.type === 'list') {
+        interpreter.print("Help on class list:");
+        interpreter.print("  list(iterable=()) -> list");
+        interpreter.print("");
+        interpreter.print("Methods:");
+        interpreter.print("  append(x), extend(iterable), insert(i, x), remove(x)");
+        interpreter.print("  pop([i]), clear(), index(x), count(x), sort(), reverse(), copy()");
+      } else if (obj.type === 'dict') {
+        interpreter.print("Help on class dict:");
+        interpreter.print("  dict(**kwargs) -> dict");
+        interpreter.print("");
+        interpreter.print("Methods:");
+        interpreter.print("  keys(), values(), items(), get(key[, default])");
+        interpreter.print("  pop(key[, default]), update(dict), clear(), copy()");
       } else {
         interpreter.print(`Help on ${obj.type} object:`);
         interpreter.print(`  Type: ${obj.type}`);
+        if (obj.type === 'int' || obj.type === 'float') {
+          interpreter.print(`  Value: ${(obj as any).value}`);
+        }
       }
 
       return pyNone();
