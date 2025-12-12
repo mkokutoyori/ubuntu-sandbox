@@ -44,6 +44,7 @@ export interface NetworkDevice {
   id: string;
   type: DeviceType;
   name: string;
+  hostname?: string;
   x: number;
   y: number;
   interfaces: NetworkInterface[];
