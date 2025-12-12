@@ -700,8 +700,8 @@ export const Terminal: React.FC = () => {
     if (line.type === 'input') {
       return (
         <div key={line.id} className="flex">
-          <span className="text-terminal-amber terminal-glow-amber mr-2">{line.prompt}</span>
-          <span className={colorClass}>{line.content}</span>
+          <span className="text-terminal-amber terminal-glow-amber mr-2 whitespace-pre">{line.prompt}</span>
+          <span className={`${colorClass} whitespace-pre`}>{line.content}</span>
         </div>
       );
     }
