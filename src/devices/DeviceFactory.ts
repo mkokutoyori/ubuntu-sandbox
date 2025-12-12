@@ -6,6 +6,7 @@
 import { BaseDevice } from './common/BaseDevice';
 import { createLinuxPC } from './linux/LinuxPC';
 import { createWindowsPC } from './windows/WindowsPC';
+import { createCiscoRouter, createCiscoSwitch } from './cisco/CiscoDevice';
 import {
   DeviceType,
   DeviceConfig,
@@ -137,11 +138,27 @@ export class DeviceFactory {
           windowsVersion: type === 'windows-server' ? 'Windows Server 2022' : 'Windows 10 Pro'
         });
 
+      case 'router-cisco':
+        return createCiscoRouter({
+          id: baseConfig.id,
+          name: baseConfig.name,
+          hostname: baseConfig.hostname,
+          interfaces: baseConfig.interfaces,
+          isPoweredOn: baseConfig.isPoweredOn,
+        });
+
+      case 'switch-cisco':
+        return createCiscoSwitch({
+          id: baseConfig.id,
+          name: baseConfig.name,
+          hostname: baseConfig.hostname,
+          interfaces: baseConfig.interfaces,
+          isPoweredOn: baseConfig.isPoweredOn,
+        });
+
       // TODO: Implement these device types in future sprints
       case 'mac-pc':
-      case 'router-cisco':
       case 'router-huawei':
-      case 'switch-cisco':
       case 'switch-huawei':
       case 'firewall-fortinet':
       case 'firewall-cisco':
@@ -202,7 +219,9 @@ export class DeviceFactory {
       'db-mysql',
       'db-postgres',
       'db-oracle',
-      'db-sqlserver'
+      'db-sqlserver',
+      'router-cisco',
+      'switch-cisco'
     ];
     return implementedDevices.includes(type);
   }
