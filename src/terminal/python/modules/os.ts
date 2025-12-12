@@ -336,9 +336,12 @@ export function getOsModule(interpreter: any): PyModule {
         throw new TypeError(`Not a directory: '${targetPath}'`);
       }
 
-      // Return list of children names
-      const children = node.children || {};
-      const names = Object.keys(children);
+      // Return list of children names (children is a Map, not an object)
+      const children = node.children;
+      if (!children) {
+        return pyList([]);
+      }
+      const names = Array.from(children.keys());
       return pyList(names.map(name => pyStr(name)));
     }
 
