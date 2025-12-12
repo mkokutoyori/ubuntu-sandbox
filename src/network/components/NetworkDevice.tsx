@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { Power, Settings, Terminal, Trash2, Link } from 'lucide-react';
 import { NetworkDevice as NetworkDeviceType } from '../types';
 import { DeviceIcon } from './DeviceIcon';
@@ -25,7 +25,6 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
   } = useNetworkStore();
   
   const [isDragging, setIsDragging] = useState(false);
-  const [showContextMenu, setShowContextMenu] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   
   const isSelected = selectedDeviceId === device.id;
@@ -53,46 +52,39 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
     selectDevice(device.id);
     setIsDragging(true);
     
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     dragOffset.current = {
       x: e.clientX - rect.left - rect.width / 2,
       y: e.clientY - rect.top - rect.height / 2
     };
   }, [device, isConnecting, isConnectionSource, selectDevice, finishConnecting]);
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  useEffect(() => {
     if (!isDragging) return;
-    
-    const canvas = document.getElementById('network-canvas');
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / zoom - dragOffset.current.x;
-    const y = (e.clientY - rect.top) / zoom - dragOffset.current.y;
-    
-    moveDevice(device.id, Math.max(0, x), Math.max(0, y));
-  }, [isDragging, device.id, zoom, moveDevice]);
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+    const handleMouseMove = (e: MouseEvent) => {
+      const canvas = document.getElementById('network-canvas');
+      if (!canvas) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / zoom - dragOffset.current.x;
+      const y = (e.clientY - rect.top) / zoom - dragOffset.current.y;
+      
+      moveDevice(device.id, Math.max(0, x), Math.max(0, y));
+    };
 
-  // Attach global mouse events for dragging
-  useState(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  });
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setShowContextMenu(true);
-  };
+  }, [isDragging, device.id, zoom, moveDevice]);
 
   const handleStartConnection = () => {
     const firstFreeInterface = device.interfaces.find(iface => {
@@ -105,7 +97,12 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
     if (firstFreeInterface) {
       startConnecting(device.id, firstFreeInterface.id);
     }
-    setShowContextMenu(false);
+  };
+
+  const handleDoubleClick = () => {
+    if ((device.type.includes('linux') || device.type.includes('server')) && onOpenTerminal) {
+      onOpenTerminal(device);
+    }
   };
 
   return (
@@ -121,7 +118,7 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
         transform: 'translate(-50%, -50%)'
       }}
       onMouseDown={handleMouseDown}
-      onContextMenu={handleContextMenu}
+      onDoubleClick={handleDoubleClick}
     >
       {/* Device Card */}
       <div
@@ -168,7 +165,7 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
           "animate-in fade-in slide-in-from-top-2 duration-200"
         )}>
           <button
-            onClick={() => updateDevice(device.id, { isPoweredOn: !device.isPoweredOn })}
+            onClick={(e) => { e.stopPropagation(); updateDevice(device.id, { isPoweredOn: !device.isPoweredOn }); }}
             className={cn(
               "p-1.5 rounded-md hover:bg-white/10 transition-colors",
               device.isPoweredOn ? "text-green-400" : "text-gray-400"
@@ -178,7 +175,7 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
             <Power className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={handleStartConnection}
+            onClick={(e) => { e.stopPropagation(); handleStartConnection(); }}
             className="p-1.5 rounded-md hover:bg-white/10 text-blue-400 transition-colors"
             title="Connect"
           >
@@ -186,7 +183,7 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
           </button>
           {(device.type.includes('linux') || device.type.includes('server')) && onOpenTerminal && (
             <button
-              onClick={() => onOpenTerminal(device)}
+              onClick={(e) => { e.stopPropagation(); onOpenTerminal(device); }}
               className="p-1.5 rounded-md hover:bg-white/10 text-green-400 transition-colors"
               title="Open Terminal"
             >
@@ -194,14 +191,14 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
             </button>
           )}
           <button
-            onClick={() => {}}
+            onClick={(e) => e.stopPropagation()}
             className="p-1.5 rounded-md hover:bg-white/10 text-white/60 transition-colors"
             title="Settings"
           >
             <Settings className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => removeDevice(device.id)}
+            onClick={(e) => { e.stopPropagation(); removeDevice(device.id); }}
             className="p-1.5 rounded-md hover:bg-white/10 text-red-400 transition-colors"
             title="Delete"
           >
