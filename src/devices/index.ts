@@ -4,4 +4,5 @@
 
 export * from './common';
 export * from './linux';
+export * from './windows';
 export * from './DeviceFactory';

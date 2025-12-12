@@ -5,6 +5,7 @@
 
 import { BaseDevice } from './common/BaseDevice';
 import { createLinuxPC } from './linux/LinuxPC';
+import { createWindowsPC } from './windows/WindowsPC';
 import {
   DeviceType,
   DeviceConfig,
@@ -125,9 +126,18 @@ export class DeviceFactory {
           isPoweredOn: baseConfig.isPoweredOn
         });
 
-      // TODO: Implement these device types in future sprints
       case 'windows-pc':
       case 'windows-server':
+        return createWindowsPC({
+          id: baseConfig.id,
+          name: baseConfig.name,
+          hostname: baseConfig.hostname,
+          interfaces: baseConfig.interfaces,
+          isPoweredOn: baseConfig.isPoweredOn,
+          windowsVersion: type === 'windows-server' ? 'Windows Server 2022' : 'Windows 10 Pro'
+        });
+
+      // TODO: Implement these device types in future sprints
       case 'mac-pc':
       case 'router-cisco':
       case 'router-huawei':
@@ -187,6 +197,8 @@ export class DeviceFactory {
     const implementedDevices: DeviceType[] = [
       'linux-pc',
       'linux-server',
+      'windows-pc',
+      'windows-server',
       'db-mysql',
       'db-postgres',
       'db-oracle',

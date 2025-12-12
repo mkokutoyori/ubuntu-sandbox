@@ -50,7 +50,11 @@ function saveToStorage(key: string, value: any): void {
   }
 }
 
-export const Terminal: React.FC = () => {
+interface TerminalProps {
+  onRequestClose?: () => void;
+}
+
+export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
   // Load history from localStorage
   const savedHistory = loadFromStorage<string[]>(STORAGE_KEYS.HISTORY, []);
   const savedAchievements = loadFromStorage<string[]>(STORAGE_KEYS.ACHIEVEMENTS, []);
@@ -299,6 +303,22 @@ export const Terminal: React.FC = () => {
     }
 
     // Handle special commands
+    if (cmd.trim() === 'exit' || cmd.trim() === 'logout') {
+      if (onRequestClose) {
+        onRequestClose();
+        return;
+      }
+      // If no close handler, just show a message
+      setOutput(prev => [...prev, {
+        id: generateId(),
+        type: 'system',
+        content: 'logout',
+        timestamp: new Date(),
+      }]);
+      setInput('');
+      return;
+    }
+
     if (cmd.trim() === 'tutorial') {
       setTutorialMode(true);
       setTutorialStep(0);
@@ -439,7 +459,7 @@ export const Terminal: React.FC = () => {
     setInput('');
     setSuggestion('');
     setShowCompletions(false);
-  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession]);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, onRequestClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // History search mode

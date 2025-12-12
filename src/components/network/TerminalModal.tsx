@@ -7,6 +7,7 @@
 import { X, Minus, Square } from 'lucide-react';
 import { BaseDevice } from '@/devices';
 import { Terminal } from '@/components/Terminal';
+import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { DeviceFactory } from '@/devices/DeviceFactory';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
   // Determine which terminal to use based on device type
   const osType = device.getOSType();
   const isLinuxDevice = osType === 'linux';
+  const isWindowsDevice = osType === 'windows';
   const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
 
   if (!isPoweredOn) {
@@ -50,7 +52,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
   }
 
   // Show message for non-implemented device types
-  if (!isLinuxDevice && !isFullyImplemented) {
+  if (!isLinuxDevice && !isWindowsDevice && !isFullyImplemented) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className={cn(
@@ -65,7 +67,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
             is not yet implemented. This device type will be available in a future sprint.
           </div>
           <div className="text-white/40 text-xs text-center mb-4">
-            Currently implemented: Linux PC, Linux Server, Database Servers
+            Currently implemented: Linux PC, Linux Server, Windows PC, Windows Server, Database Servers
           </div>
           <button
             onClick={onClose}
@@ -111,6 +113,11 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
                 Ubuntu Linux
               </span>
             )}
+            {isWindowsDevice && (
+              <span className="text-xs text-blue-400/60 ml-2">
+                Windows
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button className="p-1 hover:bg-white/10 rounded transition-colors">
@@ -128,9 +135,13 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
           </div>
         </div>
 
-        {/* Terminal content - Use the existing Linux terminal */}
+        {/* Terminal content - Use the appropriate terminal based on OS type */}
         <div className="flex-1 overflow-hidden">
-          <Terminal />
+          {isWindowsDevice ? (
+            <WindowsTerminal onRequestClose={onClose} />
+          ) : (
+            <Terminal onRequestClose={onClose} />
+          )}
         </div>
       </div>
     </div>
