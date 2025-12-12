@@ -1,7 +1,7 @@
-import { Terminal } from '@/components/Terminal';
+import { NetworkDesigner } from '@/network/NetworkDesigner';
 
 const Index = () => {
-  return <Terminal />;
+  return <NetworkDesigner />;
 };
 
 export default Index;

@@ -128,9 +128,9 @@ export function getSysModule(interpreter: any): PyModule {
       methods: new Map(),
       attributes: new Map()
     },
-    attributes: new Map([
+    attributes: new Map<string, PyValue>([
       ['name', pyStr('PythonSimulator')],
-      ['version', pyTuple([pyInt(3), pyInt(11), pyInt(0)])],
+      ['version', pyTuple([pyInt(3), pyInt(11), pyInt(0)]) as PyValue],
       ['cache_tag', pyStr('pysim-311')]
     ])
   } as any);
