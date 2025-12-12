@@ -9,6 +9,7 @@ import { X, Minus, Square } from 'lucide-react';
 import { BaseDevice } from '@/devices';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
+import { CiscoTerminal } from '@/components/CiscoTerminal';
 import { DeviceFactory } from '@/devices/DeviceFactory';
 import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
   const osType = device.getOSType();
   const isLinuxDevice = osType === 'linux';
   const isWindowsDevice = osType === 'windows';
+  const isCiscoDevice = osType === 'cisco-ios';
   const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
@@ -62,7 +64,7 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
   }
 
   // Show message for non-implemented device types
-  if (!isLinuxDevice && !isWindowsDevice && !isFullyImplemented) {
+  if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !isFullyImplemented) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className={cn(
@@ -128,6 +130,11 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
                 Windows
               </span>
             )}
+            {isCiscoDevice && (
+              <span className="text-xs text-cyan-400/60 ml-2">
+                Cisco IOS
+              </span>
+            )}
             {isDatabaseDevice && (
               <span className="text-xs text-orange-400/60 ml-2">
                 {deviceType === 'db-oracle' ? 'Oracle Database Server' :
@@ -155,7 +162,13 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
 
         {/* Terminal content - Use the appropriate terminal based on OS type */}
         <div className="flex-1 overflow-hidden">
-          {isWindowsDevice ? (
+          {isCiscoDevice ? (
+            <CiscoTerminal
+              deviceType={deviceType === 'switch-cisco' ? 'switch' : 'router'}
+              hostname={device.getHostname()}
+              onRequestClose={onClose}
+            />
+          ) : isWindowsDevice ? (
             <WindowsTerminal onRequestClose={onClose} />
           ) : (
             <Terminal onRequestClose={onClose} />
