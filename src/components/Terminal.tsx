@@ -16,6 +16,7 @@ import {
   TUTORIAL_STEPS,
   TutorialStep,
 } from '@/terminal/shellUtils';
+import { createPythonSession, executeLine, PythonSession } from '@/terminal/python';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -106,6 +107,7 @@ export const Terminal: React.FC = () => {
   // Python REPL mode
   const [pythonMode, setPythonMode] = useState(false);
   const [pythonPrompt, setPythonPrompt] = useState('>>> ');
+  const [pythonSession, setPythonSession] = useState<PythonSession | null>(null);
 
   // Achievements
   const [achievements, setAchievements] = useState<string[]>(savedAchievements);
@@ -252,19 +254,28 @@ export const Terminal: React.FC = () => {
       }));
     }
 
-    // Handle Python REPL mode
+    // Handle Python REPL mode - directly call Python interpreter to preserve quotes
     if (pythonMode) {
-      const result = executeCommand(`__pythonExec ${cmd}`, state, fileSystem, packageManager);
+      // Initialize session if needed
+      let session = pythonSession;
+      if (!session) {
+        session = createPythonSession();
+        setPythonSession(session);
+      }
 
-      if ((result as any).exitPythonMode) {
+      // Execute Python code directly (bypassing shell parser to preserve quotes)
+      const result = executeLine(session, cmd);
+
+      if (result.exit) {
         setPythonMode(false);
         setPythonPrompt('>>> ');
+        setPythonSession(null);
         setInput('');
         return;
       }
 
-      if ((result as any).pythonPrompt) {
-        setPythonPrompt((result as any).pythonPrompt);
+      if (result.prompt) {
+        setPythonPrompt(result.prompt);
       }
 
       if (result.output) {
@@ -396,6 +407,7 @@ export const Terminal: React.FC = () => {
     if ((result as any).enterPythonMode) {
       setPythonMode(true);
       setPythonPrompt('>>> ');
+      setPythonSession(createPythonSession());
     }
 
     setState(prev => ({
@@ -415,7 +427,7 @@ export const Terminal: React.FC = () => {
     setInput('');
     setSuggestion('');
     setShowCompletions(false);
-  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode]);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // History search mode
@@ -581,6 +593,7 @@ export const Terminal: React.FC = () => {
         if (pythonMode) {
           setPythonMode(false);
           setPythonPrompt('>>> ');
+          setPythonSession(null);
           setOutput(prev => [...prev, {
             id: generateId(),
             type: 'system',
