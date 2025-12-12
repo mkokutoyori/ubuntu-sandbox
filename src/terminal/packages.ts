@@ -33,6 +33,18 @@ export const availablePackages: Package[] = [
   { name: 'cowsay', version: '3.03+dfsg2-8', description: 'configurable talking cow', installed: false, size: '24 kB' },
   { name: 'fortune', version: '1:1.99.1-7build1', description: 'provides fortune cookies on demand', installed: false, size: '2,345 kB' },
   { name: 'sl', version: '5.02-1build1', description: 'Correct you if you type sl by mistake', installed: false, size: '24 kB' },
+  // Database packages
+  { name: 'oracle-xe-21c', version: '21.3.0-1', description: 'Oracle Database 21c Express Edition', installed: false, size: '2,456,789 kB' },
+  { name: 'oracle-instantclient', version: '21.9.0.0.0-1', description: 'Oracle Instant Client (Basic)', installed: false, size: '78,234 kB' },
+  { name: 'oracle-sqlplus', version: '21.9.0.0.0-1', description: 'Oracle SQL*Plus command line tool', installed: false, size: '2,345 kB' },
+  { name: 'postgresql-14', version: '14.7-0ubuntu0.22.04.1', description: 'PostgreSQL 14 database server', installed: false, size: '15,234 kB' },
+  { name: 'postgresql-client-14', version: '14.7-0ubuntu0.22.04.1', description: 'PostgreSQL 14 client programs', installed: false, size: '1,456 kB' },
+  { name: 'mysql-server-8.0', version: '8.0.32-0ubuntu0.22.04.2', description: 'MySQL 8.0 database server', installed: false, size: '25,678 kB' },
+  { name: 'mysql-client-8.0', version: '8.0.32-0ubuntu0.22.04.2', description: 'MySQL 8.0 client programs', installed: false, size: '2,345 kB' },
+  { name: 'mariadb-server', version: '1:10.6.12-0ubuntu0.22.04.1', description: 'MariaDB database server', installed: false, size: '18,234 kB' },
+  { name: 'sqlite3', version: '3.37.2-2ubuntu0.1', description: 'Command line interface for SQLite 3', installed: false, size: '892 kB' },
+  { name: 'redis-server', version: '5:6.0.16-1ubuntu1', description: 'Redis in-memory data store server', installed: false, size: '1,234 kB' },
+  { name: 'mongodb-org', version: '6.0.5', description: 'MongoDB document database', installed: false, size: '45,678 kB' },
 ];
 
 export class PackageManager {
@@ -227,3 +239,39 @@ export class PackageManager {
 }
 
 export const packageManager = new PackageManager();
+
+/**
+ * Pre-install packages based on device type
+ * Called when a database server device terminal is opened
+ */
+export function preInstallForDevice(deviceType: string): void {
+  switch (deviceType) {
+    case 'db-oracle':
+      // Pre-install Oracle packages for Oracle database servers
+      ['oracle-xe-21c', 'oracle-instantclient', 'oracle-sqlplus'].forEach(pkgName => {
+        const pkg = (packageManager as any).packages.get(pkgName);
+        if (pkg) pkg.installed = true;
+      });
+      break;
+
+    case 'db-mysql':
+      // Pre-install MySQL packages
+      ['mysql-server', 'mysql-server-8.0', 'mysql-client-8.0'].forEach(pkgName => {
+        const pkg = (packageManager as any).packages.get(pkgName);
+        if (pkg) pkg.installed = true;
+      });
+      break;
+
+    case 'db-postgres':
+      // Pre-install PostgreSQL packages
+      ['postgresql', 'postgresql-14', 'postgresql-client-14'].forEach(pkgName => {
+        const pkg = (packageManager as any).packages.get(pkgName);
+        if (pkg) pkg.installed = true;
+      });
+      break;
+
+    case 'db-sqlserver':
+      // SQL Server simulation would need mssql packages
+      break;
+  }
+}
