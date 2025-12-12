@@ -495,6 +495,19 @@ export const Terminal: React.FC = () => {
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
+      e.stopPropagation();
+
+      // In Python mode, Tab inserts 4 spaces for indentation
+      if (pythonMode) {
+        const cursorPos = inputRef.current?.selectionStart || input.length;
+        const newInput = input.slice(0, cursorPos) + '    ' + input.slice(cursorPos);
+        setInput(newInput);
+        // Set cursor position after the inserted spaces
+        setTimeout(() => {
+          inputRef.current?.setSelectionRange(cursorPos + 4, cursorPos + 4);
+        }, 0);
+        return;
+      }
 
       // Accept auto-suggestion with Tab
       if (suggestion) {
