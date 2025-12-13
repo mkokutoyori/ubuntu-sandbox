@@ -18,6 +18,7 @@ import {
   createICMPEchoRequest
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
+import { FileSystem } from '../../terminal/filesystem';
 
 export interface LinuxPCConfig extends Omit<DeviceConfig, 'type' | 'osType'> {
   type?: 'linux-pc' | 'linux-server';
@@ -39,11 +40,23 @@ export class LinuxPC extends BaseDevice {
     resolve: (result: PingResult) => void;
   }> = new Map();
 
+  // Each device has its own isolated filesystem
+  private fileSystem: FileSystem;
+
   constructor(config: LinuxPCConfig) {
     super(config);
     this.distribution = config.distribution || 'Ubuntu 22.04 LTS';
     this.kernelVersion = config.kernelVersion || '5.15.0-generic';
     this.arpService = new ARPService();
+
+    // Create isolated filesystem for this device
+    this.fileSystem = new FileSystem();
+
+    // Update hostname in the filesystem
+    const hostnameNode = this.fileSystem.getNode('/etc/hostname');
+    if (hostnameNode) {
+      hostnameNode.content = this.hostname + '\n';
+    }
 
     // Connect ARP service to packet sender
     this.arpService.setPacketSender((packet, interfaceId) => {
@@ -59,6 +72,11 @@ export class LinuxPC extends BaseDevice {
 
   getPrompt(): string {
     return `${this.hostname}:~$ `;
+  }
+
+  // Get the device's isolated filesystem
+  getFileSystem(): FileSystem {
+    return this.fileSystem;
   }
 
   // Execute a shell command

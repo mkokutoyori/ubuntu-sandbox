@@ -3,27 +3,39 @@
  * Supports both CMD and PowerShell modes
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { WindowsFileSystem, windowsFileSystem } from '@/terminal/windows/filesystem';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { WindowsFileSystem, windowsFileSystem as globalWindowsFileSystem } from '@/terminal/windows/filesystem';
 import { executeCmdCommand } from '@/terminal/windows/commands';
 import { createPSContext, executePSCommand, PSContext } from '@/terminal/windows/powershell';
 import { WindowsTerminalState, WindowsOutputLine } from '@/terminal/windows/types';
+import { BaseDevice } from '@/devices';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 interface WindowsTerminalProps {
+  device?: BaseDevice;
   onRequestClose?: () => void;
 }
 
-export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ onRequestClose }) => {
-  const [state, setState] = useState<WindowsTerminalState>({
+export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequestClose }) => {
+  // Use device's filesystem if available, otherwise fall back to global singleton
+  const windowsFileSystem = useMemo(() => {
+    if (device && device.getFileSystem()) {
+      return device.getFileSystem() as WindowsFileSystem;
+    }
+    return globalWindowsFileSystem;
+  }, [device]);
+  // Get hostname from device if available
+  const deviceHostname = device?.getHostname()?.toUpperCase() || 'DESKTOP-NETSIM';
+
+  const [state, setState] = useState<WindowsTerminalState>(() => ({
     currentUser: 'User',
     currentPath: 'C:\\Users\\User',
-    hostname: 'DESKTOP-NETSIM',
+    hostname: deviceHostname,
     history: [],
     historyIndex: -1,
     env: {
-      COMPUTERNAME: 'DESKTOP-NETSIM',
+      COMPUTERNAME: deviceHostname,
       USERNAME: 'User',
       USERPROFILE: 'C:\\Users\\User',
       HOMEDRIVE: 'C:',
@@ -43,7 +55,7 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ onRequestClose
     isAdmin: false,
     processes: [],
     shellType: 'cmd',
-  });
+  }));
 
   const [output, setOutput] = useState<WindowsOutputLine[]>([]);
   const [input, setInput] = useState('');
