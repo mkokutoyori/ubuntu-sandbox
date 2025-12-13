@@ -17,6 +17,8 @@ import {
   TutorialStep,
 } from '@/terminal/shellUtils';
 import { createPythonSession, executeLine, PythonSession, PythonContext } from '@/terminal/python';
+import { createOrGetSQLPlusSession, deleteSQLPlusSession } from '@/terminal/commands/database';
+import { executeSQLPlus, getSQLPlusPrompt } from '@/terminal/sql/oracle/sqlplus';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -112,6 +114,10 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
   const [pythonMode, setPythonMode] = useState(false);
   const [pythonPrompt, setPythonPrompt] = useState('>>> ');
   const [pythonSession, setPythonSession] = useState<PythonSession | null>(null);
+
+  // SQL*Plus mode
+  const [sqlplusMode, setSqlplusMode] = useState(false);
+  const [sqlplusPrompt, setSqlplusPrompt] = useState('SQL> ');
 
   // Achievements
   const [achievements, setAchievements] = useState<string[]>(savedAchievements);
@@ -214,13 +220,18 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
       return pythonPrompt;
     }
 
+    // SQL*Plus prompt
+    if (sqlplusMode) {
+      return sqlplusPrompt;
+    }
+
     const user = state.currentUser;
     const host = state.hostname;
     const path = state.currentPath === `/home/${user}` ? '~' :
                  state.currentPath.replace(`/home/${user}`, '~');
     const symbol = state.isRoot || user === 'root' ? '#' : '$';
     return `${user}@${host}:${path}${symbol}`;
-  }, [state.currentUser, state.hostname, state.currentPath, state.isRoot, pythonMode, pythonPrompt]);
+  }, [state.currentUser, state.hostname, state.currentPath, state.isRoot, pythonMode, pythonPrompt, sqlplusMode, sqlplusPrompt]);
 
   const updateStats = useCallback((cmd: string, result: any) => {
     setStats(prev => {
@@ -298,6 +309,53 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
         }]);
       }
 
+      setInput('');
+      return;
+    }
+
+    // Handle SQL*Plus mode
+    if (sqlplusMode) {
+      const sessionId = state.currentUser;
+      const session = createOrGetSQLPlusSession(sessionId);
+      const result = executeSQLPlus(session, cmd);
+
+      if (result.exit) {
+        setSqlplusMode(false);
+        setSqlplusPrompt('SQL> ');
+        deleteSQLPlusSession(sessionId);
+        setOutput(prev => [...prev, {
+          id: generateId(),
+          type: 'system',
+          content: 'Disconnected from Oracle Database.',
+          timestamp: new Date(),
+        }]);
+        setInput('');
+        return;
+      }
+
+      // Build output
+      let outputText = '';
+      if (result.output) {
+        outputText += result.output;
+      }
+      if (result.error) {
+        outputText += (outputText ? '\n' : '') + result.error;
+      }
+      if (result.feedback) {
+        outputText += (outputText ? '\n' : '') + result.feedback;
+      }
+
+      if (outputText) {
+        setOutput(prev => [...prev, {
+          id: generateId(),
+          type: result.error ? 'error' : 'output',
+          content: outputText,
+          timestamp: new Date(),
+        }]);
+      }
+
+      // Update prompt
+      setSqlplusPrompt(getSQLPlusPrompt(session));
       setInput('');
       return;
     }
@@ -442,6 +500,14 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
       setPythonSession(createPythonSession(context));
     }
 
+    // Check if we're entering SQL*Plus mode
+    if ((result as any).enterSQLPlusMode) {
+      setSqlplusMode(true);
+      setSqlplusPrompt('SQL> ');
+      // Create session
+      createOrGetSQLPlusSession(state.currentUser);
+    }
+
     setState(prev => ({
       ...prev,
       currentPath: result.newPath || prev.currentPath,
@@ -459,7 +525,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
     setInput('');
     setSuggestion('');
     setShowCompletions(false);
-  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, onRequestClose]);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, sqlplusMode, onRequestClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // History search mode
@@ -632,7 +698,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
       setHistorySearchResults(state.history.slice().reverse());
       setHistorySearchIndex(0);
     } else if (e.key === 'd' && e.ctrlKey) {
-      // Exit Python mode or logout
+      // Exit Python mode, SQL*Plus mode, or logout
       e.preventDefault();
       if (input === '') {
         if (pythonMode) {
@@ -643,6 +709,16 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
             id: generateId(),
             type: 'system',
             content: '',
+            timestamp: new Date(),
+          }]);
+        } else if (sqlplusMode) {
+          setSqlplusMode(false);
+          setSqlplusPrompt('SQL> ');
+          deleteSQLPlusSession(state.currentUser);
+          setOutput(prev => [...prev, {
+            id: generateId(),
+            type: 'system',
+            content: 'Disconnected from Oracle Database.',
             timestamp: new Date(),
           }]);
         } else {
@@ -660,7 +736,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
     } else {
       setShowCompletions(false);
     }
-  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex, pythonMode]);
+  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex, pythonMode, sqlplusMode]);
 
   // Handle history search input
   const handleHistorySearchInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -776,6 +852,11 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
         {pythonMode && (
           <span className="ml-auto text-terminal-green text-sm">
             🐍 Python 3.11 REPL (exit() or Ctrl+D to exit)
+          </span>
+        )}
+        {sqlplusMode && (
+          <span className="ml-auto text-terminal-amber text-sm">
+            🗄️ SQL*Plus 21.0 (EXIT or QUIT to exit)
           </span>
         )}
       </div>
