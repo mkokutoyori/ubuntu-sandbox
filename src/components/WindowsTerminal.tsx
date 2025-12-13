@@ -12,6 +12,88 @@ import { BaseDevice } from '@/devices';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+/**
+ * Handle tab completion for file paths in Windows terminal
+ */
+function handleTabCompletion(
+  input: string,
+  currentPath: string,
+  fs: WindowsFileSystem
+): string {
+  // Find the last word being typed (the one to complete)
+  const words = input.split(/\s+/);
+  if (words.length === 0) return input;
+
+  const lastWord = words[words.length - 1];
+  if (!lastWord) return input;
+
+  // Determine the directory to search and the prefix to match
+  let searchDir: string;
+  let prefix: string;
+  let pathPrefix = '';
+
+  if (lastWord.includes('\\')) {
+    // Path with backslash - get directory part and file prefix
+    const lastSlash = lastWord.lastIndexOf('\\');
+    pathPrefix = lastWord.substring(0, lastSlash + 1);
+    prefix = lastWord.substring(lastSlash + 1).toLowerCase();
+
+    // Resolve the search directory
+    if (pathPrefix.match(/^[A-Za-z]:\\/)) {
+      // Absolute path
+      searchDir = pathPrefix;
+    } else {
+      // Relative path
+      searchDir = fs.resolvePath(pathPrefix, currentPath);
+    }
+  } else {
+    // Just a filename prefix - search current directory
+    searchDir = currentPath;
+    prefix = lastWord.toLowerCase();
+  }
+
+  // List directory and find matches
+  const entries = fs.listDirectory(searchDir);
+  if (!entries) return input;
+
+  const matches = entries.filter(entry =>
+    entry.name.toLowerCase().startsWith(prefix)
+  );
+
+  if (matches.length === 0) {
+    return input;
+  }
+
+  if (matches.length === 1) {
+    // Single match - complete it
+    const match = matches[0];
+    const completion = match.name + (match.type === 'directory' ? '\\' : '');
+    const newWords = [...words.slice(0, -1), pathPrefix + completion];
+    return newWords.join(' ');
+  }
+
+  // Multiple matches - find common prefix
+  const names = matches.map(m => m.name);
+  let commonPrefix = names[0];
+  for (const name of names) {
+    while (!name.toLowerCase().startsWith(commonPrefix.toLowerCase()) && commonPrefix.length > 0) {
+      commonPrefix = commonPrefix.slice(0, -1);
+    }
+  }
+
+  if (commonPrefix.length > prefix.length) {
+    // Use the matching case from the first match
+    const firstMatch = matches.find(m =>
+      m.name.toLowerCase().startsWith(commonPrefix.toLowerCase())
+    );
+    const actualPrefix = firstMatch ? firstMatch.name.substring(0, commonPrefix.length) : commonPrefix;
+    const newWords = [...words.slice(0, -1), pathPrefix + actualPrefix];
+    return newWords.join(' ');
+  }
+
+  return input;
+}
+
 interface WindowsTerminalProps {
   device?: BaseDevice;
   onRequestClose?: () => void;
@@ -278,7 +360,11 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      // Basic tab completion could be added here
+      // Tab completion for paths
+      const completedInput = handleTabCompletion(input, state.currentPath, windowsFileSystem);
+      if (completedInput !== input) {
+        setInput(completedInput);
+      }
     } else if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
       setOutput(prev => [...prev, {

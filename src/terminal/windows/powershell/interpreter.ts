@@ -139,9 +139,9 @@ export function executePSCommand(input: string, context: PSContext): PSResult {
     return { output: '', exitCode: 0 };
   }
 
-  // Handle exit
+  // Handle exit - returns to CMD shell instead of closing terminal
   if (trimmed.toLowerCase() === 'exit') {
-    return { output: '', exitCode: 0, exitTerminal: true };
+    return { output: '', exitCode: 0, switchToCmd: true };
   }
 
   // Handle switch to CMD
