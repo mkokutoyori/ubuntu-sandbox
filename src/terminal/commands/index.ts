@@ -11,6 +11,7 @@ import {
   isBackgroundJob,
   parseHereDocument,
 } from '../shellUtils';
+import { executeShellCommand } from '../shell/executor';
 
 export type CommandFunction = (
   args: string[],
@@ -102,8 +103,26 @@ export function parseCommand(input: string): { command: string; args: string[] }
   };
 }
 
-// Main execute command function
+// Main execute command function - now uses proper shell parsing
 export function executeCommand(
+  input: string,
+  state: TerminalState,
+  fs: FileSystem,
+  pm: PackageManager
+): CommandResult {
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    return { output: '', exitCode: 0 };
+  }
+
+  // Use the new AST-based shell executor for proper parsing
+  // This correctly handles complex commands like: echo "text" >> file | python file
+  return executeShellCommand(trimmed, state, fs, pm);
+}
+
+// Legacy execute command function for simple cases and internal use
+export function executeCommandLegacy(
   input: string,
   state: TerminalState,
   fs: FileSystem,
