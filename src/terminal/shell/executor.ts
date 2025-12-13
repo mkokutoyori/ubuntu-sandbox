@@ -75,6 +75,7 @@ function executeProgram(program: ProgramNode, ctx: ExecutionContext): ExecutionR
   let newPath = ctx.state.currentPath;
   let newUser = ctx.state.currentUser;
   let envUpdate: Record<string, string> = {};
+  let lastResult: any = null;
 
   for (let i = 0; i < program.body.length; i++) {
     const pipeline = program.body[i];
@@ -100,6 +101,7 @@ function executeProgram(program: ProgramNode, ctx: ExecutionContext): ExecutionR
     };
 
     const result = executePipeline(pipeline, updatedCtx);
+    lastResult = result;
 
     if (result.output) {
       combinedOutput += (combinedOutput ? '\n' : '') + result.output;
@@ -121,7 +123,8 @@ function executeProgram(program: ProgramNode, ctx: ExecutionContext): ExecutionR
     }
   }
 
-  return {
+  // Build the base result
+  const baseResult: ExecutionResult = {
     output: combinedOutput,
     error: combinedError || undefined,
     exitCode: lastExitCode,
@@ -129,6 +132,23 @@ function executeProgram(program: ProgramNode, ctx: ExecutionContext): ExecutionR
     newUser: newUser !== ctx.state.currentUser ? newUser : undefined,
     envUpdate: Object.keys(envUpdate).length > 0 ? envUpdate : undefined,
   };
+
+  // Propagate special flags from the last command result
+  // These flags are used by Terminal to enter special modes (Python, SQL*Plus, psql, etc.)
+  if (lastResult) {
+    const specialFlags = [
+      'enterPythonMode', 'enterSQLPlusMode', 'enterPsqlMode', 'enterMysqlMode',
+      'enterSqliteMode', 'enterRedisMode', 'enterMongoMode',
+      'editorMode', 'sqlplusConfig', 'psqlConfig'
+    ];
+    for (const flag of specialFlags) {
+      if (lastResult[flag] !== undefined) {
+        (baseResult as any)[flag] = lastResult[flag];
+      }
+    }
+  }
+
+  return baseResult;
 }
 
 /**
@@ -562,7 +582,7 @@ function applyOutputRedirection(
   const existingNode = ctx.fs.getNode(fullPath);
 
   if (existingNode && existingNode.type === 'directory') {
-    return { output: '', error: `${filePath}: Is a directory`, exitCode: 1 };
+    return { ...result, output: '', error: `${filePath}: Is a directory`, exitCode: 1 };
   }
 
   const isAppend = operator === '>>' || operator === '2>>' || operator === '1>>';
