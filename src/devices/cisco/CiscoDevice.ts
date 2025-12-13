@@ -659,6 +659,8 @@ export function createCiscoRouter(config: Partial<CiscoDeviceConfig> & { id: str
     ciscoType: 'router',
     interfaces: config.interfaces || [],
     isPoweredOn: config.isPoweredOn ?? true,
+    x: config.x ?? 0,
+    y: config.y ?? 0
   });
 }
 
@@ -675,5 +677,7 @@ export function createCiscoSwitch(config: Partial<CiscoDeviceConfig> & { id: str
     ciscoType: 'switch',
     interfaces: config.interfaces || [],
     isPoweredOn: config.isPoweredOn ?? true,
+    x: config.x ?? 0,
+    y: config.y ?? 0
   });
 }

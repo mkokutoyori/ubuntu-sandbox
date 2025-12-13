@@ -351,5 +351,7 @@ export function createWindowsPC(config: Partial<WindowsPCConfig> & { id: string;
     isPoweredOn: config.isPoweredOn ?? true,
     windowsVersion: config.windowsVersion,
     build: config.build,
+    x: config.x ?? 0,
+    y: config.y ?? 0
   });
 }
