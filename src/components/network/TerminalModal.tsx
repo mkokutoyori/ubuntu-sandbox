@@ -168,9 +168,9 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
               onRequestClose={onClose}
             />
           ) : isWindowsDevice ? (
-            <WindowsTerminal onRequestClose={onClose} />
+            <WindowsTerminal device={device} onRequestClose={onClose} />
           ) : (
-            <Terminal onRequestClose={onClose} />
+            <Terminal device={device} onRequestClose={onClose} />
           )}
         </div>
       </div>

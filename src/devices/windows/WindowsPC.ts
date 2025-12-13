@@ -18,6 +18,7 @@ import {
   createICMPEchoRequest
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
+import { WindowsFileSystem } from '../../terminal/windows/filesystem';
 
 export interface WindowsPCConfig extends Omit<DeviceConfig, 'type' | 'osType'> {
   type?: 'windows-pc' | 'windows-server';
@@ -31,11 +32,17 @@ export class WindowsPC extends BaseDevice {
   private windowsVersion: string;
   private build: string;
 
+  // Each device has its own isolated filesystem
+  private fileSystem: WindowsFileSystem;
+
   constructor(config: WindowsPCConfig) {
     super(config);
     this.windowsVersion = config.windowsVersion || 'Windows 10 Pro';
     this.build = config.build || '22621.2428';
     this.arpService = new ARPService();
+
+    // Create isolated filesystem for this device
+    this.fileSystem = new WindowsFileSystem();
 
     // Connect ARP service to packet sender
     this.arpService.setPacketSender((packet, interfaceId) => {
@@ -51,6 +58,11 @@ export class WindowsPC extends BaseDevice {
 
   getPrompt(): string {
     return `${this.hostname}>`;
+  }
+
+  // Get the device's isolated filesystem
+  getFileSystem(): WindowsFileSystem {
+    return this.fileSystem;
   }
 
   // Execute a command (for network simulation purposes)

@@ -41,6 +41,11 @@ export abstract class BaseDevice {
   abstract getPrompt(): string;
   abstract getOSType(): string;
 
+  // Get the device's isolated filesystem (implemented by subclasses that support it)
+  getFileSystem(): any {
+    return null;
+  }
+
   // Get device info
   getId(): string {
     return this.id;

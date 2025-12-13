@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { fileSystem } from '@/terminal/filesystem';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { fileSystem as globalFileSystem, FileSystem } from '@/terminal/filesystem';
 import { packageManager } from '@/terminal/packages';
 import { executeCommand, commands } from '@/terminal/commands';
 import { TerminalState, OutputLine, EditorState } from '@/terminal/types';
@@ -20,6 +20,7 @@ import { createPythonSession, executeLine, PythonSession, PythonContext } from '
 import { createOrGetSQLPlusSession, deleteSQLPlusSession, createOrGetPsqlSession, deletePsqlSession } from '@/terminal/commands/database';
 import { executeSQLPlus, getSQLPlusPrompt } from '@/terminal/sql/oracle/sqlplus';
 import { executePsql, getPsqlPrompt } from '@/terminal/sql/postgres/psql';
+import { BaseDevice } from '@/devices';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -54,19 +55,31 @@ function saveToStorage(key: string, value: any): void {
 }
 
 interface TerminalProps {
+  device?: BaseDevice;
   onRequestClose?: () => void;
 }
 
-export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
+export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) => {
+  // Use device's filesystem if available, otherwise fall back to global singleton
+  const fileSystem = useMemo(() => {
+    if (device && device.getFileSystem()) {
+      return device.getFileSystem() as FileSystem;
+    }
+    return globalFileSystem;
+  }, [device]);
+
+  // Get hostname from device if available
+  const deviceHostname = device?.getHostname() || 'ubuntu-terminal';
+
   // Load history from localStorage
   const savedHistory = loadFromStorage<string[]>(STORAGE_KEYS.HISTORY, []);
   const savedAchievements = loadFromStorage<string[]>(STORAGE_KEYS.ACHIEVEMENTS, []);
   const savedVariables = loadFromStorage<Record<string, string>>(STORAGE_KEYS.VARIABLES, {});
 
-  const [state, setState] = useState<TerminalState>({
+  const [state, setState] = useState<TerminalState>(() => ({
     currentUser: 'user',
     currentPath: '/home/user',
-    hostname: 'ubuntu-terminal',
+    hostname: device?.getHostname() || 'ubuntu-terminal',
     history: savedHistory,
     historyIndex: -1,
     env: {
@@ -77,6 +90,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
       PWD: '/home/user',
       TERM: 'xterm-256color',
       LANG: 'en_US.UTF-8',
+      HOSTNAME: device?.getHostname() || 'ubuntu-terminal',
       ...savedVariables,
     },
     aliases: {
@@ -88,7 +102,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
     isRoot: false,
     processes: [],
     backgroundJobs: [],
-  });
+  }));
 
   const [output, setOutput] = useState<OutputLine[]>([]);
   const [input, setInput] = useState('');
