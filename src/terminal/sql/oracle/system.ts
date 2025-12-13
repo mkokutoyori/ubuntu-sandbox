@@ -375,7 +375,7 @@ export class OracleSystemCatalog {
   private getVSession(whereClause?: (row: SQLRow) => boolean): SQLResultSet {
     let rows = this.sessions.map(s => ({
       SID: s.sid,
-      SERIAL#: s.serial,
+      'SERIAL#': s.serial,
       USERNAME: s.username,
       STATUS: s.status,
       SCHEMANAME: s.schemaName,
