@@ -4,9 +4,13 @@
 
 import { CommandRegistry } from './index';
 import { createSQLPlusSession, executeSQLPlus, getSQLPlusPrompt, SQLPlusSession } from '../sql/oracle/sqlplus';
+import { createPsqlSession, executePsql, getPsqlPrompt, PsqlSession } from '../sql/postgres/psql';
 
 // Store SQL*Plus sessions for interactive mode
 const sqlplusSessions = new Map<string, SQLPlusSession>();
+
+// Store psql sessions for interactive mode
+const psqlSessions = new Map<string, PsqlSession>();
 
 export const databaseCommands: CommandRegistry = {
   /**
@@ -176,17 +180,52 @@ General options:
   -V, --version            output version information, then exit
   -?, --help               show this help, then exit
 
-PostgreSQL simulation - full implementation coming soon.`,
+Connection options:
+  -h, --host=HOSTNAME      database server host
+  -p, --port=PORT          database server port
+  -U, --username=USERNAME  database user name
+  -W, --password           force password prompt
+
+For more information, type "\\?" (for internal commands) or "\\h" (for SQL
+commands) from within psql.`,
         exitCode: 0
       };
     }
 
+    // Parse arguments
+    let dbname = 'postgres';
+    let username = 'postgres';
+
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === '-d' || arg === '--dbname') {
+        dbname = args[++i] || dbname;
+      } else if (arg.startsWith('-d')) {
+        dbname = arg.slice(2);
+      } else if (arg.startsWith('--dbname=')) {
+        dbname = arg.slice(9);
+      } else if (arg === '-U' || arg === '--username') {
+        username = args[++i] || username;
+      } else if (arg.startsWith('-U')) {
+        username = arg.slice(2);
+      } else if (arg.startsWith('--username=')) {
+        username = arg.slice(11);
+      } else if (!arg.startsWith('-') && i === args.length - 1) {
+        // Last positional argument is dbname
+        dbname = arg;
+      }
+    }
+
+    // Enter interactive psql mode
+    const banner = `psql (14.7 (Ubuntu 14.7-0ubuntu0.22.04.1))
+Type "help" for help.
+`;
+
     return {
-      output: `psql: PostgreSQL interactive terminal simulation.
-Full implementation coming in a future update.
-Type 'exit' or '\\q' to quit.`,
+      output: banner,
       exitCode: 0,
-      enterPsqlMode: true
+      enterPsqlMode: true,
+      psqlConfig: { dbname, username }
     } as any;
   },
 
@@ -372,3 +411,24 @@ export function createOrGetSQLPlusSession(sessionId: string): SQLPlusSession {
 export function deleteSQLPlusSession(sessionId: string): void {
   sqlplusSessions.delete(sessionId);
 }
+
+// Export psql session management for use by Terminal
+export function getPsqlSession(sessionId: string): PsqlSession | undefined {
+  return psqlSessions.get(sessionId);
+}
+
+export function createOrGetPsqlSession(sessionId: string): PsqlSession {
+  let session = psqlSessions.get(sessionId);
+  if (!session) {
+    session = createPsqlSession();
+    psqlSessions.set(sessionId, session);
+  }
+  return session;
+}
+
+export function deletePsqlSession(sessionId: string): void {
+  psqlSessions.delete(sessionId);
+}
+
+// Re-export psql functions for Terminal
+export { executePsql, getPsqlPrompt } from '../sql/postgres/psql';

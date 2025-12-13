@@ -17,8 +17,9 @@ import {
   TutorialStep,
 } from '@/terminal/shellUtils';
 import { createPythonSession, executeLine, PythonSession, PythonContext } from '@/terminal/python';
-import { createOrGetSQLPlusSession, deleteSQLPlusSession } from '@/terminal/commands/database';
+import { createOrGetSQLPlusSession, deleteSQLPlusSession, createOrGetPsqlSession, deletePsqlSession } from '@/terminal/commands/database';
 import { executeSQLPlus, getSQLPlusPrompt } from '@/terminal/sql/oracle/sqlplus';
+import { executePsql, getPsqlPrompt } from '@/terminal/sql/postgres/psql';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -118,6 +119,10 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
   // SQL*Plus mode
   const [sqlplusMode, setSqlplusMode] = useState(false);
   const [sqlplusPrompt, setSqlplusPrompt] = useState('SQL> ');
+
+  // psql mode
+  const [psqlMode, setPsqlMode] = useState(false);
+  const [psqlPrompt, setPsqlPrompt] = useState('postgres=# ');
 
   // Achievements
   const [achievements, setAchievements] = useState<string[]>(savedAchievements);
@@ -225,13 +230,18 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
       return sqlplusPrompt;
     }
 
+    // psql prompt
+    if (psqlMode) {
+      return psqlPrompt;
+    }
+
     const user = state.currentUser;
     const host = state.hostname;
     const path = state.currentPath === `/home/${user}` ? '~' :
                  state.currentPath.replace(`/home/${user}`, '~');
     const symbol = state.isRoot || user === 'root' ? '#' : '$';
     return `${user}@${host}:${path}${symbol}`;
-  }, [state.currentUser, state.hostname, state.currentPath, state.isRoot, pythonMode, pythonPrompt, sqlplusMode, sqlplusPrompt]);
+  }, [state.currentUser, state.hostname, state.currentPath, state.isRoot, pythonMode, pythonPrompt, sqlplusMode, sqlplusPrompt, psqlMode, psqlPrompt]);
 
   const updateStats = useCallback((cmd: string, result: any) => {
     setStats(prev => {
@@ -356,6 +366,44 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
 
       // Update prompt
       setSqlplusPrompt(getSQLPlusPrompt(session));
+      setInput('');
+      return;
+    }
+
+    // Handle psql mode
+    if (psqlMode) {
+      const sessionId = state.currentUser;
+      const session = createOrGetPsqlSession(sessionId);
+      const result = executePsql(session, cmd);
+
+      if (result.exit) {
+        setPsqlMode(false);
+        setPsqlPrompt('postgres=# ');
+        deletePsqlSession(sessionId);
+        setInput('');
+        return;
+      }
+
+      // Build output
+      let outputText = '';
+      if (result.output) {
+        outputText += result.output;
+      }
+      if (result.error) {
+        outputText += (outputText ? '\n' : '') + result.error;
+      }
+
+      if (outputText) {
+        setOutput(prev => [...prev, {
+          id: generateId(),
+          type: result.error ? 'error' : 'output',
+          content: outputText,
+          timestamp: new Date(),
+        }]);
+      }
+
+      // Update prompt
+      setPsqlPrompt(getPsqlPrompt(session));
       setInput('');
       return;
     }
@@ -508,6 +556,13 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
       createOrGetSQLPlusSession(state.currentUser);
     }
 
+    // Check if we're entering psql mode
+    if ((result as any).enterPsqlMode) {
+      setPsqlMode(true);
+      const session = createOrGetPsqlSession(state.currentUser);
+      setPsqlPrompt(getPsqlPrompt(session));
+    }
+
     setState(prev => ({
       ...prev,
       currentPath: result.newPath || prev.currentPath,
@@ -525,7 +580,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
     setInput('');
     setSuggestion('');
     setShowCompletions(false);
-  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, sqlplusMode, onRequestClose]);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, sqlplusMode, psqlMode, onRequestClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // History search mode
@@ -721,6 +776,10 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
             content: 'Disconnected from Oracle Database.',
             timestamp: new Date(),
           }]);
+        } else if (psqlMode) {
+          setPsqlMode(false);
+          setPsqlPrompt('postgres=# ');
+          deletePsqlSession(state.currentUser);
         } else {
           setOutput(prev => [...prev, {
             id: generateId(),
@@ -736,7 +795,7 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
     } else {
       setShowCompletions(false);
     }
-  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex, pythonMode, sqlplusMode]);
+  }, [input, state, handleCommand, getPrompt, suggestion, historySearchMode, historySearchResults, historySearchIndex, pythonMode, sqlplusMode, psqlMode]);
 
   // Handle history search input
   const handleHistorySearchInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -857,6 +916,11 @@ export const Terminal: React.FC<TerminalProps> = ({ onRequestClose }) => {
         {sqlplusMode && (
           <span className="ml-auto text-terminal-amber text-sm">
             🗄️ SQL*Plus 21.0 (EXIT or QUIT to exit)
+          </span>
+        )}
+        {psqlMode && (
+          <span className="ml-auto text-terminal-cyan text-sm">
+            🐘 psql 14.7 (\q or Ctrl+D to exit)
           </span>
         )}
       </div>
