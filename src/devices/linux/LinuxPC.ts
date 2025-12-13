@@ -539,6 +539,8 @@ export function createLinuxPC(config: Partial<LinuxPCConfig> & { id: string; nam
     ],
     isPoweredOn: config.isPoweredOn ?? true,
     distribution: config.distribution,
-    kernelVersion: config.kernelVersion
+    kernelVersion: config.kernelVersion,
+    x: config.x ?? 0,
+    y: config.y ?? 0
   });
 }

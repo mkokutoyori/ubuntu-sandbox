@@ -124,7 +124,9 @@ export class DeviceFactory {
           name: baseConfig.name,
           hostname: baseConfig.hostname,
           interfaces: baseConfig.interfaces,
-          isPoweredOn: baseConfig.isPoweredOn
+          isPoweredOn: baseConfig.isPoweredOn,
+          x,
+          y
         });
 
       case 'windows-pc':
@@ -135,7 +137,9 @@ export class DeviceFactory {
           hostname: baseConfig.hostname,
           interfaces: baseConfig.interfaces,
           isPoweredOn: baseConfig.isPoweredOn,
-          windowsVersion: type === 'windows-server' ? 'Windows Server 2022' : 'Windows 10 Pro'
+          windowsVersion: type === 'windows-server' ? 'Windows Server 2022' : 'Windows 10 Pro',
+          x,
+          y
         });
 
       case 'router-cisco':
@@ -145,6 +149,8 @@ export class DeviceFactory {
           hostname: baseConfig.hostname,
           interfaces: baseConfig.interfaces,
           isPoweredOn: baseConfig.isPoweredOn,
+          x,
+          y
         });
 
       case 'switch-cisco':
@@ -154,6 +160,8 @@ export class DeviceFactory {
           hostname: baseConfig.hostname,
           interfaces: baseConfig.interfaces,
           isPoweredOn: baseConfig.isPoweredOn,
+          x,
+          y
         });
 
       // TODO: Implement these device types in future sprints
