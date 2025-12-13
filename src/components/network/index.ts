@@ -11,3 +11,4 @@ export * from './ConnectionLine';
 export * from './DeviceIcon';
 export * from './Toolbar';
 export * from './TerminalModal';
+export * from './MinimizedTerminals';

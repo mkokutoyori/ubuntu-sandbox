@@ -560,48 +560,124 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
 };
 
 /**
- * Try to complete a partial command
+ * Cisco command completion data - organized by command for subcommand support
+ */
+const CISCO_COMMANDS: Record<string, Record<string, string[]>> = {
+  user: {
+    '_root': ['connect', 'disable', 'enable', 'exit', 'logout', 'ping', 'quit', 'show', 'ssh', 'telnet', 'terminal', 'traceroute'],
+    'show': ['arp', 'cdp', 'clock', 'controllers', 'flash', 'history', 'interfaces', 'ip', 'logging', 'mac', 'privilege', 'protocols', 'running-config', 'spanning-tree', 'startup-config', 'users', 'version', 'vlan'],
+    'show ip': ['arp', 'interface', 'protocols', 'route'],
+    'terminal': ['history', 'length', 'monitor', 'width'],
+  },
+  privileged: {
+    '_root': ['clear', 'clock', 'configure', 'copy', 'debug', 'delete', 'dir', 'disable', 'erase', 'exit', 'logout', 'more', 'ping', 'reload', 'show', 'ssh', 'telnet', 'terminal', 'traceroute', 'undebug', 'verify', 'write'],
+    'show': ['arp', 'cdp', 'clock', 'controllers', 'flash', 'history', 'interfaces', 'ip', 'logging', 'mac', 'privilege', 'protocols', 'running-config', 'spanning-tree', 'startup-config', 'users', 'version', 'vlan'],
+    'show ip': ['arp', 'interface', 'protocols', 'route'],
+    'configure': ['memory', 'terminal'],
+    'copy': ['flash:', 'running-config', 'startup-config', 'tftp:'],
+    'write': ['erase', 'memory', 'terminal'],
+    'clear': ['arp-cache', 'counters', 'ip', 'line', 'logging', 'mac'],
+    'clock': ['set'],
+    'debug': ['all', 'ip', 'spanning-tree'],
+    'terminal': ['history', 'length', 'monitor', 'width'],
+  },
+  'global-config': {
+    '_root': ['access-list', 'banner', 'cdp', 'do', 'enable', 'end', 'exit', 'hostname', 'interface', 'ip', 'line', 'lldp', 'logging', 'no', 'ntp', 'router', 'service', 'snmp-server', 'spanning-tree', 'username', 'vlan', 'vtp'],
+    'interface': ['Ethernet', 'FastEthernet', 'GigabitEthernet', 'Loopback', 'Serial', 'Tunnel', 'Vlan'],
+    'router': ['bgp', 'eigrp', 'ospf', 'rip'],
+    'line': ['aux', 'console', 'vty'],
+    'ip': ['access-list', 'default-gateway', 'dhcp', 'domain-name', 'host', 'name-server', 'route', 'routing'],
+    'banner': ['exec', 'login', 'motd'],
+    'spanning-tree': ['mode', 'portfast', 'vlan'],
+    'service': ['password-encryption', 'timestamps'],
+  },
+  interface: {
+    '_root': ['bandwidth', 'description', 'do', 'duplex', 'encapsulation', 'end', 'exit', 'ip', 'mtu', 'no', 'shutdown', 'spanning-tree', 'speed', 'switchport'],
+    'ip': ['access-group', 'address', 'helper-address', 'nat', 'ospf'],
+    'switchport': ['access', 'mode', 'native', 'nonegotiate', 'port-security', 'trunk', 'voice'],
+    'switchport mode': ['access', 'dynamic', 'trunk'],
+    'spanning-tree': ['bpdufilter', 'bpduguard', 'cost', 'guard', 'link-type', 'port-priority', 'portfast'],
+    'duplex': ['auto', 'full', 'half'],
+    'speed': ['10', '100', '1000', 'auto'],
+  },
+  line: {
+    '_root': ['do', 'end', 'exec-timeout', 'exit', 'login', 'logging', 'no', 'password', 'transport'],
+    'transport': ['input', 'output', 'preferred'],
+    'transport input': ['all', 'none', 'ssh', 'telnet'],
+    'login': ['authentication', 'local'],
+  },
+  router: {
+    '_root': ['auto-summary', 'default-information', 'do', 'end', 'exit', 'network', 'no', 'passive-interface', 'redistribute', 'router-id', 'version'],
+    'default-information': ['originate'],
+    'redistribute': ['bgp', 'connected', 'eigrp', 'ospf', 'rip', 'static'],
+    'passive-interface': ['default', 'Ethernet', 'FastEthernet', 'GigabitEthernet', 'Loopback', 'Serial'],
+  },
+  vlan: {
+    '_root': ['do', 'end', 'exit', 'mtu', 'name', 'no', 'shutdown', 'state'],
+    'state': ['active', 'suspend'],
+  },
+};
+
+/**
+ * Try to complete a partial command with subcommand support
  */
 function tryCompleteCommand(partial: string, mode: string): string | null {
-  const commands: Record<string, string[]> = {
-    user: [
-      'connect', 'disable', 'enable', 'exit', 'logout',
-      'ping', 'quit', 'show', 'ssh', 'telnet', 'terminal', 'traceroute',
-    ],
-    privileged: [
-      'clear', 'clock', 'configure', 'copy', 'debug', 'delete',
-      'dir', 'disable', 'erase', 'exit', 'logout', 'more',
-      'ping', 'reload', 'show', 'ssh', 'telnet', 'terminal',
-      'traceroute', 'undebug', 'verify', 'write',
-    ],
-    'global-config': [
-      'access-list', 'banner', 'cdp', 'do', 'enable', 'end', 'exit',
-      'hostname', 'interface', 'ip', 'line', 'lldp', 'logging',
-      'no', 'ntp', 'router', 'service', 'snmp-server',
-      'spanning-tree', 'username', 'vlan', 'vtp',
-    ],
-    interface: [
-      'bandwidth', 'description', 'do', 'duplex', 'encapsulation',
-      'end', 'exit', 'ip', 'mtu', 'no', 'shutdown',
-      'spanning-tree', 'speed', 'switchport',
-    ],
-    line: [
-      'do', 'end', 'exec-timeout', 'exit', 'login',
-      'logging', 'no', 'password', 'transport',
-    ],
-    router: [
-      'auto-summary', 'default-information', 'do', 'end', 'exit',
-      'network', 'no', 'passive-interface', 'redistribute',
-      'router-id', 'version',
-    ],
-    vlan: ['do', 'end', 'exit', 'mtu', 'name', 'no', 'shutdown', 'state'],
-  };
+  const modeCommands = CISCO_COMMANDS[mode] || CISCO_COMMANDS['global-config'];
+  const words = partial.toLowerCase().split(/\s+/).filter(w => w);
 
-  const modeCommands = commands[mode] || commands['global-config'];
-  const matches = modeCommands.filter(cmd => cmd.startsWith(partial.toLowerCase()));
+  if (words.length === 0) return null;
+
+  // Find the command context
+  let commandPath = '';
+  let completingWord = words[words.length - 1];
+
+  if (words.length > 1) {
+    // Build the command path for subcommand lookup
+    for (let i = 0; i < words.length - 1; i++) {
+      const testPath = commandPath ? `${commandPath} ${words[i]}` : words[i];
+      if (modeCommands[testPath]) {
+        commandPath = testPath;
+      } else if (commandPath) {
+        // Try partial match
+        const prevPath = commandPath;
+        const subCommands = modeCommands[prevPath] || [];
+        const matches = subCommands.filter((c: string) => c.toLowerCase().startsWith(words[i]));
+        if (matches.length === 1) {
+          const newPath = `${prevPath} ${matches[0]}`;
+          if (modeCommands[newPath]) {
+            commandPath = newPath;
+          }
+        }
+      }
+    }
+  }
+
+  // Get available completions
+  const completions = modeCommands[commandPath || '_root'] || modeCommands['_root'];
+  const matches = completions.filter((cmd: string) => cmd.toLowerCase().startsWith(completingWord));
 
   if (matches.length === 1) {
+    // Build the complete command
+    if (words.length > 1) {
+      return [...words.slice(0, -1), matches[0]].join(' ');
+    }
     return matches[0];
+  }
+
+  // If multiple matches, find common prefix
+  if (matches.length > 1) {
+    let commonPrefix = matches[0];
+    for (const match of matches) {
+      while (!match.toLowerCase().startsWith(commonPrefix.toLowerCase()) && commonPrefix.length > 0) {
+        commonPrefix = commonPrefix.slice(0, -1);
+      }
+    }
+    if (commonPrefix.length > completingWord.length) {
+      if (words.length > 1) {
+        return [...words.slice(0, -1), commonPrefix].join(' ');
+      }
+      return commonPrefix;
+    }
   }
 
   return null;
