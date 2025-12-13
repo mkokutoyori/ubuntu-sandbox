@@ -32,12 +32,11 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
   const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
-  // Pre-install database packages for database devices
-  useEffect(() => {
-    if (isDatabaseDevice) {
-      preInstallForDevice(deviceType);
-    }
-  }, [deviceType, isDatabaseDevice]);
+  // Pre-install database packages for database devices - call immediately (not in useEffect)
+  // This ensures packages are installed before the terminal component mounts
+  if (isDatabaseDevice) {
+    preInstallForDevice(deviceType);
+  }
 
   if (!isPoweredOn) {
     return (
