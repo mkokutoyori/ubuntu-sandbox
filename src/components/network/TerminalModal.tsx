@@ -17,9 +17,10 @@ import { cn } from '@/lib/utils';
 interface TerminalModalProps {
   device: BaseDevice;
   onClose: () => void;
+  onMinimize?: () => void;
 }
 
-export function TerminalModal({ device, onClose }: TerminalModalProps) {
+export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProps) {
   const deviceName = device.getName();
   const deviceType = device.getDeviceType();
   const isPoweredOn = device.getIsPoweredOn();
@@ -144,17 +145,22 @@ export function TerminalModal({ device, onClose }: TerminalModalProps) {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <button className="p-1 hover:bg-white/10 rounded transition-colors">
-              <Minus className="w-4 h-4 text-white/50" />
+            <button
+              onClick={onMinimize}
+              className="p-1 hover:bg-white/10 rounded transition-colors"
+              title="Minimize"
+            >
+              <Minus className="w-4 h-4 text-white/50 hover:text-white/80" />
             </button>
-            <button className="p-1 hover:bg-white/10 rounded transition-colors">
-              <Square className="w-3.5 h-3.5 text-white/50" />
+            <button className="p-1 hover:bg-white/10 rounded transition-colors" title="Maximize">
+              <Square className="w-3.5 h-3.5 text-white/50 hover:text-white/80" />
             </button>
             <button
               onClick={onClose}
               className="p-1 hover:bg-white/10 rounded transition-colors"
+              title="Close"
             >
-              <X className="w-4 h-4 text-white/50" />
+              <X className="w-4 h-4 text-white/50 hover:text-red-400" />
             </button>
           </div>
         </div>
