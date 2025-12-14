@@ -418,14 +418,23 @@ export class SQLEngine {
       ? (row: SQLRow) => this.evaluateExpression(stmt.where!, row)
       : () => true;
 
-    // Build updates object
-    const updates: Partial<SQLRow> = {};
-    for (const setItem of stmt.set) {
-      const colName = this.normalizeIdentifier(setItem.column);
-      updates[colName] = this.evaluateExpression(setItem.value, {});
+    // Update rows with expression evaluation per row
+    let affectedRows = 0;
+    const rows = storage.select();
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (predicate(row)) {
+        // Evaluate SET expressions with current row context
+        const updates: Partial<SQLRow> = {};
+        for (const setItem of stmt.set) {
+          const colName = this.normalizeIdentifier(setItem.column);
+          updates[colName] = this.evaluateExpression(setItem.value, row);
+        }
+        // Apply updates to the row
+        Object.assign(row, updates);
+        affectedRows++;
+      }
     }
-
-    const affectedRows = storage.update(predicate, updates);
 
     return {
       success: true,
@@ -468,8 +477,9 @@ export class SQLEngine {
   }
 
   commit(): SQLResult {
+    // Allow COMMIT without active transaction (standard SQL behavior - no-op)
     if (!this.inTransaction) {
-      return createErrorResult('NO_TRANSACTION', 'No transaction in progress');
+      return createSuccessResult();
     }
     this.inTransaction = false;
     this.transactionBackup.clear();
@@ -478,8 +488,9 @@ export class SQLEngine {
   }
 
   rollback(savepoint?: string): SQLResult {
+    // Allow ROLLBACK without active transaction (standard SQL behavior - no-op)
     if (!this.inTransaction) {
-      return createErrorResult('NO_TRANSACTION', 'No transaction in progress');
+      return createSuccessResult();
     }
 
     if (savepoint) {
@@ -679,7 +690,9 @@ export class SQLEngine {
 
   private validateRow(row: SQLRow, definition: TableDefinition): SQLResult | null {
     for (const col of definition.columns) {
-      const value = row[col.name];
+      // Normalize column name to match how values are stored
+      const normalizedColName = this.normalizeIdentifier(col.name);
+      const value = row[normalizedColName];
 
       // Check NOT NULL
       if (!col.nullable && (value === null || value === undefined)) {
@@ -817,19 +830,22 @@ export class SQLEngine {
         // Try different variations of the column name
         const colName = expr.name!;
         const prefix = expr.alias;
+        const upperColName = colName.toUpperCase();
 
-        if (prefix) {
-          const fullName = `${prefix}.${colName}`;
-          if (fullName in row) return row[fullName];
-        }
-
-        if (colName in row) return row[colName];
-
-        // Case-insensitive lookup
-        const upperName = colName.toUpperCase();
+        // Case-insensitive lookup with optional prefix
         for (const key of Object.keys(row)) {
-          if (key.toUpperCase() === upperName || key.toUpperCase().endsWith(`.${upperName}`)) {
-            return row[key];
+          const upperKey = key.toUpperCase();
+          if (prefix) {
+            // Match "prefix.COLUMN" pattern
+            const upperPrefix = prefix.toUpperCase();
+            if (upperKey === `${upperPrefix}.${upperColName}`) {
+              return row[key];
+            }
+          } else {
+            // Match either exact column name or any prefix.column pattern
+            if (upperKey === upperColName || upperKey.endsWith(`.${upperColName}`)) {
+              return row[key];
+            }
           }
         }
 

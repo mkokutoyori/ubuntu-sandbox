@@ -263,6 +263,7 @@ function executeSQLStatement(session: PsqlSession, sql: string): PsqlResult {
     // Handle BEGIN/COMMIT/ROLLBACK
     if (lowerSql.match(/^\s*begin\b/i)) {
       session.inTransaction = true;
+      session.engine.beginTransaction();
       return { output: 'BEGIN' };
     }
     if (lowerSql.match(/^\s*commit\b/i)) {
@@ -292,7 +293,11 @@ function executeSQLStatement(session: PsqlSession, sql: string): PsqlResult {
       const tableName = stmt.from[0].table.toLowerCase();
       if (isSystemView(tableName)) {
         const result = session.catalog.queryView(tableName);
-        return formatResultSet(session, result.columns, result.rows, startTime);
+        // Convert SQLRow objects to arrays for formatResultSet
+        const rowArrays = result.rows.map(row =>
+          result.columns.map(col => row[col])
+        );
+        return formatResultSet(session, result.columns, rowArrays, startTime);
       }
     }
 
@@ -300,35 +305,42 @@ function executeSQLStatement(session: PsqlSession, sql: string): PsqlResult {
     const result = executeStatement(session, stmt);
 
     if (!result.success) {
-      return { output: '', error: `ERROR:  ${result.error}` };
+      const errorMsg = result.error
+        ? (typeof result.error === 'string' ? result.error : result.error.message)
+        : 'unknown error';
+      return { output: '', error: `ERROR:  ${errorMsg}` };
     }
 
     // Format output based on statement type
     switch (stmt.type) {
       case 'SELECT':
         if (result.resultSet) {
-          return formatResultSet(session, result.resultSet.columns, result.resultSet.rows, startTime);
+          // Convert SQLRow objects to arrays for formatResultSet
+          const rowArrays = result.resultSet.rows.map(row =>
+            result.resultSet!.columns.map(col => row[col])
+          );
+          return formatResultSet(session, result.resultSet.columns, rowArrays, startTime);
         }
         return { output: '(0 rows)', rowCount: 0 };
 
       case 'INSERT':
         return {
-          output: `INSERT 0 ${result.rowsAffected || 0}`,
-          rowCount: result.rowsAffected || 0,
+          output: `INSERT 0 ${result.affectedRows || 0}`,
+          rowCount: result.affectedRows || 0,
           timing: session.settings.timing ? Date.now() - startTime : undefined,
         };
 
       case 'UPDATE':
         return {
-          output: `UPDATE ${result.rowsAffected || 0}`,
-          rowCount: result.rowsAffected || 0,
+          output: `UPDATE ${result.affectedRows || 0}`,
+          rowCount: result.affectedRows || 0,
           timing: session.settings.timing ? Date.now() - startTime : undefined,
         };
 
       case 'DELETE':
         return {
-          output: `DELETE ${result.rowsAffected || 0}`,
-          rowCount: result.rowsAffected || 0,
+          output: `DELETE ${result.affectedRows || 0}`,
+          rowCount: result.affectedRows || 0,
           timing: session.settings.timing ? Date.now() - startTime : undefined,
         };
 

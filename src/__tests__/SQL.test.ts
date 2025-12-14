@@ -199,7 +199,9 @@ describe('SQL Parser', () => {
       const result = parseSQL('CREATE TABLE users (id SERIAL PRIMARY KEY);');
       expect(result.success).toBe(true);
       const stmt = result.statements[0] as any;
-      expect(stmt.columns[0].dataType.toUpperCase()).toBe('SERIAL');
+      // SERIAL is converted to INTEGER with autoIncrement: true
+      expect(stmt.columns[0].dataType.toUpperCase()).toBe('INTEGER');
+      expect(stmt.columns[0].autoIncrement).toBe(true);
     });
 
     it('parses CREATE TABLE with NUMERIC precision and scale', () => {
