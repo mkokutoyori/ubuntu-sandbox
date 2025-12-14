@@ -1099,8 +1099,9 @@ export class SQLParser {
 
     for (const op of operators) {
       if (this.match(op)) {
+        const operator = this.previous().value;
         const right = this.parseAdditionExpression();
-        return { type: 'BINARY_OP', left, right, operator: this.previous().value };
+        return { type: 'BINARY_OP', left, right, operator };
       }
     }
 
