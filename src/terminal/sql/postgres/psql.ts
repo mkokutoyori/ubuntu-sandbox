@@ -5,6 +5,7 @@
 
 import { SQLEngine } from '../generic/engine';
 import { parseSQL } from '../generic/parser';
+import { SQLResult, SQLStatement } from '../generic/types';
 import { PostgresSessionSettings, createDefaultPostgresSettings, PsqlResult } from './types';
 import { PostgresSystemCatalog } from './system';
 import { getPostgresFunction } from './functions';
@@ -295,8 +296,8 @@ function executeSQLStatement(session: PsqlSession, sql: string): PsqlResult {
       }
     }
 
-    // Execute through engine
-    const result = session.engine.execute(stmt);
+    // Execute through engine based on statement type
+    const result = executeStatement(session, stmt);
 
     if (!result.success) {
       return { output: '', error: `ERROR:  ${result.error}` };
@@ -348,6 +349,54 @@ function executeSQLStatement(session: PsqlSession, sql: string): PsqlResult {
     }
   } catch (err) {
     return { output: '', error: `ERROR:  ${err instanceof Error ? err.message : 'unknown error'}` };
+  }
+}
+
+/**
+ * Execute a SQL statement through the engine
+ */
+function executeStatement(session: PsqlSession, stmt: SQLStatement): SQLResult {
+  switch (stmt.type) {
+    case 'SELECT':
+      return session.engine.executeSelect(stmt as any);
+    case 'INSERT':
+      return session.engine.executeInsert(stmt as any);
+    case 'UPDATE':
+      return session.engine.executeUpdate(stmt as any);
+    case 'DELETE':
+      return session.engine.executeDelete(stmt as any);
+    case 'CREATE_TABLE':
+      return session.engine.createTable(stmt as any);
+    case 'DROP_TABLE':
+      return session.engine.dropTable((stmt as any).name, (stmt as any).schema, (stmt as any).ifExists, (stmt as any).cascade);
+    case 'TRUNCATE':
+      return session.engine.truncateTable((stmt as any).table, (stmt as any).schema);
+    case 'CREATE_SCHEMA':
+    case 'CREATE_DATABASE':
+      return session.engine.createSchema((stmt as any).name);
+    case 'DROP_SCHEMA':
+    case 'DROP_DATABASE':
+      return session.engine.dropSchema((stmt as any).name, (stmt as any).cascade);
+    case 'CREATE_USER':
+      return session.engine.createUser((stmt as any).name, (stmt as any).password);
+    case 'DROP_USER':
+      return session.engine.dropUser((stmt as any).name);
+    case 'GRANT':
+      return session.engine.grant((stmt as any).privileges[0], (stmt as any).objectType, (stmt as any).objectName, (stmt as any).grantee, (stmt as any).withGrantOption);
+    case 'REVOKE':
+      return session.engine.revoke((stmt as any).privileges[0], (stmt as any).objectType, (stmt as any).objectName, (stmt as any).grantee);
+    case 'BEGIN':
+      return session.engine.beginTransaction();
+    case 'COMMIT':
+      return session.engine.commit();
+    case 'ROLLBACK':
+      return session.engine.rollback((stmt as any).savepoint);
+    case 'SAVEPOINT':
+      return session.engine.savepoint((stmt as any).name);
+    case 'CREATE_SEQUENCE':
+      return session.engine.createSequence((stmt as any).name, undefined, stmt as any);
+    default:
+      return { success: true };
   }
 }
 
