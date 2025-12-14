@@ -601,16 +601,31 @@ export class SQLParser {
     const name = this.parseIdentifier();
     const dataType = this.parseDataType();
 
+    // Handle SERIAL types (PostgreSQL auto-increment)
+    let actualType = dataType.type;
+    let isAutoIncrement = false;
+    const upperType = dataType.type.toUpperCase();
+    if (upperType === 'SERIAL' || upperType === 'SERIAL4') {
+      actualType = 'INTEGER';
+      isAutoIncrement = true;
+    } else if (upperType === 'SMALLSERIAL' || upperType === 'SERIAL2') {
+      actualType = 'SMALLINT';
+      isAutoIncrement = true;
+    } else if (upperType === 'BIGSERIAL' || upperType === 'SERIAL8') {
+      actualType = 'BIGINT';
+      isAutoIncrement = true;
+    }
+
     const column: ColumnDefinition = {
       name,
-      dataType: dataType.type,
+      dataType: actualType,
       length: dataType.length,
       precision: dataType.precision,
       scale: dataType.scale,
       nullable: true,
       primaryKey: false,
       unique: false,
-      autoIncrement: false
+      autoIncrement: isAutoIncrement
     };
 
     // Parse column constraints
