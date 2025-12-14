@@ -2,15 +2,17 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, Play, Pause, RotateCcw, HelpCircle } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, Play, Pause, RotateCcw, HelpCircle, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ToolbarProps {
   projectName: string;
   onProjectNameChange: (name: string) => void;
+  onClearAll?: () => void;
+  hasDevices?: boolean;
 }
 
-export function Toolbar({ projectName, onProjectNameChange }: ToolbarProps) {
+export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevices }: ToolbarProps) {
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
       {/* Left section - Project name */}
@@ -29,6 +31,20 @@ export function Toolbar({ projectName, onProjectNameChange }: ToolbarProps) {
             placeholder="Untitled Network"
           />
         </div>
+        {/* Clear All button - always visible when devices exist */}
+        {hasDevices && onClearAll && (
+          <button
+            onClick={onClearAll}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+              "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+            )}
+            title="Clear All Devices"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="hidden lg:inline">Clear All</span>
+          </button>
+        )}
       </div>
 
       {/* Center section - Actions */}

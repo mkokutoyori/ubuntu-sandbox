@@ -375,6 +375,21 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
     [moreMode, pendingOutput, state.terminalLength]
   );
 
+  // Handle --More-- mode keyboard events at document level
+  useEffect(() => {
+    if (!moreMode) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.key === 'q' || e.key === 'Q' || e.key === 'Enter') {
+        e.preventDefault();
+        handleMoreKey(e.key);
+      }
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [moreMode, handleMoreKey]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       // Handle --More-- mode
@@ -511,7 +526,7 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
     }
 
     return (
-      <pre key={line.id} className={`${colorClass} whitespace-pre-wrap break-words`}>
+      <pre key={line.id} className={`${colorClass} whitespace-pre`}>
         {line.content}
       </pre>
     );
@@ -524,7 +539,7 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
     >
       <div
         ref={terminalRef}
-        className="flex-1 overflow-y-auto p-3"
+        className="flex-1 overflow-auto p-3"
         style={{ scrollBehavior: 'smooth' }}
       >
         {output.map(renderLine)}

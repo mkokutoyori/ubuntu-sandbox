@@ -2,10 +2,15 @@
  * TerminalModal - Modal window for device terminal
  * Uses the existing Linux terminal for Linux devices
  * Will use device-specific terminals for other equipment types
+ *
+ * Features:
+ * - Resizable via drag handles
+ * - Fullscreen mode
+ * - Horizontal scrolling
  */
 
-import { useEffect } from 'react';
-import { X, Minus, Square } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { X, Minus, Square, Maximize2, Minimize2 } from 'lucide-react';
 import { BaseDevice } from '@/devices';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
@@ -13,6 +18,12 @@ import { CiscoTerminal } from '@/components/CiscoTerminal';
 import { DeviceFactory } from '@/devices/DeviceFactory';
 import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
+
+// Minimum and default dimensions
+const MIN_WIDTH = 400;
+const MIN_HEIGHT = 300;
+const DEFAULT_WIDTH = 1000;
+const DEFAULT_HEIGHT = 700;
 
 interface TerminalModalProps {
   device: BaseDevice;
@@ -32,6 +43,77 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   const isCiscoDevice = osType === 'cisco-ios';
   const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
+
+  // Resizable state
+  const [dimensions, setDimensions] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number; direction: string } | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Handle resize start
+  const handleResizeStart = useCallback((e: React.MouseEvent, direction: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: dimensions.width,
+      startHeight: dimensions.height,
+      direction,
+    };
+  }, [dimensions]);
+
+  // Handle resize move
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { startX, startY, startWidth, startHeight, direction } = resizeRef.current;
+
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      if (direction.includes('e')) {
+        newWidth = Math.max(MIN_WIDTH, startWidth + (e.clientX - startX) * 2);
+      }
+      if (direction.includes('w')) {
+        newWidth = Math.max(MIN_WIDTH, startWidth - (e.clientX - startX) * 2);
+      }
+      if (direction.includes('s')) {
+        newHeight = Math.max(MIN_HEIGHT, startHeight + (e.clientY - startY) * 2);
+      }
+      if (direction.includes('n')) {
+        newHeight = Math.max(MIN_HEIGHT, startHeight - (e.clientY - startY) * 2);
+      }
+
+      // Limit to viewport
+      newWidth = Math.min(newWidth, window.innerWidth - 40);
+      newHeight = Math.min(newHeight, window.innerHeight - 40);
+
+      setDimensions({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      resizeRef.current = null;
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Toggle fullscreen
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(prev => !prev);
+  }, []);
 
   // Pre-install database packages for database devices - call immediately (not in useEffect)
   // This ensures packages are installed before the terminal component mounts
@@ -95,15 +177,25 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
+        ref={modalRef}
         className={cn(
-          "w-[1000px] h-[700px] flex flex-col",
+          "flex flex-col relative",
           "bg-slate-900 rounded-xl overflow-hidden",
           "border border-white/10 shadow-2xl shadow-black/50",
-          "animate-in zoom-in-95 fade-in duration-200"
+          "animate-in zoom-in-95 fade-in duration-200",
+          isResizing && "select-none"
         )}
+        style={isFullscreen ? {
+          width: '100vw',
+          height: '100vh',
+          borderRadius: 0,
+        } : {
+          width: `${dimensions.width}px`,
+          height: `${dimensions.height}px`,
+        }}
       >
         {/* Terminal window header */}
-        <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-white/10">
+        <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               <button
@@ -111,8 +203,16 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
                 className="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-colors"
                 title="Close"
               />
-              <button className="w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-colors" />
-              <button className="w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-colors" />
+              <button
+                onClick={onMinimize}
+                className="w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-colors"
+                title="Minimize"
+              />
+              <button
+                onClick={toggleFullscreen}
+                className="w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-colors"
+                title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              />
             </div>
             <span className="text-xs text-white/60 font-medium">
               {deviceName} — Terminal
@@ -152,8 +252,16 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
             >
               <Minus className="w-4 h-4 text-white/50 hover:text-white/80" />
             </button>
-            <button className="p-1 hover:bg-white/10 rounded transition-colors" title="Maximize">
-              <Square className="w-3.5 h-3.5 text-white/50 hover:text-white/80" />
+            <button
+              onClick={toggleFullscreen}
+              className="p-1 hover:bg-white/10 rounded transition-colors"
+              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="w-3.5 h-3.5 text-white/50 hover:text-white/80" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5 text-white/50 hover:text-white/80" />
+              )}
             </button>
             <button
               onClick={onClose}
@@ -179,6 +287,46 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
             <Terminal device={device} onRequestClose={onClose} />
           )}
         </div>
+
+        {/* Resize handles - only show when not fullscreen */}
+        {!isFullscreen && (
+          <>
+            {/* Corner handles */}
+            <div
+              className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'nw')}
+            />
+            <div
+              className="absolute top-0 right-0 w-4 h-4 cursor-ne-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'ne')}
+            />
+            <div
+              className="absolute bottom-0 left-0 w-4 h-4 cursor-sw-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'sw')}
+            />
+            <div
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'se')}
+            />
+            {/* Edge handles */}
+            <div
+              className="absolute top-0 left-4 right-4 h-2 cursor-n-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'n')}
+            />
+            <div
+              className="absolute bottom-0 left-4 right-4 h-2 cursor-s-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 's')}
+            />
+            <div
+              className="absolute left-0 top-4 bottom-4 w-2 cursor-w-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'w')}
+            />
+            <div
+              className="absolute right-0 top-4 bottom-4 w-2 cursor-e-resize z-10"
+              onMouseDown={(e) => handleResizeStart(e, 'e')}
+            />
+          </>
+        )}
       </div>
     </div>
   );

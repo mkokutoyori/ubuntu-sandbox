@@ -3,7 +3,7 @@
  */
 
 import { useRef, useCallback, useState } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Trash2, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
@@ -233,22 +233,6 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           <Maximize2 className="w-4 h-4 text-white/70" />
         </button>
       </div>
-
-      {/* Clear all button */}
-      {devices.length > 0 && (
-        <button
-          onClick={clearAll}
-          className={cn(
-            "absolute bottom-4 left-4 flex items-center gap-2 px-3 py-2",
-            "bg-red-500/20 hover:bg-red-500/30 backdrop-blur-md",
-            "border border-red-500/30 rounded-lg transition-colors",
-            "text-red-400 text-sm font-medium"
-          )}
-        >
-          <Trash2 className="w-4 h-4" />
-          Clear All
-        </button>
-      )}
 
       {/* Empty state */}
       {devices.length === 0 && (

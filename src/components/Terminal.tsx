@@ -941,7 +941,7 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
 
       <div
         ref={terminalRef}
-        className="flex-1 overflow-y-auto p-4 font-mono text-sm scrollbar-terminal"
+        className="flex-1 overflow-auto p-4 font-mono text-sm scrollbar-terminal"
       >
         {output.map(renderLine)}
 
