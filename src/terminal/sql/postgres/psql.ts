@@ -277,11 +277,14 @@ function executeSQLStatement(session: PsqlSession, sql: string): PsqlResult {
 
     // Parse and execute
     const parseResult = parseSQL(sql);
-    if (!parseResult.success || !parseResult.statement) {
-      return { output: '', error: `ERROR:  ${parseResult.error || 'syntax error'}` };
+    if (!parseResult.success || parseResult.statements.length === 0) {
+      const errorMsg = parseResult.errors.length > 0
+        ? parseResult.errors[0].message
+        : 'syntax error';
+      return { output: '', error: `ERROR:  ${errorMsg}` };
     }
 
-    const stmt = parseResult.statement;
+    const stmt = parseResult.statements[0];
 
     // Handle SELECT on system views
     if (stmt.type === 'SELECT' && stmt.from) {
