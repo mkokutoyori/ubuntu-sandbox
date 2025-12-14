@@ -12,6 +12,7 @@ import { TerminalModal } from './TerminalModal';
 import { MinimizedTerminals } from './MinimizedTerminals';
 import { DeviceType } from '@/devices/common/types';
 import { BaseDevice } from '@/devices';
+import { useNetworkStore } from '@/store/networkStore';
 
 export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
@@ -22,6 +23,10 @@ export function NetworkDesigner() {
   const [openTerminals, setOpenTerminals] = useState<Map<string, BaseDevice>>(new Map());
   // Track which terminals are minimized
   const [minimizedTerminals, setMinimizedTerminals] = useState<Set<string>>(new Set());
+
+  // Get clearAll and devices from store
+  const { getDevices, clearAll } = useNetworkStore();
+  const devices = getDevices();
 
   const handleOpenTerminal = useCallback((device: BaseDevice) => {
     if (device.getIsPoweredOn()) {
@@ -120,6 +125,8 @@ export function NetworkDesigner() {
       <Toolbar
         projectName={projectName}
         onProjectNameChange={setProjectName}
+        onClearAll={clearAll}
+        hasDevices={devices.length > 0}
       />
 
       <div className="flex-1 flex overflow-hidden">

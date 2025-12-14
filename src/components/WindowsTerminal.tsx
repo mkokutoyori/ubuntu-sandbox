@@ -418,7 +418,7 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
     >
       <div
         ref={terminalRef}
-        className="flex-1 overflow-y-auto p-3"
+        className="flex-1 overflow-auto p-3"
       >
         {output.map(renderLine)}
 
