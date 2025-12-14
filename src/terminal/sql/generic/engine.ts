@@ -109,7 +109,8 @@ export class TableStorage {
   }
 
   getAllRows(): SQLRow[] {
-    return [...this.rows];
+    // Return deep copy to prevent modification of backup data
+    return this.rows.map(row => ({ ...row }));
   }
 }
 
@@ -144,12 +145,16 @@ export class SQLEngine {
       ...config
     };
 
-    this.currentSchema = this.config.defaultSchema;
+    // Normalize default schema name based on case sensitivity setting
+    const defaultSchema = this.config.caseSensitiveIdentifiers
+      ? this.config.defaultSchema
+      : this.config.defaultSchema.toUpperCase();
+    this.currentSchema = defaultSchema;
 
     // Initialize default schema
-    this.schemas.set(this.currentSchema, new Map());
-    this.views.set(this.currentSchema, new Map());
-    this.sequences.set(this.currentSchema, new Map());
+    this.schemas.set(defaultSchema, new Map());
+    this.views.set(defaultSchema, new Map());
+    this.sequences.set(defaultSchema, new Map());
 
     // Create system user
     this.users.set('system', {
@@ -260,6 +265,37 @@ export class SQLEngine {
   getTableDefinition(tableName: string, schemaName?: string): TableDefinition | null {
     const storage = this.getTableStorage(tableName, schemaName);
     return storage?.definition || null;
+  }
+
+  /**
+   * Describe a table for psql/sqlplus DESCRIBE command
+   * Returns column info in a format suitable for display
+   */
+  describeTable(tableName: string, schemaName?: string): {
+    columns: Array<{
+      name: string;
+      type: string;
+      size?: number;
+      nullable: boolean;
+      primaryKey: boolean;
+      unique: boolean;
+      defaultValue?: any;
+    }>;
+  } | null {
+    const definition = this.getTableDefinition(tableName, schemaName);
+    if (!definition) return null;
+
+    return {
+      columns: definition.columns.map(col => ({
+        name: col.name,
+        type: col.dataType,
+        size: col.length || col.precision,
+        nullable: col.nullable !== false,
+        primaryKey: col.primaryKey === true,
+        unique: col.unique === true,
+        defaultValue: col.defaultValue,
+      })),
+    };
   }
 
   listTables(schemaName?: string): string[] {
@@ -473,6 +509,16 @@ export class SQLEngine {
     this.inTransaction = true;
     this.transactionBackup.clear();
     this.transactionSavepoints.clear();
+
+    // Save current state of all tables for rollback
+    for (const [schemaName, schemaTables] of this.schemas) {
+      for (const [tableName, storage] of schemaTables) {
+        const normalizedSchema = this.normalizeIdentifier(schemaName);
+        const normalizedTable = this.normalizeIdentifier(tableName);
+        this.transactionBackup.set(`${normalizedSchema}.${normalizedTable}`, storage.getAllRows());
+      }
+    }
+
     return createSuccessResult();
   }
 
@@ -678,8 +724,9 @@ export class SQLEngine {
   }
 
   private backupTable(tableName: string, schemaName?: string): void {
-    const schema = schemaName || this.currentSchema;
-    const key = `${schema}.${tableName}`;
+    const schema = this.normalizeIdentifier(schemaName || this.currentSchema);
+    const table = this.normalizeIdentifier(tableName);
+    const key = `${schema}.${table}`;
     if (!this.transactionBackup.has(key)) {
       const storage = this.getTableStorage(tableName, schemaName);
       if (storage) {
@@ -881,6 +928,20 @@ export class SQLEngine {
         const inValue = this.evaluateExpression(expr.left!, row);
         const inList = expr.arguments!.map(arg => this.evaluateExpression(arg, row));
         return inList.some(item => this.sqlEquals(inValue, item));
+
+      case 'IN_SUBQUERY':
+        const inSubVal = this.evaluateExpression(expr.left!, row);
+        // Execute the subquery and get the first column values
+        const inSubResult = this.executeSelect(expr.subquery as any);
+        if (!inSubResult.success || !inSubResult.resultSet) {
+          return false;
+        }
+        const inSubValues = inSubResult.resultSet.rows.map(r => {
+          // Get the first column value from each row
+          const firstCol = inSubResult.resultSet!.columns[0];
+          return r[firstCol];
+        });
+        return inSubValues.some(item => this.sqlEquals(inSubVal, item));
 
       case 'BETWEEN':
         const betweenValue = this.evaluateExpression(expr.left!, row) as number;

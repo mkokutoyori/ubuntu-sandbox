@@ -1083,6 +1083,13 @@ export class SQLParser {
 
     if (this.match(SQLTokenType.IN)) {
       this.expect(SQLTokenType.LPAREN);
+      // Check if it's a subquery
+      if (this.check(SQLTokenType.SELECT)) {
+        const subquery = this.parseSelect();
+        this.expect(SQLTokenType.RPAREN);
+        return { type: 'IN_SUBQUERY', left, subquery };
+      }
+      // Parse list of values
       const values: SQLExpression[] = [];
       do {
         values.push(this.parseExpression());
