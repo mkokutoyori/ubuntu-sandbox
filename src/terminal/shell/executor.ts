@@ -23,6 +23,7 @@ import { FileSystem } from '../filesystem';
 import { PackageManager } from '../packages';
 import { commands, parseCommand, CommandFunction } from '../commands';
 import { expandGlobArgs, expandVariables } from '../shellUtils';
+import { executeInlineLoop } from './scriptInterpreter';
 
 export interface ExecutionContext {
   state: TerminalState;
@@ -48,6 +49,12 @@ export function executeShellCommand(
 
   if (!trimmed) {
     return { output: '', exitCode: 0 };
+  }
+
+  // Check for inline control structures (for, while, if)
+  const loopResult = executeInlineLoop(trimmed, state, fs, pm);
+  if (loopResult !== null) {
+    return loopResult;
   }
 
   // Parse the input
