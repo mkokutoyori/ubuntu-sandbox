@@ -2,6 +2,21 @@
 
 Ce document recense les limitations identifiées dans l'implémentation actuelle du terminal Linux et de la classe `LinuxPC`.
 
+---
+
+## Améliorations implémentées (2025-12-18)
+
+Les problèmes suivants ont été **résolus** :
+
+| Problème | Solution | Commit |
+|----------|----------|--------|
+| Déconnexion Terminal/LinuxPC | Les commandes réseau (`ifconfig`, `ip`, `ping`, `arp`, `route`, `hostname`) sont maintenant routées vers `LinuxPC.executeCommand()` | `41d98b4` |
+| Ping toujours réussi | Le ping vérifie maintenant la validité de l'IP, l'existence d'une route, et retourne "Network is unreachable" si pas de route | `41d98b4` |
+| FileSystem non partagé | Le Terminal utilise `device.getFileSystem()` quand disponible | Déjà implémenté |
+| Commandes système manquantes | Ajout de `systemctl`, `journalctl`, `mount`, `lsblk`, `dmesg`, `service` | `41d98b4` |
+
+---
+
 ## Table des matières
 1. [Architecture et conception](#1-architecture-et-conception)
 2. [Commandes réseau](#2-commandes-réseau)
