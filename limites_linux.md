@@ -14,6 +14,8 @@ Les problèmes suivants ont été **résolus** :
 | Ping toujours réussi | Le ping vérifie maintenant la validité de l'IP, l'existence d'une route, et retourne "Network is unreachable" si pas de route | `41d98b4` |
 | FileSystem non partagé | Le Terminal utilise `device.getFileSystem()` quand disponible | Déjà implémenté |
 | Commandes système manquantes | Ajout de `systemctl`, `journalctl`, `mount`, `lsblk`, `dmesg`, `service` | `41d98b4` |
+| Boucles shell absentes | Ajout de `for`, `while`, brace expansion `{1..5}` | `9d4576a` |
+| Conditions shell absentes | Ajout de `if/else/elif/fi`, `case/esac` | `9d4576a` |
 
 ---
 
