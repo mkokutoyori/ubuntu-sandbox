@@ -459,26 +459,94 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
       return { output: '', error: 'ping: usage error: Destination address required', exitCode: 1 };
     }
 
-    // Find outgoing interface
+    // Validate target is a valid IP address
+    if (!this.networkStack.isValidIP(target)) {
+      return { output: '', error: `ping: ${target}: Name or service not known`, exitCode: 2 };
+    }
+
+    // Find outgoing interfaces with IP
     const interfaces = this.networkStack.getInterfaces().filter(i => i.isUp && i.ipAddress);
     if (interfaces.length === 0) {
       return { output: '', error: `ping: connect: Network is unreachable`, exitCode: 1 };
     }
 
-    // Simulate ping response
-    const lines = [`PING ${target} (${target}) 56(84) bytes of data.`];
-
-    for (let i = 0; i < Math.min(count, 10); i++) {
-      const time = (Math.random() * 50 + 10).toFixed(1);
-      lines.push(`64 bytes from ${target}: icmp_seq=${i + 1} ttl=64 time=${time} ms`);
+    // Check if target is our own IP (localhost ping) or loopback
+    const isLocalIP = interfaces.some(i => i.ipAddress === target);
+    if (isLocalIP || target === '127.0.0.1' || target.startsWith('127.')) {
+      return this.simulatePingSuccess(target, count, true);
     }
+
+    // Check if we have a route to the target
+    const route = this.networkStack.lookupRoute(target);
+    if (!route) {
+      return { output: '', error: `ping: connect: Network is unreachable`, exitCode: 1 };
+    }
+
+    // Get the outgoing interface
+    const outInterface = this.networkStack.getInterfaceByName(route.interface);
+    if (!outInterface || !outInterface.isUp || !outInterface.ipAddress) {
+      return { output: '', error: `ping: connect: Network is unreachable`, exitCode: 1 };
+    }
+
+    // Check if target is on the same subnet (directly connected)
+    const isDirectlyConnected = this.networkStack.isIPInNetwork(
+      target,
+      this.networkStack.getNetworkAddress(outInterface.ipAddress, outInterface.subnetMask || '255.255.255.0'),
+      outInterface.subnetMask || '255.255.255.0'
+    );
+
+    if (isDirectlyConnected) {
+      // For directly connected networks, simulate success
+      // In a full simulation, we'd check if the target device exists
+      return this.simulatePingSuccess(target, count, false);
+    }
+
+    // For routed traffic, check if we have a gateway
+    if (route.gateway && route.gateway !== '0.0.0.0') {
+      // We have a gateway - simulate success (in real sim, we'd trace the path)
+      return this.simulatePingSuccess(target, count, false);
+    }
+
+    // No valid path to destination - simulate timeout
+    return this.simulatePingTimeout(target, count);
+  }
+
+  private simulatePingSuccess(target: string, count: number, isLocal: boolean): CommandResult {
+    const lines = [`PING ${target} (${target}) 56(84) bytes of data.`];
+    const ttl = isLocal ? 64 : 64 - Math.floor(Math.random() * 10);
+    const baseTime = isLocal ? 0.01 : 10;
+    const timeVariance = isLocal ? 0.05 : 40;
+
+    const times: number[] = [];
+    for (let i = 0; i < Math.min(count, 10); i++) {
+      const time = baseTime + Math.random() * timeVariance;
+      times.push(time);
+      lines.push(`64 bytes from ${target}: icmp_seq=${i + 1} ttl=${ttl} time=${time.toFixed(isLocal ? 3 : 1)} ms`);
+    }
+
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+    const mdev = Math.sqrt(times.reduce((sum, t) => sum + Math.pow(t - avgTime, 2), 0) / times.length);
 
     lines.push('');
     lines.push(`--- ${target} ping statistics ---`);
     lines.push(`${count} packets transmitted, ${count} received, 0% packet loss, time ${count * 1000}ms`);
-    lines.push(`rtt min/avg/max/mdev = 10.123/25.456/48.789/12.345 ms`);
+    lines.push(`rtt min/avg/max/mdev = ${minTime.toFixed(3)}/${avgTime.toFixed(3)}/${maxTime.toFixed(3)}/${mdev.toFixed(3)} ms`);
 
     return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private simulatePingTimeout(target: string, count: number): CommandResult {
+    const lines = [`PING ${target} (${target}) 56(84) bytes of data.`];
+
+    // No response output for timed out packets
+
+    lines.push('');
+    lines.push(`--- ${target} ping statistics ---`);
+    lines.push(`${count} packets transmitted, 0 received, 100% packet loss, time ${count * 1000}ms`);
+
+    return { output: lines.join('\n'), exitCode: 1 };
   }
 
   // ==================== Packet Processing ====================

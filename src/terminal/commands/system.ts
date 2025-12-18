@@ -468,6 +468,260 @@ export const systemCommands: CommandRegistry = {
     const value = state.env[args[0]];
     return { output: value || '', exitCode: value ? 0 : 1 };
   },
+
+  systemctl: (args, state) => {
+    if (args.length === 0) {
+      return {
+        output: 'Usage: systemctl [OPTIONS...] COMMAND ...\nQuery or send control commands to the system manager.',
+        exitCode: 0,
+      };
+    }
+
+    const command = args[0];
+    const service = args[1] || '';
+
+    const services = [
+      { name: 'ssh.service', status: 'active', loaded: 'enabled', description: 'OpenBSD Secure Shell server' },
+      { name: 'cron.service', status: 'active', loaded: 'enabled', description: 'Regular background program processing daemon' },
+      { name: 'rsyslog.service', status: 'active', loaded: 'enabled', description: 'System Logging Service' },
+      { name: 'networking.service', status: 'active', loaded: 'enabled', description: 'Raise network interfaces' },
+      { name: 'systemd-journald.service', status: 'active', loaded: 'enabled', description: 'Journal Service' },
+      { name: 'systemd-logind.service', status: 'active', loaded: 'enabled', description: 'User Login Management' },
+      { name: 'dbus.service', status: 'active', loaded: 'enabled', description: 'D-Bus System Message Bus' },
+      { name: 'docker.service', status: 'inactive', loaded: 'disabled', description: 'Docker Application Container Engine' },
+      { name: 'nginx.service', status: 'inactive', loaded: 'disabled', description: 'A high performance web server' },
+      { name: 'mysql.service', status: 'inactive', loaded: 'disabled', description: 'MySQL Community Server' },
+    ];
+
+    switch (command) {
+      case 'status': {
+        if (!service) {
+          return {
+            output: `● ${state.hostname}
+    State: running
+     Jobs: 0 queued
+   Failed: 0 units
+    Since: Mon 2024-01-01 00:00:00 UTC; 30 days ago
+   CGroup: /
+           └─user.slice`,
+            exitCode: 0,
+          };
+        }
+        const svc = services.find(s => s.name === service || s.name === service + '.service');
+        if (!svc) {
+          return { output: '', error: `Unit ${service}.service could not be found.`, exitCode: 4 };
+        }
+        const isActive = svc.status === 'active';
+        return {
+          output: `● ${svc.name} - ${svc.description}
+     Loaded: loaded (/lib/systemd/system/${svc.name}; ${svc.loaded}; vendor preset: enabled)
+     Active: ${isActive ? '\x1b[32mactive (running)\x1b[0m' : '\x1b[31minactive (dead)\x1b[0m'} since Mon 2024-01-01 00:00:00 UTC; 30 days ago
+   Main PID: ${isActive ? Math.floor(Math.random() * 1000) + 100 : '-'} (${svc.name.split('.')[0]})
+      Tasks: ${isActive ? Math.floor(Math.random() * 10) + 1 : 0}
+     Memory: ${isActive ? (Math.random() * 50).toFixed(1) + 'M' : '0B'}
+        CPU: ${isActive ? Math.floor(Math.random() * 100) + 'ms' : '-'}
+     CGroup: /system.slice/${svc.name}`,
+          exitCode: isActive ? 0 : 3,
+        };
+      }
+
+      case 'list-units':
+      case 'list': {
+        let output = 'UNIT                          LOAD   ACTIVE SUB     DESCRIPTION\n';
+        for (const svc of services.filter(s => s.status === 'active')) {
+          output += `${svc.name.padEnd(30)}loaded active running ${svc.description}\n`;
+        }
+        output += `\nLOAD   = Reflects whether the unit definition was properly loaded.\nACTIVE = The high-level unit activation state, i.e. generalization of SUB.`;
+        return { output, exitCode: 0 };
+      }
+
+      case 'start':
+      case 'stop':
+      case 'restart':
+      case 'enable':
+      case 'disable': {
+        if (!service) {
+          return { output: '', error: `Too few arguments.`, exitCode: 1 };
+        }
+        if (state.currentUser !== 'root') {
+          return { output: '', error: `==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-units ===\nAuthentication is required to ${command} '${service}'.`, exitCode: 1 };
+        }
+        return { output: '', exitCode: 0 };
+      }
+
+      case 'is-active': {
+        const svc = services.find(s => s.name === service || s.name === service + '.service');
+        if (!svc) return { output: 'unknown', exitCode: 3 };
+        return { output: svc.status, exitCode: svc.status === 'active' ? 0 : 3 };
+      }
+
+      case 'is-enabled': {
+        const svc = services.find(s => s.name === service || s.name === service + '.service');
+        if (!svc) return { output: 'not-found', exitCode: 1 };
+        return { output: svc.loaded, exitCode: svc.loaded === 'enabled' ? 0 : 1 };
+      }
+
+      default:
+        return { output: '', error: `Unknown command: ${command}`, exitCode: 1 };
+    }
+  },
+
+  journalctl: (args, state) => {
+    const follow = args.includes('-f');
+    const lines = args.includes('-n') ? parseInt(args[args.indexOf('-n') + 1]) || 10 : 10;
+    const unit = args.includes('-u') ? args[args.indexOf('-u') + 1] : null;
+
+    const logEntries = [
+      'systemd[1]: Started Session 1 of User user.',
+      'sshd[1234]: Server listening on 0.0.0.0 port 22.',
+      'kernel: [    0.000000] Linux version 5.15.0-generic',
+      'systemd[1]: Reached target Multi-User System.',
+      'cron[567]: (CRON) INFO (pidfile fd = 3)',
+      'rsyslogd: [origin software="rsyslogd"] start',
+      'kernel: [   12.345678] EXT4-fs (sda1): mounted filesystem',
+      'systemd[1]: Started Daily apt download activities.',
+      'dbus-daemon[890]: [system] Activating via systemd',
+      'systemd-logind[234]: New session 1 of user user.',
+      'kernel: [   15.678901] eth0: link up (1000Mbps/Full duplex)',
+      'sshd[1235]: Accepted password for user from 192.168.1.50',
+      'sudo:     user : TTY=pts/0 ; PWD=/home/user ; COMMAND=/bin/ls',
+      'kernel: [   20.123456] audit: type=1400 audit(1234567890.123:1)',
+      'systemd[1]: Starting Cleanup of Temporary Directories...',
+    ];
+
+    const now = new Date();
+    let output = '';
+
+    const filteredLogs = unit
+      ? logEntries.filter(l => l.toLowerCase().includes(unit.toLowerCase()))
+      : logEntries;
+
+    for (let i = 0; i < Math.min(lines, filteredLogs.length); i++) {
+      const date = new Date(now.getTime() - (lines - i) * 60000);
+      const dateStr = date.toLocaleString('en-US', {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+      output += `${dateStr} ${state.hostname} ${filteredLogs[i]}\n`;
+    }
+
+    if (follow) {
+      output += '-- Logs begin at Mon 2024-01-01 00:00:00 UTC. --\n';
+    }
+
+    return { output: output.trim(), exitCode: 0 };
+  },
+
+  mount: (args, state) => {
+    if (args.length === 0) {
+      return {
+        output: `/dev/sda1 on / type ext4 (rw,relatime,errors=remount-ro)
+sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+udev on /dev type devtmpfs (rw,nosuid,noexec,relatime,size=8175616k,nr_inodes=2043904,mode=755)
+devpts on /dev/pts type devpts (rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000)
+tmpfs on /run type tmpfs (rw,nosuid,nodev,noexec,relatime,size=1671168k,mode=755)
+tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)
+tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)
+cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime)`,
+        exitCode: 0,
+      };
+    }
+
+    if (state.currentUser !== 'root') {
+      return { output: '', error: 'mount: only root can do that', exitCode: 1 };
+    }
+
+    return { output: '', exitCode: 0 };
+  },
+
+  umount: (args, state) => {
+    if (args.length === 0) {
+      return { output: '', error: 'umount: missing operand', exitCode: 1 };
+    }
+
+    if (state.currentUser !== 'root') {
+      return { output: '', error: `umount: ${args[0]}: must be superuser to unmount`, exitCode: 1 };
+    }
+
+    return { output: '', exitCode: 0 };
+  },
+
+  lsblk: (args) => {
+    const all = args.includes('-a');
+    const bytes = args.includes('-b');
+
+    let output = 'NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS\n';
+    output += `sda      8:0    0 ${bytes ? '53687091200' : '50G'}  0 disk \n`;
+    output += `├─sda1   8:1    0 ${bytes ? '52613349376' : '49G'}  0 part /\n`;
+    output += `└─sda2   8:2    0 ${bytes ? '1073741824' : '1G'}  0 part [SWAP]\n`;
+
+    if (all) {
+      output += `loop0    7:0    0 ${bytes ? '67108864' : '64M'}  1 loop /snap/core/12345\n`;
+      output += `loop1    7:1    0 ${bytes ? '50331648' : '48M'}  1 loop /snap/snapd/12345\n`;
+    }
+
+    return { output: output.trim(), exitCode: 0 };
+  },
+
+  dmesg: (args, state) => {
+    const humanReadable = args.includes('-H') || args.includes('--human');
+    const tail = args.includes('-T');
+
+    const messages = [
+      '[    0.000000] Linux version 5.15.0-generic (buildd@lcy02-amd64-086)',
+      '[    0.000000] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash',
+      '[    0.000000] BIOS-provided physical RAM map:',
+      '[    0.000000]  BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable',
+      '[    0.000000] ACPI: Early table checksum verification disabled',
+      '[    0.000000] ACPI: RSDP 0x00000000000F05B0 000024 (v02 VBOX  )',
+      '[    0.123456] CPU: Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz',
+      '[    0.234567] x86/fpu: Supporting XSAVE feature 0x001: \'x87 floating point registers\'',
+      '[    0.345678] Memory: 16384MB available (14336k kernel code)',
+      '[    0.456789] Calibrating delay loop (skipped), value calculated using timer frequency.. 3600.00 BogoMIPS',
+      '[    1.000000] PCI: Using host bridge windows from ACPI',
+      '[    1.234567] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])',
+      '[    2.000000] SCSI subsystem initialized',
+      '[    2.345678] scsi host0: ata_piix',
+      '[    3.000000] ata1.00: ATA-6: VBOX HARDDISK, 1.0, max UDMA/133',
+      '[    3.456789] ata1.00: 104857600 sectors, multi 128: LBA48 NCQ (depth 32)',
+      '[    4.000000] sd 0:0:0:0: [sda] 104857600 512-byte logical blocks',
+      '[    4.567890] sd 0:0:0:0: [sda] Write Protect is off',
+      '[    5.000000] EXT4-fs (sda1): mounted filesystem with ordered data mode',
+      '[    5.678901] systemd[1]: Detected architecture x86-64.',
+      '[    6.000000] systemd[1]: Set hostname to <ubuntu-terminal>.',
+      '[   10.123456] audit: type=1400 audit(1234567890.123:1): apparmor="STATUS"',
+      '[   12.345678] eth0: link up (1000Mbps/Full duplex)',
+    ];
+
+    let output = '';
+    for (const msg of messages.slice(-20)) {
+      if (tail) {
+        const timestamp = new Date(Date.now() - Math.random() * 86400000);
+        output += `[${timestamp.toLocaleString()}] ${msg.replace(/\[[^\]]+\]/, '').trim()}\n`;
+      } else {
+        output += msg + '\n';
+      }
+    }
+
+    return { output: output.trim(), exitCode: 0 };
+  },
+
+  service: (args, state) => {
+    if (args.length === 0) {
+      return { output: 'Usage: service <service> <action>', exitCode: 1 };
+    }
+
+    const service = args[0];
+    const action = args[1] || 'status';
+
+    // Redirect to systemctl
+    return systemCommands.systemctl([action, service + '.service'], state, null as any, null as any);
+  },
 };
 
 function generateMonthCalendar(year: number, month: number, today: Date): string {

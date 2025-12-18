@@ -21,8 +21,33 @@ import { createOrGetSQLPlusSession, deleteSQLPlusSession, createOrGetPsqlSession
 import { executeSQLPlus, getSQLPlusPrompt } from '@/terminal/sql/oracle/sqlplus';
 import { executePsql, getPsqlPrompt } from '@/terminal/sql/postgres/psql';
 import { BaseDevice } from '@/devices';
+import { LinuxPC } from '@/devices/linux/LinuxPC';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
+// Network commands that should be routed to the device's NetworkStack
+const DEVICE_NETWORK_COMMANDS = new Set(['ifconfig', 'ip', 'ping', 'arp', 'route', 'hostname']);
+
+/**
+ * Check if a command should be handled by the device's network implementation
+ */
+function shouldUseDeviceNetworkCommand(cmd: string, device?: BaseDevice): boolean {
+  if (!device) return false;
+  if (device.getOSType() !== 'linux') return false;
+
+  const commandName = cmd.trim().split(/\s+/)[0];
+  return DEVICE_NETWORK_COMMANDS.has(commandName);
+}
+
+/**
+ * Execute a network command using the device's real NetworkStack
+ */
+function executeDeviceNetworkCommand(cmd: string, device: BaseDevice): { output: string; error?: string; exitCode: number } {
+  if (device instanceof LinuxPC) {
+    return device.executeCommand(cmd);
+  }
+  return { output: '', error: 'Device does not support network commands', exitCode: 1 };
+}
 
 // LocalStorage keys
 const STORAGE_KEYS = {
@@ -511,7 +536,13 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
       }
     }
 
-    const result = executeCommand(cmd, state, fileSystem, packageManager);
+    // Route network commands to device's NetworkStack for real state
+    let result;
+    if (shouldUseDeviceNetworkCommand(cmd, device)) {
+      result = executeDeviceNetworkCommand(cmd, device!);
+    } else {
+      result = executeCommand(cmd, state, fileSystem, packageManager);
+    }
 
     // Update stats
     updateStats(cmd, result);
@@ -594,7 +625,7 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
     setInput('');
     setSuggestion('');
     setShowCompletions(false);
-  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, sqlplusMode, psqlMode, onRequestClose]);
+  }, [state, getPrompt, tutorialMode, tutorialStep, achievements, stats, updateStats, pythonMode, pythonSession, sqlplusMode, psqlMode, onRequestClose, device, fileSystem]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     // History search mode
