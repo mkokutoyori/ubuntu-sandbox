@@ -745,8 +745,16 @@ function resolveWord(word: WordNode, ctx: ExecutionContext): string {
 
       case 'variable': {
         const name = part.name.replace(/^\$/, '');
-        const value = ctx.state.env[name] || '';
-        result += value;
+        // Handle special variables
+        if (name === '?') {
+          result += ctx.state.lastExitCode.toString();
+        } else if (name === '$') {
+          result += '1'; // Fake PID
+        } else if (name === '!') {
+          result += ''; // Last background PID (not implemented)
+        } else {
+          result += ctx.state.env[name] || '';
+        }
         break;
       }
 

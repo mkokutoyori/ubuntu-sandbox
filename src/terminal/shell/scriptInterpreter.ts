@@ -53,12 +53,36 @@ export function defineShellFunction(name: string, body: string[]): void {
   });
 }
 
+/**
+ * Remove a shell function
+ */
+export function unsetShellFunction(name: string): boolean {
+  return shellFunctions.delete(name);
+}
+
+/**
+ * Get all defined function names
+ */
+export function listShellFunctions(): string[] {
+  return Array.from(shellFunctions.keys());
+}
+
+/**
+ * Get function definition as string (for declare -f)
+ */
+export function getFunctionDefinition(name: string): string | null {
+  const func = shellFunctions.get(name);
+  if (!func) return null;
+  return `${name} () {\n${func.body.map(l => '    ' + l).join('\n')}\n}`;
+}
+
 export interface ScriptContext {
   state: TerminalState;
   fs: FileSystem;
   pm: PackageManager;
   localVars: Record<string, string>;
   positionalArgs?: string[]; // $1, $2, $@, $#, etc.
+  arrays?: Record<string, string[]>; // Bash arrays
 }
 
 /**
@@ -160,6 +184,15 @@ function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
     expandedLine = expandedLine.replace(new RegExp(`\\$\\{${name}\\}`, 'g'), value);
   }
 
+  // Expand special variables ($?, $$)
+  expandedLine = expandedLine.replace(/\$\?/g, (ctx.state.lastExitCode ?? 0).toString());
+  expandedLine = expandedLine.replace(/\$\$/g, '1'); // Fake PID
+
+  // Expand array references
+  if (ctx.arrays) {
+    expandedLine = expandArrays(expandedLine, ctx.arrays);
+  }
+
   // Also expand environment variables
   expandedLine = expandVariables(expandedLine, ctx.state.env);
 
@@ -168,6 +201,17 @@ function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
   if (localMatch) {
     const [, name, value] = localMatch;
     ctx.localVars[name] = value ? value.replace(/^["']|["']$/g, '') : '';
+    return { output: '', exitCode: 0 };
+  }
+
+  // Handle array assignment: arr=(a b c)
+  const arrayAssignMatch = expandedLine.match(/^([A-Za-z_][A-Za-z0-9_]*)=\(([^)]*)\)$/);
+  if (arrayAssignMatch) {
+    const [, name, elements] = arrayAssignMatch;
+    if (!ctx.arrays) ctx.arrays = {};
+    // Parse array elements (handles quoted strings)
+    const values = parseArrayElements(elements);
+    ctx.arrays[name] = values;
     return { output: '', exitCode: 0 };
   }
 
@@ -184,6 +228,41 @@ function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
   if (returnMatch) {
     const exitCode = returnMatch[1] ? parseInt(returnMatch[1]) : 0;
     return { output: '', exitCode, error: '__return__' };
+  }
+
+  // Handle 'shift' command to shift positional arguments
+  const shiftMatch = expandedLine.match(/^shift(?:\s+(\d+))?$/);
+  if (shiftMatch && ctx.positionalArgs) {
+    const n = shiftMatch[1] ? parseInt(shiftMatch[1]) : 1;
+    ctx.positionalArgs = ctx.positionalArgs.slice(n);
+    return { output: '', exitCode: 0 };
+  }
+
+  // Handle 'declare -f' to list/show functions
+  const declareFMatch = expandedLine.match(/^declare\s+-f(?:\s+([A-Za-z_][A-Za-z0-9_]*))?$/);
+  if (declareFMatch) {
+    const funcName = declareFMatch[1];
+    if (funcName) {
+      // Show specific function
+      const def = getFunctionDefinition(funcName);
+      if (def) {
+        return { output: def, exitCode: 0 };
+      }
+      return { output: '', error: `declare: ${funcName}: not found`, exitCode: 1 };
+    } else {
+      // List all functions
+      const funcs = listShellFunctions();
+      const defs = funcs.map(name => getFunctionDefinition(name)).filter(Boolean);
+      return { output: defs.join('\n'), exitCode: 0 };
+    }
+  }
+
+  // Handle 'unset -f' to remove functions
+  const unsetFMatch = expandedLine.match(/^unset\s+-f\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+  if (unsetFMatch) {
+    const funcName = unsetFMatch[1];
+    unsetShellFunction(funcName);
+    return { output: '', exitCode: 0 };
   }
 
   // Check if line is a function call
@@ -233,6 +312,67 @@ function expandPositionalArgs(line: string, ctx: ScriptContext): string {
   result = result.replace(/\$\{(\d+)\}/g, (_, num) => {
     const index = parseInt(num) - 1;
     return index >= 0 && index < args.length ? args[index] : '';
+  });
+
+  return result;
+}
+
+/**
+ * Parse array elements from (a b c) content
+ */
+function parseArrayElements(input: string): string[] {
+  const elements: string[] = [];
+  let current = '';
+  let inQuote = false;
+  let quoteChar = '';
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+
+    if ((char === '"' || char === "'") && !inQuote) {
+      inQuote = true;
+      quoteChar = char;
+    } else if (char === quoteChar && inQuote) {
+      inQuote = false;
+      quoteChar = '';
+    } else if (char === ' ' && !inQuote) {
+      if (current) {
+        elements.push(current);
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) {
+    elements.push(current);
+  }
+
+  return elements;
+}
+
+/**
+ * Expand array references in a string
+ */
+function expandArrays(input: string, arrays: Record<string, string[]>): string {
+  let result = input;
+
+  // Handle ${#arr[@]} - array length
+  result = result.replace(/\$\{#([A-Za-z_][A-Za-z0-9_]*)\[@\]\}/g, (_, name) => {
+    return (arrays[name]?.length || 0).toString();
+  });
+
+  // Handle ${arr[@]} and ${arr[*]} - all elements
+  result = result.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\[[@*]\]\}/g, (_, name) => {
+    return (arrays[name] || []).join(' ');
+  });
+
+  // Handle ${arr[n]} - specific index
+  result = result.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\}/g, (_, name, index) => {
+    const arr = arrays[name];
+    const idx = parseInt(index);
+    return arr && idx < arr.length ? arr[idx] : '';
   });
 
   return result;

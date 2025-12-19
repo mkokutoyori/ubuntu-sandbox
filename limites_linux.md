@@ -21,10 +21,14 @@ Les problèmes suivants ont été **résolus** :
 | SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
 | Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | `7574e9f` |
 | Fonctions shell absentes | Définition et appel de fonctions, arguments positionnels ($1, $@, $#), return | `7ef1471` |
-| ls non compatible pipe | `ls` affiche maintenant un fichier par ligne quand pipé | À commiter |
-| Arguments guillemets | Parsing correct des arguments entre guillemets dans les fonctions | À commiter |
-| Expansion arithmétique | Support de `$((expr))` pour calculs arithmétiques | À commiter |
-| Variables locales | Support du mot-clé `local` dans les fonctions | À commiter |
+| ls non compatible pipe | `ls` affiche maintenant un fichier par ligne quand pipé | `4e23e41` |
+| Arguments guillemets | Parsing correct des arguments entre guillemets dans les fonctions | `4e23e41` |
+| Expansion arithmétique | Support de `$((expr))` pour calculs arithmétiques | `4e23e41` |
+| Variables locales | Support du mot-clé `local` dans les fonctions | `4e23e41` |
+| $? non supporté | `$?` retourne maintenant le dernier exit code | À commiter |
+| shift absent | Support de `shift` pour décaler les arguments | À commiter |
+| Arrays absents | Support des arrays bash `arr=(a b c)`, `${arr[0]}`, `${arr[@]}` | À commiter |
+| declare/unset -f | Support de `declare -f` et `unset -f` pour gérer les fonctions | À commiter |
 
 ---
 
@@ -210,13 +214,16 @@ Le nouveau `ProcessManager` (`src/terminal/processManager.ts`) offre :
 | Boucles `for`, `while` | ✅ Implémenté |
 | Conditions `if`, `case` | ✅ Implémenté |
 | Fonctions shell | ✅ Implémenté |
-| Arrays | **Non implémentés** |
+| Arrays `arr=(a b c)` | ✅ Implémenté |
 | Arithmetic expansion `$((expr))` | ✅ Implémenté |
 | Here documents `<<EOF` | ✅ Implémenté |
 | Subshells `(cmd)` | **Non implémentés** |
 | Process substitution `<(cmd)` | **Non implémenté** |
 | Brace expansion `{a,b,c}` | ✅ Implémenté (dans boucles for) |
 | Variables locales `local` | ✅ Implémenté |
+| `$?` (exit code) | ✅ Implémenté |
+| `shift` | ✅ Implémenté |
+| `declare -f`, `unset -f` | ✅ Implémenté |
 
 ### 5.3 Fonctions shell (NOUVEAU)
 
@@ -243,12 +250,12 @@ return [N]           # Retourner avec code de sortie
 | Fonctionnalité | Statut |
 |----------------|--------|
 | `local var=value` | ✅ Implémenté |
-| `declare -f` | **Non implémenté** - lister les fonctions |
-| `unset -f name` | **Non implémenté** - supprimer une fonction |
-| `$?` dans fonction | **Non supporté** - dernier exit code |
+| `declare -f` | ✅ Implémenté - lister/afficher les fonctions |
+| `unset -f name` | ✅ Implémenté - supprimer une fonction |
+| `$?` dans fonction | ✅ Implémenté - dernier exit code |
 | Fonctions récursives | Limitées (pas de protection contre stack overflow) |
 | Arguments avec guillemets | ✅ Implémenté - `func "hello world"` fonctionne correctement |
-| `shift` | **Non implémenté** |
+| `shift` | ✅ Implémenté |
 | `set --` | **Non implémenté** |
 
 ### 5.4 Limitations découvertes avec scripts réels
@@ -259,9 +266,9 @@ Les tests avec des scripts réalistes (déploiement, CI/CD, monitoring) ont rév
 |----------|--------|
 | `ls \| grep` | ✅ Corrigé - `ls` affiche un fichier par ligne quand pipé |
 | `$((2+2))` | ✅ Corrigé - Expansion arithmétique fonctionne |
-| `arr=(a b c)` | **Non supporté** - Arrays bash non implémentés |
+| `arr=(a b c)` | ✅ Corrigé - Arrays bash implémentés |
 | `<(cmd)` | **Non supporté** - Process substitution non implémentée |
-| `$(date +%A)` | Substitution de commande fonctionne dans la plupart des contextes |
+| `$(date +%A)` | ✅ Substitution de commande fonctionne |
 
 **Scripts qui fonctionnent** :
 - Boucles for/while avec variables

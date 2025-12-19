@@ -395,10 +395,11 @@ ERROR: Timeout`);
       expect(result.output).toContain('Today is');
     });
 
-    it('LIMITATION: arrays not supported', () => {
-      // arr=(a b c) should create an array
+    it('LIMITATION: arrays not supported in single command', () => {
+      // Arrays work in scripts but not in single executeShellCommand
+      // because the executor doesn't parse array assignment syntax
       const result = executeShellCommand('arr=(one two three); echo ${arr[0]}', state, fs, pm);
-      // Arrays are not implemented
+      // This returns the literal because arrays need executeScript
       expect(result.exitCode).toBeDefined();
     });
 
@@ -418,6 +419,62 @@ ERROR: Timeout`);
       // Variable should not exist outside function
       const result2 = executeShellCommand('echo "Value: $myvar"', state, fs, pm);
       expect(result2.output).toBe('Value: ');
+    });
+
+    it('supports $? for last exit code', () => {
+      // Run a successful command
+      executeShellCommand('echo hello', state, fs, pm);
+      state.lastExitCode = 0;
+      const result1 = executeShellCommand('echo $?', state, fs, pm);
+      expect(result1.output.trim()).toBe('0');
+
+      // Run a failing command (simulate)
+      state.lastExitCode = 1;
+      const result2 = executeShellCommand('echo $?', state, fs, pm);
+      expect(result2.output.trim()).toBe('1');
+    });
+
+    it('supports shift command in functions', () => {
+      executeInlineLoop('process_args() { echo $1; shift; echo $1; }', state, fs, pm);
+      const result = executeInlineLoop('process_args first second third', state, fs, pm);
+      expect(result?.output).toContain('first');
+      expect(result?.output).toContain('second');
+    });
+
+    it('supports bash arrays', () => {
+      // This test uses executeScript which supports arrays
+      const script = `
+        arr=(one two three)
+        echo \${arr[0]}
+        echo \${arr[1]}
+        echo \${arr[@]}
+        echo \${#arr[@]}
+      `;
+      const result = executeScript(script, state, fs, pm);
+      expect(result.output).toContain('one');
+      expect(result.output).toContain('two');
+      expect(result.output).toContain('one two three');
+      expect(result.output).toContain('3');
+    });
+
+    it('supports declare -f and unset -f', () => {
+      // Define a function using script
+      const script1 = `
+        myfunc() { echo hello; }
+        declare -f myfunc
+      `;
+      const result1 = executeScript(script1, state, fs, pm);
+      expect(result1.output).toContain('myfunc');
+      expect(result1.output).toContain('echo hello');
+
+      // Unset the function and try to call it (should fail silently or return empty)
+      const script2 = `
+        unset -f myfunc
+        declare -f
+      `;
+      const result2 = executeScript(script2, state, fs, pm);
+      // After unsetting, myfunc should not appear in the output
+      expect(result2.output).not.toContain('myfunc');
     });
 
     it('LIMITATION: process substitution not supported', () => {
