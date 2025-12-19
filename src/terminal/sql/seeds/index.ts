@@ -392,11 +392,16 @@ INSERT INTO REVIEWS (ID, PRODUCT_ID, CUSTOMER_ID, RATING, TITLE, REVIEW_TEXT, IS
 export function executeSeedScript(engine: SQLEngine, seedScript: string): { success: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  // Split script into individual statements
+  // Split script into individual statements and clean up comments
   const statements = seedScript
     .split(';')
-    .map(s => s.trim())
-    .filter(s => s && !s.startsWith('--'));
+    .map(s => {
+      // Remove full-line comments from the statement
+      const lines = s.split('\n');
+      const cleanedLines = lines.filter(line => !line.trim().startsWith('--'));
+      return cleanedLines.join('\n').trim();
+    })
+    .filter(s => s.length > 0);
 
   for (const stmt of statements) {
     if (!stmt) continue;
@@ -432,7 +437,8 @@ export function executeSeedScript(engine: SQLEngine, seedScript: string): { succ
       }
 
       if (result && !result.success) {
-        errors.push(`Error executing: ${stmt.substring(0, 50)}... - ${result.error}`);
+        const errorMsg = result.error?.message || JSON.stringify(result.error);
+        errors.push(`Error executing: ${stmt.substring(0, 50)}... - ${errorMsg}`);
       }
     } catch (e) {
       errors.push(`Exception: ${(e as Error).message}`);
