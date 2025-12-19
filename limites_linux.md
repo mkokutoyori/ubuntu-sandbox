@@ -242,11 +242,33 @@ return [N]           # Retourner avec code de sortie
 | `unset -f name` | **Non implémenté** - supprimer une fonction |
 | `$?` dans fonction | **Non supporté** - dernier exit code |
 | Fonctions récursives | Limitées (pas de protection contre stack overflow) |
-| Arguments avec espaces | Nécessitent des quotes |
+| Arguments avec guillemets | **Mal parsés** - `func "hello world"` split en 2 args |
 | `shift` | **Non implémenté** |
 | `set --` | **Non implémenté** |
 
-### 5.4 Variables d'environnement
+### 5.4 Limitations découvertes avec scripts réels
+
+Les tests avec des scripts réalistes (déploiement, CI/CD, monitoring) ont révélé:
+
+| Problème | Impact |
+|----------|--------|
+| `ls \| grep` | `ls` n'affiche pas un fichier par ligne quand pipé |
+| `$((2+2))` | Expansion arithmétique non évaluée |
+| `arr=(a b c)` | Arrays bash non supportés |
+| `<(cmd)` | Process substitution non supportée |
+| `$(date +%A)` | Substitution de commande limitée dans certains contextes |
+
+**Scripts qui fonctionnent** :
+- Boucles for/while avec variables
+- Conditions if/elif/else/fi avec `test`
+- Case statements pour routing
+- Fonctions avec arguments simples
+- Pipes multi-étapes (cat \| grep \| wc)
+- Redirections (>, >>, <)
+- SSH/SCP simulés
+- systemctl/journalctl
+
+### 5.5 Variables d'environnement
 
 - Export limité (pas de propagation aux sous-processus)
 - `source` / `.` : Non fonctionnel
