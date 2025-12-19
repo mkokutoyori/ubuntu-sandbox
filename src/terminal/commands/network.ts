@@ -610,6 +610,301 @@ ${hostname} has IPv6 address 2606:2800:220:1:248:1893:25c8:1946`,
 
     return { output: lines.join('\n'), exitCode: 0 };
   },
+
+  ssh: (args, state) => {
+    if (args.length === 0) {
+      return { output: '', error: 'usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]\n           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]\n           [-E log_file] [-e escape_char] [-F configfile] [-I pkcs11]\n           [-i identity_file] [-J [user@]host[:port]] [-L address]\n           [-l login_name] [-m mac_spec] [-O ctl_cmd] [-o option] [-p port]\n           [-Q query_option] [-R address] [-S ctl_path] [-W host:port]\n           [-w local_tun[:remote_tun]] destination [command]', exitCode: 255 };
+    }
+
+    // Parse SSH arguments
+    const verbose = args.includes('-v') || args.includes('-vv') || args.includes('-vvv');
+    const portIdx = args.indexOf('-p');
+    const port = portIdx !== -1 && args[portIdx + 1] ? args[portIdx + 1] : '22';
+    const identityIdx = args.indexOf('-i');
+    const identity = identityIdx !== -1 ? args[identityIdx + 1] : null;
+
+    // Find destination (user@host or just host)
+    const destination = args.filter(a =>
+      !a.startsWith('-') &&
+      a !== port &&
+      a !== identity &&
+      (a.includes('@') || a.match(/^[\w.-]+$/))
+    )[0];
+
+    if (!destination) {
+      return { output: '', error: 'ssh: No destination specified', exitCode: 255 };
+    }
+
+    let user = state.currentUser;
+    let host = destination;
+
+    if (destination.includes('@')) {
+      [user, host] = destination.split('@');
+    }
+
+    // Check for command after destination
+    const destIdx = args.indexOf(destination);
+    const remoteCommand = args.slice(destIdx + 1).join(' ');
+
+    const lines: string[] = [];
+
+    if (verbose) {
+      lines.push(`OpenSSH_8.9p1 Ubuntu-3ubuntu0.4, OpenSSL 3.0.2 15 Mar 2022`);
+      lines.push(`debug1: Reading configuration data /etc/ssh/ssh_config`);
+      lines.push(`debug1: Connecting to ${host} [${host}] port ${port}.`);
+      lines.push(`debug1: Connection established.`);
+      lines.push(`debug1: identity file /home/${state.currentUser}/.ssh/id_rsa type 0`);
+      lines.push(`debug1: Authenticating to ${host}:${port} as '${user}'`);
+      lines.push(`debug1: Authentication succeeded (publickey).`);
+    }
+
+    if (remoteCommand) {
+      // Execute remote command simulation
+      lines.push(`[Executing on ${host}]: ${remoteCommand}`);
+
+      // Simulate some common remote commands
+      if (remoteCommand.includes('hostname')) {
+        lines.push(host);
+      } else if (remoteCommand.includes('uname')) {
+        lines.push('Linux');
+      } else if (remoteCommand.includes('whoami')) {
+        lines.push(user);
+      } else if (remoteCommand.includes('date')) {
+        lines.push(new Date().toString());
+      } else if (remoteCommand.includes('uptime')) {
+        lines.push(` ${new Date().toLocaleTimeString()} up 5 days,  3:42,  1 user,  load average: 0.15, 0.10, 0.05`);
+      } else {
+        lines.push(`[Command output simulated]`);
+      }
+    } else {
+      // Interactive session simulation
+      lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-88-generic x86_64)`);
+      lines.push(``);
+      lines.push(` * Documentation:  https://help.ubuntu.com`);
+      lines.push(` * Management:     https://landscape.canonical.com`);
+      lines.push(` * Support:        https://ubuntu.com/advantage`);
+      lines.push(``);
+      lines.push(`Last login: ${new Date().toDateString()} ${new Date().toLocaleTimeString()} from ${state.env.SSH_CLIENT?.split(' ')[0] || '192.168.1.50'}`);
+      lines.push(`${user}@${host}:~$ [Interactive SSH session - type 'exit' to disconnect]`);
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  },
+
+  scp: (args, state) => {
+    if (args.length < 2) {
+      return { output: '', error: 'usage: scp [-346BCpqrTv] [-c cipher] [-F ssh_config] [-i identity_file]\n           [-J destination] [-l limit] [-o ssh_option] [-P port]\n           [-S program] source ... target', exitCode: 1 };
+    }
+
+    const recursive = args.includes('-r');
+    const verbose = args.includes('-v');
+    const quiet = args.includes('-q');
+    const portIdx = args.indexOf('-P');
+    const port = portIdx !== -1 ? args[portIdx + 1] : '22';
+
+    // Get source and target (last two non-flag arguments)
+    const nonFlags = args.filter(a => !a.startsWith('-') && a !== port);
+
+    if (nonFlags.length < 2) {
+      return { output: '', error: 'scp: missing source or target', exitCode: 1 };
+    }
+
+    const source = nonFlags.slice(0, -1).join(' ');
+    const target = nonFlags[nonFlags.length - 1];
+
+    // Determine if this is upload or download
+    const isUpload = target.includes(':');
+    const isDownload = source.includes(':');
+
+    const lines: string[] = [];
+
+    if (verbose) {
+      lines.push(`Executing: program /usr/bin/ssh host ${isUpload ? target.split(':')[0] : source.split(':')[0]}, user (unspecified), command scp -v ${recursive ? '-r ' : ''}-t ${isUpload ? target.split(':')[1] : '.'}`);
+      lines.push(`OpenSSH_8.9p1 Ubuntu-3ubuntu0.4, OpenSSL 3.0.2 15 Mar 2022`);
+    }
+
+    // Simulate file transfer
+    const fileName = (isUpload ? source : source.split(':')[1] || 'file').split('/').pop() || 'file';
+    const fileSize = Math.floor(Math.random() * 10000) + 1000;
+
+    if (!quiet) {
+      lines.push(`${fileName}                                     100% ${fileSize}     ${(fileSize / 100).toFixed(1)}KB/s   00:00`);
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  },
+
+  sftp: (args, state) => {
+    if (args.length === 0) {
+      return { output: '', error: 'usage: sftp [-46aCfNpqrv] [-B buffer_size] [-b batchfile] [-c cipher]\n          [-D sftp_server_path] [-F ssh_config] [-i identity_file]\n          [-J destination] [-l limit] [-o ssh_option] [-P port]\n          [-R num_requests] [-S program] [-s subsystem | sftp_server]\n          destination', exitCode: 1 };
+    }
+
+    const destination = args.filter(a => !a.startsWith('-'))[0];
+
+    if (!destination) {
+      return { output: '', error: 'sftp: No destination specified', exitCode: 1 };
+    }
+
+    let user = state.currentUser;
+    let host = destination;
+
+    if (destination.includes('@')) {
+      [user, host] = destination.split('@');
+    }
+
+    const lines = [
+      `Connected to ${host}.`,
+      `sftp> [Interactive SFTP session]`,
+      ``,
+      `Available commands:`,
+      `  cd path                 Change remote directory`,
+      `  lcd path                Change local directory`,
+      `  ls [path]               List remote directory`,
+      `  lls [path]              List local directory`,
+      `  get remote [local]      Download file`,
+      `  put local [remote]      Upload file`,
+      `  mkdir path              Create remote directory`,
+      `  rmdir path              Remove remote directory`,
+      `  rm path                 Remove remote file`,
+      `  pwd                     Print remote working directory`,
+      `  lpwd                    Print local working directory`,
+      `  exit/quit               Exit sftp`,
+    ];
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  },
+
+  rsync: (args, state) => {
+    if (args.length < 2) {
+      return { output: '', error: 'rsync  version 3.2.7  protocol version 31\nUsage: rsync [OPTION]... SRC [SRC]... DEST\n  or   rsync [OPTION]... SRC [SRC]... [USER@]HOST:DEST\n  or   rsync [OPTION]... SRC [SRC]... [USER@]HOST::DEST\n  or   rsync [OPTION]... [USER@]HOST:SRC [DEST]\n  or   rsync [OPTION]... [USER@]HOST::SRC [DEST]', exitCode: 1 };
+    }
+
+    const verbose = args.includes('-v') || args.includes('--verbose');
+    const archive = args.includes('-a') || args.includes('--archive');
+    const recursive = args.includes('-r') || args.includes('--recursive');
+    const compress = args.includes('-z') || args.includes('--compress');
+    const progress = args.includes('--progress') || args.includes('-P');
+    const dryRun = args.includes('-n') || args.includes('--dry-run');
+    const delete_ = args.includes('--delete');
+
+    // Get source and target
+    const nonFlags = args.filter(a => !a.startsWith('-'));
+
+    if (nonFlags.length < 2) {
+      return { output: '', error: 'rsync: missing source or destination', exitCode: 1 };
+    }
+
+    const source = nonFlags[0];
+    const target = nonFlags[nonFlags.length - 1];
+    const isRemote = source.includes(':') || target.includes(':');
+
+    const lines: string[] = [];
+
+    if (dryRun) {
+      lines.push(`(DRY RUN) Would transfer files from ${source} to ${target}`);
+    }
+
+    // Simulate file list
+    const files = [
+      { name: 'file1.txt', size: 1234 },
+      { name: 'file2.log', size: 5678 },
+      { name: 'data/config.json', size: 890 },
+      { name: 'data/settings.yml', size: 456 },
+    ];
+
+    if (verbose) {
+      lines.push(`sending incremental file list`);
+      for (const file of files) {
+        if (progress) {
+          lines.push(`${file.name}`);
+          lines.push(`          ${file.size} 100%    ${(file.size / 100).toFixed(2)}kB/s    0:00:00 (xfr#1, to-chk=0/${files.length})`);
+        } else {
+          lines.push(`${file.name}`);
+        }
+      }
+    }
+
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    lines.push(``);
+    lines.push(`sent ${totalSize + 500} bytes  received ${Math.floor(totalSize / 10)} bytes  ${((totalSize + 500 + totalSize / 10) / 1000).toFixed(2)}K bytes/sec`);
+    lines.push(`total size is ${totalSize}  speedup is ${(10 + Math.random() * 5).toFixed(2)}${dryRun ? ' (DRY RUN)' : ''}`);
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  },
+
+  'ssh-keygen': (args, state) => {
+    const type = args.includes('-t') ? args[args.indexOf('-t') + 1] : 'rsa';
+    const bits = args.includes('-b') ? args[args.indexOf('-b') + 1] : (type === 'rsa' ? '3072' : '256');
+    const comment = args.includes('-C') ? args[args.indexOf('-C') + 1] : `${state.currentUser}@${state.hostname}`;
+    const file = args.includes('-f') ? args[args.indexOf('-f') + 1] : `/home/${state.currentUser}/.ssh/id_${type}`;
+
+    if (args.includes('-l')) {
+      // List fingerprint
+      const keyFile = args.filter(a => !a.startsWith('-'))[0] || file + '.pub';
+      return {
+        output: `${bits} SHA256:${Buffer.from(Math.random().toString()).toString('base64').substring(0, 43)} ${comment} (${type.toUpperCase()})`,
+        exitCode: 0,
+      };
+    }
+
+    const lines = [
+      `Generating public/private ${type} key pair.`,
+      `Enter file in which to save the key (${file}): `,
+      `Enter passphrase (empty for no passphrase): `,
+      `Enter same passphrase again: `,
+      `Your identification has been saved in ${file}`,
+      `Your public key has been saved in ${file}.pub`,
+      `The key fingerprint is:`,
+      `SHA256:${Buffer.from(Math.random().toString()).toString('base64').substring(0, 43)} ${comment}`,
+      `The key's randomart image is:`,
+      `+---[${type.toUpperCase()} ${bits}]----+`,
+      `|     .o+*O=.     |`,
+      `|      .=B=+      |`,
+      `|       o*+.o     |`,
+      `|      . +o= .    |`,
+      `|        S+ o     |`,
+      `|       o  o .    |`,
+      `|      . .E .     |`,
+      `|       o..o      |`,
+      `|        oo.      |`,
+      `+----[SHA256]-----+`,
+    ];
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  },
+
+  'ssh-copy-id': (args, state) => {
+    if (args.length === 0) {
+      return { output: '', error: 'Usage: ssh-copy-id [-h|-?|-f|-n|-s] [-i [identity_file]] [-p port] [-o ssh_option] [user@]hostname', exitCode: 1 };
+    }
+
+    const destination = args.filter(a => !a.startsWith('-'))[0];
+
+    if (!destination) {
+      return { output: '', error: 'ssh-copy-id: No destination specified', exitCode: 1 };
+    }
+
+    let user = state.currentUser;
+    let host = destination;
+
+    if (destination.includes('@')) {
+      [user, host] = destination.split('@');
+    }
+
+    const lines = [
+      `/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/${state.currentUser}/.ssh/id_rsa.pub"`,
+      `/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed`,
+      `/usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys`,
+      `${user}@${host}'s password: `,
+      ``,
+      `Number of key(s) added: 1`,
+      ``,
+      `Now try logging into the machine, with:   "ssh '${user}@${host}'"`,
+      `and check to make sure that only the key(s) you wanted were added.`,
+    ];
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  },
 };
 
 function getServiceName(port: number): string {

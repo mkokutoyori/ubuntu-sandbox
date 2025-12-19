@@ -18,6 +18,7 @@ Les problèmes suivants ont été **résolus** :
 | Conditions shell absentes | Ajout de `if/else/elif/fi`, `case/esac` | `9d4576a` |
 | Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | `6df7ac2` |
 | Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
+| SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | En cours |
 
 ---
 
