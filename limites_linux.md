@@ -17,7 +17,7 @@ Les problèmes suivants ont été **résolus** :
 | Boucles shell absentes | Ajout de `for`, `while`, brace expansion `{1..5}` | `9d4576a` |
 | Conditions shell absentes | Ajout de `if/else/elif/fi`, `case/esac` | `9d4576a` |
 | Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | `6df7ac2` |
-| Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | En cours |
+| Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
 
 ---
 
@@ -310,7 +310,7 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 
 6. ~~**Simuler les processus**~~ : ✅ Implémenté (`ProcessManager` avec spawn/kill dynamique).
 
-7. **Améliorer netcat/curl** : Implémenter des réponses réseau plus réalistes.
+7. ~~**Améliorer netcat/curl**~~ : ✅ Implémenté (`nc`, `nmap`, `tcpdump`, `telnet`, `curl` amélioré).
 
 ### 8.3 Priorité basse
 
