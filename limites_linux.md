@@ -18,7 +18,8 @@ Les problèmes suivants ont été **résolus** :
 | Conditions shell absentes | Ajout de `if/else/elif/fi`, `case/esac` | `9d4576a` |
 | Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | `6df7ac2` |
 | Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
-| SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | En cours |
+| SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
+| Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | En cours |
 
 ---
 
@@ -317,9 +318,11 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 
 7. **Protocoles réseau avancés** : DHCP, DNS fonctionnel, TCP connections.
 
-8. **Commandes SSH/SCP simulées** : Pour la connexion entre appareils du réseau.
+8. ~~**Commandes SSH/SCP simulées**~~ : ✅ Implémenté (`ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id`).
 
-9. **Here documents et fonctions shell** : Pour des scripts plus complexes.
+9. ~~**Here documents**~~ : ✅ Implémenté (`<<EOF`, `<<'EOF'`, `<<-EOF`).
+
+10. **Fonctions shell** : Pour des scripts plus complexes avec définition de fonctions.
 
 ---
 

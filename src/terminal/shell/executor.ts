@@ -51,6 +51,12 @@ export function executeShellCommand(
     return { output: '', exitCode: 0 };
   }
 
+  // Check for here document (<<EOF ... EOF)
+  const heredocResult = handleHeredoc(trimmed, state, fs, pm);
+  if (heredocResult !== null) {
+    return heredocResult;
+  }
+
   // Check for inline control structures (for, while, if)
   const loopResult = executeInlineLoop(trimmed, state, fs, pm);
   if (loopResult !== null) {
@@ -70,6 +76,110 @@ export function executeShellCommand(
 
   const ctx: ExecutionContext = { state, fs, pm };
   return executeProgram(parseResult.ast, ctx);
+}
+
+/**
+ * Handle here documents (<<EOF ... EOF)
+ * Supports:
+ * - <<EOF ... EOF (with variable expansion)
+ * - <<'EOF' ... EOF (no variable expansion)
+ * - <<"EOF" ... EOF (with variable expansion)
+ * - <<-EOF ... EOF (strip leading tabs)
+ */
+function handleHeredoc(
+  input: string,
+  state: TerminalState,
+  fs: FileSystem,
+  pm: PackageManager
+): ExecutionResult | null {
+  // Match heredoc pattern: command <<[-]'DELIMITER' or <<[-]"DELIMITER" or <<[-]DELIMITER
+  const heredocMatch = input.match(/^(.+?)<<(-)?(['"]?)(\w+)\3\s*\n([\s\S]*?)\n\4$/);
+
+  if (!heredocMatch) {
+    // Try single-line heredoc for simple cases like: cat <<EOF\ntext\nEOF
+    return null;
+  }
+
+  const [, commandPart, stripTabs, quote, delimiter, content] = heredocMatch;
+
+  // Determine if we should expand variables (not quoted with single quotes)
+  const expandVars = quote !== "'";
+  const shouldStripTabs = stripTabs === '-';
+
+  // Process the content
+  let processedContent = content;
+
+  // Strip leading tabs if <<- was used
+  if (shouldStripTabs) {
+    processedContent = processedContent
+      .split('\n')
+      .map(line => line.replace(/^\t+/, ''))
+      .join('\n');
+  }
+
+  // Expand variables if not quoted with single quotes
+  if (expandVars) {
+    processedContent = expandVariables(processedContent, state.env);
+  }
+
+  // Parse the command part
+  const cmdTrimmed = commandPart.trim();
+
+  // Execute the command with the heredoc content as stdin
+  const ctx: ExecutionContext = { state, fs, pm, stdin: processedContent };
+
+  const parseResult = parseShellInput(cmdTrimmed);
+
+  if (!parseResult.success || !parseResult.ast) {
+    return {
+      output: '',
+      error: parseResult.error || 'Parse error',
+      exitCode: 2,
+    };
+  }
+
+  return executeProgram(parseResult.ast, ctx);
+}
+
+/**
+ * Parse a heredoc from multiline input
+ * This is called when the input contains a heredoc marker
+ */
+export function parseHeredocInput(input: string): {
+  command: string;
+  delimiter: string;
+  content: string;
+  expandVars: boolean;
+  stripTabs: boolean;
+} | null {
+  // Match: command <<[-]['"]?DELIMITER['"]?
+  const headerMatch = input.match(/^(.+?)<<(-)?(['"]?)(\w+)\3\s*$/m);
+
+  if (!headerMatch) {
+    return null;
+  }
+
+  const [fullMatch, command, stripTabs, quote, delimiter] = headerMatch;
+  const headerEndIdx = input.indexOf(fullMatch) + fullMatch.length;
+  const rest = input.substring(headerEndIdx);
+
+  // Find the ending delimiter
+  const delimiterPattern = new RegExp(`^${delimiter}$`, 'm');
+  const delimMatch = rest.match(delimiterPattern);
+
+  if (!delimMatch || delimMatch.index === undefined) {
+    return null;
+  }
+
+  const content = rest.substring(1, delimMatch.index); // Skip initial newline
+
+  return {
+    command: command.trim(),
+    delimiter,
+    content: content.replace(/\n$/, ''), // Remove trailing newline before delimiter
+    expandVars: quote !== "'",
+    stripTabs: stripTabs === '-',
+  };
 }
 
 /**
