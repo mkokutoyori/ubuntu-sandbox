@@ -19,7 +19,7 @@ Les problèmes suivants ont été **résolus** :
 | Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | `6df7ac2` |
 | Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
 | SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
-| Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | En cours |
+| Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | `7574e9f` |
 
 ---
 
