@@ -22,6 +22,7 @@ import { executeSQLPlus, getSQLPlusPrompt } from '@/terminal/sql/oracle/sqlplus'
 import { executePsql, getPsqlPrompt } from '@/terminal/sql/postgres/psql';
 import { BaseDevice } from '@/devices';
 import { LinuxPC } from '@/devices/linux/LinuxPC';
+import { getProcessManager, resetProcessManager } from '@/terminal/processManager';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -198,6 +199,11 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
 
   useEffect(() => {
     const bootSequence = async () => {
+      // Initialize process manager with user session
+      resetProcessManager();
+      const pm = getProcessManager();
+      pm.initUserSession(state.currentUser, 'pts/0');
+
       for (let i = 0; i < bootMessages.length; i++) {
         await new Promise(resolve => setTimeout(resolve, 50));
         setOutput(prev => [...prev, {

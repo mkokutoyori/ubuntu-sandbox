@@ -14,6 +14,9 @@ Les problèmes suivants ont été **résolus** :
 | Ping toujours réussi | Le ping vérifie maintenant la validité de l'IP, l'existence d'une route, et retourne "Network is unreachable" si pas de route | `41d98b4` |
 | FileSystem non partagé | Le Terminal utilise `device.getFileSystem()` quand disponible | Déjà implémenté |
 | Commandes système manquantes | Ajout de `systemctl`, `journalctl`, `mount`, `lsblk`, `dmesg`, `service` | `41d98b4` |
+| Boucles shell absentes | Ajout de `for`, `while`, brace expansion `{1..5}` | `9d4576a` |
+| Conditions shell absentes | Ajout de `if/else/elif/fi`, `case/esac` | `9d4576a` |
+| Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | En cours |
 
 ---
 
@@ -104,35 +107,42 @@ for (let i = 0; i < Math.min(count, 10); i++) {
 
 ## 3. Gestion des processus
 
-### 3.1 Processus simulés
+### 3.1 ProcessManager dynamique (AMÉLIORÉ)
+
+Le nouveau `ProcessManager` (`src/terminal/processManager.ts`) offre :
 
 ```typescript
-// src/terminal/commands/process.ts
-// ps, top retournent une liste STATIQUE de processus fictifs
+// Fonctionnalités implémentées:
+- Processus système persistants (init, kthreadd, sshd, cron, rsyslogd, journald)
+- Session utilisateur dynamique (sshd session + bash shell)
+- Tracking des PIDs avec spawn/kill
+- Statistiques temps réel (uptime, load average, process count)
+- CPU/MEM simulés dynamiquement pour les processus actifs
 ```
 
-**Limitations** :
-- `ps aux` : Liste de processus hardcodée (init, sshd, bash, cron...)
-- `top` : Snapshot statique, pas de rafraîchissement
-- PIDs fixes et ne changent jamais
-- Aucun processus réel n'est créé ou géré
+**Commandes améliorées** :
 
-### 3.2 Contrôle des jobs inexistant
-
-| Commande | Comportement |
+| Commande | Amélioration |
 |----------|--------------|
-| `jobs` | Toujours vide |
-| `bg` | Erreur "no current job" |
-| `fg` | Erreur "no current job" |
-| `kill PID` | Erreur "No such process" (aucun processus réel) |
-| `&` (background) | Génère un PID aléatoire mais n'exécute rien en arrière-plan |
+| `ps aux` | Liste dynamique des processus avec stats CPU/MEM variables |
+| `top` | Uptime réel, load average calculé, statistiques de processus |
+| `uptime` | Durée depuis le boot, load average |
+| `free` | Mémoire avec variations simulées |
+| `vmstat` | Statistiques système simulées |
+| `kill PID` | Termine réellement le processus (avec vérification permissions) |
+| `killall`/`pkill` | Kill par nom de processus |
+| `pgrep` | Recherche de processus par pattern |
 
-### 3.3 Signaux non implémentés
+### 3.2 Limitations restantes
 
-- `Ctrl+C` : Non intercepté
-- `Ctrl+Z` : Non intercepté
-- `trap` : Non supporté
-- `nohup` : Non implémenté
+| Fonctionnalité | Statut |
+|----------------|--------|
+| `jobs` | Background jobs non trackés automatiquement |
+| `bg`/`fg` | Non fonctionnels (pas de vrais background processes) |
+| `&` (background) | Génère un PID mais n'exécute pas vraiment en arrière-plan |
+| `Ctrl+C` / `Ctrl+Z` | Non interceptés |
+| `trap` | Non supporté |
+| `nohup` | Simule le message mais n'a pas d'effet réel |
 
 ---
 
@@ -289,11 +299,13 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 
 ### 8.2 Priorité moyenne
 
-4. **Implémenter le contrôle de flux** : Boucles `for`/`while`, conditions `if`/`case`.
+4. ~~**Implémenter le contrôle de flux**~~ : ✅ Implémenté (`for`, `while`, `if`, `case`).
 
-5. **Ajouter les commandes système manquantes** : `systemctl`, `journalctl`, `mount`.
+5. ~~**Ajouter les commandes système manquantes**~~ : ✅ Implémenté (`systemctl`, `journalctl`, `mount`, etc.).
 
-6. **Simuler les processus** : Créer de vrais processus (au moins un PID tracking) pour `ps`, `kill`, `jobs`.
+6. ~~**Simuler les processus**~~ : ✅ Implémenté (`ProcessManager` avec spawn/kill dynamique).
+
+7. **Améliorer netcat/curl** : Implémenter des réponses réseau plus réalistes.
 
 ### 8.3 Priorité basse
 
@@ -310,8 +322,11 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 | Fichier | Description |
 |---------|-------------|
 | `src/devices/linux/LinuxPC.ts` | Classe LinuxPC avec NetworkStack |
-| `src/terminal/commands/network.ts` | Commandes réseau (statiques) |
-| `src/terminal/commands/index.ts` | Registry des commandes |
+| `src/terminal/commands/network.ts` | Commandes réseau (routées vers LinuxPC) |
+| `src/terminal/commands/process.ts` | Commandes processus (utilise ProcessManager) |
+| `src/terminal/commands/system.ts` | Commandes système (systemctl, journalctl, etc.) |
+| `src/terminal/processManager.ts` | Gestionnaire de processus dynamique |
+| `src/terminal/shell/scriptInterpreter.ts` | Interpréteur de contrôle de flux (for, while, if) |
 | `src/terminal/shell/executor.ts` | Exécuteur de commandes shell |
 | `src/terminal/filesystem.ts` | Système de fichiers virtuel |
 | `src/core/network/packet.ts` | Structures de paquets réseau |
@@ -319,5 +334,5 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 
 ---
 
-*Document généré le 2025-12-18*
+*Dernière mise à jour : 2025-12-19*
 *NetSim - Simulateur de réseau*
