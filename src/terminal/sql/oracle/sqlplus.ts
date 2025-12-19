@@ -8,6 +8,7 @@ import { parseSQL } from '../generic/parser';
 import { OracleSessionSettings, createDefaultOracleSettings, ColumnFormat, SpoolSettings } from './types';
 import { OracleSystemCatalog } from './system';
 import { ORACLE_FUNCTIONS, getOracleFunction } from './functions';
+import { initializeOracleSeeds } from '../seeds';
 
 export interface SQLPlusResult {
   output: string;
@@ -29,6 +30,7 @@ export interface SQLPlusSession {
   lastCommand: string;
   lastResult: SQLResult | null;
   runningScript: boolean;
+  seeded: boolean;
 }
 
 /**
@@ -46,6 +48,9 @@ export function createSQLPlusSession(): SQLPlusSession {
   engine.setCurrentSchema('SYSTEM');
   engine.setCurrentUser('SYSTEM');
 
+  // Initialize e-commerce seed data
+  const seedResult = initializeOracleSeeds(engine);
+
   return {
     engine,
     catalog: new OracleSystemCatalog(engine),
@@ -58,7 +63,8 @@ export function createSQLPlusSession(): SQLPlusSession {
     username: 'SYSTEM',
     lastCommand: '',
     lastResult: null,
-    runningScript: false
+    runningScript: false,
+    seeded: seedResult.success
   };
 }
 
