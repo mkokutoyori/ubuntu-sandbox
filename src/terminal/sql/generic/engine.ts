@@ -317,9 +317,15 @@ export class SQLEngine {
         rows = rows.filter(row => this.evaluateExpression(stmt.where!, row));
       }
 
-      // Apply GROUP BY
+      // Apply GROUP BY or aggregate functions
+      let aggregated = false;
       if (stmt.groupBy && stmt.groupBy.length > 0) {
         rows = this.applyGroupBy(rows, stmt.groupBy, stmt.columns);
+        aggregated = true;
+      } else if (this.hasAggregateFunctions(stmt.columns)) {
+        // If there are aggregate functions without GROUP BY, treat all rows as one group
+        rows = this.applyGroupBy(rows, [], stmt.columns);
+        aggregated = true;
       }
 
       // Apply HAVING
@@ -347,8 +353,22 @@ export class SQLEngine {
         rows = rows.slice(0, stmt.limit);
       }
 
-      // Project columns
-      const { columns, columnTypes, projectedRows } = this.projectColumns(rows, stmt.columns);
+      // Project columns (skip if already aggregated - applyGroupBy already projected)
+      let columns: string[];
+      let columnTypes: SQLDataType[];
+      let projectedRows: SQLRow[];
+
+      if (aggregated) {
+        // Use rows directly from aggregation - they're already projected
+        columns = Object.keys(rows[0] || {});
+        columnTypes = columns.map(() => 'VARCHAR' as SQLDataType);
+        projectedRows = rows;
+      } else {
+        const projected = this.projectColumns(rows, stmt.columns);
+        columns = projected.columns;
+        columnTypes = projected.columnTypes;
+        projectedRows = projected.projectedRows;
+      }
 
       return {
         success: true,
@@ -1231,6 +1251,18 @@ export class SQLEngine {
       default:
         return value;
     }
+  }
+
+  private hasAggregateFunctions(columns: any[]): boolean {
+    const aggregateFunctions = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
+    for (const col of columns) {
+      if (col.all) continue;
+      const expr = col.expression;
+      if (expr && expr.type === 'FUNCTION_CALL' && aggregateFunctions.includes(expr.name?.toUpperCase())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private applyGroupBy(rows: SQLRow[], groupBy: SQLExpression[], columns: any[]): SQLRow[] {

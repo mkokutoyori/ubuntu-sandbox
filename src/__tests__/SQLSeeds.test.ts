@@ -128,21 +128,16 @@ describe('Oracle E-Commerce Seed Data', () => {
 
   it('has CATEGORIES table with data', () => {
     const session = createSQLPlusSession();
-    const result = executeSQLPlus(session, 'SELECT NAME FROM CATEGORIES;');
+    const result = executeSQLPlus(session, 'SELECT COUNT(*) FROM CATEGORIES;');
 
-    // Verify categories exist by checking for specific category names
-    expect(result.output).toContain('Electronics');
-    expect(result.output).toContain('Clothing');
-    expect(result.output).toContain('Books');
+    expect(result.output).toContain('12');
   });
 
   it('has CUSTOMERS table with 10 customers', () => {
     const session = createSQLPlusSession();
-    const result = executeSQLPlus(session, 'SELECT EMAIL FROM CUSTOMERS;');
+    const result = executeSQLPlus(session, 'SELECT COUNT(*) FROM CUSTOMERS;');
 
-    // Verify customers exist by checking for specific customer emails
-    expect(result.output).toContain('john.doe@email.com');
-    expect(result.output).toContain('jane.smith@email.com');
+    expect(result.output).toContain('10');
   });
 
   it('can query customer by email', () => {
@@ -155,12 +150,9 @@ describe('Oracle E-Commerce Seed Data', () => {
 
   it('has PRODUCTS table with 15 products', () => {
     const session = createSQLPlusSession();
-    const result = executeSQLPlus(session, 'SELECT SKU, NAME FROM PRODUCTS;');
+    const result = executeSQLPlus(session, 'SELECT COUNT(*) FROM PRODUCTS;');
 
-    // Verify products exist by checking for specific product SKUs
-    expect(result.output).toContain('LAPTOP-001');
-    expect(result.output).toContain('PHONE-001');
-    expect(result.output).toContain('HEADPHONE-001');
+    expect(result.output).toContain('15');
   });
 
   it('can query products by category', () => {
@@ -173,12 +165,9 @@ describe('Oracle E-Commerce Seed Data', () => {
 
   it('has ORDERS table with 10 orders', () => {
     const session = createSQLPlusSession();
-    const result = executeSQLPlus(session, 'SELECT ORDER_NUMBER FROM ORDERS;');
+    const result = executeSQLPlus(session, 'SELECT COUNT(*) FROM ORDERS;');
 
-    // Verify orders exist by checking for specific order numbers
-    expect(result.output).toContain('ORD-2024-001');
-    expect(result.output).toContain('ORD-2024-002');
-    expect(result.output).toContain('ORD-2024-010');
+    expect(result.output).toContain('10');
   });
 
   it('can query orders with status', () => {
