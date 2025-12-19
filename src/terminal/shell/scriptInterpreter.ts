@@ -163,6 +163,14 @@ function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
   // Also expand environment variables
   expandedLine = expandVariables(expandedLine, ctx.state.env);
 
+  // Handle 'local' variable declaration (local var=value or local var)
+  const localMatch = expandedLine.match(/^local\s+([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$/);
+  if (localMatch) {
+    const [, name, value] = localMatch;
+    ctx.localVars[name] = value ? value.replace(/^["']|["']$/g, '') : '';
+    return { output: '', exitCode: 0 };
+  }
+
   // Handle variable assignment
   const assignMatch = expandedLine.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
   if (assignMatch) {
@@ -231,11 +239,58 @@ function expandPositionalArgs(line: string, ctx: ScriptContext): string {
 }
 
 /**
+ * Parse a command line respecting quoted strings
+ */
+function parseCommandArgs(input: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let inQuote = false;
+  let quoteChar = '';
+  let escape = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+
+    if (escape) {
+      current += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\' && !inQuote) {
+      escape = true;
+      continue;
+    }
+
+    if ((char === '"' || char === "'") && !inQuote) {
+      inQuote = true;
+      quoteChar = char;
+    } else if (char === quoteChar && inQuote) {
+      inQuote = false;
+      quoteChar = '';
+    } else if (char === ' ' && !inQuote) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+/**
  * Try to call a shell function
  */
 function tryCallFunction(line: string, ctx: ScriptContext): CommandResult | null {
-  // Parse the command and arguments
-  const parts = line.trim().split(/\s+/);
+  // Parse the command and arguments respecting quotes
+  const parts = parseCommandArgs(line.trim());
   if (parts.length === 0) return null;
 
   const funcName = parts[0];
@@ -859,7 +914,7 @@ export function executeInlineLoop(
   }
 
   // Check if it's a function call (defined function)
-  const parts = command.trim().split(/\s+/);
+  const parts = parseCommandArgs(command.trim());
   if (parts.length > 0 && shellFunctions.has(parts[0])) {
     const ctx: ScriptContext = { state, fs, pm, localVars: {} };
     return tryCallFunction(command, ctx);

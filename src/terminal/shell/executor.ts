@@ -22,7 +22,7 @@ import { TerminalState, CommandResult } from '../types';
 import { FileSystem } from '../filesystem';
 import { PackageManager } from '../packages';
 import { commands, parseCommand, CommandFunction } from '../commands';
-import { expandGlobArgs, expandVariables } from '../shellUtils';
+import { expandGlobArgs, expandVariables, evaluateArithmetic } from '../shellUtils';
 import { executeInlineLoop } from './scriptInterpreter';
 
 export interface ExecutionContext {
@@ -280,9 +280,14 @@ function executePipeline(pipeline: PipelineNode, ctx: ExecutionContext): Executi
     const isLast = i === pipeline.commands.length - 1;
 
     // Execute command with current stdin
+    // Set isPiped flag for commands that are piped to other commands
     const commandCtx: ExecutionContext = {
       ...ctx,
       stdin: currentStdin,
+      state: {
+        ...ctx.state,
+        isPiped: !isLast, // Command output is piped if not the last command
+      },
     };
 
     const result = executeCommandNode(command, commandCtx);
@@ -749,6 +754,13 @@ function resolveWord(word: WordNode, ctx: ExecutionContext): string {
         // Execute command substitution
         const subResult = executeShellCommand(part.command, ctx.state, ctx.fs, ctx.pm);
         result += subResult.output.trim();
+        break;
+      }
+
+      case 'arithmetic': {
+        // Evaluate arithmetic expression
+        const expr = part.expr;
+        result += evaluateArithmetic(expr, ctx.state.env);
         break;
       }
 

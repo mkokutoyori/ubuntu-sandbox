@@ -196,14 +196,12 @@ ERROR: Timeout`);
       expect(result?.output).toBe('[LOG] AppStarted');
     });
 
-    it('LIMITATION: quoted arguments in function calls are split incorrectly', () => {
+    it('handles quoted arguments in function calls correctly', () => {
       executeInlineLoop('show() { echo "Arg1: $1, Arg2: $2"; }', state, fs, pm);
 
-      // This should pass "Hello World" as $1, but it gets split
+      // "Hello World" should be passed as a single argument $1
       const result = executeInlineLoop('show "Hello World"', state, fs, pm);
-      // The quotes are included in the argument, not stripped
-      // This documents the limitation
-      expect(result?.output).toContain('Arg1:');
+      expect(result?.output).toBe('Arg1: Hello World, Arg2: ');
     });
 
     it('handles function with multiple commands', () => {
@@ -311,27 +309,28 @@ ERROR: Timeout`);
       expect(result.output).toContain('DB_PORT=5432');
     });
 
-    it('finds files by pattern', () => {
+    it('finds files by pattern using ls | grep', () => {
       fs.createNode('/home/user/app.js', 'file', 'user', 'console.log("app");');
       fs.createNode('/home/user/test.js', 'file', 'user', 'console.log("test");');
       fs.createNode('/home/user/readme.md', 'file', 'user', '# Readme');
 
-      // LIMITATION: ls outputs all files on one line, so grep matches the whole line
-      // In real bash, ls piped would output one file per line
+      // ls outputs one file per line when piped
       const result = executeShellCommand('ls /home/user | grep js', state, fs, pm);
       expect(result.output).toContain('app.js');
       expect(result.output).toContain('test.js');
-      // Note: This also contains readme.md because ls outputs everything on one line
-      // and grep matches any line containing "js"
+      // readme.md should NOT be in output (grep only matches lines containing 'js')
+      expect(result.output).not.toContain('readme.md');
     });
 
-    it('LIMITATION: ls does not output one file per line when piped', () => {
-      fs.createNode('/home/user/myfile.txt', 'file', 'user', 'content');
+    it('ls outputs one file per line when piped', () => {
+      fs.createNode('/home/user/file1.txt', 'file', 'user', 'content1');
+      fs.createNode('/home/user/file2.txt', 'file', 'user', 'content2');
 
-      const result = executeShellCommand('ls /home/user', state, fs, pm);
-      // ls outputs all files space-separated on one line (with ANSI colors)
-      // In real bash, when piped, ls would output one per line
-      expect(result.output.includes('\n')).toBe(false);
+      // When piped, ls outputs one file per line
+      const result = executeShellCommand('ls /home/user | wc -l', state, fs, pm);
+      // Should count files correctly (2 files = 2 lines)
+      const lineCount = parseInt(result.output.trim());
+      expect(lineCount).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -377,20 +376,23 @@ ERROR: Timeout`);
     });
   });
 
-  describe('Known Limitations Tests', () => {
-    it('LIMITATION: arithmetic expansion not supported', () => {
+  describe('Shell Features Tests', () => {
+    it('supports arithmetic expansion $((expr))', () => {
       // $((expr)) should evaluate to the result
       const result = executeShellCommand('echo $((2 + 2))', state, fs, pm);
-      // Currently outputs literally "$((2 + 2))" or empty
-      // This documents the limitation
-      expect(result.output).not.toBe('4');
+      expect(result.output.trim()).toBe('4');
     });
 
-    it('LIMITATION: command substitution limited', () => {
+    it('supports complex arithmetic expressions', () => {
+      const result = executeShellCommand('echo $((10 * 5 - 3))', state, fs, pm);
+      expect(result.output.trim()).toBe('47');
+    });
+
+    it('supports command substitution', () => {
       // $(cmd) should be replaced with command output
       const result = executeShellCommand('echo "Today is $(date +%A)"', state, fs, pm);
-      // May not fully expand
-      expect(result.exitCode).toBeDefined();
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain('Today is');
     });
 
     it('LIMITATION: arrays not supported', () => {
@@ -400,12 +402,22 @@ ERROR: Timeout`);
       expect(result.exitCode).toBeDefined();
     });
 
-    it('LIMITATION: local variables in functions', () => {
+    it('supports local variables in functions', () => {
       // local should create function-scoped variable
       executeInlineLoop('test_local() { local x=5; echo $x; }', state, fs, pm);
       const result = executeInlineLoop('test_local', state, fs, pm);
-      // 'local' keyword is not recognized, but the function still works
-      expect(result).toBeDefined();
+      expect(result?.output).toBe('5');
+    });
+
+    it('local variables do not leak outside function', () => {
+      // Define function with local var
+      executeInlineLoop('set_local() { local myvar=secret; echo $myvar; }', state, fs, pm);
+      const result1 = executeInlineLoop('set_local', state, fs, pm);
+      expect(result1?.output).toBe('secret');
+
+      // Variable should not exist outside function
+      const result2 = executeShellCommand('echo "Value: $myvar"', state, fs, pm);
+      expect(result2.output).toBe('Value: ');
     });
 
     it('LIMITATION: process substitution not supported', () => {

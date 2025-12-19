@@ -45,6 +45,7 @@ export enum TokenType {
   // Special
   VARIABLE = 'VARIABLE',             // $VAR, ${VAR}
   COMMAND_SUB = 'COMMAND_SUB',       // $(...), `...`
+  ARITH_EXPAND = 'ARITH_EXPAND',     // $((expr))
   GLOB = 'GLOB',                     // *, ?, [...]
   COMMENT = 'COMMENT',               // # comment
 
@@ -395,6 +396,44 @@ export class ShellLexer {
     this.advance(); // Skip $
 
     const char = this.peek();
+    const next = this.peek(1);
+
+    // $((...)) arithmetic expansion
+    if (char === '(' && next === '(') {
+      this.advance(); // Skip first (
+      this.advance(); // Skip second (
+      let value = '';
+      let depth = 2; // We're already inside ((
+
+      while (this.position < this.input.length && depth > 0) {
+        const c = this.peek();
+        const n = this.peek(1);
+
+        if (c === ')' && n === ')' && depth === 2) {
+          // End of arithmetic expansion
+          this.advance(); // Skip first )
+          this.advance(); // Skip second )
+          break;
+        }
+
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+
+        if (depth >= 2) {
+          value += this.advance();
+        } else {
+          this.advance();
+        }
+      }
+
+      this.tokens.push({
+        type: TokenType.ARITH_EXPAND,
+        value,
+        position: startPos,
+        raw: '$((' + value + '))',
+      });
+      return;
+    }
 
     // $(...) command substitution
     if (char === '(') {

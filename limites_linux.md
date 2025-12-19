@@ -21,6 +21,10 @@ Les problèmes suivants ont été **résolus** :
 | SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
 | Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | `7574e9f` |
 | Fonctions shell absentes | Définition et appel de fonctions, arguments positionnels ($1, $@, $#), return | `7ef1471` |
+| ls non compatible pipe | `ls` affiche maintenant un fichier par ligne quand pipé | À commiter |
+| Arguments guillemets | Parsing correct des arguments entre guillemets dans les fonctions | À commiter |
+| Expansion arithmétique | Support de `$((expr))` pour calculs arithmétiques | À commiter |
+| Variables locales | Support du mot-clé `local` dans les fonctions | À commiter |
 
 ---
 
@@ -205,13 +209,14 @@ Le nouveau `ProcessManager` (`src/terminal/processManager.ts`) offre :
 | Substitution de commandes `$(cmd)` | **Partiellement** - ne fonctionne pas dans tous les contextes |
 | Boucles `for`, `while` | ✅ Implémenté |
 | Conditions `if`, `case` | ✅ Implémenté |
-| Fonctions shell | ✅ Implémenté (voir limitations ci-dessous) |
+| Fonctions shell | ✅ Implémenté |
 | Arrays | **Non implémentés** |
-| Arithmetic expansion `$((expr))` | **Non implémenté** |
+| Arithmetic expansion `$((expr))` | ✅ Implémenté |
 | Here documents `<<EOF` | ✅ Implémenté |
 | Subshells `(cmd)` | **Non implémentés** |
 | Process substitution `<(cmd)` | **Non implémenté** |
 | Brace expansion `{a,b,c}` | ✅ Implémenté (dans boucles for) |
+| Variables locales `local` | ✅ Implémenté |
 
 ### 5.3 Fonctions shell (NOUVEAU)
 
@@ -237,12 +242,12 @@ return [N]           # Retourner avec code de sortie
 
 | Fonctionnalité | Statut |
 |----------------|--------|
-| `local var=value` | **Non supporté** - variables sont globales |
+| `local var=value` | ✅ Implémenté |
 | `declare -f` | **Non implémenté** - lister les fonctions |
 | `unset -f name` | **Non implémenté** - supprimer une fonction |
 | `$?` dans fonction | **Non supporté** - dernier exit code |
 | Fonctions récursives | Limitées (pas de protection contre stack overflow) |
-| Arguments avec guillemets | **Mal parsés** - `func "hello world"` split en 2 args |
+| Arguments avec guillemets | ✅ Implémenté - `func "hello world"` fonctionne correctement |
 | `shift` | **Non implémenté** |
 | `set --` | **Non implémenté** |
 
@@ -250,13 +255,13 @@ return [N]           # Retourner avec code de sortie
 
 Les tests avec des scripts réalistes (déploiement, CI/CD, monitoring) ont révélé:
 
-| Problème | Impact |
+| Problème | Statut |
 |----------|--------|
-| `ls \| grep` | `ls` n'affiche pas un fichier par ligne quand pipé |
-| `$((2+2))` | Expansion arithmétique non évaluée |
-| `arr=(a b c)` | Arrays bash non supportés |
-| `<(cmd)` | Process substitution non supportée |
-| `$(date +%A)` | Substitution de commande limitée dans certains contextes |
+| `ls \| grep` | ✅ Corrigé - `ls` affiche un fichier par ligne quand pipé |
+| `$((2+2))` | ✅ Corrigé - Expansion arithmétique fonctionne |
+| `arr=(a b c)` | **Non supporté** - Arrays bash non implémentés |
+| `<(cmd)` | **Non supporté** - Process substitution non implémentée |
+| `$(date +%A)` | Substitution de commande fonctionne dans la plupart des contextes |
 
 **Scripts qui fonctionnent** :
 - Boucles for/while avec variables
