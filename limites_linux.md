@@ -16,7 +16,10 @@ Les problèmes suivants ont été **résolus** :
 | Commandes système manquantes | Ajout de `systemctl`, `journalctl`, `mount`, `lsblk`, `dmesg`, `service` | `41d98b4` |
 | Boucles shell absentes | Ajout de `for`, `while`, brace expansion `{1..5}` | `9d4576a` |
 | Conditions shell absentes | Ajout de `if/else/elif/fi`, `case/esac` | `9d4576a` |
-| Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | En cours |
+| Processus statiques | `ProcessManager` dynamique avec tracking des PIDs, spawn/kill, uptime, load average | `6df7ac2` |
+| Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
+| SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
+| Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | `7574e9f` |
 
 ---
 
@@ -93,11 +96,15 @@ for (let i = 0; i < Math.min(count, 10); i++) {
 - Pas de timeout pour les hôtes inaccessibles
 - TTL toujours à 64
 
-### 2.3 Commandes réseau non fonctionnelles
+### 2.3 Commandes réseau améliorées
 
 | Commande | Statut |
 |----------|--------|
-| `curl` | Simule une réponse HTML générique |
+| `curl` | ✅ Support `-v`, `-i`, `-I`, `-s`, `-o`, `-d`, `-X`, réponses contextuelles (API, httpbin) |
+| `nc`/`netcat` | ✅ Mode listen `-l`, port scan `-z`, connexions TCP avec réponses par port |
+| `nmap` | ✅ Scan de ports, détection de services `-sV`, détection OS `-O` |
+| `tcpdump` | ✅ Capture de paquets simulée (requiert root) |
+| `telnet` | ✅ Connexion avec bannières par protocole |
 | `wget` | Simule un téléchargement sans créer de fichier |
 | `nslookup` | Retourne toujours `93.184.216.34` |
 | `dig` | Même comportement que `nslookup` |
@@ -305,15 +312,17 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 
 6. ~~**Simuler les processus**~~ : ✅ Implémenté (`ProcessManager` avec spawn/kill dynamique).
 
-7. **Améliorer netcat/curl** : Implémenter des réponses réseau plus réalistes.
+7. ~~**Améliorer netcat/curl**~~ : ✅ Implémenté (`nc`, `nmap`, `tcpdump`, `telnet`, `curl` amélioré).
 
 ### 8.3 Priorité basse
 
 7. **Protocoles réseau avancés** : DHCP, DNS fonctionnel, TCP connections.
 
-8. **Commandes SSH/SCP simulées** : Pour la connexion entre appareils du réseau.
+8. ~~**Commandes SSH/SCP simulées**~~ : ✅ Implémenté (`ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id`).
 
-9. **Here documents et fonctions shell** : Pour des scripts plus complexes.
+9. ~~**Here documents**~~ : ✅ Implémenté (`<<EOF`, `<<'EOF'`, `<<-EOF`).
+
+10. **Fonctions shell** : Pour des scripts plus complexes avec définition de fonctions.
 
 ---
 
