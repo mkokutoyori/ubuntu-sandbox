@@ -20,7 +20,7 @@ Les problèmes suivants ont été **résolus** :
 | Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
 | SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
 | Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | `7574e9f` |
-| Fonctions shell absentes | Définition et appel de fonctions, arguments positionnels ($1, $@, $#), return | En cours |
+| Fonctions shell absentes | Définition et appel de fonctions, arguments positionnels ($1, $@, $#), return | `7ef1471` |
 
 ---
 
@@ -205,7 +205,7 @@ Le nouveau `ProcessManager` (`src/terminal/processManager.ts`) offre :
 | Substitution de commandes `$(cmd)` | **Partiellement** - ne fonctionne pas dans tous les contextes |
 | Boucles `for`, `while` | ✅ Implémenté |
 | Conditions `if`, `case` | ✅ Implémenté |
-| Fonctions shell | ✅ Implémenté (définition, appel, $1, $@, $#, return) |
+| Fonctions shell | ✅ Implémenté (voir limitations ci-dessous) |
 | Arrays | **Non implémentés** |
 | Arithmetic expansion `$((expr))` | **Non implémenté** |
 | Here documents `<<EOF` | ✅ Implémenté |
@@ -213,7 +213,40 @@ Le nouveau `ProcessManager` (`src/terminal/processManager.ts`) offre :
 | Process substitution `<(cmd)` | **Non implémenté** |
 | Brace expansion `{a,b,c}` | ✅ Implémenté (dans boucles for) |
 
-### 5.3 Variables d'environnement
+### 5.3 Fonctions shell (NOUVEAU)
+
+**Fonctionnalités implémentées** :
+
+```bash
+# Définition de fonction
+greet() { echo "Hello $1"; }
+function sayhi() { echo "Hi"; }
+
+# Appel avec arguments
+greet World           # Hello World
+
+# Arguments positionnels
+$1, $2, ...          # Arguments individuels
+$@, $*               # Tous les arguments
+$#                   # Nombre d'arguments
+$0                   # Nom du script (retourne "bash")
+return [N]           # Retourner avec code de sortie
+```
+
+**Limitations des fonctions** :
+
+| Fonctionnalité | Statut |
+|----------------|--------|
+| `local var=value` | **Non supporté** - variables sont globales |
+| `declare -f` | **Non implémenté** - lister les fonctions |
+| `unset -f name` | **Non implémenté** - supprimer une fonction |
+| `$?` dans fonction | **Non supporté** - dernier exit code |
+| Fonctions récursives | Limitées (pas de protection contre stack overflow) |
+| Arguments avec espaces | Nécessitent des quotes |
+| `shift` | **Non implémenté** |
+| `set --` | **Non implémenté** |
+
+### 5.4 Variables d'environnement
 
 - Export limité (pas de propagation aux sous-processus)
 - `source` / `.` : Non fonctionnel
