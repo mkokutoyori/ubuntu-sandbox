@@ -69,11 +69,16 @@ export function listShellFunctions(): string[] {
 
 /**
  * Get function definition as string (for declare -f)
+ * Format matches real bash output:
+ * name ()
+ * {
+ *     command
+ * }
  */
 export function getFunctionDefinition(name: string): string | null {
   const func = shellFunctions.get(name);
   if (!func) return null;
-  return `${name} () {\n${func.body.map(l => '    ' + l).join('\n')}\n}`;
+  return `${name} () \n{ \n${func.body.map(l => '    ' + l).join('\n')}\n}`;
 }
 
 export interface ScriptContext {
@@ -1058,6 +1063,29 @@ export function executeInlineLoop(
   if (parts.length > 0 && shellFunctions.has(parts[0])) {
     const ctx: ScriptContext = { state, fs, pm, localVars: {} };
     return tryCallFunction(command, ctx);
+  }
+
+  // Handle special builtins: declare -f, unset -f
+  const declareFMatch = command.match(/^declare\s+-f(?:\s+([A-Za-z_][A-Za-z0-9_]*))?$/);
+  if (declareFMatch) {
+    const funcName = declareFMatch[1];
+    if (funcName) {
+      const def = getFunctionDefinition(funcName);
+      if (def) {
+        return { output: def, exitCode: 0 };
+      }
+      return { output: '', error: `declare: ${funcName}: not found`, exitCode: 1 };
+    } else {
+      const funcs = listShellFunctions();
+      const defs = funcs.map(name => getFunctionDefinition(name)).filter(Boolean);
+      return { output: defs.join('\n'), exitCode: 0 };
+    }
+  }
+
+  const unsetFMatch = command.match(/^unset\s+-f\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+  if (unsetFMatch) {
+    unsetShellFunction(unsetFMatch[1]);
+    return { output: '', exitCode: 0 };
   }
 
   return null;

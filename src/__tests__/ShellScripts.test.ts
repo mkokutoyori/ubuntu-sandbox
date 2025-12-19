@@ -526,4 +526,112 @@ ERROR: Timeout`);
       expect(result.output).toContain('Home directory exists');
     });
   });
+
+  describe('Real Bash Behavior Validation', () => {
+    // These tests validate our implementation matches real bash behavior exactly
+    // Based on running: /tmp/test_bash.sh with real bash
+
+    it('$? reflects exit code from true/false commands', () => {
+      // After 'true', $? should be 0
+      const result1 = executeShellCommand('true', state, fs, pm);
+      expect(result1.exitCode).toBe(0);
+      state.lastExitCode = result1.exitCode;
+
+      const check1 = executeShellCommand('echo $?', state, fs, pm);
+      expect(check1.output.trim()).toBe('0');
+
+      // After 'false', $? should be 1
+      const result2 = executeShellCommand('false', state, fs, pm);
+      expect(result2.exitCode).toBe(1);
+      state.lastExitCode = result2.exitCode;
+
+      const check2 = executeShellCommand('echo $?', state, fs, pm);
+      expect(check2.output.trim()).toBe('1');
+    });
+
+    it('shift moves positional arguments correctly', () => {
+      // Real bash: shift moves $2->$1, $3->$2, etc.
+      executeInlineLoop('process_args() { echo $1; shift; echo $1; shift 2; echo $1; }', state, fs, pm);
+
+      const result = executeInlineLoop('process_args a b c d e', state, fs, pm);
+      const lines = result?.output.split('\n') || [];
+
+      // Before shift: $1=a
+      expect(lines[0]).toBe('a');
+      // After shift: $1=b
+      expect(lines[1]).toBe('b');
+      // After shift 2: $1=d
+      expect(lines[2]).toBe('d');
+    });
+
+    it('array indexing works correctly', () => {
+      const script = `
+        arr=(one two three)
+        echo \${arr[0]}
+        echo \${arr[1]}
+        echo \${arr[2]}
+      `;
+      const result = executeScript(script, state, fs, pm);
+      const lines = result.output.split('\n');
+
+      expect(lines[0]).toBe('one');
+      expect(lines[1]).toBe('two');
+      expect(lines[2]).toBe('three');
+    });
+
+    it('${arr[@]} expands to all elements', () => {
+      const script = `
+        arr=(one two three)
+        echo \${arr[@]}
+      `;
+      const result = executeScript(script, state, fs, pm);
+      expect(result.output.trim()).toBe('one two three');
+    });
+
+    it('${#arr[@]} returns array length', () => {
+      const script = `
+        arr=(one two three)
+        echo \${#arr[@]}
+      `;
+      const result = executeScript(script, state, fs, pm);
+      expect(result.output.trim()).toBe('3');
+    });
+
+    it('declare -f output format matches bash', () => {
+      // Define function
+      executeInlineLoop('myfunc() { echo hello; }', state, fs, pm);
+
+      // Get definition
+      const result = executeInlineLoop('declare -f myfunc', state, fs, pm);
+
+      // Bash format:
+      // myfunc ()
+      // {
+      //     echo hello
+      // }
+      expect(result?.output).toContain('myfunc ()');
+      expect(result?.output).toContain('{');
+      expect(result?.output).toContain('echo hello');
+      expect(result?.output).toContain('}');
+    });
+
+    it('unset -f removes function definition', () => {
+      // Define function
+      executeInlineLoop('testfn() { echo test; }', state, fs, pm);
+
+      // Verify it exists
+      const result1 = executeInlineLoop('testfn', state, fs, pm);
+      expect(result1?.output).toBe('test');
+
+      // Unset it
+      const script = `
+        unset -f testfn
+        declare -f testfn
+      `;
+      const result2 = executeScript(script, state, fs, pm);
+
+      // Should not contain the function definition anymore
+      expect(result2.output).not.toContain('testfn');
+    });
+  });
 });
