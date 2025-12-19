@@ -11,11 +11,54 @@ import { FileSystem } from '../filesystem';
 import { PackageManager } from '../packages';
 import { expandVariables } from '../shellUtils';
 
+export interface ShellFunction {
+  name: string;
+  body: string[];
+  params: string[]; // $1, $2, etc. will be filled from call
+}
+
+// Global function registry (persists across commands)
+const shellFunctions: Map<string, ShellFunction> = new Map();
+
+/**
+ * Clear all defined functions (for testing or reset)
+ */
+export function clearShellFunctions(): void {
+  shellFunctions.clear();
+}
+
+/**
+ * Get a defined function by name
+ */
+export function getShellFunction(name: string): ShellFunction | undefined {
+  return shellFunctions.get(name);
+}
+
+/**
+ * Check if a function is defined
+ */
+export function hasShellFunction(name: string): boolean {
+  return shellFunctions.has(name);
+}
+
+/**
+ * Define a shell function
+ * Syntax: function name() { ... } or name() { ... }
+ */
+export function defineShellFunction(name: string, body: string[]): void {
+  shellFunctions.set(name, {
+    name,
+    body,
+    params: [],
+  });
+}
+
 export interface ScriptContext {
   state: TerminalState;
   fs: FileSystem;
   pm: PackageManager;
   localVars: Record<string, string>;
+  positionalArgs?: string[]; // $1, $2, $@, $#, etc.
 }
 
 /**
@@ -85,6 +128,13 @@ function executeLines(lines: string[], ctx: ScriptContext): CommandResult {
       continue;
     }
 
+    // Function definition: function name() { ... } or name() { ... }
+    const funcDefResult = tryParseFunctionDefinition(lines, i, ctx);
+    if (funcDefResult) {
+      i = funcDefResult.nextIndex;
+      continue;
+    }
+
     // Regular command
     const result = executeLineWithVars(line, ctx);
     if (result.output) {
@@ -101,8 +151,10 @@ function executeLines(lines: string[], ctx: ScriptContext): CommandResult {
  * Execute a line with local variable expansion
  */
 function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
+  // Expand positional arguments first ($1, $2, $@, $#, $*)
+  let expandedLine = expandPositionalArgs(line, ctx);
+
   // Expand local variables
-  let expandedLine = line;
   for (const [name, value] of Object.entries(ctx.localVars)) {
     expandedLine = expandedLine.replace(new RegExp(`\\$${name}\\b`, 'g'), value);
     expandedLine = expandedLine.replace(new RegExp(`\\$\\{${name}\\}`, 'g'), value);
@@ -119,7 +171,188 @@ function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
     return { output: '', exitCode: 0 };
   }
 
+  // Handle 'return' statement inside functions
+  const returnMatch = expandedLine.match(/^return(?:\s+(\d+))?$/);
+  if (returnMatch) {
+    const exitCode = returnMatch[1] ? parseInt(returnMatch[1]) : 0;
+    return { output: '', exitCode, error: '__return__' };
+  }
+
+  // Check if line is a function call
+  const funcCallResult = tryCallFunction(expandedLine, ctx);
+  if (funcCallResult !== null) {
+    return funcCallResult;
+  }
+
   return executeShellCommand(expandedLine, ctx.state, ctx.fs, ctx.pm);
+}
+
+/**
+ * Expand positional arguments ($1, $2, $@, $#, $*, $0)
+ */
+function expandPositionalArgs(line: string, ctx: ScriptContext): string {
+  if (!ctx.positionalArgs || ctx.positionalArgs.length === 0) {
+    // Replace with empty if no args
+    return line
+      .replace(/\$@/g, '')
+      .replace(/\$\*/g, '')
+      .replace(/\$#/g, '0')
+      .replace(/\$0/g, 'bash')
+      .replace(/\$(\d+)/g, '');
+  }
+
+  let result = line;
+  const args = ctx.positionalArgs;
+
+  // $# - number of arguments
+  result = result.replace(/\$#/g, args.length.toString());
+
+  // $@ and $* - all arguments (simplified - $@ should quote each arg separately)
+  const allArgs = args.join(' ');
+  result = result.replace(/\$@/g, allArgs);
+  result = result.replace(/\$\*/g, allArgs);
+
+  // $0 - script name (use "bash" as default)
+  result = result.replace(/\$0/g, 'bash');
+
+  // $1, $2, etc. - individual arguments
+  result = result.replace(/\$(\d+)/g, (_, num) => {
+    const index = parseInt(num) - 1;
+    return index >= 0 && index < args.length ? args[index] : '';
+  });
+
+  // ${1}, ${2}, etc.
+  result = result.replace(/\$\{(\d+)\}/g, (_, num) => {
+    const index = parseInt(num) - 1;
+    return index >= 0 && index < args.length ? args[index] : '';
+  });
+
+  return result;
+}
+
+/**
+ * Try to call a shell function
+ */
+function tryCallFunction(line: string, ctx: ScriptContext): CommandResult | null {
+  // Parse the command and arguments
+  const parts = line.trim().split(/\s+/);
+  if (parts.length === 0) return null;
+
+  const funcName = parts[0];
+  const func = shellFunctions.get(funcName);
+
+  if (!func) return null;
+
+  // Get arguments for the function
+  const args = parts.slice(1);
+
+  // Create a new context with positional args
+  const funcCtx: ScriptContext = {
+    state: ctx.state,
+    fs: ctx.fs,
+    pm: ctx.pm,
+    localVars: { ...ctx.localVars },
+    positionalArgs: args,
+  };
+
+  // Execute function body
+  let output = '';
+  let exitCode = 0;
+
+  for (const bodyLine of func.body) {
+    const result = executeLineWithVars(bodyLine, funcCtx);
+    if (result.output) {
+      output += (output ? '\n' : '') + result.output;
+    }
+    exitCode = result.exitCode;
+
+    // Handle return statement
+    if (result.error === '__return__') {
+      break;
+    }
+  }
+
+  return { output, exitCode };
+}
+
+/**
+ * Try to parse a function definition
+ * Syntax:
+ *   function name() { ... }
+ *   function name { ... }
+ *   name() { ... }
+ */
+function tryParseFunctionDefinition(
+  lines: string[],
+  startIndex: number,
+  _ctx: ScriptContext
+): { nextIndex: number } | null {
+  const line = lines[startIndex];
+
+  // Match function definitions:
+  // - function name() {
+  // - function name {
+  // - name() {
+  const funcMatch = line.match(
+    /^(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*\{?\s*$|^function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{?\s*$/
+  );
+
+  if (!funcMatch) return null;
+
+  const funcName = funcMatch[1] || funcMatch[2];
+  if (!funcName) return null;
+
+  // Find opening brace if not on same line
+  let i = startIndex;
+  let foundBrace = line.includes('{');
+
+  if (!foundBrace) {
+    i++;
+    while (i < lines.length) {
+      if (lines[i] === '{') {
+        foundBrace = true;
+        break;
+      } else if (lines[i].trim() !== '') {
+        // Non-empty line that isn't brace - not a function definition
+        return null;
+      }
+      i++;
+    }
+  }
+
+  if (!foundBrace) return null;
+
+  // Now find the matching closing brace
+  const body: string[] = [];
+  let depth = 1;
+  i++;
+
+  while (i < lines.length && depth > 0) {
+    const bodyLine = lines[i];
+
+    // Count braces (simplified - doesn't handle braces in strings)
+    for (const char of bodyLine) {
+      if (char === '{') depth++;
+      if (char === '}') depth--;
+    }
+
+    if (depth > 0) {
+      body.push(bodyLine);
+    } else if (bodyLine.trim() !== '}') {
+      // Line contains } but has other content before it
+      const content = bodyLine.substring(0, bodyLine.lastIndexOf('}'));
+      if (content.trim()) {
+        body.push(content.trim());
+      }
+    }
+
+    i++;
+  }
+
+  // Register the function
+  defineShellFunction(funcName, body);
+
+  return { nextIndex: i };
 }
 
 interface LoopResult extends CommandResult {
@@ -611,6 +844,25 @@ export function executeInlineLoop(
       return executeLineWithVars(elseCmd, ctx);
     }
     return { output: '', exitCode: 0 };
+  }
+
+  // Check if it's an inline function definition: name() { cmd; }
+  const inlineFuncMatch = command.match(
+    /^(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*\{\s*(.+?)\s*\}$/
+  );
+  if (inlineFuncMatch) {
+    const [, funcName, bodyContent] = inlineFuncMatch;
+    // Split body by semicolons
+    const bodyLines = bodyContent.split(/\s*;\s*/).filter(l => l.trim());
+    defineShellFunction(funcName, bodyLines);
+    return { output: '', exitCode: 0 };
+  }
+
+  // Check if it's a function call (defined function)
+  const parts = command.trim().split(/\s+/);
+  if (parts.length > 0 && shellFunctions.has(parts[0])) {
+    const ctx: ScriptContext = { state, fs, pm, localVars: {} };
+    return tryCallFunction(command, ctx);
   }
 
   return null;

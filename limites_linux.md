@@ -20,6 +20,7 @@ Les problèmes suivants ont été **résolus** :
 | Commandes réseau limitées | Ajout de `nc`, `nmap`, `tcpdump`, `telnet` + amélioration de `curl` | `02bd503` |
 | SSH/SCP manquants | Ajout de `ssh`, `scp`, `sftp`, `rsync`, `ssh-keygen`, `ssh-copy-id` | `3c6a64c` |
 | Here documents absents | Support `<<EOF`, `<<'EOF'`, `<<-EOF` avec expansion de variables | `7574e9f` |
+| Fonctions shell absentes | Définition et appel de fonctions, arguments positionnels ($1, $@, $#), return | En cours |
 
 ---
 
@@ -202,15 +203,15 @@ Le nouveau `ProcessManager` (`src/terminal/processManager.ts`) offre :
 | Fonctionnalité | Statut |
 |----------------|--------|
 | Substitution de commandes `$(cmd)` | **Partiellement** - ne fonctionne pas dans tous les contextes |
-| Boucles `for`, `while` | **Non implémentées** |
-| Conditions `if`, `case` | **Non implémentées** |
-| Fonctions shell | **Non implémentées** |
+| Boucles `for`, `while` | ✅ Implémenté |
+| Conditions `if`, `case` | ✅ Implémenté |
+| Fonctions shell | ✅ Implémenté (définition, appel, $1, $@, $#, return) |
 | Arrays | **Non implémentés** |
 | Arithmetic expansion `$((expr))` | **Non implémenté** |
-| Here documents `<<EOF` | **Non implémentés** |
+| Here documents `<<EOF` | ✅ Implémenté |
 | Subshells `(cmd)` | **Non implémentés** |
 | Process substitution `<(cmd)` | **Non implémenté** |
-| Brace expansion `{a,b,c}` | **Non implémenté** |
+| Brace expansion `{a,b,c}` | ✅ Implémenté (dans boucles for) |
 
 ### 5.3 Variables d'environnement
 
@@ -322,7 +323,7 @@ Le composant `Terminal.tsx` utilise les commandes de `terminal/commands/` au lie
 
 9. ~~**Here documents**~~ : ✅ Implémenté (`<<EOF`, `<<'EOF'`, `<<-EOF`).
 
-10. **Fonctions shell** : Pour des scripts plus complexes avec définition de fonctions.
+10. ~~**Fonctions shell**~~ : ✅ Implémenté (définition `function name()`, appel avec arguments, `$1`, `$@`, `$#`, `return`).
 
 ---
 
