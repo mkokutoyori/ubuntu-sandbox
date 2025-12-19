@@ -903,13 +903,90 @@ export class SQLParser {
   private parseCreateUser(): SQLStatement {
     this.advance(); // USER
     const name = this.parseIdentifier();
-    return { type: 'CREATE_USER', name } as any;
+
+    let password: string | undefined;
+    let defaultTablespace: string | undefined;
+    let temporaryTablespace: string | undefined;
+    let profile: string | undefined;
+    let accountLocked = false;
+    let passwordExpire = false;
+    const quotas: { tablespace: string; value: number | 'UNLIMITED' }[] = [];
+
+    // Parse optional clauses
+    while (!this.isAtEnd() && !this.check(SQLTokenType.SEMICOLON)) {
+      if (this.match(SQLTokenType.IDENTIFIED)) {
+        this.expect(SQLTokenType.BY);
+        password = this.parseIdentifierOrString();
+      } else if (this.match(SQLTokenType.DEFAULT)) {
+        this.expect(SQLTokenType.TABLESPACE);
+        defaultTablespace = this.parseIdentifier();
+      } else if (this.check(SQLTokenType.TEMPORARY) && this.peek(1)?.type === SQLTokenType.TABLESPACE) {
+        this.advance(); // TEMPORARY
+        this.advance(); // TABLESPACE
+        temporaryTablespace = this.parseIdentifier();
+      } else if (this.match(SQLTokenType.PROFILE)) {
+        profile = this.parseIdentifier();
+      } else if (this.match(SQLTokenType.QUOTA)) {
+        let value: number | 'UNLIMITED';
+        if (this.match(SQLTokenType.UNLIMITED)) {
+          value = 'UNLIMITED';
+        } else {
+          value = parseInt(this.advance().value, 10);
+          // Skip size units like M, G, K
+          if (this.check(SQLTokenType.IDENTIFIER)) {
+            this.advance();
+          }
+        }
+        this.expect(SQLTokenType.ON);
+        const tablespace = this.parseIdentifier();
+        quotas.push({ tablespace, value });
+      } else if (this.match(SQLTokenType.ACCOUNT)) {
+        if (this.match(SQLTokenType.LOCK)) {
+          accountLocked = true;
+        } else if (this.match(SQLTokenType.UNLOCK)) {
+          accountLocked = false;
+        }
+      } else if (this.match(SQLTokenType.PASSWORD)) {
+        this.expect(SQLTokenType.EXPIRE);
+        passwordExpire = true;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      type: 'CREATE_USER',
+      name,
+      password,
+      defaultTablespace,
+      temporaryTablespace,
+      profile,
+      accountLocked,
+      passwordExpire,
+      quotas
+    } as any;
   }
 
   private parseCreateRole(): SQLStatement {
     this.advance(); // ROLE
     const name = this.parseIdentifier();
-    return { type: 'CREATE_ROLE', name } as any;
+
+    let password: string | undefined;
+    if (this.match(SQLTokenType.IDENTIFIED)) {
+      this.expect(SQLTokenType.BY);
+      password = this.parseIdentifierOrString();
+    }
+
+    return { type: 'CREATE_ROLE', name, password } as any;
+  }
+
+  private parseIdentifierOrString(): string {
+    if (this.check(SQLTokenType.STRING_LITERAL)) {
+      const token = this.advance();
+      // Remove quotes from string literal
+      return token.value.slice(1, -1);
+    }
+    return this.parseIdentifier();
   }
 
   private parseCreateSchema(): SQLStatement {
@@ -938,9 +1015,81 @@ export class SQLParser {
   // ALTER statement
   private parseAlter(): SQLStatement {
     this.expect(SQLTokenType.ALTER);
-    const objectType = this.advance().value;
+    const objectType = this.advance().value.toUpperCase();
+
+    if (objectType === 'USER') {
+      return this.parseAlterUser();
+    }
+
     const name = this.parseIdentifier();
     return { type: `ALTER_${objectType}` as any, name } as any;
+  }
+
+  private parseAlterUser(): SQLStatement {
+    const name = this.parseIdentifier();
+
+    let password: string | undefined;
+    let defaultTablespace: string | undefined;
+    let temporaryTablespace: string | undefined;
+    let profile: string | undefined;
+    let accountLock: boolean | undefined;
+    let accountUnlock: boolean | undefined;
+    let passwordExpire = false;
+    let quota: { tablespace: string; value: number | 'UNLIMITED' } | undefined;
+
+    // Parse optional clauses
+    while (!this.isAtEnd() && !this.check(SQLTokenType.SEMICOLON)) {
+      if (this.match(SQLTokenType.IDENTIFIED)) {
+        this.expect(SQLTokenType.BY);
+        password = this.parseIdentifierOrString();
+      } else if (this.match(SQLTokenType.DEFAULT)) {
+        this.expect(SQLTokenType.TABLESPACE);
+        defaultTablespace = this.parseIdentifier();
+      } else if (this.check(SQLTokenType.TEMPORARY) && this.peek(1)?.type === SQLTokenType.TABLESPACE) {
+        this.advance(); // TEMPORARY
+        this.advance(); // TABLESPACE
+        temporaryTablespace = this.parseIdentifier();
+      } else if (this.match(SQLTokenType.PROFILE)) {
+        profile = this.parseIdentifier();
+      } else if (this.match(SQLTokenType.QUOTA)) {
+        let value: number | 'UNLIMITED';
+        if (this.match(SQLTokenType.UNLIMITED)) {
+          value = 'UNLIMITED';
+        } else {
+          value = parseInt(this.advance().value, 10);
+          if (this.check(SQLTokenType.IDENTIFIER)) {
+            this.advance(); // Skip size unit
+          }
+        }
+        this.expect(SQLTokenType.ON);
+        const tablespace = this.parseIdentifier();
+        quota = { tablespace, value };
+      } else if (this.match(SQLTokenType.ACCOUNT)) {
+        if (this.match(SQLTokenType.LOCK)) {
+          accountLock = true;
+        } else if (this.match(SQLTokenType.UNLOCK)) {
+          accountUnlock = true;
+        }
+      } else if (this.match(SQLTokenType.PASSWORD)) {
+        this.expect(SQLTokenType.EXPIRE);
+        passwordExpire = true;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      type: 'ALTER_USER',
+      name,
+      password,
+      defaultTablespace,
+      temporaryTablespace,
+      profile,
+      accountLock,
+      accountUnlock,
+      passwordExpire,
+      quota
+    } as any;
   }
 
   // TRUNCATE statement
@@ -951,35 +1100,160 @@ export class SQLParser {
     return { type: 'TRUNCATE', table } as any;
   }
 
-  // GRANT statement
+  // GRANT statement - handles system privileges, object privileges, and roles
   private parseGrant(): SQLStatement {
     this.expect(SQLTokenType.GRANT);
+
+    // Parse privilege(s) or role name(s)
     const privileges: string[] = [];
     do {
-      privileges.push(this.advance().value);
+      // Handle multi-word privileges like "CREATE SESSION", "SELECT ANY TABLE"
+      let priv = this.advance().value.toUpperCase();
+      // Check for compound privileges
+      while (this.check(SQLTokenType.IDENTIFIER) || this.check(SQLTokenType.SESSION) ||
+             this.check(SQLTokenType.TABLE) || this.check(SQLTokenType.USER) ||
+             this.check(SQLTokenType.ROLE) || this.check(SQLTokenType.VIEW) ||
+             this.check(SQLTokenType.SEQUENCE) || this.check(SQLTokenType.PROCEDURE)) {
+        if (this.check(SQLTokenType.ON) || this.check(SQLTokenType.TO) || this.check(SQLTokenType.COMMA)) {
+          break;
+        }
+        priv += ' ' + this.advance().value.toUpperCase();
+      }
+      privileges.push(priv);
     } while (this.match(SQLTokenType.COMMA));
-    this.expect(SQLTokenType.ON);
-    const objectType = this.advance().value;
-    const objectName = this.parseIdentifier();
+
+    // Check if this is a system privilege grant (GRANT priv TO user)
+    // or object privilege grant (GRANT priv ON obj TO user)
+    // or role grant (GRANT role TO user)
+    let objectOwner: string | undefined;
+    let objectName: string | undefined;
+    let objectType: string | undefined;
+    let isRoleGrant = false;
+
+    if (this.match(SQLTokenType.ON)) {
+      // Object privilege: GRANT SELECT ON table TO user
+      objectType = 'TABLE'; // default
+      const firstPart = this.parseIdentifier();
+      if (this.match(SQLTokenType.DOT)) {
+        objectOwner = firstPart;
+        objectName = this.parseIdentifier();
+      } else {
+        objectName = firstPart;
+      }
+    } else {
+      // Could be a system privilege or role grant
+      // We'll determine this based on context (roles have no "ANY" or "SESSION" etc.)
+      isRoleGrant = !privileges.some(p =>
+        p.includes('SESSION') || p.includes('ANY') || p.includes('CREATE') ||
+        p.includes('ALTER') || p.includes('DROP') || p.includes('SELECT') ||
+        p.includes('INSERT') || p.includes('UPDATE') || p.includes('DELETE') ||
+        p.includes('GRANT') || p.includes('EXECUTE') || p.includes('UNLIMITED')
+      );
+    }
+
     this.expect(SQLTokenType.TO);
-    const grantee = this.parseIdentifier();
-    const withGrantOption = this.match(SQLTokenType.WITH) && this.match(SQLTokenType.GRANT) && this.match(SQLTokenType.OPTION);
-    return { type: 'GRANT', privileges, objectType, objectName, grantee, withGrantOption } as any;
+
+    // Parse grantee(s)
+    const grantees: string[] = [];
+    do {
+      if (this.match(SQLTokenType.PUBLIC)) {
+        grantees.push('PUBLIC');
+      } else {
+        grantees.push(this.parseIdentifier());
+      }
+    } while (this.match(SQLTokenType.COMMA));
+
+    // Check for WITH ADMIN OPTION or WITH GRANT OPTION
+    let withAdminOption = false;
+    let withGrantOption = false;
+    if (this.match(SQLTokenType.WITH)) {
+      if (this.match(SQLTokenType.ADMIN)) {
+        this.expect(SQLTokenType.OPTION);
+        withAdminOption = true;
+      } else if (this.match(SQLTokenType.GRANT)) {
+        this.expect(SQLTokenType.OPTION);
+        withGrantOption = true;
+      }
+    }
+
+    return {
+      type: 'GRANT',
+      privileges,
+      objectOwner,
+      objectName,
+      objectType,
+      grantees,
+      grantee: grantees[0], // backward compatibility
+      isRoleGrant,
+      withAdminOption,
+      withGrantOption
+    } as any;
   }
 
   // REVOKE statement
   private parseRevoke(): SQLStatement {
     this.expect(SQLTokenType.REVOKE);
+
+    // Parse privilege(s) or role name(s)
     const privileges: string[] = [];
     do {
-      privileges.push(this.advance().value);
+      let priv = this.advance().value.toUpperCase();
+      while (this.check(SQLTokenType.IDENTIFIER) || this.check(SQLTokenType.SESSION) ||
+             this.check(SQLTokenType.TABLE) || this.check(SQLTokenType.USER) ||
+             this.check(SQLTokenType.ROLE) || this.check(SQLTokenType.VIEW) ||
+             this.check(SQLTokenType.SEQUENCE) || this.check(SQLTokenType.PROCEDURE)) {
+        if (this.check(SQLTokenType.ON) || this.check(SQLTokenType.FROM) || this.check(SQLTokenType.COMMA)) {
+          break;
+        }
+        priv += ' ' + this.advance().value.toUpperCase();
+      }
+      privileges.push(priv);
     } while (this.match(SQLTokenType.COMMA));
-    this.expect(SQLTokenType.ON);
-    const objectType = this.advance().value;
-    const objectName = this.parseIdentifier();
+
+    let objectOwner: string | undefined;
+    let objectName: string | undefined;
+    let objectType: string | undefined;
+    let isRoleRevoke = false;
+
+    if (this.match(SQLTokenType.ON)) {
+      objectType = 'TABLE';
+      const firstPart = this.parseIdentifier();
+      if (this.match(SQLTokenType.DOT)) {
+        objectOwner = firstPart;
+        objectName = this.parseIdentifier();
+      } else {
+        objectName = firstPart;
+      }
+    } else {
+      isRoleRevoke = !privileges.some(p =>
+        p.includes('SESSION') || p.includes('ANY') || p.includes('CREATE') ||
+        p.includes('ALTER') || p.includes('DROP') || p.includes('SELECT') ||
+        p.includes('INSERT') || p.includes('UPDATE') || p.includes('DELETE') ||
+        p.includes('GRANT') || p.includes('EXECUTE') || p.includes('UNLIMITED')
+      );
+    }
+
     this.expect(SQLTokenType.FROM);
-    const grantee = this.parseIdentifier();
-    return { type: 'REVOKE', privileges, objectType, objectName, grantee } as any;
+
+    const grantees: string[] = [];
+    do {
+      if (this.match(SQLTokenType.PUBLIC)) {
+        grantees.push('PUBLIC');
+      } else {
+        grantees.push(this.parseIdentifier());
+      }
+    } while (this.match(SQLTokenType.COMMA));
+
+    return {
+      type: 'REVOKE',
+      privileges,
+      objectOwner,
+      objectName,
+      objectType,
+      grantees,
+      grantee: grantees[0],
+      isRoleRevoke
+    } as any;
   }
 
   // Transaction statements
