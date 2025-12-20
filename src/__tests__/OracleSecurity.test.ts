@@ -773,5 +773,383 @@ describe('Oracle Security Module', () => {
         expect(removed).toBe(true);
       });
     });
+
+    // ============================================================================
+    // Password Policy Tests
+    // ============================================================================
+    describe('Password Policy', () => {
+      describe('Password Verification Functions (PASSWORD_VERIFY_FUNC$)', () => {
+        it('should have default password verification functions', () => {
+          const functions = secMgr.getAllPasswordVerifyFunctions();
+          expect(functions.length).toBeGreaterThanOrEqual(3);
+
+          const funcNames = functions.map((f: any) => f.FUNCTION_NAME);
+          expect(funcNames).toContain('ORA12C_VERIFY_FUNCTION');
+          expect(funcNames).toContain('ORA12C_STRONG_VERIFY_FUNCTION');
+          expect(funcNames).toContain('VERIFY_FUNCTION_11G');
+        });
+
+        it('should get specific password verification function', () => {
+          const func = secMgr.getPasswordVerifyFunction('ORA12C_VERIFY_FUNCTION');
+          expect(func).toBeDefined();
+          expect(func.MIN_LENGTH).toBe(8);
+          expect(func.REQUIRE_UPPERCASE).toBe('Y');
+          expect(func.REQUIRE_LOWERCASE).toBe('Y');
+          expect(func.REQUIRE_DIGIT).toBe('Y');
+        });
+
+        it('should create custom password verification function', () => {
+          const result = secMgr.createPasswordVerifyFunction('CUSTOM_VERIFY', {
+            minLength: 12,
+            maxLength: 40,
+            requireUppercase: true,
+            requireLowercase: true,
+            requireDigit: true,
+            requireSpecial: true,
+            specialChars: '!@#$%',
+            differFromPrevious: 5
+          });
+          expect(result.success).toBe(true);
+
+          const func = secMgr.getPasswordVerifyFunction('CUSTOM_VERIFY');
+          expect(func).toBeDefined();
+          expect(func.MIN_LENGTH).toBe(12);
+          expect(func.REQUIRE_SPECIAL).toBe('Y');
+        });
+
+        it('should prevent duplicate function names', () => {
+          secMgr.createPasswordVerifyFunction('DUP_FUNC', {});
+          const result = secMgr.createPasswordVerifyFunction('DUP_FUNC', {});
+          expect(result.success).toBe(false);
+          expect(result.error?.message).toContain('ORA-00955');
+        });
+      });
+
+      describe('Password Complexity Verification', () => {
+        it('should validate password length', () => {
+          const result = secMgr.verifyPasswordComplexity('Short1', 'TESTUSER', 'ORA12C_VERIFY_FUNCTION');
+          expect(result.valid).toBe(false);
+          expect(result.errors.some(e => e.includes('at least 8 characters'))).toBe(true);
+        });
+
+        it('should validate uppercase requirement', () => {
+          const result = secMgr.verifyPasswordComplexity('password123', 'TESTUSER', 'ORA12C_VERIFY_FUNCTION');
+          expect(result.valid).toBe(false);
+          expect(result.errors.some(e => e.includes('uppercase'))).toBe(true);
+        });
+
+        it('should validate lowercase requirement', () => {
+          const result = secMgr.verifyPasswordComplexity('PASSWORD123', 'TESTUSER', 'ORA12C_VERIFY_FUNCTION');
+          expect(result.valid).toBe(false);
+          expect(result.errors.some(e => e.includes('lowercase'))).toBe(true);
+        });
+
+        it('should validate digit requirement', () => {
+          const result = secMgr.verifyPasswordComplexity('PasswordABC', 'TESTUSER', 'ORA12C_VERIFY_FUNCTION');
+          expect(result.valid).toBe(false);
+          expect(result.errors.some(e => e.includes('digit'))).toBe(true);
+        });
+
+        it('should reject password containing username', () => {
+          const result = secMgr.verifyPasswordComplexity('TestUser123', 'TESTUSER', 'ORA12C_VERIFY_FUNCTION');
+          expect(result.valid).toBe(false);
+          expect(result.errors.some(e => e.includes('cannot contain the username'))).toBe(true);
+        });
+
+        it('should accept valid password', () => {
+          const result = secMgr.verifyPasswordComplexity('SecurePass123', 'JOHN', 'ORA12C_VERIFY_FUNCTION');
+          expect(result.valid).toBe(true);
+          expect(result.errors.length).toBe(0);
+        });
+
+        it('should allow any password when no function specified', () => {
+          const result = secMgr.verifyPasswordComplexity('weak', 'TESTUSER', null as any);
+          expect(result.valid).toBe(true);
+        });
+
+        it('should validate special character requirement', () => {
+          secMgr.createPasswordVerifyFunction('SPECIAL_REQ', {
+            minLength: 8,
+            requireSpecial: true
+          });
+
+          const invalid = secMgr.verifyPasswordComplexity('Password123', 'TESTUSER', 'SPECIAL_REQ');
+          expect(invalid.valid).toBe(false);
+          expect(invalid.errors.some(e => e.includes('special character'))).toBe(true);
+
+          const valid = secMgr.verifyPasswordComplexity('Password123!', 'TESTUSER', 'SPECIAL_REQ');
+          expect(valid.valid).toBe(true);
+        });
+      });
+
+      describe('Password History (PASSWORD_HISTORY$)', () => {
+        it('should add password to history', () => {
+          secMgr.addPasswordToHistory(999, 'HISTUSER', 'hash1');
+          secMgr.addPasswordToHistory(999, 'HISTUSER', 'hash2');
+
+          const history = secMgr.getPasswordHistory('HISTUSER');
+          expect(history.length).toBe(2);
+          // Both hashes should be present
+          const hashes = history.map((h: any) => h.PASSWORD_HASH);
+          expect(hashes).toContain('hash1');
+          expect(hashes).toContain('hash2');
+        });
+
+        it('should check password reuse', () => {
+          // Create user with secure profile
+          secMgr.createUser('REUSETEST', 'Password123', { profile: 'SECURE_PROFILE' });
+
+          // Add some passwords to history
+          const user = secMgr.getUser('REUSETEST');
+          secMgr.addPasswordToHistory(user.USER_ID, 'REUSETEST', 'oldhash1');
+          secMgr.addPasswordToHistory(user.USER_ID, 'REUSETEST', 'oldhash2');
+
+          // Check reuse - should be detected since SECURE_PROFILE has PASSWORD_REUSE_MAX=10
+          const reuseCheck = secMgr.isPasswordReused('REUSETEST', 'oldhash1');
+          expect(reuseCheck.reused).toBe(true);
+          expect(reuseCheck.reason).toContain('ORA-28007');
+        });
+
+        it('should allow password reuse when profile allows it', () => {
+          // Default profile has UNLIMITED reuse
+          secMgr.createUser('ALLOWREUSE', 'Password123');
+
+          const user = secMgr.getUser('ALLOWREUSE');
+          secMgr.addPasswordToHistory(user.USER_ID, 'ALLOWREUSE', 'oldhash');
+
+          const reuseCheck = secMgr.isPasswordReused('ALLOWREUSE', 'oldhash');
+          expect(reuseCheck.reused).toBe(false);
+        });
+      });
+
+      describe('Profile Password Settings', () => {
+        it('should get profile password settings', () => {
+          const settings = secMgr.getProfilePasswordSettings('SECURE_PROFILE');
+          expect(settings['FAILED_LOGIN_ATTEMPTS']).toBe('3');
+          expect(settings['PASSWORD_LIFE_TIME']).toBe('60');
+          expect(settings['PASSWORD_VERIFY_FUNCTION']).toBe('ORA12C_VERIFY_FUNCTION');
+        });
+
+        it('should alter profile password setting', () => {
+          const result = secMgr.alterProfilePasswordSetting('DEFAULT', 'PASSWORD_LIFE_TIME', '90');
+          expect(result.success).toBe(true);
+
+          const settings = secMgr.getProfilePasswordSettings('DEFAULT');
+          expect(settings['PASSWORD_LIFE_TIME']).toBe('90');
+        });
+
+        it('should get user password verify function', () => {
+          secMgr.createUser('SECUREUSER', 'Password123', { profile: 'SECURE_PROFILE' });
+
+          const funcName = secMgr.getUserPasswordVerifyFunction('SECUREUSER');
+          expect(funcName).toBe('ORA12C_VERIFY_FUNCTION');
+        });
+      });
+    });
+
+    // ============================================================================
+    // Fine-Grained Auditing Tests
+    // ============================================================================
+    describe('Fine-Grained Auditing (FGA)', () => {
+      describe('FGA Policies (FGA_POLICY$)', () => {
+        it('should create FGA policy', () => {
+          const result = secMgr.addFGAPolicy('HR', 'EMPLOYEES', 'SALARY_AUDIT', {
+            auditColumn: 'SALARY',
+            auditCondition: 'SALARY > 100000',
+            statementTypes: 'SELECT,UPDATE',
+            enable: true
+          });
+          expect(result.success).toBe(true);
+
+          const policies = secMgr.getFGAPolicies('HR', 'EMPLOYEES');
+          expect(policies.length).toBe(1);
+          expect(policies[0].POLICY_NAME).toBe('SALARY_AUDIT');
+          expect(policies[0].POLICY_COLUMN).toBe('SALARY');
+          expect(policies[0].ENABLED).toBe('YES');
+        });
+
+        it('should prevent duplicate policy names', () => {
+          secMgr.addFGAPolicy('HR', 'DEPARTMENTS', 'DUP_POLICY', {});
+          const result = secMgr.addFGAPolicy('HR', 'OTHER', 'DUP_POLICY', {});
+          expect(result.success).toBe(false);
+          expect(result.error?.message).toContain('ORA-28101');
+        });
+
+        it('should enable/disable FGA policy', () => {
+          secMgr.addFGAPolicy('SCOTT', 'TEST_TABLE', 'TOGGLE_POLICY', { enable: true });
+
+          secMgr.setFGAPolicyEnabled('TOGGLE_POLICY', false);
+          let policies = secMgr.getFGAPolicies('SCOTT', 'TEST_TABLE');
+          expect(policies[0].ENABLED).toBe('NO');
+
+          secMgr.setFGAPolicyEnabled('TOGGLE_POLICY', true);
+          policies = secMgr.getFGAPolicies('SCOTT', 'TEST_TABLE');
+          expect(policies[0].ENABLED).toBe('YES');
+        });
+
+        it('should drop FGA policy', () => {
+          secMgr.addFGAPolicy('SCOTT', 'DROP_TABLE', 'DROP_POLICY', {});
+
+          const dropResult = secMgr.dropFGAPolicy('SCOTT', 'DROP_TABLE', 'DROP_POLICY');
+          expect(dropResult.success).toBe(true);
+
+          const policies = secMgr.getFGAPolicies('SCOTT', 'DROP_TABLE');
+          expect(policies.length).toBe(0);
+        });
+
+        it('should return error when dropping non-existent policy', () => {
+          const result = secMgr.dropFGAPolicy('SCOTT', 'TABLE', 'NONEXISTENT');
+          expect(result.success).toBe(false);
+          expect(result.error?.message).toContain('ORA-28102');
+        });
+      });
+
+      describe('FGA Audit Log (FGA_LOG$)', () => {
+        it('should log FGA events', () => {
+          secMgr.addFGAPolicy('SALES', 'ORDERS', 'ORDER_AUDIT', { enable: true });
+
+          secMgr.logFGAEvent('ORDER_AUDIT', 'SALES', 'ORDERS', 'SELECT * FROM ORDERS WHERE AMOUNT > 10000', {
+            dbUser: 'SCOTT',
+            osUser: 'oracle',
+            statementType: 'SELECT',
+            sessionId: 100
+          });
+
+          const logs = secMgr.getFGAAuditTrail({ policyName: 'ORDER_AUDIT' });
+          expect(logs.length).toBeGreaterThan(0);
+          expect(logs[0].DB_USER).toBe('SCOTT');
+          expect(logs[0].STATEMENT_TYPE).toBe('SELECT');
+        });
+
+        it('should filter FGA audit trail', () => {
+          secMgr.logFGAEvent('TEST_POLICY', 'HR', 'EMPLOYEES', 'SELECT SALARY FROM EMPLOYEES', {
+            dbUser: 'ADMIN',
+            statementType: 'SELECT'
+          });
+
+          secMgr.logFGAEvent('TEST_POLICY', 'HR', 'EMPLOYEES', 'UPDATE EMPLOYEES SET SALARY = 50000', {
+            dbUser: 'MANAGER',
+            statementType: 'UPDATE'
+          });
+
+          const adminLogs = secMgr.getFGAAuditTrail({ dbUser: 'ADMIN' });
+          expect(adminLogs.length).toBeGreaterThan(0);
+          expect(adminLogs[0].DB_USER).toBe('ADMIN');
+
+          const hrLogs = secMgr.getFGAAuditTrail({ objectSchema: 'HR' });
+          expect(hrLogs.length).toBeGreaterThanOrEqual(2);
+        });
+      });
+    });
+
+    // ============================================================================
+    // Unified Audit Tests
+    // ============================================================================
+    describe('Unified Audit', () => {
+      describe('Unified Audit Policies (UNIFIED_AUDIT_POLICY$)', () => {
+        it('should create unified audit policy', () => {
+          const result = secMgr.createUnifiedAuditPolicy('ALL_LOGON_POLICY', {
+            auditOption: 'LOGON',
+            auditOptionType: 'STANDARD ACTION'
+          });
+          expect(result.success).toBe(true);
+
+          const policies = secMgr.getUnifiedAuditPolicies();
+          const policy = policies.find((p: any) => p.POLICY_NAME === 'ALL_LOGON_POLICY');
+          expect(policy).toBeDefined();
+          expect(policy.ENABLED).toBe('NO');
+        });
+
+        it('should prevent duplicate policy names', () => {
+          secMgr.createUnifiedAuditPolicy('DUP_UNIFIED', {});
+          const result = secMgr.createUnifiedAuditPolicy('DUP_UNIFIED', {});
+          expect(result.success).toBe(false);
+          expect(result.error?.message).toContain('ORA-46358');
+        });
+
+        it('should enable/disable unified audit policy', () => {
+          secMgr.createUnifiedAuditPolicy('TOGGLE_UNIFIED', {});
+
+          const enableResult = secMgr.enableUnifiedAuditPolicy('TOGGLE_UNIFIED', 'SYS');
+          expect(enableResult.success).toBe(true);
+
+          let policies = secMgr.getUnifiedAuditPolicies(true);
+          expect(policies.some((p: any) => p.POLICY_NAME === 'TOGGLE_UNIFIED')).toBe(true);
+
+          const disableResult = secMgr.disableUnifiedAuditPolicy('TOGGLE_UNIFIED');
+          expect(disableResult.success).toBe(true);
+
+          policies = secMgr.getUnifiedAuditPolicies(true);
+          expect(policies.some((p: any) => p.POLICY_NAME === 'TOGGLE_UNIFIED')).toBe(false);
+        });
+
+        it('should drop unified audit policy', () => {
+          secMgr.createUnifiedAuditPolicy('DROP_UNIFIED', {});
+
+          const result = secMgr.dropUnifiedAuditPolicy('DROP_UNIFIED');
+          expect(result.success).toBe(true);
+
+          const policies = secMgr.getUnifiedAuditPolicies();
+          expect(policies.some((p: any) => p.POLICY_NAME === 'DROP_UNIFIED')).toBe(false);
+        });
+
+        it('should return error when policy does not exist', () => {
+          const dropResult = secMgr.dropUnifiedAuditPolicy('NONEXISTENT');
+          expect(dropResult.success).toBe(false);
+          expect(dropResult.error?.message).toContain('ORA-46355');
+
+          const enableResult = secMgr.enableUnifiedAuditPolicy('NONEXISTENT', 'SYS');
+          expect(enableResult.success).toBe(false);
+        });
+      });
+
+      describe('Unified Audit Trail (UNIFIED_AUDIT_TRAIL$)', () => {
+        it('should log unified audit events', () => {
+          secMgr.logUnifiedAuditEvent('CREATE_USER', {
+            policies: ['USER_MGMT_POLICY'],
+            objectSchema: 'SYS',
+            dbUsername: 'SYS',
+            targetUser: 'NEWUSER',
+            returnCode: 0,
+            privilegeUsed: 'CREATE USER'
+          });
+
+          const trail = secMgr.getUnifiedAuditTrail({ action: 'CREATE_USER' });
+          expect(trail.length).toBeGreaterThan(0);
+          expect(trail[0].TARGET_USER).toBe('NEWUSER');
+          expect(trail[0].SYSTEM_PRIVILEGE_USED).toBe('CREATE USER');
+        });
+
+        it('should filter unified audit trail by user', () => {
+          secMgr.logUnifiedAuditEvent('SELECT', {
+            dbUsername: 'SCOTT',
+            objectSchema: 'HR',
+            objectName: 'EMPLOYEES',
+            sqlText: 'SELECT * FROM EMPLOYEES'
+          });
+
+          secMgr.logUnifiedAuditEvent('SELECT', {
+            dbUsername: 'HR',
+            objectSchema: 'HR',
+            objectName: 'DEPARTMENTS',
+            sqlText: 'SELECT * FROM DEPARTMENTS'
+          });
+
+          const scottTrail = secMgr.getUnifiedAuditTrail({ dbUsername: 'SCOTT' });
+          expect(scottTrail.every((t: any) => t.DBUSERNAME === 'SCOTT')).toBe(true);
+        });
+
+        it('should filter unified audit trail by policy', () => {
+          secMgr.logUnifiedAuditEvent('LOGON', {
+            policies: ['LOGON_POLICY', 'SECURITY_POLICY'],
+            dbUsername: 'ADMIN'
+          });
+
+          const trail = secMgr.getUnifiedAuditTrail({ policyName: 'LOGON_POLICY' });
+          expect(trail.length).toBeGreaterThan(0);
+          expect(trail[0].UNIFIED_AUDIT_POLICIES).toContain('LOGON_POLICY');
+        });
+      });
+    });
   });
 });

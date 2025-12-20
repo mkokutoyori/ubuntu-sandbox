@@ -162,6 +162,99 @@ CREATE TABLE SYS.AUDIT$ (
   FAILURE VARCHAR(10),
   PRIMARY KEY (AUDIT_OPTION)
 );
+
+-- Password history (for password reuse prevention)
+CREATE TABLE SYS.PASSWORD_HISTORY$ (
+  USER_ID INTEGER NOT NULL,
+  USERNAME VARCHAR(128) NOT NULL,
+  PASSWORD_HASH VARCHAR(256) NOT NULL,
+  PASSWORD_DATE TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (USER_ID, PASSWORD_HASH)
+);
+
+-- Password verification functions (maps to DBA_USERS.PASSWORD_VERIFY_FUNCTION)
+CREATE TABLE SYS.PASSWORD_VERIFY_FUNC$ (
+  FUNCTION_NAME VARCHAR(128) PRIMARY KEY,
+  MIN_LENGTH INTEGER DEFAULT 8,
+  MAX_LENGTH INTEGER DEFAULT 30,
+  REQUIRE_UPPERCASE VARCHAR(1) DEFAULT 'Y',
+  REQUIRE_LOWERCASE VARCHAR(1) DEFAULT 'Y',
+  REQUIRE_DIGIT VARCHAR(1) DEFAULT 'Y',
+  REQUIRE_SPECIAL VARCHAR(1) DEFAULT 'N',
+  SPECIAL_CHARS VARCHAR(128) DEFAULT '!@#$%^&*()_+-=[]{}|;:,.<>?',
+  NO_USERNAME VARCHAR(1) DEFAULT 'Y',
+  NO_REVERSE_USERNAME VARCHAR(1) DEFAULT 'Y',
+  NO_SERVER_NAME VARCHAR(1) DEFAULT 'Y',
+  DIFFER_FROM_PREVIOUS INTEGER DEFAULT 3,
+  CREATED TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fine-Grained Auditing policies (maps to DBA_AUDIT_POLICIES)
+CREATE TABLE SYS.FGA_POLICY$ (
+  POLICY_NAME VARCHAR(128) PRIMARY KEY,
+  OBJECT_SCHEMA VARCHAR(128) NOT NULL,
+  OBJECT_NAME VARCHAR(128) NOT NULL,
+  POLICY_COLUMN VARCHAR(128),
+  POLICY_CONDITION VARCHAR(4000),
+  ENABLED VARCHAR(3) DEFAULT 'YES',
+  STATEMENT_TYPES VARCHAR(128) DEFAULT 'SELECT',
+  AUDIT_TRAIL VARCHAR(32) DEFAULT 'DB',
+  AUDIT_COLUMN_OPTS VARCHAR(32) DEFAULT 'ANY_COLUMNS',
+  CREATED TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fine-Grained Auditing log (maps to DBA_FGA_AUDIT_TRAIL)
+CREATE TABLE SYS.FGA_LOG$ (
+  FGA_ID INTEGER PRIMARY KEY,
+  SESSION_ID INTEGER,
+  EVENT_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  DB_USER VARCHAR(128),
+  OS_USER VARCHAR(255),
+  CLIENT_ID VARCHAR(255),
+  POLICY_NAME VARCHAR(128),
+  OBJECT_SCHEMA VARCHAR(128),
+  OBJECT_NAME VARCHAR(128),
+  SQL_TEXT VARCHAR(4000),
+  SQL_BIND VARCHAR(4000),
+  STATEMENT_TYPE VARCHAR(32),
+  EXTENDED_TIMESTAMP TIMESTAMP
+);
+
+-- Unified audit policies (maps to AUDIT_UNIFIED_POLICIES)
+CREATE TABLE SYS.UNIFIED_AUDIT_POLICY$ (
+  POLICY_NAME VARCHAR(128) PRIMARY KEY,
+  AUDIT_CONDITION VARCHAR(4000),
+  AUDIT_OPTION VARCHAR(128),
+  AUDIT_OPTION_TYPE VARCHAR(32),
+  OBJECT_SCHEMA VARCHAR(128),
+  OBJECT_NAME VARCHAR(128),
+  OBJECT_TYPE VARCHAR(32),
+  ENABLED VARCHAR(3) DEFAULT 'NO',
+  ENABLED_BY VARCHAR(128),
+  ENABLED_DATE TIMESTAMP
+);
+
+-- Unified audit trail (maps to UNIFIED_AUDIT_TRAIL)
+CREATE TABLE SYS.UNIFIED_AUDIT_TRAIL$ (
+  AUDIT_ID INTEGER PRIMARY KEY,
+  UNIFIED_AUDIT_POLICIES VARCHAR(4000),
+  FGA_POLICY_NAME VARCHAR(128),
+  ACTION_NAME VARCHAR(128),
+  OBJECT_SCHEMA VARCHAR(128),
+  OBJECT_NAME VARCHAR(128),
+  SQL_TEXT VARCHAR(4000),
+  SQL_BINDS VARCHAR(4000),
+  DBUSERNAME VARCHAR(128),
+  OS_USERNAME VARCHAR(255),
+  CLIENT_PROGRAM_NAME VARCHAR(128),
+  EVENT_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  RETURN_CODE INTEGER DEFAULT 0,
+  SESSION_ID INTEGER,
+  AUTHENTICATION_TYPE VARCHAR(32),
+  SYSTEM_PRIVILEGE_USED VARCHAR(128),
+  TARGET_USER VARCHAR(128),
+  ROLE_NAME VARCHAR(128)
+);
 `;
 
 // ============================================================================
@@ -172,28 +265,87 @@ function getInitialDataSQL(): string[] {
   const statements: string[] = [];
   const now = new Date().toISOString();
 
-  // Create profiles
+  // Create profiles with password policies
   const profileSettings = [
-    { profile: 'DEFAULT', resource: 'SESSIONS_PER_USER', value: 'UNLIMITED' },
-    { profile: 'DEFAULT', resource: 'CPU_PER_SESSION', value: 'UNLIMITED' },
-    { profile: 'DEFAULT', resource: 'CONNECT_TIME', value: 'UNLIMITED' },
-    { profile: 'DEFAULT', resource: 'IDLE_TIME', value: 'UNLIMITED' },
-    { profile: 'DEFAULT', resource: 'FAILED_LOGIN_ATTEMPTS', value: '10' },
-    { profile: 'DEFAULT', resource: 'PASSWORD_LIFE_TIME', value: '180' },
-    { profile: 'DEFAULT', resource: 'PASSWORD_REUSE_TIME', value: 'UNLIMITED' },
-    { profile: 'DEFAULT', resource: 'PASSWORD_LOCK_TIME', value: '1' },
-    { profile: 'DEFAULT', resource: 'PASSWORD_GRACE_TIME', value: '7' },
-    { profile: 'SECURE_PROFILE', resource: 'FAILED_LOGIN_ATTEMPTS', value: '3' },
-    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_LIFE_TIME', value: '60' },
-    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_LOCK_TIME', value: '1' },
-    { profile: 'SECURE_PROFILE', resource: 'CONNECT_TIME', value: '480' },
-    { profile: 'SECURE_PROFILE', resource: 'IDLE_TIME', value: '30' },
+    // DEFAULT profile - resource settings
+    { profile: 'DEFAULT', resource: 'SESSIONS_PER_USER', type: 'KERNEL', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'CPU_PER_SESSION', type: 'KERNEL', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'CONNECT_TIME', type: 'KERNEL', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'IDLE_TIME', type: 'KERNEL', value: 'UNLIMITED' },
+    // DEFAULT profile - password settings
+    { profile: 'DEFAULT', resource: 'FAILED_LOGIN_ATTEMPTS', type: 'PASSWORD', value: '10' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_LIFE_TIME', type: 'PASSWORD', value: '180' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_REUSE_TIME', type: 'PASSWORD', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_REUSE_MAX', type: 'PASSWORD', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_LOCK_TIME', type: 'PASSWORD', value: '1' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_GRACE_TIME', type: 'PASSWORD', value: '7' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_VERIFY_FUNCTION', type: 'PASSWORD', value: 'NULL' },
+    // SECURE_PROFILE - stricter settings
+    { profile: 'SECURE_PROFILE', resource: 'FAILED_LOGIN_ATTEMPTS', type: 'PASSWORD', value: '3' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_LIFE_TIME', type: 'PASSWORD', value: '60' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_LOCK_TIME', type: 'PASSWORD', value: '1' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_GRACE_TIME', type: 'PASSWORD', value: '3' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_REUSE_TIME', type: 'PASSWORD', value: '365' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_REUSE_MAX', type: 'PASSWORD', value: '10' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_VERIFY_FUNCTION', type: 'PASSWORD', value: 'ORA12C_VERIFY_FUNCTION' },
+    { profile: 'SECURE_PROFILE', resource: 'CONNECT_TIME', type: 'KERNEL', value: '480' },
+    { profile: 'SECURE_PROFILE', resource: 'IDLE_TIME', type: 'KERNEL', value: '30' },
   ];
 
   for (const p of profileSettings) {
     statements.push(
       `INSERT INTO PROFILE$ (PROFILE_NAME, RESOURCE_NAME, RESOURCE_TYPE, LIMIT_VALUE) ` +
-      `VALUES ('${p.profile}', '${p.resource}', 'PASSWORD', '${p.value}')`
+      `VALUES ('${p.profile}', '${p.resource}', '${p.type}', '${p.value}')`
+    );
+  }
+
+  // Create password verification functions
+  const passwordVerifyFunctions = [
+    {
+      name: 'ORA12C_VERIFY_FUNCTION',
+      minLength: 8,
+      maxLength: 30,
+      requireUpper: 'Y',
+      requireLower: 'Y',
+      requireDigit: 'Y',
+      requireSpecial: 'N',
+      noUsername: 'Y',
+      noReverse: 'Y',
+      noServerName: 'Y',
+      differFromPrev: 3
+    },
+    {
+      name: 'ORA12C_STRONG_VERIFY_FUNCTION',
+      minLength: 12,
+      maxLength: 30,
+      requireUpper: 'Y',
+      requireLower: 'Y',
+      requireDigit: 'Y',
+      requireSpecial: 'Y',
+      noUsername: 'Y',
+      noReverse: 'Y',
+      noServerName: 'Y',
+      differFromPrev: 4
+    },
+    {
+      name: 'VERIFY_FUNCTION_11G',
+      minLength: 8,
+      maxLength: 30,
+      requireUpper: 'Y',
+      requireLower: 'Y',
+      requireDigit: 'Y',
+      requireSpecial: 'N',
+      noUsername: 'Y',
+      noReverse: 'N',
+      noServerName: 'N',
+      differFromPrev: 3
+    }
+  ];
+
+  for (const f of passwordVerifyFunctions) {
+    statements.push(
+      `INSERT INTO PASSWORD_VERIFY_FUNC$ (FUNCTION_NAME, MIN_LENGTH, MAX_LENGTH, REQUIRE_UPPERCASE, REQUIRE_LOWERCASE, REQUIRE_DIGIT, REQUIRE_SPECIAL, NO_USERNAME, NO_REVERSE_USERNAME, NO_SERVER_NAME, DIFFER_FROM_PREVIOUS, CREATED) ` +
+      `VALUES ('${f.name}', ${f.minLength}, ${f.maxLength}, '${f.requireUpper}', '${f.requireLower}', '${f.requireDigit}', '${f.requireSpecial}', '${f.noUsername}', '${f.noReverse}', '${f.noServerName}', ${f.differFromPrev}, '${now}')`
     );
   }
 
@@ -387,6 +539,8 @@ export class OracleSecurityManager {
   private constraintSequence: number = 1;
   private tablespaceSequence: number = 10;
   private fileSequence: number = 10;
+  private fgaSequence: number = 1;
+  private unifiedAuditSequence: number = 1;
 
   constructor(engine?: SQLEngine) {
     if (engine) {
@@ -533,6 +687,116 @@ export class OracleSecurityManager {
           { name: 'FAILURE', dataType: 'VARCHAR', length: 10, nullable: true },
         ],
         primaryKey: ['AUDIT_OPTION']
+      },
+      // ========================================================================
+      // Password Policy Tables
+      // ========================================================================
+      {
+        name: 'PASSWORD_HISTORY$',
+        columns: [
+          { name: 'USER_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'PASSWORD_HASH', dataType: 'VARCHAR', length: 256, nullable: false },
+          { name: 'PASSWORD_DATE', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['USER_ID', 'PASSWORD_HASH']
+      },
+      {
+        name: 'PASSWORD_VERIFY_FUNC$',
+        columns: [
+          { name: 'FUNCTION_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'MIN_LENGTH', dataType: 'INTEGER', nullable: true, defaultValue: 8 },
+          { name: 'MAX_LENGTH', dataType: 'INTEGER', nullable: true, defaultValue: 30 },
+          { name: 'REQUIRE_UPPERCASE', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'REQUIRE_LOWERCASE', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'REQUIRE_DIGIT', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'REQUIRE_SPECIAL', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'SPECIAL_CHARS', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: '!@#$%^&*()_+-=[]{}|;:,.<>?' },
+          { name: 'NO_USERNAME', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'NO_REVERSE_USERNAME', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'NO_SERVER_NAME', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'DIFFER_FROM_PREVIOUS', dataType: 'INTEGER', nullable: true, defaultValue: 3 },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['FUNCTION_NAME']
+      },
+      // ========================================================================
+      // Fine-Grained Auditing Tables
+      // ========================================================================
+      {
+        name: 'FGA_POLICY$',
+        columns: [
+          { name: 'POLICY_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OBJECT_SCHEMA', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OBJECT_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'POLICY_COLUMN', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'POLICY_CONDITION', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'ENABLED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'YES' },
+          { name: 'STATEMENT_TYPES', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'SELECT' },
+          { name: 'AUDIT_TRAIL', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'DB' },
+          { name: 'AUDIT_COLUMN_OPTS', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'ANY_COLUMNS' },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['POLICY_NAME']
+      },
+      {
+        name: 'FGA_LOG$',
+        columns: [
+          { name: 'FGA_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'SESSION_ID', dataType: 'INTEGER', nullable: true },
+          { name: 'EVENT_TIMESTAMP', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'DB_USER', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OS_USER', dataType: 'VARCHAR', length: 255, nullable: true },
+          { name: 'CLIENT_ID', dataType: 'VARCHAR', length: 255, nullable: true },
+          { name: 'POLICY_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_SCHEMA', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'SQL_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'SQL_BIND', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'STATEMENT_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'EXTENDED_TIMESTAMP', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['FGA_ID']
+      },
+      {
+        name: 'UNIFIED_AUDIT_POLICY$',
+        columns: [
+          { name: 'POLICY_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'AUDIT_CONDITION', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'AUDIT_OPTION', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'AUDIT_OPTION_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'OBJECT_SCHEMA', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'ENABLED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'ENABLED_BY', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'ENABLED_DATE', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['POLICY_NAME']
+      },
+      {
+        name: 'UNIFIED_AUDIT_TRAIL$',
+        columns: [
+          { name: 'AUDIT_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'UNIFIED_AUDIT_POLICIES', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'FGA_POLICY_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'ACTION_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_SCHEMA', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'SQL_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'SQL_BINDS', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'DBUSERNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OS_USERNAME', dataType: 'VARCHAR', length: 255, nullable: true },
+          { name: 'CLIENT_PROGRAM_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'EVENT_TIMESTAMP', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'RETURN_CODE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SESSION_ID', dataType: 'INTEGER', nullable: true },
+          { name: 'AUTHENTICATION_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'SYSTEM_PRIVILEGE_USED', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'TARGET_USER', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'ROLE_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+        ],
+        primaryKey: ['AUDIT_ID']
       },
       // ========================================================================
       // Data Dictionary Tables (DBA_OBJECTS, DBA_TABLES, etc.)
@@ -1703,6 +1967,664 @@ export class OracleSecurityManager {
     sql += ` ORDER BY EVENT_TIME DESC`;
 
     return this.queryTable(sql);
+  }
+
+  // ==========================================================================
+  // Password Policy Methods
+  // ==========================================================================
+
+  /**
+   * Get password verification function definition
+   */
+  getPasswordVerifyFunction(functionName: string): any | undefined {
+    const rows = this.queryTable(
+      `SELECT * FROM PASSWORD_VERIFY_FUNC$ WHERE FUNCTION_NAME = '${functionName.toUpperCase()}'`
+    );
+    return rows.length > 0 ? rows[0] : undefined;
+  }
+
+  /**
+   * Get all password verification functions
+   */
+  getAllPasswordVerifyFunctions(): any[] {
+    return this.queryTable(`SELECT * FROM PASSWORD_VERIFY_FUNC$ ORDER BY FUNCTION_NAME`);
+  }
+
+  /**
+   * Create a new password verification function
+   */
+  createPasswordVerifyFunction(
+    functionName: string,
+    options?: {
+      minLength?: number;
+      maxLength?: number;
+      requireUppercase?: boolean;
+      requireLowercase?: boolean;
+      requireDigit?: boolean;
+      requireSpecial?: boolean;
+      specialChars?: string;
+      noUsername?: boolean;
+      noReverseUsername?: boolean;
+      noServerName?: boolean;
+      differFromPrevious?: number;
+    }
+  ): SQLResult {
+    const upperName = functionName.toUpperCase();
+
+    // Check if function already exists
+    const existing = this.getPasswordVerifyFunction(upperName);
+    if (existing) {
+      return createErrorResult('00955', 'ORA-00955: name is already used by an existing object');
+    }
+
+    const now = new Date().toISOString();
+    this.executeSQL(
+      `INSERT INTO PASSWORD_VERIFY_FUNC$ (FUNCTION_NAME, MIN_LENGTH, MAX_LENGTH, REQUIRE_UPPERCASE, REQUIRE_LOWERCASE, REQUIRE_DIGIT, REQUIRE_SPECIAL, SPECIAL_CHARS, NO_USERNAME, NO_REVERSE_USERNAME, NO_SERVER_NAME, DIFFER_FROM_PREVIOUS, CREATED) ` +
+      `VALUES ('${upperName}', ${options?.minLength || 8}, ${options?.maxLength || 30}, '${options?.requireUppercase !== false ? 'Y' : 'N'}', '${options?.requireLowercase !== false ? 'Y' : 'N'}', '${options?.requireDigit !== false ? 'Y' : 'N'}', '${options?.requireSpecial ? 'Y' : 'N'}', '${options?.specialChars || '!@#$%^&*()_+-=[]{}|;:,.<>?'}', '${options?.noUsername !== false ? 'Y' : 'N'}', '${options?.noReverseUsername !== false ? 'Y' : 'N'}', '${options?.noServerName !== false ? 'Y' : 'N'}', ${options?.differFromPrevious || 3}, '${now}')`
+    );
+
+    return createSuccessResult([], `Password verify function ${upperName} created.`);
+  }
+
+  /**
+   * Verify password against a password verification function
+   */
+  verifyPasswordComplexity(
+    password: string,
+    username: string,
+    functionName?: string
+  ): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // If no function specified or NULL, password is valid
+    if (!functionName || functionName === 'NULL') {
+      return { valid: true, errors: [] };
+    }
+
+    const func = this.getPasswordVerifyFunction(functionName);
+    if (!func) {
+      return { valid: true, errors: [] }; // Function doesn't exist, allow password
+    }
+
+    // Check minimum length
+    if (func.MIN_LENGTH && password.length < func.MIN_LENGTH) {
+      errors.push(`ORA-28003: password verification for the specified password failed - password must be at least ${func.MIN_LENGTH} characters`);
+    }
+
+    // Check maximum length
+    if (func.MAX_LENGTH && password.length > func.MAX_LENGTH) {
+      errors.push(`ORA-28003: password verification failed - password must be at most ${func.MAX_LENGTH} characters`);
+    }
+
+    // Check uppercase requirement
+    if (func.REQUIRE_UPPERCASE === 'Y' && !/[A-Z]/.test(password)) {
+      errors.push(`ORA-28003: password verification failed - password must contain at least one uppercase letter`);
+    }
+
+    // Check lowercase requirement
+    if (func.REQUIRE_LOWERCASE === 'Y' && !/[a-z]/.test(password)) {
+      errors.push(`ORA-28003: password verification failed - password must contain at least one lowercase letter`);
+    }
+
+    // Check digit requirement
+    if (func.REQUIRE_DIGIT === 'Y' && !/[0-9]/.test(password)) {
+      errors.push(`ORA-28003: password verification failed - password must contain at least one digit`);
+    }
+
+    // Check special character requirement
+    if (func.REQUIRE_SPECIAL === 'Y') {
+      const specialChars = func.SPECIAL_CHARS || '!@#$%^&*()_+-=[]{}|;:,.<>?';
+      const hasSpecial = [...password].some(char => specialChars.includes(char));
+      if (!hasSpecial) {
+        errors.push(`ORA-28003: password verification failed - password must contain at least one special character`);
+      }
+    }
+
+    // Check if password contains username
+    if (func.NO_USERNAME === 'Y' && password.toUpperCase().includes(username.toUpperCase())) {
+      errors.push(`ORA-28003: password verification failed - password cannot contain the username`);
+    }
+
+    // Check if password contains reversed username
+    if (func.NO_REVERSE_USERNAME === 'Y') {
+      const reversedUsername = username.split('').reverse().join('');
+      if (password.toUpperCase().includes(reversedUsername.toUpperCase())) {
+        errors.push(`ORA-28003: password verification failed - password cannot contain the reversed username`);
+      }
+    }
+
+    // Check if password contains server name
+    if (func.NO_SERVER_NAME === 'Y') {
+      const dbName = this.getParameter('db_name') || 'ORCL';
+      if (password.toUpperCase().includes(dbName.toUpperCase())) {
+        errors.push(`ORA-28003: password verification failed - password cannot contain the database name`);
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Get password verification function for a user's profile
+   */
+  getUserPasswordVerifyFunction(username: string): string | null {
+    const user = this.getUser(username);
+    if (!user) return null;
+
+    const profile = user.USER_PROFILE || 'DEFAULT';
+    const rows = this.queryTable(
+      `SELECT LIMIT_VALUE FROM PROFILE$ WHERE PROFILE_NAME = '${profile}' AND RESOURCE_NAME = 'PASSWORD_VERIFY_FUNCTION'`
+    );
+
+    if (rows.length > 0 && rows[0].LIMIT_VALUE !== 'NULL') {
+      return rows[0].LIMIT_VALUE;
+    }
+    return null;
+  }
+
+  // ==========================================================================
+  // Password History Methods
+  // ==========================================================================
+
+  /**
+   * Add password to history
+   */
+  addPasswordToHistory(userId: number, username: string, passwordHash: string): void {
+    const now = new Date().toISOString();
+    this.executeSQL(
+      `INSERT INTO PASSWORD_HISTORY$ (USER_ID, USERNAME, PASSWORD_HASH, PASSWORD_DATE) ` +
+      `VALUES (${userId}, '${username.toUpperCase()}', '${passwordHash}', '${now}')`
+    );
+  }
+
+  /**
+   * Get password history for a user
+   */
+  getPasswordHistory(username: string): any[] {
+    return this.queryTable(
+      `SELECT * FROM PASSWORD_HISTORY$ WHERE USERNAME = '${username.toUpperCase()}' ORDER BY PASSWORD_DATE DESC`
+    );
+  }
+
+  /**
+   * Check if password was used recently (based on profile settings)
+   */
+  isPasswordReused(username: string, newPasswordHash: string): { reused: boolean; reason?: string } {
+    const user = this.getUser(username);
+    if (!user) return { reused: false };
+
+    const profile = user.USER_PROFILE || 'DEFAULT';
+
+    // Get PASSWORD_REUSE_MAX setting
+    const reuseMaxRows = this.queryTable(
+      `SELECT LIMIT_VALUE FROM PROFILE$ WHERE PROFILE_NAME = '${profile}' AND RESOURCE_NAME = 'PASSWORD_REUSE_MAX'`
+    );
+    const reuseMax = reuseMaxRows.length > 0 ? reuseMaxRows[0].LIMIT_VALUE : 'UNLIMITED';
+
+    // Get PASSWORD_REUSE_TIME setting
+    const reuseTimeRows = this.queryTable(
+      `SELECT LIMIT_VALUE FROM PROFILE$ WHERE PROFILE_NAME = '${profile}' AND RESOURCE_NAME = 'PASSWORD_REUSE_TIME'`
+    );
+    const reuseTime = reuseTimeRows.length > 0 ? reuseTimeRows[0].LIMIT_VALUE : 'UNLIMITED';
+
+    // If both are UNLIMITED, no restriction
+    if (reuseMax === 'UNLIMITED' && reuseTime === 'UNLIMITED') {
+      return { reused: false };
+    }
+
+    const history = this.getPasswordHistory(username);
+
+    // Check reuse count
+    if (reuseMax !== 'UNLIMITED') {
+      const maxCount = parseInt(reuseMax, 10);
+      const recentPasswords = history.slice(0, maxCount);
+      for (const entry of recentPasswords) {
+        if (entry.PASSWORD_HASH === newPasswordHash) {
+          return {
+            reused: true,
+            reason: `ORA-28007: the password cannot be reused - must change password ${maxCount} times before reuse`
+          };
+        }
+      }
+    }
+
+    // Check reuse time
+    if (reuseTime !== 'UNLIMITED') {
+      const days = parseInt(reuseTime, 10);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+
+      for (const entry of history) {
+        if (entry.PASSWORD_HASH === newPasswordHash) {
+          const passwordDate = new Date(entry.PASSWORD_DATE);
+          if (passwordDate > cutoffDate) {
+            return {
+              reused: true,
+              reason: `ORA-28007: the password cannot be reused - must wait ${days} days before reusing this password`
+            };
+          }
+        }
+      }
+    }
+
+    return { reused: false };
+  }
+
+  /**
+   * Check password similarity to previous passwords
+   */
+  checkPasswordDifference(
+    username: string,
+    newPassword: string,
+    functionName?: string
+  ): { valid: boolean; error?: string } {
+    if (!functionName || functionName === 'NULL') {
+      return { valid: true };
+    }
+
+    const func = this.getPasswordVerifyFunction(functionName);
+    if (!func || !func.DIFFER_FROM_PREVIOUS) {
+      return { valid: true };
+    }
+
+    const history = this.getPasswordHistory(username);
+    if (history.length === 0) {
+      return { valid: true };
+    }
+
+    // Get the most recent password (we can't directly compare hashes for difference,
+    // but we can at least check it's not identical)
+    const lastPassword = history[0];
+    const newHash = hashPassword(newPassword);
+
+    // Check if it's exactly the same
+    if (verifyPassword(newPassword, lastPassword.PASSWORD_HASH)) {
+      return {
+        valid: false,
+        error: `ORA-28003: password verification failed - new password must differ from the previous password by at least ${func.DIFFER_FROM_PREVIOUS} characters`
+      };
+    }
+
+    return { valid: true };
+  }
+
+  // ==========================================================================
+  // Fine-Grained Auditing (FGA) Methods
+  // ==========================================================================
+
+  /**
+   * Add FGA policy
+   */
+  addFGAPolicy(
+    objectSchema: string,
+    objectName: string,
+    policyName: string,
+    options?: {
+      auditColumn?: string;
+      auditCondition?: string;
+      statementTypes?: string;
+      enable?: boolean;
+    }
+  ): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+
+    // Check if policy already exists
+    const existing = this.queryTable(
+      `SELECT 1 FROM FGA_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length > 0) {
+      return createErrorResult('28101', 'ORA-28101: policy already exists');
+    }
+
+    const now = new Date().toISOString();
+    this.executeSQL(
+      `INSERT INTO FGA_POLICY$ (POLICY_NAME, OBJECT_SCHEMA, OBJECT_NAME, POLICY_COLUMN, POLICY_CONDITION, ENABLED, STATEMENT_TYPES, CREATED) ` +
+      `VALUES ('${upperPolicyName}', '${objectSchema.toUpperCase()}', '${objectName.toUpperCase()}', ${options?.auditColumn ? `'${options.auditColumn.toUpperCase()}'` : 'NULL'}, ${options?.auditCondition ? `'${options.auditCondition}'` : 'NULL'}, '${options?.enable !== false ? 'YES' : 'NO'}', '${options?.statementTypes || 'SELECT'}', '${now}')`
+    );
+
+    this.auditAction('CREATE_FGA_POLICY', 'SYS', {
+      objectSchema,
+      objectName,
+      returnCode: 0,
+      comment: `FGA policy ${upperPolicyName} created`
+    });
+
+    return createSuccessResult([], `FGA policy ${upperPolicyName} created.`);
+  }
+
+  /**
+   * Drop FGA policy
+   */
+  dropFGAPolicy(objectSchema: string, objectName: string, policyName: string): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM FGA_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length === 0) {
+      return createErrorResult('28102', 'ORA-28102: policy does not exist');
+    }
+
+    this.executeSQL(`DELETE FROM FGA_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`);
+
+    this.auditAction('DROP_FGA_POLICY', 'SYS', {
+      objectSchema,
+      objectName,
+      returnCode: 0,
+      comment: `FGA policy ${upperPolicyName} dropped`
+    });
+
+    return createSuccessResult([], `FGA policy ${upperPolicyName} dropped.`);
+  }
+
+  /**
+   * Enable/Disable FGA policy
+   */
+  setFGAPolicyEnabled(policyName: string, enable: boolean): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM FGA_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length === 0) {
+      return createErrorResult('28102', 'ORA-28102: policy does not exist');
+    }
+
+    this.executeSQL(
+      `UPDATE FGA_POLICY$ SET ENABLED = '${enable ? 'YES' : 'NO'}' WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+
+    return createSuccessResult([], `FGA policy ${upperPolicyName} ${enable ? 'enabled' : 'disabled'}.`);
+  }
+
+  /**
+   * Get FGA policies
+   */
+  getFGAPolicies(objectSchema?: string, objectName?: string): any[] {
+    let sql = `SELECT * FROM FGA_POLICY$ WHERE 1=1`;
+    if (objectSchema) {
+      sql += ` AND OBJECT_SCHEMA = '${objectSchema.toUpperCase()}'`;
+    }
+    if (objectName) {
+      sql += ` AND OBJECT_NAME = '${objectName.toUpperCase()}'`;
+    }
+    sql += ` ORDER BY POLICY_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Log FGA event
+   */
+  logFGAEvent(
+    policyName: string,
+    objectSchema: string,
+    objectName: string,
+    sqlText: string,
+    options?: {
+      dbUser?: string;
+      osUser?: string;
+      clientId?: string;
+      statementType?: string;
+      sqlBind?: string;
+      sessionId?: number;
+    }
+  ): void {
+    const fgaId = this.fgaSequence++;
+    const now = new Date().toISOString();
+
+    this.executeSQL(
+      `INSERT INTO FGA_LOG$ (FGA_ID, SESSION_ID, EVENT_TIMESTAMP, DB_USER, OS_USER, CLIENT_ID, POLICY_NAME, OBJECT_SCHEMA, OBJECT_NAME, SQL_TEXT, SQL_BIND, STATEMENT_TYPE, EXTENDED_TIMESTAMP) ` +
+      `VALUES (${fgaId}, ${options?.sessionId || 0}, '${now}', ${options?.dbUser ? `'${options.dbUser}'` : 'NULL'}, ${options?.osUser ? `'${options.osUser}'` : 'NULL'}, ${options?.clientId ? `'${options.clientId}'` : 'NULL'}, '${policyName}', '${objectSchema}', '${objectName}', '${sqlText.replace(/'/g, "''")}', ${options?.sqlBind ? `'${options.sqlBind}'` : 'NULL'}, ${options?.statementType ? `'${options.statementType}'` : 'NULL'}, '${now}')`
+    );
+  }
+
+  /**
+   * Get FGA audit log
+   */
+  getFGAAuditTrail(filter?: {
+    policyName?: string;
+    objectSchema?: string;
+    objectName?: string;
+    dbUser?: string;
+  }): any[] {
+    let sql = `SELECT * FROM FGA_LOG$ WHERE 1=1`;
+
+    if (filter?.policyName) {
+      sql += ` AND POLICY_NAME = '${filter.policyName.toUpperCase()}'`;
+    }
+    if (filter?.objectSchema) {
+      sql += ` AND OBJECT_SCHEMA = '${filter.objectSchema.toUpperCase()}'`;
+    }
+    if (filter?.objectName) {
+      sql += ` AND OBJECT_NAME = '${filter.objectName.toUpperCase()}'`;
+    }
+    if (filter?.dbUser) {
+      sql += ` AND DB_USER = '${filter.dbUser.toUpperCase()}'`;
+    }
+
+    sql += ` ORDER BY EVENT_TIMESTAMP DESC`;
+    return this.queryTable(sql);
+  }
+
+  // ==========================================================================
+  // Unified Audit Methods
+  // ==========================================================================
+
+  /**
+   * Create unified audit policy
+   */
+  createUnifiedAuditPolicy(
+    policyName: string,
+    options: {
+      auditOption?: string;
+      auditOptionType?: string;
+      objectSchema?: string;
+      objectName?: string;
+      objectType?: string;
+      condition?: string;
+    }
+  ): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM UNIFIED_AUDIT_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length > 0) {
+      return createErrorResult('46358', 'ORA-46358: audit policy already exists');
+    }
+
+    this.executeSQL(
+      `INSERT INTO UNIFIED_AUDIT_POLICY$ (POLICY_NAME, AUDIT_CONDITION, AUDIT_OPTION, AUDIT_OPTION_TYPE, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE, ENABLED) ` +
+      `VALUES ('${upperPolicyName}', ${options.condition ? `'${options.condition}'` : 'NULL'}, ${options.auditOption ? `'${options.auditOption}'` : 'NULL'}, ${options.auditOptionType ? `'${options.auditOptionType}'` : 'NULL'}, ${options.objectSchema ? `'${options.objectSchema.toUpperCase()}'` : 'NULL'}, ${options.objectName ? `'${options.objectName.toUpperCase()}'` : 'NULL'}, ${options.objectType ? `'${options.objectType.toUpperCase()}'` : 'NULL'}, 'NO')`
+    );
+
+    return createSuccessResult([], `Unified audit policy ${upperPolicyName} created.`);
+  }
+
+  /**
+   * Drop unified audit policy
+   */
+  dropUnifiedAuditPolicy(policyName: string): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM UNIFIED_AUDIT_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length === 0) {
+      return createErrorResult('46355', 'ORA-46355: audit policy does not exist');
+    }
+
+    this.executeSQL(`DELETE FROM UNIFIED_AUDIT_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`);
+
+    return createSuccessResult([], `Unified audit policy ${upperPolicyName} dropped.`);
+  }
+
+  /**
+   * Enable unified audit policy for user(s)
+   */
+  enableUnifiedAuditPolicy(policyName: string, enabledBy: string): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+    const now = new Date().toISOString();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM UNIFIED_AUDIT_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length === 0) {
+      return createErrorResult('46355', 'ORA-46355: audit policy does not exist');
+    }
+
+    this.executeSQL(
+      `UPDATE UNIFIED_AUDIT_POLICY$ SET ENABLED = 'YES', ENABLED_BY = '${enabledBy.toUpperCase()}', ENABLED_DATE = '${now}' WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+
+    return createSuccessResult([], `Unified audit policy ${upperPolicyName} enabled.`);
+  }
+
+  /**
+   * Disable unified audit policy
+   */
+  disableUnifiedAuditPolicy(policyName: string): SQLResult {
+    const upperPolicyName = policyName.toUpperCase();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM UNIFIED_AUDIT_POLICY$ WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+    if (existing.length === 0) {
+      return createErrorResult('46355', 'ORA-46355: audit policy does not exist');
+    }
+
+    this.executeSQL(
+      `UPDATE UNIFIED_AUDIT_POLICY$ SET ENABLED = 'NO', ENABLED_BY = NULL, ENABLED_DATE = NULL WHERE POLICY_NAME = '${upperPolicyName}'`
+    );
+
+    return createSuccessResult([], `Unified audit policy ${upperPolicyName} disabled.`);
+  }
+
+  /**
+   * Get unified audit policies
+   */
+  getUnifiedAuditPolicies(enabledOnly?: boolean): any[] {
+    let sql = `SELECT * FROM UNIFIED_AUDIT_POLICY$`;
+    if (enabledOnly) {
+      sql += ` WHERE ENABLED = 'YES'`;
+    }
+    sql += ` ORDER BY POLICY_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Log unified audit event
+   */
+  logUnifiedAuditEvent(
+    action: string,
+    options?: {
+      policies?: string[];
+      fgaPolicyName?: string;
+      objectSchema?: string;
+      objectName?: string;
+      sqlText?: string;
+      dbUsername?: string;
+      osUsername?: string;
+      clientProgram?: string;
+      returnCode?: number;
+      sessionId?: number;
+      authType?: string;
+      privilegeUsed?: string;
+      targetUser?: string;
+      roleName?: string;
+    }
+  ): void {
+    const auditId = this.unifiedAuditSequence++;
+    const now = new Date().toISOString();
+
+    this.executeSQL(
+      `INSERT INTO UNIFIED_AUDIT_TRAIL$ (AUDIT_ID, UNIFIED_AUDIT_POLICIES, FGA_POLICY_NAME, ACTION_NAME, OBJECT_SCHEMA, OBJECT_NAME, SQL_TEXT, DBUSERNAME, OS_USERNAME, CLIENT_PROGRAM_NAME, EVENT_TIMESTAMP, RETURN_CODE, SESSION_ID, AUTHENTICATION_TYPE, SYSTEM_PRIVILEGE_USED, TARGET_USER, ROLE_NAME) ` +
+      `VALUES (${auditId}, ${options?.policies ? `'${options.policies.join(',')}'` : 'NULL'}, ${options?.fgaPolicyName ? `'${options.fgaPolicyName}'` : 'NULL'}, '${action}', ${options?.objectSchema ? `'${options.objectSchema}'` : 'NULL'}, ${options?.objectName ? `'${options.objectName}'` : 'NULL'}, ${options?.sqlText ? `'${options.sqlText.replace(/'/g, "''")}'` : 'NULL'}, ${options?.dbUsername ? `'${options.dbUsername}'` : 'NULL'}, ${options?.osUsername ? `'${options.osUsername}'` : 'NULL'}, ${options?.clientProgram ? `'${options.clientProgram}'` : 'NULL'}, '${now}', ${options?.returnCode || 0}, ${options?.sessionId || 0}, ${options?.authType ? `'${options.authType}'` : 'NULL'}, ${options?.privilegeUsed ? `'${options.privilegeUsed}'` : 'NULL'}, ${options?.targetUser ? `'${options.targetUser}'` : 'NULL'}, ${options?.roleName ? `'${options.roleName}'` : 'NULL'})`
+    );
+  }
+
+  /**
+   * Get unified audit trail
+   */
+  getUnifiedAuditTrail(filter?: {
+    action?: string;
+    dbUsername?: string;
+    objectSchema?: string;
+    objectName?: string;
+    policyName?: string;
+  }): any[] {
+    let sql = `SELECT * FROM UNIFIED_AUDIT_TRAIL$ WHERE 1=1`;
+
+    if (filter?.action) {
+      sql += ` AND ACTION_NAME = '${filter.action}'`;
+    }
+    if (filter?.dbUsername) {
+      sql += ` AND DBUSERNAME = '${filter.dbUsername.toUpperCase()}'`;
+    }
+    if (filter?.objectSchema) {
+      sql += ` AND OBJECT_SCHEMA = '${filter.objectSchema.toUpperCase()}'`;
+    }
+    if (filter?.objectName) {
+      sql += ` AND OBJECT_NAME = '${filter.objectName.toUpperCase()}'`;
+    }
+    if (filter?.policyName) {
+      sql += ` AND UNIFIED_AUDIT_POLICIES LIKE '%${filter.policyName.toUpperCase()}%'`;
+    }
+
+    sql += ` ORDER BY EVENT_TIMESTAMP DESC`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get profile password settings
+   */
+  getProfilePasswordSettings(profileName: string): any {
+    const rows = this.queryTable(
+      `SELECT RESOURCE_NAME, LIMIT_VALUE FROM PROFILE$ WHERE PROFILE_NAME = '${profileName.toUpperCase()}' AND RESOURCE_TYPE = 'PASSWORD'`
+    );
+
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.RESOURCE_NAME] = row.LIMIT_VALUE;
+    }
+    return settings;
+  }
+
+  /**
+   * Update profile password setting
+   */
+  alterProfilePasswordSetting(
+    profileName: string,
+    resourceName: string,
+    value: string
+  ): SQLResult {
+    const upperProfile = profileName.toUpperCase();
+    const upperResource = resourceName.toUpperCase();
+
+    const existing = this.queryTable(
+      `SELECT 1 FROM PROFILE$ WHERE PROFILE_NAME = '${upperProfile}' AND RESOURCE_NAME = '${upperResource}'`
+    );
+
+    if (existing.length === 0) {
+      // Insert new setting
+      this.executeSQL(
+        `INSERT INTO PROFILE$ (PROFILE_NAME, RESOURCE_NAME, RESOURCE_TYPE, LIMIT_VALUE) ` +
+        `VALUES ('${upperProfile}', '${upperResource}', 'PASSWORD', '${value}')`
+      );
+    } else {
+      // Update existing setting
+      this.executeSQL(
+        `UPDATE PROFILE$ SET LIMIT_VALUE = '${value}' WHERE PROFILE_NAME = '${upperProfile}' AND RESOURCE_NAME = '${upperResource}'`
+      );
+    }
+
+    this.auditAction('ALTER_PROFILE', 'SYS', {
+      objectName: upperProfile,
+      returnCode: 0,
+      comment: `Set ${upperResource} = ${value}`
+    });
+
+    return createSuccessResult([], `Profile ${upperProfile} altered.`);
   }
 
   // ==========================================================================
