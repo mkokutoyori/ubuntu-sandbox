@@ -877,3 +877,232 @@ describe('Real-World Usage Scenarios', () => {
     });
   });
 });
+
+// ============================================
+// Oracle DBA Training V$ Views Integration Tests
+// ============================================
+describe('Oracle DBA V$ Views Integration', () => {
+  let session: ReturnType<typeof createSQLPlusSession>;
+
+  beforeEach(() => {
+    session = createSQLPlusSession();
+  });
+
+  describe('Redo Log Management (V$LOG, V$LOGFILE)', () => {
+    it('should query V$LOG via SQL*Plus', () => {
+      const result = executeSQLPlus(session, 'SELECT * FROM V$LOG;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+      expect(result.output).toContain('GROUP_NUM');
+      expect(result.output).toContain('STATUS');
+    });
+
+    it('should find CURRENT log group', () => {
+      const result = executeSQLPlus(session, "SELECT GROUP_NUM, STATUS FROM V$LOG WHERE STATUS = 'CURRENT';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('CURRENT');
+    });
+
+    it('should query V$LOGFILE for log members', () => {
+      const result = executeSQLPlus(session, 'SELECT GROUP_NUM, MEMBER FROM V$LOGFILE;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('redo');
+    });
+
+    it('should query V$ARCHIVED_LOG', () => {
+      const result = executeSQLPlus(session, 'SELECT RECID, SEQUENCE_NUM, NAME FROM V$ARCHIVED_LOG;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('archivelog');
+    });
+  });
+
+  describe('RMAN Backup History (V$RMAN_BACKUP_JOB_DETAILS)', () => {
+    it('should query backup job history', () => {
+      const result = executeSQLPlus(session, 'SELECT SESSION_KEY, INPUT_TYPE, STATUS FROM V$RMAN_BACKUP_JOB_DETAILS;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should find completed full backups', () => {
+      const result = executeSQLPlus(session, "SELECT SESSION_KEY, INPUT_TYPE, ELAPSED_SECONDS FROM V$RMAN_BACKUP_JOB_DETAILS WHERE INPUT_TYPE = 'DB FULL';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('DB FULL');
+    });
+
+    it('should query backup sizes', () => {
+      const result = executeSQLPlus(session, 'SELECT INPUT_TYPE, INPUT_BYTES_DISPLAY, OUTPUT_BYTES_DISPLAY FROM V$RMAN_BACKUP_JOB_DETAILS;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+  });
+
+  describe('SGA Memory Management (V$SGA, V$SGASTAT)', () => {
+    it('should query V$SGA for memory components', () => {
+      const result = executeSQLPlus(session, 'SELECT NAME, VALUE_BYTES FROM V$SGA;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Fixed Size');
+      expect(result.output).toContain('Database Buffers');
+    });
+
+    it('should query V$SGASTAT for pool statistics', () => {
+      const result = executeSQLPlus(session, "SELECT POOL, COMPONENT_NAME, BYTES_VAL FROM V$SGASTAT WHERE POOL = 'shared pool';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('shared pool');
+    });
+  });
+
+  describe('Wait Statistics (V$WAITSTAT)', () => {
+    it('should query wait class statistics', () => {
+      const result = executeSQLPlus(session, 'SELECT WAIT_CLASS, COUNT_VAL, TIME_VAL FROM V$WAITSTAT;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('User I/O');
+    });
+  });
+
+  describe('SQL Performance (V$SQL, V$SQLAREA)', () => {
+    it('should query V$SQL for cached SQL', () => {
+      const result = executeSQLPlus(session, 'SELECT SQL_ID, EXECUTIONS, BUFFER_GETS, CPU_TIME FROM V$SQL;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should find top SQL by buffer gets', () => {
+      const result = executeSQLPlus(session, "SELECT SQL_ID, SQL_TEXT, BUFFER_GETS FROM V$SQL WHERE PARSING_SCHEMA_NAME = 'HR';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should query V$SQLAREA for aggregated stats', () => {
+      const result = executeSQLPlus(session, 'SELECT SQL_ID, EXECUTIONS, ELAPSED_TIME FROM V$SQLAREA;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+  });
+
+  describe('Scheduler Jobs (DBA_SCHEDULER_JOBS)', () => {
+    it('should query scheduler jobs', () => {
+      const result = executeSQLPlus(session, 'SELECT OWNER, JOB_NAME, JOB_TYPE, STATE FROM DBA_SCHEDULER_JOBS;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('GATHER_STATS_JOB');
+    });
+
+    it('should find enabled jobs', () => {
+      const result = executeSQLPlus(session, "SELECT JOB_NAME, REPEAT_INTERVAL FROM DBA_SCHEDULER_JOBS WHERE ENABLED = 'TRUE';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+  });
+
+  describe('Resource Manager (DBA_RSRC_PLANS)', () => {
+    it('should query resource plans', () => {
+      const result = executeSQLPlus(session, 'SELECT PLAN, STATUS, COMMENTS FROM DBA_RSRC_PLANS;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('DEFAULT_PLAN');
+    });
+
+    it('should query consumer groups', () => {
+      const result = executeSQLPlus(session, 'SELECT CONSUMER_GROUP, COMMENTS FROM DBA_RSRC_CONSUMER_GROUPS;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('SYS_GROUP');
+    });
+  });
+
+  describe('Flashback (DBA_FLASHBACK_ARCHIVE)', () => {
+    it('should query flashback archives', () => {
+      const result = executeSQLPlus(session, 'SELECT FLASHBACK_ARCHIVE_NAME, RETENTION_IN_DAYS, STATUS FROM DBA_FLASHBACK_ARCHIVE;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('FLA_1YEAR');
+    });
+
+    it('should query flashback database log', () => {
+      const result = executeSQLPlus(session, 'SELECT OLDEST_FLASHBACK_SCN, RETENTION_TARGET, FLASHBACK_SIZE FROM V$FLASHBACK_DATABASE_LOG;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+  });
+
+  describe('Alert Log (V$DIAG_ALERT_EXT)', () => {
+    it('should query alert log entries', () => {
+      const result = executeSQLPlus(session, 'SELECT RECORD_ID, MESSAGE_LEVEL, MESSAGE_GROUP, MESSAGE_TEXT FROM V$DIAG_ALERT_EXT;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should find error messages', () => {
+      const result = executeSQLPlus(session, "SELECT MESSAGE_TEXT FROM V$DIAG_ALERT_EXT WHERE MESSAGE_GROUP = 'error';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('ORA-00600');
+    });
+
+    it('should find startup messages', () => {
+      const result = executeSQLPlus(session, "SELECT MESSAGE_TEXT FROM V$DIAG_ALERT_EXT WHERE MESSAGE_GROUP = 'startup';");
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Database opened');
+    });
+  });
+
+  describe('DBA Training Scenarios', () => {
+    it('should perform log switch analysis', () => {
+      // A typical DBA task: analyze redo log activity
+      const result = executeSQLPlus(session, `
+        SELECT GROUP_NUM, SEQUENCE_NUM, LOG_BYTES, STATUS, ARCHIVED
+        FROM V$LOG
+        ORDER BY SEQUENCE_NUM DESC;
+      `);
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should check backup status', () => {
+      // A typical DBA task: verify backup status
+      const result = executeSQLPlus(session, `
+        SELECT INPUT_TYPE, STATUS, INPUT_BYTES_DISPLAY, TIME_TAKEN_DISPLAY
+        FROM V$RMAN_BACKUP_JOB_DETAILS
+        WHERE STATUS = 'COMPLETED';
+      `);
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('COMPLETED');
+    });
+
+    it('should analyze SGA memory allocation', () => {
+      // A typical DBA task: analyze memory usage
+      const result = executeSQLPlus(session, 'SELECT NAME, VALUE_BYTES FROM V$SGA;');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should identify problematic SQL', () => {
+      // A typical DBA task: find poorly performing SQL
+      const result = executeSQLPlus(session, `
+        SELECT SQL_ID, BUFFER_GETS, EXECUTIONS, ELAPSED_TIME
+        FROM V$SQL
+        ORDER BY BUFFER_GETS DESC;
+      `);
+      expect(result.error).toBeUndefined();
+      expect(result.output).toBeDefined();
+    });
+
+    it('should review scheduled maintenance jobs', () => {
+      // A typical DBA task: check maintenance schedule
+      const result = executeSQLPlus(session, `
+        SELECT JOB_NAME, JOB_TYPE, REPEAT_INTERVAL, STATE
+        FROM DBA_SCHEDULER_JOBS
+        WHERE OWNER = 'SYS';
+      `);
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('GATHER_STATS_JOB');
+    });
+
+    it('should check alert log for critical errors', () => {
+      // A typical DBA task: review recent errors
+      const result = executeSQLPlus(session, `
+        SELECT ORIGINATING_TIMESTAMP, MESSAGE_LEVEL, MESSAGE_TEXT
+        FROM V$DIAG_ALERT_EXT
+        WHERE MESSAGE_LEVEL <= 4;
+      `);
+      expect(result.error).toBeUndefined();
+      // Should contain ORA- errors
+      expect(result.output).toContain('ORA-');
+    });
+  });
+});
