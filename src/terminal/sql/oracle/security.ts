@@ -255,6 +255,590 @@ CREATE TABLE SYS.UNIFIED_AUDIT_TRAIL$ (
   TARGET_USER VARCHAR(128),
   ROLE_NAME VARCHAR(128)
 );
+
+-- ============================================================================
+-- Redo Logs & Archiving (V$LOG, V$LOGFILE, V$ARCHIVED_LOG)
+-- ============================================================================
+
+-- Redo log groups
+CREATE TABLE SYS.V_LOG$ (
+  GROUP_NUM INTEGER PRIMARY KEY,
+  THREAD_NUM INTEGER DEFAULT 1,
+  SEQUENCE_NUM INTEGER DEFAULT 0,
+  LOG_BYTES INTEGER DEFAULT 52428800,
+  BLOCKSIZE INTEGER DEFAULT 512,
+  MEMBERS INTEGER DEFAULT 1,
+  ARCHIVED VARCHAR(3) DEFAULT 'NO',
+  STATUS VARCHAR(16) DEFAULT 'UNUSED',
+  FIRST_CHANGE INTEGER DEFAULT 0,
+  FIRST_TIME TIMESTAMP,
+  NEXT_CHANGE INTEGER,
+  NEXT_TIME TIMESTAMP,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- Redo log files
+CREATE TABLE SYS.V_LOGFILE$ (
+  GROUP_NUM INTEGER NOT NULL,
+  STATUS VARCHAR(16) DEFAULT 'VALID',
+  FILE_TYPE VARCHAR(16) DEFAULT 'ONLINE',
+  MEMBER VARCHAR(512) NOT NULL,
+  IS_RECOVERY_DEST_FILE VARCHAR(3) DEFAULT 'NO',
+  CON_ID INTEGER DEFAULT 0,
+  PRIMARY KEY (GROUP_NUM, MEMBER)
+);
+
+-- Archived logs
+CREATE TABLE SYS.V_ARCHIVED_LOG$ (
+  RECID INTEGER PRIMARY KEY,
+  STAMP INTEGER,
+  NAME VARCHAR(512),
+  DEST_ID INTEGER DEFAULT 1,
+  THREAD_NUM INTEGER DEFAULT 1,
+  SEQUENCE_NUM INTEGER,
+  RESETLOGS_CHANGE INTEGER,
+  RESETLOGS_TIME TIMESTAMP,
+  RESETLOGS_ID INTEGER,
+  FIRST_CHANGE INTEGER,
+  FIRST_TIME TIMESTAMP,
+  NEXT_CHANGE INTEGER,
+  NEXT_TIME TIMESTAMP,
+  BLOCKS INTEGER,
+  BLOCK_SIZE INTEGER DEFAULT 512,
+  CREATOR VARCHAR(16) DEFAULT 'ARCH',
+  REGISTRAR VARCHAR(16) DEFAULT 'SMON',
+  STANDBY_DEST VARCHAR(3) DEFAULT 'NO',
+  ARCHIVED VARCHAR(3) DEFAULT 'YES',
+  APPLIED VARCHAR(9) DEFAULT 'NO',
+  DELETED VARCHAR(3) DEFAULT 'NO',
+  STATUS VARCHAR(1) DEFAULT 'A',
+  COMPLETION_TIME TIMESTAMP,
+  COMPRESSED VARCHAR(3) DEFAULT 'NO',
+  FAL VARCHAR(3) DEFAULT 'NO',
+  END_OF_REDO VARCHAR(3) DEFAULT 'NO',
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- ============================================================================
+-- RMAN Backup (V$BACKUP, V$RMAN_BACKUP_JOB_DETAILS)
+-- ============================================================================
+
+-- Backup status
+CREATE TABLE SYS.V_BACKUP$ (
+  FILE_NUM INTEGER PRIMARY KEY,
+  STATUS VARCHAR(18) DEFAULT 'NOT ACTIVE',
+  CHANGE_NUM INTEGER,
+  BACKUP_TIME TIMESTAMP,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- RMAN backup job details
+CREATE TABLE SYS.V_RMAN_BACKUP_JOB_DETAILS$ (
+  SESSION_KEY INTEGER PRIMARY KEY,
+  SESSION_RECID INTEGER,
+  SESSION_STAMP INTEGER,
+  COMMAND_ID VARCHAR(128),
+  START_TIME TIMESTAMP,
+  END_TIME TIMESTAMP,
+  INPUT_TYPE VARCHAR(32),
+  STATUS VARCHAR(32) DEFAULT 'COMPLETED',
+  OUTPUT_DEVICE_TYPE VARCHAR(32) DEFAULT 'DISK',
+  INPUT_BYTES INTEGER DEFAULT 0,
+  OUTPUT_BYTES INTEGER DEFAULT 0,
+  INPUT_BYTES_PER_SEC INTEGER DEFAULT 0,
+  OUTPUT_BYTES_PER_SEC INTEGER DEFAULT 0,
+  ELAPSED_SECONDS INTEGER DEFAULT 0,
+  COMPRESSION_RATIO DECIMAL(10,2) DEFAULT 1.00,
+  INPUT_BYTES_DISPLAY VARCHAR(32),
+  OUTPUT_BYTES_DISPLAY VARCHAR(32),
+  AUTOBACKUP_COUNT INTEGER DEFAULT 0,
+  AUTOBACKUP_DONE VARCHAR(3) DEFAULT 'NO',
+  TIME_TAKEN_DISPLAY VARCHAR(32),
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- ============================================================================
+-- Locks & Transactions (V$LOCK, V$TRANSACTION, V$SESSION_WAIT)
+-- ============================================================================
+
+-- Locks
+CREATE TABLE SYS.V_LOCK$ (
+  ADDR VARCHAR(32) PRIMARY KEY,
+  KADDR VARCHAR(32),
+  SID INTEGER NOT NULL,
+  LOCK_TYPE VARCHAR(2) NOT NULL,
+  ID1 INTEGER DEFAULT 0,
+  ID2 INTEGER DEFAULT 0,
+  LMODE INTEGER DEFAULT 0,
+  REQUEST INTEGER DEFAULT 0,
+  CTIME INTEGER DEFAULT 0,
+  BLOCK_STATUS INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- Transactions
+CREATE TABLE SYS.V_TRANSACTION$ (
+  ADDR VARCHAR(32) PRIMARY KEY,
+  XIDUSN INTEGER DEFAULT 0,
+  XIDSLOT INTEGER DEFAULT 0,
+  XIDSQN INTEGER DEFAULT 0,
+  UBAFIL INTEGER DEFAULT 0,
+  UBABLK INTEGER DEFAULT 0,
+  UBASQN INTEGER DEFAULT 0,
+  UBAREC INTEGER DEFAULT 0,
+  STATUS VARCHAR(16) DEFAULT 'ACTIVE',
+  START_TIME VARCHAR(32),
+  START_SCNB INTEGER DEFAULT 0,
+  START_SCNW INTEGER DEFAULT 0,
+  SES_ADDR VARCHAR(32),
+  FLAG INTEGER DEFAULT 0,
+  SPACE VARCHAR(3) DEFAULT 'NO',
+  RECURSIVE VARCHAR(3) DEFAULT 'NO',
+  NOUNDO VARCHAR(3) DEFAULT 'NO',
+  PTX VARCHAR(3) DEFAULT 'NO',
+  NAME VARCHAR(256),
+  USED_UBLK INTEGER DEFAULT 0,
+  USED_UREC INTEGER DEFAULT 0,
+  LOG_IO INTEGER DEFAULT 0,
+  PHY_IO INTEGER DEFAULT 0,
+  CR_GET INTEGER DEFAULT 0,
+  CR_CHANGE INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- Session waits
+CREATE TABLE SYS.V_SESSION_WAIT$ (
+  SID INTEGER PRIMARY KEY,
+  SEQ_NUM INTEGER DEFAULT 0,
+  EVENT VARCHAR(64),
+  P1TEXT VARCHAR(64),
+  P1 INTEGER DEFAULT 0,
+  P1RAW VARCHAR(32),
+  P2TEXT VARCHAR(64),
+  P2 INTEGER DEFAULT 0,
+  P2RAW VARCHAR(32),
+  P3TEXT VARCHAR(64),
+  P3 INTEGER DEFAULT 0,
+  P3RAW VARCHAR(32),
+  WAIT_CLASS_ID INTEGER DEFAULT 0,
+  WAIT_CLASS VARCHAR(64) DEFAULT 'Other',
+  WAIT_TIME INTEGER DEFAULT 0,
+  SECONDS_IN_WAIT INTEGER DEFAULT 0,
+  STATE VARCHAR(32) DEFAULT 'WAITED SHORT TIME',
+  TIME_REMAINING_MICRO INTEGER DEFAULT 0,
+  TIME_SINCE_LAST_WAIT_MICRO INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- Wait statistics
+CREATE TABLE SYS.V_WAITSTAT$ (
+  WAIT_CLASS VARCHAR(64) PRIMARY KEY,
+  COUNT_VAL INTEGER DEFAULT 0,
+  TIME_VAL INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- ============================================================================
+-- Memory/SGA (V$SGA, V$SGASTAT)
+-- ============================================================================
+
+-- SGA summary
+CREATE TABLE SYS.V_SGA$ (
+  NAME VARCHAR(64) PRIMARY KEY,
+  VALUE_BYTES INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- SGA statistics
+CREATE TABLE SYS.V_SGASTAT$ (
+  POOL VARCHAR(32),
+  COMPONENT_NAME VARCHAR(64),
+  BYTES_VAL INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- ============================================================================
+-- Performance SQL (V$SQL, V$SQLAREA)
+-- ============================================================================
+
+-- SQL statements
+CREATE TABLE SYS.V_SQL$ (
+  SQL_ID VARCHAR(32) PRIMARY KEY,
+  CHILD_NUMBER INTEGER DEFAULT 0,
+  SQL_TEXT VARCHAR(4000),
+  SQL_FULLTEXT VARCHAR(4000),
+  SHARABLE_MEM INTEGER DEFAULT 0,
+  PERSISTENT_MEM INTEGER DEFAULT 0,
+  RUNTIME_MEM INTEGER DEFAULT 0,
+  SORTS INTEGER DEFAULT 0,
+  LOADED_VERSIONS INTEGER DEFAULT 1,
+  OPEN_VERSIONS INTEGER DEFAULT 0,
+  USERS_OPENING INTEGER DEFAULT 0,
+  FETCHES INTEGER DEFAULT 0,
+  EXECUTIONS INTEGER DEFAULT 1,
+  PX_SERVERS_EXECUTIONS INTEGER DEFAULT 0,
+  END_OF_FETCH_COUNT INTEGER DEFAULT 0,
+  PARSE_CALLS INTEGER DEFAULT 1,
+  DISK_READS INTEGER DEFAULT 0,
+  DIRECT_READS INTEGER DEFAULT 0,
+  DIRECT_WRITES INTEGER DEFAULT 0,
+  BUFFER_GETS INTEGER DEFAULT 0,
+  APPLICATION_WAIT_TIME INTEGER DEFAULT 0,
+  CONCURRENCY_WAIT_TIME INTEGER DEFAULT 0,
+  CLUSTER_WAIT_TIME INTEGER DEFAULT 0,
+  USER_IO_WAIT_TIME INTEGER DEFAULT 0,
+  PLSQL_EXEC_TIME INTEGER DEFAULT 0,
+  JAVA_EXEC_TIME INTEGER DEFAULT 0,
+  ROWS_PROCESSED INTEGER DEFAULT 0,
+  COMMAND_TYPE INTEGER DEFAULT 0,
+  OPTIMIZER_MODE VARCHAR(32) DEFAULT 'ALL_ROWS',
+  OPTIMIZER_COST INTEGER DEFAULT 0,
+  PARSING_USER_ID INTEGER DEFAULT 0,
+  PARSING_SCHEMA_ID INTEGER DEFAULT 0,
+  PARSING_SCHEMA_NAME VARCHAR(128),
+  FIRST_LOAD_TIME VARCHAR(32),
+  LAST_LOAD_TIME TIMESTAMP,
+  LAST_ACTIVE_TIME TIMESTAMP,
+  PLAN_HASH_VALUE INTEGER DEFAULT 0,
+  FULL_PLAN_HASH_VALUE INTEGER DEFAULT 0,
+  MODULE VARCHAR(128),
+  ACTION VARCHAR(128),
+  SERIALIZABLE_ABORTS INTEGER DEFAULT 0,
+  CPU_TIME INTEGER DEFAULT 0,
+  ELAPSED_TIME INTEGER DEFAULT 0,
+  OUTLINE_CATEGORY VARCHAR(128),
+  IS_OBSOLETE VARCHAR(1) DEFAULT 'N',
+  IS_SHAREABLE VARCHAR(1) DEFAULT 'Y',
+  CHILD_LATCH INTEGER DEFAULT 0,
+  OBJECT_STATUS VARCHAR(32) DEFAULT 'VALID',
+  PROGRAM_ID INTEGER DEFAULT 0,
+  PROGRAM_LINE INTEGER DEFAULT 0,
+  EXACT_MATCHING_SIGNATURE INTEGER DEFAULT 0,
+  FORCE_MATCHING_SIGNATURE INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- SQL area
+CREATE TABLE SYS.V_SQLAREA$ (
+  SQL_ID VARCHAR(32) PRIMARY KEY,
+  SQL_TEXT VARCHAR(4000),
+  SHARABLE_MEM INTEGER DEFAULT 0,
+  PERSISTENT_MEM INTEGER DEFAULT 0,
+  RUNTIME_MEM INTEGER DEFAULT 0,
+  SORTS INTEGER DEFAULT 0,
+  VERSION_COUNT INTEGER DEFAULT 1,
+  LOADED_VERSIONS INTEGER DEFAULT 1,
+  OPEN_VERSIONS INTEGER DEFAULT 0,
+  USERS_OPENING INTEGER DEFAULT 0,
+  USERS_EXECUTING INTEGER DEFAULT 0,
+  FETCHES INTEGER DEFAULT 0,
+  EXECUTIONS INTEGER DEFAULT 1,
+  END_OF_FETCH_COUNT INTEGER DEFAULT 0,
+  LOADS INTEGER DEFAULT 1,
+  FIRST_LOAD_TIME VARCHAR(32),
+  LAST_LOAD_TIME TIMESTAMP,
+  LAST_ACTIVE_TIME TIMESTAMP,
+  INVALIDATIONS INTEGER DEFAULT 0,
+  PARSE_CALLS INTEGER DEFAULT 1,
+  DISK_READS INTEGER DEFAULT 0,
+  DIRECT_READS INTEGER DEFAULT 0,
+  DIRECT_WRITES INTEGER DEFAULT 0,
+  BUFFER_GETS INTEGER DEFAULT 0,
+  ROWS_PROCESSED INTEGER DEFAULT 0,
+  CPU_TIME INTEGER DEFAULT 0,
+  ELAPSED_TIME INTEGER DEFAULT 0,
+  AVG_HARD_PARSE_TIME INTEGER DEFAULT 0,
+  APPLICATION_WAIT_TIME INTEGER DEFAULT 0,
+  CONCURRENCY_WAIT_TIME INTEGER DEFAULT 0,
+  CLUSTER_WAIT_TIME INTEGER DEFAULT 0,
+  USER_IO_WAIT_TIME INTEGER DEFAULT 0,
+  PLSQL_EXEC_TIME INTEGER DEFAULT 0,
+  JAVA_EXEC_TIME INTEGER DEFAULT 0,
+  COMMAND_TYPE INTEGER DEFAULT 0,
+  PARSING_USER_ID INTEGER DEFAULT 0,
+  PARSING_SCHEMA_ID INTEGER DEFAULT 0,
+  PARSING_SCHEMA_NAME VARCHAR(128),
+  OPTIMIZER_MODE VARCHAR(32) DEFAULT 'ALL_ROWS',
+  MODULE VARCHAR(128),
+  ACTION VARCHAR(128),
+  SERIALIZABLE_ABORTS INTEGER DEFAULT 0,
+  OUTLINE_CATEGORY VARCHAR(128),
+  PROGRAM_ID INTEGER DEFAULT 0,
+  EXACT_MATCHING_SIGNATURE INTEGER DEFAULT 0,
+  FORCE_MATCHING_SIGNATURE INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- ============================================================================
+-- Scheduler Jobs (DBA_SCHEDULER_JOBS, DBA_SCHEDULER_JOB_LOG)
+-- ============================================================================
+
+-- Scheduler jobs
+CREATE TABLE SYS.SCHEDULER_JOB$ (
+  OWNER VARCHAR(128) NOT NULL,
+  JOB_NAME VARCHAR(128) NOT NULL,
+  JOB_SUBNAME VARCHAR(128),
+  JOB_STYLE VARCHAR(32) DEFAULT 'REGULAR',
+  JOB_CREATOR VARCHAR(128),
+  CLIENT_ID VARCHAR(128),
+  GLOBAL_UID VARCHAR(128),
+  PROGRAM_OWNER VARCHAR(128),
+  PROGRAM_NAME VARCHAR(128),
+  JOB_TYPE VARCHAR(32),
+  JOB_ACTION VARCHAR(4000),
+  NUMBER_OF_ARGUMENTS INTEGER DEFAULT 0,
+  SCHEDULE_OWNER VARCHAR(128),
+  SCHEDULE_NAME VARCHAR(128),
+  SCHEDULE_TYPE VARCHAR(32) DEFAULT 'ONCE',
+  START_DATE TIMESTAMP,
+  REPEAT_INTERVAL VARCHAR(256),
+  EVENT_QUEUE_OWNER VARCHAR(128),
+  EVENT_QUEUE_NAME VARCHAR(128),
+  EVENT_QUEUE_AGENT VARCHAR(1024),
+  EVENT_CONDITION VARCHAR(4000),
+  EVENT_RULE VARCHAR(256),
+  FILE_WATCHER_OWNER VARCHAR(128),
+  FILE_WATCHER_NAME VARCHAR(128),
+  END_DATE TIMESTAMP,
+  JOB_CLASS VARCHAR(128) DEFAULT 'DEFAULT_JOB_CLASS',
+  ENABLED VARCHAR(5) DEFAULT 'FALSE',
+  AUTO_DROP VARCHAR(5) DEFAULT 'TRUE',
+  RESTART_ON_RECOVERY VARCHAR(5) DEFAULT 'FALSE',
+  RESTART_ON_FAILURE VARCHAR(5) DEFAULT 'FALSE',
+  STATE VARCHAR(32) DEFAULT 'DISABLED',
+  JOB_PRIORITY INTEGER DEFAULT 3,
+  RUN_COUNT INTEGER DEFAULT 0,
+  MAX_RUNS INTEGER,
+  FAILURE_COUNT INTEGER DEFAULT 0,
+  MAX_FAILURES INTEGER,
+  RETRY_COUNT INTEGER DEFAULT 0,
+  LAST_START_DATE TIMESTAMP,
+  LAST_RUN_DURATION INTEGER,
+  NEXT_RUN_DATE TIMESTAMP,
+  SCHEDULE_LIMIT INTEGER,
+  MAX_RUN_DURATION INTEGER,
+  LOGGING_LEVEL VARCHAR(32) DEFAULT 'RUNS',
+  STORE_OUTPUT VARCHAR(5) DEFAULT 'FALSE',
+  STOP_ON_WINDOW_CLOSE VARCHAR(5) DEFAULT 'FALSE',
+  INSTANCE_STICKINESS VARCHAR(5) DEFAULT 'FALSE',
+  RAISE_EVENTS VARCHAR(128),
+  SYSTEM_JOB VARCHAR(5) DEFAULT 'FALSE',
+  JOB_WEIGHT INTEGER DEFAULT 1,
+  NLS_ENV VARCHAR(4000),
+  SOURCE VARCHAR(256),
+  NUMBER_OF_DESTINATIONS INTEGER DEFAULT 1,
+  DESTINATION_OWNER VARCHAR(256),
+  DESTINATION VARCHAR(4000),
+  CREDENTIAL_OWNER VARCHAR(128),
+  CREDENTIAL_NAME VARCHAR(128),
+  INSTANCE_ID INTEGER,
+  DEFERRED_DROP VARCHAR(5) DEFAULT 'FALSE',
+  ALLOW_RUNS_IN_RESTRICTED_MODE VARCHAR(5) DEFAULT 'FALSE',
+  COMMENTS VARCHAR(4000),
+  FLAGS INTEGER DEFAULT 0,
+  RESTARTABLE VARCHAR(5) DEFAULT 'FALSE',
+  HAS_CONSTRAINTS VARCHAR(5) DEFAULT 'FALSE',
+  CONNECT_CREDENTIAL_OWNER VARCHAR(128),
+  CONNECT_CREDENTIAL_NAME VARCHAR(128),
+  FAIL_ON_SCRIPT_ERROR VARCHAR(5) DEFAULT 'FALSE',
+  PRIMARY KEY (OWNER, JOB_NAME)
+);
+
+-- Scheduler job log
+CREATE TABLE SYS.SCHEDULER_JOB_LOG$ (
+  LOG_ID INTEGER PRIMARY KEY,
+  LOG_DATE TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  OWNER VARCHAR(128) NOT NULL,
+  JOB_NAME VARCHAR(128) NOT NULL,
+  JOB_SUBNAME VARCHAR(128),
+  JOB_CLASS VARCHAR(128) DEFAULT 'DEFAULT_JOB_CLASS',
+  OPERATION VARCHAR(32),
+  STATUS VARCHAR(32),
+  USER_NAME VARCHAR(128),
+  CLIENT_ID VARCHAR(128),
+  GLOBAL_UID VARCHAR(128),
+  CREDENTIAL_OWNER VARCHAR(128),
+  CREDENTIAL_NAME VARCHAR(128),
+  DESTINATION_OWNER VARCHAR(256),
+  DESTINATION VARCHAR(4000),
+  REQ_START_DATE TIMESTAMP,
+  ACTUAL_START_DATE TIMESTAMP,
+  RUN_DURATION INTEGER,
+  INSTANCE_ID INTEGER,
+  SESSION_ID INTEGER,
+  SLAVE_PID INTEGER,
+  CPU_USED INTEGER,
+  ADDITIONAL_INFO VARCHAR(4000),
+  ERRORS VARCHAR(4000),
+  OUTPUT VARCHAR(4000)
+);
+
+-- ============================================================================
+-- Database Links (DBA_DB_LINKS)
+-- ============================================================================
+
+CREATE TABLE SYS.DB_LINK$ (
+  OWNER VARCHAR(128) NOT NULL,
+  DB_LINK VARCHAR(128) NOT NULL,
+  USERNAME VARCHAR(128),
+  PASSWORD VARCHAR(128),
+  HOST VARCHAR(2000),
+  CREATED TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  HIDDEN VARCHAR(3) DEFAULT 'NO',
+  SHARD_INTERNAL VARCHAR(3) DEFAULT 'NO',
+  VALID VARCHAR(3) DEFAULT 'YES',
+  INTRA_CDB VARCHAR(3) DEFAULT 'NO',
+  PRIMARY KEY (OWNER, DB_LINK)
+);
+
+-- ============================================================================
+-- Resource Manager (DBA_RSRC_PLANS, DBA_RSRC_CONSUMER_GROUPS)
+-- ============================================================================
+
+-- Resource plans
+CREATE TABLE SYS.RSRC_PLAN$ (
+  PLAN VARCHAR(128) PRIMARY KEY,
+  NUM_PLAN_DIRECTIVES INTEGER DEFAULT 0,
+  CPU_METHOD VARCHAR(128) DEFAULT 'EMPHASIS',
+  MGMT_METHOD VARCHAR(128) DEFAULT 'EMPHASIS',
+  ACTIVE_SESS_POOL_MTH VARCHAR(128) DEFAULT 'ACTIVE_SESS_POOL_ABSOLUTE',
+  PARALLEL_DEGREE_LIMIT_MTH VARCHAR(128) DEFAULT 'PARALLEL_DEGREE_LIMIT_ABSOLUTE',
+  QUEUING_MTH VARCHAR(128) DEFAULT 'FIFO_TIMEOUT',
+  STATUS VARCHAR(16),
+  MANDATORY VARCHAR(3) DEFAULT 'NO',
+  COMMENTS VARCHAR(2000),
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- Resource consumer groups
+CREATE TABLE SYS.RSRC_CONSUMER_GROUP$ (
+  CONSUMER_GROUP VARCHAR(128) PRIMARY KEY,
+  CPU_METHOD VARCHAR(128) DEFAULT 'ROUND-ROBIN',
+  MGMT_METHOD VARCHAR(128) DEFAULT 'ROUND-ROBIN',
+  INTERNAL_USE VARCHAR(3) DEFAULT 'NO',
+  COMMENTS VARCHAR(2000),
+  CATEGORY VARCHAR(128) DEFAULT 'OTHER',
+  STATUS VARCHAR(16),
+  MANDATORY VARCHAR(3) DEFAULT 'NO',
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- Resource plan directives
+CREATE TABLE SYS.RSRC_PLAN_DIRECTIVE$ (
+  PLAN VARCHAR(128) NOT NULL,
+  GROUP_OR_SUBPLAN VARCHAR(128) NOT NULL,
+  DIRECTIVE_TYPE VARCHAR(32) DEFAULT 'PLAN_DIRECTIVE',
+  MGMT_P1 INTEGER DEFAULT 0,
+  MGMT_P2 INTEGER DEFAULT 0,
+  MGMT_P3 INTEGER DEFAULT 0,
+  MGMT_P4 INTEGER DEFAULT 0,
+  MGMT_P5 INTEGER DEFAULT 0,
+  MGMT_P6 INTEGER DEFAULT 0,
+  MGMT_P7 INTEGER DEFAULT 0,
+  MGMT_P8 INTEGER DEFAULT 0,
+  ACTIVE_SESS_POOL_P1 INTEGER,
+  QUEUEING_P1 INTEGER,
+  PARALLEL_TARGET_PERCENTAGE INTEGER,
+  PARALLEL_DEGREE_LIMIT_P1 INTEGER,
+  SWITCH_GROUP VARCHAR(128),
+  SWITCH_FOR_CALL VARCHAR(5) DEFAULT 'FALSE',
+  SWITCH_TIME INTEGER,
+  SWITCH_IO_MEGABYTES INTEGER,
+  SWITCH_IO_REQS INTEGER,
+  SWITCH_ELAPSED_TIME INTEGER,
+  SWITCH_TIME_IN_CALL INTEGER,
+  MAX_EST_EXEC_TIME INTEGER,
+  UNDO_POOL INTEGER,
+  MAX_IDLE_TIME INTEGER,
+  MAX_IDLE_BLOCKER_TIME INTEGER,
+  MAX_UTILIZATION_LIMIT INTEGER,
+  PARALLEL_QUEUE_TIMEOUT INTEGER,
+  SWITCH_IO_LOGICAL INTEGER,
+  SHARES INTEGER DEFAULT 1,
+  UTILIZATION_LIMIT INTEGER DEFAULT 100,
+  PARALLEL_SERVER_LIMIT INTEGER DEFAULT 100,
+  PQ_TIMEOUT_ACTION VARCHAR(16) DEFAULT 'RUN',
+  COMMENTS VARCHAR(2000),
+  STATUS VARCHAR(16),
+  MANDATORY VARCHAR(3) DEFAULT 'NO',
+  CON_ID INTEGER DEFAULT 0,
+  PRIMARY KEY (PLAN, GROUP_OR_SUBPLAN)
+);
+
+-- ============================================================================
+-- Flashback (DBA_FLASHBACK_ARCHIVE, V$FLASHBACK_DATABASE_LOG)
+-- ============================================================================
+
+-- Flashback archives
+CREATE TABLE SYS.FLASHBACK_ARCHIVE$ (
+  FLASHBACK_ARCHIVE_NAME VARCHAR(255) PRIMARY KEY,
+  FLASHBACK_ARCHIVE_NUM INTEGER,
+  RETENTION_IN_DAYS INTEGER DEFAULT 365,
+  CREATE_TIME TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  LAST_PURGE_TIME TIMESTAMP,
+  STATUS VARCHAR(16) DEFAULT 'ENABLED',
+  QUOTA_IN_MB INTEGER
+);
+
+-- Flashback archive tables
+CREATE TABLE SYS.FLASHBACK_ARCHIVE_TABLES$ (
+  TABLE_NAME VARCHAR(128) NOT NULL,
+  OWNER_NAME VARCHAR(128) NOT NULL,
+  FLASHBACK_ARCHIVE_NAME VARCHAR(255) NOT NULL,
+  ARCHIVE_TABLE_NAME VARCHAR(128),
+  STATUS VARCHAR(16) DEFAULT 'ENABLED',
+  PRIMARY KEY (OWNER_NAME, TABLE_NAME)
+);
+
+-- Flashback database log
+CREATE TABLE SYS.V_FLASHBACK_DATABASE_LOG$ (
+  OLDEST_FLASHBACK_SCN INTEGER,
+  OLDEST_FLASHBACK_TIME TIMESTAMP,
+  RETENTION_TARGET INTEGER DEFAULT 1440,
+  FLASHBACK_SIZE INTEGER DEFAULT 0,
+  ESTIMATED_FLASHBACK_SIZE INTEGER DEFAULT 0,
+  CON_ID INTEGER DEFAULT 0
+);
+
+-- ============================================================================
+-- Alert/Diagnostics (V$DIAG_ALERT_EXT)
+-- ============================================================================
+
+CREATE TABLE SYS.V_DIAG_ALERT_EXT$ (
+  RECORD_ID INTEGER PRIMARY KEY,
+  ORIGINATING_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  NORMALIZED_TIMESTAMP TIMESTAMP,
+  ORGANIZATION_ID VARCHAR(128),
+  COMPONENT_ID VARCHAR(128),
+  HOST_ID VARCHAR(256),
+  HOST_ADDRESS VARCHAR(64),
+  MESSAGE_TYPE INTEGER DEFAULT 0,
+  MESSAGE_LEVEL INTEGER DEFAULT 0,
+  MESSAGE_ID VARCHAR(128),
+  MESSAGE_GROUP VARCHAR(128),
+  CLIENT_ID VARCHAR(256),
+  MODULE_ID VARCHAR(256),
+  PROCESS_ID VARCHAR(128),
+  THREAD_ID VARCHAR(128),
+  USER_ID VARCHAR(128),
+  INSTANCE_ID VARCHAR(128),
+  DETAILED_LOCATION VARCHAR(256),
+  PROBLEM_KEY VARCHAR(256),
+  UPSTREAM_COMP_ID VARCHAR(128),
+  DOWNSTREAM_COMP_ID VARCHAR(128),
+  EXECUTION_CONTEXT_ID VARCHAR(128),
+  EXECUTION_CONTEXT_SEQUENCE INTEGER,
+  ERROR_INSTANCE_ID INTEGER,
+  ERROR_INSTANCE_SEQUENCE INTEGER,
+  MESSAGE_TEXT VARCHAR(4000),
+  MESSAGE_ARGUMENTS VARCHAR(4000),
+  SUPPLEMENTAL_ATTRIBUTES VARCHAR(4000),
+  SUPPLEMENTAL_DETAILS VARCHAR(4000),
+  PARTITION INTEGER DEFAULT 0,
+  RECORD_TYPE INTEGER DEFAULT 0,
+  FILENAME VARCHAR(512),
+  CON_ID INTEGER DEFAULT 0
+);
 `;
 
 // ============================================================================
@@ -518,6 +1102,232 @@ function getInitialDataSQL(): string[] {
     statements.push(
       `INSERT INTO PARAMETER$ (PARAM_NUM, PARAM_NAME, PARAM_VALUE, DISPLAY_VALUE, ISDEFAULT, DESCRIPTION) ` +
       `VALUES (${p.num}, '${p.name}', '${p.value}', '${p.value}', 'TRUE', '${p.desc}')`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - Redo Logs
+  // ========================================================================
+  const redoLogs = [
+    { group: 1, thread: 1, seq: 100, bytes: 52428800, status: 'CURRENT', archived: 'NO' },
+    { group: 2, thread: 1, seq: 99, bytes: 52428800, status: 'INACTIVE', archived: 'YES' },
+    { group: 3, thread: 1, seq: 98, bytes: 52428800, status: 'INACTIVE', archived: 'YES' },
+  ];
+
+  for (const log of redoLogs) {
+    statements.push(
+      `INSERT INTO V_LOG$ (GROUP_NUM, THREAD_NUM, SEQUENCE_NUM, LOG_BYTES, STATUS, ARCHIVED, FIRST_TIME) ` +
+      `VALUES (${log.group}, ${log.thread}, ${log.seq}, ${log.bytes}, '${log.status}', '${log.archived}', '${now}')`
+    );
+  }
+
+  // Redo log files
+  const logFiles = [
+    { group: 1, member: '/u01/app/oracle/oradata/ORCL/redo01a.log', status: '' },
+    { group: 1, member: '/u01/app/oracle/oradata/ORCL/redo01b.log', status: '' },
+    { group: 2, member: '/u01/app/oracle/oradata/ORCL/redo02a.log', status: '' },
+    { group: 2, member: '/u01/app/oracle/oradata/ORCL/redo02b.log', status: '' },
+    { group: 3, member: '/u01/app/oracle/oradata/ORCL/redo03a.log', status: '' },
+    { group: 3, member: '/u01/app/oracle/oradata/ORCL/redo03b.log', status: '' },
+  ];
+
+  for (const lf of logFiles) {
+    statements.push(
+      `INSERT INTO V_LOGFILE$ (GROUP_NUM, MEMBER, STATUS, FILE_TYPE) ` +
+      `VALUES (${lf.group}, '${lf.member}', '${lf.status || 'VALID'}', 'ONLINE')`
+    );
+  }
+
+  // Archived logs
+  for (let i = 1; i <= 5; i++) {
+    statements.push(
+      `INSERT INTO V_ARCHIVED_LOG$ (RECID, STAMP, NAME, THREAD_NUM, SEQUENCE_NUM, FIRST_CHANGE, BLOCKS, COMPLETION_TIME, ARCHIVED, STATUS) ` +
+      `VALUES (${i}, ${Date.now() - i * 3600000}, '/u01/app/oracle/fast_recovery_area/ORCL/archivelog/arc_${100 - i}.arc', 1, ${100 - i}, ${(100 - i) * 10000}, ${10240 + i * 1000}, '${now}', 'YES', 'A')`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - RMAN Backups
+  // ========================================================================
+  const backupJobs = [
+    { key: 1, cmdId: 'FULL_DB_BACKUP', inputType: 'DB FULL', status: 'COMPLETED', inputBytes: 10737418240, outputBytes: 5368709120, elapsed: 3600 },
+    { key: 2, cmdId: 'ARCH_BACKUP', inputType: 'ARCHIVELOG', status: 'COMPLETED', inputBytes: 1073741824, outputBytes: 536870912, elapsed: 600 },
+    { key: 3, cmdId: 'INCR_LEVEL1', inputType: 'DB INCR', status: 'COMPLETED', inputBytes: 2147483648, outputBytes: 1073741824, elapsed: 1800 },
+    { key: 4, cmdId: 'CONTROLFILE_BACKUP', inputType: 'CONTROLFILE', status: 'COMPLETED', inputBytes: 16777216, outputBytes: 8388608, elapsed: 60 },
+  ];
+
+  for (const job of backupJobs) {
+    statements.push(
+      `INSERT INTO V_RMAN_BACKUP_JOB_DETAILS$ (SESSION_KEY, COMMAND_ID, START_TIME, END_TIME, INPUT_TYPE, STATUS, INPUT_BYTES, OUTPUT_BYTES, ELAPSED_SECONDS, INPUT_BYTES_DISPLAY, OUTPUT_BYTES_DISPLAY, TIME_TAKEN_DISPLAY) ` +
+      `VALUES (${job.key}, '${job.cmdId}', '${now}', '${now}', '${job.inputType}', '${job.status}', ${job.inputBytes}, ${job.outputBytes}, ${job.elapsed}, '${Math.round(job.inputBytes / 1073741824)}G', '${Math.round(job.outputBytes / 1073741824)}G', '${Math.floor(job.elapsed / 60)}m ${job.elapsed % 60}s')`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - SGA Memory
+  // ========================================================================
+  const sgaComponents = [
+    { name: 'Fixed Size', value: 2932632 },
+    { name: 'Variable Size', value: 436207720 },
+    { name: 'Database Buffers', value: 104857600 },
+    { name: 'Redo Buffers', value: 7340032 },
+  ];
+
+  for (const comp of sgaComponents) {
+    statements.push(
+      `INSERT INTO V_SGA$ (NAME, VALUE_BYTES) VALUES ('${comp.name}', ${comp.value})`
+    );
+  }
+
+  // SGA Stats
+  const sgaStats = [
+    { pool: 'shared pool', name: 'free memory', bytes: 50331648 },
+    { pool: 'shared pool', name: 'library cache', bytes: 67108864 },
+    { pool: 'shared pool', name: 'sql area', bytes: 33554432 },
+    { pool: 'shared pool', name: 'dictionary cache', bytes: 16777216 },
+    { pool: 'large pool', name: 'free memory', bytes: 8388608 },
+    { pool: 'java pool', name: 'free memory', bytes: 16777216 },
+    { pool: null, name: 'buffer_cache', bytes: 104857600 },
+    { pool: null, name: 'log_buffer', bytes: 7340032 },
+  ];
+
+  for (const stat of sgaStats) {
+    statements.push(
+      `INSERT INTO V_SGASTAT$ (POOL, COMPONENT_NAME, BYTES_VAL) ` +
+      `VALUES (${stat.pool ? `'${stat.pool}'` : 'NULL'}, '${stat.name}', ${stat.bytes})`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - Wait Statistics
+  // ========================================================================
+  const waitStats = [
+    { waitClass: 'User I/O', count: 15420, time: 245000 },
+    { waitClass: 'System I/O', count: 8540, time: 125000 },
+    { waitClass: 'Concurrency', count: 1250, time: 45000 },
+    { waitClass: 'Application', count: 350, time: 12000 },
+    { waitClass: 'Network', count: 25000, time: 85000 },
+    { waitClass: 'Commit', count: 4500, time: 15000 },
+    { waitClass: 'Configuration', count: 120, time: 5000 },
+    { waitClass: 'Scheduler', count: 80, time: 2000 },
+    { waitClass: 'Administrative', count: 25, time: 500 },
+    { waitClass: 'Other', count: 500, time: 8000 },
+  ];
+
+  for (const ws of waitStats) {
+    statements.push(
+      `INSERT INTO V_WAITSTAT$ (WAIT_CLASS, COUNT_VAL, TIME_VAL) VALUES ('${ws.waitClass}', ${ws.count}, ${ws.time})`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - Sample SQL Statements
+  // ========================================================================
+  const sampleSQLs = [
+    { id: 'a1b2c3d4e5', text: 'SELECT * FROM EMPLOYEES WHERE DEPARTMENT_ID = :1', executions: 15420, bufferGets: 245000, diskReads: 1200, cpuTime: 125000, elapsedTime: 180000, rowsProcessed: 45000, parsingSchema: 'HR' },
+    { id: 'f6g7h8i9j0', text: 'SELECT E.*, D.DEPARTMENT_NAME FROM EMPLOYEES E JOIN DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID', executions: 8200, bufferGets: 180000, diskReads: 850, cpuTime: 95000, elapsedTime: 140000, rowsProcessed: 32000, parsingSchema: 'HR' },
+    { id: 'k1l2m3n4o5', text: 'INSERT INTO AUDIT_LOG (ACTION, USER_ID, TIMESTAMP) VALUES (:1, :2, SYSDATE)', executions: 45000, bufferGets: 90000, diskReads: 100, cpuTime: 45000, elapsedTime: 60000, rowsProcessed: 45000, parsingSchema: 'SYSTEM' },
+    { id: 'p6q7r8s9t0', text: 'UPDATE EMPLOYEES SET SALARY = SALARY * 1.1 WHERE EMPLOYEE_ID = :1', executions: 520, bufferGets: 15600, diskReads: 50, cpuTime: 8000, elapsedTime: 12000, rowsProcessed: 520, parsingSchema: 'HR' },
+    { id: 'u1v2w3x4y5', text: 'SELECT COUNT(*) FROM DBA_OBJECTS', executions: 1200, bufferGets: 48000, diskReads: 200, cpuTime: 24000, elapsedTime: 36000, rowsProcessed: 1200, parsingSchema: 'SYS' },
+  ];
+
+  for (const sql of sampleSQLs) {
+    statements.push(
+      `INSERT INTO V_SQL$ (SQL_ID, SQL_TEXT, EXECUTIONS, BUFFER_GETS, DISK_READS, CPU_TIME, ELAPSED_TIME, ROWS_PROCESSED, PARSING_SCHEMA_NAME, FIRST_LOAD_TIME, LAST_ACTIVE_TIME) ` +
+      `VALUES ('${sql.id}', '${sql.text.replace(/'/g, "''")}', ${sql.executions}, ${sql.bufferGets}, ${sql.diskReads}, ${sql.cpuTime}, ${sql.elapsedTime}, ${sql.rowsProcessed}, '${sql.parsingSchema}', '${now}', '${now}')`
+    );
+    statements.push(
+      `INSERT INTO V_SQLAREA$ (SQL_ID, SQL_TEXT, EXECUTIONS, BUFFER_GETS, DISK_READS, CPU_TIME, ELAPSED_TIME, ROWS_PROCESSED, PARSING_SCHEMA_NAME, FIRST_LOAD_TIME, LAST_ACTIVE_TIME) ` +
+      `VALUES ('${sql.id}', '${sql.text.replace(/'/g, "''")}', ${sql.executions}, ${sql.bufferGets}, ${sql.diskReads}, ${sql.cpuTime}, ${sql.elapsedTime}, ${sql.rowsProcessed}, '${sql.parsingSchema}', '${now}', '${now}')`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - Scheduler Jobs
+  // ========================================================================
+  const schedulerJobs = [
+    { owner: 'SYS', name: 'GATHER_STATS_JOB', type: 'PLSQL_BLOCK', action: 'BEGIN DBMS_STATS.GATHER_DATABASE_STATS; END;', schedule: 'FREQ=DAILY;BYHOUR=2', enabled: 'TRUE', state: 'SCHEDULED' },
+    { owner: 'SYS', name: 'PURGE_LOG', type: 'PLSQL_BLOCK', action: 'BEGIN DBMS_SCHEDULER.PURGE_LOG; END;', schedule: 'FREQ=WEEKLY;BYDAY=SUN', enabled: 'TRUE', state: 'SCHEDULED' },
+    { owner: 'SYS', name: 'AUTO_SPACE_ADVISOR_JOB', type: 'PLSQL_BLOCK', action: 'BEGIN DBMS_SPACE.AUTO_SPACE_ADVISOR_JOB_PROC; END;', schedule: 'FREQ=DAILY;BYHOUR=3', enabled: 'TRUE', state: 'SCHEDULED' },
+    { owner: 'HR', name: 'EMPLOYEE_REPORT', type: 'STORED_PROCEDURE', action: 'HR.GENERATE_EMPLOYEE_REPORT', schedule: 'FREQ=MONTHLY;BYMONTHDAY=1', enabled: 'TRUE', state: 'SCHEDULED' },
+    { owner: 'SYS', name: 'BACKUP_JOB', type: 'EXECUTABLE', action: '/u01/app/scripts/rman_backup.sh', schedule: 'FREQ=DAILY;BYHOUR=23', enabled: 'TRUE', state: 'SCHEDULED' },
+  ];
+
+  for (const job of schedulerJobs) {
+    statements.push(
+      `INSERT INTO SCHEDULER_JOB$ (OWNER, JOB_NAME, JOB_TYPE, JOB_ACTION, REPEAT_INTERVAL, ENABLED, STATE, JOB_CREATOR, START_DATE, NEXT_RUN_DATE) ` +
+      `VALUES ('${job.owner}', '${job.name}', '${job.type}', '${job.action.replace(/'/g, "''")}', '${job.schedule}', '${job.enabled}', '${job.state}', 'SYS', '${now}', '${now}')`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - Resource Plans
+  // ========================================================================
+  const resourcePlans = [
+    { plan: 'DEFAULT_PLAN', directives: 3, status: 'ACTIVE', comment: 'Default resource plan' },
+    { plan: 'MIXED_WORKLOAD_PLAN', directives: 4, status: 'PENDING', comment: 'Plan for mixed OLTP and reporting workload' },
+    { plan: 'MAINTENANCE_PLAN', directives: 2, status: 'PENDING', comment: 'Plan for maintenance windows' },
+  ];
+
+  for (const plan of resourcePlans) {
+    statements.push(
+      `INSERT INTO RSRC_PLAN$ (PLAN, NUM_PLAN_DIRECTIVES, STATUS, COMMENTS) VALUES ('${plan.plan}', ${plan.directives}, '${plan.status}', '${plan.comment}')`
+    );
+  }
+
+  // Consumer groups
+  const consumerGroups = [
+    { group: 'SYS_GROUP', comment: 'System consumer group for SYS users', mandatory: 'YES' },
+    { group: 'LOW_GROUP', comment: 'Low priority consumer group', mandatory: 'NO' },
+    { group: 'INTERACTIVE_GROUP', comment: 'For interactive OLTP sessions', mandatory: 'NO' },
+    { group: 'BATCH_GROUP', comment: 'For batch processing jobs', mandatory: 'NO' },
+    { group: 'OTHER_GROUPS', comment: 'Default consumer group', mandatory: 'YES' },
+  ];
+
+  for (const cg of consumerGroups) {
+    statements.push(
+      `INSERT INTO RSRC_CONSUMER_GROUP$ (CONSUMER_GROUP, COMMENTS, MANDATORY) VALUES ('${cg.group}', '${cg.comment}', '${cg.mandatory}')`
+    );
+  }
+
+  // ========================================================================
+  // DBA Training Data - Flashback Archive
+  // ========================================================================
+  statements.push(
+    `INSERT INTO FLASHBACK_ARCHIVE$ (FLASHBACK_ARCHIVE_NAME, FLASHBACK_ARCHIVE_NUM, RETENTION_IN_DAYS, CREATE_TIME, STATUS, QUOTA_IN_MB) ` +
+    `VALUES ('FLA_1YEAR', 1, 365, '${now}', 'ENABLED', 10240)`
+  );
+  statements.push(
+    `INSERT INTO FLASHBACK_ARCHIVE$ (FLASHBACK_ARCHIVE_NAME, FLASHBACK_ARCHIVE_NUM, RETENTION_IN_DAYS, CREATE_TIME, STATUS, QUOTA_IN_MB) ` +
+    `VALUES ('FLA_5YEAR', 2, 1825, '${now}', 'ENABLED', 51200)`
+  );
+
+  // Flashback database log
+  statements.push(
+    `INSERT INTO V_FLASHBACK_DATABASE_LOG$ (OLDEST_FLASHBACK_SCN, OLDEST_FLASHBACK_TIME, RETENTION_TARGET, FLASHBACK_SIZE, ESTIMATED_FLASHBACK_SIZE, CON_ID) ` +
+    `VALUES (1000000, '${now}', 1440, 1073741824, 2147483648, 0)`
+  );
+
+  // ========================================================================
+  // DBA Training Data - Alert Log Entries
+  // ========================================================================
+  const alertMessages = [
+    { id: 1, level: 16, group: 'startup', text: 'Starting ORACLE instance (normal)' },
+    { id: 2, level: 16, group: 'startup', text: 'LICENSE_MAX_SESSION = 0' },
+    { id: 3, level: 16, group: 'startup', text: 'SGA size: 524288000 bytes' },
+    { id: 4, level: 16, group: 'startup', text: 'Database mounted' },
+    { id: 5, level: 16, group: 'startup', text: 'Database opened' },
+    { id: 6, level: 8, group: 'checkpoint', text: 'Completed checkpoint' },
+    { id: 7, level: 8, group: 'archiver', text: 'Thread 1 advanced to log sequence 101' },
+    { id: 8, level: 8, group: 'archiver', text: 'Archived Log entry 100 added for thread 1 sequence 100' },
+    { id: 9, level: 4, group: 'warning', text: 'ORA-01555: snapshot too old: rollback segment number with name "" too small' },
+    { id: 10, level: 2, group: 'error', text: 'ORA-00600: internal error code, arguments: [kghstack_free3], [0x7F4D2C1A8B00]' },
+  ];
+
+  for (const alert of alertMessages) {
+    statements.push(
+      `INSERT INTO V_DIAG_ALERT_EXT$ (RECORD_ID, ORIGINATING_TIMESTAMP, MESSAGE_LEVEL, MESSAGE_GROUP, MESSAGE_TEXT, HOST_ID, INSTANCE_ID, COMPONENT_ID) ` +
+      `VALUES (${alert.id}, '${now}', ${alert.level}, '${alert.group}', '${alert.text.replace(/'/g, "''")}', 'dbserver01', 'ORCL1', 'rdbms')`
     );
   }
 
@@ -1066,6 +1876,477 @@ export class OracleSecurityManager {
           { name: 'DESCRIPTION', dataType: 'VARCHAR', length: 255, nullable: true },
         ],
         primaryKey: ['PARAM_NUM']
+      },
+      // ========================================================================
+      // Redo Logs & Archiving (V$LOG, V$LOGFILE, V$ARCHIVED_LOG)
+      // ========================================================================
+      {
+        name: 'V_LOG$',
+        columns: [
+          { name: 'GROUP_NUM', dataType: 'INTEGER', nullable: false },
+          { name: 'THREAD_NUM', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'SEQUENCE_NUM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'LOG_BYTES', dataType: 'INTEGER', nullable: true, defaultValue: 52428800 },
+          { name: 'BLOCKSIZE', dataType: 'INTEGER', nullable: true, defaultValue: 512 },
+          { name: 'MEMBERS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'ARCHIVED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true, defaultValue: 'UNUSED' },
+          { name: 'FIRST_CHANGE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'FIRST_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'NEXT_CHANGE', dataType: 'INTEGER', nullable: true },
+          { name: 'NEXT_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['GROUP_NUM']
+      },
+      {
+        name: 'V_LOGFILE$',
+        columns: [
+          { name: 'GROUP_NUM', dataType: 'INTEGER', nullable: false },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true, defaultValue: 'VALID' },
+          { name: 'FILE_TYPE', dataType: 'VARCHAR', length: 16, nullable: true, defaultValue: 'ONLINE' },
+          { name: 'MEMBER', dataType: 'VARCHAR', length: 512, nullable: false },
+          { name: 'IS_RECOVERY_DEST_FILE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['GROUP_NUM', 'MEMBER']
+      },
+      {
+        name: 'V_ARCHIVED_LOG$',
+        columns: [
+          { name: 'RECID', dataType: 'INTEGER', nullable: false },
+          { name: 'STAMP', dataType: 'INTEGER', nullable: true },
+          { name: 'NAME', dataType: 'VARCHAR', length: 512, nullable: true },
+          { name: 'DEST_ID', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'THREAD_NUM', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'SEQUENCE_NUM', dataType: 'INTEGER', nullable: true },
+          { name: 'RESETLOGS_CHANGE', dataType: 'INTEGER', nullable: true },
+          { name: 'RESETLOGS_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'FIRST_CHANGE', dataType: 'INTEGER', nullable: true },
+          { name: 'FIRST_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'NEXT_CHANGE', dataType: 'INTEGER', nullable: true },
+          { name: 'NEXT_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'BLOCKS', dataType: 'INTEGER', nullable: true },
+          { name: 'BLOCK_SIZE', dataType: 'INTEGER', nullable: true, defaultValue: 512 },
+          { name: 'ARCHIVED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'YES' },
+          { name: 'APPLIED', dataType: 'VARCHAR', length: 9, nullable: true, defaultValue: 'NO' },
+          { name: 'DELETED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'A' },
+          { name: 'COMPLETION_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'COMPRESSED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['RECID']
+      },
+      // ========================================================================
+      // RMAN Backup (V$BACKUP, V$RMAN_BACKUP_JOB_DETAILS)
+      // ========================================================================
+      {
+        name: 'V_BACKUP$',
+        columns: [
+          { name: 'FILE_NUM', dataType: 'INTEGER', nullable: false },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 18, nullable: true, defaultValue: 'NOT ACTIVE' },
+          { name: 'CHANGE_NUM', dataType: 'INTEGER', nullable: true },
+          { name: 'BACKUP_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['FILE_NUM']
+      },
+      {
+        name: 'V_RMAN_BACKUP_JOB_DETAILS$',
+        columns: [
+          { name: 'SESSION_KEY', dataType: 'INTEGER', nullable: false },
+          { name: 'SESSION_RECID', dataType: 'INTEGER', nullable: true },
+          { name: 'SESSION_STAMP', dataType: 'INTEGER', nullable: true },
+          { name: 'COMMAND_ID', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'START_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'END_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'INPUT_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'COMPLETED' },
+          { name: 'OUTPUT_DEVICE_TYPE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'DISK' },
+          { name: 'INPUT_BYTES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'OUTPUT_BYTES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'INPUT_BYTES_PER_SEC', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'OUTPUT_BYTES_PER_SEC', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ELAPSED_SECONDS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'COMPRESSION_RATIO', dataType: 'DECIMAL', nullable: true, defaultValue: 1.00 },
+          { name: 'INPUT_BYTES_DISPLAY', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'OUTPUT_BYTES_DISPLAY', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'TIME_TAKEN_DISPLAY', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['SESSION_KEY']
+      },
+      // ========================================================================
+      // Locks & Transactions (V$LOCK, V$TRANSACTION, V$SESSION_WAIT)
+      // ========================================================================
+      {
+        name: 'V_LOCK$',
+        columns: [
+          { name: 'ADDR', dataType: 'VARCHAR', length: 32, nullable: false },
+          { name: 'KADDR', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'SID', dataType: 'INTEGER', nullable: false },
+          { name: 'LOCK_TYPE', dataType: 'VARCHAR', length: 2, nullable: false },
+          { name: 'ID1', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ID2', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'LMODE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'REQUEST', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CTIME', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'BLOCK_STATUS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['ADDR']
+      },
+      {
+        name: 'V_TRANSACTION$',
+        columns: [
+          { name: 'ADDR', dataType: 'VARCHAR', length: 32, nullable: false },
+          { name: 'XIDUSN', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'XIDSLOT', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'XIDSQN', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'UBAFIL', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'UBABLK', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true, defaultValue: 'ACTIVE' },
+          { name: 'START_TIME', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'SES_ADDR', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'FLAG', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SPACE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'RECURSIVE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'NOUNDO', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'NAME', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'USED_UBLK', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'USED_UREC', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'LOG_IO', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'PHY_IO', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CR_GET', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CR_CHANGE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['ADDR']
+      },
+      {
+        name: 'V_SESSION_WAIT$',
+        columns: [
+          { name: 'SID', dataType: 'INTEGER', nullable: false },
+          { name: 'SEQ_NUM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'EVENT', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'P1TEXT', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'P1', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'P2TEXT', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'P2', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'P3TEXT', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'P3', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'WAIT_CLASS_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'WAIT_CLASS', dataType: 'VARCHAR', length: 64, nullable: true, defaultValue: 'Other' },
+          { name: 'WAIT_TIME', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SECONDS_IN_WAIT', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'STATE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'WAITED SHORT TIME' },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['SID']
+      },
+      {
+        name: 'V_WAITSTAT$',
+        columns: [
+          { name: 'WAIT_CLASS', dataType: 'VARCHAR', length: 64, nullable: false },
+          { name: 'COUNT_VAL', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'TIME_VAL', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['WAIT_CLASS']
+      },
+      // ========================================================================
+      // Memory/SGA (V$SGA, V$SGASTAT)
+      // ========================================================================
+      {
+        name: 'V_SGA$',
+        columns: [
+          { name: 'NAME', dataType: 'VARCHAR', length: 64, nullable: false },
+          { name: 'VALUE_BYTES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['NAME']
+      },
+      {
+        name: 'V_SGASTAT$',
+        columns: [
+          { name: 'POOL', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'COMPONENT_NAME', dataType: 'VARCHAR', length: 64, nullable: false },
+          { name: 'BYTES_VAL', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['COMPONENT_NAME']
+      },
+      // ========================================================================
+      // Performance SQL (V$SQL, V$SQLAREA)
+      // ========================================================================
+      {
+        name: 'V_SQL$',
+        columns: [
+          { name: 'SQL_ID', dataType: 'VARCHAR', length: 32, nullable: false },
+          { name: 'CHILD_NUMBER', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SQL_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'SHARABLE_MEM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'PERSISTENT_MEM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'RUNTIME_MEM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SORTS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'FETCHES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'EXECUTIONS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'PARSE_CALLS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'DISK_READS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'DIRECT_READS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'DIRECT_WRITES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'BUFFER_GETS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ROWS_PROCESSED', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CPU_TIME', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ELAPSED_TIME', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'OPTIMIZER_MODE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'ALL_ROWS' },
+          { name: 'OPTIMIZER_COST', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'PARSING_SCHEMA_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'FIRST_LOAD_TIME', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'LAST_LOAD_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_ACTIVE_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'PLAN_HASH_VALUE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MODULE', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'ACTION', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'IS_OBSOLETE', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'OBJECT_STATUS', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'VALID' },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['SQL_ID']
+      },
+      {
+        name: 'V_SQLAREA$',
+        columns: [
+          { name: 'SQL_ID', dataType: 'VARCHAR', length: 32, nullable: false },
+          { name: 'SQL_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'SHARABLE_MEM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'PERSISTENT_MEM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'RUNTIME_MEM', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SORTS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'VERSION_COUNT', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'FETCHES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'EXECUTIONS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'LOADS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'FIRST_LOAD_TIME', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'LAST_LOAD_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_ACTIVE_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'INVALIDATIONS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'PARSE_CALLS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'DISK_READS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'BUFFER_GETS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ROWS_PROCESSED', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CPU_TIME', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ELAPSED_TIME', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'PARSING_SCHEMA_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OPTIMIZER_MODE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'ALL_ROWS' },
+          { name: 'MODULE', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'ACTION', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['SQL_ID']
+      },
+      // ========================================================================
+      // Scheduler Jobs (DBA_SCHEDULER_JOBS, DBA_SCHEDULER_JOB_LOG)
+      // ========================================================================
+      {
+        name: 'SCHEDULER_JOB$',
+        columns: [
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'JOB_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'JOB_SUBNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'JOB_STYLE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'REGULAR' },
+          { name: 'JOB_CREATOR', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'JOB_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'JOB_ACTION', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'NUMBER_OF_ARGUMENTS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SCHEDULE_TYPE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'ONCE' },
+          { name: 'START_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'REPEAT_INTERVAL', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'END_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'JOB_CLASS', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'DEFAULT_JOB_CLASS' },
+          { name: 'ENABLED', dataType: 'VARCHAR', length: 5, nullable: true, defaultValue: 'FALSE' },
+          { name: 'AUTO_DROP', dataType: 'VARCHAR', length: 5, nullable: true, defaultValue: 'TRUE' },
+          { name: 'STATE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'DISABLED' },
+          { name: 'JOB_PRIORITY', dataType: 'INTEGER', nullable: true, defaultValue: 3 },
+          { name: 'RUN_COUNT', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MAX_RUNS', dataType: 'INTEGER', nullable: true },
+          { name: 'FAILURE_COUNT', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MAX_FAILURES', dataType: 'INTEGER', nullable: true },
+          { name: 'RETRY_COUNT', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'LAST_START_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_RUN_DURATION', dataType: 'INTEGER', nullable: true },
+          { name: 'NEXT_RUN_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LOGGING_LEVEL', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'RUNS' },
+          { name: 'COMMENTS', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'RESTARTABLE', dataType: 'VARCHAR', length: 5, nullable: true, defaultValue: 'FALSE' },
+        ],
+        primaryKey: ['OWNER', 'JOB_NAME']
+      },
+      {
+        name: 'SCHEDULER_JOB_LOG$',
+        columns: [
+          { name: 'LOG_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'LOG_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'JOB_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'JOB_SUBNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'JOB_CLASS', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'DEFAULT_JOB_CLASS' },
+          { name: 'OPERATION', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'USER_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'REQ_START_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'ACTUAL_START_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'RUN_DURATION', dataType: 'INTEGER', nullable: true },
+          { name: 'INSTANCE_ID', dataType: 'INTEGER', nullable: true },
+          { name: 'SESSION_ID', dataType: 'INTEGER', nullable: true },
+          { name: 'CPU_USED', dataType: 'INTEGER', nullable: true },
+          { name: 'ADDITIONAL_INFO', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'ERRORS', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'OUTPUT', dataType: 'VARCHAR', length: 4000, nullable: true },
+        ],
+        primaryKey: ['LOG_ID']
+      },
+      // ========================================================================
+      // Database Links (DBA_DB_LINKS)
+      // ========================================================================
+      {
+        name: 'DB_LINK$',
+        columns: [
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'DB_LINK', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'HOST', dataType: 'VARCHAR', length: 2000, nullable: true },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'HIDDEN', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'VALID', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'YES' },
+        ],
+        primaryKey: ['OWNER', 'DB_LINK']
+      },
+      // ========================================================================
+      // Resource Manager (DBA_RSRC_PLANS, DBA_RSRC_CONSUMER_GROUPS)
+      // ========================================================================
+      {
+        name: 'RSRC_PLAN$',
+        columns: [
+          { name: 'PLAN', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'NUM_PLAN_DIRECTIVES', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CPU_METHOD', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'EMPHASIS' },
+          { name: 'MGMT_METHOD', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'EMPHASIS' },
+          { name: 'ACTIVE_SESS_POOL_MTH', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'PARALLEL_DEGREE_LIMIT_MTH', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'QUEUING_MTH', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'FIFO_TIMEOUT' },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true },
+          { name: 'MANDATORY', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'COMMENTS', dataType: 'VARCHAR', length: 2000, nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['PLAN']
+      },
+      {
+        name: 'RSRC_CONSUMER_GROUP$',
+        columns: [
+          { name: 'CONSUMER_GROUP', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'CPU_METHOD', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'ROUND-ROBIN' },
+          { name: 'MGMT_METHOD', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'ROUND-ROBIN' },
+          { name: 'INTERNAL_USE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'COMMENTS', dataType: 'VARCHAR', length: 2000, nullable: true },
+          { name: 'CATEGORY', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'OTHER' },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true },
+          { name: 'MANDATORY', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['CONSUMER_GROUP']
+      },
+      {
+        name: 'RSRC_PLAN_DIRECTIVE$',
+        columns: [
+          { name: 'PLAN', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'GROUP_OR_SUBPLAN', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'DIRECTIVE_TYPE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'PLAN_DIRECTIVE' },
+          { name: 'MGMT_P1', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MGMT_P2', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MGMT_P3', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MGMT_P4', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'SWITCH_GROUP', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'SWITCH_TIME', dataType: 'INTEGER', nullable: true },
+          { name: 'MAX_EST_EXEC_TIME', dataType: 'INTEGER', nullable: true },
+          { name: 'UNDO_POOL', dataType: 'INTEGER', nullable: true },
+          { name: 'MAX_IDLE_TIME', dataType: 'INTEGER', nullable: true },
+          { name: 'SHARES', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'UTILIZATION_LIMIT', dataType: 'INTEGER', nullable: true, defaultValue: 100 },
+          { name: 'PARALLEL_SERVER_LIMIT', dataType: 'INTEGER', nullable: true, defaultValue: 100 },
+          { name: 'COMMENTS', dataType: 'VARCHAR', length: 2000, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['PLAN', 'GROUP_OR_SUBPLAN']
+      },
+      // ========================================================================
+      // Flashback (DBA_FLASHBACK_ARCHIVE, V$FLASHBACK_DATABASE_LOG)
+      // ========================================================================
+      {
+        name: 'FLASHBACK_ARCHIVE$',
+        columns: [
+          { name: 'FLASHBACK_ARCHIVE_NAME', dataType: 'VARCHAR', length: 255, nullable: false },
+          { name: 'FLASHBACK_ARCHIVE_NUM', dataType: 'INTEGER', nullable: true },
+          { name: 'RETENTION_IN_DAYS', dataType: 'INTEGER', nullable: true, defaultValue: 365 },
+          { name: 'CREATE_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_PURGE_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true, defaultValue: 'ENABLED' },
+          { name: 'QUOTA_IN_MB', dataType: 'INTEGER', nullable: true },
+        ],
+        primaryKey: ['FLASHBACK_ARCHIVE_NAME']
+      },
+      {
+        name: 'FLASHBACK_ARCHIVE_TABLES$',
+        columns: [
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OWNER_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'FLASHBACK_ARCHIVE_NAME', dataType: 'VARCHAR', length: 255, nullable: false },
+          { name: 'ARCHIVE_TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 16, nullable: true, defaultValue: 'ENABLED' },
+        ],
+        primaryKey: ['OWNER_NAME', 'TABLE_NAME']
+      },
+      {
+        name: 'V_FLASHBACK_DATABASE_LOG$',
+        columns: [
+          { name: 'OLDEST_FLASHBACK_SCN', dataType: 'INTEGER', nullable: true },
+          { name: 'OLDEST_FLASHBACK_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'RETENTION_TARGET', dataType: 'INTEGER', nullable: true, defaultValue: 1440 },
+          { name: 'FLASHBACK_SIZE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'ESTIMATED_FLASHBACK_SIZE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['CON_ID']
+      },
+      // ========================================================================
+      // Alert/Diagnostics (V$DIAG_ALERT_EXT)
+      // ========================================================================
+      {
+        name: 'V_DIAG_ALERT_EXT$',
+        columns: [
+          { name: 'RECORD_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'ORIGINATING_TIMESTAMP', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'COMPONENT_ID', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'HOST_ID', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'HOST_ADDRESS', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'MESSAGE_TYPE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MESSAGE_LEVEL', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'MESSAGE_ID', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'MESSAGE_GROUP', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'CLIENT_ID', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'MODULE_ID', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'PROCESS_ID', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'USER_ID', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'INSTANCE_ID', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'PROBLEM_KEY', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'MESSAGE_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'FILENAME', dataType: 'VARCHAR', length: 512, nullable: true },
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['RECORD_ID']
       },
     ];
 

@@ -1151,5 +1151,221 @@ describe('Oracle Security Module', () => {
         });
       });
     });
+
+    // ========================================================================
+    // DBA Training Features - V$ Views and Performance Tables
+    // ========================================================================
+    describe('DBA Training Features', () => {
+
+      describe('Redo Logs (V$LOG, V$LOGFILE, V$ARCHIVED_LOG)', () => {
+        it('should have redo log groups populated', () => {
+          const logs = secMgr['queryTable']('SELECT * FROM V_LOG$');
+          expect(logs.length).toBe(3);
+          expect(logs.some((l: any) => l.STATUS === 'CURRENT')).toBe(true);
+          expect(logs.some((l: any) => l.STATUS === 'INACTIVE')).toBe(true);
+        });
+
+        it('should have redo log files with multiplexed members', () => {
+          const logFiles = secMgr['queryTable']('SELECT * FROM V_LOGFILE$');
+          expect(logFiles.length).toBe(6); // 3 groups x 2 members each
+          expect(logFiles.every((f: any) => f.FILE_TYPE === 'ONLINE')).toBe(true);
+        });
+
+        it('should have archived logs', () => {
+          const archivedLogs = secMgr['queryTable']('SELECT * FROM V_ARCHIVED_LOG$');
+          expect(archivedLogs.length).toBe(5);
+          expect(archivedLogs.every((a: any) => a.ARCHIVED === 'YES')).toBe(true);
+        });
+
+        it('should query logs by status', () => {
+          const currentLog = secMgr['queryTable']("SELECT * FROM V_LOG$ WHERE STATUS = 'CURRENT'");
+          expect(currentLog.length).toBe(1);
+          expect(currentLog[0].ARCHIVED).toBe('NO');
+        });
+      });
+
+      describe('RMAN Backup (V$RMAN_BACKUP_JOB_DETAILS)', () => {
+        it('should have backup job history', () => {
+          const backups = secMgr['queryTable']('SELECT * FROM V_RMAN_BACKUP_JOB_DETAILS$');
+          expect(backups.length).toBeGreaterThan(0);
+          expect(backups.some((b: any) => b.INPUT_TYPE === 'DB FULL')).toBe(true);
+          expect(backups.some((b: any) => b.INPUT_TYPE === 'ARCHIVELOG')).toBe(true);
+        });
+
+        it('should have backup completion status', () => {
+          const completedBackups = secMgr['queryTable']("SELECT * FROM V_RMAN_BACKUP_JOB_DETAILS$ WHERE STATUS = 'COMPLETED'");
+          expect(completedBackups.length).toBe(4);
+        });
+
+        it('should have backup size information', () => {
+          const fullBackup = secMgr['queryTable']("SELECT * FROM V_RMAN_BACKUP_JOB_DETAILS$ WHERE INPUT_TYPE = 'DB FULL'");
+          expect(fullBackup.length).toBe(1);
+          expect(fullBackup[0].INPUT_BYTES).toBeGreaterThan(0);
+          expect(fullBackup[0].OUTPUT_BYTES).toBeGreaterThan(0);
+        });
+      });
+
+      describe('Memory/SGA (V$SGA, V$SGASTAT)', () => {
+        it('should have SGA components', () => {
+          const sga = secMgr['queryTable']('SELECT * FROM V_SGA$');
+          expect(sga.length).toBe(4);
+          expect(sga.some((s: any) => s.NAME === 'Fixed Size')).toBe(true);
+          expect(sga.some((s: any) => s.NAME === 'Database Buffers')).toBe(true);
+          expect(sga.some((s: any) => s.NAME === 'Redo Buffers')).toBe(true);
+        });
+
+        it('should have SGA statistics by pool', () => {
+          const sharedPool = secMgr['queryTable']("SELECT * FROM V_SGASTAT$ WHERE POOL = 'shared pool'");
+          expect(sharedPool.length).toBeGreaterThan(0);
+          expect(sharedPool.some((s: any) => s.COMPONENT_NAME === 'library cache')).toBe(true);
+          expect(sharedPool.some((s: any) => s.COMPONENT_NAME === 'sql area')).toBe(true);
+        });
+
+        it('should calculate total SGA size', () => {
+          const sga = secMgr['queryTable']('SELECT * FROM V_SGA$');
+          const totalBytes = sga.reduce((sum: number, s: any) => sum + s.VALUE_BYTES, 0);
+          expect(totalBytes).toBeGreaterThan(500000000); // More than 500MB
+        });
+      });
+
+      describe('Wait Statistics (V$WAITSTAT)', () => {
+        it('should have wait class statistics', () => {
+          const waits = secMgr['queryTable']('SELECT * FROM V_WAITSTAT$');
+          expect(waits.length).toBe(10);
+          expect(waits.some((w: any) => w.WAIT_CLASS === 'User I/O')).toBe(true);
+          expect(waits.some((w: any) => w.WAIT_CLASS === 'Concurrency')).toBe(true);
+        });
+
+        it('should have wait counts and times', () => {
+          const userIO = secMgr['queryTable']("SELECT * FROM V_WAITSTAT$ WHERE WAIT_CLASS = 'User I/O'");
+          expect(userIO.length).toBe(1);
+          expect(userIO[0].COUNT_VAL).toBeGreaterThan(0);
+          expect(userIO[0].TIME_VAL).toBeGreaterThan(0);
+        });
+      });
+
+      describe('SQL Performance (V$SQL, V$SQLAREA)', () => {
+        it('should have SQL statements in cache', () => {
+          const sql = secMgr['queryTable']('SELECT * FROM V_SQL$');
+          expect(sql.length).toBe(5);
+        });
+
+        it('should have execution statistics', () => {
+          const topSQL = secMgr['queryTable']('SELECT * FROM V_SQL$ ORDER BY BUFFER_GETS DESC');
+          expect(topSQL[0].BUFFER_GETS).toBeGreaterThan(0);
+          expect(topSQL[0].CPU_TIME).toBeGreaterThan(0);
+        });
+
+        it('should filter SQL by parsing schema', () => {
+          const hrSQL = secMgr['queryTable']("SELECT * FROM V_SQL$ WHERE PARSING_SCHEMA_NAME = 'HR'");
+          expect(hrSQL.length).toBeGreaterThan(0);
+        });
+
+        it('should have matching data in V$SQLAREA', () => {
+          const sqlarea = secMgr['queryTable']('SELECT * FROM V_SQLAREA$');
+          expect(sqlarea.length).toBe(5);
+          const sql = secMgr['queryTable']('SELECT * FROM V_SQL$');
+          expect(sqlarea.length).toBe(sql.length);
+        });
+      });
+
+      describe('Scheduler Jobs (DBA_SCHEDULER_JOBS)', () => {
+        it('should have scheduler jobs defined', () => {
+          const jobs = secMgr['queryTable']('SELECT * FROM SCHEDULER_JOB$');
+          expect(jobs.length).toBe(5);
+        });
+
+        it('should have system maintenance jobs', () => {
+          const sysJobs = secMgr['queryTable']("SELECT * FROM SCHEDULER_JOB$ WHERE OWNER = 'SYS'");
+          expect(sysJobs.length).toBe(4);
+          expect(sysJobs.some((j: any) => j.JOB_NAME === 'GATHER_STATS_JOB')).toBe(true);
+          expect(sysJobs.some((j: any) => j.JOB_NAME === 'BACKUP_JOB')).toBe(true);
+        });
+
+        it('should have enabled scheduled jobs', () => {
+          const enabledJobs = secMgr['queryTable']("SELECT * FROM SCHEDULER_JOB$ WHERE ENABLED = 'TRUE'");
+          expect(enabledJobs.length).toBe(5);
+        });
+
+        it('should have different job types', () => {
+          const jobs = secMgr['queryTable']('SELECT * FROM SCHEDULER_JOB$');
+          const jobTypes = new Set(jobs.map((j: any) => j.JOB_TYPE));
+          expect(jobTypes.has('PLSQL_BLOCK')).toBe(true);
+          expect(jobTypes.has('STORED_PROCEDURE')).toBe(true);
+          expect(jobTypes.has('EXECUTABLE')).toBe(true);
+        });
+      });
+
+      describe('Resource Manager (DBA_RSRC_PLANS)', () => {
+        it('should have resource plans', () => {
+          const plans = secMgr['queryTable']('SELECT * FROM RSRC_PLAN$');
+          expect(plans.length).toBe(3);
+          expect(plans.some((p: any) => p.PLAN === 'DEFAULT_PLAN')).toBe(true);
+        });
+
+        it('should have active resource plan', () => {
+          const activePlan = secMgr['queryTable']("SELECT * FROM RSRC_PLAN$ WHERE STATUS = 'ACTIVE'");
+          expect(activePlan.length).toBe(1);
+          expect(activePlan[0].PLAN).toBe('DEFAULT_PLAN');
+        });
+
+        it('should have consumer groups', () => {
+          const groups = secMgr['queryTable']('SELECT * FROM RSRC_CONSUMER_GROUP$');
+          expect(groups.length).toBe(5);
+          expect(groups.some((g: any) => g.CONSUMER_GROUP === 'SYS_GROUP')).toBe(true);
+          expect(groups.some((g: any) => g.CONSUMER_GROUP === 'BATCH_GROUP')).toBe(true);
+        });
+      });
+
+      describe('Flashback (FLASHBACK_ARCHIVE$)', () => {
+        it('should have flashback archives', () => {
+          const archives = secMgr['queryTable']('SELECT * FROM FLASHBACK_ARCHIVE$');
+          expect(archives.length).toBe(2);
+          expect(archives.some((a: any) => a.FLASHBACK_ARCHIVE_NAME === 'FLA_1YEAR')).toBe(true);
+          expect(archives.some((a: any) => a.FLASHBACK_ARCHIVE_NAME === 'FLA_5YEAR')).toBe(true);
+        });
+
+        it('should have retention periods', () => {
+          const fla1year = secMgr['queryTable']("SELECT * FROM FLASHBACK_ARCHIVE$ WHERE FLASHBACK_ARCHIVE_NAME = 'FLA_1YEAR'");
+          expect(fla1year[0].RETENTION_IN_DAYS).toBe(365);
+
+          const fla5year = secMgr['queryTable']("SELECT * FROM FLASHBACK_ARCHIVE$ WHERE FLASHBACK_ARCHIVE_NAME = 'FLA_5YEAR'");
+          expect(fla5year[0].RETENTION_IN_DAYS).toBe(1825);
+        });
+
+        it('should have flashback database log info', () => {
+          const fbLog = secMgr['queryTable']('SELECT * FROM V_FLASHBACK_DATABASE_LOG$');
+          expect(fbLog.length).toBe(1);
+          expect(fbLog[0].RETENTION_TARGET).toBe(1440);
+        });
+      });
+
+      describe('Alert Log (V$DIAG_ALERT_EXT)', () => {
+        it('should have alert log entries', () => {
+          const alerts = secMgr['queryTable']('SELECT * FROM V_DIAG_ALERT_EXT$');
+          expect(alerts.length).toBe(10);
+        });
+
+        it('should have startup messages', () => {
+          const startupMsgs = secMgr['queryTable']("SELECT * FROM V_DIAG_ALERT_EXT$ WHERE MESSAGE_GROUP = 'startup'");
+          expect(startupMsgs.length).toBe(5);
+        });
+
+        it('should have error and warning messages', () => {
+          const errors = secMgr['queryTable']("SELECT * FROM V_DIAG_ALERT_EXT$ WHERE MESSAGE_GROUP = 'error'");
+          expect(errors.length).toBe(1);
+          expect(errors[0].MESSAGE_TEXT).toContain('ORA-00600');
+
+          const warnings = secMgr['queryTable']("SELECT * FROM V_DIAG_ALERT_EXT$ WHERE MESSAGE_GROUP = 'warning'");
+          expect(warnings.length).toBe(1);
+          expect(warnings[0].MESSAGE_TEXT).toContain('ORA-01555');
+        });
+
+        it('should have message levels for filtering', () => {
+          const criticalMsgs = secMgr['queryTable']('SELECT * FROM V_DIAG_ALERT_EXT$ WHERE MESSAGE_LEVEL <= 4');
+          expect(criticalMsgs.length).toBe(2); // error and warning
+        });
+      });
+    });
   });
 });
