@@ -756,17 +756,24 @@ function configVTP(args: string[], config: CiscoConfig, isNegation: boolean): Ci
  * Configure numbered access list
  */
 function configAccessList(args: string[], config: CiscoConfig, isNegation: boolean): CiscoCommandResult {
-  if (args.length < 2) {
+  if (args.length < 1) {
     return { output: '', error: '% Incomplete command.', exitCode: 1 };
   }
 
   const aclNumber = parseInt(args[0]);
-  const action = args[1].toLowerCase() as 'permit' | 'deny';
 
+  // Handle negation (no access-list X) - removes entire ACL
   if (isNegation) {
     config.accessLists.delete(aclNumber);
     return { output: '', exitCode: 0 };
   }
+
+  // For adding entries, we need at least action (permit/deny)
+  if (args.length < 2) {
+    return { output: '', error: '% Incomplete command.', exitCode: 1 };
+  }
+
+  const action = args[1].toLowerCase() as 'permit' | 'deny';
 
   // Determine ACL type based on number
   const isStandard = (aclNumber >= 1 && aclNumber <= 99) || (aclNumber >= 1300 && aclNumber <= 1999);
@@ -1824,22 +1831,42 @@ function executeACLConfig(
     return { output: '', exitCode: 0 };
   }
 
-  // Handle permit/deny entries
-  if (command === 'permit' || command === 'deny') {
-    const action = command as 'permit' | 'deny';
+  // Handle command starting with sequence number (e.g., "10 permit ...")
+  let action: 'permit' | 'deny';
+  let sequence: number;
+  let aclArgs: string[];
 
-    // Check for sequence number
-    let startIdx = 0;
-    let sequence = (acl.entries.length + 1) * 10;
-
-    if (!isNaN(parseInt(args[0]))) {
-      sequence = parseInt(args[0]);
-      startIdx = 1;
+  if (!isNaN(parseInt(command))) {
+    // Command is a sequence number, action should be in args[0]
+    sequence = parseInt(command);
+    if (args[0] !== 'permit' && args[0] !== 'deny') {
+      return { output: '', error: '% Invalid input detected', exitCode: 1 };
     }
+    action = args[0] as 'permit' | 'deny';
+    aclArgs = args.slice(1);
+  } else if (command === 'permit' || command === 'deny') {
+    action = command as 'permit' | 'deny';
+    sequence = (acl.entries.length + 1) * 10;
+    aclArgs = args;
+  } else {
+    // Not a permit/deny command, handle other commands
+    switch (command) {
+      case 'remark':
+        return { output: '', exitCode: 0 };
+      case 'exit':
+        return { output: '', exitCode: 0, newMode: 'global-config' };
+      case 'end':
+        return { output: '', exitCode: 0, newMode: 'privileged' };
+      default:
+        return { output: '', error: '% Invalid input detected', exitCode: 1 };
+    }
+  }
 
+  // Handle permit/deny entries
+  {
     if (acl.type === 'standard') {
-      const source = args[startIdx] || 'any';
-      const sourceWildcard = args[startIdx + 1] || '0.0.0.0';
+      const source = aclArgs[0] || 'any';
+      const sourceWildcard = aclArgs[1] || '0.0.0.0';
 
       const entry: ACLEntry = {
         sequence,
@@ -1859,31 +1886,71 @@ function executeACLConfig(
         acl.entries.push(entry);
       }
     } else {
-      // Extended ACL
-      const protocol = args[startIdx] || 'ip';
-      const sourceIP = args[startIdx + 1] || 'any';
-      const sourceWildcard = args[startIdx + 2] || '0.0.0.0';
-      const destIP = args[startIdx + 3] || 'any';
-      const destWildcard = args[startIdx + 4] || '0.0.0.0';
+      // Extended ACL - parse with proper handling of 'any' and 'host' keywords
+      const protocol = aclArgs[0] || 'ip';
+      let idx = 1;
+
+      // Parse source
+      let sourceIP = '0.0.0.0';
+      let sourceWildcard = '255.255.255.255';
+      if (aclArgs[idx] === 'any') {
+        sourceIP = '0.0.0.0';
+        sourceWildcard = '255.255.255.255';
+        idx++;
+      } else if (aclArgs[idx] === 'host') {
+        idx++;
+        sourceIP = aclArgs[idx] || '0.0.0.0';
+        sourceWildcard = '0.0.0.0';
+        idx++;
+      } else if (aclArgs[idx]) {
+        sourceIP = aclArgs[idx];
+        idx++;
+        sourceWildcard = aclArgs[idx] || '0.0.0.0';
+        idx++;
+      }
+
+      // Parse destination
+      let destIP = '0.0.0.0';
+      let destWildcard = '255.255.255.255';
+      if (aclArgs[idx] === 'any') {
+        destIP = '0.0.0.0';
+        destWildcard = '255.255.255.255';
+        idx++;
+      } else if (aclArgs[idx] === 'host') {
+        idx++;
+        destIP = aclArgs[idx] || '0.0.0.0';
+        destWildcard = '0.0.0.0';
+        idx++;
+      } else if (aclArgs[idx]) {
+        destIP = aclArgs[idx];
+        idx++;
+        destWildcard = aclArgs[idx] || '0.0.0.0';
+        idx++;
+      }
 
       const entry: ACLEntry = {
         sequence,
         action,
         protocol: protocol as any,
-        sourceIP: sourceIP === 'any' ? '0.0.0.0' : sourceIP,
-        sourceWildcard: sourceIP === 'any' ? '255.255.255.255' : sourceWildcard,
-        destIP: destIP === 'any' ? '0.0.0.0' : destIP,
-        destWildcard: destIP === 'any' ? '255.255.255.255' : destWildcard,
+        sourceIP,
+        sourceWildcard,
+        destIP,
+        destWildcard,
       };
 
-      // Parse additional options
-      for (let i = startIdx + 5; i < args.length; i++) {
-        if (args[i] === 'eq' && args[i + 1]) {
-          entry.destPort = { operator: 'eq', ports: [parseInt(args[++i])] };
-        } else if (args[i] === 'established') {
+      // Parse additional options (eq, established, log, etc.)
+      while (idx < aclArgs.length) {
+        if (aclArgs[idx] === 'eq' && aclArgs[idx + 1]) {
+          entry.destPort = { operator: 'eq', ports: [parseInt(aclArgs[idx + 1])] };
+          idx += 2;
+        } else if (aclArgs[idx] === 'established') {
           entry.established = true;
-        } else if (args[i] === 'log') {
+          idx++;
+        } else if (aclArgs[idx] === 'log') {
           entry.log = true;
+          idx++;
+        } else {
+          idx++;
         }
       }
 
@@ -1896,28 +1963,5 @@ function executeACLConfig(
     }
 
     return { output: '', exitCode: 0 };
-  }
-
-  switch (command) {
-    case 'remark':
-      // ACL remark - just store as a comment
-      return { output: '', exitCode: 0 };
-
-    case 'exit':
-      return {
-        output: '',
-        exitCode: 0,
-        newMode: 'global-config',
-      };
-
-    case 'end':
-      return {
-        output: '',
-        exitCode: 0,
-        newMode: 'privileged',
-      };
-
-    default:
-      return { output: '', error: '% Invalid input detected', exitCode: 1 };
   }
 }

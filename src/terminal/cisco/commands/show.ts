@@ -647,7 +647,7 @@ function showIPProtocols(config: CiscoConfig): CiscoCommandResult {
 
 function showIPOSPF(config: CiscoConfig, args: string[]): CiscoCommandResult {
   if (!config.ospf) {
-    return { output: '% OSPF is not enabled', exitCode: 1 };
+    return { output: '% OSPF: No router process configured', exitCode: 0 };
   }
 
   if (args.length === 0) {
@@ -744,7 +744,14 @@ function showOSPFInterface(config: CiscoConfig, args: string[]): CiscoCommandRes
 
 function showIPEIGRP(config: CiscoConfig, args: string[]): CiscoCommandResult {
   if (!config.eigrp) {
-    return { output: '% EIGRP is not enabled', exitCode: 1 };
+    // EIGRP not configured - return empty output with success
+    if (args[0] === 'neighbors') {
+      return {
+        output: 'EIGRP-IPv4 Neighbors for AS(0)\nH   Address                 Interface              Hold Uptime   SRTT   RTO  Q  Seq\n                                                   (sec)         (ms)       Cnt Num',
+        exitCode: 0
+      };
+    }
+    return { output: '', exitCode: 0 };
   }
 
   if (args[0] === 'neighbors') {
