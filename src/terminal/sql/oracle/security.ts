@@ -301,6 +301,74 @@ function getInitialDataSQL(): string[] {
     `VALUES ('SYS', 'SYSOPER', 'YES', 'SYS', '${now}')`
   );
 
+  // ========================================================================
+  // Tablespaces (TS$)
+  // ========================================================================
+  const tablespaces = [
+    { id: 0, name: 'SYSTEM', contents: 'PERMANENT', status: 'ONLINE' },
+    { id: 1, name: 'SYSAUX', contents: 'PERMANENT', status: 'ONLINE' },
+    { id: 2, name: 'USERS', contents: 'PERMANENT', status: 'ONLINE' },
+    { id: 3, name: 'TEMP', contents: 'TEMPORARY', status: 'ONLINE' },
+    { id: 4, name: 'UNDOTBS1', contents: 'UNDO', status: 'ONLINE' },
+  ];
+
+  for (const ts of tablespaces) {
+    statements.push(
+      `INSERT INTO TS$ (TS_ID, TABLESPACE_NAME, BLOCK_SIZE, STATUS, CONTENTS, LOGGING) ` +
+      `VALUES (${ts.id}, '${ts.name}', 8192, '${ts.status}', '${ts.contents}', 'LOGGING')`
+    );
+  }
+
+  // ========================================================================
+  // Data Files (FILE$)
+  // ========================================================================
+  const dataFiles = [
+    { id: 1, ts: 'SYSTEM', file: '/u01/app/oracle/oradata/ORCL/system01.dbf', bytes: 880803840 },
+    { id: 2, ts: 'SYSAUX', file: '/u01/app/oracle/oradata/ORCL/sysaux01.dbf', bytes: 587202560 },
+    { id: 3, ts: 'USERS', file: '/u01/app/oracle/oradata/ORCL/users01.dbf', bytes: 5242880 },
+    { id: 4, ts: 'UNDOTBS1', file: '/u01/app/oracle/oradata/ORCL/undotbs01.dbf', bytes: 26214400 },
+  ];
+
+  for (const df of dataFiles) {
+    statements.push(
+      `INSERT INTO FILE$ (FILE_ID, TABLESPACE_NAME, FILE_NAME, BYTES, STATUS, AUTOEXTENSIBLE) ` +
+      `VALUES (${df.id}, '${df.ts}', '${df.file}', ${df.bytes}, 'AVAILABLE', 'YES')`
+    );
+  }
+
+  // ========================================================================
+  // Database Parameters (PARAMETER$) - V$PARAMETER equivalent
+  // ========================================================================
+  const parameters = [
+    { num: 1, name: 'db_name', value: 'ORCL', desc: 'Database name' },
+    { num: 2, name: 'db_block_size', value: '8192', desc: 'Size of database block in bytes' },
+    { num: 3, name: 'db_cache_size', value: '100M', desc: 'Size of buffer cache' },
+    { num: 4, name: 'shared_pool_size', value: '200M', desc: 'Size of shared pool' },
+    { num: 5, name: 'pga_aggregate_target', value: '100M', desc: 'Target PGA memory' },
+    { num: 6, name: 'sga_target', value: '500M', desc: 'Target SGA memory' },
+    { num: 7, name: 'processes', value: '300', desc: 'Max number of user processes' },
+    { num: 8, name: 'sessions', value: '472', desc: 'Max number of sessions' },
+    { num: 9, name: 'open_cursors', value: '300', desc: 'Max number of open cursors' },
+    { num: 10, name: 'cursor_sharing', value: 'EXACT', desc: 'Cursor sharing mode' },
+    { num: 11, name: 'optimizer_mode', value: 'ALL_ROWS', desc: 'Optimizer mode' },
+    { num: 12, name: 'nls_language', value: 'AMERICAN', desc: 'NLS language' },
+    { num: 13, name: 'nls_territory', value: 'AMERICA', desc: 'NLS territory' },
+    { num: 14, name: 'nls_date_format', value: 'DD-MON-RR', desc: 'NLS date format' },
+    { num: 15, name: 'compatible', value: '19.0.0', desc: 'Database compatibility level' },
+    { num: 16, name: 'undo_management', value: 'AUTO', desc: 'Undo management mode' },
+    { num: 17, name: 'undo_tablespace', value: 'UNDOTBS1', desc: 'Undo tablespace' },
+    { num: 18, name: 'audit_trail', value: 'DB', desc: 'Enable database auditing' },
+    { num: 19, name: 'remote_login_passwordfile', value: 'EXCLUSIVE', desc: 'Password file usage' },
+    { num: 20, name: 'control_files', value: '/u01/app/oracle/oradata/ORCL/control01.ctl', desc: 'Control file locations' },
+  ];
+
+  for (const p of parameters) {
+    statements.push(
+      `INSERT INTO PARAMETER$ (PARAM_NUM, PARAM_NAME, PARAM_VALUE, DISPLAY_VALUE, ISDEFAULT, DESCRIPTION) ` +
+      `VALUES (${p.num}, '${p.name}', '${p.value}', '${p.value}', 'TRUE', '${p.desc}')`
+    );
+  }
+
   return statements;
 }
 
@@ -315,6 +383,10 @@ export class OracleSecurityManager {
   private auditSequence: number = 1;
   private userSequence: number = 100;
   private roleSequence: number = 100;
+  private objectSequence: number = 1000;
+  private constraintSequence: number = 1;
+  private tablespaceSequence: number = 10;
+  private fileSequence: number = 10;
 
   constructor(engine?: SQLEngine) {
     if (engine) {
@@ -461,6 +533,275 @@ export class OracleSecurityManager {
           { name: 'FAILURE', dataType: 'VARCHAR', length: 10, nullable: true },
         ],
         primaryKey: ['AUDIT_OPTION']
+      },
+      // ========================================================================
+      // Data Dictionary Tables (DBA_OBJECTS, DBA_TABLES, etc.)
+      // ========================================================================
+      {
+        name: 'OBJ$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OBJECT_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OBJECT_TYPE', dataType: 'VARCHAR', length: 32, nullable: false },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_DDL_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 10, nullable: true, defaultValue: 'VALID' },
+          { name: 'TEMPORARY', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'GENERATED', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+        ],
+        primaryKey: ['OBJ_ID']
+      },
+      {
+        name: 'TAB$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLESPACE_NAME', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'USERS' },
+          { name: 'NUM_ROWS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'BLOCKS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'AVG_ROW_LEN', dataType: 'INTEGER', nullable: true },
+          { name: 'LAST_ANALYZED', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'PARTITIONED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'TEMPORARY', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'IOT_TYPE', dataType: 'VARCHAR', length: 12, nullable: true },
+          { name: 'COMPRESSION', dataType: 'VARCHAR', length: 8, nullable: true, defaultValue: 'DISABLED' },
+        ],
+        primaryKey: ['OBJ_ID']
+      },
+      {
+        name: 'COL$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'COLUMN_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'COLUMN_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'DATA_TYPE', dataType: 'VARCHAR', length: 106, nullable: true },
+          { name: 'DATA_LENGTH', dataType: 'INTEGER', nullable: true },
+          { name: 'DATA_PRECISION', dataType: 'INTEGER', nullable: true },
+          { name: 'DATA_SCALE', dataType: 'INTEGER', nullable: true },
+          { name: 'NULLABLE', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'Y' },
+          { name: 'DEFAULT_VALUE', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'HIDDEN_COLUMN', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'VIRTUAL_COLUMN', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+        ],
+        primaryKey: ['OBJ_ID', 'COLUMN_ID']
+      },
+      {
+        name: 'IND$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'INDEX_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLE_OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'INDEX_TYPE', dataType: 'VARCHAR', length: 27, nullable: true, defaultValue: 'NORMAL' },
+          { name: 'UNIQUENESS', dataType: 'VARCHAR', length: 9, nullable: true, defaultValue: 'NONUNIQUE' },
+          { name: 'TABLESPACE_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 8, nullable: true, defaultValue: 'VALID' },
+          { name: 'NUM_ROWS', dataType: 'INTEGER', nullable: true },
+          { name: 'LAST_ANALYZED', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'COMPRESSION', dataType: 'VARCHAR', length: 8, nullable: true, defaultValue: 'DISABLED' },
+        ],
+        primaryKey: ['OBJ_ID']
+      },
+      {
+        name: 'ICOL$',
+        columns: [
+          { name: 'INDEX_OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'COLUMN_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'COLUMN_POSITION', dataType: 'INTEGER', nullable: false },
+          { name: 'DESCEND', dataType: 'VARCHAR', length: 4, nullable: true, defaultValue: 'ASC' },
+        ],
+        primaryKey: ['INDEX_OBJ_ID', 'COLUMN_POSITION']
+      },
+      {
+        name: 'CON$',
+        columns: [
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'CONSTRAINT_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'CONSTRAINT_TYPE', dataType: 'VARCHAR', length: 1, nullable: false },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'SEARCH_CONDITION', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'R_OWNER', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'R_CONSTRAINT_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'DELETE_RULE', dataType: 'VARCHAR', length: 9, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 8, nullable: true, defaultValue: 'ENABLED' },
+          { name: 'VALIDATED', dataType: 'VARCHAR', length: 13, nullable: true, defaultValue: 'VALIDATED' },
+          { name: 'GENERATED', dataType: 'VARCHAR', length: 14, nullable: true },
+          { name: 'INDEX_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+        ],
+        primaryKey: ['CON_ID']
+      },
+      {
+        name: 'CCOL$',
+        columns: [
+          { name: 'CON_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'COLUMN_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'POSITION', dataType: 'INTEGER', nullable: true },
+        ],
+        primaryKey: ['CON_ID', 'COLUMN_NAME']
+      },
+      {
+        name: 'SEQ$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'SEQUENCE_OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'SEQUENCE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'MIN_VALUE', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'MAX_VALUE', dataType: 'INTEGER', nullable: true },
+          { name: 'INCREMENT_BY', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'CYCLE_FLAG', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'ORDER_FLAG', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'CACHE_SIZE', dataType: 'INTEGER', nullable: true, defaultValue: 20 },
+          { name: 'LAST_NUMBER', dataType: 'INTEGER', nullable: true },
+        ],
+        primaryKey: ['OBJ_ID']
+      },
+      {
+        name: 'TS$',
+        columns: [
+          { name: 'TS_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'TABLESPACE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'BLOCK_SIZE', dataType: 'INTEGER', nullable: true, defaultValue: 8192 },
+          { name: 'INITIAL_EXTENT', dataType: 'INTEGER', nullable: true },
+          { name: 'NEXT_EXTENT', dataType: 'INTEGER', nullable: true },
+          { name: 'MIN_EXTENTS', dataType: 'INTEGER', nullable: true, defaultValue: 1 },
+          { name: 'MAX_EXTENTS', dataType: 'INTEGER', nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 9, nullable: true, defaultValue: 'ONLINE' },
+          { name: 'CONTENTS', dataType: 'VARCHAR', length: 9, nullable: true, defaultValue: 'PERMANENT' },
+          { name: 'LOGGING', dataType: 'VARCHAR', length: 9, nullable: true, defaultValue: 'LOGGING' },
+          { name: 'BIGFILE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'ENCRYPTED', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+        ],
+        primaryKey: ['TS_ID']
+      },
+      {
+        name: 'FILE$',
+        columns: [
+          { name: 'FILE_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'TABLESPACE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'FILE_NAME', dataType: 'VARCHAR', length: 513, nullable: false },
+          { name: 'BYTES', dataType: 'INTEGER', nullable: true },
+          { name: 'BLOCKS', dataType: 'INTEGER', nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 9, nullable: true, defaultValue: 'AVAILABLE' },
+          { name: 'AUTOEXTENSIBLE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'MAXBYTES', dataType: 'INTEGER', nullable: true },
+          { name: 'MAXBLOCKS', dataType: 'INTEGER', nullable: true },
+          { name: 'INCREMENT_BY', dataType: 'INTEGER', nullable: true },
+          { name: 'ONLINE_STATUS', dataType: 'VARCHAR', length: 7, nullable: true, defaultValue: 'ONLINE' },
+        ],
+        primaryKey: ['FILE_ID']
+      },
+      {
+        name: 'SESSION$',
+        columns: [
+          { name: 'SID', dataType: 'INTEGER', nullable: false },
+          { name: 'SERIAL_NUM', dataType: 'INTEGER', nullable: false },
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 8, nullable: true, defaultValue: 'ACTIVE' },
+          { name: 'OSUSER', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'MACHINE', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'TERMINAL', dataType: 'VARCHAR', length: 30, nullable: true },
+          { name: 'PROGRAM', dataType: 'VARCHAR', length: 48, nullable: true },
+          { name: 'SQL_ID', dataType: 'VARCHAR', length: 13, nullable: true },
+          { name: 'LOGON_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_CALL_ET', dataType: 'INTEGER', nullable: true },
+          { name: 'BLOCKING_SESSION', dataType: 'INTEGER', nullable: true },
+          { name: 'EVENT', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'WAIT_CLASS', dataType: 'VARCHAR', length: 64, nullable: true },
+          { name: 'SCHEMA_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+        ],
+        primaryKey: ['SID', 'SERIAL_NUM']
+      },
+      {
+        name: 'SYNONYM$',
+        columns: [
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'SYNONYM_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLE_OWNER', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'DB_LINK', dataType: 'VARCHAR', length: 128, nullable: true },
+        ],
+        primaryKey: ['OWNER', 'SYNONYM_NAME']
+      },
+      {
+        name: 'VIEW$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'VIEW_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TEXT_LENGTH', dataType: 'INTEGER', nullable: true },
+          { name: 'VIEW_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'TYPE_TEXT_LENGTH', dataType: 'INTEGER', nullable: true },
+          { name: 'TYPE_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'OID_TEXT_LENGTH', dataType: 'INTEGER', nullable: true },
+          { name: 'OID_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'READ_ONLY', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+        ],
+        primaryKey: ['OBJ_ID']
+      },
+      {
+        name: 'TRIGGER$',
+        columns: [
+          { name: 'OBJ_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TRIGGER_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TRIGGER_TYPE', dataType: 'VARCHAR', length: 16, nullable: true },
+          { name: 'TRIGGERING_EVENT', dataType: 'VARCHAR', length: 246, nullable: true },
+          { name: 'TABLE_OWNER', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'BASE_OBJECT_TYPE', dataType: 'VARCHAR', length: 18, nullable: true },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'COLUMN_NAME', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'REFERENCING_NAMES', dataType: 'VARCHAR', length: 422, nullable: true },
+          { name: 'WHEN_CLAUSE', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'STATUS', dataType: 'VARCHAR', length: 8, nullable: true, defaultValue: 'ENABLED' },
+          { name: 'DESCRIPTION', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'ACTION_TYPE', dataType: 'VARCHAR', length: 11, nullable: true },
+          { name: 'TRIGGER_BODY', dataType: 'VARCHAR', length: 4000, nullable: true },
+        ],
+        primaryKey: ['OBJ_ID']
+      },
+      {
+        name: 'SOURCE$',
+        columns: [
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OBJ_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OBJ_TYPE', dataType: 'VARCHAR', length: 12, nullable: false },
+          { name: 'LINE_NUM', dataType: 'INTEGER', nullable: false },
+          { name: 'SOURCE_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+        ],
+        primaryKey: ['OWNER', 'OBJ_NAME', 'OBJ_TYPE', 'LINE_NUM']
+      },
+      {
+        name: 'LINK$',
+        columns: [
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'DB_LINK', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'HOST', dataType: 'VARCHAR', length: 2000, nullable: true },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['OWNER', 'DB_LINK']
+      },
+      {
+        name: 'PARAMETER$',
+        columns: [
+          { name: 'PARAM_NUM', dataType: 'INTEGER', nullable: false },
+          { name: 'PARAM_NAME', dataType: 'VARCHAR', length: 80, nullable: false },
+          { name: 'PARAM_TYPE', dataType: 'INTEGER', nullable: true },
+          { name: 'PARAM_VALUE', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'DISPLAY_VALUE', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'ISDEFAULT', dataType: 'VARCHAR', length: 9, nullable: true },
+          { name: 'ISSES_MODIFIABLE', dataType: 'VARCHAR', length: 5, nullable: true },
+          { name: 'ISSYS_MODIFIABLE', dataType: 'VARCHAR', length: 9, nullable: true },
+          { name: 'ISINSTANCE_MODIFIABLE', dataType: 'VARCHAR', length: 5, nullable: true },
+          { name: 'DESCRIPTION', dataType: 'VARCHAR', length: 255, nullable: true },
+        ],
+        primaryKey: ['PARAM_NUM']
       },
     ];
 
@@ -1361,6 +1702,411 @@ export class OracleSecurityManager {
 
     sql += ` ORDER BY EVENT_TIME DESC`;
 
+    return this.queryTable(sql);
+  }
+
+  // ==========================================================================
+  // Data Dictionary Methods (OBJ$, TAB$, COL$, etc.)
+  // ==========================================================================
+
+  /**
+   * Register an object in the data dictionary
+   */
+  registerObject(
+    owner: string,
+    objectName: string,
+    objectType: string,
+    createdBy?: string
+  ): number {
+    const objId = this.objectSequence++;
+    const now = new Date().toISOString();
+
+    this.executeSQL(
+      `INSERT INTO OBJ$ (OBJ_ID, OWNER, OBJECT_NAME, OBJECT_TYPE, CREATED, LAST_DDL_TIME, STATUS) ` +
+      `VALUES (${objId}, '${owner.toUpperCase()}', '${objectName.toUpperCase()}', '${objectType.toUpperCase()}', '${now}', '${now}', 'VALID')`
+    );
+
+    this.auditAction('CREATE', createdBy || owner, {
+      objectSchema: owner,
+      objectName: objectName,
+      objectType: objectType,
+      returnCode: 0
+    });
+
+    return objId;
+  }
+
+  /**
+   * Register a table in the data dictionary
+   */
+  registerTable(
+    owner: string,
+    tableName: string,
+    columns: Array<{
+      name: string;
+      dataType: string;
+      length?: number;
+      precision?: number;
+      scale?: number;
+      nullable?: boolean;
+      defaultValue?: string;
+    }>,
+    tablespace?: string
+  ): number {
+    const objId = this.registerObject(owner, tableName, 'TABLE');
+
+    // Insert into TAB$
+    this.executeSQL(
+      `INSERT INTO TAB$ (OBJ_ID, OWNER, TABLE_NAME, TABLESPACE_NAME, NUM_ROWS, BLOCKS) ` +
+      `VALUES (${objId}, '${owner.toUpperCase()}', '${tableName.toUpperCase()}', '${tablespace || 'USERS'}', 0, 0)`
+    );
+
+    // Insert columns into COL$
+    let colId = 1;
+    for (const col of columns) {
+      this.executeSQL(
+        `INSERT INTO COL$ (OBJ_ID, OWNER, TABLE_NAME, COLUMN_NAME, COLUMN_ID, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DEFAULT_VALUE) ` +
+        `VALUES (${objId}, '${owner.toUpperCase()}', '${tableName.toUpperCase()}', '${col.name.toUpperCase()}', ${colId}, '${col.dataType}', ${col.length || 'NULL'}, ${col.precision || 'NULL'}, ${col.scale || 'NULL'}, '${col.nullable === false ? 'N' : 'Y'}', ${col.defaultValue ? `'${col.defaultValue}'` : 'NULL'})`
+      );
+      colId++;
+    }
+
+    return objId;
+  }
+
+  /**
+   * Register an index in the data dictionary
+   */
+  registerIndex(
+    owner: string,
+    indexName: string,
+    tableOwner: string,
+    tableName: string,
+    columns: string[],
+    unique: boolean = false
+  ): number {
+    const objId = this.registerObject(owner, indexName, 'INDEX');
+
+    this.executeSQL(
+      `INSERT INTO IND$ (OBJ_ID, OWNER, INDEX_NAME, TABLE_OWNER, TABLE_NAME, INDEX_TYPE, UNIQUENESS, STATUS) ` +
+      `VALUES (${objId}, '${owner.toUpperCase()}', '${indexName.toUpperCase()}', '${tableOwner.toUpperCase()}', '${tableName.toUpperCase()}', 'NORMAL', '${unique ? 'UNIQUE' : 'NONUNIQUE'}', 'VALID')`
+    );
+
+    // Insert index columns
+    let pos = 1;
+    for (const col of columns) {
+      this.executeSQL(
+        `INSERT INTO ICOL$ (INDEX_OBJ_ID, COLUMN_NAME, COLUMN_POSITION, DESCEND) ` +
+        `VALUES (${objId}, '${col.toUpperCase()}', ${pos}, 'ASC')`
+      );
+      pos++;
+    }
+
+    return objId;
+  }
+
+  /**
+   * Register a constraint in the data dictionary
+   */
+  registerConstraint(
+    owner: string,
+    constraintName: string,
+    constraintType: string,
+    tableName: string,
+    columns: string[],
+    searchCondition?: string,
+    refOwner?: string,
+    refConstraint?: string
+  ): number {
+    const conId = this.constraintSequence++;
+
+    this.executeSQL(
+      `INSERT INTO CON$ (CON_ID, OWNER, CONSTRAINT_NAME, CONSTRAINT_TYPE, TABLE_NAME, SEARCH_CONDITION, R_OWNER, R_CONSTRAINT_NAME, STATUS) ` +
+      `VALUES (${conId}, '${owner.toUpperCase()}', '${constraintName.toUpperCase()}', '${constraintType}', '${tableName.toUpperCase()}', ${searchCondition ? `'${searchCondition}'` : 'NULL'}, ${refOwner ? `'${refOwner}'` : 'NULL'}, ${refConstraint ? `'${refConstraint}'` : 'NULL'}, 'ENABLED')`
+    );
+
+    // Insert constraint columns
+    let pos = 1;
+    for (const col of columns) {
+      this.executeSQL(
+        `INSERT INTO CCOL$ (CON_ID, COLUMN_NAME, POSITION) ` +
+        `VALUES (${conId}, '${col.toUpperCase()}', ${pos})`
+      );
+      pos++;
+    }
+
+    return conId;
+  }
+
+  /**
+   * Register a sequence in the data dictionary
+   */
+  registerSequence(
+    owner: string,
+    sequenceName: string,
+    options?: {
+      minValue?: number;
+      maxValue?: number;
+      incrementBy?: number;
+      cycle?: boolean;
+      cache?: number;
+    }
+  ): number {
+    const objId = this.registerObject(owner, sequenceName, 'SEQUENCE');
+
+    this.executeSQL(
+      `INSERT INTO SEQ$ (OBJ_ID, SEQUENCE_OWNER, SEQUENCE_NAME, MIN_VALUE, MAX_VALUE, INCREMENT_BY, CYCLE_FLAG, CACHE_SIZE, LAST_NUMBER) ` +
+      `VALUES (${objId}, '${owner.toUpperCase()}', '${sequenceName.toUpperCase()}', ${options?.minValue || 1}, ${options?.maxValue || 9999999999}, ${options?.incrementBy || 1}, '${options?.cycle ? 'Y' : 'N'}', ${options?.cache || 20}, ${options?.minValue || 1})`
+    );
+
+    return objId;
+  }
+
+  /**
+   * Register a view in the data dictionary
+   */
+  registerView(
+    owner: string,
+    viewName: string,
+    viewText: string
+  ): number {
+    const objId = this.registerObject(owner, viewName, 'VIEW');
+
+    this.executeSQL(
+      `INSERT INTO VIEW$ (OBJ_ID, OWNER, VIEW_NAME, TEXT_LENGTH, VIEW_TEXT, READ_ONLY) ` +
+      `VALUES (${objId}, '${owner.toUpperCase()}', '${viewName.toUpperCase()}', ${viewText.length}, '${viewText.replace(/'/g, "''")}', 'NO')`
+    );
+
+    return objId;
+  }
+
+  /**
+   * Register a synonym in the data dictionary
+   */
+  registerSynonym(
+    owner: string,
+    synonymName: string,
+    tableOwner: string,
+    tableName: string,
+    dbLink?: string
+  ): void {
+    this.executeSQL(
+      `INSERT INTO SYNONYM$ (OWNER, SYNONYM_NAME, TABLE_OWNER, TABLE_NAME, DB_LINK) ` +
+      `VALUES ('${owner.toUpperCase()}', '${synonymName.toUpperCase()}', '${tableOwner.toUpperCase()}', '${tableName.toUpperCase()}', ${dbLink ? `'${dbLink}'` : 'NULL'})`
+    );
+
+    this.registerObject(owner, synonymName, 'SYNONYM');
+  }
+
+  /**
+   * Drop an object from the data dictionary
+   */
+  dropObject(owner: string, objectName: string, objectType: string): void {
+    const upperOwner = owner.toUpperCase();
+    const upperName = objectName.toUpperCase();
+    const upperType = objectType.toUpperCase();
+
+    // Get object ID
+    const objs = this.queryTable(
+      `SELECT OBJ_ID FROM OBJ$ WHERE OWNER = '${upperOwner}' AND OBJECT_NAME = '${upperName}' AND OBJECT_TYPE = '${upperType}'`
+    );
+
+    if (objs.length > 0) {
+      const objId = objs[0].OBJ_ID;
+
+      // Delete from type-specific table
+      switch (upperType) {
+        case 'TABLE':
+          this.executeSQL(`DELETE FROM COL$ WHERE OBJ_ID = ${objId}`);
+          this.executeSQL(`DELETE FROM TAB$ WHERE OBJ_ID = ${objId}`);
+          break;
+        case 'INDEX':
+          this.executeSQL(`DELETE FROM ICOL$ WHERE INDEX_OBJ_ID = ${objId}`);
+          this.executeSQL(`DELETE FROM IND$ WHERE OBJ_ID = ${objId}`);
+          break;
+        case 'SEQUENCE':
+          this.executeSQL(`DELETE FROM SEQ$ WHERE OBJ_ID = ${objId}`);
+          break;
+        case 'VIEW':
+          this.executeSQL(`DELETE FROM VIEW$ WHERE OBJ_ID = ${objId}`);
+          break;
+        case 'SYNONYM':
+          this.executeSQL(`DELETE FROM SYNONYM$ WHERE OWNER = '${upperOwner}' AND SYNONYM_NAME = '${upperName}'`);
+          break;
+      }
+
+      // Delete from OBJ$
+      this.executeSQL(`DELETE FROM OBJ$ WHERE OBJ_ID = ${objId}`);
+    }
+  }
+
+  // ==========================================================================
+  // Session Management (SESSION$ / V$SESSION)
+  // ==========================================================================
+
+  /**
+   * Create a session entry
+   */
+  createSession(
+    username: string,
+    options?: {
+      osuser?: string;
+      machine?: string;
+      terminal?: string;
+      program?: string;
+    }
+  ): { sid: number; serial: number } {
+    const sid = this.currentSessionId;
+    const serial = Math.floor(Math.random() * 65535) + 1;
+    const now = new Date().toISOString();
+
+    this.executeSQL(
+      `INSERT INTO SESSION$ (SID, SERIAL_NUM, USERNAME, STATUS, OSUSER, MACHINE, TERMINAL, PROGRAM, LOGON_TIME, SCHEMA_NAME) ` +
+      `VALUES (${sid}, ${serial}, '${username.toUpperCase()}', 'ACTIVE', '${options?.osuser || 'unknown'}', '${options?.machine || 'localhost'}', '${options?.terminal || 'pts/0'}', '${options?.program || 'sqlplus'}', '${now}', '${username.toUpperCase()}')`
+    );
+
+    return { sid, serial };
+  }
+
+  /**
+   * End a session
+   */
+  endSession(sid: number, serial: number): void {
+    this.executeSQL(
+      `DELETE FROM SESSION$ WHERE SID = ${sid} AND SERIAL_NUM = ${serial}`
+    );
+  }
+
+  /**
+   * Get active sessions
+   */
+  getActiveSessions(): any[] {
+    return this.queryTable(`SELECT * FROM SESSION$ WHERE STATUS = 'ACTIVE' ORDER BY SID`);
+  }
+
+  // ==========================================================================
+  // Tablespace and File Management
+  // ==========================================================================
+
+  /**
+   * Get tablespaces
+   */
+  getTablespaces(): any[] {
+    return this.queryTable(`SELECT * FROM TS$ ORDER BY TABLESPACE_NAME`);
+  }
+
+  /**
+   * Get data files
+   */
+  getDataFiles(): any[] {
+    return this.queryTable(`SELECT * FROM FILE$ ORDER BY FILE_ID`);
+  }
+
+  /**
+   * Get database parameters
+   */
+  getParameters(): any[] {
+    return this.queryTable(`SELECT * FROM PARAMETER$ ORDER BY PARAM_NUM`);
+  }
+
+  /**
+   * Get a specific parameter value
+   */
+  getParameter(name: string): string | undefined {
+    const rows = this.queryTable(
+      `SELECT PARAM_VALUE FROM PARAMETER$ WHERE PARAM_NAME = '${name.toLowerCase()}'`
+    );
+    return rows.length > 0 ? rows[0].PARAM_VALUE : undefined;
+  }
+
+  // ==========================================================================
+  // Data Dictionary Queries
+  // ==========================================================================
+
+  /**
+   * Get all objects (DBA_OBJECTS equivalent)
+   */
+  getObjects(filter?: { owner?: string; objectType?: string; objectName?: string }): any[] {
+    let sql = `SELECT * FROM OBJ$ WHERE 1=1`;
+    if (filter?.owner) sql += ` AND OWNER = '${filter.owner.toUpperCase()}'`;
+    if (filter?.objectType) sql += ` AND OBJECT_TYPE = '${filter.objectType.toUpperCase()}'`;
+    if (filter?.objectName) sql += ` AND OBJECT_NAME = '${filter.objectName.toUpperCase()}'`;
+    sql += ` ORDER BY OWNER, OBJECT_TYPE, OBJECT_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get tables (DBA_TABLES equivalent)
+   */
+  getTables(owner?: string): any[] {
+    let sql = `SELECT * FROM TAB$`;
+    if (owner) sql += ` WHERE OWNER = '${owner.toUpperCase()}'`;
+    sql += ` ORDER BY OWNER, TABLE_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get columns for a table (DBA_TAB_COLUMNS equivalent)
+   */
+  getColumns(owner: string, tableName: string): any[] {
+    return this.queryTable(
+      `SELECT * FROM COL$ WHERE OWNER = '${owner.toUpperCase()}' AND TABLE_NAME = '${tableName.toUpperCase()}' ORDER BY COLUMN_ID`
+    );
+  }
+
+  /**
+   * Get indexes (DBA_INDEXES equivalent)
+   */
+  getIndexes(owner?: string, tableName?: string): any[] {
+    let sql = `SELECT * FROM IND$`;
+    const conditions: string[] = [];
+    if (owner) conditions.push(`OWNER = '${owner.toUpperCase()}'`);
+    if (tableName) conditions.push(`TABLE_NAME = '${tableName.toUpperCase()}'`);
+    if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+    sql += ` ORDER BY OWNER, INDEX_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get constraints (DBA_CONSTRAINTS equivalent)
+   */
+  getConstraints(owner?: string, tableName?: string): any[] {
+    let sql = `SELECT * FROM CON$`;
+    const conditions: string[] = [];
+    if (owner) conditions.push(`OWNER = '${owner.toUpperCase()}'`);
+    if (tableName) conditions.push(`TABLE_NAME = '${tableName.toUpperCase()}'`);
+    if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+    sql += ` ORDER BY OWNER, TABLE_NAME, CONSTRAINT_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get sequences (DBA_SEQUENCES equivalent)
+   */
+  getSequences(owner?: string): any[] {
+    let sql = `SELECT * FROM SEQ$`;
+    if (owner) sql += ` WHERE SEQUENCE_OWNER = '${owner.toUpperCase()}'`;
+    sql += ` ORDER BY SEQUENCE_OWNER, SEQUENCE_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get views (DBA_VIEWS equivalent)
+   */
+  getViews(owner?: string): any[] {
+    let sql = `SELECT * FROM VIEW$`;
+    if (owner) sql += ` WHERE OWNER = '${owner.toUpperCase()}'`;
+    sql += ` ORDER BY OWNER, VIEW_NAME`;
+    return this.queryTable(sql);
+  }
+
+  /**
+   * Get synonyms (DBA_SYNONYMS equivalent)
+   */
+  getSynonyms(owner?: string): any[] {
+    let sql = `SELECT * FROM SYNONYM$`;
+    if (owner) sql += ` WHERE OWNER = '${owner.toUpperCase()}'`;
+    sql += ` ORDER BY OWNER, SYNONYM_NAME`;
     return this.queryTable(sql);
   }
 }

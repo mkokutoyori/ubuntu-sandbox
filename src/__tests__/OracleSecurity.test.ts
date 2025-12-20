@@ -569,4 +569,209 @@ describe('Oracle Security Module', () => {
       expect(result.output).toContain('CREATE_USER');
     });
   });
+
+  describe('Data Dictionary Tables', () => {
+    let engine: SQLEngine;
+    let secMgr: OracleSecurityManager;
+
+    beforeEach(() => {
+      engine = new SQLEngine({
+        caseSensitiveIdentifiers: false,
+        defaultSchema: 'SYSTEM',
+        autoCommit: true
+      });
+      engine.createSchema('SYSTEM');
+      engine.setCurrentSchema('SYSTEM');
+      secMgr = new OracleSecurityManager(engine);
+    });
+
+    describe('Tablespaces (TS$)', () => {
+      it('should have default tablespaces', () => {
+        const tablespaces = secMgr.getTablespaces();
+        expect(tablespaces.length).toBeGreaterThanOrEqual(4);
+
+        const names = tablespaces.map((ts: any) => ts.TABLESPACE_NAME);
+        expect(names).toContain('SYSTEM');
+        expect(names).toContain('USERS');
+        expect(names).toContain('TEMP');
+      });
+
+      it('should be queryable via SQL', () => {
+        // Tables are in SYS schema and queryable via getTablespaces
+        const tablespaces = secMgr.getTablespaces();
+        expect(tablespaces.length).toBeGreaterThan(0);
+
+        // Check SYSTEM tablespace exists
+        const system = tablespaces.find((ts: any) => ts.TABLESPACE_NAME === 'SYSTEM');
+        expect(system).toBeDefined();
+        expect(system.CONTENTS).toBe('PERMANENT');
+      });
+    });
+
+    describe('Data Files (FILE$)', () => {
+      it('should have data files for tablespaces', () => {
+        const files = secMgr.getDataFiles();
+        expect(files.length).toBeGreaterThanOrEqual(3);
+      });
+    });
+
+    describe('Database Parameters (PARAMETER$)', () => {
+      it('should have database parameters', () => {
+        const params = secMgr.getParameters();
+        expect(params.length).toBeGreaterThanOrEqual(10);
+      });
+
+      it('should get specific parameter value', () => {
+        const dbName = secMgr.getParameter('db_name');
+        expect(dbName).toBe('ORCL');
+
+        const blockSize = secMgr.getParameter('db_block_size');
+        expect(blockSize).toBe('8192');
+      });
+    });
+
+    describe('Object Catalog (OBJ$)', () => {
+      it('should register objects', () => {
+        const objId = secMgr.registerObject('SCOTT', 'TEST_OBJ', 'TABLE');
+        expect(objId).toBeGreaterThan(0);
+
+        const objs = secMgr.getObjects({ owner: 'SCOTT', objectName: 'TEST_OBJ' });
+        expect(objs.length).toBe(1);
+        expect(objs[0].OBJECT_TYPE).toBe('TABLE');
+        expect(objs[0].STATUS).toBe('VALID');
+      });
+
+      it('should drop objects', () => {
+        secMgr.registerObject('SCOTT', 'DROP_TEST', 'TABLE');
+        secMgr.dropObject('SCOTT', 'DROP_TEST', 'TABLE');
+
+        const objs = secMgr.getObjects({ owner: 'SCOTT', objectName: 'DROP_TEST' });
+        expect(objs.length).toBe(0);
+      });
+    });
+
+    describe('Tables (TAB$) and Columns (COL$)', () => {
+      it('should register tables with columns', () => {
+        const objId = secMgr.registerTable('SCOTT', 'EMPLOYEES', [
+          { name: 'EMP_ID', dataType: 'NUMBER', precision: 10, nullable: false },
+          { name: 'EMP_NAME', dataType: 'VARCHAR2', length: 100 },
+          { name: 'SALARY', dataType: 'NUMBER', precision: 10, scale: 2 },
+        ], 'USERS');
+
+        expect(objId).toBeGreaterThan(0);
+
+        // Check TAB$
+        const tables = secMgr.getTables('SCOTT');
+        const empTable = tables.find((t: any) => t.TABLE_NAME === 'EMPLOYEES');
+        expect(empTable).toBeDefined();
+        expect(empTable.TABLESPACE_NAME).toBe('USERS');
+
+        // Check COL$
+        const columns = secMgr.getColumns('SCOTT', 'EMPLOYEES');
+        expect(columns.length).toBe(3);
+        expect(columns[0].COLUMN_NAME).toBe('EMP_ID');
+        expect(columns[0].NULLABLE).toBe('N');
+        expect(columns[1].COLUMN_NAME).toBe('EMP_NAME');
+        expect(columns[2].COLUMN_NAME).toBe('SALARY');
+      });
+    });
+
+    describe('Indexes (IND$)', () => {
+      it('should register indexes', () => {
+        secMgr.registerTable('SCOTT', 'TEST_TABLE', [
+          { name: 'ID', dataType: 'NUMBER' },
+          { name: 'NAME', dataType: 'VARCHAR2', length: 50 },
+        ]);
+
+        const objId = secMgr.registerIndex('SCOTT', 'IDX_TEST', 'SCOTT', 'TEST_TABLE', ['ID', 'NAME'], true);
+        expect(objId).toBeGreaterThan(0);
+
+        const indexes = secMgr.getIndexes('SCOTT', 'TEST_TABLE');
+        expect(indexes.length).toBe(1);
+        expect(indexes[0].INDEX_NAME).toBe('IDX_TEST');
+        expect(indexes[0].UNIQUENESS).toBe('UNIQUE');
+      });
+    });
+
+    describe('Constraints (CON$)', () => {
+      it('should register constraints', () => {
+        const conId = secMgr.registerConstraint(
+          'SCOTT', 'PK_EMP', 'P', 'EMPLOYEES', ['EMP_ID']
+        );
+        expect(conId).toBeGreaterThan(0);
+
+        const constraints = secMgr.getConstraints('SCOTT', 'EMPLOYEES');
+        expect(constraints.length).toBe(1);
+        expect(constraints[0].CONSTRAINT_NAME).toBe('PK_EMP');
+        expect(constraints[0].CONSTRAINT_TYPE).toBe('P');
+      });
+    });
+
+    describe('Sequences (SEQ$)', () => {
+      it('should register sequences', () => {
+        const objId = secMgr.registerSequence('SCOTT', 'EMP_SEQ', {
+          minValue: 1,
+          maxValue: 1000000,
+          incrementBy: 1,
+          cache: 20
+        });
+        expect(objId).toBeGreaterThan(0);
+
+        const sequences = secMgr.getSequences('SCOTT');
+        const seq = sequences.find((s: any) => s.SEQUENCE_NAME === 'EMP_SEQ');
+        expect(seq).toBeDefined();
+        expect(seq.INCREMENT_BY).toBe(1);
+      });
+    });
+
+    describe('Views (VIEW$)', () => {
+      it('should register views', () => {
+        const objId = secMgr.registerView('SCOTT', 'V_EMPLOYEES', 'SELECT * FROM EMPLOYEES');
+        expect(objId).toBeGreaterThan(0);
+
+        const views = secMgr.getViews('SCOTT');
+        expect(views.length).toBe(1);
+        expect(views[0].VIEW_NAME).toBe('V_EMPLOYEES');
+        expect(views[0].VIEW_TEXT).toContain('SELECT');
+      });
+    });
+
+    describe('Synonyms (SYNONYM$)', () => {
+      it('should register synonyms', () => {
+        secMgr.registerSynonym('PUBLIC', 'EMP', 'SCOTT', 'EMPLOYEES');
+
+        const synonyms = secMgr.getSynonyms('PUBLIC');
+        expect(synonyms.length).toBe(1);
+        expect(synonyms[0].SYNONYM_NAME).toBe('EMP');
+        expect(synonyms[0].TABLE_NAME).toBe('EMPLOYEES');
+      });
+    });
+
+    describe('Sessions (SESSION$)', () => {
+      it('should create and end sessions', () => {
+        const session = secMgr.createSession('SCOTT', {
+          osuser: 'oracle',
+          machine: 'db-server',
+          program: 'sqlplus'
+        });
+
+        expect(session.sid).toBeGreaterThan(0);
+        expect(session.serial).toBeGreaterThan(0);
+
+        const activeSessions = secMgr.getActiveSessions();
+        expect(activeSessions.length).toBeGreaterThan(0);
+
+        const scottSession = activeSessions.find((s: any) => s.USERNAME === 'SCOTT');
+        expect(scottSession).toBeDefined();
+        expect(scottSession.PROGRAM).toBe('sqlplus');
+
+        // End session
+        secMgr.endSession(session.sid, session.serial);
+
+        const sessionsAfter = secMgr.getActiveSessions();
+        const removed = !sessionsAfter.find((s: any) => s.SID === session.sid && s.SERIAL_NUM === session.serial);
+        expect(removed).toBe(true);
+      });
+    });
+  });
 });
