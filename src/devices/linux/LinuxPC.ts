@@ -564,24 +564,32 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
 
     const frame = packet.frame;
 
-    // Check if frame is for us
-    if (frame.destinationMAC !== iface.macAddress &&
-        frame.destinationMAC !== BROADCAST_MAC) {
+    // Check if frame is for us (case-insensitive MAC comparison)
+    if (frame.destinationMAC.toUpperCase() !== iface.macAddress.toUpperCase() &&
+        frame.destinationMAC.toUpperCase() !== BROADCAST_MAC) {
       return null;
     }
 
     // Handle ARP
     if (frame.etherType === ETHER_TYPE.ARP && iface.ipAddress) {
+      const arpPacket = frame.payload as any;
+
+      // Learn sender's MAC in both ARPService and NetworkStack
+      this.arpService.addDynamicEntry(arpPacket.senderIP, arpPacket.senderMAC, iface.name);
+      this.networkStack.addARPEntry(arpPacket.senderIP, arpPacket.senderMAC, iface.name, false);
+
       const arpReply = this.arpService.processPacket(
-        frame.payload as any,
+        arpPacket,
         iface.name,
         iface.ipAddress,
         iface.macAddress
       );
 
-      if (arpReply) {
-        return arpReply;
+      // Send ARP reply via packetSender
+      if (arpReply && this.packetSender) {
+        this.packetSender(arpReply, interfaceId);
       }
+      return null;  // Response sent via callback
     }
 
     // Let network stack handle other packets (IPv4, ICMP, etc.)

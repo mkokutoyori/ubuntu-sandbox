@@ -435,30 +435,30 @@ export class CiscoDevice extends BaseDevice {
     const ciscoIface = this.ciscoConfig.interfaces.get(iface.name);
     const vlanId = ciscoIface?.accessVlan || 1;
 
-    // MAC learning
-    if (frame.sourceMAC !== BROADCAST_MAC) {
-      this.macTable.set(frame.sourceMAC, {
+    // MAC learning (case-insensitive)
+    if (frame.sourceMAC.toUpperCase() !== BROADCAST_MAC) {
+      this.macTable.set(frame.sourceMAC.toUpperCase(), {
         vlan: vlanId,
-        macAddress: frame.sourceMAC,
+        macAddress: frame.sourceMAC.toUpperCase(),
         type: 'DYNAMIC',
         ports: iface.name,
       });
     }
 
     // Check if destination is us (VLAN interface or management)
-    if (frame.destinationMAC === iface.macAddress) {
+    if (frame.destinationMAC.toUpperCase() === iface.macAddress.toUpperCase()) {
       return this.networkStack.processIncomingPacket(packet, interfaceId);
     }
 
     // Forwarding decision
-    if (frame.destinationMAC === BROADCAST_MAC) {
+    if (frame.destinationMAC.toUpperCase() === BROADCAST_MAC) {
       // Flood to all ports in same VLAN except source
       // In simulation, we return null as flooding is handled by network layer
       return null;
     }
 
-    // Unicast - lookup MAC table
-    const entry = this.macTable.get(frame.destinationMAC);
+    // Unicast - lookup MAC table (case-insensitive)
+    const entry = this.macTable.get(frame.destinationMAC.toUpperCase());
     if (entry && entry.vlan === vlanId) {
       // Forward to specific port
       if (this.packetSender) {
@@ -481,22 +481,31 @@ export class CiscoDevice extends BaseDevice {
 
     if (!iface) return null;
 
-    // Check if frame is for us
-    if (frame.destinationMAC !== iface.macAddress && frame.destinationMAC !== BROADCAST_MAC) {
+    // Check if frame is for us (case-insensitive MAC comparison)
+    if (frame.destinationMAC.toUpperCase() !== iface.macAddress.toUpperCase() &&
+        frame.destinationMAC.toUpperCase() !== BROADCAST_MAC) {
       return null;
     }
 
     // Handle ARP
     if (frame.etherType === ETHER_TYPE.ARP && iface.ipAddress) {
+      const arpPacket = frame.payload as any;
+
+      // Learn sender's MAC in both ARPService and NetworkStack
+      this.arpService.addDynamicEntry(arpPacket.senderIP, arpPacket.senderMAC, iface.name);
+      this.networkStack.addARPEntry(arpPacket.senderIP, arpPacket.senderMAC, iface.name, false);
+
       const arpReply = this.arpService.processPacket(
-        frame.payload as any,
+        arpPacket,
         iface.name,
         iface.ipAddress,
         iface.macAddress
       );
-      if (arpReply) {
-        return arpReply;
+      // Send ARP reply via packetSender
+      if (arpReply && this.packetSender) {
+        this.packetSender(arpReply, interfaceId);
       }
+      return null;  // Response sent via callback
     }
 
     // Handle IPv4

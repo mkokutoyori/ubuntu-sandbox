@@ -111,203 +111,202 @@ describe('Network Simulation', () => {
   });
 
   describe('ARP Resolution', () => {
-    it('should send ARP request for unknown MAC', (done) => {
-      const pc1Iface = pc1.getInterfaces()[0];
-      const events: any[] = [];
+    it('should send ARP request for unknown MAC', () => {
+      return new Promise<void>((resolve) => {
+        const pc1Iface = pc1.getInterfaces()[0];
+        const events: any[] = [];
 
-      NetworkSimulator.addEventListener((event) => {
-        events.push(event);
+        const unsubscribe = () => {
+          NetworkSimulator.removeEventListener(listener);
+        };
 
-        // Check for ARP request
-        if (event.type === 'frame_sent' && event.frame?.etherType === ETHER_TYPE.ARP) {
-          const arpPacket = event.frame.payload as ARPPacket;
-          expect(arpPacket.opcode).toBe(ARPOpcode.REQUEST);
-          expect(arpPacket.targetIP).toBe('192.168.1.20');
-          done();
-        }
+        const listener = (event: any) => {
+          events.push(event);
+
+          // Check for ARP request
+          if (event.type === 'frame_sent' && event.frame?.etherType === ETHER_TYPE.ARP) {
+            const arpPacket = event.frame.payload as ARPPacket;
+            expect(arpPacket.opcode).toBe(ARPOpcode.REQUEST);
+            expect(arpPacket.targetIP).toBe('192.168.1.20');
+            unsubscribe();
+            resolve();
+          }
+        };
+
+        NetworkSimulator.addEventListener(listener);
+
+        // Trigger ARP by trying to send to unknown IP
+        pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
       });
-
-      // Trigger ARP by trying to send to unknown IP
-      pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
     });
 
-    it('should learn MAC address from ARP request', () => {
+    it('should learn MAC address from ARP request', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
-      const pc2Iface = pc2.getInterfaces()[0];
 
       // Send ARP from PC1
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-      // Wait a bit for processing
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          // PC2 should have learned PC1's MAC
-          const pc2Arp = pc2.getNetworkStack().getARPTable();
-          const pc1Entry = pc2Arp.find(e => e.ipAddress === '192.168.1.10');
-          expect(pc1Entry).toBeDefined();
-          expect(pc1Entry?.macAddress.toUpperCase()).toBe(pc1Iface.macAddress.toUpperCase());
-          resolve();
-        }, 50);
-      });
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // PC2 should have learned PC1's MAC
+      const pc2Arp = pc2.getNetworkStack().getARPTable();
+      const pc1Entry = pc2Arp.find(e => e.ipAddress === '192.168.1.10');
+      expect(pc1Entry).toBeDefined();
+      expect(pc1Entry?.macAddress.toUpperCase()).toBe(pc1Iface.macAddress.toUpperCase());
     });
 
-    it('should receive ARP reply and learn MAC', () => {
+    it('should receive ARP reply and learn MAC', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
 
       // Send ARP from PC1
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
       // Wait for ARP reply
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          // PC1 should now have PC2's MAC in its ARP table
-          const pc1Arp = pc1.getNetworkStack().getARPTable();
-          const pc2Entry = pc1Arp.find(e => e.ipAddress === '192.168.1.20');
-          expect(pc2Entry).toBeDefined();
-          resolve();
-        }, 100);
-      });
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // PC1 should now have PC2's MAC in its ARP table
+      const pc1Arp = pc1.getNetworkStack().getARPTable();
+      const pc2Entry = pc1Arp.find(e => e.ipAddress === '192.168.1.20');
+      expect(pc2Entry).toBeDefined();
     });
   });
 
   describe('Switch MAC Learning', () => {
-    it('should learn source MAC on ingress port', () => {
+    it('should learn source MAC on ingress port', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
 
       // Send a frame from PC1
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-      // Check switch MAC table
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          const macTable = NetworkSimulator.getMACTable(switch1.getId());
-          expect(macTable).not.toBeNull();
-          expect(macTable!.length).toBeGreaterThan(0);
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-          // Should have PC1's MAC
-          const pc1Entry = macTable!.find(e =>
-            e.macAddress.toUpperCase() === pc1Iface.macAddress.toUpperCase()
-          );
-          expect(pc1Entry).toBeDefined();
-          resolve();
-        }, 50);
-      });
+      // Check switch MAC table
+      const macTable = NetworkSimulator.getMACTable(switch1.getId());
+      expect(macTable).not.toBeNull();
+      expect(macTable!.length).toBeGreaterThan(0);
+
+      // Should have PC1's MAC
+      const pc1Entry = macTable!.find(e =>
+        e.macAddress.toUpperCase() === pc1Iface.macAddress.toUpperCase()
+      );
+      expect(pc1Entry).toBeDefined();
     });
 
-    it('should flood broadcast frames to all ports', () => {
+    it('should flood broadcast frames to all ports', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
       const receivedEvents: any[] = [];
 
-      NetworkSimulator.addEventListener((event) => {
+      const listener = (event: any) => {
         if (event.type === 'frame_received') {
           receivedEvents.push(event);
         }
-      });
+      };
+
+      NetworkSimulator.addEventListener(listener);
 
       // Send ARP (broadcast) from PC1
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          // PC2 should have received the broadcast
-          const pc2Received = receivedEvents.find(e =>
-            e.destinationDeviceId === pc2.getId()
-          );
-          expect(pc2Received).toBeDefined();
-          resolve();
-        }, 50);
-      });
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      NetworkSimulator.removeEventListener(listener);
+
+      // PC2 should have received the broadcast
+      const pc2Received = receivedEvents.find(e =>
+        e.destinationDeviceId === pc2.getId()
+      );
+      expect(pc2Received).toBeDefined();
     });
   });
 
   describe('ICMP Ping', () => {
-    it('should send ping and receive reply', () => {
-      return new Promise<void>((resolve, reject) => {
-        // First do ARP to get MAC addresses
-        const pc1Iface = pc1.getInterfaces()[0];
-        pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
+    it('should send ping and receive reply', async () => {
+      // First do ARP to get MAC addresses
+      const pc1Iface = pc1.getInterfaces()[0];
+      pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-        setTimeout(() => {
-          // Now send ping
-          pc1.getNetworkStack().sendPing('192.168.1.20', (response) => {
-            try {
-              expect(response.success).toBe(true);
-              expect(response.sourceIP).toBe('192.168.1.20');
-              expect(response.rtt).toBeGreaterThanOrEqual(0);
-              resolve();
-            } catch (e) {
-              reject(e);
-            }
-          }, 2000);
-        }, 150);
+      // Wait for ARP to complete
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Now send ping
+      const pingResult = await new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Ping timeout')), 3000);
+
+        pc1.getNetworkStack().sendPing('192.168.1.20', (response) => {
+          clearTimeout(timeout);
+          resolve(response);
+        }, 2500);
       });
+
+      expect(pingResult.success).toBe(true);
+      expect(pingResult.sourceIP).toBe('192.168.1.20');
+      expect(pingResult.rtt).toBeGreaterThanOrEqual(0);
     });
 
-    it('should timeout when destination unreachable', () => {
-      return new Promise<void>((resolve, reject) => {
-        // Try to ping non-existent IP
+    it('should timeout when destination unreachable', async () => {
+      // Try to ping non-existent IP
+      const pingResult = await new Promise<any>((resolve) => {
         pc1.getNetworkStack().sendPing('192.168.1.99', (response) => {
-          try {
-            expect(response.success).toBe(false);
-            expect(response.error).toBeDefined();
-            resolve();
-          } catch (e) {
-            reject(e);
-          }
+          resolve(response);
         }, 500);
       });
+
+      expect(pingResult.success).toBe(false);
+      expect(pingResult.error).toBeDefined();
     });
 
-    it('should fail ping when interface is down', () => {
+    it('should fail ping when interface is down', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
 
       // Bring interface down
       pc1.configureInterface(pc1Iface.id, { isUp: false });
 
-      return new Promise<void>((resolve, reject) => {
+      const pingResult = await new Promise<any>((resolve) => {
         pc1.getNetworkStack().sendPing('192.168.1.20', (response) => {
-          try {
-            expect(response.success).toBe(false);
-            expect(response.error).toContain('unreachable');
-            resolve();
-          } catch (e) {
-            reject(e);
-          }
+          resolve(response);
         }, 500);
       });
+
+      expect(pingResult.success).toBe(false);
+      expect(pingResult.error).toContain('unreachable');
     });
   });
 
   describe('Frame Delivery', () => {
-    it('should not deliver frames to powered-off devices', () => {
+    it('should not deliver frames to powered-off devices', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
 
       // Power off PC2
       pc2.powerOff();
 
       const events: any[] = [];
-      NetworkSimulator.addEventListener((event) => {
+      const listener = (event: any) => {
         events.push(event);
-      });
+      };
+
+      NetworkSimulator.addEventListener(listener);
 
       // Send ARP from PC1
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          // Should have a dropped frame event for PC2
-          const droppedEvent = events.find(e =>
-            e.type === 'frame_dropped' &&
-            e.destinationDeviceId === pc2.getId() &&
-            e.details?.reason === 'device_powered_off'
-          );
-          expect(droppedEvent).toBeDefined();
-          resolve();
-        }, 50);
-      });
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      NetworkSimulator.removeEventListener(listener);
+
+      // Should have a dropped frame event for PC2
+      const droppedEvent = events.find(e =>
+        e.type === 'frame_dropped' &&
+        e.destinationDeviceId === pc2.getId() &&
+        e.details?.reason === 'device_powered_off'
+      );
+      expect(droppedEvent).toBeDefined();
     });
 
-    it('should not deliver frames to interfaces that are down', () => {
+    it('should not deliver frames to interfaces that are down', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
       const pc2Iface = pc2.getInterfaces()[0];
 
@@ -315,51 +314,52 @@ describe('Network Simulation', () => {
       pc2.configureInterface(pc2Iface.id, { isUp: false });
 
       const events: any[] = [];
-      NetworkSimulator.addEventListener((event) => {
+      const listener = (event: any) => {
         events.push(event);
-      });
+      };
+
+      NetworkSimulator.addEventListener(listener);
 
       // Send ARP from PC1
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          // Should have a dropped frame event
-          const droppedEvent = events.find(e =>
-            e.type === 'frame_dropped' &&
-            e.details?.reason === 'interface_down'
-          );
-          expect(droppedEvent).toBeDefined();
-          resolve();
-        }, 50);
-      });
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      NetworkSimulator.removeEventListener(listener);
+
+      // Should have a dropped frame event
+      const droppedEvent = events.find(e =>
+        e.type === 'frame_dropped' &&
+        e.details?.reason === 'interface_down'
+      );
+      expect(droppedEvent).toBeDefined();
     });
   });
 
   describe('Multiple Ping Sequences', () => {
-    it('should handle multiple consecutive pings', () => {
+    it('should handle multiple consecutive pings', async () => {
       const pc1Iface = pc1.getInterfaces()[0];
 
       // First do ARP
       pc1.getNetworkStack().sendARPRequest('192.168.1.20', pc1Iface);
 
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          let successCount = 0;
-          const totalPings = 3;
+      // Wait for ARP
+      await new Promise(resolve => setTimeout(resolve, 250));
 
-          for (let i = 0; i < totalPings; i++) {
-            pc1.getNetworkStack().sendPing('192.168.1.20', (response) => {
-              if (response.success) successCount++;
+      // Send multiple pings
+      const totalPings = 3;
+      const results: any[] = [];
 
-              if (successCount + (totalPings - i - 1) <= 0 || successCount === totalPings) {
-                expect(successCount).toBe(totalPings);
-                resolve();
-              }
-            }, 2000);
-          }
-        }, 200);
-      });
+      for (let i = 0; i < totalPings; i++) {
+        const result = await new Promise<any>((resolve) => {
+          pc1.getNetworkStack().sendPing('192.168.1.20', resolve, 2000);
+        });
+        results.push(result);
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      expect(successCount).toBe(totalPings);
     });
   });
 });
@@ -411,24 +411,26 @@ describe('Direct Device Ping', () => {
     NetworkSimulator.initialize(devices, connections);
   });
 
-  it('should ping directly connected device', () => {
+  it('should ping directly connected device', async () => {
     const pc1Iface = pc1.getInterfaces()[0];
 
     // Do ARP first
     pc1.getNetworkStack().sendARPRequest('10.0.0.2', pc1Iface);
 
-    return new Promise<void>((resolve, reject) => {
-      setTimeout(() => {
-        pc1.getNetworkStack().sendPing('10.0.0.2', (response) => {
-          try {
-            expect(response.success).toBe(true);
-            expect(response.sourceIP).toBe('10.0.0.2');
-            resolve();
-          } catch (e) {
-            reject(e);
-          }
-        }, 2000);
-      }, 200);
+    // Wait for ARP
+    await new Promise(resolve => setTimeout(resolve, 250));
+
+    // Send ping
+    const pingResult = await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Ping timeout')), 3000);
+
+      pc1.getNetworkStack().sendPing('10.0.0.2', (response) => {
+        clearTimeout(timeout);
+        resolve(response);
+      }, 2500);
     });
+
+    expect(pingResult.success).toBe(true);
+    expect(pingResult.sourceIP).toBe('10.0.0.2');
   });
 });
