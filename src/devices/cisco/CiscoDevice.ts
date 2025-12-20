@@ -11,9 +11,11 @@ import {
   IPv4Packet,
   ICMPPacket,
   ICMPType,
+  EthernetFrame,
   ETHER_TYPE,
   IP_PROTOCOL,
   BROADCAST_MAC,
+  generatePacketId,
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
 import {
@@ -532,40 +534,215 @@ export class CiscoDevice extends BaseDevice {
 
   /**
    * Route a packet to its destination
+   * This is the core Layer 3 forwarding function
    */
   private routePacket(packet: Packet, sourceInterfaceId: string): Packet | null {
-    const ipPacket = packet.frame.payload as IPv4Packet;
+    const originalIP = packet.frame.payload as IPv4Packet;
 
     // Decrement TTL
-    if (ipPacket.ttl <= 1) {
+    if (originalIP.ttl <= 1) {
       // TTL expired - send ICMP Time Exceeded
+      this.sendICMPTimeExceeded(originalIP, sourceInterfaceId);
       return null;
     }
-    ipPacket.ttl--;
+
+    // Create a copy of the IP packet with decremented TTL
+    const routedIP: IPv4Packet = {
+      ...originalIP,
+      ttl: originalIP.ttl - 1
+    };
 
     // Lookup route
-    const route = this.networkStack.lookupRoute(ipPacket.destinationIP);
+    const route = this.networkStack.lookupRoute(routedIP.destinationIP);
     if (!route) {
       // No route - send ICMP Destination Unreachable
+      this.sendICMPDestUnreachable(originalIP, sourceInterfaceId, 'network');
       return null;
     }
 
     // Get outgoing interface
     const outIface = this.networkStack.getInterfaceByName(route.interface);
-    if (!outIface || !outIface.isUp || outIface.id === sourceInterfaceId) {
+    if (!outIface || !outIface.isUp) {
+      this.sendICMPDestUnreachable(originalIP, sourceInterfaceId, 'network');
       return null;
     }
 
-    // ARP for next hop
-    const nextHop = route.gateway !== '0.0.0.0' ? route.gateway : ipPacket.destinationIP;
-
-    // In simulation, we would do ARP resolution here
-    // For now, forward the packet
-    if (this.packetSender) {
-      this.packetSender(packet, outIface.id);
+    // Don't route back out the same interface (split horizon)
+    if (outIface.id === sourceInterfaceId) {
+      return null;
     }
 
+    // Determine next hop IP (gateway or direct)
+    const nextHopIP = route.gateway !== '0.0.0.0' ? route.gateway : routedIP.destinationIP;
+
+    // Lookup MAC for next hop
+    let nextHopMAC = this.networkStack.lookupARP(nextHopIP);
+
+    if (!nextHopMAC) {
+      // Need to do ARP for next hop
+      this.networkStack.sendARPRequest(nextHopIP, outIface);
+
+      // Queue packet for later sending (simplified: just drop for now, but trigger ARP)
+      // In production, we'd queue this and retry after ARP completes
+      // For now, we'll check if we have any cached ARP entry
+      nextHopMAC = this.arpService.lookup(nextHopIP);
+
+      if (!nextHopMAC) {
+        // Schedule retry after ARP (simplified approach)
+        setTimeout(() => {
+          const resolvedMAC = this.networkStack.lookupARP(nextHopIP) || this.arpService.lookup(nextHopIP);
+          if (resolvedMAC) {
+            this.forwardRoutedPacket(routedIP, outIface, resolvedMAC);
+          }
+        }, 100);
+        return null;
+      }
+    }
+
+    // Forward the packet
+    this.forwardRoutedPacket(routedIP, outIface, nextHopMAC);
     return null;
+  }
+
+  /**
+   * Forward a routed IP packet with new Ethernet frame
+   */
+  private forwardRoutedPacket(
+    ipPacket: IPv4Packet,
+    outInterface: NetworkInterfaceConfig,
+    destinationMAC: string
+  ): void {
+    if (!this.packetSender) return;
+
+    // Create new Ethernet frame with router's MAC as source
+    const newFrame: EthernetFrame = {
+      destinationMAC: destinationMAC,
+      sourceMAC: outInterface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: ipPacket
+    };
+
+    const newPacket: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame: newFrame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(newPacket, outInterface.id);
+  }
+
+  /**
+   * Send ICMP Time Exceeded message
+   */
+  private sendICMPTimeExceeded(originalIP: IPv4Packet, incomingInterfaceId: string): void {
+    const inIface = this.networkStack.getInterface(incomingInterfaceId);
+    if (!inIface || !inIface.ipAddress || !this.packetSender) return;
+
+    // Get source MAC from ARP
+    const sourceMAC = this.networkStack.lookupARP(originalIP.sourceIP);
+    if (!sourceMAC) return;
+
+    const icmpPacket: ICMPPacket = {
+      type: ICMPType.TIME_EXCEEDED,
+      code: 0, // TTL exceeded in transit
+      checksum: 0,
+      identifier: 0,
+      sequenceNumber: 0,
+      data: undefined
+    };
+
+    const responseIP: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: 64,
+      protocol: IP_PROTOCOL.ICMP,
+      headerChecksum: 0,
+      sourceIP: inIface.ipAddress,
+      destinationIP: originalIP.sourceIP,
+      payload: icmpPacket
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC: sourceMAC,
+      sourceMAC: inIface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: responseIP
+    };
+
+    const packet: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(packet, incomingInterfaceId);
+  }
+
+  /**
+   * Send ICMP Destination Unreachable message
+   */
+  private sendICMPDestUnreachable(
+    originalIP: IPv4Packet,
+    incomingInterfaceId: string,
+    _reason: 'network' | 'host' | 'port'
+  ): void {
+    const inIface = this.networkStack.getInterface(incomingInterfaceId);
+    if (!inIface || !inIface.ipAddress || !this.packetSender) return;
+
+    // Get source MAC from ARP
+    const sourceMAC = this.networkStack.lookupARP(originalIP.sourceIP);
+    if (!sourceMAC) return;
+
+    const icmpPacket: ICMPPacket = {
+      type: ICMPType.DESTINATION_UNREACHABLE,
+      code: 0, // Network unreachable
+      checksum: 0,
+      identifier: 0,
+      sequenceNumber: 0,
+      data: undefined
+    };
+
+    const responseIP: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: 64,
+      protocol: IP_PROTOCOL.ICMP,
+      headerChecksum: 0,
+      sourceIP: inIface.ipAddress,
+      destinationIP: originalIP.sourceIP,
+      payload: icmpPacket
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC: sourceMAC,
+      sourceMAC: inIface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: responseIP
+    };
+
+    const packet: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(packet, incomingInterfaceId);
   }
 
   /**
