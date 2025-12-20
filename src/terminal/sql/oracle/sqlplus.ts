@@ -9,7 +9,7 @@ import { OracleSessionSettings, createDefaultOracleSettings, ColumnFormat, Spool
 import { OracleSystemCatalog } from './system';
 import { ORACLE_FUNCTIONS, getOracleFunction } from './functions';
 import { initializeOracleSeeds } from '../seeds';
-import { OracleSecurityManager, oracleSecurityManager } from './security';
+import { OracleSecurityManager } from './security';
 
 export interface SQLPlusResult {
   output: string;
@@ -51,6 +51,9 @@ export function createSQLPlusSession(): SQLPlusSession {
   engine.setCurrentSchema('SYSTEM');
   engine.setCurrentUser('SYSTEM');
 
+  // Initialize security manager with engine (creates SYS.USER$, SYS.ROLE$, etc.)
+  const securityManager = new OracleSecurityManager(engine);
+
   // Initialize e-commerce seed data
   const seedResult = initializeOracleSeeds(engine);
 
@@ -68,7 +71,7 @@ export function createSQLPlusSession(): SQLPlusSession {
     lastResult: null,
     runningScript: false,
     seeded: seedResult.success,
-    securityManager: oracleSecurityManager,
+    securityManager,
     sessionId: 0
   };
 }

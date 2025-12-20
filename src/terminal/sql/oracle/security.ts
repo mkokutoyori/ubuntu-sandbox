@@ -1,40 +1,26 @@
 /**
- * Oracle Security Module
+ * Oracle Security Module - SQL-based implementation
  *
- * Implements authentication, authorization, role-based access control (RBAC),
- * and audit capabilities similar to a real Oracle database.
+ * Uses actual SQL tables to store security data, just like a real Oracle database.
+ * All security data is queryable via standard SQL SELECT statements.
+ *
+ * Core tables:
+ * - SYS.USER$ - User accounts
+ * - SYS.PROFILE$ - Security profiles
+ * - SYS.ROLE$ - Role definitions
+ * - SYS.SYSAUTH$ - System privileges granted
+ * - SYS.OBJAUTH$ - Object privileges granted
+ * - SYS.AUDIT$ - Audit trail
  */
 
-import { SQLResult, SQLRow, createSuccessResult, createErrorResult } from '../generic/types';
-import { OracleUser, OracleProfile, OracleSystemPrivilege, OracleObjectPrivilege } from './types';
+import { SQLEngine } from '../generic/engine';
+import { SQLResult, createSuccessResult, createErrorResult } from '../generic/types';
+import { parseSQL } from '../generic/parser';
 
 // ============================================================================
-// Password Hashing (simulated SHA-256 style for Oracle)
+// Password Hashing
 // ============================================================================
 
-/**
- * Simple hash function for password storage
- * In a real system, this would use proper cryptographic hashing
- */
-export function hashPassword(password: string, salt?: string): string {
-  const actualSalt = salt || generateSalt();
-  let hash = 0;
-  const combined = actualSalt + password;
-
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-
-  // Convert to hex and pad
-  const hashHex = Math.abs(hash).toString(16).toUpperCase().padStart(16, '0');
-  return `S:${hashHex}${actualSalt}`;
-}
-
-/**
- * Generate a random salt for password hashing
- */
 export function generateSalt(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let salt = '';
@@ -44,393 +30,610 @@ export function generateSalt(): string {
   return salt;
 }
 
-/**
- * Verify a password against a stored hash
- */
-export function verifyPassword(password: string, storedHash: string): boolean {
-  if (!storedHash.startsWith('S:')) {
-    // Legacy plain text password (for backwards compatibility)
-    return password === storedHash;
+export function hashPassword(password: string, salt?: string): string {
+  const actualSalt = salt || generateSalt();
+  let hash = 0;
+  const combined = actualSalt + password;
+
+  for (let i = 0; i < combined.length; i++) {
+    const char = combined.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
   }
 
-  // Extract salt from stored hash (last 20 characters)
+  const hashHex = Math.abs(hash).toString(16).toUpperCase().padStart(16, '0');
+  return `S:${hashHex}${actualSalt}`;
+}
+
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!storedHash || !storedHash.startsWith('S:')) {
+    return password === storedHash;
+  }
   const salt = storedHash.slice(-20);
   const expectedHash = hashPassword(password, salt);
   return expectedHash === storedHash;
 }
 
 // ============================================================================
-// Role Definition
+// SQL Schema Definitions for Security Tables
 // ============================================================================
 
-export interface OracleRole {
-  name: string;
-  password?: string;  // Optional password-protected role
-  createdBy: string;
-  createdDate: Date;
-  grantedPrivileges: Set<string>;  // System privileges
-  grantedObjectPrivileges: Map<string, Set<string>>;  // object -> privileges
-  grantedRoles: Set<string>;  // Roles granted to this role
-  isDefault: boolean;
+const SECURITY_SCHEMA_SQL = `
+-- User accounts (maps to DBA_USERS view)
+CREATE TABLE SYS.USER$ (
+  USER_ID INTEGER PRIMARY KEY,
+  USERNAME VARCHAR(128) NOT NULL UNIQUE,
+  PASSWORD VARCHAR(256),
+  ACCOUNT_STATUS VARCHAR(32) DEFAULT 'OPEN',
+  LOCK_DATE TIMESTAMP,
+  EXPIRY_DATE TIMESTAMP,
+  DEFAULT_TABLESPACE VARCHAR(128) DEFAULT 'USERS',
+  TEMPORARY_TABLESPACE VARCHAR(128) DEFAULT 'TEMP',
+  PROFILE VARCHAR(128) DEFAULT 'DEFAULT',
+  CREATED TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  LAST_LOGIN TIMESTAMP,
+  FAILED_LOGIN_ATTEMPTS INTEGER DEFAULT 0
+);
+
+-- Security profiles (maps to DBA_PROFILES view)
+CREATE TABLE SYS.PROFILE$ (
+  PROFILE VARCHAR(128) NOT NULL,
+  RESOURCE_NAME VARCHAR(128) NOT NULL,
+  RESOURCE_TYPE VARCHAR(32),
+  LIMIT VARCHAR(128),
+  PRIMARY KEY (PROFILE, RESOURCE_NAME)
+);
+
+-- Roles (maps to DBA_ROLES view)
+CREATE TABLE SYS.ROLE$ (
+  ROLE_ID INTEGER PRIMARY KEY,
+  ROLE VARCHAR(128) NOT NULL UNIQUE,
+  PASSWORD_REQUIRED VARCHAR(1) DEFAULT 'N',
+  PASSWORD VARCHAR(256),
+  AUTHENTICATION_TYPE VARCHAR(32) DEFAULT 'NONE',
+  CREATED_BY VARCHAR(128),
+  CREATED TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- System privileges granted (maps to DBA_SYS_PRIVS view)
+CREATE TABLE SYS.SYSAUTH$ (
+  GRANTEE VARCHAR(128) NOT NULL,
+  PRIVILEGE VARCHAR(128) NOT NULL,
+  ADMIN_OPTION VARCHAR(3) DEFAULT 'NO',
+  GRANTED_BY VARCHAR(128),
+  GRANT_DATE TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (GRANTEE, PRIVILEGE)
+);
+
+-- Role privileges granted (maps to DBA_ROLE_PRIVS view)
+CREATE TABLE SYS.ROLEAUTH$ (
+  GRANTEE VARCHAR(128) NOT NULL,
+  GRANTED_ROLE VARCHAR(128) NOT NULL,
+  ADMIN_OPTION VARCHAR(3) DEFAULT 'NO',
+  DEFAULT_ROLE VARCHAR(3) DEFAULT 'YES',
+  GRANTED_BY VARCHAR(128),
+  GRANT_DATE TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (GRANTEE, GRANTED_ROLE)
+);
+
+-- Object privileges granted (maps to DBA_TAB_PRIVS view)
+CREATE TABLE SYS.OBJAUTH$ (
+  GRANTEE VARCHAR(128) NOT NULL,
+  OWNER VARCHAR(128) NOT NULL,
+  TABLE_NAME VARCHAR(128) NOT NULL,
+  PRIVILEGE VARCHAR(128) NOT NULL,
+  GRANTABLE VARCHAR(3) DEFAULT 'NO',
+  GRANTOR VARCHAR(128),
+  GRANT_DATE TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (GRANTEE, OWNER, TABLE_NAME, PRIVILEGE)
+);
+
+-- Tablespace quotas (maps to DBA_TS_QUOTAS view)
+CREATE TABLE SYS.TSQUOTA$ (
+  USERNAME VARCHAR(128) NOT NULL,
+  TABLESPACE_NAME VARCHAR(128) NOT NULL,
+  MAX_BYTES INTEGER DEFAULT -1,
+  PRIMARY KEY (USERNAME, TABLESPACE_NAME)
+);
+
+-- Audit trail (maps to DBA_AUDIT_TRAIL view)
+CREATE TABLE SYS.AUD$ (
+  AUDIT_ID INTEGER PRIMARY KEY,
+  SESSION_ID INTEGER,
+  TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  USERNAME VARCHAR(128),
+  OS_USERNAME VARCHAR(255),
+  TERMINAL VARCHAR(255),
+  ACTION_NAME VARCHAR(128),
+  OBJECT_SCHEMA VARCHAR(128),
+  OBJECT_NAME VARCHAR(128),
+  OBJECT_TYPE VARCHAR(32),
+  SQL_TEXT VARCHAR(4000),
+  RETURN_CODE INTEGER DEFAULT 0,
+  CLIENT_ID VARCHAR(255),
+  COMMENT_TEXT VARCHAR(4000)
+);
+
+-- Audit policies (maps to DBA_STMT_AUDIT_OPTS view)
+CREATE TABLE SYS.AUDIT$ (
+  USER_NAME VARCHAR(128),
+  AUDIT_OPTION VARCHAR(128) NOT NULL,
+  SUCCESS VARCHAR(10),
+  FAILURE VARCHAR(10),
+  PRIMARY KEY (AUDIT_OPTION)
+);
+`;
+
+// ============================================================================
+// Initial Data Population
+// ============================================================================
+
+function getInitialDataSQL(): string[] {
+  const statements: string[] = [];
+  const now = new Date().toISOString();
+
+  // Create profiles
+  const profileSettings = [
+    { profile: 'DEFAULT', resource: 'SESSIONS_PER_USER', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'CPU_PER_SESSION', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'CONNECT_TIME', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'IDLE_TIME', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'FAILED_LOGIN_ATTEMPTS', value: '10' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_LIFE_TIME', value: '180' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_REUSE_TIME', value: 'UNLIMITED' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_LOCK_TIME', value: '1' },
+    { profile: 'DEFAULT', resource: 'PASSWORD_GRACE_TIME', value: '7' },
+    { profile: 'SECURE_PROFILE', resource: 'FAILED_LOGIN_ATTEMPTS', value: '3' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_LIFE_TIME', value: '60' },
+    { profile: 'SECURE_PROFILE', resource: 'PASSWORD_LOCK_TIME', value: '1' },
+    { profile: 'SECURE_PROFILE', resource: 'CONNECT_TIME', value: '480' },
+    { profile: 'SECURE_PROFILE', resource: 'IDLE_TIME', value: '30' },
+  ];
+
+  for (const p of profileSettings) {
+    statements.push(
+      `INSERT INTO PROFILE$ (PROFILE_NAME, RESOURCE_NAME, RESOURCE_TYPE, LIMIT_VALUE) ` +
+      `VALUES ('${p.profile}', '${p.resource}', 'PASSWORD', '${p.value}')`
+    );
+  }
+
+  // Create system users
+  const users = [
+    { id: 0, name: 'SYS', password: hashPassword('oracle'), status: 'OPEN' },
+    { id: 1, name: 'SYSTEM', password: hashPassword('oracle'), status: 'OPEN' },
+    { id: 2, name: 'SCOTT', password: hashPassword('tiger'), status: 'OPEN' },
+    { id: 3, name: 'HR', password: hashPassword('hr'), status: 'OPEN' },
+  ];
+
+  for (const u of users) {
+    statements.push(
+      `INSERT INTO USER$ (USER_ID, USERNAME, PASSWORD_HASH, ACCOUNT_STATUS, DEFAULT_TABLESPACE, TEMPORARY_TABLESPACE, USER_PROFILE, CREATED, FAILED_LOGIN_ATTEMPTS) ` +
+      `VALUES (${u.id}, '${u.name}', '${u.password}', '${u.status}', '${u.name === 'SYS' || u.name === 'SYSTEM' ? 'SYSTEM' : 'USERS'}', 'TEMP', 'DEFAULT', '${now}', 0)`
+    );
+  }
+
+  // Create roles
+  const roles = [
+    { id: 1, name: 'CONNECT', createdBy: 'SYS' },
+    { id: 2, name: 'RESOURCE', createdBy: 'SYS' },
+    { id: 3, name: 'DBA', createdBy: 'SYS' },
+    { id: 4, name: 'SELECT_CATALOG_ROLE', createdBy: 'SYS' },
+    { id: 5, name: 'EXECUTE_CATALOG_ROLE', createdBy: 'SYS' },
+  ];
+
+  for (const r of roles) {
+    statements.push(
+      `INSERT INTO ROLE$ (ROLE_ID, ROLE_NAME, PASSWORD_REQUIRED, AUTHENTICATION_TYPE, CREATED_BY, CREATED) ` +
+      `VALUES (${r.id}, '${r.name}', 'N', 'NONE', '${r.createdBy}', '${now}')`
+    );
+  }
+
+  // Grant privileges to roles
+  const rolePrivs = [
+    { role: 'CONNECT', priv: 'CREATE SESSION' },
+    { role: 'RESOURCE', priv: 'CREATE TABLE' },
+    { role: 'RESOURCE', priv: 'CREATE SEQUENCE' },
+    { role: 'RESOURCE', priv: 'CREATE PROCEDURE' },
+    { role: 'RESOURCE', priv: 'CREATE TRIGGER' },
+    { role: 'DBA', priv: 'CREATE SESSION' },
+    { role: 'DBA', priv: 'CREATE USER' },
+    { role: 'DBA', priv: 'ALTER USER' },
+    { role: 'DBA', priv: 'DROP USER' },
+    { role: 'DBA', priv: 'CREATE ROLE' },
+    { role: 'DBA', priv: 'DROP ANY ROLE' },
+    { role: 'DBA', priv: 'GRANT ANY ROLE' },
+    { role: 'DBA', priv: 'CREATE TABLE' },
+    { role: 'DBA', priv: 'CREATE ANY TABLE' },
+    { role: 'DBA', priv: 'ALTER ANY TABLE' },
+    { role: 'DBA', priv: 'DROP ANY TABLE' },
+    { role: 'DBA', priv: 'SELECT ANY TABLE' },
+    { role: 'DBA', priv: 'INSERT ANY TABLE' },
+    { role: 'DBA', priv: 'UPDATE ANY TABLE' },
+    { role: 'DBA', priv: 'DELETE ANY TABLE' },
+    { role: 'DBA', priv: 'CREATE SEQUENCE' },
+    { role: 'DBA', priv: 'CREATE ANY SEQUENCE' },
+    { role: 'DBA', priv: 'GRANT ANY PRIVILEGE' },
+    { role: 'DBA', priv: 'GRANT ANY OBJECT PRIVILEGE' },
+    { role: 'DBA', priv: 'AUDIT ANY' },
+  ];
+
+  for (const rp of rolePrivs) {
+    statements.push(
+      `INSERT INTO SYSAUTH$ (GRANTEE, PRIVILEGE, ADMIN_OPTION, GRANTED_BY, GRANT_DATE) ` +
+      `VALUES ('${rp.role}', '${rp.priv}', 'YES', 'SYS', '${now}')`
+    );
+  }
+
+  // Grant roles to users
+  const userRoles = [
+    { grantee: 'SYS', role: 'DBA' },
+    { grantee: 'SYSTEM', role: 'DBA' },
+    { grantee: 'SCOTT', role: 'CONNECT' },
+    { grantee: 'SCOTT', role: 'RESOURCE' },
+    { grantee: 'HR', role: 'CONNECT' },
+    { grantee: 'HR', role: 'RESOURCE' },
+  ];
+
+  for (const ur of userRoles) {
+    statements.push(
+      `INSERT INTO ROLEAUTH$ (GRANTEE, GRANTED_ROLE, ADMIN_OPTION, DEFAULT_ROLE, GRANTED_BY, GRANT_DATE) ` +
+      `VALUES ('${ur.grantee}', '${ur.role}', 'NO', 'YES', 'SYS', '${now}')`
+    );
+  }
+
+  // Grant DBA nested roles
+  statements.push(
+    `INSERT INTO ROLEAUTH$ (GRANTEE, GRANTED_ROLE, ADMIN_OPTION, DEFAULT_ROLE, GRANTED_BY, GRANT_DATE) ` +
+    `VALUES ('DBA', 'CONNECT', 'YES', 'YES', 'SYS', '${now}')`
+  );
+  statements.push(
+    `INSERT INTO ROLEAUTH$ (GRANTEE, GRANTED_ROLE, ADMIN_OPTION, DEFAULT_ROLE, GRANTED_BY, GRANT_DATE) ` +
+    `VALUES ('DBA', 'RESOURCE', 'YES', 'YES', 'SYS', '${now}')`
+  );
+
+  // Grant SYSDBA to SYS
+  statements.push(
+    `INSERT INTO SYSAUTH$ (GRANTEE, PRIVILEGE, ADMIN_OPTION, GRANTED_BY, GRANT_DATE) ` +
+    `VALUES ('SYS', 'SYSDBA', 'YES', 'SYS', '${now}')`
+  );
+  statements.push(
+    `INSERT INTO SYSAUTH$ (GRANTEE, PRIVILEGE, ADMIN_OPTION, GRANTED_BY, GRANT_DATE) ` +
+    `VALUES ('SYS', 'SYSOPER', 'YES', 'SYS', '${now}')`
+  );
+
+  return statements;
 }
 
 // ============================================================================
-// Audit Entry
-// ============================================================================
-
-export type AuditAction =
-  | 'LOGON' | 'LOGOFF' | 'LOGON_FAILED'
-  | 'CREATE_USER' | 'ALTER_USER' | 'DROP_USER'
-  | 'CREATE_ROLE' | 'DROP_ROLE'
-  | 'GRANT' | 'REVOKE'
-  | 'CREATE_TABLE' | 'DROP_TABLE' | 'ALTER_TABLE' | 'TRUNCATE_TABLE'
-  | 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'
-  | 'CREATE_SESSION' | 'ALTER_SESSION';
-
-export interface AuditEntry {
-  timestamp: Date;
-  username: string;
-  osUsername: string;
-  terminal: string;
-  action: AuditAction;
-  objectOwner?: string;
-  objectName?: string;
-  objectType?: string;
-  sqlText?: string;
-  returnCode: number;  // 0 for success, error code for failure
-  sessionId: number;
-  clientIp?: string;
-  comment?: string;
-}
-
-export interface AuditPolicy {
-  action: AuditAction;
-  objectOwner?: string;
-  objectName?: string;
-  byAccess: boolean;  // Audit each access vs once per session
-  wheneverSuccessful: boolean;
-  wheneverNotSuccessful: boolean;
-}
-
-// ============================================================================
-// Oracle Security Manager
+// Oracle Security Manager - SQL-based
 // ============================================================================
 
 export class OracleSecurityManager {
-  private users: Map<string, OracleUser> = new Map();
-  private roles: Map<string, OracleRole> = new Map();
-  private profiles: Map<string, OracleProfile> = new Map();
-  private auditTrail: AuditEntry[] = [];
-  private auditPolicies: AuditPolicy[] = [];
-  private failedLoginAttempts: Map<string, number> = new Map();
+  private engine: SQLEngine;
+  private initialized: boolean = false;
   private currentSessionId: number = 1;
+  private auditSequence: number = 1;
+  private userSequence: number = 100;
+  private roleSequence: number = 100;
 
-  constructor() {
-    this.initializeDefaultProfiles();
-    this.initializeBuiltinRoles();
-    this.initializeSystemUsers();
+  constructor(engine?: SQLEngine) {
+    if (engine) {
+      this.engine = engine;
+      this.initializeSecurityTables();
+    }
   }
 
-  // ==========================================================================
-  // Initialization
-  // ==========================================================================
-
-  private initializeDefaultProfiles(): void {
-    this.profiles.set('DEFAULT', {
-      name: 'DEFAULT',
-      sessionsPerUser: 'UNLIMITED',
-      cpuPerSession: 'UNLIMITED',
-      cpuPerCall: 'UNLIMITED',
-      connectTime: 'UNLIMITED',
-      idleTime: 'UNLIMITED',
-      logicalReadsPerSession: 'UNLIMITED',
-      logicalReadsPerCall: 'UNLIMITED',
-      privateGA: 'UNLIMITED',
-      compositeLimit: 'UNLIMITED',
-      failedLoginAttempts: 10,
-      passwordLifeTime: 180,  // days
-      passwordReuseTime: 'UNLIMITED',
-      passwordReuseMax: 'UNLIMITED',
-      passwordLockTime: 1,  // days
-      passwordGraceTime: 7,  // days
-      passwordVerifyFunction: null
-    });
-
-    this.profiles.set('SECURE_PROFILE', {
-      name: 'SECURE_PROFILE',
-      sessionsPerUser: 3,
-      cpuPerSession: 'UNLIMITED',
-      cpuPerCall: 'UNLIMITED',
-      connectTime: 480,  // 8 hours in minutes
-      idleTime: 30,
-      logicalReadsPerSession: 'UNLIMITED',
-      logicalReadsPerCall: 'UNLIMITED',
-      privateGA: 'UNLIMITED',
-      compositeLimit: 'UNLIMITED',
-      failedLoginAttempts: 3,
-      passwordLifeTime: 60,
-      passwordReuseTime: 365,
-      passwordReuseMax: 10,
-      passwordLockTime: 1,
-      passwordGraceTime: 7,
-      passwordVerifyFunction: 'ORA12C_VERIFY_FUNCTION'
-    });
+  /**
+   * Set the SQL engine (for deferred initialization)
+   */
+  setEngine(engine: SQLEngine): void {
+    this.engine = engine;
+    if (!this.initialized) {
+      this.initializeSecurityTables();
+    }
   }
 
-  private initializeBuiltinRoles(): void {
-    // CONNECT role - basic connection privileges
-    this.roles.set('CONNECT', {
-      name: 'CONNECT',
-      createdBy: 'SYS',
-      createdDate: new Date('2024-01-01'),
-      grantedPrivileges: new Set(['CREATE SESSION']),
-      grantedObjectPrivileges: new Map(),
-      grantedRoles: new Set(),
-      isDefault: true
-    });
+  /**
+   * Initialize security tables in the database
+   */
+  private initializeSecurityTables(): void {
+    if (this.initialized || !this.engine) return;
 
-    // RESOURCE role - create objects
-    this.roles.set('RESOURCE', {
-      name: 'RESOURCE',
-      createdBy: 'SYS',
-      createdDate: new Date('2024-01-01'),
-      grantedPrivileges: new Set([
-        'CREATE TABLE',
-        'CREATE SEQUENCE',
-        'CREATE PROCEDURE',
-        'CREATE TRIGGER'
-      ]),
-      grantedObjectPrivileges: new Map(),
-      grantedRoles: new Set(),
-      isDefault: true
-    });
+    // Create SYS schema if not exists
+    this.engine.createSchema('SYS');
+    const originalSchema = this.engine.getCurrentSchema();
+    this.engine.setCurrentSchema('SYS');
 
-    // DBA role - full administrative privileges
-    this.roles.set('DBA', {
-      name: 'DBA',
-      createdBy: 'SYS',
-      createdDate: new Date('2024-01-01'),
-      grantedPrivileges: new Set([
-        'CREATE SESSION',
-        'CREATE USER', 'ALTER USER', 'DROP USER',
-        'CREATE ROLE', 'DROP ANY ROLE', 'GRANT ANY ROLE',
-        'CREATE TABLE', 'CREATE ANY TABLE', 'ALTER ANY TABLE', 'DROP ANY TABLE',
-        'SELECT ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE', 'DELETE ANY TABLE',
-        'CREATE VIEW', 'CREATE ANY VIEW', 'DROP ANY VIEW',
-        'CREATE SEQUENCE', 'CREATE ANY SEQUENCE', 'DROP ANY SEQUENCE',
-        'CREATE PROCEDURE', 'CREATE ANY PROCEDURE', 'DROP ANY PROCEDURE',
-        'CREATE TABLESPACE', 'ALTER TABLESPACE', 'DROP TABLESPACE',
-        'GRANT ANY PRIVILEGE', 'GRANT ANY OBJECT PRIVILEGE',
-        'AUDIT ANY', 'ANALYZE ANY'
-      ]),
-      grantedObjectPrivileges: new Map(),
-      grantedRoles: new Set(['CONNECT', 'RESOURCE']),
-      isDefault: true
-    });
+    // Create security tables
+    const tables = [
+      {
+        name: 'USER$',
+        columns: [
+          { name: 'USER_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'PASSWORD_HASH', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'ACCOUNT_STATUS', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'OPEN' },
+          { name: 'LOCK_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'EXPIRY_DATE', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'DEFAULT_TABLESPACE', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'USERS' },
+          { name: 'TEMPORARY_TABLESPACE', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'TEMP' },
+          { name: 'USER_PROFILE', dataType: 'VARCHAR', length: 128, nullable: true, defaultValue: 'DEFAULT' },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'LAST_LOGIN', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'FAILED_LOGIN_ATTEMPTS', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+        ],
+        primaryKey: ['USER_ID']
+      },
+      {
+        name: 'PROFILE$',
+        columns: [
+          { name: 'PROFILE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'RESOURCE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'RESOURCE_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'LIMIT_VALUE', dataType: 'VARCHAR', length: 128, nullable: true },
+        ],
+        primaryKey: ['PROFILE_NAME', 'RESOURCE_NAME']
+      },
+      {
+        name: 'ROLE$',
+        columns: [
+          { name: 'ROLE_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'ROLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'PASSWORD_REQUIRED', dataType: 'VARCHAR', length: 1, nullable: true, defaultValue: 'N' },
+          { name: 'PASSWORD_HASH', dataType: 'VARCHAR', length: 256, nullable: true },
+          { name: 'AUTHENTICATION_TYPE', dataType: 'VARCHAR', length: 32, nullable: true, defaultValue: 'NONE' },
+          { name: 'CREATED_BY', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'CREATED', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['ROLE_ID']
+      },
+      {
+        name: 'SYSAUTH$',
+        columns: [
+          { name: 'GRANTEE', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'PRIVILEGE', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'ADMIN_OPTION', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'GRANTED_BY', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'GRANT_DATE', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['GRANTEE', 'PRIVILEGE']
+      },
+      {
+        name: 'ROLEAUTH$',
+        columns: [
+          { name: 'GRANTEE', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'GRANTED_ROLE', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'ADMIN_OPTION', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'DEFAULT_ROLE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'YES' },
+          { name: 'GRANTED_BY', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'GRANT_DATE', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['GRANTEE', 'GRANTED_ROLE']
+      },
+      {
+        name: 'OBJAUTH$',
+        columns: [
+          { name: 'GRANTEE', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'OWNER', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'PRIVILEGE', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'GRANTABLE', dataType: 'VARCHAR', length: 3, nullable: true, defaultValue: 'NO' },
+          { name: 'GRANTOR', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'GRANT_DATE', dataType: 'TIMESTAMP', nullable: true },
+        ],
+        primaryKey: ['GRANTEE', 'OWNER', 'TABLE_NAME', 'PRIVILEGE']
+      },
+      {
+        name: 'TSQUOTA$',
+        columns: [
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'TABLESPACE_NAME', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'MAX_BYTES', dataType: 'INTEGER', nullable: true, defaultValue: -1 },
+        ],
+        primaryKey: ['USERNAME', 'TABLESPACE_NAME']
+      },
+      {
+        name: 'AUD$',
+        columns: [
+          { name: 'AUDIT_ID', dataType: 'INTEGER', nullable: false },
+          { name: 'SESSION_ID', dataType: 'INTEGER', nullable: true },
+          { name: 'EVENT_TIME', dataType: 'TIMESTAMP', nullable: true },
+          { name: 'USERNAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OS_USERNAME', dataType: 'VARCHAR', length: 255, nullable: true },
+          { name: 'TERMINAL', dataType: 'VARCHAR', length: 255, nullable: true },
+          { name: 'ACTION_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_SCHEMA', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'OBJECT_TYPE', dataType: 'VARCHAR', length: 32, nullable: true },
+          { name: 'SQL_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+          { name: 'RETURN_CODE', dataType: 'INTEGER', nullable: true, defaultValue: 0 },
+          { name: 'CLIENT_ID', dataType: 'VARCHAR', length: 255, nullable: true },
+          { name: 'COMMENT_TEXT', dataType: 'VARCHAR', length: 4000, nullable: true },
+        ],
+        primaryKey: ['AUDIT_ID']
+      },
+      {
+        name: 'AUDIT$',
+        columns: [
+          { name: 'USER_NAME', dataType: 'VARCHAR', length: 128, nullable: true },
+          { name: 'AUDIT_OPTION', dataType: 'VARCHAR', length: 128, nullable: false },
+          { name: 'SUCCESS', dataType: 'VARCHAR', length: 10, nullable: true },
+          { name: 'FAILURE', dataType: 'VARCHAR', length: 10, nullable: true },
+        ],
+        primaryKey: ['AUDIT_OPTION']
+      },
+    ];
 
-    // SELECT_CATALOG_ROLE
-    this.roles.set('SELECT_CATALOG_ROLE', {
-      name: 'SELECT_CATALOG_ROLE',
-      createdBy: 'SYS',
-      createdDate: new Date('2024-01-01'),
-      grantedPrivileges: new Set(),
-      grantedObjectPrivileges: new Map(),
-      grantedRoles: new Set(),
-      isDefault: false
-    });
+    for (const tableDef of tables) {
+      this.engine.createTable({
+        type: 'CREATE_TABLE',
+        table: tableDef.name,
+        schema: 'SYS',
+        columns: tableDef.columns,
+        primaryKey: tableDef.primaryKey,
+        foreignKeys: [],
+        uniqueConstraints: [],
+        checkConstraints: [],
+        ifNotExists: true
+      });
+    }
+
+    // Insert initial data
+    const initStatements = getInitialDataSQL();
+    for (const sql of initStatements) {
+      try {
+        this.executeSQL(sql);
+      } catch (e) {
+        // Ignore duplicate key errors during initialization
+      }
+    }
+
+    this.engine.setCurrentSchema(originalSchema);
+    this.initialized = true;
   }
 
-  private initializeSystemUsers(): void {
-    // SYS user - superuser
-    this.users.set('SYS', {
-      username: 'SYS',
-      password: hashPassword('oracle'),
-      defaultTablespace: 'SYSTEM',
-      temporaryTablespace: 'TEMP',
-      profile: 'DEFAULT',
-      accountStatus: 'OPEN',
-      createdDate: new Date('2024-01-01'),
-      quotas: new Map([['SYSTEM', 'UNLIMITED'], ['USERS', 'UNLIMITED']]),
-      grantedRoles: ['DBA', 'SYSDBA'],
-      grantedPrivileges: ['SYSDBA', 'SYSOPER']
-    });
+  /**
+   * Execute SQL on the security tables
+   */
+  private executeSQL(sql: string): SQLResult {
+    const originalSchema = this.engine.getCurrentSchema();
+    this.engine.setCurrentSchema('SYS');
 
-    // SYSTEM user - DBA
-    this.users.set('SYSTEM', {
-      username: 'SYSTEM',
-      password: hashPassword('oracle'),
-      defaultTablespace: 'SYSTEM',
-      temporaryTablespace: 'TEMP',
-      profile: 'DEFAULT',
-      accountStatus: 'OPEN',
-      createdDate: new Date('2024-01-01'),
-      quotas: new Map([['SYSTEM', 'UNLIMITED'], ['USERS', 'UNLIMITED']]),
-      grantedRoles: ['DBA'],
-      grantedPrivileges: []
-    });
+    try {
+      // Parse and execute
+      const parseResult = parseSQL(sql);
 
-    // SCOTT - classic demo user
-    this.users.set('SCOTT', {
-      username: 'SCOTT',
-      password: hashPassword('tiger'),
-      defaultTablespace: 'USERS',
-      temporaryTablespace: 'TEMP',
-      profile: 'DEFAULT',
-      accountStatus: 'OPEN',
-      createdDate: new Date('2024-01-01'),
-      quotas: new Map([['USERS', 'UNLIMITED']]),
-      grantedRoles: ['CONNECT', 'RESOURCE'],
-      grantedPrivileges: []
-    });
+      if (!parseResult.success || parseResult.statements.length === 0) {
+        return createErrorResult('PARSE_ERROR', 'Failed to parse SQL');
+      }
+
+      const stmt = parseResult.statements[0];
+      let result: SQLResult;
+
+      switch (stmt.type) {
+        case 'SELECT':
+          result = this.engine.executeSelect(stmt);
+          break;
+        case 'INSERT':
+          result = this.engine.executeInsert(stmt);
+          break;
+        case 'UPDATE':
+          result = this.engine.executeUpdate(stmt);
+          break;
+        case 'DELETE':
+          result = this.engine.executeDelete(stmt);
+          break;
+        default:
+          result = createSuccessResult();
+      }
+
+      return result;
+    } finally {
+      this.engine.setCurrentSchema(originalSchema);
+    }
+  }
+
+  /**
+   * Query a security table
+   */
+  private queryTable(sql: string): any[] {
+    const result = this.executeSQL(sql);
+    if (result.success && result.resultSet) {
+      return result.resultSet.rows;
+    }
+    return [];
   }
 
   // ==========================================================================
   // Authentication
   // ==========================================================================
 
-  /**
-   * Authenticate a user with username and password
-   */
   authenticate(username: string, password: string, options?: {
     osUser?: string;
     terminal?: string;
     clientIp?: string;
   }): { success: boolean; error?: string; sessionId?: number } {
     const upperUsername = username.toUpperCase();
-    const user = this.users.get(upperUsername);
 
-    // Check if user exists
-    if (!user) {
-      this.audit({
-        action: 'LOGON_FAILED',
-        username: upperUsername,
-        osUsername: options?.osUser || 'unknown',
-        terminal: options?.terminal || 'unknown',
-        returnCode: 1017,  // ORA-01017: invalid username/password
-        clientIp: options?.clientIp,
-        comment: 'User does not exist'
-      });
+    // Query user from database
+    const users = this.queryTable(
+      `SELECT USER_ID, USERNAME, PASSWORD_HASH, ACCOUNT_STATUS, USER_PROFILE, FAILED_LOGIN_ATTEMPTS ` +
+      `FROM USER$ WHERE USERNAME = '${upperUsername}'`
+    );
+
+    if (users.length === 0) {
+      this.auditAction('LOGON_FAILED', upperUsername, { returnCode: 1017, comment: 'User does not exist' });
       return { success: false, error: 'ORA-01017: invalid username/password; logon denied' };
     }
 
+    const user = users[0];
+
     // Check account status
-    if (user.accountStatus === 'LOCKED' || user.accountStatus === 'EXPIRED & LOCKED') {
-      this.audit({
-        action: 'LOGON_FAILED',
-        username: upperUsername,
-        osUsername: options?.osUser || 'unknown',
-        terminal: options?.terminal || 'unknown',
-        returnCode: 28000,  // ORA-28000: account is locked
-        clientIp: options?.clientIp,
-        comment: 'Account is locked'
-      });
+    if (user.ACCOUNT_STATUS === 'LOCKED' || user.ACCOUNT_STATUS === 'EXPIRED & LOCKED') {
+      this.auditAction('LOGON_FAILED', upperUsername, { returnCode: 28000, comment: 'Account is locked' });
       return { success: false, error: 'ORA-28000: the account is locked' };
     }
 
     // Verify password
-    if (!user.password || !verifyPassword(password, user.password)) {
-      // Increment failed attempts
-      const attempts = (this.failedLoginAttempts.get(upperUsername) || 0) + 1;
-      this.failedLoginAttempts.set(upperUsername, attempts);
+    if (!verifyPassword(password, user.PASSWORD_HASH)) {
+      const attempts = (user.FAILED_LOGIN_ATTEMPTS || 0) + 1;
 
-      // Check if we should lock the account
-      const profile = this.profiles.get(user.profile) || this.profiles.get('DEFAULT')!;
-      const maxAttempts = profile.failedLoginAttempts;
+      // Update failed attempts
+      this.executeSQL(
+        `UPDATE USER$ SET FAILED_LOGIN_ATTEMPTS = ${attempts} WHERE USERNAME = '${upperUsername}'`
+      );
 
-      if (maxAttempts !== 'UNLIMITED' && maxAttempts !== 'DEFAULT' && attempts >= maxAttempts) {
-        user.accountStatus = 'LOCKED';
-        user.lockDate = new Date();
-        this.audit({
-          action: 'LOGON_FAILED',
-          username: upperUsername,
-          osUsername: options?.osUser || 'unknown',
-          terminal: options?.terminal || 'unknown',
-          returnCode: 28000,
-          clientIp: options?.clientIp,
-          comment: `Account locked after ${attempts} failed attempts`
-        });
+      // Get max attempts from profile
+      const profileRows = this.queryTable(
+        `SELECT LIMIT_VALUE FROM PROFILE$ WHERE PROFILE_NAME = '${user.USER_PROFILE || 'DEFAULT'}' AND RESOURCE_NAME = 'FAILED_LOGIN_ATTEMPTS'`
+      );
+      const maxAttempts = profileRows.length > 0 && profileRows[0].LIMIT_VALUE !== 'UNLIMITED'
+        ? parseInt(profileRows[0].LIMIT_VALUE, 10)
+        : 10;
+
+      if (attempts >= maxAttempts) {
+        this.executeSQL(
+          `UPDATE USER$ SET ACCOUNT_STATUS = 'LOCKED', LOCK_DATE = '${new Date().toISOString()}' WHERE USERNAME = '${upperUsername}'`
+        );
+        this.auditAction('LOGON_FAILED', upperUsername, { returnCode: 28000, comment: `Account locked after ${attempts} failed attempts` });
         return { success: false, error: 'ORA-28000: the account is locked' };
       }
 
-      this.audit({
-        action: 'LOGON_FAILED',
-        username: upperUsername,
-        osUsername: options?.osUser || 'unknown',
-        terminal: options?.terminal || 'unknown',
-        returnCode: 1017,
-        clientIp: options?.clientIp,
-        comment: `Failed attempt ${attempts}`
-      });
+      this.auditAction('LOGON_FAILED', upperUsername, { returnCode: 1017, comment: `Failed attempt ${attempts}` });
       return { success: false, error: 'ORA-01017: invalid username/password; logon denied' };
     }
 
     // Check password expiration
-    if (user.accountStatus === 'EXPIRED') {
-      this.audit({
-        action: 'LOGON_FAILED',
-        username: upperUsername,
-        osUsername: options?.osUser || 'unknown',
-        terminal: options?.terminal || 'unknown',
-        returnCode: 28001,  // ORA-28001: password has expired
-        clientIp: options?.clientIp,
-        comment: 'Password expired'
-      });
+    if (user.ACCOUNT_STATUS === 'EXPIRED') {
+      this.auditAction('LOGON_FAILED', upperUsername, { returnCode: 28001, comment: 'Password expired' });
       return { success: false, error: 'ORA-28001: the password has expired' };
     }
 
-    // Check if user has CREATE SESSION privilege
+    // Check CREATE SESSION privilege
     if (!this.hasPrivilege(upperUsername, 'CREATE SESSION')) {
-      this.audit({
-        action: 'LOGON_FAILED',
-        username: upperUsername,
-        osUsername: options?.osUser || 'unknown',
-        terminal: options?.terminal || 'unknown',
-        returnCode: 1045,  // ORA-01045: user lacks CREATE SESSION privilege
-        clientIp: options?.clientIp,
-        comment: 'Lacks CREATE SESSION privilege'
-      });
+      this.auditAction('LOGON_FAILED', upperUsername, { returnCode: 1045, comment: 'Lacks CREATE SESSION privilege' });
       return { success: false, error: 'ORA-01045: user lacks CREATE SESSION privilege; logon denied' };
     }
 
-    // Successful login
-    this.failedLoginAttempts.delete(upperUsername);
-    user.lastLogin = new Date();
-    const sessionId = this.currentSessionId++;
+    // Success - reset failed attempts and update last login
+    this.executeSQL(
+      `UPDATE USER$ SET FAILED_LOGIN_ATTEMPTS = 0, LAST_LOGIN = '${new Date().toISOString()}' WHERE USERNAME = '${upperUsername}'`
+    );
 
-    this.audit({
-      action: 'LOGON',
-      username: upperUsername,
-      osUsername: options?.osUser || 'unknown',
-      terminal: options?.terminal || 'unknown',
-      returnCode: 0,
-      sessionId,
-      clientIp: options?.clientIp
-    });
+    const sessionId = this.currentSessionId++;
+    this.auditAction('LOGON', upperUsername, { sessionId, returnCode: 0 });
 
     return { success: true, sessionId };
   }
 
-  /**
-   * End a session (logout)
-   */
   logout(username: string, sessionId: number): void {
-    this.audit({
-      action: 'LOGOFF',
-      username: username.toUpperCase(),
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      returnCode: 0,
-      sessionId
-    });
+    this.auditAction('LOGOFF', username.toUpperCase(), { sessionId, returnCode: 0 });
   }
 
   // ==========================================================================
   // User Management
   // ==========================================================================
 
-  /**
-   * Create a new user
-   */
   createUser(
     username: string,
     password: string,
@@ -447,52 +650,38 @@ export class OracleSecurityManager {
     const upperUsername = username.toUpperCase();
 
     // Check if user already exists
-    if (this.users.has(upperUsername)) {
-      return createErrorResult('USER_EXISTS', `ORA-01920: user name '${upperUsername}' conflicts with another user or role name`);
+    const existing = this.queryTable(`SELECT 1 FROM USER$ WHERE USERNAME = '${upperUsername}'`);
+    if (existing.length > 0) {
+      return createErrorResult('01920', `ORA-01920: user name '${upperUsername}' conflicts with another user or role name`);
     }
 
-    // Validate username
-    if (!/^[A-Z][A-Z0-9_$#]*$/.test(upperUsername)) {
-      return createErrorResult('INVALID_USERNAME', 'ORA-01935: missing user or role name');
+    // Check if conflicts with role
+    const roleConflict = this.queryTable(`SELECT 1 FROM ROLE$ WHERE ROLE_NAME = '${upperUsername}'`);
+    if (roleConflict.length > 0) {
+      return createErrorResult('01920', `ORA-01920: user name '${upperUsername}' conflicts with another user or role name`);
     }
 
-    // Create the user
-    const user: OracleUser = {
-      username: upperUsername,
-      password: hashPassword(password),
-      defaultTablespace: options?.defaultTablespace || 'USERS',
-      temporaryTablespace: options?.temporaryTablespace || 'TEMP',
-      profile: options?.profile || 'DEFAULT',
-      accountStatus: options?.accountLocked ? 'LOCKED' : (options?.passwordExpire ? 'EXPIRED' : 'OPEN'),
-      createdDate: new Date(),
-      quotas: options?.quota || new Map([['USERS', 'UNLIMITED']]),
-      grantedRoles: [],
-      grantedPrivileges: []
-    };
+    const userId = this.userSequence++;
+    const hashedPassword = hashPassword(password);
+    const status = options?.accountLocked ? 'LOCKED' : (options?.passwordExpire ? 'EXPIRED' : 'OPEN');
+    const now = new Date().toISOString();
 
-    if (options?.accountLocked) {
-      user.lockDate = new Date();
+    const result = this.executeSQL(
+      `INSERT INTO USER$ (USER_ID, USERNAME, PASSWORD_HASH, ACCOUNT_STATUS, DEFAULT_TABLESPACE, TEMPORARY_TABLESPACE, USER_PROFILE, CREATED, FAILED_LOGIN_ATTEMPTS) ` +
+      `VALUES (${userId}, '${upperUsername}', '${hashedPassword}', '${status}', '${options?.defaultTablespace || 'USERS'}', '${options?.temporaryTablespace || 'TEMP'}', '${options?.profile || 'DEFAULT'}', '${now}', 0)`
+    );
+
+    if (result.success) {
+      this.auditAction('CREATE_USER', createdBy || 'SYSTEM', {
+        objectName: upperUsername,
+        objectType: 'USER',
+        returnCode: 0
+      });
     }
 
-    this.users.set(upperUsername, user);
-
-    // Audit
-    this.audit({
-      action: 'CREATE_USER',
-      username: createdBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperUsername,
-      objectType: 'USER',
-      returnCode: 0
-    });
-
-    return createSuccessResult();
+    return result.success ? createSuccessResult() : result;
   }
 
-  /**
-   * Alter an existing user
-   */
   alterUser(
     username: string,
     changes: {
@@ -503,200 +692,190 @@ export class OracleSecurityManager {
       accountLock?: boolean;
       accountUnlock?: boolean;
       passwordExpire?: boolean;
-      quota?: { tablespace: string; value: number | 'UNLIMITED' };
     },
     alteredBy?: string
   ): SQLResult {
     const upperUsername = username.toUpperCase();
-    const user = this.users.get(upperUsername);
 
-    if (!user) {
-      return createErrorResult('USER_NOT_FOUND', `ORA-01918: user '${upperUsername}' does not exist`);
+    // Check user exists
+    const existing = this.queryTable(`SELECT ACCOUNT_STATUS FROM USER$ WHERE USERNAME = '${upperUsername}'`);
+    if (existing.length === 0) {
+      return createErrorResult('01918', `ORA-01918: user '${upperUsername}' does not exist`);
     }
 
-    // Apply changes
+    const updates: string[] = [];
+
     if (changes.password !== undefined) {
-      user.password = hashPassword(changes.password);
-      if (user.accountStatus === 'EXPIRED') {
-        user.accountStatus = 'OPEN';
+      updates.push(`PASSWORD_HASH = '${hashPassword(changes.password)}'`);
+      if (existing[0].ACCOUNT_STATUS === 'EXPIRED') {
+        updates.push(`ACCOUNT_STATUS = 'OPEN'`);
       }
     }
 
     if (changes.defaultTablespace !== undefined) {
-      user.defaultTablespace = changes.defaultTablespace;
+      updates.push(`DEFAULT_TABLESPACE = '${changes.defaultTablespace}'`);
     }
 
     if (changes.temporaryTablespace !== undefined) {
-      user.temporaryTablespace = changes.temporaryTablespace;
+      updates.push(`TEMPORARY_TABLESPACE = '${changes.temporaryTablespace}'`);
     }
 
     if (changes.profile !== undefined) {
-      if (!this.profiles.has(changes.profile)) {
-        return createErrorResult('PROFILE_NOT_FOUND', `ORA-02380: profile ${changes.profile} does not exist`);
-      }
-      user.profile = changes.profile;
+      updates.push(`USER_PROFILE = '${changes.profile}'`);
     }
 
     if (changes.accountLock) {
-      user.accountStatus = 'LOCKED';
-      user.lockDate = new Date();
+      updates.push(`ACCOUNT_STATUS = 'LOCKED'`);
+      updates.push(`LOCK_DATE = '${new Date().toISOString()}'`);
     }
 
     if (changes.accountUnlock) {
-      if (user.accountStatus === 'LOCKED' || user.accountStatus === 'EXPIRED & LOCKED') {
-        user.accountStatus = user.accountStatus === 'EXPIRED & LOCKED' ? 'EXPIRED' : 'OPEN';
-        user.lockDate = undefined;
-        this.failedLoginAttempts.delete(upperUsername);
+      const currentStatus = existing[0].ACCOUNT_STATUS;
+      if (currentStatus === 'LOCKED') {
+        updates.push(`ACCOUNT_STATUS = 'OPEN'`);
+      } else if (currentStatus === 'EXPIRED & LOCKED') {
+        updates.push(`ACCOUNT_STATUS = 'EXPIRED'`);
       }
+      updates.push(`LOCK_DATE = NULL`);
+      updates.push(`FAILED_LOGIN_ATTEMPTS = 0`);
     }
 
     if (changes.passwordExpire) {
-      user.accountStatus = user.accountStatus === 'LOCKED' ? 'EXPIRED & LOCKED' : 'EXPIRED';
-      user.expiryDate = new Date();
+      const currentStatus = existing[0].ACCOUNT_STATUS;
+      if (currentStatus === 'LOCKED') {
+        updates.push(`ACCOUNT_STATUS = 'EXPIRED & LOCKED'`);
+      } else {
+        updates.push(`ACCOUNT_STATUS = 'EXPIRED'`);
+      }
+      updates.push(`EXPIRY_DATE = '${new Date().toISOString()}'`);
     }
 
-    if (changes.quota) {
-      user.quotas.set(changes.quota.tablespace, changes.quota.value);
+    if (updates.length === 0) {
+      return createSuccessResult();
     }
 
-    // Audit
-    this.audit({
-      action: 'ALTER_USER',
-      username: alteredBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperUsername,
-      objectType: 'USER',
-      returnCode: 0
-    });
+    const result = this.executeSQL(
+      `UPDATE USER$ SET ${updates.join(', ')} WHERE USERNAME = '${upperUsername}'`
+    );
 
-    return createSuccessResult();
+    if (result.success) {
+      this.auditAction('ALTER_USER', alteredBy || 'SYSTEM', {
+        objectName: upperUsername,
+        objectType: 'USER',
+        returnCode: 0
+      });
+    }
+
+    return result.success ? createSuccessResult() : result;
   }
 
-  /**
-   * Drop a user
-   */
   dropUser(username: string, cascade: boolean = false, droppedBy?: string): SQLResult {
     const upperUsername = username.toUpperCase();
 
-    if (!this.users.has(upperUsername)) {
-      return createErrorResult('USER_NOT_FOUND', `ORA-01918: user '${upperUsername}' does not exist`);
-    }
-
     // Prevent dropping system users
     if (['SYS', 'SYSTEM', 'PUBLIC'].includes(upperUsername)) {
-      return createErrorResult('CANNOT_DROP_USER', `ORA-01031: insufficient privileges to drop ${upperUsername}`);
+      return createErrorResult('01031', `ORA-01031: insufficient privileges to drop ${upperUsername}`);
     }
 
-    this.users.delete(upperUsername);
+    // Check user exists
+    const existing = this.queryTable(`SELECT 1 FROM USER$ WHERE USERNAME = '${upperUsername}'`);
+    if (existing.length === 0) {
+      return createErrorResult('01918', `ORA-01918: user '${upperUsername}' does not exist`);
+    }
 
-    // Audit
-    this.audit({
-      action: 'DROP_USER',
-      username: droppedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperUsername,
-      objectType: 'USER',
-      returnCode: 0
-    });
+    // Delete user and related data
+    this.executeSQL(`DELETE FROM ROLEAUTH$ WHERE GRANTEE = '${upperUsername}'`);
+    this.executeSQL(`DELETE FROM SYSAUTH$ WHERE GRANTEE = '${upperUsername}'`);
+    this.executeSQL(`DELETE FROM OBJAUTH$ WHERE GRANTEE = '${upperUsername}'`);
+    this.executeSQL(`DELETE FROM TSQUOTA$ WHERE USERNAME = '${upperUsername}'`);
 
-    return createSuccessResult();
+    const result = this.executeSQL(`DELETE FROM USER$ WHERE USERNAME = '${upperUsername}'`);
+
+    if (result.success) {
+      this.auditAction('DROP_USER', droppedBy || 'SYSTEM', {
+        objectName: upperUsername,
+        objectType: 'USER',
+        returnCode: 0
+      });
+    }
+
+    return result.success ? createSuccessResult() : result;
   }
 
   // ==========================================================================
   // Role Management
   // ==========================================================================
 
-  /**
-   * Create a new role
-   */
   createRole(roleName: string, password?: string, createdBy?: string): SQLResult {
     const upperRoleName = roleName.toUpperCase();
 
-    if (this.roles.has(upperRoleName)) {
-      return createErrorResult('ROLE_EXISTS', `ORA-01921: role name '${upperRoleName}' conflicts with another user or role name`);
+    // Check conflicts
+    const roleExists = this.queryTable(`SELECT 1 FROM ROLE$ WHERE ROLE_NAME = '${upperRoleName}'`);
+    if (roleExists.length > 0) {
+      return createErrorResult('01921', `ORA-01921: role name '${upperRoleName}' conflicts with another user or role name`);
     }
 
-    if (this.users.has(upperRoleName)) {
-      return createErrorResult('NAME_CONFLICT', `ORA-01921: role name '${upperRoleName}' conflicts with another user or role name`);
+    const userExists = this.queryTable(`SELECT 1 FROM USER$ WHERE USERNAME = '${upperRoleName}'`);
+    if (userExists.length > 0) {
+      return createErrorResult('01921', `ORA-01921: role name '${upperRoleName}' conflicts with another user or role name`);
     }
 
-    this.roles.set(upperRoleName, {
-      name: upperRoleName,
-      password: password ? hashPassword(password) : undefined,
-      createdBy: createdBy || 'SYSTEM',
-      createdDate: new Date(),
-      grantedPrivileges: new Set(),
-      grantedObjectPrivileges: new Map(),
-      grantedRoles: new Set(),
-      isDefault: false
-    });
+    const roleId = this.roleSequence++;
+    const now = new Date().toISOString();
+    const hashedPassword = password ? hashPassword(password) : '';
+    const passwordRequired = password ? 'Y' : 'N';
 
-    this.audit({
-      action: 'CREATE_ROLE',
-      username: createdBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperRoleName,
-      objectType: 'ROLE',
-      returnCode: 0
-    });
+    const result = this.executeSQL(
+      `INSERT INTO ROLE$ (ROLE_ID, ROLE_NAME, PASSWORD_REQUIRED, PASSWORD_HASH, AUTHENTICATION_TYPE, CREATED_BY, CREATED) ` +
+      `VALUES (${roleId}, '${upperRoleName}', '${passwordRequired}', '${hashedPassword}', '${password ? 'PASSWORD' : 'NONE'}', '${createdBy || 'SYSTEM'}', '${now}')`
+    );
 
-    return createSuccessResult();
+    if (result.success) {
+      this.auditAction('CREATE_ROLE', createdBy || 'SYSTEM', {
+        objectName: upperRoleName,
+        objectType: 'ROLE',
+        returnCode: 0
+      });
+    }
+
+    return result.success ? createSuccessResult() : result;
   }
 
-  /**
-   * Drop a role
-   */
   dropRole(roleName: string, droppedBy?: string): SQLResult {
     const upperRoleName = roleName.toUpperCase();
 
-    if (!this.roles.has(upperRoleName)) {
-      return createErrorResult('ROLE_NOT_FOUND', `ORA-01919: role '${upperRoleName}' does not exist`);
+    // Check role exists
+    const existing = this.queryTable(`SELECT CREATED_BY FROM ROLE$ WHERE ROLE_NAME = '${upperRoleName}'`);
+    if (existing.length === 0) {
+      return createErrorResult('01919', `ORA-01919: role '${upperRoleName}' does not exist`);
     }
 
     // Prevent dropping built-in roles
-    const role = this.roles.get(upperRoleName)!;
-    if (role.createdBy === 'SYS' && ['CONNECT', 'RESOURCE', 'DBA'].includes(upperRoleName)) {
-      return createErrorResult('CANNOT_DROP_ROLE', `ORA-01031: insufficient privileges to drop built-in role ${upperRoleName}`);
+    if (['CONNECT', 'RESOURCE', 'DBA'].includes(upperRoleName) && existing[0].CREATED_BY === 'SYS') {
+      return createErrorResult('01031', `ORA-01031: insufficient privileges to drop built-in role ${upperRoleName}`);
     }
 
-    // Remove role from all users
-    for (const user of this.users.values()) {
-      const idx = user.grantedRoles.indexOf(upperRoleName);
-      if (idx > -1) {
-        user.grantedRoles.splice(idx, 1);
-      }
+    // Remove role from all grantees
+    this.executeSQL(`DELETE FROM ROLEAUTH$ WHERE GRANTED_ROLE = '${upperRoleName}'`);
+    this.executeSQL(`DELETE FROM SYSAUTH$ WHERE GRANTEE = '${upperRoleName}'`);
+
+    const result = this.executeSQL(`DELETE FROM ROLE$ WHERE ROLE_NAME = '${upperRoleName}'`);
+
+    if (result.success) {
+      this.auditAction('DROP_ROLE', droppedBy || 'SYSTEM', {
+        objectName: upperRoleName,
+        objectType: 'ROLE',
+        returnCode: 0
+      });
     }
 
-    // Remove role from all other roles
-    for (const otherRole of this.roles.values()) {
-      otherRole.grantedRoles.delete(upperRoleName);
-    }
-
-    this.roles.delete(upperRoleName);
-
-    this.audit({
-      action: 'DROP_ROLE',
-      username: droppedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperRoleName,
-      objectType: 'ROLE',
-      returnCode: 0
-    });
-
-    return createSuccessResult();
+    return result.success ? createSuccessResult() : result;
   }
 
   // ==========================================================================
   // Privilege Management
   // ==========================================================================
 
-  /**
-   * Grant a system privilege to a user or role
-   */
   grantSystemPrivilege(
     privilege: string,
     grantee: string,
@@ -705,40 +884,125 @@ export class OracleSecurityManager {
   ): SQLResult {
     const upperPrivilege = privilege.toUpperCase();
     const upperGrantee = grantee.toUpperCase();
+    const now = new Date().toISOString();
 
-    // Check if grantee is a user or role
-    const user = this.users.get(upperGrantee);
-    const role = this.roles.get(upperGrantee);
+    // Check grantee exists (user or role)
+    const userExists = this.queryTable(`SELECT 1 FROM USER$ WHERE USERNAME = '${upperGrantee}'`);
+    const roleExists = this.queryTable(`SELECT 1 FROM ROLE$ WHERE ROLE_NAME = '${upperGrantee}'`);
 
-    if (!user && !role) {
-      return createErrorResult('GRANTEE_NOT_FOUND', `ORA-01917: user or role '${upperGrantee}' does not exist`);
+    if (userExists.length === 0 && roleExists.length === 0) {
+      return createErrorResult('01917', `ORA-01917: user or role '${upperGrantee}' does not exist`);
     }
 
-    if (user) {
-      if (!user.grantedPrivileges.includes(upperPrivilege)) {
-        user.grantedPrivileges.push(upperPrivilege);
-      }
-    } else if (role) {
-      role.grantedPrivileges.add(upperPrivilege);
+    // Delete existing grant first (to handle update of admin option)
+    this.executeSQL(`DELETE FROM SYSAUTH$ WHERE GRANTEE = '${upperGrantee}' AND PRIVILEGE = '${upperPrivilege}'`);
+
+    const result = this.executeSQL(
+      `INSERT INTO SYSAUTH$ (GRANTEE, PRIVILEGE, ADMIN_OPTION, GRANTED_BY, GRANT_DATE) ` +
+      `VALUES ('${upperGrantee}', '${upperPrivilege}', '${withAdminOption ? 'YES' : 'NO'}', '${grantedBy || 'SYSTEM'}', '${now}')`
+    );
+
+    if (result.success) {
+      this.auditAction('GRANT', grantedBy || 'SYSTEM', {
+        objectName: upperPrivilege,
+        objectType: 'SYSTEM PRIVILEGE',
+        comment: `Granted to ${upperGrantee}`,
+        returnCode: 0
+      });
     }
 
-    this.audit({
-      action: 'GRANT',
-      username: grantedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperPrivilege,
-      objectType: 'SYSTEM PRIVILEGE',
-      comment: `Granted to ${upperGrantee}`,
-      returnCode: 0
-    });
-
-    return createSuccessResult();
+    return result.success ? createSuccessResult() : result;
   }
 
-  /**
-   * Grant an object privilege to a user or role
-   */
+  revokeSystemPrivilege(privilege: string, grantee: string, revokedBy?: string): SQLResult {
+    const upperPrivilege = privilege.toUpperCase();
+    const upperGrantee = grantee.toUpperCase();
+
+    const result = this.executeSQL(
+      `DELETE FROM SYSAUTH$ WHERE GRANTEE = '${upperGrantee}' AND PRIVILEGE = '${upperPrivilege}'`
+    );
+
+    if (result.success) {
+      this.auditAction('REVOKE', revokedBy || 'SYSTEM', {
+        objectName: upperPrivilege,
+        objectType: 'SYSTEM PRIVILEGE',
+        comment: `Revoked from ${upperGrantee}`,
+        returnCode: 0
+      });
+    }
+
+    return result.success ? createSuccessResult() : result;
+  }
+
+  grantRole(
+    roleName: string,
+    grantee: string,
+    withAdminOption: boolean = false,
+    grantedBy?: string
+  ): SQLResult {
+    const upperRoleName = roleName.toUpperCase();
+    const upperGrantee = grantee.toUpperCase();
+    const now = new Date().toISOString();
+
+    // Check role exists
+    const roleExists = this.queryTable(`SELECT 1 FROM ROLE$ WHERE ROLE_NAME = '${upperRoleName}'`);
+    if (roleExists.length === 0) {
+      return createErrorResult('01919', `ORA-01919: role '${upperRoleName}' does not exist`);
+    }
+
+    // Check grantee exists
+    const userExists = this.queryTable(`SELECT 1 FROM USER$ WHERE USERNAME = '${upperGrantee}'`);
+    const granteeRoleExists = this.queryTable(`SELECT 1 FROM ROLE$ WHERE ROLE_NAME = '${upperGrantee}'`);
+
+    if (userExists.length === 0 && granteeRoleExists.length === 0) {
+      return createErrorResult('01917', `ORA-01917: user or role '${upperGrantee}' does not exist`);
+    }
+
+    // Check for circular grant
+    if (granteeRoleExists.length > 0 && this.wouldCreateCircularGrant(upperRoleName, upperGrantee)) {
+      return createErrorResult('01934', `ORA-01934: circular role grant detected`);
+    }
+
+    // Delete existing grant first
+    this.executeSQL(`DELETE FROM ROLEAUTH$ WHERE GRANTEE = '${upperGrantee}' AND GRANTED_ROLE = '${upperRoleName}'`);
+
+    const result = this.executeSQL(
+      `INSERT INTO ROLEAUTH$ (GRANTEE, GRANTED_ROLE, ADMIN_OPTION, DEFAULT_ROLE, GRANTED_BY, GRANT_DATE) ` +
+      `VALUES ('${upperGrantee}', '${upperRoleName}', '${withAdminOption ? 'YES' : 'NO'}', 'YES', '${grantedBy || 'SYSTEM'}', '${now}')`
+    );
+
+    if (result.success) {
+      this.auditAction('GRANT', grantedBy || 'SYSTEM', {
+        objectName: upperRoleName,
+        objectType: 'ROLE',
+        comment: `Granted to ${upperGrantee}`,
+        returnCode: 0
+      });
+    }
+
+    return result.success ? createSuccessResult() : result;
+  }
+
+  revokeRole(roleName: string, grantee: string, revokedBy?: string): SQLResult {
+    const upperRoleName = roleName.toUpperCase();
+    const upperGrantee = grantee.toUpperCase();
+
+    const result = this.executeSQL(
+      `DELETE FROM ROLEAUTH$ WHERE GRANTEE = '${upperGrantee}' AND GRANTED_ROLE = '${upperRoleName}'`
+    );
+
+    if (result.success) {
+      this.auditAction('REVOKE', revokedBy || 'SYSTEM', {
+        objectName: upperRoleName,
+        objectType: 'ROLE',
+        comment: `Revoked from ${upperGrantee}`,
+        returnCode: 0
+      });
+    }
+
+    return result.success ? createSuccessResult() : result;
+  }
+
   grantObjectPrivilege(
     privilege: string,
     objectOwner: string,
@@ -748,213 +1012,126 @@ export class OracleSecurityManager {
     grantedBy?: string
   ): SQLResult {
     const upperPrivilege = privilege.toUpperCase();
+    const upperOwner = objectOwner.toUpperCase();
+    const upperObject = objectName.toUpperCase();
     const upperGrantee = grantee.toUpperCase();
-    const fullObjectName = `${objectOwner.toUpperCase()}.${objectName.toUpperCase()}`;
+    const now = new Date().toISOString();
 
-    const user = this.users.get(upperGrantee);
-    const role = this.roles.get(upperGrantee);
+    // Delete existing grant first
+    this.executeSQL(
+      `DELETE FROM OBJAUTH$ WHERE GRANTEE = '${upperGrantee}' AND OWNER = '${upperOwner}' ` +
+      `AND TABLE_NAME = '${upperObject}' AND PRIVILEGE = '${upperPrivilege}'`
+    );
 
-    if (!user && !role) {
-      return createErrorResult('GRANTEE_NOT_FOUND', `ORA-01917: user or role '${upperGrantee}' does not exist`);
+    const result = this.executeSQL(
+      `INSERT INTO OBJAUTH$ (GRANTEE, OWNER, TABLE_NAME, PRIVILEGE, GRANTABLE, GRANTOR, GRANT_DATE) ` +
+      `VALUES ('${upperGrantee}', '${upperOwner}', '${upperObject}', '${upperPrivilege}', '${withGrantOption ? 'YES' : 'NO'}', '${grantedBy || 'SYSTEM'}', '${now}')`
+    );
+
+    if (result.success) {
+      this.auditAction('GRANT', grantedBy || 'SYSTEM', {
+        objectSchema: upperOwner,
+        objectName: upperObject,
+        objectType: 'OBJECT PRIVILEGE',
+        comment: `${upperPrivilege} granted to ${upperGrantee}`,
+        returnCode: 0
+      });
     }
 
-    if (role) {
-      if (!role.grantedObjectPrivileges.has(fullObjectName)) {
-        role.grantedObjectPrivileges.set(fullObjectName, new Set());
-      }
-      role.grantedObjectPrivileges.get(fullObjectName)!.add(upperPrivilege);
-    }
-
-    this.audit({
-      action: 'GRANT',
-      username: grantedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectOwner: objectOwner.toUpperCase(),
-      objectName: objectName.toUpperCase(),
-      objectType: 'OBJECT PRIVILEGE',
-      comment: `${upperPrivilege} granted to ${upperGrantee}`,
-      returnCode: 0
-    });
-
-    return createSuccessResult();
+    return result.success ? createSuccessResult() : result;
   }
 
-  /**
-   * Grant a role to a user or another role
-   */
-  grantRole(
-    roleName: string,
+  revokeObjectPrivilege(
+    privilege: string,
+    objectOwner: string,
+    objectName: string,
     grantee: string,
-    withAdminOption: boolean = false,
-    grantedBy?: string
+    revokedBy?: string
   ): SQLResult {
-    const upperRoleName = roleName.toUpperCase();
-    const upperGrantee = grantee.toUpperCase();
-
-    const roleToGrant = this.roles.get(upperRoleName);
-    if (!roleToGrant) {
-      return createErrorResult('ROLE_NOT_FOUND', `ORA-01919: role '${upperRoleName}' does not exist`);
-    }
-
-    const user = this.users.get(upperGrantee);
-    const targetRole = this.roles.get(upperGrantee);
-
-    if (!user && !targetRole) {
-      return createErrorResult('GRANTEE_NOT_FOUND', `ORA-01917: user or role '${upperGrantee}' does not exist`);
-    }
-
-    if (user) {
-      if (!user.grantedRoles.includes(upperRoleName)) {
-        user.grantedRoles.push(upperRoleName);
-      }
-    } else if (targetRole) {
-      // Check for circular grant
-      if (this.wouldCreateCircularGrant(upperRoleName, upperGrantee)) {
-        return createErrorResult('CIRCULAR_GRANT', `ORA-01934: circular role grant detected`);
-      }
-      targetRole.grantedRoles.add(upperRoleName);
-    }
-
-    this.audit({
-      action: 'GRANT',
-      username: grantedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperRoleName,
-      objectType: 'ROLE',
-      comment: `Granted to ${upperGrantee}`,
-      returnCode: 0
-    });
-
-    return createSuccessResult();
-  }
-
-  /**
-   * Revoke a system privilege from a user or role
-   */
-  revokeSystemPrivilege(privilege: string, grantee: string, revokedBy?: string): SQLResult {
     const upperPrivilege = privilege.toUpperCase();
+    const upperOwner = objectOwner.toUpperCase();
+    const upperObject = objectName.toUpperCase();
     const upperGrantee = grantee.toUpperCase();
 
-    const user = this.users.get(upperGrantee);
-    const role = this.roles.get(upperGrantee);
+    const result = this.executeSQL(
+      `DELETE FROM OBJAUTH$ WHERE GRANTEE = '${upperGrantee}' AND OWNER = '${upperOwner}' ` +
+      `AND TABLE_NAME = '${upperObject}' AND PRIVILEGE = '${upperPrivilege}'`
+    );
 
-    if (!user && !role) {
-      return createErrorResult('GRANTEE_NOT_FOUND', `ORA-01917: user or role '${upperGrantee}' does not exist`);
+    if (result.success) {
+      this.auditAction('REVOKE', revokedBy || 'SYSTEM', {
+        objectSchema: upperOwner,
+        objectName: upperObject,
+        objectType: 'OBJECT PRIVILEGE',
+        comment: `${upperPrivilege} revoked from ${upperGrantee}`,
+        returnCode: 0
+      });
     }
 
-    if (user) {
-      const idx = user.grantedPrivileges.indexOf(upperPrivilege);
-      if (idx > -1) {
-        user.grantedPrivileges.splice(idx, 1);
-      }
-    } else if (role) {
-      role.grantedPrivileges.delete(upperPrivilege);
-    }
-
-    this.audit({
-      action: 'REVOKE',
-      username: revokedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperPrivilege,
-      objectType: 'SYSTEM PRIVILEGE',
-      comment: `Revoked from ${upperGrantee}`,
-      returnCode: 0
-    });
-
-    return createSuccessResult();
-  }
-
-  /**
-   * Revoke a role from a user or another role
-   */
-  revokeRole(roleName: string, grantee: string, revokedBy?: string): SQLResult {
-    const upperRoleName = roleName.toUpperCase();
-    const upperGrantee = grantee.toUpperCase();
-
-    const user = this.users.get(upperGrantee);
-    const targetRole = this.roles.get(upperGrantee);
-
-    if (!user && !targetRole) {
-      return createErrorResult('GRANTEE_NOT_FOUND', `ORA-01917: user or role '${upperGrantee}' does not exist`);
-    }
-
-    if (user) {
-      const idx = user.grantedRoles.indexOf(upperRoleName);
-      if (idx > -1) {
-        user.grantedRoles.splice(idx, 1);
-      }
-    } else if (targetRole) {
-      targetRole.grantedRoles.delete(upperRoleName);
-    }
-
-    this.audit({
-      action: 'REVOKE',
-      username: revokedBy || 'SYSTEM',
-      osUsername: 'unknown',
-      terminal: 'unknown',
-      objectName: upperRoleName,
-      objectType: 'ROLE',
-      comment: `Revoked from ${upperGrantee}`,
-      returnCode: 0
-    });
-
-    return createSuccessResult();
+    return result.success ? createSuccessResult() : result;
   }
 
   // ==========================================================================
   // Privilege Checking
   // ==========================================================================
 
-  /**
-   * Check if a user has a specific system privilege
-   */
   hasPrivilege(username: string, privilege: string): boolean {
     const upperUsername = username.toUpperCase();
     const upperPrivilege = privilege.toUpperCase();
-    const user = this.users.get(upperUsername);
 
-    if (!user) return false;
-
-    // SYS and users with SYSDBA have all privileges
-    if (upperUsername === 'SYS' || user.grantedPrivileges.includes('SYSDBA')) {
+    // SYS has all privileges
+    if (upperUsername === 'SYS') {
       return true;
     }
 
-    // Direct privilege
-    if (user.grantedPrivileges.includes(upperPrivilege)) {
+    // Check for SYSDBA
+    const sysdba = this.queryTable(
+      `SELECT 1 FROM SYSAUTH$ WHERE GRANTEE = '${upperUsername}' AND PRIVILEGE = 'SYSDBA'`
+    );
+    if (sysdba.length > 0) {
+      return true;
+    }
+
+    // Check direct privilege
+    const directPriv = this.queryTable(
+      `SELECT 1 FROM SYSAUTH$ WHERE GRANTEE = '${upperUsername}' AND PRIVILEGE = '${upperPrivilege}'`
+    );
+    if (directPriv.length > 0) {
       return true;
     }
 
     // Check privileges from roles (recursively)
-    return this.hasPrivilegeFromRoles(user.grantedRoles, upperPrivilege, new Set());
+    return this.hasPrivilegeFromRoles(upperUsername, upperPrivilege, new Set());
   }
 
-  private hasPrivilegeFromRoles(roleNames: string[], privilege: string, visited: Set<string>): boolean {
-    for (const roleName of roleNames) {
+  private hasPrivilegeFromRoles(grantee: string, privilege: string, visited: Set<string>): boolean {
+    // Get all roles granted to this grantee
+    const roles = this.queryTable(
+      `SELECT GRANTED_ROLE FROM ROLEAUTH$ WHERE GRANTEE = '${grantee}'`
+    );
+
+    for (const row of roles) {
+      const roleName = row.GRANTED_ROLE;
       if (visited.has(roleName)) continue;
       visited.add(roleName);
 
-      const role = this.roles.get(roleName);
-      if (!role) continue;
-
-      if (role.grantedPrivileges.has(privilege)) {
+      // Check if role has the privilege
+      const rolePriv = this.queryTable(
+        `SELECT 1 FROM SYSAUTH$ WHERE GRANTEE = '${roleName}' AND PRIVILEGE = '${privilege}'`
+      );
+      if (rolePriv.length > 0) {
         return true;
       }
 
       // Check nested roles
-      if (this.hasPrivilegeFromRoles([...role.grantedRoles], privilege, visited)) {
+      if (this.hasPrivilegeFromRoles(roleName, privilege, visited)) {
         return true;
       }
     }
+
     return false;
   }
 
-  /**
-   * Check if a user has a specific object privilege
-   */
   hasObjectPrivilege(
     username: string,
     privilege: string,
@@ -963,12 +1140,11 @@ export class OracleSecurityManager {
   ): boolean {
     const upperUsername = username.toUpperCase();
     const upperPrivilege = privilege.toUpperCase();
-    const user = this.users.get(upperUsername);
+    const upperOwner = objectOwner.toUpperCase();
+    const upperObject = objectName.toUpperCase();
 
-    if (!user) return false;
-
-    // Object owner has all privileges on their objects
-    if (upperUsername === objectOwner.toUpperCase()) {
+    // Owner has all privileges on their objects
+    if (upperUsername === upperOwner) {
       return true;
     }
 
@@ -977,61 +1153,100 @@ export class OracleSecurityManager {
       return true;
     }
 
-    // Check for ANY privilege (e.g., SELECT ANY TABLE)
+    // Check for ANY privilege
     const anyPrivilege = `${upperPrivilege} ANY TABLE`;
     if (this.hasPrivilege(upperUsername, anyPrivilege)) {
       return true;
     }
 
+    // Check direct object privilege
+    const directObjPriv = this.queryTable(
+      `SELECT 1 FROM OBJAUTH$ WHERE GRANTEE = '${upperUsername}' AND OWNER = '${upperOwner}' ` +
+      `AND TABLE_NAME = '${upperObject}' AND (PRIVILEGE = '${upperPrivilege}' OR PRIVILEGE = 'ALL')`
+    );
+    if (directObjPriv.length > 0) {
+      return true;
+    }
+
     // Check object privileges from roles
-    const fullObjectName = `${objectOwner.toUpperCase()}.${objectName.toUpperCase()}`;
-    return this.hasObjectPrivilegeFromRoles(user.grantedRoles, upperPrivilege, fullObjectName, new Set());
+    return this.hasObjectPrivilegeFromRoles(upperUsername, upperPrivilege, upperOwner, upperObject, new Set());
   }
 
   private hasObjectPrivilegeFromRoles(
-    roleNames: string[],
+    grantee: string,
     privilege: string,
-    fullObjectName: string,
+    objectOwner: string,
+    objectName: string,
     visited: Set<string>
   ): boolean {
-    for (const roleName of roleNames) {
+    const roles = this.queryTable(
+      `SELECT GRANTED_ROLE FROM ROLEAUTH$ WHERE GRANTEE = '${grantee}'`
+    );
+
+    for (const row of roles) {
+      const roleName = row.GRANTED_ROLE;
       if (visited.has(roleName)) continue;
       visited.add(roleName);
 
-      const role = this.roles.get(roleName);
-      if (!role) continue;
-
-      const objPrivs = role.grantedObjectPrivileges.get(fullObjectName);
-      if (objPrivs && (objPrivs.has(privilege) || objPrivs.has('ALL') || objPrivs.has('ALL PRIVILEGES'))) {
+      // Check if role has the object privilege
+      const roleObjPriv = this.queryTable(
+        `SELECT 1 FROM OBJAUTH$ WHERE GRANTEE = '${roleName}' AND OWNER = '${objectOwner}' ` +
+        `AND TABLE_NAME = '${objectName}' AND (PRIVILEGE = '${privilege}' OR PRIVILEGE = 'ALL')`
+      );
+      if (roleObjPriv.length > 0) {
         return true;
       }
 
-      if (this.hasObjectPrivilegeFromRoles([...role.grantedRoles], privilege, fullObjectName, visited)) {
+      // Check nested roles
+      if (this.hasObjectPrivilegeFromRoles(roleName, privilege, objectOwner, objectName, visited)) {
         return true;
       }
     }
+
     return false;
   }
 
-  /**
-   * Get all effective privileges for a user
-   */
+  private wouldCreateCircularGrant(roleName: string, targetRole: string): boolean {
+    if (roleName === targetRole) return true;
+
+    const visited = new Set<string>();
+    const queue = [roleName];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current === targetRole) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+
+      const nestedRoles = this.queryTable(
+        `SELECT GRANTED_ROLE FROM ROLEAUTH$ WHERE GRANTEE = '${current}'`
+      );
+      for (const row of nestedRoles) {
+        queue.push(row.GRANTED_ROLE);
+      }
+    }
+
+    return false;
+  }
+
   getEffectivePrivileges(username: string): {
     systemPrivileges: string[];
     roles: string[];
   } {
     const upperUsername = username.toUpperCase();
-    const user = this.users.get(upperUsername);
-
-    if (!user) {
-      return { systemPrivileges: [], roles: [] };
-    }
-
-    const allPrivileges = new Set<string>(user.grantedPrivileges);
+    const allPrivileges = new Set<string>();
     const allRoles = new Set<string>();
 
-    // Collect all roles and their privileges recursively
-    this.collectRolesAndPrivileges(user.grantedRoles, allPrivileges, allRoles, new Set());
+    // Get direct privileges
+    const directPrivs = this.queryTable(
+      `SELECT PRIVILEGE FROM SYSAUTH$ WHERE GRANTEE = '${upperUsername}'`
+    );
+    for (const row of directPrivs) {
+      allPrivileges.add(row.PRIVILEGE);
+    }
+
+    // Collect roles and their privileges
+    this.collectRolesAndPrivileges(upperUsername, allPrivileges, allRoles, new Set());
 
     return {
       systemPrivileges: [...allPrivileges].sort(),
@@ -1040,185 +1255,114 @@ export class OracleSecurityManager {
   }
 
   private collectRolesAndPrivileges(
-    roleNames: string[],
+    grantee: string,
     privileges: Set<string>,
     roles: Set<string>,
     visited: Set<string>
   ): void {
-    for (const roleName of roleNames) {
+    const grantedRoles = this.queryTable(
+      `SELECT GRANTED_ROLE FROM ROLEAUTH$ WHERE GRANTEE = '${grantee}'`
+    );
+
+    for (const row of grantedRoles) {
+      const roleName = row.GRANTED_ROLE;
       if (visited.has(roleName)) continue;
       visited.add(roleName);
 
       roles.add(roleName);
-      const role = this.roles.get(roleName);
-      if (!role) continue;
 
-      for (const priv of role.grantedPrivileges) {
-        privileges.add(priv);
+      // Get privileges from this role
+      const rolePrivs = this.queryTable(
+        `SELECT PRIVILEGE FROM SYSAUTH$ WHERE GRANTEE = '${roleName}'`
+      );
+      for (const p of rolePrivs) {
+        privileges.add(p.PRIVILEGE);
       }
 
-      this.collectRolesAndPrivileges([...role.grantedRoles], privileges, roles, visited);
+      // Recurse
+      this.collectRolesAndPrivileges(roleName, privileges, roles, visited);
     }
-  }
-
-  private wouldCreateCircularGrant(roleName: string, targetRole: string): boolean {
-    if (roleName === targetRole) return true;
-
-    const role = this.roles.get(roleName);
-    if (!role) return false;
-
-    const visited = new Set<string>();
-    const queue = [...role.grantedRoles];
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (current === targetRole) return true;
-      if (visited.has(current)) continue;
-      visited.add(current);
-
-      const currentRole = this.roles.get(current);
-      if (currentRole) {
-        queue.push(...currentRole.grantedRoles);
-      }
-    }
-
-    return false;
   }
 
   // ==========================================================================
   // Audit
   // ==========================================================================
 
-  private audit(entry: Omit<AuditEntry, 'timestamp' | 'sessionId'> & { sessionId?: number }): void {
-    this.auditTrail.push({
-      ...entry,
-      timestamp: new Date(),
-      sessionId: entry.sessionId || 0
-    });
-
-    // Keep only last 10000 entries
-    if (this.auditTrail.length > 10000) {
-      this.auditTrail = this.auditTrail.slice(-10000);
-    }
-  }
-
-  /**
-   * Add an audit policy
-   */
-  addAuditPolicy(policy: AuditPolicy): void {
-    this.auditPolicies.push(policy);
-  }
-
-  /**
-   * Remove an audit policy
-   */
-  removeAuditPolicy(action: AuditAction, objectName?: string): void {
-    this.auditPolicies = this.auditPolicies.filter(p =>
-      !(p.action === action && p.objectName === objectName)
-    );
-  }
-
-  /**
-   * Record an auditable action
-   */
-  auditAction(
-    action: AuditAction,
+  private auditAction(
+    action: string,
     username: string,
-    options: {
-      objectOwner?: string;
+    options?: {
+      objectSchema?: string;
       objectName?: string;
       objectType?: string;
       sqlText?: string;
       returnCode?: number;
       sessionId?: number;
+      comment?: string;
     }
   ): void {
-    // Check if this action should be audited
-    const shouldAudit = this.auditPolicies.some(policy => {
-      if (policy.action !== action) return false;
-      if (policy.objectName && policy.objectName !== options.objectName) return false;
-      if (policy.objectOwner && policy.objectOwner !== options.objectOwner) return false;
+    const auditId = this.auditSequence++;
+    const now = new Date().toISOString();
 
-      const isSuccess = (options.returnCode || 0) === 0;
-      if (isSuccess && !policy.wheneverSuccessful) return false;
-      if (!isSuccess && !policy.wheneverNotSuccessful) return false;
-
-      return true;
-    });
-
-    if (shouldAudit) {
-      this.audit({
-        action,
-        username: username.toUpperCase(),
-        osUsername: 'unknown',
-        terminal: 'unknown',
-        ...options,
-        returnCode: options.returnCode || 0
-      });
-    }
+    this.executeSQL(
+      `INSERT INTO AUD$ (AUDIT_ID, SESSION_ID, EVENT_TIME, USERNAME, OS_USERNAME, TERMINAL, ACTION_NAME, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE, SQL_TEXT, RETURN_CODE, COMMENT_TEXT) ` +
+      `VALUES (${auditId}, ${options?.sessionId || 0}, '${now}', '${username}', 'unknown', 'SQLPLUS', '${action}', ${options?.objectSchema ? `'${options.objectSchema}'` : 'NULL'}, ${options?.objectName ? `'${options.objectName}'` : 'NULL'}, ${options?.objectType ? `'${options.objectType}'` : 'NULL'}, ${options?.sqlText ? `'${options.sqlText.replace(/'/g, "''")}'` : 'NULL'}, ${options?.returnCode || 0}, ${options?.comment ? `'${options.comment.replace(/'/g, "''")}'` : 'NULL'})`
+    );
   }
 
-  /**
-   * Get audit trail
-   */
+  // ==========================================================================
+  // Getters for Data Dictionary
+  // ==========================================================================
+
+  getUser(username: string): any | undefined {
+    const rows = this.queryTable(`SELECT * FROM USER$ WHERE USERNAME = '${username.toUpperCase()}'`);
+    return rows.length > 0 ? rows[0] : undefined;
+  }
+
+  getAllUsers(): any[] {
+    return this.queryTable(`SELECT * FROM USER$ ORDER BY USERNAME`);
+  }
+
+  getRole(roleName: string): any | undefined {
+    const rows = this.queryTable(`SELECT * FROM ROLE$ WHERE ROLE_NAME = '${roleName.toUpperCase()}'`);
+    return rows.length > 0 ? rows[0] : undefined;
+  }
+
+  getAllRoles(): any[] {
+    return this.queryTable(`SELECT * FROM ROLE$ ORDER BY ROLE_NAME`);
+  }
+
+  getProfile(profileName: string): any[] {
+    return this.queryTable(`SELECT * FROM PROFILE$ WHERE PROFILE_NAME = '${profileName.toUpperCase()}'`);
+  }
+
+  getAllProfiles(): any[] {
+    return this.queryTable(`SELECT DISTINCT PROFILE_NAME FROM PROFILE$ ORDER BY PROFILE_NAME`);
+  }
+
   getAuditTrail(filter?: {
     username?: string;
-    action?: AuditAction;
+    action?: string;
     startDate?: Date;
     endDate?: Date;
     objectName?: string;
-  }): AuditEntry[] {
-    let entries = [...this.auditTrail];
+  }): any[] {
+    let sql = `SELECT * FROM AUD$ WHERE 1=1`;
 
-    if (filter) {
-      if (filter.username) {
-        entries = entries.filter(e => e.username === filter.username.toUpperCase());
-      }
-      if (filter.action) {
-        entries = entries.filter(e => e.action === filter.action);
-      }
-      if (filter.startDate) {
-        entries = entries.filter(e => e.timestamp >= filter.startDate!);
-      }
-      if (filter.endDate) {
-        entries = entries.filter(e => e.timestamp <= filter.endDate!);
-      }
-      if (filter.objectName) {
-        entries = entries.filter(e => e.objectName === filter.objectName!.toUpperCase());
-      }
+    if (filter?.username) {
+      sql += ` AND USERNAME = '${filter.username.toUpperCase()}'`;
+    }
+    if (filter?.action) {
+      sql += ` AND ACTION_NAME = '${filter.action}'`;
+    }
+    if (filter?.objectName) {
+      sql += ` AND OBJECT_NAME = '${filter.objectName.toUpperCase()}'`;
     }
 
-    return entries;
-  }
+    sql += ` ORDER BY EVENT_TIME DESC`;
 
-  // ==========================================================================
-  // Getters for Data Dictionary Views
-  // ==========================================================================
-
-  getUser(username: string): OracleUser | undefined {
-    return this.users.get(username.toUpperCase());
-  }
-
-  getAllUsers(): OracleUser[] {
-    return [...this.users.values()];
-  }
-
-  getRole(roleName: string): OracleRole | undefined {
-    return this.roles.get(roleName.toUpperCase());
-  }
-
-  getAllRoles(): OracleRole[] {
-    return [...this.roles.values()];
-  }
-
-  getProfile(profileName: string): OracleProfile | undefined {
-    return this.profiles.get(profileName.toUpperCase());
-  }
-
-  getAllProfiles(): OracleProfile[] {
-    return [...this.profiles.values()];
+    return this.queryTable(sql);
   }
 }
 
-// Singleton instance
-export const oracleSecurityManager = new OracleSecurityManager();
+// Note: Don't create singleton - each SQLPlus session creates its own with engine reference
