@@ -12,12 +12,15 @@ import {
   ICMPPacket,
   ICMPType,
   EthernetFrame,
+  UDPDatagram,
   ETHER_TYPE,
   IP_PROTOCOL,
   BROADCAST_MAC,
   generatePacketId,
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
+import { DHCPServer, DHCPPoolConfig, parseDHCPPacket, isDHCPPacket, DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../../core/network/dhcp';
+import { DNSServer, parseDNSMessage, isDNSPacket, DNS_PORT } from '../../core/network/dns';
 import {
   CiscoConfig,
   CiscoTerminalState,
@@ -45,6 +48,8 @@ export interface CiscoDeviceConfig extends Omit<DeviceConfig, 'type' | 'osType'>
  */
 export class CiscoDevice extends BaseDevice {
   private arpService: ARPService;
+  private dhcpServer: DHCPServer;
+  private dnsServer: DNSServer;
   private ciscoConfig: CiscoConfig;
   private terminalState: CiscoTerminalState;
   private bootTime: Date;
@@ -81,8 +86,27 @@ export class CiscoDevice extends BaseDevice {
       }
     });
 
+    // Initialize DHCP server (for routers)
+    this.dhcpServer = new DHCPServer();
+    this.dhcpServer.setPacketSender((packet, interfaceId) => {
+      if (this.packetSender) {
+        this.packetSender(packet, interfaceId);
+      }
+    });
+
+    // Initialize DNS server
+    this.dnsServer = new DNSServer();
+    this.dnsServer.setPacketSender((packet, interfaceId) => {
+      if (this.packetSender) {
+        this.packetSender(packet, interfaceId);
+      }
+    });
+
     // Sync interfaces with Cisco config
     this.syncInterfaces();
+
+    // Sync DHCP pools from Cisco config
+    this.syncDHCPPools();
   }
 
   /**
@@ -98,6 +122,35 @@ export class CiscoDevice extends BaseDevice {
         ciscoIface.subnetMask = iface.subnetMask;
         ciscoIface.isUp = iface.isUp;
         ciscoIface.isAdminDown = !iface.isUp;
+      }
+    }
+  }
+
+  /**
+   * Sync DHCP pools from Cisco config to DHCP server
+   */
+  private syncDHCPPools(): void {
+    for (const pool of this.ciscoConfig.dhcpPools) {
+      const dhcpPool: DHCPPoolConfig = {
+        name: pool.name,
+        network: pool.network || '0.0.0.0',
+        mask: pool.mask || '255.255.255.0',
+        defaultRouter: pool.defaultRouter,
+        dnsServer: pool.dnsServer,
+        domain: pool.domain,
+        leaseTime: pool.leaseTime || 86400,
+        excludedAddresses: pool.excludedAddresses || [],
+      };
+      this.dhcpServer.addPool(dhcpPool);
+    }
+
+    // Set DHCP server interface based on first configured interface
+    const interfaces = this.networkStack.getInterfaces();
+    if (interfaces.length > 0) {
+      const iface = interfaces[0];
+      if (iface.ipAddress) {
+        this.dhcpServer.setInterface(iface.id, iface.ipAddress, iface.macAddress);
+        this.dnsServer.setInterface(iface.id, iface.ipAddress, iface.macAddress);
       }
     }
   }
@@ -515,11 +568,45 @@ export class CiscoDevice extends BaseDevice {
     if (frame.etherType === ETHER_TYPE.IPv4) {
       const ipPacket = frame.payload as IPv4Packet;
 
+      // Handle UDP for DHCP and DNS
+      if (ipPacket.protocol === IP_PROTOCOL.UDP) {
+        const udpPacket = ipPacket.payload as UDPDatagram;
+
+        // Handle DHCP (server receives on port 67)
+        if (isDHCPPacket(udpPacket) && udpPacket.destinationPort === DHCP_SERVER_PORT) {
+          const dhcpPacket = parseDHCPPacket(udpPacket.payload);
+          if (dhcpPacket) {
+            const response = this.dhcpServer.processPacket(dhcpPacket, interfaceId);
+            if (response && this.packetSender) {
+              this.packetSender(response, interfaceId);
+            }
+          }
+          return null;
+        }
+
+        // Handle DNS (server receives on port 53)
+        if (isDNSPacket(udpPacket) && udpPacket.destinationPort === DNS_PORT) {
+          const dnsMessage = parseDNSMessage(udpPacket.payload);
+          if (dnsMessage && !dnsMessage.header.flags.qr) {
+            const response = this.dnsServer.processQuery(
+              dnsMessage,
+              ipPacket.sourceIP,
+              frame.sourceMAC,
+              interfaceId
+            );
+            if (response && this.packetSender) {
+              this.packetSender(response, interfaceId);
+            }
+          }
+          return null;
+        }
+      }
+
       // Check if packet is for us
       const destIP = ipPacket.destinationIP;
       const isForUs = this.networkStack
         .getInterfaces()
-        .some(i => i.ipAddress === destIP);
+        .some(i => i.ipAddress === destIP) || destIP === '255.255.255.255';
 
       if (isForUs) {
         // Process locally (ICMP, etc.)
@@ -751,6 +838,38 @@ export class CiscoDevice extends BaseDevice {
    */
   getARPService(): ARPService {
     return this.arpService;
+  }
+
+  /**
+   * Get DHCP server
+   */
+  getDHCPServer(): DHCPServer {
+    return this.dhcpServer;
+  }
+
+  /**
+   * Get DNS server
+   */
+  getDNSServer(): DNSServer {
+    return this.dnsServer;
+  }
+
+  /**
+   * Add DHCP pool
+   */
+  addDHCPPool(pool: DHCPPoolConfig): void {
+    this.dhcpServer.addPool(pool);
+  }
+
+  /**
+   * Get DHCP leases
+   */
+  getDHCPLeases(): Array<{ ipAddress: string; macAddress: string; state: string }> {
+    return this.dhcpServer.getLeases().map(lease => ({
+      ipAddress: lease.ipAddress,
+      macAddress: lease.macAddress,
+      state: lease.state,
+    }));
   }
 
   /**
