@@ -17,9 +17,12 @@ import { useNetworkStore } from '@/store/networkStore';
 export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
   const [, setDraggingDevice] = useState<DeviceType | null>(null);
-  const [terminalDevice, setTerminalDevice] = useState<BaseDevice | null>(null);
-  // Track minimized terminals by device ID
-  const [minimizedTerminals, setMinimizedTerminals] = useState<Map<string, BaseDevice>>(new Map());
+  // Track the currently active (visible) terminal
+  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+  // Track all open terminals (both active and minimized) - keeps them mounted
+  const [openTerminals, setOpenTerminals] = useState<Map<string, BaseDevice>>(new Map());
+  // Track which terminals are minimized
+  const [minimizedTerminals, setMinimizedTerminals] = useState<Set<string>>(new Set());
 
   // Get clearAll and devices from store
   const { getDevices, clearAll } = useNetworkStore();
@@ -28,51 +31,94 @@ export function NetworkDesigner() {
   const handleOpenTerminal = useCallback((device: BaseDevice) => {
     if (device.getIsPoweredOn()) {
       const deviceId = device.getId();
-      // If this device has a minimized terminal, restore it
-      if (minimizedTerminals.has(deviceId)) {
-        setMinimizedTerminals(prev => {
-          const newMap = new Map(prev);
-          newMap.delete(deviceId);
-          return newMap;
-        });
-      }
-      setTerminalDevice(device);
-    }
-  }, [minimizedTerminals]);
 
-  const handleCloseTerminal = useCallback(() => {
-    setTerminalDevice(null);
-  }, []);
+      // If this terminal is already open and not minimized, do nothing
+      if (openTerminals.has(deviceId) && !minimizedTerminals.has(deviceId)) {
+        return;
+      }
+
+      // Minimize any currently visible terminal (except the one we're opening)
+      setMinimizedTerminals(prev => {
+        const newSet = new Set(prev);
+        // Minimize all non-minimized terminals
+        openTerminals.forEach((_, id) => {
+          if (!prev.has(id) && id !== deviceId) {
+            newSet.add(id);
+          }
+        });
+        // Make sure the one we're opening is not minimized
+        newSet.delete(deviceId);
+        return newSet;
+      });
+
+      // Add to open terminals if not already open
+      setOpenTerminals(prev => {
+        if (!prev.has(deviceId)) {
+          const newMap = new Map(prev);
+          newMap.set(deviceId, device);
+          return newMap;
+        }
+        return prev;
+      });
+
+      // Set as active terminal
+      setActiveTerminalId(deviceId);
+    }
+  }, [openTerminals, minimizedTerminals]);
+
+  const handleCloseTerminal = useCallback((deviceId: string) => {
+    // Remove from all tracking
+    setOpenTerminals(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(deviceId);
+      return newMap;
+    });
+    setMinimizedTerminals(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(deviceId);
+      return newSet;
+    });
+    if (activeTerminalId === deviceId) {
+      setActiveTerminalId(null);
+    }
+  }, [activeTerminalId]);
 
   const handleMinimizeTerminal = useCallback(() => {
-    if (terminalDevice) {
-      const deviceId = terminalDevice.getId();
+    if (activeTerminalId) {
+      // Add to minimized set (terminal stays in openTerminals)
       setMinimizedTerminals(prev => {
-        const newMap = new Map(prev);
-        newMap.set(deviceId, terminalDevice);
-        return newMap;
+        const newSet = new Set(prev);
+        newSet.add(activeTerminalId);
+        return newSet;
       });
-      setTerminalDevice(null);
+      // No active terminal
+      setActiveTerminalId(null);
     }
-  }, [terminalDevice]);
+  }, [activeTerminalId]);
 
   const handleRestoreTerminal = useCallback((device: BaseDevice) => {
     const deviceId = device.getId();
+    // Remove from minimized
     setMinimizedTerminals(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(deviceId);
-      return newMap;
+      const newSet = new Set(prev);
+      newSet.delete(deviceId);
+      return newSet;
     });
-    setTerminalDevice(device);
+    // Set as active
+    setActiveTerminalId(deviceId);
   }, []);
 
-  const handleCloseMinimizedTerminal = useCallback((deviceId: string) => {
-    setMinimizedTerminals(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(deviceId);
-      return newMap;
-    });
-  }, []);
+  // Get minimized terminals as Map for MinimizedTerminals component
+  const minimizedTerminalsMap = new Map<string, BaseDevice>();
+  minimizedTerminals.forEach(deviceId => {
+    const device = openTerminals.get(deviceId);
+    if (device) {
+      minimizedTerminalsMap.set(deviceId, device);
+    }
+  });
+
+  // Get the active device
+  const activeDevice = activeTerminalId ? openTerminals.get(activeTerminalId) : null;
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
@@ -89,21 +135,32 @@ export function NetworkDesigner() {
         <PropertiesPanel />
       </div>
 
-      {/* Terminal Modal */}
-      {terminalDevice && (
-        <TerminalModal
-          device={terminalDevice}
-          onClose={handleCloseTerminal}
-          onMinimize={handleMinimizeTerminal}
-        />
-      )}
+      {/* All open terminals - keep mounted for state preservation */}
+      {Array.from(openTerminals.entries()).map(([deviceId, device]) => {
+        const isMinimized = minimizedTerminals.has(deviceId);
+
+        // Keep all terminals mounted but hide minimized ones
+        // This preserves terminal state (history, output, etc.)
+        return (
+          <div
+            key={deviceId}
+            style={{ display: isMinimized ? 'none' : 'block' }}
+          >
+            <TerminalModal
+              device={device}
+              onClose={() => handleCloseTerminal(deviceId)}
+              onMinimize={handleMinimizeTerminal}
+            />
+          </div>
+        );
+      })}
 
       {/* Minimized Terminals Taskbar */}
-      {minimizedTerminals.size > 0 && (
+      {minimizedTerminalsMap.size > 0 && (
         <MinimizedTerminals
-          terminals={minimizedTerminals}
+          terminals={minimizedTerminalsMap}
           onRestore={handleRestoreTerminal}
-          onClose={handleCloseMinimizedTerminal}
+          onClose={handleCloseTerminal}
         />
       )}
     </div>

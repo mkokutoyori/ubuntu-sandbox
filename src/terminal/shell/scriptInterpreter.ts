@@ -1,0 +1,617 @@
+/**
+ * Script Interpreter - Handles shell control structures (for, while, if)
+ *
+ * This module provides interpretation for shell scripts with control flow,
+ * working alongside the existing command executor.
+ */
+
+import { executeShellCommand } from './executor';
+import { TerminalState, CommandResult } from '../types';
+import { FileSystem } from '../filesystem';
+import { PackageManager } from '../packages';
+import { expandVariables } from '../shellUtils';
+
+export interface ScriptContext {
+  state: TerminalState;
+  fs: FileSystem;
+  pm: PackageManager;
+  localVars: Record<string, string>;
+}
+
+/**
+ * Execute a shell script with control flow support
+ */
+export function executeScript(
+  script: string,
+  state: TerminalState,
+  fs: FileSystem,
+  pm: PackageManager
+): CommandResult {
+  const ctx: ScriptContext = {
+    state: { ...state },
+    fs,
+    pm,
+    localVars: {},
+  };
+
+  const lines = script.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  return executeLines(lines, ctx);
+}
+
+/**
+ * Execute a list of lines with control flow
+ */
+function executeLines(lines: string[], ctx: ScriptContext): CommandResult {
+  let output = '';
+  let lastExitCode = 0;
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // For loop: for VAR in VALUES; do ... done
+    if (line.startsWith('for ')) {
+      const result = executeForLoop(lines, i, ctx);
+      output += result.output ? (output ? '\n' : '') + result.output : '';
+      lastExitCode = result.exitCode;
+      i = result.nextIndex;
+      continue;
+    }
+
+    // While loop: while CONDITION; do ... done
+    if (line.startsWith('while ')) {
+      const result = executeWhileLoop(lines, i, ctx);
+      output += result.output ? (output ? '\n' : '') + result.output : '';
+      lastExitCode = result.exitCode;
+      i = result.nextIndex;
+      continue;
+    }
+
+    // If statement: if CONDITION; then ... [elif ... then ...] [else ...] fi
+    if (line.startsWith('if ')) {
+      const result = executeIfStatement(lines, i, ctx);
+      output += result.output ? (output ? '\n' : '') + result.output : '';
+      lastExitCode = result.exitCode;
+      i = result.nextIndex;
+      continue;
+    }
+
+    // Case statement: case WORD in ... esac
+    if (line.startsWith('case ')) {
+      const result = executeCaseStatement(lines, i, ctx);
+      output += result.output ? (output ? '\n' : '') + result.output : '';
+      lastExitCode = result.exitCode;
+      i = result.nextIndex;
+      continue;
+    }
+
+    // Regular command
+    const result = executeLineWithVars(line, ctx);
+    if (result.output) {
+      output += (output ? '\n' : '') + result.output;
+    }
+    lastExitCode = result.exitCode;
+    i++;
+  }
+
+  return { output, exitCode: lastExitCode };
+}
+
+/**
+ * Execute a line with local variable expansion
+ */
+function executeLineWithVars(line: string, ctx: ScriptContext): CommandResult {
+  // Expand local variables
+  let expandedLine = line;
+  for (const [name, value] of Object.entries(ctx.localVars)) {
+    expandedLine = expandedLine.replace(new RegExp(`\\$${name}\\b`, 'g'), value);
+    expandedLine = expandedLine.replace(new RegExp(`\\$\\{${name}\\}`, 'g'), value);
+  }
+
+  // Also expand environment variables
+  expandedLine = expandVariables(expandedLine, ctx.state.env);
+
+  // Handle variable assignment
+  const assignMatch = expandedLine.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+  if (assignMatch) {
+    const [, name, value] = assignMatch;
+    ctx.localVars[name] = value.replace(/^["']|["']$/g, '');
+    return { output: '', exitCode: 0 };
+  }
+
+  return executeShellCommand(expandedLine, ctx.state, ctx.fs, ctx.pm);
+}
+
+interface LoopResult extends CommandResult {
+  nextIndex: number;
+}
+
+/**
+ * Execute a for loop
+ * Syntax: for VAR in VALUE1 VALUE2 ...; do COMMANDS; done
+ * Or multi-line:
+ *   for VAR in VALUES
+ *   do
+ *     COMMANDS
+ *   done
+ */
+function executeForLoop(lines: string[], startIndex: number, ctx: ScriptContext): LoopResult {
+  const line = lines[startIndex];
+
+  // Parse for loop header: for VAR in VALUES [; do]
+  const match = line.match(/^for\s+(\w+)\s+in\s+(.+?)(?:\s*;\s*do)?$/);
+  if (!match) {
+    return { output: '', error: 'syntax error: invalid for loop', exitCode: 2, nextIndex: startIndex + 1 };
+  }
+
+  const [, varName, valuesPart] = match;
+
+  // Parse values (handle quoted strings, brace expansion, etc.)
+  const values = parseValues(valuesPart, ctx);
+
+  // Find loop body (between do and done)
+  const { body, endIndex } = findLoopBody(lines, startIndex, 'do', 'done');
+
+  let output = '';
+  let lastExitCode = 0;
+
+  // Execute loop body for each value
+  for (const value of values) {
+    ctx.localVars[varName] = value;
+
+    const result = executeLines(body, ctx);
+    if (result.output) {
+      output += (output ? '\n' : '') + result.output;
+    }
+    lastExitCode = result.exitCode;
+
+    // Handle break/continue (simplified)
+    if (result.error === '__break__') break;
+    if (result.error === '__continue__') continue;
+  }
+
+  delete ctx.localVars[varName];
+
+  return { output, exitCode: lastExitCode, nextIndex: endIndex + 1 };
+}
+
+/**
+ * Execute a while loop
+ * Syntax: while CONDITION; do COMMANDS; done
+ */
+function executeWhileLoop(lines: string[], startIndex: number, ctx: ScriptContext): LoopResult {
+  const line = lines[startIndex];
+
+  // Parse while loop header: while CONDITION [; do]
+  const match = line.match(/^while\s+(.+?)(?:\s*;\s*do)?$/);
+  if (!match) {
+    return { output: '', error: 'syntax error: invalid while loop', exitCode: 2, nextIndex: startIndex + 1 };
+  }
+
+  const [, condition] = match;
+
+  // Find loop body
+  const { body, endIndex } = findLoopBody(lines, startIndex, 'do', 'done');
+
+  let output = '';
+  let lastExitCode = 0;
+  let iterations = 0;
+  const maxIterations = 1000; // Prevent infinite loops
+
+  // Execute while condition is true
+  while (iterations < maxIterations) {
+    const condResult = executeLineWithVars(condition, ctx);
+    if (condResult.exitCode !== 0) break;
+
+    const result = executeLines(body, ctx);
+    if (result.output) {
+      output += (output ? '\n' : '') + result.output;
+    }
+    lastExitCode = result.exitCode;
+
+    if (result.error === '__break__') break;
+    if (result.error === '__continue__') continue;
+
+    iterations++;
+  }
+
+  return { output, exitCode: lastExitCode, nextIndex: endIndex + 1 };
+}
+
+/**
+ * Execute an if statement
+ * Syntax: if CONDITION; then COMMANDS [elif CONDITION; then COMMANDS] [else COMMANDS] fi
+ */
+function executeIfStatement(lines: string[], startIndex: number, ctx: ScriptContext): LoopResult {
+  const line = lines[startIndex];
+
+  // Parse if header: if CONDITION [; then]
+  const match = line.match(/^if\s+(.+?)(?:\s*;\s*then)?$/);
+  if (!match) {
+    return { output: '', error: 'syntax error: invalid if statement', exitCode: 2, nextIndex: startIndex + 1 };
+  }
+
+  const [, condition] = match;
+
+  // Find the structure of the if statement
+  const { branches, endIndex } = findIfStructure(lines, startIndex);
+
+  let output = '';
+  let exitCode = 0;
+  let executed = false;
+
+  // Evaluate conditions in order
+  for (const branch of branches) {
+    if (branch.type === 'else') {
+      if (!executed) {
+        const result = executeLines(branch.body, ctx);
+        output = result.output;
+        exitCode = result.exitCode;
+      }
+      break;
+    }
+
+    if (!executed) {
+      const condResult = executeLineWithVars(branch.condition!, ctx);
+      if (condResult.exitCode === 0) {
+        const result = executeLines(branch.body, ctx);
+        output = result.output;
+        exitCode = result.exitCode;
+        executed = true;
+      }
+    }
+  }
+
+  return { output, exitCode, nextIndex: endIndex + 1 };
+}
+
+/**
+ * Execute a case statement
+ * Syntax: case WORD in PATTERN) COMMANDS ;; ... esac
+ */
+function executeCaseStatement(lines: string[], startIndex: number, ctx: ScriptContext): LoopResult {
+  const line = lines[startIndex];
+
+  const match = line.match(/^case\s+(\S+)\s+in$/);
+  if (!match) {
+    return { output: '', error: 'syntax error: invalid case statement', exitCode: 2, nextIndex: startIndex + 1 };
+  }
+
+  let word = match[1];
+  // Expand variables in word
+  word = expandVariables(word, ctx.state.env);
+  for (const [name, value] of Object.entries(ctx.localVars)) {
+    word = word.replace(new RegExp(`\\$${name}\\b`, 'g'), value);
+  }
+  word = word.replace(/^["']|["']$/g, '');
+
+  // Find case patterns and their commands
+  const { cases, endIndex } = findCaseStructure(lines, startIndex);
+
+  let output = '';
+  let exitCode = 0;
+
+  for (const caseItem of cases) {
+    if (matchPattern(word, caseItem.pattern)) {
+      const result = executeLines(caseItem.body, ctx);
+      output = result.output;
+      exitCode = result.exitCode;
+      break;
+    }
+  }
+
+  return { output, exitCode, nextIndex: endIndex + 1 };
+}
+
+/**
+ * Parse values for a for loop (handles glob, brace expansion, etc.)
+ */
+function parseValues(valuesPart: string, ctx: ScriptContext): string[] {
+  // Expand variables first
+  let expanded = valuesPart;
+  for (const [name, value] of Object.entries(ctx.localVars)) {
+    expanded = expanded.replace(new RegExp(`\\$${name}\\b`, 'g'), value);
+  }
+  expanded = expandVariables(expanded, ctx.state.env);
+
+  // Handle brace expansion {1..5} or {a,b,c}
+  const braceMatch = expanded.match(/\{(\d+)\.\.(\d+)\}/);
+  if (braceMatch) {
+    const start = parseInt(braceMatch[1]);
+    const end = parseInt(braceMatch[2]);
+    const values: string[] = [];
+    for (let i = start; i <= end; i++) {
+      values.push(i.toString());
+    }
+    return values;
+  }
+
+  const commaMatch = expanded.match(/\{([^}]+)\}/);
+  if (commaMatch) {
+    return commaMatch[1].split(',').map(s => s.trim());
+  }
+
+  // Handle $(command) substitution
+  const cmdMatch = expanded.match(/\$\(([^)]+)\)/);
+  if (cmdMatch) {
+    const result = executeShellCommand(cmdMatch[1], ctx.state, ctx.fs, ctx.pm);
+    return result.output.split(/\s+/).filter(s => s);
+  }
+
+  // Simple space-separated values
+  return expanded.split(/\s+/).filter(s => s);
+}
+
+/**
+ * Find the body of a loop (between start and end keywords)
+ */
+function findLoopBody(
+  lines: string[],
+  startIndex: number,
+  startKeyword: string,
+  endKeyword: string
+): { body: string[]; endIndex: number } {
+  const body: string[] = [];
+  let depth = 1;
+  let foundDo = lines[startIndex].includes('; do') || lines[startIndex].includes(';do');
+  let i = startIndex + 1;
+
+  while (i < lines.length && depth > 0) {
+    const line = lines[i];
+
+    // Track nested structures
+    if (line.startsWith('for ') || line.startsWith('while ') || line.startsWith('until ')) {
+      if (!foundDo) {
+        if (line === 'do') {
+          foundDo = true;
+          i++;
+          continue;
+        }
+      }
+      depth++;
+    }
+
+    if (!foundDo && line === 'do') {
+      foundDo = true;
+      i++;
+      continue;
+    }
+
+    if (line === endKeyword || line.startsWith(endKeyword + ' ')) {
+      depth--;
+      if (depth === 0) break;
+    }
+
+    if (foundDo && depth > 0) {
+      body.push(line);
+    }
+
+    i++;
+  }
+
+  return { body, endIndex: i };
+}
+
+/**
+ * Find the structure of an if statement
+ */
+interface IfBranch {
+  type: 'if' | 'elif' | 'else';
+  condition?: string;
+  body: string[];
+}
+
+function findIfStructure(
+  lines: string[],
+  startIndex: number
+): { branches: IfBranch[]; endIndex: number } {
+  const branches: IfBranch[] = [];
+  let i = startIndex;
+  let depth = 1;
+  let currentBranch: IfBranch | null = null;
+
+  // Parse initial if
+  const ifMatch = lines[i].match(/^if\s+(.+?)(?:\s*;\s*then)?$/);
+  if (ifMatch) {
+    currentBranch = { type: 'if', condition: ifMatch[1], body: [] };
+  }
+
+  let foundThen = lines[i].includes('; then') || lines[i].includes(';then');
+  i++;
+
+  while (i < lines.length && depth > 0) {
+    const line = lines[i];
+
+    // Handle nested if
+    if (line.startsWith('if ')) {
+      depth++;
+      if (foundThen && currentBranch) {
+        currentBranch.body.push(line);
+      }
+      i++;
+      continue;
+    }
+
+    if (!foundThen && line === 'then') {
+      foundThen = true;
+      i++;
+      continue;
+    }
+
+    if (depth === 1 && line.startsWith('elif ')) {
+      if (currentBranch) branches.push(currentBranch);
+      const elifMatch = line.match(/^elif\s+(.+?)(?:\s*;\s*then)?$/);
+      currentBranch = { type: 'elif', condition: elifMatch?.[1] || '', body: [] };
+      foundThen = line.includes('; then');
+      i++;
+      continue;
+    }
+
+    if (depth === 1 && line === 'else') {
+      if (currentBranch) branches.push(currentBranch);
+      currentBranch = { type: 'else', body: [] };
+      i++;
+      continue;
+    }
+
+    if (line === 'fi') {
+      depth--;
+      if (depth === 0) {
+        if (currentBranch) branches.push(currentBranch);
+        break;
+      }
+    }
+
+    if (foundThen && currentBranch && depth > 0) {
+      currentBranch.body.push(line);
+    }
+
+    i++;
+  }
+
+  return { branches, endIndex: i };
+}
+
+/**
+ * Find the structure of a case statement
+ */
+interface CaseItem {
+  pattern: string;
+  body: string[];
+}
+
+function findCaseStructure(
+  lines: string[],
+  startIndex: number
+): { cases: CaseItem[]; endIndex: number } {
+  const cases: CaseItem[] = [];
+  let i = startIndex + 1;
+  let currentCase: CaseItem | null = null;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line === 'esac') {
+      if (currentCase) cases.push(currentCase);
+      break;
+    }
+
+    // Pattern line: pattern)
+    const patternMatch = line.match(/^(.+)\)$/);
+    if (patternMatch) {
+      if (currentCase) cases.push(currentCase);
+      currentCase = { pattern: patternMatch[1].trim(), body: [] };
+      i++;
+      continue;
+    }
+
+    // End of case: ;;
+    if (line === ';;') {
+      if (currentCase) {
+        cases.push(currentCase);
+        currentCase = null;
+      }
+      i++;
+      continue;
+    }
+
+    if (currentCase) {
+      currentCase.body.push(line);
+    }
+
+    i++;
+  }
+
+  return { cases, endIndex: i };
+}
+
+/**
+ * Match a value against a shell pattern
+ */
+function matchPattern(value: string, pattern: string): boolean {
+  // Handle * wildcard pattern
+  if (pattern === '*') return true;
+
+  // Handle simple patterns with * and ?
+  const regexPattern = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+
+  return new RegExp(`^${regexPattern}$`).test(value);
+}
+
+/**
+ * Execute inline loop (for single-line for loops)
+ * Syntax: for i in 1 2 3; do echo $i; done
+ */
+export function executeInlineLoop(
+  command: string,
+  state: TerminalState,
+  fs: FileSystem,
+  pm: PackageManager
+): CommandResult | null {
+  // Check if it's a complete inline loop
+  const forMatch = command.match(/^for\s+(\w+)\s+in\s+(.+?);\s*do\s+(.+?);\s*done$/);
+  if (forMatch) {
+    const [, varName, valuesPart, bodyCommand] = forMatch;
+    const ctx: ScriptContext = { state, fs, pm, localVars: {} };
+    const values = parseValues(valuesPart, ctx);
+
+    let output = '';
+    let lastExitCode = 0;
+
+    for (const value of values) {
+      ctx.localVars[varName] = value;
+      const result = executeLineWithVars(bodyCommand, ctx);
+      if (result.output) {
+        output += (output ? '\n' : '') + result.output;
+      }
+      lastExitCode = result.exitCode;
+    }
+
+    return { output, exitCode: lastExitCode };
+  }
+
+  // Check if it's an inline while loop
+  const whileMatch = command.match(/^while\s+(.+?);\s*do\s+(.+?);\s*done$/);
+  if (whileMatch) {
+    const [, condition, bodyCommand] = whileMatch;
+    const ctx: ScriptContext = { state, fs, pm, localVars: {} };
+
+    let output = '';
+    let lastExitCode = 0;
+    let iterations = 0;
+
+    while (iterations < 100) {
+      const condResult = executeLineWithVars(condition, ctx);
+      if (condResult.exitCode !== 0) break;
+
+      const result = executeLineWithVars(bodyCommand, ctx);
+      if (result.output) {
+        output += (output ? '\n' : '') + result.output;
+      }
+      lastExitCode = result.exitCode;
+      iterations++;
+    }
+
+    return { output, exitCode: lastExitCode };
+  }
+
+  // Check if it's an inline if statement
+  const ifMatch = command.match(/^if\s+(.+?);\s*then\s+(.+?)(?:;\s*else\s+(.+?))?;\s*fi$/);
+  if (ifMatch) {
+    const [, condition, thenCmd, elseCmd] = ifMatch;
+    const ctx: ScriptContext = { state, fs, pm, localVars: {} };
+
+    const condResult = executeLineWithVars(condition, ctx);
+    if (condResult.exitCode === 0) {
+      return executeLineWithVars(thenCmd, ctx);
+    } else if (elseCmd) {
+      return executeLineWithVars(elseCmd, ctx);
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  return null;
+}

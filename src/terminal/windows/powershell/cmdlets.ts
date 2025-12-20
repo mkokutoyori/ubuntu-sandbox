@@ -1123,3 +1123,229 @@ registerCmdlet('Format-Wide', (args, context, input) => {
 
   return { objects: [psString(output)], exitCode: 0 };
 });
+
+// ==================== User and Group Cmdlets ====================
+
+registerCmdlet('Get-LocalUser', (args, context, input) => {
+  const name = args.positional[0] ? psValueToString(args.positional[0]) : null;
+
+  const users = [
+    { name: 'Administrator', enabled: false, description: 'Built-in account for administering the computer/domain', sid: 'S-1-5-21-0-0-0-500', lastLogon: new Date(Date.now() - 86400000 * 30) },
+    { name: 'DefaultAccount', enabled: false, description: 'A user account managed by the system.', sid: 'S-1-5-21-0-0-0-503', lastLogon: null },
+    { name: 'Guest', enabled: false, description: 'Built-in account for guest access to the computer/domain', sid: 'S-1-5-21-0-0-0-501', lastLogon: null },
+    { name: 'User', enabled: true, description: 'Local User Account', sid: 'S-1-5-21-0-0-0-1001', lastLogon: new Date() },
+    { name: 'WDAGUtilityAccount', enabled: false, description: 'A user account managed and used by the system for Windows Defender Application Guard scenarios.', sid: 'S-1-5-21-0-0-0-504', lastLogon: null },
+  ];
+
+  let filtered = users;
+  if (name) {
+    const pattern = name.replace(/\*/g, '.*').replace(/\?/g, '.');
+    const regex = new RegExp(`^${pattern}$`, 'i');
+    filtered = users.filter(u => regex.test(u.name));
+    if (filtered.length === 0) {
+      return { objects: [psString(`Get-LocalUser: User '${name}' was not found.`)], exitCode: 1 };
+    }
+  }
+
+  const results: PSValue[] = filtered.map(user => {
+    const props = new Map<string, PSValue>();
+    props.set('Name', psString(user.name));
+    props.set('Enabled', psBool(user.enabled));
+    props.set('Description', psString(user.description));
+    props.set('SID', psString(user.sid));
+    props.set('LastLogon', user.lastLogon ? psDateTime(user.lastLogon) : psNull());
+    return { type: 'psobject', typeName: 'Microsoft.PowerShell.Commands.LocalUser', properties: props, methods: new Map() };
+  });
+
+  return { objects: results, exitCode: 0 };
+});
+
+registerCmdlet('Get-LocalGroup', (args, context, input) => {
+  const name = args.positional[0] ? psValueToString(args.positional[0]) : null;
+
+  const groups = [
+    { name: 'Administrators', description: 'Administrators have complete and unrestricted access to the computer/domain', sid: 'S-1-5-32-544' },
+    { name: 'Backup Operators', description: 'Backup Operators can override security restrictions for the sole purpose of backing up or restoring files', sid: 'S-1-5-32-551' },
+    { name: 'Guests', description: 'Guests have the same access as members of the Users group by default', sid: 'S-1-5-32-546' },
+    { name: 'Power Users', description: 'Power Users are included for backwards compatibility and possess limited administrative powers', sid: 'S-1-5-32-547' },
+    { name: 'Remote Desktop Users', description: 'Members in this group are granted the right to logon remotely', sid: 'S-1-5-32-555' },
+    { name: 'Users', description: 'Users are prevented from making accidental or intentional system-wide changes', sid: 'S-1-5-32-545' },
+  ];
+
+  let filtered = groups;
+  if (name) {
+    const pattern = name.replace(/\*/g, '.*').replace(/\?/g, '.');
+    const regex = new RegExp(`^${pattern}$`, 'i');
+    filtered = groups.filter(g => regex.test(g.name));
+    if (filtered.length === 0) {
+      return { objects: [psString(`Get-LocalGroup: Group '${name}' was not found.`)], exitCode: 1 };
+    }
+  }
+
+  const results: PSValue[] = filtered.map(group => {
+    const props = new Map<string, PSValue>();
+    props.set('Name', psString(group.name));
+    props.set('Description', psString(group.description));
+    props.set('SID', psString(group.sid));
+    return { type: 'psobject', typeName: 'Microsoft.PowerShell.Commands.LocalGroup', properties: props, methods: new Map() };
+  });
+
+  return { objects: results, exitCode: 0 };
+});
+
+// ==================== Service Cmdlets ====================
+
+registerCmdlet('Get-Service', (args, context, input) => {
+  const name = args.positional[0] ? psValueToString(args.positional[0]) : null;
+
+  const services = [
+    { name: 'wuauserv', displayName: 'Windows Update', status: 'Running', startType: 'Manual' },
+    { name: 'Spooler', displayName: 'Print Spooler', status: 'Running', startType: 'Automatic' },
+    { name: 'BITS', displayName: 'Background Intelligent Transfer Service', status: 'Running', startType: 'Manual' },
+    { name: 'Dhcp', displayName: 'DHCP Client', status: 'Running', startType: 'Automatic' },
+    { name: 'Dnscache', displayName: 'DNS Client', status: 'Running', startType: 'Automatic' },
+    { name: 'EventLog', displayName: 'Windows Event Log', status: 'Running', startType: 'Automatic' },
+    { name: 'MpsSvc', displayName: 'Windows Defender Firewall', status: 'Running', startType: 'Automatic' },
+    { name: 'WinDefend', displayName: 'Microsoft Defender Antivirus Service', status: 'Running', startType: 'Automatic' },
+    { name: 'WSearch', displayName: 'Windows Search', status: 'Running', startType: 'Automatic' },
+  ];
+
+  let filtered = services;
+  if (name) {
+    const pattern = name.replace(/\*/g, '.*').replace(/\?/g, '.');
+    const regex = new RegExp(`^${pattern}$`, 'i');
+    filtered = services.filter(s => regex.test(s.name));
+  }
+
+  const results: PSValue[] = filtered.map(svc => {
+    const props = new Map<string, PSValue>();
+    props.set('Name', psString(svc.name));
+    props.set('DisplayName', psString(svc.displayName));
+    props.set('Status', psString(svc.status));
+    props.set('StartType', psString(svc.startType));
+    return { type: 'psobject', typeName: 'System.ServiceProcess.ServiceController', properties: props, methods: new Map() };
+  });
+
+  return { objects: results, exitCode: 0 };
+});
+
+// ==================== Network Cmdlets ====================
+
+registerCmdlet('Get-NetIPAddress', (args, context, input) => {
+  const results: PSValue[] = [];
+
+  let props = new Map<string, PSValue>();
+  props.set('IPAddress', psString('192.168.1.100'));
+  props.set('InterfaceAlias', psString('Ethernet'));
+  props.set('AddressFamily', psString('IPv4'));
+  props.set('PrefixLength', psInt(24));
+  results.push({ type: 'psobject', typeName: 'MSFT_NetIPAddress', properties: props, methods: new Map() });
+
+  props = new Map<string, PSValue>();
+  props.set('IPAddress', psString('127.0.0.1'));
+  props.set('InterfaceAlias', psString('Loopback'));
+  props.set('AddressFamily', psString('IPv4'));
+  props.set('PrefixLength', psInt(8));
+  results.push({ type: 'psobject', typeName: 'MSFT_NetIPAddress', properties: props, methods: new Map() });
+
+  return { objects: results, exitCode: 0 };
+});
+
+registerCmdlet('Get-NetAdapter', (args, context, input) => {
+  const adapters = [
+    { name: 'Ethernet', status: 'Up', macAddress: '00-15-5D-01-02-03', speed: '1 Gbps' },
+    { name: 'Wi-Fi', status: 'Disconnected', macAddress: '00-15-5D-04-05-06', speed: '0 bps' },
+  ];
+
+  const results: PSValue[] = adapters.map(adapter => {
+    const props = new Map<string, PSValue>();
+    props.set('Name', psString(adapter.name));
+    props.set('Status', psString(adapter.status));
+    props.set('MacAddress', psString(adapter.macAddress));
+    props.set('LinkSpeed', psString(adapter.speed));
+    return { type: 'psobject', typeName: 'MSFT_NetAdapter', properties: props, methods: new Map() };
+  });
+
+  return { objects: results, exitCode: 0 };
+});
+
+registerCmdlet('Test-NetConnection', (args, context, input) => {
+  const computerName = args.positional[0] ? psValueToString(args.positional[0]) : 'internetbeacon.msedge.net';
+  const props = new Map<string, PSValue>();
+  props.set('ComputerName', psString(computerName));
+  props.set('RemoteAddress', psString('13.107.4.52'));
+  props.set('PingSucceeded', psBool(true));
+  props.set('PingReplyDetails', psString('RTT=15ms'));
+  return { objects: [{ type: 'psobject', typeName: 'TestNetConnectionResult', properties: props, methods: new Map() }], exitCode: 0 };
+});
+
+// ==================== System Info Cmdlets ====================
+
+registerCmdlet('Get-ComputerInfo', (args, context, input) => {
+  const props = new Map<string, PSValue>();
+  props.set('WindowsProductName', psString('Windows 10 Pro'));
+  props.set('WindowsVersion', psString('2009'));
+  props.set('OsBuildNumber', psString('22621'));
+  props.set('CsName', psString(context.state.hostname));
+  props.set('CsNumberOfLogicalProcessors', psInt(4));
+  props.set('CsTotalPhysicalMemory', psInt(17179869184));
+  props.set('OsArchitecture', psString('64-bit'));
+  return { objects: [{ type: 'psobject', typeName: 'Microsoft.PowerShell.Commands.ComputerInfo', properties: props, methods: new Map() }], exitCode: 0 };
+});
+
+// ==================== Net Command ====================
+
+registerCmdlet('net', (args, context, input) => {
+  const subCommand = args.positional[0] ? psValueToString(args.positional[0]).toLowerCase() : '';
+  const target = args.positional[1] ? psValueToString(args.positional[1]) : '';
+
+  switch (subCommand) {
+    case 'user': {
+      if (target) {
+        const users: Record<string, any> = {
+          'administrator': { fullName: 'Administrator', active: 'No', lastLogon: 'Never' },
+          'user': { fullName: 'Local User', active: 'Yes', lastLogon: new Date().toLocaleString() },
+          'guest': { fullName: 'Guest', active: 'No', lastLogon: 'Never' },
+        };
+        const userInfo = users[target.toLowerCase()];
+        if (!userInfo) return { objects: [psString(`The user name could not be found.`)], exitCode: 1 };
+        return { objects: [psString(`User name                    ${target}\r\nFull Name                    ${userInfo.fullName}\r\nAccount active               ${userInfo.active}\r\nLast logon                   ${userInfo.lastLogon}\r\n\r\nThe command completed successfully.`)], exitCode: 0 };
+      }
+      return { objects: [psString(`User accounts for \\\\${context.state.hostname}\r\n\r\n-------------------------------------------------------------------------------\r\nAdministrator            Guest                    User\r\nThe command completed successfully.`)], exitCode: 0 };
+    }
+    case 'localgroup': {
+      if (target) {
+        const groups: Record<string, string[]> = { 'administrators': ['Administrator', 'User'], 'users': ['User'], 'guests': ['Guest'] };
+        const members = groups[target.toLowerCase()];
+        if (!members) return { objects: [psString(`The specified local group does not exist.`)], exitCode: 1 };
+        return { objects: [psString(`Alias name     ${target}\r\nMembers\r\n-------------------------------------------------------------------------------\r\n${members.join('\r\n')}\r\nThe command completed successfully.`)], exitCode: 0 };
+      }
+      return { objects: [psString(`Aliases for \\\\${context.state.hostname}\r\n\r\n*Administrators\r\n*Guests\r\n*Users\r\nThe command completed successfully.`)], exitCode: 0 };
+    }
+    case 'share': return { objects: [psString(`Share name   Resource\r\n-------------------------------------------------------------------------------\r\nC$           C:\\\r\nADMIN$       C:\\Windows\r\nThe command completed successfully.`)], exitCode: 0 };
+    case 'accounts': return { objects: [psString(`Minimum password age (days):  0\r\nMaximum password age (days):  42\r\nLockout threshold:            Never\r\nThe command completed successfully.`)], exitCode: 0 };
+    default: return { objects: [psString(`The syntax of this command is:\r\n\r\nNET [ ACCOUNTS | LOCALGROUP | SHARE | START | STOP | USER | VIEW ]`)], exitCode: 1 };
+  }
+});
+
+// ==================== Common Commands ====================
+
+registerCmdlet('hostname', (args, context, input) => {
+  return { objects: [psString(context.state.hostname)], exitCode: 0 };
+});
+
+registerCmdlet('whoami', (args, context, input) => {
+  return { objects: [psString(`${context.state.hostname.toLowerCase()}\\${context.state.currentUser.toLowerCase()}`)], exitCode: 0 };
+});
+
+registerCmdlet('ipconfig', (args, context, input) => {
+  const all = args.named.get('all');
+  let output = '\r\nWindows IP Configuration\r\n\r\nEthernet adapter Ethernet:\r\n\r\n   IPv4 Address. . . . . . . . . . . : 192.168.1.100\r\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\r\n   Default Gateway . . . . . . . . . : 192.168.1.1\r\n';
+  if (all) output = '\r\nWindows IP Configuration\r\n\r\n   Host Name . . . . . . . . . . . . : ' + context.state.hostname + '\r\n\r\nEthernet adapter Ethernet:\r\n\r\n   Physical Address. . . . . . . . . : 00-15-5D-01-02-03\r\n   DHCP Enabled. . . . . . . . . . . : Yes\r\n   IPv4 Address. . . . . . . . . . . : 192.168.1.100\r\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\r\n   Default Gateway . . . . . . . . . : 192.168.1.1\r\n   DNS Servers . . . . . . . . . . . : 192.168.1.1\r\n';
+  return { objects: [psString(output)], exitCode: 0 };
+});
+
+registerCmdlet('systeminfo', (args, context, input) => {
+  const output = `Host Name:                 ${context.state.hostname}\r\nOS Name:                   Microsoft Windows 10 Pro\r\nOS Version:                10.0.22621 Build 22621\r\nSystem Type:               x64-based PC\r\nTotal Physical Memory:     16,384 MB\r\n`;
+  return { objects: [psString(output)], exitCode: 0 };
+});
