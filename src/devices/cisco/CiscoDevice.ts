@@ -26,6 +26,7 @@ import {
   CiscoRoute,
   CiscoARPEntry,
   CiscoMACEntry,
+  RealDeviceData,
 } from '../../terminal/cisco/types';
 import {
   createDefaultRouterConfig,
@@ -750,6 +751,57 @@ export class CiscoDevice extends BaseDevice {
    */
   getARPService(): ARPService {
     return this.arpService;
+  }
+
+  /**
+   * Get real device data for CLI display
+   * Returns current state from NetworkStack for accurate show commands
+   */
+  getRealDeviceData(): RealDeviceData {
+    // Get interfaces from NetworkStack
+    const interfaces = this.networkStack.getInterfaces().map(iface => ({
+      id: iface.id,
+      name: iface.name,
+      type: iface.type || 'GigabitEthernet',
+      macAddress: iface.macAddress,
+      ipAddress: iface.ipAddress,
+      subnetMask: iface.subnetMask,
+      isUp: iface.isUp,
+    }));
+
+    // Get routing table from NetworkStack
+    const routingTable = this.networkStack.getRoutingTable().map(route => ({
+      destination: route.destination,
+      netmask: route.netmask,
+      gateway: route.gateway,
+      interface: route.interface,
+      metric: route.metric || 0,
+      protocol: route.protocol || 'connected',
+    }));
+
+    // Get ARP table from both ARPService and NetworkStack
+    const arpEntries = this.arpService.getTable();
+    const arpTable = arpEntries.map(entry => ({
+      ipAddress: entry.ipAddress,
+      macAddress: entry.macAddress,
+      interface: entry.interface,
+      age: entry.age,
+    }));
+
+    // Get MAC table for switches
+    const macTable = Array.from(this.macTable.values()).map(entry => ({
+      vlan: entry.vlan,
+      macAddress: entry.macAddress,
+      type: entry.type,
+      ports: entry.ports,
+    }));
+
+    return {
+      interfaces,
+      routingTable,
+      arpTable,
+      macTable: this.ciscoType === 'switch' ? macTable : undefined,
+    };
   }
 
   /**

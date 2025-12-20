@@ -9,6 +9,7 @@ import {
   CiscoTerminalState,
   CiscoOutputLine,
   CiscoDeviceType,
+  RealDeviceData,
   generateId,
 } from '@/terminal/cisco/types';
 import {
@@ -18,17 +19,20 @@ import {
   getPrompt,
   executeCiscoCommand,
 } from '@/terminal/cisco';
+import { CiscoDevice } from '@/devices/cisco/CiscoDevice';
 
 interface CiscoTerminalProps {
   deviceType?: CiscoDeviceType;
   hostname?: string;
   onRequestClose?: () => void;
+  device?: CiscoDevice;
 }
 
 export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
   deviceType = 'router',
   hostname,
   onRequestClose,
+  device,
 }) => {
   // Initialize configuration based on device type
   const [config] = useState<CiscoConfig>(() => {
@@ -233,8 +237,11 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
         return;
       }
 
+      // Get real device data if device is connected
+      const realDeviceData: RealDeviceData | undefined = device?.getRealDeviceData();
+
       // Execute command
-      const result = executeCiscoCommand(cmd, state, config, bootTime);
+      const result = executeCiscoCommand(cmd, state, config, bootTime, realDeviceData);
 
       // Handle output
       if (result.output) {
