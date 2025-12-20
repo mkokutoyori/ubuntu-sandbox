@@ -1106,3 +1106,453 @@ describe('Oracle DBA V$ Views Integration', () => {
     });
   });
 });
+
+// ============================================
+// Oracle RMAN (Recovery Manager) Integration Tests
+// ============================================
+import { createRMANSession, executeRMAN, getRMANPrompt } from '../terminal/sql/oracle/rman';
+
+describe('Oracle RMAN (Recovery Manager) Integration', () => {
+  let session: ReturnType<typeof createRMANSession>;
+
+  beforeEach(() => {
+    session = createRMANSession();
+    // Auto-connect for most tests
+    session.connected = true;
+    session.targetDatabase = 'ORCL';
+  });
+
+  describe('Session Management', () => {
+    it('creates a valid RMAN session', () => {
+      expect(session).toBeDefined();
+      expect(session.engine).toBeDefined();
+      expect(session.securityManager).toBeDefined();
+    });
+
+    it('returns correct RMAN prompt', () => {
+      const prompt = getRMANPrompt(session);
+      expect(prompt).toBe('RMAN> ');
+    });
+
+    it('handles EXIT command', () => {
+      const result = executeRMAN(session, 'exit');
+      expect(result.exit).toBe(true);
+      expect(result.output).toContain('Recovery Manager complete');
+    });
+
+    it('handles QUIT command', () => {
+      const result = executeRMAN(session, 'quit');
+      expect(result.exit).toBe(true);
+    });
+
+    it('shows HELP information', () => {
+      const result = executeRMAN(session, 'help');
+      expect(result.output).toContain('BACKUP');
+      expect(result.output).toContain('RESTORE');
+      expect(result.output).toContain('RECOVER');
+      expect(result.output).toContain('LIST');
+    });
+  });
+
+  describe('Connection Commands', () => {
+    it('connects to target database', () => {
+      const newSession = createRMANSession();
+      expect(newSession.connected).toBe(false);
+
+      const result = executeRMAN(newSession, 'connect target /');
+      expect(result.output).toContain('connected to target database');
+      expect(newSession.connected).toBe(true);
+    });
+
+    it('requires connection before operations', () => {
+      const newSession = createRMANSession();
+      const result = executeRMAN(newSession, 'backup database');
+      expect(result.error).toContain('not connected');
+    });
+  });
+
+  describe('BACKUP Operations', () => {
+    it('performs BACKUP DATABASE', () => {
+      const result = executeRMAN(session, 'backup database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting backup');
+      expect(result.output).toContain('starting full datafile backup set');
+      expect(result.output).toContain('system01.dbf');
+      expect(result.output).toContain('backup set complete');
+      expect(result.output).toContain('Finished backup');
+    });
+
+    it('performs BACKUP ARCHIVELOG ALL', () => {
+      const result = executeRMAN(session, 'backup archivelog all');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting backup');
+      expect(result.output).toContain('archived log');
+      expect(result.output).toContain('Finished backup');
+    });
+
+    it('performs incremental level 0 backup', () => {
+      const result = executeRMAN(session, 'backup incremental level 0 database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting backup');
+      expect(result.output).toContain('Finished backup');
+    });
+
+    it('performs incremental level 1 backup', () => {
+      const result = executeRMAN(session, 'backup incremental level 1 database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting backup');
+    });
+
+    it('performs BACKUP CURRENT CONTROLFILE', () => {
+      const result = executeRMAN(session, 'backup current controlfile');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('control file');
+    });
+
+    it('performs BACKUP SPFILE', () => {
+      const result = executeRMAN(session, 'backup spfile');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('spfile');
+    });
+
+    it('generates controlfile autobackup', () => {
+      session.controlfileAutobackup = true;
+      const result = executeRMAN(session, 'backup database');
+      expect(result.output).toContain('control file autobackup complete');
+    });
+  });
+
+  describe('RESTORE Operations', () => {
+    it('performs RESTORE DATABASE', () => {
+      const result = executeRMAN(session, 'restore database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting restore');
+      expect(result.output).toContain('restoring datafile');
+      expect(result.output).toContain('restore complete');
+      expect(result.output).toContain('Finished restore');
+    });
+
+    it('performs RESTORE CONTROLFILE', () => {
+      const result = executeRMAN(session, 'restore controlfile');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting restore');
+      expect(result.output).toContain('controlfile');
+    });
+
+    it('performs RESTORE SPFILE', () => {
+      const result = executeRMAN(session, 'restore spfile');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('restoring spfile');
+    });
+  });
+
+  describe('RECOVER Operations', () => {
+    it('performs RECOVER DATABASE', () => {
+      const result = executeRMAN(session, 'recover database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting recover');
+      expect(result.output).toContain('media recovery');
+      expect(result.output).toContain('archived log');
+      expect(result.output).toContain('Finished recover');
+    });
+  });
+
+  describe('LIST Commands', () => {
+    it('lists backup summary', () => {
+      const result = executeRMAN(session, 'list backup summary');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('List of Backups');
+      expect(result.output).toContain('Key');
+      expect(result.output).toContain('Device Type');
+    });
+
+    it('lists detailed backup', () => {
+      const result = executeRMAN(session, 'list backup');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('List of Backup Sets');
+      expect(result.output).toContain('Piece Name');
+    });
+
+    it('lists backup of database', () => {
+      const result = executeRMAN(session, 'list backup of database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('List of Backup Sets');
+      expect(result.output).toContain('List of Datafiles');
+    });
+
+    it('lists backup of archivelog', () => {
+      const result = executeRMAN(session, 'list backup of archivelog');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('List of Archived Logs');
+    });
+
+    it('lists incarnation', () => {
+      const result = executeRMAN(session, 'list incarnation');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Database Incarnations');
+      expect(result.output).toContain('CURRENT');
+    });
+
+    it('lists archivelog all', () => {
+      const result = executeRMAN(session, 'list archivelog all');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Archived Log Copies');
+    });
+  });
+
+  describe('REPORT Commands', () => {
+    it('reports obsolete backups', () => {
+      const result = executeRMAN(session, 'report obsolete');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('retention policy');
+      expect(result.output).toContain('7 days');
+    });
+
+    it('reports need backup', () => {
+      const result = executeRMAN(session, 'report need backup');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('retention policy');
+    });
+
+    it('reports schema', () => {
+      const result = executeRMAN(session, 'report schema');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Permanent Datafiles');
+      expect(result.output).toContain('SYSTEM');
+      expect(result.output).toContain('SYSAUX');
+      expect(result.output).toContain('USERS');
+    });
+  });
+
+  describe('CROSSCHECK Commands', () => {
+    it('crosschecks backup', () => {
+      const result = executeRMAN(session, 'crosscheck backup');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('crosschecked');
+      expect(result.output).toContain('AVAILABLE');
+    });
+
+    it('crosschecks archivelog all', () => {
+      const result = executeRMAN(session, 'crosscheck archivelog all');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('crosschecked');
+    });
+  });
+
+  describe('DELETE Commands', () => {
+    it('deletes obsolete backups', () => {
+      const result = executeRMAN(session, 'delete obsolete');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('retention policy');
+    });
+
+    it('deletes expired backups', () => {
+      const result = executeRMAN(session, 'delete expired');
+      expect(result.error).toBeUndefined();
+    });
+  });
+
+  describe('VALIDATE Commands', () => {
+    it('validates database', () => {
+      const result = executeRMAN(session, 'validate database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Starting validate');
+      expect(result.output).toContain('List of Datafiles');
+      expect(result.output).toContain('OK');
+      expect(result.output).toContain('Finished validate');
+    });
+
+    it('validates backupset', () => {
+      const result = executeRMAN(session, 'validate backupset 1');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('validation of backup set');
+      expect(result.output).toContain('backup set validated');
+    });
+  });
+
+  describe('CONFIGURE Commands', () => {
+    it('configures retention policy redundancy', () => {
+      const result = executeRMAN(session, 'configure retention policy to redundancy 2');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('RETENTION POLICY');
+      expect(result.output).toContain('REDUNDANCY 2');
+      expect(session.retentionPolicy).toBe('REDUNDANCY 2');
+    });
+
+    it('configures retention policy recovery window', () => {
+      const result = executeRMAN(session, 'configure retention policy to recovery window of 14 days');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('RECOVERY WINDOW');
+      expect(session.retentionPolicy).toBe('RECOVERY WINDOW OF 14 DAYS');
+    });
+
+    it('configures backup optimization', () => {
+      const result = executeRMAN(session, 'configure backup optimization on');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('BACKUP OPTIMIZATION ON');
+      expect(session.backupOptimization).toBe(true);
+    });
+
+    it('configures controlfile autobackup', () => {
+      session.controlfileAutobackup = false;
+      const result = executeRMAN(session, 'configure controlfile autobackup on');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('CONTROLFILE AUTOBACKUP ON');
+      expect(session.controlfileAutobackup).toBe(true);
+    });
+
+    it('configures device type', () => {
+      const result = executeRMAN(session, 'configure default device type to sbt');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('DEVICE TYPE');
+      expect(session.deviceType).toBe('SBT_TAPE');
+    });
+
+    it('configures parallelism', () => {
+      const result = executeRMAN(session, 'configure parallelism 4');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('PARALLELISM 4');
+      expect(session.parallelism).toBe(4);
+    });
+  });
+
+  describe('SHOW Commands', () => {
+    it('shows all configuration', () => {
+      const result = executeRMAN(session, 'show all');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('RETENTION POLICY');
+      expect(result.output).toContain('BACKUP OPTIMIZATION');
+      expect(result.output).toContain('CONTROLFILE AUTOBACKUP');
+      expect(result.output).toContain('DEVICE TYPE');
+      expect(result.output).toContain('PARALLELISM');
+    });
+
+    it('shows retention policy', () => {
+      const result = executeRMAN(session, 'show retention policy');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('RETENTION POLICY');
+    });
+  });
+
+  describe('Channel Management', () => {
+    it('allocates channel', () => {
+      const result = executeRMAN(session, 'allocate channel c1 device type disk');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('allocated channel: c1');
+      expect(session.channel).toBe('c1');
+    });
+
+    it('releases channel', () => {
+      session.channel = 'c1';
+      const result = executeRMAN(session, 'release channel c1');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('released channel');
+    });
+  });
+
+  describe('RUN Block', () => {
+    it('executes RUN block with multiple commands', () => {
+      const result = executeRMAN(session, `run {
+        allocate channel c1 device type disk;
+        backup database;
+        release channel c1;
+      }`);
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('allocated channel');
+      expect(result.output).toContain('Starting backup');
+      expect(result.output).toContain('released channel');
+    });
+  });
+
+  describe('Database Control', () => {
+    it('handles STARTUP command', () => {
+      const result = executeRMAN(session, 'startup');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Oracle instance started');
+      expect(result.output).toContain('database mounted');
+      expect(result.output).toContain('database opened');
+    });
+
+    it('handles STARTUP MOUNT', () => {
+      const result = executeRMAN(session, 'startup mount');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Oracle instance started');
+      expect(result.output).toContain('database mounted');
+      expect(result.output).not.toContain('database opened');
+    });
+
+    it('handles SHUTDOWN', () => {
+      const result = executeRMAN(session, 'shutdown');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('database closed');
+      expect(result.output).toContain('Oracle instance shut down');
+    });
+
+    it('handles SHUTDOWN IMMEDIATE', () => {
+      const result = executeRMAN(session, 'shutdown immediate');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Oracle instance shut down');
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('handles invalid command', () => {
+      const result = executeRMAN(session, 'invalidcommand');
+      expect(result.error).toContain('RMAN-00558');
+      expect(result.error).toContain('syntax error');
+    });
+  });
+
+  describe('DBA Training Scenarios', () => {
+    it('performs complete backup and recovery workflow', () => {
+      // 1. Show current configuration
+      let result = executeRMAN(session, 'show all');
+      expect(result.error).toBeUndefined();
+
+      // 2. Configure retention
+      result = executeRMAN(session, 'configure retention policy to recovery window of 7 days');
+      expect(result.error).toBeUndefined();
+
+      // 3. Backup database
+      result = executeRMAN(session, 'backup database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Finished backup');
+
+      // 4. Backup archivelogs
+      result = executeRMAN(session, 'backup archivelog all');
+      expect(result.error).toBeUndefined();
+
+      // 5. List backups
+      result = executeRMAN(session, 'list backup summary');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('List of Backups');
+
+      // 6. Crosscheck
+      result = executeRMAN(session, 'crosscheck backup');
+      expect(result.error).toBeUndefined();
+
+      // 7. Report obsolete
+      result = executeRMAN(session, 'report obsolete');
+      expect(result.error).toBeUndefined();
+    });
+
+    it('performs disaster recovery simulation', () => {
+      // Simulate restore and recovery after database loss
+      let result = executeRMAN(session, 'restore controlfile');
+      expect(result.error).toBeUndefined();
+
+      result = executeRMAN(session, 'restore database');
+      expect(result.error).toBeUndefined();
+
+      result = executeRMAN(session, 'recover database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('media recovery complete');
+    });
+
+    it('validates backups before restore', () => {
+      const result = executeRMAN(session, 'validate database');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('OK');
+    });
+  });
+});
