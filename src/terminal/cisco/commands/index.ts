@@ -8,6 +8,7 @@ import {
   CiscoTerminalState,
   CiscoCommandResult,
   CiscoMode,
+  RealDeviceData,
   generateId,
 } from '../types';
 import { executeShowCommand } from './show';
@@ -58,7 +59,8 @@ export function executeCiscoCommand(
   input: string,
   state: CiscoTerminalState,
   config: CiscoConfig,
-  bootTime: Date
+  bootTime: Date,
+  realDeviceData?: RealDeviceData
 ): CiscoCommandResult {
   const trimmed = input.trim();
 
@@ -81,10 +83,10 @@ export function executeCiscoCommand(
   // Route to appropriate handler based on mode
   switch (state.mode) {
     case 'user':
-      return executeUserCommand(command, args, state, config, bootTime);
+      return executeUserCommand(command, args, state, config, bootTime, realDeviceData);
 
     case 'privileged':
-      return executePrivilegedCommand(command, args, state, config, bootTime);
+      return executePrivilegedCommand(command, args, state, config, bootTime, realDeviceData);
 
     case 'global-config':
     case 'interface':
@@ -95,7 +97,7 @@ export function executeCiscoCommand(
     case 'dhcp':
     case 'acl':
     case 'route-map':
-      return executeConfigModeCommand(command, args, state, config, bootTime);
+      return executeConfigModeCommand(command, args, state, config, bootTime, realDeviceData);
 
     default:
       return { output: '', error: '% Invalid input detected', exitCode: 1 };
@@ -110,7 +112,8 @@ function executeUserCommand(
   args: string[],
   state: CiscoTerminalState,
   config: CiscoConfig,
-  bootTime: Date
+  bootTime: Date,
+  realDeviceData?: RealDeviceData
 ): CiscoCommandResult {
   switch (command) {
     case 'enable':
@@ -132,7 +135,7 @@ function executeUserCommand(
     case 'show':
     case 'sh':
       // Limited show commands in user mode
-      return executeLimitedShow(args, state, config, bootTime);
+      return executeLimitedShow(args, state, config, bootTime, realDeviceData);
 
     case 'terminal':
       return executeTerminal(args, state);
@@ -154,7 +157,7 @@ function executeUserCommand(
       // Try abbreviated commands
       const expanded = expandCommand(command, getUserCommands());
       if (expanded && expanded !== command) {
-        return executeUserCommand(expanded, args, state, config, bootTime);
+        return executeUserCommand(expanded, args, state, config, bootTime, realDeviceData);
       }
       return { output: '', error: `% Unknown command or computer name, or unable to find computer address`, exitCode: 1 };
   }
@@ -168,7 +171,8 @@ function executePrivilegedCommand(
   args: string[],
   state: CiscoTerminalState,
   config: CiscoConfig,
-  bootTime: Date
+  bootTime: Date,
+  realDeviceData?: RealDeviceData
 ): CiscoCommandResult {
   switch (command) {
     case 'configure':
@@ -184,7 +188,7 @@ function executePrivilegedCommand(
 
     case 'show':
     case 'sh':
-      return executeShowCommand(args, state, config, bootTime);
+      return executeShowCommand(args, state, config, bootTime, realDeviceData);
 
     case 'write':
     case 'wr':
@@ -276,14 +280,15 @@ function executeConfigModeCommand(
   args: string[],
   state: CiscoTerminalState,
   config: CiscoConfig,
-  bootTime: Date
+  bootTime: Date,
+  realDeviceData?: RealDeviceData
 ): CiscoCommandResult {
   // Handle 'do' prefix for privileged commands
   if (command === 'do') {
     const doCommand = args[0];
     const doArgs = args.slice(1);
     if (doCommand === 'show' || doCommand === 'sh') {
-      return executeShowCommand(doArgs, state, config, bootTime);
+      return executeShowCommand(doArgs, state, config, bootTime, realDeviceData);
     }
     if (doCommand === 'write' || doCommand === 'wr') {
       return executeWrite(doArgs, state, config);
@@ -752,7 +757,8 @@ function executeLimitedShow(
   args: string[],
   state: CiscoTerminalState,
   config: CiscoConfig,
-  bootTime: Date
+  bootTime: Date,
+  realDeviceData?: RealDeviceData
 ): CiscoCommandResult {
   const allowedShowCommands = ['version', 'clock', 'history', 'users', 'flash', 'flash:'];
 
@@ -763,7 +769,7 @@ function executeLimitedShow(
   const subCommand = args[0].toLowerCase();
 
   if (allowedShowCommands.includes(subCommand)) {
-    return executeShowCommand(args, state, config, bootTime);
+    return executeShowCommand(args, state, config, bootTime, realDeviceData);
   }
 
   return { output: '', error: '% Invalid input detected', exitCode: 1 };

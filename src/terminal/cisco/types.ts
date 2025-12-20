@@ -284,6 +284,39 @@ export interface CiscoCommandResult {
   moreOutput?: boolean;
 }
 
+// Real device data from NetworkStack (for integration with live simulation)
+export interface RealDeviceData {
+  interfaces: Array<{
+    id: string;
+    name: string;
+    type: string;
+    macAddress: string;
+    ipAddress?: string;
+    subnetMask?: string;
+    isUp: boolean;
+  }>;
+  routingTable: Array<{
+    destination: string;
+    netmask: string;
+    gateway: string;
+    interface: string;
+    metric: number;
+    protocol: string;
+  }>;
+  arpTable: Array<{
+    ipAddress: string;
+    macAddress: string;
+    interface: string;
+    age?: number;
+  }>;
+  macTable?: Array<{
+    vlan: number;
+    macAddress: string;
+    type: string;
+    ports: string;
+  }>;
+}
+
 // Device type (Router vs Switch)
 export type CiscoDeviceType = 'router' | 'switch';
 
