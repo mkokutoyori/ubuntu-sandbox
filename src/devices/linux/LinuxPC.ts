@@ -28,6 +28,21 @@ import {
   DHCP_CLIENT_PORT,
 } from '../../core/network/dhcp';
 
+// UFW Firewall types
+export type UFWAction = 'allow' | 'deny' | 'reject' | 'limit';
+export type UFWDirection = 'in' | 'out' | 'both';
+
+export interface UFWRule {
+  id: number;
+  action: UFWAction;
+  direction: UFWDirection;
+  port?: number;
+  protocol?: 'tcp' | 'udp' | 'any';
+  from?: string;      // Source IP or 'any'
+  to?: string;        // Destination IP or 'any'
+  comment?: string;
+}
+
 export interface LinuxPCConfig extends Omit<DeviceConfig, 'type' | 'osType'> {
   type?: 'linux-pc' | 'linux-server';
   osType?: 'linux';
@@ -54,6 +69,14 @@ export class LinuxPC extends BaseDevice {
   // DHCP client for automatic IP configuration
   private dhcpClients: Map<string, DHCPClient> = new Map(); // interfaceId -> client
   private dhcpLeases: Map<string, DHCPClientLease> = new Map(); // interfaceId -> lease
+
+  // UFW Firewall state
+  private ufwEnabled: boolean = false;
+  private ufwRules: UFWRule[] = [];
+  private ufwRuleIdCounter: number = 1;
+  private ufwDefaultIncoming: UFWAction = 'deny';
+  private ufwDefaultOutgoing: UFWAction = 'allow';
+  private ufwLogging: 'off' | 'low' | 'medium' | 'high' | 'full' = 'low';
 
   constructor(config: LinuxPCConfig) {
     super(config);
@@ -114,6 +137,8 @@ export class LinuxPC extends BaseDevice {
         return this.cmdDhclient(args);
       case 'traceroute':
         return this.cmdTraceroute(args);
+      case 'ufw':
+        return this.cmdUfw(args);
       default:
         return { output: '', error: `${cmd}: command not found`, exitCode: 127 };
     }
@@ -880,6 +905,466 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
         }, timeoutMs);
       }, (hop - 1) * 200); // Stagger probes slightly
     }
+  }
+
+  // ==================== UFW Firewall Command ====================
+
+  private cmdUfw(args: string[]): CommandResult {
+    if (args.length === 0) {
+      return {
+        output: '',
+        error: 'ERROR: You need to specify a command',
+        exitCode: 1
+      };
+    }
+
+    const subcommand = args[0].toLowerCase();
+
+    switch (subcommand) {
+      case 'status':
+        return this.ufwStatus(args.slice(1));
+      case 'enable':
+        return this.ufwEnable();
+      case 'disable':
+        return this.ufwDisable();
+      case 'allow':
+        return this.ufwAllow(args.slice(1));
+      case 'deny':
+        return this.ufwDeny(args.slice(1));
+      case 'reject':
+        return this.ufwReject(args.slice(1));
+      case 'delete':
+        return this.ufwDelete(args.slice(1));
+      case 'reset':
+        return this.ufwReset();
+      case 'default':
+        return this.ufwDefault(args.slice(1));
+      case 'logging':
+        return this.ufwLogging(args.slice(1));
+      case 'reload':
+        return this.ufwReload();
+      case '--version':
+      case 'version':
+        return { output: 'ufw 0.36.1', exitCode: 0 };
+      case '--help':
+      case 'help':
+        return this.ufwHelp();
+      default:
+        return { output: '', error: `ERROR: Invalid command '${subcommand}'`, exitCode: 1 };
+    }
+  }
+
+  private ufwStatus(args: string[]): CommandResult {
+    const verbose = args.includes('verbose') || args.includes('numbered');
+    const numbered = args.includes('numbered');
+
+    if (!this.ufwEnabled) {
+      return { output: 'Status: inactive', exitCode: 0 };
+    }
+
+    const lines: string[] = ['Status: active'];
+
+    if (verbose) {
+      lines.push('');
+      lines.push(`Logging: ${this.ufwLogging}`);
+      lines.push(`Default: ${this.ufwDefaultIncoming} (incoming), ${this.ufwDefaultOutgoing} (outgoing), disabled (routed)`);
+      lines.push('New profiles: skip');
+      lines.push('');
+    }
+
+    if (this.ufwRules.length > 0) {
+      lines.push('');
+      lines.push('To                         Action      From');
+      lines.push('--                         ------      ----');
+
+      this.ufwRules.forEach((rule, index) => {
+        const num = numbered ? `[${index + 1}] ` : '';
+        const to = rule.port ? `${rule.port}/${rule.protocol || 'tcp'}` : 'Anywhere';
+        const from = rule.from || 'Anywhere';
+        const action = rule.action.toUpperCase().padEnd(12);
+        const direction = rule.direction === 'in' ? '' : ` (${rule.direction})`;
+
+        lines.push(`${num}${to.padEnd(27)}${action}${from}${direction}`);
+      });
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private ufwEnable(): CommandResult {
+    if (this.ufwEnabled) {
+      return { output: 'Firewall is already enabled', exitCode: 0 };
+    }
+
+    this.ufwEnabled = true;
+    return {
+      output: 'Firewall is active and enabled on system startup',
+      exitCode: 0
+    };
+  }
+
+  private ufwDisable(): CommandResult {
+    if (!this.ufwEnabled) {
+      return { output: 'Firewall is already disabled', exitCode: 0 };
+    }
+
+    this.ufwEnabled = false;
+    return {
+      output: 'Firewall stopped and disabled on system startup',
+      exitCode: 0
+    };
+  }
+
+  private ufwAllow(args: string[]): CommandResult {
+    return this.ufwAddRule('allow', args);
+  }
+
+  private ufwDeny(args: string[]): CommandResult {
+    return this.ufwAddRule('deny', args);
+  }
+
+  private ufwReject(args: string[]): CommandResult {
+    return this.ufwAddRule('reject', args);
+  }
+
+  private ufwAddRule(action: UFWAction, args: string[]): CommandResult {
+    if (args.length === 0) {
+      return { output: '', error: 'ERROR: You need to specify a rule', exitCode: 1 };
+    }
+
+    const rule: UFWRule = {
+      id: this.ufwRuleIdCounter++,
+      action,
+      direction: 'in',
+      protocol: 'any'
+    };
+
+    let i = 0;
+    while (i < args.length) {
+      const arg = args[i].toLowerCase();
+
+      // Check for direction
+      if (arg === 'in') {
+        rule.direction = 'in';
+        i++;
+        continue;
+      }
+      if (arg === 'out') {
+        rule.direction = 'out';
+        i++;
+        continue;
+      }
+
+      // Check for "from" clause
+      if (arg === 'from') {
+        i++;
+        if (i < args.length) {
+          rule.from = args[i].toLowerCase() === 'any' ? undefined : args[i];
+          i++;
+        }
+        continue;
+      }
+
+      // Check for "to" clause
+      if (arg === 'to') {
+        i++;
+        if (i < args.length) {
+          rule.to = args[i].toLowerCase() === 'any' ? undefined : args[i];
+          i++;
+        }
+        continue;
+      }
+
+      // Check for "port" clause
+      if (arg === 'port') {
+        i++;
+        if (i < args.length) {
+          rule.port = parseInt(args[i]);
+          i++;
+        }
+        continue;
+      }
+
+      // Check for "proto" clause
+      if (arg === 'proto') {
+        i++;
+        if (i < args.length) {
+          const proto = args[i].toLowerCase();
+          if (proto === 'tcp' || proto === 'udp') {
+            rule.protocol = proto;
+          }
+          i++;
+        }
+        continue;
+      }
+
+      // Check for "comment" clause
+      if (arg === 'comment') {
+        i++;
+        if (i < args.length) {
+          rule.comment = args[i];
+          i++;
+        }
+        continue;
+      }
+
+      // Check for port/protocol format (e.g., "22/tcp", "80", "ssh")
+      const portMatch = arg.match(/^(\d+)(\/(\w+))?$/);
+      if (portMatch) {
+        rule.port = parseInt(portMatch[1]);
+        if (portMatch[3]) {
+          const proto = portMatch[3].toLowerCase();
+          if (proto === 'tcp' || proto === 'udp') {
+            rule.protocol = proto;
+          }
+        }
+        i++;
+        continue;
+      }
+
+      // Check for service names
+      const servicePort = this.getServicePort(arg);
+      if (servicePort) {
+        rule.port = servicePort.port;
+        rule.protocol = servicePort.protocol;
+        i++;
+        continue;
+      }
+
+      i++;
+    }
+
+    this.ufwRules.push(rule);
+
+    // Format output
+    let ruleDesc = '';
+    if (rule.port) {
+      ruleDesc = `${rule.port}/${rule.protocol || 'tcp'}`;
+    } else if (rule.from) {
+      ruleDesc = `from ${rule.from}`;
+    } else {
+      ruleDesc = 'Anywhere';
+    }
+
+    return {
+      output: `Rule added\nRule added (v6)`,
+      exitCode: 0
+    };
+  }
+
+  private getServicePort(service: string): { port: number; protocol: 'tcp' | 'udp' } | null {
+    const services: Record<string, { port: number; protocol: 'tcp' | 'udp' }> = {
+      'ssh': { port: 22, protocol: 'tcp' },
+      'http': { port: 80, protocol: 'tcp' },
+      'https': { port: 443, protocol: 'tcp' },
+      'ftp': { port: 21, protocol: 'tcp' },
+      'smtp': { port: 25, protocol: 'tcp' },
+      'dns': { port: 53, protocol: 'udp' },
+      'dhcp': { port: 67, protocol: 'udp' },
+      'telnet': { port: 23, protocol: 'tcp' },
+      'mysql': { port: 3306, protocol: 'tcp' },
+      'postgresql': { port: 5432, protocol: 'tcp' },
+      'redis': { port: 6379, protocol: 'tcp' },
+      'mongodb': { port: 27017, protocol: 'tcp' },
+    };
+    return services[service.toLowerCase()] || null;
+  }
+
+  private ufwDelete(args: string[]): CommandResult {
+    if (args.length === 0) {
+      return { output: '', error: 'ERROR: You need to specify a rule', exitCode: 1 };
+    }
+
+    // Delete by rule number
+    const ruleNum = parseInt(args[0]);
+    if (!isNaN(ruleNum) && ruleNum > 0 && ruleNum <= this.ufwRules.length) {
+      this.ufwRules.splice(ruleNum - 1, 1);
+      return { output: 'Rule deleted\nRule deleted (v6)', exitCode: 0 };
+    }
+
+    // Delete by matching rule
+    const action = args[0].toLowerCase() as UFWAction;
+    if (['allow', 'deny', 'reject'].includes(action) && args.length > 1) {
+      const port = parseInt(args[1]);
+      const index = this.ufwRules.findIndex(r => r.action === action && r.port === port);
+      if (index !== -1) {
+        this.ufwRules.splice(index, 1);
+        return { output: 'Rule deleted\nRule deleted (v6)', exitCode: 0 };
+      }
+    }
+
+    return { output: '', error: 'ERROR: Could not delete non-existent rule', exitCode: 1 };
+  }
+
+  private ufwReset(): CommandResult {
+    this.ufwEnabled = false;
+    this.ufwRules = [];
+    this.ufwRuleIdCounter = 1;
+    this.ufwDefaultIncoming = 'deny';
+    this.ufwDefaultOutgoing = 'allow';
+    this.ufwLogging = 'low';
+
+    return {
+      output: 'Resetting all rules to installed defaults. Proceed with operation (y|n)? y\nBacking up \'user.rules\' to \'/etc/ufw/user.rules.old\'\nBacking up \'before.rules\' to \'/etc/ufw/before.rules.old\'',
+      exitCode: 0
+    };
+  }
+
+  private ufwDefault(args: string[]): CommandResult {
+    if (args.length < 1) {
+      return {
+        output: '',
+        error: 'ERROR: You need to specify a default policy',
+        exitCode: 1
+      };
+    }
+
+    const action = args[0].toLowerCase() as UFWAction;
+    if (!['allow', 'deny', 'reject'].includes(action)) {
+      return { output: '', error: 'ERROR: Invalid default policy', exitCode: 1 };
+    }
+
+    const direction = args[1]?.toLowerCase() || 'incoming';
+
+    if (direction === 'incoming') {
+      this.ufwDefaultIncoming = action;
+      return { output: `Default incoming policy changed to '${action}'`, exitCode: 0 };
+    } else if (direction === 'outgoing') {
+      this.ufwDefaultOutgoing = action;
+      return { output: `Default outgoing policy changed to '${action}'`, exitCode: 0 };
+    }
+
+    return { output: '', error: 'ERROR: Invalid direction', exitCode: 1 };
+  }
+
+  private ufwLogging(args: string[]): CommandResult {
+    if (args.length === 0) {
+      return { output: `Logging: ${this.ufwLogging}`, exitCode: 0 };
+    }
+
+    const level = args[0].toLowerCase();
+    if (['off', 'low', 'medium', 'high', 'full'].includes(level)) {
+      this.ufwLogging = level as typeof this.ufwLogging;
+      return { output: `Logging ${level === 'off' ? 'disabled' : `enabled (${level})`}`, exitCode: 0 };
+    }
+
+    return { output: '', error: 'ERROR: Invalid logging level', exitCode: 1 };
+  }
+
+  private ufwReload(): CommandResult {
+    if (!this.ufwEnabled) {
+      return { output: '', error: 'Firewall not enabled (skipping reload)', exitCode: 1 };
+    }
+    return { output: 'Firewall reloaded', exitCode: 0 };
+  }
+
+  private ufwHelp(): CommandResult {
+    return {
+      output: `Usage: ufw COMMAND
+
+Commands:
+ enable                          enables the firewall
+ disable                         disables the firewall
+ default ARG                     set default policy
+ logging LEVEL                   set logging to LEVEL
+ allow ARGS                      add allow rule
+ deny ARGS                       add deny rule
+ reject ARGS                     add reject rule
+ delete RULE|NUM                 delete RULE
+ reset                           reset firewall
+ reload                          reload firewall
+ status                          show firewall status
+ status numbered                 show firewall status as numbered list
+ status verbose                  show verbose firewall status
+ version                         display version information
+
+Application profile commands:
+ app list                        list application profiles
+ app info PROFILE                show information on PROFILE
+ app update PROFILE              update PROFILE
+ app default ARG                 set default application policy`,
+      exitCode: 0
+    };
+  }
+
+  /**
+   * Check if incoming packet is allowed by UFW rules
+   */
+  checkUfwIncoming(sourceIP: string, destIP: string, protocol: number, destPort?: number): boolean {
+    if (!this.ufwEnabled) {
+      return true; // Firewall disabled, allow all
+    }
+
+    const protoStr = protocol === 6 ? 'tcp' : protocol === 17 ? 'udp' : 'any';
+
+    // Check explicit rules first
+    for (const rule of this.ufwRules) {
+      if (rule.direction !== 'in' && rule.direction !== 'both') continue;
+
+      // Check source IP match
+      if (rule.from && rule.from !== sourceIP) continue;
+
+      // Check destination IP match
+      if (rule.to && rule.to !== destIP) continue;
+
+      // Check port match
+      if (rule.port && destPort !== rule.port) continue;
+
+      // Check protocol match
+      if (rule.protocol !== 'any' && rule.protocol !== protoStr) continue;
+
+      // Rule matches!
+      return rule.action === 'allow';
+    }
+
+    // No rule matched, use default policy
+    return this.ufwDefaultIncoming === 'allow';
+  }
+
+  /**
+   * Check if outgoing packet is allowed by UFW rules
+   */
+  checkUfwOutgoing(sourceIP: string, destIP: string, protocol: number, destPort?: number): boolean {
+    if (!this.ufwEnabled) {
+      return true; // Firewall disabled, allow all
+    }
+
+    const protoStr = protocol === 6 ? 'tcp' : protocol === 17 ? 'udp' : 'any';
+
+    // Check explicit rules first
+    for (const rule of this.ufwRules) {
+      if (rule.direction !== 'out' && rule.direction !== 'both') continue;
+
+      // Check source IP match
+      if (rule.from && rule.from !== sourceIP) continue;
+
+      // Check destination IP match
+      if (rule.to && rule.to !== destIP) continue;
+
+      // Check port match
+      if (rule.port && destPort !== rule.port) continue;
+
+      // Check protocol match
+      if (rule.protocol !== 'any' && rule.protocol !== protoStr) continue;
+
+      // Rule matches!
+      return rule.action === 'allow';
+    }
+
+    // No rule matched, use default policy
+    return this.ufwDefaultOutgoing === 'allow';
+  }
+
+  /**
+   * Get UFW firewall status
+   */
+  getUfwStatus(): { enabled: boolean; rules: UFWRule[]; defaultIncoming: UFWAction; defaultOutgoing: UFWAction } {
+    return {
+      enabled: this.ufwEnabled,
+      rules: [...this.ufwRules],
+      defaultIncoming: this.ufwDefaultIncoming,
+      defaultOutgoing: this.ufwDefaultOutgoing
+    };
   }
 
   // ==================== Packet Processing ====================
