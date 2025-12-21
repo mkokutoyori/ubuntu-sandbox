@@ -93,6 +93,291 @@ interface DNSCacheEntry {
 }
 
 /**
+ * DNS Wire Format Encoder/Decoder
+ * Implements RFC 1035 DNS message format
+ */
+export class DNSWireFormat {
+  /**
+   * Encode a domain name to DNS wire format (length-prefixed labels)
+   * e.g., "www.example.com" -> [3,'w','w','w',7,'e','x','a','m','p','l','e',3,'c','o','m',0]
+   */
+  static encodeDomainName(name: string): Uint8Array {
+    if (!name || name === '.') {
+      return new Uint8Array([0]);
+    }
+
+    const labels = name.split('.');
+    const parts: number[] = [];
+
+    for (const label of labels) {
+      if (label.length > 63) {
+        throw new Error('DNS label exceeds 63 characters');
+      }
+      if (label.length > 0) {
+        parts.push(label.length);
+        for (let i = 0; i < label.length; i++) {
+          parts.push(label.charCodeAt(i));
+        }
+      }
+    }
+    parts.push(0); // Null terminator
+
+    return new Uint8Array(parts);
+  }
+
+  /**
+   * Decode a domain name from DNS wire format
+   */
+  static decodeDomainName(data: Uint8Array, offset: number): { name: string; bytesRead: number } {
+    const labels: string[] = [];
+    let pos = offset;
+    let bytesRead = 0;
+    let jumped = false;
+    let jumpedPos = -1;
+
+    while (pos < data.length) {
+      const len = data[pos];
+
+      // Check for compression pointer (RFC 1035 section 4.1.4)
+      if ((len & 0xc0) === 0xc0) {
+        if (!jumped) {
+          bytesRead = pos - offset + 2;
+          jumped = true;
+        }
+        const pointer = ((len & 0x3f) << 8) | data[pos + 1];
+        pos = pointer;
+        continue;
+      }
+
+      if (len === 0) {
+        if (!jumped) {
+          bytesRead = pos - offset + 1;
+        }
+        break;
+      }
+
+      pos++;
+      const label = String.fromCharCode(...data.slice(pos, pos + len));
+      labels.push(label);
+      pos += len;
+    }
+
+    return { name: labels.join('.'), bytesRead };
+  }
+
+  /**
+   * Serialize a DNS message to wire format
+   */
+  static serialize(msg: DNSMessage): Uint8Array {
+    const buffer: number[] = [];
+
+    // Header (12 bytes)
+    // Transaction ID (2 bytes)
+    buffer.push((msg.header.id >> 8) & 0xff);
+    buffer.push(msg.header.id & 0xff);
+
+    // Flags (2 bytes)
+    let flags = 0;
+    if (msg.header.flags.qr) flags |= 0x8000;
+    flags |= (msg.header.flags.opcode & 0x0f) << 11;
+    if (msg.header.flags.aa) flags |= 0x0400;
+    if (msg.header.flags.tc) flags |= 0x0200;
+    if (msg.header.flags.rd) flags |= 0x0100;
+    if (msg.header.flags.ra) flags |= 0x0080;
+    flags |= msg.header.flags.rcode & 0x0f;
+    buffer.push((flags >> 8) & 0xff);
+    buffer.push(flags & 0xff);
+
+    // Counts (8 bytes)
+    buffer.push((msg.header.qdcount >> 8) & 0xff);
+    buffer.push(msg.header.qdcount & 0xff);
+    buffer.push((msg.header.ancount >> 8) & 0xff);
+    buffer.push(msg.header.ancount & 0xff);
+    buffer.push((msg.header.nscount >> 8) & 0xff);
+    buffer.push(msg.header.nscount & 0xff);
+    buffer.push((msg.header.arcount >> 8) & 0xff);
+    buffer.push(msg.header.arcount & 0xff);
+
+    // Questions
+    for (const q of msg.questions) {
+      const encodedName = this.encodeDomainName(q.name);
+      buffer.push(...encodedName);
+      buffer.push((q.type >> 8) & 0xff);
+      buffer.push(q.type & 0xff);
+      buffer.push((q.class >> 8) & 0xff);
+      buffer.push(q.class & 0xff);
+    }
+
+    // Answers
+    for (const rr of msg.answers) {
+      this.serializeResourceRecord(buffer, rr);
+    }
+
+    // Authority
+    for (const rr of msg.authority) {
+      this.serializeResourceRecord(buffer, rr);
+    }
+
+    // Additional
+    for (const rr of msg.additional) {
+      this.serializeResourceRecord(buffer, rr);
+    }
+
+    return new Uint8Array(buffer);
+  }
+
+  /**
+   * Serialize a resource record to the buffer
+   */
+  private static serializeResourceRecord(buffer: number[], rr: DNSResourceRecord): void {
+    // Name
+    const encodedName = this.encodeDomainName(rr.name);
+    buffer.push(...encodedName);
+
+    // Type (2 bytes)
+    buffer.push((rr.type >> 8) & 0xff);
+    buffer.push(rr.type & 0xff);
+
+    // Class (2 bytes)
+    buffer.push((rr.class >> 8) & 0xff);
+    buffer.push(rr.class & 0xff);
+
+    // TTL (4 bytes)
+    buffer.push((rr.ttl >> 24) & 0xff);
+    buffer.push((rr.ttl >> 16) & 0xff);
+    buffer.push((rr.ttl >> 8) & 0xff);
+    buffer.push(rr.ttl & 0xff);
+
+    // RDATA
+    let rdata: number[];
+    if (rr.type === DNSRecordType.A) {
+      // A record: 4 bytes IPv4 address
+      rdata = rr.data.split('.').map(Number);
+    } else if (rr.type === DNSRecordType.AAAA) {
+      // AAAA record: 16 bytes IPv6 address (simplified)
+      rdata = [];
+      const parts = rr.data.split(':');
+      for (const part of parts) {
+        const val = parseInt(part, 16);
+        rdata.push((val >> 8) & 0xff);
+        rdata.push(val & 0xff);
+      }
+    } else {
+      // Other types: encode as domain name or raw text
+      const encoded = this.encodeDomainName(rr.data);
+      rdata = Array.from(encoded);
+    }
+
+    // RDLENGTH (2 bytes)
+    buffer.push((rdata.length >> 8) & 0xff);
+    buffer.push(rdata.length & 0xff);
+
+    // RDATA
+    buffer.push(...rdata);
+  }
+
+  /**
+   * Parse a DNS message from wire format
+   */
+  static parse(data: Uint8Array): DNSMessage | null {
+    if (data.length < 12) {
+      return null;
+    }
+
+    try {
+      let offset = 0;
+
+      // Header
+      const id = (data[offset] << 8) | data[offset + 1];
+      offset += 2;
+
+      const flags = (data[offset] << 8) | data[offset + 1];
+      offset += 2;
+
+      const header: DNSHeader = {
+        id,
+        flags: {
+          qr: (flags & 0x8000) !== 0,
+          opcode: (flags >> 11) & 0x0f,
+          aa: (flags & 0x0400) !== 0,
+          tc: (flags & 0x0200) !== 0,
+          rd: (flags & 0x0100) !== 0,
+          ra: (flags & 0x0080) !== 0,
+          rcode: flags & 0x0f,
+        },
+        qdcount: (data[offset] << 8) | data[offset + 1],
+        ancount: (data[offset + 2] << 8) | data[offset + 3],
+        nscount: (data[offset + 4] << 8) | data[offset + 5],
+        arcount: (data[offset + 6] << 8) | data[offset + 7],
+      };
+      offset += 8;
+
+      // Questions
+      const questions: DNSQuestion[] = [];
+      for (let i = 0; i < header.qdcount; i++) {
+        const { name, bytesRead } = this.decodeDomainName(data, offset);
+        offset += bytesRead;
+        const type = (data[offset] << 8) | data[offset + 1];
+        offset += 2;
+        const qclass = (data[offset] << 8) | data[offset + 1];
+        offset += 2;
+        questions.push({ name, type, class: qclass });
+      }
+
+      // Parse resource records
+      const parseRRs = (count: number): DNSResourceRecord[] => {
+        const rrs: DNSResourceRecord[] = [];
+        for (let i = 0; i < count; i++) {
+          const { name, bytesRead } = this.decodeDomainName(data, offset);
+          offset += bytesRead;
+
+          const type = (data[offset] << 8) | data[offset + 1];
+          offset += 2;
+          const rclass = (data[offset] << 8) | data[offset + 1];
+          offset += 2;
+          const ttl = (data[offset] << 24) | (data[offset + 1] << 16) |
+                      (data[offset + 2] << 8) | data[offset + 3];
+          offset += 4;
+          const rdlength = (data[offset] << 8) | data[offset + 1];
+          offset += 2;
+
+          let rdata = '';
+          if (type === DNSRecordType.A && rdlength === 4) {
+            rdata = `${data[offset]}.${data[offset + 1]}.${data[offset + 2]}.${data[offset + 3]}`;
+          } else if (type === DNSRecordType.CNAME || type === DNSRecordType.NS || type === DNSRecordType.PTR) {
+            const { name: domainData } = this.decodeDomainName(data, offset);
+            rdata = domainData;
+          } else {
+            // Generic: convert to hex string
+            rdata = Array.from(data.slice(offset, offset + rdlength))
+              .map(b => b.toString(16).padStart(2, '0'))
+              .join('');
+          }
+          offset += rdlength;
+
+          rrs.push({ name, type, class: rclass, ttl, data: rdata });
+        }
+        return rrs;
+      };
+
+      const answers = parseRRs(header.ancount);
+      const authority = parseRRs(header.nscount);
+      const additional = parseRRs(header.arcount);
+
+      return {
+        header,
+        questions,
+        answers,
+        authority,
+        additional,
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * DNS Server - Provides DNS resolution for the network
  */
 export class DNSServer {
@@ -290,8 +575,8 @@ export class DNSServer {
   }
 
   private serializeDNSMessage(msg: DNSMessage): Uint8Array {
-    const encoder = new TextEncoder();
-    return encoder.encode(JSON.stringify(msg));
+    // Use proper DNS wire format
+    return DNSWireFormat.serialize(msg);
   }
 }
 
@@ -322,12 +607,15 @@ export class DNSResolver {
   private pendingQueries: Map<number, {
     resolve: (records: DNSResourceRecord[]) => void;
     reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
+    timeout: ReturnType<typeof setTimeout>;
+    sourcePort: number;
+    hostname: string;
   }> = new Map();
   private clientIP: string = '0.0.0.0';
   private clientMAC: string = '00:00:00:00:00:00';
   private packetSender?: (packet: Packet, interfaceId: string) => void;
   private interfaceId: string = '';
+  private nextQueryId: number = 1;
 
   constructor() {}
 
@@ -387,9 +675,15 @@ export class DNSResolver {
       }
     }
 
-    // Create DNS query
-    const queryId = Math.floor(Math.random() * 65535);
-    const query = this.createQuery(hostname, queryId);
+    // Generate unique query ID (sequential + random component for security)
+    // Wraps around at 65535
+    this.nextQueryId = (this.nextQueryId + Math.floor(Math.random() * 100) + 1) % 65536;
+    const queryId = this.nextQueryId;
+
+    // Generate random source port in ephemeral range
+    const sourcePort = Math.floor(Math.random() * (65535 - 49152)) + 49152;
+
+    const query = this.createQuery(hostname, queryId, sourcePort);
 
     const promise = new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -417,6 +711,8 @@ export class DNSResolver {
           reject(error);
         },
         timeout,
+        sourcePort,
+        hostname: name,
       });
     });
 
@@ -425,13 +721,26 @@ export class DNSResolver {
 
   /**
    * Process DNS response
+   * @param dnsMessage - The DNS response message
+   * @param destPort - Optional destination port from the UDP header for validation
    */
-  processResponse(dnsMessage: DNSMessage): void {
+  processResponse(dnsMessage: DNSMessage, destPort?: number): void {
     const queryId = dnsMessage.header.id;
     const pending = this.pendingQueries.get(queryId);
 
     if (!pending) {
       return; // No matching query
+    }
+
+    // Validate source port if provided (defense against DNS spoofing)
+    if (destPort !== undefined && destPort !== pending.sourcePort) {
+      // Port mismatch - possible spoofing attempt, ignore
+      return;
+    }
+
+    // Validate that this is actually a response
+    if (!dnsMessage.header.flags.qr) {
+      return; // Not a response
     }
 
     this.pendingQueries.delete(queryId);
@@ -442,6 +751,44 @@ export class DNSResolver {
     }
 
     pending.resolve(dnsMessage.answers);
+  }
+
+  /**
+   * Get pending query info for debugging
+   */
+  getPendingQueries(): Array<{ id: number; hostname: string; sourcePort: number }> {
+    const queries: Array<{ id: number; hostname: string; sourcePort: number }> = [];
+    for (const [id, pending] of this.pendingQueries) {
+      queries.push({
+        id,
+        hostname: pending.hostname,
+        sourcePort: pending.sourcePort,
+      });
+    }
+    return queries;
+  }
+
+  /**
+   * Cancel a pending query
+   */
+  cancelQuery(queryId: number): void {
+    const pending = this.pendingQueries.get(queryId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingQueries.delete(queryId);
+      pending.reject(new Error('Query cancelled'));
+    }
+  }
+
+  /**
+   * Cancel all pending queries
+   */
+  cancelAllQueries(): void {
+    for (const [id, pending] of this.pendingQueries) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Query cancelled'));
+    }
+    this.pendingQueries.clear();
   }
 
   /**
@@ -526,7 +873,7 @@ export class DNSResolver {
   /**
    * Create DNS query packet
    */
-  private createQuery(hostname: string, queryId: number): Packet {
+  private createQuery(hostname: string, queryId: number, sourcePort: number): Packet {
     const dnsMessage: DNSMessage = {
       header: {
         id: queryId,
@@ -555,7 +902,7 @@ export class DNSResolver {
     };
 
     const udp: UDPDatagram = {
-      sourcePort: Math.floor(Math.random() * (65535 - 1024)) + 1024,
+      sourcePort,
       destinationPort: DNS_PORT,
       length: 0,
       checksum: 0,
@@ -597,15 +944,23 @@ export class DNSResolver {
   }
 
   private serializeDNSMessage(msg: DNSMessage): Uint8Array {
-    const encoder = new TextEncoder();
-    return encoder.encode(JSON.stringify(msg));
+    // Use proper DNS wire format
+    return DNSWireFormat.serialize(msg);
   }
 }
 
 /**
  * Parse DNS message from UDP payload
+ * Supports both binary wire format and JSON (for backwards compatibility)
  */
 export function parseDNSMessage(payload: Uint8Array): DNSMessage | null {
+  // Try binary wire format first
+  const binaryResult = DNSWireFormat.parse(payload);
+  if (binaryResult) {
+    return binaryResult;
+  }
+
+  // Fallback to JSON for backwards compatibility
   try {
     const decoder = new TextDecoder();
     const json = decoder.decode(payload);
@@ -613,6 +968,13 @@ export function parseDNSMessage(payload: Uint8Array): DNSMessage | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Serialize DNS message to wire format
+ */
+export function serializeDNSMessage(msg: DNSMessage): Uint8Array {
+  return DNSWireFormat.serialize(msg);
 }
 
 /**
