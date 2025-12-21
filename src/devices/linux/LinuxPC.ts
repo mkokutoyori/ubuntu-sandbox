@@ -76,7 +76,7 @@ export class LinuxPC extends BaseDevice {
   private ufwRuleIdCounter: number = 1;
   private ufwDefaultIncoming: UFWAction = 'deny';
   private ufwDefaultOutgoing: UFWAction = 'allow';
-  private ufwLogging: 'off' | 'low' | 'medium' | 'high' | 'full' = 'low';
+  private ufwLoggingLevel: 'off' | 'low' | 'medium' | 'high' | 'full' = 'low';
 
   constructor(config: LinuxPCConfig) {
     super(config);
@@ -940,7 +940,7 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
       case 'default':
         return this.ufwDefault(args.slice(1));
       case 'logging':
-        return this.ufwLogging(args.slice(1));
+        return this.ufwSetLogging(args.slice(1));
       case 'reload':
         return this.ufwReload();
       case '--version':
@@ -966,7 +966,7 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
 
     if (verbose) {
       lines.push('');
-      lines.push(`Logging: ${this.ufwLogging}`);
+      lines.push(`Logging: ${this.ufwLoggingLevel}`);
       lines.push(`Default: ${this.ufwDefaultIncoming} (incoming), ${this.ufwDefaultOutgoing} (outgoing), disabled (routed)`);
       lines.push('New profiles: skip');
       lines.push('');
@@ -1202,7 +1202,7 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
     this.ufwRuleIdCounter = 1;
     this.ufwDefaultIncoming = 'deny';
     this.ufwDefaultOutgoing = 'allow';
-    this.ufwLogging = 'low';
+    this.ufwLoggingLevel = 'low';
 
     return {
       output: 'Resetting all rules to installed defaults. Proceed with operation (y|n)? y\nBacking up \'user.rules\' to \'/etc/ufw/user.rules.old\'\nBacking up \'before.rules\' to \'/etc/ufw/before.rules.old\'',
@@ -1237,14 +1237,14 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
     return { output: '', error: 'ERROR: Invalid direction', exitCode: 1 };
   }
 
-  private ufwLogging(args: string[]): CommandResult {
+  private ufwSetLogging(args: string[]): CommandResult {
     if (args.length === 0) {
-      return { output: `Logging: ${this.ufwLogging}`, exitCode: 0 };
+      return { output: `Logging: ${this.ufwLoggingLevel}`, exitCode: 0 };
     }
 
     const level = args[0].toLowerCase();
     if (['off', 'low', 'medium', 'high', 'full'].includes(level)) {
-      this.ufwLogging = level as typeof this.ufwLogging;
+      this.ufwLoggingLevel = level as typeof this.ufwLoggingLevel;
       return { output: `Logging ${level === 'off' ? 'disabled' : `enabled (${level})`}`, exitCode: 0 };
     }
 
@@ -1413,6 +1413,34 @@ Application profile commands:
     // Handle IPv4 packets
     if (frame.etherType === ETHER_TYPE.IPv4) {
       const ipPacket = frame.payload as IPv4Packet;
+
+      // ===== UFW FIREWALL CHECK =====
+      // Apply UFW rules to incoming packets BEFORE processing
+      if (this.ufwEnabled && iface.ipAddress) {
+        let destPort: number | undefined;
+
+        // Extract destination port from UDP/TCP packets
+        if (ipPacket.protocol === IP_PROTOCOL.UDP || ipPacket.protocol === IP_PROTOCOL.TCP) {
+          const transportPacket = ipPacket.payload as { destinationPort?: number };
+          destPort = transportPacket.destinationPort;
+        }
+
+        // Check if packet is allowed by UFW rules
+        const allowed = this.checkUfwIncoming(
+          ipPacket.sourceIP,
+          ipPacket.destinationIP,
+          ipPacket.protocol,
+          destPort
+        );
+
+        if (!allowed) {
+          // Packet blocked by firewall - silently drop or log
+          if (this.ufwLoggingLevel !== 'off') {
+            console.log(`[UFW] BLOCKED: ${ipPacket.sourceIP} -> ${ipPacket.destinationIP}:${destPort || 'N/A'} proto=${ipPacket.protocol}`);
+          }
+          return null;
+        }
+      }
 
       // Handle DHCP responses (UDP)
       if (ipPacket.protocol === IP_PROTOCOL.UDP) {
