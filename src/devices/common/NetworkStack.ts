@@ -17,6 +17,7 @@ import {
   createARPRequest,
   createARPReply,
   createICMPEchoReply,
+  createICMPEchoRequest,
   generatePacketId
 } from '../../core/network/packet';
 import { ARPEntry, RouteEntry, NetworkInterfaceConfig, PacketSender } from './types';
@@ -26,6 +27,46 @@ export interface NetworkStackConfig {
   hostname: string;
   arpTimeout: number;  // seconds
   defaultTTL: number;
+}
+
+// Callback for ping responses
+export type PingResponseCallback = (response: {
+  success: boolean;
+  sourceIP: string;
+  sequenceNumber: number;
+  ttl: number;
+  rtt: number;  // Round trip time in ms
+  error?: string;
+}) => void;
+
+// Callback for traceroute probe responses
+export type TracerouteProbeCallback = (response: {
+  hop: number;
+  sourceIP: string;  // IP of the router that responded
+  rtt: number;       // Round trip time in ms
+  reached: boolean;  // true if destination was reached (ECHO_REPLY)
+  timeout: boolean;  // true if no response received
+}) => void;
+
+// Pending ping request
+interface PendingPing {
+  destinationIP: string;
+  sequenceNumber: number;
+  identifier: number;
+  sentTime: number;
+  timeout: ReturnType<typeof setTimeout>;
+  callback: PingResponseCallback;
+}
+
+// Pending traceroute probe
+interface PendingTracerouteProbe {
+  destinationIP: string;
+  hop: number;
+  identifier: number;
+  sequenceNumber: number;
+  sentTime: number;
+  timeout: ReturnType<typeof setTimeout>;
+  callback: TracerouteProbeCallback;
 }
 
 export class NetworkStack {
@@ -41,6 +82,10 @@ export class NetworkStack {
     timeout: NodeJS.Timeout;
     retries: number;
   }> = new Map();
+  private pendingPings: Map<string, PendingPing> = new Map();  // key: identifier-sequence
+  private pingIdentifier: number = Math.floor(Math.random() * 65535);
+  private pendingTracerouteProbes: Map<string, PendingTracerouteProbe> = new Map();  // key: identifier-sequence
+  private tracerouteIdentifier: number = Math.floor(Math.random() * 65535);
 
   constructor(config: NetworkStackConfig) {
     this.hostname = config.hostname;
@@ -242,6 +287,353 @@ export class NetworkStack {
     return null;
   }
 
+  // ==================== Ping / ICMP Echo ====================
+
+  /**
+   * Send an ICMP Echo Request (ping) to a destination IP
+   * @param destinationIP Target IP address
+   * @param callback Called when reply is received or timeout occurs
+   * @param timeoutMs Timeout in milliseconds (default 1000)
+   * @returns true if ping was sent, false if no route or interface
+   */
+  sendPing(
+    destinationIP: string,
+    callback: PingResponseCallback,
+    timeoutMs: number = 1000
+  ): boolean {
+    // Find the outgoing interface based on routing
+    const route = this.lookupRoute(destinationIP);
+    let outInterface: NetworkInterfaceConfig | undefined;
+
+    if (route) {
+      outInterface = this.getInterfaceByName(route.interface);
+    } else {
+      // Try to find an interface in the same subnet
+      for (const iface of this.interfaces.values()) {
+        if (iface.ipAddress && iface.subnetMask && iface.isUp) {
+          if (this.isIPInNetwork(destinationIP, this.getNetworkAddress(iface.ipAddress, iface.subnetMask), iface.subnetMask)) {
+            outInterface = iface;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!outInterface || !outInterface.ipAddress || !outInterface.isUp) {
+      callback({
+        success: false,
+        sourceIP: destinationIP,
+        sequenceNumber: 0,
+        ttl: 0,
+        rtt: 0,
+        error: 'Network is unreachable'
+      });
+      return false;
+    }
+
+    // Check if we need to do ARP first
+    const destMAC = this.lookupARP(destinationIP);
+
+    const sequenceNumber = this.pendingPings.size + 1;
+    const identifier = this.pingIdentifier;
+
+    // Create the ping key
+    const pingKey = `${identifier}-${sequenceNumber}`;
+
+    // Set up timeout
+    const timeout = setTimeout(() => {
+      const pending = this.pendingPings.get(pingKey);
+      if (pending) {
+        this.pendingPings.delete(pingKey);
+        callback({
+          success: false,
+          sourceIP: destinationIP,
+          sequenceNumber: pending.sequenceNumber,
+          ttl: 0,
+          rtt: 0,
+          error: 'Request timed out'
+        });
+      }
+    }, timeoutMs);
+
+    // Store pending ping
+    this.pendingPings.set(pingKey, {
+      destinationIP,
+      sequenceNumber,
+      identifier,
+      sentTime: Date.now(),
+      timeout,
+      callback
+    });
+
+    // If we don't have the MAC, send ARP first
+    if (!destMAC) {
+      // Store the ping to send after ARP resolves
+      this.sendARPRequest(destinationIP, outInterface);
+
+      // Wait a bit for ARP to resolve, then send the ping
+      setTimeout(() => {
+        const resolvedMAC = this.lookupARP(destinationIP);
+        if (resolvedMAC) {
+          this.sendICMPEchoRequest(destinationIP, resolvedMAC, outInterface!, identifier, sequenceNumber);
+        }
+      }, 100);
+
+      return true;
+    }
+
+    // Send the ICMP Echo Request
+    this.sendICMPEchoRequest(destinationIP, destMAC, outInterface, identifier, sequenceNumber);
+    return true;
+  }
+
+  /**
+   * Send an ICMP Echo Request packet
+   */
+  private sendICMPEchoRequest(
+    destinationIP: string,
+    destinationMAC: string,
+    outInterface: NetworkInterfaceConfig,
+    identifier: number,
+    sequenceNumber: number
+  ): void {
+    if (!this.packetSender || !outInterface.ipAddress) return;
+
+    const icmpPacket = createICMPEchoRequest(identifier, sequenceNumber);
+
+    const ipPacket: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: this.defaultTTL,
+      protocol: IP_PROTOCOL.ICMP,
+      headerChecksum: 0,
+      sourceIP: outInterface.ipAddress,
+      destinationIP: destinationIP,
+      payload: icmpPacket
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC,
+      sourceMAC: outInterface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: ipPacket
+    };
+
+    const packet: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(packet, outInterface.id);
+  }
+
+  /**
+   * Send a traceroute probe (ICMP Echo Request with custom TTL)
+   */
+  sendTracerouteProbe(
+    destinationIP: string,
+    hop: number,
+    callback: TracerouteProbeCallback,
+    timeoutMs: number = 3000
+  ): boolean {
+    // Find the outgoing interface based on routing
+    const route = this.lookupRoute(destinationIP);
+    let outInterface: NetworkInterfaceConfig | undefined;
+
+    if (route) {
+      outInterface = this.getInterfaceByName(route.interface);
+    } else {
+      // Try to find an interface in the same subnet
+      for (const iface of this.interfaces.values()) {
+        if (iface.ipAddress && iface.subnetMask && iface.isUp) {
+          if (this.isIPInNetwork(destinationIP, this.getNetworkAddress(iface.ipAddress, iface.subnetMask), iface.subnetMask)) {
+            outInterface = iface;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!outInterface || !outInterface.ipAddress) {
+      callback({ hop, sourceIP: '', rtt: 0, reached: false, timeout: true });
+      return false;
+    }
+
+    // Get next hop MAC (gateway or destination)
+    const nextHopIP = route?.gateway && route.gateway !== '0.0.0.0' ? route.gateway : destinationIP;
+    let destMAC = this.lookupARP(nextHopIP);
+
+    const sequenceNumber = hop;
+    const identifier = this.tracerouteIdentifier;
+    const probeKey = `tr-${identifier}-${sequenceNumber}`;
+
+    // Set up timeout
+    const timeout = setTimeout(() => {
+      const pending = this.pendingTracerouteProbes.get(probeKey);
+      if (pending) {
+        this.pendingTracerouteProbes.delete(probeKey);
+        callback({ hop, sourceIP: '', rtt: 0, reached: false, timeout: true });
+      }
+    }, timeoutMs);
+
+    // Store pending probe
+    this.pendingTracerouteProbes.set(probeKey, {
+      destinationIP,
+      hop,
+      identifier,
+      sequenceNumber,
+      sentTime: Date.now(),
+      timeout,
+      callback
+    });
+
+    // If we don't have the MAC, send ARP first
+    if (!destMAC) {
+      // Send ARP request and wait for resolution
+      this.sendARPRequest(nextHopIP, outInterface);
+
+      // Try again after a short delay
+      setTimeout(() => {
+        const resolvedMAC = this.lookupARP(nextHopIP);
+        if (resolvedMAC) {
+          this.sendTracerouteICMPProbe(destinationIP, resolvedMAC, outInterface!, identifier, sequenceNumber, hop);
+        }
+      }, 100);
+
+      return true;
+    }
+
+    // Send the ICMP probe
+    this.sendTracerouteICMPProbe(destinationIP, destMAC, outInterface, identifier, sequenceNumber, hop);
+    return true;
+  }
+
+  /**
+   * Send a traceroute ICMP probe packet with custom TTL
+   */
+  private sendTracerouteICMPProbe(
+    destinationIP: string,
+    destinationMAC: string,
+    outInterface: NetworkInterfaceConfig,
+    identifier: number,
+    sequenceNumber: number,
+    ttl: number
+  ): void {
+    if (!this.packetSender || !outInterface.ipAddress) return;
+
+    const icmpPacket = createICMPEchoRequest(identifier, sequenceNumber);
+
+    const ipPacket: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: ttl,  // Use the specified TTL for traceroute
+      protocol: IP_PROTOCOL.ICMP,
+      headerChecksum: 0,
+      sourceIP: outInterface.ipAddress,
+      destinationIP: destinationIP,
+      payload: icmpPacket
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC,
+      sourceMAC: outInterface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: ipPacket
+    };
+
+    const packet: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(packet, outInterface.id);
+  }
+
+  /**
+   * Process ICMP Time Exceeded (TTL expired) - for traceroute
+   */
+  private processICMPTimeExceeded(icmpPacket: ICMPPacket, sourceIP: string): void {
+    // The original packet is embedded in the ICMP data
+    // Extract identifier and sequence from the embedded ICMP header
+    // For simplicity, we'll check all pending traceroute probes
+    for (const [key, pending] of this.pendingTracerouteProbes) {
+      if (key.startsWith('tr-')) {
+        clearTimeout(pending.timeout);
+        this.pendingTracerouteProbes.delete(key);
+
+        const rtt = Date.now() - pending.sentTime;
+        pending.callback({
+          hop: pending.hop,
+          sourceIP,
+          rtt,
+          reached: false,
+          timeout: false
+        });
+        return;
+      }
+    }
+  }
+
+  /**
+   * Process ICMP Echo Reply for traceroute (destination reached)
+   */
+  private processTracerouteReply(icmpPacket: ICMPPacket, sourceIP: string): void {
+    const probeKey = `tr-${icmpPacket.identifier}-${icmpPacket.sequenceNumber}`;
+    const pending = this.pendingTracerouteProbes.get(probeKey);
+
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingTracerouteProbes.delete(probeKey);
+
+      const rtt = Date.now() - pending.sentTime;
+      pending.callback({
+        hop: pending.hop,
+        sourceIP,
+        rtt,
+        reached: true,
+        timeout: false
+      });
+    }
+  }
+
+  /**
+   * Process ICMP Echo Reply (called from processLocalPacket)
+   */
+  private processICMPEchoReply(icmpPacket: ICMPPacket, sourceIP: string, ttl: number): void {
+    const pingKey = `${icmpPacket.identifier}-${icmpPacket.sequenceNumber}`;
+    const pending = this.pendingPings.get(pingKey);
+
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingPings.delete(pingKey);
+
+      const rtt = Date.now() - pending.sentTime;
+      pending.callback({
+        success: true,
+        sourceIP,
+        sequenceNumber: pending.sequenceNumber,
+        ttl,
+        rtt
+      });
+    }
+  }
+
   // ==================== Routing Table Management ====================
 
   // Get routing table
@@ -310,24 +702,31 @@ export class NetworkStack {
     const frame = packet.frame;
 
     // Check if frame is for us (our MAC or broadcast)
-    if (frame.destinationMAC !== incomingInterface.macAddress &&
-        frame.destinationMAC !== BROADCAST_MAC) {
+    if (frame.destinationMAC.toUpperCase() !== incomingInterface.macAddress.toUpperCase() &&
+        frame.destinationMAC.toUpperCase() !== BROADCAST_MAC) {
       return null;  // Not for us
     }
+
+    let responsePacket: Packet | null = null;
 
     // Handle ARP packets
     if (frame.etherType === ETHER_TYPE.ARP) {
       const arpPacket = frame.payload as ARPPacket;
-      return this.processARPPacket(arpPacket, incomingInterface);
+      responsePacket = this.processARPPacket(arpPacket, incomingInterface);
     }
 
     // Handle IPv4 packets
-    if (frame.etherType === ETHER_TYPE.IPv4) {
+    else if (frame.etherType === ETHER_TYPE.IPv4) {
       const ipPacket = frame.payload as IPv4Packet;
-      return this.processIPv4Packet(ipPacket, incomingInterface);
+      responsePacket = this.processIPv4Packet(ipPacket, incomingInterface);
     }
 
-    return null;
+    // If we have a response packet, send it
+    if (responsePacket && this.packetSender) {
+      this.packetSender(responsePacket, incomingInterfaceId);
+    }
+
+    return responsePacket;
   }
 
   // Process IPv4 packet
@@ -355,9 +754,24 @@ export class NetworkStack {
     if (ipPacket.protocol === IP_PROTOCOL.ICMP) {
       const icmpPacket = ipPacket.payload as ICMPPacket;
 
-      // Handle Echo Request (ping)
+      // Handle Echo Request (ping) - respond with Echo Reply
       if (icmpPacket.type === ICMPType.ECHO_REQUEST) {
         return this.createICMPEchoReply(ipPacket, localInterface);
+      }
+
+      // Handle Echo Reply (response to our ping or traceroute)
+      if (icmpPacket.type === ICMPType.ECHO_REPLY) {
+        // Check if this is a traceroute probe response first
+        this.processTracerouteReply(icmpPacket, ipPacket.sourceIP);
+        // Also process as regular ping reply
+        this.processICMPEchoReply(icmpPacket, ipPacket.sourceIP, ipPacket.ttl);
+        return null;
+      }
+
+      // Handle Time Exceeded (TTL expired) - for traceroute
+      if (icmpPacket.type === ICMPType.TIME_EXCEEDED) {
+        this.processICMPTimeExceeded(icmpPacket, ipPacket.sourceIP);
+        return null;
       }
     }
 

@@ -8,6 +8,7 @@ import {
   CiscoTerminalState,
   CiscoCommandResult,
   CiscoInterface,
+  RealDeviceData,
   formatCiscoMAC,
   subnetMaskToPrefix,
 } from '../types';
@@ -20,7 +21,8 @@ export function executeShowCommand(
   args: string[],
   state: CiscoTerminalState,
   config: CiscoConfig,
-  bootTime: Date
+  bootTime: Date,
+  realDeviceData?: RealDeviceData
 ): CiscoCommandResult {
   if (args.length === 0) {
     return {
@@ -48,25 +50,25 @@ export function executeShowCommand(
 
     case 'interfaces':
     case 'int':
-      return showInterfaces(config, subArgs);
+      return showInterfaces(config, subArgs, realDeviceData);
 
     case 'interface':
-      return showInterface(config, subArgs);
+      return showInterface(config, subArgs, realDeviceData);
 
     case 'ip':
-      return showIP(config, subArgs);
+      return showIP(config, subArgs, realDeviceData);
 
     case 'vlan':
       return showVlan(config, subArgs);
 
     case 'mac':
       if (subArgs[0] === 'address-table') {
-        return showMACAddressTable(config, subArgs.slice(1));
+        return showMACAddressTable(config, subArgs.slice(1), realDeviceData);
       }
       return { output: '', error: '% Invalid input detected', exitCode: 1 };
 
     case 'arp':
-      return showARP(config);
+      return showARP(config, realDeviceData);
 
     case 'history':
       return showHistory(state);
@@ -193,11 +195,11 @@ Configuration register is 0x2102`;
   return { output, exitCode: 0 };
 }
 
-function showInterfaces(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showInterfaces(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (args.length > 0) {
     const section = args[0].toLowerCase();
     if (section === 'status') {
-      return showInterfacesStatus(config);
+      return showInterfacesStatus(config, realDeviceData);
     }
     if (section === 'trunk') {
       return showInterfacesTrunk(config);
@@ -206,41 +208,110 @@ function showInterfaces(config: CiscoConfig, args: string[]): CiscoCommandResult
       return showInterfacesSwitchport(config);
     }
     if (section === 'description') {
-      return showInterfacesDescription(config);
+      return showInterfacesDescription(config, realDeviceData);
     }
   }
 
-  // Full interface details
+  // Full interface details - use real data if available
   const lines: string[] = [];
 
-  for (const [name, iface] of config.interfaces) {
-    lines.push(formatInterfaceDetails(iface));
-    lines.push('');
+  if (realDeviceData && realDeviceData.interfaces.length > 0) {
+    for (const iface of realDeviceData.interfaces) {
+      lines.push(formatRealInterfaceDetails(iface));
+      lines.push('');
+    }
+  } else {
+    for (const [name, iface] of config.interfaces) {
+      lines.push(formatInterfaceDetails(iface));
+      lines.push('');
+    }
   }
 
   return { output: lines.join('\n'), exitCode: 0, moreOutput: true };
 }
 
-function showInterfacesStatus(config: CiscoConfig): CiscoCommandResult {
+function formatRealInterfaceDetails(iface: RealDeviceData['interfaces'][0]): string {
+  const status = iface.isUp ? 'up' : 'down';
+  const protocol = iface.isUp ? 'up' : 'down';
+
+  const lines: string[] = [
+    `${iface.name} is ${status}, line protocol is ${protocol}`,
+    `  Hardware is ${iface.type}, address is ${formatCiscoMAC(iface.macAddress)} (bia ${formatCiscoMAC(iface.macAddress)})`,
+  ];
+
+  if (iface.ipAddress) {
+    lines.push(`  Internet address is ${iface.ipAddress}/${subnetMaskToPrefix(iface.subnetMask || '255.255.255.0')}`);
+  }
+
+  lines.push(`  MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,`);
+  lines.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
+  lines.push(`  Encapsulation ARPA, loopback not set`);
+  lines.push(`  Keepalive set (10 sec)`);
+
+  if (iface.type.includes('Ethernet')) {
+    lines.push(`  Full-duplex, 1000Mb/s, media type is RJ45`);
+    lines.push(`  output flow-control is unsupported, input flow-control is unsupported`);
+    lines.push(`  ARP type: ARPA, ARP Timeout 04:00:00`);
+  }
+
+  lines.push(`  Last input never, output never, output hang never`);
+  lines.push(`  Last clearing of "show interface" counters never`);
+  lines.push(`  Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0`);
+  lines.push(`  Queueing strategy: fifo`);
+  lines.push(`  Output queue: 0/40 (size/max)`);
+  lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
+  lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+  lines.push(`     0 packets input, 0 bytes, 0 no buffer`);
+  lines.push(`     Received 0 broadcasts (0 multicasts)`);
+  lines.push(`     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored`);
+  lines.push(`     0 watchdog, 0 multicast, 0 pause input`);
+  lines.push(`     0 packets output, 0 bytes, 0 underruns`);
+  lines.push(`     0 output errors, 0 collisions, 0 interface resets`);
+  lines.push(`     0 unknown protocol drops`);
+  lines.push(`     0 babbles, 0 late collision, 0 deferred`);
+  lines.push(`     0 lost carrier, 0 no carrier, 0 pause output`);
+  lines.push(`     0 output buffer failures, 0 output buffers swapped out`);
+
+  return lines.join('\n');
+}
+
+function showInterfacesStatus(config: CiscoConfig, realDeviceData?: RealDeviceData): CiscoCommandResult {
   const lines: string[] = [
     'Port      Name               Status       Vlan       Duplex  Speed Type',
     '--------- ------------------ ------------ ---------- ------- ----- ----',
   ];
 
-  for (const [name, iface] of config.interfaces) {
-    if (iface.type === 'Loopback') continue;
+  // Use real device data if available
+  if (realDeviceData && realDeviceData.interfaces.length > 0) {
+    for (const iface of realDeviceData.interfaces) {
+      if (iface.type === 'Loopback') continue;
 
-    const shortName = getShortInterfaceName(name);
-    const desc = (iface.description || '').substring(0, 18).padEnd(18);
-    const status = iface.isAdminDown ? 'disabled' : (iface.isUp ? 'connected' : 'notconnect');
-    const vlan = iface.switchportMode === 'trunk' ? 'trunk' : String(iface.accessVlan || 1);
-    const duplex = iface.duplex === 'auto' ? 'auto' : iface.duplex;
-    const speed = iface.speed === 'auto' ? 'auto' : iface.speed;
-    const type = iface.type.includes('Gig') ? '10/100/1000BaseTX' : '10/100BaseTX';
+      const shortName = getShortInterfaceName(iface.name);
+      const desc = ''.padEnd(18);
+      const status = iface.isUp ? 'connected' : 'notconnect';
+      const vlan = '1';
+      const type = iface.type.includes('Gig') ? '10/100/1000BaseTX' : '10/100BaseTX';
 
-    lines.push(
-      `${shortName.padEnd(10)}${desc} ${status.padEnd(12)} ${vlan.padEnd(10)} ${duplex.padEnd(7)} ${speed.padEnd(5)} ${type}`
-    );
+      lines.push(
+        `${shortName.padEnd(10)}${desc} ${status.padEnd(12)} ${vlan.padEnd(10)} ${'auto'.padEnd(7)} ${'auto'.padEnd(5)} ${type}`
+      );
+    }
+  } else {
+    for (const [name, iface] of config.interfaces) {
+      if (iface.type === 'Loopback') continue;
+
+      const shortName = getShortInterfaceName(name);
+      const desc = (iface.description || '').substring(0, 18).padEnd(18);
+      const status = iface.isAdminDown ? 'disabled' : (iface.isUp ? 'connected' : 'notconnect');
+      const vlan = iface.switchportMode === 'trunk' ? 'trunk' : String(iface.accessVlan || 1);
+      const duplex = iface.duplex === 'auto' ? 'auto' : iface.duplex;
+      const speed = iface.speed === 'auto' ? 'auto' : iface.speed;
+      const type = iface.type.includes('Gig') ? '10/100/1000BaseTX' : '10/100BaseTX';
+
+      lines.push(
+        `${shortName.padEnd(10)}${desc} ${status.padEnd(12)} ${vlan.padEnd(10)} ${duplex.padEnd(7)} ${speed.padEnd(5)} ${type}`
+      );
+    }
   }
 
   return { output: lines.join('\n'), exitCode: 0 };
@@ -299,29 +370,54 @@ function showInterfacesSwitchport(config: CiscoConfig): CiscoCommandResult {
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-function showInterfacesDescription(config: CiscoConfig): CiscoCommandResult {
+function showInterfacesDescription(config: CiscoConfig, realDeviceData?: RealDeviceData): CiscoCommandResult {
   const lines: string[] = [
     'Interface                      Status         Protocol Description',
     '------------------------------  -------------  -------- -----------',
   ];
 
-  for (const [name, iface] of config.interfaces) {
-    const status = iface.isAdminDown ? 'admin down' : (iface.isUp ? 'up' : 'down');
-    const protocol = iface.isUp ? 'up' : 'down';
-    lines.push(
-      `${name.padEnd(31)} ${status.padEnd(14)} ${protocol.padEnd(8)} ${iface.description || ''}`
-    );
+  // Use real device data if available
+  if (realDeviceData && realDeviceData.interfaces.length > 0) {
+    for (const iface of realDeviceData.interfaces) {
+      const status = iface.isUp ? 'up' : 'down';
+      const protocol = iface.isUp ? 'up' : 'down';
+      lines.push(
+        `${iface.name.padEnd(31)} ${status.padEnd(14)} ${protocol.padEnd(8)} `
+      );
+    }
+  } else {
+    for (const [name, iface] of config.interfaces) {
+      const status = iface.isAdminDown ? 'admin down' : (iface.isUp ? 'up' : 'down');
+      const protocol = iface.isUp ? 'up' : 'down';
+      lines.push(
+        `${name.padEnd(31)} ${status.padEnd(14)} ${protocol.padEnd(8)} ${iface.description || ''}`
+      );
+    }
   }
 
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-function showInterface(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showInterface(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (args.length === 0) {
     return { output: '', error: '% Incomplete command.', exitCode: 1 };
   }
 
   const ifaceName = args.join('');
+
+  // Try to find in real device data first
+  if (realDeviceData && realDeviceData.interfaces.length > 0) {
+    const expandedName = expandInterfaceName(ifaceName);
+    const realIface = realDeviceData.interfaces.find(
+      i => i.name.toLowerCase() === expandedName.toLowerCase() ||
+           i.name.toLowerCase().startsWith(expandedName.toLowerCase()) ||
+           i.id === ifaceName
+    );
+    if (realIface) {
+      return { output: formatRealInterfaceDetails(realIface), exitCode: 0 };
+    }
+  }
+
   const iface = findInterface(config, ifaceName);
 
   if (!iface) {
@@ -422,7 +518,7 @@ function formatInterfaceConfig(iface: CiscoInterface, config: CiscoConfig): stri
   return lines.join('\n');
 }
 
-function showIP(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showIP(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (args.length === 0) {
     return { output: '', error: '% Incomplete command.', exitCode: 1 };
   }
@@ -431,32 +527,32 @@ function showIP(config: CiscoConfig, args: string[]): CiscoCommandResult {
 
   switch (subCommand) {
     case 'route':
-      return showIPRoute(config);
+      return showIPRoute(config, realDeviceData);
     case 'interface':
-      return showIPInterface(config, args.slice(1));
+      return showIPInterface(config, args.slice(1), realDeviceData);
     case 'protocols':
       return showIPProtocols(config);
     case 'arp':
-      return showARP(config);
+      return showARP(config, realDeviceData);
     case 'int':
     case 'brief':
-      return showIPInterfaceBrief(config);
+      return showIPInterfaceBrief(config, realDeviceData);
     case 'ospf':
       return showIPOSPF(config, args.slice(1));
     case 'eigrp':
       return showIPEIGRP(config, args.slice(1));
     case 'access-lists':
-      return showAccessLists(config, args.slice(1));
+      return showAccessLists(config, args.slice(1), realDeviceData);
     case 'dhcp':
-      return showIPDHCP(config, args.slice(1));
+      return showIPDHCP(config, args.slice(1), realDeviceData);
     case 'nat':
-      return showIPNAT(config, args.slice(1));
+      return showIPNAT(config, args.slice(1), realDeviceData);
     default:
       return { output: '', error: '% Invalid input detected', exitCode: 1 };
   }
 }
 
-function showIPRoute(config: CiscoConfig): CiscoCommandResult {
+function showIPRoute(config: CiscoConfig, realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (!config.ipRouting && config.deviceType !== 'router') {
     return { output: 'IP routing is disabled', exitCode: 0 };
   }
@@ -476,12 +572,35 @@ function showIPRoute(config: CiscoConfig): CiscoCommandResult {
     '',
   ];
 
+  // Use real device data if available
+  if (realDeviceData && realDeviceData.routingTable.length > 0) {
+    for (const route of realDeviceData.routingTable) {
+      const prefix = netmaskToPrefix(route.netmask);
+      let code = 'S';
+      if (route.protocol === 'connected') {
+        code = 'C';
+      } else if (route.protocol === 'local') {
+        code = 'L';
+      } else if (route.protocol === 'static') {
+        code = 'S';
+      }
+
+      if (route.protocol === 'connected' || route.protocol === 'local') {
+        lines.push(`${code}        ${route.destination}/${prefix} is directly connected, ${route.interface}`);
+      } else {
+        const nextHop = route.gateway !== '0.0.0.0' ? route.gateway : route.interface;
+        lines.push(`${code}        ${route.destination}/${prefix} [1/${route.metric}] via ${nextHop}, ${route.interface}`);
+      }
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  // Fallback to config-based display
   // Add connected routes from interfaces
   for (const [name, iface] of config.interfaces) {
     if (iface.ipAddress && iface.isUp && !iface.isAdminDown) {
       const prefix = subnetMaskToPrefix(iface.subnetMask || '255.255.255.0');
       const network = getNetworkAddress(iface.ipAddress, iface.subnetMask || '255.255.255.0');
-      lines.push(`      ${network}/${prefix} is directly connected, ${name}`);
       lines.push(`C        ${network}/${prefix} is directly connected, ${name}`);
       lines.push(`L        ${iface.ipAddress}/32 is directly connected, ${name}`);
     }
@@ -502,9 +621,19 @@ function showIPRoute(config: CiscoConfig): CiscoCommandResult {
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-function showIPInterface(config: CiscoConfig, args: string[]): CiscoCommandResult {
+// Helper to convert netmask to prefix length
+function netmaskToPrefix(netmask: string): number {
+  const octets = netmask.split('.').map(Number);
+  let prefix = 0;
+  for (const octet of octets) {
+    prefix += (octet >>> 0).toString(2).split('1').length - 1;
+  }
+  return prefix;
+}
+
+function showIPInterface(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (args.length === 0 || args[0].toLowerCase() === 'brief') {
-    return showIPInterfaceBrief(config);
+    return showIPInterfaceBrief(config, realDeviceData);
   }
 
   const ifaceName = args.join('');
@@ -548,11 +677,28 @@ function showIPInterface(config: CiscoConfig, args: string[]): CiscoCommandResul
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-function showIPInterfaceBrief(config: CiscoConfig): CiscoCommandResult {
+function showIPInterfaceBrief(config: CiscoConfig, realDeviceData?: RealDeviceData): CiscoCommandResult {
   const lines: string[] = [
     'Interface              IP-Address      OK? Method Status                Protocol',
   ];
 
+  // Use real device data if available
+  if (realDeviceData && realDeviceData.interfaces.length > 0) {
+    for (const iface of realDeviceData.interfaces) {
+      const ip = iface.ipAddress || 'unassigned';
+      const ok = 'YES';
+      const method = iface.ipAddress ? 'manual' : 'unset';
+      const status = iface.isUp ? 'up' : 'down';
+      const protocol = iface.isUp ? 'up' : 'down';
+
+      lines.push(
+        `${iface.name.padEnd(23)}${ip.padEnd(16)}${ok.padEnd(4)}${method.padEnd(7)}${status.padEnd(22)}${protocol}`
+      );
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  // Fallback to config-based display
   for (const [name, iface] of config.interfaces) {
     const ip = iface.ipAddress || 'unassigned';
     const ok = 'YES';
@@ -647,7 +793,7 @@ function showIPProtocols(config: CiscoConfig): CiscoCommandResult {
 
 function showIPOSPF(config: CiscoConfig, args: string[]): CiscoCommandResult {
   if (!config.ospf) {
-    return { output: '% OSPF is not enabled', exitCode: 1 };
+    return { output: '% OSPF: No router process configured', exitCode: 0 };
   }
 
   if (args.length === 0) {
@@ -744,7 +890,14 @@ function showOSPFInterface(config: CiscoConfig, args: string[]): CiscoCommandRes
 
 function showIPEIGRP(config: CiscoConfig, args: string[]): CiscoCommandResult {
   if (!config.eigrp) {
-    return { output: '% EIGRP is not enabled', exitCode: 1 };
+    // EIGRP not configured - return empty output with success
+    if (args[0] === 'neighbors') {
+      return {
+        output: 'EIGRP-IPv4 Neighbors for AS(0)\nH   Address                 Interface              Hold Uptime   SRTT   RTO  Q  Seq\n                                                   (sec)         (ms)       Cnt Num',
+        exitCode: 0
+      };
+    }
+    return { output: '', exitCode: 0 };
   }
 
   if (args[0] === 'neighbors') {
@@ -770,20 +923,39 @@ function showIPEIGRP(config: CiscoConfig, args: string[]): CiscoCommandResult {
   return { output: '', error: '% Invalid input detected', exitCode: 1 };
 }
 
-function showIPDHCP(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showIPDHCP(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (args[0] === 'pool') {
     const lines: string[] = [];
+
+    // Get real leases if available
+    const realLeases = realDeviceData?.dhcpLeases || [];
+    const leaseCount = realLeases.filter(l => l.state === 'active').length;
+
     for (const [name, pool] of config.dhcpPools) {
+      // Count leases for this pool
+      const poolLeases = realLeases.filter(l => {
+        if (!pool.network || !pool.mask) return false;
+        const network = ipToNumber(pool.network);
+        const mask = ipToNumber(pool.mask);
+        const ip = ipToNumber(l.ipAddress);
+        return (ip & mask) === (network & mask);
+      });
+      const poolLeaseCount = poolLeases.filter(l => l.state === 'active').length;
+
+      // Calculate total addresses in pool
+      const hostBits = 32 - netmaskToPrefix(pool.mask || '255.255.255.0');
+      const totalAddresses = Math.pow(2, hostBits) - 2; // Subtract network and broadcast
+
       lines.push(`Pool ${name} :`);
       lines.push(` Utilization mark (high/low)    : 100 / 0`);
       lines.push(` Subnet size (first/next)       : 0 / 0`);
-      lines.push(` Total addresses                : 254`);
-      lines.push(` Leased addresses               : 0`);
+      lines.push(` Total addresses                : ${totalAddresses}`);
+      lines.push(` Leased addresses               : ${poolLeaseCount}`);
       lines.push(` Pending event                  : none`);
       lines.push(` 1 subnet is currently in the pool :`);
       lines.push(` Current index        IP address range                    Leased/Excluded/Total`);
       if (pool.network && pool.mask) {
-        lines.push(` ${pool.network}        ${pool.network} - ${getBroadcastAddress(pool.network, pool.mask)}   0 / 0 / 254`);
+        lines.push(` ${pool.network}        ${pool.network} - ${getBroadcastAddress(pool.network, pool.mask)}   ${poolLeaseCount} / 0 / ${totalAddresses}`);
       }
       lines.push(``);
     }
@@ -791,30 +963,131 @@ function showIPDHCP(config: CiscoConfig, args: string[]): CiscoCommandResult {
   }
 
   if (args[0] === 'binding') {
-    return { output: 'Bindings from all pools not associated with VRF:\nIP address      Client-ID/              Lease expiration        Type       State\n', exitCode: 0 };
+    const lines: string[] = [
+      'Bindings from all pools not associated with VRF:',
+      'IP address      Client-ID/              Lease expiration        Type       State',
+      '                Hardware address',
+      '                /User name',
+    ];
+
+    const realLeases = realDeviceData?.dhcpLeases || [];
+
+    if (realLeases.length === 0) {
+      // No leases
+    } else {
+      for (const lease of realLeases) {
+        // Calculate lease expiration
+        const expirationDate = new Date(Date.now() + 86400000); // 1 day from now (simplified)
+        const expStr = formatLeaseExpiration(expirationDate);
+
+        const stateStr = lease.state === 'active' ? 'Active' : lease.state.charAt(0).toUpperCase() + lease.state.slice(1);
+
+        lines.push(`${lease.ipAddress.padEnd(16)}${lease.macAddress.toLowerCase().padEnd(24)}${expStr.padEnd(24)}${'Automatic'.padEnd(11)}${stateStr}`);
+      }
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  if (args[0] === 'server' && args[1] === 'statistics') {
+    const realLeases = realDeviceData?.dhcpLeases || [];
+    const activeCount = realLeases.filter(l => l.state === 'active').length;
+
+    const lines: string[] = [
+      'Memory usage         9353',
+      `Address pools        ${config.dhcpPools.size}`,
+      'Database agents      0',
+      'Automatic bindings   ' + activeCount,
+      'Manual bindings      0',
+      'Expired bindings     0',
+      'Malformed messages   0',
+      'Secure arp entries   0',
+      '',
+      'Message              Received',
+      'BOOTREQUEST          0',
+      'DHCPDISCOVER         ' + (activeCount * 2), // Estimate
+      'DHCPREQUEST          ' + activeCount,
+      'DHCPDECLINE          0',
+      'DHCPRELEASE          0',
+      'DHCPINFORM           0',
+      '',
+      'Message              Sent',
+      'BOOTREPLY            0',
+      'DHCPOFFER            ' + activeCount,
+      'DHCPACK              ' + activeCount,
+      'DHCPNAK              0',
+    ];
+
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   return { output: '', error: '% Incomplete command.', exitCode: 1 };
 }
 
-function showIPNAT(config: CiscoConfig, args: string[]): CiscoCommandResult {
+// Helper for DHCP lease expiration formatting
+function formatLeaseExpiration(date: Date): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[date.getMonth()];
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const mins = String(date.getMinutes()).padStart(2, '0');
+  return `${month} ${day} ${year} ${hours}:${mins} AM`;
+}
+
+// Helper to convert IP to number
+function ipToNumber(ip: string): number {
+  const parts = ip.split('.').map(Number);
+  return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+}
+
+function showIPNAT(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
+  const translations = realDeviceData?.natTranslations || [];
+
   if (args[0] === 'translations') {
     const lines: string[] = [
       'Pro Inside global      Inside local       Outside local      Outside global',
     ];
+
+    for (const t of translations) {
+      const proto = t.protocol === 6 ? 'tcp' : t.protocol === 17 ? 'udp' : t.protocol === 1 ? 'icmp' : '---';
+      const insideGlobal = t.insidePort ? `${t.insideGlobal}:${t.outsidePort}` : t.insideGlobal;
+      const insideLocal = t.insidePort ? `${t.insideLocal}:${t.insidePort}` : t.insideLocal;
+      const outsideLocal = t.outsideLocal || '---';
+      const outsideGlobal = t.outsideGlobal || '---';
+
+      lines.push(
+        `${proto.padEnd(4)}${insideGlobal.padEnd(19)}${insideLocal.padEnd(19)}${outsideLocal.padEnd(19)}${outsideGlobal}`
+      );
+    }
+
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
   if (args[0] === 'statistics') {
+    const staticCount = translations.filter(t => t.type === 'static').length;
+    const dynamicCount = translations.filter(t => t.type === 'dynamic').length;
+    const patCount = translations.filter(t => t.type === 'pat').length;
+    const total = translations.length;
+
     const lines: string[] = [
-      'Total active translations: 0 (0 static, 0 dynamic; 0 extended)',
+      `Total active translations: ${total} (${staticCount} static, ${dynamicCount + patCount} dynamic; ${patCount} extended)`,
       'Outside interfaces:',
+      '  ' + (config.interfaces.size > 0 ? Array.from(config.interfaces.keys()).slice(-1)[0] : 'none'),
       'Inside interfaces:',
-      'Hits: 0  Misses: 0',
+      '  ' + (config.interfaces.size > 0 ? Array.from(config.interfaces.keys())[0] : 'none'),
+      `Hits: ${total * 10}  Misses: 0`,
       'CEF Translated packets: 0, CEF Punted packets: 0',
       'Expired translations: 0',
       'Dynamic mappings:',
     ];
+
+    // Add NAT pool info from config
+    for (const [name, pool] of config.natPools || new Map()) {
+      lines.push(`-- Inside Source`);
+      lines.push(`   access-list ${pool.aclNumber || 1} pool ${name} refcount ${dynamicCount + patCount}`);
+    }
+
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
@@ -876,7 +1149,7 @@ function showVlan(config: CiscoConfig, args: string[]): CiscoCommandResult {
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-function showMACAddressTable(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showMACAddressTable(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (config.deviceType !== 'switch') {
     return { output: '', error: '% Invalid input detected', exitCode: 1 };
   }
@@ -889,23 +1162,46 @@ function showMACAddressTable(config: CiscoConfig, args: string[]): CiscoCommandR
     '----    -----------       --------    -----',
   ];
 
-  for (const entry of config.macTable) {
-    lines.push(
-      ` ${String(entry.vlan).padEnd(7)} ${entry.macAddress.padEnd(17)} ${entry.type.padEnd(11)} ${entry.ports}`
-    );
+  // Use real device data if available
+  if (realDeviceData && realDeviceData.macTable && realDeviceData.macTable.length > 0) {
+    for (const entry of realDeviceData.macTable) {
+      lines.push(
+        ` ${String(entry.vlan).padEnd(7)} ${entry.macAddress.padEnd(17)} ${entry.type.padEnd(11)} ${entry.ports}`
+      );
+    }
+    lines.push('');
+    lines.push(`Total Mac Addresses for this criterion: ${realDeviceData.macTable.length}`);
+  } else {
+    for (const entry of config.macTable) {
+      lines.push(
+        ` ${String(entry.vlan).padEnd(7)} ${entry.macAddress.padEnd(17)} ${entry.type.padEnd(11)} ${entry.ports}`
+      );
+    }
+    lines.push('');
+    lines.push(`Total Mac Addresses for this criterion: ${config.macTable.length}`);
   }
-
-  lines.push('');
-  lines.push(`Total Mac Addresses for this criterion: ${config.macTable.length}`);
 
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-function showARP(config: CiscoConfig): CiscoCommandResult {
+function showARP(config: CiscoConfig, realDeviceData?: RealDeviceData): CiscoCommandResult {
   const lines: string[] = [
     'Protocol  Address          Age (min)  Hardware Addr   Type   Interface',
   ];
 
+  // Use real device data if available
+  if (realDeviceData && realDeviceData.arpTable.length > 0) {
+    for (const entry of realDeviceData.arpTable) {
+      const age = entry.age !== undefined ? entry.age : 0;
+      const formattedMac = formatCiscoMAC(entry.macAddress);
+      lines.push(
+        `${'Internet'.padEnd(10)}${entry.ipAddress.padEnd(17)}${String(age).padEnd(11)}${formattedMac.padEnd(16)}${'ARPA'.padEnd(7)}${entry.interface}`
+      );
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  // Fallback to config-based display
   for (const entry of config.arpTable) {
     lines.push(
       `${entry.protocol.padEnd(10)}${entry.address.padEnd(17)}${String(entry.age).padEnd(11)}${entry.hardwareAddr.padEnd(16)}${entry.type.padEnd(7)}${entry.interface}`
@@ -1081,27 +1377,52 @@ No active filter modules.`,
   };
 }
 
-function showAccessLists(config: CiscoConfig, args: string[]): CiscoCommandResult {
-  if (config.accessLists.size === 0) {
+function showAccessLists(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
+  // Try to get real ACL data first, fall back to config
+  const aclList = realDeviceData?.aclList || [];
+
+  if (aclList.length === 0 && config.accessLists.size === 0) {
     return { output: '', exitCode: 0 };
   }
 
   const lines: string[] = [];
 
-  for (const [id, acl] of config.accessLists) {
-    if (typeof id === 'number') {
-      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${id}`);
-    } else {
-      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${id}`);
-    }
+  // Display from real device data if available
+  if (aclList.length > 0) {
+    for (const acl of aclList) {
+      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${acl.identifier}`);
 
-    for (const entry of acl.entries) {
-      let line = `    ${entry.sequence} ${entry.action} ${entry.protocol}`;
-      line += ` ${entry.sourceIP === '0.0.0.0' && entry.sourceWildcard === '255.255.255.255' ? 'any' : entry.sourceIP + ' ' + entry.sourceWildcard}`;
-      if (acl.type === 'extended') {
-        line += ` ${entry.destIP === '0.0.0.0' && entry.destWildcard === '255.255.255.255' ? 'any' : entry.destIP + ' ' + entry.destWildcard}`;
+      for (const entry of acl.entries) {
+        let line = `    ${entry.sequence} ${entry.action}`;
+        if (acl.type === 'extended' && entry.protocol) {
+          line += ` ${entry.protocol}`;
+        }
+        line += ` ${entry.source}`;
+        if (acl.type === 'extended' && entry.destination) {
+          line += ` ${entry.destination}`;
+        }
+        if (entry.hits > 0) {
+          line += ` (${entry.hits} matches)`;
+        }
+        lines.push(line);
       }
-      lines.push(line);
+    }
+  } else {
+    // Fall back to config data
+    for (const [id, acl] of config.accessLists) {
+      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${id}`);
+
+      for (const entry of acl.entries) {
+        let line = `    ${entry.sequence} ${entry.action}`;
+        if (acl.type === 'extended') {
+          line += ` ${entry.protocol}`;
+        }
+        line += ` ${entry.sourceIP === '0.0.0.0' && entry.sourceWildcard === '255.255.255.255' ? 'any' : entry.sourceIP + ' ' + entry.sourceWildcard}`;
+        if (acl.type === 'extended') {
+          line += ` ${entry.destIP === '0.0.0.0' && entry.destWildcard === '255.255.255.255' ? 'any' : entry.destIP + ' ' + entry.destWildcard}`;
+        }
+        lines.push(line);
+      }
     }
   }
 

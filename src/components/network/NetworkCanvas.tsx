@@ -7,8 +7,10 @@ import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
+import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { DeviceType } from '@/devices/common/types';
 import { BaseDevice } from '@/devices';
+import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
 import { cn } from '@/lib/utils';
 
 interface NetworkCanvasProps {
@@ -36,6 +38,9 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   } = useNetworkStore();
 
   const devices = getDevices();
+
+  // Network simulation
+  const { activePackets } = useNetworkSimulator();
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
@@ -192,6 +197,20 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
                 className="pointer-events-none animate-pulse"
               />
             )}
+
+            {/* Packet animations */}
+            {activePackets.map(packet => {
+              const connection = connections.find(c => c.id === packet.connectionId);
+              if (!connection) return null;
+              return (
+                <PacketAnimation
+                  key={packet.id}
+                  packet={packet}
+                  connection={connection}
+                  devices={devices}
+                />
+              );
+            })}
           </svg>
 
           {/* Devices layer */}
@@ -205,6 +224,13 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           ))}
         </div>
       </div>
+
+      {/* Packet legend */}
+      {connections.length > 0 && (
+        <div className="absolute bottom-4 left-4 p-2 bg-black/40 backdrop-blur-md rounded-lg border border-white/10">
+          <PacketLegend />
+        </div>
+      )}
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex items-center gap-2 p-1 bg-black/40 backdrop-blur-md rounded-lg border border-white/10">

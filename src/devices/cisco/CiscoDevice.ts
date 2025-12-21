@@ -11,11 +11,18 @@ import {
   IPv4Packet,
   ICMPPacket,
   ICMPType,
+  EthernetFrame,
+  UDPDatagram,
   ETHER_TYPE,
   IP_PROTOCOL,
   BROADCAST_MAC,
+  generatePacketId,
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
+import { DHCPServer, DHCPPoolConfig, parseDHCPPacket, isDHCPPacket, DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../../core/network/dhcp';
+import { DNSServer, parseDNSMessage, isDNSPacket, DNS_PORT } from '../../core/network/dns';
+import { NATService, NATPool, NATTranslation } from '../../core/network/nat';
+import { ACLService, ACL, ACLEntry, parseStandardACL, parseExtendedACL } from '../../core/network/acl';
 import {
   CiscoConfig,
   CiscoTerminalState,
@@ -24,6 +31,7 @@ import {
   CiscoRoute,
   CiscoARPEntry,
   CiscoMACEntry,
+  RealDeviceData,
 } from '../../terminal/cisco/types';
 import {
   createDefaultRouterConfig,
@@ -42,6 +50,10 @@ export interface CiscoDeviceConfig extends Omit<DeviceConfig, 'type' | 'osType'>
  */
 export class CiscoDevice extends BaseDevice {
   private arpService: ARPService;
+  private dhcpServer: DHCPServer;
+  private dnsServer: DNSServer;
+  private natService: NATService;
+  private aclService: ACLService;
   private ciscoConfig: CiscoConfig;
   private terminalState: CiscoTerminalState;
   private bootTime: Date;
@@ -78,8 +90,33 @@ export class CiscoDevice extends BaseDevice {
       }
     });
 
+    // Initialize DHCP server (for routers)
+    this.dhcpServer = new DHCPServer();
+    this.dhcpServer.setPacketSender((packet, interfaceId) => {
+      if (this.packetSender) {
+        this.packetSender(packet, interfaceId);
+      }
+    });
+
+    // Initialize DNS server
+    this.dnsServer = new DNSServer();
+    this.dnsServer.setPacketSender((packet, interfaceId) => {
+      if (this.packetSender) {
+        this.packetSender(packet, interfaceId);
+      }
+    });
+
+    // Initialize NAT service (for routers)
+    this.natService = new NATService();
+
+    // Initialize ACL service
+    this.aclService = new ACLService();
+
     // Sync interfaces with Cisco config
     this.syncInterfaces();
+
+    // Sync DHCP pools from Cisco config
+    this.syncDHCPPools();
   }
 
   /**
@@ -95,6 +132,35 @@ export class CiscoDevice extends BaseDevice {
         ciscoIface.subnetMask = iface.subnetMask;
         ciscoIface.isUp = iface.isUp;
         ciscoIface.isAdminDown = !iface.isUp;
+      }
+    }
+  }
+
+  /**
+   * Sync DHCP pools from Cisco config to DHCP server
+   */
+  private syncDHCPPools(): void {
+    for (const pool of this.ciscoConfig.dhcpPools) {
+      const dhcpPool: DHCPPoolConfig = {
+        name: pool.name,
+        network: pool.network || '0.0.0.0',
+        mask: pool.mask || '255.255.255.0',
+        defaultRouter: pool.defaultRouter,
+        dnsServer: pool.dnsServer,
+        domain: pool.domain,
+        leaseTime: pool.leaseTime || 86400,
+        excludedAddresses: pool.excludedAddresses || [],
+      };
+      this.dhcpServer.addPool(dhcpPool);
+    }
+
+    // Set DHCP server interface based on first configured interface
+    const interfaces = this.networkStack.getInterfaces();
+    if (interfaces.length > 0) {
+      const iface = interfaces[0];
+      if (iface.ipAddress) {
+        this.dhcpServer.setInterface(iface.id, iface.ipAddress, iface.macAddress);
+        this.dnsServer.setInterface(iface.id, iface.ipAddress, iface.macAddress);
       }
     }
   }
@@ -435,30 +501,30 @@ export class CiscoDevice extends BaseDevice {
     const ciscoIface = this.ciscoConfig.interfaces.get(iface.name);
     const vlanId = ciscoIface?.accessVlan || 1;
 
-    // MAC learning
-    if (frame.sourceMAC !== BROADCAST_MAC) {
-      this.macTable.set(frame.sourceMAC, {
+    // MAC learning (case-insensitive)
+    if (frame.sourceMAC.toUpperCase() !== BROADCAST_MAC) {
+      this.macTable.set(frame.sourceMAC.toUpperCase(), {
         vlan: vlanId,
-        macAddress: frame.sourceMAC,
+        macAddress: frame.sourceMAC.toUpperCase(),
         type: 'DYNAMIC',
         ports: iface.name,
       });
     }
 
     // Check if destination is us (VLAN interface or management)
-    if (frame.destinationMAC === iface.macAddress) {
+    if (frame.destinationMAC.toUpperCase() === iface.macAddress.toUpperCase()) {
       return this.networkStack.processIncomingPacket(packet, interfaceId);
     }
 
     // Forwarding decision
-    if (frame.destinationMAC === BROADCAST_MAC) {
+    if (frame.destinationMAC.toUpperCase() === BROADCAST_MAC) {
       // Flood to all ports in same VLAN except source
       // In simulation, we return null as flooding is handled by network layer
       return null;
     }
 
-    // Unicast - lookup MAC table
-    const entry = this.macTable.get(frame.destinationMAC);
+    // Unicast - lookup MAC table (case-insensitive)
+    const entry = this.macTable.get(frame.destinationMAC.toUpperCase());
     if (entry && entry.vlan === vlanId) {
       // Forward to specific port
       if (this.packetSender) {
@@ -481,33 +547,86 @@ export class CiscoDevice extends BaseDevice {
 
     if (!iface) return null;
 
-    // Check if frame is for us
-    if (frame.destinationMAC !== iface.macAddress && frame.destinationMAC !== BROADCAST_MAC) {
+    // Check if frame is for us (case-insensitive MAC comparison)
+    if (frame.destinationMAC.toUpperCase() !== iface.macAddress.toUpperCase() &&
+        frame.destinationMAC.toUpperCase() !== BROADCAST_MAC) {
       return null;
     }
 
     // Handle ARP
     if (frame.etherType === ETHER_TYPE.ARP && iface.ipAddress) {
+      const arpPacket = frame.payload as any;
+
+      // Learn sender's MAC in both ARPService and NetworkStack
+      this.arpService.addDynamicEntry(arpPacket.senderIP, arpPacket.senderMAC, iface.name);
+      this.networkStack.addARPEntry(arpPacket.senderIP, arpPacket.senderMAC, iface.name, false);
+
       const arpReply = this.arpService.processPacket(
-        frame.payload as any,
+        arpPacket,
         iface.name,
         iface.ipAddress,
         iface.macAddress
       );
-      if (arpReply) {
-        return arpReply;
+      // Send ARP reply via packetSender
+      if (arpReply && this.packetSender) {
+        this.packetSender(arpReply, interfaceId);
       }
+      return null;  // Response sent via callback
     }
 
     // Handle IPv4
     if (frame.etherType === ETHER_TYPE.IPv4) {
       const ipPacket = frame.payload as IPv4Packet;
 
-      // Check if packet is for us
-      const destIP = ipPacket.destinationIP;
+      // Handle UDP for DHCP and DNS
+      if (ipPacket.protocol === IP_PROTOCOL.UDP) {
+        const udpPacket = ipPacket.payload as UDPDatagram;
+
+        // Handle DHCP (server receives on port 67)
+        if (isDHCPPacket(udpPacket) && udpPacket.destinationPort === DHCP_SERVER_PORT) {
+          const dhcpPacket = parseDHCPPacket(udpPacket.payload);
+          if (dhcpPacket) {
+            const response = this.dhcpServer.processPacket(dhcpPacket, interfaceId);
+            if (response && this.packetSender) {
+              this.packetSender(response, interfaceId);
+            }
+          }
+          return null;
+        }
+
+        // Handle DNS (server receives on port 53)
+        if (isDNSPacket(udpPacket) && udpPacket.destinationPort === DNS_PORT) {
+          const dnsMessage = parseDNSMessage(udpPacket.payload);
+          if (dnsMessage && !dnsMessage.header.flags.qr) {
+            const response = this.dnsServer.processQuery(
+              dnsMessage,
+              ipPacket.sourceIP,
+              frame.sourceMAC,
+              interfaceId
+            );
+            if (response && this.packetSender) {
+              this.packetSender(response, interfaceId);
+            }
+          }
+          return null;
+        }
+      }
+
+      // Apply NAT for incoming packets (outside to inside)
+      let currentPacket = packet;
+      if (iface && this.natService.isOutsideInterface(iface.name)) {
+        const natResult = this.natService.translateIncoming(currentPacket, iface.name);
+        if (natResult.translated) {
+          currentPacket = natResult.packet;
+        }
+      }
+
+      // Check if packet is for us (after NAT translation)
+      const currentIP = currentPacket.frame.payload as IPv4Packet;
+      const destIP = currentIP.destinationIP;
       const isForUs = this.networkStack
         .getInterfaces()
-        .some(i => i.ipAddress === destIP);
+        .some(i => i.ipAddress === destIP) || destIP === '255.255.255.255';
 
       if (isForUs) {
         // Process locally (ICMP, etc.)
@@ -523,40 +642,282 @@ export class CiscoDevice extends BaseDevice {
 
   /**
    * Route a packet to its destination
+   * This is the core Layer 3 forwarding function
    */
   private routePacket(packet: Packet, sourceInterfaceId: string): Packet | null {
-    const ipPacket = packet.frame.payload as IPv4Packet;
+    const sourceIface = this.networkStack.getInterface(sourceInterfaceId);
+    if (!sourceIface) return null;
+
+    const originalIP = packet.frame.payload as IPv4Packet;
+
+    // Apply inbound ACL on source interface
+    const inboundACL = this.aclService.getInterfaceACL(sourceIface.name, 'in');
+    if (inboundACL) {
+      const ipPacket = packet.frame.payload as IPv4Packet;
+      const udpPacket = ipPacket.protocol === IP_PROTOCOL.UDP ? ipPacket.payload as UDPDatagram : null;
+      const srcPort = udpPacket?.sourcePort;
+      const dstPort = udpPacket?.destinationPort;
+
+      const permitted = this.aclService.checkPacket(
+        inboundACL.number || inboundACL.name!,
+        ipPacket.sourceIP,
+        ipPacket.destinationIP,
+        ipPacket.protocol,
+        srcPort,
+        dstPort
+      );
+
+      if (!permitted) {
+        // ACL denied - drop packet silently
+        return null;
+      }
+    }
 
     // Decrement TTL
-    if (ipPacket.ttl <= 1) {
+    if (originalIP.ttl <= 1) {
       // TTL expired - send ICMP Time Exceeded
+      this.sendICMPTimeExceeded(originalIP, sourceInterfaceId);
       return null;
     }
-    ipPacket.ttl--;
+
+    // Create a copy of the IP packet with decremented TTL
+    const routedIP: IPv4Packet = {
+      ...originalIP,
+      ttl: originalIP.ttl - 1
+    };
 
     // Lookup route
-    const route = this.networkStack.lookupRoute(ipPacket.destinationIP);
+    const route = this.networkStack.lookupRoute(routedIP.destinationIP);
     if (!route) {
       // No route - send ICMP Destination Unreachable
+      this.sendICMPDestUnreachable(originalIP, sourceInterfaceId, 'network');
       return null;
     }
 
     // Get outgoing interface
     const outIface = this.networkStack.getInterfaceByName(route.interface);
-    if (!outIface || !outIface.isUp || outIface.id === sourceInterfaceId) {
+    if (!outIface || !outIface.isUp) {
+      this.sendICMPDestUnreachable(originalIP, sourceInterfaceId, 'network');
       return null;
     }
 
-    // ARP for next hop
-    const nextHop = route.gateway !== '0.0.0.0' ? route.gateway : ipPacket.destinationIP;
-
-    // In simulation, we would do ARP resolution here
-    // For now, forward the packet
-    if (this.packetSender) {
-      this.packetSender(packet, outIface.id);
+    // Don't route back out the same interface (split horizon)
+    if (outIface.id === sourceInterfaceId) {
+      return null;
     }
 
+    // Apply NAT if configured (inside to outside)
+    let currentPacket = packet;
+    if (this.natService.isInsideInterface(sourceIface.name) &&
+        this.natService.isOutsideInterface(outIface.name)) {
+      const natResult = this.natService.translateOutgoing(
+        currentPacket,
+        sourceIface.name,
+        outIface.ipAddress || '',
+        (aclNum, srcIP) => this.aclService.checkStandardACL(aclNum, srcIP)
+      );
+      if (natResult.translated) {
+        currentPacket = natResult.packet;
+      }
+    }
+
+    // Apply outbound ACL on destination interface
+    const outboundACL = this.aclService.getInterfaceACL(outIface.name, 'out');
+    if (outboundACL) {
+      const ipPacket = currentPacket.frame.payload as IPv4Packet;
+      const udpPacket = ipPacket.protocol === IP_PROTOCOL.UDP ? ipPacket.payload as UDPDatagram : null;
+      const srcPort = udpPacket?.sourcePort;
+      const dstPort = udpPacket?.destinationPort;
+
+      const permitted = this.aclService.checkPacket(
+        outboundACL.number || outboundACL.name!,
+        ipPacket.sourceIP,
+        ipPacket.destinationIP,
+        ipPacket.protocol,
+        srcPort,
+        dstPort
+      );
+
+      if (!permitted) {
+        // ACL denied - drop packet silently
+        return null;
+      }
+    }
+
+    // Update routedIP from potentially NAT-translated packet
+    const finalIP = currentPacket.frame.payload as IPv4Packet;
+
+    // Determine next hop IP (gateway or direct)
+    const nextHopIP = route.gateway !== '0.0.0.0' ? route.gateway : finalIP.destinationIP;
+
+    // Lookup MAC for next hop
+    let nextHopMAC = this.networkStack.lookupARP(nextHopIP);
+
+    if (!nextHopMAC) {
+      // Need to do ARP for next hop
+      this.networkStack.sendARPRequest(nextHopIP, outIface);
+
+      // Queue packet for later sending (simplified: just drop for now, but trigger ARP)
+      // In production, we'd queue this and retry after ARP completes
+      // For now, we'll check if we have any cached ARP entry
+      nextHopMAC = this.arpService.lookup(nextHopIP);
+
+      if (!nextHopMAC) {
+        // Schedule retry after ARP (simplified approach)
+        setTimeout(() => {
+          const resolvedMAC = this.networkStack.lookupARP(nextHopIP) || this.arpService.lookup(nextHopIP);
+          if (resolvedMAC) {
+            this.forwardRoutedPacket(routedIP, outIface, resolvedMAC);
+          }
+        }, 100);
+        return null;
+      }
+    }
+
+    // Forward the packet
+    this.forwardRoutedPacket(routedIP, outIface, nextHopMAC);
     return null;
+  }
+
+  /**
+   * Forward a routed IP packet with new Ethernet frame
+   */
+  private forwardRoutedPacket(
+    ipPacket: IPv4Packet,
+    outInterface: NetworkInterfaceConfig,
+    destinationMAC: string
+  ): void {
+    if (!this.packetSender) return;
+
+    // Create new Ethernet frame with router's MAC as source
+    const newFrame: EthernetFrame = {
+      destinationMAC: destinationMAC,
+      sourceMAC: outInterface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: ipPacket
+    };
+
+    const newPacket: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame: newFrame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(newPacket, outInterface.id);
+  }
+
+  /**
+   * Send ICMP Time Exceeded message
+   */
+  private sendICMPTimeExceeded(originalIP: IPv4Packet, incomingInterfaceId: string): void {
+    const inIface = this.networkStack.getInterface(incomingInterfaceId);
+    if (!inIface || !inIface.ipAddress || !this.packetSender) return;
+
+    // Get source MAC from ARP
+    const sourceMAC = this.networkStack.lookupARP(originalIP.sourceIP);
+    if (!sourceMAC) return;
+
+    const icmpPacket: ICMPPacket = {
+      type: ICMPType.TIME_EXCEEDED,
+      code: 0, // TTL exceeded in transit
+      checksum: 0,
+      identifier: 0,
+      sequenceNumber: 0,
+      data: undefined
+    };
+
+    const responseIP: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: 64,
+      protocol: IP_PROTOCOL.ICMP,
+      headerChecksum: 0,
+      sourceIP: inIface.ipAddress,
+      destinationIP: originalIP.sourceIP,
+      payload: icmpPacket
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC: sourceMAC,
+      sourceMAC: inIface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: responseIP
+    };
+
+    const packet: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(packet, incomingInterfaceId);
+  }
+
+  /**
+   * Send ICMP Destination Unreachable message
+   */
+  private sendICMPDestUnreachable(
+    originalIP: IPv4Packet,
+    incomingInterfaceId: string,
+    _reason: 'network' | 'host' | 'port'
+  ): void {
+    const inIface = this.networkStack.getInterface(incomingInterfaceId);
+    if (!inIface || !inIface.ipAddress || !this.packetSender) return;
+
+    // Get source MAC from ARP
+    const sourceMAC = this.networkStack.lookupARP(originalIP.sourceIP);
+    if (!sourceMAC) return;
+
+    const icmpPacket: ICMPPacket = {
+      type: ICMPType.DESTINATION_UNREACHABLE,
+      code: 0, // Network unreachable
+      checksum: 0,
+      identifier: 0,
+      sequenceNumber: 0,
+      data: undefined
+    };
+
+    const responseIP: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: 64,
+      protocol: IP_PROTOCOL.ICMP,
+      headerChecksum: 0,
+      sourceIP: inIface.ipAddress,
+      destinationIP: originalIP.sourceIP,
+      payload: icmpPacket
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC: sourceMAC,
+      sourceMAC: inIface.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: responseIP
+    };
+
+    const packet: Packet = {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit'
+    };
+
+    this.packetSender(packet, incomingInterfaceId);
   }
 
   /**
@@ -564,6 +925,143 @@ export class CiscoDevice extends BaseDevice {
    */
   getARPService(): ARPService {
     return this.arpService;
+  }
+
+  /**
+   * Get DHCP server
+   */
+  getDHCPServer(): DHCPServer {
+    return this.dhcpServer;
+  }
+
+  /**
+   * Get DNS server
+   */
+  getDNSServer(): DNSServer {
+    return this.dnsServer;
+  }
+
+  /**
+   * Get NAT service
+   */
+  getNATService(): NATService {
+    return this.natService;
+  }
+
+  /**
+   * Get ACL service
+   */
+  getACLService(): ACLService {
+    return this.aclService;
+  }
+
+  /**
+   * Add DHCP pool
+   */
+  addDHCPPool(pool: DHCPPoolConfig): void {
+    this.dhcpServer.addPool(pool);
+  }
+
+  /**
+   * Get DHCP leases
+   */
+  getDHCPLeases(): Array<{ ipAddress: string; macAddress: string; state: string }> {
+    return this.dhcpServer.getLeases().map(lease => ({
+      ipAddress: lease.ipAddress,
+      macAddress: lease.macAddress,
+      state: lease.state,
+    }));
+  }
+
+  /**
+   * Get real device data for CLI display
+   * Returns current state from NetworkStack for accurate show commands
+   */
+  getRealDeviceData(): RealDeviceData {
+    // Get interfaces from NetworkStack
+    const interfaces = this.networkStack.getInterfaces().map(iface => ({
+      id: iface.id,
+      name: iface.name,
+      type: iface.type || 'GigabitEthernet',
+      macAddress: iface.macAddress,
+      ipAddress: iface.ipAddress,
+      subnetMask: iface.subnetMask,
+      isUp: iface.isUp,
+    }));
+
+    // Get routing table from NetworkStack
+    const routingTable = this.networkStack.getRoutingTable().map(route => ({
+      destination: route.destination,
+      netmask: route.netmask,
+      gateway: route.gateway,
+      interface: route.interface,
+      metric: route.metric || 0,
+      protocol: route.protocol || 'connected',
+    }));
+
+    // Get ARP table from both ARPService and NetworkStack
+    const arpEntries = this.arpService.getTable();
+    const arpTable = arpEntries.map(entry => ({
+      ipAddress: entry.ipAddress,
+      macAddress: entry.macAddress,
+      interface: entry.interface,
+      age: entry.age,
+    }));
+
+    // Get MAC table for switches
+    const macTable = Array.from(this.macTable.values()).map(entry => ({
+      vlan: entry.vlan,
+      macAddress: entry.macAddress,
+      type: entry.type,
+      ports: entry.ports,
+    }));
+
+    // Get NAT translations
+    const natTranslations = this.natService.getTranslations().map(t => ({
+      insideLocal: t.insideLocal,
+      insideGlobal: t.insideGlobal,
+      outsideLocal: t.outsideLocal,
+      outsideGlobal: t.outsideGlobal,
+      protocol: t.protocol,
+      insidePort: t.insidePort,
+      outsidePort: t.translatedPort,
+      type: t.type,
+    }));
+
+    // Get ACL list
+    const aclList = this.aclService.getAllACLs().map(acl => ({
+      identifier: acl.number || acl.name!,
+      type: acl.type,
+      entries: acl.entries.map(e => ({
+        sequence: e.sequence,
+        action: e.action,
+        source: e.sourceIP === '0.0.0.0' && e.sourceWildcard === '255.255.255.255'
+          ? 'any'
+          : e.sourceWildcard === '0.0.0.0'
+            ? `host ${e.sourceIP}`
+            : `${e.sourceIP} ${e.sourceWildcard}`,
+        destination: e.destIP
+          ? e.destIP === '0.0.0.0' && e.destWildcard === '255.255.255.255'
+            ? 'any'
+            : e.destWildcard === '0.0.0.0'
+              ? `host ${e.destIP}`
+              : `${e.destIP} ${e.destWildcard}`
+          : undefined,
+        protocol: typeof e.protocol === 'number'
+          ? e.protocol === 6 ? 'tcp' : e.protocol === 17 ? 'udp' : e.protocol === 1 ? 'icmp' : String(e.protocol)
+          : e.protocol as string | undefined,
+        hits: e.hits,
+      })),
+    }));
+
+    return {
+      interfaces,
+      routingTable,
+      arpTable,
+      macTable: this.ciscoType === 'switch' ? macTable : undefined,
+      natTranslations: this.ciscoType === 'router' ? natTranslations : undefined,
+      aclList: aclList.length > 0 ? aclList : undefined,
+    };
   }
 
   /**
