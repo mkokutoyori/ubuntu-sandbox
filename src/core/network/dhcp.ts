@@ -243,6 +243,15 @@ export class DHCPServer {
       return this.buildDHCPNAK(dhcpPacket, sourceInterface);
     }
 
+    // Validate XID if this is a response to our OFFER (not a renewal)
+    // For renewal/rebinding (ciaddr is set), XID validation is less strict
+    if (existingLease && existingLease.state === 'offered' && existingLease.xid !== undefined) {
+      if (dhcpPacket.xid !== existingLease.xid) {
+        // XID mismatch - this REQUEST doesn't match our OFFER
+        return this.buildDHCPNAK(dhcpPacket, sourceInterface);
+      }
+    }
+
     const pool = this.findPoolForIP(requestedIP);
     if (!pool) {
       return this.buildDHCPNAK(dhcpPacket, sourceInterface);
@@ -372,10 +381,16 @@ export class DHCPServer {
     pool: DHCPPoolConfig,
     sourceInterface: string
   ): Packet {
+    // Calculate T1 and T2 times per RFC 2131
+    const t1Time = Math.floor(pool.leaseTime * 0.5);    // 50% of lease
+    const t2Time = Math.floor(pool.leaseTime * 0.875);  // 87.5% of lease
+
     const options: DHCPOption[] = [
       { code: DHCP_OPTIONS.MESSAGE_TYPE, data: messageType },
       { code: DHCP_OPTIONS.SERVER_IDENTIFIER, data: this.serverIP },
       { code: DHCP_OPTIONS.LEASE_TIME, data: pool.leaseTime },
+      { code: DHCP_OPTIONS.RENEWAL_TIME, data: t1Time },
+      { code: DHCP_OPTIONS.REBINDING_TIME, data: t2Time },
       { code: DHCP_OPTIONS.SUBNET_MASK, data: pool.mask },
     ];
 
@@ -586,6 +601,17 @@ export class DHCPClient {
   private packetSender?: (packet: Packet, interfaceId: string) => void;
   private interfaceId: string = '';
   private onLeaseObtained?: (lease: DHCPClientLease) => void;
+  private onLeaseExpired?: () => void;
+
+  // Renewal (T1) and Rebinding (T2) times in seconds
+  // T1 = 50% of lease time, T2 = 87.5% of lease time (RFC 2131)
+  private t1Time: number = 0;  // Renewal time
+  private t2Time: number = 0;  // Rebinding time
+
+  // Timer IDs for cleanup
+  private renewalTimer?: ReturnType<typeof setTimeout>;
+  private rebindingTimer?: ReturnType<typeof setTimeout>;
+  private expirationTimer?: ReturnType<typeof setTimeout>;
 
   constructor(macAddress: string, hostname: string = '') {
     this.macAddress = macAddress.toUpperCase();
@@ -611,6 +637,230 @@ export class DHCPClient {
    */
   setOnLeaseObtained(callback: (lease: DHCPClientLease) => void): void {
     this.onLeaseObtained = callback;
+  }
+
+  /**
+   * Set callback for when lease expires
+   */
+  setOnLeaseExpired(callback: () => void): void {
+    this.onLeaseExpired = callback;
+  }
+
+  /**
+   * Stop all timers (cleanup)
+   */
+  stopTimers(): void {
+    if (this.renewalTimer) {
+      clearTimeout(this.renewalTimer);
+      this.renewalTimer = undefined;
+    }
+    if (this.rebindingTimer) {
+      clearTimeout(this.rebindingTimer);
+      this.rebindingTimer = undefined;
+    }
+    if (this.expirationTimer) {
+      clearTimeout(this.expirationTimer);
+      this.expirationTimer = undefined;
+    }
+  }
+
+  /**
+   * Start lease timers (T1, T2, expiration)
+   */
+  private startLeaseTimers(): void {
+    this.stopTimers();
+
+    if (this.leaseTime <= 0) {
+      return;
+    }
+
+    // Calculate T1 (50% of lease) and T2 (87.5% of lease) if not provided by server
+    if (this.t1Time <= 0) {
+      this.t1Time = Math.floor(this.leaseTime * 0.5);
+    }
+    if (this.t2Time <= 0) {
+      this.t2Time = Math.floor(this.leaseTime * 0.875);
+    }
+
+    // T1 - Renewal timer (unicast to original server)
+    this.renewalTimer = setTimeout(() => {
+      this.initiateRenewal();
+    }, this.t1Time * 1000);
+
+    // T2 - Rebinding timer (broadcast to any server)
+    this.rebindingTimer = setTimeout(() => {
+      this.initiateRebinding();
+    }, this.t2Time * 1000);
+
+    // Lease expiration timer
+    this.expirationTimer = setTimeout(() => {
+      this.handleLeaseExpiration();
+    }, this.leaseTime * 1000);
+  }
+
+  /**
+   * Initiate lease renewal (T1 expired)
+   * Sends unicast REQUEST to the original DHCP server
+   */
+  private initiateRenewal(): void {
+    if (this.state !== 'bound') {
+      return;
+    }
+
+    this.state = 'renewing';
+    const packet = this.createRenewalRequest(false);
+
+    if (this.packetSender && packet) {
+      this.packetSender(packet, this.interfaceId);
+    }
+  }
+
+  /**
+   * Initiate lease rebinding (T2 expired)
+   * Broadcasts REQUEST to any DHCP server
+   */
+  private initiateRebinding(): void {
+    if (this.state !== 'bound' && this.state !== 'renewing') {
+      return;
+    }
+
+    this.state = 'rebinding';
+    const packet = this.createRenewalRequest(true);
+
+    if (this.packetSender && packet) {
+      this.packetSender(packet, this.interfaceId);
+    }
+  }
+
+  /**
+   * Handle lease expiration
+   */
+  private handleLeaseExpiration(): void {
+    this.stopTimers();
+    this.state = 'init';
+    const expiredIP = this.leasedIP;
+    this.leasedIP = '';
+    this.serverIP = '';
+    this.subnetMask = '';
+    this.defaultGateway = '';
+    this.dnsServers = [];
+    this.leaseTime = 0;
+    this.t1Time = 0;
+    this.t2Time = 0;
+
+    if (this.onLeaseExpired) {
+      this.onLeaseExpired();
+    }
+  }
+
+  /**
+   * Create renewal/rebinding request packet
+   * @param broadcast - true for rebinding (broadcast), false for renewal (unicast)
+   */
+  private createRenewalRequest(broadcast: boolean): Packet {
+    this.xid = Math.floor(Math.random() * 0xFFFFFFFF);
+
+    const options: DHCPOption[] = [
+      { code: DHCP_OPTIONS.MESSAGE_TYPE, data: DHCPMessageType.REQUEST },
+      { code: DHCP_OPTIONS.END, data: new Uint8Array(0) },
+    ];
+
+    const dhcpRequest: DHCPPacket = {
+      op: 1, // BOOTREQUEST
+      htype: 1,
+      hlen: 6,
+      hops: 0,
+      xid: this.xid,
+      secs: 0,
+      flags: broadcast ? 0x8000 : 0, // Broadcast flag only for rebinding
+      ciaddr: this.leasedIP, // Client's current IP (renewal/rebinding uses ciaddr)
+      yiaddr: '0.0.0.0',
+      siaddr: '0.0.0.0',
+      giaddr: '0.0.0.0',
+      chaddr: this.macAddress,
+      sname: '',
+      file: '',
+      options,
+    };
+
+    // Create packet with appropriate addressing
+    const udp: UDPDatagram = {
+      sourcePort: DHCP_CLIENT_PORT,
+      destinationPort: DHCP_SERVER_PORT,
+      length: 0,
+      checksum: 0,
+      payload: this.serializeDHCPPacket(dhcpRequest),
+    };
+
+    const ipv4: IPv4Packet = {
+      version: 4,
+      headerLength: 20,
+      dscp: 0,
+      totalLength: 0,
+      identification: Math.floor(Math.random() * 65535),
+      flags: 0,
+      fragmentOffset: 0,
+      ttl: 64,
+      protocol: IP_PROTOCOL.UDP,
+      headerChecksum: 0,
+      sourceIP: this.leasedIP,
+      destinationIP: broadcast ? '255.255.255.255' : this.serverIP,
+      payload: udp,
+    };
+
+    const frame: EthernetFrame = {
+      destinationMAC: broadcast ? BROADCAST_MAC : 'FF:FF:FF:FF:FF:FF', // Would need ARP for unicast in real impl
+      sourceMAC: this.macAddress,
+      etherType: ETHER_TYPE.IPv4,
+      payload: ipv4,
+    };
+
+    return {
+      id: generatePacketId(),
+      timestamp: Date.now(),
+      frame,
+      hops: [],
+      status: 'in_transit',
+    };
+  }
+
+  /**
+   * Manually trigger lease renewal (for testing or user commands)
+   */
+  renew(): Packet | null {
+    if (this.state !== 'bound' && this.state !== 'renewing' && this.state !== 'rebinding') {
+      return null;
+    }
+
+    this.state = 'renewing';
+    return this.createRenewalRequest(false);
+  }
+
+  /**
+   * Get remaining lease time in seconds
+   */
+  getRemainingLeaseTime(): number {
+    if (this.state !== 'bound' && this.state !== 'renewing' && this.state !== 'rebinding') {
+      return 0;
+    }
+
+    const elapsed = (Date.now() - this.leaseStart) / 1000;
+    const remaining = this.leaseTime - elapsed;
+    return Math.max(0, Math.floor(remaining));
+  }
+
+  /**
+   * Get T1 (renewal) time in seconds
+   */
+  getT1Time(): number {
+    return this.t1Time;
+  }
+
+  /**
+   * Get T2 (rebinding) time in seconds
+   */
+  getT2Time(): number {
+    return this.t2Time;
   }
 
   /**
@@ -656,8 +906,15 @@ export class DHCPClient {
    * Process incoming DHCP packet
    */
   processPacket(dhcpPacket: DHCPPacket): Packet | null {
-    // Verify this is for us
+    // Verify this is for us (MAC address check)
     if (dhcpPacket.chaddr.toUpperCase() !== this.macAddress) {
+      return null;
+    }
+
+    // Verify XID matches our transaction (RFC 2131 requires this)
+    // Only validate if we're in an active state expecting a response
+    if (this.state !== 'init' && dhcpPacket.xid !== this.xid) {
+      // XID mismatch - this response is not for our current transaction
       return null;
     }
 
@@ -721,13 +978,24 @@ export class DHCPClient {
   }
 
   /**
-   * Handle DHCP ACK - lease obtained
+   * Handle DHCP ACK - lease obtained or renewed
    */
   private handleAck(dhcpPacket: DHCPPacket): Packet | null {
+    const wasRenewing = this.state === 'renewing' || this.state === 'rebinding';
+
     this.state = 'bound';
-    this.leasedIP = dhcpPacket.yiaddr;
-    this.serverIP = dhcpPacket.siaddr;
+    // For renewal/rebinding, yiaddr may be 0.0.0.0 (keep existing IP)
+    if (dhcpPacket.yiaddr && dhcpPacket.yiaddr !== '0.0.0.0') {
+      this.leasedIP = dhcpPacket.yiaddr;
+    }
+    if (dhcpPacket.siaddr && dhcpPacket.siaddr !== '0.0.0.0') {
+      this.serverIP = dhcpPacket.siaddr;
+    }
     this.leaseStart = Date.now();
+
+    // Reset T1/T2 before extracting (they may be in options)
+    this.t1Time = 0;
+    this.t2Time = 0;
 
     // Extract options
     for (const option of dhcpPacket.options) {
@@ -745,10 +1013,19 @@ export class DHCPClient {
         case DHCP_OPTIONS.LEASE_TIME:
           this.leaseTime = option.data as number;
           break;
+        case DHCP_OPTIONS.RENEWAL_TIME:
+          this.t1Time = option.data as number;
+          break;
+        case DHCP_OPTIONS.REBINDING_TIME:
+          this.t2Time = option.data as number;
+          break;
       }
     }
 
-    // Notify lease obtained
+    // Start lease timers (T1, T2, expiration)
+    this.startLeaseTimers();
+
+    // Notify lease obtained (also fires on renewal)
     if (this.onLeaseObtained) {
       this.onLeaseObtained({
         ipAddress: this.leasedIP,
@@ -767,8 +1044,19 @@ export class DHCPClient {
    * Handle DHCP NAK - request denied
    */
   private handleNak(_dhcpPacket: DHCPPacket): Packet | null {
+    // Stop all lease timers
+    this.stopTimers();
+
     this.state = 'init';
     this.leasedIP = '';
+    this.serverIP = '';
+    this.subnetMask = '';
+    this.defaultGateway = '';
+    this.dnsServers = [];
+    this.leaseTime = 0;
+    this.t1Time = 0;
+    this.t2Time = 0;
+
     // Restart discovery
     return this.discover();
   }
@@ -777,9 +1065,12 @@ export class DHCPClient {
    * Release the current lease
    */
   release(): Packet | null {
-    if (this.state !== 'bound') {
+    if (this.state !== 'bound' && this.state !== 'renewing' && this.state !== 'rebinding') {
       return null;
     }
+
+    // Stop all lease timers
+    this.stopTimers();
 
     const options: DHCPOption[] = [
       { code: DHCP_OPTIONS.MESSAGE_TYPE, data: DHCPMessageType.RELEASE },
@@ -807,6 +1098,13 @@ export class DHCPClient {
 
     this.state = 'init';
     this.leasedIP = '';
+    this.serverIP = '';
+    this.subnetMask = '';
+    this.defaultGateway = '';
+    this.dnsServers = [];
+    this.leaseTime = 0;
+    this.t1Time = 0;
+    this.t2Time = 0;
 
     return this.createDHCPPacket(dhcpRelease);
   }
