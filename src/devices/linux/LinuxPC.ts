@@ -112,6 +112,8 @@ export class LinuxPC extends BaseDevice {
         return this.cmdHostname(args);
       case 'dhclient':
         return this.cmdDhclient(args);
+      case 'traceroute':
+        return this.cmdTraceroute(args);
       default:
         return { output: '', error: `${cmd}: command not found`, exitCode: 127 };
     }
@@ -767,6 +769,117 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
     lines.push(`${count} packets transmitted, 0 received, 100% packet loss, time ${count * 1000}ms`);
 
     return { output: lines.join('\n'), exitCode: 1 };
+  }
+
+  // ==================== Traceroute Command ====================
+
+  private cmdTraceroute(args: string[]): CommandResult {
+    if (args.length === 0) {
+      return {
+        output: '',
+        error: 'Usage: traceroute [-m max_ttl] [-q nqueries] [-w wait] host',
+        exitCode: 1
+      };
+    }
+
+    let maxHops = 30;
+    let target = '';
+    let waitTime = 3; // seconds
+
+    // Parse arguments
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-m' && args[i + 1]) {
+        maxHops = parseInt(args[++i]) || 30;
+      } else if (args[i] === '-w' && args[i + 1]) {
+        waitTime = parseInt(args[++i]) || 3;
+      } else if (!args[i].startsWith('-')) {
+        target = args[i];
+      }
+    }
+
+    if (!target) {
+      return {
+        output: '',
+        error: 'traceroute: usage error: No target host specified',
+        exitCode: 1
+      };
+    }
+
+    // Validate target is a valid IP address
+    if (!this.networkStack.isValidIP(target)) {
+      return { output: '', error: `traceroute: ${target}: Name or service not known`, exitCode: 2 };
+    }
+
+    // Find outgoing interface with IP
+    const interfaces = this.networkStack.getInterfaces().filter(i => i.isUp && i.ipAddress);
+    if (interfaces.length === 0) {
+      return { output: '', error: `traceroute: connect: Network is unreachable`, exitCode: 1 };
+    }
+
+    // Check if we have a route to the target
+    const route = this.networkStack.lookupRoute(target);
+    if (!route) {
+      return { output: '', error: `traceroute: connect: Network is unreachable`, exitCode: 1 };
+    }
+
+    // Start traceroute - for CLI output we provide synchronous simulated output
+    // Real probes are sent asynchronously in the background
+    const lines = [`traceroute to ${target} (${target}), ${maxHops} hops max, 60 byte packets`];
+
+    // Start real traceroute probes in background
+    this.startRealTraceroute(target, maxHops, waitTime * 1000);
+
+    // For synchronous CLI output, simulate expected path based on routing
+    const outInterface = this.networkStack.getInterfaceByName(route.interface);
+    if (outInterface && outInterface.ipAddress) {
+      // Check if target is directly connected
+      const isDirectlyConnected = this.networkStack.isIPInNetwork(
+        target,
+        this.networkStack.getNetworkAddress(outInterface.ipAddress, outInterface.subnetMask || '255.255.255.0'),
+        outInterface.subnetMask || '255.255.255.0'
+      );
+
+      if (isDirectlyConnected) {
+        // Only one hop to target
+        const rtt = (Math.random() * 5 + 1).toFixed(3);
+        lines.push(` 1  ${target}  ${rtt} ms  ${rtt} ms  ${rtt} ms`);
+      } else if (route.gateway && route.gateway !== '0.0.0.0') {
+        // Through gateway - show gateway as hop 1
+        const gwRtt = (Math.random() * 5 + 1).toFixed(3);
+        lines.push(` 1  ${route.gateway}  ${gwRtt} ms  ${gwRtt} ms  ${gwRtt} ms`);
+
+        // Then target as hop 2 (simplified - real traceroute would show all hops)
+        const targetRtt = (Math.random() * 10 + 5).toFixed(3);
+        lines.push(` 2  ${target}  ${targetRtt} ms  ${targetRtt} ms  ${targetRtt} ms`);
+      } else {
+        // No gateway route, show timeout
+        lines.push(` 1  * * *`);
+      }
+    } else {
+      lines.push(` 1  * * *`);
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  /**
+   * Start real traceroute through network simulation
+   * Sends ICMP probes with incrementing TTL values
+   */
+  private startRealTraceroute(target: string, maxHops: number, timeoutMs: number): void {
+    // Send probes with incrementing TTL
+    for (let hop = 1; hop <= Math.min(maxHops, 10); hop++) {
+      setTimeout(() => {
+        this.networkStack.sendTracerouteProbe(target, hop, (response) => {
+          // Response is handled by the network simulation
+          // In the future, we could collect these for async display
+          if (response.reached) {
+            // Destination reached, no need to send more probes
+            return;
+          }
+        }, timeoutMs);
+      }, (hop - 1) * 200); // Stagger probes slightly
+    }
   }
 
   // ==================== Packet Processing ====================
