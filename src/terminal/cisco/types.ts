@@ -315,6 +315,28 @@ export interface RealDeviceData {
     type: string;
     ports: string;
   }>;
+  natTranslations?: Array<{
+    insideLocal: string;
+    insideGlobal: string;
+    outsideLocal: string;
+    outsideGlobal: string;
+    protocol?: number;
+    insidePort?: number;
+    outsidePort?: number;
+    type: 'static' | 'dynamic' | 'pat';
+  }>;
+  aclList?: Array<{
+    identifier: number | string;
+    type: 'standard' | 'extended';
+    entries: Array<{
+      sequence: number;
+      action: 'permit' | 'deny';
+      source: string;
+      destination?: string;
+      protocol?: string;
+      hits: number;
+    }>;
+  }>;
 }
 
 // Device type (Router vs Switch)

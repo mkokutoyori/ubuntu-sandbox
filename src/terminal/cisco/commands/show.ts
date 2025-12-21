@@ -542,11 +542,11 @@ function showIP(config: CiscoConfig, args: string[], realDeviceData?: RealDevice
     case 'eigrp':
       return showIPEIGRP(config, args.slice(1));
     case 'access-lists':
-      return showAccessLists(config, args.slice(1));
+      return showAccessLists(config, args.slice(1), realDeviceData);
     case 'dhcp':
       return showIPDHCP(config, args.slice(1), realDeviceData);
     case 'nat':
-      return showIPNAT(config, args.slice(1));
+      return showIPNAT(config, args.slice(1), realDeviceData);
     default:
       return { output: '', error: '% Invalid input detected', exitCode: 1 };
   }
@@ -1041,24 +1041,53 @@ function ipToNumber(ip: string): number {
   return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
 }
 
-function showIPNAT(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showIPNAT(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
+  const translations = realDeviceData?.natTranslations || [];
+
   if (args[0] === 'translations') {
     const lines: string[] = [
       'Pro Inside global      Inside local       Outside local      Outside global',
     ];
+
+    for (const t of translations) {
+      const proto = t.protocol === 6 ? 'tcp' : t.protocol === 17 ? 'udp' : t.protocol === 1 ? 'icmp' : '---';
+      const insideGlobal = t.insidePort ? `${t.insideGlobal}:${t.outsidePort}` : t.insideGlobal;
+      const insideLocal = t.insidePort ? `${t.insideLocal}:${t.insidePort}` : t.insideLocal;
+      const outsideLocal = t.outsideLocal || '---';
+      const outsideGlobal = t.outsideGlobal || '---';
+
+      lines.push(
+        `${proto.padEnd(4)}${insideGlobal.padEnd(19)}${insideLocal.padEnd(19)}${outsideLocal.padEnd(19)}${outsideGlobal}`
+      );
+    }
+
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
   if (args[0] === 'statistics') {
+    const staticCount = translations.filter(t => t.type === 'static').length;
+    const dynamicCount = translations.filter(t => t.type === 'dynamic').length;
+    const patCount = translations.filter(t => t.type === 'pat').length;
+    const total = translations.length;
+
     const lines: string[] = [
-      'Total active translations: 0 (0 static, 0 dynamic; 0 extended)',
+      `Total active translations: ${total} (${staticCount} static, ${dynamicCount + patCount} dynamic; ${patCount} extended)`,
       'Outside interfaces:',
+      '  ' + (config.interfaces.size > 0 ? Array.from(config.interfaces.keys()).slice(-1)[0] : 'none'),
       'Inside interfaces:',
-      'Hits: 0  Misses: 0',
+      '  ' + (config.interfaces.size > 0 ? Array.from(config.interfaces.keys())[0] : 'none'),
+      `Hits: ${total * 10}  Misses: 0`,
       'CEF Translated packets: 0, CEF Punted packets: 0',
       'Expired translations: 0',
       'Dynamic mappings:',
     ];
+
+    // Add NAT pool info from config
+    for (const [name, pool] of config.natPools || new Map()) {
+      lines.push(`-- Inside Source`);
+      lines.push(`   access-list ${pool.aclNumber || 1} pool ${name} refcount ${dynamicCount + patCount}`);
+    }
+
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
@@ -1348,27 +1377,52 @@ No active filter modules.`,
   };
 }
 
-function showAccessLists(config: CiscoConfig, args: string[]): CiscoCommandResult {
-  if (config.accessLists.size === 0) {
+function showAccessLists(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
+  // Try to get real ACL data first, fall back to config
+  const aclList = realDeviceData?.aclList || [];
+
+  if (aclList.length === 0 && config.accessLists.size === 0) {
     return { output: '', exitCode: 0 };
   }
 
   const lines: string[] = [];
 
-  for (const [id, acl] of config.accessLists) {
-    if (typeof id === 'number') {
-      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${id}`);
-    } else {
-      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${id}`);
-    }
+  // Display from real device data if available
+  if (aclList.length > 0) {
+    for (const acl of aclList) {
+      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${acl.identifier}`);
 
-    for (const entry of acl.entries) {
-      let line = `    ${entry.sequence} ${entry.action} ${entry.protocol}`;
-      line += ` ${entry.sourceIP === '0.0.0.0' && entry.sourceWildcard === '255.255.255.255' ? 'any' : entry.sourceIP + ' ' + entry.sourceWildcard}`;
-      if (acl.type === 'extended') {
-        line += ` ${entry.destIP === '0.0.0.0' && entry.destWildcard === '255.255.255.255' ? 'any' : entry.destIP + ' ' + entry.destWildcard}`;
+      for (const entry of acl.entries) {
+        let line = `    ${entry.sequence} ${entry.action}`;
+        if (acl.type === 'extended' && entry.protocol) {
+          line += ` ${entry.protocol}`;
+        }
+        line += ` ${entry.source}`;
+        if (acl.type === 'extended' && entry.destination) {
+          line += ` ${entry.destination}`;
+        }
+        if (entry.hits > 0) {
+          line += ` (${entry.hits} matches)`;
+        }
+        lines.push(line);
       }
-      lines.push(line);
+    }
+  } else {
+    // Fall back to config data
+    for (const [id, acl] of config.accessLists) {
+      lines.push(`${acl.type === 'standard' ? 'Standard' : 'Extended'} IP access list ${id}`);
+
+      for (const entry of acl.entries) {
+        let line = `    ${entry.sequence} ${entry.action}`;
+        if (acl.type === 'extended') {
+          line += ` ${entry.protocol}`;
+        }
+        line += ` ${entry.sourceIP === '0.0.0.0' && entry.sourceWildcard === '255.255.255.255' ? 'any' : entry.sourceIP + ' ' + entry.sourceWildcard}`;
+        if (acl.type === 'extended') {
+          line += ` ${entry.destIP === '0.0.0.0' && entry.destWildcard === '255.255.255.255' ? 'any' : entry.destIP + ' ' + entry.destWildcard}`;
+        }
+        lines.push(line);
+      }
     }
   }
 

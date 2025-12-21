@@ -21,6 +21,8 @@ import {
 import { ARPService } from '../../core/network/arp';
 import { DHCPServer, DHCPPoolConfig, parseDHCPPacket, isDHCPPacket, DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../../core/network/dhcp';
 import { DNSServer, parseDNSMessage, isDNSPacket, DNS_PORT } from '../../core/network/dns';
+import { NATService, NATPool, NATTranslation } from '../../core/network/nat';
+import { ACLService, ACL, ACLEntry, parseStandardACL, parseExtendedACL } from '../../core/network/acl';
 import {
   CiscoConfig,
   CiscoTerminalState,
@@ -50,6 +52,8 @@ export class CiscoDevice extends BaseDevice {
   private arpService: ARPService;
   private dhcpServer: DHCPServer;
   private dnsServer: DNSServer;
+  private natService: NATService;
+  private aclService: ACLService;
   private ciscoConfig: CiscoConfig;
   private terminalState: CiscoTerminalState;
   private bootTime: Date;
@@ -101,6 +105,12 @@ export class CiscoDevice extends BaseDevice {
         this.packetSender(packet, interfaceId);
       }
     });
+
+    // Initialize NAT service (for routers)
+    this.natService = new NATService();
+
+    // Initialize ACL service
+    this.aclService = new ACLService();
 
     // Sync interfaces with Cisco config
     this.syncInterfaces();
@@ -602,8 +612,18 @@ export class CiscoDevice extends BaseDevice {
         }
       }
 
-      // Check if packet is for us
-      const destIP = ipPacket.destinationIP;
+      // Apply NAT for incoming packets (outside to inside)
+      let currentPacket = packet;
+      if (iface && this.natService.isOutsideInterface(iface.name)) {
+        const natResult = this.natService.translateIncoming(currentPacket, iface.name);
+        if (natResult.translated) {
+          currentPacket = natResult.packet;
+        }
+      }
+
+      // Check if packet is for us (after NAT translation)
+      const currentIP = currentPacket.frame.payload as IPv4Packet;
+      const destIP = currentIP.destinationIP;
       const isForUs = this.networkStack
         .getInterfaces()
         .some(i => i.ipAddress === destIP) || destIP === '255.255.255.255';
@@ -625,7 +645,33 @@ export class CiscoDevice extends BaseDevice {
    * This is the core Layer 3 forwarding function
    */
   private routePacket(packet: Packet, sourceInterfaceId: string): Packet | null {
+    const sourceIface = this.networkStack.getInterface(sourceInterfaceId);
+    if (!sourceIface) return null;
+
     const originalIP = packet.frame.payload as IPv4Packet;
+
+    // Apply inbound ACL on source interface
+    const inboundACL = this.aclService.getInterfaceACL(sourceIface.name, 'in');
+    if (inboundACL) {
+      const ipPacket = packet.frame.payload as IPv4Packet;
+      const udpPacket = ipPacket.protocol === IP_PROTOCOL.UDP ? ipPacket.payload as UDPDatagram : null;
+      const srcPort = udpPacket?.sourcePort;
+      const dstPort = udpPacket?.destinationPort;
+
+      const permitted = this.aclService.checkPacket(
+        inboundACL.number || inboundACL.name!,
+        ipPacket.sourceIP,
+        ipPacket.destinationIP,
+        ipPacket.protocol,
+        srcPort,
+        dstPort
+      );
+
+      if (!permitted) {
+        // ACL denied - drop packet silently
+        return null;
+      }
+    }
 
     // Decrement TTL
     if (originalIP.ttl <= 1) {
@@ -660,8 +706,49 @@ export class CiscoDevice extends BaseDevice {
       return null;
     }
 
+    // Apply NAT if configured (inside to outside)
+    let currentPacket = packet;
+    if (this.natService.isInsideInterface(sourceIface.name) &&
+        this.natService.isOutsideInterface(outIface.name)) {
+      const natResult = this.natService.translateOutgoing(
+        currentPacket,
+        sourceIface.name,
+        outIface.ipAddress || '',
+        (aclNum, srcIP) => this.aclService.checkStandardACL(aclNum, srcIP)
+      );
+      if (natResult.translated) {
+        currentPacket = natResult.packet;
+      }
+    }
+
+    // Apply outbound ACL on destination interface
+    const outboundACL = this.aclService.getInterfaceACL(outIface.name, 'out');
+    if (outboundACL) {
+      const ipPacket = currentPacket.frame.payload as IPv4Packet;
+      const udpPacket = ipPacket.protocol === IP_PROTOCOL.UDP ? ipPacket.payload as UDPDatagram : null;
+      const srcPort = udpPacket?.sourcePort;
+      const dstPort = udpPacket?.destinationPort;
+
+      const permitted = this.aclService.checkPacket(
+        outboundACL.number || outboundACL.name!,
+        ipPacket.sourceIP,
+        ipPacket.destinationIP,
+        ipPacket.protocol,
+        srcPort,
+        dstPort
+      );
+
+      if (!permitted) {
+        // ACL denied - drop packet silently
+        return null;
+      }
+    }
+
+    // Update routedIP from potentially NAT-translated packet
+    const finalIP = currentPacket.frame.payload as IPv4Packet;
+
     // Determine next hop IP (gateway or direct)
-    const nextHopIP = route.gateway !== '0.0.0.0' ? route.gateway : routedIP.destinationIP;
+    const nextHopIP = route.gateway !== '0.0.0.0' ? route.gateway : finalIP.destinationIP;
 
     // Lookup MAC for next hop
     let nextHopMAC = this.networkStack.lookupARP(nextHopIP);
@@ -855,6 +942,20 @@ export class CiscoDevice extends BaseDevice {
   }
 
   /**
+   * Get NAT service
+   */
+  getNATService(): NATService {
+    return this.natService;
+  }
+
+  /**
+   * Get ACL service
+   */
+  getACLService(): ACLService {
+    return this.aclService;
+  }
+
+  /**
    * Add DHCP pool
    */
   addDHCPPool(pool: DHCPPoolConfig): void {
@@ -915,11 +1016,51 @@ export class CiscoDevice extends BaseDevice {
       ports: entry.ports,
     }));
 
+    // Get NAT translations
+    const natTranslations = this.natService.getTranslations().map(t => ({
+      insideLocal: t.insideLocal,
+      insideGlobal: t.insideGlobal,
+      outsideLocal: t.outsideLocal,
+      outsideGlobal: t.outsideGlobal,
+      protocol: t.protocol,
+      insidePort: t.insidePort,
+      outsidePort: t.translatedPort,
+      type: t.type,
+    }));
+
+    // Get ACL list
+    const aclList = this.aclService.getAllACLs().map(acl => ({
+      identifier: acl.number || acl.name!,
+      type: acl.type,
+      entries: acl.entries.map(e => ({
+        sequence: e.sequence,
+        action: e.action,
+        source: e.sourceIP === '0.0.0.0' && e.sourceWildcard === '255.255.255.255'
+          ? 'any'
+          : e.sourceWildcard === '0.0.0.0'
+            ? `host ${e.sourceIP}`
+            : `${e.sourceIP} ${e.sourceWildcard}`,
+        destination: e.destIP
+          ? e.destIP === '0.0.0.0' && e.destWildcard === '255.255.255.255'
+            ? 'any'
+            : e.destWildcard === '0.0.0.0'
+              ? `host ${e.destIP}`
+              : `${e.destIP} ${e.destWildcard}`
+          : undefined,
+        protocol: typeof e.protocol === 'number'
+          ? e.protocol === 6 ? 'tcp' : e.protocol === 17 ? 'udp' : e.protocol === 1 ? 'icmp' : String(e.protocol)
+          : e.protocol as string | undefined,
+        hits: e.hits,
+      })),
+    }));
+
     return {
       interfaces,
       routingTable,
       arpTable,
       macTable: this.ciscoType === 'switch' ? macTable : undefined,
+      natTranslations: this.ciscoType === 'router' ? natTranslations : undefined,
+      aclList: aclList.length > 0 ? aclList : undefined,
     };
   }
 
