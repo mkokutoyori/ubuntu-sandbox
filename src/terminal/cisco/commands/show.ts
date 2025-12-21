@@ -544,7 +544,7 @@ function showIP(config: CiscoConfig, args: string[], realDeviceData?: RealDevice
     case 'access-lists':
       return showAccessLists(config, args.slice(1));
     case 'dhcp':
-      return showIPDHCP(config, args.slice(1));
+      return showIPDHCP(config, args.slice(1), realDeviceData);
     case 'nat':
       return showIPNAT(config, args.slice(1));
     default:
@@ -923,20 +923,39 @@ function showIPEIGRP(config: CiscoConfig, args: string[]): CiscoCommandResult {
   return { output: '', error: '% Invalid input detected', exitCode: 1 };
 }
 
-function showIPDHCP(config: CiscoConfig, args: string[]): CiscoCommandResult {
+function showIPDHCP(config: CiscoConfig, args: string[], realDeviceData?: RealDeviceData): CiscoCommandResult {
   if (args[0] === 'pool') {
     const lines: string[] = [];
+
+    // Get real leases if available
+    const realLeases = realDeviceData?.dhcpLeases || [];
+    const leaseCount = realLeases.filter(l => l.state === 'active').length;
+
     for (const [name, pool] of config.dhcpPools) {
+      // Count leases for this pool
+      const poolLeases = realLeases.filter(l => {
+        if (!pool.network || !pool.mask) return false;
+        const network = ipToNumber(pool.network);
+        const mask = ipToNumber(pool.mask);
+        const ip = ipToNumber(l.ipAddress);
+        return (ip & mask) === (network & mask);
+      });
+      const poolLeaseCount = poolLeases.filter(l => l.state === 'active').length;
+
+      // Calculate total addresses in pool
+      const hostBits = 32 - netmaskToPrefix(pool.mask || '255.255.255.0');
+      const totalAddresses = Math.pow(2, hostBits) - 2; // Subtract network and broadcast
+
       lines.push(`Pool ${name} :`);
       lines.push(` Utilization mark (high/low)    : 100 / 0`);
       lines.push(` Subnet size (first/next)       : 0 / 0`);
-      lines.push(` Total addresses                : 254`);
-      lines.push(` Leased addresses               : 0`);
+      lines.push(` Total addresses                : ${totalAddresses}`);
+      lines.push(` Leased addresses               : ${poolLeaseCount}`);
       lines.push(` Pending event                  : none`);
       lines.push(` 1 subnet is currently in the pool :`);
       lines.push(` Current index        IP address range                    Leased/Excluded/Total`);
       if (pool.network && pool.mask) {
-        lines.push(` ${pool.network}        ${pool.network} - ${getBroadcastAddress(pool.network, pool.mask)}   0 / 0 / 254`);
+        lines.push(` ${pool.network}        ${pool.network} - ${getBroadcastAddress(pool.network, pool.mask)}   ${poolLeaseCount} / 0 / ${totalAddresses}`);
       }
       lines.push(``);
     }
@@ -944,10 +963,82 @@ function showIPDHCP(config: CiscoConfig, args: string[]): CiscoCommandResult {
   }
 
   if (args[0] === 'binding') {
-    return { output: 'Bindings from all pools not associated with VRF:\nIP address      Client-ID/              Lease expiration        Type       State\n', exitCode: 0 };
+    const lines: string[] = [
+      'Bindings from all pools not associated with VRF:',
+      'IP address      Client-ID/              Lease expiration        Type       State',
+      '                Hardware address',
+      '                /User name',
+    ];
+
+    const realLeases = realDeviceData?.dhcpLeases || [];
+
+    if (realLeases.length === 0) {
+      // No leases
+    } else {
+      for (const lease of realLeases) {
+        // Calculate lease expiration
+        const expirationDate = new Date(Date.now() + 86400000); // 1 day from now (simplified)
+        const expStr = formatLeaseExpiration(expirationDate);
+
+        const stateStr = lease.state === 'active' ? 'Active' : lease.state.charAt(0).toUpperCase() + lease.state.slice(1);
+
+        lines.push(`${lease.ipAddress.padEnd(16)}${lease.macAddress.toLowerCase().padEnd(24)}${expStr.padEnd(24)}${'Automatic'.padEnd(11)}${stateStr}`);
+      }
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  if (args[0] === 'server' && args[1] === 'statistics') {
+    const realLeases = realDeviceData?.dhcpLeases || [];
+    const activeCount = realLeases.filter(l => l.state === 'active').length;
+
+    const lines: string[] = [
+      'Memory usage         9353',
+      `Address pools        ${config.dhcpPools.size}`,
+      'Database agents      0',
+      'Automatic bindings   ' + activeCount,
+      'Manual bindings      0',
+      'Expired bindings     0',
+      'Malformed messages   0',
+      'Secure arp entries   0',
+      '',
+      'Message              Received',
+      'BOOTREQUEST          0',
+      'DHCPDISCOVER         ' + (activeCount * 2), // Estimate
+      'DHCPREQUEST          ' + activeCount,
+      'DHCPDECLINE          0',
+      'DHCPRELEASE          0',
+      'DHCPINFORM           0',
+      '',
+      'Message              Sent',
+      'BOOTREPLY            0',
+      'DHCPOFFER            ' + activeCount,
+      'DHCPACK              ' + activeCount,
+      'DHCPNAK              0',
+    ];
+
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   return { output: '', error: '% Incomplete command.', exitCode: 1 };
+}
+
+// Helper for DHCP lease expiration formatting
+function formatLeaseExpiration(date: Date): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[date.getMonth()];
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const mins = String(date.getMinutes()).padStart(2, '0');
+  return `${month} ${day} ${year} ${hours}:${mins} AM`;
+}
+
+// Helper to convert IP to number
+function ipToNumber(ip: string): number {
+  const parts = ip.split('.').map(Number);
+  return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
 }
 
 function showIPNAT(config: CiscoConfig, args: string[]): CiscoCommandResult {

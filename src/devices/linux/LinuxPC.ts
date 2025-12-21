@@ -11,6 +11,7 @@ import {
   IPv4Packet,
   ICMPPacket,
   ICMPType,
+  UDPDatagram,
   ETHER_TYPE,
   IP_PROTOCOL,
   BROADCAST_MAC,
@@ -19,6 +20,13 @@ import {
 } from '../../core/network/packet';
 import { ARPService } from '../../core/network/arp';
 import { FileSystem } from '../../terminal/filesystem';
+import {
+  DHCPClient,
+  DHCPClientLease,
+  parseDHCPPacket,
+  isDHCPPacket,
+  DHCP_CLIENT_PORT,
+} from '../../core/network/dhcp';
 
 export interface LinuxPCConfig extends Omit<DeviceConfig, 'type' | 'osType'> {
   type?: 'linux-pc' | 'linux-server';
@@ -42,6 +50,10 @@ export class LinuxPC extends BaseDevice {
 
   // Each device has its own isolated filesystem
   private fileSystem: FileSystem;
+
+  // DHCP client for automatic IP configuration
+  private dhcpClients: Map<string, DHCPClient> = new Map(); // interfaceId -> client
+  private dhcpLeases: Map<string, DHCPClientLease> = new Map(); // interfaceId -> lease
 
   constructor(config: LinuxPCConfig) {
     super(config);
@@ -98,6 +110,8 @@ export class LinuxPC extends BaseDevice {
         return this.cmdRoute(args);
       case 'hostname':
         return this.cmdHostname(args);
+      case 'dhclient':
+        return this.cmdDhclient(args);
       default:
         return { output: '', error: `${cmd}: command not found`, exitCode: 127 };
     }
@@ -436,6 +450,177 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
     return { output: this.hostname, exitCode: 0 };
   }
 
+  private cmdDhclient(args: string[]): CommandResult {
+    // Parse options
+    let release = false;
+    let interfaceName = '';
+
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-r') {
+        release = true;
+      } else if (args[i] === '-v') {
+        // verbose mode (we're always verbose)
+      } else if (!args[i].startsWith('-')) {
+        interfaceName = args[i];
+      }
+    }
+
+    // Default to eth0 if no interface specified
+    if (!interfaceName) {
+      interfaceName = 'eth0';
+    }
+
+    const iface = this.networkStack.getInterfaceByName(interfaceName);
+    if (!iface) {
+      return {
+        output: '',
+        error: `RTNETLINK answers: No such device`,
+        exitCode: 1
+      };
+    }
+
+    if (release) {
+      return this.dhclientRelease(iface);
+    }
+
+    return this.dhclientDiscover(iface);
+  }
+
+  private dhclientDiscover(iface: NetworkInterfaceConfig): CommandResult {
+    const lines: string[] = [];
+    lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
+    lines.push(`Copyright 2004-2018 Internet Systems Consortium.`);
+    lines.push(`All rights reserved.`);
+    lines.push(`For info, please visit https://www.isc.org/software/dhcp/`);
+    lines.push(``);
+
+    // Check if we already have a DHCP client for this interface
+    let client = this.dhcpClients.get(iface.id);
+    if (!client) {
+      client = new DHCPClient(iface.macAddress, this.hostname);
+      client.setInterface(iface.id);
+
+      // Set up callback for when lease is obtained
+      client.setOnLeaseObtained((lease: DHCPClientLease) => {
+        this.dhcpLeases.set(iface.id, lease);
+
+        // Configure the interface with the obtained IP
+        this.networkStack.configureInterface(iface.id, {
+          ipAddress: lease.ipAddress,
+          subnetMask: lease.subnetMask,
+          isUp: true
+        });
+
+        // Add default route if gateway provided
+        if (lease.defaultGateway) {
+          this.networkStack.addStaticRoute('0.0.0.0', '0.0.0.0', lease.defaultGateway, iface.name);
+        }
+      });
+
+      this.dhcpClients.set(iface.id, client);
+    }
+
+    // Check if we already have a lease
+    const existingLease = this.dhcpLeases.get(iface.id);
+    if (existingLease && client.getState() === 'bound') {
+      lines.push(`Listening on LPF/${iface.name}/${iface.macAddress.toLowerCase()}`);
+      lines.push(`Sending on   LPF/${iface.name}/${iface.macAddress.toLowerCase()}`);
+      lines.push(``);
+      lines.push(`DHCPREQUEST for ${existingLease.ipAddress} on ${iface.name} to ${existingLease.dhcpServer || '255.255.255.255'}`);
+      lines.push(`DHCPACK of ${existingLease.ipAddress} from ${existingLease.dhcpServer || 'unknown'}`);
+      lines.push(`bound to ${existingLease.ipAddress} -- renewal in ${Math.floor(existingLease.leaseTime / 2)} seconds.`);
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
+
+    // Bring interface up if not already
+    if (!iface.isUp) {
+      this.networkStack.configureInterface(iface.id, { isUp: true });
+    }
+
+    lines.push(`Listening on LPF/${iface.name}/${iface.macAddress.toLowerCase()}`);
+    lines.push(`Sending on   LPF/${iface.name}/${iface.macAddress.toLowerCase()}`);
+    lines.push(``);
+    lines.push(`DHCPDISCOVER on ${iface.name} to 255.255.255.255 port 67 interval 3`);
+
+    // Create and send DHCP DISCOVER packet
+    const discoverPacket = client.discover();
+
+    // Send the packet through the network
+    if (this.packetSender) {
+      this.packetSender(discoverPacket, iface.id);
+
+      // For simulation: Check if we got a response (synchronous for now)
+      // In a real async implementation, we'd wait for responses
+      const lease = this.dhcpLeases.get(iface.id);
+      if (lease) {
+        lines.push(`DHCPOFFER of ${lease.ipAddress} from ${lease.dhcpServer || 'unknown'}`);
+        lines.push(`DHCPREQUEST for ${lease.ipAddress} on ${iface.name} to ${lease.dhcpServer || '255.255.255.255'}`);
+        lines.push(`DHCPACK of ${lease.ipAddress} from ${lease.dhcpServer || 'unknown'}`);
+        lines.push(`bound to ${lease.ipAddress} -- renewal in ${Math.floor(lease.leaseTime / 2)} seconds.`);
+      } else {
+        lines.push(`No DHCPOFFERS received.`);
+        lines.push(`No working leases in persistent database - sleeping.`);
+        return { output: lines.join('\n'), exitCode: 1 };
+      }
+    } else {
+      lines.push(`No DHCPOFFERS received.`);
+      lines.push(`No working leases in persistent database - sleeping.`);
+      return { output: lines.join('\n'), exitCode: 1 };
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private dhclientRelease(iface: NetworkInterfaceConfig): CommandResult {
+    const lines: string[] = [];
+    lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
+
+    const client = this.dhcpClients.get(iface.id);
+    const lease = this.dhcpLeases.get(iface.id);
+
+    if (!client || !lease) {
+      lines.push(`No lease found for ${iface.name}.`);
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
+
+    lines.push(`Listening on LPF/${iface.name}/${iface.macAddress.toLowerCase()}`);
+    lines.push(`Sending on   LPF/${iface.name}/${iface.macAddress.toLowerCase()}`);
+    lines.push(``);
+    lines.push(`DHCPRELEASE on ${iface.name} to ${lease.dhcpServer || '255.255.255.255'}`);
+
+    // Create and send release packet
+    const releasePacket = client.release();
+    if (releasePacket && this.packetSender) {
+      this.packetSender(releasePacket, iface.id);
+    }
+
+    // Clear local lease info
+    this.dhcpLeases.delete(iface.id);
+
+    // Remove IP from interface
+    this.networkStack.configureInterface(iface.id, {
+      ipAddress: '',
+      subnetMask: ''
+    });
+
+    // Remove default route if it was the DHCP-provided one
+    if (lease.defaultGateway) {
+      this.networkStack.removeRoute('0.0.0.0', '0.0.0.0');
+    }
+
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  // Get DHCP lease for an interface
+  getDHCPLease(interfaceId: string): DHCPClientLease | null {
+    return this.dhcpLeases.get(interfaceId) || null;
+  }
+
+  // Get all DHCP leases
+  getDHCPLeases(): Map<string, DHCPClientLease> {
+    return this.dhcpLeases;
+  }
+
   private cmdPing(args: string[]): CommandResult {
     // This ping implementation uses real network simulation for connectivity checking
     // ARP resolution and ICMP packets travel through the actual simulated network
@@ -625,6 +810,32 @@ where  OBJECT := { link | address | addr | route | neigh | arp }`,
         this.packetSender(arpReply, interfaceId);
       }
       return null;  // Response sent via callback
+    }
+
+    // Handle IPv4 packets
+    if (frame.etherType === ETHER_TYPE.IPv4) {
+      const ipPacket = frame.payload as IPv4Packet;
+
+      // Handle DHCP responses (UDP)
+      if (ipPacket.protocol === IP_PROTOCOL.UDP) {
+        const udpPacket = ipPacket.payload as UDPDatagram;
+
+        // Check if this is a DHCP response (from server port 67 to client port 68)
+        if (isDHCPPacket(udpPacket) && udpPacket.destinationPort === DHCP_CLIENT_PORT) {
+          const dhcpPacket = parseDHCPPacket(udpPacket.payload);
+          if (dhcpPacket) {
+            const client = this.dhcpClients.get(interfaceId);
+            if (client) {
+              const response = client.processPacket(dhcpPacket);
+              if (response && this.packetSender) {
+                // Send DHCP REQUEST if we got an OFFER
+                this.packetSender(response, interfaceId);
+              }
+            }
+          }
+          return null; // DHCP handled
+        }
+      }
     }
 
     // Let network stack handle other packets (IPv4, ICMP, etc.)
