@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tokenize, TokenType } from '../terminal/shell/lexer';
 import { parseShellInput, astToString } from '../terminal/shell/parser';
 import { executeShellCommand } from '../terminal/shell/executor';
+import { executeInlineLoop, clearShellFunctions, hasShellFunction } from '../terminal/shell/scriptInterpreter';
 import { FileSystem } from '../terminal/filesystem';
 import { PackageManager } from '../terminal/packages';
 import { TerminalState } from '../terminal/types';
@@ -274,5 +275,96 @@ describe('Shell Executor', () => {
     expect(lines.length).toBe(2);
     expect(lines[0]).toBe('4');
     expect(lines[1]).toBe('5');
+  });
+});
+
+describe('Shell Functions', () => {
+  let fs: FileSystem;
+  let pm: PackageManager;
+  let state: TerminalState;
+
+  beforeEach(() => {
+    clearShellFunctions();
+    fs = new FileSystem();
+    pm = new PackageManager();
+    state = {
+      currentPath: '/home/user',
+      currentUser: 'user',
+      hostname: 'test-host',
+      history: [],
+      historyIndex: -1,
+      aliases: {},
+      env: {
+        PATH: '/usr/bin:/bin',
+        HOME: '/home/user',
+        USER: 'user',
+      },
+      isRoot: false,
+    };
+  });
+
+  it('defines and calls inline function', () => {
+    // Define function
+    const defResult = executeInlineLoop('greet() { echo "Hello"; }', state, fs, pm);
+    expect(defResult).not.toBeNull();
+    expect(defResult?.exitCode).toBe(0);
+    expect(hasShellFunction('greet')).toBe(true);
+
+    // Call function
+    const callResult = executeInlineLoop('greet', state, fs, pm);
+    expect(callResult).not.toBeNull();
+    expect(callResult?.output).toBe('Hello');
+  });
+
+  it('handles function with positional argument $1', () => {
+    // Define function with $1
+    executeInlineLoop('sayhi() { echo "Hi $1"; }', state, fs, pm);
+
+    // Call with argument
+    const result = executeInlineLoop('sayhi World', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('Hi World');
+  });
+
+  it('handles function with multiple arguments', () => {
+    executeInlineLoop('add() { echo "$1 + $2"; }', state, fs, pm);
+
+    const result = executeInlineLoop('add 5 3', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('5 + 3');
+  });
+
+  it('handles $# for argument count', () => {
+    executeInlineLoop('countargs() { echo "Count: $#"; }', state, fs, pm);
+
+    const result = executeInlineLoop('countargs a b c', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('Count: 3');
+  });
+
+  it('handles $@ for all arguments', () => {
+    executeInlineLoop('allargs() { echo "Args: $@"; }', state, fs, pm);
+
+    const result = executeInlineLoop('allargs one two three', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('Args: one two three');
+  });
+
+  it('handles for loop', () => {
+    const result = executeInlineLoop('for i in 1 2 3; do echo $i; done', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('1\n2\n3');
+  });
+
+  it('handles if statement', () => {
+    const result = executeInlineLoop('if true; then echo yes; else echo no; fi', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('yes');
+  });
+
+  it('handles brace expansion in for loop', () => {
+    const result = executeInlineLoop('for i in {1..3}; do echo $i; done', state, fs, pm);
+    expect(result).not.toBeNull();
+    expect(result?.output).toBe('1\n2\n3');
   });
 });

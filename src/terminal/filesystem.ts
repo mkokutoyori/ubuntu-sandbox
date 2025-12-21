@@ -1,4 +1,5 @@
 import { FileNode, User, Group } from './types';
+import { POSTGRES_ECOMMERCE_SEED, ORACLE_ECOMMERCE_SEED } from './sql/seeds';
 
 export class FileSystem {
   root: FileNode;
@@ -251,7 +252,19 @@ export class FileSystem {
     varDir.children!.get('www')!.children!.set('html', this.createDir('html', 'www-data', 'www-data'));
     varDir.children!.get('www')!.children!.get('html')!.children!.set('index.html', this.createFile('index.html', '<!DOCTYPE html>\n<html>\n<head><title>Welcome to Ubuntu</title></head>\n<body><h1>It works!</h1></body>\n</html>\n', 'www-data', 'www-data'));
 
+    // PostgreSQL data directory with seed scripts
+    const varLib = varDir.children!.get('lib')!;
+    const postgresql = this.createDir('postgresql', 'postgres', 'postgres');
+    postgresql.children!.set('seed-ecommerce.sql', this.createFile('seed-ecommerce.sql', this.getPostgresSeedScript(), 'postgres', 'postgres'));
+    varLib.children!.set('postgresql', postgresql);
+
     root.children!.set('var', varDir);
+
+    // Oracle data directory in /opt
+    const opt = root.children!.get('opt')!;
+    const oracle = this.createDir('oracle', 'oracle', 'oracle');
+    oracle.children!.set('seed-ecommerce.sql', this.createFile('seed-ecommerce.sql', this.getOracleSeedScript(), 'oracle', 'oracle'));
+    opt.children!.set('oracle', oracle);
 
     return root;
   }
@@ -335,6 +348,14 @@ export class FileSystem {
 2024-01-15 10:30:01 configure vim:amd64 2:8.2.3995-1ubuntu2.13 <none>
 2024-01-15 10:30:45 status installed vim:amd64 2:8.2.3995-1ubuntu2.13
 `;
+  }
+
+  private getPostgresSeedScript(): string {
+    return POSTGRES_ECOMMERCE_SEED;
+  }
+
+  private getOracleSeedScript(): string {
+    return ORACLE_ECOMMERCE_SEED;
   }
 
   // Path resolution

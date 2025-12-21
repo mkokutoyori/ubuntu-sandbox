@@ -4,6 +4,7 @@
 
 import { SQLRow, SQLResultSet, TableDefinition, ColumnDefinition } from '../generic/types';
 import { SQLEngine, TableStorage } from '../generic/engine';
+import { parseSQL } from '../generic/parser';
 import { OracleUser, OracleVSession, OracleDatabaseInfo, OracleTablespace } from './types';
 
 /**
@@ -285,6 +286,105 @@ export class OracleSystemCatalog {
       case 'DICT':
         return this.getDictionary();
 
+      // ========================================================================
+      // DBA Training V$ Views - Query underlying SYS tables
+      // ========================================================================
+
+      // Redo Logs
+      case 'V$LOG':
+      case 'V_$LOG':
+        return this.querySysTable('V_LOG$');
+
+      case 'V$LOGFILE':
+      case 'V_$LOGFILE':
+        return this.querySysTable('V_LOGFILE$');
+
+      case 'V$ARCHIVED_LOG':
+      case 'V_$ARCHIVED_LOG':
+        return this.querySysTable('V_ARCHIVED_LOG$');
+
+      // RMAN Backup
+      case 'V$BACKUP':
+      case 'V_$BACKUP':
+        return this.querySysTable('V_BACKUP$');
+
+      case 'V$RMAN_BACKUP_JOB_DETAILS':
+      case 'V_$RMAN_BACKUP_JOB_DETAILS':
+        return this.querySysTable('V_RMAN_BACKUP_JOB_DETAILS$');
+
+      // Locks and Transactions
+      case 'V$LOCK':
+      case 'V_$LOCK':
+        return this.querySysTable('V_LOCK$');
+
+      case 'V$TRANSACTION':
+      case 'V_$TRANSACTION':
+        return this.querySysTable('V_TRANSACTION$');
+
+      case 'V$SESSION_WAIT':
+      case 'V_$SESSION_WAIT':
+        return this.querySysTable('V_SESSION_WAIT$');
+
+      case 'V$WAITSTAT':
+      case 'V_$WAITSTAT':
+        return this.querySysTable('V_WAITSTAT$');
+
+      // Memory/SGA
+      case 'V$SGA':
+      case 'V_$SGA':
+        return this.querySysTable('V_SGA$');
+
+      case 'V$SGASTAT':
+      case 'V_$SGASTAT':
+        return this.querySysTable('V_SGASTAT$');
+
+      // SQL Performance
+      case 'V$SQL':
+      case 'V_$SQL':
+        return this.querySysTable('V_SQL$');
+
+      case 'V$SQLAREA':
+      case 'V_$SQLAREA':
+        return this.querySysTable('V_SQLAREA$');
+
+      // Flashback
+      case 'V$FLASHBACK_DATABASE_LOG':
+      case 'V_$FLASHBACK_DATABASE_LOG':
+        return this.querySysTable('V_FLASHBACK_DATABASE_LOG$');
+
+      // Diagnostics
+      case 'V$DIAG_ALERT_EXT':
+      case 'V_$DIAG_ALERT_EXT':
+        return this.querySysTable('V_DIAG_ALERT_EXT$');
+
+      // Scheduler Jobs
+      case 'DBA_SCHEDULER_JOBS':
+        return this.querySysTable('SCHEDULER_JOB$');
+
+      case 'DBA_SCHEDULER_JOB_LOG':
+        return this.querySysTable('SCHEDULER_JOB_LOG$');
+
+      // Resource Manager
+      case 'DBA_RSRC_PLANS':
+        return this.querySysTable('RSRC_PLAN$');
+
+      case 'DBA_RSRC_CONSUMER_GROUPS':
+        return this.querySysTable('RSRC_CONSUMER_GROUP$');
+
+      case 'DBA_RSRC_PLAN_DIRECTIVES':
+        return this.querySysTable('RSRC_PLAN_DIRECTIVE$');
+
+      // Flashback Archive
+      case 'DBA_FLASHBACK_ARCHIVE':
+        return this.querySysTable('FLASHBACK_ARCHIVE$');
+
+      case 'DBA_FLASHBACK_ARCHIVE_TABLES':
+        return this.querySysTable('FLASHBACK_ARCHIVE_TABLES$');
+
+      // Database Links
+      case 'DBA_DB_LINKS':
+        return this.querySysTable('DB_LINK$');
+
       default:
         return {
           columns: [],
@@ -292,6 +392,34 @@ export class OracleSystemCatalog {
           rows: [],
           rowCount: 0
         };
+    }
+  }
+
+  /**
+   * Query a table from the SYS schema
+   */
+  private querySysTable(tableName: string): SQLResultSet {
+    try {
+      const originalSchema = this.engine.getCurrentSchema();
+      this.engine.setCurrentSchema('SYS');
+
+      const sql = `SELECT * FROM SYS.${tableName}`;
+      const parsed = parseSQL(sql);
+
+      if (!parsed.success || parsed.statements.length === 0) {
+        this.engine.setCurrentSchema(originalSchema);
+        return { columns: [], columnTypes: [], rows: [], rowCount: 0 };
+      }
+
+      const result = this.engine.executeSelect(parsed.statements[0] as any);
+      this.engine.setCurrentSchema(originalSchema);
+
+      if (result.success && result.resultSet) {
+        return result.resultSet;
+      }
+      return { columns: [], columnTypes: [], rows: [], rowCount: 0 };
+    } catch (e) {
+      return { columns: [], columnTypes: [], rows: [], rowCount: 0 };
     }
   }
 

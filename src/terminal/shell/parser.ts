@@ -145,6 +145,7 @@ export class ShellParser {
       TokenType.STRING_DOUBLE,
       TokenType.VARIABLE,
       TokenType.COMMAND_SUB,
+      TokenType.ARITH_EXPAND,
       TokenType.GLOB,
     ].includes(token.type);
   }
@@ -399,6 +400,12 @@ export class ShellParser {
         case TokenType.COMMAND_SUB:
           parts.push({ type: 'command', command: token.value });
           value += token.raw || `$(${token.value})`;
+          break;
+
+        case TokenType.ARITH_EXPAND:
+          // Evaluate arithmetic expansion and replace with result
+          parts.push({ type: 'arithmetic', expr: token.value });
+          value += token.raw || `$((${token.value}))`;
           break;
 
         case TokenType.GLOB:

@@ -5,12 +5,16 @@
 import { CommandRegistry } from './index';
 import { createSQLPlusSession, executeSQLPlus, getSQLPlusPrompt, SQLPlusSession } from '../sql/oracle/sqlplus';
 import { createPsqlSession, executePsql, getPsqlPrompt, PsqlSession } from '../sql/postgres/psql';
+import { createRMANSession, executeRMAN, getRMANPrompt, RMANSession } from '../sql/oracle/rman';
 
 // Store SQL*Plus sessions for interactive mode
 const sqlplusSessions = new Map<string, SQLPlusSession>();
 
 // Store psql sessions for interactive mode
 const psqlSessions = new Map<string, PsqlSession>();
+
+// Store RMAN sessions for interactive mode
+const rmanSessions = new Map<string, RMANSession>();
 
 export const databaseCommands: CommandRegistry = {
   /**
@@ -141,6 +145,133 @@ Version 19.3.0.0.0
       output,
       exitCode: result.error ? 1 : 0,
       sqlplusPrompt: getSQLPlusPrompt(session)
+    } as any;
+  },
+
+  /**
+   * Oracle RMAN (Recovery Manager) command
+   */
+  rman: (args, state, fs, pm) => {
+    // Check if oracle is installed
+    const oracleInstalled = pm.isInstalled('oracle-xe-21c') ||
+                            pm.isInstalled('oracle-sqlplus') ||
+                            pm.isInstalled('oracle-instantclient');
+
+    if (!oracleInstalled) {
+      return {
+        output: '',
+        error: 'rman: command not found\nHint: Install oracle-xe-21c with: apt install oracle-xe-21c',
+        exitCode: 127
+      };
+    }
+
+    // Handle version
+    if (args[0] === '-v' || args[0] === '-V' || args[0] === '--version') {
+      return {
+        output: `Recovery Manager: Release 19.0.0.0.0 - Production on ${new Date().toDateString()}
+Version 19.3.0.0.0
+
+Copyright (c) 1982, 2019, Oracle and/or its affiliates.  All rights reserved.`,
+        exitCode: 0
+      };
+    }
+
+    // Handle help
+    if (args[0] === '-h' || args[0] === '-?' || args[0] === '--help') {
+      return {
+        output: `
+Recovery Manager: Release 19.0.0.0.0 - Production
+
+Usage: rman [options]
+
+Options:
+  TARGET connectstring     connect to target database
+  CATALOG connectstring    connect to recovery catalog
+  CMDFILE filename         execute commands from file
+  LOG filename             log output to file
+  TRACE filename           trace output to file
+  APPEND                   append to log file
+  DEBUG                    enable debug mode
+  MSGNO                    show message numbers
+  SEND 'command'           send command to media manager
+  PIPE pipename            operate in pipe mode
+  TIMEOUT minutes          wait timeout for pipe
+  CHECKSYNTAX              check syntax only
+  SCRIPT scriptname        run stored script
+
+Example:
+  rman target /
+  rman target sys/password@orcl catalog rman/rman@rcat
+
+For more information, enter HELP at the RMAN prompt.
+`,
+        exitCode: 0
+      };
+    }
+
+    // Check for "target /" or connection arguments
+    let autoConnect = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].toLowerCase() === 'target') {
+        autoConnect = true;
+        break;
+      }
+    }
+
+    // Enter interactive RMAN mode
+    const banner = `
+Recovery Manager: Release 19.0.0.0.0 - Production on ${new Date().toDateString()}
+Version 19.3.0.0.0
+
+Copyright (c) 1982, 2019, Oracle and/or its affiliates.  All rights reserved.
+${autoConnect ? '\nconnected to target database: ORCL (DBID=1234567890)' : ''}`;
+
+    return {
+      output: banner,
+      exitCode: 0,
+      enterRMANMode: true,
+      rmanConfig: { autoConnect }
+    } as any;
+  },
+
+  /**
+   * Internal RMAN execution (called from Terminal component)
+   */
+  __rmanExec: (args, state) => {
+    const sessionId = state.currentUser;
+    let session = rmanSessions.get(sessionId);
+
+    if (!session) {
+      session = createRMANSession();
+      // Auto-connect if specified
+      if ((state as any).rmanAutoConnect) {
+        session.connected = true;
+        session.targetDatabase = 'ORCL';
+      }
+      rmanSessions.set(sessionId, session);
+    }
+
+    const input = args.join(' ');
+    const result = executeRMAN(session, input);
+
+    if (result.exit) {
+      rmanSessions.delete(sessionId);
+      return {
+        output: result.output,
+        exitCode: 0,
+        exitRMANMode: true
+      } as any;
+    }
+
+    let output = result.output;
+    if (result.error) {
+      output += (output ? '\n' : '') + result.error;
+    }
+
+    return {
+      output,
+      exitCode: result.error ? 1 : 0,
+      rmanPrompt: getRMANPrompt(session)
     } as any;
   },
 
@@ -432,3 +563,28 @@ export function deletePsqlSession(sessionId: string): void {
 
 // Re-export psql functions for Terminal
 export { executePsql, getPsqlPrompt } from '../sql/postgres/psql';
+
+// Export RMAN session management for use by Terminal
+export function getRMANSession(sessionId: string): RMANSession | undefined {
+  return rmanSessions.get(sessionId);
+}
+
+export function createOrGetRMANSession(sessionId: string, autoConnect: boolean = false): RMANSession {
+  let session = rmanSessions.get(sessionId);
+  if (!session) {
+    session = createRMANSession();
+    if (autoConnect) {
+      session.connected = true;
+      session.targetDatabase = 'ORCL';
+    }
+    rmanSessions.set(sessionId, session);
+  }
+  return session;
+}
+
+export function deleteRMANSession(sessionId: string): void {
+  rmanSessions.delete(sessionId);
+}
+
+// Re-export RMAN functions for Terminal
+export { executeRMAN, getRMANPrompt } from '../sql/oracle/rman';

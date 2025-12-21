@@ -61,6 +61,7 @@ export interface TerminalState {
   isRoot: boolean;
   processes: Process[];
   backgroundJobs: Process[];
+  isPiped?: boolean; // True when command output is being piped to another command
 }
 
 export interface OutputLine {

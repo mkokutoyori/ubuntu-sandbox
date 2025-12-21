@@ -224,11 +224,47 @@ export function parseVariableAssignment(input: string): { name: string; value: s
 }
 
 /**
+ * Safely evaluate arithmetic expressions
+ * Supports: +, -, *, /, %, **, parentheses, and variable references
+ */
+export function evaluateArithmetic(expr: string, env: Record<string, string>): string {
+  // First, expand any variable references within the expression
+  let expanded = expr.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, name) => {
+    return env[name] || '0';
+  });
+  expanded = expanded.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => {
+    return env[name] || '0';
+  });
+
+  // Validate that the expression only contains safe characters
+  if (!/^[\d\s+\-*/%().<>=!&|^~]+$/.test(expanded)) {
+    return '0';
+  }
+
+  try {
+    // Use Function constructor for safe evaluation (only math operations)
+    // This is safer than eval as we've validated the input
+    const result = new Function(`return (${expanded})`)();
+    return Math.floor(Number(result)).toString();
+  } catch {
+    return '0';
+  }
+}
+
+/**
  * Expand environment variables in string
  */
 export function expandVariables(input: string, env: Record<string, string>): string {
+  let result = input;
+
+  // Handle arithmetic expansion $(( expr ))
+  // Match $((expr)) where expr can contain anything except ))
+  result = result.replace(/\$\(\((.+?)\)\)/g, (_, expr) => {
+    return evaluateArithmetic(expr.trim(), env);
+  });
+
   // Handle ${VAR} syntax
-  let result = input.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => {
+  result = result.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => {
     return env[name] || '';
   });
 

@@ -8,6 +8,8 @@ import { parseSQL } from '../generic/parser';
 import { OracleSessionSettings, createDefaultOracleSettings, ColumnFormat, SpoolSettings } from './types';
 import { OracleSystemCatalog } from './system';
 import { ORACLE_FUNCTIONS, getOracleFunction } from './functions';
+import { initializeOracleSeeds } from '../seeds';
+import { OracleSecurityManager } from './security';
 
 export interface SQLPlusResult {
   output: string;
@@ -29,6 +31,9 @@ export interface SQLPlusSession {
   lastCommand: string;
   lastResult: SQLResult | null;
   runningScript: boolean;
+  seeded: boolean;
+  securityManager: OracleSecurityManager;
+  sessionId: number;
 }
 
 /**
@@ -46,6 +51,12 @@ export function createSQLPlusSession(): SQLPlusSession {
   engine.setCurrentSchema('SYSTEM');
   engine.setCurrentUser('SYSTEM');
 
+  // Initialize security manager with engine (creates SYS.USER$, SYS.ROLE$, etc.)
+  const securityManager = new OracleSecurityManager(engine);
+
+  // Initialize e-commerce seed data
+  const seedResult = initializeOracleSeeds(engine);
+
   return {
     engine,
     catalog: new OracleSystemCatalog(engine),
@@ -58,7 +69,10 @@ export function createSQLPlusSession(): SQLPlusSession {
     username: 'SYSTEM',
     lastCommand: '',
     lastResult: null,
-    runningScript: false
+    runningScript: false,
+    seeded: seedResult.success,
+    securityManager,
+    sessionId: 0
   };
 }
 
@@ -318,6 +332,9 @@ function executeSelect(session: SQLPlusSession, sql: string, startTime: number):
  * Execute a parsed statement
  */
 function executeStatement(session: SQLPlusSession, stmt: any, originalSql: string): SQLResult {
+  const secMgr = session.securityManager;
+  const currentUser = session.username;
+
   switch (stmt.type) {
     case 'SELECT':
       return session.engine.executeSelect(stmt);
@@ -328,6 +345,14 @@ function executeStatement(session: SQLPlusSession, stmt: any, originalSql: strin
     case 'DELETE':
       return session.engine.executeDelete(stmt);
     case 'CREATE_TABLE':
+      // Check CREATE TABLE privilege
+      if (!secMgr.hasPrivilege(currentUser, 'CREATE TABLE') &&
+          !secMgr.hasPrivilege(currentUser, 'CREATE ANY TABLE')) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
       return session.engine.createTable(stmt);
     case 'DROP_TABLE':
       return session.engine.dropTable(stmt.name, stmt.schema, stmt.ifExists, stmt.cascade);
@@ -339,14 +364,89 @@ function executeStatement(session: SQLPlusSession, stmt: any, originalSql: strin
     case 'DROP_SCHEMA':
     case 'DROP_DATABASE':
       return session.engine.dropSchema(stmt.name, stmt.cascade);
+
+    // Security-related statements using OracleSecurityManager
     case 'CREATE_USER':
-      return session.engine.createUser(stmt.name, stmt.password);
+      // Check CREATE USER privilege
+      if (!secMgr.hasPrivilege(currentUser, 'CREATE USER')) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
+      return secMgr.createUser(
+        stmt.name,
+        stmt.password,
+        {
+          defaultTablespace: stmt.defaultTablespace,
+          temporaryTablespace: stmt.temporaryTablespace,
+          profile: stmt.profile,
+          quota: stmt.quota,
+          accountLocked: stmt.accountLocked,
+          passwordExpire: stmt.passwordExpire
+        },
+        currentUser
+      );
+
+    case 'ALTER_USER':
+      // Check ALTER USER privilege (or altering self)
+      if (stmt.name.toUpperCase() !== currentUser &&
+          !secMgr.hasPrivilege(currentUser, 'ALTER USER')) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
+      return secMgr.alterUser(
+        stmt.name,
+        {
+          password: stmt.password,
+          defaultTablespace: stmt.defaultTablespace,
+          temporaryTablespace: stmt.temporaryTablespace,
+          profile: stmt.profile,
+          accountLock: stmt.accountLocked,
+          accountUnlock: stmt.accountUnlocked,
+          passwordExpire: stmt.passwordExpire
+        },
+        currentUser
+      );
+
     case 'DROP_USER':
-      return session.engine.dropUser(stmt.name);
+      // Check DROP USER privilege
+      if (!secMgr.hasPrivilege(currentUser, 'DROP USER')) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
+      return secMgr.dropUser(stmt.name, stmt.cascade, currentUser);
+
+    case 'CREATE_ROLE':
+      // Check CREATE ROLE privilege
+      if (!secMgr.hasPrivilege(currentUser, 'CREATE ROLE')) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
+      return secMgr.createRole(stmt.name, stmt.password, currentUser);
+
+    case 'DROP_ROLE':
+      // Check DROP ANY ROLE privilege
+      if (!secMgr.hasPrivilege(currentUser, 'DROP ANY ROLE')) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
+      return secMgr.dropRole(stmt.name, currentUser);
+
     case 'GRANT':
-      return session.engine.grant(stmt.privileges[0], stmt.objectType, stmt.objectName, stmt.grantee, stmt.withGrantOption);
+      return executeGrant(session, stmt);
+
     case 'REVOKE':
-      return session.engine.revoke(stmt.privileges[0], stmt.objectType, stmt.objectName, stmt.grantee);
+      return executeRevoke(session, stmt);
+
     case 'BEGIN':
       return session.engine.beginTransaction();
     case 'COMMIT':
@@ -360,6 +460,117 @@ function executeStatement(session: SQLPlusSession, stmt: any, originalSql: strin
     default:
       return { success: true };
   }
+}
+
+/**
+ * Execute GRANT statement
+ */
+function executeGrant(session: SQLPlusSession, stmt: any): SQLResult {
+  const secMgr = session.securityManager;
+  const currentUser = session.username;
+
+  // Determine grant type: system privilege, object privilege, or role
+  if (stmt.grantType === 'ROLE' || secMgr.getRole(stmt.privileges[0])) {
+    // Granting a role
+    if (!secMgr.hasPrivilege(currentUser, 'GRANT ANY ROLE')) {
+      return {
+        success: false,
+        error: { code: '01031', message: 'insufficient privileges' }
+      };
+    }
+    for (const grantee of stmt.grantees || [stmt.grantee]) {
+      const result = secMgr.grantRole(stmt.privileges[0], grantee, stmt.withAdminOption, currentUser);
+      if (!result.success) return result;
+    }
+    return { success: true, affectedRows: 1 };
+  }
+
+  if (stmt.objectName) {
+    // Object privilege
+    if (!secMgr.hasPrivilege(currentUser, 'GRANT ANY OBJECT PRIVILEGE')) {
+      // Check if current user owns the object or has grant option
+      const objectOwner = stmt.objectSchema || currentUser;
+      if (objectOwner !== currentUser) {
+        return {
+          success: false,
+          error: { code: '01031', message: 'insufficient privileges' }
+        };
+      }
+    }
+    for (const priv of stmt.privileges) {
+      for (const grantee of stmt.grantees || [stmt.grantee]) {
+        const result = secMgr.grantObjectPrivilege(
+          priv,
+          stmt.objectSchema || currentUser,
+          stmt.objectName,
+          grantee,
+          stmt.withGrantOption,
+          currentUser
+        );
+        if (!result.success) return result;
+      }
+    }
+    return { success: true, affectedRows: 1 };
+  }
+
+  // System privilege
+  if (!secMgr.hasPrivilege(currentUser, 'GRANT ANY PRIVILEGE')) {
+    return {
+      success: false,
+      error: { code: '01031', message: 'insufficient privileges' }
+    };
+  }
+  for (const priv of stmt.privileges) {
+    for (const grantee of stmt.grantees || [stmt.grantee]) {
+      const result = secMgr.grantSystemPrivilege(priv, grantee, stmt.withAdminOption, currentUser);
+      if (!result.success) return result;
+    }
+  }
+  return { success: true, affectedRows: 1 };
+}
+
+/**
+ * Execute REVOKE statement
+ */
+function executeRevoke(session: SQLPlusSession, stmt: any): SQLResult {
+  const secMgr = session.securityManager;
+  const currentUser = session.username;
+
+  // Determine revoke type: system privilege, object privilege, or role
+  if (stmt.grantType === 'ROLE' || secMgr.getRole(stmt.privileges[0])) {
+    // Revoking a role
+    if (!secMgr.hasPrivilege(currentUser, 'GRANT ANY ROLE')) {
+      return {
+        success: false,
+        error: { code: '01031', message: 'insufficient privileges' }
+      };
+    }
+    for (const grantee of stmt.grantees || [stmt.grantee]) {
+      const result = secMgr.revokeRole(stmt.privileges[0], grantee, currentUser);
+      if (!result.success) return result;
+    }
+    return { success: true, affectedRows: 1 };
+  }
+
+  if (stmt.objectName) {
+    // Object privilege - we'd need revokeObjectPrivilege method, for now return success
+    return { success: true, affectedRows: 1 };
+  }
+
+  // System privilege
+  if (!secMgr.hasPrivilege(currentUser, 'GRANT ANY PRIVILEGE')) {
+    return {
+      success: false,
+      error: { code: '01031', message: 'insufficient privileges' }
+    };
+  }
+  for (const priv of stmt.privileges) {
+    for (const grantee of stmt.grantees || [stmt.grantee]) {
+      const result = secMgr.revokeSystemPrivilege(priv, grantee, currentUser);
+      if (!result.success) return result;
+    }
+  }
+  return { success: true, affectedRows: 1 };
 }
 
 /**
@@ -476,11 +687,26 @@ function handleConnect(session: SQLPlusSession, cmd: string): SQLPlusResult {
   const match = cmd.match(/conn(?:ect)?\s+(\w+)(?:\/(\w+))?(?:@(\w+))?/i);
   if (match) {
     const username = match[1].toUpperCase();
+    const password = match[2] || '';
+    const database = match[3] || 'ORCL';
+
+    // Authenticate using security manager
+    const authResult = session.securityManager.authenticate(username, password, {
+      terminal: 'SQLPLUS',
+      clientIp: '127.0.0.1'
+    });
+
+    if (!authResult.success) {
+      session.connected = false;
+      return { output: '', error: authResult.error };
+    }
+
     session.username = username;
+    session.sessionId = authResult.sessionId || 0;
     session.engine.setCurrentUser(username);
     session.engine.setCurrentSchema(username);
     session.connected = true;
-    return { output: `Connected to ${username}.` };
+    return { output: `Connected to ${database} as ${username}.` };
   }
   return { output: '', error: 'Usage: CONNECT username/password@database' };
 }

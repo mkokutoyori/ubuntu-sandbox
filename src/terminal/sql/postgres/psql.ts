@@ -9,6 +9,7 @@ import { SQLResult, SQLStatement } from '../generic/types';
 import { PostgresSessionSettings, createDefaultPostgresSettings, PsqlResult } from './types';
 import { PostgresSystemCatalog } from './system';
 import { getPostgresFunction } from './functions';
+import { initializePostgresSeeds } from '../seeds';
 
 /**
  * psql Session
@@ -21,6 +22,7 @@ export interface PsqlSession {
   inTransaction: boolean;
   lastRowCount: number;
   connected: boolean;
+  seeded: boolean;
 }
 
 /**
@@ -30,6 +32,9 @@ export function createPsqlSession(): PsqlSession {
   const engine = new SQLEngine();
   const catalog = new PostgresSystemCatalog(engine);
 
+  // Initialize e-commerce seed data
+  const seedResult = initializePostgresSeeds(engine);
+
   return {
     engine,
     catalog,
@@ -38,6 +43,7 @@ export function createPsqlSession(): PsqlSession {
     inTransaction: false,
     lastRowCount: 0,
     connected: true,
+    seeded: seedResult.success,
   };
 }
 

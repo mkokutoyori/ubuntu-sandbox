@@ -122,6 +122,11 @@ export const navigationCommands: CommandRegistry = {
       return { output: lines.join('\n'), exitCode: 0 };
     }
 
+    // When piped, output one file per line without colors (like real ls)
+    if (state.isPiped) {
+      return { output: entries.map(entry => entry.name).join('\n'), exitCode: 0 };
+    }
+
     const coloredEntries = entries.map(entry => {
       if (entry.type === 'directory') {
         return `\x1b[1;34m${entry.name}\x1b[0m`;
