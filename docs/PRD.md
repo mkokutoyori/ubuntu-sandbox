@@ -718,15 +718,662 @@ Pour chaque composant développé :
 
 ---
 
+## 3. Architecture Technique et Design Patterns
+
+### 3.1 Vue d'Ensemble de l'Architecture
+
+#### 3.1.1 Architecture en Couches (Layered Architecture)
+
+Notre architecture suit le principe de séparation en couches avec des responsabilités clairement définies :
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  React Components (UI/UX) - shadcn/ui + Tailwind    │   │
+│  │  - NetworkDesigner, Canvas, DevicePalette           │   │
+│  │  - TerminalModal, PropertiesPanel, Toolbar          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Props & Callbacks
+┌────────────────────────────▼────────────────────────────────┐
+│                     ADAPTER LAYER                            │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  React Hooks & State Management                      │   │
+│  │  - useNetworkSimulator (Bridge Pattern)             │   │
+│  │  - networkStore (Zustand)                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Interfaces
+┌────────────────────────────▼────────────────────────────────┐
+│                   APPLICATION LAYER                          │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Use Cases & Business Logic Orchestration            │   │
+│  │  - SimulationController                              │   │
+│  │  - DeviceManager                                     │   │
+│  │  - TopologyManager                                   │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Commands & Queries
+┌────────────────────────────▼────────────────────────────────┐
+│                     DOMAIN LAYER                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Core Business Logic (Framework-agnostic)            │   │
+│  │                                                       │   │
+│  │  Network Simulation Core:                            │   │
+│  │  - NetworkSimulator (Mediator)                       │   │
+│  │  - FrameForwardingService                            │   │
+│  │  - MACTableService                                   │   │
+│  │  - ARPService, DHCPService, DNSService              │   │
+│  │                                                       │   │
+│  │  Device Models:                                      │   │
+│  │  - IDevice (Interface)                               │   │
+│  │  - DeviceFactory (Factory Pattern)                   │   │
+│  │  - LinuxPC, WindowsPC, CiscoRouter, etc.            │   │
+│  │  - NetworkInterface, InterfaceState                  │   │
+│  │                                                       │   │
+│  │  Terminal Emulation:                                 │   │
+│  │  - ITerminal (Interface)                             │   │
+│  │  - CommandExecutor (Command Pattern)                 │   │
+│  │  - BashShell, CmdShell, IOSShell                    │   │
+│  │  - FileSystem (Virtual FS)                          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Data Structures
+┌────────────────────────────▼────────────────────────────────┐
+│                  INFRASTRUCTURE LAYER                        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Low-level Services & Utilities                      │   │
+│  │  - EventEmitter (Observer Pattern)                   │   │
+│  │  - Logger                                            │   │
+│  │  - StorageAdapter (LocalStorage)                     │   │
+│  │  - Serialization/Deserialization                     │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Règles de dépendance** :
+- ✅ Les couches supérieures dépendent des couches inférieures
+- ❌ Les couches inférieures ne connaissent PAS les couches supérieures
+- ✅ La Domain Layer ne dépend d'aucun framework (Pure TypeScript)
+- ✅ Communication via interfaces (Dependency Inversion Principle)
+
+#### 3.1.2 Principes SOLID Appliqués
+
+| Principe | Application | Exemple |
+|----------|-------------|---------|
+| **S**ingle Responsibility | Chaque classe a une seule raison de changer | `MACTableService` gère uniquement MAC tables |
+| **O**pen/Closed | Ouvert à l'extension, fermé à la modification | Nouveaux devices via `IDevice` interface |
+| **L**iskov Substitution | Les sous-types sont substituables | Tous les `IDevice` implémentent le contrat |
+| **I**nterface Segregation | Interfaces spécifiques vs générales | `IRoutable`, `ISwitchable` vs `IDevice` |
+| **D**ependency Inversion | Dépendre d'abstractions, pas de concrets | Injecter `ITerminal` pas `BashShell` |
+
+### 3.2 Design Patterns Utilisés
+
+#### 3.2.1 Creational Patterns (Création d'objets)
+
+##### A. Factory Pattern - DeviceFactory
+
+**Problème** : Créer des devices de types variés sans coupler le code client aux classes concrètes
+
+**Solution** :
+```typescript
+// Interface commune
+interface IDevice {
+  getId(): string;
+  getType(): DeviceType;
+  powerOn(): void;
+  powerOff(): void;
+  sendFrame(frame: EthernetFrame): void;
+  receiveFrame(frame: EthernetFrame): void;
+  getInterfaces(): NetworkInterface[];
+}
+
+// Factory
+class DeviceFactory {
+  private static registry = new Map<DeviceType, DeviceConstructor>();
+
+  // Permet l'enregistrement de nouveaux types
+  static register(type: DeviceType, constructor: DeviceConstructor): void {
+    this.registry.set(type, constructor);
+  }
+
+  static create(type: DeviceType, config: DeviceConfig): IDevice {
+    const Constructor = this.registry.get(type);
+    if (!Constructor) {
+      throw new DeviceTypeNotFoundError(type);
+    }
+    return new Constructor(config);
+  }
+}
+
+// Enregistrement des types
+DeviceFactory.register('linux-pc', LinuxPC);
+DeviceFactory.register('cisco-router', CiscoRouter);
+
+// Usage
+const device = DeviceFactory.create('linux-pc', { x: 100, y: 200 });
+```
+
+**Avantages** :
+- ✅ Ajout de nouveaux types sans modifier le factory
+- ✅ Code client découplé des implémentations concrètes
+- ✅ Testabilité : injection de mocks facile
+
+##### B. Builder Pattern - ConfigurationBuilder
+
+**Problème** : Créer des configurations complexes step-by-step
+
+**Solution** :
+```typescript
+class DeviceConfigBuilder {
+  private config: Partial<DeviceConfig> = {};
+
+  withType(type: DeviceType): this {
+    this.config.type = type;
+    return this;
+  }
+
+  withHostname(hostname: string): this {
+    this.config.hostname = hostname;
+    return this;
+  }
+
+  withInterface(iface: NetworkInterfaceConfig): this {
+    this.config.interfaces = [...(this.config.interfaces || []), iface];
+    return this;
+  }
+
+  build(): DeviceConfig {
+    this.validate();
+    return this.config as DeviceConfig;
+  }
+}
+
+// Usage
+const config = new DeviceConfigBuilder()
+  .withType('cisco-router')
+  .withHostname('R1')
+  .withInterface({ name: 'Fa0/0', ipAddress: '192.168.1.1' })
+  .withInterface({ name: 'Fa0/1', ipAddress: '10.0.0.1' })
+  .build();
+```
+
+#### 3.2.2 Structural Patterns (Organisation du code)
+
+##### A. Adapter Pattern - React Bridge
+
+**Problème** : Adapter la logique métier pour React sans la polluer
+
+**Solution** :
+```typescript
+// Domain Layer (Pure TypeScript)
+class NetworkSimulator {
+  private eventBus: EventEmitter;
+
+  sendFrame(frame: EthernetFrame): void {
+    // Business logic...
+    this.eventBus.emit('frame:sent', { frame, timestamp: Date.now() });
+  }
+}
+
+// Adapter Layer (React Hook)
+function useNetworkSimulator() {
+  const [events, setEvents] = useState<NetworkEvent[]>([]);
+  const simulatorRef = useRef<NetworkSimulator>();
+
+  useEffect(() => {
+    const simulator = NetworkSimulator.getInstance();
+    simulatorRef.current = simulator;
+
+    // Adapter: convertit events domain → state React
+    const handleFrameSent = (event: FrameSentEvent) => {
+      setEvents(prev => [...prev, {
+        type: 'frame_sent',
+        data: event,
+        id: generateId()
+      }]);
+    };
+
+    simulator.on('frame:sent', handleFrameSent);
+    return () => simulator.off('frame:sent', handleFrameSent);
+  }, []);
+
+  return {
+    sendFrame: (frame: EthernetFrame) => simulatorRef.current?.sendFrame(frame),
+    events
+  };
+}
+```
+
+##### B. Composite Pattern - Device Hierarchy
+
+**Problème** : Traiter uniformément devices simples et groupes de devices
+
+**Solution** :
+```typescript
+interface INetworkNode {
+  getId(): string;
+  accept(visitor: NetworkVisitor): void;
+  getChildren(): INetworkNode[];
+}
+
+class Device implements INetworkNode {
+  getChildren(): INetworkNode[] {
+    return []; // Leaf node
+  }
+}
+
+class DeviceGroup implements INetworkNode {
+  private children: INetworkNode[] = [];
+
+  add(node: INetworkNode): void {
+    this.children.push(node);
+  }
+
+  getChildren(): INetworkNode[] {
+    return this.children;
+  }
+}
+```
+
+#### 3.2.3 Behavioral Patterns (Comportement)
+
+##### A. Strategy Pattern - Protocol Handlers
+
+**Problème** : Différents algorithmes pour traiter différents protocoles
+
+**Solution** :
+```typescript
+interface IProtocolHandler {
+  canHandle(frame: EthernetFrame): boolean;
+  handle(frame: EthernetFrame, device: IDevice): void;
+}
+
+class ARPHandler implements IProtocolHandler {
+  canHandle(frame: EthernetFrame): boolean {
+    return frame.etherType === ETHER_TYPE.ARP;
+  }
+
+  handle(frame: EthernetFrame, device: IDevice): void {
+    const arpPacket = frame.payload as ARPPacket;
+    // ARP logic...
+  }
+}
+
+class IPv4Handler implements IProtocolHandler {
+  canHandle(frame: EthernetFrame): boolean {
+    return frame.etherType === ETHER_TYPE.IPv4;
+  }
+
+  handle(frame: EthernetFrame, device: IDevice): void {
+    const ipPacket = frame.payload as IPv4Packet;
+    // IPv4 logic...
+  }
+}
+
+// Usage dans Device
+class BaseDevice implements IDevice {
+  private handlers: IProtocolHandler[] = [
+    new ARPHandler(),
+    new IPv4Handler(),
+    new ICMPHandler()
+  ];
+
+  receiveFrame(frame: EthernetFrame): void {
+    const handler = this.handlers.find(h => h.canHandle(frame));
+    if (handler) {
+      handler.handle(frame, this);
+    }
+  }
+}
+```
+
+##### B. Command Pattern - Terminal Commands
+
+**Problème** : Encapsuler les commandes terminal de manière extensible
+
+**Solution** :
+```typescript
+interface ICommand {
+  execute(context: CommandContext): CommandResult;
+  undo?(): void;
+  getHelp(): string;
+}
+
+class LSCommand implements ICommand {
+  execute(context: CommandContext): CommandResult {
+    const { filesystem, currentPath, args } = context;
+    const entries = filesystem.readDir(currentPath);
+
+    return {
+      output: entries.map(e => e.name).join('\n'),
+      exitCode: 0
+    };
+  }
+
+  getHelp(): string {
+    return 'ls - list directory contents';
+  }
+}
+
+// Registry pattern pour les commandes
+class CommandRegistry {
+  private commands = new Map<string, ICommand>();
+
+  register(name: string, command: ICommand): void {
+    this.commands.set(name, command);
+  }
+
+  execute(name: string, context: CommandContext): CommandResult {
+    const command = this.commands.get(name);
+    if (!command) {
+      return { output: `Command not found: ${name}`, exitCode: 127 };
+    }
+    return command.execute(context);
+  }
+}
+```
+
+##### C. Observer Pattern - Event System
+
+**Problème** : Notifier multiples composants des changements réseau
+
+**Solution** :
+```typescript
+interface IEventEmitter {
+  on(event: string, listener: EventListener): void;
+  off(event: string, listener: EventListener): void;
+  emit(event: string, data: any): void;
+}
+
+class EventBus implements IEventEmitter {
+  private listeners = new Map<string, Set<EventListener>>();
+
+  on(event: string, listener: EventListener): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(listener);
+  }
+
+  emit(event: string, data: any): void {
+    const eventListeners = this.listeners.get(event);
+    if (eventListeners) {
+      eventListeners.forEach(listener => {
+        try {
+          listener(data);
+        } catch (error) {
+          console.error('Listener error:', error);
+        }
+      });
+    }
+  }
+}
+
+// Usage
+class NetworkSimulator {
+  private eventBus = new EventBus();
+
+  sendFrame(frame: EthernetFrame): void {
+    // ... logic
+    this.eventBus.emit('frame:sent', { frame, timestamp: Date.now() });
+  }
+
+  subscribe(callback: (event: NetworkEvent) => void): () => void {
+    this.eventBus.on('frame:sent', callback);
+    return () => this.eventBus.off('frame:sent', callback);
+  }
+}
+```
+
+##### D. Mediator Pattern - NetworkSimulator
+
+**Problème** : Coordonner la communication entre devices sans les coupler directement
+
+**Solution** :
+```typescript
+class NetworkSimulator {
+  private devices = new Map<string, IDevice>();
+  private topology = new Map<string, Set<string>>(); // device -> connected devices
+
+  registerDevice(device: IDevice): void {
+    this.devices.set(device.getId(), device);
+  }
+
+  connect(device1Id: string, device2Id: string): void {
+    if (!this.topology.has(device1Id)) {
+      this.topology.set(device1Id, new Set());
+    }
+    this.topology.get(device1Id)!.add(device2Id);
+  }
+
+  sendFrame(frame: EthernetFrame, sourceId: string): void {
+    const connectedDevices = this.topology.get(sourceId) || new Set();
+
+    connectedDevices.forEach(targetId => {
+      const targetDevice = this.devices.get(targetId);
+      if (targetDevice) {
+        // Mediator orchestre la communication
+        targetDevice.receiveFrame(frame);
+        this.eventBus.emit('frame:forwarded', { sourceId, targetId, frame });
+      }
+    });
+  }
+}
+```
+
+### 3.3 Structure des Modules
+
+#### 3.3.1 Organisation du Code
+
+```
+src/
+├── domain/                           # Domain Layer (Pure TypeScript)
+│   ├── network/                      # Network simulation core
+│   │   ├── interfaces/
+│   │   │   ├── INetworkSimulator.ts
+│   │   │   ├── IDevice.ts
+│   │   │   └── IProtocolHandler.ts
+│   │   ├── services/
+│   │   │   ├── NetworkSimulator.ts   # Mediator
+│   │   │   ├── MACTableService.ts
+│   │   │   ├── FrameForwardingService.ts
+│   │   │   ├── ARPService.ts
+│   │   │   ├── DHCPService.ts
+│   │   │   └── DNSService.ts
+│   │   ├── entities/
+│   │   │   ├── Frame.ts
+│   │   │   ├── Packet.ts
+│   │   │   └── NetworkInterface.ts
+│   │   └── value-objects/
+│   │       ├── MACAddress.ts
+│   │       ├── IPAddress.ts
+│   │       └── SubnetMask.ts
+│   │
+│   ├── devices/                      # Device models
+│   │   ├── interfaces/
+│   │   │   ├── IDevice.ts
+│   │   │   ├── IRoutable.ts
+│   │   │   └── ISwitchable.ts
+│   │   ├── factories/
+│   │   │   └── DeviceFactory.ts
+│   │   ├── base/
+│   │   │   └── BaseDevice.ts
+│   │   ├── linux/
+│   │   │   └── LinuxPC.ts
+│   │   ├── windows/
+│   │   │   └── WindowsPC.ts
+│   │   └── cisco/
+│   │       ├── CiscoRouter.ts
+│   │       ├── CiscoSwitch.ts
+│   │       └── CiscoL3Switch.ts
+│   │
+│   └── terminal/                     # Terminal emulation
+│       ├── interfaces/
+│       │   ├── ITerminal.ts
+│       │   ├── ICommand.ts
+│       │   └── IFileSystem.ts
+│       ├── commands/
+│       │   ├── CommandRegistry.ts
+│       │   ├── LSCommand.ts
+│       │   ├── CDCommand.ts
+│       │   └── ...
+│       ├── shells/
+│       │   ├── BashShell.ts
+│       │   ├── CmdShell.ts
+│       │   └── IOSShell.ts
+│       └── filesystem/
+│           ├── VirtualFileSystem.ts
+│           └── FileSystemNode.ts
+│
+├── application/                      # Application Layer (Use Cases)
+│   ├── use-cases/
+│   │   ├── CreateTopologyUseCase.ts
+│   │   ├── AddDeviceUseCase.ts
+│   │   ├── ConnectDevicesUseCase.ts
+│   │   └── SendFrameUseCase.ts
+│   └── services/
+│       ├── TopologyService.ts
+│       └── SimulationService.ts
+│
+├── infrastructure/                   # Infrastructure Layer
+│   ├── events/
+│   │   └── EventBus.ts
+│   ├── storage/
+│   │   └── LocalStorageAdapter.ts
+│   └── logging/
+│       └── Logger.ts
+│
+├── adapters/                         # Adapter Layer (React Bridge)
+│   ├── hooks/
+│   │   ├── useNetworkSimulator.ts
+│   │   ├── useDeviceManager.ts
+│   │   └── useTerminal.ts
+│   └── store/
+│       └── networkStore.ts
+│
+├── presentation/                     # Presentation Layer (React UI)
+│   └── components/
+│       ├── network/
+│       ├── terminal/
+│       └── ui/
+│
+└── __tests__/                        # Tests (mirror structure)
+    ├── unit/
+    ├── integration/
+    └── e2e/
+```
+
+### 3.4 Interfaces et Contrats Principaux
+
+#### 3.4.1 IDevice Interface
+
+```typescript
+/**
+ * Core interface for all network devices
+ */
+interface IDevice {
+  // Identity
+  getId(): string;
+  getType(): DeviceType;
+  getName(): string;
+  setName(name: string): void;
+
+  // Power management
+  isPoweredOn(): boolean;
+  powerOn(): void;
+  powerOff(): void;
+
+  // Network interfaces
+  getInterfaces(): NetworkInterface[];
+  getInterface(id: string): NetworkInterface | undefined;
+  addInterface(config: InterfaceConfig): NetworkInterface;
+
+  // Frame handling
+  sendFrame(frame: EthernetFrame, interfaceId: string): void;
+  receiveFrame(frame: EthernetFrame, interfaceId: string): void;
+
+  // Configuration
+  getConfig(): DeviceConfig;
+  setConfig(config: Partial<DeviceConfig>): void;
+
+  // Terminal access
+  hasTerminal(): boolean;
+  getTerminal(): ITerminal | undefined;
+
+  // Serialization
+  serialize(): SerializedDevice;
+  deserialize(data: SerializedDevice): void;
+}
+```
+
+#### 3.4.2 INetworkSimulator Interface
+
+```typescript
+interface INetworkSimulator {
+  // Device management
+  registerDevice(device: IDevice): void;
+  unregisterDevice(deviceId: string): void;
+  getDevice(deviceId: string): IDevice | undefined;
+  getAllDevices(): IDevice[];
+
+  // Topology management
+  connect(device1Id: string, interface1Id: string,
+          device2Id: string, interface2Id: string): Connection;
+  disconnect(connectionId: string): void;
+  getConnections(): Connection[];
+
+  // Frame routing
+  sendFrame(frame: EthernetFrame, sourceDeviceId: string): void;
+
+  // Event system
+  on(event: SimulatorEvent, listener: EventListener): void;
+  off(event: SimulatorEvent, listener: EventListener): void;
+
+  // Simulation control
+  start(): void;
+  stop(): void;
+  reset(): void;
+  getStatus(): SimulatorStatus;
+}
+```
+
+#### 3.4.3 ITerminal Interface
+
+```typescript
+interface ITerminal {
+  // Command execution
+  executeCommand(command: string): Promise<CommandResult>;
+
+  // State management
+  getState(): TerminalState;
+  getCurrentPath(): string;
+  getHistory(): string[];
+
+  // File system
+  getFileSystem(): IFileSystem;
+
+  // I/O
+  write(output: string): void;
+  read(): Promise<string>;
+
+  // Configuration
+  getPrompt(): string;
+  setPrompt(prompt: string): void;
+}
+```
+
+---
+
 ## Suite du Document
 
 Les prochaines sections à développer :
 
-- **Section 3** : Architecture technique détaillée et design patterns
-- **Section 4** : Spécifications fonctionnelles par composant
+- **Section 4** : Spécifications fonctionnelles détaillées par composant
 - **Section 5** : Plan d'implémentation TDD et roadmap
 
 ---
 
-**Statut actuel** : Sections 1-2 complétées (≈4000 mots)
-**Progression** : 40% du PRD total
+**Statut actuel** : Sections 1-3 complétées (≈6000 mots)
+**Progression** : 60% du PRD total
