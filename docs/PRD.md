@@ -1366,14 +1366,637 @@ interface ITerminal {
 
 ---
 
-## Suite du Document
+## 4. Spécifications Fonctionnelles Détaillées
 
-Les prochaines sections à développer :
+### 4.1 Couche Réseau (Network Layer)
 
-- **Section 4** : Spécifications fonctionnelles détaillées par composant
-- **Section 5** : Plan d'implémentation TDD et roadmap
+#### 4.1.1 NetworkSimulator - Spécifications
+
+**Responsabilité** : Coordonner la communication entre devices et gérer la topologie réseau
+
+**Fonctionnalités** :
+
+| Fonctionnalité | Description | Critères d'acceptation |
+|----------------|-------------|------------------------|
+| **registerDevice()** | Enregistrer un device dans le simulateur | - Device ajouté à la map<br>- Event 'device:registered' émis<br>- Retourne true si succès |
+| **connect()** | Créer une connexion entre 2 interfaces | - Vérifier que devices existent<br>- Vérifier que interfaces existent<br>- Créer connexion bidirectionnelle<br>- Event 'connection:created' |
+| **sendFrame()** | Router une frame depuis un device source | - Frame validée (MAC, CRC)<br>- Routage vers destinations<br>- Event 'frame:sent' avec timestamp |
+
+**Règles Métier** :
+
+```typescript
+// Validation de frame
+class FrameValidator {
+  validate(frame: EthernetFrame): ValidationResult {
+    // 1. Vérifier format MAC address
+    if (!this.isValidMAC(frame.sourceMAC)) {
+      return { valid: false, error: 'Invalid source MAC address' };
+    }
+
+    // 2. Vérifier taille frame (64-1518 bytes)
+    const size = this.calculateSize(frame);
+    if (size < 64 || size > 1518) {
+      return { valid: false, error: 'Frame size out of bounds' };
+    }
+
+    // 3. Vérifier CRC (optionnel)
+    if (frame.fcs && !this.verifyCRC(frame)) {
+      return { valid: false, error: 'CRC mismatch' };
+    }
+
+    return { valid: true };
+  }
+}
+```
+
+**Cas Limites** :
+
+1. **Device inexistant** : Throw `DeviceNotFoundException`
+2. **Interface déjà connectée** : Throw `InterfaceAlreadyConnectedException`
+3. **Frame invalide** : Log warning, drop frame, emit 'frame:dropped' event
+4. **Boucle de routage** : Détecter via TTL, drop après 255 hops
+
+#### 4.1.2 Protocoles Réseau - Spécifications
+
+##### A. ARP (Address Resolution Protocol)
+
+**RFC Compliance** : RFC 826
+
+**Fonctionnalités** :
+
+```typescript
+interface ARPService {
+  // Résoudre IP → MAC
+  resolve(ipAddress: string): Promise<string | null>;
+
+  // Envoyer ARP request
+  sendRequest(targetIP: string, sourceInterface: NetworkInterface): void;
+
+  // Traiter ARP reply
+  handleReply(packet: ARPPacket): void;
+
+  // Gérer cache ARP
+  getCache(): Map<string, ARPEntry>;
+  clearCache(): void;
+  setTTL(ttl: number): void; // Default: 20 minutes
+}
+
+interface ARPEntry {
+  ipAddress: string;
+  macAddress: string;
+  timestamp: number;
+  ttl: number; // Time to live in ms
+  isStatic: boolean;
+}
+```
+
+**Comportement** :
+
+1. **ARP Request** :
+   - Broadcast à FF:FF:FF:FF:FF:FF
+   - Inclure sender MAC et IP
+   - Attendre reply pendant 1 seconde (timeout)
+   - Retry jusqu'à 3 fois si pas de réponse
+
+2. **ARP Reply** :
+   - Unicast vers requester
+   - Inclure target MAC et IP
+   - Mise à jour automatique du cache
+
+3. **Cache Management** :
+   - TTL par défaut : 20 minutes
+   - Entries statiques : jamais expirées
+   - Nettoyage automatique toutes les 5 minutes
+
+**Cas d'Usage** :
+
+```typescript
+// Test : ARP resolution réussie
+describe('ARPService', () => {
+  it('should resolve IP to MAC address', async () => {
+    const arpService = new ARPService();
+    const device = createMockDevice({ ip: '192.168.1.2', mac: 'AA:BB:CC:DD:EE:FF' });
+
+    const mac = await arpService.resolve('192.168.1.2');
+
+    expect(mac).toBe('AA:BB:CC:DD:EE:FF');
+  });
+
+  it('should timeout after 3 retries', async () => {
+    const arpService = new ARPService();
+
+    const mac = await arpService.resolve('192.168.1.99'); // Non-existent
+
+    expect(mac).toBeNull();
+    expect(arpService.getRequestCount()).toBe(3);
+  });
+});
+```
+
+##### B. DHCP (Dynamic Host Configuration Protocol)
+
+**RFC Compliance** : RFC 2131, RFC 2132
+
+**Fonctionnalités** :
+
+```typescript
+interface DHCPService {
+  // Server side
+  startServer(config: DHCPServerConfig): void;
+  stopServer(): void;
+  assignLease(clientMAC: string): DHCPLease;
+  renewLease(clientMAC: string): DHCPLease;
+  releaseLease(clientMAC: string): void;
+
+  // Client side
+  discover(): void;
+  request(offerIP: string): void;
+  renew(): void;
+  release(): void;
+}
+
+interface DHCPServerConfig {
+  ipPool: {
+    start: string;      // e.g., '192.168.1.100'
+    end: string;        // e.g., '192.168.1.200'
+  };
+  subnetMask: string;   // e.g., '255.255.255.0'
+  gateway: string;      // e.g., '192.168.1.1'
+  dnsServers: string[]; // e.g., ['8.8.8.8', '8.8.4.4']
+  leaseTime: number;    // en secondes, default: 86400 (24h)
+}
+
+interface DHCPLease {
+  clientMAC: string;
+  assignedIP: string;
+  subnetMask: string;
+  gateway: string;
+  dnsServers: string[];
+  leaseStart: number;
+  leaseExpiry: number;
+}
+```
+
+**DHCP Message Types** :
+
+1. **DISCOVER** (Client → Broadcast) :
+   - Client cherche un serveur DHCP
+   - Broadcast à 255.255.255.255
+
+2. **OFFER** (Server → Unicast) :
+   - Serveur propose une IP
+   - Inclut configuration réseau
+
+3. **REQUEST** (Client → Broadcast) :
+   - Client accepte l'offre
+   - Peut être envoyé à plusieurs serveurs
+
+4. **ACK** (Server → Unicast) :
+   - Serveur confirme l'assignation
+   - Lease activé
+
+5. **NAK** (Server → Unicast) :
+   - Serveur refuse (IP déjà prise)
+
+6. **RELEASE** (Client → Unicast) :
+   - Client libère l'IP avant expiry
+
+**État du Client** :
+
+```
+INIT → SELECTING → REQUESTING → BOUND → RENEWING → REBINDING → INIT
+```
+
+##### C. DNS (Domain Name System)
+
+**RFC Compliance** : RFC 1035
+
+**Fonctionnalités** :
+
+```typescript
+interface DNSService {
+  // Query
+  resolve(hostname: string, recordType: DNSRecordType): Promise<DNSRecord[]>;
+
+  // Server management
+  addZone(zone: DNSZone): void;
+  removeZone(zoneName: string): void;
+  addRecord(zoneName: string, record: DNSRecord): void;
+
+  // Cache management
+  getCache(): Map<string, DNSCacheEntry>;
+  clearCache(): void;
+}
+
+enum DNSRecordType {
+  A = 1,      // IPv4 address
+  AAAA = 28,  // IPv6 address
+  CNAME = 5,  // Canonical name
+  MX = 15,    // Mail exchange
+  NS = 2,     // Name server
+  PTR = 12,   // Pointer
+  SOA = 6,    // Start of authority
+  TXT = 16    // Text
+}
+
+interface DNSRecord {
+  name: string;         // e.g., 'www.example.com'
+  type: DNSRecordType;
+  class: number;        // 1 = IN (Internet)
+  ttl: number;          // Time to live (seconds)
+  data: string;         // Record data
+}
+
+interface DNSZone {
+  name: string;         // e.g., 'example.com'
+  records: DNSRecord[];
+  ttl: number;
+}
+```
+
+**Comportement** :
+
+1. **Query Process** :
+   - Vérifier cache local
+   - Si miss, envoyer query à serveur DNS
+   - Parser response
+   - Mettre en cache avec TTL
+
+2. **Cache** :
+   - TTL respecté pour chaque record
+   - Negative caching (NXDOMAIN) : 5 minutes
+   - Cache size limit : 1000 entrées (LRU eviction)
+
+### 4.2 Modèles de Devices
+
+#### 4.2.1 Linux PC - Spécifications
+
+**Type** : `linux-pc`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_LINUX_CONFIG = {
+  os: 'Ubuntu 22.04 LTS',
+  hostname: 'ubuntu-pc',
+  username: 'user',
+  interfaces: [
+    {
+      name: 'eth0',
+      type: 'ethernet',
+      dhcp: true
+    }
+  ],
+  filesystem: {
+    '/': 'Standard Linux FS',
+    '/home/user': 'User home directory',
+    '/etc': 'System configuration',
+    '/var': 'Variable data'
+  }
+};
+```
+
+**Commandes Terminal Supportées** (Phase 1) :
+
+| Catégorie | Commandes | Priorité |
+|-----------|-----------|----------|
+| **Navigation** | ls, cd, pwd, dirs | P0 |
+| **Fichiers** | cat, touch, mkdir, rm, cp, mv | P0 |
+| **Réseau** | ping, ifconfig, ip, route, netstat | P0 |
+| **Système** | ps, top, kill, uname, hostname | P1 |
+| **Utilisateurs** | whoami, groups, id | P1 |
+| **Éditeurs** | nano (basique), vi (limité) | P2 |
+
+**Comportement Réseau** :
+
+- Supporte ARP, DHCP client, DNS client
+- Ping (ICMP echo request/reply)
+- Traceroute (ICMP TTL exceeded)
+- Routing table consulté pour forwarding
+
+#### 4.2.2 Windows PC - Spécifications
+
+**Type** : `windows-pc`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_WINDOWS_CONFIG = {
+  os: 'Windows 10 Pro',
+  hostname: 'WIN-PC',
+  username: 'Administrator',
+  interfaces: [
+    {
+      name: 'Ethernet0',
+      type: 'ethernet',
+      dhcp: true
+    }
+  ],
+  filesystem: {
+    'C:\\': 'System drive',
+    'C:\\Users\\Administrator': 'User profile',
+    'C:\\Windows': 'System files'
+  }
+};
+```
+
+**Commandes Terminal Supportées** (Phase 1) :
+
+| Catégorie | Commandes CMD | Priorité |
+|-----------|---------------|----------|
+| **Navigation** | dir, cd, tree | P0 |
+| **Fichiers** | type, copy, move, del, mkdir | P0 |
+| **Réseau** | ping, ipconfig, route, netstat | P0 |
+| **Système** | tasklist, taskkill, systeminfo, hostname | P1 |
+
+**PowerShell** (Phase 2) :
+
+- Get-ChildItem, Set-Location
+- Get-Content, Copy-Item
+- Test-NetConnection
+- Get-Process
+
+#### 4.2.3 Cisco Router - Spécifications
+
+**Type** : `cisco-router`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_ROUTER_CONFIG = {
+  model: 'Cisco 2900 Series',
+  ios: '15.2(4)M',
+  hostname: 'Router',
+  interfaces: [
+    { name: 'FastEthernet0/0', type: 'ethernet', status: 'administratively down' },
+    { name: 'FastEthernet0/1', type: 'ethernet', status: 'administratively down' },
+    { name: 'Serial0/0/0', type: 'serial', status: 'administratively down' }
+  ],
+  routingTable: [],
+  runningConfig: {},
+  startupConfig: {}
+};
+```
+
+**Modes IOS** :
+
+```
+User EXEC (>) → Privileged EXEC (#) → Global Config (config)# → Interface Config (config-if)#
+```
+
+**Commandes IOS Supportées** (Phase 1) :
+
+```typescript
+// User EXEC Mode
+const USER_EXEC_COMMANDS = [
+  'enable',           // Passer en privileged mode
+  'show version',     // Version IOS
+  'show ip interface brief',
+  'ping <ip>',
+  'traceroute <ip>'
+];
+
+// Privileged EXEC Mode
+const PRIVILEGED_EXEC_COMMANDS = [
+  'configure terminal',  // Passer en config mode
+  'show running-config',
+  'show startup-config',
+  'show ip route',
+  'show arp',
+  'copy running-config startup-config',
+  'reload'
+];
+
+// Global Configuration Mode
+const GLOBAL_CONFIG_COMMANDS = [
+  'hostname <name>',
+  'interface <type> <number>',
+  'ip route <network> <mask> <next-hop>',
+  'no ip route <network> <mask> <next-hop>'
+];
+
+// Interface Configuration Mode
+const INTERFACE_CONFIG_COMMANDS = [
+  'ip address <ip> <mask>',
+  'no shutdown',
+  'shutdown',
+  'description <text>'
+];
+```
+
+**Routage** :
+
+- Static routing : `ip route 192.168.2.0 255.255.255.0 192.168.1.2`
+- Connected routes : automatiquement ajoutées quand interface up
+- Default route : `ip route 0.0.0.0 0.0.0.0 <gateway>`
+
+#### 4.2.4 Cisco Switch - Spécifications
+
+**Type** : `cisco-switch`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_SWITCH_CONFIG = {
+  model: 'Cisco Catalyst 2960',
+  ios: '15.2(2)E',
+  hostname: 'Switch',
+  interfaces: [
+    { name: 'GigabitEthernet0/1', type: 'ethernet', vlan: 1 },
+    { name: 'GigabitEthernet0/2', type: 'ethernet', vlan: 1 },
+    // ... 24 ports total
+  ],
+  macAddressTable: new Map(),
+  vlanDatabase: [
+    { id: 1, name: 'default', status: 'active' }
+  ]
+};
+```
+
+**MAC Address Learning** :
+
+```typescript
+interface MACTableEntry {
+  macAddress: string;
+  vlan: number;
+  interface: string;
+  type: 'dynamic' | 'static';
+  age: number; // en secondes, max 300 (5 min)
+}
+
+class MACTableService {
+  learn(mac: string, port: string, vlan: number): void {
+    // Ajouter/rafraîchir entrée
+    this.table.set(mac, {
+      macAddress: mac,
+      vlan,
+      interface: port,
+      type: 'dynamic',
+      age: 0
+    });
+  }
+
+  lookup(mac: string, vlan: number): string | null {
+    const entry = this.table.get(mac);
+    if (entry && entry.vlan === vlan && entry.age < 300) {
+      return entry.interface;
+    }
+    return null; // Unknown unicast → flood
+  }
+}
+```
+
+**Frame Forwarding Logic** :
+
+```typescript
+class FrameForwardingService {
+  forward(frame: EthernetFrame, ingressPort: string, switch: CiscoSwitch): void {
+    const vlan = switch.getPortVLAN(ingressPort);
+
+    // 1. MAC Learning
+    switch.macTable.learn(frame.sourceMAC, ingressPort, vlan);
+
+    // 2. Lookup destination
+    const egressPort = switch.macTable.lookup(frame.destinationMAC, vlan);
+
+    if (egressPort) {
+      // Known unicast → forward to specific port
+      if (egressPort !== ingressPort) {
+        switch.sendFrame(frame, egressPort);
+      }
+    } else {
+      // Unknown unicast ou broadcast → flood to all ports in VLAN
+      switch.floodFrame(frame, ingressPort, vlan);
+    }
+  }
+}
+```
+
+### 4.3 Terminal Emulation
+
+#### 4.3.1 Bash Shell - Spécifications
+
+**Commandes Prioritaires** (Phase 1) :
+
+```typescript
+interface CommandSpecification {
+  name: string;
+  syntax: string;
+  description: string;
+  examples: string[];
+  testCases: TestCase[];
+}
+
+const LS_COMMAND: CommandSpecification = {
+  name: 'ls',
+  syntax: 'ls [OPTIONS] [PATH]',
+  description: 'List directory contents',
+  examples: [
+    'ls',           // Liste répertoire courant
+    'ls -l',        // Format long
+    'ls -a',        // Inclure fichiers cachés
+    'ls -lh',       // Format long + tailles lisibles
+    'ls /etc'       // Liste répertoire spécifique
+  ],
+  testCases: [
+    {
+      input: 'ls',
+      expectedOutput: ['file1.txt', 'file2.txt', 'dir1'],
+      exitCode: 0
+    },
+    {
+      input: 'ls /nonexistent',
+      expectedOutput: ['ls: cannot access \'/nonexistent\': No such file or directory'],
+      exitCode: 2
+    }
+  ]
+};
+```
+
+**File System Virtuel** :
+
+```typescript
+interface FileSystemNode {
+  name: string;
+  type: 'file' | 'directory' | 'symlink';
+  permissions: string; // e.g., 'rwxr-xr-x'
+  owner: string;
+  group: string;
+  size: number;
+  modified: Date;
+  content?: string;     // Pour files
+  children?: Map<string, FileSystemNode>; // Pour directories
+  target?: string;      // Pour symlinks
+}
+
+class VirtualFileSystem {
+  private root: FileSystemNode;
+
+  // Opérations
+  readFile(path: string): string | null;
+  writeFile(path: string, content: string): boolean;
+  createDirectory(path: string): boolean;
+  deleteNode(path: string): boolean;
+  exists(path: string): boolean;
+  isDirectory(path: string): boolean;
+  listDirectory(path: string): FileSystemNode[];
+
+  // Permissions
+  checkPermission(path: string, operation: 'read' | 'write' | 'execute'): boolean;
+}
+```
+
+### 4.4 Gestion des Erreurs
+
+#### 4.4.1 Types d'Erreurs
+
+```typescript
+// Domain Errors
+class DomainError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = 'DomainError';
+  }
+}
+
+class DeviceNotFoundError extends DomainError {
+  constructor(deviceId: string) {
+    super(`Device not found: ${deviceId}`, 'DEVICE_NOT_FOUND');
+  }
+}
+
+class InvalidConfigurationError extends DomainError {
+  constructor(reason: string) {
+    super(`Invalid configuration: ${reason}`, 'INVALID_CONFIG');
+  }
+}
+
+class NetworkError extends DomainError {
+  constructor(message: string) {
+    super(message, 'NETWORK_ERROR');
+  }
+}
+```
+
+#### 4.4.2 Stratégies de Récupération
+
+| Erreur | Stratégie | Action UI |
+|--------|-----------|-----------|
+| Device non trouvé | Log + return null | Toast error message |
+| Frame invalide | Drop + log warning | Afficher dans event log |
+| Interface down | Reject + error | Highlight interface en rouge |
+| Configuration invalide | Validation + error | Form validation feedback |
+| Timeout réseau | Retry 3x puis fail | Spinner → Error message |
 
 ---
 
-**Statut actuel** : Sections 1-3 complétées (≈6000 mots)
-**Progression** : 60% du PRD total
+## Suite du Document
+
+La prochaine section à développer :
+
+- **Section 5** : Plan d'implémentation TDD et roadmap détaillée
+
+---
+
+**Statut actuel** : Sections 1-4 complétées (≈8000 mots)
+**Progression** : 80% du PRD total
