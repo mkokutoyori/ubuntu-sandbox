@@ -9,12 +9,30 @@ export type DeviceType =
   | 'windows-pc'
   | 'cisco-router'
   | 'cisco-switch'
-  | 'cisco-l3-switch';
+  | 'cisco-l3-switch'
+  // Additional UI device types (not yet implemented in the device layer)
+  | 'mac-pc'
+  | 'linux-server'
+  | 'windows-server'
+  | 'db-mysql'
+  | 'db-postgres'
+  | 'db-oracle'
+  | 'db-sqlserver'
+  | 'router-cisco'
+  | 'router-huawei'
+  | 'switch-cisco'
+  | 'switch-huawei'
+  | 'switch-generic'
+  | 'firewall-fortinet'
+  | 'firewall-cisco'
+  | 'firewall-paloalto'
+  | 'access-point'
+  | 'cloud';
 
 export interface NetworkInterfaceConfig {
   id: string;
   name: string;
-  type: 'ethernet' | 'serial' | 'console';
+  type: 'ethernet' | 'serial' | 'console' | 'wifi' | 'fiber';
   ipAddress?: string;
   subnetMask?: string;
   macAddress?: string;
@@ -32,7 +50,7 @@ export interface DeviceConfig {
   isPoweredOn?: boolean;
 }
 
-export type ConnectionType = 'ethernet' | 'serial' | 'console';
+export type ConnectionType = 'ethernet' | 'serial' | 'console' | 'wifi' | 'fiber';
 
 export interface Connection {
   id: string;

@@ -9,6 +9,7 @@ export interface EditorState {
   content: string;
   cursorLine: number;
   cursorCol: number;
+  message?: string;
 }
 
 export interface OutputLine {

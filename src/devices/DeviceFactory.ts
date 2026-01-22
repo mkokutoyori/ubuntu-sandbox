@@ -29,8 +29,25 @@ export class DeviceFactory {
     }
   }
 
-  static isFullyImplemented(): boolean {
+  static isFullyImplemented(_type?: DeviceType): boolean {
     // Stub implementation - returns false as we're using stubs
     return false;
+  }
+
+  /**
+   * UI helper: whether a device type can open an interactive terminal.
+   * (Stub implementation: all current device types have terminal support.)
+   */
+  static hasTerminalSupport(type: DeviceType): boolean {
+    switch (type) {
+      case 'linux-pc':
+      case 'windows-pc':
+      case 'cisco-router':
+      case 'cisco-switch':
+      case 'cisco-l3-switch':
+        return true;
+      default:
+        return false;
+    }
   }
 }

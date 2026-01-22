@@ -15,7 +15,6 @@ import { BaseDevice } from '@/devices';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { CiscoTerminal } from '@/components/CiscoTerminal';
-import { CiscoDevice } from '@/devices/cisco/CiscoDevice';
 import { DeviceFactory } from '@/devices/DeviceFactory';
 import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
@@ -281,7 +280,6 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
               deviceType={deviceType === 'switch-cisco' ? 'switch' : 'router'}
               hostname={device.getHostname()}
               onRequestClose={onClose}
-              device={device as CiscoDevice}
             />
           ) : isWindowsDevice ? (
             <WindowsTerminal device={device} onRequestClose={onClose} />
