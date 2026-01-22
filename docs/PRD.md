@@ -313,16 +313,420 @@ Point crucial : **nous conservons l'interface utilisateur actuelle** qui est dé
 
 ---
 
-## Suite du Document
+## 2. Analyse de l'Existant et Objectifs Détaillés
 
-La suite du PRD sera développée dans les prochaines sections :
+### 2.1 Analyse Technique de l'Architecture Actuelle
 
-- **Section 2** : Analyse détaillée de l'existant et définition précise des objectifs
-- **Section 3** : Architecture technique, design patterns à utiliser, et structure des modules
-- **Section 4** : Spécifications fonctionnelles détaillées pour chaque composant
-- **Section 5** : Plan d'implémentation, roadmap et organisation du travail TDD
+#### 2.1.1 Structure de la Base de Code (Avant Refonte)
+
+L'analyse approfondie de l'architecture existante révèle une structure organisée en trois couches principales :
+
+##### Couche Présentation (~338KB)
+```
+/src/components/
+├── network/               # 11 composants de visualisation réseau
+│   ├── NetworkDesigner    # Orchestrateur principal
+│   ├── NetworkCanvas      # Canvas drag-and-drop
+│   ├── DevicePalette      # Palette d'équipements
+│   └── TerminalModal      # Fenêtre terminal
+├── ui/                    # 60+ composants shadcn/ui
+└── Terminal*.tsx          # 3 composants terminaux (Linux, Windows, Cisco)
+```
+
+**Points forts** :
+- ✅ Composants React bien structurés et réutilisables
+- ✅ Utilisation de bibliothèques modernes (shadcn/ui, Tailwind CSS)
+- ✅ Interface utilisateur intuitive et responsive
+- ✅ Séparation claire entre composants UI
+
+**Points faibles** :
+- ❌ Couplage fort avec la logique métier (imports directs)
+- ❌ State management complexe mélangé avec UI logic
+- ❌ Difficultés à tester les composants isolément
+
+##### Couche Logique Métier (~2.6MB)
+```
+/src/
+├── core/network/          # 126KB - Simulation réseau
+│   ├── NetworkSimulator.ts    # 494 lignes - Hub central
+│   ├── packet.ts              # Structures de données réseau
+│   ├── arp.ts, dhcp.ts, dns.ts, nat.ts, acl.ts
+│
+├── devices/               # 332KB - Modèles d'équipements
+│   ├── common/
+│   │   ├── BaseDevice.ts      # 160 lignes - Classe de base
+│   │   ├── NetworkStack.ts    # 450+ lignes - Stack réseau commune
+│   │   └── types.ts
+│   ├── linux/LinuxPC.ts
+│   ├── windows/WindowsPC.ts
+│   └── cisco/CiscoDevice.ts
+│
+└── terminal/              # 1.7MB - Émulation terminaux
+    ├── shell/             # Shell Linux (lexer, parser, executor)
+    ├── python/            # Interpréteur Python (80+ fichiers)
+    ├── sql/               # PostgreSQL + Oracle SQL
+    ├── windows/           # CMD + PowerShell
+    └── cisco/             # IOS CLI
+```
+
+**Points forts** :
+- ✅ Couverture fonctionnelle impressionnante
+- ✅ Support de multiples OS et protocoles
+- ✅ Émulation terminal très complète
+
+**Points faibles** :
+- ❌ **Architecture monolithique** : NetworkSimulator.ts fait 494 lignes avec responsabilités multiples
+- ❌ **Héritage profond** : BaseDevice → LinuxPC/WindowsPC/CiscoDevice avec couplage fort
+- ❌ **Duplication de code** : Logique similaire répétée dans terminal/shell, terminal/windows, terminal/cisco
+- ❌ **Tests insuffisants** : Seulement 21 fichiers de tests pour 15,000 lignes de logique
+
+##### Couche Bridge (~31KB)
+```
+/src/
+├── store/networkStore.ts      # 12KB - Zustand store
+├── hooks/useNetworkSimulator.ts # 15KB - Hook d'intégration
+└── lib/utils.ts               # 4.5KB - Utilitaires
+```
+
+#### 2.1.2 Patterns Identifiés (Actuels)
+
+| Pattern | Localisation | Qualité | Problèmes |
+|---------|--------------|---------|-----------|
+| **Mediator** | NetworkSimulator.ts | 🟡 Moyen | Trop de responsabilités, devient God Object |
+| **Inheritance** | BaseDevice hierarchy | 🔴 Faible | Couplage fort, difficile à étendre |
+| **Singleton** | NetworkSimulator | 🟡 Moyen | État global difficilement testable |
+| **Factory** | DeviceFactory.ts | 🟢 Bon | Bien implémenté mais manque d'abstraction |
+| **Observer** | Event system | 🔴 Faible | Implémentation ad-hoc, pas standardisée |
+
+#### 2.1.3 Dette Technique Mesurée
+
+Avant la refonte, nous avons quantifié la dette technique :
+
+```typescript
+// Exemple de code problématique dans NetworkSimulator.ts
+class NetworkSimulator {
+  private devices: Map<string, BaseDevice> = new Map();
+  private macTable: Map<string, Map<string, string>> = new Map();
+  private arpCache: Map<string, ARPEntry[]> = new Map();
+
+  // 🔴 Méthode avec trop de responsabilités (100+ lignes)
+  sendFrame(frame: EthernetFrame, sourceDeviceId: string) {
+    // Validation
+    // MAC learning
+    // Frame forwarding
+    // Broadcast handling
+    // Logging
+    // Event emission
+    // ...
+  }
+}
+```
+
+**Problèmes identifiés** :
+1. **Violation SRP** (Single Responsibility Principle) : Une classe fait trop de choses
+2. **Difficulté de test** : Impossible de tester MAC learning indépendamment du forwarding
+3. **Couplage temporel** : L'ordre des opérations est implicite et fragile
+4. **État partagé** : Multiples maps modifiées par différentes méthodes
+
+### 2.2 Benchmarking avec Solutions Existantes
+
+#### 2.2.1 Cisco Packet Tracer
+
+**Architecture** :
+- Application desktop (Windows/Linux/macOS)
+- Simulation temps réel avec moteur C++
+- Protocoles réseau implémentés nativement
+
+**Forces** :
+- ✅ Très réaliste (certification officielle Cisco)
+- ✅ Performance excellente (simulations complexes fluides)
+- ✅ Documentation exhaustive
+
+**Faiblesses** :
+- ❌ Propriétaire et fermé
+- ❌ Installation requise (pas web)
+- ❌ Limité à l'écosystème Cisco
+
+**Notre différenciation** :
+- 🎯 Web-based (pas d'installation)
+- 🎯 Open-source (extensible)
+- 🎯 Multi-vendor (pas seulement Cisco)
+
+#### 2.2.2 GNS3 (Graphical Network Simulator 3)
+
+**Architecture** :
+- Desktop + Server backend
+- Utilise des VMs réelles ou émulateurs
+- Architecture microservices
+
+**Forces** :
+- ✅ Très réaliste (vrais OS réseau)
+- ✅ Extensible et scriptable
+- ✅ Communauté active
+
+**Faiblesses** :
+- ❌ Complexité de setup élevée
+- ❌ Ressources système importantes
+- ❌ Courbe d'apprentissage raide
+
+**Notre différenciation** :
+- 🎯 Setup instantané (web browser)
+- 🎯 Légèreté (simulation pure, pas de VMs)
+- 🎯 Pédagogique (interface guidée)
+
+#### 2.2.3 Tableau Comparatif
+
+| Critère | Cisco Packet Tracer | GNS3 | **Notre Simulateur** |
+|---------|---------------------|------|----------------------|
+| **Déploiement** | Desktop app | Desktop + Server | Web browser |
+| **Installation** | Téléchargement requis | Complexe (VMs) | Aucune |
+| **Réalisme** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ (cible) |
+| **Performance** | Excellente | Moyenne | Bonne |
+| **Extensibilité** | Fermée | Ouverte | Ouverte |
+| **Courbe apprentissage** | Moyenne | Raide | Douce |
+| **Coût** | Gratuit (académique) | Gratuit | Gratuit |
+| **Open Source** | Non | Oui | Oui |
+| **Mobile-friendly** | Non | Non | Possible |
+
+### 2.3 Objectifs Techniques Détaillés
+
+#### 2.3.1 Objectifs d'Architecture
+
+##### A. Séparation des Préoccupations (Separation of Concerns)
+
+**Objectif** : Découpler complètement la logique métier de la présentation
+
+```
+Avant :                          Après :
+┌─────────────────────┐         ┌─────────────────────┐
+│   React Component   │         │   React Component   │
+│  ┌──────────────┐   │         │  (Pure UI)          │
+│  │ UI Logic     │   │         └──────────┬──────────┘
+│  │ + Business   │   │                    │
+│  │   Logic      │   │         ┌──────────▼──────────┐
+│  └──────────────┘   │         │   Adapter/Hook      │
+└─────────────────────┘         │  (Bridge Pattern)   │
+                                └──────────┬──────────┘
+                                           │
+                                ┌──────────▼──────────┐
+                                │  Business Logic     │
+                                │  (Pure TypeScript)  │
+                                │  - Testable         │
+                                │  - Réutilisable     │
+                                └─────────────────────┘
+```
+
+**Critères de succès** :
+- ✅ Aucun import de React dans les modules business logic
+- ✅ Tests unitaires sans dépendances React
+- ✅ Réutilisation possible en CLI/backend futur
+
+##### B. Architecture Modulaire et Extensible
+
+**Principe** : Chaque module est indépendant et interchangeable
+
+```typescript
+// 🎯 Objectif : Interface + Implémentations multiples
+interface IDevice {
+  powerOn(): void;
+  powerOff(): void;
+  sendFrame(frame: Frame): void;
+  receiveFrame(frame: Frame): void;
+}
+
+// Facilite l'ajout de nouveaux devices
+class JuniperRouter implements IDevice { ... }
+class HPSwitch implements IDevice { ... }
+class DockerContainer implements IDevice { ... }
+```
+
+**Critères de succès** :
+- ✅ Ajout d'un nouveau type de device en <2h (vs 8h actuellement)
+- ✅ Nouveau protocole réseau sans modifier code existant
+- ✅ Support nouveau langage terminal (Ruby, Go) en <1 jour
+
+##### C. Testabilité à 100%
+
+**Objectif** : Chaque composant business est unitairement testable
+
+```typescript
+// ❌ Avant : Difficile à tester
+class NetworkSimulator {
+  sendFrame(frame: Frame) {
+    // Logique mélangée, dépendances cachées
+    this.macTable.set(...);
+    this.emitEvent(...);
+    this.forwardFrame(...);
+  }
+}
+
+// ✅ Après : Facilement testable
+class MACTableService {
+  learn(mac: string, port: string): void { ... }
+}
+
+class FrameForwardingService {
+  forward(frame: Frame, table: MACTable): Port { ... }
+}
+
+// Tests unitaires simples
+describe('MACTableService', () => {
+  it('should learn MAC address on port', () => {
+    const service = new MACTableService();
+    service.learn('AA:BB:CC:DD:EE:FF', 'eth0');
+    expect(service.lookup('AA:BB:CC:DD:EE:FF')).toBe('eth0');
+  });
+});
+```
+
+**Critères de succès** :
+- ✅ 80%+ code coverage (lignes)
+- ✅ 90%+ branch coverage (branches critiques)
+- ✅ Tests exécutables en <30s
+- ✅ Pas de tests flaky (0% flakiness)
+
+#### 2.3.2 Objectifs de Performance
+
+| Métrique | Actuel | Objectif | Stratégie |
+|----------|--------|----------|-----------|
+| **Chargement initial** | ~5s | <3s | Code splitting, lazy loading |
+| **Frame processing** | ~200ms | <100ms | Optimisation algorithmes, memoization |
+| **Mémoire (20 devices)** | ~400MB | <300MB | Object pooling, garbage collection |
+| **FPS (50 devices)** | ~30 | ≥60 | RequestAnimationFrame, Web Workers |
+| **Build time** | ~12s | <8s | Vite optimizations, cache |
+
+#### 2.3.3 Objectifs de Qualité de Code
+
+##### A. Métriques Statiques (SonarQube)
+
+| Métrique | Seuil | Description |
+|----------|-------|-------------|
+| **Code Smells** | <10 / 1000 lignes | Problèmes de maintenabilité |
+| **Bugs** | 0 | Erreurs de logique détectables |
+| **Vulnerabilities** | 0 | Failles de sécurité |
+| **Security Hotspots** | Review 100% | Points d'attention sécurité |
+| **Duplication** | <3% | Code dupliqué |
+| **Complexity** | <15 par fonction | Complexité cyclomatique |
+| **Maintainability Rating** | A | Note globale |
+
+##### B. Conventions de Code (ESLint + Prettier)
+
+```typescript
+// 🎯 Standards à appliquer
+{
+  "rules": {
+    "max-lines-per-function": ["error", 50],      // Fonctions courtes
+    "max-params": ["error", 4],                   // Limiter paramètres
+    "complexity": ["error", 10],                  // Complexité maîtrisée
+    "no-magic-numbers": "error",                  // Pas de nombres magiques
+    "@typescript-eslint/explicit-function-return-type": "error",  // Types explicites
+    "jsdoc/require-jsdoc": "error"                // Documentation obligatoire
+  }
+}
+```
+
+#### 2.3.4 Objectifs de Documentation
+
+| Type | Objectif | Outil |
+|------|----------|-------|
+| **API Documentation** | 100% des exports publics | TSDoc + TypeDoc |
+| **Architecture Docs** | Diagrammes à jour | Mermaid.js |
+| **User Guide** | Guide complet | Markdown + Screenshots |
+| **Developer Guide** | Onboarding <4h | Wiki interne |
+| **Design Decisions** | ADRs documentés | Architecture Decision Records |
+
+### 2.4 Priorisation des Objectifs
+
+#### 2.4.1 Matrice Impact/Effort
+
+```
+Impact
+  ^
+  │
+H │  [TDD Setup]        [Design Patterns]
+i │  [Core Network]     [Device Models]
+g │
+h │  [Terminal Bash]
+  │
+  │  [PowerShell]       [Python Interp.]
+M │  [SQL Support]      [Advanced Protocols]
+e │
+d │
+  │  [UI Polish]        [Performance Opt.]
+L │  [Documentation]    [Extra Features]
+o │
+w │
+  └─────────────────────────────────────────>
+    Low    Medium      High      Effort
+
+Légende :
+[Item] = Composant à développer
+```
+
+**Priorité P0 (Critique)** :
+1. ✅ TDD Setup complet (infrastructure de tests)
+2. ✅ Design Patterns architecture
+3. ✅ Core Network Simulator
+4. ✅ Device Models (Linux, Windows, Cisco)
+
+**Priorité P1 (Important)** :
+5. ✅ Terminal Bash basique
+6. ⏸️ Terminal Windows CMD
+7. ⏸️ Terminal Cisco IOS
+
+**Priorité P2 (Nice to have)** :
+8. ⏸️ PowerShell support
+9. ⏸️ Python interpreter
+10. ⏸️ SQL support
+
+#### 2.4.2 Définition de "Done"
+
+Pour chaque composant développé :
+
+**Code** :
+- ✅ Tests écrits AVANT implémentation (TDD)
+- ✅ Code coverage ≥80% pour ce composant
+- ✅ Pas de code smells (SonarQube)
+- ✅ ESLint + Prettier passent
+- ✅ TypeScript strict mode
+
+**Documentation** :
+- ✅ TSDoc pour toutes les fonctions publiques
+- ✅ README.md du module
+- ✅ Exemples d'utilisation
+- ✅ ADR si décision d'architecture
+
+**Review** :
+- ✅ Code review par un pair
+- ✅ Tests review
+- ✅ Architecture review
+
+**Intégration** :
+- ✅ CI/CD pipeline passe
+- ✅ Build successful
+- ✅ Pas de régression détectée
+
+### 2.5 Risques et Mitigation
+
+| Risque | Probabilité | Impact | Mitigation |
+|--------|-------------|--------|------------|
+| **Refonte trop longue** | Moyenne | Élevé | Développement incrémental, releases fréquentes |
+| **Over-engineering** | Moyenne | Moyen | Code reviews, principe YAGNI |
+| **Performance insuffisante** | Faible | Élevé | Benchmarks continus, profiling |
+| **Complexité des tests** | Moyenne | Moyen | Formation TDD, pair programming |
+| **Scope creep** | Élevée | Élevé | PRD strict, backlog priorisé |
 
 ---
 
-**Statut actuel** : Section 1 complétée (≈2000 mots)
-**Progression** : 20% du PRD total
+## Suite du Document
+
+Les prochaines sections à développer :
+
+- **Section 3** : Architecture technique détaillée et design patterns
+- **Section 4** : Spécifications fonctionnelles par composant
+- **Section 5** : Plan d'implémentation TDD et roadmap
+
+---
+
+**Statut actuel** : Sections 1-2 complétées (≈4000 mots)
+**Progression** : 40% du PRD total
