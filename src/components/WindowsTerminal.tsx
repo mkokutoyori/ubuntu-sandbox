@@ -1,98 +1,15 @@
 /**
- * Windows Terminal Component
- * Supports both CMD and PowerShell modes
+ * WindowsTerminal (stub-compatible)
+ * Minimal CMD-like terminal UI using the current stubbed windows command runner.
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { WindowsFileSystem, windowsFileSystem as globalWindowsFileSystem } from '@/terminal/windows/filesystem';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { executeCmdCommand } from '@/terminal/windows/commands';
-import { createPSContext, executePSCommand, PSContext } from '@/terminal/windows/powershell';
-import { WindowsTerminalState, WindowsOutputLine } from '@/terminal/windows/types';
+import { windowsFileSystem } from '@/terminal/windows/filesystem';
+import { WindowsOutputLine, WindowsTerminalState } from '@/terminal/windows/types';
 import { BaseDevice } from '@/devices';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
-
-/**
- * Handle tab completion for file paths in Windows terminal
- */
-function handleTabCompletion(
-  input: string,
-  currentPath: string,
-  fs: WindowsFileSystem
-): string {
-  // Find the last word being typed (the one to complete)
-  const words = input.split(/\s+/);
-  if (words.length === 0) return input;
-
-  const lastWord = words[words.length - 1];
-  if (!lastWord) return input;
-
-  // Determine the directory to search and the prefix to match
-  let searchDir: string;
-  let prefix: string;
-  let pathPrefix = '';
-
-  if (lastWord.includes('\\')) {
-    // Path with backslash - get directory part and file prefix
-    const lastSlash = lastWord.lastIndexOf('\\');
-    pathPrefix = lastWord.substring(0, lastSlash + 1);
-    prefix = lastWord.substring(lastSlash + 1).toLowerCase();
-
-    // Resolve the search directory
-    if (pathPrefix.match(/^[A-Za-z]:\\/)) {
-      // Absolute path
-      searchDir = pathPrefix;
-    } else {
-      // Relative path
-      searchDir = fs.resolvePath(pathPrefix, currentPath);
-    }
-  } else {
-    // Just a filename prefix - search current directory
-    searchDir = currentPath;
-    prefix = lastWord.toLowerCase();
-  }
-
-  // List directory and find matches
-  const entries = fs.listDirectory(searchDir);
-  if (!entries) return input;
-
-  const matches = entries.filter(entry =>
-    entry.name.toLowerCase().startsWith(prefix)
-  );
-
-  if (matches.length === 0) {
-    return input;
-  }
-
-  if (matches.length === 1) {
-    // Single match - complete it
-    const match = matches[0];
-    const completion = match.name + (match.type === 'directory' ? '\\' : '');
-    const newWords = [...words.slice(0, -1), pathPrefix + completion];
-    return newWords.join(' ');
-  }
-
-  // Multiple matches - find common prefix
-  const names = matches.map(m => m.name);
-  let commonPrefix = names[0];
-  for (const name of names) {
-    while (!name.toLowerCase().startsWith(commonPrefix.toLowerCase()) && commonPrefix.length > 0) {
-      commonPrefix = commonPrefix.slice(0, -1);
-    }
-  }
-
-  if (commonPrefix.length > prefix.length) {
-    // Use the matching case from the first match
-    const firstMatch = matches.find(m =>
-      m.name.toLowerCase().startsWith(commonPrefix.toLowerCase())
-    );
-    const actualPrefix = firstMatch ? firstMatch.name.substring(0, commonPrefix.length) : commonPrefix;
-    const newWords = [...words.slice(0, -1), pathPrefix + actualPrefix];
-    return newWords.join(' ');
-  }
-
-  return input;
-}
+const generateId = () => Math.random().toString(36).slice(2);
 
 interface WindowsTerminalProps {
   device?: BaseDevice;
@@ -100,345 +17,162 @@ interface WindowsTerminalProps {
 }
 
 export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequestClose }) => {
-  // Use device's filesystem if available, otherwise fall back to global singleton
-  const windowsFileSystem = useMemo(() => {
-    if (device && device.getFileSystem()) {
-      return device.getFileSystem() as WindowsFileSystem;
-    }
-    return globalWindowsFileSystem;
-  }, [device]);
-  // Get hostname from device if available
-  const deviceHostname = device?.getHostname()?.toUpperCase() || 'DESKTOP-NETSIM';
+  const hostname = device?.getHostname?.()?.toUpperCase() || 'DESKTOP-NETSIM';
 
   const [state, setState] = useState<WindowsTerminalState>(() => ({
-    currentUser: 'User',
     currentPath: 'C:\\Users\\User',
-    hostname: deviceHostname,
-    history: [],
+    output: [],
+    commandHistory: [],
     historyIndex: -1,
-    env: {
-      COMPUTERNAME: deviceHostname,
+    environment: {
+      COMPUTERNAME: hostname,
       USERNAME: 'User',
       USERPROFILE: 'C:\\Users\\User',
-      HOMEDRIVE: 'C:',
-      HOMEPATH: '\\Users\\User',
-      PATH: 'C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\',
-      PATHEXT: '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1',
-      SYSTEMROOT: 'C:\\Windows',
-      WINDIR: 'C:\\Windows',
-      TEMP: 'C:\\Users\\User\\AppData\\Local\\Temp',
-      TMP: 'C:\\Users\\User\\AppData\\Local\\Temp',
-      PROCESSOR_ARCHITECTURE: 'AMD64',
-      NUMBER_OF_PROCESSORS: '4',
-      OS: 'Windows_NT',
     },
-    aliases: {},
-    lastExitCode: 0,
-    isAdmin: false,
-    processes: [],
     shellType: 'cmd',
   }));
 
-  const [output, setOutput] = useState<WindowsOutputLine[]>([]);
+  const [lines, setLines] = useState<WindowsOutputLine[]>([]);
   const [input, setInput] = useState('');
-  const [booted, setBooted] = useState(false);
-  const [psContext, setPsContext] = useState<PSContext | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Boot sequence
+  const prompt = useMemo(() => `${state.currentPath}>`, [state.currentPath]);
+
   useEffect(() => {
-    const bootMessages = state.shellType === 'powershell'
-      ? [
-          'Windows PowerShell',
-          'Copyright (C) Microsoft Corporation. All rights reserved.',
-          '',
-          'Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows',
-          '',
-        ]
-      : [
-          'Microsoft Windows [Version 10.0.22621.2428]',
-          '(c) Microsoft Corporation. All rights reserved.',
-          '',
-        ];
+    inputRef.current?.focus();
+  }, []);
 
-    const bootSequence = async () => {
-      for (let i = 0; i < bootMessages.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, 30));
-        setOutput(prev => [...prev, {
-          id: generateId(),
-          type: 'system',
-          content: bootMessages[i],
-          timestamp: new Date(),
-        }]);
-      }
-      setBooted(true);
-    };
-
-    bootSequence();
-  }, [state.shellType]);
-
-  // Auto-scroll
   useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-    }
-  }, [output]);
+    terminalRef.current?.scrollTo({ top: terminalRef.current.scrollHeight });
+  }, [lines]);
 
-  // Focus input
-  useEffect(() => {
-    if (booted) {
-      inputRef.current?.focus();
-    }
-  }, [booted, output]);
+  const append = useCallback((l: WindowsOutputLine) => setLines((p) => [...p, l]), []);
 
-  // Initialize PowerShell context when switching to PowerShell
-  useEffect(() => {
-    if (state.shellType === 'powershell' && !psContext) {
-      setPsContext(createPSContext(windowsFileSystem, state));
-    }
-  }, [state.shellType, psContext, state]);
+  const run = useCallback(
+    async (cmd: string) => {
+      const trimmed = cmd.trim();
 
-  const getPrompt = useCallback(() => {
-    if (state.shellType === 'powershell') {
-      return `PS ${state.currentPath}> `;
-    }
-    return `${state.currentPath}>`;
-  }, [state.currentPath, state.shellType]);
-
-  const handleCommand = useCallback((cmd: string) => {
-    const prompt = getPrompt();
-
-    // Add input to output
-    setOutput(prev => [...prev, {
-      id: generateId(),
-      type: 'input',
-      content: cmd,
-      timestamp: new Date(),
-      prompt,
-    }]);
-
-    // Add to history
-    if (cmd.trim()) {
-      setState(prev => ({
-        ...prev,
-        history: [...prev.history, cmd],
-        historyIndex: -1,
-      }));
-    }
-
-    // Execute command based on shell type
-    if (state.shellType === 'powershell') {
-      // Execute PowerShell command
-      let ctx = psContext;
-      if (!ctx) {
-        ctx = createPSContext(windowsFileSystem, state);
-        setPsContext(ctx);
+      if (trimmed === 'exit') {
+        onRequestClose?.();
+        if (!onRequestClose) append({ id: generateId(), text: 'exit', type: 'normal', timestamp: Date.now() });
+        setInput('');
+        return;
       }
 
-      // Update context path
-      ctx.state = { ...state };
-      ctx.variables.set('PWD', { type: 'string', value: state.currentPath });
+      append({ id: generateId(), text: `${prompt}${cmd}`, type: 'normal', timestamp: Date.now() });
 
-      const result = executePSCommand(cmd, ctx);
+      if (trimmed) {
+        setState((prev) => ({
+          ...prev,
+          commandHistory: [...prev.commandHistory.slice(-199), trimmed],
+          historyIndex: -1,
+        }));
+      }
+
+      // If a device is connected, let it handle commands (stub: string output).
+      if (device) {
+        const out = await device.executeCommand(trimmed);
+        if (out) append({ id: generateId(), text: out, type: 'normal', timestamp: Date.now() });
+        setInput('');
+        return;
+      }
+
+      const result = await executeCmdCommand(trimmed, {
+        currentPath: state.currentPath,
+        fileSystem: windowsFileSystem,
+        environment: state.environment,
+      });
 
       if (result.output) {
-        setOutput(prev => [...prev, {
-          id: generateId(),
-          type: result.exitCode === 0 ? 'output' : 'error',
-          content: result.output,
-          timestamp: new Date(),
-        }]);
-      }
-
-      if (result.exitTerminal) {
-        onRequestClose?.();
-        return;
-      }
-
-      if (result.switchToCmd) {
-        setState(prev => ({ ...prev, shellType: 'cmd' }));
-        setOutput([]);
-        setBooted(false);
-        setTimeout(() => {
-          setOutput([
-            { id: generateId(), type: 'system', content: 'Microsoft Windows [Version 10.0.22621.2428]', timestamp: new Date() },
-            { id: generateId(), type: 'system', content: '(c) Microsoft Corporation. All rights reserved.', timestamp: new Date() },
-            { id: generateId(), type: 'system', content: '', timestamp: new Date() },
-          ]);
-          setBooted(true);
-        }, 100);
-      }
-
-      if (result.newPath) {
-        setState(prev => ({ ...prev, currentPath: result.newPath! }));
-      }
-
-      // Handle Clear-Host
-      if (result.output?.includes('\x1b[2J')) {
-        setOutput([]);
-      }
-    } else {
-      // Execute CMD command
-      const result = executeCmdCommand(cmd, state, windowsFileSystem);
-
-      if (result.clearScreen) {
-        setOutput([]);
-      } else {
-        if (result.output) {
-          setOutput(prev => [...prev, {
-            id: generateId(),
-            type: 'output',
-            content: result.output,
-            timestamp: new Date(),
-          }]);
-        }
-        if (result.error) {
-          setOutput(prev => [...prev, {
-            id: generateId(),
-            type: 'error',
-            content: result.error,
-            timestamp: new Date(),
-          }]);
+        const isClear = result.output.includes('\x1b[2J') || result.output.includes('\x1b[H');
+        if (isClear) {
+          setLines([]);
+        } else {
+          append({ id: generateId(), text: result.output, type: result.exitCode === 0 ? 'normal' : 'error', timestamp: Date.now() });
         }
       }
 
-      if (result.exitTerminal) {
-        onRequestClose?.();
+      setState((prev) => ({
+        ...prev,
+        currentPath: result.newPath ?? prev.currentPath,
+      }));
+
+      setInput('');
+    },
+    [append, device, onRequestClose, prompt, state.currentPath, state.environment]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        run(input);
         return;
       }
-
-      if (result.switchToPowerShell) {
-        setState(prev => ({ ...prev, shellType: 'powershell' }));
-        setOutput([]);
-        setBooted(false);
-        setPsContext(null);
-        setTimeout(() => {
-          setOutput([
-            { id: generateId(), type: 'system', content: 'Windows PowerShell', timestamp: new Date() },
-            { id: generateId(), type: 'system', content: 'Copyright (C) Microsoft Corporation. All rights reserved.', timestamp: new Date() },
-            { id: generateId(), type: 'system', content: '', timestamp: new Date() },
-            { id: generateId(), type: 'system', content: 'Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows', timestamp: new Date() },
-            { id: generateId(), type: 'system', content: '', timestamp: new Date() },
-          ]);
-          setBooted(true);
-        }, 100);
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (state.commandHistory.length === 0) return;
+        const newIndex = state.historyIndex === -1 ? state.commandHistory.length - 1 : Math.max(0, state.historyIndex - 1);
+        setState((prev) => ({ ...prev, historyIndex: newIndex }));
+        setInput(state.commandHistory[newIndex] ?? '');
+        return;
       }
-
-      if (result.newPath) {
-        setState(prev => ({ ...prev, currentPath: result.newPath! }));
-      }
-    }
-
-    setInput('');
-  }, [state, getPrompt, psContext, onRequestClose]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleCommand(input);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (state.history.length > 0) {
-        const newIndex = state.historyIndex === -1
-          ? state.history.length - 1
-          : Math.max(0, state.historyIndex - 1);
-        setState(prev => ({ ...prev, historyIndex: newIndex }));
-        setInput(state.history[newIndex] || '');
-      }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (state.historyIndex !== -1) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (state.historyIndex === -1) return;
         const newIndex = state.historyIndex + 1;
-        if (newIndex >= state.history.length) {
-          setState(prev => ({ ...prev, historyIndex: -1 }));
+        if (newIndex >= state.commandHistory.length) {
+          setState((prev) => ({ ...prev, historyIndex: -1 }));
           setInput('');
         } else {
-          setState(prev => ({ ...prev, historyIndex: newIndex }));
-          setInput(state.history[newIndex] || '');
+          setState((prev) => ({ ...prev, historyIndex: newIndex }));
+          setInput(state.commandHistory[newIndex] ?? '');
         }
       }
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      // Tab completion for paths
-      const completedInput = handleTabCompletion(input, state.currentPath, windowsFileSystem);
-      if (completedInput !== input) {
-        setInput(completedInput);
+      if (e.key === 'l' && e.ctrlKey) {
+        e.preventDefault();
+        setLines([]);
       }
-    } else if (e.key === 'c' && e.ctrlKey) {
-      e.preventDefault();
-      setOutput(prev => [...prev, {
-        id: generateId(),
-        type: 'input',
-        content: input + '^C',
-        timestamp: new Date(),
-        prompt: getPrompt(),
-      }]);
-      setInput('');
-    } else if (e.key === 'l' && e.ctrlKey) {
-      e.preventDefault();
-      setOutput([]);
-    }
-  }, [input, state, handleCommand, getPrompt]);
-
-  const renderLine = (line: WindowsOutputLine) => {
-    const colorClass = {
-      input: 'text-white',
-      output: 'text-gray-200',
-      error: 'text-red-400',
-      system: 'text-gray-400',
-      success: 'text-green-400',
-    }[line.type];
-
-    if (line.type === 'input') {
-      return (
-        <div key={line.id} className="flex">
-          <span className={`${state.shellType === 'powershell' ? 'text-yellow-300' : 'text-gray-400'} mr-1 whitespace-pre`}>
-            {line.prompt}
-          </span>
-          <span className={`${colorClass} whitespace-pre`}>{line.content}</span>
-        </div>
-      );
-    }
-
-    return (
-      <pre key={line.id} className={`${colorClass} whitespace-pre-wrap break-all`}>
-        {line.content}
-      </pre>
-    );
-  };
-
-  const bgColor = state.shellType === 'powershell' ? 'bg-[#012456]' : 'bg-black';
-  const promptColor = state.shellType === 'powershell' ? 'text-yellow-300' : 'text-gray-400';
+      if (e.key === 'c' && e.ctrlKey) {
+        e.preventDefault();
+        append({ id: generateId(), text: `${prompt}${input}^C`, type: 'warning', timestamp: Date.now() });
+        setInput('');
+      }
+    },
+    [append, input, prompt, run, state.commandHistory, state.historyIndex]
+  );
 
   return (
-    <div
-      className={`h-full w-full ${bgColor} overflow-hidden flex flex-col font-mono text-sm`}
-      onClick={() => inputRef.current?.focus()}
-    >
-      <div
-        ref={terminalRef}
-        className="flex-1 overflow-auto p-3"
-      >
-        {output.map(renderLine)}
+    <div className="h-full w-full bg-background text-foreground flex flex-col font-mono text-sm">
+      <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+        Windows CMD (stub)
+      </div>
+      <div ref={terminalRef} className="flex-1 overflow-auto p-3 space-y-1" onClick={() => inputRef.current?.focus()}>
+        {lines.map((l) => (
+          <pre
+            key={l.id}
+            className={l.type === 'error' ? 'text-destructive whitespace-pre-wrap' : 'whitespace-pre-wrap'}
+          >
+            {l.text}
+          </pre>
+        ))}
 
-        {booted && (
-          <div className="flex items-center">
-            <span className={`${promptColor} mr-1 whitespace-pre`}>{getPrompt()}</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className={`flex-1 ${bgColor} text-white outline-none caret-white font-mono`}
-              spellCheck={false}
-              autoComplete="off"
-              autoFocus
-            />
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground whitespace-pre">{prompt}</span>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="flex-1 bg-transparent outline-none"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
       </div>
     </div>
   );
 };
+
+export default WindowsTerminal;
