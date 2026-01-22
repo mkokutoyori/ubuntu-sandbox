@@ -1990,13 +1990,503 @@ class NetworkError extends DomainError {
 
 ---
 
-## Suite du Document
+## 5. Plan d'Implémentation TDD et Roadmap
 
-La prochaine section à développer :
+### 5.1 Méthodologie TDD (Test-Driven Development)
 
-- **Section 5** : Plan d'implémentation TDD et roadmap détaillée
+#### 5.1.1 Cycle Red-Green-Refactor
+
+Notre approche TDD suivra rigoureusement le cycle classique :
+
+```
+┌─────────────────────────────────────────────────────┐
+│  1. RED : Écrire un test qui échoue                 │
+│     - Définir le comportement attendu                │
+│     - Écrire le test AVANT le code                  │
+│     - Vérifier que le test échoue (pour la bonne    │
+│       raison)                                        │
+└──────────────────┬──────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────┐
+│  2. GREEN : Écrire le code minimal qui passe        │
+│     - Implémenter uniquement ce qui fait passer     │
+│       le test                                        │
+│     - Ne pas optimiser prématurément                │
+│     - "Make it work"                                 │
+└──────────────────┬──────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────┐
+│  3. REFACTOR : Améliorer le code                    │
+│     - Éliminer duplication                          │
+│     - Améliorer lisibilité                          │
+│     - Appliquer design patterns                     │
+│     - "Make it right"                                │
+│     - Les tests doivent toujours passer             │
+└──────────────────┬──────────────────────────────────┘
+                   │
+                   │ Répéter pour chaque fonctionnalité
+                   └──────────────────────────────────►
+```
+
+#### 5.1.2 Exemple Concret : MACTableService
+
+**Étape 1 - RED : Écrire le test**
+
+```typescript
+describe('MACTableService', () => {
+  describe('learn()', () => {
+    it('should add MAC address entry with correct port and VLAN', () => {
+      // Arrange
+      const macTable = new MACTableService();
+      const mac = 'AA:BB:CC:DD:EE:FF';
+      const port = 'Gi0/1';
+      const vlan = 10;
+
+      // Act
+      macTable.learn(mac, port, vlan);
+
+      // Assert
+      const entry = macTable.lookup(mac, vlan);
+      expect(entry).not.toBeNull();
+      expect(entry?.interface).toBe(port);
+      expect(entry?.vlan).toBe(vlan);
+      expect(entry?.type).toBe('dynamic');
+    });
+  });
+});
+```
+
+**Résultat** : ❌ Test échoue (MACTableService n'existe pas encore)
+
+**Étape 2 - GREEN : Implémenter**
+
+```typescript
+interface MACTableEntry {
+  macAddress: string;
+  vlan: number;
+  interface: string;
+  type: 'dynamic' | 'static';
+  age: number;
+}
+
+class MACTableService {
+  private table = new Map<string, MACTableEntry>();
+
+  learn(mac: string, port: string, vlan: number): void {
+    this.table.set(mac, {
+      macAddress: mac,
+      vlan,
+      interface: port,
+      type: 'dynamic',
+      age: 0
+    });
+  }
+
+  lookup(mac: string, vlan: number): MACTableEntry | null {
+    return this.table.get(mac) || null;
+  }
+}
+```
+
+**Résultat** : ✅ Test passe
+
+**Étape 3 - REFACTOR : Améliorer**
+
+```typescript
+class MACTableService {
+  private table = new Map<string, MACTableEntry>();
+  private readonly DEFAULT_TTL = 300; // 5 minutes
+
+  learn(mac: string, port: string, vlan: number): void {
+    const key = this.generateKey(mac, vlan);
+    this.table.set(key, {
+      macAddress: mac,
+      vlan,
+      interface: port,
+      type: 'dynamic',
+      age: 0
+    });
+  }
+
+  private generateKey(mac: string, vlan: number): string {
+    return `${mac}:${vlan}`;
+  }
+}
+```
+
+**Résultat** : ✅ Tests passent toujours, code plus propre
+
+#### 5.1.3 Organisation des Tests
+
+```
+__tests__/
+├── unit/                           # Tests unitaires (isolés)
+│   ├── network/
+│   │   ├── MACTableService.test.ts
+│   │   ├── FrameValidator.test.ts
+│   │   ├── ARPService.test.ts
+│   │   └── DHCPService.test.ts
+│   ├── devices/
+│   │   ├── DeviceFactory.test.ts
+│   │   ├── LinuxPC.test.ts
+│   │   └── CiscoRouter.test.ts
+│   └── terminal/
+│       ├── CommandRegistry.test.ts
+│       ├── VirtualFileSystem.test.ts
+│       └── BashShell.test.ts
+│
+├── integration/                    # Tests d'intégration
+│   ├── NetworkSimulation.test.ts  # Devices + NetworkSimulator
+│   ├── DeviceCommunication.test.ts # Frame exchange entre devices
+│   └── TerminalCommands.test.ts   # Commandes avec filesystem
+│
+└── e2e/                           # Tests end-to-end
+    ├── PingScenario.test.ts       # Scénario ping complet
+    ├── DHCPAssignment.test.ts     # DHCP discovery → lease
+    └── RoutingScenario.test.ts    # Routing multi-hops
+```
+
+### 5.2 Roadmap d'Implémentation
+
+#### 5.2.1 Phase 0 : Infrastructure (Sprint 0 - 1 semaine)
+
+**Objectif** : Mettre en place l'infrastructure de développement
+
+| Tâche | Durée estimée | Critères de succès |
+|-------|---------------|-------------------|
+| Setup Vitest + configuration | 0.5j | Tests exécutables avec `npm test` |
+| Configuration ESLint strict | 0.5j | Linting fonctionne avec règles TDD |
+| Setup CI/CD (GitHub Actions) | 1j | Pipeline passe sur push |
+| Configuration couverture tests | 0.5j | Coverage report généré automatiquement |
+| Documentation structure projet | 1j | README.md + CONTRIBUTING.md |
+
+**Livrables** :
+- ✅ Vitest configuré
+- ✅ ESLint + Prettier
+- ✅ CI/CD pipeline
+- ✅ Coverage reporting (CodeCov ou similaire)
+
+#### 5.2.2 Phase 1 : Network Core (Sprint 1-2 - 2 semaines)
+
+**Objectif** : Implémenter le cœur du simulateur réseau
+
+**Sprint 1 (Semaine 1)** :
+
+1. **NetworkSimulator (Mediator)** (3j)
+   - TDD: Device registration
+   - TDD: Topology management (connect/disconnect)
+   - TDD: Frame routing basique
+
+2. **Frame & Packet structures** (2j)
+   - TDD: EthernetFrame validation
+   - TDD: IPv4Packet parsing
+   - TDD: MAC/IP address value objects
+
+**Sprint 2 (Semaine 2)** :
+
+3. **Protocol Services** (5j)
+   - TDD: ARPService (resolution + cache)
+   - TDD: MACTableService (learning + lookup)
+   - TDD: FrameForwardingService (unicast + broadcast)
+
+**Tests d'intégration** :
+- Scénario : 2 devices connectés échangent des frames
+- Scénario : ARP resolution entre 2 devices
+- Scénario : MAC learning sur switch
+
+#### 5.2.3 Phase 2 : Device Models (Sprint 3-4 - 2 semaines)
+
+**Objectif** : Implémenter les modèles de devices
+
+**Sprint 3 (Semaine 3)** :
+
+1. **Base Infrastructure** (2j)
+   - TDD: IDevice interface + contrats
+   - TDD: DeviceFactory avec registry
+   - TDD: NetworkInterface + state management
+
+2. **Linux PC** (3j)
+   - TDD: Device initialization
+   - TDD: Interface configuration (IP, mask, gateway)
+   - TDD: Frame send/receive
+   - TDD: ARP client integration
+
+**Sprint 4 (Semaine 4)** :
+
+3. **Cisco Router** (3j)
+   - TDD: Routing table management
+   - TDD: Static routes
+   - TDD: Frame forwarding based on routes
+
+4. **Cisco Switch** (2j)
+   - TDD: MAC learning
+   - TDD: Frame flooding
+   - TDD: VLAN support basique
+
+**Tests d'intégration** :
+- Scénario : Linux PC obtient IP via DHCP
+- Scénario : Ping entre 2 PCs via router
+- Scénario : Switch learn + forward
+
+#### 5.2.4 Phase 3 : Terminal Emulation (Sprint 5-6 - 2 semaines)
+
+**Objectif** : Implémenter terminal bash basique
+
+**Sprint 5 (Semaine 5)** :
+
+1. **Virtual FileSystem** (2j)
+   - TDD: File/directory CRUD operations
+   - TDD: Path resolution
+   - TDD: Permissions checking
+
+2. **Command Pattern Infrastructure** (1j)
+   - TDD: ICommand interface
+   - TDD: CommandRegistry
+   - TDD: CommandContext
+
+3. **Commandes Navigation** (2j)
+   - TDD: ls, cd, pwd
+   - TDD: mkdir, rm
+
+**Sprint 6 (Semaine 6)** :
+
+4. **Commandes Fichiers** (2j)
+   - TDD: cat, touch
+   - TDD: cp, mv
+
+5. **Commandes Réseau** (3j)
+   - TDD: ping (ICMP)
+   - TDD: ifconfig
+   - TDD: netstat
+
+**Tests d'intégration** :
+- Scénario : Navigation complète dans filesystem
+- Scénario : Ping depuis terminal vers autre device
+- Scénario : Configuration IP via terminal
+
+#### 5.2.5 Phase 4 : Protocoles Avancés (Sprint 7-8 - 2 semaines)
+
+**Objectif** : DHCP et DNS
+
+**Sprint 7 (Semaine 7)** :
+
+1. **DHCP Service** (5j)
+   - TDD: DHCP Server (DORA process)
+   - TDD: DHCP Client
+   - TDD: Lease management
+   - TDD: Renewal/Release
+
+**Sprint 8 (Semaine 8)** :
+
+2. **DNS Service** (5j)
+   - TDD: DNS resolver
+   - TDD: DNS cache
+   - TDD: A/CNAME record support
+   - TDD: Zone management
+
+**Tests d'intégration** :
+- Scénario E2E : PC boot → DHCP → DNS → ping by hostname
+
+#### 5.2.6 Phase 5 : Polish & Performance (Sprint 9 - 1 semaine)
+
+**Objectif** : Optimisations et finitions
+
+1. **Performance** (2j)
+   - Profiling et optimisations
+   - Frame processing < 100ms
+   - Memory management
+
+2. **Error Handling** (1j)
+   - Error boundaries
+   - User-friendly messages
+   - Recovery strategies
+
+3. **Documentation** (2j)
+   - API documentation (TypeDoc)
+   - User guide
+   - Architecture diagrams
+
+### 5.3 Critères de Release
+
+#### 5.3.1 Release 1.0.0 - MVP (Minimum Viable Product)
+
+**Date cible** : Fin Sprint 8 (8 semaines)
+
+**Fonctionnalités obligatoires** :
+
+| Feature | Status | Critère |
+|---------|--------|---------|
+| Network Simulator | ✅ | Frame routing fonctionne |
+| Linux PC + Cisco Router + Switch | ✅ | 3 types de devices opérationnels |
+| ARP Protocol | ✅ | Resolution IP→MAC fonctionne |
+| Ping (ICMP) | ✅ | Ping réussit entre 2 PCs |
+| DHCP | ✅ | PC obtient IP automatiquement |
+| DNS | ✅ | Résolution de noms fonctionne |
+| Terminal Bash | ✅ | 15+ commandes essentielles |
+| Static Routing | ✅ | Routage multi-hops fonctionne |
+| UI Integration | ✅ | UI React fonctionne avec nouveau backend |
+
+**Critères qualité** :
+
+- ✅ Test coverage ≥ 80%
+- ✅ 0 bugs critiques
+- ✅ Performance : <100ms frame processing
+- ✅ Build size : <5MB
+- ✅ Documentation : README + API docs
+
+#### 5.3.2 Release 1.1.0 - Enhanced (Post-MVP)
+
+**Date cible** : +4 semaines après 1.0.0
+
+**Fonctionnalités additionnelles** :
+
+- Windows PC support (CMD commands)
+- Cisco IOS CLI basique
+- VLAN configuration
+- Advanced routing (default gateway)
+- Save/Load topologies
+- Export configurations
+
+### 5.4 Stratégie de Tests
+
+#### 5.4.1 Pyramide de Tests
+
+```
+                 ┌─────────┐
+                 │   E2E   │  ~10% (Scénarios complets)
+                 │  Tests  │
+              ┌──┴─────────┴──┐
+              │  Integration  │  ~20% (Modules interconnectés)
+              │     Tests     │
+         ┌────┴───────────────┴────┐
+         │      Unit Tests          │  ~70% (Fonctions isolées)
+         │   (TDD - Red/Green)      │
+         └──────────────────────────┘
+```
+
+**Répartition** :
+- **Unit tests** : 70% - Tests rapides (<1ms chacun), isolés
+- **Integration tests** : 20% - Tests de modules interconnectés
+- **E2E tests** : 10% - Scénarios complets utilisateur
+
+#### 5.4.2 Coverage Goals
+
+| Catégorie | Coverage Min | Coverage Cible |
+|-----------|--------------|----------------|
+| **Domain Layer** | 90% | 95% |
+| **Application Layer** | 80% | 90% |
+| **Infrastructure Layer** | 70% | 85% |
+| **Global** | 80% | 90% |
+
+**Exclusions de coverage** :
+- Fichiers UI React (testés manuellement)
+- Fichiers de configuration
+- Stubs et mocks
+- Types TypeScript purs
+
+#### 5.4.3 Continuous Integration
+
+**Pipeline CI/CD** :
+
+```yaml
+name: CI Pipeline
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - Checkout code
+      - Install dependencies
+      - Run ESLint
+      - Run TypeScript compiler
+      - Run unit tests (parallel)
+      - Run integration tests
+      - Generate coverage report
+      - Upload to CodeCov
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - Build production bundle
+      - Verify bundle size < 5MB
+      - Run E2E tests (Playwright)
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - Deploy to staging
+      - Run smoke tests
+      - Deploy to production (manual approval)
+```
+
+### 5.5 Indicateurs de Succès
+
+#### 5.5.1 Métriques Techniques
+
+| Métrique | Objectif Sprint 4 | Objectif Release 1.0 |
+|----------|-------------------|----------------------|
+| **Test Coverage** | ≥70% | ≥80% |
+| **Build Time** | <15s | <10s |
+| **Test Execution** | <30s | <60s |
+| **Bundle Size** | <3MB | <5MB |
+| **Code Duplication** | <5% | <3% |
+| **Cyclomatic Complexity** | <15 | <12 |
+
+#### 5.5.2 Métriques Fonctionnelles
+
+| Feature | Sprint | Test Scenario |
+|---------|--------|---------------|
+| **Frame Routing** | 2 | 100 frames/sec sans perte |
+| **ARP Resolution** | 2 | <1s timeout, 3 retries |
+| **Ping Success** | 4 | RTT <50ms simulation |
+| **DHCP Assignment** | 7 | Lease en <5s |
+| **DNS Resolution** | 8 | Query response <100ms |
 
 ---
 
-**Statut actuel** : Sections 1-4 complétées (≈8000 mots)
-**Progression** : 80% du PRD total
+## Conclusion
+
+Ce PRD définit une approche rigoureuse et professionnelle pour la refonte complète du simulateur d'infrastructure IT. En adoptant **Test-Driven Development**, des **design patterns éprouvés**, et une **architecture en couches claire**, nous construisons une base solide, maintenable et extensible pour les années à venir.
+
+### Points Clés à Retenir
+
+1. **TDD Strict** : 100% du code métier développé test-first
+2. **Architecture Propre** : Séparation Domain/Application/Infrastructure
+3. **Design Patterns** : Factory, Strategy, Command, Observer, Mediator
+4. **Couverture Tests** : ≥80% minimum, ≥90% cible
+5. **Documentation** : Code auto-documenté + TSDoc + guides
+6. **Performance** : <100ms frame processing, ≥60 FPS
+7. **Extensibilité** : Nouveau device en <2h vs 8h actuellement
+
+### Prochaines Actions
+
+1. **Immédiat** : Setup infrastructure (Sprint 0)
+2. **Semaine 1-2** : Network Core (Sprints 1-2)
+3. **Semaine 3-4** : Device Models (Sprints 3-4)
+4. **Semaine 5-8** : Terminal + Protocoles (Sprints 5-8)
+5. **Release 1.0.0** : Fin semaine 8
+
+### Engagement Qualité
+
+Nous nous engageons à suivre ce PRD rigoureusement, en acceptant que :
+- **Les tests viennent toujours en premier**
+- **La qualité prime sur la vélocité**
+- **L'architecture est respectée sans compromis**
+- **La documentation est maintenue à jour**
+- **Le code review est obligatoire**
+
+**Ce projet servira de référence pour tout futur développement d'applications complexes avec une approche professionnelle et maintenable.**
+
+---
+
+**Document Status** : ✅ COMPLET
+**Total Words** : ~9500 mots
+**Sections** : 5/5 (100%)
+**Dernière mise à jour** : 22 janvier 2026
