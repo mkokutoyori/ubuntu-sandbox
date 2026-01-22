@@ -313,16 +313,2180 @@ Point crucial : **nous conservons l'interface utilisateur actuelle** qui est dé
 
 ---
 
-## Suite du Document
+## 2. Analyse de l'Existant et Objectifs Détaillés
 
-La suite du PRD sera développée dans les prochaines sections :
+### 2.1 Analyse Technique de l'Architecture Actuelle
 
-- **Section 2** : Analyse détaillée de l'existant et définition précise des objectifs
-- **Section 3** : Architecture technique, design patterns à utiliser, et structure des modules
-- **Section 4** : Spécifications fonctionnelles détaillées pour chaque composant
-- **Section 5** : Plan d'implémentation, roadmap et organisation du travail TDD
+#### 2.1.1 Structure de la Base de Code (Avant Refonte)
+
+L'analyse approfondie de l'architecture existante révèle une structure organisée en trois couches principales :
+
+##### Couche Présentation (~338KB)
+```
+/src/components/
+├── network/               # 11 composants de visualisation réseau
+│   ├── NetworkDesigner    # Orchestrateur principal
+│   ├── NetworkCanvas      # Canvas drag-and-drop
+│   ├── DevicePalette      # Palette d'équipements
+│   └── TerminalModal      # Fenêtre terminal
+├── ui/                    # 60+ composants shadcn/ui
+└── Terminal*.tsx          # 3 composants terminaux (Linux, Windows, Cisco)
+```
+
+**Points forts** :
+- ✅ Composants React bien structurés et réutilisables
+- ✅ Utilisation de bibliothèques modernes (shadcn/ui, Tailwind CSS)
+- ✅ Interface utilisateur intuitive et responsive
+- ✅ Séparation claire entre composants UI
+
+**Points faibles** :
+- ❌ Couplage fort avec la logique métier (imports directs)
+- ❌ State management complexe mélangé avec UI logic
+- ❌ Difficultés à tester les composants isolément
+
+##### Couche Logique Métier (~2.6MB)
+```
+/src/
+├── core/network/          # 126KB - Simulation réseau
+│   ├── NetworkSimulator.ts    # 494 lignes - Hub central
+│   ├── packet.ts              # Structures de données réseau
+│   ├── arp.ts, dhcp.ts, dns.ts, nat.ts, acl.ts
+│
+├── devices/               # 332KB - Modèles d'équipements
+│   ├── common/
+│   │   ├── BaseDevice.ts      # 160 lignes - Classe de base
+│   │   ├── NetworkStack.ts    # 450+ lignes - Stack réseau commune
+│   │   └── types.ts
+│   ├── linux/LinuxPC.ts
+│   ├── windows/WindowsPC.ts
+│   └── cisco/CiscoDevice.ts
+│
+└── terminal/              # 1.7MB - Émulation terminaux
+    ├── shell/             # Shell Linux (lexer, parser, executor)
+    ├── python/            # Interpréteur Python (80+ fichiers)
+    ├── sql/               # PostgreSQL + Oracle SQL
+    ├── windows/           # CMD + PowerShell
+    └── cisco/             # IOS CLI
+```
+
+**Points forts** :
+- ✅ Couverture fonctionnelle impressionnante
+- ✅ Support de multiples OS et protocoles
+- ✅ Émulation terminal très complète
+
+**Points faibles** :
+- ❌ **Architecture monolithique** : NetworkSimulator.ts fait 494 lignes avec responsabilités multiples
+- ❌ **Héritage profond** : BaseDevice → LinuxPC/WindowsPC/CiscoDevice avec couplage fort
+- ❌ **Duplication de code** : Logique similaire répétée dans terminal/shell, terminal/windows, terminal/cisco
+- ❌ **Tests insuffisants** : Seulement 21 fichiers de tests pour 15,000 lignes de logique
+
+##### Couche Bridge (~31KB)
+```
+/src/
+├── store/networkStore.ts      # 12KB - Zustand store
+├── hooks/useNetworkSimulator.ts # 15KB - Hook d'intégration
+└── lib/utils.ts               # 4.5KB - Utilitaires
+```
+
+#### 2.1.2 Patterns Identifiés (Actuels)
+
+| Pattern | Localisation | Qualité | Problèmes |
+|---------|--------------|---------|-----------|
+| **Mediator** | NetworkSimulator.ts | 🟡 Moyen | Trop de responsabilités, devient God Object |
+| **Inheritance** | BaseDevice hierarchy | 🔴 Faible | Couplage fort, difficile à étendre |
+| **Singleton** | NetworkSimulator | 🟡 Moyen | État global difficilement testable |
+| **Factory** | DeviceFactory.ts | 🟢 Bon | Bien implémenté mais manque d'abstraction |
+| **Observer** | Event system | 🔴 Faible | Implémentation ad-hoc, pas standardisée |
+
+#### 2.1.3 Dette Technique Mesurée
+
+Avant la refonte, nous avons quantifié la dette technique :
+
+```typescript
+// Exemple de code problématique dans NetworkSimulator.ts
+class NetworkSimulator {
+  private devices: Map<string, BaseDevice> = new Map();
+  private macTable: Map<string, Map<string, string>> = new Map();
+  private arpCache: Map<string, ARPEntry[]> = new Map();
+
+  // 🔴 Méthode avec trop de responsabilités (100+ lignes)
+  sendFrame(frame: EthernetFrame, sourceDeviceId: string) {
+    // Validation
+    // MAC learning
+    // Frame forwarding
+    // Broadcast handling
+    // Logging
+    // Event emission
+    // ...
+  }
+}
+```
+
+**Problèmes identifiés** :
+1. **Violation SRP** (Single Responsibility Principle) : Une classe fait trop de choses
+2. **Difficulté de test** : Impossible de tester MAC learning indépendamment du forwarding
+3. **Couplage temporel** : L'ordre des opérations est implicite et fragile
+4. **État partagé** : Multiples maps modifiées par différentes méthodes
+
+### 2.2 Benchmarking avec Solutions Existantes
+
+#### 2.2.1 Cisco Packet Tracer
+
+**Architecture** :
+- Application desktop (Windows/Linux/macOS)
+- Simulation temps réel avec moteur C++
+- Protocoles réseau implémentés nativement
+
+**Forces** :
+- ✅ Très réaliste (certification officielle Cisco)
+- ✅ Performance excellente (simulations complexes fluides)
+- ✅ Documentation exhaustive
+
+**Faiblesses** :
+- ❌ Propriétaire et fermé
+- ❌ Installation requise (pas web)
+- ❌ Limité à l'écosystème Cisco
+
+**Notre différenciation** :
+- 🎯 Web-based (pas d'installation)
+- 🎯 Open-source (extensible)
+- 🎯 Multi-vendor (pas seulement Cisco)
+
+#### 2.2.2 GNS3 (Graphical Network Simulator 3)
+
+**Architecture** :
+- Desktop + Server backend
+- Utilise des VMs réelles ou émulateurs
+- Architecture microservices
+
+**Forces** :
+- ✅ Très réaliste (vrais OS réseau)
+- ✅ Extensible et scriptable
+- ✅ Communauté active
+
+**Faiblesses** :
+- ❌ Complexité de setup élevée
+- ❌ Ressources système importantes
+- ❌ Courbe d'apprentissage raide
+
+**Notre différenciation** :
+- 🎯 Setup instantané (web browser)
+- 🎯 Légèreté (simulation pure, pas de VMs)
+- 🎯 Pédagogique (interface guidée)
+
+#### 2.2.3 Tableau Comparatif
+
+| Critère | Cisco Packet Tracer | GNS3 | **Notre Simulateur** |
+|---------|---------------------|------|----------------------|
+| **Déploiement** | Desktop app | Desktop + Server | Web browser |
+| **Installation** | Téléchargement requis | Complexe (VMs) | Aucune |
+| **Réalisme** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ (cible) |
+| **Performance** | Excellente | Moyenne | Bonne |
+| **Extensibilité** | Fermée | Ouverte | Ouverte |
+| **Courbe apprentissage** | Moyenne | Raide | Douce |
+| **Coût** | Gratuit (académique) | Gratuit | Gratuit |
+| **Open Source** | Non | Oui | Oui |
+| **Mobile-friendly** | Non | Non | Possible |
+
+### 2.3 Objectifs Techniques Détaillés
+
+#### 2.3.1 Objectifs d'Architecture
+
+##### A. Séparation des Préoccupations (Separation of Concerns)
+
+**Objectif** : Découpler complètement la logique métier de la présentation
+
+```
+Avant :                          Après :
+┌─────────────────────┐         ┌─────────────────────┐
+│   React Component   │         │   React Component   │
+│  ┌──────────────┐   │         │  (Pure UI)          │
+│  │ UI Logic     │   │         └──────────┬──────────┘
+│  │ + Business   │   │                    │
+│  │   Logic      │   │         ┌──────────▼──────────┐
+│  └──────────────┘   │         │   Adapter/Hook      │
+└─────────────────────┘         │  (Bridge Pattern)   │
+                                └──────────┬──────────┘
+                                           │
+                                ┌──────────▼──────────┐
+                                │  Business Logic     │
+                                │  (Pure TypeScript)  │
+                                │  - Testable         │
+                                │  - Réutilisable     │
+                                └─────────────────────┘
+```
+
+**Critères de succès** :
+- ✅ Aucun import de React dans les modules business logic
+- ✅ Tests unitaires sans dépendances React
+- ✅ Réutilisation possible en CLI/backend futur
+
+##### B. Architecture Modulaire et Extensible
+
+**Principe** : Chaque module est indépendant et interchangeable
+
+```typescript
+// 🎯 Objectif : Interface + Implémentations multiples
+interface IDevice {
+  powerOn(): void;
+  powerOff(): void;
+  sendFrame(frame: Frame): void;
+  receiveFrame(frame: Frame): void;
+}
+
+// Facilite l'ajout de nouveaux devices
+class JuniperRouter implements IDevice { ... }
+class HPSwitch implements IDevice { ... }
+class DockerContainer implements IDevice { ... }
+```
+
+**Critères de succès** :
+- ✅ Ajout d'un nouveau type de device en <2h (vs 8h actuellement)
+- ✅ Nouveau protocole réseau sans modifier code existant
+- ✅ Support nouveau langage terminal (Ruby, Go) en <1 jour
+
+##### C. Testabilité à 100%
+
+**Objectif** : Chaque composant business est unitairement testable
+
+```typescript
+// ❌ Avant : Difficile à tester
+class NetworkSimulator {
+  sendFrame(frame: Frame) {
+    // Logique mélangée, dépendances cachées
+    this.macTable.set(...);
+    this.emitEvent(...);
+    this.forwardFrame(...);
+  }
+}
+
+// ✅ Après : Facilement testable
+class MACTableService {
+  learn(mac: string, port: string): void { ... }
+}
+
+class FrameForwardingService {
+  forward(frame: Frame, table: MACTable): Port { ... }
+}
+
+// Tests unitaires simples
+describe('MACTableService', () => {
+  it('should learn MAC address on port', () => {
+    const service = new MACTableService();
+    service.learn('AA:BB:CC:DD:EE:FF', 'eth0');
+    expect(service.lookup('AA:BB:CC:DD:EE:FF')).toBe('eth0');
+  });
+});
+```
+
+**Critères de succès** :
+- ✅ 80%+ code coverage (lignes)
+- ✅ 90%+ branch coverage (branches critiques)
+- ✅ Tests exécutables en <30s
+- ✅ Pas de tests flaky (0% flakiness)
+
+#### 2.3.2 Objectifs de Performance
+
+| Métrique | Actuel | Objectif | Stratégie |
+|----------|--------|----------|-----------|
+| **Chargement initial** | ~5s | <3s | Code splitting, lazy loading |
+| **Frame processing** | ~200ms | <100ms | Optimisation algorithmes, memoization |
+| **Mémoire (20 devices)** | ~400MB | <300MB | Object pooling, garbage collection |
+| **FPS (50 devices)** | ~30 | ≥60 | RequestAnimationFrame, Web Workers |
+| **Build time** | ~12s | <8s | Vite optimizations, cache |
+
+#### 2.3.3 Objectifs de Qualité de Code
+
+##### A. Métriques Statiques (SonarQube)
+
+| Métrique | Seuil | Description |
+|----------|-------|-------------|
+| **Code Smells** | <10 / 1000 lignes | Problèmes de maintenabilité |
+| **Bugs** | 0 | Erreurs de logique détectables |
+| **Vulnerabilities** | 0 | Failles de sécurité |
+| **Security Hotspots** | Review 100% | Points d'attention sécurité |
+| **Duplication** | <3% | Code dupliqué |
+| **Complexity** | <15 par fonction | Complexité cyclomatique |
+| **Maintainability Rating** | A | Note globale |
+
+##### B. Conventions de Code (ESLint + Prettier)
+
+```typescript
+// 🎯 Standards à appliquer
+{
+  "rules": {
+    "max-lines-per-function": ["error", 50],      // Fonctions courtes
+    "max-params": ["error", 4],                   // Limiter paramètres
+    "complexity": ["error", 10],                  // Complexité maîtrisée
+    "no-magic-numbers": "error",                  // Pas de nombres magiques
+    "@typescript-eslint/explicit-function-return-type": "error",  // Types explicites
+    "jsdoc/require-jsdoc": "error"                // Documentation obligatoire
+  }
+}
+```
+
+#### 2.3.4 Objectifs de Documentation
+
+| Type | Objectif | Outil |
+|------|----------|-------|
+| **API Documentation** | 100% des exports publics | TSDoc + TypeDoc |
+| **Architecture Docs** | Diagrammes à jour | Mermaid.js |
+| **User Guide** | Guide complet | Markdown + Screenshots |
+| **Developer Guide** | Onboarding <4h | Wiki interne |
+| **Design Decisions** | ADRs documentés | Architecture Decision Records |
+
+### 2.4 Priorisation des Objectifs
+
+#### 2.4.1 Matrice Impact/Effort
+
+```
+Impact
+  ^
+  │
+H │  [TDD Setup]        [Design Patterns]
+i │  [Core Network]     [Device Models]
+g │
+h │  [Terminal Bash]
+  │
+  │  [PowerShell]       [Python Interp.]
+M │  [SQL Support]      [Advanced Protocols]
+e │
+d │
+  │  [UI Polish]        [Performance Opt.]
+L │  [Documentation]    [Extra Features]
+o │
+w │
+  └─────────────────────────────────────────>
+    Low    Medium      High      Effort
+
+Légende :
+[Item] = Composant à développer
+```
+
+**Priorité P0 (Critique)** :
+1. ✅ TDD Setup complet (infrastructure de tests)
+2. ✅ Design Patterns architecture
+3. ✅ Core Network Simulator
+4. ✅ Device Models (Linux, Windows, Cisco)
+
+**Priorité P1 (Important)** :
+5. ✅ Terminal Bash basique
+6. ⏸️ Terminal Windows CMD
+7. ⏸️ Terminal Cisco IOS
+
+**Priorité P2 (Nice to have)** :
+8. ⏸️ PowerShell support
+9. ⏸️ Python interpreter
+10. ⏸️ SQL support
+
+#### 2.4.2 Définition de "Done"
+
+Pour chaque composant développé :
+
+**Code** :
+- ✅ Tests écrits AVANT implémentation (TDD)
+- ✅ Code coverage ≥80% pour ce composant
+- ✅ Pas de code smells (SonarQube)
+- ✅ ESLint + Prettier passent
+- ✅ TypeScript strict mode
+
+**Documentation** :
+- ✅ TSDoc pour toutes les fonctions publiques
+- ✅ README.md du module
+- ✅ Exemples d'utilisation
+- ✅ ADR si décision d'architecture
+
+**Review** :
+- ✅ Code review par un pair
+- ✅ Tests review
+- ✅ Architecture review
+
+**Intégration** :
+- ✅ CI/CD pipeline passe
+- ✅ Build successful
+- ✅ Pas de régression détectée
+
+### 2.5 Risques et Mitigation
+
+| Risque | Probabilité | Impact | Mitigation |
+|--------|-------------|--------|------------|
+| **Refonte trop longue** | Moyenne | Élevé | Développement incrémental, releases fréquentes |
+| **Over-engineering** | Moyenne | Moyen | Code reviews, principe YAGNI |
+| **Performance insuffisante** | Faible | Élevé | Benchmarks continus, profiling |
+| **Complexité des tests** | Moyenne | Moyen | Formation TDD, pair programming |
+| **Scope creep** | Élevée | Élevé | PRD strict, backlog priorisé |
 
 ---
 
-**Statut actuel** : Section 1 complétée (≈2000 mots)
-**Progression** : 20% du PRD total
+## 3. Architecture Technique et Design Patterns
+
+### 3.1 Vue d'Ensemble de l'Architecture
+
+#### 3.1.1 Architecture en Couches (Layered Architecture)
+
+Notre architecture suit le principe de séparation en couches avec des responsabilités clairement définies :
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  React Components (UI/UX) - shadcn/ui + Tailwind    │   │
+│  │  - NetworkDesigner, Canvas, DevicePalette           │   │
+│  │  - TerminalModal, PropertiesPanel, Toolbar          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Props & Callbacks
+┌────────────────────────────▼────────────────────────────────┐
+│                     ADAPTER LAYER                            │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  React Hooks & State Management                      │   │
+│  │  - useNetworkSimulator (Bridge Pattern)             │   │
+│  │  - networkStore (Zustand)                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Interfaces
+┌────────────────────────────▼────────────────────────────────┐
+│                   APPLICATION LAYER                          │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Use Cases & Business Logic Orchestration            │   │
+│  │  - SimulationController                              │   │
+│  │  - DeviceManager                                     │   │
+│  │  - TopologyManager                                   │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Commands & Queries
+┌────────────────────────────▼────────────────────────────────┐
+│                     DOMAIN LAYER                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Core Business Logic (Framework-agnostic)            │   │
+│  │                                                       │   │
+│  │  Network Simulation Core:                            │   │
+│  │  - NetworkSimulator (Mediator)                       │   │
+│  │  - FrameForwardingService                            │   │
+│  │  - MACTableService                                   │   │
+│  │  - ARPService, DHCPService, DNSService              │   │
+│  │                                                       │   │
+│  │  Device Models:                                      │   │
+│  │  - IDevice (Interface)                               │   │
+│  │  - DeviceFactory (Factory Pattern)                   │   │
+│  │  - LinuxPC, WindowsPC, CiscoRouter, etc.            │   │
+│  │  - NetworkInterface, InterfaceState                  │   │
+│  │                                                       │   │
+│  │  Terminal Emulation:                                 │   │
+│  │  - ITerminal (Interface)                             │   │
+│  │  - CommandExecutor (Command Pattern)                 │   │
+│  │  - BashShell, CmdShell, IOSShell                    │   │
+│  │  - FileSystem (Virtual FS)                          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Data Structures
+┌────────────────────────────▼────────────────────────────────┐
+│                  INFRASTRUCTURE LAYER                        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Low-level Services & Utilities                      │   │
+│  │  - EventEmitter (Observer Pattern)                   │   │
+│  │  - Logger                                            │   │
+│  │  - StorageAdapter (LocalStorage)                     │   │
+│  │  - Serialization/Deserialization                     │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Règles de dépendance** :
+- ✅ Les couches supérieures dépendent des couches inférieures
+- ❌ Les couches inférieures ne connaissent PAS les couches supérieures
+- ✅ La Domain Layer ne dépend d'aucun framework (Pure TypeScript)
+- ✅ Communication via interfaces (Dependency Inversion Principle)
+
+#### 3.1.2 Principes SOLID Appliqués
+
+| Principe | Application | Exemple |
+|----------|-------------|---------|
+| **S**ingle Responsibility | Chaque classe a une seule raison de changer | `MACTableService` gère uniquement MAC tables |
+| **O**pen/Closed | Ouvert à l'extension, fermé à la modification | Nouveaux devices via `IDevice` interface |
+| **L**iskov Substitution | Les sous-types sont substituables | Tous les `IDevice` implémentent le contrat |
+| **I**nterface Segregation | Interfaces spécifiques vs générales | `IRoutable`, `ISwitchable` vs `IDevice` |
+| **D**ependency Inversion | Dépendre d'abstractions, pas de concrets | Injecter `ITerminal` pas `BashShell` |
+
+### 3.2 Design Patterns Utilisés
+
+#### 3.2.1 Creational Patterns (Création d'objets)
+
+##### A. Factory Pattern - DeviceFactory
+
+**Problème** : Créer des devices de types variés sans coupler le code client aux classes concrètes
+
+**Solution** :
+```typescript
+// Interface commune
+interface IDevice {
+  getId(): string;
+  getType(): DeviceType;
+  powerOn(): void;
+  powerOff(): void;
+  sendFrame(frame: EthernetFrame): void;
+  receiveFrame(frame: EthernetFrame): void;
+  getInterfaces(): NetworkInterface[];
+}
+
+// Factory
+class DeviceFactory {
+  private static registry = new Map<DeviceType, DeviceConstructor>();
+
+  // Permet l'enregistrement de nouveaux types
+  static register(type: DeviceType, constructor: DeviceConstructor): void {
+    this.registry.set(type, constructor);
+  }
+
+  static create(type: DeviceType, config: DeviceConfig): IDevice {
+    const Constructor = this.registry.get(type);
+    if (!Constructor) {
+      throw new DeviceTypeNotFoundError(type);
+    }
+    return new Constructor(config);
+  }
+}
+
+// Enregistrement des types
+DeviceFactory.register('linux-pc', LinuxPC);
+DeviceFactory.register('cisco-router', CiscoRouter);
+
+// Usage
+const device = DeviceFactory.create('linux-pc', { x: 100, y: 200 });
+```
+
+**Avantages** :
+- ✅ Ajout de nouveaux types sans modifier le factory
+- ✅ Code client découplé des implémentations concrètes
+- ✅ Testabilité : injection de mocks facile
+
+##### B. Builder Pattern - ConfigurationBuilder
+
+**Problème** : Créer des configurations complexes step-by-step
+
+**Solution** :
+```typescript
+class DeviceConfigBuilder {
+  private config: Partial<DeviceConfig> = {};
+
+  withType(type: DeviceType): this {
+    this.config.type = type;
+    return this;
+  }
+
+  withHostname(hostname: string): this {
+    this.config.hostname = hostname;
+    return this;
+  }
+
+  withInterface(iface: NetworkInterfaceConfig): this {
+    this.config.interfaces = [...(this.config.interfaces || []), iface];
+    return this;
+  }
+
+  build(): DeviceConfig {
+    this.validate();
+    return this.config as DeviceConfig;
+  }
+}
+
+// Usage
+const config = new DeviceConfigBuilder()
+  .withType('cisco-router')
+  .withHostname('R1')
+  .withInterface({ name: 'Fa0/0', ipAddress: '192.168.1.1' })
+  .withInterface({ name: 'Fa0/1', ipAddress: '10.0.0.1' })
+  .build();
+```
+
+#### 3.2.2 Structural Patterns (Organisation du code)
+
+##### A. Adapter Pattern - React Bridge
+
+**Problème** : Adapter la logique métier pour React sans la polluer
+
+**Solution** :
+```typescript
+// Domain Layer (Pure TypeScript)
+class NetworkSimulator {
+  private eventBus: EventEmitter;
+
+  sendFrame(frame: EthernetFrame): void {
+    // Business logic...
+    this.eventBus.emit('frame:sent', { frame, timestamp: Date.now() });
+  }
+}
+
+// Adapter Layer (React Hook)
+function useNetworkSimulator() {
+  const [events, setEvents] = useState<NetworkEvent[]>([]);
+  const simulatorRef = useRef<NetworkSimulator>();
+
+  useEffect(() => {
+    const simulator = NetworkSimulator.getInstance();
+    simulatorRef.current = simulator;
+
+    // Adapter: convertit events domain → state React
+    const handleFrameSent = (event: FrameSentEvent) => {
+      setEvents(prev => [...prev, {
+        type: 'frame_sent',
+        data: event,
+        id: generateId()
+      }]);
+    };
+
+    simulator.on('frame:sent', handleFrameSent);
+    return () => simulator.off('frame:sent', handleFrameSent);
+  }, []);
+
+  return {
+    sendFrame: (frame: EthernetFrame) => simulatorRef.current?.sendFrame(frame),
+    events
+  };
+}
+```
+
+##### B. Composite Pattern - Device Hierarchy
+
+**Problème** : Traiter uniformément devices simples et groupes de devices
+
+**Solution** :
+```typescript
+interface INetworkNode {
+  getId(): string;
+  accept(visitor: NetworkVisitor): void;
+  getChildren(): INetworkNode[];
+}
+
+class Device implements INetworkNode {
+  getChildren(): INetworkNode[] {
+    return []; // Leaf node
+  }
+}
+
+class DeviceGroup implements INetworkNode {
+  private children: INetworkNode[] = [];
+
+  add(node: INetworkNode): void {
+    this.children.push(node);
+  }
+
+  getChildren(): INetworkNode[] {
+    return this.children;
+  }
+}
+```
+
+#### 3.2.3 Behavioral Patterns (Comportement)
+
+##### A. Strategy Pattern - Protocol Handlers
+
+**Problème** : Différents algorithmes pour traiter différents protocoles
+
+**Solution** :
+```typescript
+interface IProtocolHandler {
+  canHandle(frame: EthernetFrame): boolean;
+  handle(frame: EthernetFrame, device: IDevice): void;
+}
+
+class ARPHandler implements IProtocolHandler {
+  canHandle(frame: EthernetFrame): boolean {
+    return frame.etherType === ETHER_TYPE.ARP;
+  }
+
+  handle(frame: EthernetFrame, device: IDevice): void {
+    const arpPacket = frame.payload as ARPPacket;
+    // ARP logic...
+  }
+}
+
+class IPv4Handler implements IProtocolHandler {
+  canHandle(frame: EthernetFrame): boolean {
+    return frame.etherType === ETHER_TYPE.IPv4;
+  }
+
+  handle(frame: EthernetFrame, device: IDevice): void {
+    const ipPacket = frame.payload as IPv4Packet;
+    // IPv4 logic...
+  }
+}
+
+// Usage dans Device
+class BaseDevice implements IDevice {
+  private handlers: IProtocolHandler[] = [
+    new ARPHandler(),
+    new IPv4Handler(),
+    new ICMPHandler()
+  ];
+
+  receiveFrame(frame: EthernetFrame): void {
+    const handler = this.handlers.find(h => h.canHandle(frame));
+    if (handler) {
+      handler.handle(frame, this);
+    }
+  }
+}
+```
+
+##### B. Command Pattern - Terminal Commands
+
+**Problème** : Encapsuler les commandes terminal de manière extensible
+
+**Solution** :
+```typescript
+interface ICommand {
+  execute(context: CommandContext): CommandResult;
+  undo?(): void;
+  getHelp(): string;
+}
+
+class LSCommand implements ICommand {
+  execute(context: CommandContext): CommandResult {
+    const { filesystem, currentPath, args } = context;
+    const entries = filesystem.readDir(currentPath);
+
+    return {
+      output: entries.map(e => e.name).join('\n'),
+      exitCode: 0
+    };
+  }
+
+  getHelp(): string {
+    return 'ls - list directory contents';
+  }
+}
+
+// Registry pattern pour les commandes
+class CommandRegistry {
+  private commands = new Map<string, ICommand>();
+
+  register(name: string, command: ICommand): void {
+    this.commands.set(name, command);
+  }
+
+  execute(name: string, context: CommandContext): CommandResult {
+    const command = this.commands.get(name);
+    if (!command) {
+      return { output: `Command not found: ${name}`, exitCode: 127 };
+    }
+    return command.execute(context);
+  }
+}
+```
+
+##### C. Observer Pattern - Event System
+
+**Problème** : Notifier multiples composants des changements réseau
+
+**Solution** :
+```typescript
+interface IEventEmitter {
+  on(event: string, listener: EventListener): void;
+  off(event: string, listener: EventListener): void;
+  emit(event: string, data: any): void;
+}
+
+class EventBus implements IEventEmitter {
+  private listeners = new Map<string, Set<EventListener>>();
+
+  on(event: string, listener: EventListener): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(listener);
+  }
+
+  emit(event: string, data: any): void {
+    const eventListeners = this.listeners.get(event);
+    if (eventListeners) {
+      eventListeners.forEach(listener => {
+        try {
+          listener(data);
+        } catch (error) {
+          console.error('Listener error:', error);
+        }
+      });
+    }
+  }
+}
+
+// Usage
+class NetworkSimulator {
+  private eventBus = new EventBus();
+
+  sendFrame(frame: EthernetFrame): void {
+    // ... logic
+    this.eventBus.emit('frame:sent', { frame, timestamp: Date.now() });
+  }
+
+  subscribe(callback: (event: NetworkEvent) => void): () => void {
+    this.eventBus.on('frame:sent', callback);
+    return () => this.eventBus.off('frame:sent', callback);
+  }
+}
+```
+
+##### D. Mediator Pattern - NetworkSimulator
+
+**Problème** : Coordonner la communication entre devices sans les coupler directement
+
+**Solution** :
+```typescript
+class NetworkSimulator {
+  private devices = new Map<string, IDevice>();
+  private topology = new Map<string, Set<string>>(); // device -> connected devices
+
+  registerDevice(device: IDevice): void {
+    this.devices.set(device.getId(), device);
+  }
+
+  connect(device1Id: string, device2Id: string): void {
+    if (!this.topology.has(device1Id)) {
+      this.topology.set(device1Id, new Set());
+    }
+    this.topology.get(device1Id)!.add(device2Id);
+  }
+
+  sendFrame(frame: EthernetFrame, sourceId: string): void {
+    const connectedDevices = this.topology.get(sourceId) || new Set();
+
+    connectedDevices.forEach(targetId => {
+      const targetDevice = this.devices.get(targetId);
+      if (targetDevice) {
+        // Mediator orchestre la communication
+        targetDevice.receiveFrame(frame);
+        this.eventBus.emit('frame:forwarded', { sourceId, targetId, frame });
+      }
+    });
+  }
+}
+```
+
+### 3.3 Structure des Modules
+
+#### 3.3.1 Organisation du Code
+
+```
+src/
+├── domain/                           # Domain Layer (Pure TypeScript)
+│   ├── network/                      # Network simulation core
+│   │   ├── interfaces/
+│   │   │   ├── INetworkSimulator.ts
+│   │   │   ├── IDevice.ts
+│   │   │   └── IProtocolHandler.ts
+│   │   ├── services/
+│   │   │   ├── NetworkSimulator.ts   # Mediator
+│   │   │   ├── MACTableService.ts
+│   │   │   ├── FrameForwardingService.ts
+│   │   │   ├── ARPService.ts
+│   │   │   ├── DHCPService.ts
+│   │   │   └── DNSService.ts
+│   │   ├── entities/
+│   │   │   ├── Frame.ts
+│   │   │   ├── Packet.ts
+│   │   │   └── NetworkInterface.ts
+│   │   └── value-objects/
+│   │       ├── MACAddress.ts
+│   │       ├── IPAddress.ts
+│   │       └── SubnetMask.ts
+│   │
+│   ├── devices/                      # Device models
+│   │   ├── interfaces/
+│   │   │   ├── IDevice.ts
+│   │   │   ├── IRoutable.ts
+│   │   │   └── ISwitchable.ts
+│   │   ├── factories/
+│   │   │   └── DeviceFactory.ts
+│   │   ├── base/
+│   │   │   └── BaseDevice.ts
+│   │   ├── linux/
+│   │   │   └── LinuxPC.ts
+│   │   ├── windows/
+│   │   │   └── WindowsPC.ts
+│   │   └── cisco/
+│   │       ├── CiscoRouter.ts
+│   │       ├── CiscoSwitch.ts
+│   │       └── CiscoL3Switch.ts
+│   │
+│   └── terminal/                     # Terminal emulation
+│       ├── interfaces/
+│       │   ├── ITerminal.ts
+│       │   ├── ICommand.ts
+│       │   └── IFileSystem.ts
+│       ├── commands/
+│       │   ├── CommandRegistry.ts
+│       │   ├── LSCommand.ts
+│       │   ├── CDCommand.ts
+│       │   └── ...
+│       ├── shells/
+│       │   ├── BashShell.ts
+│       │   ├── CmdShell.ts
+│       │   └── IOSShell.ts
+│       └── filesystem/
+│           ├── VirtualFileSystem.ts
+│           └── FileSystemNode.ts
+│
+├── application/                      # Application Layer (Use Cases)
+│   ├── use-cases/
+│   │   ├── CreateTopologyUseCase.ts
+│   │   ├── AddDeviceUseCase.ts
+│   │   ├── ConnectDevicesUseCase.ts
+│   │   └── SendFrameUseCase.ts
+│   └── services/
+│       ├── TopologyService.ts
+│       └── SimulationService.ts
+│
+├── infrastructure/                   # Infrastructure Layer
+│   ├── events/
+│   │   └── EventBus.ts
+│   ├── storage/
+│   │   └── LocalStorageAdapter.ts
+│   └── logging/
+│       └── Logger.ts
+│
+├── adapters/                         # Adapter Layer (React Bridge)
+│   ├── hooks/
+│   │   ├── useNetworkSimulator.ts
+│   │   ├── useDeviceManager.ts
+│   │   └── useTerminal.ts
+│   └── store/
+│       └── networkStore.ts
+│
+├── presentation/                     # Presentation Layer (React UI)
+│   └── components/
+│       ├── network/
+│       ├── terminal/
+│       └── ui/
+│
+└── __tests__/                        # Tests (mirror structure)
+    ├── unit/
+    ├── integration/
+    └── e2e/
+```
+
+### 3.4 Interfaces et Contrats Principaux
+
+#### 3.4.1 IDevice Interface
+
+```typescript
+/**
+ * Core interface for all network devices
+ */
+interface IDevice {
+  // Identity
+  getId(): string;
+  getType(): DeviceType;
+  getName(): string;
+  setName(name: string): void;
+
+  // Power management
+  isPoweredOn(): boolean;
+  powerOn(): void;
+  powerOff(): void;
+
+  // Network interfaces
+  getInterfaces(): NetworkInterface[];
+  getInterface(id: string): NetworkInterface | undefined;
+  addInterface(config: InterfaceConfig): NetworkInterface;
+
+  // Frame handling
+  sendFrame(frame: EthernetFrame, interfaceId: string): void;
+  receiveFrame(frame: EthernetFrame, interfaceId: string): void;
+
+  // Configuration
+  getConfig(): DeviceConfig;
+  setConfig(config: Partial<DeviceConfig>): void;
+
+  // Terminal access
+  hasTerminal(): boolean;
+  getTerminal(): ITerminal | undefined;
+
+  // Serialization
+  serialize(): SerializedDevice;
+  deserialize(data: SerializedDevice): void;
+}
+```
+
+#### 3.4.2 INetworkSimulator Interface
+
+```typescript
+interface INetworkSimulator {
+  // Device management
+  registerDevice(device: IDevice): void;
+  unregisterDevice(deviceId: string): void;
+  getDevice(deviceId: string): IDevice | undefined;
+  getAllDevices(): IDevice[];
+
+  // Topology management
+  connect(device1Id: string, interface1Id: string,
+          device2Id: string, interface2Id: string): Connection;
+  disconnect(connectionId: string): void;
+  getConnections(): Connection[];
+
+  // Frame routing
+  sendFrame(frame: EthernetFrame, sourceDeviceId: string): void;
+
+  // Event system
+  on(event: SimulatorEvent, listener: EventListener): void;
+  off(event: SimulatorEvent, listener: EventListener): void;
+
+  // Simulation control
+  start(): void;
+  stop(): void;
+  reset(): void;
+  getStatus(): SimulatorStatus;
+}
+```
+
+#### 3.4.3 ITerminal Interface
+
+```typescript
+interface ITerminal {
+  // Command execution
+  executeCommand(command: string): Promise<CommandResult>;
+
+  // State management
+  getState(): TerminalState;
+  getCurrentPath(): string;
+  getHistory(): string[];
+
+  // File system
+  getFileSystem(): IFileSystem;
+
+  // I/O
+  write(output: string): void;
+  read(): Promise<string>;
+
+  // Configuration
+  getPrompt(): string;
+  setPrompt(prompt: string): void;
+}
+```
+
+---
+
+## 4. Spécifications Fonctionnelles Détaillées
+
+### 4.1 Couche Réseau (Network Layer)
+
+#### 4.1.1 NetworkSimulator - Spécifications
+
+**Responsabilité** : Coordonner la communication entre devices et gérer la topologie réseau
+
+**Fonctionnalités** :
+
+| Fonctionnalité | Description | Critères d'acceptation |
+|----------------|-------------|------------------------|
+| **registerDevice()** | Enregistrer un device dans le simulateur | - Device ajouté à la map<br>- Event 'device:registered' émis<br>- Retourne true si succès |
+| **connect()** | Créer une connexion entre 2 interfaces | - Vérifier que devices existent<br>- Vérifier que interfaces existent<br>- Créer connexion bidirectionnelle<br>- Event 'connection:created' |
+| **sendFrame()** | Router une frame depuis un device source | - Frame validée (MAC, CRC)<br>- Routage vers destinations<br>- Event 'frame:sent' avec timestamp |
+
+**Règles Métier** :
+
+```typescript
+// Validation de frame
+class FrameValidator {
+  validate(frame: EthernetFrame): ValidationResult {
+    // 1. Vérifier format MAC address
+    if (!this.isValidMAC(frame.sourceMAC)) {
+      return { valid: false, error: 'Invalid source MAC address' };
+    }
+
+    // 2. Vérifier taille frame (64-1518 bytes)
+    const size = this.calculateSize(frame);
+    if (size < 64 || size > 1518) {
+      return { valid: false, error: 'Frame size out of bounds' };
+    }
+
+    // 3. Vérifier CRC (optionnel)
+    if (frame.fcs && !this.verifyCRC(frame)) {
+      return { valid: false, error: 'CRC mismatch' };
+    }
+
+    return { valid: true };
+  }
+}
+```
+
+**Cas Limites** :
+
+1. **Device inexistant** : Throw `DeviceNotFoundException`
+2. **Interface déjà connectée** : Throw `InterfaceAlreadyConnectedException`
+3. **Frame invalide** : Log warning, drop frame, emit 'frame:dropped' event
+4. **Boucle de routage** : Détecter via TTL, drop après 255 hops
+
+#### 4.1.2 Protocoles Réseau - Spécifications
+
+##### A. ARP (Address Resolution Protocol)
+
+**RFC Compliance** : RFC 826
+
+**Fonctionnalités** :
+
+```typescript
+interface ARPService {
+  // Résoudre IP → MAC
+  resolve(ipAddress: string): Promise<string | null>;
+
+  // Envoyer ARP request
+  sendRequest(targetIP: string, sourceInterface: NetworkInterface): void;
+
+  // Traiter ARP reply
+  handleReply(packet: ARPPacket): void;
+
+  // Gérer cache ARP
+  getCache(): Map<string, ARPEntry>;
+  clearCache(): void;
+  setTTL(ttl: number): void; // Default: 20 minutes
+}
+
+interface ARPEntry {
+  ipAddress: string;
+  macAddress: string;
+  timestamp: number;
+  ttl: number; // Time to live in ms
+  isStatic: boolean;
+}
+```
+
+**Comportement** :
+
+1. **ARP Request** :
+   - Broadcast à FF:FF:FF:FF:FF:FF
+   - Inclure sender MAC et IP
+   - Attendre reply pendant 1 seconde (timeout)
+   - Retry jusqu'à 3 fois si pas de réponse
+
+2. **ARP Reply** :
+   - Unicast vers requester
+   - Inclure target MAC et IP
+   - Mise à jour automatique du cache
+
+3. **Cache Management** :
+   - TTL par défaut : 20 minutes
+   - Entries statiques : jamais expirées
+   - Nettoyage automatique toutes les 5 minutes
+
+**Cas d'Usage** :
+
+```typescript
+// Test : ARP resolution réussie
+describe('ARPService', () => {
+  it('should resolve IP to MAC address', async () => {
+    const arpService = new ARPService();
+    const device = createMockDevice({ ip: '192.168.1.2', mac: 'AA:BB:CC:DD:EE:FF' });
+
+    const mac = await arpService.resolve('192.168.1.2');
+
+    expect(mac).toBe('AA:BB:CC:DD:EE:FF');
+  });
+
+  it('should timeout after 3 retries', async () => {
+    const arpService = new ARPService();
+
+    const mac = await arpService.resolve('192.168.1.99'); // Non-existent
+
+    expect(mac).toBeNull();
+    expect(arpService.getRequestCount()).toBe(3);
+  });
+});
+```
+
+##### B. DHCP (Dynamic Host Configuration Protocol)
+
+**RFC Compliance** : RFC 2131, RFC 2132
+
+**Fonctionnalités** :
+
+```typescript
+interface DHCPService {
+  // Server side
+  startServer(config: DHCPServerConfig): void;
+  stopServer(): void;
+  assignLease(clientMAC: string): DHCPLease;
+  renewLease(clientMAC: string): DHCPLease;
+  releaseLease(clientMAC: string): void;
+
+  // Client side
+  discover(): void;
+  request(offerIP: string): void;
+  renew(): void;
+  release(): void;
+}
+
+interface DHCPServerConfig {
+  ipPool: {
+    start: string;      // e.g., '192.168.1.100'
+    end: string;        // e.g., '192.168.1.200'
+  };
+  subnetMask: string;   // e.g., '255.255.255.0'
+  gateway: string;      // e.g., '192.168.1.1'
+  dnsServers: string[]; // e.g., ['8.8.8.8', '8.8.4.4']
+  leaseTime: number;    // en secondes, default: 86400 (24h)
+}
+
+interface DHCPLease {
+  clientMAC: string;
+  assignedIP: string;
+  subnetMask: string;
+  gateway: string;
+  dnsServers: string[];
+  leaseStart: number;
+  leaseExpiry: number;
+}
+```
+
+**DHCP Message Types** :
+
+1. **DISCOVER** (Client → Broadcast) :
+   - Client cherche un serveur DHCP
+   - Broadcast à 255.255.255.255
+
+2. **OFFER** (Server → Unicast) :
+   - Serveur propose une IP
+   - Inclut configuration réseau
+
+3. **REQUEST** (Client → Broadcast) :
+   - Client accepte l'offre
+   - Peut être envoyé à plusieurs serveurs
+
+4. **ACK** (Server → Unicast) :
+   - Serveur confirme l'assignation
+   - Lease activé
+
+5. **NAK** (Server → Unicast) :
+   - Serveur refuse (IP déjà prise)
+
+6. **RELEASE** (Client → Unicast) :
+   - Client libère l'IP avant expiry
+
+**État du Client** :
+
+```
+INIT → SELECTING → REQUESTING → BOUND → RENEWING → REBINDING → INIT
+```
+
+##### C. DNS (Domain Name System)
+
+**RFC Compliance** : RFC 1035
+
+**Fonctionnalités** :
+
+```typescript
+interface DNSService {
+  // Query
+  resolve(hostname: string, recordType: DNSRecordType): Promise<DNSRecord[]>;
+
+  // Server management
+  addZone(zone: DNSZone): void;
+  removeZone(zoneName: string): void;
+  addRecord(zoneName: string, record: DNSRecord): void;
+
+  // Cache management
+  getCache(): Map<string, DNSCacheEntry>;
+  clearCache(): void;
+}
+
+enum DNSRecordType {
+  A = 1,      // IPv4 address
+  AAAA = 28,  // IPv6 address
+  CNAME = 5,  // Canonical name
+  MX = 15,    // Mail exchange
+  NS = 2,     // Name server
+  PTR = 12,   // Pointer
+  SOA = 6,    // Start of authority
+  TXT = 16    // Text
+}
+
+interface DNSRecord {
+  name: string;         // e.g., 'www.example.com'
+  type: DNSRecordType;
+  class: number;        // 1 = IN (Internet)
+  ttl: number;          // Time to live (seconds)
+  data: string;         // Record data
+}
+
+interface DNSZone {
+  name: string;         // e.g., 'example.com'
+  records: DNSRecord[];
+  ttl: number;
+}
+```
+
+**Comportement** :
+
+1. **Query Process** :
+   - Vérifier cache local
+   - Si miss, envoyer query à serveur DNS
+   - Parser response
+   - Mettre en cache avec TTL
+
+2. **Cache** :
+   - TTL respecté pour chaque record
+   - Negative caching (NXDOMAIN) : 5 minutes
+   - Cache size limit : 1000 entrées (LRU eviction)
+
+### 4.2 Modèles de Devices
+
+#### 4.2.1 Linux PC - Spécifications
+
+**Type** : `linux-pc`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_LINUX_CONFIG = {
+  os: 'Ubuntu 22.04 LTS',
+  hostname: 'ubuntu-pc',
+  username: 'user',
+  interfaces: [
+    {
+      name: 'eth0',
+      type: 'ethernet',
+      dhcp: true
+    }
+  ],
+  filesystem: {
+    '/': 'Standard Linux FS',
+    '/home/user': 'User home directory',
+    '/etc': 'System configuration',
+    '/var': 'Variable data'
+  }
+};
+```
+
+**Commandes Terminal Supportées** (Phase 1) :
+
+| Catégorie | Commandes | Priorité |
+|-----------|-----------|----------|
+| **Navigation** | ls, cd, pwd, dirs | P0 |
+| **Fichiers** | cat, touch, mkdir, rm, cp, mv | P0 |
+| **Réseau** | ping, ifconfig, ip, route, netstat | P0 |
+| **Système** | ps, top, kill, uname, hostname | P1 |
+| **Utilisateurs** | whoami, groups, id | P1 |
+| **Éditeurs** | nano (basique), vi (limité) | P2 |
+
+**Comportement Réseau** :
+
+- Supporte ARP, DHCP client, DNS client
+- Ping (ICMP echo request/reply)
+- Traceroute (ICMP TTL exceeded)
+- Routing table consulté pour forwarding
+
+#### 4.2.2 Windows PC - Spécifications
+
+**Type** : `windows-pc`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_WINDOWS_CONFIG = {
+  os: 'Windows 10 Pro',
+  hostname: 'WIN-PC',
+  username: 'Administrator',
+  interfaces: [
+    {
+      name: 'Ethernet0',
+      type: 'ethernet',
+      dhcp: true
+    }
+  ],
+  filesystem: {
+    'C:\\': 'System drive',
+    'C:\\Users\\Administrator': 'User profile',
+    'C:\\Windows': 'System files'
+  }
+};
+```
+
+**Commandes Terminal Supportées** (Phase 1) :
+
+| Catégorie | Commandes CMD | Priorité |
+|-----------|---------------|----------|
+| **Navigation** | dir, cd, tree | P0 |
+| **Fichiers** | type, copy, move, del, mkdir | P0 |
+| **Réseau** | ping, ipconfig, route, netstat | P0 |
+| **Système** | tasklist, taskkill, systeminfo, hostname | P1 |
+
+**PowerShell** (Phase 2) :
+
+- Get-ChildItem, Set-Location
+- Get-Content, Copy-Item
+- Test-NetConnection
+- Get-Process
+
+#### 4.2.3 Cisco Router - Spécifications
+
+**Type** : `cisco-router`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_ROUTER_CONFIG = {
+  model: 'Cisco 2900 Series',
+  ios: '15.2(4)M',
+  hostname: 'Router',
+  interfaces: [
+    { name: 'FastEthernet0/0', type: 'ethernet', status: 'administratively down' },
+    { name: 'FastEthernet0/1', type: 'ethernet', status: 'administratively down' },
+    { name: 'Serial0/0/0', type: 'serial', status: 'administratively down' }
+  ],
+  routingTable: [],
+  runningConfig: {},
+  startupConfig: {}
+};
+```
+
+**Modes IOS** :
+
+```
+User EXEC (>) → Privileged EXEC (#) → Global Config (config)# → Interface Config (config-if)#
+```
+
+**Commandes IOS Supportées** (Phase 1) :
+
+```typescript
+// User EXEC Mode
+const USER_EXEC_COMMANDS = [
+  'enable',           // Passer en privileged mode
+  'show version',     // Version IOS
+  'show ip interface brief',
+  'ping <ip>',
+  'traceroute <ip>'
+];
+
+// Privileged EXEC Mode
+const PRIVILEGED_EXEC_COMMANDS = [
+  'configure terminal',  // Passer en config mode
+  'show running-config',
+  'show startup-config',
+  'show ip route',
+  'show arp',
+  'copy running-config startup-config',
+  'reload'
+];
+
+// Global Configuration Mode
+const GLOBAL_CONFIG_COMMANDS = [
+  'hostname <name>',
+  'interface <type> <number>',
+  'ip route <network> <mask> <next-hop>',
+  'no ip route <network> <mask> <next-hop>'
+];
+
+// Interface Configuration Mode
+const INTERFACE_CONFIG_COMMANDS = [
+  'ip address <ip> <mask>',
+  'no shutdown',
+  'shutdown',
+  'description <text>'
+];
+```
+
+**Routage** :
+
+- Static routing : `ip route 192.168.2.0 255.255.255.0 192.168.1.2`
+- Connected routes : automatiquement ajoutées quand interface up
+- Default route : `ip route 0.0.0.0 0.0.0.0 <gateway>`
+
+#### 4.2.4 Cisco Switch - Spécifications
+
+**Type** : `cisco-switch`
+
+**Configuration par Défaut** :
+
+```typescript
+const DEFAULT_SWITCH_CONFIG = {
+  model: 'Cisco Catalyst 2960',
+  ios: '15.2(2)E',
+  hostname: 'Switch',
+  interfaces: [
+    { name: 'GigabitEthernet0/1', type: 'ethernet', vlan: 1 },
+    { name: 'GigabitEthernet0/2', type: 'ethernet', vlan: 1 },
+    // ... 24 ports total
+  ],
+  macAddressTable: new Map(),
+  vlanDatabase: [
+    { id: 1, name: 'default', status: 'active' }
+  ]
+};
+```
+
+**MAC Address Learning** :
+
+```typescript
+interface MACTableEntry {
+  macAddress: string;
+  vlan: number;
+  interface: string;
+  type: 'dynamic' | 'static';
+  age: number; // en secondes, max 300 (5 min)
+}
+
+class MACTableService {
+  learn(mac: string, port: string, vlan: number): void {
+    // Ajouter/rafraîchir entrée
+    this.table.set(mac, {
+      macAddress: mac,
+      vlan,
+      interface: port,
+      type: 'dynamic',
+      age: 0
+    });
+  }
+
+  lookup(mac: string, vlan: number): string | null {
+    const entry = this.table.get(mac);
+    if (entry && entry.vlan === vlan && entry.age < 300) {
+      return entry.interface;
+    }
+    return null; // Unknown unicast → flood
+  }
+}
+```
+
+**Frame Forwarding Logic** :
+
+```typescript
+class FrameForwardingService {
+  forward(frame: EthernetFrame, ingressPort: string, switch: CiscoSwitch): void {
+    const vlan = switch.getPortVLAN(ingressPort);
+
+    // 1. MAC Learning
+    switch.macTable.learn(frame.sourceMAC, ingressPort, vlan);
+
+    // 2. Lookup destination
+    const egressPort = switch.macTable.lookup(frame.destinationMAC, vlan);
+
+    if (egressPort) {
+      // Known unicast → forward to specific port
+      if (egressPort !== ingressPort) {
+        switch.sendFrame(frame, egressPort);
+      }
+    } else {
+      // Unknown unicast ou broadcast → flood to all ports in VLAN
+      switch.floodFrame(frame, ingressPort, vlan);
+    }
+  }
+}
+```
+
+### 4.3 Terminal Emulation
+
+#### 4.3.1 Bash Shell - Spécifications
+
+**Commandes Prioritaires** (Phase 1) :
+
+```typescript
+interface CommandSpecification {
+  name: string;
+  syntax: string;
+  description: string;
+  examples: string[];
+  testCases: TestCase[];
+}
+
+const LS_COMMAND: CommandSpecification = {
+  name: 'ls',
+  syntax: 'ls [OPTIONS] [PATH]',
+  description: 'List directory contents',
+  examples: [
+    'ls',           // Liste répertoire courant
+    'ls -l',        // Format long
+    'ls -a',        // Inclure fichiers cachés
+    'ls -lh',       // Format long + tailles lisibles
+    'ls /etc'       // Liste répertoire spécifique
+  ],
+  testCases: [
+    {
+      input: 'ls',
+      expectedOutput: ['file1.txt', 'file2.txt', 'dir1'],
+      exitCode: 0
+    },
+    {
+      input: 'ls /nonexistent',
+      expectedOutput: ['ls: cannot access \'/nonexistent\': No such file or directory'],
+      exitCode: 2
+    }
+  ]
+};
+```
+
+**File System Virtuel** :
+
+```typescript
+interface FileSystemNode {
+  name: string;
+  type: 'file' | 'directory' | 'symlink';
+  permissions: string; // e.g., 'rwxr-xr-x'
+  owner: string;
+  group: string;
+  size: number;
+  modified: Date;
+  content?: string;     // Pour files
+  children?: Map<string, FileSystemNode>; // Pour directories
+  target?: string;      // Pour symlinks
+}
+
+class VirtualFileSystem {
+  private root: FileSystemNode;
+
+  // Opérations
+  readFile(path: string): string | null;
+  writeFile(path: string, content: string): boolean;
+  createDirectory(path: string): boolean;
+  deleteNode(path: string): boolean;
+  exists(path: string): boolean;
+  isDirectory(path: string): boolean;
+  listDirectory(path: string): FileSystemNode[];
+
+  // Permissions
+  checkPermission(path: string, operation: 'read' | 'write' | 'execute'): boolean;
+}
+```
+
+### 4.4 Gestion des Erreurs
+
+#### 4.4.1 Types d'Erreurs
+
+```typescript
+// Domain Errors
+class DomainError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = 'DomainError';
+  }
+}
+
+class DeviceNotFoundError extends DomainError {
+  constructor(deviceId: string) {
+    super(`Device not found: ${deviceId}`, 'DEVICE_NOT_FOUND');
+  }
+}
+
+class InvalidConfigurationError extends DomainError {
+  constructor(reason: string) {
+    super(`Invalid configuration: ${reason}`, 'INVALID_CONFIG');
+  }
+}
+
+class NetworkError extends DomainError {
+  constructor(message: string) {
+    super(message, 'NETWORK_ERROR');
+  }
+}
+```
+
+#### 4.4.2 Stratégies de Récupération
+
+| Erreur | Stratégie | Action UI |
+|--------|-----------|-----------|
+| Device non trouvé | Log + return null | Toast error message |
+| Frame invalide | Drop + log warning | Afficher dans event log |
+| Interface down | Reject + error | Highlight interface en rouge |
+| Configuration invalide | Validation + error | Form validation feedback |
+| Timeout réseau | Retry 3x puis fail | Spinner → Error message |
+
+---
+
+## 5. Plan d'Implémentation TDD et Roadmap
+
+### 5.1 Méthodologie TDD (Test-Driven Development)
+
+#### 5.1.1 Cycle Red-Green-Refactor
+
+Notre approche TDD suivra rigoureusement le cycle classique :
+
+```
+┌─────────────────────────────────────────────────────┐
+│  1. RED : Écrire un test qui échoue                 │
+│     - Définir le comportement attendu                │
+│     - Écrire le test AVANT le code                  │
+│     - Vérifier que le test échoue (pour la bonne    │
+│       raison)                                        │
+└──────────────────┬──────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────┐
+│  2. GREEN : Écrire le code minimal qui passe        │
+│     - Implémenter uniquement ce qui fait passer     │
+│       le test                                        │
+│     - Ne pas optimiser prématurément                │
+│     - "Make it work"                                 │
+└──────────────────┬──────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────┐
+│  3. REFACTOR : Améliorer le code                    │
+│     - Éliminer duplication                          │
+│     - Améliorer lisibilité                          │
+│     - Appliquer design patterns                     │
+│     - "Make it right"                                │
+│     - Les tests doivent toujours passer             │
+└──────────────────┬──────────────────────────────────┘
+                   │
+                   │ Répéter pour chaque fonctionnalité
+                   └──────────────────────────────────►
+```
+
+#### 5.1.2 Exemple Concret : MACTableService
+
+**Étape 1 - RED : Écrire le test**
+
+```typescript
+describe('MACTableService', () => {
+  describe('learn()', () => {
+    it('should add MAC address entry with correct port and VLAN', () => {
+      // Arrange
+      const macTable = new MACTableService();
+      const mac = 'AA:BB:CC:DD:EE:FF';
+      const port = 'Gi0/1';
+      const vlan = 10;
+
+      // Act
+      macTable.learn(mac, port, vlan);
+
+      // Assert
+      const entry = macTable.lookup(mac, vlan);
+      expect(entry).not.toBeNull();
+      expect(entry?.interface).toBe(port);
+      expect(entry?.vlan).toBe(vlan);
+      expect(entry?.type).toBe('dynamic');
+    });
+  });
+});
+```
+
+**Résultat** : ❌ Test échoue (MACTableService n'existe pas encore)
+
+**Étape 2 - GREEN : Implémenter**
+
+```typescript
+interface MACTableEntry {
+  macAddress: string;
+  vlan: number;
+  interface: string;
+  type: 'dynamic' | 'static';
+  age: number;
+}
+
+class MACTableService {
+  private table = new Map<string, MACTableEntry>();
+
+  learn(mac: string, port: string, vlan: number): void {
+    this.table.set(mac, {
+      macAddress: mac,
+      vlan,
+      interface: port,
+      type: 'dynamic',
+      age: 0
+    });
+  }
+
+  lookup(mac: string, vlan: number): MACTableEntry | null {
+    return this.table.get(mac) || null;
+  }
+}
+```
+
+**Résultat** : ✅ Test passe
+
+**Étape 3 - REFACTOR : Améliorer**
+
+```typescript
+class MACTableService {
+  private table = new Map<string, MACTableEntry>();
+  private readonly DEFAULT_TTL = 300; // 5 minutes
+
+  learn(mac: string, port: string, vlan: number): void {
+    const key = this.generateKey(mac, vlan);
+    this.table.set(key, {
+      macAddress: mac,
+      vlan,
+      interface: port,
+      type: 'dynamic',
+      age: 0
+    });
+  }
+
+  private generateKey(mac: string, vlan: number): string {
+    return `${mac}:${vlan}`;
+  }
+}
+```
+
+**Résultat** : ✅ Tests passent toujours, code plus propre
+
+#### 5.1.3 Organisation des Tests
+
+```
+__tests__/
+├── unit/                           # Tests unitaires (isolés)
+│   ├── network/
+│   │   ├── MACTableService.test.ts
+│   │   ├── FrameValidator.test.ts
+│   │   ├── ARPService.test.ts
+│   │   └── DHCPService.test.ts
+│   ├── devices/
+│   │   ├── DeviceFactory.test.ts
+│   │   ├── LinuxPC.test.ts
+│   │   └── CiscoRouter.test.ts
+│   └── terminal/
+│       ├── CommandRegistry.test.ts
+│       ├── VirtualFileSystem.test.ts
+│       └── BashShell.test.ts
+│
+├── integration/                    # Tests d'intégration
+│   ├── NetworkSimulation.test.ts  # Devices + NetworkSimulator
+│   ├── DeviceCommunication.test.ts # Frame exchange entre devices
+│   └── TerminalCommands.test.ts   # Commandes avec filesystem
+│
+└── e2e/                           # Tests end-to-end
+    ├── PingScenario.test.ts       # Scénario ping complet
+    ├── DHCPAssignment.test.ts     # DHCP discovery → lease
+    └── RoutingScenario.test.ts    # Routing multi-hops
+```
+
+### 5.2 Roadmap d'Implémentation
+
+#### 5.2.1 Phase 0 : Infrastructure (Sprint 0 - 1 semaine)
+
+**Objectif** : Mettre en place l'infrastructure de développement
+
+| Tâche | Durée estimée | Critères de succès |
+|-------|---------------|-------------------|
+| Setup Vitest + configuration | 0.5j | Tests exécutables avec `npm test` |
+| Configuration ESLint strict | 0.5j | Linting fonctionne avec règles TDD |
+| Setup CI/CD (GitHub Actions) | 1j | Pipeline passe sur push |
+| Configuration couverture tests | 0.5j | Coverage report généré automatiquement |
+| Documentation structure projet | 1j | README.md + CONTRIBUTING.md |
+
+**Livrables** :
+- ✅ Vitest configuré
+- ✅ ESLint + Prettier
+- ✅ CI/CD pipeline
+- ✅ Coverage reporting (CodeCov ou similaire)
+
+#### 5.2.2 Phase 1 : Network Core (Sprint 1-2 - 2 semaines)
+
+**Objectif** : Implémenter le cœur du simulateur réseau
+
+**Sprint 1 (Semaine 1)** :
+
+1. **NetworkSimulator (Mediator)** (3j)
+   - TDD: Device registration
+   - TDD: Topology management (connect/disconnect)
+   - TDD: Frame routing basique
+
+2. **Frame & Packet structures** (2j)
+   - TDD: EthernetFrame validation
+   - TDD: IPv4Packet parsing
+   - TDD: MAC/IP address value objects
+
+**Sprint 2 (Semaine 2)** :
+
+3. **Protocol Services** (5j)
+   - TDD: ARPService (resolution + cache)
+   - TDD: MACTableService (learning + lookup)
+   - TDD: FrameForwardingService (unicast + broadcast)
+
+**Tests d'intégration** :
+- Scénario : 2 devices connectés échangent des frames
+- Scénario : ARP resolution entre 2 devices
+- Scénario : MAC learning sur switch
+
+#### 5.2.3 Phase 2 : Device Models (Sprint 3-4 - 2 semaines)
+
+**Objectif** : Implémenter les modèles de devices
+
+**Sprint 3 (Semaine 3)** :
+
+1. **Base Infrastructure** (2j)
+   - TDD: IDevice interface + contrats
+   - TDD: DeviceFactory avec registry
+   - TDD: NetworkInterface + state management
+
+2. **Linux PC** (3j)
+   - TDD: Device initialization
+   - TDD: Interface configuration (IP, mask, gateway)
+   - TDD: Frame send/receive
+   - TDD: ARP client integration
+
+**Sprint 4 (Semaine 4)** :
+
+3. **Cisco Router** (3j)
+   - TDD: Routing table management
+   - TDD: Static routes
+   - TDD: Frame forwarding based on routes
+
+4. **Cisco Switch** (2j)
+   - TDD: MAC learning
+   - TDD: Frame flooding
+   - TDD: VLAN support basique
+
+**Tests d'intégration** :
+- Scénario : Linux PC obtient IP via DHCP
+- Scénario : Ping entre 2 PCs via router
+- Scénario : Switch learn + forward
+
+#### 5.2.4 Phase 3 : Terminal Emulation (Sprint 5-6 - 2 semaines)
+
+**Objectif** : Implémenter terminal bash basique
+
+**Sprint 5 (Semaine 5)** :
+
+1. **Virtual FileSystem** (2j)
+   - TDD: File/directory CRUD operations
+   - TDD: Path resolution
+   - TDD: Permissions checking
+
+2. **Command Pattern Infrastructure** (1j)
+   - TDD: ICommand interface
+   - TDD: CommandRegistry
+   - TDD: CommandContext
+
+3. **Commandes Navigation** (2j)
+   - TDD: ls, cd, pwd
+   - TDD: mkdir, rm
+
+**Sprint 6 (Semaine 6)** :
+
+4. **Commandes Fichiers** (2j)
+   - TDD: cat, touch
+   - TDD: cp, mv
+
+5. **Commandes Réseau** (3j)
+   - TDD: ping (ICMP)
+   - TDD: ifconfig
+   - TDD: netstat
+
+**Tests d'intégration** :
+- Scénario : Navigation complète dans filesystem
+- Scénario : Ping depuis terminal vers autre device
+- Scénario : Configuration IP via terminal
+
+#### 5.2.5 Phase 4 : Protocoles Avancés (Sprint 7-8 - 2 semaines)
+
+**Objectif** : DHCP et DNS
+
+**Sprint 7 (Semaine 7)** :
+
+1. **DHCP Service** (5j)
+   - TDD: DHCP Server (DORA process)
+   - TDD: DHCP Client
+   - TDD: Lease management
+   - TDD: Renewal/Release
+
+**Sprint 8 (Semaine 8)** :
+
+2. **DNS Service** (5j)
+   - TDD: DNS resolver
+   - TDD: DNS cache
+   - TDD: A/CNAME record support
+   - TDD: Zone management
+
+**Tests d'intégration** :
+- Scénario E2E : PC boot → DHCP → DNS → ping by hostname
+
+#### 5.2.6 Phase 5 : Polish & Performance (Sprint 9 - 1 semaine)
+
+**Objectif** : Optimisations et finitions
+
+1. **Performance** (2j)
+   - Profiling et optimisations
+   - Frame processing < 100ms
+   - Memory management
+
+2. **Error Handling** (1j)
+   - Error boundaries
+   - User-friendly messages
+   - Recovery strategies
+
+3. **Documentation** (2j)
+   - API documentation (TypeDoc)
+   - User guide
+   - Architecture diagrams
+
+### 5.3 Critères de Release
+
+#### 5.3.1 Release 1.0.0 - MVP (Minimum Viable Product)
+
+**Date cible** : Fin Sprint 8 (8 semaines)
+
+**Fonctionnalités obligatoires** :
+
+| Feature | Status | Critère |
+|---------|--------|---------|
+| Network Simulator | ✅ | Frame routing fonctionne |
+| Linux PC + Cisco Router + Switch | ✅ | 3 types de devices opérationnels |
+| ARP Protocol | ✅ | Resolution IP→MAC fonctionne |
+| Ping (ICMP) | ✅ | Ping réussit entre 2 PCs |
+| DHCP | ✅ | PC obtient IP automatiquement |
+| DNS | ✅ | Résolution de noms fonctionne |
+| Terminal Bash | ✅ | 15+ commandes essentielles |
+| Static Routing | ✅ | Routage multi-hops fonctionne |
+| UI Integration | ✅ | UI React fonctionne avec nouveau backend |
+
+**Critères qualité** :
+
+- ✅ Test coverage ≥ 80%
+- ✅ 0 bugs critiques
+- ✅ Performance : <100ms frame processing
+- ✅ Build size : <5MB
+- ✅ Documentation : README + API docs
+
+#### 5.3.2 Release 1.1.0 - Enhanced (Post-MVP)
+
+**Date cible** : +4 semaines après 1.0.0
+
+**Fonctionnalités additionnelles** :
+
+- Windows PC support (CMD commands)
+- Cisco IOS CLI basique
+- VLAN configuration
+- Advanced routing (default gateway)
+- Save/Load topologies
+- Export configurations
+
+### 5.4 Stratégie de Tests
+
+#### 5.4.1 Pyramide de Tests
+
+```
+                 ┌─────────┐
+                 │   E2E   │  ~10% (Scénarios complets)
+                 │  Tests  │
+              ┌──┴─────────┴──┐
+              │  Integration  │  ~20% (Modules interconnectés)
+              │     Tests     │
+         ┌────┴───────────────┴────┐
+         │      Unit Tests          │  ~70% (Fonctions isolées)
+         │   (TDD - Red/Green)      │
+         └──────────────────────────┘
+```
+
+**Répartition** :
+- **Unit tests** : 70% - Tests rapides (<1ms chacun), isolés
+- **Integration tests** : 20% - Tests de modules interconnectés
+- **E2E tests** : 10% - Scénarios complets utilisateur
+
+#### 5.4.2 Coverage Goals
+
+| Catégorie | Coverage Min | Coverage Cible |
+|-----------|--------------|----------------|
+| **Domain Layer** | 90% | 95% |
+| **Application Layer** | 80% | 90% |
+| **Infrastructure Layer** | 70% | 85% |
+| **Global** | 80% | 90% |
+
+**Exclusions de coverage** :
+- Fichiers UI React (testés manuellement)
+- Fichiers de configuration
+- Stubs et mocks
+- Types TypeScript purs
+
+#### 5.4.3 Continuous Integration
+
+**Pipeline CI/CD** :
+
+```yaml
+name: CI Pipeline
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - Checkout code
+      - Install dependencies
+      - Run ESLint
+      - Run TypeScript compiler
+      - Run unit tests (parallel)
+      - Run integration tests
+      - Generate coverage report
+      - Upload to CodeCov
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - Build production bundle
+      - Verify bundle size < 5MB
+      - Run E2E tests (Playwright)
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - Deploy to staging
+      - Run smoke tests
+      - Deploy to production (manual approval)
+```
+
+### 5.5 Indicateurs de Succès
+
+#### 5.5.1 Métriques Techniques
+
+| Métrique | Objectif Sprint 4 | Objectif Release 1.0 |
+|----------|-------------------|----------------------|
+| **Test Coverage** | ≥70% | ≥80% |
+| **Build Time** | <15s | <10s |
+| **Test Execution** | <30s | <60s |
+| **Bundle Size** | <3MB | <5MB |
+| **Code Duplication** | <5% | <3% |
+| **Cyclomatic Complexity** | <15 | <12 |
+
+#### 5.5.2 Métriques Fonctionnelles
+
+| Feature | Sprint | Test Scenario |
+|---------|--------|---------------|
+| **Frame Routing** | 2 | 100 frames/sec sans perte |
+| **ARP Resolution** | 2 | <1s timeout, 3 retries |
+| **Ping Success** | 4 | RTT <50ms simulation |
+| **DHCP Assignment** | 7 | Lease en <5s |
+| **DNS Resolution** | 8 | Query response <100ms |
+
+---
+
+## Conclusion
+
+Ce PRD définit une approche rigoureuse et professionnelle pour la refonte complète du simulateur d'infrastructure IT. En adoptant **Test-Driven Development**, des **design patterns éprouvés**, et une **architecture en couches claire**, nous construisons une base solide, maintenable et extensible pour les années à venir.
+
+### Points Clés à Retenir
+
+1. **TDD Strict** : 100% du code métier développé test-first
+2. **Architecture Propre** : Séparation Domain/Application/Infrastructure
+3. **Design Patterns** : Factory, Strategy, Command, Observer, Mediator
+4. **Couverture Tests** : ≥80% minimum, ≥90% cible
+5. **Documentation** : Code auto-documenté + TSDoc + guides
+6. **Performance** : <100ms frame processing, ≥60 FPS
+7. **Extensibilité** : Nouveau device en <2h vs 8h actuellement
+
+### Prochaines Actions
+
+1. **Immédiat** : Setup infrastructure (Sprint 0)
+2. **Semaine 1-2** : Network Core (Sprints 1-2)
+3. **Semaine 3-4** : Device Models (Sprints 3-4)
+4. **Semaine 5-8** : Terminal + Protocoles (Sprints 5-8)
+5. **Release 1.0.0** : Fin semaine 8
+
+### Engagement Qualité
+
+Nous nous engageons à suivre ce PRD rigoureusement, en acceptant que :
+- **Les tests viennent toujours en premier**
+- **La qualité prime sur la vélocité**
+- **L'architecture est respectée sans compromis**
+- **La documentation est maintenue à jour**
+- **Le code review est obligatoire**
+
+**Ce projet servira de référence pour tout futur développement d'applications complexes avec une approche professionnelle et maintenable.**
+
+---
+
+**Document Status** : ✅ COMPLET
+**Total Words** : ~9500 mots
+**Sections** : 5/5 (100%)
+**Dernière mise à jour** : 22 janvier 2026
