@@ -87,14 +87,28 @@ interface NetworkState {
  */
 function deviceToUI(device: BaseDevice): NetworkDeviceUI {
   const pos = device.getPosition();
+
+  // Get interfaces and convert to config format
+  let interfaces: NetworkInterfaceConfig[] = [];
+  if ('getInterfaces' in device && typeof (device as any).getInterfaces === 'function') {
+    const deviceInterfaces = (device as any).getInterfaces();
+    interfaces = deviceInterfaces.map((iface: any) => ({
+      id: iface.getName(),
+      name: iface.getName(),
+      type: 'ethernet' as const,
+      ipAddress: iface.getIPAddress()?.toString(),
+      subnetMask: iface.getSubnetMask()?.toString(),
+    }));
+  }
+
   return {
     id: device.getId(),
-    type: device.getDeviceType(),
+    type: device.getType(),
     name: device.getName(),
     hostname: device.getHostname(),
     x: pos.x,
     y: pos.y,
-    interfaces: device.getInterfaces(),
+    interfaces: interfaces,
     isPoweredOn: device.getIsPoweredOn(),
     instance: device
   };
