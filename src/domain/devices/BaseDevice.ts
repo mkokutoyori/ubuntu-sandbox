@@ -27,9 +27,19 @@
  */
 
 /**
- * Device types
+ * Device types (unified for both network simulation and UI)
  */
-export type DeviceType = 'pc' | 'switch' | 'router' | 'hub' | 'test';
+export type DeviceType =
+  | 'pc'           // Generic PC
+  | 'linux-pc'     // Linux PC (for UI/Terminal)
+  | 'windows-pc'   // Windows PC (for UI/Terminal)
+  | 'switch'       // Generic Layer 2 switch
+  | 'cisco-switch' // Cisco switch (for UI/Terminal)
+  | 'router'       // Generic Layer 3 router
+  | 'cisco-router' // Cisco router (for UI/Terminal)
+  | 'cisco-l3-switch' // Cisco Layer 3 switch (for UI/Terminal)
+  | 'hub'          // Layer 1 hub
+  | 'test';        // Test device
 
 /**
  * Device status
@@ -46,6 +56,9 @@ export interface DeviceJSON {
   status: DeviceStatus;
   ports: string[];
   metadata: Record<string, any>;
+  hostname?: string;
+  x?: number;
+  y?: number;
 }
 
 /**
@@ -59,6 +72,11 @@ export abstract class BaseDevice {
   protected ports: Set<string>;
   protected metadata: Map<string, any>;
 
+  // UI properties
+  protected hostname: string;
+  protected x: number;
+  protected y: number;
+
   constructor(id: string, name: string, type: DeviceType) {
     this.id = id;
     this.name = name;
@@ -66,6 +84,11 @@ export abstract class BaseDevice {
     this.status = 'offline';
     this.ports = new Set();
     this.metadata = new Map();
+
+    // Initialize UI properties
+    this.hostname = name;
+    this.x = 0;
+    this.y = 0;
   }
 
   /**
@@ -126,6 +149,53 @@ export abstract class BaseDevice {
    */
   public isOnline(): boolean {
     return this.status === 'online';
+  }
+
+  /**
+   * Returns device hostname
+   */
+  public getHostname(): string {
+    return this.hostname;
+  }
+
+  /**
+   * Sets device hostname
+   */
+  public setHostname(hostname: string): void {
+    this.hostname = hostname;
+  }
+
+  /**
+   * Returns device position (for UI)
+   */
+  public getPosition(): { x: number; y: number } {
+    return { x: this.x, y: this.y };
+  }
+
+  /**
+   * Sets device position (for UI)
+   */
+  public setPosition(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+  }
+
+  /**
+   * Alias for isOnline (for UI compatibility)
+   */
+  public getIsPoweredOn(): boolean {
+    return this.isOnline();
+  }
+
+  /**
+   * Toggles power state
+   */
+  public togglePower(): void {
+    if (this.isOnline()) {
+      this.powerOff();
+    } else {
+      this.powerOn();
+    }
   }
 
   /**
@@ -210,7 +280,10 @@ export abstract class BaseDevice {
       type: this.type,
       status: this.status,
       ports: this.getPorts(),
-      metadata: this.getAllMetadata()
+      metadata: this.getAllMetadata(),
+      hostname: this.hostname,
+      x: this.x,
+      y: this.y
     };
   }
 }
