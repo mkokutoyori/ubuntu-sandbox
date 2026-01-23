@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, RefreshCw, Trash2 } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
-import { DeviceFactory } from '@/devices/DeviceFactory';
+import { DeviceFactory } from '@/domain/devices/DeviceFactory';
 import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
 import { cn } from '@/lib/utils';
 

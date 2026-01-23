@@ -3,7 +3,7 @@
  * Package manager for terminal
  */
 
-import { DeviceType } from '@/devices/common/types';
+import { DeviceType } from '@/domain/devices';
 
 export class PackageManager {
   private installedPackages: Set<string> = new Set();

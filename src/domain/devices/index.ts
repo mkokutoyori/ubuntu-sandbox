@@ -25,6 +25,12 @@ export { CiscoRouter } from './CiscoRouter';
 export { CiscoSwitch } from './CiscoSwitch';
 export { CiscoL3Switch } from './CiscoL3Switch';
 
+// Cisco device union type (for backwards compatibility with UI)
+import type { CiscoRouter } from './CiscoRouter';
+import type { CiscoSwitch } from './CiscoSwitch';
+import type { CiscoL3Switch } from './CiscoL3Switch';
+export type CiscoDevice = CiscoRouter | CiscoSwitch | CiscoL3Switch;
+
 // Factory
 export { DeviceFactory } from './DeviceFactory';
 

@@ -21,7 +21,7 @@ import { createOrGetSQLPlusSession, deleteSQLPlusSession, createOrGetPsqlSession
 import { executeSQLPlus, getSQLPlusPrompt } from '@/terminal/sql/oracle/sqlplus';
 import { executePsql, getPsqlPrompt } from '@/terminal/sql/postgres/psql';
 import { BaseDevice } from '@/devices';
-import { LinuxPC } from '@/devices/linux/LinuxPC';
+import { LinuxPC } from '@/domain/devices';
 import { getProcessManager, resetProcessManager } from '@/terminal/processManager';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);

@@ -19,7 +19,7 @@ import {
   getPrompt,
   executeCiscoCommand,
 } from '@/terminal/cisco';
-import { CiscoDevice } from '@/devices/cisco/CiscoDevice';
+import { CiscoDevice } from '@/domain/devices';
 
 interface CiscoTerminalProps {
   deviceType?: CiscoDeviceType;

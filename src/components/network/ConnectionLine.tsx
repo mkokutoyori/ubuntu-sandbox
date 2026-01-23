@@ -3,7 +3,7 @@
  */
 
 import { useMemo } from 'react';
-import { Connection, ConnectionType } from '@/devices/common/types';
+import { Connection, ConnectionType } from '@/domain/devices';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import { cn } from '@/lib/utils';
 

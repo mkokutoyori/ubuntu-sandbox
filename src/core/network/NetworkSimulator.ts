@@ -4,8 +4,7 @@
  * Real implementation will be rebuilt with TDD
  */
 
-import { BaseDevice } from '../../devices/common/BaseDevice';
-import { Connection } from '../../devices/common/types';
+import { BaseDevice, Connection } from '@/domain/devices';
 
 export interface EthernetFrame {
   sourceMAC: string;

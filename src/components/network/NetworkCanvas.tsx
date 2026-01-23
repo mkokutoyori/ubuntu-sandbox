@@ -8,7 +8,7 @@ import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
-import { DeviceType } from '@/devices/common/types';
+import { DeviceType } from '@/domain/devices';
 import { BaseDevice } from '@/devices';
 import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
 import { cn } from '@/lib/utils';

@@ -15,8 +15,8 @@ import { BaseDevice } from '@/devices';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { CiscoTerminal } from '@/components/CiscoTerminal';
-import { CiscoDevice } from '@/devices/cisco/CiscoDevice';
-import { DeviceFactory } from '@/devices/DeviceFactory';
+import { CiscoDevice } from '@/domain/devices';
+import { DeviceFactory } from '@/domain/devices/DeviceFactory';
 import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
 
