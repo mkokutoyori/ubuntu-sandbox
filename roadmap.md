@@ -268,23 +268,119 @@ Ce document trace la progression du développement du simulateur d'infrastructur
 
 ---
 
-## 📋 Phase 2 : Device Models (Sprint 3-4) - PLANIFIÉ
+## ✅ Phase 2 : Device Models (Sprint 3) - COMPLETED
 
-### Sprint 3 - Semaine 3 (Planifié)
-**Objectif**: Implémenter les device models de base
+### Sprint 3 - Semaine 3
+**Date**: 2026-01-22
+**Commit**: `TBD`
+**Tests**: ✅ **284 tests passing** (276 unitaires + 21 intégration)
 
-**Devices à implémenter**:
-1. **PC (Computer)**
-   - NetworkInterface (NIC)
-   - IP stack
-   - ARP client
-   - ICMP (ping)
+#### Livrable 1 : Base Infrastructure (46 tests unitaires)
 
-2. **Switch (Layer 2)**
-   - Multiple ports
-   - MAC learning
-   - Frame forwarding
-   - Broadcast domain
+**1. BaseDevice** (18 tests) - Abstract base class
+- **Fichier**: `src/domain/devices/BaseDevice.ts`
+- **Test**: `src/__tests__/unit/devices/BaseDevice.test.ts`
+- **Fonctionnalités**:
+  - Device identification (ID, name, type)
+  - Port management (add/remove/check)
+  - Status management (online/offline)
+  - Metadata storage (key-value pairs)
+  - JSON serialization
+- **Pattern**: Template Method
+- **Tests passed**: ✅ 18/18
+
+**2. NetworkInterface** (28 tests) - Network Interface Card
+- **Fichier**: `src/domain/devices/NetworkInterface.ts`
+- **Test**: `src/__tests__/unit/devices/NetworkInterface.test.ts`
+- **Fonctionnalités**:
+  - MAC address assignment
+  - IP address configuration (IP, subnet, gateway)
+  - Interface status (up/down)
+  - Frame TX/RX with callbacks
+  - Promiscuous mode support
+  - MTU configuration (576-9216 bytes, default 1500)
+  - Statistics tracking (RX/TX frames/bytes, drops, errors)
+  - Broadcast and unicast frame handling
+  - MAC address filtering
+- **Tests passed**: ✅ 28/28
+
+#### Livrable 2 : Device Models (50 tests unitaires)
+
+**3. PC Device** (26 tests) - Personal Computer
+- **Fichier**: `src/domain/devices/PC.ts`
+- **Test**: `src/__tests__/unit/devices/PC.test.ts`
+- **Fonctionnalités**:
+  - Single network interface (eth0)
+  - Automatic MAC address generation
+  - IP configuration with gateway
+  - ARP cache integration
+  - ARP request/reply handling
+  - Frame transmission/reception
+  - Automatic ARP reply generation
+  - Hostname configuration
+- **Pattern**: Composite (NetworkInterface + ARPService)
+- **Tests passed**: ✅ 26/26
+
+**4. Switch Device** (24 tests) - Layer 2 Switch
+- **Fichier**: `src/domain/devices/Switch.ts`
+- **Test**: `src/__tests__/unit/devices/Switch.test.ts`
+- **Fonctionnalités**:
+  - Multiple ports (configurable, default 8)
+  - Dynamic MAC learning
+  - Frame forwarding (unicast/broadcast/multicast)
+  - Port enable/disable
+  - VLAN support (1-4094)
+  - VLAN isolation
+  - MAC table management
+  - Forwarding statistics
+  - Port filtering (no hairpin)
+- **Pattern**: Composite + Strategy
+- **Integration**: MACTableService + FrameForwardingService
+- **Tests passed**: ✅ 24/24
+
+#### Livrable 3 : Tests d'Intégration (8 tests)
+
+**Fichier**: `src/__tests__/integration/devices.integration.test.ts`
+
+**Scénario 1**: PC-to-PC communication through switch (3 tests)
+- MAC address learning on switch
+- Unicast forwarding after learning
+- Frame filtering for same-port devices
+- **Tests passed**: ✅ 3/3
+
+**Scénario 2**: ARP resolution through switch (2 tests)
+- Complete ARP request/reply cycle through switch
+- Bidirectional ARP cache updates
+- **Tests passed**: ✅ 2/2
+
+**Scénario 3**: VLAN isolation (2 tests)
+- Traffic isolation between different VLANs
+- Communication within same VLAN
+- **Tests passed**: ✅ 2/2
+
+**Scénario 4**: Multiple switches (1 test)
+- Frame forwarding through cascaded switches
+- MAC learning on all switches in path
+- **Tests passed**: ✅ 1/1
+
+### Résumé Sprint 3
+
+| Catégorie | Fichiers | Tests | Status |
+|-----------|----------|-------|--------|
+| Base Infrastructure | 2 | 46 | ✅ |
+| Device Models | 2 | 50 | ✅ |
+| Integration Tests | 1 | 8 | ✅ |
+| **TOTAL Sprint 3** | **5** | **104** | ✅ |
+| **TOTAL Cumul** | **15** | **284** | ✅ |
+
+**Lignes de code ajoutées Sprint 3**: ~2200 lignes
+**Build status**: ✅ Successfully builds
+**Approche TDD**: 100% (tests écrits avant implémentation)
+**Integration**: Tous les composants fonctionnent ensemble
+
+---
+
+## 📋 Phase 2 : Device Models (Sprint 4) - PLANIFIÉ
 
 ### Sprint 4 - Semaine 4 (Planifié)
 **Objectif**: Devices avancés
@@ -352,7 +448,8 @@ Ce document trace la progression du développement du simulateur d'infrastructur
 ### Couverture de Tests
 - **Sprint 1**: 95 tests unitaires ✅
 - **Sprint 2**: 72 tests unitaires + 13 tests intégration ✅
-- **Total**: 180 tests (167 unitaires + 13 intégration)
+- **Sprint 3**: 96 tests unitaires + 8 tests intégration ✅
+- **Total**: 284 tests (263 unitaires + 21 intégration)
 - **Objectif global**: > 90% code coverage
 
 ### Conformité Patterns
@@ -398,6 +495,22 @@ Ce document trace la progression du développement du simulateur d'infrastructur
 
 ## 🔄 Changelog
 
+### [2026-01-22] - Sprint 3 Completed
+**Ajouté**:
+- Base Infrastructure: BaseDevice, NetworkInterface
+- Device Models: PC, Switch
+- 96 tests unitaires (100% passing)
+- 8 tests d'intégration (100% passing)
+- VLAN support on Switch
+- Complete device-to-device communication through switches
+- Updated roadmap
+
+**Commits**:
+- `TBD`: feat: Implement Sprint 3 - Device Models with TDD (104 tests)
+- `9b66a1d`: wip: Sprint 3 - BaseDevice and NetworkInterface (46 tests)
+
+**Total cumulé**: 284 tests passing
+
 ### [2026-01-22] - Sprint 2 Completed
 **Ajouté**:
 - Services: ARPService, MACTableService, FrameForwardingService
@@ -407,7 +520,7 @@ Ce document trace la progression du développement du simulateur d'infrastructur
 - Roadmap documentation
 
 **Commits**:
-- `TBD`: feat: Implement Sprint 2 - Protocol Services with TDD (85 tests)
+- `bef6451`: feat: Implement Sprint 2 - Protocol Services with TDD (85 tests)
 
 **Total cumulé**: 180 tests passing
 
@@ -452,6 +565,6 @@ Ce document trace la progression du développement du simulateur d'infrastructur
 ---
 
 **Dernière mise à jour**: 2026-01-22
-**Version**: 0.2.0 (Sprint 2 completed)
+**Version**: 0.3.0 (Sprint 3 completed)
 **Statut global**: 🟢 On track
-**Tests**: 180/180 passing (100%)
+**Tests**: 284/284 passing (100%)
