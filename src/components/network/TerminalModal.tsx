@@ -40,6 +40,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   const osType = device.getOSType();
   const isLinuxDevice = osType === 'linux';
   const isWindowsDevice = osType === 'windows';
+  const isCiscoDevice = osType === 'cisco-ios';
   const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
@@ -145,6 +146,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   }
 
   // Show message for non-implemented device types
+  if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !isFullyImplemented) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className={cn(
@@ -228,6 +230,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
                 Windows
               </span>
             )}
+            {isCiscoDevice && (
               <span className="text-xs text-cyan-400/60 ml-2">
                 Cisco IOS
               </span>
@@ -272,6 +275,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
 
         {/* Terminal content - Use the appropriate terminal based on OS type */}
         <div className="flex-1 overflow-hidden">
+          {isCiscoDevice ? (
             <CiscoTerminal
               deviceType={deviceType === 'switch-cisco' ? 'switch' : 'router'}
               hostname={device.getHostname()}
