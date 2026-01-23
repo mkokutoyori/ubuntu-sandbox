@@ -42,7 +42,8 @@ import { IPAddress } from '../network/value-objects/IPAddress';
 import { SubnetMask } from '../network/value-objects/SubnetMask';
 import { MACAddress } from '../network/value-objects/MACAddress';
 import { EthernetFrame, EtherType } from '../network/entities/EthernetFrame';
-import { IPv4Packet } from '../network/entities/IPv4Packet';
+import { IPv4Packet, IPProtocol } from '../network/entities/IPv4Packet';
+import { ICMPPacket, ICMPCode } from '../network/entities/ICMPPacket';
 
 /**
  * Route entry in routing table
@@ -320,6 +321,10 @@ export class Router extends BaseDevice {
       if (this.packetDropCallback) {
         this.packetDropCallback('TTL expired', packet);
       }
+
+      // Send ICMP Time Exceeded to source
+      this.sendICMPTimeExceeded(packet, ingressInterface);
+
       return;
     }
 
@@ -551,6 +556,65 @@ export class Router extends BaseDevice {
       }
     } catch (error) {
       // Silently drop malformed ARP packets
+    }
+  }
+
+  /**
+   * Sends ICMP Time Exceeded message to packet source
+   *
+   * @param originalPacket - Original packet that expired
+   * @param ingressInterface - Interface where packet was received
+   */
+  private sendICMPTimeExceeded(originalPacket: IPv4Packet, ingressInterface: string): void {
+    const sourceIP = originalPacket.getSourceIP();
+
+    // Get ingress interface
+    const ingressNIC = this.interfaces.get(ingressInterface);
+    if (!ingressNIC || !ingressNIC.getIPAddress()) {
+      return; // Can't send without configured interface
+    }
+
+    // Create ICMP Time Exceeded packet
+    // Include first 8 bytes of IP header + 8 bytes of data from original packet
+    const originalBytes = originalPacket.toBytes();
+    const icmpData = originalBytes.subarray(0, Math.min(28, originalBytes.length));
+
+    const icmpPacket = ICMPPacket.createTimeExceeded(icmpData, ICMPCode.TTL_EXCEEDED);
+
+    // Encapsulate in IP packet
+    const icmpBytes = icmpPacket.toBytes();
+    const ipPacket = new IPv4Packet({
+      sourceIP: ingressNIC.getIPAddress()!,
+      destinationIP: sourceIP,
+      protocol: IPProtocol.ICMP,
+      ttl: 64,
+      payload: icmpBytes
+    });
+
+    // Resolve source MAC
+    const sourceMac = this.resolveMAC(ingressInterface, sourceIP);
+    if (!sourceMac) {
+      // Can't send without MAC resolution
+      return;
+    }
+
+    // Encapsulate in Ethernet frame
+    const packetBytes = ipPacket.toBytes();
+    const paddedPayload = Buffer.concat([
+      packetBytes,
+      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
+    ]);
+
+    const frame = new EthernetFrame({
+      sourceMAC: ingressNIC.getMAC(),
+      destinationMAC: sourceMac,
+      etherType: EtherType.IPv4,
+      payload: paddedPayload
+    });
+
+    // Send back via ingress interface
+    if (this.frameTransmitCallback) {
+      this.frameTransmitCallback(ingressInterface, frame);
     }
   }
 

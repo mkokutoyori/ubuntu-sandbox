@@ -32,10 +32,13 @@
 import { BaseDevice } from './BaseDevice';
 import { NetworkInterface } from './NetworkInterface';
 import { ARPService, ARPPacket } from '../network/services/ARPService';
+import { ICMPService } from '../network/services/ICMPService';
 import { IPAddress } from '../network/value-objects/IPAddress';
 import { SubnetMask } from '../network/value-objects/SubnetMask';
 import { MACAddress } from '../network/value-objects/MACAddress';
 import { EthernetFrame, EtherType } from '../network/entities/EthernetFrame';
+import { IPv4Packet, IPProtocol } from '../network/entities/IPv4Packet';
+import { ICMPPacket } from '../network/entities/ICMPPacket';
 
 /**
  * Frame callback type
@@ -48,7 +51,9 @@ type FrameCallback = (frame: EthernetFrame) => void;
 export class PC extends BaseDevice {
   private interfaces: Map<string, NetworkInterface>;
   private arpService: ARPService;
+  private icmpService: ICMPService;
   private hostname: string;
+  private gateway?: IPAddress;
   private transmitCallback?: FrameCallback;
   private receiveCallback?: FrameCallback;
 
@@ -57,6 +62,7 @@ export class PC extends BaseDevice {
 
     this.interfaces = new Map();
     this.arpService = new ARPService();
+    this.icmpService = new ICMPService();
     this.hostname = name;
 
     // Create default network interface (eth0)
@@ -169,6 +175,8 @@ export class PC extends BaseDevice {
    * @param gateway - Gateway IP address
    */
   public setGateway(gateway: IPAddress): void {
+    this.gateway = gateway;
+
     // Set gateway on primary interface (eth0)
     const nic = this.interfaces.get('eth0');
     if (nic) {
@@ -316,6 +324,11 @@ export class PC extends BaseDevice {
         this.handleARPFrame(frame);
       }
 
+      // Process IPv4 frames
+      if (frame.getEtherType() === EtherType.IPv4) {
+        this.handleIPv4Frame(frame);
+      }
+
       // Forward to application layer
       if (this.receiveCallback) {
         this.receiveCallback(frame);
@@ -369,5 +382,114 @@ export class PC extends BaseDevice {
     } catch (error) {
       // Silently drop malformed ARP packets
     }
+  }
+
+  /**
+   * Handles IPv4 frame
+   *
+   * @param frame - Ethernet frame containing IPv4 packet
+   */
+  private handleIPv4Frame(frame: EthernetFrame): void {
+    try {
+      const payload = frame.getPayload();
+      const ipPacket = IPv4Packet.fromBytes(payload);
+
+      // Only process ICMP packets
+      if (ipPacket.getProtocol() !== IPProtocol.ICMP) {
+        return;
+      }
+
+      const icmpPacket = ICMPPacket.fromBytes(ipPacket.getPayload());
+
+      // Handle Echo Request - send Echo Reply
+      if (icmpPacket.isEchoRequest()) {
+        this.sendEchoReply(ipPacket.getSourceIP(), icmpPacket);
+      }
+
+      // Handle Echo Reply - notify ICMP service
+      if (icmpPacket.isEchoReply()) {
+        this.icmpService.handleEchoReply(ipPacket.getSourceIP(), icmpPacket);
+      }
+    } catch (error) {
+      // Silently drop malformed IPv4/ICMP packets
+    }
+  }
+
+  /**
+   * Sends ICMP Echo Reply
+   *
+   * @param destination - Destination IP (original source)
+   * @param request - Original Echo Request packet
+   */
+  private sendEchoReply(destination: IPAddress, request: ICMPPacket): void {
+    const nic = this.interfaces.get('eth0');
+    if (!nic || !nic.getIPAddress()) {
+      return;
+    }
+
+    // Create Echo Reply
+    const reply = ICMPPacket.createEchoReply(request);
+
+    // Encapsulate in IP packet
+    const replyBytes = reply.toBytes();
+    const ipPacket = new IPv4Packet({
+      sourceIP: nic.getIPAddress()!,
+      destinationIP: destination,
+      protocol: IPProtocol.ICMP,
+      ttl: 64,
+      payload: replyBytes
+    });
+
+    // Determine next hop (use gateway if destination is not on local network)
+    let nextHop = destination;
+    if (this.gateway) {
+      const ourMask = nic.getSubnetMask();
+      if (ourMask) {
+        const ourNetwork = (nic.getIPAddress()!.toNumber() & ourMask.toNumber()) >>> 0;
+        const destNetwork = (destination.toNumber() & ourMask.toNumber()) >>> 0;
+
+        // If destination is on different network, use gateway
+        if (ourNetwork !== destNetwork) {
+          nextHop = this.gateway;
+        }
+      }
+    }
+
+    // Resolve next hop MAC
+    const destMAC = this.resolveMAC(nextHop);
+    if (!destMAC) {
+      // Can't send without MAC - in real implementation would queue and send ARP request
+      return;
+    }
+
+    // Encapsulate in Ethernet frame
+    const packetBytes = ipPacket.toBytes();
+    const paddedPayload = Buffer.concat([
+      packetBytes,
+      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
+    ]);
+
+    const frame = new EthernetFrame({
+      sourceMAC: nic.getMAC(),
+      destinationMAC: destMAC,
+      etherType: EtherType.IPv4,
+      payload: paddedPayload
+    });
+
+    this.sendFrame('eth0', frame);
+  }
+
+  /**
+   * Returns ICMP service instance
+   */
+  public getICMPService(): ICMPService {
+    return this.icmpService;
+  }
+
+  /**
+   * Returns gateway IP
+   */
+  public getGateway(): IPAddress | undefined {
+    return this.gateway;
   }
 }
