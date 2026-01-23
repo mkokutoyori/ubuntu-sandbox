@@ -113,7 +113,11 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
 
   addDevice: (type, x, y) => {
     // Create a new device instance using the factory
-    const device = DeviceFactory.createDevice(type, x, y);
+    const device = DeviceFactory.createDevice({
+      type: type,
+      x: x,
+      y: y
+    });
 
     // Store the instance
     set(state => {
