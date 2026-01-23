@@ -10,7 +10,7 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { Toolbar } from './Toolbar';
 import { TerminalModal } from './TerminalModal';
 import { MinimizedTerminals } from './MinimizedTerminals';
-import { DeviceType } from '@/devices/common/types';
+import { DeviceType } from '@/domain/devices';
 import { BaseDevice } from '@/devices';
 import { useNetworkStore } from '@/store/networkStore';
 

@@ -4,8 +4,9 @@
  */
 
 import { create } from 'zustand';
-import { BaseDevice, DeviceFactory } from '../devices';
 import {
+  BaseDevice,
+  DeviceFactory,
   DeviceType,
   DeviceConfig,
   Connection,
@@ -13,7 +14,7 @@ import {
   NetworkInterfaceConfig,
   generateId,
   resetDeviceCounters
-} from '../devices/common/types';
+} from '@/domain/devices';
 
 /**
  * UI representation of a device (for rendering)

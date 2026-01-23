@@ -5,7 +5,7 @@
 import { useMemo } from 'react';
 import { ActivePacket } from '@/hooks/useNetworkSimulator';
 import { NetworkDeviceUI } from '@/store/networkStore';
-import { Connection } from '@/devices/common/types';
+import { Connection } from '@/domain/devices';
 
 interface PacketAnimationProps {
   packet: ActivePacket;

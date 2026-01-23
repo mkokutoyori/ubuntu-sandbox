@@ -6,7 +6,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Power, Settings, Terminal, Trash2, Link } from 'lucide-react';
 import { DeviceIcon } from './DeviceIcon';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
-import { DeviceFactory } from '@/devices/DeviceFactory';
+import { DeviceFactory } from '@/domain/devices/DeviceFactory';
 import { BaseDevice } from '@/devices';
 import { cn } from '@/lib/utils';
 
