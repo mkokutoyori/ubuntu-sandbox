@@ -104,6 +104,11 @@ export class LinuxPC extends PC {
       return this.getIfconfigOutput();
     }
 
+    // ifconfig with arguments for IP configuration
+    if (cmd.startsWith('ifconfig ')) {
+      return this.executeIfconfigCommand(cmd);
+    }
+
     if (cmd === 'route' || cmd === 'ip route') {
       return this.getRouteOutput();
     }
@@ -140,6 +145,83 @@ export class LinuxPC extends PC {
 
     // Unknown command
     return `bash: ${cmd.split(' ')[0]}: command not found`;
+  }
+
+  /**
+   * Executes ifconfig command with arguments
+   * Supports: ifconfig <interface> <ip> netmask <mask> [up|down]
+   *           ifconfig <interface> up|down
+   */
+  private executeIfconfigCommand(cmd: string): string {
+    const parts = cmd.split(/\s+/);
+    // parts[0] = 'ifconfig', parts[1] = interface name
+
+    if (parts.length < 2) {
+      return this.getIfconfigOutput();
+    }
+
+    const ifaceName = parts[1];
+    const iface = this.getInterface(ifaceName);
+
+    if (!iface) {
+      return `ifconfig: error: interface '${ifaceName}' not found`;
+    }
+
+    // ifconfig eth0 up/down
+    if (parts.length === 3 && (parts[2] === 'up' || parts[2] === 'down')) {
+      if (parts[2] === 'up') {
+        iface.up();
+      } else {
+        iface.down();
+      }
+      return '';
+    }
+
+    // ifconfig eth0 <ip> netmask <mask> [up]
+    if (parts.length >= 2) {
+      // Check if just "ifconfig eth0" - show interface info
+      if (parts.length === 2) {
+        return this.getIfconfigOutput();
+      }
+
+      // Get IP address
+      const ipStr = parts[2];
+      let ip: IPAddress;
+      try {
+        ip = new IPAddress(ipStr);
+      } catch (e) {
+        return `ifconfig: error: invalid IP address '${ipStr}'`;
+      }
+
+      // Look for netmask
+      let mask: SubnetMask = new SubnetMask('/24'); // Default mask
+      const netmaskIndex = parts.indexOf('netmask');
+      if (netmaskIndex !== -1 && parts[netmaskIndex + 1]) {
+        try {
+          mask = new SubnetMask(parts[netmaskIndex + 1]);
+        } catch (e) {
+          return `ifconfig: error: invalid netmask '${parts[netmaskIndex + 1]}'`;
+        }
+      }
+
+      // Configure the interface
+      this.setIPAddress(ifaceName, ip, mask);
+
+      // Check for up/down flag at the end
+      const lastArg = parts[parts.length - 1];
+      if (lastArg === 'up') {
+        iface.up();
+      } else if (lastArg === 'down') {
+        iface.down();
+      } else {
+        // By default, bringing up the interface when configuring IP
+        iface.up();
+      }
+
+      return '';
+    }
+
+    return `ifconfig: error: invalid arguments`;
   }
 
   /**

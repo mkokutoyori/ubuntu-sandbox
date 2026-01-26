@@ -190,6 +190,69 @@ describe('LinuxPC', () => {
     });
   });
 
+  describe('ifconfig with arguments (TDD)', () => {
+    beforeEach(() => {
+      pc.powerOn();
+    });
+
+    it('should configure IP address via ifconfig command', async () => {
+      const result = await pc.executeCommand('ifconfig eth0 192.168.1.10 netmask 255.255.255.0');
+      expect(result).not.toContain('command not found');
+
+      // Verify the IP was configured
+      const iface = pc.getInterface('eth0');
+      expect(iface?.getIPAddress()?.toString()).toBe('192.168.1.10');
+      expect(iface?.getSubnetMask()?.toString()).toBe('255.255.255.0');
+    });
+
+    it('should configure IP with up flag', async () => {
+      const result = await pc.executeCommand('ifconfig eth0 192.168.1.20 netmask 255.255.255.0 up');
+      expect(result).not.toContain('command not found');
+
+      const iface = pc.getInterface('eth0');
+      expect(iface?.getIPAddress()?.toString()).toBe('192.168.1.20');
+      expect(iface?.isUp()).toBe(true);
+    });
+
+    it('should bring interface down with ifconfig eth0 down', async () => {
+      pc.setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
+      const result = await pc.executeCommand('ifconfig eth0 down');
+      expect(result).not.toContain('command not found');
+
+      const iface = pc.getInterface('eth0');
+      expect(iface?.isUp()).toBe(false);
+    });
+
+    it('should bring interface up with ifconfig eth0 up', async () => {
+      pc.setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
+      await pc.executeCommand('ifconfig eth0 down');
+
+      const result = await pc.executeCommand('ifconfig eth0 up');
+      expect(result).not.toContain('command not found');
+
+      const iface = pc.getInterface('eth0');
+      expect(iface?.isUp()).toBe(true);
+    });
+
+    it('should show error for invalid interface', async () => {
+      const result = await pc.executeCommand('ifconfig eth99 192.168.1.10 netmask 255.255.255.0');
+      expect(result).toContain('error');
+    });
+
+    it('should show error for invalid IP address', async () => {
+      const result = await pc.executeCommand('ifconfig eth0 999.999.999.999 netmask 255.255.255.0');
+      expect(result).toContain('error');
+    });
+
+    it('should show ifconfig output after configuration', async () => {
+      await pc.executeCommand('ifconfig eth0 10.0.0.50 netmask 255.0.0.0');
+
+      const result = await pc.executeCommand('ifconfig');
+      expect(result).toContain('10.0.0.50');
+      expect(result).toContain('255.0.0.0');
+    });
+  });
+
   describe('Help Command', () => {
     beforeEach(() => {
       pc.powerOn();

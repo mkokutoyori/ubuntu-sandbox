@@ -253,4 +253,42 @@ describe('WindowsPC', () => {
       expect(result).toBe('Windows Test PC');
     });
   });
+
+  describe('netsh IP configuration (TDD)', () => {
+    beforeEach(() => {
+      pc.powerOn();
+    });
+
+    it('should configure IP address via netsh command', async () => {
+      const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.1.50 255.255.255.0');
+      expect(result).not.toContain('is not recognized');
+
+      // Verify the IP was configured
+      const iface = pc.getInterface('eth0');
+      expect(iface?.getIPAddress()?.toString()).toBe('192.168.1.50');
+      expect(iface?.getSubnetMask()?.toString()).toBe('255.255.255.0');
+    });
+
+    it('should configure IP with gateway via netsh', async () => {
+      const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.1.60 255.255.255.0 192.168.1.1');
+      expect(result).not.toContain('is not recognized');
+
+      const iface = pc.getInterface('eth0');
+      expect(iface?.getIPAddress()?.toString()).toBe('192.168.1.60');
+      expect(pc.getGateway()?.toString()).toBe('192.168.1.1');
+    });
+
+    it('should show ipconfig output after netsh configuration', async () => {
+      await pc.executeCommand('netsh interface ip set address "Ethernet0" static 10.0.0.100 255.0.0.0');
+
+      const result = await pc.executeCommand('ipconfig');
+      expect(result).toContain('10.0.0.100');
+      expect(result).toContain('255.0.0.0');
+    });
+
+    it('should show error for invalid IP address', async () => {
+      const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" static 999.999.999.999 255.255.255.0');
+      expect(result.toLowerCase()).toContain('error');
+    });
+  });
 });
