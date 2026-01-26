@@ -1,190 +1,109 @@
 /**
  * CiscoTerminal - Cisco IOS Terminal Emulation
  *
- * Realistic Cisco CLI with boot sequence, banners, and IOS commands.
- * Uses the actual CiscoRouter/CiscoSwitch domain classes.
+ * Uses the real CiscoRouter/CiscoSwitch domain classes directly.
+ * No stubs - all commands go through device.executeCommand().
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BaseDevice } from '@/domain/devices';
-import { CiscoRouter } from '@/domain/devices/CiscoRouter';
-import { CiscoSwitch } from '@/domain/devices/CiscoSwitch';
 
-interface CiscoOutputLine {
-  id: string;
+interface OutputLine {
+  id: number;
   text: string;
-  type: 'normal' | 'error' | 'warning' | 'boot';
-  timestamp: number;
+  type: 'normal' | 'error' | 'boot';
 }
 
 interface CiscoTerminalProps {
-  device?: BaseDevice;
-  deviceType?: 'router' | 'switch';
-  hostname?: string;
+  device: BaseDevice;
   onRequestClose?: () => void;
 }
 
-let lineIdCounter = 0;
-const generateId = () => `cisco-line-${++lineIdCounter}-${Date.now()}`;
+let lineId = 0;
 
 export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
   device,
-  deviceType = 'router',
-  hostname,
   onRequestClose,
 }) => {
-  const [output, setOutput] = useState<CiscoOutputLine[]>([]);
+  const [output, setOutput] = useState<OutputLine[]>([]);
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isBooting, setIsBooting] = useState(true);
-  const [bootComplete, setBootComplete] = useState(false);
+  const [prompt, setPrompt] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Get the Cisco device instance
-  const ciscoDevice = useMemo(() => {
-    if (device) {
-      // Check if it's a Cisco device
-      if (device instanceof CiscoRouter || device instanceof CiscoSwitch) {
-        return device;
-      }
-      // Check by type
-      const type = device.getType();
-      if (type === 'cisco-router' || type === 'cisco-switch') {
-        return device as CiscoRouter | CiscoSwitch;
-      }
+  // Get device info
+  const deviceType = device.getType();
+  const isSwitch = deviceType.includes('switch');
+
+  // Update prompt from device
+  const updatePrompt = useCallback(() => {
+    if ('getPrompt' in device && typeof (device as any).getPrompt === 'function') {
+      setPrompt((device as any).getPrompt());
+    } else {
+      setPrompt(`${device.getHostname()}>`);
     }
-    return null;
   }, [device]);
 
-  // Get hostname from device or prop
-  const displayHostname = useMemo(() => {
-    if (ciscoDevice) {
-      return ciscoDevice.getHostname();
-    }
-    return hostname || (deviceType === 'switch' ? 'Switch' : 'Router');
-  }, [ciscoDevice, hostname, deviceType]);
-
-  // Get prompt from device or generate one
-  const prompt = useMemo(() => {
-    if (ciscoDevice && 'getPrompt' in ciscoDevice) {
-      return (ciscoDevice as any).getPrompt();
-    }
-    return `${displayHostname}>`;
-  }, [ciscoDevice, displayHostname]);
-
-  // Scroll to bottom when output changes
+  // Scroll to bottom
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [output]);
 
-  // Focus input on mount
+  // Boot sequence on mount
   useEffect(() => {
-    if (!isBooting) {
-      inputRef.current?.focus();
-    }
-  }, [isBooting]);
-
-  // Display boot sequence on mount
-  useEffect(() => {
-    if (bootComplete) return;
-
-    const showBootSequence = async () => {
+    const boot = async () => {
       setIsBooting(true);
 
-      let bootSequence = '';
-
-      if (ciscoDevice && 'getBootSequence' in ciscoDevice) {
-        bootSequence = (ciscoDevice as any).getBootSequence();
-      } else {
-        // Fallback boot sequence
-        bootSequence = deviceType === 'switch'
-          ? getDefaultSwitchBootSequence(displayHostname)
-          : getDefaultRouterBootSequence(displayHostname);
+      // Get boot sequence from device
+      let bootText = '';
+      if ('getBootSequence' in device && typeof (device as any).getBootSequence === 'function') {
+        bootText = (device as any).getBootSequence();
       }
 
-      // Split boot sequence into lines and display with animation
-      const lines = bootSequence.split('\n');
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        // Add line with small delay for animation effect
-        await new Promise(resolve => setTimeout(resolve, 15));
-
-        setOutput(prev => [...prev, {
-          id: generateId(),
-          text: line,
-          type: 'boot',
-          timestamp: Date.now(),
-        }]);
-      }
-
-      // Show banner if available
-      if (ciscoDevice && 'getBanner' in ciscoDevice) {
-        const motd = (ciscoDevice as any).getBanner('motd');
-        if (motd) {
-          setOutput(prev => [...prev, {
-            id: generateId(),
-            text: `\n${motd}\n`,
-            type: 'normal',
-            timestamp: Date.now(),
-          }]);
+      // Display boot sequence line by line
+      if (bootText) {
+        const lines = bootText.split('\n');
+        for (const line of lines) {
+          await new Promise(r => setTimeout(r, 12));
+          setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
         }
       }
 
-      // Add empty line before prompt
-      setOutput(prev => [...prev, {
-        id: generateId(),
-        text: '',
-        type: 'normal',
-        timestamp: Date.now(),
-      }]);
+      // Show MOTD banner if available
+      if ('getBanner' in device && typeof (device as any).getBanner === 'function') {
+        const motd = (device as any).getBanner('motd');
+        if (motd) {
+          setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
+          setOutput(prev => [...prev, { id: ++lineId, text: motd, type: 'normal' }]);
+        }
+      }
 
+      setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
       setIsBooting(false);
-      setBootComplete(true);
-
-      // Focus input after boot
-      setTimeout(() => inputRef.current?.focus(), 100);
+      updatePrompt();
+      setTimeout(() => inputRef.current?.focus(), 50);
     };
 
-    showBootSequence();
-  }, [ciscoDevice, deviceType, displayHostname, bootComplete]);
+    boot();
+  }, [device, updatePrompt]);
 
-  // Append a line to output
-  const appendLine = useCallback((text: string, type: CiscoOutputLine['type'] = 'normal') => {
-    setOutput(prev => [...prev, {
-      id: generateId(),
-      text,
-      type,
-      timestamp: Date.now(),
-    }]);
+  // Add line to output
+  const addLine = useCallback((text: string, type: OutputLine['type'] = 'normal') => {
+    setOutput(prev => [...prev, { id: ++lineId, text, type }]);
   }, []);
 
   // Execute command
-  const runCommand = useCallback(async (cmd: string) => {
+  const executeCommand = useCallback(async (cmd: string) => {
     const trimmed = cmd.trim();
 
-    // Echo the command with prompt
-    appendLine(`${prompt}${cmd}`);
-
-    // Handle exit at user mode
-    if ((trimmed === 'exit' || trimmed === 'logout')) {
-      if (ciscoDevice) {
-        const result = await ciscoDevice.executeCommand(trimmed);
-        if (result === 'Connection closed.' || result === '') {
-          onRequestClose?.();
-          return;
-        }
-      } else {
-        onRequestClose?.();
-        return;
-      }
-    }
+    // Echo command
+    addLine(`${prompt}${cmd}`);
 
     // Add to history
     if (trimmed) {
@@ -192,84 +111,82 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
       setHistoryIndex(-1);
     }
 
-    // Execute command on device
-    if (ciscoDevice) {
-      try {
-        const result = await ciscoDevice.executeCommand(trimmed);
-        if (result) {
-          appendLine(result);
-        }
-      } catch (error) {
-        appendLine(`% Error: ${error}`, 'error');
+    // Execute on device
+    try {
+      const result = await device.executeCommand(trimmed);
+
+      // Check for exit/logout
+      if (result === 'Connection closed.') {
+        onRequestClose?.();
+        return;
       }
-    } else {
-      // Fallback for when no device instance is provided
-      appendLine('% Device not connected', 'error');
+
+      // Display result
+      if (result) {
+        addLine(result);
+      }
+    } catch (err) {
+      addLine(`% Error: ${err}`, 'error');
     }
 
+    // Update prompt (mode may have changed)
+    updatePrompt();
     setInput('');
-  }, [appendLine, ciscoDevice, onRequestClose, prompt]);
+  }, [device, prompt, addLine, updatePrompt, onRequestClose]);
 
-  // Handle keyboard input
+  // Keyboard handling
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      runCommand(input);
+      executeCommand(input);
       return;
     }
 
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (history.length === 0) return;
-      const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(newIndex);
-      setInput(history[newIndex] ?? '');
+      const idx = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(idx);
+      setInput(history[idx] || '');
       return;
     }
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (historyIndex === -1) return;
-      const newIndex = historyIndex + 1;
-      if (newIndex >= history.length) {
+      const idx = historyIndex + 1;
+      if (idx >= history.length) {
         setHistoryIndex(-1);
         setInput('');
       } else {
-        setHistoryIndex(newIndex);
-        setInput(history[newIndex] ?? '');
+        setHistoryIndex(idx);
+        setInput(history[idx] || '');
       }
       return;
     }
 
     if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
-      appendLine(`${prompt}${input}^C`, 'warning');
+      addLine(`${prompt}${input}^C`);
       setInput('');
     }
 
-    // Tab completion hint
     if (e.key === 'Tab') {
       e.preventDefault();
-      if (input.endsWith('?')) {
-        runCommand(input);
-      } else {
-        // Show available commands hint
-        appendLine(`${prompt}${input}?`);
-        runCommand(input + '?');
-      }
+      executeCommand(input + '?');
     }
-  }, [appendLine, history, historyIndex, input, prompt, runCommand]);
+  }, [input, history, historyIndex, prompt, addLine, executeCommand]);
 
   return (
     <div className="h-full w-full bg-black text-green-400 flex flex-col font-mono text-sm">
-      {/* Terminal header */}
+      {/* Header */}
       <div className="border-b border-green-900/50 px-3 py-2 text-xs text-green-600 bg-black/50">
-        Cisco IOS — {displayHostname} {deviceType === 'switch' ? '(C2960)' : '(C2911)'}
+        Cisco IOS — {device.getHostname()} ({isSwitch ? 'C2960 Switch' : 'C2911 Router'})
       </div>
 
-      {/* Terminal output area */}
+      {/* Output */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-auto p-3 space-y-0 bg-black"
+        className="flex-1 overflow-auto p-3 bg-black"
         onClick={() => !isBooting && inputRef.current?.focus()}
       >
         {output.map((line) => (
@@ -277,7 +194,6 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
             key={line.id}
             className={`whitespace-pre-wrap leading-5 ${
               line.type === 'error' ? 'text-red-400' :
-              line.type === 'warning' ? 'text-yellow-400' :
               line.type === 'boot' ? 'text-green-500' :
               'text-green-400'
             }`}
@@ -286,7 +202,7 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
           </pre>
         ))}
 
-        {/* Input line - only show when not booting */}
+        {/* Input line */}
         {!isBooting && (
           <div className="flex items-center">
             <span className="text-green-400 whitespace-pre">{prompt}</span>
@@ -298,75 +214,17 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
               className="flex-1 bg-transparent outline-none text-green-400 caret-green-400"
               spellCheck={false}
               autoComplete="off"
-              autoFocus
             />
           </div>
         )}
 
-        {/* Booting indicator */}
+        {/* Boot cursor */}
         {isBooting && (
-          <div className="flex items-center text-green-500">
-            <span className="animate-pulse">█</span>
-          </div>
+          <span className="text-green-500 animate-pulse">█</span>
         )}
       </div>
     </div>
   );
 };
-
-// Default boot sequences when no device instance is available
-function getDefaultRouterBootSequence(hostname: string): string {
-  return `
-System Bootstrap, Version 15.1(4)M4, RELEASE SOFTWARE (fc1)
-Technical Support: http://www.cisco.com/techsupport
-Copyright (c) 2010 by cisco Systems, Inc.
-
-Initializing memory for ECC
-
-BOOTLDR: C2900 Boot Loader (C2900-HBOOT-M) Version 15.0(1r)M15, RELEASE SOFTWARE (fc1)
-
-           cisco Systems, Inc.
-           170 West Tasman Drive
-           San Jose, California 95134-1706
-
-Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4, RELEASE SOFTWARE (fc1)
-Copyright (c) 1986-2012 by Cisco Systems, Inc.
-
-cisco C2911 (revision 1.0) processor with 491520K/32768K bytes of memory.
-Processor board ID FTX152400KS
-3 Gigabit Ethernet interfaces
-255K bytes of non-volatile configuration memory.
-249856K bytes of ATA System CompactFlash 0 (Read/Write)
-
-Press RETURN to get started!
-`;
-}
-
-function getDefaultSwitchBootSequence(hostname: string): string {
-  return `
-System Bootstrap, Version 15.0(2)SE4, RELEASE SOFTWARE (fc1)
-Technical Support: http://www.cisco.com/techsupport
-Copyright (c) 2013 by cisco Systems, Inc.
-
-Initializing memory...
-
-BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
-
-           cisco Systems, Inc.
-           170 West Tasman Drive
-           San Jose, California 95134-1706
-
-Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE4, RELEASE SOFTWARE (fc1)
-Copyright (c) 1986-2013 by Cisco Systems, Inc.
-
-cisco WS-C2960-24TT-L (PowerPC405) processor with 65536K bytes of memory.
-Processor board ID FOC1010X104
-24 FastEthernet interfaces
-2 Gigabit Ethernet interfaces
-64K bytes of flash-simulated non-volatile configuration memory.
-
-Press RETURN to get started!
-`;
-}
 
 export default CiscoTerminal;
