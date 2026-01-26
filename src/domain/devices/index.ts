@@ -20,10 +20,30 @@ export { NetworkInterface } from './NetworkInterface';
 export { LinuxPC } from './LinuxPC';
 export { WindowsPC } from './WindowsPC';
 
+// Servers
+export { LinuxServer } from './LinuxServer';
+export { WindowsServer } from './WindowsServer';
+
 // Cisco devices
 export { CiscoRouter } from './CiscoRouter';
 export { CiscoSwitch } from './CiscoSwitch';
 export { CiscoL3Switch } from './CiscoL3Switch';
+export { CiscoASA } from './CiscoASA';
+
+// Security devices
+export { Firewall } from './Firewall';
+
+// Wireless devices
+export { AccessPoint } from './AccessPoint';
+export { WirelessController } from './WirelessController';
+
+// Infrastructure
+export { Cloud } from './Cloud';
+export { MultilayerSwitch } from './MultilayerSwitch';
+
+// End devices
+export { IPPhone } from './IPPhone';
+export { Printer } from './Printer';
 
 // Cisco device union type (for backwards compatibility with UI)
 import type { CiscoRouter } from './CiscoRouter';

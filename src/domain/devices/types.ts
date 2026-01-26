@@ -131,6 +131,22 @@ export const DEVICE_CATEGORIES: DeviceCategory[] = [
     ]
   },
   {
+    id: 'servers',
+    name: 'Servers',
+    devices: [
+      {
+        type: 'linux-server',
+        name: 'Linux Server',
+        description: 'Ubuntu/CentOS server'
+      },
+      {
+        type: 'windows-server',
+        name: 'Windows Server',
+        description: 'Windows Server 2019/2022'
+      }
+    ]
+  },
+  {
     id: 'network',
     name: 'Network Devices',
     devices: [
@@ -150,9 +166,73 @@ export const DEVICE_CATEGORIES: DeviceCategory[] = [
         description: 'Layer 3 switching device'
       },
       {
+        type: 'multilayer-switch',
+        name: 'Multilayer Switch',
+        description: 'Generic Layer 3 switch'
+      },
+      {
         type: 'hub',
         name: 'Hub',
         description: 'Layer 1 repeater'
+      }
+    ]
+  },
+  {
+    id: 'security',
+    name: 'Security',
+    devices: [
+      {
+        type: 'firewall',
+        name: 'Firewall',
+        description: 'Network firewall'
+      },
+      {
+        type: 'cisco-asa',
+        name: 'Cisco ASA',
+        description: 'Cisco Adaptive Security Appliance'
+      }
+    ]
+  },
+  {
+    id: 'wireless',
+    name: 'Wireless',
+    devices: [
+      {
+        type: 'access-point',
+        name: 'Access Point',
+        description: 'Wireless access point'
+      },
+      {
+        type: 'wireless-controller',
+        name: 'Wireless Controller',
+        description: 'Wireless LAN controller'
+      }
+    ]
+  },
+  {
+    id: 'infrastructure',
+    name: 'Infrastructure',
+    devices: [
+      {
+        type: 'cloud',
+        name: 'Cloud/Internet',
+        description: 'External network or cloud'
+      }
+    ]
+  },
+  {
+    id: 'end-devices',
+    name: 'End Devices',
+    devices: [
+      {
+        type: 'ip-phone',
+        name: 'IP Phone',
+        description: 'VoIP telephone'
+      },
+      {
+        type: 'printer',
+        name: 'Network Printer',
+        description: 'Network-attached printer'
       }
     ]
   }

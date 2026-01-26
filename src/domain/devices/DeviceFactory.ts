@@ -2,17 +2,20 @@
  * DeviceFactory - Factory for creating network devices
  *
  * Creates devices based on configuration:
- * - LinuxPC, WindowsPC for workstations
- * - CiscoRouter, CiscoSwitch, CiscoL3Switch for Cisco devices
- * - Generic PC, Switch, Router, Hub for simulation
+ * - Computers: LinuxPC, WindowsPC
+ * - Servers: LinuxServer, WindowsServer
+ * - Network: Switch, Router, Hub, CiscoRouter, CiscoSwitch, CiscoL3Switch
+ * - Security: Firewall, CiscoASA
+ * - Wireless: AccessPoint, WirelessController
+ * - Infrastructure: Cloud, MultilayerSwitch
+ * - End Devices: IPPhone, Printer
  *
  * @example
  * ```typescript
- * const pc = DeviceFactory.createDevice({
- *   type: 'linux-pc',
- *   name: 'Ubuntu PC',
- *   x: 100,
- *   y: 200
+ * const server = DeviceFactory.createDevice({
+ *   type: 'linux-server',
+ *   name: 'Web Server',
+ *   hostname: 'web01'
  * });
  * ```
  */
@@ -25,9 +28,19 @@ import { Router } from './Router';
 import { Hub } from './Hub';
 import { LinuxPC } from './LinuxPC';
 import { WindowsPC } from './WindowsPC';
+import { LinuxServer } from './LinuxServer';
+import { WindowsServer } from './WindowsServer';
 import { CiscoRouter } from './CiscoRouter';
 import { CiscoSwitch } from './CiscoSwitch';
 import { CiscoL3Switch } from './CiscoL3Switch';
+import { Firewall } from './Firewall';
+import { CiscoASA } from './CiscoASA';
+import { AccessPoint } from './AccessPoint';
+import { WirelessController } from './WirelessController';
+import { Cloud } from './Cloud';
+import { MultilayerSwitch } from './MultilayerSwitch';
+import { IPPhone } from './IPPhone';
+import { Printer } from './Printer';
 import { generateDeviceId } from './types';
 
 /**
@@ -53,23 +66,14 @@ export class DeviceFactory {
 
     // Create device based on type
     switch (config.type) {
+      // === COMPUTERS ===
       case 'linux-pc':
         return new LinuxPC(config);
 
       case 'windows-pc':
         return new WindowsPC(config);
 
-      case 'cisco-router':
-        return new CiscoRouter(config);
-
-      case 'cisco-switch':
-        return new CiscoSwitch(config);
-
-      case 'cisco-l3-switch':
-        return new CiscoL3Switch(config);
-
       case 'pc': {
-        // Generic PC
         const pc = new PC(config.id, config.name);
         if (config.hostname) pc.setHostname(config.hostname);
         if (config.x !== undefined && config.y !== undefined) {
@@ -81,8 +85,15 @@ export class DeviceFactory {
         return pc;
       }
 
+      // === SERVERS ===
+      case 'linux-server':
+        return new LinuxServer(config);
+
+      case 'windows-server':
+        return new WindowsServer(config);
+
+      // === NETWORK DEVICES - LAYER 2 ===
       case 'switch': {
-        // Generic switch (default 8 ports)
         const portCount = config.interfaces?.length || 8;
         const sw = new Switch(config.id, config.name, portCount);
         if (config.hostname) sw.setHostname(config.hostname);
@@ -95,8 +106,24 @@ export class DeviceFactory {
         return sw;
       }
 
+      case 'cisco-switch':
+        return new CiscoSwitch(config);
+
+      case 'hub': {
+        const portCount = config.interfaces?.length || 8;
+        const hub = new Hub(config.id, config.name, portCount);
+        if (config.hostname) hub.setHostname(config.hostname);
+        if (config.x !== undefined && config.y !== undefined) {
+          hub.setPosition(config.x, config.y);
+        }
+        if (config.isPoweredOn !== false) {
+          hub.powerOn();
+        }
+        return hub;
+      }
+
+      // === NETWORK DEVICES - LAYER 3 ===
       case 'router': {
-        // Generic router (default 2 interfaces)
         const ifaceCount = config.interfaces?.length || 2;
         const router = new Router(config.id, config.name, ifaceCount);
         if (config.hostname) router.setHostname(config.hostname);
@@ -109,19 +136,39 @@ export class DeviceFactory {
         return router;
       }
 
-      case 'hub': {
-        // Hub (default 8 ports)
-        const portCount = config.interfaces?.length || 8;
-        const hub = new Hub(config.id, config.name, portCount);
-        if (config.hostname) hub.setHostname(config.hostname);
-        if (config.x !== undefined && config.y !== undefined) {
-          hub.setPosition(config.x, config.y);
-        }
-        if (config.isPoweredOn !== false) {
-          hub.powerOn();
-        }
-        return hub;
-      }
+      case 'cisco-router':
+        return new CiscoRouter(config);
+
+      case 'cisco-l3-switch':
+        return new CiscoL3Switch(config);
+
+      case 'multilayer-switch':
+        return new MultilayerSwitch(config);
+
+      // === SECURITY DEVICES ===
+      case 'firewall':
+        return new Firewall(config);
+
+      case 'cisco-asa':
+        return new CiscoASA(config);
+
+      // === WIRELESS DEVICES ===
+      case 'access-point':
+        return new AccessPoint(config);
+
+      case 'wireless-controller':
+        return new WirelessController(config);
+
+      // === INFRASTRUCTURE ===
+      case 'cloud':
+        return new Cloud(config);
+
+      // === END DEVICES ===
+      case 'ip-phone':
+        return new IPPhone(config);
+
+      case 'printer':
+        return new Printer(config);
 
       default:
         throw new Error(`Unknown device type: ${config.type}`);
@@ -146,16 +193,29 @@ export class DeviceFactory {
    */
   public static hasTerminalSupport(type: string): boolean {
     switch (type) {
+      // Full terminal support
       case 'linux-pc':
+      case 'linux-server':
       case 'windows-pc':
+      case 'windows-server':
       case 'cisco-router':
       case 'cisco-switch':
       case 'cisco-l3-switch':
+      case 'cisco-asa':
         return true;
+
+      // No terminal support
       case 'pc':
       case 'switch':
       case 'router':
       case 'hub':
+      case 'firewall':
+      case 'access-point':
+      case 'wireless-controller':
+      case 'cloud':
+      case 'multilayer-switch':
+      case 'ip-phone':
+      case 'printer':
       case 'test':
       default:
         return false;
@@ -173,13 +233,40 @@ export class DeviceFactory {
 
     switch (type) {
       case 'linux-pc':
+      case 'linux-server':
       case 'windows-pc':
+      case 'windows-server':
       case 'cisco-router':
       case 'cisco-switch':
       case 'cisco-l3-switch':
+      case 'cisco-asa':
         return true;
       default:
         return false;
     }
+  }
+
+  /**
+   * Get all supported device types
+   */
+  public static getSupportedTypes(): string[] {
+    return [
+      // Computers
+      'pc', 'linux-pc', 'windows-pc',
+      // Servers
+      'linux-server', 'windows-server',
+      // Network - Layer 2
+      'switch', 'cisco-switch', 'hub',
+      // Network - Layer 3
+      'router', 'cisco-router', 'cisco-l3-switch', 'multilayer-switch',
+      // Security
+      'firewall', 'cisco-asa',
+      // Wireless
+      'access-point', 'wireless-controller',
+      // Infrastructure
+      'cloud',
+      // End Devices
+      'ip-phone', 'printer'
+    ];
   }
 }
