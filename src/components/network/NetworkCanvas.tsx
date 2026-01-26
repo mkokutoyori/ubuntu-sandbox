@@ -9,7 +9,7 @@ import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { DeviceType } from '@/domain/devices';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
 import { cn } from '@/lib/utils';
 

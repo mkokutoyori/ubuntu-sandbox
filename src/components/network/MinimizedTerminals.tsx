@@ -5,7 +5,7 @@
  */
 
 import { X, Terminal } from 'lucide-react';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 import { cn } from '@/lib/utils';
 
 interface MinimizedTerminalsProps {

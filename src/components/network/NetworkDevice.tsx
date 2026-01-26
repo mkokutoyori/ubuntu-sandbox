@@ -7,7 +7,7 @@ import { Power, Settings, Terminal, Trash2, Link } from 'lucide-react';
 import { DeviceIcon } from './DeviceIcon';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import { DeviceFactory } from '@/domain/devices/DeviceFactory';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 import { cn } from '@/lib/utils';
 
 interface NetworkDeviceProps {
