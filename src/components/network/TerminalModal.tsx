@@ -277,7 +277,8 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
         <div className="flex-1 overflow-hidden">
           {isCiscoDevice ? (
             <CiscoTerminal
-              deviceType={deviceType === 'switch-cisco' ? 'switch' : 'router'}
+              device={device}
+              deviceType={deviceType.includes('switch') ? 'switch' : 'router'}
               hostname={device.getHostname()}
               onRequestClose={onClose}
             />
