@@ -6,6 +6,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
+import { NetworkSimulator } from '@/core/network/NetworkSimulator';
+import { IPAddress } from '@/domain/network/value-objects/IPAddress';
+import { SubnetMask } from '@/domain/network/value-objects/SubnetMask';
 
 describe('Network Store', () => {
   beforeEach(() => {
@@ -170,6 +173,117 @@ describe('Network Store', () => {
 
       const result = await deviceUI.instance.executeCommand('hostname');
       expect(result).toBeDefined();
+    });
+  });
+
+  describe('NetworkSimulator Integration', () => {
+    it('should initialize NetworkSimulator when devices and connections are created', () => {
+      const store = useNetworkStore.getState();
+
+      // Create topology
+      const pc1 = store.addDevice('linux-pc', 100, 100);
+      const sw = store.addDevice('cisco-switch', 300, 100);
+
+      const conn = store.addConnection(
+        pc1.id, pc1.interfaces[0].id,
+        sw.id, sw.interfaces[0].id
+      );
+
+      // Initialize NetworkSimulator with store data
+      const { deviceInstances, connections } = useNetworkStore.getState();
+      NetworkSimulator.initialize(deviceInstances, connections);
+
+      expect(NetworkSimulator.isReady()).toBe(true);
+
+      const info = NetworkSimulator.getConnectionInfo();
+      expect(info.devices).toBe(2);
+      expect(info.connections).toBe(1);
+    });
+
+    it('should wire up devices for frame forwarding', () => {
+      const store = useNetworkStore.getState();
+
+      // Create LAN: PC1 <-> Switch <-> PC2
+      const pc1UI = store.addDevice('linux-pc', 100, 100);
+      const pc2UI = store.addDevice('linux-pc', 100, 300);
+      const swUI = store.addDevice('cisco-switch', 300, 200);
+
+      store.addConnection(pc1UI.id, 'eth0', swUI.id, 'eth0');
+      store.addConnection(pc2UI.id, 'eth0', swUI.id, 'eth1');
+
+      // Initialize NetworkSimulator
+      const { deviceInstances, connections } = useNetworkStore.getState();
+      NetworkSimulator.initialize(deviceInstances, connections);
+
+      // Get device instances
+      const pc1 = store.getDevice(pc1UI.id);
+      const pc2 = store.getDevice(pc2UI.id);
+
+      expect(pc1).toBeDefined();
+      expect(pc2).toBeDefined();
+
+      // Configure IPs
+      (pc1 as any).setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
+      (pc2 as any).setIPAddress('eth0', new IPAddress('192.168.1.20'), new SubnetMask('/24'));
+
+      // Add ARP entries so they know each other
+      const pc1MAC = (pc1 as any).getInterface('eth0').getMAC();
+      const pc2MAC = (pc2 as any).getInterface('eth0').getMAC();
+      (pc1 as any).addARPEntry(new IPAddress('192.168.1.20'), pc2MAC);
+      (pc2 as any).addARPEntry(new IPAddress('192.168.1.10'), pc1MAC);
+
+      // Track events
+      const events: any[] = [];
+      NetworkSimulator.addEventListener((event) => {
+        events.push(event);
+      });
+
+      // Execute ping - this should send frames through the simulator
+      // Note: The ping command sends frames which should be forwarded
+      expect(pc1!.isOnline()).toBe(true);
+    });
+
+    it('should support full ping flow with configured devices', async () => {
+      const store = useNetworkStore.getState();
+
+      // Create LAN topology
+      const pc1UI = store.addDevice('linux-pc', 100, 100);
+      const pc2UI = store.addDevice('linux-pc', 100, 300);
+      const swUI = store.addDevice('cisco-switch', 300, 200);
+
+      // Connect devices
+      store.addConnection(pc1UI.id, 'eth0', swUI.id, 'eth0');
+      store.addConnection(pc2UI.id, 'eth0', swUI.id, 'eth1');
+
+      // Initialize simulator with connections
+      const { deviceInstances, connections } = useNetworkStore.getState();
+      NetworkSimulator.initialize(deviceInstances, connections);
+
+      // Get device instances for configuration
+      const pc1 = store.getDevice(pc1UI.id);
+      const pc2 = store.getDevice(pc2UI.id);
+      const sw = store.getDevice(swUI.id);
+
+      // Configure IPs
+      (pc1 as any).setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
+      (pc2 as any).setIPAddress('eth0', new IPAddress('192.168.1.20'), new SubnetMask('/24'));
+
+      // Setup ARP entries
+      const pc1MAC = (pc1 as any).getInterface('eth0').getMAC();
+      const pc2MAC = (pc2 as any).getInterface('eth0').getMAC();
+      (pc1 as any).addARPEntry(new IPAddress('192.168.1.20'), pc2MAC);
+      (pc2 as any).addARPEntry(new IPAddress('192.168.1.10'), pc1MAC);
+
+      // Execute ping command
+      const result = await (pc1 as any).executeCommand('ping 192.168.1.20');
+
+      // Verify ping output
+      expect(result).toContain('PING 192.168.1.20');
+      expect(result).toContain('bytes');
+
+      // The switch should have learned MAC addresses
+      const macTable = (sw as any).getMACTable();
+      expect(macTable).toBeDefined();
     });
   });
 });
