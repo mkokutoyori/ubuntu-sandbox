@@ -137,4 +137,49 @@ export class DeviceFactory {
   public static createDevices(configs: DeviceConfig[]): BaseDevice[] {
     return configs.map(config => this.createDevice(config));
   }
+
+  /**
+   * Checks if device type has terminal support
+   *
+   * @param type - Device type
+   * @returns True if device has terminal support
+   */
+  public static hasTerminalSupport(type: string): boolean {
+    switch (type) {
+      case 'linux-pc':
+      case 'windows-pc':
+      case 'cisco-router':
+      case 'cisco-switch':
+      case 'cisco-l3-switch':
+        return true;
+      case 'pc':
+      case 'switch':
+      case 'router':
+      case 'hub':
+      case 'test':
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Checks if device type is fully implemented
+   *
+   * @param type - Device type
+   * @returns True if device is fully implemented
+   */
+  public static isFullyImplemented(type?: string): boolean {
+    if (!type) return false;
+
+    switch (type) {
+      case 'linux-pc':
+      case 'windows-pc':
+      case 'cisco-router':
+      case 'cisco-switch':
+      case 'cisco-l3-switch':
+        return true;
+      default:
+        return false;
+    }
+  }
 }

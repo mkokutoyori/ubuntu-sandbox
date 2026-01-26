@@ -239,6 +239,16 @@ export class PC extends BaseDevice {
   }
 
   /**
+   * Returns ARP table entries
+   * @returns Array of ARP entries
+   */
+  public getARPTable(): Array<{ ip: IPAddress; mac: MACAddress }> {
+    // For now, return empty array
+    // TODO: Add method to ARPService to get all entries
+    return [];
+  }
+
+  /**
    * Sends frame on interface
    *
    * @param interfaceName - Interface name
