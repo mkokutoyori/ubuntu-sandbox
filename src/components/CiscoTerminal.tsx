@@ -1,186 +1,227 @@
 /**
- * CiscoTerminal (stub-compatible)
- * Minimal Cisco CLI UI wired to the current stubbed terminal/cisco engine.
+ * CiscoTerminal - Cisco IOS Terminal Emulation
+ *
+ * Uses the real CiscoRouter/CiscoSwitch domain classes directly.
+ * No stubs - all commands go through device.executeCommand().
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CiscoDeviceType,
-  CiscoMode,
-  CiscoOutputLine,
-  CiscoConfig,
-  generateId,
-} from '@/terminal/cisco/types';
-import {
-  createDefaultRouterConfig,
-  createDefaultSwitchConfig,
-  executeCiscoCommand,
-  getPrompt,
-} from '@/terminal/cisco';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BaseDevice } from '@/domain/devices';
+
+interface OutputLine {
+  id: number;
+  text: string;
+  type: 'normal' | 'error' | 'boot';
+}
 
 interface CiscoTerminalProps {
-  deviceType?: CiscoDeviceType;
-  hostname?: string;
+  device: BaseDevice;
   onRequestClose?: () => void;
 }
 
+let lineId = 0;
+
 export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
-  deviceType = 'router',
-  hostname,
+  device,
   onRequestClose,
 }) => {
-  const config: CiscoConfig = useMemo(() => {
-    const hn = hostname || (deviceType === 'switch' ? 'Switch' : 'Router');
-    if (deviceType === 'switch') return createDefaultSwitchConfig(hn);
-    return createDefaultRouterConfig(hn);
-  }, [deviceType, hostname]);
-
-  const [mode, setMode] = useState<CiscoMode>('user');
-  const [configContext, setConfigContext] = useState<string | undefined>(undefined);
+  const [output, setOutput] = useState<OutputLine[]>([]);
+  const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [output, setOutput] = useState<CiscoOutputLine[]>([]);
-  const [input, setInput] = useState('');
+  const [isBooting, setIsBooting] = useState(true);
+  const [prompt, setPrompt] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
+  // Get device info
+  const deviceType = device.getType();
+  const isSwitch = deviceType.includes('switch');
+
+  // Update prompt from device
+  const updatePrompt = useCallback(() => {
+    if ('getPrompt' in device && typeof (device as any).getPrompt === 'function') {
+      setPrompt((device as any).getPrompt());
+    } else {
+      setPrompt(`${device.getHostname()}>`);
+    }
+  }, [device]);
+
+  // Scroll to bottom
   useEffect(() => {
-    terminalRef.current?.scrollTo({ top: terminalRef.current.scrollHeight });
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
   }, [output]);
 
+  // Boot sequence on mount
   useEffect(() => {
-    inputRef.current?.focus();
+    const boot = async () => {
+      setIsBooting(true);
+
+      // Get boot sequence from device
+      let bootText = '';
+      if ('getBootSequence' in device && typeof (device as any).getBootSequence === 'function') {
+        bootText = (device as any).getBootSequence();
+      }
+
+      // Display boot sequence line by line
+      if (bootText) {
+        const lines = bootText.split('\n');
+        for (const line of lines) {
+          await new Promise(r => setTimeout(r, 12));
+          setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
+        }
+      }
+
+      // Show MOTD banner if available
+      if ('getBanner' in device && typeof (device as any).getBanner === 'function') {
+        const motd = (device as any).getBanner('motd');
+        if (motd) {
+          setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
+          setOutput(prev => [...prev, { id: ++lineId, text: motd, type: 'normal' }]);
+        }
+      }
+
+      setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
+      setIsBooting(false);
+      updatePrompt();
+      setTimeout(() => inputRef.current?.focus(), 50);
+    };
+
+    boot();
+  }, [device, updatePrompt]);
+
+  // Add line to output
+  const addLine = useCallback((text: string, type: OutputLine['type'] = 'normal') => {
+    setOutput(prev => [...prev, { id: ++lineId, text, type }]);
   }, []);
 
-  const prompt = useMemo(() => getPrompt(config.hostname, mode, configContext), [config.hostname, mode, configContext]);
+  // Execute command
+  const executeCommand = useCallback(async (cmd: string) => {
+    const trimmed = cmd.trim();
 
-  const appendLine = useCallback((line: CiscoOutputLine) => {
-    setOutput((prev) => [...prev, line]);
-  }, []);
+    // Echo command
+    addLine(`${prompt}${cmd}`);
 
-  const runCommand = useCallback(
-    async (cmd: string) => {
-      const trimmed = cmd.trim();
+    // Add to history
+    if (trimmed) {
+      setHistory(prev => [...prev.slice(-99), trimmed]);
+      setHistoryIndex(-1);
+    }
 
-      // Local exit behavior (close modal if present)
-      if ((trimmed === 'exit' || trimmed === 'logout') && mode === 'user') {
+    // Execute on device
+    try {
+      const result = await device.executeCommand(trimmed);
+
+      // Check for exit/logout
+      if (result === 'Connection closed.') {
         onRequestClose?.();
         return;
       }
 
-      // Echo input line
-      appendLine({
-        id: generateId(),
-        text: `${prompt}${cmd}`,
-        type: 'normal',
-        timestamp: Date.now(),
-      });
+      // Display result
+      if (result) {
+        addLine(result);
+      }
+    } catch (err) {
+      addLine(`% Error: ${err}`, 'error');
+    }
 
-      if (trimmed) {
-        setHistory((prev) => [...prev.slice(-99), trimmed]);
+    // Update prompt (mode may have changed)
+    updatePrompt();
+    setInput('');
+  }, [device, prompt, addLine, updatePrompt, onRequestClose]);
+
+  // Keyboard handling
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      executeCommand(input);
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (history.length === 0) return;
+      const idx = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(idx);
+      setInput(history[idx] || '');
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex === -1) return;
+      const idx = historyIndex + 1;
+      if (idx >= history.length) {
         setHistoryIndex(-1);
-      }
-
-      const result = executeCiscoCommand(trimmed, {
-        mode,
-        runningConfig: config,
-        startupConfig: config,
-        configContext,
-      });
-
-      if (result.output) {
-        appendLine({
-          id: generateId(),
-          text: result.output,
-          type: result.isError ? 'error' : 'normal',
-          timestamp: Date.now(),
-        });
-      }
-
-      if (result.newMode) setMode(result.newMode);
-      if ('configContext' in result) setConfigContext(result.configContext);
-
-      setInput('');
-    },
-    [appendLine, config, configContext, mode, onRequestClose, prompt]
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        runCommand(input);
-        return;
-      }
-
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (history.length === 0) return;
-        const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
-        setHistoryIndex(newIndex);
-        setInput(history[newIndex] ?? '');
-        return;
-      }
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (historyIndex === -1) return;
-        const newIndex = historyIndex + 1;
-        if (newIndex >= history.length) {
-          setHistoryIndex(-1);
-          setInput('');
-        } else {
-          setHistoryIndex(newIndex);
-          setInput(history[newIndex] ?? '');
-        }
-        return;
-      }
-
-      if (e.key === 'c' && e.ctrlKey) {
-        e.preventDefault();
-        appendLine({ id: generateId(), text: `${prompt}${input}^C`, type: 'warning', timestamp: Date.now() });
         setInput('');
+      } else {
+        setHistoryIndex(idx);
+        setInput(history[idx] || '');
       }
-    },
-    [appendLine, history, historyIndex, input, prompt, runCommand]
-  );
+      return;
+    }
+
+    if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
+      addLine(`${prompt}${input}^C`);
+      setInput('');
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      executeCommand(input + '?');
+    }
+  }, [input, history, historyIndex, prompt, addLine, executeCommand]);
 
   return (
-    <div className="h-full w-full bg-background text-foreground flex flex-col font-mono text-sm">
-      <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-        Cisco IOS (stub) — {config.hostname}
+    <div className="h-full w-full bg-black text-green-400 flex flex-col font-mono text-sm">
+      {/* Header */}
+      <div className="border-b border-green-900/50 px-3 py-2 text-xs text-green-600 bg-black/50">
+        Cisco IOS — {device.getHostname()} ({isSwitch ? 'C2960 Switch' : 'C2911 Router'})
       </div>
 
+      {/* Output */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-auto p-3 space-y-1"
-        onClick={() => inputRef.current?.focus()}
+        className="flex-1 overflow-auto p-3 bg-black"
+        onClick={() => !isBooting && inputRef.current?.focus()}
       >
         {output.map((line) => (
           <pre
             key={line.id}
-            className={
-              line.type === 'error'
-                ? 'text-destructive whitespace-pre-wrap'
-                : 'whitespace-pre-wrap'
-            }
+            className={`whitespace-pre-wrap leading-5 ${
+              line.type === 'error' ? 'text-red-400' :
+              line.type === 'boot' ? 'text-green-500' :
+              'text-green-400'
+            }`}
           >
             {line.text}
           </pre>
         ))}
 
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground whitespace-pre">{prompt}</span>
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent outline-none"
-            spellCheck={false}
-            autoComplete="off"
-          />
-        </div>
+        {/* Input line */}
+        {!isBooting && (
+          <div className="flex items-center">
+            <span className="text-green-400 whitespace-pre">{prompt}</span>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-transparent outline-none text-green-400 caret-green-400"
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+
+        {/* Boot cursor */}
+        {isBooting && (
+          <span className="text-green-500 animate-pulse">█</span>
+        )}
       </div>
     </div>
   );

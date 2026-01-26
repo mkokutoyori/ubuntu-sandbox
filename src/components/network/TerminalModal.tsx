@@ -276,11 +276,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
         {/* Terminal content - Use the appropriate terminal based on OS type */}
         <div className="flex-1 overflow-hidden">
           {isCiscoDevice ? (
-            <CiscoTerminal
-              deviceType={deviceType === 'switch-cisco' ? 'switch' : 'router'}
-              hostname={device.getHostname()}
-              onRequestClose={onClose}
-            />
+            <CiscoTerminal device={device} onRequestClose={onClose} />
           ) : isWindowsDevice ? (
             <WindowsTerminal device={device} onRequestClose={onClose} />
           ) : (
