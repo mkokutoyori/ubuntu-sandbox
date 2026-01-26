@@ -1,178 +1,176 @@
 /**
- * WindowsTerminal (stub-compatible)
- * Minimal CMD-like terminal UI using the current stubbed windows command runner.
+ * WindowsTerminal - Windows CMD Terminal Emulation
+ *
+ * Uses the real WindowsPC/WindowsServer device classes directly.
+ * All commands go through device.executeCommand().
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { executeCmdCommand } from '@/terminal/windows/commands';
-import { windowsFileSystem } from '@/terminal/windows/filesystem';
-import { WindowsOutputLine, WindowsTerminalState } from '@/terminal/windows/types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BaseDevice } from '@/domain/devices';
 
-const generateId = () => Math.random().toString(36).slice(2);
+interface OutputLine {
+  id: number;
+  text: string;
+  type: 'normal' | 'error' | 'warning';
+}
 
 interface WindowsTerminalProps {
-  device?: BaseDevice;
+  device: BaseDevice;
   onRequestClose?: () => void;
 }
 
+let lineId = 0;
+
 export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequestClose }) => {
-  const hostname = device?.getHostname?.()?.toUpperCase() || 'DESKTOP-NETSIM';
-
-  const [state, setState] = useState<WindowsTerminalState>(() => ({
-    currentPath: 'C:\\Users\\User',
-    output: [],
-    commandHistory: [],
-    historyIndex: -1,
-    environment: {
-      COMPUTERNAME: hostname,
-      USERNAME: 'User',
-      USERPROFILE: 'C:\\Users\\User',
-    },
-    shellType: 'cmd',
-  }));
-
-  const [lines, setLines] = useState<WindowsOutputLine[]>([]);
+  const [lines, setLines] = useState<OutputLine[]>([]);
   const [input, setInput] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [currentPath] = useState('C:\\Users\\User');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  const prompt = useMemo(() => `${state.currentPath}>`, [state.currentPath]);
+  // Windows CMD prompt
+  const prompt = `${currentPath}>`;
 
+  // Focus on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
+  // Scroll to bottom
   useEffect(() => {
-    terminalRef.current?.scrollTo({ top: terminalRef.current.scrollHeight });
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
   }, [lines]);
 
-  const append = useCallback((l: WindowsOutputLine) => setLines((p) => [...p, l]), []);
+  // Add line to output
+  const addLine = useCallback((text: string, type: OutputLine['type'] = 'normal') => {
+    setLines(prev => [...prev, { id: ++lineId, text, type }]);
+  }, []);
 
-  const run = useCallback(
-    async (cmd: string) => {
-      const trimmed = cmd.trim();
+  // Execute command
+  const executeCommand = useCallback(async (cmd: string) => {
+    const trimmed = cmd.trim();
 
-      if (trimmed === 'exit') {
-        onRequestClose?.();
-        if (!onRequestClose) append({ id: generateId(), text: 'exit', type: 'normal', timestamp: Date.now() });
-        setInput('');
-        return;
-      }
+    // Echo command with prompt
+    addLine(`${prompt}${cmd}`);
 
-      append({ id: generateId(), text: `${prompt}${cmd}`, type: 'normal', timestamp: Date.now() });
+    // Handle exit
+    if (trimmed.toLowerCase() === 'exit') {
+      onRequestClose?.();
+      setInput('');
+      return;
+    }
 
-      if (trimmed) {
-        setState((prev) => ({
-          ...prev,
-          commandHistory: [...prev.commandHistory.slice(-199), trimmed],
-          historyIndex: -1,
-        }));
-      }
+    // Add to history
+    if (trimmed) {
+      setHistory(prev => [...prev.slice(-199), trimmed]);
+      setHistoryIndex(-1);
+    }
 
-      // If a device is connected, let it handle commands (stub: string output).
-      if (device) {
-        const out = await device.executeCommand(trimmed);
-        if (out) {
-          // Handle clear screen ANSI codes
-          if (out.includes('\x1b[2J') || out.includes('\x1b[H')) {
-            setLines([]);
-          } else {
-            append({ id: generateId(), text: out, type: 'normal', timestamp: Date.now() });
-          }
-        }
-        setInput('');
-        return;
-      }
+    // Execute on device
+    try {
+      const result = await device.executeCommand(trimmed);
 
-      const result = await executeCmdCommand(trimmed, {
-        currentPath: state.currentPath,
-        fileSystem: windowsFileSystem,
-        environment: state.environment,
-      });
-
-      if (result.output) {
-        const isClear = result.output.includes('\x1b[2J') || result.output.includes('\x1b[H');
-        if (isClear) {
+      if (result) {
+        // Handle clear screen (cls)
+        if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
           setLines([]);
         } else {
-          append({ id: generateId(), text: result.output, type: result.exitCode === 0 ? 'normal' : 'error', timestamp: Date.now() });
+          addLine(result);
         }
       }
+    } catch (err) {
+      addLine(`Error: ${err}`, 'error');
+    }
 
-      setState((prev) => ({
-        ...prev,
-        currentPath: result.newPath ?? prev.currentPath,
-      }));
+    setInput('');
+  }, [device, prompt, addLine, onRequestClose]);
 
-      setInput('');
-    },
-    [append, device, onRequestClose, prompt, state.currentPath, state.environment]
-  );
+  // Keyboard handling
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      executeCommand(input);
+      return;
+    }
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        run(input);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (state.commandHistory.length === 0) return;
-        const newIndex = state.historyIndex === -1 ? state.commandHistory.length - 1 : Math.max(0, state.historyIndex - 1);
-        setState((prev) => ({ ...prev, historyIndex: newIndex }));
-        setInput(state.commandHistory[newIndex] ?? '');
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (state.historyIndex === -1) return;
-        const newIndex = state.historyIndex + 1;
-        if (newIndex >= state.commandHistory.length) {
-          setState((prev) => ({ ...prev, historyIndex: -1 }));
-          setInput('');
-        } else {
-          setState((prev) => ({ ...prev, historyIndex: newIndex }));
-          setInput(state.commandHistory[newIndex] ?? '');
-        }
-      }
-      if (e.key === 'l' && e.ctrlKey) {
-        e.preventDefault();
-        setLines([]);
-      }
-      if (e.key === 'c' && e.ctrlKey) {
-        e.preventDefault();
-        append({ id: generateId(), text: `${prompt}${input}^C`, type: 'warning', timestamp: Date.now() });
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (history.length === 0) return;
+      const idx = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(idx);
+      setInput(history[idx] || '');
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex === -1) return;
+      const idx = historyIndex + 1;
+      if (idx >= history.length) {
+        setHistoryIndex(-1);
         setInput('');
+      } else {
+        setHistoryIndex(idx);
+        setInput(history[idx] || '');
       }
-    },
-    [append, input, prompt, run, state.commandHistory, state.historyIndex]
-  );
+      return;
+    }
+
+    if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
+      addLine(`${prompt}${input}^C`, 'warning');
+      setInput('');
+    }
+  }, [input, history, historyIndex, prompt, addLine, executeCommand]);
+
+  const deviceType = device.getType();
+  const isServer = deviceType.includes('server');
 
   return (
-    <div className="h-full w-full bg-background text-foreground flex flex-col font-mono text-sm">
-      <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-        Windows CMD (stub)
+    <div className="h-full w-full bg-[#0c0c0c] text-[#cccccc] flex flex-col font-mono text-sm">
+      {/* Header */}
+      <div className="border-b border-[#333333] px-3 py-2 text-xs text-[#808080] bg-[#1a1a1a]">
+        {device.getHostname()} — {isServer ? 'Windows Server' : 'Windows'} Command Prompt
       </div>
-      <div ref={terminalRef} className="flex-1 overflow-auto p-3 space-y-1" onClick={() => inputRef.current?.focus()}>
-        {lines.map((l) => (
+
+      {/* Output */}
+      <div
+        ref={terminalRef}
+        className="flex-1 overflow-auto p-3 bg-[#0c0c0c]"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {/* Windows header */}
+        <pre className="text-[#cccccc] whitespace-pre-wrap leading-5 mb-2">
+          Microsoft Windows [Version 10.0.19045.3803]{'\n'}
+          (c) Microsoft Corporation. All rights reserved.
+        </pre>
+
+        {lines.map((line) => (
           <pre
-            key={l.id}
-            className={l.type === 'error' ? 'text-destructive whitespace-pre-wrap' : 'whitespace-pre-wrap'}
+            key={line.id}
+            className={`whitespace-pre-wrap leading-5 ${
+              line.type === 'error' ? 'text-red-400' :
+              line.type === 'warning' ? 'text-yellow-400' :
+              'text-[#cccccc]'
+            }`}
           >
-            {l.text}
+            {line.text}
           </pre>
         ))}
 
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground whitespace-pre">{prompt}</span>
+        {/* Input line */}
+        <div className="flex items-center">
+          <span className="text-[#cccccc] whitespace-pre">{prompt}</span>
           <input
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent outline-none"
+            className="flex-1 bg-transparent outline-none text-[#cccccc] caret-[#cccccc]"
             spellCheck={false}
             autoComplete="off"
           />
