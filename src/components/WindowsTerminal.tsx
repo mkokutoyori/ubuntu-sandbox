@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { executeCmdCommand } from '@/terminal/windows/commands';
 import { windowsFileSystem } from '@/terminal/windows/filesystem';
 import { WindowsOutputLine, WindowsTerminalState } from '@/terminal/windows/types';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 
 const generateId = () => Math.random().toString(36).slice(2);
 

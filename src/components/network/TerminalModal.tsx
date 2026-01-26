@@ -11,7 +11,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Minus, Square, Maximize2, Minimize2 } from 'lucide-react';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { CiscoTerminal } from '@/components/CiscoTerminal';

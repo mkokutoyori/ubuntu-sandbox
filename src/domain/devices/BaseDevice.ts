@@ -138,6 +138,31 @@ export abstract class BaseDevice {
   }
 
   /**
+   * Alias for getType() for UI compatibility
+   */
+  public getDeviceType(): DeviceType {
+    return this.type;
+  }
+
+  /**
+   * Returns OS type for terminal emulation
+   * Override in subclasses for specific OS types
+   */
+  public getOSType(): 'linux' | 'windows' | 'cisco-ios' | 'unknown' {
+    return 'unknown';
+  }
+
+  /**
+   * Executes a command on the device terminal
+   * Override in subclasses for specific command handling
+   * @param command - Command to execute
+   * @returns Command output
+   */
+  public async executeCommand(command: string): Promise<string> {
+    return `Command execution not supported for device type: ${this.type}`;
+  }
+
+  /**
    * Returns device status
    */
   public getStatus(): DeviceStatus {

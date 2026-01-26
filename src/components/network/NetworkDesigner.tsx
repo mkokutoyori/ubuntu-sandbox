@@ -11,7 +11,7 @@ import { Toolbar } from './Toolbar';
 import { TerminalModal } from './TerminalModal';
 import { MinimizedTerminals } from './MinimizedTerminals';
 import { DeviceType } from '@/domain/devices';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 import { useNetworkStore } from '@/store/networkStore';
 
 export function NetworkDesigner() {

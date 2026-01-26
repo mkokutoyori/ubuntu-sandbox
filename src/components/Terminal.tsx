@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fileSystem as globalFileSystem } from '@/terminal/filesystem';
 import { executeCommand } from '@/terminal/commands';
-import { BaseDevice } from '@/devices';
+import { BaseDevice } from '@/domain/devices';
 import { OutputLine, TerminalState } from '@/terminal/types';
 
 const generateId = () => Math.random().toString(36).slice(2);
