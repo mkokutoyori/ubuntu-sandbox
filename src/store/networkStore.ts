@@ -90,6 +90,8 @@ function deviceToUI(device: BaseDevice): NetworkDeviceUI {
 
   // Get interfaces and convert to config format
   let interfaces: NetworkInterfaceConfig[] = [];
+
+  // First, try getInterfaces() for devices like PC, Router that have NetworkInterface objects
   if ('getInterfaces' in device && typeof (device as any).getInterfaces === 'function') {
     const deviceInterfaces = (device as any).getInterfaces();
     interfaces = deviceInterfaces.map((iface: any) => ({
@@ -98,6 +100,19 @@ function deviceToUI(device: BaseDevice): NetworkDeviceUI {
       type: 'ethernet' as const,
       ipAddress: iface.getIPAddress()?.toString(),
       subnetMask: iface.getSubnetMask()?.toString(),
+    }));
+  }
+
+  // If no interfaces found, fall back to getPorts() for devices like Switch, Hub
+  // These devices have ports (strings) but not full NetworkInterface objects
+  if (interfaces.length === 0 && 'getPorts' in device && typeof (device as any).getPorts === 'function') {
+    const ports = (device as any).getPorts() as string[];
+    interfaces = ports.map((portName: string) => ({
+      id: portName,
+      name: portName,
+      type: 'ethernet' as const,
+      ipAddress: undefined,
+      subnetMask: undefined,
     }));
   }
 
