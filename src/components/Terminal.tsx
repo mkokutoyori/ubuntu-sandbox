@@ -82,7 +82,14 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
       // If a device is connected, let it handle commands (stub: returns a string).
       if (device) {
         const out = await device.executeCommand(trimmed);
-        if (out) append({ id: generateId(), text: out, type: 'normal', timestamp: Date.now() });
+        if (out) {
+          // Handle clear screen ANSI codes
+          if (out.includes('\x1b[2J') || out.includes('\x1b[H')) {
+            setLines([]);
+          } else {
+            append({ id: generateId(), text: out, type: 'normal', timestamp: Date.now() });
+          }
+        }
         setInput('');
         return;
       }

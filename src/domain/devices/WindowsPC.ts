@@ -130,6 +130,11 @@ export class WindowsPC extends PC {
       return '\x1b[2J\x1b[H';
     }
 
+    // netsh command for IP configuration
+    if (cmd.startsWith('netsh ')) {
+      return this.executeNetshCommand(command);
+    }
+
     if (cmd === 'doskey /history' || cmd === 'history') {
       return this.commandHistory.join('\n');
     }
@@ -151,6 +156,67 @@ OS Name:                   Microsoft Windows 10 Pro
 OS Version:                10.0.19045 N/A Build 19045
 OS Manufacturer:           Microsoft Corporation
 System Type:               x64-based PC`;
+  }
+
+  /**
+   * Executes netsh command for IP configuration
+   * Supports: netsh interface ip set address "Interface" static IP MASK [GATEWAY]
+   */
+  private executeNetshCommand(command: string): string {
+    const cmd = command.trim().toLowerCase();
+
+    // Parse netsh interface ip set address command
+    // Format: netsh interface ip set address "Ethernet0" static 192.168.1.50 255.255.255.0 [gateway]
+    const setAddressMatch = cmd.match(/netsh\s+interface\s+ip\s+set\s+address\s+"?([^"]+)"?\s+static\s+(\S+)\s+(\S+)(?:\s+(\S+))?/i);
+
+    if (setAddressMatch) {
+      const interfaceName = setAddressMatch[1];
+      const ipStr = setAddressMatch[2];
+      const maskStr = setAddressMatch[3];
+      const gatewayStr = setAddressMatch[4];
+
+      // Map interface name to internal name
+      const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+      const iface = this.getInterface(ifaceName);
+
+      if (!iface) {
+        return `The interface "${interfaceName}" was not found.`;
+      }
+
+      // Validate and set IP
+      let ip: IPAddress;
+      try {
+        ip = new IPAddress(ipStr);
+      } catch (e) {
+        return `The IP address "${ipStr}" is not valid. Error: Invalid IP address format.`;
+      }
+
+      // Validate and set subnet mask
+      let mask: SubnetMask;
+      try {
+        mask = new SubnetMask(maskStr);
+      } catch (e) {
+        return `The subnet mask "${maskStr}" is not valid. Error: Invalid subnet mask format.`;
+      }
+
+      // Configure the interface
+      this.setIPAddress(ifaceName, ip, mask);
+      iface.up();
+
+      // Configure gateway if provided
+      if (gatewayStr) {
+        try {
+          const gateway = new IPAddress(gatewayStr);
+          this.setGateway(gateway);
+        } catch (e) {
+          return `The gateway "${gatewayStr}" is not valid. Error: Invalid IP address format.`;
+        }
+      }
+
+      return 'Ok.\n';
+    }
+
+    return `The command "${command}" is not valid. Use "netsh interface ip set address" to configure IP.`;
   }
 
   /**
