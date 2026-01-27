@@ -1183,6 +1183,409 @@ show interfaces status
 
 ---
 
+## Guide complet : Configuration LAN via Terminal
+
+Cette section détaille comment configurer des LANs complets en utilisant uniquement les commandes du terminal.
+
+### Scénario A : LAN Linux simple (2 PC + Switch)
+
+#### Topologie
+```
+Linux PC 1 (192.168.1.10) ---- Switch ---- Linux PC 2 (192.168.1.20)
+```
+
+#### Configuration avec ifconfig
+
+**PC 1 :**
+```bash
+# Configurer l'adresse IP
+ifconfig eth0 192.168.1.10 netmask 255.255.255.0
+
+# Vérifier la configuration
+ifconfig eth0
+
+# Afficher toutes les interfaces
+ifconfig -a
+```
+
+**PC 2 :**
+```bash
+# Configurer l'adresse IP
+ifconfig eth0 192.168.1.20 netmask 255.255.255.0
+
+# Vérifier la configuration
+ifconfig eth0
+```
+
+#### Configuration avec la commande ip (moderne)
+
+**PC 1 :**
+```bash
+# Configurer l'adresse IP
+ip addr add 192.168.1.10/24 dev eth0
+
+# Vérifier la configuration
+ip addr show eth0
+
+# Afficher le statut des interfaces
+ip link show eth0
+
+# Afficher toutes les interfaces
+ip addr
+```
+
+**PC 2 :**
+```bash
+# Configurer l'adresse IP
+ip addr add 192.168.1.20/24 dev eth0
+
+# Vérifier avec ip addr
+ip addr
+```
+
+#### Test de connectivité
+
+```bash
+# Depuis PC 1, ping vers PC 2
+ping -c 4 192.168.1.20
+
+# Traceroute vers PC 2
+traceroute 192.168.1.20
+
+# Vérifier la table ARP
+arp -a
+
+# Ou avec ip neigh
+ip neigh
+
+# Afficher la table de routage
+route
+# ou
+ip route
+
+# Afficher les statistiques réseau
+netstat -i
+
+# Afficher les sockets
+ss -tln
+```
+
+### Scénario B : LAN Windows simple (2 PC + Switch)
+
+#### Topologie
+```
+Windows PC 1 (192.168.1.10) ---- Switch ---- Windows PC 2 (192.168.1.20)
+```
+
+#### Configuration avec netsh
+
+**PC 1 :**
+```cmd
+# Configurer l'adresse IP statique
+netsh interface ip set address "Ethernet0" static 192.168.1.10 255.255.255.0
+
+# Vérifier avec ipconfig
+ipconfig
+
+# Configuration détaillée
+ipconfig /all
+
+# Afficher la configuration de l'interface
+netsh interface ip show config
+
+# Afficher toutes les interfaces
+netsh interface show interface
+```
+
+**PC 2 :**
+```cmd
+# Configurer l'adresse IP statique
+netsh interface ip set address "Ethernet0" static 192.168.1.20 255.255.255.0
+
+# Vérifier
+ipconfig /all
+```
+
+#### Test de connectivité
+
+```cmd
+# Depuis PC 1, ping vers PC 2
+ping -n 4 192.168.1.20
+
+# Tracert vers PC 2
+tracert 192.168.1.20
+
+# Afficher la table ARP
+arp -a
+
+# Afficher la table de routage
+route print
+
+# Informations système
+hostname
+systeminfo
+ver
+```
+
+### Scénario C : LAN mixte Linux/Windows (4 PC + Switch)
+
+#### Topologie
+```
+Linux PC 1 (192.168.1.10)  ----+
+Linux PC 2 (192.168.1.11)  ----|
+                               +---- Switch Central
+Windows PC 1 (192.168.1.20) ---|
+Windows PC 2 (192.168.1.21) ---+
+```
+
+#### Configuration
+
+**Linux PC 1 :**
+```bash
+ip addr add 192.168.1.10/24 dev eth0
+```
+
+**Linux PC 2 :**
+```bash
+ip addr add 192.168.1.11/24 dev eth0
+```
+
+**Windows PC 1 :**
+```cmd
+netsh interface ip set address "Ethernet0" static 192.168.1.20 255.255.255.0
+```
+
+**Windows PC 2 :**
+```cmd
+netsh interface ip set address "Ethernet0" static 192.168.1.21 255.255.255.0
+```
+
+#### Tests de connectivité cross-platform
+
+**Depuis Linux PC 1 :**
+```bash
+# Ping vers Windows
+ping -c 1 192.168.1.20
+ping -c 1 192.168.1.21
+
+# Ping vers autre Linux
+ping -c 1 192.168.1.11
+
+# Traceroute vers Windows
+traceroute 192.168.1.20
+```
+
+**Depuis Windows PC 1 :**
+```cmd
+# Ping vers Linux
+ping -n 1 192.168.1.10
+ping -n 1 192.168.1.11
+
+# Ping vers autre Windows
+ping -n 1 192.168.1.21
+
+# Tracert vers Linux
+tracert 192.168.1.10
+```
+
+### Scénario D : LAN avec serveur (clients + serveur + Switch)
+
+#### Topologie
+```
+Linux Client (192.168.1.10)   ----+
+Windows Client (192.168.1.20) ----|
+Linux Client 2 (192.168.1.30) ----+---- Switch ---- Linux Server (192.168.1.1)
+```
+
+#### Configuration du serveur Linux
+
+```bash
+# Configuration réseau
+ip addr add 192.168.1.1/24 dev eth0
+
+# Vérifier toutes les interfaces du serveur (eth0-eth3)
+ip link
+
+# Gestion des services
+systemctl status ssh
+systemctl start ssh
+systemctl enable ssh
+
+systemctl start apache2
+systemctl start nginx
+
+# Configuration du firewall avec iptables
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+iptables -L INPUT
+
+# Ou avec ufw
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw enable
+ufw status
+```
+
+#### Configuration des clients
+
+**Linux Client :**
+```bash
+ip addr add 192.168.1.10/24 dev eth0
+ping -c 1 192.168.1.1
+```
+
+**Windows Client :**
+```cmd
+netsh interface ip set address "Ethernet0" static 192.168.1.20 255.255.255.0
+ping -n 1 192.168.1.1
+```
+
+### Scénario E : Réseau de bureau complet
+
+#### Topologie
+```
+File Server (192.168.10.1)   ----+
+Admin PC (192.168.10.2)      ----|
+Workstation 1 (192.168.10.10) ---+---- Main Switch
+Workstation 2 (192.168.10.11) ---|
+Workstation 3 (192.168.10.20) ---+
+```
+
+#### Configuration complète
+
+**File Server (Linux) :**
+```bash
+# Configuration réseau
+ip addr add 192.168.10.1/24 dev eth0
+
+# Démarrer les services
+systemctl start ssh
+systemctl start samba  # Si disponible
+
+# Configurer le firewall
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 445 -j ACCEPT
+```
+
+**Admin PC (Linux) :**
+```bash
+ip addr add 192.168.10.2/24 dev eth0
+```
+
+**Workstation 1 & 2 (Windows) :**
+```cmd
+netsh interface ip set address "Ethernet0" static 192.168.10.10 255.255.255.0
+netsh interface ip set address "Ethernet0" static 192.168.10.11 255.255.255.0
+```
+
+**Workstation 3 (Linux) :**
+```bash
+ifconfig eth0 192.168.10.20 netmask 255.255.255.0
+```
+
+#### Vérification de la connectivité
+
+**Depuis n'importe quel poste :**
+```bash
+# Linux
+ping -c 1 192.168.10.1
+ping -c 1 192.168.10.2
+ping -c 1 192.168.10.10
+ping -c 1 192.168.10.11
+ping -c 1 192.168.10.20
+```
+
+```cmd
+# Windows
+ping -n 1 192.168.10.1
+ping -n 1 192.168.10.2
+ping -n 1 192.168.10.10
+ping -n 1 192.168.10.11
+ping -n 1 192.168.10.20
+```
+
+### Gestion des interfaces
+
+#### Linux
+
+```bash
+# Activer une interface
+ip link set eth0 up
+
+# Désactiver une interface
+ip link set eth0 down
+
+# Afficher l'état de l'interface
+ip link show eth0
+
+# Informations détaillées avec ethtool
+ethtool eth0
+
+# Gestionnaire de réseau
+nmcli device status
+nmcli device show eth0
+
+# Information sur le hostname
+hostnamectl
+```
+
+#### Windows
+
+```cmd
+# Désactiver une interface
+netsh interface set interface "Ethernet0" disable
+
+# Activer une interface
+netsh interface set interface "Ethernet0" enable
+
+# Afficher l'état
+netsh interface show interface "Ethernet0"
+
+# Configuration du firewall
+netsh advfirewall firewall add rule name="Web" dir=in action=allow protocol=tcp localport=80
+netsh advfirewall firewall show rule name="Web"
+netsh advfirewall show allprofiles
+```
+
+### Messages d'erreur réalistes
+
+Le simulateur retourne des messages d'erreur identiques à ceux des vrais systèmes :
+
+#### Linux
+
+```bash
+# IP invalide
+ip addr add 999.999.999.999/24 dev eth0
+# Erreur: inet address is expected rather than "999.999.999.999"
+
+# Interface inexistante
+ifconfig eth99 192.168.1.1
+# ifconfig: error: interface 'eth99' not found
+
+# iptables sans commande
+iptables
+# iptables v1.8.7 (nf_tables): no command specified
+
+# Protocole invalide
+iptables -A INPUT -p invalidproto -j ACCEPT
+# iptables: unknown protocol 'invalidproto' specified
+```
+
+#### Windows
+
+```bash
+# IP invalide
+netsh interface ip set address "Ethernet0" static 999.999.999.999 255.255.255.0
+# The IP address is not valid
+
+# Hostname invalide avec ping
+ping invalid.hostname
+# Ping request could not find host invalid.hostname. Please check the name and try again.
+```
+
+---
+
 ## Conclusion
 
 Ce simulateur est un outil puissant pour apprendre et pratiquer les concepts réseau. Commencez par des topologies simples et progressez vers des scénarios plus complexes.
@@ -1191,8 +1594,15 @@ Ce simulateur est un outil puissant pour apprendre et pratiquer les concepts ré
 
 ---
 
-*Dernière mise à jour : Sprint 6 - Héritage complet serveurs, ARP automatique, LANs mixtes*
-*Version du simulateur : 1.6.0*
+*Dernière mise à jour : Sprint 7 - Tests LAN complets via terminal, messages d'erreur réalistes*
+*Version du simulateur : 1.7.0*
+
+### Nouveautés version 1.7.0
+
+- **Tests LAN complets via terminal** : 72 nouveaux tests d'intégration qui configurent des LANs entiers via les commandes du terminal
+- **Messages d'erreur réalistes** : Tous les messages d'erreur sont identiques à ceux des vrais équipements (90 tests)
+- **Support ifconfig -a** : Affichage de toutes les interfaces
+- **Parsing ping Windows amélioré** : Support complet de -n count et autres options
 
 ### Nouveautés version 1.6.0
 

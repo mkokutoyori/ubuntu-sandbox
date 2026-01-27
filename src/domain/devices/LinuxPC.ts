@@ -2625,6 +2625,12 @@ supports-priv-flags: no`;
     }
 
     const ifaceName = parts[1];
+
+    // Handle ifconfig -a (show all interfaces)
+    if (ifaceName === '-a') {
+      return this.getIfconfigOutput();
+    }
+
     const iface = this.getInterface(ifaceName);
 
     if (!iface) {

@@ -207,8 +207,8 @@ The ARP command failed: The parameter is incorrect.`;
     }
 
     if (cmd.startsWith('ping ')) {
-      const target = command.substring(5).trim();
-      return this.executePing(target);
+      const args = command.substring(5).trim();
+      return this.executePing(args);
     }
 
     if (cmd === 'tracert') {
@@ -1519,14 +1519,37 @@ To view help for a command, type the command, followed by a space, and then
 
   /**
    * Executes ping command
+   * Supports: ping [-n count] [-l size] [-w timeout] target
    */
-  private executePing(target: string): string {
+  private executePing(args: string): string {
+    // Parse ping arguments
+    const parts = args.split(/\s+/).filter(p => p);
+    let count = 4; // Default count
+    let targetStr = '';
+
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === '-n' && i + 1 < parts.length) {
+        count = parseInt(parts[i + 1], 10) || 4;
+        i++; // Skip the count value
+      } else if (parts[i] === '-l' && i + 1 < parts.length) {
+        i++; // Skip size value (not used in simulation)
+      } else if (parts[i] === '-w' && i + 1 < parts.length) {
+        i++; // Skip timeout value (not used in simulation)
+      } else if (!parts[i].startsWith('-')) {
+        targetStr = parts[i];
+      }
+    }
+
+    if (!targetStr) {
+      return `\nUsage: ping [-n count] [-l size] [-w timeout] target_name`;
+    }
+
     // Validate IP address
     let targetIP: IPAddress;
     try {
-      targetIP = new IPAddress(target);
+      targetIP = new IPAddress(targetStr);
     } catch (error) {
-      return `Ping request could not find host ${target}. Please check the name and try again.`;
+      return `Ping request could not find host ${targetStr}. Please check the name and try again.`;
     }
 
     // Check if interface is configured
@@ -1543,7 +1566,7 @@ To view help for a command, type the command, followed by a space, and then
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < count; i++) {
       // Create Echo Request with 32 bytes (Windows default)
       const data = Buffer.alloc(32);
       data.fill(0x61); // Fill with 'a' characters (Windows pattern)
@@ -1565,7 +1588,7 @@ To view help for a command, type the command, followed by a space, and then
 
     // Windows-style statistics
     output += `\nPing statistics for ${targetIP.toString()}:\n`;
-    output += `    Packets: Sent = 4, Received = ${successCount}, Lost = ${failCount} (${Math.round((failCount / 4) * 100)}% loss),\n`;
+    output += `    Packets: Sent = ${count}, Received = ${successCount}, Lost = ${failCount} (${Math.round((failCount / count) * 100)}% loss),\n`;
 
     if (successCount > 0) {
       output += `Approximate round trip times in milli-seconds:\n`;
