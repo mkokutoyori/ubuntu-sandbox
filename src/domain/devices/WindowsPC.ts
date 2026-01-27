@@ -1565,9 +1565,14 @@ To view help for a command, type the command, followed by a space, and then
     }
 
     // Resolve next hop MAC
-    const destMAC = this.resolveMAC(nextHop);
+    let destMAC = this.resolveMAC(nextHop);
     if (!destMAC) {
-      throw new Error('Unable to resolve MAC address (ARP not configured)');
+      // MAC not in cache - send ARP request
+      this.sendARPRequest(nextHop);
+      destMAC = this.resolveMAC(nextHop);
+      if (!destMAC) {
+        throw new Error('Destination host unreachable (ARP timeout)');
+      }
     }
 
     // Encapsulate in Ethernet frame
@@ -1679,9 +1684,14 @@ To view help for a command, type the command, followed by a space, and then
     }
 
     // Resolve next hop MAC
-    const destMAC = this.resolveMAC(nextHop);
+    let destMAC = this.resolveMAC(nextHop);
     if (!destMAC) {
-      throw new Error('Unable to resolve MAC address (ARP not configured)');
+      // MAC not in cache - send ARP request
+      this.sendARPRequest(nextHop);
+      destMAC = this.resolveMAC(nextHop);
+      if (!destMAC) {
+        throw new Error('Destination host unreachable (ARP timeout)');
+      }
     }
 
     // Encapsulate in Ethernet frame
@@ -1737,6 +1747,41 @@ To view help for a command, type the command, followed by a space, and then
 
 For more information on a specific command, type HELP command-name
 `;
+  }
+
+  /**
+   * Sends an ARP request for the given IP address
+   */
+  private sendARPRequest(targetIP: IPAddress): void {
+    const nic = this.getInterface('eth0');
+    if (!nic || !nic.getIPAddress()) {
+      return;
+    }
+
+    const arpService = this.getARPService();
+    const arpRequest = arpService.createRequest(
+      nic.getIPAddress()!,
+      nic.getMAC(),
+      targetIP
+    );
+
+    // Serialize ARP packet
+    const arpBytes = arpService.serializePacket(arpRequest);
+    const paddedPayload = Buffer.concat([
+      arpBytes,
+      Buffer.alloc(Math.max(0, 46 - arpBytes.length))
+    ]);
+
+    // Create broadcast Ethernet frame for ARP request
+    const frame = new EthernetFrame({
+      sourceMAC: nic.getMAC(),
+      destinationMAC: MACAddress.BROADCAST,
+      etherType: EtherType.ARP,
+      payload: paddedPayload
+    });
+
+    // Send frame (broadcast)
+    this.sendFrame('eth0', frame);
   }
 
   /**
