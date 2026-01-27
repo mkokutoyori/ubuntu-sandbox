@@ -389,9 +389,17 @@ export class LinuxPC extends PC {
       return this.getArpOutput();
     }
 
+    if (cmd === 'ping') {
+      return 'ping: usage error: Destination address required\nUsage: ping [-c count] destination';
+    }
+
     if (cmd.startsWith('ping ')) {
       const target = cmd.substring(5).trim();
       return this.executePing(target);
+    }
+
+    if (cmd === 'traceroute' || cmd === 'tracert') {
+      return 'Usage: traceroute [-m max_ttl] host';
     }
 
     if (cmd.startsWith('traceroute ') || cmd.startsWith('tracert ')) {

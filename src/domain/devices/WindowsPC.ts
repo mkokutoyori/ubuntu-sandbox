@@ -159,9 +159,17 @@ export class WindowsPC extends PC {
       return this.getArpOutput();
     }
 
+    if (cmd === 'ping') {
+      return `\nUsage: ping [-n count] [-l size] [-w timeout] target_name\n\nOptions:\n    -n count       Number of echo requests to send.\n    -l size        Send buffer size.\n    -w timeout     Timeout in milliseconds to wait for each reply.`;
+    }
+
     if (cmd.startsWith('ping ')) {
       const target = command.substring(5).trim();
       return this.executePing(target);
+    }
+
+    if (cmd === 'tracert') {
+      return `\nUsage: tracert [-d] [-h maximum_hops] target_name\n\nOptions:\n    -d                 Do not resolve addresses to hostnames.\n    -h maximum_hops    Maximum number of hops to search for target.`;
     }
 
     if (cmd.startsWith('tracert ')) {
@@ -1565,9 +1573,14 @@ To view help for a command, type the command, followed by a space, and then
     }
 
     // Resolve next hop MAC
-    const destMAC = this.resolveMAC(nextHop);
+    let destMAC = this.resolveMAC(nextHop);
     if (!destMAC) {
-      throw new Error('Unable to resolve MAC address (ARP not configured)');
+      // MAC not in cache - send ARP request
+      this.sendARPRequest(nextHop);
+      destMAC = this.resolveMAC(nextHop);
+      if (!destMAC) {
+        throw new Error('Destination host unreachable (ARP timeout)');
+      }
     }
 
     // Encapsulate in Ethernet frame
@@ -1679,9 +1692,14 @@ To view help for a command, type the command, followed by a space, and then
     }
 
     // Resolve next hop MAC
-    const destMAC = this.resolveMAC(nextHop);
+    let destMAC = this.resolveMAC(nextHop);
     if (!destMAC) {
-      throw new Error('Unable to resolve MAC address (ARP not configured)');
+      // MAC not in cache - send ARP request
+      this.sendARPRequest(nextHop);
+      destMAC = this.resolveMAC(nextHop);
+      if (!destMAC) {
+        throw new Error('Destination host unreachable (ARP timeout)');
+      }
     }
 
     // Encapsulate in Ethernet frame
@@ -1737,6 +1755,41 @@ To view help for a command, type the command, followed by a space, and then
 
 For more information on a specific command, type HELP command-name
 `;
+  }
+
+  /**
+   * Sends an ARP request for the given IP address
+   */
+  private sendARPRequest(targetIP: IPAddress): void {
+    const nic = this.getInterface('eth0');
+    if (!nic || !nic.getIPAddress()) {
+      return;
+    }
+
+    const arpService = this.getARPService();
+    const arpRequest = arpService.createRequest(
+      nic.getIPAddress()!,
+      nic.getMAC(),
+      targetIP
+    );
+
+    // Serialize ARP packet
+    const arpBytes = arpService.serializePacket(arpRequest);
+    const paddedPayload = Buffer.concat([
+      arpBytes,
+      Buffer.alloc(Math.max(0, 46 - arpBytes.length))
+    ]);
+
+    // Create broadcast Ethernet frame for ARP request
+    const frame = new EthernetFrame({
+      sourceMAC: nic.getMAC(),
+      destinationMAC: MACAddress.BROADCAST,
+      etherType: EtherType.ARP,
+      payload: paddedPayload
+    });
+
+    // Send frame (broadcast)
+    this.sendFrame('eth0', frame);
   }
 
   /**
