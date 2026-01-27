@@ -30,15 +30,42 @@
  * Device types (unified for both network simulation and UI)
  */
 export type DeviceType =
+  // Computers
   | 'pc'           // Generic PC
   | 'linux-pc'     // Linux PC (for UI/Terminal)
   | 'windows-pc'   // Windows PC (for UI/Terminal)
+
+  // Servers
+  | 'linux-server'    // Linux Server (Ubuntu/CentOS)
+  | 'windows-server'  // Windows Server
+
+  // Network Devices - Layer 2
   | 'switch'       // Generic Layer 2 switch
   | 'cisco-switch' // Cisco switch (for UI/Terminal)
+  | 'hub'          // Layer 1 hub
+
+  // Network Devices - Layer 3
   | 'router'       // Generic Layer 3 router
   | 'cisco-router' // Cisco router (for UI/Terminal)
   | 'cisco-l3-switch' // Cisco Layer 3 switch (for UI/Terminal)
-  | 'hub'          // Layer 1 hub
+  | 'multilayer-switch' // Generic multilayer switch
+
+  // Security Devices
+  | 'firewall'     // Generic firewall
+  | 'cisco-asa'    // Cisco ASA firewall
+
+  // Wireless Devices
+  | 'access-point'       // Wireless Access Point
+  | 'wireless-controller' // Wireless LAN Controller
+
+  // Infrastructure
+  | 'cloud'        // Cloud/Internet representation
+
+  // End Devices
+  | 'ip-phone'     // VoIP Phone
+  | 'printer'      // Network Printer
+
+  // Testing
   | 'test';        // Test device
 
 /**
