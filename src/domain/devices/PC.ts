@@ -153,6 +153,17 @@ export class PC extends BaseDevice {
   }
 
   /**
+   * Adds a network interface (for subclasses like servers)
+   *
+   * @param name - Interface name
+   * @param iface - Network interface to add
+   */
+  protected addInterfaceToParent(name: string, iface: NetworkInterface): void {
+    this.interfaces.set(name, iface);
+    this.setupInterfaceCallbacks(iface);
+  }
+
+  /**
    * Sets IP address on interface
    *
    * @param interfaceName - Interface name
