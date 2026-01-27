@@ -419,6 +419,8 @@ describe('Linux Networking Commands', () => {
       });
 
       it('should delete rule by number', async () => {
+        // First add a rule, then delete it
+        await pc.executeCommand('iptables -A INPUT -p tcp --dport 80 -j ACCEPT');
         const result = await pc.executeCommand('iptables -D INPUT 1');
         expect(result).toBe('');
       });

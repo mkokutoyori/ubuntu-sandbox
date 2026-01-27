@@ -151,12 +151,55 @@ export class WindowsPC extends PC {
       return this.getIpconfigOutput(cmd.includes('/all'));
     }
 
+    if (cmd.startsWith('ipconfig /')) {
+      const validSwitches = ['/all', '/release', '/renew', '/flushdns', '/displaydns', '/registerdns'];
+      const switchArg = cmd.substring(8).trim().toLowerCase();
+      if (!validSwitches.includes(switchArg)) {
+        return `Error: unrecognized or incomplete command line.
+
+USAGE:
+    ipconfig [/allcompartments] [/? | /all |
+                                 /renew [adapter] | /release [adapter] |
+                                 /renew6 [adapter] | /release6 [adapter] |
+                                 /flushdns | /displaydns | /registerdns |
+                                 /showclassid adapter |
+                                 /setclassid adapter [classid] |
+                                 /showclassid6 adapter |
+                                 /setclassid6 adapter [classid] ]`;
+      }
+    }
+
+    if (cmd === 'route' || cmd === 'route help' || cmd === 'route /?') {
+      return `
+Manipulates network routing tables.
+
+ROUTE [-f] [-p] [-4|-6] command [destination]
+                  [MASK netmask]  [gateway] [METRIC metric]  [IF interface]
+
+  command      One of these:
+                 PRINT     Prints  a route
+                 ADD       Adds    a route
+                 DELETE    Deletes a route
+                 CHANGE    Modifies an existing route
+  destination  Specifies the host.
+  MASK         Specifies that the next parameter is the 'netmask' value.
+  netmask      Specifies a subnet mask value for this route entry.
+  gateway      Specifies gateway.`;
+    }
+
     if (cmd === 'route print') {
       return this.getRouteOutput();
     }
 
     if (cmd === 'arp' || cmd === 'arp -a') {
       return this.getArpOutput();
+    }
+
+    if (cmd.startsWith('arp -') && !cmd.startsWith('arp -a') && !cmd.startsWith('arp -s') && !cmd.startsWith('arp -d')) {
+      const opt = cmd.substring(5, 6);
+      return `
+ARP: bad argument: -${opt}
+The ARP command failed: The parameter is incorrect.`;
     }
 
     if (cmd === 'ping') {

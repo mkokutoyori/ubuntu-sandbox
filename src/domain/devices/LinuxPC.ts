@@ -381,12 +381,74 @@ export class LinuxPC extends PC {
       return this.executeIfconfigCommand(cmd);
     }
 
-    if (cmd === 'route') {
+    if (cmd === 'route' || cmd === 'route -n') {
       return this.getRouteOutput();
     }
 
-    if (cmd === 'arp' || cmd === 'arp -a') {
+    if (cmd.startsWith('route add ')) {
+      // route add -net NETWORK gw GATEWAY or route add HOST gw GATEWAY
+      const gwMatch = cmd.match(/gw\s+(\S+)/i);
+      if (gwMatch) {
+        try {
+          new IPAddress(gwMatch[1]);
+        } catch (e) {
+          return `SIOCADDRT: Invalid argument`;
+        }
+      }
+      // Check for valid network/host
+      const netMatch = cmd.match(/-net\s+(\S+)/i);
+      const hostMatch = cmd.match(/route add\s+(\d+\.\d+\.\d+\.\d+)/i);
+      if (netMatch) {
+        const netParts = netMatch[1].split('/');
+        try {
+          new IPAddress(netParts[0]);
+        } catch (e) {
+          return `SIOCADDRT: Invalid argument`;
+        }
+      } else if (hostMatch) {
+        try {
+          new IPAddress(hostMatch[1]);
+        } catch (e) {
+          return `SIOCADDRT: Invalid argument`;
+        }
+      }
+      return '';
+    }
+
+    if (cmd === 'arp' || cmd === 'arp -a' || cmd === 'arp -n') {
       return this.getArpOutput();
+    }
+
+    if (cmd.startsWith('arp -s ')) {
+      // arp -s IP MAC
+      const parts = cmd.split(/\s+/);
+      if (parts.length < 4) {
+        return 'arp: need host hw-addr';
+      }
+      const mac = parts[3];
+      // Validate MAC address format
+      if (!/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(mac) &&
+          !/^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$/.test(mac)) {
+        return `arp: invalid hardware address: ${mac}`;
+      }
+      return '';
+    }
+
+    if (cmd.startsWith('arp -d ')) {
+      // arp -d IP
+      const parts = cmd.split(/\s+/);
+      if (parts.length < 3) {
+        return 'arp: need host name';
+      }
+      // In a real scenario, this would check the ARP cache
+      // For simulation, we always return success unless IP is invalid
+      const ip = parts[2];
+      try {
+        new IPAddress(ip);
+      } catch (e) {
+        return `arp: ${ip}: host name lookup failure`;
+      }
+      return '';
     }
 
     if (cmd === 'ping') {
@@ -514,8 +576,21 @@ export class LinuxPC extends PC {
 
     // ip route add
     if (cmdLower.startsWith('ip route add')) {
-      const routeMatch = cmd.match(/ip route add\s+(\S+)\s+via\s+(\d+\.\d+\.\d+\.\d+)/i);
+      const routeMatch = cmd.match(/ip route add\s+(\S+)\s+via\s+(\S+)/i);
       if (routeMatch) {
+        // Validate gateway IP
+        try {
+          new IPAddress(routeMatch[2]);
+        } catch (e) {
+          return `Error: inet address is expected rather than "${routeMatch[2]}".`;
+        }
+        // Validate destination network
+        const destParts = routeMatch[1].split('/');
+        try {
+          new IPAddress(destParts[0]);
+        } catch (e) {
+          return `Error: inet prefix is expected rather than "${routeMatch[1]}".`;
+        }
         this.customRoutes.push({
           destination: routeMatch[1],
           via: routeMatch[2],
@@ -523,7 +598,7 @@ export class LinuxPC extends PC {
         });
         return '';
       }
-      return 'Error: Invalid arguments';
+      return 'Error: Invalid route specification. Usage: ip route add NETWORK via GATEWAY';
     }
 
     // ip route del
@@ -579,7 +654,11 @@ export class LinuxPC extends PC {
 32767:  from all lookup default`;
     }
 
-    return 'Error: Unknown ip subcommand. Usage: ip {addr|link|route|neigh|rule}';
+    // Check if it's an unknown object type
+    if (parts.length >= 2) {
+      return `Object "${parts[1]}" is unknown, try "ip help".`;
+    }
+    return 'Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }\n       ip addr | link | route | neigh | rule';
   }
 
   /**
@@ -906,6 +985,30 @@ IP4.DNS[1]:                             ${this.dnsServers[0] || '(none)'}`;
   private executeSsCommand(cmd: string): string {
     const cmdLower = cmd.toLowerCase();
 
+    // Check for invalid long options
+    const longOptMatch = cmd.match(/--([a-zA-Z-]+)/);
+    if (longOptMatch) {
+      const validLongOpts = ['summary', 'tcp', 'udp', 'listening', 'all', 'numeric', 'processes', 'help'];
+      if (!validLongOpts.includes(longOptMatch[1].toLowerCase())) {
+        return `ss: invalid option -- '${longOptMatch[1]}'
+Try 'ss --help' for more information.`;
+      }
+    }
+
+    // ss help
+    if (cmdLower.includes('--help') || cmdLower.includes('-h')) {
+      return `Usage: ss [ OPTIONS ]
+       ss [ OPTIONS ] [ FILTER ]
+   -h, --help          this message
+   -t, --tcp           display only TCP sockets
+   -u, --udp           display only UDP sockets
+   -l, --listening     display listening sockets
+   -a, --all           display all sockets
+   -n, --numeric       don't resolve service names
+   -p, --processes     show process using socket
+   -s, --summary       show socket usage summary`;
+    }
+
     // ss -s (summary)
     if (cmdLower === 'ss -s') {
       return `Total: 45
@@ -955,6 +1058,32 @@ FRAG      0         0         0`;
   private executeIptablesCommand(cmd: string): string {
     const cmdLower = cmd.toLowerCase();
 
+    // iptables without arguments
+    if (cmdLower.trim() === 'iptables') {
+      return `iptables v1.8.7 (nf_tables): no command specified
+Try \`iptables -h' or 'iptables --help' for more information.`;
+    }
+
+    // iptables help
+    if (cmdLower.includes('-h') || cmdLower.includes('--help')) {
+      return `iptables v1.8.7 (nf_tables)
+
+Usage: iptables -[ACD] chain rule-specification [options]
+       iptables -[RI] chain rulenum rule-specification [options]
+       iptables -D chain rulenum [options]
+       iptables -[LFZ] [chain [rulenum]] [options]
+       iptables -[NX] chain
+       iptables -P chain target [options]
+
+Commands:
+  -A, --append chain rule-spec    Append a rule to chain
+  -D, --delete chain rule-spec    Delete matching rule from chain
+  -I, --insert chain [rulenum]    Insert in chain as rulenum (default 1=first)
+  -L, --list [chain]              List the rules in a chain or all chains
+  -F, --flush [chain]             Delete all rules in chain or all chains
+  -P, --policy chain target       Change policy on chain to target`;
+    }
+
     // iptables -t nat -L
     if (cmdLower.includes('-t nat') && cmdLower.includes('-l')) {
       return `Chain PREROUTING (policy ACCEPT)
@@ -976,18 +1105,47 @@ target     prot opt source               destination`;
       const lineNumbers = cmdLower.includes('--line-numbers');
       const chain = this.getIptablesChain(cmd);
 
+      // Validate chain name
+      const validChains = ['INPUT', 'OUTPUT', 'FORWARD'];
+      if (chain && !validChains.includes(chain.toUpperCase())) {
+        return `iptables: No chain/target/match by that name.`;
+      }
+
       return this.getIptablesListOutput(chain, verbose, lineNumbers);
     }
 
     // iptables -A (append rule)
     if (cmdLower.includes('-a ')) {
-      const ruleMatch = cmd.match(/-A\s+(\w+)\s+(.+)/i);
+      const ruleMatch = cmd.match(/-A\s+(\w+)(?:\s+(.+))?/i);
       if (ruleMatch) {
         const chain = ruleMatch[1];
-        const ruleStr = ruleMatch[2];
+        const ruleStr = ruleMatch[2] || '';
+
+        // Validate chain
+        const validChains = ['INPUT', 'OUTPUT', 'FORWARD'];
+        if (!validChains.includes(chain.toUpperCase())) {
+          return `iptables: No chain/target/match by that name.`;
+        }
+
+        // Check if target (-j) is specified
+        if (!ruleStr.includes('-j ') && !ruleStr.includes('--jump ')) {
+          return `iptables v1.8.7 (nf_tables): No chain/target/match by that name.
+Try \`iptables -h' or 'iptables --help' for more information.`;
+        }
+
+        // Validate protocol if specified
+        const protMatch = ruleStr.match(/-p\s+(\w+)/i);
+        if (protMatch) {
+          const validProtocols = ['tcp', 'udp', 'icmp', 'all', 'icmpv6'];
+          if (!validProtocols.includes(protMatch[1].toLowerCase())) {
+            return `iptables v1.8.7 (nf_tables): unknown protocol \`${protMatch[1]}' specified
+Try \`iptables -h' or 'iptables --help' for more information.`;
+          }
+        }
+
         const rule = this.parseIptablesRule(chain, ruleStr);
         if (rule) {
-          rule.lineNum = this.iptablesRules.filter(r => r.chain === chain).length + 1;
+          rule.lineNum = this.iptablesRules.filter(r => r.chain === chain.toUpperCase()).length + 1;
           this.iptablesRules.push(rule);
         }
       }
@@ -1011,6 +1169,33 @@ target     prot opt source               destination`;
 
     // iptables -D (delete rule)
     if (cmdLower.includes('-d ')) {
+      const ruleMatch = cmd.match(/-D\s+(\w+)\s+(\d+)/i);
+      if (ruleMatch) {
+        const chain = ruleMatch[1].toUpperCase();
+        const ruleNum = parseInt(ruleMatch[2]);
+
+        // Validate chain
+        const validChains = ['INPUT', 'OUTPUT', 'FORWARD'];
+        if (!validChains.includes(chain)) {
+          return `iptables: No chain/target/match by that name.`;
+        }
+
+        // Check if rule exists
+        const chainRules = this.iptablesRules.filter(r => r.chain === chain);
+        if (ruleNum > chainRules.length || ruleNum < 1) {
+          return `iptables: Index of deletion too big.`;
+        }
+
+        // Delete the rule
+        let deleted = 0;
+        this.iptablesRules = this.iptablesRules.filter(r => {
+          if (r.chain === chain) {
+            deleted++;
+            if (deleted === ruleNum) return false;
+          }
+          return true;
+        });
+      }
       return '';
     }
 
@@ -1136,6 +1321,36 @@ target     prot opt source               destination`;
     const cmdLower = cmd.toLowerCase();
     const parts = cmd.split(/\s+/);
 
+    // ufw without arguments
+    if (cmdLower.trim() === 'ufw') {
+      return `ERROR: Invalid syntax
+
+Usage: ufw COMMAND
+
+Commands:
+ enable                          enables the firewall
+ disable                         disables the firewall
+ default ARG                     set default policy
+ logging LEVEL                   set logging to LEVEL
+ allow ARGS                      add allow rule
+ deny ARGS                       add deny rule
+ reject ARGS                     add reject rule
+ limit ARGS                      add limit rule
+ delete RULE|NUM                 delete RULE
+ insert NUM RULE                 insert RULE at NUM
+ prepend RULE                    prepend RULE
+ route RULE                      add route RULE
+ route delete RULE|NUM           delete route RULE
+ route insert NUM RULE           insert route RULE at NUM
+ reload                          reload firewall
+ reset                           reset firewall
+ status                          show firewall status
+ status numbered                 show firewall status as numbered list of RULES
+ status verbose                  show verbose firewall status
+ show ARG                        show firewall report
+ version                         display version information`;
+    }
+
     // ufw status
     if (cmdLower === 'ufw status') {
       return this.ufwEnabled
@@ -1182,22 +1397,64 @@ To                         Action      From
 
     // ufw allow
     if (cmdLower.startsWith('ufw allow')) {
+      // Check for port argument
+      const portMatch = cmd.match(/ufw\s+allow\s+(\S+)/i);
+      if (portMatch) {
+        const portArg = portMatch[1];
+
+        // Check if it's a numeric port
+        if (/^\d+$/.test(portArg)) {
+          const port = parseInt(portArg);
+          if (port < 1 || port > 65535) {
+            return `ERROR: Bad port '${portArg}'`;
+          }
+        } else if (/^\d+\/\w+$/.test(portArg)) {
+          // Port with protocol like 80/tcp
+          const [portStr, proto] = portArg.split('/');
+          const port = parseInt(portStr);
+          if (port < 1 || port > 65535) {
+            return `ERROR: Bad port '${portStr}'`;
+          }
+          const validProtocols = ['tcp', 'udp'];
+          if (!validProtocols.includes(proto.toLowerCase())) {
+            return `ERROR: Unsupported protocol '${proto}'`;
+          }
+        } else if (!/^(ssh|http|https|ftp|from|to|in|out|on|proto)$/i.test(portArg)) {
+          // Not a known service or keyword - check if it looks like an invalid app
+          if (!/^[a-zA-Z]+$/.test(portArg)) {
+            return `ERROR: Could not find a profile matching '${portArg}'`;
+          }
+        }
+      }
+
       const rule = this.parseUfwRule('allow', cmd);
       if (rule) {
         this.ufwRules.push(rule);
         return 'Rule added';
       }
-      return 'Error: Invalid rule';
+      return 'ERROR: Invalid syntax';
     }
 
     // ufw deny
     if (cmdLower.startsWith('ufw deny')) {
+      // Check for port argument
+      const portMatch = cmd.match(/ufw\s+deny\s+(\S+)/i);
+      if (portMatch) {
+        const portArg = portMatch[1];
+        if (/^\d+$/.test(portArg)) {
+          const port = parseInt(portArg);
+          if (port < 1 || port > 65535) {
+            return `ERROR: Bad port '${portArg}'`;
+          }
+        }
+      }
+
       const rule = this.parseUfwRule('deny', cmd);
       if (rule) {
         this.ufwRules.push(rule);
         return 'Rule added';
       }
-      return 'Error: Invalid rule';
+      return 'ERROR: Invalid syntax';
     }
 
     // ufw delete
@@ -1227,7 +1484,17 @@ To                         Action      From
       return 'Default incoming policy changed';
     }
 
-    return 'Error: Unknown ufw subcommand';
+    return `ERROR: Invalid syntax
+
+Usage: ufw COMMAND
+
+Commands:
+ enable                          enables the firewall
+ disable                         disables the firewall
+ allow ARGS                      add allow rule
+ deny ARGS                       add deny rule
+ status                          show firewall status
+ reset                           reset firewall`;
   }
 
   /**
@@ -1841,6 +2108,12 @@ WantedBy=multi-user.target`;
   private executeJournalctlCommand(cmd: string): string {
     const cmdLower = cmd.toLowerCase();
 
+    // Check for invalid -n value
+    const nMatch = cmd.match(/-n\s+(\S+)/i);
+    if (nMatch && !/^\d+$/.test(nMatch[1])) {
+      return `Failed to parse line count '${nMatch[1]}'`;
+    }
+
     // journalctl -f (follow)
     if (cmdLower.includes('-f') && !cmdLower.includes('-files')) {
       return 'Following journal logs... (Press Ctrl+C to stop)';
@@ -1873,7 +2146,7 @@ WantedBy=multi-user.target`;
     const bootFlag = cmdLower.includes('-b');
     const kernelFlag = cmdLower.includes('-k') || cmdLower.includes('--dmesg');
     const reverseFlag = cmdLower.includes('-r');
-    const nMatch = cmd.match(/-n\s+(\d+)/i);
+    const limitMatch = cmd.match(/-n\s+(\d+)/i);
     const grepMatch = cmd.match(/(?:-g|--grep=?)[\s=]?"?([^"]+)"?/i);
 
     // Filter logs
@@ -1902,8 +2175,8 @@ WantedBy=multi-user.target`;
       logs = logs.reverse();
     }
 
-    if (nMatch) {
-      logs = logs.slice(-parseInt(nMatch[1]));
+    if (limitMatch) {
+      logs = logs.slice(-parseInt(limitMatch[1]));
     }
 
     // Output format
@@ -2093,6 +2366,16 @@ WantedBy=multi-user.target`;
   private executeNetstatCommand(cmd: string): string {
     const cmdLower = cmd.toLowerCase();
 
+    // Check for invalid long options
+    const longOptMatch = cmd.match(/--([a-zA-Z-]+)/);
+    if (longOptMatch) {
+      const validLongOpts = ['route', 'interfaces', 'statistics', 'listening', 'all', 'numeric', 'tcp', 'udp', 'programs', 'help'];
+      if (!validLongOpts.includes(longOptMatch[1].toLowerCase())) {
+        return `netstat: invalid option -- '${longOptMatch[1]}'
+Try 'netstat --help' for more information.`;
+      }
+    }
+
     // netstat -r (routing)
     if (cmdLower.includes('-r')) {
       return `Kernel IP routing table
@@ -2181,7 +2464,23 @@ Current DNS Server: ${this.dnsServers[0]}
    */
   private executeDigCommand(cmd: string): string {
     const parts = cmd.split(/\s+/);
-    const domain = parts[1] || 'localhost';
+
+    // Check for @server syntax
+    const serverMatch = cmd.match(/@(\S+)/);
+    if (serverMatch) {
+      const server = serverMatch[1];
+      // Validate server IP
+      try {
+        new IPAddress(server);
+      } catch (e) {
+        // Could be a hostname, check if it's clearly invalid
+        if (/^\d+\.\d+\.\d+\.\d+$/.test(server)) {
+          return `dig: couldn't get address for '${server}': not found`;
+        }
+      }
+    }
+
+    const domain = parts.find(p => !p.startsWith('@') && !p.startsWith('+') && !p.startsWith('-') && p !== 'dig') || 'localhost';
 
     return `; <<>> DiG 9.18.12-1ubuntu1 <<>> ${domain}
 ;; global options: +cmd
@@ -2210,6 +2509,19 @@ ${domain}.              300     IN      A       142.250.185.78
     const parts = cmd.split(/\s+/);
     const domain = parts[1] || 'localhost';
 
+    // Check if custom server is specified (third argument)
+    if (parts.length >= 3) {
+      const server = parts[2];
+      // Validate server IP
+      try {
+        new IPAddress(server);
+      } catch (e) {
+        if (/^\d+\.\d+\.\d+\.\d+$/.test(server)) {
+          return `;; connection timed out; no servers could be reached`;
+        }
+      }
+    }
+
     return `Server:         ${this.dnsServers[0]}
 Address:        ${this.dnsServers[0]}#53
 
@@ -2224,7 +2536,26 @@ Address: 142.250.185.78`;
   private executeEthtoolCommand(cmd: string): string {
     const cmdLower = cmd.toLowerCase();
     const parts = cmd.split(/\s+/);
-    const iface = parts[parts.length - 1];
+
+    // ethtool without interface
+    if (parts.length < 2 || (parts.length === 2 && parts[1].startsWith('-'))) {
+      return `ethtool: bad command line argument(s)
+For more information run ethtool -h`;
+    }
+
+    // Get interface name (last non-flag argument)
+    let iface = '';
+    for (let i = parts.length - 1; i >= 1; i--) {
+      if (!parts[i].startsWith('-')) {
+        iface = parts[i];
+        break;
+      }
+    }
+
+    // Check if interface exists
+    if (iface && !this.hasInterface(iface)) {
+      return `Cannot get device settings: No such device`;
+    }
 
     // ethtool -i <interface> (driver info)
     if (cmdLower.includes('-i')) {
@@ -2445,12 +2776,26 @@ supports-priv-flags: no`;
 
     for (let i = 0; i < parts.length; i++) {
       if (parts[i] === '-c' && i + 1 < parts.length) {
-        count = parseInt(parts[i + 1], 10) || 4;
+        const countVal = parts[i + 1];
+        if (!/^\d+$/.test(countVal)) {
+          return `ping: bad number of packets to transmit.`;
+        }
+        count = parseInt(countVal, 10);
         i++; // Skip the count value
-      } else if (parts[i] === '-n' && i + 1 < parts.length) {
-        // Some Linux systems also use -n for count
-        count = parseInt(parts[i + 1], 10) || 4;
-        i++;
+      } else if (parts[i] === '-n') {
+        // -n means numeric output only (don't resolve hostnames)
+        continue;
+      } else if (parts[i].startsWith('--')) {
+        // Unknown long option
+        return `ping: unrecognized option '${parts[i]}'
+Try 'ping --help' for more information.`;
+      } else if (parts[i].startsWith('-') && parts[i] !== '-c') {
+        // Check for valid single-letter options
+        const validOpts = ['-c', '-n', '-i', '-w', '-W', '-s', '-t', '-q', '-v'];
+        if (!validOpts.includes(parts[i])) {
+          return `ping: invalid option -- '${parts[i].substring(1)}'
+Try 'ping --help' for more information.`;
+        }
       } else if (!parts[i].startsWith('-')) {
         targetStr = parts[i];
       }
