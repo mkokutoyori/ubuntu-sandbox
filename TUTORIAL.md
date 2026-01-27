@@ -733,7 +733,133 @@ interface GigabitEthernet0/0.20
  ip address 192.168.20.1 255.255.255.0
 ```
 
-### Scénario 5 : Serveur Web accessible depuis le LAN
+### Scénario 5 : LAN mixte Linux/Windows avec serveur
+
+**Objectif** : Créer un LAN réaliste avec des clients Linux, Windows et un serveur
+
+#### Topologie
+
+```
+       Linux PC 1                Windows PC 1
+    (192.168.1.10)              (192.168.1.30)
+           \                         /
+            \                       /
+             \                     /
+              \                   /
+               \                 /
+                \               /
+                    Switch
+                /               \
+               /                 \
+              /                   \
+             /                     \
+            /                       \
+       Linux PC 2                Linux Server
+    (192.168.1.20)              (192.168.1.100)
+```
+
+#### Configuration des équipements
+
+**Linux PC 1 :**
+```bash
+# Configuration IP moderne avec commande ip
+ip addr add 192.168.1.10/24 dev eth0
+ip link set eth0 up
+
+# Vérification
+ip addr show eth0
+```
+
+**Linux PC 2 :**
+```bash
+ip addr add 192.168.1.20/24 dev eth0
+ip link set eth0 up
+```
+
+**Windows PC 1 :**
+```cmd
+# Configuration via netsh (méthode moderne Windows)
+netsh interface ip set address "Ethernet0" static 192.168.1.30 255.255.255.0
+
+# Vérification
+ipconfig /all
+```
+
+**Linux Server :**
+```bash
+# Le serveur a 4 interfaces réseau (eth0-eth3)
+ip addr add 192.168.1.100/24 dev eth0
+ip link set eth0 up
+
+# Vérifier les services disponibles
+systemctl list-units --type=service
+
+# Démarrer un service (ex: nginx)
+systemctl start nginx
+systemctl status nginx
+```
+
+#### Test de connectivité
+
+**Depuis Linux PC 1 :**
+```bash
+# Ping vers Windows
+ping -c 4 192.168.1.30
+
+# Ping vers serveur
+ping -c 4 192.168.1.100
+
+# Traceroute
+traceroute 192.168.1.100
+```
+
+**Depuis Windows PC 1 :**
+```cmd
+# Ping vers Linux
+ping -n 4 192.168.1.10
+
+# Ping vers serveur
+ping -n 4 192.168.1.100
+
+# ARP table
+arp -a
+```
+
+**Depuis Linux Server :**
+```bash
+# Ping vers tous les clients
+ping -c 1 192.168.1.10
+ping -c 1 192.168.1.20
+ping -c 1 192.168.1.30
+
+# Afficher les logs du système
+journalctl -n 20
+
+# Voir les connexions réseau
+ss -tln
+```
+
+#### Fonctionnalités avancées du serveur
+
+```bash
+# Gestion complète des services
+systemctl status ssh
+systemctl start nginx
+systemctl enable apache2
+systemctl restart mysql
+
+# Gestion du firewall
+ufw status
+ufw allow 80/tcp
+ufw enable
+
+# Configuration réseau avancée
+# Le serveur supporte iptables complet
+iptables -L
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+```
+
+### Scénario 6 : Serveur Web accessible depuis le LAN
 
 **Objectif** : Configurer un serveur Web Linux accessible depuis le réseau
 
@@ -836,6 +962,26 @@ ping <destination>
 # Test traceroute
 traceroute <destination>
 ```
+
+### Résolution ARP automatique
+
+Le simulateur implémente une résolution ARP automatique réaliste :
+
+1. **Quand vous pingez une IP pour la première fois**, le PC envoie une requête ARP broadcast
+2. **Le destinataire répond** avec son adresse MAC
+3. **L'entrée ARP est mise en cache** pour les communications futures
+
+```bash
+# Vérifier le cache ARP après un ping
+ping -c 1 192.168.1.20
+arp -a
+# Vous devriez voir l'entrée pour 192.168.1.20
+
+# Sur Linux moderne
+ip neigh show
+```
+
+**Note** : Si le ping échoue avec "Destination host unreachable (ARP timeout)", cela signifie que la cible n'a pas répondu à la requête ARP - vérifiez la configuration réseau de la cible.
 
 ### Problèmes courants et solutions
 
@@ -1045,5 +1191,16 @@ Ce simulateur est un outil puissant pour apprendre et pratiquer les concepts ré
 
 ---
 
-*Dernière mise à jour : Sprint 5 - Support ICMP complet (ping/traceroute)*
-*Version du simulateur : 1.5.0*
+*Dernière mise à jour : Sprint 6 - Héritage complet serveurs, ARP automatique, LANs mixtes*
+*Version du simulateur : 1.6.0*
+
+### Nouveautés version 1.6.0
+
+- **Héritage serveurs complet** : LinuxServer et WindowsServer héritent correctement de toutes les commandes de leurs parents (LinuxPC, WindowsPC)
+- **Interfaces multiples** : Les serveurs ont 4 interfaces réseau (eth0-eth3) avec gestion complète
+- **Résolution ARP automatique** : Le ping envoie automatiquement des requêtes ARP si le MAC n'est pas en cache
+- **Support ping avancé** : `ping -c N <ip>` pour spécifier le nombre de paquets
+- **Statistiques ping** : Affichage des RTT min/avg/max/mdev
+- **Gestion services complète** : systemctl, service, journalctl, update-rc.d, chkconfig
+- **Commandes réseau Linux** : ip, nmcli, ss, iptables, ufw, ethtool, dig, nslookup, resolvectl
+- **Commandes Windows avancées** : netsh interface, netsh advfirewall, ipconfig /all avec DNS

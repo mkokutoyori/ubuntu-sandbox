@@ -3,25 +3,18 @@
  *
  * Server with Windows Server commands and multiple interfaces.
  * Extends WindowsPC with server-specific features.
+ *
+ * Design: Uses parent's interface management to ensure command inheritance works properly.
  */
 
 import { WindowsPC } from './WindowsPC';
 import { DeviceConfig } from './types';
+import { NetworkInterface } from './NetworkInterface';
+import { MACAddress } from '../network/value-objects/MACAddress';
 
 export class WindowsServer extends WindowsPC {
   constructor(config: DeviceConfig) {
-    // Servers have more interfaces by default
-    const serverConfig = {
-      ...config,
-      interfaces: config.interfaces || [
-        { id: 'eth0', name: 'eth0', type: 'ethernet' as const },
-        { id: 'eth1', name: 'eth1', type: 'ethernet' as const },
-        { id: 'eth2', name: 'eth2', type: 'ethernet' as const },
-        { id: 'eth3', name: 'eth3', type: 'ethernet' as const }
-      ]
-    };
-
-    super(serverConfig);
+    super(config);
 
     // Override type
     (this as any).type = 'windows-server';
@@ -30,6 +23,41 @@ export class WindowsServer extends WindowsPC {
     if (!config.hostname) {
       this.setHostname('SERVER');
     }
+
+    // Add additional server interfaces (servers have 4 NICs: eth0-eth3)
+    // eth0 is already created by PC parent, we add eth1, eth2, eth3
+    this.addServerInterfaces();
+  }
+
+  /**
+   * Adds additional server network interfaces
+   */
+  private addServerInterfaces(): void {
+    const additionalInterfaces = ['eth1', 'eth2', 'eth3'];
+
+    for (const name of additionalInterfaces) {
+      if (!this.hasInterface(name)) {
+        const mac = this.generateServerMAC();
+        const iface = new NetworkInterface(name, mac);
+        this.addInterfaceToParent(name, iface);
+        if (!this.hasPort(name)) {
+          this.addPort(name);
+        }
+      }
+    }
+  }
+
+  /**
+   * Generates a random MAC address for server interfaces
+   */
+  private generateServerMAC(): MACAddress {
+    const bytes = new Array(6);
+    bytes[0] = 0x02; // Locally administered
+    for (let i = 1; i < 6; i++) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+    const macStr = bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+    return new MACAddress(macStr);
   }
 
   /**

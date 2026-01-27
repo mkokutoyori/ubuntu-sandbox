@@ -294,12 +294,20 @@ To view help for a command, type the command, followed by a space, and then
    * Shows all network interfaces
    */
   private netshShowInterface(): string {
-    const iface = this.getInterface('eth0');
-    const isUp = iface?.isUp() ?? false;
+    const interfaces = this.getInterfaces();
 
     let output = '\nAdmin State    State          Type             Interface Name\n';
     output += '-------------------------------------------------------------------------\n';
-    output += `${isUp ? 'Enabled' : 'Disabled'}        ${isUp ? 'Connected' : 'Disconnected'}      Dedicated        Ethernet0\n`;
+
+    const sortedInterfaces = interfaces.sort((a, b) => a.getName().localeCompare(b.getName()));
+    let adapterNum = 0;
+    for (const iface of sortedInterfaces) {
+      const isUp = iface.isUp();
+      const adminState = isUp ? 'Enabled' : 'Disabled';
+      const state = isUp ? 'Connected' : 'Disconnected';
+      output += `${adminState.padEnd(15)}${state.padEnd(15)}${'Dedicated'.padEnd(17)}Ethernet${adapterNum}\n`;
+      adapterNum++;
+    }
 
     return output;
   }
@@ -472,20 +480,27 @@ To view help for a command, type the command, followed by a space, and then
    * Shows IP addresses
    */
   private netshShowAddresses(): string {
-    const iface = this.getInterface('eth0');
-    if (!iface) {
+    const interfaces = this.getInterfaces();
+    if (interfaces.length === 0) {
       return 'No interfaces configured.';
     }
 
-    const ip = iface.getIPAddress();
-    const mask = iface.getSubnetMask();
+    let output = '';
+    const sortedInterfaces = interfaces.sort((a, b) => a.getName().localeCompare(b.getName()));
+    let adapterNum = 0;
 
-    let output = '\nConfiguration for interface "Ethernet0"\n';
-    if (ip) {
-      output += `    IP Address:                           ${ip.toString()}\n`;
-      output += `    Subnet Prefix:                        ${mask ? `/${mask.getCIDR()}` : '/24'}\n`;
-    } else {
-      output += '    No IP addresses configured.\n';
+    for (const iface of sortedInterfaces) {
+      const ip = iface.getIPAddress();
+      const mask = iface.getSubnetMask();
+
+      output += `\nConfiguration for interface "Ethernet${adapterNum}"\n`;
+      if (ip) {
+        output += `    IP Address:                           ${ip.toString()}\n`;
+        output += `    Subnet Prefix:                        ${mask ? `/${mask.getCIDR()}` : '/24'}\n`;
+      } else {
+        output += '    No IP addresses configured.\n';
+      }
+      adapterNum++;
     }
 
     return output;
@@ -1312,37 +1327,62 @@ To view help for a command, type the command, followed by a space, and then
    * Returns ipconfig output
    */
   private getIpconfigOutput(all: boolean): string {
-    const iface = this.getInterface('eth0');
+    const interfaces = this.getInterfaces();
 
-    if (!iface) {
+    if (interfaces.length === 0) {
       return 'No network adapters configured';
     }
 
-    const ip = iface.getIPAddress();
-    const mask = iface.getSubnetMask();
-    const mac = iface.getMAC();
     const gateway = this.getGateway();
-
     let output = 'Windows IP Configuration\n\n';
-    output += 'Ethernet adapter Ethernet0:\n\n';
 
-    const status = iface.isUp() ? 'Up' : 'Down';
-    output += `   Connection-specific DNS Suffix  . : \n`;
+    // Sort interfaces by name
+    const sortedInterfaces = interfaces.sort((a, b) => a.getName().localeCompare(b.getName()));
 
-    if (all) {
-      output += `   Description . . . . . . . . . . . : Intel(R) 82574L Gigabit Network Connection\n`;
-      output += `   Physical Address. . . . . . . . . : ${mac.toString()}\n`;
-      output += `   DHCP Enabled. . . . . . . . . . . : No\n`;
-      output += `   Autoconfiguration Enabled . . . . : Yes\n`;
-    }
+    let adapterNum = 0;
+    for (const iface of sortedInterfaces) {
+      const ip = iface.getIPAddress();
+      const mask = iface.getSubnetMask();
+      const mac = iface.getMAC();
+      const ifaceName = iface.getName();
 
-    if (ip) {
-      output += `   IPv4 Address. . . . . . . . . . . : ${ip.toString()}\n`;
-      output += `   Subnet Mask . . . . . . . . . . . : ${mask ? mask.toString() : '255.255.255.0'}\n`;
-    }
+      output += `Ethernet adapter Ethernet${adapterNum}:\n\n`;
 
-    if (gateway) {
-      output += `   Default Gateway . . . . . . . . . : ${gateway.toString()}\n`;
+      output += `   Connection-specific DNS Suffix  . : \n`;
+
+      if (all) {
+        output += `   Description . . . . . . . . . . . : Intel(R) 82574L Gigabit Network Connection #${adapterNum + 1}\n`;
+        output += `   Physical Address. . . . . . . . . : ${mac.toString()}\n`;
+        const isDhcp = this.dhcpEnabled.get(ifaceName) ?? false;
+        output += `   DHCP Enabled. . . . . . . . . . . : ${isDhcp ? 'Yes' : 'No'}\n`;
+        output += `   Autoconfiguration Enabled . . . . : Yes\n`;
+      }
+
+      if (ip) {
+        output += `   IPv4 Address. . . . . . . . . . . : ${ip.toString()}\n`;
+        output += `   Subnet Mask . . . . . . . . . . . : ${mask ? mask.toString() : '255.255.255.0'}\n`;
+      } else {
+        output += `   Media State . . . . . . . . . . . : Media disconnected\n`;
+      }
+
+      // Only show gateway on first interface with an IP
+      if (gateway && adapterNum === 0 && ip) {
+        output += `   Default Gateway . . . . . . . . . : ${gateway.toString()}\n`;
+      }
+
+      // Show DNS servers if all flag is set
+      if (all) {
+        const dns = this.dnsServers.get(ifaceName) || [];
+        if (dns.length > 0) {
+          output += `   DNS Servers . . . . . . . . . . . : ${dns[0]}\n`;
+          for (let i = 1; i < dns.length; i++) {
+            output += `                                       ${dns[i]}\n`;
+          }
+        }
+      }
+
+      output += '\n';
+      adapterNum++;
     }
 
     return output;
@@ -1352,33 +1392,46 @@ To view help for a command, type the command, followed by a space, and then
    * Returns route output
    */
   private getRouteOutput(): string {
-    const gateway = this.getGateway();
-    const iface = this.getInterface('eth0');
+    const interfaces = this.getInterfaces();
 
-    if (!iface) {
+    if (interfaces.length === 0) {
       return 'No network interfaces configured';
     }
 
-    const ip = iface.getIPAddress();
-    const mask = iface.getSubnetMask();
+    const gateway = this.getGateway();
 
     let output = '===========================================================================\n';
     output += 'Interface List\n';
     output += '  1...........................Software Loopback Interface 1\n';
-    output += `  2...${iface.getMAC().toString().replace(/:/g, ' ')} ......Intel(R) 82574L Gigabit Network Connection\n`;
+
+    // List all interfaces
+    const sortedInterfaces = interfaces.sort((a, b) => a.getName().localeCompare(b.getName()));
+    let ifaceIdx = 2;
+    for (const iface of sortedInterfaces) {
+      output += `  ${ifaceIdx}...${iface.getMAC().toString().replace(/:/g, ' ')} ......Intel(R) 82574L Gigabit Network Connection #${ifaceIdx - 1}\n`;
+      ifaceIdx++;
+    }
+
     output += '===========================================================================\n\n';
     output += 'IPv4 Route Table\n';
     output += '===========================================================================\n';
     output += 'Active Routes:\n';
     output += 'Network Destination        Netmask          Gateway       Interface  Metric\n';
 
-    if (ip && mask) {
-      const network = this.getNetwork(ip, mask);
-      output += `${network.padEnd(27)}${mask.toString().padEnd(17)}${ip.toString().padEnd(14)}${ip.toString().padEnd(11)}281\n`;
+    // Add routes for each interface with an IP
+    let primaryIp: string | null = null;
+    for (const iface of sortedInterfaces) {
+      const ip = iface.getIPAddress();
+      const mask = iface.getSubnetMask();
+      if (ip && mask) {
+        if (!primaryIp) primaryIp = ip.toString();
+        const network = this.getNetwork(ip, mask);
+        output += `${network.padEnd(27)}${mask.toString().padEnd(17)}${ip.toString().padEnd(14)}${ip.toString().padEnd(11)}281\n`;
+      }
     }
 
-    if (gateway) {
-      output += `${'0.0.0.0'.padEnd(27)}${'0.0.0.0'.padEnd(17)}${gateway.toString().padEnd(14)}${ip ? ip.toString().padEnd(11) : ''.padEnd(11)}281\n`;
+    if (gateway && primaryIp) {
+      output += `${'0.0.0.0'.padEnd(27)}${'0.0.0.0'.padEnd(17)}${gateway.toString().padEnd(14)}${primaryIp.padEnd(11)}281\n`;
     }
 
     output += '===========================================================================\n';
