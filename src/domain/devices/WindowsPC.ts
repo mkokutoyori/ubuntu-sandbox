@@ -159,9 +159,17 @@ export class WindowsPC extends PC {
       return this.getArpOutput();
     }
 
+    if (cmd === 'ping') {
+      return `\nUsage: ping [-n count] [-l size] [-w timeout] target_name\n\nOptions:\n    -n count       Number of echo requests to send.\n    -l size        Send buffer size.\n    -w timeout     Timeout in milliseconds to wait for each reply.`;
+    }
+
     if (cmd.startsWith('ping ')) {
       const target = command.substring(5).trim();
       return this.executePing(target);
+    }
+
+    if (cmd === 'tracert') {
+      return `\nUsage: tracert [-d] [-h maximum_hops] target_name\n\nOptions:\n    -d                 Do not resolve addresses to hostnames.\n    -h maximum_hops    Maximum number of hops to search for target.`;
     }
 
     if (cmd.startsWith('tracert ')) {
