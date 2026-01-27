@@ -151,6 +151,42 @@ export class WindowsPC extends PC {
       return this.getIpconfigOutput(cmd.includes('/all'));
     }
 
+    if (cmd.startsWith('ipconfig /')) {
+      const validSwitches = ['/all', '/release', '/renew', '/flushdns', '/displaydns', '/registerdns'];
+      const switchArg = cmd.substring(8).trim().toLowerCase();
+      if (!validSwitches.includes(switchArg)) {
+        return `Error: unrecognized or incomplete command line.
+
+USAGE:
+    ipconfig [/allcompartments] [/? | /all |
+                                 /renew [adapter] | /release [adapter] |
+                                 /renew6 [adapter] | /release6 [adapter] |
+                                 /flushdns | /displaydns | /registerdns |
+                                 /showclassid adapter |
+                                 /setclassid adapter [classid] |
+                                 /showclassid6 adapter |
+                                 /setclassid6 adapter [classid] ]`;
+      }
+    }
+
+    if (cmd === 'route' || cmd === 'route help' || cmd === 'route /?') {
+      return `
+Manipulates network routing tables.
+
+ROUTE [-f] [-p] [-4|-6] command [destination]
+                  [MASK netmask]  [gateway] [METRIC metric]  [IF interface]
+
+  command      One of these:
+                 PRINT     Prints  a route
+                 ADD       Adds    a route
+                 DELETE    Deletes a route
+                 CHANGE    Modifies an existing route
+  destination  Specifies the host.
+  MASK         Specifies that the next parameter is the 'netmask' value.
+  netmask      Specifies a subnet mask value for this route entry.
+  gateway      Specifies gateway.`;
+    }
+
     if (cmd === 'route print') {
       return this.getRouteOutput();
     }
@@ -159,13 +195,20 @@ export class WindowsPC extends PC {
       return this.getArpOutput();
     }
 
+    if (cmd.startsWith('arp -') && !cmd.startsWith('arp -a') && !cmd.startsWith('arp -s') && !cmd.startsWith('arp -d')) {
+      const opt = cmd.substring(5, 6);
+      return `
+ARP: bad argument: -${opt}
+The ARP command failed: The parameter is incorrect.`;
+    }
+
     if (cmd === 'ping') {
       return `\nUsage: ping [-n count] [-l size] [-w timeout] target_name\n\nOptions:\n    -n count       Number of echo requests to send.\n    -l size        Send buffer size.\n    -w timeout     Timeout in milliseconds to wait for each reply.`;
     }
 
     if (cmd.startsWith('ping ')) {
-      const target = command.substring(5).trim();
-      return this.executePing(target);
+      const args = command.substring(5).trim();
+      return this.executePing(args);
     }
 
     if (cmd === 'tracert') {
@@ -1476,14 +1519,37 @@ To view help for a command, type the command, followed by a space, and then
 
   /**
    * Executes ping command
+   * Supports: ping [-n count] [-l size] [-w timeout] target
    */
-  private executePing(target: string): string {
+  private executePing(args: string): string {
+    // Parse ping arguments
+    const parts = args.split(/\s+/).filter(p => p);
+    let count = 4; // Default count
+    let targetStr = '';
+
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === '-n' && i + 1 < parts.length) {
+        count = parseInt(parts[i + 1], 10) || 4;
+        i++; // Skip the count value
+      } else if (parts[i] === '-l' && i + 1 < parts.length) {
+        i++; // Skip size value (not used in simulation)
+      } else if (parts[i] === '-w' && i + 1 < parts.length) {
+        i++; // Skip timeout value (not used in simulation)
+      } else if (!parts[i].startsWith('-')) {
+        targetStr = parts[i];
+      }
+    }
+
+    if (!targetStr) {
+      return `\nUsage: ping [-n count] [-l size] [-w timeout] target_name`;
+    }
+
     // Validate IP address
     let targetIP: IPAddress;
     try {
-      targetIP = new IPAddress(target);
+      targetIP = new IPAddress(targetStr);
     } catch (error) {
-      return `Ping request could not find host ${target}. Please check the name and try again.`;
+      return `Ping request could not find host ${targetStr}. Please check the name and try again.`;
     }
 
     // Check if interface is configured
@@ -1500,7 +1566,7 @@ To view help for a command, type the command, followed by a space, and then
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < count; i++) {
       // Create Echo Request with 32 bytes (Windows default)
       const data = Buffer.alloc(32);
       data.fill(0x61); // Fill with 'a' characters (Windows pattern)
@@ -1522,7 +1588,7 @@ To view help for a command, type the command, followed by a space, and then
 
     // Windows-style statistics
     output += `\nPing statistics for ${targetIP.toString()}:\n`;
-    output += `    Packets: Sent = 4, Received = ${successCount}, Lost = ${failCount} (${Math.round((failCount / 4) * 100)}% loss),\n`;
+    output += `    Packets: Sent = ${count}, Received = ${successCount}, Lost = ${failCount} (${Math.round((failCount / count) * 100)}% loss),\n`;
 
     if (successCount > 0) {
       output += `Approximate round trip times in milli-seconds:\n`;
