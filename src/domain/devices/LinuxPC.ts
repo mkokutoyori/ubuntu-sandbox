@@ -24,6 +24,8 @@ import { SubnetMask } from '../network/value-objects/SubnetMask';
 import { MACAddress } from '../network/value-objects/MACAddress';
 import { IPv4Packet } from '../network/entities/IPv4Packet';
 import { EthernetFrame, EtherType } from '../network/entities/EthernetFrame';
+import { DHCPClientService, DHCPClientState, DHCPClientLeaseInfo } from '../network/services/DHCPService';
+import { DHCPPacket, DHCPMessageType } from '../network/entities/DHCPPacket';
 
 /**
  * IPTables rule configuration
@@ -118,6 +120,9 @@ export class LinuxPC extends PC {
   private nmConnections: Map<string, any>;
   private journalLogs: JournalEntry[];
   private bootId: number;
+  private dhcpClient?: DHCPClientService;
+  private dhcpLeaseInfo?: DHCPClientLeaseInfo;
+  private dhcpCallback?: (packet: DHCPPacket) => void;
 
   constructor(config: DeviceConfig) {
     // Create PC with linux-pc type
@@ -449,6 +454,11 @@ export class LinuxPC extends PC {
         return `arp: ${ip}: host name lookup failure`;
       }
       return '';
+    }
+
+    // dhclient command
+    if (cmdLower.startsWith('dhclient') || cmdLower.startsWith('sudo dhclient')) {
+      return this.executeDhclient(cmd);
     }
 
     if (cmd === 'ping') {
@@ -2768,6 +2778,279 @@ supports-priv-flags: no`;
     }
 
     return output;
+  }
+
+  // ============== DHCP Client Methods ==============
+
+  /**
+   * Executes dhclient command
+   * Simulates Linux DHCP client behavior
+   */
+  private executeDhclient(cmd: string): string {
+    const cmdLower = cmd.toLowerCase().replace(/^sudo\s+/, '');
+    const parts = cmdLower.split(/\s+/).filter(p => p);
+
+    // dhclient -h or --help
+    if (parts.includes('-h') || parts.includes('--help')) {
+      return this.getDhclientHelp();
+    }
+
+    // dhclient -r (release)
+    if (parts.includes('-r')) {
+      return this.dhclientRelease(parts);
+    }
+
+    // dhclient -v (verbose) or regular dhclient
+    const verbose = parts.includes('-v');
+    const interfaceName = parts.find(p => !p.startsWith('-') && p !== 'dhclient') || 'eth0';
+
+    return this.dhclientRequest(interfaceName, verbose);
+  }
+
+  /**
+   * Gets dhclient help output
+   */
+  private getDhclientHelp(): string {
+    return `Usage: dhclient [-4|-6] [-SNTPRI] [-nw] [-v] [-q] [-cf config-file]
+                [-sf script-file] [-lf lease-file] [-pf pid-file] [-e VAR=val]
+                [-s server-addr] [-g relay] [-i] [--no-pid] [--version]
+                [-d] [-r] [-x] [-1] [-w] [-B] [-C] [--dad-wait-time seconds]
+                [--detect-unicast] [-timeout seconds] [--no-auth] [interface0 [...]]
+
+Options:
+  -4              Request IPv4 address
+  -6              Request IPv6 address
+  -d              Run in foreground
+  -r              Release current lease
+  -v              Enable verbose output
+  -q              Quiet mode
+  -1              Try once and exit if no lease obtained
+  -nw             Non-interactive mode (don't wait for lease)
+  -x              Stop running dhclient
+  --version       Display version information
+
+Examples:
+  dhclient eth0           Request DHCP lease on eth0
+  dhclient -v eth0        Request lease with verbose output
+  dhclient -r eth0        Release current lease
+  dhclient -r             Release all leases`;
+  }
+
+  /**
+   * Release DHCP lease
+   */
+  private dhclientRelease(parts: string[]): string {
+    const interfaceName = parts.find(p => !p.startsWith('-') && p !== 'dhclient') || 'eth0';
+    const nic = this.getInterface(interfaceName);
+
+    if (!nic) {
+      return `dhclient: interface '${interfaceName}' not found`;
+    }
+
+    if (!this.dhcpLeaseInfo) {
+      return `Internet Systems Consortium DHCP Client 4.4.1
+Copyright 2004-2018 Internet Systems Consortium.
+All rights reserved.
+For info, please visit https://www.isc.org/software/dhcp/
+
+Listening on LPF/${interfaceName}/${nic.getMAC().toString()}
+Sending on   LPF/${interfaceName}/${nic.getMAC().toString()}
+DHCPRELEASE of ${nic.getIPAddress()?.toString() || '0.0.0.0'} on ${interfaceName} to 0.0.0.0 port 67`;
+    }
+
+    // Create and send RELEASE
+    if (this.dhcpClient) {
+      const release = this.dhcpClient.createRelease();
+      if (release && this.dhcpCallback) {
+        this.dhcpCallback(release);
+      }
+      this.dhcpClient.release();
+    }
+
+    const output = `Internet Systems Consortium DHCP Client 4.4.1
+Copyright 2004-2018 Internet Systems Consortium.
+All rights reserved.
+For info, please visit https://www.isc.org/software/dhcp/
+
+Listening on LPF/${interfaceName}/${nic.getMAC().toString()}
+Sending on   LPF/${interfaceName}/${nic.getMAC().toString()}
+DHCPRELEASE of ${this.dhcpLeaseInfo.ipAddress.toString()} on ${interfaceName} to ${this.dhcpLeaseInfo.serverIP.toString()} port 67`;
+
+    // Clear IP configuration
+    this.dhcpLeaseInfo = undefined;
+
+    return output;
+  }
+
+  /**
+   * Request DHCP lease
+   */
+  private dhclientRequest(interfaceName: string, verbose: boolean): string {
+    const nic = this.getInterface(interfaceName);
+
+    if (!nic) {
+      return `dhclient: interface '${interfaceName}' not found`;
+    }
+
+    const mac = nic.getMAC();
+    const hostname = this.getHostname();
+
+    // Initialize DHCP client
+    this.dhcpClient = new DHCPClientService(mac, hostname);
+
+    const output: string[] = [];
+
+    // ISC DHCP Client header
+    output.push('Internet Systems Consortium DHCP Client 4.4.1');
+    output.push('Copyright 2004-2018 Internet Systems Consortium.');
+    output.push('All rights reserved.');
+    output.push('For info, please visit https://www.isc.org/software/dhcp/');
+    output.push('');
+
+    if (verbose) {
+      output.push(`Listening on LPF/${interfaceName}/${mac.toString()}`);
+      output.push(`Sending on   LPF/${interfaceName}/${mac.toString()}`);
+    }
+
+    // Start DHCP discovery
+    this.dhcpClient.startDiscover();
+    const discover = this.dhcpClient.createDiscover();
+
+    output.push(`DHCPDISCOVER on ${interfaceName} to 255.255.255.255 port 67 interval 3`);
+
+    // Send DISCOVER packet via callback
+    if (this.dhcpCallback) {
+      this.dhcpCallback(discover);
+    }
+
+    // Check if we have a pending DHCP response (simulated)
+    // In real implementation, this would be asynchronous
+    if (this.dhcpLeaseInfo) {
+      output.push(`DHCPOFFER of ${this.dhcpLeaseInfo.ipAddress.toString()} from ${this.dhcpLeaseInfo.serverIP.toString()}`);
+      output.push(`DHCPREQUEST for ${this.dhcpLeaseInfo.ipAddress.toString()} on ${interfaceName} to 255.255.255.255 port 67`);
+      output.push(`DHCPACK of ${this.dhcpLeaseInfo.ipAddress.toString()} from ${this.dhcpLeaseInfo.serverIP.toString()}`);
+      output.push(`bound to ${this.dhcpLeaseInfo.ipAddress.toString()} -- renewal in ${Math.floor(this.dhcpLeaseInfo.renewalTime)} seconds.`);
+    } else {
+      // No response - timeout scenario
+      output.push(`DHCPDISCOVER on ${interfaceName} to 255.255.255.255 port 67 interval 6`);
+      output.push(`DHCPDISCOVER on ${interfaceName} to 255.255.255.255 port 67 interval 12`);
+      output.push(`No DHCPOFFERS received.`);
+      output.push(`No working leases in persistent database - sleeping.`);
+    }
+
+    return output.join('\n');
+  }
+
+  /**
+   * Sets DHCP callback for sending packets
+   */
+  public setDHCPCallback(callback: (packet: DHCPPacket) => void): void {
+    this.dhcpCallback = callback;
+  }
+
+  /**
+   * Handles received DHCP packet
+   */
+  public handleDHCPResponse(packet: DHCPPacket): boolean {
+    if (!this.dhcpClient) {
+      return false;
+    }
+
+    const messageType = packet.getMessageType();
+
+    switch (messageType) {
+      case DHCPMessageType.OFFER:
+        if (this.dhcpClient.handleOffer(packet)) {
+          // Auto-send REQUEST
+          const request = this.dhcpClient.createRequest();
+          if (request && this.dhcpCallback) {
+            this.dhcpCallback(request);
+          }
+          return true;
+        }
+        break;
+
+      case DHCPMessageType.ACK:
+        if (this.dhcpClient.handleAck(packet)) {
+          // Apply lease configuration
+          this.dhcpLeaseInfo = this.dhcpClient.getLeaseInfo() ?? undefined;
+          if (this.dhcpLeaseInfo) {
+            this.applyDHCPLease(this.dhcpLeaseInfo);
+          }
+          return true;
+        }
+        break;
+
+      case DHCPMessageType.NAK:
+        this.dhcpClient.handleNak(packet);
+        this.dhcpLeaseInfo = undefined;
+        return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Applies DHCP lease configuration to interface
+   */
+  private applyDHCPLease(lease: DHCPClientLeaseInfo): void {
+    const nic = this.getInterface('eth0');
+    if (!nic) return;
+
+    // Set IP address
+    const mask = new SubnetMask(lease.subnetMask.toString());
+    this.setIPAddress('eth0', lease.ipAddress, mask);
+
+    // Set gateway
+    if (lease.gateway) {
+      this.setGateway(lease.gateway);
+    }
+
+    // Set DNS servers
+    if (lease.dnsServers.length > 0) {
+      this.dnsServers = lease.dnsServers.map(d => d.toString());
+    }
+
+    // Update NetworkManager connection info
+    const conn = this.nmConnections.get('Wired connection 1');
+    if (conn) {
+      conn.ipv4 = {
+        method: 'auto',
+        addresses: [{ address: lease.ipAddress.toString(), prefix: mask.getCIDR() }],
+        gateway: lease.gateway?.toString(),
+        dns: lease.dnsServers.map(d => d.toString())
+      };
+    }
+
+    // Add journal log entry
+    this.addJournalLog('NetworkManager', `<info>  [${Date.now()}] dhcp4 (${nic.getName()}): state changed bound -> bound`, 6);
+  }
+
+  /**
+   * Gets current DHCP lease info
+   */
+  public getDHCPLeaseInfo(): DHCPClientLeaseInfo | undefined {
+    return this.dhcpLeaseInfo;
+  }
+
+  /**
+   * Gets DHCP client state
+   */
+  public getDHCPClientState(): DHCPClientState | undefined {
+    return this.dhcpClient?.getState();
+  }
+
+  /**
+   * Adds a journal log entry
+   */
+  private addJournalLog(unit: string, message: string, priority: number = 6): void {
+    this.journalLogs.push({
+      timestamp: new Date(),
+      priority,
+      unit,
+      message,
+      hostname: this.getHostname()
+    });
   }
 
   /**

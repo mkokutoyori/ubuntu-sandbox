@@ -38,6 +38,8 @@
 import { BaseDevice } from './BaseDevice';
 import { NetworkInterface } from './NetworkInterface';
 import { ARPService, ARPPacket } from '../network/services/ARPService';
+import { DHCPServerService, DHCPServerConfig, DHCPLease } from '../network/services/DHCPService';
+import { DHCPPacket, DHCPMessageType } from '../network/entities/DHCPPacket';
 import { IPAddress } from '../network/value-objects/IPAddress';
 import { SubnetMask } from '../network/value-objects/SubnetMask';
 import { MACAddress } from '../network/value-objects/MACAddress';
@@ -83,11 +85,24 @@ type PacketDropCallback = (reason: string, packet?: IPv4Packet) => void;
 type FrameTransmitCallback = (interfaceName: string, frame: EthernetFrame) => void;
 
 /**
+ * DHCP Server configuration for Router
+ */
+export interface RouterDHCPConfig {
+  interfaceName: string;
+  poolStart: IPAddress;
+  poolEnd: IPAddress;
+  leaseTime?: number; // seconds, default 86400 (24 hours)
+  dnsServers?: IPAddress[];
+  domainName?: string;
+}
+
+/**
  * Router - Layer 3 routing device
  */
 export class Router extends BaseDevice {
   private interfaces: Map<string, NetworkInterface>;
   private arpServices: Map<string, ARPService>;
+  private dhcpServers: Map<string, DHCPServerService>; // per-interface DHCP servers
   private routingTable: Route[];
   private statistics: RouterStatistics;
   private packetForwardCallback?: PacketForwardCallback;
@@ -99,6 +114,7 @@ export class Router extends BaseDevice {
 
     this.interfaces = new Map();
     this.arpServices = new Map();
+    this.dhcpServers = new Map();
     this.routingTable = [];
     this.statistics = {
       packetsForwarded: 0,
@@ -454,6 +470,218 @@ export class Router extends BaseDevice {
     return arpService;
   }
 
+  // ============== DHCP Server Methods ==============
+
+  /**
+   * Enables DHCP server on an interface
+   *
+   * @param config - DHCP server configuration
+   */
+  public enableDHCPServer(config: RouterDHCPConfig): void {
+    const nic = this.interfaces.get(config.interfaceName);
+    if (!nic) {
+      throw new Error(`Interface not found: ${config.interfaceName}`);
+    }
+
+    const nicIP = nic.getIPAddress();
+    const nicMask = nic.getSubnetMask();
+
+    if (!nicIP || !nicMask) {
+      throw new Error(`Interface ${config.interfaceName} must have IP address configured before enabling DHCP`);
+    }
+
+    // Create DHCP server config
+    const serverConfig: DHCPServerConfig = {
+      serverIP: nicIP,
+      poolStart: config.poolStart,
+      poolEnd: config.poolEnd,
+      subnetMask: new IPAddress(nicMask.toString()),
+      gateway: nicIP,
+      dnsServers: config.dnsServers ?? [new IPAddress('8.8.8.8'), new IPAddress('8.8.4.4')],
+      leaseTime: config.leaseTime ?? 86400,
+      domainName: config.domainName
+    };
+
+    const dhcpServer = new DHCPServerService(serverConfig);
+    this.dhcpServers.set(config.interfaceName, dhcpServer);
+  }
+
+  /**
+   * Disables DHCP server on an interface
+   *
+   * @param interfaceName - Interface name
+   */
+  public disableDHCPServer(interfaceName: string): void {
+    this.dhcpServers.delete(interfaceName);
+  }
+
+  /**
+   * Checks if DHCP server is enabled on interface
+   *
+   * @param interfaceName - Interface name
+   * @returns True if DHCP server is enabled
+   */
+  public isDHCPServerEnabled(interfaceName: string): boolean {
+    return this.dhcpServers.has(interfaceName);
+  }
+
+  /**
+   * Gets DHCP server for interface
+   *
+   * @param interfaceName - Interface name
+   * @returns DHCPServerService or undefined
+   */
+  public getDHCPServer(interfaceName: string): DHCPServerService | undefined {
+    return this.dhcpServers.get(interfaceName);
+  }
+
+  /**
+   * Gets all DHCP leases across all interfaces
+   *
+   * @returns Array of leases with interface info
+   */
+  public getAllDHCPLeases(): { interface: string; lease: DHCPLease }[] {
+    const allLeases: { interface: string; lease: DHCPLease }[] = [];
+
+    for (const [ifaceName, dhcpServer] of this.dhcpServers) {
+      for (const lease of dhcpServer.getActiveLeases()) {
+        allLeases.push({ interface: ifaceName, lease });
+      }
+    }
+
+    return allLeases;
+  }
+
+  /**
+   * Adds DHCP reservation
+   *
+   * @param interfaceName - Interface name
+   * @param mac - MAC address
+   * @param ip - Reserved IP address
+   */
+  public addDHCPReservation(interfaceName: string, mac: MACAddress, ip: IPAddress): void {
+    const dhcpServer = this.dhcpServers.get(interfaceName);
+    if (!dhcpServer) {
+      throw new Error(`DHCP server not enabled on interface: ${interfaceName}`);
+    }
+    dhcpServer.addReservation(mac, ip);
+  }
+
+  /**
+   * Removes DHCP reservation
+   *
+   * @param interfaceName - Interface name
+   * @param mac - MAC address
+   */
+  public removeDHCPReservation(interfaceName: string, mac: MACAddress): void {
+    const dhcpServer = this.dhcpServers.get(interfaceName);
+    if (dhcpServer) {
+      dhcpServer.removeReservation(mac);
+    }
+  }
+
+  /**
+   * Handles DHCP packet received on interface
+   *
+   * @param interfaceName - Interface name
+   * @param dhcpPacket - DHCP packet
+   * @returns Response packet or null
+   */
+  public handleDHCPPacket(interfaceName: string, dhcpPacket: DHCPPacket): DHCPPacket | null {
+    const dhcpServer = this.dhcpServers.get(interfaceName);
+    if (!dhcpServer) {
+      return null; // DHCP not enabled on this interface
+    }
+
+    const messageType = dhcpPacket.getMessageType();
+
+    switch (messageType) {
+      case DHCPMessageType.DISCOVER:
+        return dhcpServer.handleDiscover(dhcpPacket);
+
+      case DHCPMessageType.REQUEST:
+        return dhcpServer.handleRequest(dhcpPacket);
+
+      case DHCPMessageType.RELEASE:
+        dhcpServer.handleRelease(dhcpPacket);
+        return null;
+
+      case DHCPMessageType.DECLINE:
+        dhcpServer.handleDecline(dhcpPacket);
+        return null;
+
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Sends DHCP response to client
+   *
+   * @param interfaceName - Interface name
+   * @param response - DHCP response packet
+   * @param clientMAC - Client MAC address
+   */
+  public sendDHCPResponse(interfaceName: string, response: DHCPPacket, clientMAC: MACAddress): void {
+    const nic = this.interfaces.get(interfaceName);
+    if (!nic || !nic.getIPAddress()) {
+      return;
+    }
+
+    // DHCP responses are broadcast or unicast depending on broadcast flag
+    const destMAC = response.isBroadcast() ? MACAddress.BROADCAST : clientMAC;
+    const destIP = response.isBroadcast()
+      ? new IPAddress('255.255.255.255')
+      : (response.getYourIP() ?? new IPAddress('255.255.255.255'));
+
+    // Serialize DHCP packet
+    const dhcpBytes = response.toBytes();
+
+    // Create UDP header (simplified: source port 67, dest port 68)
+    const udpHeader = this.createUDPHeader(67, 68, dhcpBytes.length);
+    const udpPayload = Buffer.concat([udpHeader, dhcpBytes]);
+
+    // Create IP packet
+    const ipPacket = new IPv4Packet({
+      sourceIP: nic.getIPAddress()!,
+      destinationIP: destIP,
+      protocol: 17, // UDP
+      ttl: 64,
+      payload: udpPayload
+    });
+
+    // Create Ethernet frame
+    const packetBytes = ipPacket.toBytes();
+    const paddedPayload = Buffer.concat([
+      packetBytes,
+      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
+    ]);
+
+    const frame = new EthernetFrame({
+      sourceMAC: nic.getMAC(),
+      destinationMAC: destMAC,
+      etherType: EtherType.IPv4,
+      payload: paddedPayload
+    });
+
+    // Transmit frame
+    if (this.frameTransmitCallback) {
+      this.frameTransmitCallback(interfaceName, frame);
+    }
+  }
+
+  /**
+   * Creates simplified UDP header
+   */
+  private createUDPHeader(srcPort: number, dstPort: number, dataLength: number): Buffer {
+    const header = Buffer.alloc(8);
+    header.writeUInt16BE(srcPort, 0);  // Source port
+    header.writeUInt16BE(dstPort, 2);  // Destination port
+    header.writeUInt16BE(8 + dataLength, 4); // Length (header + data)
+    header.writeUInt16BE(0, 6);        // Checksum (0 = not used)
+    return header;
+  }
+
   /**
    * Registers callback for packet forwarding
    *
@@ -496,9 +724,57 @@ export class Router extends BaseDevice {
       const payload = frame.getPayload();
       const packet = IPv4Packet.fromBytes(payload);
 
+      // Check if this is a DHCP packet (UDP, dest port 67)
+      if (packet.getProtocol() === 17) { // UDP
+        const udpPayload = packet.getPayload();
+        if (udpPayload.length >= 8) {
+          const destPort = udpPayload.readUInt16BE(2);
+          if (destPort === 67) {
+            // DHCP server port - handle DHCP request
+            this.handleDHCPFrame(interfaceName, packet, udpPayload, frame.getSourceMAC());
+            return;
+          }
+        }
+      }
+
+      // Check if packet is destined for router itself
+      const nic = this.interfaces.get(interfaceName);
+      if (nic && nic.getIPAddress()?.equals(packet.getDestinationIP())) {
+        // Packet is for us - don't forward
+        return;
+      }
+
       this.forwardPacket(packet, interfaceName);
     } catch (error) {
       // Silently drop malformed packets
+    }
+  }
+
+  /**
+   * Handles DHCP frame
+   */
+  private handleDHCPFrame(
+    interfaceName: string,
+    ipPacket: IPv4Packet,
+    udpPayload: Buffer,
+    clientMAC: MACAddress
+  ): void {
+    try {
+      // Skip UDP header (8 bytes) to get DHCP data
+      const dhcpData = udpPayload.subarray(8);
+
+      if (dhcpData.length < 240) {
+        return; // Too small for DHCP
+      }
+
+      const dhcpPacket = DHCPPacket.fromBytes(dhcpData);
+      const response = this.handleDHCPPacket(interfaceName, dhcpPacket);
+
+      if (response) {
+        this.sendDHCPResponse(interfaceName, response, clientMAC);
+      }
+    } catch (error) {
+      // Silently drop malformed DHCP packets
     }
   }
 

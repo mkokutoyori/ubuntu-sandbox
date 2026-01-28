@@ -21,8 +21,11 @@ import { PC } from './PC';
 import { DeviceConfig, OSType } from './types';
 import { IPAddress } from '../network/value-objects/IPAddress';
 import { SubnetMask } from '../network/value-objects/SubnetMask';
+import { MACAddress } from '../network/value-objects/MACAddress';
 import { IPv4Packet, IPProtocol } from '../network/entities/IPv4Packet';
 import { EthernetFrame, EtherType } from '../network/entities/EthernetFrame';
+import { DHCPClientService, DHCPClientState, DHCPClientLeaseInfo } from '../network/services/DHCPService';
+import { DHCPPacket, DHCPMessageType } from '../network/entities/DHCPPacket';
 
 /**
  * Firewall rule configuration
@@ -49,6 +52,9 @@ export class WindowsPC extends PC {
   private proxyBypass: string | null;
   private wifiProfiles: string[];
   private dhcpEnabled: Map<string, boolean>;
+  private dhcpClient?: DHCPClientService;
+  private dhcpLeaseInfo?: DHCPClientLeaseInfo;
+  private dhcpCallback?: (packet: DHCPPacket) => void;
 
   constructor(config: DeviceConfig) {
     // Create PC with windows-pc type
@@ -151,9 +157,36 @@ export class WindowsPC extends PC {
       return this.getIpconfigOutput(cmd.includes('/all'));
     }
 
+    // ipconfig /release
+    if (cmd === 'ipconfig /release' || cmd.startsWith('ipconfig /release ')) {
+      const adapter = cmd.substring(17).trim() || 'eth0';
+      return this.ipconfigRelease(adapter);
+    }
+
+    // ipconfig /renew
+    if (cmd === 'ipconfig /renew' || cmd.startsWith('ipconfig /renew ')) {
+      const adapter = cmd.substring(15).trim() || 'eth0';
+      return this.ipconfigRenew(adapter);
+    }
+
+    // ipconfig /flushdns
+    if (cmd === 'ipconfig /flushdns') {
+      return `\nWindows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache.`;
+    }
+
+    // ipconfig /displaydns
+    if (cmd === 'ipconfig /displaydns') {
+      return `\nWindows IP Configuration\n\n    No DNS records to display.`;
+    }
+
+    // ipconfig /registerdns
+    if (cmd === 'ipconfig /registerdns') {
+      return `\nWindows IP Configuration\n\nRegistration of the DNS resource records for all adapters of this computer has been initiated. Any errors will be reported in the Event Viewer in 15 minutes.`;
+    }
+
     if (cmd.startsWith('ipconfig /')) {
       const validSwitches = ['/all', '/release', '/renew', '/flushdns', '/displaydns', '/registerdns'];
-      const switchArg = cmd.substring(8).trim().toLowerCase();
+      const switchArg = cmd.substring(8).split(' ')[0].trim().toLowerCase();
       if (!validSwitches.includes(switchArg)) {
         return `Error: unrecognized or incomplete command line.
 
@@ -2669,5 +2702,213 @@ For more information on a specific command, type HELP command-name
    */
   public clearHistory(): void {
     this.commandHistory = [];
+  }
+
+  // ============== DHCP Client Methods ==============
+
+  /**
+   * Executes ipconfig /release
+   */
+  private ipconfigRelease(adapter: string): string {
+    const nic = this.getInterface(adapter);
+
+    if (!nic) {
+      return `\nWindows IP Configuration\n\nNo adapter named "${adapter}" exists.`;
+    }
+
+    const adapterName = this.getAdapterDisplayName(adapter);
+    const output: string[] = [];
+
+    output.push('');
+    output.push('Windows IP Configuration');
+    output.push('');
+
+    if (!this.dhcpEnabled.get(adapter)) {
+      output.push(`An error occurred while releasing interface ${adapterName} : This operation is not allowed on this adapter.`);
+      output.push('DHCP is not enabled on this adapter.');
+      return output.join('\n');
+    }
+
+    // Release current DHCP lease
+    if (this.dhcpClient && this.dhcpLeaseInfo) {
+      const release = this.dhcpClient.createRelease();
+      if (release && this.dhcpCallback) {
+        this.dhcpCallback(release);
+      }
+      this.dhcpClient.release();
+    }
+
+    const currentIP = nic.getIPAddress();
+
+    output.push(`Ethernet adapter ${adapterName}:`);
+    output.push('');
+    output.push(`   Connection-specific DNS Suffix  . :`);
+    output.push(`   Link-local IPv6 Address . . . . . : fe80::1%12`);
+    output.push(`   IPv4 Address. . . . . . . . . . . : ${currentIP?.toString() || '0.0.0.0'}`);
+    output.push(`   Subnet Mask . . . . . . . . . . . : ${nic.getSubnetMask()?.toString() || '0.0.0.0'}`);
+    output.push(`   Default Gateway . . . . . . . . . :`);
+
+    // Clear IP configuration
+    this.dhcpLeaseInfo = undefined;
+
+    return output.join('\n');
+  }
+
+  /**
+   * Executes ipconfig /renew
+   */
+  private ipconfigRenew(adapter: string): string {
+    const nic = this.getInterface(adapter);
+
+    if (!nic) {
+      return `\nWindows IP Configuration\n\nNo adapter named "${adapter}" exists.`;
+    }
+
+    const mac = nic.getMAC();
+    const adapterName = this.getAdapterDisplayName(adapter);
+    const hostname = this.getHostname();
+
+    // Initialize DHCP client
+    this.dhcpClient = new DHCPClientService(mac, hostname);
+    this.dhcpEnabled.set(adapter, true);
+
+    const output: string[] = [];
+
+    output.push('');
+    output.push('Windows IP Configuration');
+    output.push('');
+
+    // Start DHCP discovery
+    this.dhcpClient.startDiscover();
+    const discover = this.dhcpClient.createDiscover();
+
+    // Send DISCOVER packet via callback
+    if (this.dhcpCallback) {
+      this.dhcpCallback(discover);
+    }
+
+    // Check if we have a pending DHCP response (simulated)
+    if (this.dhcpLeaseInfo) {
+      output.push(`Ethernet adapter ${adapterName}:`);
+      output.push('');
+      output.push(`   Connection-specific DNS Suffix  . : ${this.dhcpLeaseInfo.domainName || ''}`);
+      output.push(`   Link-local IPv6 Address . . . . . : fe80::1%12`);
+      output.push(`   IPv4 Address. . . . . . . . . . . : ${this.dhcpLeaseInfo.ipAddress.toString()}`);
+      output.push(`   Subnet Mask . . . . . . . . . . . : ${this.dhcpLeaseInfo.subnetMask.toString()}`);
+      output.push(`   Default Gateway . . . . . . . . . : ${this.dhcpLeaseInfo.gateway?.toString() || ''}`);
+    } else {
+      // No response scenario
+      output.push(`An error occurred while renewing interface ${adapterName} : unable to connect to your DHCP server. Request has timed out.`);
+    }
+
+    return output.join('\n');
+  }
+
+  /**
+   * Gets adapter display name for Windows output
+   */
+  private getAdapterDisplayName(adapter: string): string {
+    if (adapter === 'eth0') {
+      return 'Ethernet';
+    }
+    if (adapter.startsWith('eth')) {
+      return `Ethernet ${adapter.substring(3)}`;
+    }
+    if (adapter.startsWith('wlan')) {
+      return `Wi-Fi ${adapter.substring(4) || ''}`;
+    }
+    return adapter;
+  }
+
+  /**
+   * Sets DHCP callback for sending packets
+   */
+  public setDHCPCallback(callback: (packet: DHCPPacket) => void): void {
+    this.dhcpCallback = callback;
+  }
+
+  /**
+   * Handles received DHCP packet
+   */
+  public handleDHCPResponse(packet: DHCPPacket): boolean {
+    if (!this.dhcpClient) {
+      return false;
+    }
+
+    const messageType = packet.getMessageType();
+
+    switch (messageType) {
+      case DHCPMessageType.OFFER:
+        if (this.dhcpClient.handleOffer(packet)) {
+          // Auto-send REQUEST
+          const request = this.dhcpClient.createRequest();
+          if (request && this.dhcpCallback) {
+            this.dhcpCallback(request);
+          }
+          return true;
+        }
+        break;
+
+      case DHCPMessageType.ACK:
+        if (this.dhcpClient.handleAck(packet)) {
+          // Apply lease configuration
+          this.dhcpLeaseInfo = this.dhcpClient.getLeaseInfo() ?? undefined;
+          if (this.dhcpLeaseInfo) {
+            this.applyDHCPLease(this.dhcpLeaseInfo);
+          }
+          return true;
+        }
+        break;
+
+      case DHCPMessageType.NAK:
+        this.dhcpClient.handleNak(packet);
+        this.dhcpLeaseInfo = undefined;
+        return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Applies DHCP lease configuration to interface
+   */
+  private applyDHCPLease(lease: DHCPClientLeaseInfo): void {
+    const nic = this.getInterface('eth0');
+    if (!nic) return;
+
+    // Set IP address
+    const mask = new SubnetMask(lease.subnetMask.toString());
+    this.setIPAddress('eth0', lease.ipAddress, mask);
+
+    // Set gateway
+    if (lease.gateway) {
+      this.setGateway(lease.gateway);
+    }
+
+    // Set DNS servers
+    if (lease.dnsServers.length > 0) {
+      this.dnsServers.set('eth0', lease.dnsServers.map(d => d.toString()));
+    }
+  }
+
+  /**
+   * Gets current DHCP lease info
+   */
+  public getDHCPLeaseInfo(): DHCPClientLeaseInfo | undefined {
+    return this.dhcpLeaseInfo;
+  }
+
+  /**
+   * Gets DHCP client state
+   */
+  public getDHCPClientState(): DHCPClientState | undefined {
+    return this.dhcpClient?.getState();
+  }
+
+  /**
+   * Checks if DHCP is enabled on adapter
+   */
+  public isDHCPEnabled(adapter: string = 'eth0'): boolean {
+    return this.dhcpEnabled.get(adapter) ?? false;
   }
 }
