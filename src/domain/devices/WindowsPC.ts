@@ -260,8 +260,13 @@ System Type:               x64-based PC`;
     const cmdLower = cmd.toLowerCase();
     const args = cmd.split(/\s+/);
 
+    // Just netsh alone
+    if (cmdLower === 'netsh') {
+      return this.getNetshHelp();
+    }
+
     // netsh help
-    if (cmdLower === 'netsh /?' || cmdLower === 'netsh help' || cmdLower === 'netsh -?') {
+    if (cmdLower === 'netsh /?' || cmdLower === 'netsh help' || cmdLower === 'netsh -?' || cmdLower === 'netsh ?') {
       return this.getNetshHelp();
     }
 
@@ -274,19 +279,19 @@ System Type:               x64-based PC`;
       return this.executeNetshInterfaceIp(cmd);
     }
 
-    if (cmdLower.startsWith('netsh interface ')) {
+    if (cmdLower.startsWith('netsh interface ') || cmdLower === 'netsh interface') {
       return this.executeNetshInterface(cmd);
     }
 
-    if (cmdLower.startsWith('netsh wlan ')) {
+    if (cmdLower.startsWith('netsh wlan ') || cmdLower === 'netsh wlan') {
       return this.executeNetshWlan(cmd);
     }
 
-    if (cmdLower.startsWith('netsh advfirewall ')) {
+    if (cmdLower.startsWith('netsh advfirewall ') || cmdLower === 'netsh advfirewall') {
       return this.executeNetshAdvfirewall(cmd);
     }
 
-    if (cmdLower.startsWith('netsh winhttp ')) {
+    if (cmdLower.startsWith('netsh winhttp ') || cmdLower === 'netsh winhttp') {
       return this.executeNetshWinhttp(cmd);
     }
 
@@ -294,7 +299,9 @@ System Type:               x64-based PC`;
       return this.executeNetshDump();
     }
 
-    return `The following command was not found: ${args.slice(1).join(' ')}`;
+    // Unknown subcontext
+    const context = args[1] || '';
+    return `The following command was not found: ${context}.\n`;
   }
 
   /**
@@ -302,20 +309,44 @@ System Type:               x64-based PC`;
    */
   private getNetshHelp(): string {
     return `
-Usage: netsh [Context] [Command]
+Usage: netsh [-a AliasFile] [-c Context] [-r RemoteMachine] [-u [DomainName\\]UserName] [-p Password | *]
+             [Command | -f ScriptFile]
 
 The following commands are available:
 
 Commands in this context:
 ?              - Displays a list of commands.
+add            - Adds a configuration entry to a list of entries.
+advfirewall    - Changes to the \`netsh advfirewall' context.
+bridge         - Changes to the \`netsh bridge' context.
+delete         - Deletes a configuration entry from a list of entries.
+dhcpclient     - Changes to the \`netsh dhcpclient' context.
+dnsclient      - Changes to the \`netsh dnsclient' context.
 dump           - Displays a configuration script.
+exec           - Runs a script file.
+firewall       - Changes to the \`netsh firewall' context.
 help           - Displays a list of commands.
+http           - Changes to the \`netsh http' context.
+interface      - Changes to the \`netsh interface' context.
+ipsec          - Changes to the \`netsh ipsec' context.
+lan            - Changes to the \`netsh lan' context.
+mbn            - Changes to the \`netsh mbn' context.
+namespace      - Changes to the \`netsh namespace' context.
+netio          - Changes to the \`netsh netio' context.
+p2p            - Changes to the \`netsh p2p' context.
+ras            - Changes to the \`netsh ras' context.
+rpc            - Changes to the \`netsh rpc' context.
+set            - Updates configuration settings.
+show           - Displays information.
+trace          - Changes to the \`netsh trace' context.
+wfp            - Changes to the \`netsh wfp' context.
+winhttp        - Changes to the \`netsh winhttp' context.
+winsock        - Changes to the \`netsh winsock' context.
+wlan           - Changes to the \`netsh wlan' context.
 
 The following sub-contexts are available:
- advfirewall   - Changes to the 'netsh advfirewall' context.
- interface     - Changes to the 'netsh interface' context.
- wlan          - Changes to the 'netsh wlan' context.
- winhttp       - Changes to the 'netsh winhttp' context.
+ advfirewall bridge dhcpclient dnsclient firewall http interface ipsec lan mbn
+ namespace netio p2p ras rpc trace wfp winhttp winsock wlan
 
 To view help for a command, type the command, followed by a space, and then
  type ?.
@@ -338,7 +369,37 @@ To view help for a command, type the command, followed by a space, and then
       return this.netshSetInterface(command);
     }
 
-    return `The following command was not found: ${command.replace(/^netsh\s+/i, '')}`;
+    // netsh interface help or ?
+    if (cmdLower === 'netsh interface' || cmdLower === 'netsh interface ?' || cmdLower === 'netsh interface help') {
+      return `
+The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+6to4           - Changes to the \`netsh interface 6to4' context.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+httpstunnel    - Changes to the \`netsh interface httpstunnel' context.
+ip             - Changes to the \`netsh interface ip' context.
+ipv4           - Changes to the \`netsh interface ipv4' context.
+ipv6           - Changes to the \`netsh interface ipv6' context.
+isatap         - Changes to the \`netsh interface isatap' context.
+portproxy      - Changes to the \`netsh interface portproxy' context.
+set            - Sets configuration information.
+show           - Displays information.
+tcp            - Changes to the \`netsh interface tcp' context.
+teredo         - Changes to the \`netsh interface teredo' context.
+udp            - Changes to the \`netsh interface udp' context.
+
+The following sub-contexts are available:
+ 6to4 httpstunnel ip ipv4 ipv6 isatap portproxy tcp teredo udp
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.
+`;
+    }
+
+    return `The following command was not found: ${command.replace(/^netsh\s+interface\s+/i, '')}.`;
   }
 
   /**
@@ -369,32 +430,76 @@ To view help for a command, type the command, followed by a space, and then
   private netshSetInterface(command: string): string {
     const cmdLower = command.toLowerCase();
 
-    // Extract interface name
-    const nameMatch = command.match(/"([^"]+)"/i);
+    // Extract interface name using various patterns
+    const nameMatch = command.match(/name="([^"]+)"/i) ||
+                      command.match(/"([^"]+)"/i) ||
+                      command.match(/name=(\S+)/i);
+
     if (!nameMatch) {
-      return 'The interface was not found.';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set interface [name=]<string>
+             [[admin=]enabled|disabled]
+             [[connect=]connected|disconnected]
+             [[newname=]<string>]
+
+Parameters:
+
+       Tag            Value
+       name         - Interface name.
+       admin        - Enable or disable the interface.
+       connect      - Connect or disconnect the interface.
+       newname      - New name for the interface.
+
+Remarks: This command is used to change the state of an interface.
+
+Examples:
+
+       set interface name="Local Area Connection" admin=disabled
+       set interface name="Local Area Connection" newname="Connection 1"
+`;
     }
 
     const interfaceName = nameMatch[1];
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
     const iface = this.getInterface(ifaceName);
 
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `The interface with the specified name was not found.\n\nThe filename, directory name, or volume label syntax is incorrect.`;
     }
 
     // Check for enable/disable
-    if (cmdLower.includes('enable') || cmdLower.includes('admin=enabled')) {
+    if (cmdLower.includes('admin=enabled') || cmdLower.includes('enabled')) {
       iface.up();
-      return 'Ok.\n';
+      return '';
     }
 
-    if (cmdLower.includes('disable') || cmdLower.includes('admin=disabled')) {
+    if (cmdLower.includes('admin=disabled') || cmdLower.includes('disabled')) {
       iface.down();
-      return 'Ok.\n';
+      return '';
     }
 
-    return 'Invalid command. Use enable or disable.';
+    // Check for connect/disconnect
+    if (cmdLower.includes('connect=connected')) {
+      iface.up();
+      return '';
+    }
+
+    if (cmdLower.includes('connect=disconnected')) {
+      iface.down();
+      return '';
+    }
+
+    return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set interface [name=]<string>
+             [[admin=]enabled|disabled]
+             [[connect=]connected|disconnected]
+             [[newname=]<string>]
+`;
   }
 
   /**
@@ -614,20 +719,68 @@ To view help for a command, type the command, followed by a space, and then
     const interfaceName = nameMatch?.[1] || altNameMatch?.[1];
 
     if (!interfaceName) {
-      return 'Usage: netsh interface ip set address "Interface" static IP MASK [GATEWAY]\n       netsh interface ip set address "Interface" dhcp';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set address [name=]<string>
+             [[source=]dhcp|static]
+             [[address=]<IPv4 address>[/<integer>] [[mask=]<IPv4 mask>]
+               [[gateway=]<IPv4 address>|none [gwmetric=]<integer>]]
+             [[type=]unicast|anycast]
+             [[subinterface=]<string>]
+             [[store=]active|persistent]
+
+Parameters:
+
+       Tag            Value
+       name         - Interface name or index.
+       source       - One of the following values:
+                      dhcp: Enables DHCP for configuring IP addresses for
+                            the specified interface.
+                      static: Disables DHCP for configuring IP addresses
+                              for the specified interface.
+       address      - IPv4 address optionally followed by the subnet prefix
+                      length.
+       mask         - IP subnet mask for the specified IP address.
+       gateway      - One of the following values:
+                      <IPv4 address>: A specific default gateway for the
+                              static IP address you are setting.
+                      none: No default gateways are set.
+       gwmetric     - Metric for the default gateway.  This field should
+                      only be set when a gateway is specified.
+       type         - One of the following values:
+                      unicast: The address being added is a unicast address.
+                               This is the default value.
+                      anycast: The address being added is an anycast address.
+       subinterface - LUID of subinterface on which to set the address.
+       store        - One of the following values:
+                      active: Set only lasts until next boot.
+                      persistent: Set is persistent.  This is the default.
+
+Remarks: Changes the IP address configuration to either DHCP mode or static
+         mode.  If static mode is enabled, then the IP address and, optionally,
+         the IP subnet mask can be supplied.  If gateway is supplied, then
+         gateway metric should also be supplied.
+
+Examples:
+
+       set address name="Local Area Connection" source=dhcp
+       set address "Local Area Connection" static 10.0.0.9 255.0.0.0 10.0.0.1 1
+`;
     }
 
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
     const iface = this.getInterface(ifaceName);
 
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `Interface ${interfaceName} was not found.\n\nThe system cannot find the file specified.`;
     }
 
     // DHCP mode
     if (cmdLower.includes('dhcp') || cmdLower.includes('source=dhcp')) {
       this.dhcpEnabled.set(ifaceName, true);
-      return 'Ok.\n';
+      return '';
     }
 
     // Static mode - try different patterns
@@ -635,7 +788,7 @@ To view help for a command, type the command, followed by a space, and then
     const staticMatch = command.match(/static\s+(\S+)\s+(\S+)(?:\s+(\S+))?/i);
 
     // Pattern 2: netsh interface ip set address name="Ethernet0" source=static addr=IP mask=MASK
-    const altMatch = command.match(/addr=([^\s=]+)\s+mask=([^\s=]+)/i);
+    const altMatch = command.match(/addr(?:ess)?=([^\s=]+)\s+mask=([^\s=]+)/i);
 
     let ipStr: string | undefined;
     let maskStr: string | undefined;
@@ -654,7 +807,13 @@ To view help for a command, type the command, followed by a space, and then
     }
 
     if (!ipStr || !maskStr) {
-      return 'Usage: netsh interface ip set address "Interface" static IP MASK [GATEWAY]';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set address [name=]<string> [[source=]dhcp|static]
+             [[address=]<IPv4 address> [[mask=]<IPv4 mask>]
+               [[gateway=]<IPv4 address>|none]]
+`;
     }
 
     // Validate IP
@@ -662,7 +821,7 @@ To view help for a command, type the command, followed by a space, and then
     try {
       ip = new IPAddress(ipStr);
     } catch (e) {
-      return `The IP address "${ipStr}" is not valid. Error: Invalid IP address format.`;
+      return `The IPv4 address ${ipStr} is not valid.\n\nThe parameter is incorrect.`;
     }
 
     // Validate mask
@@ -670,7 +829,7 @@ To view help for a command, type the command, followed by a space, and then
     try {
       mask = new SubnetMask(maskStr);
     } catch (e) {
-      return `The subnet mask "${maskStr}" is not valid. Error: Invalid subnet mask format.`;
+      return `The IPv4 netmask ${maskStr} is not valid.\n\nThe parameter is incorrect.`;
     }
 
     // Configure interface
@@ -679,16 +838,16 @@ To view help for a command, type the command, followed by a space, and then
     iface.up();
 
     // Configure gateway if provided
-    if (gatewayStr) {
+    if (gatewayStr && gatewayStr.toLowerCase() !== 'none') {
       try {
         const gateway = new IPAddress(gatewayStr);
         this.setGateway(gateway);
       } catch (e) {
-        return `The gateway "${gatewayStr}" is not valid.`;
+        return `The default gateway ${gatewayStr} is not valid.\n\nThe parameter is incorrect.`;
       }
     }
 
-    return 'Ok.\n';
+    return '';
   }
 
   /**
@@ -700,36 +859,84 @@ To view help for a command, type the command, followed by a space, and then
     // Extract interface name
     const nameMatch = command.match(/"([^"]+)"/i);
     const interfaceName = nameMatch?.[1] || 'Ethernet0';
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
 
     const iface = this.getInterface(ifaceName);
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `Interface ${interfaceName} was not found.\n\nThe system cannot find the file specified.`;
     }
 
     // DHCP mode
     if (cmdLower.includes('dhcp') || cmdLower.includes('source=dhcp')) {
       this.dnsServers.set(ifaceName, []);
-      return 'Ok.\n';
+      return '';
     }
 
-    // Static DNS
-    const dnsMatch = command.match(/static\s+(\S+)/i);
+    // Static DNS - try different patterns
+    const dnsMatch = command.match(/static\s+(\S+)/i) ||
+                     command.match(/address=(\S+)/i) ||
+                     command.match(/addr=(\S+)/i);
+
     if (!dnsMatch) {
-      return 'Usage: netsh interface ip set dns "Interface" static DNS_IP';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set dnsservers [name=]<string> [source=]dhcp|static
+             [[address=]<IP address>|none]
+             [[register=]none|primary|both]
+             [[validate=]yes|no]
+
+Parameters:
+
+       Tag            Value
+       name         - Interface name or index.
+       source       - One of the following values:
+                      dhcp: Sets DHCP as the source for configuring DNS
+                            servers for the specified interface.
+                      static: Sets the source for configuring DNS servers
+                              to local static configuration.
+       address      - One of the following values:
+                      <IP address>: An IP address for a DNS server.
+                      none: Clears the list of DNS servers.
+       register     - One of the following values:
+                      none: Disables Dynamic DNS registration.
+                      primary: Register under the primary DNS suffix only.
+                      both: Register under both the primary DNS suffix, as
+                            well as under the connection-specific suffix.
+       validate     - Specifies whether validation of the DNS server
+                      setting will be performed. The value is yes by
+                      default.
+
+Remarks: Sets DNS server configuration to either DHCP or static mode.  Only
+         when source is "static", is the "address" option also available for
+         configuring a static list of DNS server IP addresses for the
+         specified interface.
+
+Examples:
+
+       set dnsservers name="Local Area Connection" source=dhcp
+       set dnsservers "Local Area Connection" static 10.0.0.1 primary
+`;
     }
 
     const dnsStr = dnsMatch[1];
+
+    // Handle 'none' to clear DNS
+    if (dnsStr.toLowerCase() === 'none') {
+      this.dnsServers.set(ifaceName, []);
+      return '';
+    }
 
     // Validate DNS IP
     try {
       new IPAddress(dnsStr);
     } catch (e) {
-      return `The DNS server address "${dnsStr}" is not valid.`;
+      return `The DNS server address ${dnsStr} is not valid.\n\nThe parameter is incorrect.`;
     }
 
     this.dnsServers.set(ifaceName, [dnsStr]);
-    return 'Ok.\n';
+    return '';
   }
 
   /**
@@ -739,33 +946,89 @@ To view help for a command, type the command, followed by a space, and then
     // Extract interface name
     const nameMatch = command.match(/"([^"]+)"/i);
     const interfaceName = nameMatch?.[1] || 'Ethernet0';
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
 
     const iface = this.getInterface(ifaceName);
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `Interface ${interfaceName} was not found.\n\nThe system cannot find the file specified.`;
     }
 
-    // Extract DNS IP
-    const parts = command.split(/\s+/);
-    const dnsIp = parts.find(p => {
-      try {
-        new IPAddress(p);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    // Extract DNS IP - try address= pattern first, then fall back to finding IP
+    const addrMatch = command.match(/address=(\S+)/i) || command.match(/addr=(\S+)/i);
+    let dnsIp: string | undefined;
+
+    if (addrMatch) {
+      dnsIp = addrMatch[1];
+    } else {
+      // Fall back to finding an IP address in the command
+      const parts = command.split(/\s+/);
+      dnsIp = parts.find(p => {
+        try {
+          new IPAddress(p);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+    }
 
     if (!dnsIp) {
-      return 'Usage: netsh interface ip add dns "Interface" DNS_IP';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: add dnsservers [name=]<string> [address=]<IPv4 address>
+             [[index=]<integer>] [[validate=]yes|no]
+
+Parameters:
+
+       Tag            Value
+       name         - Interface name or index.
+       address      - IPv4 address of the DNS server to be added.
+       index        - Specifies the index (preference) for the specified
+                      DNS server address.
+       validate     - Specifies whether validation of the DNS server
+                      setting will be performed. The value is yes by
+                      default.
+
+Remarks: Adds a new DNS server IP address to the statically-configured list.
+         By default, the DNS server is added to the end of the list.  If an
+         index is specified, the DNS server will be placed in that position
+         in the list, with other servers being moved down to make room.
+         If DNS servers were previously obtained through DHCP, the new
+         address will replace the old list.
+
+Examples:
+
+       add dnsservers "Local Area Connection" 10.0.0.1
+       add dnsservers "Local Area Connection" 10.0.0.3 index=2
+`;
+    }
+
+    // Validate DNS IP
+    try {
+      new IPAddress(dnsIp);
+    } catch {
+      return `The DNS server address ${dnsIp} is not valid.\n\nThe parameter is incorrect.`;
     }
 
     const existing = this.dnsServers.get(ifaceName) || [];
-    existing.push(dnsIp);
-    this.dnsServers.set(ifaceName, existing);
 
-    return 'Ok.\n';
+    // Check for index parameter
+    const indexMatch = command.match(/index=(\d+)/i);
+    if (indexMatch) {
+      const index = parseInt(indexMatch[1], 10) - 1; // Convert to 0-based
+      if (index >= 0 && index <= existing.length) {
+        existing.splice(index, 0, dnsIp);
+      } else {
+        existing.push(dnsIp);
+      }
+    } else {
+      existing.push(dnsIp);
+    }
+
+    this.dnsServers.set(ifaceName, existing);
+    return '';
   }
 
   /**
@@ -777,37 +1040,73 @@ To view help for a command, type the command, followed by a space, and then
     // Extract interface name
     const nameMatch = command.match(/"([^"]+)"/i);
     const interfaceName = nameMatch?.[1] || 'Ethernet0';
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
 
     const iface = this.getInterface(ifaceName);
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `Interface ${interfaceName} was not found.\n\nThe system cannot find the file specified.`;
     }
 
     // Delete all
-    if (cmdLower.includes('all')) {
+    if (cmdLower.includes('all') || cmdLower.includes('address=all')) {
       this.dnsServers.set(ifaceName, []);
-      return 'Ok.\n';
+      return '';
     }
 
-    // Delete specific
-    const parts = command.split(/\s+/);
-    const dnsIp = parts.find(p => {
-      try {
-        new IPAddress(p);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    // Delete specific - try address= pattern first
+    const addrMatch = command.match(/address=(\S+)/i) || command.match(/addr=(\S+)/i);
+    let dnsIp: string | undefined;
 
-    if (dnsIp) {
-      const existing = this.dnsServers.get(ifaceName) || [];
-      const filtered = existing.filter(d => d !== dnsIp);
-      this.dnsServers.set(ifaceName, filtered);
+    if (addrMatch) {
+      dnsIp = addrMatch[1];
+    } else {
+      const parts = command.split(/\s+/);
+      dnsIp = parts.find(p => {
+        try {
+          new IPAddress(p);
+          return true;
+        } catch {
+          return false;
+        }
+      });
     }
 
-    return 'Ok.\n';
+    if (!dnsIp) {
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: delete dnsservers [name=]<string> [[address=]<IP address>|all]
+
+Parameters:
+
+       Tag            Value
+       name         - Interface name or index.
+       address      - One of the following values:
+                      <IP address>: A specific IP address of a DNS server
+                              you are deleting.
+                      all: Deletes all configured IP addresses for DNS
+                           servers.
+
+Remarks: Deletes statically-configured DNS server IP addresses for a
+         specified interface.
+
+Examples:
+
+       delete dnsservers "Local Area Connection" all
+       delete dnsservers "Local Area Connection" 10.0.0.1
+`;
+    }
+
+    const existing = this.dnsServers.get(ifaceName) || [];
+    const filtered = existing.filter(d => d !== dnsIp);
+
+    if (filtered.length === existing.length) {
+      return `DNS server ${dnsIp} was not found on interface ${interfaceName}.\n\nElement not found.`;
+    }
+
+    this.dnsServers.set(ifaceName, filtered);
+    return '';
   }
 
   /**
@@ -817,15 +1116,71 @@ To view help for a command, type the command, followed by a space, and then
     // Extract interface name
     const nameMatch = command.match(/"([^"]+)"/i);
     const interfaceName = nameMatch?.[1] || 'Ethernet0';
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
 
     const iface = this.getInterface(ifaceName);
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `Interface ${interfaceName} was not found.\n\nThe system cannot find the file specified.`;
+    }
+
+    // Extract address
+    const addrMatch = command.match(/address=(\S+)/i) || command.match(/addr=(\S+)/i);
+    if (!addrMatch) {
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: add address [name=]<string> [[address=]<IPv4 address>[/<integer>]
+             [[mask=]<IPv4 mask>]  [gateway=]<IPv4 address>|none
+             [gwmetric=]<integer>] [[type=]unicast|anycast]
+             [[subinterface=]<string>]
+             [[validlifetime=]<integer>|infinite]
+             [[preferredlifetime=]<integer>|infinite]
+             [[store=]active|persistent]
+
+Parameters:
+
+       Tag              Value
+       name           - Interface name or index.
+       address        - IPv4 address to add.
+       mask           - Subnet mask for the IPv4 address being added.
+       gateway        - One of the following values:
+                        <IPv4 address>: A specific gateway for the
+                                address being added.
+                        none: No gateway is set.
+       gwmetric       - Gateway metric.  Should only be specified when
+                        gateway is specified.
+       type           - One of the following values:
+                        unicast: The address being added is a unicast
+                                 address.  This is the default value.
+                        anycast: The address being added is an anycast
+                                 address.
+       subinterface   - Subinterface LUID for the address.
+       validlifetime  - Lifetime over which the address is valid.
+                        The default value is infinite.
+       preferredlifetime - Lifetime over which the address is preferred.
+                        The default value is infinite.
+       store          - One of the following values:
+                        active: Set only lasts until next boot.
+                        persistent: Set is persistent. This is the default.
+
+Examples:
+
+       add address "Local Area Connection" 10.0.0.2 255.0.0.0
+       add address "Local Area Connection" gateway=10.0.0.1 gwmetric=0
+`;
+    }
+
+    // Validate IP address
+    const ipStr = addrMatch[1].split('/')[0]; // Handle CIDR notation
+    try {
+      new IPAddress(ipStr);
+    } catch {
+      return `The IPv4 address ${ipStr} is not valid.\n\nThe parameter is incorrect.`;
     }
 
     // For now, just acknowledge (multi-IP support would require more infrastructure)
-    return 'Ok.\n';
+    return '';
   }
 
   /**
@@ -835,15 +1190,48 @@ To view help for a command, type the command, followed by a space, and then
     // Extract interface name
     const nameMatch = command.match(/"([^"]+)"/i);
     const interfaceName = nameMatch?.[1] || 'Ethernet0';
-    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' : interfaceName;
+    const ifaceName = interfaceName.toLowerCase() === 'ethernet0' ? 'eth0' :
+                      interfaceName.toLowerCase() === 'local area connection' ? 'eth0' : interfaceName;
 
     const iface = this.getInterface(ifaceName);
     if (!iface) {
-      return `The interface "${interfaceName}" was not found.`;
+      return `Interface ${interfaceName} was not found.\n\nThe system cannot find the file specified.`;
+    }
+
+    // Extract address
+    const addrMatch = command.match(/address=(\S+)/i) || command.match(/addr=(\S+)/i);
+    if (!addrMatch) {
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: delete address [name=]<string> [[address=]<IPv4 address>]
+             [[gateway=]<IPv4 address>|all]
+             [[store=]active|persistent]
+
+Parameters:
+
+       Tag            Value
+       name         - Interface name or index.
+       address      - IPv4 address to delete.
+       gateway      - One of the following values:
+                      <IPv4 address>: A specific gateway to delete.
+                      all: Deletes all gateways.
+       store        - One of the following values:
+                      active: Deletion only lasts until next boot.
+                      persistent: Deletion is persistent.  This is the
+                              default.
+
+Remarks: Deletes an IP address from an interface.
+
+Examples:
+
+       delete address "Local Area Connection" 10.0.0.1
+       delete address "Local Area Connection" gateway=all
+`;
     }
 
     // Acknowledge the delete
-    return 'Ok.\n';
+    return '';
   }
 
   /**
@@ -851,6 +1239,33 @@ To view help for a command, type the command, followed by a space, and then
    */
   private executeNetshWlan(command: string): string {
     const cmdLower = command.toLowerCase();
+
+    // Help for wlan context
+    if (cmdLower === 'netsh wlan' || cmdLower === 'netsh wlan ?' || cmdLower === 'netsh wlan help') {
+      return `
+The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+connect        - Connects to a wireless network.
+delete         - Deletes a configuration entry from a table.
+disconnect     - Disconnects from a wireless network.
+dump           - Displays a configuration script.
+export         - Saves WLAN profiles to XML files.
+help           - Displays a list of commands.
+IHV            - Commands for IHV logging.
+refresh        - Refresh hosted network settings.
+reportissues   - Generate WLAN smart trace report.
+set            - Sets configuration information.
+show           - Displays information.
+start          - Start hosted network.
+stop           - Stop hosted network.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.
+`;
+    }
 
     if (cmdLower.includes('show profiles')) {
       return this.netshWlanShowProfiles();
@@ -880,7 +1295,38 @@ To view help for a command, type the command, followed by a space, and then
       return this.netshWlanShowDrivers();
     }
 
-    return 'Usage: netsh wlan [show profiles|show interfaces|show networks|connect|disconnect]';
+    if (cmdLower.includes('delete profile')) {
+      const nameMatch = command.match(/name="?([^"\s]+)"?/i);
+      if (!nameMatch) {
+        return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: delete profile [name=]<string> [[interface=]<string>]
+
+Parameters:
+
+       Tag            Value
+       name         - Name of the WLAN profile to delete.
+       interface    - Name of the interface on which the profile is to be
+                      deleted. If the interface name is not specified,
+                      the profile will be deleted on all interfaces.
+
+Examples:
+
+       delete profile name="SimpleProfile"
+       delete profile name="SimpleProfile" interface="Wireless Network Connection"
+`;
+      }
+      const profileName = nameMatch[1];
+      const idx = this.wifiProfiles.indexOf(profileName);
+      if (idx === -1) {
+        return `Profile "${profileName}" is not found on any interface.\n`;
+      }
+      this.wifiProfiles.splice(idx, 1);
+      return `Profile "${profileName}" is deleted from interface "Wi-Fi".\n`;
+    }
+
+    return `The following command was not found: ${command.replace(/^netsh\s+wlan\s+/i, '')}.`;
   }
 
   /**
@@ -1074,10 +1520,37 @@ To view help for a command, type the command, followed by a space, and then
     if (cmdLower.includes('reset')) {
       this.firewallRules = this.getDefaultFirewallRules();
       this.firewallEnabled = true;
-      return 'Ok.\n';
+      return 'Resetting to the default firewall policy might result in loss of\nremote connectivity to this machine. Continue? (Y/N)\nOk.\n';
     }
 
-    return 'Usage: netsh advfirewall [show currentprofile|show allprofiles|set|firewall|reset]';
+    // Help for advfirewall context
+    if (cmdLower === 'netsh advfirewall' || cmdLower === 'netsh advfirewall ?' || cmdLower === 'netsh advfirewall help') {
+      return `
+The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+consec         - Changes to the \`netsh advfirewall consec' context.
+dump           - Displays a configuration script.
+export         - Exports the current policy to a file.
+firewall       - Changes to the \`netsh advfirewall firewall' context.
+help           - Displays a list of commands.
+import         - Imports a policy file into the current policy store.
+mainmode       - Changes to the \`netsh advfirewall mainmode' context.
+monitor        - Changes to the \`netsh advfirewall monitor' context.
+reset          - Resets the policy to the default out-of-box policy.
+set            - Sets the per-profile or global settings.
+show           - Displays profile or global properties.
+
+The following sub-contexts are available:
+ consec firewall mainmode monitor
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.
+`;
+    }
+
+    return `The following command was not found: ${command.replace(/^netsh\s+advfirewall\s+/i, '')}.`;
   }
 
   /**
@@ -1206,20 +1679,129 @@ To view help for a command, type the command, followed by a space, and then
     const actionMatch = command.match(/action=(\w+)/i);
     const protocolMatch = command.match(/protocol=(\w+)/i);
     const portMatch = command.match(/localport=(\w+)/i);
+    const remotePortMatch = command.match(/remoteport=(\w+)/i);
     const programMatch = command.match(/program="([^"]+)"/i);
+    const profileMatch = command.match(/profile=(\w+)/i);
+    const enableMatch = command.match(/enable=(\w+)/i);
+    const localipMatch = command.match(/localip=(\S+)/i);
+    const remoteipMatch = command.match(/remoteip=(\S+)/i);
 
-    if (!nameMatch || !dirMatch || !actionMatch) {
-      return 'Usage: netsh advfirewall firewall add rule name="NAME" dir=in|out action=allow|block [protocol=TCP|UDP] [localport=PORT]';
+    if (!nameMatch) {
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: add rule name=<string>
+      dir=in|out
+      action=allow|block|bypass
+      [program=<program path>]
+      [service=<service short name>|any]
+      [description=<string>]
+      [enable=yes|no (default=yes)]
+      [profile=public|private|domain|any[,...]]
+      [localip=any|<IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [remoteip=any|localsubnet|dns|dhcp|wins|defaultgateway|
+         <IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [localport=0-65535|<port range>[,...]|RPC|RPC-EPMap|IPHTTPS|any (default=any)]
+      [remoteport=0-65535|<port range>[,...]|any (default=any)]
+      [protocol=0-255|icmpv4|icmpv6|icmpv4:type,code|icmpv6:type,code|
+         tcp|udp|any (default=any)]
+      [interfacetype=wireless|lan|ras|any]
+      [rmtcomputergrp=<SDDL string>]
+      [rmtusrgrp=<SDDL string>]
+      [edge=yes|deferapp|deferuser|no (default=no)]
+      [security=authenticate|authenc|authdynenc|authnoencap|notrequired
+         (default=notrequired)]
+
+Remarks:
+
+      - Add a new inbound or outbound rule to the firewall policy.
+      - Rule name should be unique and cannot be "all".
+      - If a remote computer or user group is specified, security must be
+        authenticate, authenc, authdynenc, or authnoencap.
+      - Setting security to authdynenc allows systems to dynamically
+        negotiate the use of encryption for traffic that matches
+        a given Windows Firewall rule. Encryption is negotiated based on
+        existing connection security rule properties. This option
+        enables the ability of a machine to accept the first TCP
+        or UDP packet of an inbound IPsec connection as long as
+        it is secured, but not encrypted, using IPsec.
+        Once the first packet is processed, the server will
+        re-negotiate the connection and upgrade it so that
+        all subsequent communications are fully encrypted.
+      - If action=bypass, the remote computer group must be specified when dir=in.
+      - If service=any, the rule applies to services only.
+      - ICMP type or code can be "any".
+      - Edge can only be specified for inbound rules.
+
+Examples:
+
+      Add an inbound rule with no encapsulation for messenger.exe:
+      netsh advfirewall firewall add rule name="allow messenger"
+      dir=in program="c:\\programfiles\\messenger\\msmsgs.exe"
+      action=allow
+
+      Add an outbound rule for port 80:
+      netsh advfirewall firewall add rule name="allow80"
+      protocol=TCP dir=out localport=80 action=block
+
+      Add an inbound rule requiring security and encryption
+      for TCP port 80 traffic:
+      netsh advfirewall firewall add rule name="Require Encryption for Inbound TCP/80"
+      protocol=TCP dir=in localport=80 security=authdynenc action=allow
+
+      Add an inbound rule for messenger.exe and require security
+      netsh advfirewall firewall add rule name="allow messenger"
+      dir=in program="c:\\program files\\messenger\\msmsgs.exe"
+      security=authenticate action=allow
+
+      Add an authenticated firewall bypass rule for group
+      acmedomain\\scanners identified by a SDDL string:
+      netsh advfirewall firewall add rule name="allow scanners"
+      dir=in rmtcomputergrp=<SDDL string> action=bypass
+      security=authenticate
+
+      Add an outbound allow rule for local ports 5000-5010 for udp-
+      Add rule name="Allow port range" dir=out protocol=udp localport=5000-5010 action=allow
+`;
+    }
+
+    if (!dirMatch) {
+      return `Required option 'dir' is missing.\n`;
+    }
+
+    if (!actionMatch) {
+      return `Required option 'action' is missing.\n`;
+    }
+
+    // Validate direction
+    const dir = dirMatch[1].toLowerCase();
+    if (dir !== 'in' && dir !== 'out') {
+      return `The value specified for 'dir' is invalid. It must be either in or out.\n`;
+    }
+
+    // Validate action
+    const action = actionMatch[1].toLowerCase();
+    if (action !== 'allow' && action !== 'block' && action !== 'bypass') {
+      return `The value specified for 'action' is invalid. It must be allow, block, or bypass.\n`;
+    }
+
+    // Validate protocol if specified
+    if (protocolMatch) {
+      const protocol = protocolMatch[1].toLowerCase();
+      const validProtocols = ['tcp', 'udp', 'icmpv4', 'icmpv6', 'any'];
+      if (!validProtocols.includes(protocol) && !/^\d+$/.test(protocol)) {
+        return `The value specified for 'protocol' is invalid. Specify a valid protocol.\n`;
+      }
     }
 
     const rule: FirewallRule = {
       name: nameMatch[1],
-      dir: dirMatch[1].toLowerCase() as 'in' | 'out',
-      action: actionMatch[1].toLowerCase() as 'allow' | 'block',
-      protocol: protocolMatch?.[1],
+      dir: dir as 'in' | 'out',
+      action: action as 'allow' | 'block',
+      protocol: protocolMatch?.[1]?.toUpperCase(),
       localport: portMatch?.[1],
       program: programMatch?.[1],
-      enabled: true,
+      enabled: enableMatch ? enableMatch[1].toLowerCase() !== 'no' : true,
     };
 
     this.firewallRules.push(rule);
@@ -1231,20 +1813,75 @@ To view help for a command, type the command, followed by a space, and then
    */
   private netshFirewallDeleteRule(command: string): string {
     const nameMatch = command.match(/name="([^"]+)"/i);
+    const dirMatch = command.match(/dir=(\w+)/i);
+    const protocolMatch = command.match(/protocol=(\w+)/i);
 
     if (!nameMatch) {
-      return 'Usage: netsh advfirewall firewall delete rule name="RULE_NAME"';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: delete rule name=<string>
+      [dir=in|out]
+      [profile=public|private|domain|any[,...]]
+      [program=<program path>]
+      [service=<service short name>|any]
+      [localip=any|<IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [remoteip=any|localsubnet|dns|dhcp|wins|defaultgateway|
+         <IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [localport=0-65535|<port range>[,...]|RPC|RPC-EPMap|any]
+      [remoteport=0-65535|<port range>[,...]|any]
+      [protocol=0-255|icmpv4|icmpv6|icmpv4:type,code|icmpv6:type,code|
+         tcp|udp|any]
+
+Remarks:
+
+      - Deletes a rule identified by rule name and optionally by endpoint,
+        port, and protocol.
+      - If multiple matches are found, all matching rules are deleted.
+      - If name=all is specified, all rules are deleted from the
+        specified type and profile.
+
+Examples:
+
+      Delete all rules for local port 80:
+      netsh advfirewall firewall delete rule name=all protocol=tcp localport=80
+
+      Delete a rule named "allow80":
+      netsh advfirewall firewall delete rule name="allow80"
+`;
     }
 
     const ruleName = nameMatch[1];
-    const initialLength = this.firewallRules.length;
-    this.firewallRules = this.firewallRules.filter(r => r.name !== ruleName);
+    let rulesToDelete = this.firewallRules;
 
-    if (this.firewallRules.length === initialLength) {
-      return `Rule not found. No rules match the specified criteria.\n`;
+    // Handle name=all case
+    if (ruleName.toLowerCase() === 'all') {
+      // Filter by additional criteria if provided
+      if (dirMatch) {
+        rulesToDelete = rulesToDelete.filter(r => r.dir === dirMatch[1].toLowerCase());
+      }
+      if (protocolMatch) {
+        rulesToDelete = rulesToDelete.filter(r => r.protocol?.toLowerCase() === protocolMatch[1].toLowerCase());
+      }
+
+      const count = rulesToDelete.length;
+      this.firewallRules = this.firewallRules.filter(r => !rulesToDelete.includes(r));
+
+      if (count === 0) {
+        return 'No rules match the specified criteria.\n';
+      }
+      return `Deleted ${count} rule(s).\nOk.\n`;
     }
 
-    return 'Deleted 1 rule(s).\nOk.\n';
+    // Find rules by name
+    const matchingRules = this.firewallRules.filter(r => r.name === ruleName);
+
+    if (matchingRules.length === 0) {
+      return 'No rules match the specified criteria.\n';
+    }
+
+    this.firewallRules = this.firewallRules.filter(r => r.name !== ruleName);
+    return `Deleted ${matchingRules.length} rule(s).\nOk.\n`;
   }
 
   /**
@@ -1252,22 +1889,126 @@ To view help for a command, type the command, followed by a space, and then
    */
   private netshFirewallSetRule(command: string): string {
     const nameMatch = command.match(/name="([^"]+)"/i);
+    const cmdLower = command.toLowerCase();
 
     if (!nameMatch) {
-      return 'Usage: netsh advfirewall firewall set rule name="RULE_NAME" new [enable=yes|no]';
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set rule
+      group=<string> | name=<string>
+      [dir=in|out]
+      [profile=public|private|domain|any[,...]]
+      [program=<program path>]
+      [service=<service short name>|any]
+      [localip=any|<IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [remoteip=any|localsubnet|dns|dhcp|wins|defaultgateway|
+         <IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [localport=0-65535|RPC|RPC-EPMap|any[,...]]
+      [remoteport=0-65535|any[,...]]
+      [protocol=0-255|icmpv4|icmpv6|icmpv4:type,code|icmpv6:type,code|
+         tcp|udp|any]
+      new
+      [name=<string>]
+      [dir=in|out]
+      [program=<program path>
+      [service=<service short name>|any]
+      [action=allow|block|bypass]
+      [description=<string>]
+      [enable=yes|no]
+      [profile=public|private|domain|any[,...]]
+      [localip=any|<IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [remoteip=any|localsubnet|dns|dhcp|wins|defaultgateway|
+         <IPv4 address>|<IPv6 address>|<subnet>|<range>|<list>]
+      [localport=0-65535|RPC|RPC-EPMap|any[,...]]
+      [remoteport=0-65535|any[,...]]
+      [protocol=0-255|icmpv4|icmpv6|icmpv4:type,code|icmpv6:type,code|
+         tcp|udp|any]
+      [interfacetype=wireless|lan|ras|any]
+      [rmtcomputergrp=<SDDL string>]
+      [rmtusrgrp=<SDDL string>]
+      [edge=yes|deferapp|deferuser|no (default=no)]
+      [security=authenticate|authenc|authdynenc|authnoencap|notrequired]
+
+Remarks:
+
+      - Sets a new value for a given property on an identified rule.
+        Fails if the rule does not exist. To create a rule, use the add
+        command.
+      - Values after the new keyword are updated in the rule.  If there
+        are no values, or keyword new is missing, no changes are made.
+      - A group of rules can only be enabled or disabled.
+      - If multiple rules match the criteria, all matching rules will
+        be updated.
+      - Rule name should be unique and cannot be "all".
+      - If a remote computer or user group is specified, security must be
+        authenticate, authenc, authdynenc, or authnoencap.
+      - Setting security to authdynenc allows systems to dynamically
+        negotiate the use of encryption for traffic that matches
+        a given Windows Firewall rule.
+
+Examples:
+
+      Change the remote IP address on a rule named "allow80":
+      netsh advfirewall firewall set rule name="allow80" new
+      remoteip=192.168.0.2
+
+      Enable a group with grouping string "Remote Desktop":
+      netsh advfirewall firewall set rule group="Remote Desktop" new
+      enable=yes
+
+      Change the local ports on the rule "Allow port range" for udp:
+      Set rule name="Allow port range" dir=out protocol=udp localport=5000-5020
+      new localport=5000-5050
+`;
     }
 
     const ruleName = nameMatch[1];
+
+    // Check if 'new' keyword is present
+    if (!cmdLower.includes(' new ') && !cmdLower.includes(' new\n') && !cmdLower.endsWith(' new')) {
+      return `The syntax supplied for this command is not valid. The 'new' keyword is required.\n`;
+    }
+
     const rule = this.firewallRules.find(r => r.name === ruleName);
 
     if (!rule) {
-      return `Rule not found. No rules match the specified criteria.\n`;
+      return 'No rules match the specified criteria.\n';
     }
 
-    if (command.toLowerCase().includes('enable=yes')) {
+    // Extract new values after 'new' keyword
+    const newMatch = cmdLower.indexOf(' new');
+    const newPart = command.substring(newMatch);
+
+    // Update enable status
+    if (newPart.toLowerCase().includes('enable=yes')) {
       rule.enabled = true;
-    } else if (command.toLowerCase().includes('enable=no')) {
+    } else if (newPart.toLowerCase().includes('enable=no')) {
       rule.enabled = false;
+    }
+
+    // Update action
+    const actionMatch = newPart.match(/action=(\w+)/i);
+    if (actionMatch) {
+      rule.action = actionMatch[1].toLowerCase() as 'allow' | 'block';
+    }
+
+    // Update protocol
+    const protocolMatch = newPart.match(/protocol=(\w+)/i);
+    if (protocolMatch) {
+      rule.protocol = protocolMatch[1].toUpperCase();
+    }
+
+    // Update local port
+    const portMatch = newPart.match(/localport=(\S+)/i);
+    if (portMatch) {
+      rule.localport = portMatch[1];
+    }
+
+    // Update program
+    const programMatch = newPart.match(/program="([^"]+)"/i);
+    if (programMatch) {
+      rule.program = programMatch[1];
     }
 
     return 'Updated 1 rule(s).\nOk.\n';
@@ -1279,21 +2020,46 @@ To view help for a command, type the command, followed by a space, and then
   private executeNetshWinhttp(command: string): string {
     const cmdLower = command.toLowerCase();
 
+    // Help for winhttp context
+    if (cmdLower === 'netsh winhttp' || cmdLower === 'netsh winhttp ?' || cmdLower === 'netsh winhttp help') {
+      return `
+The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+import         - Import WinHTTP proxy settings.
+reset          - Resets WinHTTP settings.
+set            - Configures WinHTTP settings.
+show           - Displays current settings.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.
+`;
+    }
+
     if (cmdLower.includes('show proxy')) {
       return this.netshWinhttpShowProxy();
+    }
+
+    // Check reset proxy BEFORE set proxy because "reset proxy" contains "set proxy"
+    if (cmdLower.includes('reset proxy')) {
+      this.proxyServer = null;
+      this.proxyBypass = null;
+      return '\nCurrent WinHTTP proxy settings:\n\n    Direct access (no proxy server).\n';
     }
 
     if (cmdLower.includes('set proxy')) {
       return this.netshWinhttpSetProxy(command);
     }
 
-    if (cmdLower.includes('reset proxy')) {
-      this.proxyServer = null;
-      this.proxyBypass = null;
-      return 'Current WinHTTP proxy settings:\n\n    Direct access (no proxy server).\n\nOk.\n';
+    if (cmdLower.includes('import proxy')) {
+      // Simulates importing IE proxy settings
+      return '\nCurrent WinHTTP proxy settings:\n\n    Direct access (no proxy server).\n';
     }
 
-    return 'Usage: netsh winhttp [show proxy|set proxy|reset proxy]';
+    return `The following command was not found: ${command.replace(/^netsh\s+winhttp\s+/i, '')}.`;
   }
 
   /**
@@ -1318,21 +2084,44 @@ To view help for a command, type the command, followed by a space, and then
    * Sets proxy settings
    */
   private netshWinhttpSetProxy(command: string): string {
-    const proxyMatch = command.match(/proxy-server="?([^"\s]+)"?/i);
+    // Try different patterns
+    const proxyMatch = command.match(/proxy-server="?([^"\s]+)"?/i) ||
+                       command.match(/proxy\s+(?:proxy-server=)?"?([^"\s]+)"?/i);
     const bypassMatch = command.match(/bypass-list="?([^"\s]+)"?/i);
 
-    if (proxyMatch) {
-      this.proxyServer = proxyMatch[1];
+    if (!proxyMatch) {
+      return `
+The syntax supplied for this command is not valid. Check help for the correct syntax.
+
+Usage: set proxy [proxy-server=]<server name> [bypass-list=]<hosts list>
+
+Parameters:
+
+      Tag             Value
+      proxy-server  - proxy server for use for http and/or https protocol
+      bypass-list   - a list of sites that should be visited bypassing the
+                     proxy (use "<local>" to bypass all short name hosts)
+
+Examples:
+
+      set proxy myproxy.corp.com:80 "<local>;*.ms.com"
+      set proxy proxy-server="myproxy.corp.com:80" bypass-list="<local>;*.ms.com"
+`;
     }
+
+    this.proxyServer = proxyMatch[1];
 
     if (bypassMatch) {
       this.proxyBypass = bypassMatch[1];
     }
 
-    return 'Current WinHTTP proxy settings:\n\n' +
-           `    Proxy Server(s) :  ${this.proxyServer || 'None'}\n` +
-           (this.proxyBypass ? `    Bypass List     :  ${this.proxyBypass}\n` : '') +
-           '\nOk.\n';
+    let output = '\nCurrent WinHTTP proxy settings:\n\n';
+    output += `    Proxy Server(s) :  ${this.proxyServer}\n`;
+    if (this.proxyBypass) {
+      output += `    Bypass List     :  ${this.proxyBypass}\n`;
+    }
+
+    return output;
   }
 
   /**

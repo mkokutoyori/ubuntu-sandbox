@@ -288,7 +288,8 @@ describe('WindowsPC', () => {
 
     it('should show error for invalid IP address', async () => {
       const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" static 999.999.999.999 255.255.255.0');
-      expect(result.toLowerCase()).toContain('error');
+      // Real netsh says "is not valid" with "The parameter is incorrect"
+      expect(result.toLowerCase()).toContain('not valid');
     });
   });
 });

@@ -64,34 +64,38 @@ describe('Windows netsh Command', () => {
 
     describe('netsh interface set interface', () => {
       it('should enable an interface', async () => {
-        const result = await pc.executeCommand('netsh interface set interface "Ethernet0" enable');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface set interface "Ethernet0" admin=enabled');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         const iface = pc.getInterface('eth0');
         expect(iface?.isUp()).toBe(true);
       });
 
       it('should disable an interface', async () => {
-        const result = await pc.executeCommand('netsh interface set interface "Ethernet0" disable');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface set interface "Ethernet0" admin=disabled');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         const iface = pc.getInterface('eth0');
         expect(iface?.isUp()).toBe(false);
       });
 
       it('should show error for unknown interface', async () => {
-        const result = await pc.executeCommand('netsh interface set interface "Unknown" enable');
+        const result = await pc.executeCommand('netsh interface set interface "Unknown" admin=enabled');
         expect(result.toLowerCase()).toContain('not found');
       });
 
       it('should support admin=enabled syntax', async () => {
         const result = await pc.executeCommand('netsh interface set interface "Ethernet0" admin=enabled');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should support admin=disabled syntax', async () => {
         const result = await pc.executeCommand('netsh interface set interface "Ethernet0" admin=disabled');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         const iface = pc.getInterface('eth0');
         expect(iface?.isUp()).toBe(false);
@@ -163,7 +167,8 @@ describe('Windows netsh Command', () => {
     describe('netsh interface ip set address', () => {
       it('should set static IP address', async () => {
         const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.50.1 255.255.255.0');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         const iface = pc.getInterface('eth0');
         expect(iface?.getIPAddress()?.toString()).toBe('192.168.50.1');
@@ -172,7 +177,8 @@ describe('Windows netsh Command', () => {
 
       it('should set IP with gateway', async () => {
         const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.50.1 255.255.255.0 192.168.50.254');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         expect(pc.getGateway()?.toString()).toBe('192.168.50.254');
       });
@@ -189,12 +195,14 @@ describe('Windows netsh Command', () => {
 
       it('should configure DHCP mode', async () => {
         const result = await pc.executeCommand('netsh interface ip set address "Ethernet0" dhcp');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should use source=static syntax', async () => {
-        const result = await pc.executeCommand('netsh interface ip set address name="Ethernet0" source=static addr=10.0.0.1 mask=255.0.0.0');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip set address name="Ethernet0" source=static address=10.0.0.1 mask=255.0.0.0');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         const iface = pc.getInterface('eth0');
         expect(iface?.getIPAddress()?.toString()).toBe('10.0.0.1');
@@ -204,17 +212,20 @@ describe('Windows netsh Command', () => {
     describe('netsh interface ip set dns', () => {
       it('should set primary DNS server', async () => {
         const result = await pc.executeCommand('netsh interface ip set dns "Ethernet0" static 8.8.8.8');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should set DNS with validation', async () => {
         const result = await pc.executeCommand('netsh interface ip set dns "Ethernet0" static 8.8.8.8 validate=no');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should configure DHCP for DNS', async () => {
         const result = await pc.executeCommand('netsh interface ip set dns "Ethernet0" dhcp');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should reject invalid DNS IP', async () => {
@@ -226,33 +237,38 @@ describe('Windows netsh Command', () => {
     describe('netsh interface ip add dns', () => {
       it('should add secondary DNS server', async () => {
         await pc.executeCommand('netsh interface ip set dns "Ethernet0" static 8.8.8.8');
-        const result = await pc.executeCommand('netsh interface ip add dns "Ethernet0" 8.8.4.4');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip add dns "Ethernet0" address=8.8.4.4');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should add DNS with index', async () => {
-        const result = await pc.executeCommand('netsh interface ip add dns "Ethernet0" 1.1.1.1 index=2');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip add dns "Ethernet0" address=1.1.1.1 index=2');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
     });
 
     describe('netsh interface ip delete dns', () => {
       it('should delete specific DNS server', async () => {
         await pc.executeCommand('netsh interface ip set dns "Ethernet0" static 8.8.8.8');
-        const result = await pc.executeCommand('netsh interface ip delete dns "Ethernet0" 8.8.8.8');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip delete dns "Ethernet0" address=8.8.8.8');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
 
       it('should delete all DNS servers', async () => {
-        const result = await pc.executeCommand('netsh interface ip delete dns "Ethernet0" all');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip delete dns "Ethernet0" address=all');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
     });
 
     describe('netsh interface ip set dnsservers', () => {
       it('should set DNS servers with dnsservers syntax', async () => {
         const result = await pc.executeCommand('netsh interface ip set dnsservers "Ethernet0" static 8.8.8.8 primary');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
     });
 
@@ -268,16 +284,18 @@ describe('Windows netsh Command', () => {
     describe('netsh interface ip add address', () => {
       it('should add secondary IP address', async () => {
         pc.setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
-        const result = await pc.executeCommand('netsh interface ip add address "Ethernet0" 192.168.1.20 255.255.255.0');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip add address "Ethernet0" address=192.168.1.20 mask=255.255.255.0');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
     });
 
     describe('netsh interface ip delete address', () => {
       it('should delete IP address', async () => {
         pc.setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
-        const result = await pc.executeCommand('netsh interface ip delete address "Ethernet0" 192.168.1.10');
-        expect(result.toLowerCase()).toContain('ok');
+        const result = await pc.executeCommand('netsh interface ip delete address "Ethernet0" address=192.168.1.10');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
       });
     });
 
@@ -390,11 +408,13 @@ describe('Windows netsh Command', () => {
     describe('netsh advfirewall set currentprofile', () => {
       it('should enable firewall', async () => {
         const result = await pc.executeCommand('netsh advfirewall set currentprofile state on');
+        // Real netsh returns "Ok.\n" for firewall state changes
         expect(result.toLowerCase()).toContain('ok');
       });
 
       it('should disable firewall', async () => {
         const result = await pc.executeCommand('netsh advfirewall set currentprofile state off');
+        // Real netsh returns "Ok.\n" for firewall state changes
         expect(result.toLowerCase()).toContain('ok');
       });
     });
@@ -402,6 +422,7 @@ describe('Windows netsh Command', () => {
     describe('netsh advfirewall set allprofiles', () => {
       it('should set state for all profiles', async () => {
         const result = await pc.executeCommand('netsh advfirewall set allprofiles state on');
+        // Real netsh returns "Ok.\n" for firewall state changes
         expect(result.toLowerCase()).toContain('ok');
       });
     });
@@ -443,14 +464,16 @@ describe('Windows netsh Command', () => {
     describe('netsh advfirewall firewall delete rule', () => {
       it('should delete firewall rule by name', async () => {
         const result = await pc.executeCommand('netsh advfirewall firewall delete rule name="My Rule"');
-        expect(result.toLowerCase()).toMatch(/ok|deleted|not found/);
+        // Rule doesn't exist, so expect "No rules match" or similar
+        expect(result.toLowerCase()).toMatch(/ok|deleted|no rules|not found/);
       });
     });
 
     describe('netsh advfirewall firewall set rule', () => {
       it('should modify existing rule', async () => {
         const result = await pc.executeCommand('netsh advfirewall firewall set rule name="My Rule" new enable=yes');
-        expect(result.toLowerCase()).toMatch(/ok|updated|not found/);
+        // Rule doesn't exist, so expect "No rules match" or similar
+        expect(result.toLowerCase()).toMatch(/ok|updated|no rules|not found/);
       });
     });
 
@@ -473,19 +496,24 @@ describe('Windows netsh Command', () => {
     describe('netsh winhttp set proxy', () => {
       it('should set proxy server', async () => {
         const result = await pc.executeCommand('netsh winhttp set proxy proxy-server="proxy.example.com:8080"');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh shows the new proxy settings
+        expect(result.toLowerCase()).toContain('proxy');
+        expect(result).toContain('proxy.example.com:8080');
       });
 
       it('should set proxy with bypass list', async () => {
         const result = await pc.executeCommand('netsh winhttp set proxy proxy-server="proxy.example.com:8080" bypass-list="*.local"');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh shows the new proxy settings
+        expect(result.toLowerCase()).toContain('proxy');
+        expect(result).toContain('proxy.example.com:8080');
       });
     });
 
     describe('netsh winhttp reset proxy', () => {
       it('should reset proxy to direct', async () => {
         const result = await pc.executeCommand('netsh winhttp reset proxy');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh shows "Direct access (no proxy server)"
+        expect(result.toLowerCase()).toContain('direct access');
       });
     });
   });
@@ -521,7 +549,8 @@ describe('Windows netsh Command', () => {
     describe('netsh interface ipv4 set address', () => {
       it('should set IPv4 address (same as ip set address)', async () => {
         const result = await pc.executeCommand('netsh interface ipv4 set address "Ethernet0" static 10.10.10.10 255.255.255.0');
-        expect(result.toLowerCase()).toContain('ok');
+        // Real netsh returns empty string on success
+        expect(result).toBe('');
 
         const iface = pc.getInterface('eth0');
         expect(iface?.getIPAddress()?.toString()).toBe('10.10.10.10');
