@@ -2356,11 +2356,12 @@ Examples:
     let failCount = 0;
 
     for (let i = 0; i < count; i++) {
-      // Create Echo Request with 32 bytes (Windows default)
-      const data = Buffer.alloc(32);
-      data.fill(0x61); // Fill with 'a' characters (Windows pattern)
+      // Create Echo Request with 32 bytes (Windows default) - use Buffer for Node.js compatibility
+      const data = typeof Buffer !== 'undefined'
+        ? Buffer.alloc(32, 0x61) // Fill with 'a' characters (Windows pattern)
+        : new Uint8Array(32).fill(0x61);
 
-      const request = icmpService.createEchoRequest(targetIP, data, 1000); // 1 second timeout
+      const request = icmpService.createEchoRequest(targetIP, data as Buffer, 1000); // 1 second timeout
 
       // Send the ICMP packet
       try {
@@ -2438,12 +2439,11 @@ Examples:
       }
     }
 
-    // Encapsulate in Ethernet frame
+    // Encapsulate in Ethernet frame - use Uint8Array for browser compatibility
     const packetBytes = ipPacket.toBytes();
-    const paddedPayload = Buffer.concat([
-      packetBytes,
-      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - packetBytes.length);
+    const paddedPayload = new Uint8Array(packetBytes.length + paddingLength);
+    paddedPayload.set(packetBytes instanceof Uint8Array ? packetBytes : new Uint8Array(packetBytes), 0);
 
     const frame = new EthernetFrame({
       sourceMAC: nic.getMAC(),
@@ -2480,9 +2480,10 @@ Examples:
     const maxHops = 30;
 
     for (let ttl = 1; ttl <= maxHops; ttl++) {
-      // Create ICMP Echo Request
-      const data = Buffer.alloc(32);
-      data.fill(0x61); // Fill with 'a' characters
+      // Create ICMP Echo Request - use Buffer for Node.js compatibility
+      const data = typeof Buffer !== 'undefined'
+        ? Buffer.alloc(32, 0x61) // Fill with 'a' characters
+        : new Uint8Array(32).fill(0x61);
 
       const icmpService = this.getICMPService();
       const request = icmpService.createEchoRequest(targetIP, data, 2000);
@@ -2557,12 +2558,11 @@ Examples:
       }
     }
 
-    // Encapsulate in Ethernet frame
+    // Encapsulate in Ethernet frame - use Uint8Array for browser compatibility
     const packetBytes = ipPacket.toBytes();
-    const paddedPayload = Buffer.concat([
-      packetBytes,
-      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - packetBytes.length);
+    const paddedPayload = new Uint8Array(packetBytes.length + paddingLength);
+    paddedPayload.set(packetBytes instanceof Uint8Array ? packetBytes : new Uint8Array(packetBytes), 0);
 
     const frame = new EthernetFrame({
       sourceMAC: nic.getMAC(),
@@ -2628,12 +2628,11 @@ For more information on a specific command, type HELP command-name
       targetIP
     );
 
-    // Serialize ARP packet
+    // Serialize ARP packet - use Uint8Array for browser compatibility
     const arpBytes = arpService.serializePacket(arpRequest);
-    const paddedPayload = Buffer.concat([
-      arpBytes,
-      Buffer.alloc(Math.max(0, 46 - arpBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - arpBytes.length);
+    const paddedPayload = new Uint8Array(arpBytes.length + paddingLength);
+    paddedPayload.set(arpBytes instanceof Uint8Array ? arpBytes : new Uint8Array(arpBytes), 0);
 
     // Create broadcast Ethernet frame for ARP request
     const frame = new EthernetFrame({

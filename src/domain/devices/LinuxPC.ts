@@ -2855,11 +2855,18 @@ Try 'ping --help' for more information.`;
     const rtts: number[] = [];
 
     for (let i = 0; i < count; i++) {
-      // Create Echo Request
-      const data = Buffer.alloc(56); // Standard ping data size
-      data.write(`Ping data ${i}`, 0);
+      // Create Echo Request data - use Buffer.from for Node.js compatibility with ICMP service
+      const pingText = `Ping data ${i}`;
+      const data = typeof Buffer !== 'undefined'
+        ? Buffer.from(pingText.padEnd(56, '\0'))
+        : new Uint8Array(56);
+      if (typeof Buffer === 'undefined') {
+        for (let j = 0; j < pingText.length && j < 56; j++) {
+          (data as Uint8Array)[j] = pingText.charCodeAt(j);
+        }
+      }
 
-      const request = icmpService.createEchoRequest(targetIP, data, 1000); // 1 second timeout
+      const request = icmpService.createEchoRequest(targetIP, data as Buffer, 1000); // 1 second timeout
 
       // Send the ICMP packet
       try {
@@ -2941,12 +2948,11 @@ Try 'ping --help' for more information.`;
       }
     }
 
-    // Encapsulate in Ethernet frame
+    // Encapsulate in Ethernet frame - use Uint8Array for browser compatibility
     const packetBytes = ipPacket.toBytes();
-    const paddedPayload = Buffer.concat([
-      packetBytes,
-      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - packetBytes.length);
+    const paddedPayload = new Uint8Array(packetBytes.length + paddingLength);
+    paddedPayload.set(packetBytes instanceof Uint8Array ? packetBytes : new Uint8Array(packetBytes), 0);
 
     const frame = new EthernetFrame({
       sourceMAC: nic.getMAC(),
@@ -2984,9 +2990,16 @@ Try 'ping --help' for more information.`;
     let hopNumber = 1;
 
     for (let ttl = 1; ttl <= maxHops; ttl++) {
-      // Create ICMP Echo Request
-      const data = Buffer.alloc(32);
-      data.write(`Traceroute hop ${ttl}`, 0);
+      // Create ICMP Echo Request data - use Buffer.from for Node.js compatibility
+      const hopText = `Traceroute hop ${ttl}`;
+      const data = typeof Buffer !== 'undefined'
+        ? Buffer.from(hopText.padEnd(32, '\0'))
+        : new Uint8Array(32);
+      if (typeof Buffer === 'undefined') {
+        for (let j = 0; j < hopText.length && j < 32; j++) {
+          (data as Uint8Array)[j] = hopText.charCodeAt(j);
+        }
+      }
 
       const icmpService = this.getICMPService();
       const request = icmpService.createEchoRequest(targetIP, data, 2000);
@@ -3064,12 +3077,11 @@ Try 'ping --help' for more information.`;
       }
     }
 
-    // Encapsulate in Ethernet frame
+    // Encapsulate in Ethernet frame - use Uint8Array for browser compatibility
     const packetBytes = ipPacket.toBytes();
-    const paddedPayload = Buffer.concat([
-      packetBytes,
-      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - packetBytes.length);
+    const paddedPayload = new Uint8Array(packetBytes.length + paddingLength);
+    paddedPayload.set(packetBytes instanceof Uint8Array ? packetBytes : new Uint8Array(packetBytes), 0);
 
     const frame = new EthernetFrame({
       sourceMAC: nic.getMAC(),
@@ -3098,12 +3110,11 @@ Try 'ping --help' for more information.`;
       targetIP
     );
 
-    // Serialize ARP packet
+    // Serialize ARP packet - use Uint8Array for browser compatibility
     const arpBytes = arpService.serializePacket(arpRequest);
-    const paddedPayload = Buffer.concat([
-      arpBytes,
-      Buffer.alloc(Math.max(0, 46 - arpBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - arpBytes.length);
+    const paddedPayload = new Uint8Array(arpBytes.length + paddingLength);
+    paddedPayload.set(arpBytes instanceof Uint8Array ? arpBytes : new Uint8Array(arpBytes), 0);
 
     // Create broadcast Ethernet frame for ARP request
     const frame = new EthernetFrame({
