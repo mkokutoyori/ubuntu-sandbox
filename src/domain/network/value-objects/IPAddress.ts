@@ -103,6 +103,16 @@ export class IPAddress {
   }
 
   /**
+   * Static helper to convert IPAddress to 32-bit number
+   *
+   * @param ip - IPAddress instance
+   * @returns 32-bit numeric representation
+   */
+  public static toNumber(ip: IPAddress): number {
+    return ip.toNumber();
+  }
+
+  /**
    * Returns string representation in dotted decimal format
    */
   public toString(): string {
