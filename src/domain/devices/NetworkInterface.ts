@@ -76,8 +76,8 @@ export class NetworkInterface {
   private mtu: number;
   private promiscuous: boolean;
   private statistics: InterfaceStatistics;
-  private transmitCallback?: FrameCallback;
-  private receiveCallback?: FrameCallback;
+  private transmitCallbacks: FrameCallback[] = [];
+  private receiveCallbacks: FrameCallback[] = [];
 
   constructor(name: string, macAddress: MACAddress) {
     this.name = name;
@@ -207,8 +207,9 @@ export class NetworkInterface {
     this.statistics.txFrames++;
     this.statistics.txBytes += frame.getSize();
 
-    if (this.transmitCallback) {
-      this.transmitCallback(frame);
+    // Call all registered transmit callbacks
+    for (const callback of this.transmitCallbacks) {
+      callback(frame);
     }
   }
 
@@ -239,27 +240,44 @@ export class NetworkInterface {
     this.statistics.rxFrames++;
     this.statistics.rxBytes += frame.getSize();
 
-    if (this.receiveCallback) {
-      this.receiveCallback(frame);
+    // Call all registered receive callbacks
+    for (const callback of this.receiveCallbacks) {
+      callback(frame);
     }
   }
 
   /**
    * Registers callback for transmitted frames
+   * Multiple callbacks can be registered and all will be called
    *
    * @param callback - Function to call when frame is transmitted
    */
   public onTransmit(callback: FrameCallback): void {
-    this.transmitCallback = callback;
+    this.transmitCallbacks.push(callback);
   }
 
   /**
    * Registers callback for received frames
+   * Multiple callbacks can be registered and all will be called
    *
    * @param callback - Function to call when frame is received
    */
   public onReceive(callback: FrameCallback): void {
-    this.receiveCallback = callback;
+    this.receiveCallbacks.push(callback);
+  }
+
+  /**
+   * Clears all transmit callbacks
+   */
+  public clearTransmitCallbacks(): void {
+    this.transmitCallbacks = [];
+  }
+
+  /**
+   * Clears all receive callbacks
+   */
+  public clearReceiveCallbacks(): void {
+    this.receiveCallbacks = [];
   }
 
   /**
