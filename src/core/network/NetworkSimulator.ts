@@ -54,6 +54,9 @@ class NetworkSimulatorSingleton {
    * Wires up device interfaces for frame transmission
    */
   initialize(devices: Map<string, BaseDevice>, connections: Connection[]): void {
+    // Clear callbacks on existing devices before re-wiring
+    this.clearDeviceCallbacks();
+
     this.devices = devices;
     this.connections = connections;
     this.initialized = true;
@@ -63,6 +66,24 @@ class NetworkSimulatorSingleton {
 
     // Wire up all devices for frame forwarding
     this.wireUpDevices();
+  }
+
+  /**
+   * Clear callbacks on all devices before re-wiring
+   * Prevents callback accumulation when re-initializing
+   */
+  private clearDeviceCallbacks(): void {
+    for (const [, device] of this.devices) {
+      // Clear interface callbacks for PC/Router
+      if ('getInterfaces' in device && typeof (device as any).getInterfaces === 'function') {
+        const interfaces = (device as any).getInterfaces();
+        for (const iface of interfaces) {
+          if (iface && typeof iface.clearTransmitCallbacks === 'function') {
+            iface.clearTransmitCallbacks();
+          }
+        }
+      }
+    }
   }
 
   /**
