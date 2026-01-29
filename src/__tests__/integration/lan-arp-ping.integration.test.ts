@@ -43,7 +43,7 @@ describe('LAN ARP Resolution', () => {
       pc1.onFrameTransmit((frame) => {
         framesSent.push(frame);
         // Forward to switch
-        switch1.receiveFrame(0, frame);
+        switch1.receiveFrame('eth0', frame);
       });
 
       // Start ping (should trigger ARP request)
@@ -249,13 +249,14 @@ describe('Complex LAN Topology', () => {
 
 function connectToSwitch(pc: LinuxPC | WindowsPC | LinuxServer | WindowsServer, sw: Switch, port: number): void {
   const iface = pc.getInterface('eth0')!;
+  const portName = `eth${port}`;
 
   pc.onFrameTransmit((frame) => {
-    sw.receiveFrame(port, frame);
+    sw.receiveFrame(portName, frame);
   });
 
   sw.onFrameForward((forwardPort, frame) => {
-    if (forwardPort === port) {
+    if (forwardPort === portName) {
       pc.receiveFrame('eth0', frame);
     }
   });
@@ -263,14 +264,14 @@ function connectToSwitch(pc: LinuxPC | WindowsPC | LinuxServer | WindowsServer, 
 
 function wireNetworkWithSwitch(devices: (LinuxPC | WindowsPC | LinuxServer | WindowsServer)[], sw: Switch): void {
   devices.forEach((device, index) => {
-    const portIndex = index;
+    const portName = `eth${index}`;
 
     device.onFrameTransmit((frame) => {
-      sw.receiveFrame(portIndex, frame);
+      sw.receiveFrame(portName, frame);
     });
 
     sw.onFrameForward((port, frame) => {
-      if (port === portIndex) {
+      if (port === portName) {
         device.receiveFrame('eth0', frame);
       }
     });
