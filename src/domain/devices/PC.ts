@@ -52,7 +52,6 @@ export class PC extends BaseDevice {
   private interfaces: Map<string, NetworkInterface>;
   private arpService: ARPService;
   private icmpService: ICMPService;
-  private hostname: string;
   private gateway?: IPAddress;
   private transmitCallback?: FrameCallback;
   private receiveCallback?: FrameCallback;

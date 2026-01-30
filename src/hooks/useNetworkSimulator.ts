@@ -124,9 +124,37 @@ export function useNetworkSimulator() {
     return () => NetworkSimulator.removeEventListener(listener);
   }, []);
 
-  // Get MAC table for a switch
-  const getMACTable = useCallback((deviceId: string) => {
-    return NetworkSimulator.getMACTable(deviceId);
+  // Get MAC table for a switch as MACTableEntry array
+  const getMACTable = useCallback((deviceId: string): Array<{
+    macAddress: string;
+    interfaceId: string;
+    vlan: number;
+    timestamp: number;
+    type: 'dynamic' | 'static';
+  }> => {
+    const table = NetworkSimulator.getMACTable(deviceId);
+    if (!table || table.size === 0) return [];
+    
+    // Convert Map<string, string> to MACTableEntry[]
+    const entries: Array<{
+      macAddress: string;
+      interfaceId: string;
+      vlan: number;
+      timestamp: number;
+      type: 'dynamic' | 'static';
+    }> = [];
+    
+    table.forEach((port, mac) => {
+      entries.push({
+        macAddress: mac,
+        interfaceId: port,
+        vlan: 1, // Default VLAN
+        timestamp: Date.now(),
+        type: 'dynamic'
+      });
+    });
+    
+    return entries;
   }, []);
 
   // Clear MAC table for a switch

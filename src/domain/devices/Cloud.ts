@@ -7,6 +7,18 @@
 import { BaseDevice, DeviceType } from './BaseDevice';
 import { DeviceConfig, OSType } from './types';
 import { NetworkInterface } from './NetworkInterface';
+import { MACAddress } from '../network/value-objects/MACAddress';
+
+// Generate a random MAC address
+function generateRandomMAC(): MACAddress {
+  const bytes: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    bytes.push(Math.floor(Math.random() * 256));
+  }
+  // Set locally administered and unicast bits
+  bytes[0] = (bytes[0] & 0xFC) | 0x02;
+  return MACAddress.fromBytes(bytes);
+}
 
 export class Cloud extends BaseDevice {
   private interfaces: Map<string, NetworkInterface>;
@@ -29,7 +41,7 @@ export class Cloud extends BaseDevice {
     this.interfaces = new Map();
 
     for (let i = 0; i < 4; i++) {
-      const iface = new NetworkInterface(`eth${i}`, `eth${i}`);
+      const iface = new NetworkInterface(`eth${i}`, generateRandomMAC());
       this.interfaces.set(`eth${i}`, iface);
       this.addPort(`eth${i}`);
     }
@@ -59,6 +71,14 @@ export class Cloud extends BaseDevice {
    */
   public powerOff(): void {
     this.status = 'offline';
+  }
+
+  /**
+   * Reset
+   */
+  public reset(): void {
+    this.powerOff();
+    this.powerOn();
   }
 
   /**

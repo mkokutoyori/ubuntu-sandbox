@@ -7,6 +7,18 @@
 import { BaseDevice, DeviceType } from './BaseDevice';
 import { DeviceConfig, OSType } from './types';
 import { NetworkInterface } from './NetworkInterface';
+import { MACAddress } from '../network/value-objects/MACAddress';
+
+// Generate a random MAC address
+function generateRandomMAC(): MACAddress {
+  const bytes: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    bytes.push(Math.floor(Math.random() * 256));
+  }
+  // Set locally administered and unicast bits
+  bytes[0] = (bytes[0] & 0xFC) | 0x02;
+  return MACAddress.fromBytes(bytes);
+}
 
 export class Printer extends BaseDevice {
   private interfaces: Map<string, NetworkInterface>;
@@ -29,7 +41,7 @@ export class Printer extends BaseDevice {
     // Create interface
     this.interfaces = new Map();
 
-    const eth0 = new NetworkInterface('eth0', 'eth0');
+    const eth0 = new NetworkInterface('eth0', generateRandomMAC());
     this.interfaces.set('eth0', eth0);
     this.addPort('eth0');
 
@@ -61,6 +73,14 @@ export class Printer extends BaseDevice {
    */
   public powerOff(): void {
     this.status = 'offline';
+  }
+
+  /**
+   * Reset
+   */
+  public reset(): void {
+    this.powerOff();
+    this.powerOn();
   }
 
   /**
