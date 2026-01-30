@@ -23,7 +23,7 @@ export interface NetworkInterfaceConfig {
  */
 export interface DeviceConfig {
   id?: string;
-  type?: DeviceType;  // Optional for typed device classes that set it internally
+  type: DeviceType;
   name?: string;
   hostname?: string;
   x?: number;

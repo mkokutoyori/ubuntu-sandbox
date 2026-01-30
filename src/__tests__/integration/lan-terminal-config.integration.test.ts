@@ -27,14 +27,13 @@ import { SubnetMask } from '../../domain/network/value-objects/SubnetMask';
 function connectToSwitch(pc: LinuxPC | WindowsPC | LinuxServer | WindowsServer, sw: Switch, port: number): void {
   const iface = pc.getInterface('eth0');
   if (!iface) return;
-  const portName = `eth${port}`;
 
   pc.onFrameTransmit((frame) => {
-    sw.receiveFrame(portName, frame);
+    sw.receiveFrame(port, frame);
   });
 
   sw.onFrameForward((forwardPort, frame) => {
-    if (forwardPort === portName) {
+    if (forwardPort === port) {
       pc.receiveFrame('eth0', frame);
     }
   });
@@ -44,14 +43,13 @@ function connectToSwitch(pc: LinuxPC | WindowsPC | LinuxServer | WindowsServer, 
 function connectToHub(pc: LinuxPC | WindowsPC | LinuxServer | WindowsServer, hub: Hub, port: number): void {
   const iface = pc.getInterface('eth0');
   if (!iface) return;
-  const portName = `eth${port}`;
 
   pc.onFrameTransmit((frame) => {
-    hub.receiveFrame(portName, frame);
+    hub.receiveFrame(port, frame);
   });
 
   hub.onFrameForward((forwardPort, frame) => {
-    if (forwardPort === portName) {
+    if (forwardPort === port) {
       pc.receiveFrame('eth0', frame);
     }
   });
@@ -68,7 +66,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
       // Create devices
       pc1 = new LinuxPC({ id: 'linux-pc-1', name: 'Linux PC 1', hostname: 'pc1' });
       pc2 = new LinuxPC({ id: 'linux-pc-2', name: 'Linux PC 2', hostname: 'pc2' });
-      sw = new Switch('switch-1', 'Switch 1');
+      sw = new Switch({ id: 'switch-1', name: 'Switch 1' });
 
       // Physical connections using helper
       connectToSwitch(pc1, sw, 0);
@@ -212,7 +210,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
     beforeEach(() => {
       pc1 = new WindowsPC({ id: 'win-pc-1', name: 'Windows PC 1', hostname: 'WINPC1' });
       pc2 = new WindowsPC({ id: 'win-pc-2', name: 'Windows PC 2', hostname: 'WINPC2' });
-      sw = new Switch('switch-1', 'Switch 1');
+      sw = new Switch({ id: 'switch-1', name: 'Switch 1' });
 
       connectToSwitch(pc1, sw, 0);
       connectToSwitch(pc2, sw, 1);
@@ -321,7 +319,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
       linuxPc2 = new LinuxPC({ id: 'linux-2', name: 'Linux 2', hostname: 'linux2' });
       winPc1 = new WindowsPC({ id: 'win-1', name: 'Windows 1', hostname: 'WIN1' });
       winPc2 = new WindowsPC({ id: 'win-2', name: 'Windows 2', hostname: 'WIN2' });
-      sw = new Switch('switch-1', 'Central Switch');
+      sw = new Switch({ id: 'switch-1', name: 'Central Switch' });
 
       // Connect all to switch
       connectToSwitch(linuxPc1, sw, 0);
@@ -437,7 +435,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
       client1 = new LinuxPC({ id: 'client-1', name: 'Client 1', hostname: 'client1' });
       client2 = new WindowsPC({ id: 'client-2', name: 'Client 2', hostname: 'CLIENT2' });
       client3 = new LinuxPC({ id: 'client-3', name: 'Client 3', hostname: 'client3' });
-      sw = new Switch('switch-1', 'Main Switch');
+      sw = new Switch({ id: 'switch-1', name: 'Main Switch' });
 
       // Connect all to switch
       connectToSwitch(server, sw, 0);
@@ -573,7 +571,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
       server = new WindowsServer({ id: 'win-server', name: 'Windows Server', hostname: 'WINSERVER' });
       client1 = new WindowsPC({ id: 'win-client', name: 'Windows Client', hostname: 'WINCLIENT' });
       client2 = new LinuxPC({ id: 'linux-client', name: 'Linux Client', hostname: 'linuxclient' });
-      sw = new Switch('switch-1', 'Switch');
+      sw = new Switch({ id: 'switch-1', name: 'Switch' });
 
       connectToSwitch(server, sw, 0);
       connectToSwitch(client1, sw, 1);
@@ -644,7 +642,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
       pc1 = new LinuxPC({ id: 'pc-1', name: 'PC 1', hostname: 'pc1' });
       pc2 = new LinuxPC({ id: 'pc-2', name: 'PC 2', hostname: 'pc2' });
       pc3 = new LinuxPC({ id: 'pc-3', name: 'PC 3', hostname: 'pc3' });
-      hub = new Hub('hub-1', 'Hub 1');
+      hub = new Hub({ id: 'hub-1', name: 'Hub 1' });
 
       connectToHub(pc1, hub, 0);
       connectToHub(pc2, hub, 1);
@@ -786,7 +784,7 @@ describe('LAN Terminal Configuration Integration Tests', () => {
       workstation1 = new WindowsPC({ id: 'ws-1', name: 'Workstation 1', hostname: 'WS1' });
       workstation2 = new WindowsPC({ id: 'ws-2', name: 'Workstation 2', hostname: 'WS2' });
       workstation3 = new LinuxPC({ id: 'ws-3', name: 'Workstation 3', hostname: 'ws3' });
-      mainSwitch = new Switch('main-sw', 'Main Switch');
+      mainSwitch = new Switch({ id: 'main-sw', name: 'Main Switch' });
 
       // Connect all devices
       connectToSwitch(server, mainSwitch, 0);
