@@ -11,7 +11,7 @@ import { DeviceType } from './BaseDevice';
 export interface NetworkInterfaceConfig {
   id: string;
   name: string;
-  type: 'ethernet' | 'serial' | 'console';
+  type: 'ethernet' | 'serial' | 'console' | 'wifi' | 'fiber';
   ipAddress?: string;
   subnetMask?: string;
   macAddress?: string;
@@ -23,7 +23,7 @@ export interface NetworkInterfaceConfig {
  */
 export interface DeviceConfig {
   id?: string;
-  type: DeviceType;
+  type?: DeviceType; // Optional: devices like LinuxPC/WindowsPC set their own type
   name?: string;
   hostname?: string;
   x?: number;
@@ -35,7 +35,7 @@ export interface DeviceConfig {
 /**
  * Connection type
  */
-export type ConnectionType = 'ethernet' | 'serial' | 'console';
+export type ConnectionType = 'ethernet' | 'serial' | 'console' | 'fiber' | 'wifi';
 
 /**
  * Connection between devices

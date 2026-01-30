@@ -7,6 +7,18 @@
 import { BaseDevice, DeviceType } from './BaseDevice';
 import { DeviceConfig, OSType } from './types';
 import { NetworkInterface } from './NetworkInterface';
+import { MACAddress } from '../network/value-objects/MACAddress';
+
+// Generate a random MAC address
+function generateRandomMAC(): MACAddress {
+  const bytes: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    bytes.push(Math.floor(Math.random() * 256));
+  }
+  // Set locally administered and unicast bits
+  bytes[0] = (bytes[0] & 0xFC) | 0x02;
+  return MACAddress.fromBytes(bytes);
+}
 
 export class IPPhone extends BaseDevice {
   private interfaces: Map<string, NetworkInterface>;
@@ -31,11 +43,11 @@ export class IPPhone extends BaseDevice {
     // eth1 = PC (passthrough port for PC)
     this.interfaces = new Map();
 
-    const eth0 = new NetworkInterface('eth0', 'eth0');
+    const eth0 = new NetworkInterface('eth0', generateRandomMAC());
     this.interfaces.set('eth0', eth0);
     this.addPort('eth0');
 
-    const eth1 = new NetworkInterface('eth1', 'eth1');
+    const eth1 = new NetworkInterface('eth1', generateRandomMAC());
     this.interfaces.set('eth1', eth1);
     this.addPort('eth1');
 
@@ -67,6 +79,15 @@ export class IPPhone extends BaseDevice {
    */
   public powerOff(): void {
     this.status = 'offline';
+  }
+
+  /**
+   * Reset
+   */
+  public reset(): void {
+    this.powerOff();
+    this.extension = '1000';
+    this.powerOn();
   }
 
   /**
