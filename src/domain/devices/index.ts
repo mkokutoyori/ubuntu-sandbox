@@ -64,10 +64,6 @@ export type {
   DeviceCategory
 } from './types';
 
-// EthernetConnection - Active connection class
-export { EthernetConnection } from '../network/EthernetConnection';
-export type { ConnectionEvent, ConnectionEventListener, EthernetConnectionConfig } from '../network/EthernetConnection';
-
 export {
   generateId,
   generateDeviceId,

@@ -34,40 +34,25 @@ export type DeviceType =
   | 'pc'           // Generic PC
   | 'linux-pc'     // Linux PC (for UI/Terminal)
   | 'windows-pc'   // Windows PC (for UI/Terminal)
-  | 'mac-pc'       // Mac PC
 
   // Servers
   | 'linux-server'    // Linux Server (Ubuntu/CentOS)
   | 'windows-server'  // Windows Server
 
-  // Database Servers
-  | 'db-mysql'      // MySQL Database
-  | 'db-postgres'   // PostgreSQL Database
-  | 'db-oracle'     // Oracle Database
-  | 'db-sqlserver'  // SQL Server Database
-
   // Network Devices - Layer 2
   | 'switch'       // Generic Layer 2 switch
   | 'cisco-switch' // Cisco switch (for UI/Terminal)
-  | 'switch-cisco' // Alias for cisco-switch
-  | 'switch-huawei' // Huawei switch
-  | 'switch-generic' // Generic switch
   | 'hub'          // Layer 1 hub
 
   // Network Devices - Layer 3
   | 'router'       // Generic Layer 3 router
   | 'cisco-router' // Cisco router (for UI/Terminal)
-  | 'router-cisco' // Alias for cisco-router
-  | 'router-huawei' // Huawei router
   | 'cisco-l3-switch' // Cisco Layer 3 switch (for UI/Terminal)
   | 'multilayer-switch' // Generic multilayer switch
 
   // Security Devices
   | 'firewall'     // Generic firewall
   | 'cisco-asa'    // Cisco ASA firewall
-  | 'firewall-cisco' // Alias for cisco-asa
-  | 'firewall-fortinet' // Fortinet firewall
-  | 'firewall-paloalto' // Palo Alto firewall
 
   // Wireless Devices
   | 'access-point'       // Wireless Access Point
