@@ -6,12 +6,13 @@
  *
  * Key responsibilities:
  * - Wire up device interfaces for frame transmission
- * - Forward frames between connected devices
+ * - Forward frames between connected devices using concrete connection instances
  * - Support switch MAC learning and forwarding
+ * - Support hub frame repetition
  * - Emit events for UI visualization
  */
 
-import { BaseDevice, Connection } from '@/domain/devices';
+import { BaseDevice, Connection, BaseConnection } from '@/domain/devices';
 import { EthernetFrame } from '@/domain/network/entities/EthernetFrame';
 
 export interface NetworkFrame {
@@ -38,6 +39,7 @@ interface ConnectionLink {
   localInterfaceId: string;
   remoteDeviceId: string;
   remoteInterfaceId: string;
+  connectionInstance?: BaseConnection;
 }
 
 class NetworkSimulatorSingleton {
@@ -48,6 +50,9 @@ class NetworkSimulatorSingleton {
 
   // Map of deviceId -> array of connection links
   private deviceConnections: Map<string, ConnectionLink[]> = new Map();
+
+  // Map of connection instances by ID for fast access
+  private connectionInstances: Map<string, BaseConnection> = new Map();
 
   /**
    * Initialize the simulator with devices and connections
@@ -61,6 +66,9 @@ class NetworkSimulatorSingleton {
     // Build connection index for fast lookups
     this.buildConnectionIndex();
 
+    // Wire up connection instances for frame delivery
+    this.wireUpConnectionInstances();
+
     // Wire up all devices for frame forwarding
     this.wireUpDevices();
   }
@@ -70,8 +78,16 @@ class NetworkSimulatorSingleton {
    */
   private buildConnectionIndex(): void {
     this.deviceConnections.clear();
+    this.connectionInstances.clear();
 
     for (const conn of this.connections) {
+      const instance = conn.instance;
+
+      // Store connection instance if available
+      if (instance) {
+        this.connectionInstances.set(conn.id, instance);
+      }
+
       // Add forward link: source -> target
       if (!this.deviceConnections.has(conn.sourceDeviceId)) {
         this.deviceConnections.set(conn.sourceDeviceId, []);
@@ -79,7 +95,8 @@ class NetworkSimulatorSingleton {
       this.deviceConnections.get(conn.sourceDeviceId)!.push({
         localInterfaceId: conn.sourceInterfaceId,
         remoteDeviceId: conn.targetDeviceId,
-        remoteInterfaceId: conn.targetInterfaceId
+        remoteInterfaceId: conn.targetInterfaceId,
+        connectionInstance: instance
       });
 
       // Add reverse link: target -> source
@@ -89,7 +106,22 @@ class NetworkSimulatorSingleton {
       this.deviceConnections.get(conn.targetDeviceId)!.push({
         localInterfaceId: conn.targetInterfaceId,
         remoteDeviceId: conn.sourceDeviceId,
-        remoteInterfaceId: conn.sourceInterfaceId
+        remoteInterfaceId: conn.sourceInterfaceId,
+        connectionInstance: instance
+      });
+    }
+  }
+
+  /**
+   * Wire up connection instances to deliver frames to target devices
+   */
+  private wireUpConnectionInstances(): void {
+    for (const [, instance] of this.connectionInstances) {
+      instance.onFrameDelivery((targetDeviceId, targetInterfaceId, frame) => {
+        const targetDevice = this.devices.get(targetDeviceId);
+        if (!targetDevice) return;
+
+        this.deliverFrame(targetDevice, targetInterfaceId, frame);
       });
     }
   }
@@ -115,18 +147,20 @@ class NetworkSimulatorSingleton {
       }
     }
 
-    // Check if device is a Switch with frame forwarding
+    // Check if device is a Switch or Hub with frame forwarding
+    // Both Switch and Hub use onFrameForward callback
     if ('onFrameForward' in device && typeof (device as any).onFrameForward === 'function') {
-      (device as any).onFrameForward((port: string, frame: EthernetFrame) => {
-        this.handleSwitchForward(deviceId, port, frame);
-      });
-    }
-
-    // Check if device is a Hub
-    if ('onFrameRepeat' in device && typeof (device as any).onFrameRepeat === 'function') {
-      (device as any).onFrameRepeat((port: string, frame: EthernetFrame) => {
-        this.handleHubRepeat(deviceId, port, frame);
-      });
+      const deviceType = device.getType();
+      if (deviceType === 'hub') {
+        (device as any).onFrameForward((port: string, frame: EthernetFrame) => {
+          this.handleHubRepeat(deviceId, port, frame);
+        });
+      } else {
+        // Switch and other L2 devices
+        (device as any).onFrameForward((port: string, frame: EthernetFrame) => {
+          this.handleSwitchForward(deviceId, port, frame);
+        });
+      }
     }
   }
 
@@ -145,6 +179,7 @@ class NetworkSimulatorSingleton {
 
   /**
    * Handle frame transmitted from a device interface
+   * Uses the concrete connection instance to forward the frame
    */
   private handleFrameTransmit(sourceDeviceId: string, sourceInterfaceId: string, frame: EthernetFrame): void {
     // Find where this frame should go
@@ -168,8 +203,13 @@ class NetworkSimulatorSingleton {
       frame: this.convertFrameForEvent(frame)
     });
 
-    // Deliver frame to target device
-    this.deliverFrame(targetDevice, link.remoteInterfaceId, frame);
+    // Use connection instance if available for realistic forwarding
+    if (link.connectionInstance) {
+      link.connectionInstance.transmitFrame(sourceDeviceId, frame);
+    } else {
+      // Fallback: direct delivery
+      this.deliverFrame(targetDevice, link.remoteInterfaceId, frame);
+    }
   }
 
   /**
@@ -193,8 +233,12 @@ class NetworkSimulatorSingleton {
       frame: this.convertFrameForEvent(frame)
     });
 
-    // Deliver frame
-    this.deliverFrame(targetDevice, link.remoteInterfaceId, frame);
+    // Use connection instance if available
+    if (link.connectionInstance) {
+      link.connectionInstance.transmitFrame(switchId, frame);
+    } else {
+      this.deliverFrame(targetDevice, link.remoteInterfaceId, frame);
+    }
   }
 
   /**
@@ -218,21 +262,19 @@ class NetworkSimulatorSingleton {
       frame: this.convertFrameForEvent(frame)
     });
 
-    // Deliver frame
-    this.deliverFrame(targetDevice, link.remoteInterfaceId, frame);
+    // Use connection instance if available
+    if (link.connectionInstance) {
+      link.connectionInstance.transmitFrame(hubId, frame);
+    } else {
+      this.deliverFrame(targetDevice, link.remoteInterfaceId, frame);
+    }
   }
 
   /**
    * Deliver a frame to a device
    */
   private deliverFrame(device: BaseDevice, interfaceId: string, frame: EthernetFrame): void {
-    // If device is a Switch, use receiveFrame
-    if ('receiveFrame' in device && typeof (device as any).receiveFrame === 'function') {
-      (device as any).receiveFrame(interfaceId, frame);
-      return;
-    }
-
-    // If device is a Hub, use receiveFrame
+    // If device has receiveFrame (Switch, Hub, or PC with that method)
     if ('receiveFrame' in device && typeof (device as any).receiveFrame === 'function') {
       (device as any).receiveFrame(interfaceId, frame);
       return;
@@ -269,6 +311,20 @@ class NetworkSimulatorSingleton {
 
   removeEventListener(listener: NetworkEventListener): void {
     this.listeners.delete(listener);
+  }
+
+  /**
+   * Get a connection instance by ID
+   */
+  getConnectionInstance(connectionId: string): BaseConnection | undefined {
+    return this.connectionInstances.get(connectionId);
+  }
+
+  /**
+   * Get all connection instances
+   */
+  getConnectionInstances(): Map<string, BaseConnection> {
+    return new Map(this.connectionInstances);
   }
 
   /**
@@ -314,6 +370,7 @@ class NetworkSimulatorSingleton {
     return {
       devices: this.devices.size,
       connections: this.connections.length,
+      connectionInstances: this.connectionInstances.size,
       deviceConnections: Object.fromEntries(this.deviceConnections)
     };
   }
@@ -329,6 +386,7 @@ class NetworkSimulatorSingleton {
     this.devices.clear();
     this.connections = [];
     this.deviceConnections.clear();
+    this.connectionInstances.clear();
     this.initialized = false;
   }
 }
