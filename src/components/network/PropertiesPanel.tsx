@@ -3,11 +3,12 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, RefreshCw, Trash2 } from 'lucide-react';
+import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, RefreshCw, Trash2, Cable, Activity } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
 import { DeviceFactory } from '@/domain/devices/DeviceFactory';
 import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
+import { getConnectionDetails } from './properties-panel-logic';
 import { cn } from '@/lib/utils';
 
 // MAC Table entry type
@@ -90,11 +91,15 @@ export function PropertiesPanel() {
   if (selectedConnection) {
     const sourceDevice = devices.find(d => d.id === selectedConnection.sourceDeviceId);
     const targetDevice = devices.find(d => d.id === selectedConnection.targetDeviceId);
+    const details = getConnectionDetails(selectedConnection);
 
     return (
       <div className="w-72 bg-card/30 backdrop-blur-xl border-l border-white/10 flex flex-col">
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground/90">Connection</h2>
+          <div className="flex items-center gap-2">
+            <Cable className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground/90">Connection</h2>
+          </div>
           <button
             onClick={() => selectDevice(null)}
             className="p-1 hover:bg-white/10 rounded transition-colors"
@@ -104,29 +109,61 @@ export function PropertiesPanel() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Connection type */}
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">Type</label>
-            <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm capitalize">
-              {selectedConnection.type}
+            <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm font-medium">
+              {details.typeLabel}
             </div>
           </div>
 
+          {/* Source device + interface */}
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">Source</label>
-            <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm flex items-center gap-2">
-              {sourceDevice && <DeviceIcon type={sourceDevice.type} size={16} />}
-              <span>{sourceDevice?.name || 'Unknown'}</span>
+            <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm">
+              <div className="flex items-center gap-2">
+                {sourceDevice && <DeviceIcon type={sourceDevice.type} size={16} />}
+                <span>{sourceDevice?.name || 'Unknown'}</span>
+              </div>
+              <div className="text-xs text-blue-400 mt-1 font-mono">
+                {details.sourceInterface}
+              </div>
             </div>
           </div>
 
+          {/* Target device + interface */}
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">Target</label>
-            <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm flex items-center gap-2">
-              {targetDevice && <DeviceIcon type={targetDevice.type} size={16} />}
-              <span>{targetDevice?.name || 'Unknown'}</span>
+            <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm">
+              <div className="flex items-center gap-2">
+                {targetDevice && <DeviceIcon type={targetDevice.type} size={16} />}
+                <span>{targetDevice?.name || 'Unknown'}</span>
+              </div>
+              <div className="text-xs text-blue-400 mt-1 font-mono">
+                {details.targetInterface}
+              </div>
             </div>
           </div>
 
+          {/* Performance details */}
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+              <Activity className="w-3 h-3" />
+              Performance
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                <div className="text-[10px] text-muted-foreground">Bandwidth</div>
+                <div className="text-sm font-medium text-foreground/90">{details.bandwidth}</div>
+              </div>
+              <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                <div className="text-[10px] text-muted-foreground">Latency</div>
+                <div className="text-sm font-medium text-foreground/90">{details.latency}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Status */}
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">Status</label>
             <div className={cn(

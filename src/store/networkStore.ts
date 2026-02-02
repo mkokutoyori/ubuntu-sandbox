@@ -45,7 +45,7 @@ interface NetworkState {
   selectedDeviceId: string | null;
   selectedConnectionId: string | null;
   isConnecting: boolean;
-  connectionSource: { deviceId: string; interfaceId: string } | null;
+  connectionSource: { deviceId: string; interfaceId: string; connectionType: ConnectionType } | null;
   zoom: number;
   panX: number;
   panY: number;
@@ -71,7 +71,7 @@ interface NetworkState {
   selectConnection: (id: string | null) => void;
 
   // Connection mode
-  startConnecting: (deviceId: string, interfaceId: string) => void;
+  startConnecting: (deviceId: string, interfaceId: string, connectionType?: ConnectionType) => void;
   finishConnecting: (deviceId: string, interfaceId: string) => void;
   cancelConnecting: () => void;
 
@@ -297,10 +297,10 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     set({ selectedConnectionId: id, selectedDeviceId: null });
   },
 
-  startConnecting: (deviceId, interfaceId) => {
+  startConnecting: (deviceId, interfaceId, connectionType = 'ethernet') => {
     set({
       isConnecting: true,
-      connectionSource: { deviceId, interfaceId }
+      connectionSource: { deviceId, interfaceId, connectionType }
     });
   },
 
@@ -313,7 +313,8 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         state.connectionSource.deviceId,
         state.connectionSource.interfaceId,
         deviceId,
-        interfaceId
+        interfaceId,
+        state.connectionSource.connectionType
       );
     }
 
