@@ -4,8 +4,9 @@
 
 Ce tutoriel vous guidera pas à pas dans la création d'un réseau local simple avec notre simulateur. À la fin, vous saurez :
 - Créer des équipements réseau (ordinateurs, switch)
-- Les connecter entre eux
+- Les connecter entre eux avec différents types de câbles (Ethernet, Série, Console)
 - Configurer leurs adresses IP
+- Vérifier la table ARP avec la commande `arp`
 - Tester la connectivité avec la commande `ping`
 
 **Aucune connaissance préalable en réseau n'est requise.**
@@ -25,6 +26,32 @@ Un **LAN** (Local Area Network) est un réseau qui connecte des ordinateurs dans
 | **PC (Ordinateur)** | Envoie et reçoit des données | Une maison qui envoie et reçoit du courrier |
 | **Switch** | Connecte plusieurs PCs ensemble | Un bureau de poste qui trie et distribue le courrier |
 | **Câble réseau** | Transporte les données | Les routes entre les maisons |
+
+### Les types de connexions (câbles)
+
+Le simulateur propose trois types de connexions, chacune avec un rôle spécifique :
+
+| Type | Usage | Analogie |
+|------|-------|----------|
+| **Ethernet** | Connecter PCs, Switches, Routeurs en LAN | Le câble réseau classique (RJ-45) |
+| **Série (Serial)** | Liaison WAN entre routeurs | Une ligne téléphonique longue distance |
+| **Console** | Administration d'un équipement | Le câble de maintenance branché directement sur la machine |
+
+#### Câble Ethernet - Détails
+
+Le câble Ethernet est le plus courant. Il existe en plusieurs standards :
+
+| Standard | Débit | Latence | Usage typique |
+|----------|-------|---------|---------------|
+| **10BASE-T** | 10 Mbps | ~2 ms | Ancien réseau |
+| **100BASE-TX** | 100 Mbps | ~0.5 ms | Réseau basique |
+| **1000BASE-T** (défaut) | 1000 Mbps | ~0.1 ms | Réseau moderne (Gigabit) |
+
+Le câble Ethernet supporte également :
+- **Mode duplex** : `full` (envoi et réception simultanés) ou `half` (un sens à la fois)
+- **Jumbo frames** : trames de grande taille pour de meilleures performances
+
+> **Pour un LAN simple**, le câble **Ethernet** standard (1000BASE-T, full duplex) est utilisé automatiquement. Vous n'avez pas besoin de modifier ces paramètres pour commencer.
 
 ### Qu'est-ce qu'une adresse IP ?
 
@@ -89,18 +116,19 @@ Exemple : `192.168.1.10`
 ### 4.1 Connecter PC1 au Switch
 
 1. Cliquez sur **"Câble"** ou l'outil de connexion
-2. Cliquez sur **PC1** puis sélectionnez son port `eth0`
-3. Cliquez sur le **Switch** puis sélectionnez son port `eth0`
+2. Sélectionnez le type de connexion **"Ethernet"** (par défaut)
+3. Cliquez sur **PC1** puis sélectionnez son port `eth0`
+4. Cliquez sur le **Switch** puis sélectionnez son port `eth0`
 
-Une ligne apparaît reliant PC1 au Switch.
+Une ligne apparaît reliant PC1 au Switch. Une connexion **Ethernet 1000BASE-T** est créée automatiquement avec un débit de 1 Gbps.
 
 ### 4.2 Connecter PC2 au Switch
 
-1. Gardez l'outil câble sélectionné
+1. Gardez l'outil câble sélectionné (type **Ethernet**)
 2. Cliquez sur **PC2** → port `eth0`
 3. Cliquez sur le **Switch** → port `eth1`
 
-**Résultat** : Les trois équipements sont maintenant connectés physiquement.
+**Résultat** : Les trois équipements sont maintenant connectés physiquement par des câbles Ethernet.
 
 ```
 PC1 (eth0) ──── eth0 [Switch] eth1 ──── PC2 (eth0)
@@ -228,7 +256,61 @@ Ping statistics for 192.168.1.10:
 
 ---
 
-## 7. Étape 5 : Commandes utiles sur les équipements
+## 7. Étape 5 : Vérifier la table ARP
+
+### Qu'est-ce que l'ARP ?
+
+Le protocole **ARP** (Address Resolution Protocol) permet à un ordinateur de trouver l'adresse MAC (adresse physique) d'un autre ordinateur à partir de son adresse IP. C'est comme chercher le numéro de téléphone d'une personne en connaissant seulement son nom.
+
+Quand PC1 fait un ping vers PC2 :
+1. PC1 ne connaît que l'IP de PC2 (`192.168.1.20`)
+2. PC1 envoie une **requête ARP** en broadcast : "Qui a l'IP 192.168.1.20 ?"
+3. PC2 répond : "C'est moi, voici mon adresse MAC"
+4. PC1 enregistre cette correspondance dans sa **table ARP**
+
+### 7.1 Afficher la table ARP sur Linux
+
+Après avoir fait un ping, dans le terminal de PC1 :
+```bash
+arp -a
+```
+
+**Résultat attendu** :
+```
+Address                  HWtype  HWaddress           Flags Mask            Iface
+192.168.1.20             ether   00:11:22:33:44:55   C                     eth0
+```
+
+**Interprétation** :
+- `192.168.1.20` : l'adresse IP connue
+- `ether` : type de connexion (Ethernet)
+- `00:11:22:33:44:55` : l'adresse MAC correspondante
+- `C` : entrée dans le cache (apprise automatiquement)
+- `eth0` : interface réseau utilisée
+
+### 7.2 Afficher la table ARP sur Windows
+
+Dans le terminal de PC2 :
+```cmd
+arp -a
+```
+
+**Résultat attendu** :
+```
+Interface: 192.168.1.20 --- 0x2
+  Internet Address      Physical Address      Type
+  192.168.1.10          00:1a:2b:3c:4d:5e     dynamic
+```
+
+### 7.3 Table ARP vide ?
+
+Si la commande `arp -a` affiche **"No ARP entries"**, cela signifie qu'aucune communication n'a encore eu lieu. Faites d'abord un `ping` vers l'autre PC, puis vérifiez à nouveau la table ARP.
+
+> **Astuce** : La table ARP se remplit automatiquement lors des communications réseau (ping, etc.). Les entrées expirent après 5 minutes par défaut.
+
+---
+
+## 8. Étape 6 : Commandes utiles sur les équipements
 
 ### Sur un PC Linux
 
@@ -237,6 +319,7 @@ Ping statistics for 192.168.1.10:
 | `ifconfig` | Affiche la configuration réseau |
 | `ifconfig eth0 IP netmask MASK` | Configure une adresse IP |
 | `ping IP` | Teste la connectivité vers une IP |
+| `arp -a` | Affiche la table ARP (correspondances IP ↔ MAC) |
 | `traceroute IP` | Affiche le chemin vers une IP |
 | `hostname` | Affiche le nom de l'ordinateur |
 | `clear` | Efface l'écran du terminal |
@@ -248,6 +331,7 @@ Ping statistics for 192.168.1.10:
 | `ipconfig` | Affiche la configuration réseau |
 | `ipconfig /all` | Affiche les détails complets |
 | `ping IP` | Teste la connectivité |
+| `arp -a` | Affiche la table ARP |
 | `tracert IP` | Affiche le chemin vers une IP |
 | `hostname` | Affiche le nom de l'ordinateur |
 | `cls` | Efface l'écran |
@@ -269,7 +353,7 @@ SW1#show vlan brief              # Affiche les VLANs
 
 ---
 
-## 8. Comprendre ce qui se passe en coulisses
+## 9. Comprendre ce qui se passe en coulisses
 
 ### Le rôle du Switch
 
@@ -308,7 +392,7 @@ Total Mac Addresses: 2
 
 ---
 
-## 9. Exercices pratiques
+## 10. Exercices pratiques
 
 ### Exercice 1 : Ajouter un troisième PC
 
@@ -335,7 +419,7 @@ Total Mac Addresses: 2
 
 ---
 
-## 10. Résolution de problèmes courants
+## 11. Résolution de problèmes courants
 
 ### "Destination host unreachable"
 
@@ -360,16 +444,17 @@ Total Mac Addresses: 2
 
 ---
 
-## 11. Récapitulatif des étapes
+## 12. Récapitulatif des étapes
 
 1. **Créer** les équipements (PCs + Switch)
-2. **Connecter** les PCs au Switch avec des câbles
+2. **Connecter** les PCs au Switch avec des câbles Ethernet
 3. **Configurer** les adresses IP sur chaque PC
 4. **Tester** avec la commande `ping`
+5. **Vérifier** la table ARP avec `arp -a`
 
 ---
 
-## 12. Glossaire
+## 13. Glossaire
 
 | Terme | Définition |
 |-------|------------|
@@ -380,17 +465,23 @@ Total Mac Addresses: 2
 | **Ping** | Commande pour tester la connectivité réseau |
 | **Interface** | Point de connexion réseau (ex: eth0) |
 | **Masque** | Détermine la taille du réseau (ex: 255.255.255.0 = 254 adresses possibles) |
+| **ARP** | Address Resolution Protocol - traduit une adresse IP en adresse MAC |
 | **Trame** | Unité de données au niveau Ethernet (couche 2) |
 | **Paquet** | Unité de données au niveau IP (couche 3) |
+| **ICMP** | Internet Control Message Protocol - protocole utilisé par `ping` |
+| **Duplex** | Mode de communication : full (bidirectionnel simultané) ou half (alterné) |
 | **VLAN** | Virtual LAN - réseau virtuel isolé |
+| **Bande passante** | Débit maximal d'une connexion (ex: 1000 Mbps pour Gigabit Ethernet) |
 
 ---
 
 ## Prochaines étapes
 
 Une fois ce tutoriel maîtrisé, vous pourrez explorer :
-- La configuration de VLANs pour séparer les réseaux
-- L'ajout de routeurs pour connecter différents réseaux
+- Les **connexions série (Serial)** pour relier deux routeurs en WAN
+- La configuration de **VLANs** pour séparer les réseaux
+- L'ajout de **routeurs** pour connecter différents réseaux (inter-VLAN, WAN)
+- Les **câbles console** pour administrer les équipements Cisco à distance
 - La configuration de spanning-tree pour la redondance
 - Les listes de contrôle d'accès (ACL) pour la sécurité
 
