@@ -254,9 +254,7 @@ export class PC extends BaseDevice {
    * @returns Array of ARP entries
    */
   public getARPTable(): Array<{ ip: IPAddress; mac: MACAddress }> {
-    // For now, return empty array
-    // TODO: Add method to ARPService to get all entries
-    return [];
+    return this.arpService.getEntries();
   }
 
   /**

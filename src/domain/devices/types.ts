@@ -38,7 +38,7 @@ export interface DeviceConfig {
 export type ConnectionType = 'ethernet' | 'serial' | 'console';
 
 /**
- * Connection between devices
+ * Connection between devices (plain data interface for store/UI)
  */
 export interface Connection {
   id: string;
@@ -48,6 +48,8 @@ export interface Connection {
   targetDeviceId: string;
   targetInterfaceId: string;
   isActive: boolean;
+  /** Reference to the concrete connection instance */
+  instance?: import('../connections/BaseConnection').BaseConnection;
 }
 
 /**

@@ -71,3 +71,26 @@ export {
   resetDeviceCounters,
   DEVICE_CATEGORIES
 } from './types';
+
+// Connections
+export {
+  BaseConnection,
+  EthernetConnection,
+  SerialConnection,
+  ConsoleConnection,
+  ConnectionFactory
+} from '../connections';
+
+export type {
+  ConnectionConfig,
+  ConnectionStatus,
+  ConnectionEndpoint,
+  ConnectionStatistics,
+  FrameDeliveryCallback,
+  EthernetStandard,
+  DuplexMode,
+  CableType,
+  SerialEncapsulation,
+  SerialRole,
+  BaudRate
+} from '../connections';

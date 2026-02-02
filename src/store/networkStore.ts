@@ -13,7 +13,9 @@ import {
   ConnectionType,
   NetworkInterfaceConfig,
   generateId,
-  resetDeviceCounters
+  resetDeviceCounters,
+  ConnectionFactory,
+  BaseConnection
 } from '@/domain/devices';
 
 /**
@@ -247,14 +249,26 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
 
     if (exists) return null;
 
+    const connId = generateId();
+
+    // Create concrete connection instance via factory
+    const instance = ConnectionFactory.create(type, {
+      id: connId,
+      sourceDeviceId,
+      sourceInterfaceId,
+      targetDeviceId,
+      targetInterfaceId
+    });
+
     const connection: Connection = {
-      id: generateId(),
+      id: connId,
       type,
       sourceDeviceId,
       sourceInterfaceId,
       targetDeviceId,
       targetInterfaceId,
-      isActive: true
+      isActive: true,
+      instance
     };
 
     set(state => ({
@@ -265,10 +279,18 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   removeConnection: (id) => {
-    set(state => ({
-      connections: state.connections.filter(c => c.id !== id),
-      selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId
-    }));
+    set(state => {
+      // Deactivate the connection instance before removing
+      const conn = state.connections.find(c => c.id === id);
+      if (conn?.instance) {
+        conn.instance.down();
+      }
+
+      return {
+        connections: state.connections.filter(c => c.id !== id),
+        selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId
+      };
+    });
   },
 
   selectConnection: (id) => {

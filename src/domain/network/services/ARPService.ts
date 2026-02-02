@@ -194,6 +194,18 @@ export class ARPService {
   }
 
   /**
+   * Returns all non-expired cache entries
+   */
+  public getEntries(): Array<{ ip: IPAddress; mac: MACAddress }> {
+    this.cleanExpired();
+    const result: Array<{ ip: IPAddress; mac: MACAddress }> = [];
+    for (const [key, entry] of this.cache.entries()) {
+      result.push({ ip: new IPAddress(key), mac: entry.mac });
+    }
+    return result;
+  }
+
+  /**
    * Clears all entries from cache
    */
   public clear(): void {
