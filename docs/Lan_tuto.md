@@ -212,30 +212,64 @@ ifconfig eth0 192.168.1.20 netmask 255.255.255.0
 
 Le **ping** est comme envoyer un "coucou" à un autre ordinateur pour vérifier qu'il répond. C'est le test de base pour vérifier la connectivité réseau.
 
-### 6.1 Depuis PC1, pinguer PC2
+### 6.1 Tester le loopback (ping soi-même)
+
+Avant de tester la connectivité avec un autre PC, vérifiez que la pile réseau de votre PC fonctionne en faisant un ping loopback.
 
 Dans le terminal de PC1, tapez :
 ```bash
-ping 192.168.1.20
+ping -c 1 127.0.0.1
+```
+
+Ou :
+```bash
+ping -c 1 localhost
+```
+
+**Résultat attendu** :
+```
+PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.015 ms
+
+--- 127.0.0.1 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss
+```
+
+Vous pouvez aussi pinguer votre propre adresse IP :
+```bash
+ping -c 1 192.168.1.10
+```
+
+> **Note** : Le loopback (`127.0.0.1`, `localhost`, ou sa propre IP) ne passe pas par le réseau physique. C'est un test interne au système d'exploitation.
+
+### 6.2 Depuis PC1, pinguer PC2
+
+Dans le terminal de PC1, tapez :
+```bash
+ping -c 4 192.168.1.20
 ```
 
 **Résultat attendu** :
 ```
 PING 192.168.1.20 (192.168.1.20) 56(84) bytes of data.
-64 bytes from 192.168.1.20: icmp_seq=1 ttl=64 time=0.5 ms
-64 bytes from 192.168.1.20: icmp_seq=2 ttl=64 time=0.4 ms
-64 bytes from 192.168.1.20: icmp_seq=3 ttl=64 time=0.3 ms
+64 bytes from 192.168.1.20: icmp_seq=1 ttl=64 time=2.45 ms
+64 bytes from 192.168.1.20: icmp_seq=2 ttl=64 time=1.30 ms
+64 bytes from 192.168.1.20: icmp_seq=3 ttl=64 time=0.89 ms
+64 bytes from 192.168.1.20: icmp_seq=4 ttl=64 time=1.12 ms
+
 --- 192.168.1.20 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss
+4 packets transmitted, 4 received, 0% packet loss
 ```
 
 **Interprétation** :
 - `64 bytes from 192.168.1.20` : PC2 a répondu
-- `icmp_seq=1, 2, 3` : numéro de chaque "coucou" envoyé
-- `time=0.5 ms` : temps de réponse (très rapide)
+- `icmp_seq=1, 2, 3, 4` : numéro de chaque "coucou" envoyé
+- `time=2.45 ms` : temps de réponse (très rapide)
 - `0% packet loss` : tous les paquets sont arrivés
 
-### 6.2 Depuis PC2, pinguer PC1
+> **Important** : Le ping entre deux PCs nécessite que le **Switch soit allumé** et que les câbles soient correctement connectés. Le simulateur effectue automatiquement la résolution ARP (découverte de l'adresse MAC) lors du premier ping.
+
+### 6.3 Depuis PC2, pinguer PC1
 
 Dans le terminal de PC2, tapez :
 ```cmd
@@ -245,11 +279,15 @@ ping 192.168.1.10
 Sur Windows, l'affichage est légèrement différent :
 ```
 Pinging 192.168.1.10 with 32 bytes of data:
-Reply from 192.168.1.10: bytes=32 time<1ms TTL=64
-Reply from 192.168.1.10: bytes=32 time<1ms TTL=64
+Reply from 192.168.1.10: bytes=32 time<1ms TTL=128
+Reply from 192.168.1.10: bytes=32 time<1ms TTL=128
+Reply from 192.168.1.10: bytes=32 time<1ms TTL=128
+Reply from 192.168.1.10: bytes=32 time<1ms TTL=128
 
 Ping statistics for 192.168.1.10:
-    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 0ms, Maximum = 1ms, Average = 0ms
 ```
 
 **Félicitations !** Votre réseau local fonctionne !
@@ -427,14 +465,18 @@ Total Mac Addresses: 2
 
 **Solution** : Vérifiez que les 3 premiers nombres de l'IP sont identiques (ex: `192.168.1.X`)
 
-### "Request timed out"
+### "Request timed out" / "100% packet loss"
 
-**Cause possible** : L'équipement cible n'est pas connecté ou éteint.
+**Causes possibles** :
+- L'équipement cible n'est pas connecté ou éteint
+- **Le Switch n'est pas allumé** (cause la plus fréquente !)
+- La résolution ARP a échoué
 
 **Solution** :
-1. Vérifiez que tous les équipements sont allumés
-2. Vérifiez que les câbles sont bien connectés
+1. Vérifiez que **tous les équipements sont allumés** (PCs ET Switch)
+2. Vérifiez que les câbles sont bien connectés aux bonnes interfaces
 3. Vérifiez la configuration IP du destinataire
+4. Vérifiez que les deux PCs sont sur le même sous-réseau (mêmes 3 premiers octets)
 
 ### "Network interface not configured"
 
@@ -469,6 +511,7 @@ Total Mac Addresses: 2
 | **Trame** | Unité de données au niveau Ethernet (couche 2) |
 | **Paquet** | Unité de données au niveau IP (couche 3) |
 | **ICMP** | Internet Control Message Protocol - protocole utilisé par `ping` |
+| **Loopback** | Adresse spéciale (127.0.0.1 / localhost) permettant de pinguer son propre PC sans passer par le réseau |
 | **Duplex** | Mode de communication : full (bidirectionnel simultané) ou half (alterné) |
 | **VLAN** | Virtual LAN - réseau virtuel isolé |
 | **Bande passante** | Débit maximal d'une connexion (ex: 1000 Mbps pour Gigabit Ethernet) |
