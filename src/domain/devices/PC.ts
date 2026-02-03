@@ -383,10 +383,7 @@ export class PC extends BaseDevice {
 
           // Send ARP reply
           const replyBytes = this.arpService.serializePacket(reply);
-          const paddedPayload = Buffer.concat([
-            replyBytes,
-            Buffer.alloc(Math.max(0, 46 - replyBytes.length))
-          ]);
+          const paddedPayload = this.createPaddedPayload(replyBytes, 46);
 
           const replyFrame = new EthernetFrame({
             sourceMAC: nic.getMAC(),
@@ -483,10 +480,7 @@ export class PC extends BaseDevice {
 
     // Encapsulate in Ethernet frame
     const packetBytes = ipPacket.toBytes();
-    const paddedPayload = Buffer.concat([
-      packetBytes,
-      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
-    ]);
+    const paddedPayload = this.createPaddedPayload(packetBytes, 46);
 
     const frame = new EthernetFrame({
       sourceMAC: nic.getMAC(),
@@ -510,5 +504,18 @@ export class PC extends BaseDevice {
    */
   public getGateway(): IPAddress | undefined {
     return this.gateway;
+  }
+
+  /**
+   * Pads payload to minimum Ethernet size.
+   */
+  private createPaddedPayload(payload: Uint8Array, minSize: number): Uint8Array {
+    if (payload.length >= minSize) {
+      return payload;
+    }
+
+    const padded = new Uint8Array(minSize);
+    padded.set(payload, 0);
+    return padded;
   }
 }

@@ -330,17 +330,19 @@ describe('ARPService', () => {
 
       const bytes = arpService.serializePacket(request);
 
-      expect(bytes).toBeInstanceOf(Buffer);
+      expect(bytes).toBeInstanceOf(Uint8Array);
       expect(bytes.length).toBe(28); // ARP packet size
 
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
       // Check hardware type (Ethernet = 1)
-      expect(bytes.readUInt16BE(0)).toBe(1);
+      expect(view.getUint16(0)).toBe(1);
 
       // Check protocol type (IPv4 = 0x0800)
-      expect(bytes.readUInt16BE(2)).toBe(0x0800);
+      expect(view.getUint16(2)).toBe(0x0800);
 
       // Check operation (request = 1)
-      expect(bytes.readUInt16BE(6)).toBe(1);
+      expect(view.getUint16(6)).toBe(1);
     });
 
     it('should deserialize ARP packet from bytes', () => {

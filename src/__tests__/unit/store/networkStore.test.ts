@@ -243,6 +243,35 @@ describe('Network Store', () => {
       expect(pc1!.isOnline()).toBe(true);
     });
 
+    it('should resolve ARP automatically for a LAN ping', async () => {
+      const store = useNetworkStore.getState();
+
+      // Create LAN: PC1 <-> Switch <-> PC2
+      const pc1UI = store.addDevice('linux-pc', 100, 100);
+      const pc2UI = store.addDevice('linux-pc', 100, 300);
+      const swUI = store.addDevice('cisco-switch', 300, 200);
+
+      store.addConnection(pc1UI.id, 'eth0', swUI.id, 'eth0');
+      store.addConnection(pc2UI.id, 'eth0', swUI.id, 'eth1');
+
+      // Initialize NetworkSimulator
+      const { deviceInstances, connections } = useNetworkStore.getState();
+      NetworkSimulator.initialize(deviceInstances, connections);
+
+      // Configure IPs
+      const pc1 = store.getDevice(pc1UI.id);
+      const pc2 = store.getDevice(pc2UI.id);
+
+      (pc1 as any).setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
+      (pc2 as any).setIPAddress('eth0', new IPAddress('192.168.1.20'), new SubnetMask('/24'));
+
+      // Execute ping without pre-populating ARP cache
+      const result = await (pc1 as any).executeCommand('ping -c 1 192.168.1.20');
+
+      expect(result).toContain('PING 192.168.1.20');
+      expect(result).toContain('64 bytes from 192.168.1.20');
+    });
+
     it('should support full ping flow with configured devices', async () => {
       const store = useNetworkStore.getState();
 
