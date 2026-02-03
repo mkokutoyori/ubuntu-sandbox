@@ -2406,20 +2406,37 @@ Examples:
     let failCount = 0;
 
     for (let i = 0; i < count; i++) {
-      // Create Echo Request with 32 bytes (Windows default) - use Buffer for Node.js compatibility
+      // Create Echo Request with 32 bytes (Windows default)
       const data = typeof Buffer !== 'undefined'
         ? Buffer.alloc(32, 0x61) // Fill with 'a' characters (Windows pattern)
         : new Uint8Array(32).fill(0x61);
 
-      const request = icmpService.createEchoRequest(targetIP, data as Buffer, 1000); // 1 second timeout
+      const seqNum = (icmpService as any).sequences?.get(targetIP.toString()) || 0;
+      const nextSeq = seqNum + 1;
+      const request = icmpService.createEchoRequest(targetIP, data as Buffer, 1000);
 
-      // Send the ICMP packet
+      // Send the ICMP packet through the real network
       try {
         this.sendICMPRequest(targetIP, request);
 
-        // Indicate packet was sent (full reply handling requires network simulation)
-        output += `Reply from ${targetIP.toString()}: bytes=32 time<1ms TTL=128\n`;
-        successCount++;
+        // Check if we got an actual reply (synchronous chain).
+        // If handleEchoReply was called, the pending request for this seq is removed.
+        const destKey = targetIP.toString();
+        const pending = icmpService.getPendingRequests().get(destKey);
+        const gotReply = !pending || !pending.has(nextSeq);
+
+        if (gotReply) {
+          output += `Reply from ${targetIP.toString()}: bytes=32 time<1ms TTL=128\n`;
+          successCount++;
+        } else {
+          // No reply — clean up stale pending request
+          pending!.delete(nextSeq);
+          if (pending!.size === 0) {
+            icmpService.getPendingRequests().delete(destKey);
+          }
+          output += `Request timed out.\n`;
+          failCount++;
+        }
       } catch (error) {
         output += `Request timed out.\n`;
         failCount++;

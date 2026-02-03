@@ -3155,7 +3155,7 @@ Try 'ping --help' for more information.`;
     const rtts: number[] = [];
 
     for (let i = 0; i < count; i++) {
-      // Create Echo Request data - use Buffer.from for Node.js compatibility with ICMP service
+      // Create Echo Request data
       const pingText = `Ping data ${i}`;
       const data = typeof Buffer !== 'undefined'
         ? Buffer.from(pingText.padEnd(56, '\0'))
@@ -3166,18 +3166,34 @@ Try 'ping --help' for more information.`;
         }
       }
 
-      const request = icmpService.createEchoRequest(targetIP, data as Buffer, 1000); // 1 second timeout
+      const seqNum = (icmpService as any).sequences?.get(targetIP.toString()) || 0;
+      const nextSeq = seqNum + 1;
+      const request = icmpService.createEchoRequest(targetIP, data as Buffer, 1000);
 
-      // Send the ICMP packet
+      // Send the ICMP packet through the real network
       try {
         this.sendICMPRequest(targetIP, request);
 
-        // Simulate reply (in real implementation would wait for actual reply)
-        // For now, indicate packet was sent
-        const rtt = Math.random() * 5 + 0.5; // Simulated RTT between 0.5ms and 5.5ms
-        rtts.push(rtt);
-        output += `64 bytes from ${targetIP.toString()}: icmp_seq=${i + 1} ttl=64 time=${rtt.toFixed(2)} ms\n`;
-        successCount++;
+        // Check if we got an actual reply (synchronous chain).
+        // If handleEchoReply was called, the pending request for this seq is removed.
+        const destKey = targetIP.toString();
+        const pending = icmpService.getPendingRequests().get(destKey);
+        const gotReply = !pending || !pending.has(nextSeq);
+
+        if (gotReply) {
+          const rtt = Math.random() * 5 + 0.5;
+          rtts.push(rtt);
+          output += `64 bytes from ${targetIP.toString()}: icmp_seq=${i + 1} ttl=64 time=${rtt.toFixed(2)} ms\n`;
+          successCount++;
+        } else {
+          // No reply came back — clean up the stale pending request
+          pending!.delete(nextSeq);
+          if (pending!.size === 0) {
+            icmpService.getPendingRequests().delete(destKey);
+          }
+          output += `Request timeout for icmp_seq ${i + 1}\n`;
+          failCount++;
+        }
       } catch (error) {
         output += `Request timeout for icmp_seq ${i + 1}\n`;
         failCount++;

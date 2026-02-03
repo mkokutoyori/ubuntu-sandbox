@@ -481,12 +481,11 @@ export class PC extends BaseDevice {
       return;
     }
 
-    // Encapsulate in Ethernet frame
+    // Encapsulate in Ethernet frame - use Uint8Array for browser compatibility
     const packetBytes = ipPacket.toBytes();
-    const paddedPayload = Buffer.concat([
-      packetBytes,
-      Buffer.alloc(Math.max(0, 46 - packetBytes.length))
-    ]);
+    const paddingLength = Math.max(0, 46 - packetBytes.length);
+    const paddedPayload = new Uint8Array(packetBytes.length + paddingLength);
+    paddedPayload.set(packetBytes instanceof Uint8Array ? packetBytes : new Uint8Array(packetBytes), 0);
 
     const frame = new EthernetFrame({
       sourceMAC: nic.getMAC(),
