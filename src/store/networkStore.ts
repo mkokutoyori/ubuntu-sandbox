@@ -17,6 +17,7 @@ import {
   ConnectionFactory,
   BaseConnection
 } from '@/domain/devices';
+import { NetworkSimulator } from '@/core/network/NetworkSimulator';
 
 /**
  * UI representation of a device (for rendering)
@@ -131,6 +132,14 @@ function deviceToUI(device: BaseDevice): NetworkDeviceUI {
   };
 }
 
+/**
+ * Synchronize the NetworkSimulator with current topology.
+ * Called synchronously after every topology change so frames can flow immediately.
+ */
+function syncSimulator(deviceInstances: Map<string, BaseDevice>, connections: Connection[]): void {
+  NetworkSimulator.initialize(deviceInstances, connections);
+}
+
 export const useNetworkStore = create<NetworkState>((set, get) => ({
   deviceInstances: new Map(),
   connections: [],
@@ -157,6 +166,10 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       return { deviceInstances: newInstances };
     });
 
+    // Synchronize simulator with new topology
+    const state = get();
+    syncSimulator(state.deviceInstances, state.connections);
+
     return deviceToUI(device);
   },
 
@@ -173,6 +186,10 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         selectedDeviceId: state.selectedDeviceId === id ? null : state.selectedDeviceId
       };
     });
+
+    // Synchronize simulator with new topology
+    const state = get();
+    syncSimulator(state.deviceInstances, state.connections);
   },
 
   updateDevice: (id, updates) => {
@@ -275,6 +292,12 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       connections: [...state.connections, connection]
     }));
 
+    // Synchronize simulator with new topology
+    {
+      const s = get();
+      syncSimulator(s.deviceInstances, s.connections);
+    }
+
     return connection;
   },
 
@@ -291,6 +314,12 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId
       };
     });
+
+    // Synchronize simulator with new topology
+    {
+      const s = get();
+      syncSimulator(s.deviceInstances, s.connections);
+    }
   },
 
   selectConnection: (id) => {
@@ -345,6 +374,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
 
   clearAll: () => {
     resetDeviceCounters();
+    NetworkSimulator.reset();
     set({
       deviceInstances: new Map(),
       connections: [],

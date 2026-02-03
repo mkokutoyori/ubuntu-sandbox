@@ -33,11 +33,14 @@ export function useNetworkSimulator() {
   const [activePackets, setActivePackets] = useState<ActivePacket[]>([]);
   const animationFrameRef = useRef<number | null>(null);
 
-  // Initialize and update simulator when topology changes
+  // The store now calls NetworkSimulator.initialize() synchronously on every
+  // topology change (addDevice, addConnection, etc.). This useEffect serves as
+  // a safety net to re-sync if state is loaded externally.
   useEffect(() => {
-    // Initialize or update the simulator
-    NetworkSimulator.initialize(deviceInstances, connections);
-    isInitializedRef.current = true;
+    if (!isInitializedRef.current) {
+      NetworkSimulator.initialize(deviceInstances, connections);
+      isInitializedRef.current = true;
+    }
   }, [deviceInstances, connections]);
 
   // Animation loop to update packet positions
