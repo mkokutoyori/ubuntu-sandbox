@@ -16,6 +16,12 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Provide Node.js Buffer polyfill for the browser.
+  // Domain network entities (EthernetFrame, IPv4Packet, ICMPPacket, ARPService)
+  // use Buffer for binary data manipulation.
+  define: {
+    global: 'globalThis',
+  },
   test: {
     globals: true,
     environment: 'node',
