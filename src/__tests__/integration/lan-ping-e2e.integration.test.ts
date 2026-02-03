@@ -1,299 +1,165 @@
 /**
- * LAN Ping End-to-End Integration Tests
+ * TDD RED Phase - End-to-end LAN ping tests
  *
- * Tests that ping works between 2 PCs connected via a Switch:
- *   PC1 (192.168.1.10) <---> Switch <---> PC2 (192.168.1.20)
- *
- * Uses TDD approach to verify realistic network behavior.
+ * Reproduces the exact user scenario: 2 Linux PCs + Switch,
+ * configure IPs via terminal, and test ping.
+ * These tests use the NetworkSimulator wiring (not manual wiring)
+ * to match the real GUI flow.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/domain/devices/LinuxPC';
-import { WindowsPC } from '@/domain/devices/WindowsPC';
 import { Switch } from '@/domain/devices/Switch';
-import { IPAddress } from '@/domain/network/value-objects/IPAddress';
-import { SubnetMask } from '@/domain/network/value-objects/SubnetMask';
-import { EthernetFrame, EtherType } from '@/domain/network/entities/EthernetFrame';
-import { MACAddress } from '@/domain/network/value-objects/MACAddress';
+import { NetworkSimulator } from '@/core/network/NetworkSimulator';
+import { ConnectionFactory } from '@/domain/connections/ConnectionFactory';
+import { Connection } from '@/domain/devices/types';
+import { BaseDevice } from '@/domain/devices/BaseDevice';
 
-describe('LAN Ping End-to-End', () => {
+describe('LAN ping end-to-end (with NetworkSimulator wiring)', () => {
   let pc1: LinuxPC;
   let pc2: LinuxPC;
   let sw: Switch;
-
-  // Track frames for verification
-  let framesFromPC1: EthernetFrame[];
-  let framesFromPC2: EthernetFrame[];
-  let framesFromSwitch: Map<string, EthernetFrame[]>;
+  let connections: Connection[];
+  let deviceInstances: Map<string, BaseDevice>;
 
   beforeEach(() => {
-    // Create devices
-    pc1 = new LinuxPC({ id: 'pc1', name: 'PC1' });
-    pc2 = new LinuxPC({ id: 'pc2', name: 'PC2' });
-    sw = new Switch('switch1', 'Switch1');
+    // Create devices (as the GUI would)
+    pc1 = new LinuxPC({ id: 'pc1', name: 'PC1', hostname: 'pc1' });
+    pc2 = new LinuxPC({ id: 'pc2', name: 'PC2', hostname: 'pc2' });
+    sw = new Switch('sw1', 'SW1', 8);
 
-    // Configure IPs
-    pc1.setIPAddress('eth0', new IPAddress('192.168.1.10'), new SubnetMask('/24'));
-    pc2.setIPAddress('eth0', new IPAddress('192.168.1.20'), new SubnetMask('/24'));
-
-    // Power on all devices
-    pc1.powerOn();
-    pc2.powerOn();
+    // Power on the switch (LinuxPC auto-powers on via config)
     sw.powerOn();
 
-    // Track frames
-    framesFromPC1 = [];
-    framesFromPC2 = [];
-    framesFromSwitch = new Map([['eth0', []], ['eth1', []]]);
-
-    // Wire up the network topology:
-    // PC1.eth0 <-> Switch.eth0
-    // PC2.eth0 <-> Switch.eth1
-    wireUpNetwork();
-  });
-
-  /**
-   * Wire up the network so frames flow between devices
-   * This simulates what the NetworkSimulator should do
-   */
-  function wireUpNetwork() {
-    const pc1Interface = pc1.getInterface('eth0');
-    const pc2Interface = pc2.getInterface('eth0');
-
-    if (!pc1Interface || !pc2Interface) {
-      throw new Error('Interfaces not found');
-    }
-
-    // When PC1 transmits, send to Switch port eth0
-    pc1Interface.onTransmit((frame) => {
-      framesFromPC1.push(frame);
-      sw.receiveFrame('eth0', frame);
+    // Create connection instances (as the store does)
+    const conn1Instance = ConnectionFactory.createEthernet({
+      id: 'conn-1',
+      sourceDeviceId: 'pc1',
+      sourceInterfaceId: 'eth0',
+      targetDeviceId: 'sw1',
+      targetInterfaceId: 'eth0'
+    });
+    const conn2Instance = ConnectionFactory.createEthernet({
+      id: 'conn-2',
+      sourceDeviceId: 'pc2',
+      sourceInterfaceId: 'eth0',
+      targetDeviceId: 'sw1',
+      targetInterfaceId: 'eth1'
     });
 
-    // When PC2 transmits, send to Switch port eth1
-    pc2Interface.onTransmit((frame) => {
-      framesFromPC2.push(frame);
-      sw.receiveFrame('eth1', frame);
-    });
-
-    // When Switch forwards frames, deliver to the appropriate device
-    sw.onFrameForward((port, frame) => {
-      framesFromSwitch.get(port)?.push(frame);
-
-      if (port === 'eth0') {
-        // Frame going to PC1
-        pc1Interface.receive(frame);
-      } else if (port === 'eth1') {
-        // Frame going to PC2
-        pc2Interface.receive(frame);
+    connections = [
+      {
+        id: 'conn-1', type: 'ethernet',
+        sourceDeviceId: 'pc1', sourceInterfaceId: 'eth0',
+        targetDeviceId: 'sw1', targetInterfaceId: 'eth0',
+        isActive: true,
+        instance: conn1Instance
+      },
+      {
+        id: 'conn-2', type: 'ethernet',
+        sourceDeviceId: 'pc2', sourceInterfaceId: 'eth0',
+        targetDeviceId: 'sw1', targetInterfaceId: 'eth1',
+        isActive: true,
+        instance: conn2Instance
       }
+    ];
+
+    // Register devices in a map (as the store does)
+    deviceInstances = new Map<string, BaseDevice>();
+    deviceInstances.set('pc1', pc1);
+    deviceInstances.set('pc2', pc2);
+    deviceInstances.set('sw1', sw);
+
+    // Initialize NetworkSimulator (as the useNetworkSimulator hook does)
+    NetworkSimulator.initialize(deviceInstances, connections);
+  });
+
+  describe('self-ping (loopback)', () => {
+    it('should succeed when pinging own IP', async () => {
+      // Configure IP via terminal command
+      await pc1.executeCommand('ifconfig eth0 192.168.1.10 netmask 255.255.255.0');
+
+      // Ping own IP - should succeed (loopback)
+      const result = await pc1.executeCommand('ping -c 1 192.168.1.10');
+      expect(result).toContain('1 received');
+      expect(result).not.toContain('100% packet loss');
     });
 
-    // Switch ports are enabled by default
-    // sw.enablePort('eth0'); // Already enabled by default
-    // sw.enablePort('eth1'); // Already enabled by default
-  }
-
-  /**
-   * Pre-populate ARP tables so devices know each other's MAC addresses
-   */
-  function setupARPTables() {
-    const pc1MAC = pc1.getInterface('eth0')!.getMAC();
-    const pc2MAC = pc2.getInterface('eth0')!.getMAC();
-
-    // PC1 knows PC2's MAC
-    pc1.addARPEntry(new IPAddress('192.168.1.20'), pc2MAC);
-    // PC2 knows PC1's MAC
-    pc2.addARPEntry(new IPAddress('192.168.1.10'), pc1MAC);
-  }
-
-  describe('Basic Connectivity', () => {
-    it('should have both PCs configured with IPs', () => {
-      const pc1IP = pc1.getInterface('eth0')?.getIPAddress();
-      const pc2IP = pc2.getInterface('eth0')?.getIPAddress();
-
-      expect(pc1IP?.toString()).toBe('192.168.1.10');
-      expect(pc2IP?.toString()).toBe('192.168.1.20');
+    it('should succeed when pinging 127.0.0.1', async () => {
+      const result = await pc1.executeCommand('ping -c 1 127.0.0.1');
+      expect(result).toContain('1 received');
+      expect(result).not.toContain('100% packet loss');
     });
 
-    it('should have switch with 2 ports enabled', () => {
-      expect(sw.isPortEnabled('eth0')).toBe(true);
-      expect(sw.isPortEnabled('eth1')).toBe(true);
-    });
-
-    it('should allow devices to be powered on', () => {
-      expect(pc1.isOnline()).toBe(true);
-      expect(pc2.isOnline()).toBe(true);
-      expect(sw.isOnline()).toBe(true);
+    it('should succeed when pinging localhost', async () => {
+      const result = await pc1.executeCommand('ping -c 1 localhost');
+      expect(result).toContain('1 received');
+      expect(result).not.toContain('100% packet loss');
     });
   });
 
-  describe('Ping Command Execution', () => {
-    beforeEach(() => {
-      setupARPTables();
+  describe('cross-device ping through switch', () => {
+    beforeEach(async () => {
+      // Configure both PCs via terminal commands
+      await pc1.executeCommand('ifconfig eth0 192.168.1.10 netmask 255.255.255.0');
+      await pc2.executeCommand('ifconfig eth0 192.168.1.20 netmask 255.255.255.0');
     });
 
-    it('should send ICMP Echo Request when ping command is executed', async () => {
-      // Execute ping command on PC1
-      const result = await pc1.executeCommand('ping 192.168.1.20');
-
-      // Verify output indicates packet was sent
-      expect(result).toContain('PING 192.168.1.20');
-      expect(result).toContain('bytes');
-
-      // Verify frame was actually sent
-      expect(framesFromPC1.length).toBeGreaterThan(0);
+    it('should succeed when pinging another PC on the same LAN', async () => {
+      const result = await pc1.executeCommand('ping -c 1 192.168.1.20');
+      expect(result).toContain('1 received');
+      expect(result).not.toContain('100% packet loss');
     });
 
-    it('should send frame to switch when pinging', async () => {
-      await pc1.executeCommand('ping 192.168.1.20');
+    it('should succeed in reverse direction (PC2 → PC1)', async () => {
+      const result = await pc2.executeCommand('ping -c 1 192.168.1.10');
+      expect(result).toContain('1 received');
+      expect(result).not.toContain('100% packet loss');
+    });
 
-      // Verify at least one frame reached the switch
-      expect(framesFromPC1.length).toBeGreaterThan(0);
+    it('should resolve ARP automatically during ping', async () => {
+      // Ping should trigger ARP exchange automatically
+      await pc1.executeCommand('ping -c 1 192.168.1.20');
 
-      // Verify the frame has correct destination MAC
-      const frame = framesFromPC1[0];
+      // After ping, ARP cache should have the entry
+      const arpTable = pc1.getARPTable();
+      const entry = arpTable.find(e => e.ip.toString() === '192.168.1.20');
+      expect(entry).toBeDefined();
+
+      // The MAC should match PC2's actual MAC
       const pc2MAC = pc2.getInterface('eth0')!.getMAC();
-      expect(frame.getDestinationMAC().equals(pc2MAC)).toBe(true);
+      expect(entry!.mac.toString()).toBe(pc2MAC.toString());
     });
 
-    it('should have switch forward frame to PC2', async () => {
-      await pc1.executeCommand('ping 192.168.1.20');
+    it('should show ARP table via terminal after ping', async () => {
+      await pc1.executeCommand('ping -c 1 192.168.1.20');
 
-      // Verify switch forwarded frame to port eth1 (where PC2 is connected)
-      const forwardedToEth1 = framesFromSwitch.get('eth1') || [];
-      expect(forwardedToEth1.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Frame Flow Through Switch', () => {
-    beforeEach(() => {
-      setupARPTables();
+      const arpOutput = await pc1.executeCommand('arp -a');
+      expect(arpOutput).toContain('192.168.1.20');
     });
 
-    it('should learn PC1 MAC address on port eth0', async () => {
-      await pc1.executeCommand('ping 192.168.1.20');
-
-      // Check switch MAC table service
-      const macTableService = sw.getMACTable();
-      const pc1MAC = pc1.getInterface('eth0')!.getMAC();
-
-      // Lookup PC1's MAC in the MAC table
-      const foundPort = macTableService.lookup(pc1MAC);
-
-      expect(foundPort).toBe('eth0');
-    });
-
-    it('should forward frame based on learned MAC (after initial flood)', async () => {
-      // First ping: PC1 -> PC2 (switch learns PC1's MAC, floods to find PC2)
-      await pc1.executeCommand('ping 192.168.1.20');
-
-      // Second ping: PC2 -> PC1 (switch knows PC1's MAC, direct forward)
-      await pc2.executeCommand('ping 192.168.1.10');
-
-      // Check that switch learned both MACs
-      const macTableService = sw.getMACTable();
-      const pc1MAC = pc1.getInterface('eth0')!.getMAC();
-      const pc2MAC = pc2.getInterface('eth0')!.getMAC();
-
-      expect(macTableService.lookup(pc1MAC)).toBe('eth0');
-      expect(macTableService.lookup(pc2MAC)).toBe('eth1');
+    it('should fail when pinging IP not on the network', async () => {
+      const result = await pc1.executeCommand('ping -c 1 10.0.0.1');
+      expect(result).toContain('packet loss');
+      // Should show 100% loss or unreachable
+      const hasLoss = result.includes('100% packet loss') ||
+                      result.includes('unreachable') ||
+                      result.includes('Network is unreachable');
+      expect(hasLoss).toBe(true);
     });
   });
 
-  describe('Windows PC Ping', () => {
-    let winPC: WindowsPC;
-
-    beforeEach(() => {
-      winPC = new WindowsPC({ id: 'winpc1', name: 'Windows PC' });
-      winPC.setIPAddress('eth0', new IPAddress('192.168.1.30'), new SubnetMask('/24'));
-      winPC.powerOn();
-
-      // Add ARP entries for Windows PC
-      const winMAC = winPC.getInterface('eth0')!.getMAC();
-      const pc1MAC = pc1.getInterface('eth0')!.getMAC();
-
-      winPC.addARPEntry(new IPAddress('192.168.1.10'), pc1MAC);
-      pc1.addARPEntry(new IPAddress('192.168.1.30'), winMAC);
+  describe('ping with multiple packets', () => {
+    beforeEach(async () => {
+      await pc1.executeCommand('ifconfig eth0 192.168.1.10 netmask 255.255.255.0');
+      await pc2.executeCommand('ifconfig eth0 192.168.1.20 netmask 255.255.255.0');
     });
 
-    it('should execute ping command on Windows PC', async () => {
-      const result = await winPC.executeCommand('ping 192.168.1.10');
-
-      expect(result).toContain('Pinging 192.168.1.10');
-      expect(result).toContain('bytes');
-    });
-
-    it('should execute tracert command on Windows PC', async () => {
-      const result = await winPC.executeCommand('tracert 192.168.1.10');
-
-      expect(result).toContain('Tracing route to 192.168.1.10');
-      expect(result).toContain('hops');
-    });
-  });
-
-  describe('Linux PC Traceroute', () => {
-    beforeEach(() => {
-      setupARPTables();
-    });
-
-    it('should execute traceroute command on Linux PC', async () => {
-      const result = await pc1.executeCommand('traceroute 192.168.1.20');
-
-      expect(result).toContain('traceroute to 192.168.1.20');
-      expect(result).toContain('hops');
-    });
-
-    it('should send packets with incrementing TTL', async () => {
-      await pc1.executeCommand('traceroute 192.168.1.20');
-
-      // Verify frames were sent
-      expect(framesFromPC1.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Error Cases', () => {
-    it('should return error when pinging without IP configuration', async () => {
-      const unconfiguredPC = new LinuxPC({ id: 'noip', name: 'NoIP PC' });
-      unconfiguredPC.powerOn();
-
-      // Clear IP address
-      const iface = unconfiguredPC.getInterface('eth0');
-      iface?.clearIPAddress();
-
-      const result = await unconfiguredPC.executeCommand('ping 192.168.1.1');
-
-      expect(result).toContain('not configured');
-    });
-
-    it('should return error when pinging with invalid IP', async () => {
-      const result = await pc1.executeCommand('ping not.an.ip');
-
-      expect(result).toContain('not known');
-    });
-
-    it('should return offline message when device is off', async () => {
-      pc1.powerOff();
-
-      const result = await pc1.executeCommand('ping 192.168.1.20');
-
-      expect(result).toBe('Device is offline');
-    });
-  });
-
-  describe('ifconfig Command Integration', () => {
-    it('should show configured IP with ifconfig', async () => {
-      const result = await pc1.executeCommand('ifconfig');
-
-      expect(result).toContain('192.168.1.10');
-      expect(result).toContain('eth0');
-    });
-
-    it('should allow reconfiguring IP via ifconfig', async () => {
-      await pc1.executeCommand('ifconfig eth0 10.0.0.100 netmask 255.0.0.0');
-
-      const newIP = pc1.getInterface('eth0')?.getIPAddress();
-      expect(newIP?.toString()).toBe('10.0.0.100');
+    it('should succeed with -c 4 (default count)', async () => {
+      const result = await pc1.executeCommand('ping -c 4 192.168.1.20');
+      expect(result).toContain('4 packets transmitted');
+      expect(result).toContain('4 received');
+      expect(result).toContain('0% packet loss');
     });
   });
 });

@@ -3094,6 +3094,11 @@ Try 'ping --help' for more information.`;
       return 'ping: usage error: Destination address required';
     }
 
+    // Resolve hostname "localhost" to 127.0.0.1
+    if (targetStr === 'localhost') {
+      targetStr = '127.0.0.1';
+    }
+
     // Validate and parse target IP
     try {
       const targetIP = new IPAddress(targetStr);
@@ -3106,7 +3111,19 @@ Try 'ping --help' for more information.`;
       // Get our IP and check configuration
       const nic = this.getInterface('eth0');
       if (!nic || !nic.getIPAddress()) {
+        // Loopback (127.x.x.x) works even without configured interface
+        if (targetIP.toString().startsWith('127.')) {
+          return this.sendLoopbackPing(targetIP, count);
+        }
         return 'Network interface not configured';
+      }
+
+      // Check for loopback/self-ping
+      const isLoopback = targetIP.toString().startsWith('127.') ||
+        targetIP.equals(nic.getIPAddress()!);
+
+      if (isLoopback) {
+        return this.sendLoopbackPing(targetIP, count);
       }
 
       // Send ping with specified count
@@ -3178,6 +3195,33 @@ Try 'ping --help' for more information.`;
       const mdev = Math.sqrt(rtts.reduce((sum, rtt) => sum + Math.pow(rtt - avg, 2), 0) / rtts.length);
       output += `rtt min/avg/max/mdev = ${min.toFixed(3)}/${avg.toFixed(3)}/${max.toFixed(3)}/${mdev.toFixed(3)} ms\n`;
     }
+
+    return output;
+  }
+
+  /**
+   * Handles loopback/self-ping without going through the network
+   * Simulates the kernel loopback path (127.0.0.0/8 or own IP)
+   */
+  private sendLoopbackPing(targetIP: IPAddress, count: number = 4): string {
+    let output = `PING ${targetIP.toString()} (${targetIP.toString()}) 56(84) bytes of data.\n`;
+    const rtts: number[] = [];
+
+    for (let i = 0; i < count; i++) {
+      // Loopback is essentially instant (< 0.1ms)
+      const rtt = Math.random() * 0.05 + 0.01;
+      rtts.push(rtt);
+      output += `64 bytes from ${targetIP.toString()}: icmp_seq=${i + 1} ttl=64 time=${rtt.toFixed(3)} ms\n`;
+    }
+
+    output += `\n--- ${targetIP.toString()} ping statistics ---\n`;
+    output += `${count} packets transmitted, ${count} received, 0% packet loss\n`;
+
+    const min = Math.min(...rtts);
+    const max = Math.max(...rtts);
+    const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+    const mdev = Math.sqrt(rtts.reduce((sum, rtt) => sum + Math.pow(rtt - avg, 2), 0) / rtts.length);
+    output += `rtt min/avg/max/mdev = ${min.toFixed(3)}/${avg.toFixed(3)}/${max.toFixed(3)}/${mdev.toFixed(3)} ms\n`;
 
     return output;
   }

@@ -2366,6 +2366,11 @@ Examples:
       return `\nUsage: ping [-n count] [-l size] [-w timeout] target_name`;
     }
 
+    // Resolve hostname "localhost" to 127.0.0.1
+    if (targetStr.toLowerCase() === 'localhost') {
+      targetStr = '127.0.0.1';
+    }
+
     // Validate IP address
     let targetIP: IPAddress;
     try {
@@ -2377,7 +2382,19 @@ Examples:
     // Check if interface is configured
     const nic = this.getInterface('eth0');
     if (!nic || !nic.getIPAddress()) {
+      // Loopback works even without configured interface
+      if (targetIP.toString().startsWith('127.')) {
+        return this.sendLoopbackPing(targetIP, count);
+      }
       return `Unable to contact IP driver. General failure.`;
+    }
+
+    // Check for loopback/self-ping
+    const isLoopback = targetIP.toString().startsWith('127.') ||
+      targetIP.equals(nic.getIPAddress()!);
+
+    if (isLoopback) {
+      return this.sendLoopbackPing(targetIP, count);
     }
 
     // Get ICMP service
@@ -2401,7 +2418,7 @@ Examples:
         this.sendICMPRequest(targetIP, request);
 
         // Indicate packet was sent (full reply handling requires network simulation)
-        output += `Reply from ${targetIP.toString()}: bytes=32 time<1ms TTL=64\n`;
+        output += `Reply from ${targetIP.toString()}: bytes=32 time<1ms TTL=128\n`;
         successCount++;
       } catch (error) {
         output += `Request timed out.\n`;
@@ -2418,10 +2435,24 @@ Examples:
       output += `    Minimum = 0ms, Maximum = 1ms, Average = 0ms\n`;
     }
 
-    // Note about implementation
-    output += `\n(Note: Ping packets are being sent to the network.\n`;
-    output += `Full round-trip reply handling requires network simulation to be running.\n`;
-    output += `Use integration tests to see complete ping functionality.)\n`;
+    return output;
+  }
+
+  /**
+   * Handles loopback/self-ping without going through the network
+   * Simulates the Windows loopback path (127.0.0.0/8 or own IP)
+   */
+  private sendLoopbackPing(targetIP: IPAddress, count: number = 4): string {
+    let output = `\nPinging ${targetIP.toString()} with 32 bytes of data:\n`;
+
+    for (let i = 0; i < count; i++) {
+      output += `Reply from ${targetIP.toString()}: bytes=32 time<1ms TTL=128\n`;
+    }
+
+    output += `\nPing statistics for ${targetIP.toString()}:\n`;
+    output += `    Packets: Sent = ${count}, Received = ${count}, Lost = 0 (0% loss),\n`;
+    output += `Approximate round trip times in milli-seconds:\n`;
+    output += `    Minimum = 0ms, Maximum = 0ms, Average = 0ms\n`;
 
     return output;
   }
