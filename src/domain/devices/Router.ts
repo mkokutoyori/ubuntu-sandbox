@@ -813,10 +813,7 @@ export class Router extends BaseDevice {
 
           // Send ARP reply
           const replyBytes = arpService.serializePacket(reply);
-          const paddedPayload = Buffer.concat([
-            replyBytes,
-            Buffer.alloc(Math.max(0, 46 - replyBytes.length))
-          ]);
+          const paddedPayload = this.createPaddedPayload(replyBytes, 46);
 
           const replyFrame = new EthernetFrame({
             sourceMAC: nic.getMAC(),
@@ -892,6 +889,19 @@ export class Router extends BaseDevice {
     if (this.frameTransmitCallback) {
       this.frameTransmitCallback(ingressInterface, frame);
     }
+  }
+
+  /**
+   * Pads payload to minimum Ethernet size.
+   */
+  private createPaddedPayload(payload: Uint8Array, minSize: number): Uint8Array {
+    if (payload.length >= minSize) {
+      return payload;
+    }
+
+    const padded = new Uint8Array(minSize);
+    padded.set(payload, 0);
+    return padded;
   }
 
   /**

@@ -338,25 +338,26 @@ export class ARPService {
    * - Target protocol address (4 bytes)
    *
    * @param packet - ARP packet
-   * @returns Serialized packet as Buffer
+   * @returns Serialized packet as bytes
    */
-  public serializePacket(packet: ARPPacket): Buffer {
-    const buffer = Buffer.alloc(ARP_PACKET_SIZE);
+  public serializePacket(packet: ARPPacket): Uint8Array {
+    const buffer = new Uint8Array(ARP_PACKET_SIZE);
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
     // Hardware type (Ethernet = 1)
-    buffer.writeUInt16BE(1, 0);
+    view.setUint16(0, 1);
 
     // Protocol type (IPv4 = 0x0800)
-    buffer.writeUInt16BE(0x0800, 2);
+    view.setUint16(2, 0x0800);
 
     // Hardware address length (MAC = 6 bytes)
-    buffer.writeUInt8(6, 4);
+    buffer[4] = 6;
 
     // Protocol address length (IPv4 = 4 bytes)
-    buffer.writeUInt8(4, 5);
+    buffer[5] = 4;
 
     // Operation (request = 1, reply = 2)
-    buffer.writeUInt16BE(packet.operation === 'request' ? 1 : 2, 6);
+    view.setUint16(6, packet.operation === 'request' ? 1 : 2);
 
     // Sender hardware address (MAC)
     const senderMACBytes = packet.senderMAC.toBytes();
@@ -392,25 +393,27 @@ export class ARPService {
    * @returns ARP packet
    * @throws {Error} If packet is invalid
    */
-  public deserializePacket(bytes: Buffer): ARPPacket {
+  public deserializePacket(bytes: Uint8Array): ARPPacket {
     if (bytes.length < ARP_PACKET_SIZE) {
       throw new Error(`Invalid ARP packet size: ${bytes.length} < ${ARP_PACKET_SIZE}`);
     }
 
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
     // Validate hardware type (Ethernet = 1)
-    const hardwareType = bytes.readUInt16BE(0);
+    const hardwareType = view.getUint16(0);
     if (hardwareType !== 1) {
       throw new Error(`Invalid hardware type: ${hardwareType}`);
     }
 
     // Validate protocol type (IPv4 = 0x0800)
-    const protocolType = bytes.readUInt16BE(2);
+    const protocolType = view.getUint16(2);
     if (protocolType !== 0x0800) {
       throw new Error(`Invalid protocol type: 0x${protocolType.toString(16)}`);
     }
 
     // Parse operation
-    const operationCode = bytes.readUInt16BE(6);
+    const operationCode = view.getUint16(6);
     const operation: ARPOperation = operationCode === 1 ? 'request' : 'reply';
 
     // Parse sender MAC
