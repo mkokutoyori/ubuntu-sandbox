@@ -33,4 +33,7 @@ export { Switch } from './devices/Switch';
 export { Hub } from './devices/Hub';
 export { Router } from './devices/Router';
 export type { RouteEntry, RouterCounters, RIPConfig } from './devices/Router';
+export type { IRouterShell } from './devices/shells/IRouterShell';
+export { CiscoIOSShell } from './devices/shells/CiscoIOSShell';
+export { HuaweiVRPShell } from './devices/shells/HuaweiVRPShell';
 export { createDevice, resetDeviceCounters, hasTerminalSupport, isFullyImplemented } from './devices/DeviceFactory';

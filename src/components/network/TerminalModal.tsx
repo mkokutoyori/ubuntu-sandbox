@@ -15,6 +15,7 @@ import { Equipment, hasTerminalSupport, isFullyImplemented } from '@/network';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { CiscoTerminal } from '@/components/CiscoTerminal';
+import { HuaweiTerminal } from '@/components/HuaweiTerminal';
 type BaseDevice = Equipment;
 import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   const isLinuxDevice = osType === 'linux';
   const isWindowsDevice = osType === 'windows';
   const isCiscoDevice = osType === 'cisco-ios';
+  const isHuaweiDevice = osType === 'huawei-vrp';
   const deviceIsFullyImplemented = isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
@@ -146,7 +148,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   }
 
   // Show message for non-implemented device types
-  if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !deviceIsFullyImplemented) {
+  if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !isHuaweiDevice && !deviceIsFullyImplemented) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className={cn(
@@ -235,6 +237,11 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
                 Cisco IOS
               </span>
             )}
+            {isHuaweiDevice && (
+              <span className="text-xs text-cyan-400/60 ml-2">
+                Huawei VRP
+              </span>
+            )}
             {isDatabaseDevice && (
               <span className="text-xs text-orange-400/60 ml-2">
                 {deviceType === 'db-oracle' ? 'Oracle Database Server' :
@@ -277,6 +284,8 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
         <div className="flex-1 overflow-hidden">
           {isCiscoDevice ? (
             <CiscoTerminal device={device} onRequestClose={onClose} />
+          ) : isHuaweiDevice ? (
+            <HuaweiTerminal device={device} onRequestClose={onClose} />
           ) : isWindowsDevice ? (
             <WindowsTerminal device={device} onRequestClose={onClose} />
           ) : (
