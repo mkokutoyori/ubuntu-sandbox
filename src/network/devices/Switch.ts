@@ -92,12 +92,14 @@ export class Switch extends Equipment {
 
   // ─── Config Persistence ─────────────────────────────────────────
   private startupConfig: string | null = null;
+  private readonly initialHostname: string;
 
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: CiscoSwitchShell;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 24, x: number = 0, y: number = 0) {
     super(type, name, x, y);
+    this.initialHostname = name;
     this.createPorts(portCount);
     this.initDefaultVLAN();
     this.startMACAgingProcess();
@@ -142,8 +144,25 @@ export class Switch extends Equipment {
 
   override powerOn(): void {
     super.powerOn();
+    // Reset volatile state (simulates DRAM loss)
+    this.hostname = this.initialHostname;
+    this.name = this.initialHostname;
+    this.macTable.clear();
+    this.vlans.clear();
+    this.initDefaultVLAN();
+    // Reset all port configs to defaults
+    for (const [portName, cfg] of this.switchportConfigs) {
+      cfg.mode = 'access';
+      cfg.accessVlan = 1;
+      cfg.trunkNativeVlan = 1;
+      cfg.trunkAllowedVlans = new Set(Array.from({ length: 4094 }, (_, i) => i + 1));
+      const port = this.getPort(portName);
+      if (port) port.setUp(true);
+    }
+    // Reset shell FSM to user mode
+    this.shell = new CiscoSwitchShell();
     this.startMACAgingProcess();
-    // Restore startup config if available
+    // Restore startup config (NVRAM) if available
     if (this.startupConfig) {
       this.restoreFromStartupConfig();
     }

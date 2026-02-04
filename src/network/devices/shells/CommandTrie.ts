@@ -182,6 +182,28 @@ export class CommandTrie {
       }
 
       if (matches.length > 1) {
+        // Try disambiguation: if there are more tokens, check which matches
+        // can continue to the next token (lookahead disambiguation)
+        if (i < tokens.length - 1) {
+          const nextToken = tokens[i + 1].toLowerCase();
+          const viable = matches.filter(m => {
+            const exactNext = m.children.get(nextToken);
+            if (exactNext) return true;
+            const prefixNext = this.prefixMatch(m, nextToken);
+            return prefixNext.length > 0;
+          });
+          if (viable.length === 1) {
+            node = viable[0];
+            matchedKeywords.push(node.keyword);
+            paramIdx = 0;
+            if (node.greedy && i < tokens.length - 1) {
+              args.push(...tokens.slice(i + 1));
+              return { status: 'ok', node, args, matchedKeywords };
+            }
+            continue;
+          }
+        }
+
         const matchNames = matches.map(m => m.keyword).join(', ');
         return {
           status: 'ambiguous',
@@ -285,6 +307,19 @@ export class CommandTrie {
         continue;
       }
 
+      // Disambiguate with lookahead if possible
+      if (matches.length > 1 && i < tokens.length - 1) {
+        const nextToken = tokens[i + 1].toLowerCase();
+        const viable = matches.filter(m => {
+          if (m.children.get(nextToken)) return true;
+          return this.prefixMatch(m, nextToken).length > 0;
+        });
+        if (viable.length === 1) {
+          node = viable[0];
+          continue;
+        }
+      }
+
       // Can't navigate further
       return [];
     }
@@ -328,6 +363,20 @@ export class CommandTrie {
         completed.push(matches[0].keyword);
         node = matches[0];
         continue;
+      }
+
+      // Disambiguate with lookahead
+      if (matches.length > 1 && i < tokens.length - 1) {
+        const nextToken = tokens[i + 1].toLowerCase();
+        const viable = matches.filter(m => {
+          if (m.children.get(nextToken)) return true;
+          return this.prefixMatch(m, nextToken).length > 0;
+        });
+        if (viable.length === 1) {
+          completed.push(viable[0].keyword);
+          node = viable[0];
+          continue;
+        }
       }
 
       completed.push(token);

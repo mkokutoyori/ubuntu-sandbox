@@ -169,6 +169,39 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
       e.preventDefault();
       addLine(`${prompt}${input}^C`);
       setInput('');
+      return;
+    }
+
+    // Ctrl+Z → "end" (return to privileged EXEC)
+    if (e.key === 'z' && e.ctrlKey) {
+      e.preventDefault();
+      addLine(`${prompt}${input}^Z`);
+      executeCommand('end');
+      setInput('');
+      return;
+    }
+
+    // Ctrl+A → move cursor to beginning of line
+    if (e.key === 'a' && e.ctrlKey) {
+      e.preventDefault();
+      const el = inputRef.current;
+      if (el) el.setSelectionRange(0, 0);
+      return;
+    }
+
+    // Ctrl+E → move cursor to end of line
+    if (e.key === 'e' && e.ctrlKey) {
+      e.preventDefault();
+      const el = inputRef.current;
+      if (el) el.setSelectionRange(input.length, input.length);
+      return;
+    }
+
+    // Ctrl+L → clear screen
+    if (e.key === 'l' && e.ctrlKey) {
+      e.preventDefault();
+      setOutput([]);
+      return;
     }
 
     if (e.key === 'Tab') {
