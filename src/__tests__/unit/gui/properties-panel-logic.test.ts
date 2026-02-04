@@ -1,10 +1,9 @@
 /**
- * TDD RED Phase - Tests for PropertiesPanel connection details logic
+ * Tests for PropertiesPanel connection details logic
  *
  * Tests the functions that compute connection details for the properties panel:
  * - Connection bandwidth, latency display
  * - Source/target interface names and device info
- * - Connection statistics formatting
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,10 +12,20 @@ import {
   formatBandwidth,
   formatLatency
 } from '@/components/network/properties-panel-logic';
-import { Connection } from '@/domain/devices/types';
-import { EthernetConnection } from '@/domain/connections/EthernetConnection';
-import { SerialConnection } from '@/domain/connections/SerialConnection';
-import { ConsoleConnection } from '@/domain/connections/ConsoleConnection';
+import { Cable } from '@/network';
+import type { Connection } from '@/store/networkStore';
+
+function makeConnection(overrides: Partial<Connection> & { id: string; type: Connection['type'] }): Connection {
+  return {
+    sourceDeviceId: 'dev-1',
+    sourceInterfaceId: 'eth0',
+    targetDeviceId: 'dev-2',
+    targetInterfaceId: 'eth0',
+    isActive: true,
+    cable: new Cable('cable-' + overrides.id),
+    ...overrides,
+  };
+}
 
 describe('properties-panel-logic', () => {
   // ── formatBandwidth ─────────────────────────────────────────────────
@@ -63,92 +72,62 @@ describe('properties-panel-logic', () => {
 
   describe('getConnectionDetails', () => {
     it('should return ethernet connection details with bandwidth', () => {
-      const instance = new EthernetConnection({
-        id: 'conn-1',
-        sourceDeviceId: 'dev-1',
-        sourceInterfaceId: 'eth0',
-        targetDeviceId: 'dev-2',
-        targetInterfaceId: 'eth0'
-      });
-
-      const connection: Connection = {
+      const connection = makeConnection({
         id: 'conn-1', type: 'ethernet',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0',
-        isActive: true,
-        instance
-      };
+        sourceInterfaceId: 'Ethernet0',
+        targetInterfaceId: 'Ethernet0',
+      });
 
       const details = getConnectionDetails(connection);
       expect(details.type).toBe('ethernet');
       expect(details.typeLabel).toBe('Ethernet');
       expect(details.bandwidth).toBe('1 Gbps');
-      expect(details.latency).toBe('0.05 ms');
-      expect(details.sourceInterface).toBe('eth0');
-      expect(details.targetInterface).toBe('eth0');
+      expect(details.latency).toBe('0.1 ms');
+      expect(details.sourceInterface).toBe('Ethernet0');
+      expect(details.targetInterface).toBe('Ethernet0');
       expect(details.isActive).toBe(true);
     });
 
     it('should return serial connection details', () => {
-      const instance = new SerialConnection({
-        id: 'conn-2',
-        sourceDeviceId: 'dev-1',
-        sourceInterfaceId: 'serial0/0',
-        targetDeviceId: 'dev-2',
-        targetInterfaceId: 'serial0/0'
-      });
-
-      const connection: Connection = {
+      const connection = makeConnection({
         id: 'conn-2', type: 'serial',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'serial0/0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'serial0/0',
-        isActive: true,
-        instance
-      };
+        sourceInterfaceId: 'serial0/0',
+        targetInterfaceId: 'serial0/0',
+      });
 
       const details = getConnectionDetails(connection);
       expect(details.type).toBe('serial');
       expect(details.typeLabel).toBe('Serial');
+      expect(details.bandwidth).toBe('1.544 Mbps');
+      expect(details.latency).toBe('5 ms');
       expect(details.sourceInterface).toBe('serial0/0');
       expect(details.targetInterface).toBe('serial0/0');
     });
 
     it('should return console connection details', () => {
-      const instance = new ConsoleConnection({
-        id: 'conn-3',
-        sourceDeviceId: 'dev-1',
-        sourceInterfaceId: 'console0',
-        targetDeviceId: 'dev-2',
-        targetInterfaceId: 'console0'
-      });
-
-      const connection: Connection = {
+      const connection = makeConnection({
         id: 'conn-3', type: 'console',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'console0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'console0',
-        isActive: true,
-        instance
-      };
+        sourceInterfaceId: 'console0',
+        targetInterfaceId: 'console0',
+      });
 
       const details = getConnectionDetails(connection);
       expect(details.type).toBe('console');
       expect(details.typeLabel).toBe('Console');
-      expect(details.bandwidth).toBe('0.0096 Mbps');
+      expect(details.bandwidth).toBe('N/A');
+      expect(details.latency).toBe('N/A');
     });
 
-    it('should handle connection without instance gracefully', () => {
-      const connection: Connection = {
+    it('should handle inactive connection', () => {
+      const connection = makeConnection({
         id: 'conn-4', type: 'ethernet',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0',
-        isActive: true
-      };
+        isActive: false,
+      });
 
       const details = getConnectionDetails(connection);
       expect(details.type).toBe('ethernet');
-      expect(details.typeLabel).toBe('Ethernet');
-      expect(details.bandwidth).toBeDefined();
-      expect(details.sourceInterface).toBe('eth0');
+      expect(details.isActive).toBe(false);
+      expect(details.bandwidth).toBe('1 Gbps');
     });
   });
 });

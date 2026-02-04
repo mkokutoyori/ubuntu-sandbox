@@ -2,7 +2,8 @@
  * Pure logic functions for the PropertiesPanel connection details.
  */
 
-import { Connection, ConnectionType } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import type { Connection } from '@/store/networkStore';
 
 /**
  * Formats bandwidth in human-readable form.
@@ -47,27 +48,20 @@ export function getConnectionDetails(connection: Connection): ConnectionDetails 
   let bandwidth = 'N/A';
   let latency = 'N/A';
 
-  if (connection.instance) {
-    const bw = connection.instance.getBandwidth();
-    bandwidth = formatBandwidth(bw);
-    const lat = connection.instance.getLatency();
-    latency = formatLatency(lat);
-  } else {
-    // Fallback defaults based on type
-    switch (connection.type) {
-      case 'ethernet':
-        bandwidth = '1 Gbps';
-        latency = '0.1 ms';
-        break;
-      case 'serial':
-        bandwidth = '1.544 Mbps';
-        latency = '5 ms';
-        break;
-      case 'console':
-        bandwidth = 'N/A';
-        latency = 'N/A';
-        break;
-    }
+  // Defaults based on connection type
+  switch (connection.type) {
+    case 'ethernet':
+      bandwidth = '1 Gbps';
+      latency = '0.1 ms';
+      break;
+    case 'serial':
+      bandwidth = '1.544 Mbps';
+      latency = '5 ms';
+      break;
+    case 'console':
+      bandwidth = 'N/A';
+      latency = 'N/A';
+      break;
   }
 
   return {

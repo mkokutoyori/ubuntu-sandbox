@@ -3,7 +3,8 @@
  * Extracted from the React component for testability.
  */
 
-import { Connection, ConnectionType } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import type { Connection } from '@/store/networkStore';
 
 export interface Point {
   x: number;

@@ -6,7 +6,8 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BaseDevice } from '@/domain/devices';
+import { Equipment } from '@/network';
+type BaseDevice = Equipment;
 
 interface OutputLine {
   id: number;

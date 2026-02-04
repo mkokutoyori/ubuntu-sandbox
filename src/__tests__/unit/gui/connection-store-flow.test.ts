@@ -1,5 +1,5 @@
 /**
- * TDD RED Phase - Tests for network store connection flow
+ * Tests for network store connection flow
  *
  * Tests the enhanced connection workflow:
  * - User selects a source device → interface selector popup → picks interface + type
@@ -36,9 +36,9 @@ describe('networkStore connection flow', () => {
 
     it('should store serial type when starting serial connection', () => {
       const store = useNetworkStore.getState();
-      const device = store.addDevice('cisco-router', 100, 100);
+      const device = store.addDevice('linux-pc', 100, 100);
 
-      store.startConnecting(device.id, 'serial0/0', 'serial');
+      store.startConnecting(device.id, 'eth0', 'serial');
 
       const state = useNetworkStore.getState();
       expect(state.connectionSource?.connectionType).toBe('serial');
@@ -72,26 +72,19 @@ describe('networkStore connection flow', () => {
       expect(state.connections[0].targetInterfaceId).toBe('eth0');
     });
 
-    it('should create serial connection when serial type was selected', () => {
+    it('should create connection between two PCs on specified interfaces', () => {
       const store = useNetworkStore.getState();
 
-      const r1 = store.addDevice('cisco-router', 100, 100);
-      const r2 = store.addDevice('cisco-router', 300, 100);
+      const pc1 = store.addDevice('linux-pc', 100, 100);
+      const pc2 = store.addDevice('linux-pc', 300, 100);
 
-      // Find serial interfaces
-      const r1Interfaces = r1.interfaces;
-      const r2Interfaces = r2.interfaces;
-      const r1Serial = r1Interfaces.find(i => i.type === 'serial');
-      const r2Serial = r2Interfaces.find(i => i.type === 'serial');
+      store.startConnecting(pc1.id, 'eth1', 'ethernet');
+      store.finishConnecting(pc2.id, 'eth1');
 
-      if (r1Serial && r2Serial) {
-        store.startConnecting(r1.id, r1Serial.id, 'serial');
-        store.finishConnecting(r2.id, r2Serial.id);
-
-        const state = useNetworkStore.getState();
-        expect(state.connections).toHaveLength(1);
-        expect(state.connections[0].type).toBe('serial');
-      }
+      const state = useNetworkStore.getState();
+      expect(state.connections).toHaveLength(1);
+      expect(state.connections[0].sourceInterfaceId).toBe('eth1');
+      expect(state.connections[0].targetInterfaceId).toBe('eth1');
     });
 
     it('should clear connecting state after finish', () => {
@@ -125,17 +118,17 @@ describe('networkStore connection flow', () => {
       const store = useNetworkStore.getState();
 
       const pc = store.addDevice('linux-pc', 100, 100);
-      const sw = store.addDevice('cisco-switch', 300, 100);
+      const sw = store.addDevice('switch-cisco', 300, 100);
 
-      // User picks eth0 on PC, eth2 on switch (not first free!)
+      // Connect to the third port (GigabitEthernet0/2)
+      const targetPort = sw.interfaces[2]?.id || 'GigabitEthernet0/2';
       store.startConnecting(pc.id, 'eth0', 'ethernet');
-      store.finishConnecting(sw.id, sw.interfaces[2]?.id || 'eth2');
+      store.finishConnecting(sw.id, targetPort);
 
       const state = useNetworkStore.getState();
       expect(state.connections).toHaveLength(1);
       expect(state.connections[0].sourceInterfaceId).toBe('eth0');
-      // Target should be the specifically chosen interface, not the first free one
-      expect(state.connections[0].targetInterfaceId).toBe(sw.interfaces[2]?.id || 'eth2');
+      expect(state.connections[0].targetInterfaceId).toBe(targetPort);
     });
 
     it('should prevent connecting to an already-used interface', () => {
@@ -143,11 +136,11 @@ describe('networkStore connection flow', () => {
 
       const pc1 = store.addDevice('linux-pc', 100, 100);
       const pc2 = store.addDevice('linux-pc', 300, 100);
-      const sw = store.addDevice('cisco-switch', 200, 200);
+      const sw = store.addDevice('switch-cisco', 200, 200);
 
-      // Connect PC1 to sw eth0
+      // Connect PC1 to sw port 0
+      const swPort0 = sw.interfaces[0]?.id || 'GigabitEthernet0/0';
       store.startConnecting(pc1.id, 'eth0', 'ethernet');
-      const swPort0 = sw.interfaces[0]?.id || 'eth0';
       store.finishConnecting(sw.id, swPort0);
 
       expect(useNetworkStore.getState().connections).toHaveLength(1);
@@ -160,8 +153,8 @@ describe('networkStore connection flow', () => {
     });
   });
 
-  describe('connection instance creation', () => {
-    it('should create EthernetConnection instance for ethernet type', () => {
+  describe('cable-based connection', () => {
+    it('should create cable for ethernet connection', () => {
       const store = useNetworkStore.getState();
 
       const pc1 = store.addDevice('linux-pc', 100, 100);
@@ -171,12 +164,11 @@ describe('networkStore connection flow', () => {
       store.finishConnecting(pc2.id, 'eth0');
 
       const conn = useNetworkStore.getState().connections[0];
-      expect(conn.instance).toBeDefined();
-      expect(conn.instance!.getType()).toBe('ethernet');
-      expect(conn.instance!.getBandwidth()).toBe(1000); // 1000BASE-T default
+      expect(conn.cable).toBeDefined();
+      expect(conn.cable.isConnected()).toBe(true);
     });
 
-    it('should deactivate connection instance on removal', () => {
+    it('should disconnect cable on connection removal', () => {
       const store = useNetworkStore.getState();
 
       const pc1 = store.addDevice('linux-pc', 100, 100);
@@ -186,11 +178,11 @@ describe('networkStore connection flow', () => {
       store.finishConnecting(pc2.id, 'eth0');
 
       const conn = useNetworkStore.getState().connections[0];
-      const instance = conn.instance!;
-      expect(instance.isActive()).toBe(true);
+      const cable = conn.cable;
+      expect(cable.isConnected()).toBe(true);
 
       store.removeConnection(conn.id);
-      expect(instance.isActive()).toBe(false);
+      expect(cable.isConnected()).toBe(false);
     });
   });
 });

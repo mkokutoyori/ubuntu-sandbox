@@ -11,11 +11,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Minus, Square, Maximize2, Minimize2 } from 'lucide-react';
-import { BaseDevice } from '@/domain/devices';
+import { Equipment, hasTerminalSupport, isFullyImplemented } from '@/network';
 import { Terminal } from '@/components/Terminal';
 import { WindowsTerminal } from '@/components/WindowsTerminal';
 import { CiscoTerminal } from '@/components/CiscoTerminal';
-import { DeviceFactory } from '@/domain/devices/DeviceFactory';
+type BaseDevice = Equipment;
 import { preInstallForDevice } from '@/terminal/packages';
 import { cn } from '@/lib/utils';
 
@@ -41,7 +41,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   const isLinuxDevice = osType === 'linux';
   const isWindowsDevice = osType === 'windows';
   const isCiscoDevice = osType === 'cisco-ios';
-  const isFullyImplemented = DeviceFactory.isFullyImplemented(deviceType);
+  const deviceIsFullyImplemented = isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
   // Resizable state
@@ -146,7 +146,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   }
 
   // Show message for non-implemented device types
-  if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !isFullyImplemented) {
+  if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !deviceIsFullyImplemented) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className={cn(

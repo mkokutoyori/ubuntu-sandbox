@@ -8,9 +8,9 @@ import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
-import { DeviceType } from '@/domain/devices';
-import { BaseDevice } from '@/domain/devices';
-import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
+import { Equipment } from '@/network';
+import type { DeviceType } from '@/network';
+type BaseDevice = Equipment;
 import { cn } from '@/lib/utils';
 
 interface NetworkCanvasProps {
@@ -39,8 +39,8 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
 
   const devices = getDevices();
 
-  // Network simulation
-  const { activePackets } = useNetworkSimulator();
+  // Packet animation (placeholder - will be implemented later)
+  const activePackets: any[] = [];
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });

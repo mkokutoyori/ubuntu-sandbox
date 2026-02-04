@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import { Connection } from '@/domain/devices';
+import { Connection } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import {
   computeConnectionPath,

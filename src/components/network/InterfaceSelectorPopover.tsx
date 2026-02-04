@@ -8,10 +8,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Network, Radio, Terminal, X, Check, Cable } from 'lucide-react';
-import { ConnectionType, NetworkInterfaceConfig } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 import { buildInterfaceList, groupInterfacesByType, InterfaceListItem } from './interface-selector-logic';
 import { getConnectionLabel } from './connection-helpers';
-import { Connection } from '@/domain/devices/types';
 import { cn } from '@/lib/utils';
 
 interface InterfaceSelectorPopoverProps {

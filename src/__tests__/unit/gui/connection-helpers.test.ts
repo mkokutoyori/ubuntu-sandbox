@@ -16,7 +16,8 @@ import {
   getInterfaceDisplayInfo,
   getConnectionEndpointLabel
 } from '@/components/network/connection-helpers';
-import { Connection, ConnectionType, NetworkInterfaceConfig } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import type { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 
 describe('connection-helpers', () => {
   // ── getAvailableInterfaces ──────────────────────────────────────────
