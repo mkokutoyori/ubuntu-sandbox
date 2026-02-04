@@ -31,5 +31,5 @@ export { WindowsPC } from './devices/WindowsPC';
 export { Switch } from './devices/Switch';
 export { Hub } from './devices/Hub';
 export { Router } from './devices/Router';
-export type { RouteEntry } from './devices/Router';
+export type { RouteEntry, RouterCounters } from './devices/Router';
 export { createDevice, resetDeviceCounters, hasTerminalSupport, isFullyImplemented } from './devices/DeviceFactory';
