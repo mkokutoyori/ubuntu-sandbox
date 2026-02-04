@@ -1,43 +1,28 @@
 /**
- * WindowsPC - Windows workstation with terminal
+ * WindowsPC - Windows workstation/server with terminal
  *
- * Supports Windows-style commands:
- * - ipconfig: show/configure interfaces
- * - netsh: set static IP
- * - ping: ICMP echo
- * - arp: view ARP table
+ * Extends EndHost (which provides the full L2/L3 network stack).
+ * This class only implements Windows-specific terminal commands and
+ * output formatting.
  *
- * Internally reuses the same equipment-driven communication model as LinuxPC.
+ * Supported commands:
+ *   ipconfig                                           — show IP config
+ *   netsh interface ip set address "name" static ...   — configure IP
+ *   ping [-n count] <destination>                      — ICMP echo
+ *   arp -a                                             — show ARP table
+ *   tracert <destination>                              — trace route
+ *   route add 0.0.0.0 mask 0.0.0.0 <gateway>          — set default route
  */
 
-import { Equipment } from '../equipment/Equipment';
+import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
-import {
-  EthernetFrame, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket,
-  ETHERTYPE_ARP, ETHERTYPE_IPV4,
-} from '../core/types';
-import { Logger } from '../core/Logger';
+import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 
-interface ARPEntry {
-  mac: MACAddress;
-  timestamp: number;
-}
+export class WindowsPC extends EndHost {
+  protected readonly defaultTTL = 128;
 
-interface PendingPing {
-  resolve: (rtt: number) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-export class WindowsPC extends Equipment {
-  private arpTable: Map<string, ARPEntry> = new Map();
-  private pendingARPs: Map<string, Array<{ resolve: (mac: MACAddress) => void; reject: (reason: string) => void; timer: ReturnType<typeof setTimeout> }>> = new Map();
-  private pendingPings: Map<string, PendingPing> = new Map();
-  private pingIdCounter: number = 0;
-
-  constructor(name: string, x: number = 0, y: number = 0) {
-    super('windows-pc', name, x, y);
+  constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
+    super(type, name, x, y);
     this.createPorts();
   }
 
@@ -47,166 +32,7 @@ export class WindowsPC extends Equipment {
     }
   }
 
-  getInterface(name: string): Port | undefined { return this.getPort(name); }
-  getInterfaces(): Port[] { return this.getPorts(); }
-
-  getARPTable(): Map<string, MACAddress> {
-    const result = new Map<string, MACAddress>();
-    for (const [ip, entry] of this.arpTable) {
-      result.set(ip, entry.mac);
-    }
-    return result;
-  }
-
-  // ─── Frame Handling (identical to LinuxPC) ─────────────────────
-
-  protected handleFrame(portName: string, frame: EthernetFrame): void {
-    const port = this.ports.get(portName);
-    if (!port) return;
-
-    if (!frame.dstMAC.isBroadcast() && !frame.dstMAC.equals(port.getMAC())) {
-      return;
-    }
-
-    if (frame.etherType === ETHERTYPE_ARP) {
-      this.handleARP(portName, frame.payload as ARPPacket);
-    } else if (frame.etherType === ETHERTYPE_IPV4) {
-      this.handleICMP(portName, frame.payload as ICMPPacket);
-    }
-  }
-
-  private handleARP(portName: string, arp: ARPPacket): void {
-    if (!arp || arp.type !== 'arp') return;
-    const port = this.ports.get(portName);
-    if (!port) return;
-    const myIP = port.getIPAddress();
-    if (!myIP) return;
-
-    this.arpTable.set(arp.senderIP.toString(), { mac: arp.senderMAC, timestamp: Date.now() });
-
-    if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
-      const reply: ARPPacket = {
-        type: 'arp', operation: 'reply',
-        senderMAC: port.getMAC(), senderIP: myIP,
-        targetMAC: arp.senderMAC, targetIP: arp.senderIP,
-      };
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
-        etherType: ETHERTYPE_ARP, payload: reply,
-      });
-    } else if (arp.operation === 'reply') {
-      const pending = this.pendingARPs.get(arp.senderIP.toString());
-      if (pending) {
-        for (const p of pending) { clearTimeout(p.timer); p.resolve(arp.senderMAC); }
-        this.pendingARPs.delete(arp.senderIP.toString());
-      }
-    }
-  }
-
-  private handleICMP(portName: string, icmp: ICMPPacket): void {
-    if (!icmp || icmp.type !== 'icmp') return;
-
-    if (icmp.icmpType === 'echo-request') {
-      const port = this.ports.get(portName);
-      if (!port) return;
-      const myIP = port.getIPAddress();
-      if (!myIP) return;
-
-      const targetMAC = this.arpTable.get(icmp.sourceIP.toString());
-      if (!targetMAC) return;
-
-      const reply: ICMPPacket = {
-        type: 'icmp', icmpType: 'echo-reply',
-        id: icmp.id, sequence: icmp.sequence,
-        sourceIP: myIP, destinationIP: icmp.sourceIP, ttl: 128,
-      };
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: targetMAC.mac,
-        etherType: ETHERTYPE_IPV4, payload: reply,
-      });
-    } else if (icmp.icmpType === 'echo-reply') {
-      const key = `${icmp.sourceIP}-${icmp.id}-${icmp.sequence}`;
-      const pending = this.pendingPings.get(key);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pendingPings.delete(key);
-        pending.resolve(1);
-      }
-    }
-  }
-
-  private resolveARP(portName: string, targetIP: IPAddress, timeoutMs: number = 2000): Promise<MACAddress> {
-    const cached = this.arpTable.get(targetIP.toString());
-    if (cached) return Promise.resolve(cached.mac);
-
-    const port = this.ports.get(portName);
-    if (!port) return Promise.reject('Port not found');
-    const myIP = port.getIPAddress();
-    if (!myIP) return Promise.reject('No IP configured');
-
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const pending = this.pendingARPs.get(targetIP.toString());
-        if (pending) {
-          const idx = pending.findIndex(p => p.resolve === resolve);
-          if (idx !== -1) pending.splice(idx, 1);
-          if (pending.length === 0) this.pendingARPs.delete(targetIP.toString());
-        }
-        reject('ARP timeout');
-      }, timeoutMs);
-
-      const key = targetIP.toString();
-      if (!this.pendingARPs.has(key)) this.pendingARPs.set(key, []);
-      this.pendingARPs.get(key)!.push({ resolve, reject, timer });
-
-      const arpReq: ARPPacket = {
-        type: 'arp', operation: 'request',
-        senderMAC: port.getMAC(), senderIP: myIP,
-        targetMAC: MACAddress.broadcast(), targetIP,
-      };
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP, payload: arpReq,
-      });
-    });
-  }
-
-  private sendPingPacket(portName: string, targetIP: IPAddress, targetMAC: MACAddress, timeoutMs: number = 2000): Promise<number> {
-    const port = this.ports.get(portName);
-    if (!port) return Promise.reject('Port not found');
-    const myIP = port.getIPAddress();
-    if (!myIP) return Promise.reject('No IP');
-
-    this.pingIdCounter++;
-    const id = this.pingIdCounter;
-    const seq = 1;
-
-    return new Promise((resolve, reject) => {
-      const key = `${targetIP}-${id}-${seq}`;
-      const timer = setTimeout(() => { this.pendingPings.delete(key); reject('timeout'); }, timeoutMs);
-      this.pendingPings.set(key, { resolve, reject, timer });
-
-      const icmp: ICMPPacket = {
-        type: 'icmp', icmpType: 'echo-request', id, sequence: seq,
-        sourceIP: myIP, destinationIP: targetIP, ttl: 128,
-      };
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: targetMAC,
-        etherType: ETHERTYPE_IPV4, payload: icmp,
-      });
-    });
-  }
-
-  private findInterfaceForIP(targetIP: IPAddress): Port | null {
-    for (const [, port] of this.ports) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (ip && mask && ip.isInSameSubnet(targetIP, mask)) return port;
-    }
-    return null;
-  }
-
-  // ─── Terminal Commands ─────────────────────────────────────────
+  // ─── Terminal ──────────────────────────────────────────────────
 
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
@@ -216,69 +42,139 @@ export class WindowsPC extends Equipment {
 
     switch (cmd) {
       case 'ipconfig': return this.cmdIpconfig(parts.slice(1));
-      case 'netsh': return this.cmdNetsh(parts.slice(1));
-      case 'ping': return this.cmdPing(parts.slice(1));
-      case 'arp': return this.cmdArp(parts.slice(1));
+      case 'netsh':    return this.cmdNetsh(parts.slice(1));
       case 'ifconfig': return this.cmdIfconfig(parts.slice(1));
+      case 'ping':     return this.cmdPing(parts.slice(1));
+      case 'arp':      return this.cmdArp(parts.slice(1));
       case 'tracert':
-      case 'traceroute': return this.cmdTraceroute(parts.slice(1));
+      case 'traceroute': return this.cmdTracert(parts.slice(1));
+      case 'route':    return this.cmdRoute(parts.slice(1));
       default: return `'${cmd}' is not recognized as an internal or external command.`;
     }
   }
 
+  // ─── ipconfig ──────────────────────────────────────────────────
+
   private cmdIpconfig(args: string[]): string {
-    const lines: string[] = ['Windows IP Configuration', ''];
+    const lines: string[] = [
+      'Windows IP Configuration',
+      '',
+    ];
     for (const [, port] of this.ports) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
-      lines.push(`Ethernet adapter ${port.getName()}:`);
+      const displayName = port.getName().replace(/^eth/, 'Ethernet ');
+      lines.push(`Ethernet adapter ${displayName}:`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
-      lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip || 'Not configured'}`);
-      lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || 'Not configured'}`);
-      lines.push(`   Default Gateway . . . . . . . . . :`);
+      if (ip) {
+        lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
+        lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
+        lines.push(`   Default Gateway . . . . . . . . . : ${this.defaultGateway || ''}`);
+      } else {
+        lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
+      }
       lines.push('');
     }
     return lines.join('\n');
   }
 
-  // netsh interface ip set address "Ethernet0" static 192.168.1.20 255.255.255.0
+  // ─── netsh ─────────────────────────────────────────────────────
+
   private cmdNetsh(args: string[]): string {
     const joined = args.join(' ');
-    const match = joined.match(/interface\s+ip\s+set\s+address\s+"?(\w+)"?\s+static\s+([\d.]+)\s+([\d.]+)/i);
-    if (!match) return 'Usage: netsh interface ip set address "name" static <ip> <mask>';
+    const match = joined.match(/interface\s+ip\s+set\s+address\s+"?(\w+[\s\w]*\w*)"?\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i);
+    if (!match) return 'Usage: netsh interface ip set address "name" static <ip> <mask> [gateway]';
 
-    const ifName = match[1];
-    // Map Windows names to internal: Ethernet0 → eth0
-    const portName = ifName.replace(/^Ethernet/i, 'eth');
+    const ifName = match[1].trim();
+    // Map Windows names: "Ethernet 0" → "eth0", "Ethernet0" → "eth0"
+    const portName = ifName.replace(/^Ethernet\s*/i, 'eth');
     const port = this.ports.get(portName);
     if (!port) return `The interface "${ifName}" was not found.`;
 
     try {
       port.configureIP(new IPAddress(match[2]), new SubnetMask(match[3]));
+      if (match[4]) {
+        this.setDefaultGateway(new IPAddress(match[4]));
+      }
       return 'Ok.';
     } catch (e: any) {
       return `Error: ${e.message}`;
     }
   }
 
+  // ─── ifconfig (compatibility) ──────────────────────────────────
+
   private cmdIfconfig(args: string[]): string {
     if (args.length < 2) return 'Usage: ifconfig <interface> <ip> [netmask <mask>]';
-    const portName = args[0];
-    const port = this.ports.get(portName);
-    if (!port) return `ifconfig: interface ${portName} not found`;
+    const port = this.ports.get(args[0]);
+    if (!port) return `ifconfig: interface ${args[0]} not found`;
 
-    const ipStr = args[1];
     let maskStr = '255.255.255.0';
     const nmIdx = args.indexOf('netmask');
     if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
 
     try {
-      port.configureIP(new IPAddress(ipStr), new SubnetMask(maskStr));
+      port.configureIP(new IPAddress(args[1]), new SubnetMask(maskStr));
       return '';
     } catch (e: any) {
       return `ifconfig: ${e.message}`;
     }
   }
+
+  // ─── route ─────────────────────────────────────────────────────
+
+  private cmdRoute(args: string[]): string {
+    // route add 0.0.0.0 mask 0.0.0.0 <gateway>
+    // route add default <gateway>  (simplified)
+    if (args.length >= 2 && args[0].toLowerCase() === 'add') {
+      // Simplified: route add default <gw>
+      if (args[1] === 'default' && args[2]) {
+        try {
+          this.setDefaultGateway(new IPAddress(args[2]));
+          return ' OK!';
+        } catch (e: any) {
+          return `The route addition failed: ${e.message}`;
+        }
+      }
+      // Full: route add 0.0.0.0 mask 0.0.0.0 <gw>
+      if (args.length >= 5 && args[2].toLowerCase() === 'mask') {
+        try {
+          this.setDefaultGateway(new IPAddress(args[4]));
+          return ' OK!';
+        } catch (e: any) {
+          return `The route addition failed: ${e.message}`;
+        }
+      }
+    }
+
+    // route print (show routing table)
+    if (args.length === 0 || args[0].toLowerCase() === 'print') {
+      const lines = [
+        '===========================================================================',
+        'Active Routes:',
+        'Network Destination        Netmask          Gateway         Interface  Metric',
+      ];
+      for (const [, port] of this.ports) {
+        const ip = port.getIPAddress();
+        const mask = port.getSubnetMask();
+        if (ip && mask) {
+          const maskOctets = mask.getOctets();
+          const ipOctets = ip.getOctets();
+          const network = ipOctets.map((o, i) => o & maskOctets[i]).join('.');
+          lines.push(`  ${network.padEnd(24)} ${mask.toString().padEnd(16)} On-link         ${ip.toString().padEnd(14)} 1`);
+        }
+      }
+      if (this.defaultGateway) {
+        lines.push(`  0.0.0.0                  0.0.0.0          ${this.defaultGateway.toString().padEnd(15)} On-link         1`);
+      }
+      lines.push('===========================================================================');
+      return lines.join('\n');
+    }
+
+    return 'Usage: route { print | add <dest> mask <mask> <gateway> }';
+  }
+
+  // ─── ping ──────────────────────────────────────────────────────
 
   private async cmdPing(args: string[]): Promise<string> {
     let count = 4;
@@ -292,53 +188,59 @@ export class WindowsPC extends Equipment {
     if (!targetStr) return 'Usage: ping [-n count] <destination>';
 
     let targetIP: IPAddress;
-    try { targetIP = new IPAddress(targetStr); } catch { return `Ping request could not find host ${targetStr}.`; }
+    try { targetIP = new IPAddress(targetStr); }
+    catch { return `Ping request could not find host ${targetStr}. Please check the name and try again.`; }
 
-    const port = this.findInterfaceForIP(targetIP);
-    if (!port) return `Ping request could not find host ${targetStr}. Please check the name and try again.`;
+    const results = await this.executePingSequence(targetIP, count);
+    return this.formatPingOutput(targetIP, count, results);
+  }
 
-    const portName = port.getName();
-    const myIP = port.getIPAddress()!;
+  private formatPingOutput(targetIP: IPAddress, count: number, results: PingResult[]): string {
+    const lines: string[] = [];
+    lines.push(`Pinging ${targetIP} with 32 bytes of data:`);
+    lines.push('');
 
-    if (myIP.equals(targetIP)) {
-      const lines = [`Pinging ${targetIP} with 32 bytes of data:`, ''];
-      for (let i = 0; i < count; i++) lines.push(`Reply from ${targetIP}: bytes=32 time<1ms TTL=128`);
-      lines.push('', `Ping statistics for ${targetIP}:`, `    Packets: Sent = ${count}, Received = ${count}, Lost = 0 (0% loss)`);
-      return lines.join('\n');
-    }
+    const received = results.filter(r => r.success);
+    const lost = count - received.length;
 
-    let targetMAC: MACAddress;
-    try { targetMAC = await this.resolveARP(portName, targetIP, 2000); }
-    catch {
-      const lines = [`Pinging ${targetIP} with 32 bytes of data:`, ''];
-      for (let i = 0; i < count; i++) lines.push('Request timed out.');
-      lines.push('', `Ping statistics for ${targetIP}:`, `    Packets: Sent = ${count}, Received = 0, Lost = ${count} (100% loss)`);
-      return lines.join('\n');
-    }
-
-    let received = 0;
-    const lines = [`Pinging ${targetIP} with 32 bytes of data:`, ''];
-
-    for (let seq = 1; seq <= count; seq++) {
-      try {
-        await this.sendPingPacket(portName, targetIP, targetMAC, 2000);
-        received++;
-        const fakeRtt = Math.floor(Math.random() * 3 + 1);
-        lines.push(`Reply from ${targetIP}: bytes=32 time=${fakeRtt}ms TTL=128`);
-      } catch {
-        lines.push('Request timed out.');
+    if (results.length === 0) {
+      for (let i = 0; i < count; i++) lines.push('PING: transmit failed. General failure.');
+    } else {
+      for (const r of results) {
+        if (r.success) {
+          const ms = r.rttMs < 1 ? '<1ms' : `${Math.round(r.rttMs)}ms`;
+          lines.push(`Reply from ${r.fromIP}: bytes=32 time=${ms} TTL=${r.ttl}`);
+        } else {
+          lines.push('Request timed out.');
+        }
       }
     }
 
-    const lost = count - received;
-    lines.push('', `Ping statistics for ${targetIP}:`,
-      `    Packets: Sent = ${count}, Received = ${received}, Lost = ${lost} (${Math.round((lost / count) * 100)}% loss)`);
+    lines.push('');
+    lines.push(`Ping statistics for ${targetIP}:`);
+    lines.push(`    Packets: Sent = ${count}, Received = ${received.length}, Lost = ${lost} (${Math.round((lost / count) * 100)}% loss),`);
+
+    if (received.length > 0) {
+      const rtts = received.map(r => Math.round(r.rttMs));
+      const min = Math.min(...rtts);
+      const max = Math.max(...rtts);
+      const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
+      lines.push('Approximate round trip times in milli-seconds:');
+      lines.push(`    Minimum = ${min}ms, Maximum = ${max}ms, Average = ${avg}ms`);
+    }
+
     return lines.join('\n');
   }
 
+  // ─── arp ───────────────────────────────────────────────────────
+
   private cmdArp(args: string[]): string {
     if (this.arpTable.size === 0) return 'No ARP Entries Found.';
-    const lines = ['  Internet Address      Physical Address      Type', ''];
+    const lines = [
+      '',
+      'Interface: --- 0x1',
+      '  Internet Address      Physical Address      Type',
+    ];
     for (const [ip, entry] of this.arpTable) {
       const mac = entry.mac.toString().replace(/:/g, '-');
       lines.push(`  ${ip.padEnd(22)}${mac.padEnd(22)}dynamic`);
@@ -346,28 +248,39 @@ export class WindowsPC extends Equipment {
     return lines.join('\n');
   }
 
-  private async cmdTraceroute(args: string[]): Promise<string> {
+  // ─── tracert ───────────────────────────────────────────────────
+
+  private async cmdTracert(args: string[]): Promise<string> {
     if (args.length === 0) return 'Usage: tracert <destination>';
-    const targetStr = args[0];
+
     let targetIP: IPAddress;
-    try { targetIP = new IPAddress(targetStr); } catch { return `Unable to resolve target system name ${targetStr}.`; }
+    try { targetIP = new IPAddress(args[0]); }
+    catch { return `Unable to resolve target system name ${args[0]}.`; }
 
-    const port = this.findInterfaceForIP(targetIP);
-    if (!port) return `Unable to resolve target system name ${targetStr}.`;
+    const hops = await this.executeTraceroute(targetIP);
 
-    const portName = port.getName();
-    let targetMAC: MACAddress;
-    try { targetMAC = await this.resolveARP(portName, targetIP, 2000); }
-    catch { return `Tracing route to ${targetIP}\n  1     *        *        *     Request timed out.`; }
-
-    try {
-      await this.sendPingPacket(portName, targetIP, targetMAC, 2000);
-      const fakeRtt = Math.floor(Math.random() * 3 + 1);
-      return `Tracing route to ${targetIP}\n  1    ${fakeRtt} ms    ${fakeRtt} ms    ${fakeRtt} ms  ${targetIP}\nTrace complete.`;
-    } catch {
-      return `Tracing route to ${targetIP}\n  1     *        *        *     Request timed out.`;
+    if (hops.length === 0) {
+      return `Unable to resolve target system name ${args[0]}.`;
     }
+
+    const lines = [
+      `Tracing route to ${targetIP} over a maximum of 30 hops:`,
+      '',
+    ];
+    for (const hop of hops) {
+      if (hop.timeout) {
+        lines.push(`  ${hop.hop}     *        *        *     Request timed out.`);
+      } else {
+        const ms = Math.round(hop.rttMs!);
+        lines.push(`  ${hop.hop}    ${ms} ms    ${ms} ms    ${ms} ms  ${hop.ip}`);
+      }
+    }
+    lines.push('');
+    lines.push('Trace complete.');
+    return lines.join('\n');
   }
+
+  // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'windows'; }
 }
