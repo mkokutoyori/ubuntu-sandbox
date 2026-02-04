@@ -1,8 +1,8 @@
 /**
- * CiscoTerminal - Cisco IOS Terminal Emulation
+ * HuaweiTerminal - Huawei VRP Terminal Emulation
  *
- * Uses the real CiscoRouter/CiscoSwitch domain classes directly.
- * No stubs - all commands go through device.executeCommand().
+ * Uses the real Router domain class directly via device.executeCommand().
+ * Emulates the look and feel of a Huawei VRP console session.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,14 +15,14 @@ interface OutputLine {
   type: 'normal' | 'error' | 'boot';
 }
 
-interface CiscoTerminalProps {
+interface HuaweiTerminalProps {
   device: BaseDevice;
   onRequestClose?: () => void;
 }
 
 let lineId = 0;
 
-export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
+export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
   device,
   onRequestClose,
 }) => {
@@ -36,16 +36,12 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Get device info
-  const deviceType = device.getType();
-  const isSwitch = deviceType.includes('switch');
-
   // Update prompt from device
   const updatePrompt = useCallback(() => {
     if ('getPrompt' in device && typeof (device as any).getPrompt === 'function') {
       setPrompt((device as any).getPrompt());
     } else {
-      setPrompt(`${device.getHostname()}>`);
+      setPrompt(`<${device.getHostname()}>`);
     }
   }, [device]);
 
@@ -61,28 +57,23 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
     const boot = async () => {
       setIsBooting(true);
 
-      // Get boot sequence from device
-      let bootText = '';
-      if ('getBootSequence' in device && typeof (device as any).getBootSequence === 'function') {
-        bootText = (device as any).getBootSequence();
-      }
+      const bootLines = [
+        '',
+        'Huawei Versatile Routing Platform Software',
+        `VRP (R) software, Version 8.180 (${device.getHostname()} V800R021C10SPC100)`,
+        'Copyright (C) 2000-2025 HUAWEI TECH CO., LTD.',
+        '',
+        'HUAWEI ' + device.getHostname() + ' uplink board starts...',
+        'Loading system software...',
+        'System software loaded successfully.',
+        '',
+        `Info: ${device.getHostname()} system is ready.`,
+        '',
+      ];
 
-      // Display boot sequence line by line
-      if (bootText) {
-        const lines = bootText.split('\n');
-        for (const line of lines) {
-          await new Promise(r => setTimeout(r, 12));
-          setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
-        }
-      }
-
-      // Show MOTD banner if available
-      if ('getBanner' in device && typeof (device as any).getBanner === 'function') {
-        const motd = (device as any).getBanner('motd');
-        if (motd) {
-          setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
-          setOutput(prev => [...prev, { id: ++lineId, text: motd, type: 'normal' }]);
-        }
+      for (const line of bootLines) {
+        await new Promise(r => setTimeout(r, 15));
+        setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
       }
 
       setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
@@ -127,7 +118,7 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
         addLine(result);
       }
     } catch (err) {
-      addLine(`% Error: ${err}`, 'error');
+      addLine(`Error: ${err}`, 'error');
     }
 
     // Update prompt (mode may have changed)
@@ -169,39 +160,6 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
       e.preventDefault();
       addLine(`${prompt}${input}^C`);
       setInput('');
-      return;
-    }
-
-    // Ctrl+Z → "end" (return to privileged EXEC)
-    if (e.key === 'z' && e.ctrlKey) {
-      e.preventDefault();
-      addLine(`${prompt}${input}^Z`);
-      executeCommand('end');
-      setInput('');
-      return;
-    }
-
-    // Ctrl+A → move cursor to beginning of line
-    if (e.key === 'a' && e.ctrlKey) {
-      e.preventDefault();
-      const el = inputRef.current;
-      if (el) el.setSelectionRange(0, 0);
-      return;
-    }
-
-    // Ctrl+E → move cursor to end of line
-    if (e.key === 'e' && e.ctrlKey) {
-      e.preventDefault();
-      const el = inputRef.current;
-      if (el) el.setSelectionRange(input.length, input.length);
-      return;
-    }
-
-    // Ctrl+L → clear screen
-    if (e.key === 'l' && e.ctrlKey) {
-      e.preventDefault();
-      setOutput([]);
-      return;
     }
 
     if (e.key === 'Tab') {
@@ -211,16 +169,16 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
   }, [input, history, historyIndex, prompt, addLine, executeCommand]);
 
   return (
-    <div className="h-full w-full bg-black text-green-400 flex flex-col font-mono text-sm">
+    <div className="h-full w-full bg-[#1a1a2e] text-cyan-300 flex flex-col font-mono text-sm">
       {/* Header */}
-      <div className="border-b border-green-900/50 px-3 py-2 text-xs text-green-600 bg-black/50">
-        Cisco IOS — {device.getHostname()} ({isSwitch ? 'C2960 Switch' : 'C2911 Router'})
+      <div className="border-b border-cyan-900/50 px-3 py-2 text-xs text-cyan-600 bg-[#0f0f1e]">
+        Huawei VRP — {device.getHostname()} (NE40E Router)
       </div>
 
       {/* Output */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-auto p-3 bg-black"
+        className="flex-1 overflow-auto p-3 bg-[#1a1a2e]"
         onClick={() => !isBooting && inputRef.current?.focus()}
       >
         {output.map((line) => (
@@ -228,8 +186,8 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
             key={line.id}
             className={`whitespace-pre-wrap leading-5 ${
               line.type === 'error' ? 'text-red-400' :
-              line.type === 'boot' ? 'text-green-500' :
-              'text-green-400'
+              line.type === 'boot' ? 'text-cyan-500' :
+              'text-cyan-300'
             }`}
           >
             {line.text}
@@ -239,13 +197,13 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
         {/* Input line */}
         {!isBooting && (
           <div className="flex items-center">
-            <span className="text-green-400 whitespace-pre">{prompt}</span>
+            <span className="text-cyan-300 whitespace-pre">{prompt}</span>
             <input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent outline-none text-green-400 caret-green-400"
+              className="flex-1 bg-transparent outline-none text-cyan-300 caret-cyan-300"
               spellCheck={false}
               autoComplete="off"
             />
@@ -254,11 +212,11 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
 
         {/* Boot cursor */}
         {isBooting && (
-          <span className="text-green-500 animate-pulse">█</span>
+          <span className="text-cyan-500 animate-pulse">_</span>
         )}
       </div>
     </div>
   );
 };
 
-export default CiscoTerminal;
+export default HuaweiTerminal;

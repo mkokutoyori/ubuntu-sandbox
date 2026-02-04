@@ -4,7 +4,7 @@
  * Encapsulation hierarchy (OSI):
  *   L2: EthernetFrame { srcMAC, dstMAC, etherType, payload }
  *   L3: IPv4Packet    { version, ihl, ttl, protocol, srcIP, dstIP, payload }
- *   L4: ICMPPacket / TCP / UDP (future)
+ *   L4: ICMPPacket / UDPPacket / TCP (future)
  *
  * ARP operates directly inside Ethernet (etherType 0x0806).
  * IPv4 is encapsulated in Ethernet (etherType 0x0800).
@@ -258,8 +258,8 @@ export interface IPv4Packet {
   sourceIP: IPAddress;
   /** Destination IP address. */
   destinationIP: IPAddress;
-  /** Upper-layer payload (ICMP, TCP segment, UDP datagram, etc.). */
-  payload: ICMPPacket | unknown;
+  /** Upper-layer payload (ICMP, UDP datagram, TCP segment, etc.). */
+  payload: ICMPPacket | UDPPacket | unknown;
 }
 
 // ─── IPv4 Checksum (RFC 791 §3.1) ──────────────────────────────────
@@ -350,7 +350,7 @@ export function createIPv4Packet(
   destinationIP: IPAddress,
   protocol: number,
   ttl: number,
-  payload: ICMPPacket | unknown,
+  payload: ICMPPacket | UDPPacket | unknown,
   payloadSize: number = 0,
 ): IPv4Packet {
   const headerSize = 20; // IHL = 5, no options
@@ -414,6 +414,66 @@ export interface ICMPPacket {
    * 84 bytes total with IPv4 header).
    */
   dataSize: number;
+}
+
+// ─── L4: UDP Datagram (RFC 768) ──────────────────────────────────────
+
+export const UDP_PORT_RIP = 520;
+
+export interface UDPPacket {
+  type: 'udp';
+  /** Source port (16-bit). */
+  sourcePort: number;
+  /** Destination port (16-bit). */
+  destinationPort: number;
+  /** Length of UDP header + payload in bytes. */
+  length: number;
+  /** UDP checksum (0 = disabled, valid for IPv4). */
+  checksum: number;
+  /** Upper-layer payload (RIP, DNS, etc.). */
+  payload: RIPPacket | unknown;
+}
+
+// ─── RIP (RFC 2453) ─────────────────────────────────────────────────
+//
+// RIPv2 message format (RFC 2453 §4):
+//   Command (1 byte): 1=Request, 2=Response
+//   Version (1 byte): 2 for RIPv2
+//   Zero (2 bytes)
+//   Route entries (20 bytes each, up to 25 per message):
+//     AFI (2 bytes): 2 = IP
+//     Route tag (2 bytes)
+//     IP Address (4 bytes)
+//     Subnet Mask (4 bytes)
+//     Next Hop (4 bytes)
+//     Metric (4 bytes): 1-15 = reachable, 16 = infinity
+
+export const RIP_METRIC_INFINITY = 16;
+export const RIP_MAX_ENTRIES_PER_MESSAGE = 25;
+
+export interface RIPRouteEntry {
+  /** Address Family Identifier (2 = IPv4) */
+  afi: number;
+  /** Route tag for external route distinguishing */
+  routeTag: number;
+  /** IP address of the destination network */
+  ipAddress: IPAddress;
+  /** Subnet mask (RIPv2 only — RIPv1 uses classful) */
+  subnetMask: SubnetMask;
+  /** Next hop (0.0.0.0 = use sender as next-hop) */
+  nextHop: IPAddress;
+  /** Hop count metric (1-16, 16 = unreachable) */
+  metric: number;
+}
+
+export interface RIPPacket {
+  type: 'rip';
+  /** 1 = Request, 2 = Response */
+  command: 1 | 2;
+  /** RIP version (2 for RIPv2) */
+  version: number;
+  /** Route entries (up to 25 per message) */
+  entries: RIPRouteEntry[];
 }
 
 // ─── Device Types ────────────────────────────────────────────────────

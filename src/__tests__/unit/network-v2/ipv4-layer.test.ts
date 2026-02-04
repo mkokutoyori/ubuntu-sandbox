@@ -192,13 +192,13 @@ describe('Group 2: Routing & TTL', () => {
 
       // Wire: PC_A.eth0 — SW1.port0 — R1.Gi0/0, R1.Gi0/1 — SW2.port0 — PC_B.eth0
       const c1 = new Cable('c1');
-      c1.connect(pcA.getPort('eth0')!, sw1.getPort('GigabitEthernet0/0')!);
+      c1.connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
       const c2 = new Cable('c2');
-      c2.connect(sw1.getPort('GigabitEthernet0/1')!, router.getPort('GigabitEthernet0/0')!);
+      c2.connect(sw1.getPort('FastEthernet0/1')!, router.getPort('GigabitEthernet0/0')!);
       const c3 = new Cable('c3');
-      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('GigabitEthernet0/0')!);
+      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/0')!);
       const c4 = new Cable('c4');
-      c4.connect(sw2.getPort('GigabitEthernet0/1')!, pcB.getPort('eth0')!);
+      c4.connect(sw2.getPort('FastEthernet0/1')!, pcB.getPort('eth0')!);
 
       // Ping from A to B
       const results = await pcA.executeCommand('ping -c 1 10.0.2.2');
@@ -229,13 +229,13 @@ describe('Group 2: Routing & TTL', () => {
       pcB.setDefaultGateway(new IPAddress('10.0.2.1'));
 
       const c1 = new Cable('c1');
-      c1.connect(pcA.getPort('eth0')!, sw1.getPort('GigabitEthernet0/0')!);
+      c1.connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
       const c2 = new Cable('c2');
-      c2.connect(sw1.getPort('GigabitEthernet0/1')!, router.getPort('GigabitEthernet0/0')!);
+      c2.connect(sw1.getPort('FastEthernet0/1')!, router.getPort('GigabitEthernet0/0')!);
       const c3 = new Cable('c3');
-      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('GigabitEthernet0/0')!);
+      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/0')!);
       const c4 = new Cable('c4');
-      c4.connect(sw2.getPort('GigabitEthernet0/1')!, pcB.getPort('eth0')!);
+      c4.connect(sw2.getPort('FastEthernet0/1')!, pcB.getPort('eth0')!);
 
       // Traceroute sends with incrementing TTL — first hop (TTL=1) should reveal router
       const results = await pcA.executeCommand('traceroute 10.0.2.2');
@@ -276,9 +276,9 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       pc2.getPort('eth0')!.configureIP(new IPAddress('192.168.1.20'), new SubnetMask('255.255.255.0'));
 
       const c1 = new Cable('c1');
-      c1.connect(pc1.getPort('eth0')!, sw.getPort('GigabitEthernet0/0')!);
+      c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
       const c2 = new Cable('c2');
-      c2.connect(pc2.getPort('eth0')!, sw.getPort('GigabitEthernet0/1')!);
+      c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
 
       const output = await pc1.executeCommand('ping -c 2 192.168.1.20');
 
