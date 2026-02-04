@@ -60,6 +60,23 @@ interface PendingPing {
   sentAt: number; // performance.now() timestamp
 }
 
+// ─── Routing Table Types ──────────────────────────────────────────
+
+export interface HostRouteEntry {
+  /** Network destination (e.g. 192.168.2.0) */
+  network: IPAddress;
+  /** Subnet mask (e.g. 255.255.255.0) */
+  mask: SubnetMask;
+  /** Next-hop IP (null for directly connected — use destination directly) */
+  nextHop: IPAddress | null;
+  /** Outgoing interface name (e.g. eth0) */
+  iface: string;
+  /** Route type */
+  type: 'connected' | 'static' | 'default';
+  /** Metric (lower = preferred when prefix lengths are equal) */
+  metric: number;
+}
+
 // ─── EndHost ───────────────────────────────────────────────────────
 
 export abstract class EndHost extends Equipment {
@@ -73,6 +90,8 @@ export abstract class EndHost extends Equipment {
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
   protected defaultGateway: IPAddress | null = null;
+  /** Full routing table (connected + static + default) with LPM support */
+  protected routingTable: HostRouteEntry[] = [];
 
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
@@ -82,17 +101,123 @@ export abstract class EndHost extends Equipment {
   getInterface(name: string): Port | undefined { return this.getPort(name); }
   getInterfaces(): Port[] { return this.getPorts(); }
 
+  /**
+   * Configure an IP on an interface. Automatically adds a connected route.
+   */
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+
+    port.configureIP(ip, mask);
+
+    // Remove old connected route for this interface
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName)
+    );
+
+    // Add connected route
+    const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
+    this.routingTable.push({
+      network: new IPAddress(networkOctets),
+      mask,
+      nextHop: null,
+      iface: ifName,
+      type: 'connected',
+      metric: 0,
+    });
+
+    Logger.info(this.id, 'host:interface-config',
+      `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
+    return true;
+  }
+
   // ─── Default Gateway ──────────────────────────────────────────
 
   getDefaultGateway(): IPAddress | null { return this.defaultGateway; }
 
   setDefaultGateway(gw: IPAddress): void {
     this.defaultGateway = gw;
+
+    // Remove old default route and add new one
+    this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+
+    // Find the interface the gateway is reachable through
+    let gwIface = '';
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (ip && mask && ip.isInSameSubnet(gw, mask)) {
+        gwIface = port.getName();
+        break;
+      }
+    }
+
+    this.routingTable.push({
+      network: new IPAddress('0.0.0.0'),
+      mask: new SubnetMask('0.0.0.0'),
+      nextHop: gw,
+      iface: gwIface,
+      type: 'default',
+      metric: 0,
+    });
+
     Logger.info(this.id, 'host:gateway', `${this.name}: default gateway set to ${gw}`);
   }
 
   clearDefaultGateway(): void {
     this.defaultGateway = null;
+    this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+  }
+
+  // ─── Routing Table Management ──────────────────────────────────
+
+  getRoutingTable(): HostRouteEntry[] {
+    return this.buildFullRoutingTable();
+  }
+
+  /**
+   * Add a static route.
+   * Returns true if the route was added successfully.
+   */
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 100): boolean {
+    // Find the interface the next-hop is reachable through
+    let gwIface = '';
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const pmask = port.getSubnetMask();
+      if (ip && pmask && ip.isInSameSubnet(nextHop, pmask)) {
+        gwIface = port.getName();
+        break;
+      }
+    }
+    if (!gwIface) {
+      Logger.warn(this.id, 'host:route-add-fail',
+        `${this.name}: next-hop ${nextHop} not reachable`);
+      return false;
+    }
+
+    this.routingTable.push({
+      network, mask, nextHop,
+      iface: gwIface,
+      type: 'static',
+      metric,
+    });
+
+    Logger.info(this.id, 'host:route-add',
+      `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);
+    return true;
+  }
+
+  /**
+   * Remove a route by network/mask match.
+   * Returns true if a route was removed.
+   */
+  removeRoute(network: IPAddress, mask: SubnetMask): boolean {
+    const before = this.routingTable.length;
+    this.routingTable = this.routingTable.filter(
+      r => !(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static')
+    );
+    return this.routingTable.length < before;
   }
 
   // ─── ARP Table ─────────────────────────────────────────────────
@@ -400,37 +525,103 @@ export abstract class EndHost extends Equipment {
     });
   }
 
-  // ─── Route Resolution ─────────────────────────────────────────
+  // ─── Route Resolution (LPM — Longest Prefix Match) ──────────────
 
   /**
-   * Find the outgoing interface and next-hop for a given destination IP.
-   * 1. Check if destination is in a directly connected subnet → use that interface
-   * 2. Otherwise, use the default gateway (which must be in a connected subnet)
+   * Build the full routing table including dynamic connected routes
+   * from ports that were configured directly (backward compatibility).
+   */
+  private buildFullRoutingTable(): HostRouteEntry[] {
+    const table = [...this.routingTable];
+
+    // Auto-detect connected routes from ports not already in the table
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!ip || !mask) continue;
+
+      const portName = port.getName();
+      const alreadyExists = table.some(
+        r => r.type === 'connected' && r.iface === portName
+      );
+      if (!alreadyExists) {
+        const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
+        table.push({
+          network: new IPAddress(networkOctets),
+          mask,
+          nextHop: null,
+          iface: portName,
+          type: 'connected',
+          metric: 0,
+        });
+      }
+    }
+
+    // Auto-detect default gateway not already in the table
+    if (this.defaultGateway && !table.some(r => r.type === 'default')) {
+      let gwIface = '';
+      for (const [, port] of this.ports) {
+        const ip = port.getIPAddress();
+        const pmask = port.getSubnetMask();
+        if (ip && pmask && ip.isInSameSubnet(this.defaultGateway, pmask)) {
+          gwIface = port.getName();
+          break;
+        }
+      }
+      table.push({
+        network: new IPAddress('0.0.0.0'),
+        mask: new SubnetMask('0.0.0.0'),
+        nextHop: this.defaultGateway,
+        iface: gwIface,
+        type: 'default',
+        metric: 0,
+      });
+    }
+
+    return table;
+  }
+
+  /**
+   * Find the outgoing interface and next-hop for a given destination IP
+   * using Longest Prefix Match (LPM).
+   *
+   * Algorithm:
+   *   1. Compare destination against every route entry using (dest & mask) == (network & mask)
+   *   2. Select the route with the longest prefix (most specific mask)
+   *   3. If prefix lengths are equal, select the one with the lowest metric
    *
    * Returns: { port, nextHopIP } or null if unreachable.
    */
   protected resolveRoute(targetIP: IPAddress): { port: Port; nextHopIP: IPAddress } | null {
-    // 1. Directly connected subnet?
-    for (const [, port] of this.ports) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (ip && mask && ip.isInSameSubnet(targetIP, mask)) {
-        return { port, nextHopIP: targetIP };
-      }
-    }
+    const table = this.buildFullRoutingTable();
+    const destInt = targetIP.toUint32();
 
-    // 2. Default gateway?
-    if (this.defaultGateway) {
-      for (const [, port] of this.ports) {
-        const ip = port.getIPAddress();
-        const mask = port.getSubnetMask();
-        if (ip && mask && ip.isInSameSubnet(this.defaultGateway, mask)) {
-          return { port, nextHopIP: this.defaultGateway };
+    let bestRoute: HostRouteEntry | null = null;
+    let bestPrefix = -1;
+
+    for (const route of table) {
+      const netInt = route.network.toUint32();
+      const maskInt = route.mask.toUint32();
+      const prefix = route.mask.toCIDR();
+
+      if ((destInt & maskInt) === (netInt & maskInt)) {
+        if (prefix > bestPrefix ||
+            (prefix === bestPrefix && bestRoute && route.metric < bestRoute.metric)) {
+          bestPrefix = prefix;
+          bestRoute = route;
         }
       }
     }
 
-    return null; // Network is unreachable
+    if (!bestRoute) return null;
+
+    const port = this.ports.get(bestRoute.iface);
+    if (!port) return null;
+
+    // For connected routes (nextHop is null), the next-hop is the destination itself
+    const nextHopIP = bestRoute.nextHop || targetIP;
+
+    return { port, nextHopIP };
   }
 
   // ─── High-level Ping (used by terminal commands) ──────────────

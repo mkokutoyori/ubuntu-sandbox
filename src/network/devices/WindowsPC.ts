@@ -11,7 +11,9 @@
  *   ping [-n count] <destination>                      — ICMP echo
  *   arp -a                                             — show ARP table
  *   tracert <destination>                              — trace route
- *   route add 0.0.0.0 mask 0.0.0.0 <gateway>          — set default route
+ *   route print                                        — show routing table
+ *   route add <dest> mask <mask> <gw> [metric <n>]     — add route
+ *   route delete <dest>                                — remove route
  */
 
 import { EndHost, PingResult } from './EndHost';
@@ -92,7 +94,7 @@ export class WindowsPC extends EndHost {
     if (!port) return `The interface "${ifName}" was not found.`;
 
     try {
-      port.configureIP(new IPAddress(match[2]), new SubnetMask(match[3]));
+      this.configureInterface(portName, new IPAddress(match[2]), new SubnetMask(match[3]));
       if (match[4]) {
         this.setDefaultGateway(new IPAddress(match[4]));
       }
@@ -106,15 +108,14 @@ export class WindowsPC extends EndHost {
 
   private cmdIfconfig(args: string[]): string {
     if (args.length < 2) return 'Usage: ifconfig <interface> <ip> [netmask <mask>]';
-    const port = this.ports.get(args[0]);
-    if (!port) return `ifconfig: interface ${args[0]} not found`;
+    if (!this.ports.has(args[0])) return `ifconfig: interface ${args[0]} not found`;
 
     let maskStr = '255.255.255.0';
     const nmIdx = args.indexOf('netmask');
     if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
 
     try {
-      port.configureIP(new IPAddress(args[1]), new SubnetMask(maskStr));
+      this.configureInterface(args[0], new IPAddress(args[1]), new SubnetMask(maskStr));
       return '';
     } catch (e: any) {
       return `ifconfig: ${e.message}`;
@@ -124,54 +125,113 @@ export class WindowsPC extends EndHost {
   // ─── route ─────────────────────────────────────────────────────
 
   private cmdRoute(args: string[]): string {
-    // route add 0.0.0.0 mask 0.0.0.0 <gateway>
-    // route add default <gateway>  (simplified)
-    if (args.length >= 2 && args[0].toLowerCase() === 'add') {
-      // Simplified: route add default <gw>
-      if (args[1] === 'default' && args[2]) {
-        try {
-          this.setDefaultGateway(new IPAddress(args[2]));
-          return ' OK!';
-        } catch (e: any) {
-          return `The route addition failed: ${e.message}`;
-        }
-      }
-      // Full: route add 0.0.0.0 mask 0.0.0.0 <gw>
-      if (args.length >= 5 && args[2].toLowerCase() === 'mask') {
-        try {
-          this.setDefaultGateway(new IPAddress(args[4]));
-          return ' OK!';
-        } catch (e: any) {
-          return `The route addition failed: ${e.message}`;
-        }
-      }
-    }
-
-    // route print (show routing table)
     if (args.length === 0 || args[0].toLowerCase() === 'print') {
-      const lines = [
-        '===========================================================================',
-        'Active Routes:',
-        'Network Destination        Netmask          Gateway         Interface  Metric',
-      ];
-      for (const [, port] of this.ports) {
-        const ip = port.getIPAddress();
-        const mask = port.getSubnetMask();
-        if (ip && mask) {
-          const maskOctets = mask.getOctets();
-          const ipOctets = ip.getOctets();
-          const network = ipOctets.map((o, i) => o & maskOctets[i]).join('.');
-          lines.push(`  ${network.padEnd(24)} ${mask.toString().padEnd(16)} On-link         ${ip.toString().padEnd(14)} 1`);
-        }
-      }
-      if (this.defaultGateway) {
-        lines.push(`  0.0.0.0                  0.0.0.0          ${this.defaultGateway.toString().padEnd(15)} On-link         1`);
-      }
-      lines.push('===========================================================================');
-      return lines.join('\n');
+      return this.showRoutePrint();
     }
 
-    return 'Usage: route { print | add <dest> mask <mask> <gateway> }';
+    if (args[0].toLowerCase() === 'add' && args.length >= 2) {
+      return this.routeAdd(args.slice(1));
+    }
+
+    if (args[0].toLowerCase() === 'delete' && args.length >= 2) {
+      return this.routeDelete(args.slice(1));
+    }
+
+    return 'Usage: route { print | add <dest> mask <mask> <gateway> [metric <n>] | delete <dest> }';
+  }
+
+  private routeAdd(args: string[]): string {
+    // route add default <gw>
+    if (args[0] === 'default' && args[1]) {
+      try {
+        this.setDefaultGateway(new IPAddress(args[1]));
+        return ' OK!';
+      } catch (e: any) {
+        return `The route addition failed: ${e.message}`;
+      }
+    }
+
+    // route add <dest> mask <mask> <gw> [metric <n>]
+    const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
+    if (maskIdx === -1 || maskIdx + 2 >= args.length) {
+      return 'Usage: route add <dest> mask <mask> <gateway> [metric <n>]';
+    }
+
+    try {
+      const destStr = args[maskIdx - 1] || args[0];
+      const maskStr = args[maskIdx + 1];
+      const gwStr = args[maskIdx + 2];
+
+      const dest = new IPAddress(destStr);
+      const mask = new SubnetMask(maskStr);
+      const gw = new IPAddress(gwStr);
+
+      // Parse optional metric
+      let metric = 1;
+      const metricIdx = args.findIndex(a => a.toLowerCase() === 'metric');
+      if (metricIdx !== -1 && args[metricIdx + 1]) {
+        metric = parseInt(args[metricIdx + 1], 10);
+      }
+
+      // Default route (0.0.0.0 mask 0.0.0.0)
+      if (destStr === '0.0.0.0' && maskStr === '0.0.0.0') {
+        this.setDefaultGateway(gw);
+        return ' OK!';
+      }
+
+      // Static route
+      if (!this.addStaticRoute(dest, mask, gw, metric)) {
+        return 'The route addition failed: the gateway is not reachable.';
+      }
+      return ' OK!';
+    } catch (e: any) {
+      return `The route addition failed: ${e.message}`;
+    }
+  }
+
+  private routeDelete(args: string[]): string {
+    if (args[0] === 'default' || args[0] === '0.0.0.0') {
+      this.clearDefaultGateway();
+      return ' OK!';
+    }
+
+    // route delete <dest> [mask <mask>]
+    try {
+      const dest = new IPAddress(args[0]);
+      let mask = new SubnetMask('255.255.255.0'); // default
+      const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
+      if (maskIdx !== -1 && args[maskIdx + 1]) {
+        mask = new SubnetMask(args[maskIdx + 1]);
+      }
+
+      if (!this.removeRoute(dest, mask)) {
+        return 'The route deletion failed: Element not found.';
+      }
+      return ' OK!';
+    } catch (e: any) {
+      return `The route deletion failed: ${e.message}`;
+    }
+  }
+
+  private showRoutePrint(): string {
+    const table = this.getRoutingTable();
+    const lines = [
+      '===========================================================================',
+      'Active Routes:',
+      'Network Destination        Netmask          Gateway         Interface  Metric',
+    ];
+
+    for (const route of table) {
+      const dest = route.network.toString().padEnd(24);
+      const mask = route.mask.toString().padEnd(16);
+      const gw = route.nextHop ? route.nextHop.toString().padEnd(15) : 'On-link        ';
+      const port = this.ports.get(route.iface);
+      const iface = port?.getIPAddress()?.toString().padEnd(14) || route.iface.padEnd(14);
+      lines.push(`  ${dest} ${mask} ${gw} ${iface} ${route.metric}`);
+    }
+
+    lines.push('===========================================================================');
+    return lines.join('\n');
   }
 
   // ─── ping ──────────────────────────────────────────────────────
