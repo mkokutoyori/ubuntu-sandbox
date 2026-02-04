@@ -47,6 +47,8 @@ export interface RouteEntry {
   type: 'connected' | 'static' | 'default';
   /** Administrative distance (lower = preferred) */
   ad: number;
+  /** Metric (lower = preferred when prefix lengths and ADs are equal) */
+  metric: number;
 }
 
 // ─── ARP State ─────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ export class Router extends Equipment {
       iface: ifName,
       type: 'connected',
       ad: 0,
+      metric: 0,
     });
 
     Logger.info(this.id, 'router:interface-config',
@@ -134,7 +137,7 @@ export class Router extends Equipment {
     return [...this.routingTable];
   }
 
-  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): boolean {
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 0): boolean {
     // Find the interface for the next-hop
     const iface = this.findInterfaceForIP(nextHop);
     if (!iface) {
@@ -148,14 +151,15 @@ export class Router extends Equipment {
       iface: iface.getName(),
       type: 'static',
       ad: 1,
+      metric,
     });
 
     Logger.info(this.id, 'router:route-add',
-      `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop}`);
+      `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);
     return true;
   }
 
-  setDefaultRoute(nextHop: IPAddress): boolean {
+  setDefaultRoute(nextHop: IPAddress, metric: number = 0): boolean {
     // Remove existing default
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
 
@@ -169,12 +173,14 @@ export class Router extends Equipment {
       iface: iface.getName(),
       type: 'default',
       ad: 1,
+      metric,
     });
     return true;
   }
 
   /**
    * Longest Prefix Match (LPM) — find the best route for a destination IP.
+   * Tiebreaking: longest prefix → lowest AD → lowest metric.
    */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
     let bestRoute: RouteEntry | null = null;
@@ -188,9 +194,15 @@ export class Router extends Equipment {
       const prefix = route.mask.toCIDR();
 
       if ((destInt & maskInt) === (netInt & maskInt)) {
-        if (prefix > bestPrefix || (prefix === bestPrefix && bestRoute && route.ad < bestRoute.ad)) {
+        if (prefix > bestPrefix) {
           bestPrefix = prefix;
           bestRoute = route;
+        } else if (prefix === bestPrefix && bestRoute) {
+          // Same prefix: prefer lower AD, then lower metric
+          if (route.ad < bestRoute.ad ||
+              (route.ad === bestRoute.ad && route.metric < bestRoute.metric)) {
+            bestRoute = route;
+          }
         }
       }
     }

@@ -6,16 +6,19 @@
  * output formatting.
  *
  * Supported commands:
- *   ifconfig <iface> <ip> [netmask <mask>]   — configure interface
- *   ip addr                                   — show IP addresses
- *   ip route [add default via <gw>]           — show/set routes
- *   ping [-c count] <destination>             — ICMP echo
- *   arp [-a]                                  — show ARP table
- *   hostname [name]                           — show/set hostname
- *   traceroute <destination>                  — trace route
+ *   ifconfig <iface> <ip> [netmask <mask>]                — configure interface
+ *   ip addr                                               — show IP addresses
+ *   ip route                                              — show routing table
+ *   ip route add default via <gw>                         — set default gateway
+ *   ip route add <net>/<cidr> via <gw> [metric <n>]       — add static route
+ *   ip route del <net>/<cidr>                             — remove static route
+ *   ping [-c count] <destination>                         — ICMP echo
+ *   arp [-a]                                              — show ARP table
+ *   hostname [name]                                       — show/set hostname
+ *   traceroute <destination>                              — trace route
  */
 
-import { EndHost, PingResult } from './EndHost';
+import { EndHost, PingResult, HostRouteEntry } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 
@@ -72,7 +75,7 @@ export class LinuxPC extends EndHost {
     if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
 
     try {
-      port.configureIP(new IPAddress(ipStr), new SubnetMask(maskStr));
+      this.configureInterface(ifName, new IPAddress(ipStr), new SubnetMask(maskStr));
       return '';
     } catch (e: any) {
       return `ifconfig: ${e.message}`;
@@ -143,10 +146,35 @@ export class LinuxPC extends EndHost {
   }
 
   private cmdIpRoute(args: string[]): string {
-    // ip route add default via <gateway>
+    // ip route add default via <gateway> [metric <n>]
     if (args.length >= 4 && args[0] === 'add' && args[1] === 'default' && args[2] === 'via') {
       try {
         this.setDefaultGateway(new IPAddress(args[3]));
+        return '';
+      } catch (e: any) {
+        return `Error: ${e.message}`;
+      }
+    }
+
+    // ip route add <network>/<cidr> via <gateway> [metric <n>]
+    if (args.length >= 4 && args[0] === 'add' && args[2] === 'via') {
+      try {
+        const netParts = args[1].split('/');
+        if (netParts.length !== 2) return 'Error: Invalid prefix (expected <network>/<cidr>)';
+        const network = new IPAddress(netParts[0]);
+        const mask = SubnetMask.fromCIDR(parseInt(netParts[1], 10));
+        const nextHop = new IPAddress(args[3]);
+
+        // Parse optional metric
+        let metric = 100;
+        const metricIdx = args.indexOf('metric');
+        if (metricIdx !== -1 && args[metricIdx + 1]) {
+          metric = parseInt(args[metricIdx + 1], 10);
+        }
+
+        if (!this.addStaticRoute(network, mask, nextHop, metric)) {
+          return 'RTNETLINK answers: Network is unreachable';
+        }
         return '';
       } catch (e: any) {
         return `Error: ${e.message}`;
@@ -159,30 +187,56 @@ export class LinuxPC extends EndHost {
       return '';
     }
 
-    // ip route (show)
-    const lines: string[] = [];
-    for (const [, port] of this.ports) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (ip && mask) {
-        const maskOctets = mask.getOctets();
-        const ipOctets = ip.getOctets();
-        const network = ipOctets.map((o, i) => o & maskOctets[i]).join('.');
-        lines.push(`${network}/${mask.toCIDR()} dev ${port.getName()} proto kernel scope link src ${ip}`);
-      }
-    }
-    if (this.defaultGateway) {
-      // Find which interface the gateway is on
-      for (const [, port] of this.ports) {
-        const ip = port.getIPAddress();
-        const mask = port.getSubnetMask();
-        if (ip && mask && ip.isInSameSubnet(this.defaultGateway, mask)) {
-          lines.push(`default via ${this.defaultGateway} dev ${port.getName()}`);
-          break;
+    // ip route del <network>/<cidr>
+    if (args.length >= 2 && args[0] === 'del') {
+      try {
+        const netParts = args[1].split('/');
+        if (netParts.length !== 2) return 'Error: Invalid prefix';
+        const network = new IPAddress(netParts[0]);
+        const mask = SubnetMask.fromCIDR(parseInt(netParts[1], 10));
+        if (!this.removeRoute(network, mask)) {
+          return 'RTNETLINK answers: No such process';
         }
+        return '';
+      } catch (e: any) {
+        return `Error: ${e.message}`;
       }
     }
-    return lines.length > 0 ? lines.join('\n') : 'No routes configured';
+
+    // ip route (show) — display the full routing table
+    return this.showRoutingTable();
+  }
+
+  private showRoutingTable(): string {
+    const table = this.getRoutingTable();
+    if (table.length === 0) return 'No routes configured';
+
+    const lines: string[] = [];
+
+    // Show connected routes first, then static, then default
+    const sorted = [...table].sort((a, b) => {
+      const order = { connected: 0, static: 1, default: 2 };
+      return order[a.type] - order[b.type];
+    });
+
+    for (const route of sorted) {
+      if (route.type === 'default') {
+        const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
+        lines.push(`default via ${route.nextHop} dev ${route.iface}${metricStr}`);
+      } else if (route.type === 'connected') {
+        // Find the source IP for this interface
+        const port = this.ports.get(route.iface);
+        const srcIP = port?.getIPAddress();
+        const srcStr = srcIP ? ` src ${srcIP}` : '';
+        lines.push(`${route.network}/${route.mask.toCIDR()} dev ${route.iface} proto kernel scope link${srcStr}`);
+      } else {
+        // static
+        const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
+        lines.push(`${route.network}/${route.mask.toCIDR()} via ${route.nextHop} dev ${route.iface}${metricStr}`);
+      }
+    }
+
+    return lines.join('\n');
   }
 
   private cmdIpNeigh(): string {
