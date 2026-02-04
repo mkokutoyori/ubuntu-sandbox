@@ -4,7 +4,8 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
-import { DEVICE_CATEGORIES, DeviceType } from '@/domain/devices';
+import { DEVICE_CATEGORIES } from '@/network';
+import type { DeviceType } from '@/network';
 import { DeviceIcon } from './DeviceIcon';
 import { cn } from '@/lib/utils';
 

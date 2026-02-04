@@ -12,8 +12,9 @@ import { Power, Settings, Terminal, Trash2, Link } from 'lucide-react';
 import { DeviceIcon } from './DeviceIcon';
 import { InterfaceSelectorPopover } from './InterfaceSelectorPopover';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
-import { DeviceFactory } from '@/domain/devices/DeviceFactory';
-import { BaseDevice, ConnectionType } from '@/domain/devices';
+import { hasTerminalSupport, Equipment } from '@/network';
+import type { ConnectionType } from '@/network';
+type BaseDevice = Equipment;
 import { cn } from '@/lib/utils';
 
 interface NetworkDeviceProps {
@@ -46,7 +47,7 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
 
   const isSelected = selectedDeviceId === device.id;
   const isConnectionSource = connectionSource?.deviceId === device.id;
-  const hasTerminal = DeviceFactory.hasTerminalSupport(device.type);
+  const hasTerminal = hasTerminalSupport(device.type);
 
   const getPopoverPosition = useCallback(() => {
     if (!deviceRef.current) return { x: 0, y: 0 };

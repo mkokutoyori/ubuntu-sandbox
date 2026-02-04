@@ -3,7 +3,8 @@
  * Extracted from components for testability.
  */
 
-import { Connection, ConnectionType, NetworkInterfaceConfig } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import type { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 
 /**
  * Returns interfaces on a device that are not yet connected,

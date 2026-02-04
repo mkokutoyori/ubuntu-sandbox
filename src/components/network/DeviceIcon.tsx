@@ -13,7 +13,7 @@ import {
   HardDrive,
   Laptop
 } from 'lucide-react';
-import { DeviceType } from '@/domain/devices';
+import type { DeviceType } from '@/network';
 import { cn } from '@/lib/utils';
 
 interface DeviceIconProps {

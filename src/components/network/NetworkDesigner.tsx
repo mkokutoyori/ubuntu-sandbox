@@ -10,8 +10,9 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { Toolbar } from './Toolbar';
 import { TerminalModal } from './TerminalModal';
 import { MinimizedTerminals } from './MinimizedTerminals';
-import { DeviceType } from '@/domain/devices';
-import { BaseDevice } from '@/domain/devices';
+import { Equipment } from '@/network';
+import type { DeviceType } from '@/network';
+type BaseDevice = Equipment;
 import { useNetworkStore } from '@/store/networkStore';
 
 export function NetworkDesigner() {

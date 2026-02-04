@@ -1,27 +1,50 @@
 /**
  * Network Store - State management for network topology
- * Uses device class instances from Sprint 1
+ *
+ * Uses the new equipment-driven architecture:
+ * - Equipment classes handle their own frame processing
+ * - Cables connect Ports for direct device-to-device communication
+ * - No central NetworkSimulator mediator
  */
 
 import { create } from 'zustand';
 import {
-  BaseDevice,
-  DeviceFactory,
-  DeviceType,
-  DeviceConfig,
-  Connection,
-  ConnectionType,
-  NetworkInterfaceConfig,
-  generateId,
-  resetDeviceCounters,
-  ConnectionFactory,
-  BaseConnection
-} from '@/domain/devices';
-import { NetworkSimulator } from '@/core/network/NetworkSimulator';
+  Equipment, Cable, Port,
+  DeviceType, ConnectionType,
+  createDevice, resetDeviceCounters,
+  generateId, resetCounters,
+  Logger,
+} from '@/network';
+
+/**
+ * Network interface config for UI rendering
+ */
+export interface NetworkInterfaceConfig {
+  id: string;
+  name: string;
+  type: 'ethernet' | 'serial' | 'console' | 'fiber';
+  ipAddress?: string;
+  subnetMask?: string;
+  macAddress?: string;
+  isUp?: boolean;
+}
+
+/**
+ * Connection record (UI representation of a Cable)
+ */
+export interface Connection {
+  id: string;
+  type: ConnectionType;
+  sourceDeviceId: string;
+  sourceInterfaceId: string;
+  targetDeviceId: string;
+  targetInterfaceId: string;
+  isActive: boolean;
+  cable: Cable;
+}
 
 /**
  * UI representation of a device (for rendering)
- * Contains both the device class instance and UI-specific data
  */
 export interface NetworkDeviceUI {
   id: string;
@@ -33,16 +56,12 @@ export interface NetworkDeviceUI {
   interfaces: NetworkInterfaceConfig[];
   isPoweredOn: boolean;
   isSelected?: boolean;
-  // Reference to the actual device instance
-  instance: BaseDevice;
+  instance: Equipment;
 }
 
 interface NetworkState {
-  // Device instances mapped by ID
-  deviceInstances: Map<string, BaseDevice>;
-  // Connections between devices
+  deviceInstances: Map<string, Equipment>;
   connections: Connection[];
-  // UI state
   selectedDeviceId: string | null;
   selectedConnectionId: string | null;
   isConnecting: boolean;
@@ -54,10 +73,10 @@ interface NetworkState {
   // Device actions
   addDevice: (type: DeviceType, x: number, y: number) => NetworkDeviceUI;
   removeDevice: (id: string) => void;
-  updateDevice: (id: string, updates: Partial<DeviceConfig>) => void;
+  updateDevice: (id: string, updates: { name?: string; hostname?: string; isPoweredOn?: boolean; x?: number; y?: number }) => void;
   moveDevice: (id: string, x: number, y: number) => void;
   selectDevice: (id: string | null) => void;
-  getDevice: (id: string) => BaseDevice | undefined;
+  getDevice: (id: string) => Equipment | undefined;
   getDevices: () => NetworkDeviceUI[];
 
   // Connection actions
@@ -80,44 +99,27 @@ interface NetworkState {
   setZoom: (zoom: number) => void;
   setPan: (x: number, y: number) => void;
 
-  // Utility actions
+  // Utility
   clearSelection: () => void;
   clearAll: () => void;
 }
 
 /**
- * Convert a BaseDevice instance to a UI representation
+ * Convert an Equipment instance to a UI representation
  */
-function deviceToUI(device: BaseDevice): NetworkDeviceUI {
+function deviceToUI(device: Equipment): NetworkDeviceUI {
   const pos = device.getPosition();
+  const ports = device.getPorts();
 
-  // Get interfaces and convert to config format
-  let interfaces: NetworkInterfaceConfig[] = [];
-
-  // First, try getInterfaces() for devices like PC, Router that have NetworkInterface objects
-  if ('getInterfaces' in device && typeof (device as any).getInterfaces === 'function') {
-    const deviceInterfaces = (device as any).getInterfaces();
-    interfaces = deviceInterfaces.map((iface: any) => ({
-      id: iface.getName(),
-      name: iface.getName(),
-      type: 'ethernet' as const,
-      ipAddress: iface.getIPAddress()?.toString(),
-      subnetMask: iface.getSubnetMask()?.toString(),
-    }));
-  }
-
-  // If no interfaces found, fall back to getPorts() for devices like Switch, Hub
-  // These devices have ports (strings) but not full NetworkInterface objects
-  if (interfaces.length === 0 && 'getPorts' in device && typeof (device as any).getPorts === 'function') {
-    const ports = (device as any).getPorts() as string[];
-    interfaces = ports.map((portName: string) => ({
-      id: portName,
-      name: portName,
-      type: 'ethernet' as const,
-      ipAddress: undefined,
-      subnetMask: undefined,
-    }));
-  }
+  const interfaces: NetworkInterfaceConfig[] = ports.map((port: Port) => ({
+    id: port.getName(),
+    name: port.getName(),
+    type: port.getType() as NetworkInterfaceConfig['type'],
+    ipAddress: port.getIPAddress()?.toString(),
+    subnetMask: port.getSubnetMask()?.toString(),
+    macAddress: port.getMAC().toString(),
+    isUp: port.getIsUp(),
+  }));
 
   return {
     id: device.getId(),
@@ -126,18 +128,10 @@ function deviceToUI(device: BaseDevice): NetworkDeviceUI {
     hostname: device.getHostname(),
     x: pos.x,
     y: pos.y,
-    interfaces: interfaces,
+    interfaces,
     isPoweredOn: device.getIsPoweredOn(),
-    instance: device
+    instance: device,
   };
-}
-
-/**
- * Synchronize the NetworkSimulator with current topology.
- * Called synchronously after every topology change so frames can flow immediately.
- */
-function syncSimulator(deviceInstances: Map<string, BaseDevice>, connections: Connection[]): void {
-  NetworkSimulator.initialize(deviceInstances, connections);
 }
 
 export const useNetworkStore = create<NetworkState>((set, get) => ({
@@ -152,28 +146,28 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   panY: 0,
 
   addDevice: (type, x, y) => {
-    // Create a new device instance using the factory
-    const device = DeviceFactory.createDevice({
-      type: type,
-      x: x,
-      y: y
-    });
+    const device = createDevice(type, x, y);
 
-    // Store the instance
     set(state => {
       const newInstances = new Map(state.deviceInstances);
       newInstances.set(device.getId(), device);
       return { deviceInstances: newInstances };
     });
 
-    // Synchronize simulator with new topology
-    const state = get();
-    syncSimulator(state.deviceInstances, state.connections);
-
     return deviceToUI(device);
   },
 
   removeDevice: (id) => {
+    const state = get();
+
+    // Disconnect all cables involving this device
+    const connectionsToRemove = state.connections.filter(
+      c => c.sourceDeviceId === id || c.targetDeviceId === id
+    );
+    for (const conn of connectionsToRemove) {
+      conn.cable.disconnect();
+    }
+
     set(state => {
       const newInstances = new Map(state.deviceInstances);
       newInstances.delete(id);
@@ -183,54 +177,35 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         connections: state.connections.filter(
           c => c.sourceDeviceId !== id && c.targetDeviceId !== id
         ),
-        selectedDeviceId: state.selectedDeviceId === id ? null : state.selectedDeviceId
+        selectedDeviceId: state.selectedDeviceId === id ? null : state.selectedDeviceId,
       };
     });
-
-    // Synchronize simulator with new topology
-    const state = get();
-    syncSimulator(state.deviceInstances, state.connections);
   },
 
   updateDevice: (id, updates) => {
     const state = get();
     const device = state.deviceInstances.get(id);
-
     if (!device) return;
 
-    // Update the device instance
-    if (updates.name !== undefined) {
-      device.setName(updates.name);
-    }
-    if (updates.hostname !== undefined) {
-      device.setHostname(updates.hostname);
-    }
+    if (updates.name !== undefined) device.setName(updates.name);
+    if (updates.hostname !== undefined) device.setHostname(updates.hostname);
     if (updates.isPoweredOn !== undefined) {
-      if (updates.isPoweredOn) {
-        device.powerOn();
-      } else {
-        device.powerOff();
-      }
+      if (updates.isPoweredOn) device.powerOn();
+      else device.powerOff();
     }
     if (updates.x !== undefined && updates.y !== undefined) {
       device.setPosition(updates.x, updates.y);
     }
 
-    // Trigger re-render by updating the map reference
-    set(state => ({
-      deviceInstances: new Map(state.deviceInstances)
-    }));
+    set(state => ({ deviceInstances: new Map(state.deviceInstances) }));
   },
 
   moveDevice: (id, x, y) => {
     const state = get();
     const device = state.deviceInstances.get(id);
-
     if (device) {
       device.setPosition(x, y);
-      set(state => ({
-        deviceInstances: new Map(state.deviceInstances)
-      }));
+      set(state => ({ deviceInstances: new Map(state.deviceInstances) }));
     }
   },
 
@@ -245,11 +220,9 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   getDevices: () => {
     const state = get();
     const devices: NetworkDeviceUI[] = [];
-
     state.deviceInstances.forEach(device => {
       devices.push(deviceToUI(device));
     });
-
     return devices;
   },
 
@@ -263,19 +236,21 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       (c.sourceDeviceId === targetDeviceId && c.sourceInterfaceId === targetInterfaceId) ||
       (c.targetDeviceId === targetDeviceId && c.targetInterfaceId === targetInterfaceId)
     );
-
     if (exists) return null;
 
-    const connId = generateId();
+    // Find the actual ports on the devices
+    const sourceDevice = state.deviceInstances.get(sourceDeviceId);
+    const targetDevice = state.deviceInstances.get(targetDeviceId);
+    if (!sourceDevice || !targetDevice) return null;
 
-    // Create concrete connection instance via factory
-    const instance = ConnectionFactory.create(type, {
-      id: connId,
-      sourceDeviceId,
-      sourceInterfaceId,
-      targetDeviceId,
-      targetInterfaceId
-    });
+    const sourcePort = sourceDevice.getPort(sourceInterfaceId);
+    const targetPort = targetDevice.getPort(targetInterfaceId);
+    if (!sourcePort || !targetPort) return null;
+
+    // Create a Cable and connect the ports
+    const connId = generateId();
+    const cable = new Cable(connId);
+    cable.connect(sourcePort, targetPort);
 
     const connection: Connection = {
       id: connId,
@@ -285,41 +260,28 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       targetDeviceId,
       targetInterfaceId,
       isActive: true,
-      instance
+      cable,
     };
 
     set(state => ({
-      connections: [...state.connections, connection]
+      connections: [...state.connections, connection],
     }));
-
-    // Synchronize simulator with new topology
-    {
-      const s = get();
-      syncSimulator(s.deviceInstances, s.connections);
-    }
 
     return connection;
   },
 
   removeConnection: (id) => {
     set(state => {
-      // Deactivate the connection instance before removing
       const conn = state.connections.find(c => c.id === id);
-      if (conn?.instance) {
-        conn.instance.down();
+      if (conn) {
+        conn.cable.disconnect();
       }
 
       return {
         connections: state.connections.filter(c => c.id !== id),
-        selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId
+        selectedConnectionId: state.selectedConnectionId === id ? null : state.selectedConnectionId,
       };
     });
-
-    // Synchronize simulator with new topology
-    {
-      const s = get();
-      syncSimulator(s.deviceInstances, s.connections);
-    }
   },
 
   selectConnection: (id) => {
@@ -329,7 +291,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   startConnecting: (deviceId, interfaceId, connectionType = 'ethernet') => {
     set({
       isConnecting: true,
-      connectionSource: { deviceId, interfaceId, connectionType }
+      connectionSource: { deviceId, interfaceId, connectionType },
     });
   },
 
@@ -343,21 +305,15 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         state.connectionSource.interfaceId,
         deviceId,
         interfaceId,
-        state.connectionSource.connectionType
+        state.connectionSource.connectionType,
       );
     }
 
-    set({
-      isConnecting: false,
-      connectionSource: null
-    });
+    set({ isConnecting: false, connectionSource: null });
   },
 
   cancelConnecting: () => {
-    set({
-      isConnecting: false,
-      connectionSource: null
-    });
+    set({ isConnecting: false, connectionSource: null });
   },
 
   setZoom: (zoom) => {
@@ -373,18 +329,25 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   clearAll: () => {
+    // Disconnect all cables
+    const state = get();
+    for (const conn of state.connections) {
+      conn.cable.disconnect();
+    }
+
     resetDeviceCounters();
-    NetworkSimulator.reset();
+    resetCounters();
+    Logger.reset();
+
     set({
       deviceInstances: new Map(),
       connections: [],
       selectedDeviceId: null,
       selectedConnectionId: null,
       isConnecting: false,
-      connectionSource: null
+      connectionSource: null,
     });
-  }
+  },
 }));
 
-// Export types
-export type { NetworkState, Connection };
+export type { NetworkState };

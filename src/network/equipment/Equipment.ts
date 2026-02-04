@@ -1,0 +1,136 @@
+/**
+ * Equipment - Base class for all network equipment
+ *
+ * Every piece of equipment has:
+ * - An ID and name
+ * - A position on the canvas (x, y)
+ * - A set of physical Ports
+ * - Power state (on/off)
+ * - The ability to send/receive frames
+ *
+ * Subclasses implement handleFrame() to define behavior:
+ * - Switch: MAC learning + forwarding
+ * - PC/Server: ARP + ICMP + terminal
+ * - Router: routing table + forwarding
+ */
+
+import { Port } from '../hardware/Port';
+import { EthernetFrame, DeviceType, generateId } from '../core/types';
+import { Logger } from '../core/Logger';
+
+export abstract class Equipment {
+  protected readonly id: string;
+  protected name: string;
+  protected hostname: string;
+  protected readonly deviceType: DeviceType;
+  protected x: number;
+  protected y: number;
+  protected isPoweredOn: boolean = true;
+  protected ports: Map<string, Port> = new Map();
+
+  constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
+    this.id = generateId();
+    this.deviceType = deviceType;
+    this.name = name;
+    this.hostname = name;
+    this.x = x;
+    this.y = y;
+  }
+
+  // ─── Identity ───────────────────────────────────────────────────
+
+  getId(): string { return this.id; }
+  getName(): string { return this.name; }
+  getHostname(): string { return this.hostname; }
+  getType(): DeviceType { return this.deviceType; }
+  getDeviceType(): DeviceType { return this.deviceType; }
+
+  /**
+   * Get the OS type for terminal selection.
+   * Override in subclasses for specific OS types.
+   */
+  getOSType(): string {
+    const t = this.deviceType;
+    if (t.startsWith('linux') || t === 'mac-pc') return 'linux';
+    if (t.startsWith('windows')) return 'windows';
+    if (t.includes('cisco')) return 'cisco-ios';
+    return 'linux'; // Default to linux terminal for unknown types
+  }
+
+  setName(name: string): void { this.name = name; }
+  setHostname(hostname: string): void { this.hostname = hostname; }
+
+  // ─── Position ──────────────────────────────────────────────────
+
+  getPosition(): { x: number; y: number } { return { x: this.x, y: this.y }; }
+  setPosition(x: number, y: number): void { this.x = x; this.y = y; }
+
+  // ─── Power ─────────────────────────────────────────────────────
+
+  getIsPoweredOn(): boolean { return this.isPoweredOn; }
+
+  powerOn(): void {
+    this.isPoweredOn = true;
+    Logger.info(this.id, 'equipment:power', `${this.name}: powered ON`);
+  }
+
+  powerOff(): void {
+    this.isPoweredOn = false;
+    Logger.info(this.id, 'equipment:power', `${this.name}: powered OFF`);
+  }
+
+  // ─── Ports ─────────────────────────────────────────────────────
+
+  getPort(name: string): Port | undefined {
+    return this.ports.get(name);
+  }
+
+  getPorts(): Port[] {
+    return Array.from(this.ports.values());
+  }
+
+  getPortNames(): string[] {
+    return Array.from(this.ports.keys());
+  }
+
+  /**
+   * Register a port on this equipment.
+   * Sets up the frame handler so incoming frames route to handleFrame().
+   */
+  protected addPort(port: Port): void {
+    port.setEquipmentId(this.id);
+    port.onFrame((portName, frame) => {
+      if (!this.isPoweredOn) {
+        Logger.warn(this.id, 'equipment:frame-dropped', `${this.name}: powered off, dropping frame on ${portName}`);
+        return;
+      }
+      this.handleFrame(portName, frame);
+    });
+    this.ports.set(port.getName(), port);
+  }
+
+  /**
+   * Send a frame out of a specific port
+   */
+  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+    if (!this.isPoweredOn) {
+      Logger.warn(this.id, 'equipment:send-blocked', `${this.name}: powered off, cannot send`);
+      return false;
+    }
+
+    const port = this.ports.get(portName);
+    if (!port) {
+      Logger.error(this.id, 'equipment:send-error', `${this.name}: port ${portName} not found`);
+      return false;
+    }
+
+    return port.sendFrame(frame);
+  }
+
+  // ─── Abstract ──────────────────────────────────────────────────
+
+  /**
+   * Handle an incoming frame on a port. Subclasses must implement this.
+   */
+  protected abstract handleFrame(portName: string, frame: EthernetFrame): void;
+}

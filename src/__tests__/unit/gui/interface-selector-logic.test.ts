@@ -14,7 +14,8 @@ import {
   groupInterfacesByType,
   InterfaceListItem
 } from '@/components/network/interface-selector-logic';
-import { Connection, ConnectionType, NetworkInterfaceConfig } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import type { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 
 describe('interface-selector-logic', () => {
   const pcInterfaces: NetworkInterfaceConfig[] = [

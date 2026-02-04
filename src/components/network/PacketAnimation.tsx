@@ -3,9 +3,17 @@
  */
 
 import { useMemo } from 'react';
-import { ActivePacket } from '@/hooks/useNetworkSimulator';
-import { NetworkDeviceUI } from '@/store/networkStore';
-import { Connection } from '@/domain/devices';
+import { NetworkDeviceUI, Connection } from '@/store/networkStore';
+
+// Packet animation placeholder - will be fully implemented later
+export interface ActivePacket {
+  id: string;
+  connectionId: string;
+  sourceDeviceId: string;
+  destinationDeviceId: string;
+  progress: number;
+  type: string;
+}
 
 interface PacketAnimationProps {
   packet: ActivePacket;

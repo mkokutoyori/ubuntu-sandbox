@@ -6,8 +6,7 @@ import { useState, useEffect } from 'react';
 import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, RefreshCw, Trash2, Cable, Activity } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
-import { DeviceFactory } from '@/domain/devices/DeviceFactory';
-import { useNetworkSimulator } from '@/hooks/useNetworkSimulator';
+import { isFullyImplemented } from '@/network';
 import { getConnectionDetails } from './properties-panel-logic';
 import { cn } from '@/lib/utils';
 
@@ -30,36 +29,46 @@ export function PropertiesPanel() {
     selectDevice
   } = useNetworkStore();
 
-  const { getMACTable, clearMACTable } = useNetworkSimulator();
   const [expandedSections, setExpandedSections] = useState<string[]>(['general', 'interfaces']);
   const [macTable, setMacTable] = useState<MACTableEntry[]>([]);
 
   // Refresh MAC table when a switch is selected
   const devices = getDevices();
   const selectedDevice = selectedDeviceId ? devices.find(d => d.id === selectedDeviceId) : null;
-  const isSwitch = selectedDevice?.type === 'switch-cisco' || selectedDevice?.type === 'switch-generic';
+  const isSwitch = selectedDevice?.type === 'switch-cisco' || selectedDevice?.type === 'switch-huawei' || selectedDevice?.type === 'switch-generic';
+
+  const getSwitchMACTable = () => {
+    if (!selectedDevice || !isSwitch) return [];
+    const sw = selectedDevice.instance as any;
+    if (typeof sw.getMACTable !== 'function') return [];
+    const table: Map<string, string> = sw.getMACTable();
+    return Array.from(table.entries()).map(([mac, port]) => ({
+      macAddress: mac,
+      interfaceId: port,
+      vlan: 1,
+      timestamp: Date.now(),
+      type: 'dynamic' as const,
+    }));
+  };
 
   useEffect(() => {
     if (selectedDeviceId && isSwitch) {
-      const table = getMACTable(selectedDeviceId);
-      setMacTable(table || []);
+      setMacTable(getSwitchMACTable());
     } else {
       setMacTable([]);
     }
-  }, [selectedDeviceId, isSwitch, getMACTable]);
+  }, [selectedDeviceId, isSwitch]);
 
-  // Refresh MAC table manually
   const refreshMACTable = () => {
     if (selectedDeviceId && isSwitch) {
-      const table = getMACTable(selectedDeviceId);
-      setMacTable(table || []);
+      setMacTable(getSwitchMACTable());
     }
   };
 
-  // Clear MAC table
   const handleClearMACTable = () => {
-    if (selectedDeviceId && isSwitch) {
-      clearMACTable(selectedDeviceId);
+    if (selectedDevice && isSwitch) {
+      const sw = selectedDevice.instance as any;
+      if (typeof sw.clearMACTable === 'function') sw.clearMACTable();
       setMacTable([]);
     }
   };
@@ -186,7 +195,7 @@ export function PropertiesPanel() {
 
   if (!selectedDevice) return null;
 
-  const isImplemented = DeviceFactory.isFullyImplemented(selectedDevice.type);
+  const isImplemented = isFullyImplemented(selectedDevice.type);
 
   return (
     <div className="w-72 bg-card/30 backdrop-blur-xl border-l border-white/10 flex flex-col">

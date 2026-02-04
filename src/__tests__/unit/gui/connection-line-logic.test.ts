@@ -16,7 +16,7 @@ import {
   computeInterfaceLabelPositions,
   getConnectionMidpointInfo
 } from '@/components/network/connection-line-logic';
-import { Connection } from '@/domain/devices/types';
+import type { Connection } from '@/store/networkStore';
 
 describe('connection-line-logic', () => {
   // ── computeConnectionPath ───────────────────────────────────────────

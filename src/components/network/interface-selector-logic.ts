@@ -3,7 +3,8 @@
  * Builds structured interface lists with availability and grouping.
  */
 
-import { Connection, ConnectionType, NetworkInterfaceConfig } from '@/domain/devices/types';
+import type { ConnectionType } from '@/network';
+import type { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 
 /**
  * Represents one item in the interface selector list.
