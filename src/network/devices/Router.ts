@@ -40,11 +40,17 @@ import { Port } from '../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket, RIPRouteEntry,
-  ETHERTYPE_ARP, ETHERTYPE_IPV4,
-  IP_PROTO_ICMP, IP_PROTO_UDP,
+  ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
+  IP_PROTO_ICMP, IP_PROTO_UDP, IP_PROTO_ICMPV6,
   UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
+  // IPv6 types
+  IPv6Address, IPv6Packet, ICMPv6Packet,
+  NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation, NDPOptionPrefixInfo,
+  createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement, createRouterAdvertisement,
+  createICMPv6EchoReply,
+  IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 
@@ -148,6 +154,74 @@ interface QueuedPacket {
   timer: ReturnType<typeof setTimeout>;
 }
 
+// ─── IPv6 State (RFC 8200, RFC 4861) ────────────────────────────────
+
+export interface IPv6RouteEntry {
+  /** Network prefix */
+  prefix: IPv6Address;
+  /** Prefix length (0-128) */
+  prefixLength: number;
+  /** Next-hop IPv6 address (null for connected routes) */
+  nextHop: IPv6Address | null;
+  /** Outgoing interface name */
+  iface: string;
+  /** Route type */
+  type: 'connected' | 'static' | 'default';
+  /** Administrative distance */
+  ad: number;
+  /** Metric */
+  metric: number;
+}
+
+export type NeighborState = 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe';
+
+interface NeighborCacheEntry {
+  mac: MACAddress;
+  iface: string;
+  state: NeighborState;
+  isRouter: boolean;
+  timestamp: number;
+}
+
+interface PendingNDP {
+  resolve: (mac: MACAddress) => void;
+  reject: (reason: string) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** Packets waiting for NDP resolution */
+interface QueuedIPv6Packet {
+  frame: IPv6Packet;
+  outIface: string;
+  nextHopIP: IPv6Address;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** Router Advertisement configuration per interface */
+export interface RAConfig {
+  /** Send periodic RAs (default true) */
+  enabled: boolean;
+  /** RA interval in ms (default 200000 = 200s) */
+  interval: number;
+  /** Advertised hop limit (0 = unspecified) */
+  curHopLimit: number;
+  /** Managed address configuration flag */
+  managedFlag: boolean;
+  /** Other configuration flag */
+  otherConfigFlag: boolean;
+  /** Router lifetime in seconds (0 = not a default router) */
+  routerLifetime: number;
+  /** Prefixes to advertise */
+  prefixes: Array<{
+    prefix: IPv6Address;
+    prefixLength: number;
+    onLink: boolean;
+    autonomous: boolean;
+    validLifetime: number;
+    preferredLifetime: number;
+  }>;
+}
+
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
@@ -185,6 +259,18 @@ export class Router extends Equipment {
     icmpOutMsgs: 0, icmpOutDestUnreachs: 0, icmpOutTimeExcds: 0,
     icmpOutEchoReps: 0,
   };
+
+  // ── IPv6 State (RFC 8200, RFC 4861) ───────────────────────────
+  private ipv6RoutingTable: IPv6RouteEntry[] = [];
+  private neighborCache: Map<string, NeighborCacheEntry> = new Map();
+  private pendingNDPs: Map<string, PendingNDP[]> = new Map();
+  private ipv6PacketQueue: QueuedIPv6Packet[] = [];
+  private readonly defaultHopLimit = 64;
+  private ipv6Enabled = false;
+  /** RA configuration per interface */
+  private raConfig: Map<string, RAConfig> = new Map();
+  /** RA timer handles per interface */
+  private raTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -240,6 +326,65 @@ export class Router extends Equipment {
 
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
+    return true;
+  }
+
+  // ─── IPv6 Interface Configuration ──────────────────────────────
+
+  /**
+   * Enable IPv6 on this router. Must be called before configuring IPv6 addresses.
+   */
+  enableIPv6Routing(): void {
+    this.ipv6Enabled = true;
+    Logger.info(this.id, 'router:ipv6-enabled', `${this.name}: IPv6 unicast routing enabled`);
+  }
+
+  /**
+   * Disable IPv6 routing.
+   */
+  disableIPv6Routing(): void {
+    this.ipv6Enabled = false;
+    // Stop all RA timers
+    for (const [, timer] of this.raTimers) {
+      clearInterval(timer);
+    }
+    this.raTimers.clear();
+    Logger.info(this.id, 'router:ipv6-disabled', `${this.name}: IPv6 unicast routing disabled`);
+  }
+
+  isIPv6RoutingEnabled(): boolean {
+    return this.ipv6Enabled;
+  }
+
+  /**
+   * Configure an IPv6 address on an interface. Automatically adds connected route.
+   */
+  configureIPv6Interface(ifName: string, address: IPv6Address, prefixLength: number): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+
+    // Enable IPv6 on the port
+    port.configureIPv6(address, prefixLength);
+
+    // Remove old connected route for this interface/prefix
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName && r.prefixLength === prefixLength)
+    );
+
+    // Add connected route
+    const networkPrefix = address.getNetworkPrefix(prefixLength);
+    this.ipv6RoutingTable.push({
+      prefix: networkPrefix,
+      prefixLength,
+      nextHop: null,
+      iface: ifName,
+      type: 'connected',
+      ad: 0,
+      metric: 0,
+    });
+
+    Logger.info(this.id, 'router:ipv6-interface-config',
+      `${this.name}: ${ifName} configured ${address}/${prefixLength}`);
     return true;
   }
 
@@ -320,6 +465,100 @@ export class Router extends Equipment {
       if (ip && mask && ip.isInSameSubnet(targetIP, mask)) return port;
     }
     return null;
+  }
+
+  // ─── IPv6 Routing Table Management ─────────────────────────────
+
+  getIPv6RoutingTable(): IPv6RouteEntry[] {
+    return [...this.ipv6RoutingTable];
+  }
+
+  addIPv6StaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, metric: number = 0): boolean {
+    const iface = this.findInterfaceForIPv6(nextHop);
+    if (!iface) {
+      Logger.warn(this.id, 'router:ipv6-route-add-fail',
+        `${this.name}: IPv6 next-hop ${nextHop} not reachable`);
+      return false;
+    }
+
+    this.ipv6RoutingTable.push({
+      prefix: prefix.getNetworkPrefix(prefixLength),
+      prefixLength,
+      nextHop,
+      iface: iface.getName(),
+      type: 'static',
+      ad: 1,
+      metric,
+    });
+
+    Logger.info(this.id, 'router:ipv6-route-add',
+      `${this.name}: static route ${prefix}/${prefixLength} via ${nextHop} metric ${metric}`);
+    return true;
+  }
+
+  setIPv6DefaultRoute(nextHop: IPv6Address, metric: number = 0): boolean {
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter(r => r.type !== 'default');
+    const iface = this.findInterfaceForIPv6(nextHop);
+    if (!iface) return false;
+
+    this.ipv6RoutingTable.push({
+      prefix: new IPv6Address('::'),
+      prefixLength: 0,
+      nextHop,
+      iface: iface.getName(),
+      type: 'default',
+      ad: 1,
+      metric,
+    });
+    return true;
+  }
+
+  /** Longest Prefix Match for IPv6 */
+  private lookupIPv6Route(destIP: IPv6Address): IPv6RouteEntry | null {
+    let bestRoute: IPv6RouteEntry | null = null;
+    let bestPrefix = -1;
+
+    for (const route of this.ipv6RoutingTable) {
+      if (destIP.isInSameSubnet(route.prefix, route.prefixLength)) {
+        if (route.prefixLength > bestPrefix) {
+          bestPrefix = route.prefixLength;
+          bestRoute = route;
+        } else if (route.prefixLength === bestPrefix && bestRoute) {
+          if (route.ad < bestRoute.ad ||
+              (route.ad === bestRoute.ad && route.metric < bestRoute.metric)) {
+            bestRoute = route;
+          }
+        }
+      }
+    }
+    return bestRoute;
+  }
+
+  private findInterfaceForIPv6(targetIP: IPv6Address): Port | null {
+    for (const [, port] of this.ports) {
+      if (!port.isIPv6Enabled()) continue;
+      for (const entry of port.getIPv6Addresses()) {
+        if (entry.address.isInSameSubnet(targetIP, entry.prefixLength)) {
+          return port;
+        }
+      }
+    }
+    return null;
+  }
+
+  // ─── Neighbor Cache (NDP) ──────────────────────────────────────
+
+  getNeighborCache(): Map<string, { mac: MACAddress; iface: string; state: NeighborState; isRouter: boolean }> {
+    const result = new Map<string, { mac: MACAddress; iface: string; state: NeighborState; isRouter: boolean }>();
+    for (const [key, entry] of this.neighborCache) {
+      result.set(key, {
+        mac: entry.mac,
+        iface: entry.iface,
+        state: entry.state,
+        isRouter: entry.isRouter,
+      });
+    }
+    return result;
   }
 
   // ─── Performance Counters ─────────────────────────────────────
@@ -780,8 +1019,13 @@ export class Router extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // Phase A.1: L2 Filter
-    if (!frame.dstMAC.isBroadcast() && !frame.dstMAC.equals(port.getMAC())) {
+    // Phase A.1: L2 Filter — accept unicast for us, broadcast, or multicast
+    const isForUs = frame.dstMAC.equals(port.getMAC());
+    const isBroadcast = frame.dstMAC.isBroadcast();
+    const octets = frame.dstMAC.getOctets();
+    const isMulticast = octets[0] === 0x33 && octets[1] === 0x33; // IPv6 multicast MAC
+
+    if (!isForUs && !isBroadcast && !isMulticast) {
       return;
     }
 
@@ -791,8 +1035,11 @@ export class Router extends Equipment {
     } else if (frame.etherType === ETHERTYPE_IPV4) {
       this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
       this.processIPv4(portName, frame.payload as IPv4Packet);
+    } else if (frame.etherType === ETHERTYPE_IPV6) {
+      if (this.ipv6Enabled || isMulticast) {
+        this.processIPv6(portName, frame.payload as IPv6Packet);
+      }
     }
-    // Non-IPv4/ARP frames silently dropped (no IPv6 support)
   }
 
   // ─── Control Plane: ARP Handling ──────────────────────────────
@@ -1099,6 +1346,506 @@ export class Router extends Equipment {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // IPv6 Data Plane (RFC 8200)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private processIPv6(inPort: string, ipv6: IPv6Packet): void {
+    if (!ipv6 || ipv6.type !== 'ipv6') return;
+
+    const port = this.ports.get(inPort);
+    if (!port) return;
+
+    // Check if packet is for us
+    const destIP = ipv6.destinationIP;
+    let isForUs = false;
+
+    // Check all our interface addresses
+    for (const [, p] of this.ports) {
+      if (p.hasIPv6Address(destIP)) {
+        isForUs = true;
+        break;
+      }
+    }
+
+    // Check for multicast we should handle
+    const isAllNodesMulticast = destIP.isAllNodesMulticast();
+    const isAllRoutersMulticast = destIP.isAllRoutersMulticast();
+    const isSolicitedNode = destIP.isSolicitedNodeMulticast();
+
+    if (isForUs || isAllNodesMulticast || isAllRoutersMulticast) {
+      this.handleIPv6LocalDelivery(inPort, ipv6);
+      return;
+    }
+
+    // Solicited-node multicast — check if target matches our address
+    if (isSolicitedNode) {
+      if (this.shouldAcceptSolicitedNode(destIP)) {
+        this.handleIPv6LocalDelivery(inPort, ipv6);
+        return;
+      }
+    }
+
+    // Not for us and routing is enabled — forward
+    if (this.ipv6Enabled) {
+      this.forwardIPv6Packet(inPort, ipv6);
+    }
+  }
+
+  private shouldAcceptSolicitedNode(destIP: IPv6Address): boolean {
+    const destHextets = destIP.getHextets();
+    const low24 = ((destHextets[6] & 0xff) << 16) | destHextets[7];
+
+    for (const [, port] of this.ports) {
+      for (const entry of port.getIPv6Addresses()) {
+        const addrHextets = entry.address.getHextets();
+        const addrLow24 = ((addrHextets[6] & 0xff) << 16) | addrHextets[7];
+        if (low24 === addrLow24) return true;
+      }
+    }
+    return false;
+  }
+
+  private handleIPv6LocalDelivery(inPort: string, ipv6: IPv6Packet): void {
+    if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
+      this.handleICMPv6(inPort, ipv6);
+    }
+    // Future: TCP, UDP for IPv6
+  }
+
+  private handleICMPv6(inPort: string, ipv6: IPv6Packet): void {
+    const icmpv6 = ipv6.payload as ICMPv6Packet;
+    if (!icmpv6 || icmpv6.type !== 'icmpv6') return;
+
+    switch (icmpv6.icmpType) {
+      case 'echo-request':
+        this.handleICMPv6EchoRequest(inPort, ipv6, icmpv6);
+        break;
+      case 'neighbor-solicitation':
+        this.handleNeighborSolicitation(inPort, ipv6, icmpv6);
+        break;
+      case 'neighbor-advertisement':
+        this.handleNeighborAdvertisement(inPort, ipv6, icmpv6);
+        break;
+      case 'router-solicitation':
+        this.handleRouterSolicitation(inPort, ipv6, icmpv6);
+        break;
+    }
+  }
+
+  private handleICMPv6EchoRequest(inPort: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const port = this.ports.get(inPort);
+    if (!port) return;
+
+    // Determine source address for reply
+    let srcIP: IPv6Address | null = null;
+    if (ipv6.destinationIP.isLinkLocal()) {
+      srcIP = port.getLinkLocalIPv6();
+    } else {
+      srcIP = port.getGlobalIPv6() || port.getLinkLocalIPv6();
+    }
+    if (!srcIP) return;
+
+    const reply = createICMPv6EchoReply(icmpv6.id || 0, icmpv6.sequence || 0, icmpv6.dataSize || 56);
+    const replyPkt = createIPv6Packet(
+      srcIP,
+      ipv6.sourceIP,
+      IP_PROTO_ICMPV6,
+      this.defaultHopLimit,
+      reply,
+      8 + (icmpv6.dataSize || 56),
+    );
+
+    // Get destination MAC from neighbor cache
+    const cached = this.neighborCache.get(ipv6.sourceIP.toString());
+    if (cached) {
+      this.sendFrame(inPort, {
+        srcMAC: port.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6,
+        payload: replyPkt,
+      });
+    }
+  }
+
+  // ─── NDP: Neighbor Solicitation (RFC 4861) ──────────────────────
+
+  private handleNeighborSolicitation(inPort: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const ns = icmpv6.ndp as NDPNeighborSolicitation;
+    if (!ns || ns.ndpType !== 'neighbor-solicitation') return;
+
+    const port = this.ports.get(inPort);
+    if (!port) return;
+
+    // Check if the target address is ours
+    if (!port.hasIPv6Address(ns.targetAddress)) return;
+
+    // Learn source's link-layer address
+    const srcLLOpt = ns.options.find(o => o.optionType === 'source-link-layer');
+    if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer' && !ipv6.sourceIP.isUnspecified()) {
+      this.neighborCache.set(ipv6.sourceIP.toString(), {
+        mac: srcLLOpt.address,
+        iface: inPort,
+        state: 'stale',
+        isRouter: false,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Send Neighbor Advertisement
+    const na = createNeighborAdvertisement(ns.targetAddress, port.getMAC(), {
+      router: true, // We are a router
+      solicited: true,
+      override: true,
+    });
+
+    let dstIP: IPv6Address;
+    let dstMAC: MACAddress;
+
+    if (ipv6.sourceIP.isUnspecified()) {
+      // DAD probe — respond to all-nodes multicast
+      dstIP = IPV6_ALL_NODES_MULTICAST;
+      dstMAC = dstIP.toMulticastMAC();
+    } else {
+      dstIP = ipv6.sourceIP;
+      const cached = this.neighborCache.get(ipv6.sourceIP.toString());
+      dstMAC = cached?.mac || (srcLLOpt as { address: MACAddress })?.address;
+      if (!dstMAC) return;
+    }
+
+    const naPkt = createIPv6Packet(ns.targetAddress, dstIP, IP_PROTO_ICMPV6, 255, na, 32);
+
+    this.sendFrame(inPort, {
+      srcMAC: port.getMAC(),
+      dstMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: naPkt,
+    });
+  }
+
+  // ─── NDP: Neighbor Advertisement ────────────────────────────────
+
+  private handleNeighborAdvertisement(inPort: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const na = icmpv6.ndp as NDPNeighborAdvertisement;
+    if (!na || na.ndpType !== 'neighbor-advertisement') return;
+
+    const tgtLLOpt = na.options.find(o => o.optionType === 'target-link-layer');
+    if (!tgtLLOpt || tgtLLOpt.optionType !== 'target-link-layer') return;
+
+    const mac = tgtLLOpt.address;
+    const key = na.targetAddress.toString();
+
+    this.neighborCache.set(key, {
+      mac,
+      iface: inPort,
+      state: na.solicitedFlag ? 'reachable' : 'stale',
+      isRouter: na.routerFlag,
+      timestamp: Date.now(),
+    });
+
+    // Resolve pending NDP requests
+    const pending = this.pendingNDPs.get(key);
+    if (pending) {
+      for (const p of pending) {
+        clearTimeout(p.timer);
+        p.resolve(mac);
+      }
+      this.pendingNDPs.delete(key);
+    }
+
+    // Flush queued packets
+    this.flushIPv6PacketQueue(na.targetAddress, mac);
+  }
+
+  // ─── NDP: Router Solicitation (RFC 4861 §6.2.6) ─────────────────
+
+  private handleRouterSolicitation(inPort: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    if (!this.ipv6Enabled) return;
+
+    const rs = icmpv6.ndp as NDPRouterSolicitation;
+    if (!rs || rs.ndpType !== 'router-solicitation') return;
+
+    const port = this.ports.get(inPort);
+    if (!port || !port.isIPv6Enabled()) return;
+
+    // Learn source's link-layer address
+    const srcLLOpt = rs.options.find(o => o.optionType === 'source-link-layer');
+    if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer' && !ipv6.sourceIP.isUnspecified()) {
+      this.neighborCache.set(ipv6.sourceIP.toString(), {
+        mac: srcLLOpt.address,
+        iface: inPort,
+        state: 'stale',
+        isRouter: false,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Send Router Advertisement
+    this.sendRouterAdvertisement(inPort, ipv6.sourceIP.isUnspecified() ? null : ipv6.sourceIP);
+  }
+
+  // ─── Router Advertisement ───────────────────────────────────────
+
+  /**
+   * Configure Router Advertisement on an interface.
+   */
+  configureRA(ifName: string, config: Partial<RAConfig>): void {
+    const existing = this.raConfig.get(ifName) || {
+      enabled: true,
+      interval: 200000,
+      curHopLimit: 64,
+      managedFlag: false,
+      otherConfigFlag: false,
+      routerLifetime: 1800,
+      prefixes: [],
+    };
+
+    const newConfig = { ...existing, ...config };
+    this.raConfig.set(ifName, newConfig);
+
+    // Stop existing timer
+    const existingTimer = this.raTimers.get(ifName);
+    if (existingTimer) {
+      clearInterval(existingTimer);
+      this.raTimers.delete(ifName);
+    }
+
+    // Start new timer if enabled
+    if (newConfig.enabled && this.ipv6Enabled) {
+      const timer = setInterval(() => {
+        this.sendRouterAdvertisement(ifName, null);
+      }, newConfig.interval);
+      this.raTimers.set(ifName, timer);
+    }
+  }
+
+  /**
+   * Add a prefix to advertise on an interface.
+   */
+  addRAPrefix(ifName: string, prefix: IPv6Address, prefixLength: number, options?: {
+    onLink?: boolean;
+    autonomous?: boolean;
+    validLifetime?: number;
+    preferredLifetime?: number;
+  }): void {
+    const config = this.raConfig.get(ifName);
+    if (!config) {
+      this.configureRA(ifName, {
+        prefixes: [{
+          prefix: prefix.getNetworkPrefix(prefixLength),
+          prefixLength,
+          onLink: options?.onLink ?? true,
+          autonomous: options?.autonomous ?? true,
+          validLifetime: options?.validLifetime ?? 2592000,
+          preferredLifetime: options?.preferredLifetime ?? 604800,
+        }],
+      });
+    } else {
+      config.prefixes.push({
+        prefix: prefix.getNetworkPrefix(prefixLength),
+        prefixLength,
+        onLink: options?.onLink ?? true,
+        autonomous: options?.autonomous ?? true,
+        validLifetime: options?.validLifetime ?? 2592000,
+        preferredLifetime: options?.preferredLifetime ?? 604800,
+      });
+    }
+  }
+
+  private sendRouterAdvertisement(ifName: string, destIP: IPv6Address | null): void {
+    const port = this.ports.get(ifName);
+    if (!port || !port.isIPv6Enabled()) return;
+
+    const config = this.raConfig.get(ifName);
+    const srcIP = port.getLinkLocalIPv6();
+    if (!srcIP) return;
+
+    // Gather prefixes from config or from interface addresses
+    const prefixes = config?.prefixes || [];
+
+    // If no explicit prefixes configured, advertise interface's global prefixes
+    if (prefixes.length === 0) {
+      for (const entry of port.getIPv6Addresses()) {
+        if (entry.origin !== 'link-local' && entry.address.isGlobalUnicast()) {
+          prefixes.push({
+            prefix: entry.address.getNetworkPrefix(entry.prefixLength),
+            prefixLength: entry.prefixLength,
+            onLink: true,
+            autonomous: true,
+            validLifetime: 2592000,
+            preferredLifetime: 604800,
+          });
+        }
+      }
+    }
+
+    const ra = createRouterAdvertisement(prefixes, port.getMAC(), {
+      curHopLimit: config?.curHopLimit ?? 64,
+      managed: config?.managedFlag ?? false,
+      other: config?.otherConfigFlag ?? false,
+      routerLifetime: config?.routerLifetime ?? 1800,
+    });
+
+    const dstIP = destIP || IPV6_ALL_NODES_MULTICAST;
+    const dstMAC = destIP
+      ? this.neighborCache.get(destIP.toString())?.mac || dstIP.toSolicitedNodeMulticast().toMulticastMAC()
+      : IPV6_ALL_NODES_MULTICAST.toMulticastMAC();
+
+    const raPkt = createIPv6Packet(srcIP, dstIP, IP_PROTO_ICMPV6, 255, ra, 64);
+
+    this.sendFrame(ifName, {
+      srcMAC: port.getMAC(),
+      dstMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: raPkt,
+    });
+
+    Logger.debug(this.id, 'router:ra-sent',
+      `${this.name}: RA sent on ${ifName} with ${prefixes.length} prefixes`);
+  }
+
+  // ─── IPv6 Forwarding ────────────────────────────────────────────
+
+  private forwardIPv6Packet(inPort: string, ipv6: IPv6Packet): void {
+    // Decrement hop limit
+    const newHopLimit = ipv6.hopLimit - 1;
+    if (newHopLimit <= 0) {
+      Logger.info(this.id, 'router:hop-limit-expired',
+        `${this.name}: Hop limit expired for ${ipv6.sourceIP} → ${ipv6.destinationIP}`);
+      this.sendICMPv6Error(inPort, ipv6, 'time-exceeded', 0);
+      return;
+    }
+
+    // Route lookup
+    const route = this.lookupIPv6Route(ipv6.destinationIP);
+    if (!route) {
+      Logger.info(this.id, 'router:no-ipv6-route',
+        `${this.name}: no route for ${ipv6.destinationIP}`);
+      this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', 0);
+      return;
+    }
+
+    // Create forwarded packet with decremented hop limit
+    const fwdPkt: IPv6Packet = {
+      ...ipv6,
+      hopLimit: newHopLimit,
+    };
+
+    const nextHopIP = route.nextHop || ipv6.destinationIP;
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return;
+
+    // NDP resolve and send
+    const cached = this.neighborCache.get(nextHopIP.toString());
+    if (cached) {
+      this.counters.ipForwDatagrams++;
+      this.sendFrame(route.iface, {
+        srcMAC: outPort.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6,
+        payload: fwdPkt,
+      });
+    } else {
+      this.queueAndResolveIPv6(fwdPkt, route.iface, nextHopIP, outPort);
+    }
+  }
+
+  private sendICMPv6Error(
+    inPort: string,
+    offendingPkt: IPv6Packet,
+    errorType: 'time-exceeded' | 'destination-unreachable' | 'packet-too-big',
+    code: number,
+    mtu?: number,
+  ): void {
+    const port = this.ports.get(inPort);
+    if (!port) return;
+    const srcIP = port.getLinkLocalIPv6() || port.getGlobalIPv6();
+    if (!srcIP) return;
+
+    const icmpError: ICMPv6Packet = {
+      type: 'icmpv6',
+      icmpType: errorType,
+      code,
+      mtu,
+    };
+
+    const errorPkt = createIPv6Packet(
+      srcIP,
+      offendingPkt.sourceIP,
+      IP_PROTO_ICMPV6,
+      this.defaultHopLimit,
+      icmpError,
+      48, // ICMPv6 header + as much of original packet as fits
+    );
+
+    const cached = this.neighborCache.get(offendingPkt.sourceIP.toString());
+    if (cached) {
+      this.sendFrame(inPort, {
+        srcMAC: port.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6,
+        payload: errorPkt,
+      });
+    }
+  }
+
+  // ─── NDP Resolution + IPv6 Packet Queue ─────────────────────────
+
+  private queueAndResolveIPv6(pkt: IPv6Packet, iface: string, nextHopIP: IPv6Address, port: Port): void {
+    const timer = setTimeout(() => {
+      this.ipv6PacketQueue = this.ipv6PacketQueue.filter(
+        q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
+      );
+    }, 2000);
+
+    this.ipv6PacketQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
+
+    const key = nextHopIP.toString();
+    if (!this.pendingNDPs.has(key)) {
+      this.pendingNDPs.set(key, []);
+
+      // Send Neighbor Solicitation
+      const srcIP = port.getLinkLocalIPv6();
+      if (!srcIP) return;
+
+      const ns = createNeighborSolicitation(nextHopIP, port.getMAC());
+      const nsPkt = createIPv6Packet(
+        srcIP,
+        nextHopIP.toSolicitedNodeMulticast(),
+        IP_PROTO_ICMPV6,
+        255,
+        ns,
+        24,
+      );
+
+      this.sendFrame(iface, {
+        srcMAC: port.getMAC(),
+        dstMAC: nextHopIP.toSolicitedNodeMulticast().toMulticastMAC(),
+        etherType: ETHERTYPE_IPV6,
+        payload: nsPkt,
+      });
+    }
+  }
+
+  private flushIPv6PacketQueue(resolvedIP: IPv6Address, resolvedMAC: MACAddress): void {
+    const ready = this.ipv6PacketQueue.filter(q => q.nextHopIP.equals(resolvedIP));
+    this.ipv6PacketQueue = this.ipv6PacketQueue.filter(q => !q.nextHopIP.equals(resolvedIP));
+
+    for (const q of ready) {
+      clearTimeout(q.timer);
+      const outPort = this.ports.get(q.outIface);
+      if (outPort) {
+        this.counters.ipForwDatagrams++;
+        this.sendFrame(q.outIface, {
+          srcMAC: outPort.getMAC(),
+          dstMAC: resolvedMAC,
+          etherType: ETHERTYPE_IPV6,
+          payload: q.frame,
+        });
+      }
+    }
+  }
+
   // ─── Management Plane: Terminal (vendor-abstracted) ────────────
 
   async executeCommand(command: string): Promise<string> {
@@ -1118,6 +1865,10 @@ export class Router extends Equipment {
   _getPortsInternal(): Map<string, Port> { return this.ports; }
   /** @internal Used by CLI shells */
   _getHostnameInternal(): string { return this.hostname; }
+  /** @internal Used by CLI shells */
+  _getIPv6RoutingTableInternal(): IPv6RouteEntry[] { return this.ipv6RoutingTable; }
+  /** @internal Used by CLI shells */
+  _getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache; }
 
   // ─── OS Info ───────────────────────────────────────────────────
 
