@@ -76,6 +76,9 @@ export function hasTerminalSupport(type: DeviceType): boolean {
     case 'mac-pc':
     case 'linux-server':
     case 'windows-server':
+    case 'switch-cisco':
+    case 'switch-huawei':
+    case 'switch-generic':
     case 'router-cisco':
     case 'router-huawei':
     case 'firewall-cisco':
