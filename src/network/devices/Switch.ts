@@ -391,8 +391,13 @@ export class Switch extends Equipment {
     // ─── Step 3: Forwarding Decision ────────────────────────────
     const dstMAC = frame.dstMAC.toString().toLowerCase();
 
-    if (frame.dstMAC.isBroadcast() || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
-      // Broadcast or unknown unicast → flood within VLAN
+    // Check for multicast: Broadcast (ff:ff:ff:ff:ff:ff) or IPv6 multicast (33:33:XX:XX:XX:XX)
+    const dstOctets = frame.dstMAC.getOctets();
+    const isMulticast = frame.dstMAC.isBroadcast() ||
+                        (dstOctets[0] === 0x33 && dstOctets[1] === 0x33);
+
+    if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
+      // Broadcast, multicast, or unknown unicast → flood within VLAN
       this.floodFrame(portName, frame, ingressVlan);
     } else {
       // Known unicast
