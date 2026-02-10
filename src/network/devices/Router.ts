@@ -1854,9 +1854,43 @@ export class Router extends Equipment {
 
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
-    const parts = command.trim().split(/\s+/);
-    const cmd = parts[0].toLowerCase();
-    return this.shell.execute(this, cmd, parts.slice(1));
+    return this.shell.execute(this, command);
+  }
+
+  getPrompt(): string {
+    return this.shell.getPrompt(this);
+  }
+
+  getBootSequence(): string {
+    const giPorts = [...this.ports.keys()].filter(n => n.startsWith('Gig'));
+    const faPorts = [...this.ports.keys()].filter(n => n.startsWith('Fast'));
+    return [
+      '',
+      'System Bootstrap, Version 15.0(1r)M15, RELEASE SOFTWARE (fc1)',
+      'Copyright (c) 2003-2025 by cisco Systems, Inc.',
+      '',
+      `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5, RELEASE SOFTWARE (fc1)`,
+      'Technical Support: http://www.cisco.com/techsupport',
+      `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
+      '',
+      'Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.',
+      'Processor board ID FTX1234567A',
+      `${giPorts.length} Gigabit Ethernet interfaces`,
+      ...(faPorts.length > 0 ? [`${faPorts.length} FastEthernet interfaces`] : []),
+      'DRAM configuration is 64 bits wide with parity enabled.',
+      '256K bytes of non-volatile configuration memory.',
+      '',
+      `Base ethernet MAC address: ${this.ports.values().next().value?.getMAC() || '00:00:00:00:00:00'}`,
+      '',
+      '--- System Configuration Dialog ---',
+      '',
+      'Press RETURN to get started.',
+    ].join('\n');
+  }
+
+  getBanner(type: string): string {
+    if (type === 'motd') return '';
+    return '';
   }
 
   // ── Public accessors used by CLI shells ──────────────────────
