@@ -6,14 +6,16 @@
  * output formatting.
  *
  * Supported commands:
- *   ipconfig                                           — show IP config
- *   netsh interface ip set address "name" static ...   — configure IP
- *   ping [-n count] <destination>                      — ICMP echo
- *   arp -a                                             — show ARP table
- *   tracert <destination>                              — trace route
- *   route print                                        — show routing table
- *   route add <dest> mask <mask> <gw> [metric <n>]     — add route
- *   route delete <dest>                                — remove route
+ *   ipconfig [/all] [/release] [/renew] [/flushdns]       — IP configuration
+ *   netsh interface ip set address "name" static ...       — configure IP
+ *   netsh int ip reset                                     — TCP/IP reset
+ *   ping [-n count] <destination>                          — ICMP echo
+ *   arp -a                                                 — show ARP table
+ *   tracert <destination>                                  — trace route
+ *   route print                                            — show routing table
+ *   route add <dest> mask <mask> <gw> [metric <n>]         — add route
+ *   route delete <dest>                                    — remove route
+ *   wevtutil qe System /q:"*[System[Provider[@Name=...]]"  — Event Log
  */
 
 import { EndHost, PingResult } from './EndHost';
@@ -22,6 +24,8 @@ import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 
 export class WindowsPC extends EndHost {
   protected readonly defaultTTL = 128;
+  /** DHCP event log for Windows Event Viewer */
+  private dhcpEventLog: string[] = [];
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -39,7 +43,14 @@ export class WindowsPC extends EndHost {
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
 
-    const parts = command.trim().split(/\s+/);
+    const trimmed = command.trim();
+
+    // Handle piped commands
+    if (trimmed.includes('|')) {
+      return this.executePipedCommand(trimmed);
+    }
+
+    const parts = trimmed.split(/\s+/);
     const cmd = parts[0].toLowerCase();
 
     switch (cmd) {
@@ -51,13 +62,66 @@ export class WindowsPC extends EndHost {
       case 'tracert':
       case 'traceroute': return this.cmdTracert(parts.slice(1));
       case 'route':    return this.cmdRoute(parts.slice(1));
+      case 'wevtutil': return this.cmdWevtutil(parts.slice(1));
       default: return `'${cmd}' is not recognized as an internal or external command.`;
     }
+  }
+
+  // ─── Piped Commands ─────────────────────────────────────────────
+
+  private async executePipedCommand(command: string): Promise<string> {
+    const segments = command.split('|').map(s => s.trim());
+    let output = await this.executeCommand(segments[0]);
+
+    for (let i = 1; i < segments.length; i++) {
+      const filter = segments[i].trim();
+      const filterParts = filter.split(/\s+/);
+      const filterCmd = filterParts[0].toLowerCase();
+
+      if (filterCmd === 'findstr') {
+        const pattern = filterParts.slice(1).join(' ').replace(/"/g, '');
+        const lines = output.split('\n');
+        output = lines.filter(l => l.toLowerCase().includes(pattern.toLowerCase())).join('\n');
+      } else if (filterCmd === 'grep') {
+        const pattern = filterParts[filterParts.length - 1];
+        const lines = output.split('\n');
+        output = lines.filter(l => l.includes(pattern)).join('\n');
+      }
+    }
+
+    return output;
   }
 
   // ─── ipconfig ──────────────────────────────────────────────────
 
   private cmdIpconfig(args: string[]): string {
+    const lower = args.map(a => a.toLowerCase());
+
+    // ipconfig /release [<adapter>]
+    if (lower.includes('/release')) {
+      return this.ipconfigRelease(args);
+    }
+
+    // ipconfig /renew [<adapter>]
+    if (lower.includes('/renew')) {
+      return this.ipconfigRenew(args);
+    }
+
+    // ipconfig /flushdns
+    if (lower.includes('/flushdns')) {
+      return 'Windows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache.';
+    }
+
+    // ipconfig /all
+    if (lower.includes('/all')) {
+      return this.ipconfigAll();
+    }
+
+    // ipconfig (basic)
+    return this.ipconfigBasic();
+  }
+
+  private ipconfigBasic(): string {
     const lines: string[] = [
       'Windows IP Configuration',
       '',
@@ -80,15 +144,224 @@ export class WindowsPC extends EndHost {
     return lines.join('\n');
   }
 
+  private ipconfigAll(): string {
+    const lines: string[] = [
+      'Windows IP Configuration',
+      '',
+      `   Host Name . . . . . . . . . . . . : ${this.hostname}`,
+      `   Primary Dns Suffix  . . . . . . . :`,
+      `   Node Type . . . . . . . . . . . . : Hybrid`,
+      `   IP Routing Enabled. . . . . . . . : No`,
+      `   WINS Proxy Enabled. . . . . . . . : No`,
+      '',
+    ];
+
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      const mac = port.getMAC().toString().replace(/:/g, '-').toUpperCase();
+      const displayName = port.getName().replace(/^eth/, 'Ethernet ');
+      const isDHCP = this.isDHCPConfigured(port.getName());
+
+      lines.push(`Ethernet adapter ${displayName}:`);
+      lines.push('');
+      lines.push(`   Connection-specific DNS Suffix  . :`);
+      lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
+      lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
+      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
+
+      if (ip) {
+        lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
+        lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}(Preferred)`);
+        lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
+
+        if (isDHCP) {
+          const dhcpState = this.dhcpClient.getState(port.getName());
+          if (dhcpState.lease) {
+            const lease = dhcpState.lease;
+            lines.push(`   Lease Obtained. . . . . . . . . . : ${new Date(lease.leaseStart).toLocaleString()}`);
+            lines.push(`   Lease Expires . . . . . . . . . . : ${new Date(lease.expiration).toLocaleString()}`);
+          }
+        }
+
+        lines.push(`   Default Gateway . . . . . . . . . : ${this.defaultGateway || ''}`);
+
+        if (isDHCP) {
+          const dhcpState = this.dhcpClient.getState(port.getName());
+          if (dhcpState.lease) {
+            lines.push(`   DHCP Server . . . . . . . . . . . : ${dhcpState.lease.serverIdentifier}`);
+            if (dhcpState.lease.dnsServers.length > 0) {
+              lines.push(`   DNS Servers . . . . . . . . . . . : ${dhcpState.lease.dnsServers.join(', ')}`);
+            }
+          }
+        }
+      } else {
+        lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
+      }
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private ipconfigRelease(args: string[]): string {
+    const lines: string[] = ['Windows IP Configuration', ''];
+
+    for (const [name] of this.ports) {
+      const state = this.dhcpClient.getState(name);
+      if (state.lease) {
+        const oldIP = state.lease.ipAddress;
+        this.dhcpClient.releaseLease(name);
+        this.addDHCPEvent('RELEASE', `Released IP ${oldIP} on ${name}`);
+      }
+    }
+
+    // All interfaces: go to INIT and mark released
+    for (const [name] of this.ports) {
+      const state = this.dhcpClient.getState(name);
+      state.state = 'INIT';
+    }
+
+    lines.push('All adapters have been successfully released.');
+    lines.push('');
+
+    // Re-show ipconfig
+    for (const [, port] of this.ports) {
+      const displayName = port.getName().replace(/^eth/, 'Ethernet ');
+      lines.push(`Ethernet adapter ${displayName}:`);
+      lines.push(`   Connection-specific DNS Suffix  . :`);
+      const ip = port.getIPAddress();
+      if (ip) {
+        lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
+        lines.push(`   Subnet Mask . . . . . . . . . . . : ${port.getSubnetMask() || '255.255.255.0'}`);
+        lines.push(`   Default Gateway . . . . . . . . . : ${this.defaultGateway || ''}`);
+      } else {
+        lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  private ipconfigRenew(args: string[]): string {
+    // Auto-discover DHCP servers through network topology
+    this.autoDiscoverDHCPServers();
+
+    const lines: string[] = ['Windows IP Configuration', ''];
+
+    // Only renew the primary interface (eth0)
+    const primaryIface = 'eth0';
+    const displayName = primaryIface.replace(/^eth/, 'Ethernet ');
+    lines.push(`Ethernet adapter ${displayName}:`);
+    lines.push(`   DHCP Discover - Broadcast on ${primaryIface}`);
+
+    this.dhcpClient.requestLease(primaryIface, { verbose: false });
+    const state = this.dhcpClient.getState(primaryIface);
+
+    if (state.lease) {
+      this.addDHCPEvent('RENEW', `Renewed IP ${state.lease.ipAddress} on ${primaryIface}`);
+      lines.push(`   DHCP Offer received from ${state.lease.serverIdentifier}`);
+      lines.push(`   DHCP Request - Broadcast`);
+      lines.push(`   DHCP ACK received`);
+    }
+    lines.push('');
+
+    // Re-show ipconfig
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      const displayName = port.getName().replace(/^eth/, 'Ethernet ');
+      lines.push(`Ethernet adapter ${displayName}:`);
+      lines.push(`   Connection-specific DNS Suffix  . :`);
+      if (ip) {
+        lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
+        lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
+        lines.push(`   Default Gateway . . . . . . . . . : ${this.defaultGateway || ''}`);
+      } else {
+        lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  // ─── wevtutil (Windows Event Log) ──────────────────────────────
+
+  private cmdWevtutil(args: string[]): string {
+    // wevtutil qe System /q:"*[System[Provider[@Name='Microsoft-Windows-Dhcp-Client']]]" /f:text /c:10
+    const joined = args.join(' ');
+
+    if (joined.toLowerCase().includes('dhcp-client') || joined.toLowerCase().includes('dhcp')) {
+      // Parse /c:N for count
+      const countMatch = joined.match(/\/c:(\d+)/);
+      const maxCount = countMatch ? parseInt(countMatch[1], 10) : 10;
+
+      // Always include at least a default initialization event
+      const events = this.dhcpEventLog.length > 0
+        ? this.dhcpEventLog.slice(-maxCount)
+        : [`[${new Date().toISOString()}] DHCP INIT: Dhcp-Client service initialized`];
+
+      const lines: string[] = [];
+      for (const event of events) {
+        lines.push(`Event[0]:`);
+        lines.push(`  Log Name: System`);
+        lines.push(`  Source: Microsoft-Windows-Dhcp-Client`);
+        lines.push(`  Date: ${new Date().toISOString()}`);
+        lines.push(`  Event ID: 1000`);
+        lines.push(`  Description: ${event}`);
+        lines.push('');
+      }
+      return lines.join('\n');
+    }
+
+    return 'Usage: wevtutil qe <log> [/q:<query>] [/f:text] [/c:<count>]';
+  }
+
+  private addDHCPEvent(type: string, message: string): void {
+    const timestamp = new Date().toISOString();
+    this.dhcpEventLog.push(`[${timestamp}] DHCP ${type}: ${message}`);
+  }
+
   // ─── netsh ─────────────────────────────────────────────────────
 
   private cmdNetsh(args: string[]): string {
-    const joined = args.join(' ');
-    const match = joined.match(/interface\s+ip\s+set\s+address\s+"?(\w+[\s\w]*\w*)"?\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i);
+    const joined = args.join(' ').toLowerCase();
+
+    // netsh winsock reset
+    if (joined.match(/winsock\s+reset/)) {
+      this.addDHCPEvent('RESET', 'Winsock catalog has been reset');
+      return [
+        '',
+        'Winsock Catalog successfully reset.',
+        'You must restart the computer in order to complete the reset.',
+      ].join('\n');
+    }
+
+    // netsh int ip reset / netsh interface ip reset
+    if (joined.match(/int(?:erface)?\s+ip\s+reset/i)) {
+      // Reset TCP/IP stack
+      for (const [name, port] of this.ports) {
+        port.clearIP();
+        this.dhcpClient.releaseLease(name);
+      }
+      this.defaultGateway = null;
+      this.routingTable = [];
+      this.arpTable.clear();
+      this.addDHCPEvent('RESET', 'TCP/IP stack has been reset');
+      return [
+        'Resetting Interface, OK!',
+        'Restart the computer to complete this action.',
+      ].join('\n');
+    }
+
+    // netsh interface ip set address "name" static <ip> <mask> [gateway]
+    const match = args.join(' ').match(
+      /interface\s+ip\s+set\s+address\s+"?(\w+[\s\w]*\w*)"?\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
+    );
     if (!match) return 'Usage: netsh interface ip set address "name" static <ip> <mask> [gateway]';
 
     const ifName = match[1].trim();
-    // Map Windows names: "Ethernet 0" → "eth0", "Ethernet0" → "eth0"
     const portName = ifName.replace(/^Ethernet\s*/i, 'eth');
     const port = this.ports.get(portName);
     if (!port) return `The interface "${ifName}" was not found.`;
@@ -141,7 +414,6 @@ export class WindowsPC extends EndHost {
   }
 
   private routeAdd(args: string[]): string {
-    // route add default <gw>
     if (args[0] === 'default' && args[1]) {
       try {
         this.setDefaultGateway(new IPAddress(args[1]));
@@ -151,7 +423,6 @@ export class WindowsPC extends EndHost {
       }
     }
 
-    // route add <dest> mask <mask> <gw> [metric <n>]
     const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
     if (maskIdx === -1 || maskIdx + 2 >= args.length) {
       return 'Usage: route add <dest> mask <mask> <gateway> [metric <n>]';
@@ -166,20 +437,17 @@ export class WindowsPC extends EndHost {
       const mask = new SubnetMask(maskStr);
       const gw = new IPAddress(gwStr);
 
-      // Parse optional metric
       let metric = 1;
       const metricIdx = args.findIndex(a => a.toLowerCase() === 'metric');
       if (metricIdx !== -1 && args[metricIdx + 1]) {
         metric = parseInt(args[metricIdx + 1], 10);
       }
 
-      // Default route (0.0.0.0 mask 0.0.0.0)
       if (destStr === '0.0.0.0' && maskStr === '0.0.0.0') {
         this.setDefaultGateway(gw);
         return ' OK!';
       }
 
-      // Static route
       if (!this.addStaticRoute(dest, mask, gw, metric)) {
         return 'The route addition failed: the gateway is not reachable.';
       }
@@ -195,10 +463,9 @@ export class WindowsPC extends EndHost {
       return ' OK!';
     }
 
-    // route delete <dest> [mask <mask>]
     try {
       const dest = new IPAddress(args[0]);
-      let mask = new SubnetMask('255.255.255.0'); // default
+      let mask = new SubnetMask('255.255.255.0');
       const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
       if (maskIdx !== -1 && args[maskIdx + 1]) {
         mask = new SubnetMask(args[maskIdx + 1]);

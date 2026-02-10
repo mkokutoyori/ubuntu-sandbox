@@ -740,10 +740,10 @@ describe('Error Messages', () => {
     expect(result).toContain('powered off');
   });
 
-  it('should reject config commands in user mode', async () => {
+  it('should auto-enable configure terminal from user mode', async () => {
     const result = await sw.executeCommand('configure terminal');
-    // In user mode, "configure" is not registered — should get invalid/unrecognized
-    expect(result).toContain('%');
+    // Simulator convenience: auto-escalate to config mode from user mode
+    expect(result).toContain('Enter configuration commands');
   });
 
   it('should return incomplete for missing VLAN ID', async () => {

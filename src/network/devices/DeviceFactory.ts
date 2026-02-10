@@ -111,4 +111,5 @@ export function isFullyImplemented(type: DeviceType): boolean {
 
 export function resetDeviceCounters(): void {
   deviceCounters.clear();
+  Equipment.clearRegistry();
 }

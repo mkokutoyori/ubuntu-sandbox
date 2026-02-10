@@ -7,7 +7,7 @@
  *
  * Supported commands:
  *   ifconfig <iface> <ip> [netmask <mask>]                — configure interface
- *   ip addr                                               — show IP addresses
+ *   ip addr [show <iface>]                                — show IP addresses
  *   ip route                                              — show routing table
  *   ip route add default via <gw>                         — set default gateway
  *   ip route add <net>/<cidr> via <gw> [metric <n>]       — add static route
@@ -16,6 +16,9 @@
  *   arp [-a]                                              — show ARP table
  *   hostname [name]                                       — show/set hostname
  *   traceroute <destination>                              — trace route
+ *   sudo dhclient [-v] [-d] [-r] [-t <timeout>] <iface>  — DHCP client
+ *   cat /var/lib/dhcp/dhclient.<iface>.leases             — show lease file
+ *   ps aux | grep dhclient                                — show dhclient processes
  */
 
 import { EndHost, PingResult, HostRouteEntry } from './EndHost';
@@ -41,7 +44,27 @@ export class LinuxPC extends EndHost {
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
 
-    const parts = command.trim().split(/\s+/);
+    const trimmed = command.trim();
+
+    // Handle piped commands: execute left side, filter with right side
+    if (trimmed.includes('|')) {
+      return this.executePipedCommand(trimmed);
+    }
+
+    // Handle compound commands with ;
+    if (trimmed.includes(';')) {
+      const cmds = trimmed.split(';').map(c => c.trim()).filter(Boolean);
+      const outputs: string[] = [];
+      for (const c of cmds) {
+        const out = await this.executeCommand(c);
+        if (out) outputs.push(out);
+      }
+      return outputs.join('\n');
+    }
+
+    // Strip 'sudo' prefix
+    const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
+    const parts = noSudo.split(/\s+/);
     const cmd = parts[0];
 
     switch (cmd) {
@@ -53,8 +76,165 @@ export class LinuxPC extends EndHost {
         if (parts.length > 1) { this.hostname = parts[1]; return ''; }
         return this.hostname;
       case 'traceroute': return this.cmdTraceroute(parts.slice(1));
+      case 'dhclient':   return this.cmdDhclient(parts.slice(1));
+      case 'cat':        return this.cmdCat(parts.slice(1));
+      case 'ps':         return this.cmdPs(parts.slice(1));
+      case 'rm':         return this.cmdRm(parts.slice(1));
       default: return `${cmd}: command not found`;
     }
+  }
+
+  // ─── Piped Commands ─────────────────────────────────────────────
+
+  private async executePipedCommand(command: string): Promise<string> {
+    const segments = command.split('|').map(s => s.trim());
+    let output = await this.executeCommand(segments[0]);
+
+    for (let i = 1; i < segments.length; i++) {
+      const filter = segments[i].trim();
+      const filterParts = filter.split(/\s+/);
+      const filterCmd = filterParts[0];
+
+      if (filterCmd === 'grep') {
+        const invertMatch = filterParts.includes('-v');
+        // Extract pattern: handle quoted strings like "inet " or 'dhclient'
+        const rawFilter = filter.slice(filter.indexOf('grep') + 4).trim();
+        let pattern: string;
+        const quoteMatch = rawFilter.match(/(?:-\w+\s+)*["']([^"']+)["']/);
+        if (quoteMatch) {
+          pattern = quoteMatch[1];
+        } else {
+          // Last non-flag argument
+          const nonFlags = filterParts.slice(1).filter(p => !p.startsWith('-'));
+          pattern = nonFlags[nonFlags.length - 1] || '';
+        }
+        const lines = output.split('\n');
+        if (invertMatch) {
+          output = lines.filter(l => !l.includes(pattern)).join('\n');
+        } else {
+          output = lines.filter(l => l.includes(pattern)).join('\n');
+        }
+      } else if (filterCmd === 'tail') {
+        const nIdx = filterParts.indexOf('-n');
+        if (nIdx !== -1 && filterParts[nIdx + 1]) {
+          const n = parseInt(filterParts[nIdx + 1], 10);
+          const lines = output.split('\n');
+          output = lines.slice(-n).join('\n');
+        } else {
+          // tail -50 shorthand
+          const numArg = filterParts.find(p => /^-?\d+$/.test(p));
+          if (numArg) {
+            const n = Math.abs(parseInt(numArg, 10));
+            const lines = output.split('\n');
+            output = lines.slice(-n).join('\n');
+          }
+        }
+      } else if (filterCmd === 'findstr') {
+        // Windows-style findstr
+        const pattern = filterParts.slice(1).join(' ').replace(/"/g, '');
+        const lines = output.split('\n');
+        output = lines.filter(l => l.includes(pattern)).join('\n');
+      }
+    }
+
+    return output;
+  }
+
+  // ─── dhclient ───────────────────────────────────────────────────
+
+  private cmdDhclient(args: string[]): string {
+    let verbose = false;
+    let daemon = false;
+    let release = false;
+    let hasTimeout = false;
+    let timeout = 30;
+    let iface = '';
+
+    for (let i = 0; i < args.length; i++) {
+      switch (args[i]) {
+        case '-v': verbose = true; break;
+        case '-d': daemon = true; break;
+        case '-r': release = true; break;
+        case '-t':
+          hasTimeout = true;
+          if (args[i + 1]) { timeout = parseInt(args[i + 1], 10); i++; }
+          break;
+        default:
+          if (!args[i].startsWith('-')) iface = args[i];
+          break;
+      }
+    }
+
+    // dhclient -r without interface: release all interfaces
+    if (release && !iface) {
+      const outputs: string[] = [];
+      for (const [name] of this.ports) {
+        const result = this.dhcpClient.releaseLease(name);
+        if (result) outputs.push(result);
+      }
+      return outputs.join('\n');
+    }
+
+    if (!iface) return 'Usage: dhclient [-v] [-d] [-r] [-t timeout] <interface>';
+    if (!this.ports.has(iface)) return `RTNETLINK answers: No such device ${iface}`;
+
+    if (release) {
+      return this.dhcpClient.releaseLease(iface);
+    }
+
+    // Auto-discover DHCP servers through network topology
+    this.autoDiscoverDHCPServers();
+
+    const opts: { verbose?: boolean; timeout?: number; daemon?: boolean } = { verbose, daemon };
+    if (hasTimeout) opts.timeout = timeout;
+    return this.dhcpClient.requestLease(iface, opts);
+  }
+
+  // ─── cat (virtual filesystem) ───────────────────────────────────
+
+  private cmdCat(args: string[]): string {
+    if (args.length === 0) return '';
+
+    const path = args[0];
+
+    // Match /var/lib/dhcp/dhclient.<iface>.leases
+    const leaseMatch = path.match(/\/var\/lib\/dhcp\/dhclient\.(\w+)\.leases/);
+    if (leaseMatch) {
+      const iface = leaseMatch[1];
+      return this.dhcpClient.formatLeaseFile(iface);
+    }
+
+    // Match /var/lib/dhcp/dhclient.leases (generic)
+    if (path === '/var/lib/dhcp/dhclient.leases') {
+      // Return all lease files
+      const outputs: string[] = [];
+      for (const [name] of this.ports) {
+        const lease = this.dhcpClient.formatLeaseFile(name);
+        if (lease) outputs.push(lease);
+      }
+      return outputs.join('\n\n');
+    }
+
+    return `cat: ${path}: No such file or directory`;
+  }
+
+  // ─── ps ─────────────────────────────────────────────────────────
+
+  private cmdPs(args: string[]): string {
+    const lines: string[] = [];
+    for (const [name] of this.ports) {
+      if (this.dhcpClient.isProcessRunning(name)) {
+        lines.push(`root     ${1000 + Math.floor(Math.random() * 9000)}  0.0  0.1  5432  2100 ?  Ss  00:00  0:00 dhclient ${name}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  // ─── rm ─────────────────────────────────────────────────────────
+
+  private cmdRm(args: string[]): string {
+    // Just accept silently for dhcp lease file removal
+    return '';
   }
 
   // ─── ifconfig ──────────────────────────────────────────────────
@@ -114,7 +294,7 @@ export class LinuxPC extends EndHost {
       case 'addr':
       case 'address':
       case 'a':
-        return this.cmdIpAddr();
+        return this.cmdIpAddr(args.slice(1));
       case 'route':
       case 'r':
         return this.cmdIpRoute(args.slice(1));
@@ -127,10 +307,17 @@ export class LinuxPC extends EndHost {
     }
   }
 
-  private cmdIpAddr(): string {
+  private cmdIpAddr(args: string[] = []): string {
+    // ip addr show <iface>
+    let filterIface: string | null = null;
+    if (args.length >= 2 && args[0] === 'show') {
+      filterIface = args[1];
+    }
+
     const lines: string[] = [];
     let idx = 1;
     for (const [, port] of this.ports) {
+      if (filterIface && port.getName() !== filterIface) { idx++; continue; }
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
       const mac = port.getMAC();
@@ -138,7 +325,8 @@ export class LinuxPC extends EndHost {
       lines.push(`${idx}: ${port.getName()}: <BROADCAST,MULTICAST,${state}> mtu 1500 state ${state}`);
       lines.push(`    link/ether ${mac} brd ff:ff:ff:ff:ff:ff`);
       if (ip && mask) {
-        lines.push(`    inet ${ip}/${mask.toCIDR()} scope global ${port.getName()}`);
+        const dynFlag = this.isDHCPConfigured(port.getName()) ? ' dynamic' : '';
+        lines.push(`    inet ${ip}/${mask.toCIDR()}${dynFlag} scope global ${port.getName()}`);
       }
       idx++;
     }

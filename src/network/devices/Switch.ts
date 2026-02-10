@@ -23,6 +23,11 @@ import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress } from '../core/types';
 import { Logger } from '../core/Logger';
+import {
+  DHCPSnoopingConfig,
+  DHCPSnoopingBinding,
+  createDefaultSnoopingConfig,
+} from '../dhcp/types';
 
 // ─── 802.1Q Tag ─────────────────────────────────────────────────────
 
@@ -94,10 +99,16 @@ export class Switch extends Equipment {
   private startupConfig: string | null = null;
   private readonly initialHostname: string;
 
+  // ─── DHCP Snooping ────────────────────────────────────────────
+  private dhcpSnooping: DHCPSnoopingConfig = createDefaultSnoopingConfig();
+  private snoopingBindings: DHCPSnoopingBinding[] = [];
+  private snoopingLog: string[] = [];
+  private syslogServer: string | null = null;
+
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: CiscoSwitchShell;
 
-  constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 24, x: number = 0, y: number = 0) {
+  constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, x, y);
     this.initialHostname = name;
     this.createPorts(portCount);
@@ -602,6 +613,12 @@ export class Switch extends Equipment {
   }
   _getSwitchportConfigs(): Map<string, SwitchportConfig> { return this.switchportConfigs; }
   _getSTPStates(): Map<string, STPPortState> { return this.stpStates; }
+  _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }
+  _getSnoopingBindings(): DHCPSnoopingBinding[] { return this.snoopingBindings; }
+  _getSnoopingLog(): string[] { return this.snoopingLog; }
+  _getSyslogServer(): string | null { return this.syslogServer; }
+  _setSyslogServer(ip: string): void { this.syslogServer = ip; }
+  _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
 
   // ─── CLI ──────────────────────────────────────────────────────────
 
@@ -616,8 +633,8 @@ export class Switch extends Equipment {
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',
       `${this.hostname} processor with 65536K bytes of memory.`,
-      `24 FastEthernet interfaces`,
-      `2 Gigabit Ethernet interfaces`,
+      `${this.getPortNames().filter(n => n.startsWith('Fast')).length} FastEthernet interfaces`,
+      `${this.getPortNames().filter(n => n.startsWith('Gig')).length} Gigabit Ethernet interfaces`,
       '',
       `Base ethernet MAC address: ${this.getPort(this.getPortNames()[0])?.getMAC() || '00:00:00:00:00:00'}`,
       '',
@@ -691,20 +708,33 @@ export class CiscoSwitchShell {
     const trimmed = input.trim();
     if (!trimmed) return '';
 
+    // Handle pipe filtering: "show logging | include DHCP"
+    let pipeFilter: { type: string; pattern: string } | null = null;
+    let cmdPart = trimmed;
+    const pipeIdx = trimmed.indexOf(' | ');
+    if (pipeIdx !== -1) {
+      cmdPart = trimmed.substring(0, pipeIdx).trim();
+      const filterPart = trimmed.substring(pipeIdx + 3).trim();
+      const filterMatch = filterPart.match(/^(include|exclude|grep|findstr)\s+(.+)$/i);
+      if (filterMatch) {
+        pipeFilter = { type: filterMatch[1].toLowerCase(), pattern: filterMatch[2] };
+      }
+    }
+
     // Handle ? for help
-    if (trimmed.endsWith('?')) {
+    if (cmdPart.endsWith('?')) {
       this.swRef = sw;
-      const helpInput = trimmed.slice(0, -1).trim();
+      const helpInput = cmdPart.slice(0, -1).trim();
       const result = this.getHelp(helpInput);
       this.swRef = null;
       return result;
     }
 
     // Global shortcuts
-    if (trimmed.toLowerCase() === 'exit') return this.cmdExit();
-    if (trimmed.toLowerCase() === 'end' || trimmed === '\x03') return this.cmdEnd();
-    if (trimmed.toLowerCase() === 'logout' && this.mode === 'user') return 'Connection closed.';
-    if (trimmed.toLowerCase() === 'disable' && this.mode === 'privileged') {
+    if (cmdPart.toLowerCase() === 'exit') return this.cmdExit();
+    if (cmdPart.toLowerCase() === 'end' || cmdPart === '\x03') return this.cmdEnd();
+    if (cmdPart.toLowerCase() === 'logout' && this.mode === 'user') return 'Connection closed.';
+    if (cmdPart.toLowerCase() === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
       return '';
     }
@@ -714,16 +744,16 @@ export class CiscoSwitchShell {
 
     // Get the trie for current mode
     const trie = this.getActiveTrie();
-    const result = trie.match(trimmed);
+    const result = trie.match(cmdPart);
 
     let output: string;
     switch (result.status) {
       case 'ok':
-        output = result.node?.action ? result.node.action(result.args, trimmed) : '';
+        output = result.node?.action ? result.node.action(result.args, cmdPart) : '';
         break;
 
       case 'ambiguous':
-        output = result.error || `% Ambiguous command: "${trimmed}"`;
+        output = result.error || `% Ambiguous command: "${cmdPart}"`;
         break;
 
       case 'incomplete':
@@ -735,10 +765,22 @@ export class CiscoSwitchShell {
         break;
 
       default:
-        output = `% Unrecognized command "${trimmed}"`;
+        output = `% Unrecognized command "${cmdPart}"`;
     }
 
     this.swRef = null;
+
+    // Apply pipe filter if present
+    if (pipeFilter && output) {
+      const lines = output.split('\n');
+      const pattern = pipeFilter.pattern.toLowerCase();
+      if (pipeFilter.type === 'include' || pipeFilter.type === 'grep' || pipeFilter.type === 'findstr') {
+        output = lines.filter(l => l.toLowerCase().includes(pattern)).join('\n');
+      } else if (pipeFilter.type === 'exclude') {
+        output = lines.filter(l => !l.toLowerCase().includes(pattern)).join('\n');
+      }
+    }
+
     return output;
   }
 
@@ -875,10 +917,32 @@ export class CiscoSwitchShell {
       return '';
     });
 
+    // configure terminal (auto-enable for simulator convenience)
+    this.userTrie.register('configure terminal', 'Enter configuration mode', () => {
+      this.mode = 'config';
+      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
+    });
+
     // show version
     this.userTrie.register('show version', 'Display system hardware and software status', () => {
       if (!this.swRef) return '';
       return `Cisco IOS Software, C2960 Software\n${this.swRef.getHostname()} uptime is 0 days, 0 hours`;
+    });
+
+    // show commands (delegate to privileged show handlers)
+    this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
+      if (!this.swRef) return '';
+      return this.showDHCPSnooping(this.swRef);
+    });
+
+    this.userTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
+      if (!this.swRef) return '';
+      return this.showDHCPSnoopingBinding(this.swRef);
+    });
+
+    this.userTrie.register('show logging', 'Display syslog messages', () => {
+      if (!this.swRef) return '';
+      return this.showLogging(this.swRef);
     });
 
     // ping (basic in user mode)
@@ -978,6 +1042,23 @@ export class CiscoSwitchShell {
       this.mode = 'user';
       return 'System restarting...';
     });
+
+    // ─── DHCP Snooping Show Commands ────────────────────────────
+    this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
+      if (!this.swRef) return '';
+      return this.showDHCPSnooping(this.swRef);
+    });
+
+    this.privilegedTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
+      if (!this.swRef) return '';
+      return this.showDHCPSnoopingBinding(this.swRef);
+    });
+
+    // show logging
+    this.privilegedTrie.register('show logging', 'Display syslog messages', () => {
+      if (!this.swRef) return '';
+      return this.showLogging(this.swRef);
+    });
   }
 
   // ─── Command Tree: Global Config Mode ((config)#) ────────────────
@@ -1068,6 +1149,44 @@ export class CiscoSwitchShell {
       if (!this.swRef) return '';
       return this.swRef.writeMemory();
     });
+
+    // ─── DHCP Snooping Commands ─────────────────────────────────
+    this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
+      if (!this.swRef) return '';
+      this.swRef._getDHCPSnoopingConfig().enabled = true;
+      return '';
+    });
+
+    this.configTrie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping on VLANs', (args) => {
+      if (!this.swRef || args.length < 1) return '% Incomplete command.';
+      const cfg = this.swRef._getDHCPSnoopingConfig();
+      // Parse VLAN list: "1,10,20" or "1-10" or "1,10,20-30"
+      const parts = args[0].split(',');
+      for (const part of parts) {
+        if (part.includes('-')) {
+          const [s, e] = part.split('-').map(Number);
+          if (!isNaN(s) && !isNaN(e)) {
+            for (let i = s; i <= e; i++) cfg.vlans.add(i);
+          }
+        } else {
+          const v = parseInt(part, 10);
+          if (!isNaN(v)) cfg.vlans.add(v);
+        }
+      }
+      return '';
+    });
+
+    this.configTrie.register('ip dhcp snooping verify mac-address', 'Enable MAC address verification', () => {
+      if (!this.swRef) return '';
+      this.swRef._getDHCPSnoopingConfig().verifyMac = true;
+      return '';
+    });
+
+    this.configTrie.registerGreedy('logging', 'Configure syslog server', (args) => {
+      if (!this.swRef || args.length < 1) return '% Incomplete command.';
+      this.swRef._setSyslogServer(args[0]);
+      return '';
+    });
   }
 
   // ─── Command Tree: Interface Config Mode ((config-if)#) ──────────
@@ -1141,6 +1260,27 @@ export class CiscoSwitchShell {
 
     // description (ignored but accepted for realism)
     this.configIfTrie.registerGreedy('description', 'Interface description', () => '');
+
+    // ─── DHCP Snooping Interface Commands ──────────────────────
+    this.configIfTrie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
+      if (!this.swRef) return '';
+      const cfg = this.swRef._getDHCPSnoopingConfig();
+      return this.applyToSelectedInterfaces(portName => {
+        cfg.trustedPorts.add(portName);
+        return '';
+      });
+    });
+
+    this.configIfTrie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
+      if (!this.swRef || args.length < 1) return '% Incomplete command.';
+      const rate = parseInt(args[0], 10);
+      if (isNaN(rate) || rate < 1) return '% Invalid rate value';
+      const cfg = this.swRef._getDHCPSnoopingConfig();
+      return this.applyToSelectedInterfaces(portName => {
+        cfg.rateLimits.set(portName, rate);
+        return '';
+      });
+    });
 
     // show running-config (do show)
     this.configIfTrie.register('do show running-config', 'Display current configuration', () => {
@@ -1259,6 +1399,93 @@ export class CiscoSwitchShell {
                   state === 'listening'  ? 'LIS' :
                   state === 'learning'   ? 'LRN' : 'DIS';
       lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}19        128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
+    }
+
+    return lines.join('\n');
+  }
+
+  // ─── DHCP Snooping Display ───────────────────────────────────────
+
+  private showDHCPSnooping(sw: Switch): string {
+    const cfg = sw._getDHCPSnoopingConfig();
+    const lines: string[] = [];
+
+    lines.push(`Switch DHCP snooping is ${cfg.enabled ? 'enabled' : 'disabled'}`);
+
+    if (cfg.vlans.size > 0) {
+      const vlanList = Array.from(cfg.vlans).sort((a, b) => a - b).join(',');
+      lines.push(`DHCP snooping is configured on following VLANs:`);
+      lines.push(`${vlanList}`);
+    }
+
+    if (cfg.verifyMac) {
+      lines.push(`DHCP snooping verify mac-address is enabled`);
+    }
+
+    // Show trusted ports
+    if (cfg.trustedPorts.size > 0) {
+      const trusted = Array.from(cfg.trustedPorts)
+        .map(p => this.abbreviateInterface(p))
+        .join(', ');
+      lines.push(`Trusted ports: ${trusted}`);
+    }
+
+    // Show rate-limited ports
+    for (const [port, rate] of cfg.rateLimits) {
+      lines.push(`  ${this.abbreviateInterface(port)}: rate limit ${rate} pps`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private showDHCPSnoopingBinding(sw: Switch): string {
+    const bindings = sw._getSnoopingBindings();
+    const lines: string[] = [];
+
+    lines.push('MacAddress          IP address        Lease(sec)  Type           VLAN  Interface');
+    lines.push('------------------  ----------------  ----------  -------------  ----  --------------------');
+
+    if (bindings.length === 0) {
+      lines.push('Total number of bindings: 0');
+    } else {
+      for (const b of bindings) {
+        const mac = b.macAddress.padEnd(20);
+        const ip = b.ipAddress.padEnd(18);
+        const lease = String(b.lease).padEnd(12);
+        const type = b.type.padEnd(15);
+        const vlan = String(b.vlan).padEnd(6);
+        lines.push(`${mac}${ip}${lease}${type}${vlan}${b.port}`);
+      }
+      lines.push(`Total number of bindings: ${bindings.length}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private showLogging(sw: Switch): string {
+    const logs = sw._getSnoopingLog();
+    const syslog = sw._getSyslogServer();
+    const lines: string[] = [];
+
+    lines.push(`Syslog logging: enabled`);
+    if (syslog) {
+      lines.push(`  Logging to ${syslog}`);
+    }
+    lines.push('');
+
+    if (logs.length > 0) {
+      for (const log of logs) {
+        lines.push(log);
+      }
+    } else {
+      // Add default DHCP snooping messages if snooping is enabled
+      const cfg = sw._getDHCPSnoopingConfig();
+      if (cfg.enabled) {
+        lines.push(`*${new Date().toLocaleString()}: %DHCP_SNOOPING-5-DHCP_SNOOPING_ENABLED: DHCP Snooping enabled globally`);
+        if (cfg.verifyMac) {
+          lines.push(`*${new Date().toLocaleString()}: %DHCP_SNOOPING-5-DHCP_SNOOPING_VERIFY_MAC: DHCP snooping verify mac-address enabled`);
+        }
+      }
     }
 
     return lines.join('\n');

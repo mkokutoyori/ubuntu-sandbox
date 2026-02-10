@@ -34,6 +34,9 @@ import {
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { DHCPClient } from '../dhcp/DHCPClient';
+import type { DHCPClientIfaceState } from '../dhcp/types';
+import type { DHCPServer } from '../dhcp/DHCPServer';
 
 // ─── Internal Types ────────────────────────────────────────────────
 
@@ -154,10 +157,41 @@ export abstract class EndHost extends Equipment {
   /** IPv6 routing table */
   protected ipv6RoutingTable: HostIPv6RouteEntry[] = [];
 
+  // ─── DHCP Client (RFC 2131) ─────────────────────────────────────
+  protected dhcpClient: DHCPClient;
+  /** Track DHCP-configured interfaces for 'dynamic' display */
+  protected dhcpInterfaces: Set<string> = new Set();
+
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
+
+  constructor(type: any, name: string, x: number, y: number) {
+    super(type, name, x, y);
+    this.dhcpClient = new DHCPClient(
+      (iface: string) => {
+        const port = this.ports.get(iface);
+        return port ? port.getMAC().toString() : '00:00:00:00:00:00';
+      },
+      (iface: string, ip: string, mask: string, gateway: string | null) => {
+        this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask));
+        if (gateway) this.setDefaultGateway(new IPAddress(gateway));
+        this.dhcpInterfaces.add(iface);
+      },
+      (iface: string) => {
+        const port = this.ports.get(iface);
+        if (port) port.clearIP();
+        // Remove connected route for this interface
+        this.routingTable = this.routingTable.filter(
+          r => !(r.type === 'connected' && r.iface === iface)
+        );
+        this.defaultGateway = null;
+        this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+        this.dhcpInterfaces.delete(iface);
+      },
+    );
+  }
 
   // ─── Interface Configuration ───────────────────────────────────
 
@@ -230,6 +264,103 @@ export abstract class EndHost extends Equipment {
   clearDefaultGateway(): void {
     this.defaultGateway = null;
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+  }
+
+  // ─── DHCP Client API ──────────────────────────────────────────
+
+  getDHCPClient(): DHCPClient { return this.dhcpClient; }
+
+  getDHCPState(iface: string): { state: string; xid?: number } {
+    const s = this.dhcpClient.getState(iface);
+    return { state: s.state, xid: s.xid };
+  }
+
+  getDHCPLogs(iface: string): string {
+    return this.dhcpClient.getLogs(iface);
+  }
+
+  getMACAddress(iface: string): MACAddress {
+    const port = this.ports.get(iface);
+    if (!port) throw new Error(`Interface ${iface} not found`);
+    return port.getMAC();
+  }
+
+  setMACAddress(iface: string, mac: MACAddress): void {
+    const port = this.ports.get(iface);
+    if (!port) throw new Error(`Interface ${iface} not found`);
+    port.setMAC(mac);
+  }
+
+  isDHCPConfigured(iface: string): boolean {
+    return this.dhcpInterfaces.has(iface);
+  }
+
+  /**
+   * Auto-discover DHCP servers reachable through the network topology.
+   * Traverses cables and switches to find Routers with DHCP servers,
+   * and falls back to scanning all Equipment instances (simulator convenience).
+   */
+  autoDiscoverDHCPServers(): void {
+    this.dhcpClient.clearServers();
+    const visited = new Set<string>();
+
+    // Helper: check if an Equipment is a Router with a DHCP server
+    const tryRegisterRouter = (equip: Equipment) => {
+      if (visited.has(equip.getId())) return;
+      visited.add(equip.getId());
+      // Use duck-typing to check for getDHCPServer method (avoids circular import of Router)
+      const router = equip as any;
+      if (typeof router.getDHCPServer === 'function') {
+        const dhcpServer: DHCPServer = router.getDHCPServer();
+        if (dhcpServer && dhcpServer.isEnabled()) {
+          // Find a configured IP on the router to use as server identifier
+          const routerPorts = equip.getPorts();
+          let serverIP = '0.0.0.0';
+          for (const rPort of routerPorts) {
+            const ip = rPort.getIPAddress();
+            if (ip) { serverIP = ip.toString(); break; }
+          }
+          this.dhcpClient.registerServer(dhcpServer, serverIP);
+        }
+      }
+    };
+
+    // Strategy 1: Traverse physical topology from our ports
+    for (const [, port] of this.ports) {
+      const cable = port.getCable();
+      if (!cable) continue;
+      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      if (!remotePort) continue;
+      const remoteId = remotePort.getEquipmentId();
+      const remoteEquip = Equipment.getById(remoteId);
+      if (!remoteEquip) continue;
+
+      // Direct connection to a Router
+      tryRegisterRouter(remoteEquip);
+
+      // If connected to a Switch, traverse through the switch's other ports
+      const remoteType = remoteEquip.getDeviceType();
+      if (remoteType.includes('switch')) {
+        for (const swPort of remoteEquip.getPorts()) {
+          if (swPort === remotePort) continue; // Skip the port we came from
+          const swCable = swPort.getCable();
+          if (!swCable) continue;
+          const farPort = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+          if (!farPort) continue;
+          const farId = farPort.getEquipmentId();
+          const farEquip = Equipment.getById(farId);
+          if (farEquip) tryRegisterRouter(farEquip);
+        }
+      }
+    }
+
+    // Strategy 2: Fallback — scan all Equipment instances (for tests without cables)
+    if (this.dhcpClient['connectedServers'].length === 0) {
+      for (const equip of Equipment.getAllEquipment()) {
+        if (equip === this) continue;
+        tryRegisterRouter(equip);
+      }
+    }
   }
 
   // ─── Routing Table Management ──────────────────────────────────

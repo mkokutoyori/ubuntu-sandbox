@@ -48,6 +48,7 @@ export class Port {
 
   getName(): string { return this.name; }
   getMAC(): MACAddress { return this.mac; }
+  setMAC(mac: MACAddress): void { this.mac = mac; }
   getType(): ConnectionType { return this.type; }
   getEquipmentId(): string { return this.equipmentId; }
 
