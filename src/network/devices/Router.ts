@@ -53,6 +53,7 @@ import {
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { DHCPServer } from '../dhcp/DHCPServer';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -271,6 +272,9 @@ export class Router extends Equipment {
   private raConfig: Map<string, RAConfig> = new Map();
   /** RA timer handles per interface */
   private raTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
+
+  // ── DHCP Server (RFC 2131) ──────────────────────────────────
+  private dhcpServer: DHCPServer = new DHCPServer();
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -1869,6 +1873,14 @@ export class Router extends Equipment {
   _getIPv6RoutingTableInternal(): IPv6RouteEntry[] { return this.ipv6RoutingTable; }
   /** @internal Used by CLI shells */
   _getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache; }
+  /** @internal Used by CLI shells */
+  _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+  /** @internal Used by CLI shells */
+  _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
+
+  // ─── DHCP Server Public API ────────────────────────────────────
+
+  getDHCPServer(): DHCPServer { return this.dhcpServer; }
 
   // ─── OS Info ───────────────────────────────────────────────────
 

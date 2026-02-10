@@ -19,6 +19,13 @@ import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 
 export abstract class Equipment {
+  /** Global registry of all Equipment instances (for topology traversal) */
+  private static registry: Map<string, Equipment> = new Map();
+
+  static getById(id: string): Equipment | undefined { return Equipment.registry.get(id); }
+  static getAllEquipment(): Equipment[] { return Array.from(Equipment.registry.values()); }
+  static clearRegistry(): void { Equipment.registry.clear(); }
+
   protected readonly id: string;
   protected name: string;
   protected hostname: string;
@@ -35,6 +42,7 @@ export abstract class Equipment {
     this.hostname = name;
     this.x = x;
     this.y = y;
+    Equipment.registry.set(this.id, this);
   }
 
   // ─── Identity ───────────────────────────────────────────────────
