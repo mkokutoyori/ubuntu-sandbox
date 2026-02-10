@@ -740,10 +740,11 @@ describe('Error Messages', () => {
     expect(result).toContain('powered off');
   });
 
-  it('should auto-enable configure terminal from user mode', async () => {
+  it('should reject config commands in user mode', async () => {
     const result = await sw.executeCommand('configure terminal');
-    // Simulator convenience: auto-escalate to config mode from user mode
-    expect(result).toContain('Enter configuration commands');
+    // In real Cisco IOS, user EXEC mode only has basic commands
+    // "configure terminal" requires privileged EXEC mode (after "enable")
+    expect(result).toContain('%');
   });
 
   it('should return incomplete for missing VLAN ID', async () => {

@@ -911,19 +911,13 @@ export class CiscoSwitchShell {
   }
 
   private buildUserCommands(): void {
-    // enable
+    // enable — the only way to enter privileged mode from user EXEC
     this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
       this.mode = 'privileged';
       return '';
     });
 
-    // configure terminal (auto-enable for simulator convenience)
-    this.userTrie.register('configure terminal', 'Enter configuration mode', () => {
-      this.mode = 'config';
-      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
-    });
-
-    // show version
+    // show version (limited show commands available in user mode)
     this.userTrie.register('show version', 'Display system hardware and software status', () => {
       if (!this.swRef) return '';
       return `Cisco IOS Software, C2960 Software\n${this.swRef.getHostname()} uptime is 0 days, 0 hours`;

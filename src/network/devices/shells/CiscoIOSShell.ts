@@ -47,8 +47,6 @@ export class CiscoIOSShell implements IRouterShell {
     const lower = fullInput.toLowerCase();
     if (lower === 'exit') return this.cmdExit();
     if (lower === 'end') return this.cmdEnd();
-    // Show commands are available from any mode (simulator convenience)
-    if (lower.startsWith('show ')) return this.handleShow(router, fullInput.slice(5).trim());
 
     switch (this.mode) {
       case 'user': return this.execUser(router, fullInput);
@@ -105,32 +103,10 @@ export class CiscoIOSShell implements IRouterShell {
     if (lower.startsWith('show ')) {
       return this.handleShow(router, input.slice(5).trim());
     }
-    // Auto-enable for privileged/config commands (simulator convenience)
-    if (lower === 'configure terminal' || lower === 'conf t') {
-      this.mode = 'config';
-      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
+    if (lower === 'ping' || lower.startsWith('ping ')) {
+      return '% Use "enable" to access privileged commands first.';
     }
-    if (lower.startsWith('debug ')) {
-      this.mode = 'privileged';
-      return this.handleDebug(router, input.slice(6).trim());
-    }
-    if (lower.startsWith('no debug ')) {
-      this.mode = 'privileged';
-      return this.handleNoDebug(router, input.slice(9).trim());
-    }
-    if (lower.startsWith('clear ')) {
-      this.mode = 'privileged';
-      return this.handleClear(router, input.slice(6).trim());
-    }
-    // Auto-escalate config-mode commands from user mode (simulator convenience)
-    if (lower.startsWith('router ') || lower.startsWith('no router ') ||
-        lower.startsWith('interface ') || lower.startsWith('ip ') ||
-        lower.startsWith('no ip ') || lower.startsWith('service ') ||
-        lower.startsWith('no service ') || lower.startsWith('hostname ')) {
-      this.mode = 'config';
-      return this.execConfig(router, input);
-    }
-    return `% Unrecognized command "${input}"`;
+    return `% Unknown command or computer name, or unable to find computer address.\nType "enable" to enter privileged EXEC mode.`;
   }
 
   // ─── Privileged EXEC Mode (#) ────────────────────────────────────
@@ -161,16 +137,7 @@ export class CiscoIOSShell implements IRouterShell {
       return this.handleClear(router, input.slice(6).trim());
     }
 
-    // Auto-escalate config-mode commands from privileged mode (simulator convenience)
-    if (lower.startsWith('router ') || lower.startsWith('no router ') ||
-        lower.startsWith('interface ') || lower.startsWith('ip ') ||
-        lower.startsWith('no ip ') || lower.startsWith('service ') ||
-        lower.startsWith('no service ') || lower.startsWith('hostname ')) {
-      this.mode = 'config';
-      return this.execConfig(router, input);
-    }
-
-    return `% Unrecognized command "${input}"`;
+    return `% Invalid input detected at '^' marker.\nType "configure terminal" to enter configuration mode.`;
   }
 
   // ─── Global Config Mode ((config)#) ──────────────────────────────
@@ -178,6 +145,16 @@ export class CiscoIOSShell implements IRouterShell {
   private execConfig(router: Router, input: string): string {
     const lower = input.toLowerCase();
     const parts = input.trim().split(/\s+/);
+
+    // 'do' prefix: execute privileged command from config mode (real Cisco IOS behavior)
+    if (lower.startsWith('do ')) {
+      return this.execPrivileged(router, input.slice(3).trim());
+    }
+
+    // 'show' also works directly from config mode (Cisco convenience)
+    if (lower.startsWith('show ')) {
+      return this.handleShow(router, input.slice(5).trim());
+    }
 
     // hostname
     if (lower.startsWith('hostname ') && parts.length >= 2) {
@@ -262,6 +239,10 @@ export class CiscoIOSShell implements IRouterShell {
     const lower = input.toLowerCase();
     const parts = input.trim().split(/\s+/);
 
+    // 'do' and 'show' from sub-config modes
+    if (lower.startsWith('do ')) return this.execPrivileged(router, input.slice(3).trim());
+    if (lower.startsWith('show ')) return this.handleShow(router, input.slice(5).trim());
+
     if (!this.selectedInterface) return '% No interface selected';
 
     // ip address <ip> <mask>
@@ -312,6 +293,11 @@ export class CiscoIOSShell implements IRouterShell {
   private execConfigDHCP(router: Router, input: string): string {
     const lower = input.toLowerCase();
     const parts = input.trim().split(/\s+/);
+
+    // 'do' and 'show' from sub-config modes
+    if (lower.startsWith('do ')) return this.execPrivileged(router, input.slice(3).trim());
+    if (lower.startsWith('show ')) return this.handleShow(router, input.slice(5).trim());
+
     const pool = this.selectedDHCPPool;
     const dhcp = router._getDHCPServerInternal();
 
@@ -367,6 +353,10 @@ export class CiscoIOSShell implements IRouterShell {
   private execConfigRouter(router: Router, input: string): string {
     const lower = input.toLowerCase();
     const parts = input.trim().split(/\s+/);
+
+    // 'do' and 'show' from sub-config modes
+    if (lower.startsWith('do ')) return this.execPrivileged(router, input.slice(3).trim());
+    if (lower.startsWith('show ')) return this.handleShow(router, input.slice(5).trim());
 
     // no router rip (exit config-router and disable)
     if (lower === 'no router rip') {

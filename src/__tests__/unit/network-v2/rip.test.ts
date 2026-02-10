@@ -583,6 +583,8 @@ describe('Group 5: CLI Commands', () => {
     const r1 = new Router('router-cisco', 'R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
     await r1.executeCommand('router rip');
     expect(r1.isRIPEnabled()).toBe(true);
 
@@ -593,6 +595,8 @@ describe('Group 5: CLI Commands', () => {
     const r1 = new Router('router-cisco', 'R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
     await r1.executeCommand('router rip');
     await r1.executeCommand('network 10.0.0.0');
 
@@ -607,6 +611,8 @@ describe('Group 5: CLI Commands', () => {
     const r1 = new Router('router-cisco', 'R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
     await r1.executeCommand('router rip');
     await r1.executeCommand('network 10.0.0.0');
 
@@ -652,9 +658,12 @@ describe('Group 5: CLI Commands', () => {
     const r1 = new Router('router-cisco', 'R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
     await r1.executeCommand('router rip');
     expect(r1.isRIPEnabled()).toBe(true);
 
+    await r1.executeCommand('exit');  // back to config mode
     await r1.executeCommand('no router rip');
     expect(r1.isRIPEnabled()).toBe(false);
   });
@@ -663,6 +672,8 @@ describe('Group 5: CLI Commands', () => {
     const r1 = new Router('router-cisco', 'R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
     await r1.executeCommand('router rip');
     await r1.executeCommand('network 10.0.0.0');
 

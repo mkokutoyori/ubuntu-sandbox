@@ -101,13 +101,15 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
 
     it('should validate pool configuration errors', async () => {
       const router = new Router('router-cisco', 'R1');
-      
+
       // Try to configure pool without network statement
-      const output = await router.executeCommand('configure terminal');
-      const output2 = await router.executeCommand('ip dhcp pool TEST');
-      const output3 = await router.executeCommand('default-router 192.168.1.1');
-      const output4 = await router.executeCommand('exit');
-      
+      await router.executeCommand('enable');
+      await router.executeCommand('configure terminal');
+      await router.executeCommand('ip dhcp pool TEST');
+      await router.executeCommand('default-router 192.168.1.1');
+      await router.executeCommand('exit');
+      await router.executeCommand('end');
+
       // Should show error when trying to use pool
       const showError = await router.executeCommand('show ip dhcp pool TEST');
       expect(showError).toContain('Incomplete configuration');
@@ -127,6 +129,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
       expect(bindings).toContain('Lease expiration');
       
       // Simulate a lease
+      await router.executeCommand('enable');
       await router.executeCommand('debug ip dhcp server events');
       const debug = await router.executeCommand('show debug');
       expect(debug).toContain('DHCP server debugging is on');
@@ -149,12 +152,13 @@ describe('Group 2: Functional — DORA Process', () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
       
       // Configure router interface and DHCP
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('interface GigabitEthernet0/0');
       await router.executeCommand('ip address 192.168.1.1 255.255.255.0');
       await router.executeCommand('no shutdown');
       await router.executeCommand('exit');
-      
+
       // Configure DHCP pool
       await router.executeCommand('ip dhcp pool LAN');
       await router.executeCommand('network 192.168.1.0 255.255.255.0');
@@ -164,14 +168,15 @@ describe('Group 2: Functional — DORA Process', () => {
       await router.executeCommand('exit');
       await router.executeCommand('ip dhcp excluded-address 192.168.1.1');
       await router.executeCommand('end');
-      
+
       // Connect devices
       const cable1 = new Cable('c1');
       cable1.connect(router.getPort('GigabitEthernet0/0')!, switch1.getPort('GigabitEthernet0/1')!);
       const cable2 = new Cable('c2');
       cable2.connect(switch1.getPort('GigabitEthernet0/2')!, pc.getPort('eth0')!);
-      
+
       // Configure switch ports
+      await switch1.executeCommand('enable');
       await switch1.executeCommand('configure terminal');
       await switch1.executeCommand('interface range GigabitEthernet0/1-2');
       await switch1.executeCommand('switchport mode access');
@@ -212,6 +217,7 @@ describe('Group 2: Functional — DORA Process', () => {
       const pc3 = new LinuxPC('linux-pc', 'PC3');
       
       // Configure router and DHCP pool with enough addresses
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('ip dhcp pool LAN');
       await router.executeCommand('network 192.168.10.0 255.255.255.0');
@@ -262,6 +268,7 @@ describe('Group 2: Functional — DORA Process', () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
       
       // Configure DHCP with short lease for testing
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 10.0.0.0 255.255.255.0');
@@ -334,6 +341,7 @@ describe('Group 2: Functional — DORA Process', () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
       
       // Configure server to NAK certain requests
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 192.168.2.0 255.255.255.0');
@@ -352,16 +360,18 @@ describe('Group 2: Functional — DORA Process', () => {
       const router = new Router('router-cisco', 'DHCP-Server');
       
       // Configure tiny pool
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('ip dhcp pool TINY');
       await router.executeCommand('network 192.168.3.0 255.255.255.252'); // Only 2 usable addresses
       await router.executeCommand('exit');
       await router.executeCommand('ip dhcp excluded-address 192.168.3.1');
+      await router.executeCommand('end');
       // Pool now has only 192.168.3.2 and 192.168.3.3
-      
+
       // Simulate 3 clients
       // ... connection and request code ...
-      
+
       // Third client should fail
       const output = await router.executeCommand('debug ip dhcp server packet');
       // Check logs for pool exhausted message
@@ -470,12 +480,13 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
       const router = new Router('router-cisco', 'DHCP-Server');
       
       // Configure DHCP first
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 172.16.0.0 255.255.255.0');
       await router.executeCommand('exit');
       await router.executeCommand('end');
-      
+
       // Show statistics
       const stats = await router.executeCommand('show ip dhcp server statistics');
       expect(stats).toContain('Memory usage');
@@ -492,15 +503,18 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
 
     it('should clear DHCP bindings and statistics', async () => {
       const router = new Router('router-cisco', 'DHCP-Server');
-      
+
+      // Enter privileged mode for clear/show commands
+      await router.executeCommand('enable');
+
       // Clear bindings
       const clearOutput = await router.executeCommand('clear ip dhcp binding *');
       expect(clearOutput).toBe('');
-      
+
       // Clear statistics
       const clearStats = await router.executeCommand('clear ip dhcp server statistics');
       expect(clearStats).toBe('');
-      
+
       // Verify statistics reset
       const stats = await router.executeCommand('show ip dhcp server statistics');
       expect(stats).toContain('0');
@@ -508,16 +522,19 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
 
     it('should debug DHCP packets in real-time', async () => {
       const router = new Router('router-cisco', 'DHCP-Server');
-      
+
+      // Enter privileged mode first (debug commands require it)
+      await router.executeCommand('enable');
+
       // Enable debugging
       await router.executeCommand('debug ip dhcp server packet');
       await router.executeCommand('debug ip dhcp server events');
-      
+
       // Check debug status
       const debugStatus = await router.executeCommand('show debug');
       expect(debugStatus).toContain('DHCP server packet debugging is on');
       expect(debugStatus).toContain('DHCP server event debugging is on');
-      
+
       // Disable debugging
       await router.executeCommand('no debug ip dhcp server packet');
       await router.executeCommand('no debug ip dhcp server events');
@@ -527,6 +544,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
       const router = new Router('router-cisco', 'Relay-Agent');
       
       // Configure interface to relay DHCP requests
+      await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('interface GigabitEthernet0/1');
       await router.executeCommand('ip helper-address 10.1.1.100'); // DHCP server IP
@@ -544,8 +562,9 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
   describe('Switch: DHCP Snooping & Security', () => {
     it('should configure DHCP snooping to prevent rogue DHCP servers', async () => {
       const switch1 = new Switch('switch-cisco', 'SW1');
-      
-      // Enable DHCP snooping globally
+
+      // Enter privileged mode, then config mode
+      await switch1.executeCommand('enable');
       await switch1.executeCommand('configure terminal');
       await switch1.executeCommand('ip dhcp snooping');
       await switch1.executeCommand('ip dhcp snooping vlan 1,10,20');
@@ -576,8 +595,9 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
 
     it('should detect and log DHCP spoofing attacks', async () => {
       const switch1 = new Switch('switch-cisco', 'SW1');
-      
-      // Enable logging
+
+      // Enter privileged mode, then config mode
+      await switch1.executeCommand('enable');
       await switch1.executeCommand('configure terminal');
       await switch1.executeCommand('ip dhcp snooping');
       await switch1.executeCommand('ip dhcp snooping verify mac-address');
