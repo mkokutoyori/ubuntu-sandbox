@@ -21,7 +21,15 @@ import type { IRouterShell } from './IRouterShell';
 export class HuaweiVRPShell implements IRouterShell {
   getOSType(): string { return 'huawei-vrp'; }
 
-  execute(router: Router, cmd: string, args: string[]): string {
+  getPrompt(router: Router): string {
+    return `<${router._getHostnameInternal()}>`;
+  }
+
+  execute(router: Router, rawInput: string): string {
+    const parts = rawInput.trim().split(/\s+/);
+    if (parts.length === 0) return '';
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
     switch (cmd) {
       case 'display': return this.cmdDisplay(router, args);
       case 'ip':      return this.cmdIp(router, args);

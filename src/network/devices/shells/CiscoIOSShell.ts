@@ -1,29 +1,26 @@
 /**
  * CiscoIOSShell - Cisco IOS CLI emulation for Router Management Plane
  *
- * FSM-based CLI with modes:
- *   user      — Router>        (limited show commands)
- *   privileged — Router#        (full show/debug/clear + configure)
- *   config    — Router(config)# (global configuration)
- *   config-if — Router(config-if)# (interface configuration)
+ * FSM-based CLI with CommandTrie for abbreviation/help support:
+ *   user        — Router>           (limited show commands)
+ *   privileged  — Router#           (full show/debug/clear + configure)
+ *   config      — Router(config)#   (global configuration)
+ *   config-if   — Router(config-if)# (interface configuration)
  *   config-dhcp — Router(dhcp-config)# (DHCP pool configuration)
  *   config-router — Router(config-router)# (routing protocol config)
  *
- * Commands include:
- *   show ip route / interface brief / arp / running-config / counters / protocols
- *   show ip dhcp pool / binding / server statistics / conflict / excluded-address
- *   show running-config interface <if>
- *   show debug
- *   configure terminal / interface / ip dhcp pool / router rip
- *   ip address / route / helper-address / forward-protocol / dhcp excluded-address
- *   service dhcp / no service dhcp
- *   debug ip dhcp server {packet|events}
- *   clear ip dhcp {binding|server statistics}
+ * Features:
+ *   - Abbreviation matching (e.g. "sh ip ro" → "show ip route")
+ *   - Context-aware ? help listing valid completions
+ *   - Pipe filtering: "show ... | include <pattern>"
+ *   - 'do' prefix in config modes (execute privileged command)
+ *   - 'show' shortcut in config modes
  */
 
 import { IPAddress, SubnetMask } from '../../core/types';
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
+import { CommandTrie, type CommandAction } from './CommandTrie';
 
 type RouterCLIMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router';
 
@@ -32,30 +29,182 @@ export class CiscoIOSShell implements IRouterShell {
   private selectedInterface: string | null = null;
   private selectedDHCPPool: string | null = null;
 
+  /** Temporary reference set during execute() for closures */
+  private routerRef: Router | null = null;
+
+  // Per-mode command tries
+  private userTrie = new CommandTrie();
+  private privilegedTrie = new CommandTrie();
+  private configTrie = new CommandTrie();
+  private configIfTrie = new CommandTrie();
+  private configDhcpTrie = new CommandTrie();
+  private configRouterTrie = new CommandTrie();
+
+  constructor() {
+    this.buildUserCommands();
+    this.buildPrivilegedCommands();
+    this.buildConfigCommands();
+    this.buildConfigIfCommands();
+    this.buildConfigDhcpCommands();
+    this.buildConfigRouterCommands();
+  }
+
   getOSType(): string { return 'cisco-ios'; }
 
   getMode(): RouterCLIMode { return this.mode; }
 
-  // ─── Main Execute (replaces old flat dispatch) ────────────────────
+  // ─── Prompt Generation ─────────────────────────────────────────────
 
-  execute(router: Router, cmd: string, args: string[]): string {
-    // Reconstruct full input for mode-based parsing
-    const fullInput = [cmd, ...args].join(' ').trim();
-    if (!fullInput) return '';
+  getPrompt(router: Router): string {
+    const host = router._getHostnameInternal();
+    switch (this.mode) {
+      case 'user':          return `${host}>`;
+      case 'privileged':    return `${host}#`;
+      case 'config':        return `${host}(config)#`;
+      case 'config-if':     return `${host}(config-if)#`;
+      case 'config-dhcp':   return `${host}(dhcp-config)#`;
+      case 'config-router': return `${host}(config-router)#`;
+      default:              return `${host}>`;
+    }
+  }
+
+  // ─── Main Execute ──────────────────────────────────────────────────
+
+  execute(router: Router, rawInput: string): string {
+    const trimmed = rawInput.trim();
+    if (!trimmed) return '';
+
+    // Handle pipe filtering: "show logging | include DHCP"
+    let pipeFilter: { type: string; pattern: string } | null = null;
+    let cmdPart = trimmed;
+    const pipeIdx = trimmed.indexOf(' | ');
+    if (pipeIdx !== -1) {
+      cmdPart = trimmed.substring(0, pipeIdx).trim();
+      const filterPart = trimmed.substring(pipeIdx + 3).trim();
+      const filterMatch = filterPart.match(/^(include|exclude|grep|findstr)\s+(.+)$/i);
+      if (filterMatch) {
+        pipeFilter = { type: filterMatch[1].toLowerCase(), pattern: filterMatch[2] };
+      }
+    }
+
+    // Handle ? for help
+    if (cmdPart.endsWith('?')) {
+      const helpInput = cmdPart.slice(0, -1);
+      return this.getHelp(helpInput);
+    }
 
     // Global shortcuts
-    const lower = fullInput.toLowerCase();
+    const lower = cmdPart.toLowerCase();
     if (lower === 'exit') return this.cmdExit();
     if (lower === 'end') return this.cmdEnd();
+    if (lower === 'logout' && this.mode === 'user') return 'Connection closed.';
+    if (lower === 'disable' && this.mode === 'privileged') {
+      this.mode = 'user';
+      return '';
+    }
 
+    // Bind router reference for command closures
+    this.routerRef = router;
+
+    // Handle 'do' prefix in config modes
+    if (this.mode !== 'user' && this.mode !== 'privileged' && lower.startsWith('do ')) {
+      const subCmd = cmdPart.slice(3).trim();
+      // Temporarily switch to privileged mode for execution
+      const savedMode = this.mode;
+      this.mode = 'privileged';
+      let output = this.executeOnTrie(subCmd);
+      this.mode = savedMode;
+      this.routerRef = null;
+      return this.applyPipeFilter(output, pipeFilter);
+    }
+
+    // Handle 'show' shortcut in config modes (real Cisco IOS behavior)
+    if (this.mode !== 'user' && this.mode !== 'privileged' && lower.startsWith('show ')) {
+      const savedMode = this.mode;
+      this.mode = 'privileged';
+      let output = this.executeOnTrie(cmdPart);
+      this.mode = savedMode;
+      this.routerRef = null;
+      return this.applyPipeFilter(output, pipeFilter);
+    }
+
+    let output = this.executeOnTrie(cmdPart);
+    this.routerRef = null;
+
+    return this.applyPipeFilter(output, pipeFilter);
+  }
+
+  private executeOnTrie(cmdPart: string): string {
+    const trie = this.getActiveTrie();
+    const result = trie.match(cmdPart);
+
+    switch (result.status) {
+      case 'ok':
+        if (result.node?.action) {
+          return result.node.action(result.args, cmdPart);
+        }
+        return '';
+
+      case 'ambiguous':
+        return result.error || `% Ambiguous command: "${cmdPart}"`;
+
+      case 'incomplete':
+        return result.error || '% Incomplete command.';
+
+      case 'invalid':
+        return result.error || `% Invalid input detected at '^' marker.`;
+
+      default:
+        return `% Unrecognized command "${cmdPart}"`;
+    }
+  }
+
+  private applyPipeFilter(output: string, pipeFilter: { type: string; pattern: string } | null): string {
+    if (!pipeFilter || !output) return output;
+    const lines = output.split('\n');
+    // Remove quotes from pattern (like the grep pipe does)
+    let pattern = pipeFilter.pattern;
+    if ((pattern.startsWith('"') && pattern.endsWith('"')) ||
+        (pattern.startsWith("'") && pattern.endsWith("'"))) {
+      pattern = pattern.slice(1, -1);
+    }
+    const lowerPattern = pattern.toLowerCase();
+    if (pipeFilter.type === 'include' || pipeFilter.type === 'grep' || pipeFilter.type === 'findstr') {
+      return lines.filter(l => l.toLowerCase().includes(lowerPattern)).join('\n');
+    } else if (pipeFilter.type === 'exclude') {
+      return lines.filter(l => !l.toLowerCase().includes(lowerPattern)).join('\n');
+    }
+    return output;
+  }
+
+  // ─── Help / Completion ─────────────────────────────────────────────
+
+  getHelp(input: string): string {
+    const trie = this.getActiveTrie();
+    const completions = trie.getCompletions(input);
+    if (completions.length === 0) return '% Unrecognized command';
+    const maxKw = Math.max(...completions.map(c => c.keyword.length));
+    return completions
+      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+      .join('\n');
+  }
+
+  tabComplete(input: string): string | null {
+    const trie = this.getActiveTrie();
+    return trie.tabComplete(input);
+  }
+
+  // ─── Active Trie Selection ─────────────────────────────────────────
+
+  private getActiveTrie(): CommandTrie {
     switch (this.mode) {
-      case 'user': return this.execUser(router, fullInput);
-      case 'privileged': return this.execPrivileged(router, fullInput);
-      case 'config': return this.execConfig(router, fullInput);
-      case 'config-if': return this.execConfigIf(router, fullInput);
-      case 'config-dhcp': return this.execConfigDHCP(router, fullInput);
-      case 'config-router': return this.execConfigRouter(router, fullInput);
-      default: return `% Unrecognized command "${fullInput}"`;
+      case 'user': return this.userTrie;
+      case 'privileged': return this.privilegedTrie;
+      case 'config': return this.configTrie;
+      case 'config-if': return this.configIfTrie;
+      case 'config-dhcp': return this.configDhcpTrie;
+      case 'config-router': return this.configRouterTrie;
+      default: return this.userTrie;
     }
   }
 
@@ -92,396 +241,366 @@ export class CiscoIOSShell implements IRouterShell {
     return '';
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Command Registration (per-mode CommandTrie construction)
+  // ═══════════════════════════════════════════════════════════════════
+
   // ─── User EXEC Mode (>) ──────────────────────────────────────────
 
-  private execUser(router: Router, input: string): string {
-    const lower = input.toLowerCase();
-    if (lower === 'enable') {
+  private buildUserCommands(): void {
+    const t = this.userTrie;
+
+    t.register('enable', 'Enter privileged EXEC mode', () => {
       this.mode = 'privileged';
       return '';
-    }
-    if (lower.startsWith('show ')) {
-      return this.handleShow(router, input.slice(5).trim());
-    }
-    if (lower === 'ping' || lower.startsWith('ping ')) {
+    });
+
+    // show commands (limited in user mode)
+    this.registerShowCommands(t);
+
+    t.registerGreedy('ping', 'Send echo messages', () => {
       return '% Use "enable" to access privileged commands first.';
-    }
-    return `% Unknown command or computer name, or unable to find computer address.\nType "enable" to enter privileged EXEC mode.`;
+    });
   }
 
-  // ─── Privileged EXEC Mode (#) ────────────────────────────────────
+  // ─── Privileged EXEC Mode (#) ─────────────────────────────────────
 
-  private execPrivileged(router: Router, input: string): string {
-    const lower = input.toLowerCase();
+  private buildPrivilegedCommands(): void {
+    const t = this.privilegedTrie;
 
-    if (lower === 'enable') return '';
+    t.register('enable', 'Enter privileged EXEC mode (already in)', () => '');
 
-    if (lower === 'configure terminal' || lower === 'conf t') {
+    t.register('configure terminal', 'Enter configuration mode', () => {
       this.mode = 'config';
       return 'Enter configuration commands, one per line.  End with CNTL/Z.';
-    }
+    });
 
-    if (lower.startsWith('show ')) {
-      return this.handleShow(router, input.slice(5).trim());
-    }
+    t.register('disable', 'Return to user EXEC mode', () => {
+      this.mode = 'user';
+      return '';
+    });
 
-    if (lower.startsWith('debug ')) {
-      return this.handleDebug(router, input.slice(6).trim());
-    }
+    t.register('copy running-config startup-config', 'Save configuration', () => {
+      return '[OK]';
+    });
 
-    if (lower.startsWith('no debug ')) {
-      return this.handleNoDebug(router, input.slice(9).trim());
-    }
+    t.register('write memory', 'Save configuration', () => {
+      return 'Building configuration...\n[OK]';
+    });
 
-    if (lower.startsWith('clear ')) {
-      return this.handleClear(router, input.slice(6).trim());
-    }
+    // show commands
+    this.registerShowCommands(t);
 
-    return `% Invalid input detected at '^' marker.\nType "configure terminal" to enter configuration mode.`;
+    // debug commands
+    t.register('debug ip dhcp server packet', 'Debug DHCP server packets', () => {
+      this.r()._getDHCPServerInternal().setDebugServerPacket(true);
+      return 'DHCP server packet debugging is on';
+    });
+    t.register('debug ip dhcp server events', 'Debug DHCP server events', () => {
+      this.r()._getDHCPServerInternal().setDebugServerEvents(true);
+      return 'DHCP server event debugging is on';
+    });
+
+    // no debug commands
+    t.register('no debug ip dhcp server packet', 'Disable DHCP packet debugging', () => {
+      this.r()._getDHCPServerInternal().setDebugServerPacket(false);
+      return '';
+    });
+    t.register('no debug ip dhcp server events', 'Disable DHCP event debugging', () => {
+      this.r()._getDHCPServerInternal().setDebugServerEvents(false);
+      return '';
+    });
+
+    // clear commands
+    t.registerGreedy('clear ip dhcp binding', 'Clear DHCP bindings', (args) => {
+      const dhcp = this.r()._getDHCPServerInternal();
+      if (args.length > 0 && args[0] === '*') {
+        dhcp.clearBindings();
+      } else if (args.length > 0) {
+        dhcp.clearBinding(args[0]);
+      } else {
+        return '% Incomplete command.';
+      }
+      return '';
+    });
+    t.register('clear ip dhcp server statistics', 'Clear DHCP server statistics', () => {
+      this.r()._getDHCPServerInternal().clearStats();
+      return '';
+    });
+
+    // ping (greedy to accept IP/hostname)
+    t.registerGreedy('ping', 'Send echo messages', () => {
+      return '% Ping requires a target IP address.';
+    });
   }
 
   // ─── Global Config Mode ((config)#) ──────────────────────────────
 
-  private execConfig(router: Router, input: string): string {
-    const lower = input.toLowerCase();
-    const parts = input.trim().split(/\s+/);
+  private buildConfigCommands(): void {
+    const t = this.configTrie;
 
-    // 'do' prefix: execute privileged command from config mode (real Cisco IOS behavior)
-    if (lower.startsWith('do ')) {
-      return this.execPrivileged(router, input.slice(3).trim());
-    }
-
-    // 'show' also works directly from config mode (Cisco convenience)
-    if (lower.startsWith('show ')) {
-      return this.handleShow(router, input.slice(5).trim());
-    }
-
-    // hostname
-    if (lower.startsWith('hostname ') && parts.length >= 2) {
-      router._setHostnameInternal(parts[1]);
+    t.registerGreedy('hostname', 'Set system hostname', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.r()._setHostnameInternal(args[0]);
       return '';
-    }
+    });
 
-    // service dhcp
-    if (lower === 'service dhcp') {
-      router._getDHCPServerInternal().enable();
+    t.register('service dhcp', 'Enable DHCP service', () => {
+      this.r()._getDHCPServerInternal().enable();
       return '';
-    }
-    if (lower === 'no service dhcp') {
-      router._getDHCPServerInternal().disable();
+    });
+    t.register('no service dhcp', 'Disable DHCP service', () => {
+      this.r()._getDHCPServerInternal().disable();
       return '';
-    }
+    });
 
-    // interface <name>
-    if (lower.startsWith('interface ') && parts.length >= 2) {
-      const ifName = this.resolveInterfaceName(router, parts.slice(1).join(' '));
-      if (!ifName) return `% Invalid interface "${parts.slice(1).join(' ')}"`;
+    t.registerGreedy('interface', 'Select an interface to configure', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const ifName = this.resolveInterfaceName(this.r(), args.join(' '));
+      if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
       this.selectedInterface = ifName;
       this.mode = 'config-if';
       return '';
-    }
+    });
 
-    // ip dhcp pool <name>
-    if (lower.startsWith('ip dhcp pool ') && parts.length >= 4) {
-      const poolName = parts[3];
-      const dhcp = router._getDHCPServerInternal();
+    t.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const poolName = args[0];
+      const dhcp = this.r()._getDHCPServerInternal();
       if (!dhcp.getPool(poolName)) {
         dhcp.createPool(poolName);
       }
       this.selectedDHCPPool = poolName;
       this.mode = 'config-dhcp';
       return '';
-    }
+    });
 
-    // ip dhcp excluded-address <start> [<end>]
-    if (lower.startsWith('ip dhcp excluded-address ')) {
-      const addrParts = parts.slice(3);
-      if (addrParts.length < 1) return '% Incomplete command.';
-      const start = addrParts[0];
-      const end = addrParts[1] || start;
-      router._getDHCPServerInternal().addExcludedRange(start, end);
+    t.registerGreedy('ip dhcp excluded-address', 'Prevent DHCP from assigning certain addresses', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const start = args[0];
+      const end = args[1] || start;
+      this.r()._getDHCPServerInternal().addExcludedRange(start, end);
       return '';
-    }
+    });
 
-    // ip route <net> <mask> <nh>
-    if (lower.startsWith('ip route ') && parts.length >= 5) {
-      return this.cmdIpRoute(router, parts.slice(2));
-    }
+    t.registerGreedy('ip route', 'Establish static routes', (args) => {
+      return this.cmdIpRoute(this.r(), args);
+    });
 
-    // router rip
-    if (lower === 'router rip') {
-      if (!router.isRIPEnabled()) router.enableRIP();
+    t.register('router rip', 'Enter RIP routing protocol configuration', () => {
+      if (!this.r().isRIPEnabled()) this.r().enableRIP();
       this.mode = 'config-router';
       return '';
-    }
+    });
 
-    // no router rip
-    if (lower === 'no router rip') {
-      router.disableRIP();
+    t.register('no router rip', 'Disable RIP routing protocol', () => {
+      this.r().disableRIP();
       return '';
-    }
+    });
 
-    // no shutdown (no-op in global config)
-    if (lower === 'no shutdown') return '';
+    t.register('no shutdown', 'Enable (no-op in global config)', () => '');
 
-    // show running-config (from config mode)
-    if (lower.startsWith('show ') || lower.startsWith('do show ')) {
-      const showArgs = lower.startsWith('do ') ? input.slice(8).trim() : input.slice(5).trim();
-      return this.handleShow(router, showArgs);
-    }
-
-    return `% Unrecognized command "${input}"`;
+    // do prefix is handled in execute() before trie matching
+    // show prefix is handled in execute() before trie matching
   }
 
   // ─── Interface Config Mode ((config-if)#) ─────────────────────────
 
-  private execConfigIf(router: Router, input: string): string {
-    const lower = input.toLowerCase();
-    const parts = input.trim().split(/\s+/);
+  private buildConfigIfCommands(): void {
+    const t = this.configIfTrie;
 
-    // 'do' and 'show' from sub-config modes
-    if (lower.startsWith('do ')) return this.execPrivileged(router, input.slice(3).trim());
-    if (lower.startsWith('show ')) return this.handleShow(router, input.slice(5).trim());
-
-    if (!this.selectedInterface) return '% No interface selected';
-
-    // ip address <ip> <mask>
-    if (lower.startsWith('ip address ') && parts.length >= 4) {
+    t.registerGreedy('ip address', 'Set interface IP address', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      if (!this.selectedInterface) return '% No interface selected';
       try {
-        router.configureInterface(this.selectedInterface, new IPAddress(parts[2]), new SubnetMask(parts[3]));
+        this.r().configureInterface(this.selectedInterface, new IPAddress(args[0]), new SubnetMask(args[1]));
         return '';
       } catch (e: any) {
         return `% Invalid input: ${e.message}`;
       }
-    }
+    });
 
-    // no shutdown
-    if (lower === 'no shutdown') {
-      const port = router.getPort(this.selectedInterface);
+    t.register('no shutdown', 'Enable interface', () => {
+      if (!this.selectedInterface) return '% No interface selected';
+      const port = this.r().getPort(this.selectedInterface);
       if (port) port.setUp(true);
       return '';
-    }
+    });
 
-    // shutdown
-    if (lower === 'shutdown') {
-      const port = router.getPort(this.selectedInterface);
+    t.register('shutdown', 'Disable interface', () => {
+      if (!this.selectedInterface) return '% No interface selected';
+      const port = this.r().getPort(this.selectedInterface);
       if (port) port.setUp(false);
       return '';
-    }
+    });
 
-    // ip helper-address <ip>
-    if (lower.startsWith('ip helper-address ') && parts.length >= 3) {
-      router._getDHCPServerInternal().addHelperAddress(this.selectedInterface, parts[2]);
+    t.registerGreedy('ip helper-address', 'Set DHCP relay agent address', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.selectedInterface) return '% No interface selected';
+      this.r()._getDHCPServerInternal().addHelperAddress(this.selectedInterface, args[0]);
       return '';
-    }
+    });
 
-    // ip forward-protocol udp <service>
-    if (lower.startsWith('ip forward-protocol udp ')) {
-      const service = parts[3];
+    t.registerGreedy('ip forward-protocol udp', 'Forward UDP port', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const service = args[0];
       const portNum = service === 'bootps' ? 67 : service === 'bootpc' ? 68 : parseInt(service, 10);
       if (!isNaN(portNum)) {
-        router._getDHCPServerInternal().addForwardProtocol(portNum);
+        this.r()._getDHCPServerInternal().addForwardProtocol(portNum);
       }
       return '';
-    }
+    });
 
-    return `% Unrecognized command "${input}"`;
+    // do/show handled in execute()
   }
 
-  // ─── DHCP Pool Config Mode ((dhcp-config)#) ───────────────────────
+  // ─── DHCP Pool Config Mode ((dhcp-config)#) ────────────────────────
 
-  private execConfigDHCP(router: Router, input: string): string {
-    const lower = input.toLowerCase();
-    const parts = input.trim().split(/\s+/);
+  private buildConfigDhcpCommands(): void {
+    const t = this.configDhcpTrie;
 
-    // 'do' and 'show' from sub-config modes
-    if (lower.startsWith('do ')) return this.execPrivileged(router, input.slice(3).trim());
-    if (lower.startsWith('show ')) return this.handleShow(router, input.slice(5).trim());
-
-    const pool = this.selectedDHCPPool;
-    const dhcp = router._getDHCPServerInternal();
-
-    if (!pool) return '% No DHCP pool selected';
-
-    // network <ip> <mask>
-    if (lower.startsWith('network ') && parts.length >= 3) {
-      dhcp.configurePoolNetwork(pool, parts[1], parts[2]);
+    t.registerGreedy('network', 'Define DHCP pool network', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      if (!this.selectedDHCPPool) return '% No DHCP pool selected';
+      this.r()._getDHCPServerInternal().configurePoolNetwork(this.selectedDHCPPool, args[0], args[1]);
       return '';
-    }
+    });
 
-    // default-router <ip>
-    if (lower.startsWith('default-router ') && parts.length >= 2) {
-      dhcp.configurePoolRouter(pool, parts[1]);
+    t.registerGreedy('default-router', 'Set default router for DHCP clients', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.selectedDHCPPool) return '% No DHCP pool selected';
+      this.r()._getDHCPServerInternal().configurePoolRouter(this.selectedDHCPPool, args[0]);
       return '';
-    }
+    });
 
-    // dns-server <ip> [<ip2>...]
-    if (lower.startsWith('dns-server ')) {
-      dhcp.configurePoolDNS(pool, parts.slice(1));
+    t.registerGreedy('dns-server', 'Set DNS server for DHCP clients', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.selectedDHCPPool) return '% No DHCP pool selected';
+      this.r()._getDHCPServerInternal().configurePoolDNS(this.selectedDHCPPool, args);
       return '';
-    }
+    });
 
-    // domain-name <name>
-    if (lower.startsWith('domain-name ') && parts.length >= 2) {
-      dhcp.configurePoolDomain(pool, parts[1]);
+    t.registerGreedy('domain-name', 'Set domain name for DHCP clients', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.selectedDHCPPool) return '% No DHCP pool selected';
+      this.r()._getDHCPServerInternal().configurePoolDomain(this.selectedDHCPPool, args[0]);
       return '';
-    }
+    });
 
-    // lease <days> [<hours> [<seconds>]]
-    if (lower.startsWith('lease ')) {
-      const leaseArgs = parts.slice(1).map(Number);
+    t.registerGreedy('lease', 'Set DHCP lease duration', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.selectedDHCPPool) return '% No DHCP pool selected';
+      const leaseArgs = args.map(Number);
       let seconds = 0;
       if (leaseArgs.length >= 1) seconds += leaseArgs[0] * 86400; // days
       if (leaseArgs.length >= 2) seconds += leaseArgs[1] * 3600;  // hours
       if (leaseArgs.length >= 3) seconds += leaseArgs[2];          // seconds
       if (seconds === 0) seconds = 86400; // default 1 day
-      dhcp.configurePoolLease(pool, seconds);
+      this.r()._getDHCPServerInternal().configurePoolLease(this.selectedDHCPPool, seconds);
       return '';
-    }
+    });
 
-    // client-identifier deny <pattern>
-    if (lower.startsWith('client-identifier deny ') && parts.length >= 3) {
-      dhcp.addDenyPattern(pool, parts[2]);
+    t.registerGreedy('client-identifier deny', 'Deny DHCP by client identifier', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.selectedDHCPPool) return '% No DHCP pool selected';
+      this.r()._getDHCPServerInternal().addDenyPattern(this.selectedDHCPPool, args[0]);
       return '';
-    }
+    });
 
-    return `% Unrecognized command "${input}"`;
+    // do/show handled in execute()
   }
 
   // ─── Router Config Mode ((config-router)#) ────────────────────────
 
-  private execConfigRouter(router: Router, input: string): string {
-    const lower = input.toLowerCase();
-    const parts = input.trim().split(/\s+/);
+  private buildConfigRouterCommands(): void {
+    const t = this.configRouterTrie;
 
-    // 'do' and 'show' from sub-config modes
-    if (lower.startsWith('do ')) return this.execPrivileged(router, input.slice(3).trim());
-    if (lower.startsWith('show ')) return this.handleShow(router, input.slice(5).trim());
-
-    // no router rip (exit config-router and disable)
-    if (lower === 'no router rip') {
-      this.mode = 'config';
-      router.disableRIP();
-      return '';
-    }
-
-    // network <ip> [<mask>]
-    if (lower.startsWith('network ') && parts.length >= 2) {
-      if (!router.isRIPEnabled()) return '% RIP is not enabled.';
+    t.registerGreedy('network', 'Advertise a network in RIP', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (!this.r().isRIPEnabled()) return '% RIP is not enabled.';
       try {
-        const network = new IPAddress(parts[1]);
-        const mask = parts.length >= 3 ? new SubnetMask(parts[2]) : this.classfulMask(network);
-        router.ripAdvertiseNetwork(network, mask);
+        const network = new IPAddress(args[0]);
+        const mask = args.length >= 2 ? new SubnetMask(args[1]) : this.classfulMask(network);
+        this.r().ripAdvertiseNetwork(network, mask);
         return '';
       } catch (e: any) {
         return `% Invalid input: ${e.message}`;
       }
-    }
+    });
 
-    // version 2
-    if (lower === 'version 2') return '';
+    t.register('version 2', 'Use RIPv2', () => '');
 
-    return `% Unrecognized command "${input}"`;
+    t.register('no router rip', 'Disable RIP and exit to config mode', () => {
+      this.mode = 'config';
+      this.r().disableRIP();
+      return '';
+    });
+
+    // do/show handled in execute()
   }
 
-  // ─── Show Commands ────────────────────────────────────────────────
+  // ─── Shared Show Commands ──────────────────────────────────────────
 
-  private handleShow(router: Router, sub: string): string {
-    const lower = sub.toLowerCase();
-
-    if (lower === 'ip route' || lower === 'ip route table') return this.showIpRoute(router);
-    if (lower === 'ip interface brief' || lower === 'ip int brief') return this.showIpIntBrief(router);
-    if (lower === 'arp') return this.showArp(router);
-    if (lower === 'running-config' || lower === 'run') return this.showRunningConfig(router);
-    if (lower === 'counters' || lower === 'ip traffic') return this.showCounters(router);
-    if (lower === 'ip protocols' || lower === 'ip rip') return this.showIpProtocols(router);
+  private registerShowCommands(trie: CommandTrie): void {
+    trie.register('show ip route', 'Display IP routing table', () => this.showIpRoute(this.r()));
+    trie.register('show ip interface brief', 'Display interface status summary', () => this.showIpIntBrief(this.r()));
+    trie.register('show arp', 'Display ARP table', () => this.showArp(this.r()));
+    trie.register('show running-config', 'Display running configuration', () => this.showRunningConfig(this.r()));
+    trie.register('show counters', 'Display traffic counters', () => this.showCounters(this.r()));
+    trie.register('show ip traffic', 'Display IP traffic statistics', () => this.showCounters(this.r()));
+    trie.register('show ip protocols', 'Display routing protocol status', () => this.showIpProtocols(this.r()));
+    trie.register('show ip rip', 'Display RIP information', () => this.showIpProtocols(this.r()));
 
     // DHCP show commands
-    if (lower === 'ip dhcp pool') return router._getDHCPServerInternal().formatPoolShow();
-    if (lower.startsWith('ip dhcp pool ')) {
-      const poolName = sub.slice(13).trim();
-      return router._getDHCPServerInternal().formatPoolShow(poolName);
-    }
-    if (lower === 'ip dhcp binding') return router._getDHCPServerInternal().formatBindingsShow();
-    if (lower === 'ip dhcp server statistics') return router._getDHCPServerInternal().formatStatsShow();
-    if (lower === 'ip dhcp conflict') return router._getDHCPServerInternal().formatConflictShow();
-    if (lower === 'ip dhcp excluded-address') return router._getDHCPServerInternal().formatExcludedShow();
+    trie.registerGreedy('show ip dhcp pool', 'Display DHCP pool information', (args) =>
+      this.r()._getDHCPServerInternal().formatPoolShow(args.length > 0 ? args[0] : undefined));
+    trie.register('show ip dhcp binding', 'Display DHCP address bindings', () =>
+      this.r()._getDHCPServerInternal().formatBindingsShow());
+    trie.register('show ip dhcp server statistics', 'Display DHCP server statistics', () =>
+      this.r()._getDHCPServerInternal().formatStatsShow());
+    trie.register('show ip dhcp conflict', 'Display DHCP address conflicts', () =>
+      this.r()._getDHCPServerInternal().formatConflictShow());
+    trie.register('show ip dhcp excluded-address', 'Display DHCP excluded addresses', () =>
+      this.r()._getDHCPServerInternal().formatExcludedShow());
 
     // Debug show
-    if (lower === 'debug') return this.showDebug(router);
+    trie.register('show debug', 'Display debugging flags', () =>
+      this.r()._getDHCPServerInternal().formatDebugShow());
 
     // show running-config interface <name>
-    if (lower.startsWith('running-config interface ')) {
-      const ifName = this.resolveInterfaceName(router, sub.slice(24).trim());
+    trie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const ifName = this.resolveInterfaceName(this.r(), args.join(' '));
       if (!ifName) return `% Invalid interface`;
-      return this.showRunningConfigInterface(router, ifName);
-    }
+      return this.showRunningConfigInterface(this.r(), ifName);
+    });
 
-    return `% Unrecognized command "show ${sub}"`;
+    trie.register('show version', 'Display system hardware and software status', () => this.showVersion(this.r()));
   }
 
-  // ─── Debug Commands ───────────────────────────────────────────────
+  // ─── Show Implementations ──────────────────────────────────────────
 
-  private handleDebug(router: Router, sub: string): string {
-    const lower = sub.toLowerCase();
-    const dhcp = router._getDHCPServerInternal();
-
-    if (lower === 'ip dhcp server packet') {
-      dhcp.setDebugServerPacket(true);
-      return 'DHCP server packet debugging is on';
-    }
-    if (lower === 'ip dhcp server events') {
-      dhcp.setDebugServerEvents(true);
-      return 'DHCP server event debugging is on';
-    }
-
-    return `% Unrecognized debug command "${sub}"`;
+  private showVersion(router: Router): string {
+    const ports = router._getPortsInternal();
+    const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig'));
+    return [
+      `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5`,
+      `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
+      '',
+      `ROM: System Bootstrap, Version 15.0(1r)M15`,
+      '',
+      `${router._getHostnameInternal()} uptime is 0 minutes`,
+      `System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"`,
+      '',
+      `Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.`,
+      `Processor board ID FTX1234567A`,
+      `${giPorts.length} Gigabit Ethernet interfaces`,
+      `DRAM configuration is 64 bits wide with parity enabled.`,
+      `256K bytes of non-volatile configuration memory.`,
+      '',
+      `Configuration register is 0x2102`,
+    ].join('\n');
   }
-
-  private handleNoDebug(router: Router, sub: string): string {
-    const lower = sub.toLowerCase();
-    const dhcp = router._getDHCPServerInternal();
-
-    if (lower === 'ip dhcp server packet') {
-      dhcp.setDebugServerPacket(false);
-      return '';
-    }
-    if (lower === 'ip dhcp server events') {
-      dhcp.setDebugServerEvents(false);
-      return '';
-    }
-
-    return `% Unrecognized command`;
-  }
-
-  private showDebug(router: Router): string {
-    return router._getDHCPServerInternal().formatDebugShow();
-  }
-
-  // ─── Clear Commands ───────────────────────────────────────────────
-
-  private handleClear(router: Router, sub: string): string {
-    const lower = sub.toLowerCase();
-    const dhcp = router._getDHCPServerInternal();
-
-    if (lower === 'ip dhcp binding *') {
-      dhcp.clearBindings();
-      return '';
-    }
-    if (lower.startsWith('ip dhcp binding ')) {
-      const ip = sub.slice(16).trim();
-      dhcp.clearBinding(ip);
-      return '';
-    }
-    if (lower === 'ip dhcp server statistics') {
-      dhcp.clearStats();
-      return '';
-    }
-
-    return `% Unrecognized command "clear ${sub}"`;
-  }
-
-  // ─── Show Implementations ─────────────────────────────────────────
 
   private showIpRoute(router: Router): string {
     const table = router.getRoutingTable();
@@ -576,7 +695,6 @@ export class CiscoIOSShell implements IRouterShell {
       } else {
         lines.push(` shutdown`);
       }
-      // Show helper addresses
       const helpers = dhcp.getHelperAddresses(name);
       for (const h of helpers) {
         lines.push(` ip helper-address ${h}`);
@@ -676,7 +794,7 @@ export class CiscoIOSShell implements IRouterShell {
     return lines.join('\n');
   }
 
-  // ─── IP Route (config mode) ───────────────────────────────────────
+  // ─── IP Route (config mode) ────────────────────────────────────────
 
   private cmdIpRoute(router: Router, args: string[]): string {
     if (args.length < 3) return '% Incomplete command.';
@@ -694,7 +812,7 @@ export class CiscoIOSShell implements IRouterShell {
     }
   }
 
-  // ─── Interface Name Resolution ────────────────────────────────────
+  // ─── Interface Name Resolution ─────────────────────────────────────
 
   private resolveInterfaceName(router: Router, input: string): string | null {
     const combined = input.replace(/\s+/g, '');
@@ -741,5 +859,11 @@ export class CiscoIOSShell implements IRouterShell {
     if (firstOctet < 128) return new SubnetMask('255.0.0.0');
     if (firstOctet < 192) return new SubnetMask('255.255.0.0');
     return new SubnetMask('255.255.255.0');
+  }
+
+  /** Helper: get the router reference (set during execute) */
+  private r(): Router {
+    if (!this.routerRef) throw new Error('Router reference not set (BUG)');
+    return this.routerRef;
   }
 }
