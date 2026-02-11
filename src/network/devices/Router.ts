@@ -1861,6 +1861,22 @@ export class Router extends Equipment {
     return this.shell.getPrompt(this);
   }
 
+  /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
+  cliHelp(inputBeforeQuestion: string): string {
+    if ('getHelp' in this.shell && typeof (this.shell as any).getHelp === 'function') {
+      return (this.shell as any).getHelp(inputBeforeQuestion);
+    }
+    return '';
+  }
+
+  /** Get CLI tab completion for the given input (used by terminal UI) */
+  cliTabComplete(input: string): string | null {
+    if ('tabComplete' in this.shell && typeof (this.shell as any).tabComplete === 'function') {
+      return (this.shell as any).tabComplete(input);
+    }
+    return null;
+  }
+
   getBootSequence(): string {
     const giPorts = [...this.ports.keys()].filter(n => n.startsWith('Gig'));
     const faPorts = [...this.ports.keys()].filter(n => n.startsWith('Fast'));
