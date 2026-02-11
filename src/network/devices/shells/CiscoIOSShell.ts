@@ -87,7 +87,7 @@ export class CiscoIOSShell implements IRouterShell {
       }
     }
 
-    // Handle ? for help
+    // Handle ? for help (preserve trailing space for "show ?" vs "show?")
     if (cmdPart.endsWith('?')) {
       const helpInput = cmdPart.slice(0, -1);
       return this.getHelp(helpInput);

@@ -626,6 +626,16 @@ export class Switch extends Equipment {
 
   getPrompt(): string { return this.shell.getPrompt(this); }
 
+  /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
+  cliHelp(inputBeforeQuestion: string): string {
+    return this.shell.getHelp(inputBeforeQuestion);
+  }
+
+  /** Get CLI tab completion for the given input (used by terminal UI) */
+  cliTabComplete(input: string): string | null {
+    return this.shell.tabComplete(input);
+  }
+
   getBootSequence(): string {
     return [
       '',
@@ -721,10 +731,10 @@ export class CiscoSwitchShell {
       }
     }
 
-    // Handle ? for help
+    // Handle ? for help (preserve trailing space: "show ?" vs "show?")
     if (cmdPart.endsWith('?')) {
       this.swRef = sw;
-      const helpInput = cmdPart.slice(0, -1).trim();
+      const helpInput = cmdPart.slice(0, -1);
       const result = this.getHelp(helpInput);
       this.swRef = null;
       return result;

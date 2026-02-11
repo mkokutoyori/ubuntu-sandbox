@@ -4,9 +4,12 @@
  * Supports:
  *   - Abbreviation matching (e.g., "sh" → "show", "conf t" → "configure terminal")
  *   - Ambiguity detection ("s" matches "show" and "shutdown" → ambiguous)
- *   - Context-aware help (?) listing valid completions
+ *   - Context-aware help (?) with proper Cisco IOS semantics:
+ *       "sh?"    → list keywords starting with "sh" (prefix listing)
+ *       "show ?" → list subcommands of "show" (subcommand listing)
+ *   - <cr> indicator when a command is already executable
  *   - Parameter validation (INT, STRING, IP_ADDR, INTERFACE, etc.)
- *   - Tab completion
+ *   - Tab completion (unique prefix → complete, ambiguous → null)
  *
  * Architecture:
  *   Each node in the trie represents a keyword. Children are possible
@@ -268,33 +271,46 @@ export class CommandTrie {
   // ─── Help & Completion ──────────────────────────────────────────
 
   /**
-   * Get completions for the current input (used by ? and Tab).
-   * Returns list of { keyword, description } entries.
+   * Get help completions with proper Cisco IOS ? semantics.
+   *
+   * Real Cisco IOS distinguishes:
+   *   "sh?"     → prefix listing: which keywords start with "sh"? → "show"
+   *   "show ?"  → subcommand listing: what comes after "show"? → children of show
+   *   "show?"   → prefix listing: which keywords match "show"? → "show"
+   *
+   * The distinction is: does the input end with a space before the ?
+   *
+   * @param inputBeforeQuestion The raw input BEFORE the '?' character
+   *   e.g. for user typing "sh?", pass "sh"
+   *        for user typing "show ?", pass "show "
    */
-  getCompletions(input: string): Array<{ keyword: string; description: string }> {
-    const tokens = input.trim().split(/\s+/).filter(t => t.length > 0);
+  getCompletions(inputBeforeQuestion: string): Array<{ keyword: string; description: string }> {
+    const raw = inputBeforeQuestion;
+    const tokens = raw.trim().split(/\s+/).filter(t => t.length > 0);
+    const endsWithSpace = raw.length > 0 && raw.endsWith(' ');
+
+    // Empty input or just spaces → show all root commands
+    if (tokens.length === 0) {
+      return this.nodeCompletions(this.root);
+    }
+
     let node = this.root;
 
-    // Walk to the node matching all complete tokens
+    // Navigate through all complete (non-last) tokens
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i].toLowerCase();
       const isLast = i === tokens.length - 1;
 
-      // If this is the last token and input ends with space, we want children of matched node
-      // If not ending with space, we want prefix matches of current token
-      if (isLast && !input.endsWith(' ')) {
-        // Partial token — return prefix matches
+      if (isLast && !endsWithSpace) {
+        // PARTIAL TOKEN (no trailing space) → prefix listing
+        // "sh?" → which keywords start with "sh"? List them.
+        // "show?" → which keywords start with "show"? → "show"
+        // Never drill down into the match — just show the matches themselves.
         const matches = this.prefixMatch(node, token);
-        if (matches.length === 1) {
-          // Unique match — show its children or params
-          node = matches[0];
-          return this.nodeCompletions(node);
-        }
-        // Return all prefix matches
         return matches.map(m => ({ keyword: m.keyword, description: m.description }));
       }
 
-      // Complete token — navigate
+      // Complete token (followed by space or more tokens) → navigate
       const exact = node.children.get(token);
       if (exact) {
         node = exact;
@@ -324,12 +340,18 @@ export class CommandTrie {
       return [];
     }
 
+    // Trailing space → show subcommands/children of the last matched node
     return this.nodeCompletions(node);
   }
 
   /**
    * Get tab completion for the current partial input.
    * Returns the completed string or null if no unique completion.
+   *
+   * Real Cisco Tab behavior:
+   *   "sh<Tab>"   → "show " (unique prefix match → complete)
+   *   "s<Tab>"    → null (ambiguous: "show", "shutdown", etc.)
+   *   "show<Tab>" → "show " (exact match → add space)
    */
   tabComplete(input: string): string | null {
     const tokens = input.trim().split(/\s+/).filter(t => t.length > 0);
@@ -343,14 +365,17 @@ export class CommandTrie {
       const isLast = i === tokens.length - 1;
 
       if (isLast && !input.endsWith(' ')) {
+        // Partial token → try to complete
         const matches = this.prefixMatch(node, token);
         if (matches.length === 1) {
           completed.push(matches[0].keyword);
           return completed.join(' ') + ' ';
         }
+        // Ambiguous or no match → no completion
         return null;
       }
 
+      // Full token → navigate
       const exact = node.children.get(token);
       if (exact) {
         completed.push(exact.keyword);
@@ -397,19 +422,32 @@ export class CommandTrie {
     return results;
   }
 
+  /**
+   * Build the completions list for a node's children/params.
+   * Includes <cr> when the node itself is executable (real Cisco behavior).
+   */
   private nodeCompletions(node: CommandNode): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
+    // Keyword children
     for (const [, child] of node.children) {
       results.push({ keyword: child.keyword, description: child.description });
     }
 
+    // Parameter specs
     for (const param of node.params) {
       results.push({ keyword: `<${param.name}>`, description: param.description });
     }
 
-    if (results.length === 0 && node.action) {
-      results.push({ keyword: '<cr>', description: 'Execute command' });
+    // If node is a greedy command, indicate it accepts arguments
+    if (node.greedy && results.length === 0) {
+      results.push({ keyword: 'WORD', description: node.description });
+    }
+
+    // <cr> — shown when the current command is already executable
+    // (real Cisco always shows <cr> when you can press Enter)
+    if (node.action) {
+      results.push({ keyword: '<cr>', description: '' });
     }
 
     return results;
