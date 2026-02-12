@@ -1282,6 +1282,22 @@ export const DEVICE_CATEGORIES: DeviceCategory[] = [
 
 export type ConnectionType = 'ethernet' | 'serial' | 'console' | 'fiber';
 
+export type PortDuplex = 'full' | 'half';
+
+export const VALID_PORT_SPEEDS = [10, 100, 1000, 10000, 25000, 40000, 100000] as const;
+export type PortSpeed = typeof VALID_PORT_SPEEDS[number];
+
+export interface PortCounters {
+  framesIn: number;
+  framesOut: number;
+  bytesIn: number;
+  bytesOut: number;
+  errorsIn: number;
+  errorsOut: number;
+  dropsIn: number;
+  dropsOut: number;
+}
+
 export interface PortInfo {
   name: string;
   type: ConnectionType;
@@ -1291,6 +1307,9 @@ export interface PortInfo {
   ipv6Enabled?: boolean;
   ipv6Addresses?: Array<{ address: IPv6Address; prefixLength: number; origin: string }>;
   isUp: boolean;
+  speed?: PortSpeed;
+  duplex?: PortDuplex;
+  counters?: PortCounters;
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────
