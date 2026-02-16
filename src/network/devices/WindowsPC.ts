@@ -4,21 +4,19 @@
  * Extends EndHost (which provides the full L2/L3 network stack).
  * Delegates command execution to modular handlers under windows/.
  *
- * Supported commands:
- *   help [command]                                     — list Windows commands
- *   ipconfig [/all] [/release] [/renew] [/flushdns] [/?]  — IP configuration
- *   netsh [/?] interface ip set address ...             — network shell
- *   ping [-n count] [-i ttl] <dest> [/?]                — ICMP echo
- *   arp [-a] [/?]                                       — ARP table
- *   tracert <dest> [/?]                                 — trace route
- *   route {print|add|delete} [/?]                       — routing table
- *   wevtutil qe System ... [/?]                         — Event Log
+ * Architecture follows linux/LinuxPC.ts pattern:
+ *   - WindowsFileSystem (VFS) in windows/WindowsFileSystem.ts
+ *   - Network commands in Win*.ts modules (WinIpconfig, WinNetsh, etc.)
+ *   - File commands in WinFileCommands.ts + WinDir.ts
+ *   - WindowsPC orchestrates both via context objects
  */
 
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
+import type { WinFileCommandContext } from './windows/WinFileCommands';
+import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
@@ -27,6 +25,11 @@ import { cmdArp } from './windows/WinArp';
 import { cmdTracert } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
+import { cmdDir } from './windows/WinDir';
+import {
+  cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
+  cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
+} from './windows/WinFileCommands';
 
 export class WindowsPC extends EndHost {
   protected readonly defaultTTL = 128;
@@ -34,16 +37,43 @@ export class WindowsPC extends EndHost {
   private dhcpEventLog: string[] = [];
   /** Track synced DHCP events to avoid duplicates */
   private trackedEvents: Set<string> = new Set();
+  /** Virtual file system */
+  private fs: WindowsFileSystem;
+  /** Current working directory */
+  private cwd: string = 'C:\\Users\\User';
+  /** Environment variables */
+  private env: Map<string, string> = new Map();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
     this.createPorts();
+    this.fs = new WindowsFileSystem(name);
+    this.initEnv();
   }
 
   private createPorts(): void {
     for (let i = 0; i < 4; i++) {
       this.addPort(new Port(`eth${i}`, 'ethernet'));
     }
+  }
+
+  private initEnv(): void {
+    this.env.set('USERNAME', 'User');
+    this.env.set('COMPUTERNAME', this.hostname);
+    this.env.set('HOMEDRIVE', 'C:');
+    this.env.set('HOMEPATH', '\\Users\\User');
+    this.env.set('USERPROFILE', 'C:\\Users\\User');
+    this.env.set('WINDIR', 'C:\\Windows');
+    this.env.set('SYSTEMROOT', 'C:\\Windows');
+    this.env.set('SYSTEMDRIVE', 'C:');
+    this.env.set('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
+    this.env.set('PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem');
+    this.env.set('PATHEXT', '.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC');
+    this.env.set('TEMP', 'C:\\Users\\User\\AppData\\Local\\Temp');
+    this.env.set('TMP', 'C:\\Users\\User\\AppData\\Local\\Temp');
+    this.env.set('OS', 'Windows_NT');
+    this.env.set('PROCESSOR_ARCHITECTURE', 'AMD64');
+    this.env.set('NUMBER_OF_PROCESSORS', '4');
   }
 
   // ─── Terminal ──────────────────────────────────────────────────
@@ -54,33 +84,122 @@ export class WindowsPC extends EndHost {
     const trimmed = command.trim();
     if (!trimmed) return '';
 
-    // Handle piped commands
-    if (trimmed.includes('|')) {
+    // Handle piped commands (but not inside redirects)
+    if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
     }
 
-    const parts = trimmed.split(/\s+/);
-    const cmd = parts[0].toLowerCase();
-    const ctx = this.buildContext();
+    // Handle echo with redirect: echo text > file / echo text >> file
+    const redirectMatch = trimmed.match(/^(.+?)\s*(>>|>)\s*(.+)$/);
+    if (redirectMatch) {
+      return this.handleRedirect(redirectMatch[1].trim(), redirectMatch[2], redirectMatch[3].trim());
+    }
 
+    // Expand environment variables
+    const expanded = this.expandEnvVars(trimmed);
+    const parts = this.parseCommandLine(expanded);
+    if (parts.length === 0) return '';
+
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+
+    // File commands (use file context)
+    const fileCtx = this.buildFileContext();
     switch (cmd) {
-      case 'help':     return cmdHelp(parts.slice(1));
-      case 'ipconfig': return cmdIpconfig(ctx, parts.slice(1));
-      case 'netsh':    return cmdNetsh(ctx, parts.slice(1));
-      case 'ifconfig': return this.cmdIfconfig(parts.slice(1));
-      case 'ping':     return cmdPing(ctx, parts.slice(1));
-      case 'arp':      return cmdArp(ctx, parts.slice(1));
-      case 'tracert':
-      case 'traceroute': return cmdTracert(ctx, parts.slice(1));
-      case 'route':    return cmdRoute(ctx, parts.slice(1));
-      case 'wevtutil': return cmdWevtutil(ctx, parts.slice(1));
+      case 'cd':
+      case 'chdir':   return cmdCd(fileCtx, args);
+      case 'dir':     return cmdDir(fileCtx, args);
+      case 'mkdir':
+      case 'md':      return cmdMkdir(fileCtx, args);
+      case 'rmdir':
+      case 'rd':      return cmdRmdir(fileCtx, args);
+      case 'type':    return cmdType(fileCtx, args);
+      case 'copy':    return cmdCopy(fileCtx, args);
+      case 'move':    return cmdMove(fileCtx, args);
+      case 'ren':
+      case 'rename':  return cmdRen(fileCtx, args);
+      case 'del':
+      case 'erase':   return cmdDel(fileCtx, args);
+      case 'tree':    return cmdTree(fileCtx, args);
+      case 'set':     return cmdSet(fileCtx, args);
+      case 'tasklist': return cmdTasklist(fileCtx);
+      case 'netstat': return cmdNetstat(fileCtx);
+      case 'echo':    return args.join(' ');
+      case 'cls':     return '';
+      case 'ver':     return '\nMicrosoft Windows [Version 10.0.22631.6649]';
       case 'hostname': return this.hostname;
-      case 'ver':      return '\nMicrosoft Windows [Version 10.0.22631.6649]';
-      case 'cls':      return '';
       case 'systeminfo': return this.cmdSysteminfo();
+    }
+
+    // Network commands (use network context)
+    const netCtx = this.buildNetContext();
+    switch (cmd) {
+      case 'help':     return cmdHelp(args);
+      case 'ipconfig': return cmdIpconfig(netCtx, args);
+      case 'netsh':    return cmdNetsh(netCtx, args);
+      case 'ifconfig': return this.cmdIfconfig(args);
+      case 'ping':     return cmdPing(netCtx, args);
+      case 'arp':      return cmdArp(netCtx, args);
+      case 'tracert':
+      case 'traceroute': return cmdTracert(netCtx, args);
+      case 'route':    return cmdRoute(netCtx, args);
+      case 'wevtutil': return cmdWevtutil(netCtx, args);
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
+  }
+
+  // ─── Command Parsing ──────────────────────────────────────────────
+
+  private parseCommandLine(line: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let inQuote = false;
+    for (const ch of line) {
+      if (ch === '"') {
+        inQuote = !inQuote;
+      } else if (ch === ' ' && !inQuote) {
+        if (current) { parts.push(current); current = ''; }
+      } else {
+        current += ch;
+      }
+    }
+    if (current) parts.push(current);
+    return parts;
+  }
+
+  private expandEnvVars(text: string): string {
+    return text.replace(/%([^%]+)%/g, (match, varName) => {
+      const upper = varName.toUpperCase();
+      if (upper === 'CD') return this.cwd;
+      return this.env.get(upper) ?? match;
+    });
+  }
+
+  // ─── Redirect Handling ────────────────────────────────────────────
+
+  private handleRedirect(cmdPart: string, op: string, filePath: string): string {
+    // Execute the command part to get its output
+    const expanded = this.expandEnvVars(cmdPart);
+    const parts = this.parseCommandLine(expanded);
+    if (parts.length === 0) return '';
+
+    const cmd = parts[0].toLowerCase();
+    let content: string;
+    if (cmd === 'echo') {
+      content = parts.slice(1).join(' ');
+    } else {
+      // For other commands, we'd need async, but echo is the main use case
+      content = parts.slice(1).join(' ');
+    }
+
+    const absPath = this.fs.normalizePath(filePath, this.cwd);
+    if (op === '>>') {
+      this.fs.appendFile(absPath, content + '\n');
+    } else {
+      this.fs.createFile(absPath, content + '\n');
+    }
+    return '';
   }
 
   // ─── Piped Commands ─────────────────────────────────────────────
@@ -103,7 +222,6 @@ export class WindowsPC extends EndHost {
         const lines = output.split('\n');
         output = lines.filter(l => l.includes(pattern)).join('\n');
       } else if (filterCmd === 'find') {
-        // Windows FIND command: find "string"
         const quoteMatch = filter.match(/find\s+"([^"]+)"/i);
         if (quoteMatch) {
           const pattern = quoteMatch[1];
@@ -111,16 +229,62 @@ export class WindowsPC extends EndHost {
           output = lines.filter(l => l.includes(pattern)).join('\n');
         }
       } else if (filterCmd === 'more') {
-        // More just passes through in simulation
+        // Passthrough in simulation
       }
     }
 
     return output;
   }
 
-  // ─── Build context for modular commands ───────────────────────
+  // ─── Tab Completion ──────────────────────────────────────────────
 
-  private buildContext(): WinCommandContext {
+  getCompletions(partial: string): string[] {
+    const parts = partial.trimStart().split(/\s+/);
+
+    if (parts.length <= 1) {
+      // Command completion
+      const prefix = (parts[0] || '').toLowerCase();
+      const commands = [
+        'help', 'ipconfig', 'netsh', 'ping', 'arp', 'tracert', 'route',
+        'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
+        'netstat', 'dir', 'cd', 'mkdir', 'md', 'rmdir', 'rd', 'type',
+        'copy', 'move', 'ren', 'rename', 'del', 'erase', 'echo', 'set',
+        'tree',
+      ];
+      return commands.filter(c => c.startsWith(prefix)).sort();
+    }
+
+    // File/directory completion for the last argument
+    const lastArg = parts[parts.length - 1];
+    // Split on last backslash to get directory and partial name
+    const lastSep = lastArg.lastIndexOf('\\');
+    let dir: string;
+    let partialName: string;
+    if (lastSep >= 0) {
+      const dirPart = lastArg.substring(0, lastSep) || '\\';
+      dir = this.fs.normalizePath(dirPart, this.cwd);
+      partialName = lastArg.substring(lastSep + 1);
+    } else {
+      dir = this.cwd;
+      partialName = lastArg;
+    }
+
+    return this.fs.getCompletions(dir, partialName);
+  }
+
+  // ─── Build Contexts ──────────────────────────────────────────────
+
+  private buildFileContext(): WinFileCommandContext {
+    return {
+      fs: this.fs,
+      cwd: this.cwd,
+      hostname: this.hostname,
+      env: this.env,
+      setCwd: (path: string) => { this.cwd = path; },
+    };
+  }
+
+  private buildNetContext(): WinCommandContext {
     return {
       hostname: this.hostname,
       ports: this.ports,
