@@ -48,6 +48,94 @@ export interface DHCPPoolConfig {
   leaseDuration: number;
   /** Client-identifier deny patterns */
   denyPatterns: string[];
+  /** Option 58: T1 renewal time in seconds (default: 50% of lease) */
+  renewalTime?: number;
+  /** Option 59: T2 rebinding time in seconds (default: 87.5% of lease) */
+  rebindingTime?: number;
+}
+
+// ─── DHCP Message Parameters (RFC 2131 §2, RFC 2132) ────────────────
+
+/** Parameters sent in DHCPDISCOVER (client → server) */
+export interface DHCPDiscoverParams {
+  clientMAC: string;
+  xid: number;
+  /** Option 61: Client Identifier (01 + MAC for Ethernet) */
+  clientIdentifier: string;
+  /** Option 55: Parameter Request List (option codes client wants) */
+  parameterRequestList: number[];
+  /** Option 50: Requested IP (used in INIT-REBOOT) */
+  requestedIP?: string;
+}
+
+/** Result returned by server for DHCPOFFER */
+export interface DHCPOfferResult {
+  ip: string;
+  pool: DHCPPoolConfig;
+  /** Option 54: Server Identifier */
+  serverIdentifier: string;
+  /** XID echoed back from DISCOVER */
+  xid: number;
+  /** Option 58: T1 renewal time in seconds */
+  renewalTime?: number;
+  /** Option 59: T2 rebinding time in seconds */
+  rebindingTime?: number;
+}
+
+/** Parameters sent in DHCPREQUEST (client → server) */
+export interface DHCPRequestParams {
+  clientMAC: string;
+  xid: number;
+  /** Option 50: Requested IP Address */
+  requestedIP: string;
+  /** Option 54: Server Identifier (in SELECTING state) */
+  serverIdentifier?: string;
+  /** Option 61: Client Identifier */
+  clientIdentifier: string;
+}
+
+/** Result returned by server for DHCPACK */
+export interface DHCPAckResult {
+  binding: DHCPBinding;
+  /** Option 54: Server Identifier */
+  serverIdentifier: string;
+  /** XID echoed back */
+  xid: number;
+  /** Option 58: T1 renewal time in seconds */
+  renewalTime?: number;
+  /** Option 59: T2 rebinding time in seconds */
+  rebindingTime?: number;
+}
+
+/** Parameters sent in DHCPRELEASE (client → server) */
+export interface DHCPReleaseParams {
+  clientMAC: string;
+  /** ciaddr: client's current IP */
+  clientIP: string;
+  /** Option 54: Server Identifier */
+  serverIdentifier?: string;
+  /** Option 61: Client Identifier */
+  clientIdentifier: string;
+}
+
+/** Parameters sent in DHCPDECLINE (client → server) */
+export interface DHCPDeclineParams {
+  clientMAC: string;
+  /** The IP address being declined */
+  declinedIP: string;
+  /** Option 54: Server Identifier */
+  serverIdentifier?: string;
+  /** Option 61: Client Identifier */
+  clientIdentifier: string;
+}
+
+/** Pending offer (reserved IP between DISCOVER and REQUEST) */
+export interface DHCPPendingOffer {
+  ip: string;
+  clientMAC: string;
+  poolName: string;
+  /** When this offer expires (ms timestamp) */
+  expiresAt: number;
 }
 
 // ─── DHCP Excluded Address Range ─────────────────────────────────────
@@ -136,6 +224,8 @@ export interface DHCPClientIfaceState {
   xid: number;
   /** Current lease (if any) */
   lease: DHCPClientLease | null;
+  /** Last known lease for INIT-REBOOT (persisted across reboots) */
+  lastKnownLease: DHCPClientLease | null;
   /** DHCP event log for this interface */
   logs: string[];
   /** Renewal timer handle */
@@ -238,6 +328,7 @@ export function createDefaultClientState(): DHCPClientIfaceState {
     state: 'INIT',
     xid: Math.floor(Math.random() * 0xFFFFFFFF),
     lease: null,
+    lastKnownLease: null,
     logs: [],
     renewalTimer: null,
     rebindingTimer: null,
