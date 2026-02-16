@@ -140,7 +140,7 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
 
     if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
-      addLine(`${prompt} ${input}^C`, 'warning');
+      addLine(`${prompt} ${input}^C`);
       setInput('');
     }
   }, [input, history, historyIndex, prompt, addLine, executeCommand]);
