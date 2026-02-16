@@ -57,6 +57,8 @@ export interface PingResult {
   success: boolean;
   rttMs: number;
   ttl: number;
+  /** ICMP error message (e.g. "Time to live exceeded", "Destination unreachable") */
+  error?: string;
   seq: number;
   bytes: number;
   fromIP: string;
@@ -711,6 +713,7 @@ export abstract class EndHost extends Equipment {
     targetMAC: MACAddress,
     seq: number = 1,
     timeoutMs: number = 2000,
+    ttl?: number,
   ): Promise<PingResult> {
     const port = this.ports.get(portName);
     if (!port) return Promise.reject('Port not found');
@@ -746,7 +749,7 @@ export abstract class EndHost extends Equipment {
         myIP,
         targetIP,
         IP_PROTO_ICMP,
-        this.defaultTTL,
+        ttl ?? this.defaultTTL,
         icmp,
         icmpSize,
       );
@@ -869,6 +872,7 @@ export abstract class EndHost extends Equipment {
     targetIP: IPAddress,
     count: number = 4,
     timeoutMs: number = 2000,
+    ttl?: number,
   ): Promise<PingResult[]> {
     // Self-ping (loopback)
     for (const [, port] of this.ports) {
@@ -909,9 +913,10 @@ export abstract class EndHost extends Equipment {
     const results: PingResult[] = [];
     for (let seq = 1; seq <= count; seq++) {
       try {
-        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs);
+        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl);
         results.push(result);
-      } catch {
+      } catch (err: any) {
+        const errorMsg = typeof err === 'string' ? err : '';
         results.push({
           success: false,
           rttMs: 0,
@@ -919,6 +924,7 @@ export abstract class EndHost extends Equipment {
           seq,
           bytes: 0,
           fromIP: '',
+          error: errorMsg,
         });
       }
     }
