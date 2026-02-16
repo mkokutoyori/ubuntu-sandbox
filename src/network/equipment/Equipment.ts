@@ -54,6 +54,12 @@ export abstract class Equipment {
   getDeviceType(): DeviceType { return this.deviceType; }
 
   /**
+   * Get the current working directory (for terminal prompt).
+   * Override in subclasses that track cwd (e.g. LinuxPC, LinuxServer).
+   */
+  getCwd(): string { return '/'; }
+
+  /**
    * Get the OS type for terminal selection.
    * Override in subclasses for specific OS types.
    */

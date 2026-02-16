@@ -283,9 +283,22 @@ export class LinuxCommandExecutor {
       case 'hostname':
         return { output: args[0] || 'localhost', exitCode: 0 };
 
+      // clear - send ANSI escape to clear terminal
+      case 'clear': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
+      case 'reset': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
+
       // Sleep, kill - no-ops in simulator
       case 'sleep': return { output: '', exitCode: 0 };
       case 'kill': return { output: '', exitCode: 0 };
+
+      // date, uptime, uname - basic system info
+      case 'date': return { output: new Date().toString(), exitCode: 0 };
+      case 'uptime': return { output: ' ' + new Date().toLocaleTimeString() + ' up 0 min,  1 user,  load average: 0.00, 0.00, 0.00', exitCode: 0 };
+      case 'uname': {
+        if (args.includes('-a')) return { output: 'Linux localhost 5.15.0-generic #1 SMP x86_64 GNU/Linux', exitCode: 0 };
+        if (args.includes('-r')) return { output: '5.15.0-generic', exitCode: 0 };
+        return { output: 'Linux', exitCode: 0 };
+      }
 
       // true/false
       case 'true': return { output: '', exitCode: 0 };

@@ -36,7 +36,9 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   const prompt = useMemo(() => {
     const hostname = device.getHostname() || 'localhost';
     const user = 'user';
-    const path = currentPath === '/home/user' ? '~' : currentPath;
+    let path = currentPath;
+    if (path === '/home/user') path = '~';
+    else if (path.startsWith('/home/user/')) path = '~' + path.slice(10);
     return `${user}@${hostname}:${path}$`;
   }, [device, currentPath]);
 
@@ -89,6 +91,10 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
           addLine(result);
         }
       }
+
+      // Sync current working directory from device (for prompt update)
+      const cwd = device.getCwd();
+      if (cwd) setCurrentPath(cwd);
     } catch (err) {
       addLine(`Error: ${err}`, 'error');
     }

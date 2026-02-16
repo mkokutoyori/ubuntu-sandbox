@@ -611,4 +611,5 @@ export class LinuxPC extends EndHost {
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'linux'; }
+  getCwd(): string { return this.executor.getCwd(); }
 }
