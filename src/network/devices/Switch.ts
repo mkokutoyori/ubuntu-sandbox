@@ -1,14 +1,22 @@
 /**
- * Switch - Layer 2 Cisco Catalyst switching device
+ * Switch - Abstract Layer 2 switching device base class
  *
- * Implements:
+ * Implements common L2 switching logic shared by all vendors:
  *   - VLAN database (802.1Q tagging)
  *   - MAC address table with configurable aging (default 300s)
  *   - Access / Trunk port modes
  *   - Native VLAN on trunk links
  *   - Trunk allowed VLAN filtering
  *   - Running-config / Startup-config (NVRAM simulation)
- *   - Full Cisco IOS CLI via CiscoSwitchShell (FSM-based)
+ *
+ * Vendor-specific behavior (overridden by subclasses):
+ *   - Port naming: Cisco (FastEthernet0/X) vs Huawei (GigabitEthernet0/0/X)
+ *   - STP initial state: Cisco (forwarding/PortFast) vs Huawei (listening/802.1D)
+ *   - VLAN deletion: Cisco (suspend ports) vs Huawei (move to default VLAN)
+ *   - CLI Shell: CiscoSwitchShell vs HuaweiVRPSwitchShell
+ *   - Boot sequence and OS type
+ *
+ * Concrete subclasses: CiscoSwitch, HuaweiSwitch
  *
  * Frame processing pipeline:
  *   1. Ingress: determine VLAN from port mode (access VLAN or 802.1Q tag)
@@ -78,16 +86,16 @@ export interface VLANEntry {
 
 export type STPPortState = 'blocking' | 'listening' | 'learning' | 'forwarding' | 'disabled';
 
-// ─── Switch Class ───────────────────────────────────────────────────
+// ─── Switch Class (Abstract Base) ───────────────────────────────────
 
-export class Switch extends Equipment {
+export abstract class Switch extends Equipment {
   // ─── MAC Table ──────────────────────────────────────────────────
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macAgingTime: number = 300; // seconds
   private macAgingTimer: ReturnType<typeof setInterval> | null = null;
 
   // ─── VLAN Database ──────────────────────────────────────────────
-  private vlans: Map<number, VLANEntry> = new Map();
+  protected vlans: Map<number, VLANEntry> = new Map();
 
   // ─── Port Configurations ────────────────────────────────────────
   private switchportConfigs: Map<string, SwitchportConfig> = new Map();
@@ -99,11 +107,11 @@ export class Switch extends Equipment {
   private macMoveCount: number = 0;
 
   // ─── Port VLAN State (active/suspended) ────────────────────────
-  private portVlanStates: Map<string, 'active' | 'suspended'> = new Map();
+  protected portVlanStates: Map<string, 'active' | 'suspended'> = new Map();
 
   // ─── Config Persistence ─────────────────────────────────────────
   private startupConfig: string | null = null;
-  private readonly initialHostname: string;
+  protected readonly initialHostname: string;
 
   // ─── DHCP Snooping ────────────────────────────────────────────
   private dhcpSnooping: DHCPSnoopingConfig = createDefaultSnoopingConfig();
@@ -120,27 +128,40 @@ export class Switch extends Equipment {
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, x, y);
     this.initialHostname = name;
-    this.createPorts(portCount);
+    this.initPorts(portCount);
     this.initDefaultVLAN();
     this.startMACAgingProcess();
-    this.shell = this.isHuawei() ? new HuaweiVRPSwitchShell() : new CiscoSwitchShell();
+    this.shell = this.createShell();
   }
 
-  /** Check if this switch is a Huawei device */
-  isHuawei(): boolean { return this.deviceType.includes('huawei'); }
+  // ─── Vendor Hooks (overridden by subclasses) ───────────────────
 
-  private createPorts(count: number): void {
-    const isCisco = this.deviceType.includes('cisco');
-    const isHuawei = this.deviceType.includes('huawei');
-    // Huawei: new ports start in listening (802.1D), Cisco: forwarding (portfast default)
-    const initialSTP: STPPortState = isHuawei ? 'listening' : 'forwarding';
+  /** Get port name for given index (vendor-specific naming) */
+  protected abstract getPortName(index: number, total: number): string;
+
+  /** Get initial STP state for new ports */
+  protected abstract getInitialSTPState(): STPPortState;
+
+  /** Create the appropriate CLI shell */
+  protected abstract createShell(): CiscoSwitchShell | HuaweiVRPSwitchShell;
+
+  /** Handle ports when their VLAN is deleted (vendor-specific behavior) */
+  protected abstract onVlanDeleted(vlanId: number, affectedPorts: string[]): void;
+
+  /** Handle ports when a previously deleted VLAN is recreated */
+  protected abstract onVlanRecreated(vlanId: number): string[];
+
+  /** Get OS type string */
+  abstract getOSType(): string;
+
+  /** Get boot sequence text */
+  abstract getBootSequence(): string;
+
+  private initPorts(count: number): void {
+    const initialSTP = this.getInitialSTPState();
 
     for (let i = 0; i < count; i++) {
-      const portName = isCisco
-        ? (i < 24 ? `FastEthernet0/${i}` : `GigabitEthernet0/${i - 24}`)
-        : isHuawei
-          ? `GigabitEthernet0/0/${i}`
-          : `eth${i}`;
+      const portName = this.getPortName(i, count);
       const port = new Port(portName, 'ethernet');
       this.addPort(port);
 
@@ -190,7 +211,7 @@ export class Switch extends Equipment {
       if (port) port.setUp(true);
     }
     // Reset shell FSM to user mode
-    this.shell = this.isHuawei() ? new HuaweiVRPSwitchShell() : new CiscoSwitchShell();
+    this.shell = this.createShell();
     this.startMACAgingProcess();
     // Restore startup config (NVRAM) if available
     if (this.startupConfig) {
@@ -206,12 +227,10 @@ export class Switch extends Equipment {
     const newVlan: VLANEntry = { id, name: name || `VLAN${String(id).padStart(4, '0')}`, ports: new Set() };
     this.vlans.set(id, newVlan);
 
-    // Reactivate any suspended ports that were assigned to this VLAN
-    for (const [portName, cfg] of this.switchportConfigs) {
-      if (cfg.mode === 'access' && cfg.accessVlan === id && this.portVlanStates.get(portName) === 'suspended') {
-        this.portVlanStates.set(portName, 'active');
-        newVlan.ports.add(portName);
-      }
+    // Let subclass handle VLAN recreation (e.g., Cisco reactivates suspended ports)
+    const reactivated = this.onVlanRecreated(id);
+    for (const portName of reactivated) {
+      newVlan.ports.add(portName);
     }
 
     Logger.info(this.id, 'switch:vlan-create', `${this.name}: created VLAN ${id}`);
@@ -222,15 +241,18 @@ export class Switch extends Equipment {
     if (id === 1) return false; // Can't delete default VLAN
     if (!this.vlans.has(id)) return false;
 
-    // Suspend ports that were in this VLAN (do NOT move to VLAN 1)
+    // Collect affected access ports
     const vlan = this.vlans.get(id)!;
+    const affectedPorts: string[] = [];
     for (const portName of vlan.ports) {
       const cfg = this.switchportConfigs.get(portName);
       if (cfg && cfg.mode === 'access' && cfg.accessVlan === id) {
-        // Port stays assigned to deleted VLAN but becomes suspended
-        this.portVlanStates.set(portName, 'suspended');
+        affectedPorts.push(portName);
       }
     }
+
+    // Let subclass handle port behavior (Cisco: suspend, Huawei: move to VLAN 1)
+    this.onVlanDeleted(id, affectedPorts);
 
     this.vlans.delete(id);
     // Remove MAC entries for this VLAN
@@ -692,8 +714,6 @@ export class Switch extends Equipment {
 
   // ─── CLI ──────────────────────────────────────────────────────────
 
-  getOSType(): string { return this.isHuawei() ? 'huawei-vrp' : 'cisco-ios'; }
-
   getPrompt(): string { return this.shell.getPrompt(this); }
 
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
@@ -712,34 +732,7 @@ export class Switch extends Equipment {
     return null;
   }
 
-  getBootSequence(): string {
-    if (this.isHuawei()) {
-      return [
-        '',
-        `Huawei Versatile Routing Platform Software`,
-        `VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)`,
-        `Copyright (C) 2000-2025 HUAWEI TECH CO., LTD`,
-        '',
-        `${this.hostname} with ${this.getPortNames().length} GigabitEthernet interfaces`,
-        `Base ethernet MAC address: ${this.getPort(this.getPortNames()[0])?.getMAC() || '00:00:00:00:00:00'}`,
-        '',
-        'Press ENTER to get started.',
-      ].join('\n');
-    }
-    return [
-      '',
-      `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2`,
-      `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
-      '',
-      `${this.hostname} processor with 65536K bytes of memory.`,
-      `${this.getPortNames().filter(n => n.startsWith('Fast')).length} FastEthernet interfaces`,
-      `${this.getPortNames().filter(n => n.startsWith('Gig')).length} Gigabit Ethernet interfaces`,
-      '',
-      `Base ethernet MAC address: ${this.getPort(this.getPortNames()[0])?.getMAC() || '00:00:00:00:00:00'}`,
-      '',
-      'Press RETURN to get started.',
-    ].join('\n');
-  }
+  // getBootSequence() and getOSType() are abstract — implemented by CiscoSwitch / HuaweiSwitch
 
   getBanner(type: string): string {
     if (type === 'motd') return '';

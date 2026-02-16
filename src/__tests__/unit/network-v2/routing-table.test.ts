@@ -13,7 +13,6 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Switch } from '@/network/devices/Switch';
 import { Router } from '@/network/devices/Router';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';

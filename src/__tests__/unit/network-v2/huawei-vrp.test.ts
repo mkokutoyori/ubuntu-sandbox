@@ -25,7 +25,7 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Router } from '@/network/devices/Router';
-import { Switch } from '@/network/devices/Switch';
+import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -48,7 +48,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
   describe('1.1 System Configuration', () => {
 
     it('should use Huawei port naming (GigabitEthernet0/0/X) for switch-huawei', () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       // Huawei S-series switches use GigabitEthernet0/0/X naming
       expect(sw.getPort('GigabitEthernet0/0/0')).toBeDefined();
       expect(sw.getPort('GigabitEthernet0/0/1')).toBeDefined();
@@ -56,7 +56,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
     });
 
     it('should set sysname and display it via display current-configuration', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('sysname Switch-LAB-01');
       await sw.executeCommand('return');
@@ -66,7 +66,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
     });
 
     it('should display version information', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const output = await sw.executeCommand('display version');
       expect(output).toContain('Huawei Versatile Routing Platform');
       expect(output).toContain('VRP');
@@ -79,7 +79,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
   describe('1.2 Interface Basic Settings', () => {
 
     it('should set description on an interface', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       await sw.executeCommand('description Link-to-PC1');
@@ -91,7 +91,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
     });
 
     it('should shutdown and undo shutdown an interface', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/2');
       await sw.executeCommand('shutdown');
@@ -120,7 +120,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
   describe('1.3 VLAN Management', () => {
 
     it('should create VLANs and assign access ports', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
 
       // Create VLAN 10 and 20
@@ -152,7 +152,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
     });
 
     it('should delete a VLAN with undo vlan', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('vlan 30');
       await sw.executeCommand('quit');
@@ -168,7 +168,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
     });
 
     it('should create multiple VLANs with vlan batch', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('vlan batch 10 20 30');
       await sw.executeCommand('return');
@@ -186,7 +186,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
   describe('1.4 Trunk Configuration', () => {
 
     it('should configure a trunk port and allow specific VLANs', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('vlan batch 10 20 30');
       await sw.executeCommand('interface GigabitEthernet0/0/23');
@@ -201,7 +201,7 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
     });
 
     it('should set PVID (native VLAN) for trunk', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/23');
       await sw.executeCommand('port link-type trunk');
@@ -220,13 +220,13 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
   describe('1.5 MAC Address Table Operations', () => {
 
     it('should display MAC address table', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const output = await sw.executeCommand('display mac-address');
       expect(output).toContain('MAC address table');
     });
 
     it('should set MAC aging time', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       await sw.executeCommand('system-view');
       await sw.executeCommand('mac-address aging-time 600');
       await sw.executeCommand('return');
@@ -364,7 +364,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
     it('should ping between two PCs on same Huawei switch VLAN', async () => {
       // Topology:
       //   PC1 (10.0.1.10/24) -- GE0/0/0 [SW1] GE0/0/1 -- PC2 (10.0.1.20/24)
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
 
@@ -493,7 +493,7 @@ describe('Group 4: ARP Protocol — Huawei Devices', () => {
   describe('4.1 Dynamic ARP Learning', () => {
 
     it('should learn ARP entry when pinging within same subnet', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
 
@@ -620,7 +620,7 @@ describe('Group 6: STP & Switch Internals', () => {
   describe('6.1 STP State Machine (802.1D)', () => {
 
     it('should start new ports in listening state (not forwarding)', () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const port = sw.getPort('GigabitEthernet0/0/0');
       expect(port).toBeDefined();
 
@@ -630,7 +630,7 @@ describe('Group 6: STP & Switch Internals', () => {
     });
 
     it('should transition port through listening → learning → forwarding', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const portName = 'GigabitEthernet0/0/0';
 
       // Initially: listening
@@ -646,7 +646,7 @@ describe('Group 6: STP & Switch Internals', () => {
     });
 
     it('should not forward frames in listening state', () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
 
@@ -675,7 +675,7 @@ describe('Group 6: STP & Switch Internals', () => {
     });
 
     it('should learn MACs in learning state but not forward', () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
       // Set port to learning state
       sw.setSTPState('GigabitEthernet0/0/0', 'learning');
@@ -692,7 +692,7 @@ describe('Group 6: STP & Switch Internals', () => {
   describe('6.2 MAC Move Detection', () => {
 
     it('should detect when a MAC address moves to a different port', async () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
 
@@ -722,12 +722,12 @@ describe('Group 6: STP & Switch Internals', () => {
   });
 
   // ----------------------------------------------------------------
-  // 6.3 VLAN Deletion — Port Suspension
+  // 6.3 VLAN Deletion — Huawei VRP Behavior
   // ----------------------------------------------------------------
-  describe('6.3 VLAN Deletion — Port Suspension', () => {
+  describe('6.3 VLAN Deletion — Huawei VRP Behavior', () => {
 
-    it('should suspend ports when their VLAN is deleted (not move to VLAN 1)', () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+    it('should move ports back to VLAN 1 when their VLAN is deleted (NOT suspend)', () => {
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
       // Create VLAN 50 and assign port to it
       sw.createVLAN(50, 'TestVLAN');
@@ -737,13 +737,17 @@ describe('Group 6: STP & Switch Internals', () => {
       // Delete VLAN 50
       sw.deleteVLAN(50);
 
-      // Port should be in suspended state, NOT moved back to VLAN 1
+      // Huawei VRP: port is moved back to default VLAN 1, stays active
       const portVlanState = sw.getPortVlanState('GigabitEthernet0/0/5');
-      expect(portVlanState).toBe('suspended');
+      expect(portVlanState).toBe('active');
+
+      // Port's access VLAN should be 1 (default)
+      const cfg = sw.getSwitchportConfig('GigabitEthernet0/0/5');
+      expect(cfg?.accessVlan).toBe(1);
     });
 
-    it('should reactivate suspended port when VLAN is recreated', () => {
-      const sw = new Switch('switch-huawei', 'SW1');
+    it('should NOT reactivate ports on VLAN recreation (they were never suspended)', () => {
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
       // Create, assign, then delete VLAN
       sw.createVLAN(50, 'TestVLAN');
@@ -751,11 +755,14 @@ describe('Group 6: STP & Switch Internals', () => {
       sw.setSwitchportAccessVlan('GigabitEthernet0/0/5', 50);
       sw.deleteVLAN(50);
 
-      expect(sw.getPortVlanState('GigabitEthernet0/0/5')).toBe('suspended');
+      // Port is active in VLAN 1 (not suspended)
+      expect(sw.getPortVlanState('GigabitEthernet0/0/5')).toBe('active');
 
-      // Recreate VLAN 50 — port should reactivate
+      // Recreate VLAN 50 — port stays in VLAN 1 (must be manually re-assigned)
       sw.createVLAN(50, 'TestVLAN-Recreated');
       expect(sw.getPortVlanState('GigabitEthernet0/0/5')).toBe('active');
+      const cfg = sw.getSwitchportConfig('GigabitEthernet0/0/5');
+      expect(cfg?.accessVlan).toBe(1); // Still in VLAN 1, not auto-moved to 50
     });
   });
 });
@@ -772,7 +779,7 @@ describe('Group 7: Inter-VLAN Routing (Huawei)', () => {
     //   PC2 (VLAN20, 10.0.20.10) -- GE0/0/1 [SW1]
     //   Note: true 802.1Q sub-interfaces are not yet supported, so we test
     //   basic L2 reachability within a VLAN through the switch.
-    const sw = new Switch('switch-huawei', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
     const r = new Router('router-huawei', 'R1');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
 

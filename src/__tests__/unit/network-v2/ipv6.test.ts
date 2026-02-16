@@ -24,7 +24,7 @@ import {
 import { Port } from '@/network/hardware/Port';
 import { Router } from '@/network/devices/Router';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { Switch } from '@/network/devices/Switch';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 
 describe('IPv6 Implementation (RFC 8200)', () => {
@@ -382,7 +382,7 @@ describe('IPv6 Implementation (RFC 8200)', () => {
     beforeEach(() => {
       pc1 = new LinuxPC('PC1', 100, 100);
       pc2 = new LinuxPC('PC2', 200, 100);
-      sw = new Switch('switch-cisco', 'SW1', 150, 50);
+      sw = new CiscoSwitch('switch-cisco', 'SW1', 150, 50);
 
       // Connect: PC1 -- SW -- PC2
       const c1 = new Cable('c1');
@@ -423,7 +423,7 @@ describe('IPv6 Implementation (RFC 8200)', () => {
 
   describe('T-IPV6-06: Switch IPv6 Multicast', () => {
     it('floods IPv6 multicast frames (33:33:XX:XX:XX:XX)', () => {
-      const sw = new Switch('switch-cisco', 'SW1', 0, 0);
+      const sw = new CiscoSwitch('switch-cisco', 'SW1', 0, 0);
       sw.powerOn();
 
       // The switch should flood frames with destination MAC 33:33:XX:XX:XX:XX

@@ -14,7 +14,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Switch, CiscoSwitchShell } from '@/network/devices/Switch';
+import { CiscoSwitchShell } from '@/network/devices/Switch';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { MACAddress } from '@/network/core/types';
@@ -29,7 +30,7 @@ describe('T-CLI-01: Navigation & Hierarchy', () => {
 
   beforeEach(() => {
     MACAddress.resetCounter();
-    sw = new Switch('switch-cisco', 'Switch1', 4);
+    sw = new CiscoSwitch('switch-cisco', 'Switch1', 4);
   });
 
   it('should start in User EXEC mode (>)', () => {
@@ -111,7 +112,7 @@ describe('T-CLI-02: Abbreviation & Ambiguity', () => {
 
   beforeEach(() => {
     MACAddress.resetCounter();
-    sw = new Switch('switch-cisco', 'Switch1', 4);
+    sw = new CiscoSwitch('switch-cisco', 'Switch1', 4);
   });
 
   it('should resolve "sh mac add" as show mac address-table', async () => {
@@ -151,7 +152,7 @@ describe('T-CLI-02: Abbreviation & Ambiguity', () => {
 
   it('should resolve interface abbreviation gi0/0', async () => {
     // 4-port switch won't have GigabitEthernet, use 26-port switch
-    const sw26 = new Switch('switch-cisco', 'SW', 26);
+    const sw26 = new CiscoSwitch('switch-cisco', 'SW', 26);
     await sw26.executeCommand('enable');
     await sw26.executeCommand('configure terminal');
     await sw26.executeCommand('int gi0/0');
@@ -168,7 +169,7 @@ describe('T-CLI-03: Configuration Persistence', () => {
 
   beforeEach(() => {
     MACAddress.resetCounter();
-    sw = new Switch('switch-cisco', 'Switch1', 4);
+    sw = new CiscoSwitch('switch-cisco', 'Switch1', 4);
   });
 
   it('should update hostname in running-config', async () => {
@@ -262,7 +263,7 @@ describe('T-CLI-03: Configuration Persistence', () => {
 describe('T-L2-01: VLAN Isolation', () => {
   it('should isolate traffic between VLANs', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const pcA = new LinuxPC('PC-A');
     const pcB = new LinuxPC('PC-B');
 
@@ -302,7 +303,7 @@ describe('T-L2-01: VLAN Isolation', () => {
 
   it('should show VLAN assignments in show vlan brief', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
@@ -327,7 +328,7 @@ describe('T-L2-01: VLAN Isolation', () => {
 describe('T-L2-02: Persistence after Reboot', () => {
   it('should restore hostname after write memory + reboot', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'Switch1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'Switch1', 4);
 
     // Change hostname and save
     await sw.executeCommand('enable');
@@ -346,7 +347,7 @@ describe('T-L2-02: Persistence after Reboot', () => {
 
   it('should restore VLANs after write memory + reboot', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
@@ -367,7 +368,7 @@ describe('T-L2-02: Persistence after Reboot', () => {
 
   it('should lose config without write memory after reboot', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'Switch1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'Switch1', 4);
 
     // Change hostname but DON'T save
     await sw.executeCommand('enable');
@@ -391,7 +392,7 @@ describe('T-L2-02: Persistence after Reboot', () => {
 describe('T-L2-03: 802.1Q Trunking', () => {
   it('should set trunk mode via CLI and show in interfaces status', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
@@ -405,7 +406,7 @@ describe('T-L2-03: 802.1Q Trunking', () => {
 
   it('should set trunk native VLAN', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
@@ -420,8 +421,8 @@ describe('T-L2-03: 802.1Q Trunking', () => {
 
   it('should forward across trunk between two switches', async () => {
     MACAddress.resetCounter();
-    const sw1 = new Switch('switch-cisco', 'SW1', 4);
-    const sw2 = new Switch('switch-cisco', 'SW2', 4);
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     const pcA = new LinuxPC('PC-A');
     const pcB = new LinuxPC('PC-B');
 
@@ -455,7 +456,7 @@ describe('T-L2-03: 802.1Q Trunking', () => {
 describe('T-L2-04: MAC Address Table', () => {
   it('should learn MAC addresses after traffic', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
 
@@ -477,7 +478,7 @@ describe('T-L2-04: MAC Address Table', () => {
 
   it('should display MAC table via show mac address-table', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
 
@@ -501,7 +502,7 @@ describe('T-L2-04: MAC Address Table', () => {
     vi.useFakeTimers();
     MACAddress.resetCounter();
 
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     sw.setMACAgingTime(5); // 5 seconds for test
 
     // Inject a static MAC entry to test aging of dynamic entries
@@ -532,7 +533,7 @@ describe('T-L2-04: MAC Address Table', () => {
 
   it('should clear MAC table', () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 4);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
 
     // Inject a frame to learn a MAC
     const port = sw.getPort('FastEthernet0/0')!;
@@ -557,7 +558,7 @@ describe('T-L2-04: MAC Address Table', () => {
 describe('T-L2-05: Interface Range', () => {
   it('should configure multiple interfaces with range command', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
@@ -580,7 +581,7 @@ describe('T-L2-05: Interface Range', () => {
 
   it('should shutdown multiple interfaces with range', async () => {
     MACAddress.resetCounter();
-    const sw = new Switch('switch-cisco', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
@@ -610,7 +611,7 @@ describe('T-L2-06: Show Commands', () => {
 
   beforeEach(() => {
     MACAddress.resetCounter();
-    sw = new Switch('switch-cisco', 'SW1', 4);
+    sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
   });
 
   it('show vlan brief should list default VLAN 1', async () => {
@@ -731,7 +732,7 @@ describe('Error Messages', () => {
 
   beforeEach(() => {
     MACAddress.resetCounter();
-    sw = new Switch('switch-cisco', 'SW1', 4);
+    sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
   });
 
   it('should return "% Device is powered off" when off', async () => {

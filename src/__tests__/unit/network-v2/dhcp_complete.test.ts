@@ -14,7 +14,7 @@ import {
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Router } from '@/network/devices/Router';
-import { Switch } from '@/network/devices/Switch';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -148,7 +148,7 @@ describe('Group 2: Functional — DORA Process', () => {
     it('should complete DORA process and obtain IP address', async () => {
       // Setup: Router as DHCP Server, Switch, Client
       const router = new Router('router-cisco', 'DHCP-Server');
-      const switch1 = new Switch('switch-cisco', 'SW1');
+      const switch1 = new CiscoSwitch('switch-cisco', 'SW1');
       const pc = new LinuxPC('linux-pc', 'PC1');
       
       // Configure router interface and DHCP
@@ -211,7 +211,7 @@ describe('Group 2: Functional — DORA Process', () => {
 
     it('should handle multiple clients simultaneously', async () => {
       const router = new Router('router-cisco', 'DHCP-Server');
-      const switch1 = new Switch('switch-cisco', 'SW1');
+      const switch1 = new CiscoSwitch('switch-cisco', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new WindowsPC('windows-pc', 'PC2');
       const pc3 = new LinuxPC('linux-pc', 'PC3');
@@ -561,7 +561,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
   // Switch DHCP Snooping Commands
   describe('Switch: DHCP Snooping & Security', () => {
     it('should configure DHCP snooping to prevent rogue DHCP servers', async () => {
-      const switch1 = new Switch('switch-cisco', 'SW1');
+      const switch1 = new CiscoSwitch('switch-cisco', 'SW1');
 
       // Enter privileged mode, then config mode
       await switch1.executeCommand('enable');
@@ -594,7 +594,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
     });
 
     it('should detect and log DHCP spoofing attacks', async () => {
-      const switch1 = new Switch('switch-cisco', 'SW1');
+      const switch1 = new CiscoSwitch('switch-cisco', 'SW1');
 
       // Enter privileged mode, then config mode
       await switch1.executeCommand('enable');
