@@ -128,7 +128,7 @@ export class LinuxCommandExecutor {
     // Strip sudo prefix
     let cmdArgs = [...args];
     let isSudo = false;
-    let savedUser: { user: string; uid: number; gid: number } | null = null;
+    let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
@@ -141,7 +141,7 @@ export class LinuxCommandExecutor {
         cmdArgs = cmdArgs.slice(2);
       }
       // Temporarily become root for the command
-      savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
+      savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
       this.userMgr.currentUser = 'root';
       this.userMgr.currentUid = 0;
       this.userMgr.currentGid = 0;
@@ -167,11 +167,19 @@ export class LinuxCommandExecutor {
       exitCode = 1;
     }
 
-    // Restore user after sudo
-    if (savedUser) {
+    // Restore user after sudo — BUT NOT if the command was `su` (su manages its own context)
+    if (savedUser && cmd !== 'su') {
       this.userMgr.currentUser = savedUser.user;
       this.userMgr.currentUid = savedUser.uid;
       this.userMgr.currentGid = savedUser.gid;
+    }
+    // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
+    if (savedUser && cmd === 'su' && this.suStack.length > 0) {
+      const top = this.suStack[this.suStack.length - 1];
+      top.user = savedUser.user;
+      top.uid = savedUser.uid;
+      top.gid = savedUser.gid;
+      top.cwd = savedUser.cwd;
     }
 
     // Handle stderr redirection
@@ -204,6 +212,17 @@ export class LinuxCommandExecutor {
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
+
+    // Root-only commands — reject if not root
+    const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp'];
+    if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
+      return { output: `${cmd}: Permission denied`, exitCode: 1 };
+    }
+    // passwd: non-root can only change own password (no args)
+    if (cmd === 'passwd' && this.userMgr.currentUid !== 0 && args.length > 0 && !args[0].startsWith('-')) {
+      return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
+    }
 
     switch (cmd) {
       // File commands
