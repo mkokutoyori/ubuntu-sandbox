@@ -44,6 +44,11 @@ export interface CableOptions {
   lengthMeters?: number;
 }
 
+export interface CableStats {
+  framesTransmitted: number;
+  framesLost: number;
+}
+
 export interface CableInfo {
   id: string;
   cableType: CableType;
@@ -52,6 +57,8 @@ export interface CableInfo {
   propagationDelayMs: number;
   isUp: boolean;
   isConnected: boolean;
+  packetLossRate: number;
+  stats: CableStats;
 }
 
 export class Cable {
@@ -62,6 +69,8 @@ export class Cable {
   private readonly cableType: CableType;
   private readonly lengthMeters: number;
   private readonly spec: CableSpec;
+  private packetLossRate: number = 0;
+  private stats: CableStats = { framesTransmitted: 0, framesLost: 0 };
 
   constructor(id: string, options?: CableOptions) {
     this.id = id;
@@ -168,6 +177,24 @@ export class Cable {
     return this.portA.getNegotiatedDuplex() !== this.portB.getNegotiatedDuplex();
   }
 
+  // ─── Error Simulation ──────────────────────────────────────────
+
+  getPacketLossRate(): number { return this.packetLossRate; }
+
+  setPacketLossRate(rate: number): void {
+    if (rate < 0 || rate > 1) {
+      throw new Error(`Invalid packet loss rate: ${rate}. Must be between 0 and 1.`);
+    }
+    this.packetLossRate = rate;
+    Logger.info(this.id, 'cable:loss-rate', `Cable ${this.id}: packet loss rate set to ${(rate * 100).toFixed(1)}%`);
+  }
+
+  getStats(): Readonly<CableStats> { return { ...this.stats }; }
+
+  resetStats(): void {
+    this.stats = { framesTransmitted: 0, framesLost: 0 };
+  }
+
   // ─── Link State ────────────────────────────────────────────────
 
   isConnected(): boolean { return this.portA !== null && this.portB !== null; }
@@ -198,6 +225,13 @@ export class Cable {
       return false;
     }
 
+    // Simulate packet loss
+    if (this.packetLossRate > 0 && Math.random() < this.packetLossRate) {
+      this.stats.framesLost++;
+      Logger.debug(this.id, 'cable:loss', `Cable ${this.id}: frame lost (simulated)`);
+      return false;
+    }
+
     const targetPort = (fromPort === this.portA) ? this.portB : this.portA;
 
     Logger.debug(this.id, 'cable:transmit',
@@ -205,6 +239,7 @@ export class Cable {
       { srcMAC: frame.srcMAC.toString(), dstMAC: frame.dstMAC.toString() });
 
     targetPort.receiveFrame(frame);
+    this.stats.framesTransmitted++;
     return true;
   }
 
@@ -219,6 +254,8 @@ export class Cable {
       propagationDelayMs: this.getPropagationDelay(),
       isUp: this.isUp,
       isConnected: this.isConnected(),
+      packetLossRate: this.packetLossRate,
+      stats: { ...this.stats },
     };
   }
 }

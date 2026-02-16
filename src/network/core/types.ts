@@ -1309,8 +1309,11 @@ export interface PortInfo {
   isUp: boolean;
   speed?: PortSpeed;
   duplex?: PortDuplex;
+  mtu?: number;
   counters?: PortCounters;
 }
+
+export type PortViolationMode = 'protect' | 'restrict' | 'shutdown';
 
 // ─── Utility ─────────────────────────────────────────────────────────
 

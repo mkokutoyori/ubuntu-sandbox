@@ -19,7 +19,7 @@
 
 import {
   MACAddress, IPAddress, SubnetMask, EthernetFrame, PortInfo, ConnectionType, IPv6Address,
-  PortDuplex, PortSpeed, PortCounters, VALID_PORT_SPEEDS,
+  PortDuplex, PortSpeed, PortCounters, VALID_PORT_SPEEDS, PortViolationMode,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import type { Cable } from './Cable';
@@ -56,6 +56,16 @@ export class Port {
   private autoNegotiation: boolean = true;
   private negotiatedSpeed: PortSpeed | null = null;
   private negotiatedDuplex: PortDuplex | null = null;
+
+  // ─── MTU ───────────────────────────────────────────────────────────
+  private mtu: number = 1500;
+
+  // ─── Port Security (Cisco-style) ──────────────────────────────────
+  private portSecurityEnabled: boolean = false;
+  private maxMACAddresses: number = 1;
+  private secureMACAddresses: MACAddress[] = [];
+  private violationMode: PortViolationMode = 'shutdown';
+  private securityViolationCount: number = 0;
 
   // ─── Error counters (RFC 2863 ifTable) ──────────────────────────
   private counters: PortCounters = {
@@ -270,6 +280,103 @@ export class Port {
     }
   }
 
+  // ─── MTU ───────────────────────────────────────────────────────────
+
+  getMTU(): number { return this.mtu; }
+
+  setMTU(mtu: number): void {
+    if (mtu < 68) {
+      throw new Error(`Invalid MTU: ${mtu}. Minimum is 68 (IPv4 minimum).`);
+    }
+    if (mtu > 9216) {
+      throw new Error(`Invalid MTU: ${mtu}. Maximum is 9216 (jumbo frame).`);
+    }
+    this.mtu = mtu;
+    Logger.info(this.equipmentId, 'port:mtu', `${this.name}: MTU set to ${mtu}`);
+  }
+
+  // ─── Port Security (Cisco-style) ──────────────────────────────────
+
+  isPortSecurityEnabled(): boolean { return this.portSecurityEnabled; }
+
+  enablePortSecurity(): void {
+    this.portSecurityEnabled = true;
+    Logger.info(this.equipmentId, 'port:security', `${this.name}: port security enabled`);
+  }
+
+  disablePortSecurity(): void {
+    this.portSecurityEnabled = false;
+    this.secureMACAddresses = [];
+    this.securityViolationCount = 0;
+    Logger.info(this.equipmentId, 'port:security', `${this.name}: port security disabled`);
+  }
+
+  getMaxMACAddresses(): number { return this.maxMACAddresses; }
+
+  setMaxMACAddresses(max: number): void {
+    if (max < 1) throw new Error('Max MAC addresses must be at least 1');
+    this.maxMACAddresses = max;
+  }
+
+  getSecureMACAddresses(): MACAddress[] { return [...this.secureMACAddresses]; }
+
+  addStaticMACAddress(mac: MACAddress): void {
+    if (!this.secureMACAddresses.some(m => m.equals(mac))) {
+      this.secureMACAddresses.push(mac);
+    }
+  }
+
+  getViolationMode(): PortViolationMode { return this.violationMode; }
+
+  setViolationMode(mode: PortViolationMode): void {
+    this.violationMode = mode;
+  }
+
+  getSecurityViolationCount(): number { return this.securityViolationCount; }
+
+  /**
+   * Check if a source MAC passes port security.
+   * Returns true if frame should be accepted, false if it should be dropped.
+   */
+  private checkPortSecurity(srcMAC: MACAddress): boolean {
+    if (!this.portSecurityEnabled) return true;
+
+    // Check if MAC is already learned
+    if (this.secureMACAddresses.some(m => m.equals(srcMAC))) {
+      return true;
+    }
+
+    // Room to learn a new MAC?
+    if (this.secureMACAddresses.length < this.maxMACAddresses) {
+      this.secureMACAddresses.push(srcMAC);
+      Logger.debug(this.equipmentId, 'port:security-learn',
+        `${this.name}: learned MAC ${srcMAC}`);
+      return true;
+    }
+
+    // Violation!
+    this.securityViolationCount++;
+    Logger.warn(this.equipmentId, 'port:security-violation',
+      `${this.name}: security violation from ${srcMAC} (mode: ${this.violationMode})`);
+
+    switch (this.violationMode) {
+      case 'shutdown':
+        this.isUp = false;
+        this.notifyLinkChange('down');
+        Logger.warn(this.equipmentId, 'port:security-shutdown',
+          `${this.name}: port shut down due to security violation`);
+        break;
+      case 'restrict':
+        // Drop + increment counter (counter already incremented above)
+        break;
+      case 'protect':
+        // Just silently drop
+        break;
+    }
+
+    return false;
+  }
+
   // ─── Error Counters (RFC 2863) ───────────────────────────────────
 
   getCounters(): Readonly<PortCounters> {
@@ -366,6 +473,12 @@ export class Port {
       return;
     }
 
+    // Port security check
+    if (!this.checkPortSecurity(frame.srcMAC)) {
+      this.counters.dropsIn++;
+      return;
+    }
+
     this.counters.framesIn++;
     Logger.debug(this.equipmentId, 'port:recv',
       `${this.name}: received frame ${frame.srcMAC} → ${frame.dstMAC}`,
@@ -394,6 +507,7 @@ export class Port {
       isUp: this.isUp,
       speed: this.speed,
       duplex: this.duplex,
+      mtu: this.mtu,
       counters: { ...this.counters },
     };
   }

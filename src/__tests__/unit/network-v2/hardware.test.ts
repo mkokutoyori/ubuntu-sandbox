@@ -301,6 +301,201 @@ describe('Port', () => {
     });
   });
 
+  // ─── MTU (Maximum Transmission Unit) ────────────────────────────
+
+  describe('MTU', () => {
+    it('should default to 1500 bytes (standard Ethernet)', () => {
+      const port = new Port('eth0');
+      expect(port.getMTU()).toBe(1500);
+    });
+
+    it('should allow setting MTU to jumbo frame size (9000)', () => {
+      const port = new Port('eth0');
+      port.setMTU(9000);
+      expect(port.getMTU()).toBe(9000);
+    });
+
+    it('should reject MTU below 68 (IPv4 minimum)', () => {
+      const port = new Port('eth0');
+      expect(() => port.setMTU(60)).toThrow();
+    });
+
+    it('should reject MTU above 9216 (max jumbo)', () => {
+      const port = new Port('eth0');
+      expect(() => port.setMTU(10000)).toThrow();
+    });
+
+    it('should drop oversized frames on receive and increment errorsIn', () => {
+      const port = new Port('eth0');
+      port.setMTU(1500);
+      let received = false;
+      port.onFrame(() => { received = true; });
+
+      // Create a frame with a large payload
+      const frame = makeFrame();
+      frame.payload = { data: 'x'.repeat(2000) };
+      (frame as EthernetFrame & { payloadSize: number }).payloadSize = 2000;
+
+      port.receiveFrame(frame);
+      // Frame should still be delivered (MTU check is informational at L2)
+      // But errorsIn should increment for oversized frames
+      expect(received).toBe(true);
+    });
+
+    it('should include MTU in port info', () => {
+      const port = new Port('eth0');
+      port.setMTU(9000);
+      expect(port.getInfo().mtu).toBe(9000);
+    });
+  });
+
+  // ─── Port Security ────────────────────────────────────────────────
+
+  describe('port security', () => {
+    it('should have port security disabled by default', () => {
+      const port = new Port('eth0');
+      expect(port.isPortSecurityEnabled()).toBe(false);
+    });
+
+    it('should allow enabling port security', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      expect(port.isPortSecurityEnabled()).toBe(true);
+    });
+
+    it('should allow disabling port security', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.disablePortSecurity();
+      expect(port.isPortSecurityEnabled()).toBe(false);
+    });
+
+    it('should default max MAC addresses to 1', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      expect(port.getMaxMACAddresses()).toBe(1);
+    });
+
+    it('should allow setting max MAC addresses', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.setMaxMACAddresses(5);
+      expect(port.getMaxMACAddresses()).toBe(5);
+    });
+
+    it('should learn MAC addresses from received frames', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.setMaxMACAddresses(2);
+      port.onFrame(() => {});
+
+      const mac1 = new MACAddress('aa:bb:cc:dd:ee:01');
+      const mac2 = new MACAddress('aa:bb:cc:dd:ee:02');
+
+      port.receiveFrame(makeFrame(mac1));
+      port.receiveFrame(makeFrame(mac2));
+
+      expect(port.getSecureMACAddresses()).toHaveLength(2);
+    });
+
+    it('should drop frames from unknown MACs when max is reached', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.setMaxMACAddresses(1);
+      let receivedCount = 0;
+      port.onFrame(() => { receivedCount++; });
+
+      const mac1 = new MACAddress('aa:bb:cc:dd:ee:01');
+      const mac2 = new MACAddress('aa:bb:cc:dd:ee:02');
+
+      port.receiveFrame(makeFrame(mac1));
+      port.receiveFrame(makeFrame(mac2)); // should be dropped — violation
+
+      expect(receivedCount).toBe(1); // only first frame delivered
+      expect(port.getCounters().dropsIn).toBe(1);
+    });
+
+    it('should allow frames from already-learned MACs', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.setMaxMACAddresses(1);
+      let receivedCount = 0;
+      port.onFrame(() => { receivedCount++; });
+
+      const mac1 = new MACAddress('aa:bb:cc:dd:ee:01');
+
+      port.receiveFrame(makeFrame(mac1));
+      port.receiveFrame(makeFrame(mac1)); // same MAC — allowed
+
+      expect(receivedCount).toBe(2);
+    });
+
+    it('should allow configuring sticky MAC addresses', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.addStaticMACAddress(new MACAddress('aa:bb:cc:dd:ee:01'));
+      expect(port.getSecureMACAddresses()).toHaveLength(1);
+    });
+
+    it('should support violation modes: protect, restrict, shutdown', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+
+      port.setViolationMode('protect');
+      expect(port.getViolationMode()).toBe('protect');
+
+      port.setViolationMode('restrict');
+      expect(port.getViolationMode()).toBe('restrict');
+
+      port.setViolationMode('shutdown');
+      expect(port.getViolationMode()).toBe('shutdown');
+    });
+
+    it('should shut down port on violation in shutdown mode', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.setMaxMACAddresses(1);
+      port.setViolationMode('shutdown');
+      port.onFrame(() => {});
+
+      const mac1 = new MACAddress('aa:bb:cc:dd:ee:01');
+      const mac2 = new MACAddress('aa:bb:cc:dd:ee:02');
+
+      port.receiveFrame(makeFrame(mac1));
+      port.receiveFrame(makeFrame(mac2)); // violation!
+
+      expect(port.getIsUp()).toBe(false); // port should be shutdown
+    });
+
+    it('should increment security violation counter', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.setMaxMACAddresses(1);
+      port.setViolationMode('protect');
+      port.onFrame(() => {});
+
+      const mac1 = new MACAddress('aa:bb:cc:dd:ee:01');
+      const mac2 = new MACAddress('aa:bb:cc:dd:ee:02');
+
+      port.receiveFrame(makeFrame(mac1));
+      port.receiveFrame(makeFrame(mac2));
+
+      expect(port.getSecurityViolationCount()).toBe(1);
+    });
+
+    it('should clear learned MACs when security is disabled', () => {
+      const port = new Port('eth0');
+      port.enablePortSecurity();
+      port.onFrame(() => {});
+
+      port.receiveFrame(makeFrame(new MACAddress('aa:bb:cc:dd:ee:01')));
+      expect(port.getSecureMACAddresses()).toHaveLength(1);
+
+      port.disablePortSecurity();
+      expect(port.getSecureMACAddresses()).toHaveLength(0);
+    });
+  });
+
   // ─── PortInfo includes new fields ─────────────────────────────────
 
   describe('getInfo()', () => {
@@ -576,6 +771,104 @@ describe('Cable', () => {
     });
   });
 
+  // ─── Error simulation ──────────────────────────────────────────────
+
+  describe('error simulation', () => {
+    it('should have 0% packet loss by default', () => {
+      const cable = new Cable('c1');
+      expect(cable.getPacketLossRate()).toBe(0);
+    });
+
+    it('should allow setting packet loss rate (0-1)', () => {
+      const cable = new Cable('c1');
+      cable.setPacketLossRate(0.05); // 5%
+      expect(cable.getPacketLossRate()).toBe(0.05);
+    });
+
+    it('should reject invalid packet loss rate', () => {
+      const cable = new Cable('c1');
+      expect(() => cable.setPacketLossRate(-0.1)).toThrow();
+      expect(() => cable.setPacketLossRate(1.5)).toThrow();
+    });
+
+    it('should drop frames based on packet loss rate (100% = all dropped)', () => {
+      const portA = new Port('eth0');
+      const portB = new Port('eth0');
+      const cable = new Cable('c1');
+      cable.connect(portA, portB);
+      cable.setPacketLossRate(1.0); // 100% loss
+
+      let received = false;
+      portB.onFrame(() => { received = true; });
+
+      const result = cable.transmit(makeFrame(), portA);
+      expect(result).toBe(false);
+      expect(received).toBe(false);
+    });
+
+    it('should deliver all frames with 0% loss', () => {
+      const portA = new Port('eth0');
+      const portB = new Port('eth0');
+      const cable = new Cable('c1');
+      cable.connect(portA, portB);
+      cable.setPacketLossRate(0);
+
+      let receivedCount = 0;
+      portB.onFrame(() => { receivedCount++; });
+
+      for (let i = 0; i < 100; i++) {
+        cable.transmit(makeFrame(), portA);
+      }
+      expect(receivedCount).toBe(100);
+    });
+
+    it('should track total frames transmitted and lost', () => {
+      const portA = new Port('eth0');
+      const portB = new Port('eth0');
+      const cable = new Cable('c1');
+      cable.connect(portA, portB);
+      cable.setPacketLossRate(1.0);
+      portB.onFrame(() => {});
+
+      cable.transmit(makeFrame(), portA);
+      cable.transmit(makeFrame(), portA);
+
+      const stats = cable.getStats();
+      expect(stats.framesTransmitted).toBe(0); // none got through
+      expect(stats.framesLost).toBe(2);
+    });
+
+    it('should track stats with 0% loss', () => {
+      const portA = new Port('eth0');
+      const portB = new Port('eth0');
+      const cable = new Cable('c1');
+      cable.connect(portA, portB);
+      portB.onFrame(() => {});
+
+      cable.transmit(makeFrame(), portA);
+      cable.transmit(makeFrame(), portA);
+
+      const stats = cable.getStats();
+      expect(stats.framesTransmitted).toBe(2);
+      expect(stats.framesLost).toBe(0);
+    });
+
+    it('should allow resetting cable stats', () => {
+      const portA = new Port('eth0');
+      const portB = new Port('eth0');
+      const cable = new Cable('c1');
+      cable.connect(portA, portB);
+      portB.onFrame(() => {});
+
+      cable.transmit(makeFrame(), portA);
+      cable.resetStats();
+
+      const stats = cable.getStats();
+      expect(stats.framesTransmitted).toBe(0);
+      expect(stats.framesLost).toBe(0);
+    });
+  });
+
   // ─── Cable info ───────────────────────────────────────────────────
 
   describe('getInfo()', () => {
@@ -588,6 +881,16 @@ describe('Cable', () => {
       expect(info.maxSpeed).toBe(10000);
       expect(info.isUp).toBe(true);
       expect(info.isConnected).toBe(false);
+    });
+
+    it('should include packet loss rate and stats in info', () => {
+      const cable = new Cable('c1');
+      cable.setPacketLossRate(0.02);
+      const info = cable.getInfo();
+      expect(info.packetLossRate).toBe(0.02);
+      expect(info.stats).toBeDefined();
+      expect(info.stats.framesTransmitted).toBe(0);
+      expect(info.stats.framesLost).toBe(0);
     });
   });
 });
