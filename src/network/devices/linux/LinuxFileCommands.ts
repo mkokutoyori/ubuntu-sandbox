@@ -6,6 +6,19 @@ import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { interpretEscapes } from './LinuxShellParser';
 
+// ANSI color codes matching GNU ls defaults (LS_COLORS)
+const C = {
+  RESET: '\x1b[0m',
+  BOLD_BLUE: '\x1b[1;34m',    // directories
+  BOLD_CYAN: '\x1b[1;36m',    // symlinks
+  BOLD_GREEN: '\x1b[1;32m',   // executables
+  BOLD_YELLOW: '\x1b[1;33m',  // FIFOs (named pipes)
+  BOLD_YELBG: '\x1b[30;43m',  // sticky + other-writable dirs
+  BOLD_BLUEBG: '\x1b[34;42m', // other-writable dirs (no sticky)
+  BOLD_GREENBG: '\x1b[37;42m',// sticky dirs (not other-writable)
+  CHARDEV: '\x1b[1;33m',      // character devices (bold yellow)
+};
+
 export interface ShellContext {
   vfs: VirtualFileSystem;
   userMgr: LinuxUserManager;
@@ -155,18 +168,28 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   } else {
     // Short format: multi-column horizontal layout (like real ls)
     const names: string[] = [];
+    const rawLens: number[] = []; // lengths without ANSI codes for column calc
     for (const entry of filtered) {
       if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      let displayName = entry.name;
-      if (classify) displayName += classifySuffix(entry.inode);
-      if (showInode) displayName = `${entry.inode.id} ${displayName}`;
+      let displayName = colorName(entry.name, entry.inode);
+      let rawName = entry.name;
+      if (classify) {
+        const suffix = classifySuffix(entry.inode);
+        displayName += suffix;
+        rawName += suffix;
+      }
+      if (showInode) {
+        displayName = `${entry.inode.id} ${displayName}`;
+        rawName = `${entry.inode.id} ${rawName}`;
+      }
       names.push(displayName);
+      rawLens.push(rawName.length);
     }
 
     if (onePerLine || names.length === 0) {
       lines.push(...names);
     } else {
-      lines.push(formatColumns(names));
+      lines.push(formatColumns(names, rawLens));
     }
   }
 
@@ -190,16 +213,17 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
  * Format multi-column horizontal layout like real `ls`.
  * Fills columns left-to-right, top-to-bottom (column-major order).
  * Assumes terminal width of 80 characters.
+ * rawLens: visible lengths of each name (excluding ANSI codes).
  */
-function formatColumns(names: string[], termWidth: number = 80): string {
+function formatColumns(names: string[], rawLens?: number[], termWidth: number = 80): string {
   if (names.length === 0) return '';
   if (names.length === 1) return names[0];
 
-  const maxLen = Math.max(...names.map(n => n.length));
+  const lens = rawLens ?? names.map(n => n.length);
+  const maxLen = Math.max(...lens);
   const colWidth = maxLen + 2; // 2-space gap between columns
 
   if (colWidth >= termWidth) {
-    // Each name on its own line
     return names.join('\n');
   }
 
@@ -212,11 +236,13 @@ function formatColumns(names: string[], termWidth: number = 80): string {
     for (let col = 0; col < numCols; col++) {
       const idx = col * numRows + row;
       if (idx < names.length) {
-        // Last column: no padding
-        if (col === numCols - 1 || (col + 1) * numRows + row >= names.length) {
+        const isLast = col === numCols - 1 || (col + 1) * numRows + row >= names.length;
+        if (isLast) {
           parts.push(names[idx]);
         } else {
-          parts.push(names[idx].padEnd(colWidth));
+          // Pad based on visible length, not string length (ANSI codes are invisible)
+          const padding = colWidth - lens[idx];
+          parts.push(names[idx] + ' '.repeat(Math.max(0, padding)));
         }
       }
     }
@@ -236,6 +262,27 @@ function classifySuffix(inode: INode): string {
       if (inode.permissions & 0o111) return '*';
       return '';
     default: return '';
+  }
+}
+
+/** Colorize a filename based on its inode type, matching GNU ls --color=auto */
+function colorName(name: string, inode: INode): string {
+  switch (inode.type) {
+    case 'directory': {
+      const sticky = (inode.permissions >> 9) & 1;
+      const ow = (inode.permissions & 0o002);
+      if (sticky && ow) return `${C.BOLD_YELBG}${name}${C.RESET}`;
+      if (ow) return `${C.BOLD_BLUEBG}${name}${C.RESET}`;
+      if (sticky) return `${C.BOLD_GREENBG}${name}${C.RESET}`;
+      return `${C.BOLD_BLUE}${name}${C.RESET}`;
+    }
+    case 'symlink': return `${C.BOLD_CYAN}${name}${C.RESET}`;
+    case 'fifo': return `${C.BOLD_YELLOW}${name}${C.RESET}`;
+    case 'chardev': return `${C.CHARDEV}${name}${C.RESET}`;
+    case 'file':
+      if (inode.permissions & 0o111) return `${C.BOLD_GREEN}${name}${C.RESET}`;
+      return name;
+    default: return name;
   }
 }
 
@@ -274,7 +321,8 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
   const group = ctx.userMgr.gidToName(inode.gid);
   const dateStr = formatLsDate(inode.mtime);
 
-  line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${name}`;
+  const coloredName = colorName(name, inode);
+  line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${coloredName}`;
 
   // Symlink target
   if (inode.type === 'symlink') {
@@ -294,7 +342,7 @@ function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: str
   if (opts.showInode) {
     line += `${inode.id} `;
   }
-  line += name;
+  line += colorName(name, inode);
   if (opts.classify) {
     line += classifySuffix(inode);
   }

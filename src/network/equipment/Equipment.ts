@@ -60,6 +60,12 @@ export abstract class Equipment {
   getCwd(): string { return '/'; }
 
   /**
+   * Get tab completions for a partial input string.
+   * Override in subclasses that support tab completion.
+   */
+  getCompletions(partial: string): string[] { return []; }
+
+  /**
    * Get the OS type for terminal selection.
    * Override in subclasses for specific OS types.
    */
