@@ -1,27 +1,36 @@
 /**
- * DHCPServer - DHCP Server Engine (RFC 2131)
+ * DHCPServer - DHCP Server Engine (RFC 2131, RFC 2132)
  *
  * Manages DHCP pools, address allocation, lease bindings,
  * statistics, and debug flags. Used by the Router class.
  *
- * Responsibilities:
- *   - Pool configuration and validation
- *   - Address allocation (DORA process server-side)
- *   - Lease binding database
- *   - Excluded address management
- *   - Statistics and conflict tracking
- *   - Debug flag management
+ * RFC compliance:
+ *   - Option 54: Server Identifier in OFFER/ACK/NAK
+ *   - Pending offers: IP reserved between DISCOVER and REQUEST (RFC 2131 §3.1.2)
+ *   - Excluded ranges checked in processRequest() (not just findAvailableIP)
+ *   - MAC + IP validation on RELEASE (ciaddr + chaddr, RFC 2131 §3.4.4)
+ *   - DHCPDECLINE processing with conflict recording (RFC 2131 §3.1.5)
+ *   - Options 58/59: T1/T2 configurable per pool
+ *   - XID echoed back in all responses
  */
 
 import {
   DHCPPoolConfig, DHCPExcludedRange, DHCPBinding, DHCPServerStats,
-  DHCPConflict, DHCPDebugFlags, DHCPRelayConfig,
+  DHCPConflict, DHCPDebugFlags, DHCPRelayConfig, DHCPPendingOffer,
+  DHCPDiscoverParams, DHCPOfferResult, DHCPRequestParams, DHCPAckResult,
+  DHCPReleaseParams, DHCPDeclineParams,
   createDefaultPoolConfig, createDefaultStats,
 } from './types';
+
+/** Default pending offer timeout: 60 seconds */
+const PENDING_OFFER_TIMEOUT_MS = 60_000;
 
 export class DHCPServer {
   /** Service enabled flag */
   private enabled: boolean = true;
+
+  /** Server's own IP address (Option 54: Server Identifier) */
+  private serverIdentifier: string = '0.0.0.0';
 
   /** Named DHCP pools */
   private pools: Map<string, DHCPPoolConfig> = new Map();
@@ -31,6 +40,9 @@ export class DHCPServer {
 
   /** Active lease bindings: IP → binding */
   private bindings: Map<string, DHCPBinding> = new Map();
+
+  /** Pending offers: IP → pending (reserved between DISCOVER and REQUEST) */
+  private pendingOffers: Map<string, DHCPPendingOffer> = new Map();
 
   /** Server statistics */
   private stats: DHCPServerStats = createDefaultStats();
@@ -52,6 +64,10 @@ export class DHCPServer {
   enable(): void { this.enabled = true; }
   disable(): void { this.enabled = false; }
   isEnabled(): boolean { return this.enabled; }
+
+  /** Set the server's own IP (used as Option 54: Server Identifier) */
+  setServerIdentifier(ip: string): void { this.serverIdentifier = ip; }
+  getServerIdentifier(): string { return this.serverIdentifier; }
 
   // ─── Pool Management ──────────────────────────────────────────────
 
@@ -102,6 +118,22 @@ export class DHCPServer {
     const pool = this.pools.get(name);
     if (!pool) return false;
     pool.leaseDuration = durationSeconds;
+    return true;
+  }
+
+  /** Configure Option 58: T1 renewal time for a pool */
+  configurePoolRenewalTime(name: string, seconds: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.renewalTime = seconds;
+    return true;
+  }
+
+  /** Configure Option 59: T2 rebinding time for a pool */
+  configurePoolRebindingTime(name: string, seconds: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.rebindingTime = seconds;
     return true;
   }
 
@@ -190,26 +222,78 @@ export class DHCPServer {
 
   /**
    * Process a DHCPDISCOVER and return an offer IP.
+   * RFC 2131 §3.1.2: The server reserves the offered address until the client responds.
+   *
+   * Accepts either the new DHCPDiscoverParams or legacy (clientMAC: string) for backward compat.
    */
-  processDiscover(clientMAC: string): { ip: string; pool: DHCPPoolConfig } | null {
+  processDiscover(paramsOrMAC: DHCPDiscoverParams | string): DHCPOfferResult | null {
     this.stats.discovers++;
     if (!this.enabled) return null;
+
+    // Normalize params (backward compat)
+    const params: DHCPDiscoverParams = typeof paramsOrMAC === 'string'
+      ? { clientMAC: paramsOrMAC, xid: 0, clientIdentifier: '01' + paramsOrMAC.replace(/:/g, ''), parameterRequestList: [] }
+      : paramsOrMAC;
+
+    // Clean expired pending offers
+    this.cleanExpiredPendingOffers();
 
     for (const [, pool] of this.pools) {
       if (!pool.network || !pool.mask) continue;
 
-      // Check existing binding
+      // Check deny patterns
+      if (this.isClientDenied(params.clientMAC, pool)) continue;
+
+      // Check existing binding — prefer re-offering the same IP
       for (const [ip, binding] of this.bindings) {
-        if (binding.clientId === clientMAC && binding.poolName === pool.name) {
+        if (binding.clientId === params.clientMAC && binding.poolName === pool.name) {
           this.stats.offers++;
-          return { ip, pool };
+          return {
+            ip,
+            pool,
+            serverIdentifier: this.serverIdentifier,
+            xid: params.xid,
+            renewalTime: pool.renewalTime,
+            rebindingTime: pool.rebindingTime,
+          };
         }
       }
 
+      // Check if we already have a pending offer for this client
+      for (const [ip, pending] of this.pendingOffers) {
+        if (pending.clientMAC === params.clientMAC && pending.poolName === pool.name) {
+          this.stats.offers++;
+          return {
+            ip,
+            pool,
+            serverIdentifier: this.serverIdentifier,
+            xid: params.xid,
+            renewalTime: pool.renewalTime,
+            rebindingTime: pool.rebindingTime,
+          };
+        }
+      }
+
+      // Allocate a new IP and create a pending offer
       const ip = this.findAvailableIP(pool);
       if (ip) {
+        // Reserve the IP (RFC 2131 §3.1.2)
+        this.pendingOffers.set(ip, {
+          ip,
+          clientMAC: params.clientMAC,
+          poolName: pool.name,
+          expiresAt: Date.now() + PENDING_OFFER_TIMEOUT_MS,
+        });
+
         this.stats.offers++;
-        return { ip, pool };
+        return {
+          ip,
+          pool,
+          serverIdentifier: this.serverIdentifier,
+          xid: params.xid,
+          renewalTime: pool.renewalTime,
+          rebindingTime: pool.rebindingTime,
+        };
       }
     }
 
@@ -218,33 +302,82 @@ export class DHCPServer {
 
   /**
    * Process a DHCPREQUEST and create/renew binding.
+   * RFC 2131 §3.1.3: Validates requested IP against excluded ranges and server identifier.
+   *
+   * Accepts either the new DHCPRequestParams or legacy (clientMAC, requestedIP) for backward compat.
    */
-  processRequest(clientMAC: string, requestedIP: string): DHCPBinding | null {
+  processRequest(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
     this.stats.requests++;
     if (!this.enabled) return null;
+
+    // Normalize params (backward compat)
+    const params: DHCPRequestParams = typeof paramsOrMAC === 'string'
+      ? {
+          clientMAC: paramsOrMAC,
+          xid: 0,
+          requestedIP: legacyRequestedIP!,
+          clientIdentifier: '01' + paramsOrMAC.replace(/:/g, ''),
+        }
+      : paramsOrMAC;
+
+    // If server identifier is specified (SELECTING state), verify it matches us
+    if (params.serverIdentifier && params.serverIdentifier !== this.serverIdentifier) {
+      // This REQUEST is for a different server — ignore silently
+      this.stats.requests--; // Don't count this as our request
+      return null;
+    }
+
+    // RFC compliance: Check if the requested IP is in an excluded range
+    if (this.isExcluded(params.requestedIP)) {
+      this.stats.naks++;
+      return null;
+    }
+
+    // Check for conflicts
+    if (this.isConflicted(params.requestedIP)) {
+      this.stats.naks++;
+      return null;
+    }
 
     // Find pool for this IP
     for (const [, pool] of this.pools) {
       if (!pool.network || !pool.mask) continue;
-      if (!this.isIPInPool(requestedIP, pool)) continue;
+      if (!this.isIPInPool(params.requestedIP, pool)) continue;
 
-      if (this.isClientDenied(clientMAC, pool)) {
+      if (this.isClientDenied(params.clientMAC, pool)) {
         this.stats.naks++;
         return null;
       }
 
+      // Check that no other client holds this IP
+      const existingBinding = this.bindings.get(params.requestedIP);
+      if (existingBinding && existingBinding.clientId !== params.clientMAC) {
+        this.stats.naks++;
+        return null;
+      }
+
+      // Remove pending offer (if any)
+      this.pendingOffers.delete(params.requestedIP);
+
       const binding: DHCPBinding = {
-        ipAddress: requestedIP,
-        clientId: clientMAC,
+        ipAddress: params.requestedIP,
+        clientId: params.clientMAC,
         leaseStart: Date.now(),
         leaseExpiration: Date.now() + pool.leaseDuration * 1000,
         poolName: pool.name,
         type: 'automatic',
       };
 
-      this.bindings.set(requestedIP, binding);
+      this.bindings.set(params.requestedIP, binding);
       this.stats.acks++;
-      return binding;
+
+      return {
+        binding,
+        serverIdentifier: this.serverIdentifier,
+        xid: params.xid,
+        renewalTime: pool.renewalTime,
+        rebindingTime: pool.rebindingTime,
+      };
     }
 
     this.stats.naks++;
@@ -253,15 +386,57 @@ export class DHCPServer {
 
   /**
    * Process DHCPRELEASE - remove binding.
+   * RFC 2131 §3.4.4: Validates both MAC and IP (ciaddr) match the binding.
+   *
+   * Accepts either the new DHCPReleaseParams or legacy (clientMAC: string) for backward compat.
    */
-  processRelease(clientMAC: string): void {
+  processRelease(paramsOrMAC: DHCPReleaseParams | string): void {
     this.stats.releases++;
-    for (const [ip, binding] of this.bindings) {
-      if (binding.clientId === clientMAC) {
-        this.bindings.delete(ip);
-        return;
+
+    if (typeof paramsOrMAC === 'string') {
+      // Legacy: remove first binding matching MAC
+      for (const [ip, binding] of this.bindings) {
+        if (binding.clientId === paramsOrMAC) {
+          this.bindings.delete(ip);
+          return;
+        }
       }
+      return;
     }
+
+    // RFC-compliant: validate both MAC and IP
+    const params = paramsOrMAC;
+    const binding = this.bindings.get(params.clientIP);
+    if (!binding) return;
+
+    // Validate that the releasing client actually owns this binding
+    if (binding.clientId !== params.clientMAC) return;
+
+    this.bindings.delete(params.clientIP);
+  }
+
+  /**
+   * Process DHCPDECLINE — client detected address conflict after ACK.
+   * RFC 2131 §3.1.5: Server records conflict and removes binding.
+   */
+  processDecline(params: DHCPDeclineParams): void {
+    this.stats.declines++;
+
+    // Record the conflict
+    this.conflicts.push({
+      ipAddress: params.declinedIP,
+      detectionMethod: 'DHCP Decline',
+      detectionTime: Date.now(),
+    });
+
+    // Remove the binding
+    const binding = this.bindings.get(params.declinedIP);
+    if (binding && binding.clientId === params.clientMAC) {
+      this.bindings.delete(params.declinedIP);
+    }
+
+    // Remove any pending offer
+    this.pendingOffers.delete(params.declinedIP);
   }
 
   // ─── Lease Bindings ───────────────────────────────────────────────
@@ -296,6 +471,19 @@ export class DHCPServer {
 
   clearConflicts(): void {
     this.conflicts = [];
+  }
+
+  /** Record a conflict detected by the server (e.g., via ping/ARP before offering) */
+  addConflict(ip: string, method: string): void {
+    this.conflicts.push({
+      ipAddress: ip,
+      detectionMethod: method,
+      detectionTime: Date.now(),
+    });
+  }
+
+  private isConflicted(ip: string): boolean {
+    return this.conflicts.some(c => c.ipAddress === ip);
   }
 
   // ─── Debug ────────────────────────────────────────────────────────
@@ -460,6 +648,12 @@ export class DHCPServer {
       // Skip already bound
       if (this.bindings.has(ipStr)) continue;
 
+      // Skip pending offers (reserved for other clients)
+      if (this.pendingOffers.has(ipStr)) continue;
+
+      // Skip conflicted addresses
+      if (this.isConflicted(ipStr)) continue;
+
       return ipStr;
     }
 
@@ -497,6 +691,15 @@ export class DHCPServer {
           regex.test(macDotted) || regex.test(clientIdDotted)) return true;
     }
     return false;
+  }
+
+  private cleanExpiredPendingOffers(): void {
+    const now = Date.now();
+    for (const [ip, pending] of this.pendingOffers) {
+      if (pending.expiresAt <= now) {
+        this.pendingOffers.delete(ip);
+      }
+    }
   }
 
   private countBindingsForPool(poolName: string): number {

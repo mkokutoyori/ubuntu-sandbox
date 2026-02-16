@@ -336,24 +336,24 @@ describe('Group 2: Functional — DORA Process', () => {
       expect(ipOutput).not.toContain('dynamic');
     });
 
-    it('should handle DHCPNAK (server denies request)', async () => {
+    it('should handle denied client (no OFFER for denied MAC)', async () => {
       const router = new Router('router-cisco', 'DHCP-Server');
       const pc = new LinuxPC('linux-pc', 'PC1');
-      
-      // Configure server to NAK certain requests
+
+      // Configure server to deny certain clients via client-identifier pattern
       await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 192.168.2.0 255.255.255.0');
       await router.executeCommand('client-identifier deny 0100.*'); // Deny MACs starting with 0100
       await router.executeCommand('end');
-      
+
       // Configure client with matching MAC pattern
       pc.setMACAddress('eth0', new MACAddress('01:00:5E:00:00:01'));
-      
+
+      // RFC 2131: Denied client won't receive an OFFER at all
       const output = await pc.executeCommand('sudo dhclient -v eth0');
-      expect(output).toContain('DHCPNAK');
-      expect(output).toContain('restarting');
+      expect(output).toContain('No DHCPOFFERS received');
     });
 
     it('should handle exhausted address pool', async () => {
