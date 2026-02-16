@@ -73,11 +73,13 @@ describe('Group 1: Gestion des Fichiers et Répertoires', () => {
       expect(permissions).toContain('-rwxr-xr-x');
       
       // Changer les permissions avec notation symbolique
+      // 755 = rwxr-xr-x → u+w (noop), g-w (noop, no w in group), o=r → rwxr-xr--
       await pc.executeCommand('chmod u+w,g-w,o=r myfile.txt');
       permissions = await pc.executeCommand('ls -l myfile.txt');
-      expect(permissions).toContain('-rwxr--r--');
+      expect(permissions).toContain('-rwxr-xr--');
       
       // Enlever le droit d'exécution pour tous
+      // rwxr-xr-- → a-x → rw-r--r--
       await pc.executeCommand('chmod a-x myfile.txt');
       permissions = await pc.executeCommand('ls -l myfile.txt');
       expect(permissions).toContain('-rw-r--r--');
@@ -167,10 +169,10 @@ describe('Group 1: Gestion des Fichiers et Répertoires', () => {
     it('should search file contents with grep', async () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
       
-      // Créer des fichiers avec contenu
-      await pc.executeCommand('echo "Hello World\nThis is a test\nAnother line" > file1.txt');
-      await pc.executeCommand('echo "Test content\nHello again\nEnd of file" > file2.txt');
-      await pc.executeCommand('echo "No match here\nJust text" > file3.txt');
+      // Créer des fichiers avec contenu (echo -e pour interpréter les \n)
+      await pc.executeCommand('echo -e "Hello World\nThis is a test\nAnother line" > file1.txt');
+      await pc.executeCommand('echo -e "Test content\nHello again\nEnd of file" > file2.txt');
+      await pc.executeCommand('echo -e "No match here\nJust text" > file3.txt');
       
       // Rechercher une chaîne simple
       const helloMatches = await pc.executeCommand('grep "Hello" file1.txt');
@@ -264,9 +266,12 @@ describe('Group 1: Gestion des Fichiers et Répertoires', () => {
       // Supprimer le fichier original
       await pc.executeCommand('rm original.txt');
       
-      // Vérifier que le lien est cassé
+      // Vérifier que le lien est cassé (la cible n'existe plus)
       const brokenLink = await pc.executeCommand('ls -l symlink.txt');
-      expect(brokenLink).toContain('red');
+      expect(brokenLink).toContain('-> original.txt');
+      // Le fichier cible n'existe plus, cat devrait échouer
+      const brokenRead = await pc.executeCommand('cat symlink.txt 2>&1 || echo "broken"');
+      expect(brokenRead).toContain('broken');
       
       // Nettoyage
       await pc.executeCommand('rm symlink.txt');
@@ -778,7 +783,7 @@ describe('Group 3: Gestion des Permissions', () => {
     });
   });
 
-  describe('P-UBU-03: Commandes d'information sur les permissions', () => {
+  describe('P-UBU-03: Commandes d\'information sur les permissions', () => {
     it('should use stat command to get detailed file information', async () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
       
@@ -988,10 +993,11 @@ describe('Group 4: Commandes Utilitaires', () => {
       const sorted = await pc.executeCommand('sort tosort.txt');
       expect(sorted.indexOf('apple')).toBeLessThan(sorted.indexOf('banana'));
       
-      // Supprimer les doublons
+      // Supprimer les doublons adjacents (uniq ne supprime que les doublons consécutifs)
+      // Input: a, a, b, c, b → Output: a, b, c, b (4 lignes)
       await pc.executeCommand('echo -e "a\na\nb\nc\nb" > duplicates.txt');
       const unique = await pc.executeCommand('uniq duplicates.txt');
-      expect(unique.split('\n').length).toBe(3);
+      expect(unique.split('\n').length).toBe(4);
       
       // Transformer le texte
       await pc.executeCommand('echo "hello world" > transform.txt');
