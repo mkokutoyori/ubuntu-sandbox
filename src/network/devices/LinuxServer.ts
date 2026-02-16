@@ -123,4 +123,6 @@ export class LinuxServer extends EndHost {
   getOSType(): string { return 'linux'; }
   getCwd(): string { return this.executor.getCwd(); }
   getCompletions(partial: string): string[] { return this.executor.getCompletions(partial); }
+  getCurrentUser(): string { return this.executor.getCurrentUser(); }
+  handleExit(): { output: string; inSu: boolean } { return this.executor.handleExit(); }
 }

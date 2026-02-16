@@ -65,6 +65,12 @@ export abstract class Equipment {
    */
   getCompletions(partial: string): string[] { return []; }
 
+  /** Get current username (for terminal prompt). Override in subclasses. */
+  getCurrentUser(): string { return 'user'; }
+
+  /** Handle exit/logout for su sessions. Override in subclasses. */
+  handleExit(): { output: string; inSu: boolean } { return { output: '', inSu: false }; }
+
   /**
    * Get the OS type for terminal selection.
    * Override in subclasses for specific OS types.

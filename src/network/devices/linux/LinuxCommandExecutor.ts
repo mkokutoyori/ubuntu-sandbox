@@ -20,6 +20,9 @@ export class LinuxCommandExecutor {
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
+  private env: Map<string, string> = new Map();
+  // Stack for su sessions: stores previous user context
+  private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -27,11 +30,18 @@ export class LinuxCommandExecutor {
     this.cron = new LinuxCronManager();
     this.isServer = isServer;
 
+    // Default environment
+    this.env.set('PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games');
+
     if (!isServer) {
       // Regular PC: default user is 'user' (non-root)
       const uid = 1000;
       const gid = 1000;
       this.userMgr.useradd('user', { m: true, s: '/bin/bash' });
+      // Add default groups for regular user (like Ubuntu)
+      this.userMgr.usermod('user', { aG: 'sudo,adm' });
+      // Create skeleton files
+      this.createSkeletonFiles('/home/user', uid, gid);
       this.userMgr.currentUser = 'user';
       this.userMgr.currentUid = uid;
       this.userMgr.currentGid = gid;
@@ -118,20 +128,29 @@ export class LinuxCommandExecutor {
     // Strip sudo prefix
     let cmdArgs = [...args];
     let isSudo = false;
+    let savedUser: { user: string; uid: number; gid: number } | null = null;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
-      // Handle sudo -l -U username (sudo check)
-      if (cmdArgs[0] === '-l') {
-        return this.dispatch('sudo', cmdArgs, stdin);
+      // Handle sudo -l (no arguments = current user)
+      if (cmdArgs.length === 0 || cmdArgs[0] === '-l') {
+        return this.dispatch('sudo', cmdArgs, stdin, true);
       }
       // Handle sudo -u user cmd
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
         cmdArgs = cmdArgs.slice(2);
       }
+      // Temporarily become root for the command
+      savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
+      this.userMgr.currentUser = 'root';
+      this.userMgr.currentUid = 0;
+      this.userMgr.currentGid = 0;
     }
 
-    if (cmdArgs.length === 0) return { output: '', exitCode: 0 };
+    if (cmdArgs.length === 0) {
+      if (savedUser) { this.userMgr.currentUser = savedUser.user; this.userMgr.currentUid = savedUser.uid; this.userMgr.currentGid = savedUser.gid; }
+      return { output: '', exitCode: 0 };
+    }
 
     const cmd = cmdArgs[0];
     const cmdArgsList = cmdArgs.slice(1);
@@ -140,12 +159,19 @@ export class LinuxCommandExecutor {
     let exitCode = 0;
 
     try {
-      const result = this.dispatch(cmd, cmdArgsList, stdin);
+      const result = this.dispatch(cmd, cmdArgsList, stdin, isSudo);
       output = result.output;
       exitCode = result.exitCode;
     } catch (e) {
       output = `${cmd}: error`;
       exitCode = 1;
+    }
+
+    // Restore user after sudo
+    if (savedUser) {
+      this.userMgr.currentUser = savedUser.user;
+      this.userMgr.currentUid = savedUser.uid;
+      this.userMgr.currentGid = savedUser.gid;
     }
 
     // Handle stderr redirection
@@ -176,7 +202,7 @@ export class LinuxCommandExecutor {
     return { output, exitCode };
   }
 
-  private dispatch(cmd: string, args: string[], stdin?: string): { output: string; exitCode: number } {
+  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
 
     switch (cmd) {
@@ -188,11 +214,24 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: isErr ? 2 : 0 };
       }
       case 'cat': {
+        // Permission check: can user read this file?
+        for (const arg of args) {
+          if (arg.startsWith('-')) continue;
+          const path = this.vfs.normalizePath(arg, this.cwd);
+          const inode = this.vfs.resolveInode(path);
+          if (inode && !this.checkPermission(inode, 'r')) {
+            return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
+          }
+        }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');
         return { output: out, exitCode: isError ? 1 : 0 };
       }
-      case 'echo': return { output: cmdEcho(c, args), exitCode: 0 };
+      case 'echo': {
+        // Expand env vars in args before echo
+        const expanded = args.map(a => this.expandEnvVars(a));
+        return { output: cmdEcho(c, expanded), exitCode: 0 };
+      }
       case 'cp': return { output: cmdCp(c, args), exitCode: 0 };
       case 'mv': return { output: cmdMv(c, args), exitCode: 0 };
       case 'rm': return { output: cmdRm(c, args), exitCode: 0 };
@@ -204,13 +243,32 @@ export class LinuxCommandExecutor {
 
       // cd changes state
       case 'cd': {
-        const target = args[0] || '/root';
-        const newCwd = this.vfs.normalizePath(target === '-' ? '/root' : target, this.cwd);
-        if (this.vfs.getType(newCwd) === 'directory') {
-          this.cwd = newCwd;
-          return { output: '', exitCode: 0 };
+        let target = args[0];
+        if (!target || target === '~') {
+          // Default to current user's home dir
+          const user = this.userMgr.getUser(this.userMgr.currentUser);
+          target = user?.home || '/root';
+        } else if (target.startsWith('~/')) {
+          const user = this.userMgr.getUser(this.userMgr.currentUser);
+          target = (user?.home || '/root') + target.slice(1);
+        } else if (target === '-') {
+          const user = this.userMgr.getUser(this.userMgr.currentUser);
+          target = user?.home || '/root';
         }
-        return { output: `bash: cd: ${target}: No such file or directory`, exitCode: 1 };
+        const newCwd = this.vfs.normalizePath(target, this.cwd);
+        const inode = this.vfs.resolveInode(newCwd);
+        if (!inode) {
+          return { output: `bash: cd: ${args[0] || target}: No such file or directory`, exitCode: 1 };
+        }
+        if (inode.type !== 'directory') {
+          return { output: `bash: cd: ${args[0] || target}: Not a directory`, exitCode: 1 };
+        }
+        // Check execute permission on directory
+        if (!this.checkPermission(inode, 'x')) {
+          return { output: `bash: cd: ${args[0] || target}: Permission denied`, exitCode: 1 };
+        }
+        this.cwd = newCwd;
+        return { output: '', exitCode: 0 };
       }
 
       // Text commands
@@ -252,16 +310,29 @@ export class LinuxCommandExecutor {
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
-      case 'useradd': return { output: cmdUseradd(c, args), exitCode: 0 };
+      case 'useradd': {
+        const out = cmdUseradd(c, args);
+        if (!out && args.includes('-m')) {
+          // Create skeleton files in new home dir
+          const username = args.filter(a => !a.startsWith('-')).find(a => !['bash', '/bin/bash', '/bin/sh', '/sbin/nologin', '/usr/sbin/nologin'].includes(a));
+          if (username) {
+            const user = this.userMgr.getUser(username);
+            if (user) this.createSkeletonFiles(user.home, user.uid, user.gid);
+          }
+        }
+        return { output: out, exitCode: out ? 1 : 0 };
+      }
+      case 'adduser': return this.handleAdduser(args);
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
-      case 'userdel': return { output: cmdUserdel(c, args), exitCode: 0 };
-      case 'passwd': return { output: cmdPasswd(c, args), exitCode: 0 };
+      case 'userdel': return this.handleUserdel(args);
+      case 'deluser': return this.handleDeluser(args);
+      case 'passwd': return this.handlePasswd(args);
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
       case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
-      case 'gpasswd': return { output: cmdGpasswd(c, args), exitCode: 0 };
+      case 'gpasswd': return this.handleGpasswd(args);
       case 'id': {
         const out = cmdId(c, args);
         return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
@@ -272,7 +343,38 @@ export class LinuxCommandExecutor {
       case 'w': return { output: cmdW(c), exitCode: 0 };
       case 'last': return { output: cmdLast(c, args), exitCode: 0 };
       case 'getent': return { output: cmdGetent(c, args), exitCode: 0 };
-      case 'sudo': return { output: cmdSudoCheck(c, args), exitCode: 0 };
+      case 'sudo': return this.handleSudoCmd(args);
+
+      // su - switch user
+      case 'su': return this.handleSu(args);
+
+      // source / . — execute file in current shell context
+      case 'source':
+      case '.': {
+        if (args.length === 0) return { output: 'bash: source: filename argument required', exitCode: 2 };
+        // In simulator, source is a no-op but we silently succeed
+        return { output: '', exitCode: 0 };
+      }
+
+      // export — set environment variable
+      case 'export': {
+        for (const arg of args) {
+          const eqIdx = arg.indexOf('=');
+          if (eqIdx > 0) {
+            const key = arg.slice(0, eqIdx);
+            const val = this.expandEnvVars(arg.slice(eqIdx + 1));
+            this.env.set(key, val);
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
+
+      // env — print environment
+      case 'env': {
+        const lines: string[] = [];
+        for (const [k, v] of this.env) { lines.push(`${k}=${v}`); }
+        return { output: lines.join('\n'), exitCode: 0 };
+      }
 
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
@@ -343,6 +445,283 @@ export class LinuxCommandExecutor {
       return { output: '', exitCode: 0 };
     }
     return { output: '', exitCode: 0 };
+  }
+
+  // ─── Permission checking ──────────────────────────────────────────
+
+  /** Check if current user has permission (r/w/x) on an inode */
+  private checkPermission(inode: { permissions: number; uid: number; gid: number }, mode: 'r' | 'w' | 'x'): boolean {
+    const uid = this.userMgr.currentUid;
+    if (uid === 0) return true; // root can do anything
+
+    const perms = inode.permissions & 0o7777;
+    const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
+
+    // Owner
+    if (inode.uid === uid) {
+      return !!((perms >> 6) & bit);
+    }
+
+    // Group
+    const gid = this.userMgr.currentGid;
+    const userGroups = this.userMgr.getUserGroups(this.userMgr.currentUser);
+    const isInGroup = inode.gid === gid || userGroups.some(g => g.gid === inode.gid);
+    if (isInGroup) {
+      return !!((perms >> 3) & bit);
+    }
+
+    // Other
+    return !!(perms & bit);
+  }
+
+  // ─── su handler ──────────────────────────────────────────────────
+
+  private handleSu(args: string[]): { output: string; exitCode: number } {
+    let loginShell = false;
+    let targetUser = 'root';
+    for (const arg of args) {
+      if (arg === '-' || arg === '-l' || arg === '--login') { loginShell = true; continue; }
+      if (!arg.startsWith('-')) targetUser = arg;
+    }
+
+    const user = this.userMgr.getUser(targetUser);
+    if (!user) return { output: `su: user ${targetUser} does not exist`, exitCode: 1 };
+    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
+      return { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 };
+    }
+
+    // Save current context to suStack
+    this.suStack.push({
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      cwd: this.cwd,
+      umask: this.umask,
+    });
+
+    // Switch user
+    this.userMgr.currentUser = user.username;
+    this.userMgr.currentUid = user.uid;
+    this.userMgr.currentGid = user.gid;
+
+    if (loginShell) {
+      this.cwd = user.home;
+    }
+
+    return { output: '', exitCode: 0 };
+  }
+
+  /** Handle exit/logout — pops su stack if in su session */
+  handleExit(): { output: string; inSu: boolean } {
+    if (this.suStack.length > 0) {
+      const prev = this.suStack.pop()!;
+      this.userMgr.currentUser = prev.user;
+      this.userMgr.currentUid = prev.uid;
+      this.userMgr.currentGid = prev.gid;
+      this.cwd = prev.cwd;
+      this.umask = prev.umask;
+      return { output: 'logout', inSu: true };
+    }
+    return { output: '', inSu: false };
+  }
+
+  /** Is the current session inside a `su` context? */
+  isInSu(): boolean { return this.suStack.length > 0; }
+
+  /** Get current username for prompt */
+  getCurrentUser(): string { return this.userMgr.currentUser; }
+
+  // ─── Improved command handlers ────────────────────────────────────
+
+  private handlePasswd(args: string[]): { output: string; exitCode: number } {
+    const c = this.ctx();
+    // passwd -l username (lock)
+    if (args[0] === '-l' && args[1]) {
+      const user = this.userMgr.getUser(args[1]);
+      if (!user) return { output: `passwd: user '${args[1]}' does not exist`, exitCode: 1 };
+      user.locked = true;
+      this.userMgr.syncToFilesystem();
+      return { output: 'passwd: password expiry information changed.', exitCode: 0 };
+    }
+    // passwd -u username (unlock)
+    if (args[0] === '-u' && args[1]) {
+      const user = this.userMgr.getUser(args[1]);
+      if (!user) return { output: `passwd: user '${args[1]}' does not exist`, exitCode: 1 };
+      user.locked = false;
+      this.userMgr.syncToFilesystem();
+      return { output: '', exitCode: 0 };
+    }
+    // passwd -S username (status)
+    if (args[0] === '-S' && args[1]) {
+      return { output: cmdPasswd(c, args), exitCode: 0 };
+    }
+    // passwd username — simulate password change
+    if (args.length > 0 && !args[0].startsWith('-')) {
+      const user = this.userMgr.getUser(args[0]);
+      if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
+      this.userMgr.setPassword(args[0], 'simulated');
+      return { output: 'passwd: password updated successfully', exitCode: 0 };
+    }
+    return { output: cmdPasswd(c, args), exitCode: 0 };
+  }
+
+  private handleUserdel(args: string[]): { output: string; exitCode: number } {
+    let removeHome = false;
+    let username = '';
+    for (const a of args) {
+      if (a === '-r') removeHome = true;
+      else if (!a.startsWith('-')) username = a;
+    }
+    if (!username) return { output: 'userdel: missing username', exitCode: 1 };
+
+    const result = this.userMgr.userdel(username, removeHome);
+    if (result) return { output: result, exitCode: 1 };
+
+    const lines: string[] = [];
+    if (removeHome) {
+      lines.push(`userdel: ${username} mail spool (/var/mail/${username}) not found`);
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private handleAdduser(args: string[]): { output: string; exitCode: number } {
+    // Debian-style adduser — simulates interactive prompts
+    let username = '';
+    for (const a of args) {
+      if (!a.startsWith('-')) { username = a; break; }
+    }
+    if (!username) return { output: 'adduser: missing username', exitCode: 1 };
+
+    const c = this.ctx();
+    const result = this.userMgr.useradd(username, { m: true, s: '/bin/bash' });
+    if (result) return { output: result, exitCode: 1 };
+
+    const user = this.userMgr.getUser(username)!;
+    this.userMgr.setPassword(username, 'simulated');
+
+    // Create skeleton files
+    this.createSkeletonFiles(user.home, user.uid, user.gid);
+
+    const lines = [
+      `Adding user \`${username}' ...`,
+      `Adding new group \`${username}' (${user.gid}) ...`,
+      `Adding new user \`${username}' (${user.uid}) with group \`${username}' ...`,
+      `Creating home directory \`${user.home}' ...`,
+      `Copying files from \`/etc/skel' ...`,
+      `New password: `,
+      `Retype new password: `,
+      `passwd: password updated successfully`,
+      `Changing the user information for ${username}`,
+      `Enter the new value, or press ENTER for the default`,
+      `\tFull Name []: `,
+      `\tRoom Number []: `,
+      `\tWork Phone []: `,
+      `\tHome Phone []: `,
+      `\tOther []: `,
+      `Is the information correct? [Y/n] y`,
+    ];
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private handleDeluser(args: string[]): { output: string; exitCode: number } {
+    let removeHome = false;
+    let username = '';
+    let fromGroup = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--remove-home') { removeHome = true; continue; }
+      if (!args[i].startsWith('-')) {
+        if (!username) username = args[i];
+        else fromGroup = args[i];
+      }
+    }
+    if (!username) return { output: 'deluser: missing username', exitCode: 1 };
+
+    // deluser user group — remove user from group
+    if (fromGroup) {
+      const grp = this.userMgr.getGroup(fromGroup);
+      if (!grp) return { output: `deluser: group '${fromGroup}' does not exist`, exitCode: 1 };
+      grp.members = grp.members.filter(m => m !== username);
+      this.userMgr.syncToFilesystem();
+      return { output: `Removing user \`${username}' from group \`${fromGroup}' ...\nDone.`, exitCode: 0 };
+    }
+
+    // deluser --remove-home user
+    const result = this.userMgr.userdel(username, removeHome);
+    if (result) return { output: result, exitCode: 1 };
+
+    const lines: string[] = [];
+    if (removeHome) {
+      lines.push('Looking for files to backup/remove ...');
+      lines.push('Removing files ...');
+    }
+    lines.push(`Removing user \`${username}' ...`);
+    lines.push('Done.');
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private handleGpasswd(args: string[]): { output: string; exitCode: number } {
+    // gpasswd -d user group
+    if (args[0] === '-d' && args.length >= 3) {
+      const group = this.userMgr.getGroup(args[2]);
+      if (!group) return { output: `gpasswd: group '${args[2]}' does not exist`, exitCode: 1 };
+      group.members = group.members.filter(m => m !== args[1]);
+      this.userMgr.syncToFilesystem();
+      return { output: `Removing user ${args[1]} from group ${args[2]}`, exitCode: 0 };
+    }
+    return { output: cmdGpasswd(this.ctx(), args), exitCode: 0 };
+  }
+
+  private handleSudoCmd(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0 || args[0] === '-l') {
+      // sudo -l: show what current user can do
+      const hostname = 'linux-pc';
+      const user = this.userMgr.currentUser;
+      return {
+        output: [
+          `Matching Defaults entries for ${user} on ${hostname}:`,
+          `    env_reset, mail_badpass, secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin`,
+          ``,
+          `User ${user} may run the following commands on ${hostname}:`,
+          `    (ALL : ALL) ALL`,
+        ].join('\n'),
+        exitCode: 0,
+      };
+    }
+    return { output: cmdSudoCheck(this.ctx(), args), exitCode: 0 };
+  }
+
+  // ─── Skeleton files ───────────────────────────────────────────────
+
+  private createSkeletonFiles(home: string, uid: number, gid: number): void {
+    this.vfs.createFileAt(`${home}/.bash_logout`,
+      '# ~/.bash_logout: executed by bash(1) when login shell exits.\n\n' +
+      '# when leaving the console clear the screen to increase privacy\n\n' +
+      'if [ "$SHLVL" = 1 ]; then\n    [ -x /usr/bin/clear_console ] && /usr/bin/clear_console -q\nfi\n',
+      0o644, uid, gid);
+    this.vfs.createFileAt(`${home}/.bashrc`,
+      '# ~/.bashrc: executed by bash(1) for non-login shells.\n\n' +
+      '# If not running interactively, don\'t do anything\ncase $- in\n    *i*) ;;\n      *) return;;\nesac\n\n' +
+      '# don\'t put duplicate lines or lines starting with space in the history.\nHISTCONTROL=ignoreboth\n\n' +
+      'HISTSIZE=1000\nHISTFILESIZE=2000\n',
+      0o644, uid, gid);
+    this.vfs.createFileAt(`${home}/.profile`,
+      '# ~/.profile: executed by the command interpreter for login shells.\n\n' +
+      '# if running bash\nif [ -n "$BASH_VERSION" ]; then\n    # include .bashrc if it exists\n' +
+      '    if [ -f "$HOME/.bashrc" ]; then\n\t. "$HOME/.bashrc"\n    fi\nfi\n\n' +
+      '# set PATH so it includes user\'s private bin if it exists\nif [ -d "$HOME/bin" ] ; then\n' +
+      '    PATH="$HOME/bin:$PATH"\nfi\n',
+      0o644, uid, gid);
+  }
+
+  // ─── Environment variable expansion ───────────────────────────────
+
+  private expandEnvVars(str: string): string {
+    // Only expand variables that exist in env — leave unknown $VARS intact (for scripts)
+    return str.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name) => {
+      return this.env.has(name) ? this.env.get(name)! : match;
+    }).replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, name) => {
+      return this.env.has(name) ? this.env.get(name)! : match;
+    });
   }
 
   /** Get current working directory */
