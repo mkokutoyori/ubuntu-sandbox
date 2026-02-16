@@ -13,7 +13,6 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Switch } from '@/network/devices/Switch';
 import { Router } from '@/network/devices/Router';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -266,7 +265,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
       expect(result).toBe('');
 
       const output = await pc.executeCommand('ip route');
-      expect(output).toContain('172.16.0.0/16 via 192.168.1.254 dev eth0 metric 50');
+      expect(output).toContain('172.16.0.0/16 via 192.168.1.254 dev eth0 proto static metric 50');
     });
 
     it('should delete a static route', async () => {

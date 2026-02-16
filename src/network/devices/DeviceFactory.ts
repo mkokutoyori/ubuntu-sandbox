@@ -7,7 +7,9 @@ import { Equipment } from '../equipment/Equipment';
 import { LinuxPC } from './LinuxPC';
 import { LinuxServer } from './LinuxServer';
 import { WindowsPC } from './WindowsPC';
-import { Switch } from './Switch';
+import { CiscoSwitch } from './CiscoSwitch';
+import { HuaweiSwitch } from './HuaweiSwitch';
+import { GenericSwitch } from './GenericSwitch';
 import { Hub } from './Hub';
 import { Router } from './Router';
 
@@ -37,11 +39,11 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 
     // Switches
     case 'switch-cisco':
-      return new Switch('switch-cisco', nextName('Switch'), 24, x, y);
+      return new CiscoSwitch('switch-cisco', nextName('Switch'), 24, x, y);
     case 'switch-huawei':
-      return new Switch('switch-huawei', nextName('Switch'), 24, x, y);
+      return new HuaweiSwitch('switch-huawei', nextName('Switch'), 24, x, y);
     case 'switch-generic':
-      return new Switch('switch-generic', nextName('Switch'), 24, x, y);
+      return new GenericSwitch('switch-generic', nextName('Switch'), 24, x, y);
     case 'hub':
       return new Hub(nextName('Hub'), 8, x, y);
 

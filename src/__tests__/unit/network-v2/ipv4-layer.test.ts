@@ -16,7 +16,7 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Switch } from '@/network/devices/Switch';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Router } from '@/network/devices/Router';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -176,8 +176,8 @@ describe('Group 2: Routing & TTL', () => {
       // Topology: PC_A (10.0.1.2) — Switch — Router (10.0.1.1 / 10.0.2.1) — Switch — PC_B (10.0.2.2)
       const pcA = new LinuxPC('linux-pc', 'PC_A');
       const pcB = new LinuxPC('linux-pc', 'PC_B');
-      const sw1 = new Switch('switch-cisco', 'SW1', 8);
-      const sw2 = new Switch('switch-cisco', 'SW2', 8);
+      const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+      const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
       const router = new Router('router-cisco', 'R1');
 
       // Configure IPs
@@ -216,8 +216,8 @@ describe('Group 2: Routing & TTL', () => {
       // Same topology but we send with TTL that will expire
       const pcA = new LinuxPC('linux-pc', 'PC_A');
       const pcB = new LinuxPC('linux-pc', 'PC_B');
-      const sw1 = new Switch('switch-cisco', 'SW1', 8);
-      const sw2 = new Switch('switch-cisco', 'SW2', 8);
+      const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+      const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
       const router = new Router('router-cisco', 'R1');
 
       pcA.getPort('eth0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -270,7 +270,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
     it('should ping on same subnet with IPv4 encapsulation', async () => {
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
-      const sw = new Switch('switch-cisco', 'SW1', 8);
+      const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
       pc1.getPort('eth0')!.configureIP(new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
       pc2.getPort('eth0')!.configureIP(new IPAddress('192.168.1.20'), new SubnetMask('255.255.255.0'));

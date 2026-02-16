@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Switch } from '@/network/devices/Switch';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Hub } from '@/network/devices/Hub';
 import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -24,7 +24,7 @@ describe('Ping through Switch (equipment-driven communication)', () => {
   function setupLAN() {
     const pc1 = new LinuxPC('PC1', 100, 100);
     const pc2 = new LinuxPC('PC2', 400, 100);
-    const sw = new Switch('switch-cisco', 'Switch1', 24, 250, 250);
+    const sw = new CiscoSwitch('switch-cisco', 'Switch1', 24, 250, 250);
 
     // Connect PC1.eth0 ↔ Switch.GigabitEthernet0/0
     const cable1 = new Cable('cable-1');
@@ -250,7 +250,7 @@ describe('Ping through Switch (equipment-driven communication)', () => {
   it('should ping between Linux PC and Windows PC', async () => {
     const linux = new LinuxPC('Linux1');
     const win = new WindowsPC('Win1');
-    const sw = new Switch('switch-cisco', 'Sw1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'Sw1', 8);
 
     const cable1 = new Cable('cable-1');
     cable1.connect(linux.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
@@ -272,7 +272,7 @@ describe('Ping through Switch (equipment-driven communication)', () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
     const pc3 = new LinuxPC('PC3');
-    const sw = new Switch('switch-cisco', 'Sw1', 24);
+    const sw = new CiscoSwitch('switch-cisco', 'Sw1', 24);
 
     new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
     new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
