@@ -55,8 +55,10 @@ export class LinuxUserManager {
     // System groups
     this.addGroup({ name: 'root', gid: 0, members: [], admins: [], password: '' });
     this.addGroup({ name: 'daemon', gid: 1, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'sudo', gid: 27, members: [], admins: [], password: '' });
     this.addGroup({ name: 'adm', gid: 4, members: [], admins: [], password: '' });
+    this.addGroup({ name: 'sudo', gid: 27, members: [], admins: [], password: '' });
+    this.addGroup({ name: 'video', gid: 44, members: [], admins: [], password: '' });
+    this.addGroup({ name: 'plugdev', gid: 46, members: [], admins: [], password: '' });
     this.addGroup({ name: 'users', gid: 100, members: [], admins: [], password: '' });
     this.addGroup({ name: 'nogroup', gid: 65534, members: [], admins: [], password: '' });
 
@@ -259,15 +261,19 @@ export class LinuxUserManager {
     if (!user) return `chage: user '${username}' does not exist`;
 
     if (opts.l) {
-      const lastChange = user.lastChange === 0
-        ? 'Jan 01, 1970'
-        : new Date(user.lastChange * 86400000).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-      const expire = user.expireDate === -1 ? 'never' : new Date(user.expireDate * 86400000).toLocaleDateString();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const fmtDate = (days: number) => {
+        if (days <= 0) return 'Jan 01, 1970';
+        const d = new Date(days * 86400000);
+        return `${months[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}, ${d.getUTCFullYear()}`;
+      };
+      const lastChange = fmtDate(user.lastChange);
+      const expire = user.expireDate === -1 ? 'never' : fmtDate(user.expireDate);
       return [
-        `Last password change\t\t\t\t: ${lastChange}`,
-        `Password expires\t\t\t\t: ${user.maxDays === 99999 ? 'never' : 'in ' + user.maxDays + ' days'}`,
-        `Password inactive\t\t\t\t: ${user.inactiveDays === -1 ? 'never' : 'in ' + user.inactiveDays + ' days'}`,
-        `Account expires\t\t\t\t\t: ${expire}`,
+        `Last password change\t\t\t\t\t: ${lastChange}`,
+        `Password expires\t\t\t\t\t: ${user.maxDays === 99999 ? 'never' : 'in ' + user.maxDays + ' days'}`,
+        `Password inactive\t\t\t\t\t: ${user.inactiveDays === -1 ? 'never' : 'in ' + user.inactiveDays + ' days'}`,
+        `Account expires\t\t\t\t\t\t: ${expire}`,
         `Minimum number of days between password change\t\t: ${user.minDays}`,
         `Maximum number of days between password change\t\t: ${user.maxDays}`,
         `Number of days of Warning before password expires\t: ${user.warnDays}`,

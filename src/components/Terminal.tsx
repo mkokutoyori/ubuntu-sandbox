@@ -95,7 +95,8 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [currentPath, setCurrentPath] = useState('/home/user');
+  const [currentPath, setCurrentPath] = useState(() => device.getCwd() || '/home/user');
+  const [currentUser, setCurrentUser] = useState(() => device.getCurrentUser() || 'user');
   const [tabSuggestions, setTabSuggestions] = useState<string[] | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,16 +105,18 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   // Build prompt parts for colored rendering
   const promptParts = useMemo(() => {
     const hostname = device.getHostname() || 'localhost';
-    const user = 'user';
+    const user = currentUser;
+    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
     let path = currentPath;
-    if (path === '/home/user') path = '~';
-    else if (path.startsWith('/home/user/')) path = '~' + path.slice(10);
-    return { user, hostname, path };
-  }, [device, currentPath]);
+    if (path === homeDir) path = '~';
+    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
+    const promptChar = user === 'root' ? '#' : '$';
+    return { user, hostname, path, promptChar };
+  }, [device, currentPath, currentUser]);
 
   // Plain text prompt for history lines
   const promptText = useMemo(() =>
-    `${promptParts.user}@${promptParts.hostname}:${promptParts.path}$`,
+    `${promptParts.user}@${promptParts.hostname}:${promptParts.path}${promptParts.promptChar}`,
     [promptParts]
   );
 
@@ -144,8 +147,19 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
     // Clear tab suggestions
     setTabSuggestions(null);
 
-    // Handle exit/logout
+    // Handle exit/logout — check if in su session first
     if (trimmed === 'exit' || trimmed === 'logout') {
+      const exitResult = device.handleExit();
+      if (exitResult.inSu) {
+        // Exiting su session — show logout and update prompt
+        if (exitResult.output) addLine(exitResult.output);
+        const cwd = device.getCwd();
+        if (cwd) setCurrentPath(cwd);
+        setCurrentUser(device.getCurrentUser());
+        setInput('');
+        return;
+      }
+      // Not in su — close terminal
       onRequestClose?.();
       setInput('');
       return;
@@ -170,9 +184,10 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
         }
       }
 
-      // Sync current working directory from device (for prompt update)
+      // Sync current working directory and user from device (for prompt update after su, cd, etc.)
       const cwd = device.getCwd();
       if (cwd) setCurrentPath(cwd);
+      setCurrentUser(device.getCurrentUser());
     } catch (err) {
       addLine(`Error: ${err}`, 'error');
     }
@@ -343,7 +358,7 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
 
         {/* Input line with colored prompt */}
         <div className="flex items-center" style={{ minHeight: '1.35em' }}>
-          <ColoredPrompt user={promptParts.user} hostname={promptParts.hostname} path={promptParts.path} />
+          <ColoredPrompt user={promptParts.user} hostname={promptParts.hostname} path={promptParts.path} promptChar={promptParts.promptChar} />
           <input
             ref={inputRef}
             value={input}
@@ -368,12 +383,12 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
 // ─── Colored Prompt Component ───────────────────────────────────────
 // Renders: user@hostname:path$ with green user@host, blue path (like real bash)
 
-const ColoredPrompt: React.FC<{ user: string; hostname: string; path: string }> = ({ user, hostname, path }) => (
+const ColoredPrompt: React.FC<{ user: string; hostname: string; path: string; promptChar?: string }> = ({ user, hostname, path, promptChar = '$' }) => (
   <span className="whitespace-pre select-none" style={{ fontFamily: 'inherit' }}>
-    <span style={{ color: '#8ae234', fontWeight: 'bold' }}>{user}@{hostname}</span>
+    <span style={{ color: user === 'root' ? '#ef2929' : '#8ae234', fontWeight: 'bold' }}>{user}@{hostname}</span>
     <span style={{ color: '#ffffff' }}>:</span>
     <span style={{ color: '#729fcf', fontWeight: 'bold' }}>{path}</span>
-    <span style={{ color: '#ffffff' }}>$ </span>
+    <span style={{ color: '#ffffff' }}>{promptChar} </span>
   </span>
 );
 
@@ -387,15 +402,15 @@ const AnsiLine: React.FC<{ text: string; type: string }> = React.memo(({ text, t
 
   if (!hasAnsi) {
     // Plain text — detect prompt pattern for coloring echoed commands
-    const promptMatch = text.match(/^(\S+)@(\S+):(.+?)\$ (.*)$/);
+    const promptMatch = text.match(/^(\S+)@(\S+):(.+?)([$#]) (.*)$/);
     if (promptMatch) {
-      const [, user, hostname, path, cmd] = promptMatch;
+      const [, user, hostname, path, char, cmd] = promptMatch;
       return (
         <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit' }}>
-          <span style={{ color: '#8ae234', fontWeight: 'bold' }}>{user}@{hostname}</span>
+          <span style={{ color: user === 'root' ? '#ef2929' : '#8ae234', fontWeight: 'bold' }}>{user}@{hostname}</span>
           <span style={{ color: '#ffffff' }}>:</span>
           <span style={{ color: '#729fcf', fontWeight: 'bold' }}>{path}</span>
-          <span style={{ color: '#ffffff' }}>$ {cmd}</span>
+          <span style={{ color: '#ffffff' }}>{char} {cmd}</span>
         </pre>
       );
     }
