@@ -5,6 +5,7 @@
 import { DeviceType } from '../core/types';
 import { Equipment } from '../equipment/Equipment';
 import { LinuxPC } from './LinuxPC';
+import { LinuxServer } from './LinuxServer';
 import { WindowsPC } from './WindowsPC';
 import { Switch } from './Switch';
 import { Hub } from './Hub';
@@ -30,7 +31,7 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 
     // Servers
     case 'linux-server':
-      return new LinuxPC('linux-server', nextName('Server'), x, y);
+      return new LinuxServer('linux-server', nextName('Server'), x, y);
     case 'windows-server':
       return new WindowsPC('windows-server', nextName('WinServer'), x, y);
 
