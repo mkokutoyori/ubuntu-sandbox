@@ -43,6 +43,7 @@ export class HuaweiVRPShell implements IRouterShell {
   private selectedInterface: string | null = null;
   private selectedPool: string | null = null;
   private dhcpEnabled: boolean = false;
+  private dhcpSnoopingEnabled: boolean = false;
   /** Track which interfaces have 'dhcp select global' */
   private dhcpSelectGlobal: Set<string> = new Set();
 
@@ -162,12 +163,7 @@ export class HuaweiVRPShell implements IRouterShell {
     }
 
     if (cmd === 'dhcp') {
-      if (parts.length >= 2 && parts[1].toLowerCase() === 'enable') {
-        this.dhcpEnabled = true;
-        router._getDHCPServerInternal().enable();
-        return '';
-      }
-      return 'Error: Incomplete command.';
+      return this.cmdDhcp(router, parts.slice(1));
     }
 
     return `Error: Unrecognized command "${input}"`;
@@ -209,6 +205,11 @@ export class HuaweiVRPShell implements IRouterShell {
     // dhcp select global
     if (lower === 'dhcp select global') {
       this.dhcpSelectGlobal.add(this.selectedInterface!);
+      return '';
+    }
+
+    // dhcp snooping enable (interface level)
+    if (lower === 'dhcp snooping enable') {
       return '';
     }
 
@@ -295,7 +296,7 @@ export class HuaweiVRPShell implements IRouterShell {
     return [
       `${portName} current state : ${isUp ? (isConn ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
       `Line protocol current state : ${isConn ? 'UP' : 'DOWN'}`,
-      `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'not configured'}`,
+      `Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`,
       `The Maximum Transmit Unit is 1500`,
       `Input:  0 packets, 0 bytes`,
       `Output: 0 packets, 0 bytes`,
@@ -322,22 +323,24 @@ export class HuaweiVRPShell implements IRouterShell {
 
   private displayIpRoutingTable(router: Router): string {
     const table = router.getRoutingTable();
+    // Count unique destinations
+    const destSet = new Set(table.map(r => `${r.network}/${r.mask}`));
     const lines = [
       'Route Flags: R - relay, D - download to fib',
       '------------------------------------------------------------------------------',
       'Routing Tables: Public',
-      '         Destinations : ' + table.length + '        Routes : ' + table.length,
+      `         Destinations : ${destSet.size}        Routes : ${table.length}`,
       '',
       'Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface',
     ];
 
     for (const r of table) {
-      const dest = `${r.network}/${r.mask.toCIDR()}`.padEnd(20);
+      const dest = `${r.network}/${r.mask}`.padEnd(20);
       const proto = (r.type === 'connected' ? 'Direct' : r.type === 'rip' ? 'RIP' : 'Static').padEnd(8);
-      const pre = String(r.ad).padEnd(5);
+      const pre = String(r.type === 'connected' ? 0 : r.type === 'rip' ? 100 : 60).padEnd(5);
       const cost = String(r.metric).padEnd(6);
-      const flags = 'D'.padEnd(6);
-      const nh = r.nextHop ? r.nextHop.toString().padEnd(16) : '0.0.0.0'.padEnd(16);
+      const flags = (r.type === 'connected' ? 'D' : 'RD').padEnd(6);
+      const nh = r.nextHop ? r.nextHop.toString().padEnd(16) : r.type === 'connected' ? `${r.network}`.padEnd(16) : '0.0.0.0'.padEnd(16);
       lines.push(`${dest}${proto}${pre}${cost}${flags}${nh}${r.iface}`);
     }
     return lines.join('\n');
@@ -349,7 +352,7 @@ export class HuaweiVRPShell implements IRouterShell {
     for (const [name, port] of ports) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
-      const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
+      const ipStr = ip && mask ? `${ip}/${mask}` : 'unassigned';
       const phys = port.isConnected() ? 'up' : 'down';
       const proto = port.isConnected() ? 'up' : 'down';
       lines.push(`${name.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
@@ -384,13 +387,17 @@ export class HuaweiVRPShell implements IRouterShell {
       lines.push('dhcp enable');
       lines.push('#');
     }
+    if (this.dhcpSnoopingEnabled) {
+      lines.push('dhcp snooping enable');
+      lines.push('#');
+    }
 
     for (const [name, port] of ports) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
       lines.push(`interface ${name}`);
       if (ip && mask) {
-        lines.push(` ip address ${ip} ${mask.toCIDR()}`);
+        lines.push(` ip address ${ip} ${mask}`);
       } else {
         lines.push(` shutdown`);
       }
@@ -452,7 +459,7 @@ export class HuaweiVRPShell implements IRouterShell {
       '  Networks:',
     ];
     for (const net of cfg.networks) {
-      lines.push(`    ${net.network}/${net.mask.toCIDR()}`);
+      lines.push(`    ${net.network}/${net.mask}`);
     }
     lines.push('');
     lines.push(`  Routes: ${ripRoutes.size}`);
@@ -467,17 +474,30 @@ export class HuaweiVRPShell implements IRouterShell {
   private cmdIp(router: Router, args: string[]): string {
     if (args.length === 0) return 'Error: Incomplete command.';
 
-    // ip route-static <network> <mask> <next-hop>
+    // ip route-static <network> <mask> <next-hop> [preference <priority>] [tag <tag>]
     if (args.length >= 4 && args[0] === 'route-static') {
       try {
         const network = new IPAddress(args[1]);
         const mask = new SubnetMask(args[2]);
         const nextHop = new IPAddress(args[3]);
 
-        if (args[1] === '0.0.0.0' && args[2] === '0.0.0.0') {
-          return router.setDefaultRoute(nextHop) ? '' : 'Error: Next-hop is not reachable';
+        // Parse optional preference (priority) and tag
+        let priority = 60; // Huawei default preference for static routes
+        let tag = 0;
+        for (let i = 4; i < args.length; i++) {
+          if (args[i] === 'preference' && args[i + 1]) {
+            priority = parseInt(args[i + 1], 10);
+            i++;
+          } else if (args[i] === 'tag' && args[i + 1]) {
+            tag = parseInt(args[i + 1], 10);
+            i++;
+          }
         }
-        return router.addStaticRoute(network, mask, nextHop) ? '' : 'Error: Next-hop is not reachable';
+
+        if (args[1] === '0.0.0.0' && args[2] === '0.0.0.0') {
+          return router.setDefaultRoute(nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
+        }
+        return router.addStaticRoute(network, mask, nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
       } catch (e: any) {
         return `Error: ${e.message}`;
       }
@@ -596,6 +616,40 @@ export class HuaweiVRPShell implements IRouterShell {
     }
 
     return `Error: Unrecognized command "undo ${args.join(' ')}"`;
+  }
+
+  // ─── DHCP Command ───────────────────────────────────────────────
+
+  private cmdDhcp(router: Router, args: string[]): string {
+    if (args.length === 0) return 'Error: Incomplete command.';
+    const sub = args[0].toLowerCase();
+
+    // dhcp enable
+    if (sub === 'enable') {
+      this.dhcpEnabled = true;
+      router._getDHCPServerInternal().enable();
+      return '';
+    }
+
+    // dhcp snooping enable
+    if (sub === 'snooping' && args.length >= 2 && args[1].toLowerCase() === 'enable') {
+      this.dhcpSnoopingEnabled = true;
+      return '';
+    }
+
+    // dhcp server ip-pool <name> — alias for 'ip pool <name>'
+    if (sub === 'server' && args.length >= 3 && args[1].toLowerCase() === 'ip-pool') {
+      const poolName = args[2];
+      const dhcp = router._getDHCPServerInternal();
+      if (!dhcp.getPool(poolName)) {
+        dhcp.createPool(poolName);
+      }
+      this.selectedPool = poolName;
+      this.mode = 'dhcp-pool';
+      return '';
+    }
+
+    return 'Error: Incomplete command.';
   }
 
   // ─── Interface Name Resolution ──────────────────────────────────

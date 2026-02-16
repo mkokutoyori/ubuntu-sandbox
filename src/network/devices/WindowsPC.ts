@@ -26,6 +26,8 @@ export class WindowsPC extends EndHost {
   protected readonly defaultTTL = 128;
   /** DHCP event log for Windows Event Viewer */
   private dhcpEventLog: string[] = [];
+  /** Track synced DHCP events to avoid duplicates */
+  private trackedEvents: Set<string> = new Set();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -206,27 +208,41 @@ export class WindowsPC extends EndHost {
   private ipconfigRelease(args: string[]): string {
     const lines: string[] = ['Windows IP Configuration', ''];
 
-    for (const [name] of this.ports) {
+    // Parse adapter name: ipconfig /release "Ethernet 0" or ipconfig /release Ethernet*
+    const adapterFilter = this.parseAdapterArg(args, '/release');
+
+    let released = false;
+    for (const [name, port] of this.ports) {
+      const displayName = port.getName().replace(/^eth/, 'Ethernet ');
+
+      // If adapter specified, only release matching ones
+      if (adapterFilter && !this.matchesAdapter(displayName, name, adapterFilter)) continue;
+
       const state = this.dhcpClient.getState(name);
       if (state.lease) {
         const oldIP = state.lease.ipAddress;
         this.dhcpClient.releaseLease(name);
         this.addDHCPEvent('RELEASE', `Released IP ${oldIP} on ${name}`);
+        released = true;
       }
-    }
-
-    // All interfaces: go to INIT and mark released
-    for (const [name] of this.ports) {
-      const state = this.dhcpClient.getState(name);
       state.state = 'INIT';
     }
 
-    lines.push('All adapters have been successfully released.');
+    if (adapterFilter && !released) {
+      lines.push(`No adapter matched "${adapterFilter}".`);
+      return lines.join('\n');
+    }
+
+    lines.push(adapterFilter
+      ? `Adapter "${adapterFilter}" has been successfully released.`
+      : 'All adapters have been successfully released.');
     lines.push('');
 
     // Re-show ipconfig
-    for (const [, port] of this.ports) {
+    for (const [name, port] of this.ports) {
       const displayName = port.getName().replace(/^eth/, 'Ethernet ');
+      if (adapterFilter && !this.matchesAdapter(displayName, name, adapterFilter)) continue;
+
       lines.push(`Ethernet adapter ${displayName}:`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
       const ip = port.getIPAddress();
@@ -241,6 +257,32 @@ export class WindowsPC extends EndHost {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * Parse adapter name argument after a switch like /release or /renew.
+   * Handles quoted names: ipconfig /release "Ethernet 0"
+   * Handles wildcard: ipconfig /release Ethernet*
+   */
+  private parseAdapterArg(args: string[], switchName: string): string | null {
+    const switchIdx = args.findIndex(a => a.toLowerCase() === switchName.toLowerCase());
+    if (switchIdx === -1) return null;
+
+    // Remaining args after the switch
+    const remaining = args.slice(switchIdx + 1).filter(a => !a.startsWith('/'));
+    if (remaining.length === 0) return null;
+
+    // Join and strip quotes
+    return remaining.join(' ').replace(/^["']|["']$/g, '');
+  }
+
+  /**
+   * Check if adapter display name or port name matches a filter (supports * wildcard).
+   */
+  private matchesAdapter(displayName: string, portName: string, filter: string): boolean {
+    const pattern = filter.replace(/\*/g, '.*');
+    const regex = new RegExp(`^${pattern}$`, 'i');
+    return regex.test(displayName) || regex.test(portName);
   }
 
   private ipconfigRenew(args: string[]): string {
@@ -297,25 +339,74 @@ export class WindowsPC extends EndHost {
       const countMatch = joined.match(/\/c:(\d+)/);
       const maxCount = countMatch ? parseInt(countMatch[1], 10) : 10;
 
-      // Always include at least a default initialization event
-      const events = this.dhcpEventLog.length > 0
-        ? this.dhcpEventLog.slice(-maxCount)
-        : [`[${new Date().toISOString()}] DHCP INIT: Dhcp-Client service initialized`];
+      // Build real DHCP events from actual client state
+      this.syncDHCPEvents();
+
+      // If no real events, add service initialization event
+      if (this.dhcpEventLog.length === 0) {
+        this.addDHCPEvent('INIT', 'Dhcp-Client service initialized');
+      }
+
+      const events = this.dhcpEventLog.slice(-maxCount);
+      const eventIDs: Record<string, number> = {
+        'INIT': 1000, 'DISCOVER': 1001, 'OFFER': 1002,
+        'REQUEST': 1003, 'ACK': 1004, 'RELEASE': 1005,
+        'NAK': 1006, 'RENEW': 1007, 'RESET': 1008,
+      };
 
       const lines: string[] = [];
-      for (const event of events) {
-        lines.push(`Event[0]:`);
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i];
+        // Extract type from "[timestamp] DHCP TYPE: message"
+        const typeMatch = event.match(/DHCP (\w+):/);
+        const type = typeMatch ? typeMatch[1] : 'INFO';
+        const eventId = eventIDs[type] || 1000;
+        const dateMatch = event.match(/^\[([^\]]+)\]/);
+        const date = dateMatch ? dateMatch[1] : new Date().toISOString();
+
+        lines.push(`Event[${i}]:`);
         lines.push(`  Log Name: System`);
         lines.push(`  Source: Microsoft-Windows-Dhcp-Client`);
-        lines.push(`  Date: ${new Date().toISOString()}`);
-        lines.push(`  Event ID: 1000`);
-        lines.push(`  Description: ${event}`);
+        lines.push(`  Date: ${date}`);
+        lines.push(`  Event ID: ${eventId}`);
+        lines.push(`  Description: ${event.replace(/^\[[^\]]+\]\s*/, '')}`);
         lines.push('');
       }
       return lines.join('\n');
     }
 
     return 'Usage: wevtutil qe <log> [/q:<query>] [/f:text] [/c:<count>]';
+  }
+
+  /**
+   * Sync DHCP event log from actual DHCPClient state and logs.
+   * Reads real client state transitions instead of relying on static data.
+   */
+  private syncDHCPEvents(): void {
+    for (const [name] of this.ports) {
+      const logs = this.dhcpClient.getLogs(name);
+      if (!logs) continue;
+      const logLines = logs.split('\n').filter(Boolean);
+      for (const line of logLines) {
+        // Avoid duplicate entries
+        const eventKey = `${name}:${line}`;
+        if (!this.trackedEvents.has(eventKey)) {
+          this.trackedEvents.add(eventKey);
+          // Map DHCPClient log entries to Windows event types
+          let type = 'INFO';
+          if (line.includes('DHCPDISCOVER')) type = 'DISCOVER';
+          else if (line.includes('DHCPOFFER')) type = 'OFFER';
+          else if (line.includes('DHCPREQUEST')) type = 'REQUEST';
+          else if (line.includes('DHCPACK')) type = 'ACK';
+          else if (line.includes('DHCPNAK')) type = 'NAK';
+          else if (line.includes('released')) type = 'RELEASE';
+          else if (line.includes('RENEWING')) type = 'RENEW';
+          else if (line.includes('INIT')) type = 'INIT';
+          else if (line.includes('bound')) type = 'ACK';
+          this.addDHCPEvent(type, `${line} on ${name}`);
+        }
+      }
+    }
   }
 
   private addDHCPEvent(type: string, message: string): void {
@@ -326,10 +417,11 @@ export class WindowsPC extends EndHost {
   // ─── netsh ─────────────────────────────────────────────────────
 
   private cmdNetsh(args: string[]): string {
-    const joined = args.join(' ').toLowerCase();
+    const joined = args.join(' ');
+    const joinedLower = joined.toLowerCase();
 
     // netsh winsock reset
-    if (joined.match(/winsock\s+reset/)) {
+    if (joinedLower.match(/winsock\s+reset/)) {
       this.addDHCPEvent('RESET', 'Winsock catalog has been reset');
       return [
         '',
@@ -339,7 +431,7 @@ export class WindowsPC extends EndHost {
     }
 
     // netsh int ip reset / netsh interface ip reset
-    if (joined.match(/int(?:erface)?\s+ip\s+reset/i)) {
+    if (joinedLower.match(/int(?:erface)?\s+ip\s+reset/i)) {
       // Reset TCP/IP stack
       for (const [name, port] of this.ports) {
         port.clearIP();
@@ -355,14 +447,17 @@ export class WindowsPC extends EndHost {
       ].join('\n');
     }
 
-    // netsh interface ip set address "name" static <ip> <mask> [gateway]
-    const match = args.join(' ').match(
-      /interface\s+ip\s+set\s+address\s+"?(\w+[\s\w]*\w*)"?\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
+    // netsh interface ip set address "name with spaces" static <ip> <mask> [gateway]
+    // Parse with proper quoted string support
+    const match = joined.match(
+      /interface\s+ip\s+set\s+address\s+"([^"]+)"\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
+    ) || joined.match(
+      /interface\s+ip\s+set\s+address\s+(\S+)\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
     );
     if (!match) return 'Usage: netsh interface ip set address "name" static <ip> <mask> [gateway]';
 
     const ifName = match[1].trim();
-    const portName = ifName.replace(/^Ethernet\s*/i, 'eth');
+    const portName = this.resolveAdapterName(ifName);
     const port = this.ports.get(portName);
     if (!port) return `The interface "${ifName}" was not found.`;
 
@@ -375,6 +470,20 @@ export class WindowsPC extends EndHost {
     } catch (e: any) {
       return `Error: ${e.message}`;
     }
+  }
+
+  /**
+   * Resolve adapter display name (with spaces) to internal port name.
+   * "Ethernet 0" → "eth0", "Ethernet 1" → "eth1", "eth0" → "eth0"
+   */
+  private resolveAdapterName(name: string): string {
+    // Direct match
+    if (this.ports.has(name)) return name;
+    // "Ethernet X" → "ethX"
+    const ethMatch = name.match(/^Ethernet\s*(\d+)$/i);
+    if (ethMatch) return `eth${ethMatch[1]}`;
+    // Try replacing spaces
+    return name.replace(/^Ethernet\s*/i, 'eth');
   }
 
   // ─── ifconfig (compatibility) ──────────────────────────────────

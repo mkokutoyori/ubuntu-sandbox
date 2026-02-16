@@ -266,7 +266,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
       expect(result).toBe('');
 
       const output = await pc.executeCommand('ip route');
-      expect(output).toContain('172.16.0.0/16 via 192.168.1.254 dev eth0 metric 50');
+      expect(output).toContain('172.16.0.0/16 via 192.168.1.254 dev eth0 proto static metric 50');
     });
 
     it('should delete a static route', async () => {

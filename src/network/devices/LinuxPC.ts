@@ -146,8 +146,11 @@ export class LinuxPC extends EndHost {
     let verbose = false;
     let daemon = false;
     let release = false;
+    let exit = false;
+    let wait = false;
     let hasTimeout = false;
     let timeout = 30;
+    let specificServer: string | null = null;
     let iface = '';
 
     for (let i = 0; i < args.length; i++) {
@@ -155,6 +158,11 @@ export class LinuxPC extends EndHost {
         case '-v': verbose = true; break;
         case '-d': daemon = true; break;
         case '-r': release = true; break;
+        case '-x': exit = true; break;
+        case '-w': wait = true; break;
+        case '-s':
+          if (args[i + 1]) { specificServer = args[i + 1]; i++; }
+          break;
         case '-t':
           hasTimeout = true;
           if (args[i + 1]) { timeout = parseInt(args[i + 1], 10); i++; }
@@ -163,6 +171,21 @@ export class LinuxPC extends EndHost {
           if (!args[i].startsWith('-')) iface = args[i];
           break;
       }
+    }
+
+    // dhclient -x: stop dhclient process and release lease
+    if (exit) {
+      if (iface) {
+        this.dhcpClient.stopProcess(iface);
+        this.dhcpClient.releaseLease(iface);
+        return '';
+      }
+      // -x without interface: stop all
+      for (const [name] of this.ports) {
+        this.dhcpClient.stopProcess(name);
+        this.dhcpClient.releaseLease(name);
+      }
+      return '';
     }
 
     // dhclient -r without interface: release all interfaces
@@ -175,19 +198,36 @@ export class LinuxPC extends EndHost {
       return outputs.join('\n');
     }
 
-    if (!iface) return 'Usage: dhclient [-v] [-d] [-r] [-t timeout] <interface>';
+    if (!iface) return 'Usage: dhclient [-v] [-d] [-r] [-x] [-s server] [-w] [-t timeout] <interface>';
     if (!this.ports.has(iface)) return `RTNETLINK answers: No such device ${iface}`;
 
     if (release) {
       return this.dhcpClient.releaseLease(iface);
     }
 
-    // Auto-discover DHCP servers through network topology
-    this.autoDiscoverDHCPServers();
+    // Discover DHCP servers via broadcast (simulated through topology)
+    this.discoverDHCPServersBroadcast(specificServer);
 
     const opts: { verbose?: boolean; timeout?: number; daemon?: boolean } = { verbose, daemon };
     if (hasTimeout) opts.timeout = timeout;
+    if (wait) opts.timeout = opts.timeout || 60; // -w: wait indefinitely (use long timeout)
     return this.dhcpClient.requestLease(iface, opts);
+  }
+
+  /**
+   * Discover DHCP servers via broadcast simulation.
+   * Sends DHCPDISCOVER as broadcast (255.255.255.255 port 67) — simulated
+   * by traversing connected topology (since we can't do real L2 broadcast).
+   * If a specific server IP is given (-s flag), only register that server.
+   */
+  private discoverDHCPServersBroadcast(specificServer: string | null = null): void {
+    this.autoDiscoverDHCPServers();
+    // If -s flag specified, filter to only the specific server
+    if (specificServer) {
+      const servers = (this.dhcpClient as any).connectedServers as Array<{ server: any; serverIP: string }>;
+      const filtered = servers.filter(s => s.serverIP === specificServer);
+      (this.dhcpClient as any).connectedServers = filtered.length > 0 ? filtered : servers;
+    }
   }
 
   // ─── cat (virtual filesystem) ───────────────────────────────────
@@ -275,14 +315,33 @@ export class LinuxPC extends EndHost {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const mac = port.getMAC();
-    const status = port.getIsUp() && port.isConnected() ? 'UP,BROADCAST,RUNNING,MULTICAST' : 'UP,BROADCAST,MULTICAST';
+    // RUNNING flag: only shown when port is UP, connected, AND has link carrier
+    const isUp = port.getIsUp();
+    const isConnected = port.isConnected();
+    const hasCarrier = isUp && isConnected;
+    const flags: string[] = [];
+    if (isUp) flags.push('UP');
+    flags.push('BROADCAST');
+    if (hasCarrier) flags.push('RUNNING');
+    flags.push('MULTICAST');
+    const flagsStr = flags.join(',');
+    const flagNum = hasCarrier ? 4163 : 4099;
+    const counters = port.getCounters();
     return [
-      `${port.getName()}: flags=4163<${status}>  mtu 1500`,
+      `${port.getName()}: flags=${flagNum}<${flagsStr}>  mtu ${port.getMTU()}`,
       ip ? `        inet ${ip}  netmask ${mask || '255.255.255.0'}` : '        inet (not configured)',
       `        ether ${mac}`,
-      `        RX packets 0  bytes 0 (0.0 B)`,
-      `        TX packets 0  bytes 0 (0.0 B)`,
+      `        RX packets ${counters.framesIn}  bytes ${counters.bytesIn} (${this.formatBytes(counters.bytesIn)})`,
+      `        TX packets ${counters.framesOut}  bytes ${counters.bytesOut} (${this.formatBytes(counters.bytesOut)})`,
     ].join('\n');
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0.0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const val = bytes / Math.pow(1024, i);
+    return `${val.toFixed(1)} ${units[i]}`;
   }
 
   // ─── ip (modern iproute2) ──────────────────────────────────────
@@ -409,18 +468,18 @@ export class LinuxPC extends EndHost {
 
     for (const route of sorted) {
       if (route.type === 'default') {
+        const proto = this.isDHCPConfigured(route.iface) ? 'dhcp' : 'static';
         const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
-        lines.push(`default via ${route.nextHop} dev ${route.iface}${metricStr}`);
+        lines.push(`default via ${route.nextHop} dev ${route.iface} proto ${proto}${metricStr}`);
       } else if (route.type === 'connected') {
         // Find the source IP for this interface
         const port = this.ports.get(route.iface);
         const srcIP = port?.getIPAddress();
         const srcStr = srcIP ? ` src ${srcIP}` : '';
-        lines.push(`${route.network}/${route.mask.toCIDR()} dev ${route.iface} proto kernel scope link${srcStr}`);
+        lines.push(`${route.network}/${route.mask.toCIDR()} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric || 100}`);
       } else {
         // static
-        const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
-        lines.push(`${route.network}/${route.mask.toCIDR()} via ${route.nextHop} dev ${route.iface}${metricStr}`);
+        lines.push(`${route.network}/${route.mask.toCIDR()} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric || 100}`);
       }
     }
 
