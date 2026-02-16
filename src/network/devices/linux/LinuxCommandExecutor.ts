@@ -83,13 +83,21 @@ export class LinuxCommandExecutor {
     let pipeInput: string | undefined;
     let lastOutput = '';
     let exitCode = 0;
+    const isPipe = chain.pipeline.length > 1;
 
-    for (const segment of chain.pipeline) {
+    for (let i = 0; i < chain.pipeline.length; i++) {
+      const segment = chain.pipeline[i];
       const cmd = segment.commands[0];
       const result = this.executeSingleCommand(cmd, pipeInput);
       lastOutput = result.output;
       exitCode = result.exitCode;
-      pipeInput = lastOutput;
+      // Strip ANSI codes when piping to next command (like real terminal isatty check)
+      if (isPipe && i < chain.pipeline.length - 1) {
+        // eslint-disable-next-line no-control-regex
+        pipeInput = lastOutput.replace(/\x1b\[[0-9;]*m/g, '');
+      } else {
+        pipeInput = lastOutput;
+      }
     }
 
     return { output: lastOutput, exitCode };
@@ -339,4 +347,73 @@ export class LinuxCommandExecutor {
 
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
+
+  /** Tab completion: returns matching completions for a partial input */
+  getCompletions(partial: string): string[] {
+    const trimmed = partial.trimStart();
+    if (!trimmed) return [];
+
+    // Split into words — complete the last word
+    const parts = trimmed.split(/\s+/);
+    const isFirstWord = parts.length <= 1;
+    const word = parts[parts.length - 1] || '';
+
+    if (isFirstWord) {
+      // Complete command names
+      return this.getCommandCompletions(word);
+    }
+
+    // Complete file/directory paths
+    return this.getPathCompletions(word);
+  }
+
+  private getCommandCompletions(prefix: string): string[] {
+    const commands = [
+      'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
+      'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
+      'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'tee', 'bash', 'sh',
+      'id', 'whoami', 'groups', 'who', 'w', 'last', 'hostname', 'uname', 'sleep', 'kill',
+      'useradd', 'usermod', 'userdel', 'passwd', 'chpasswd', 'chage',
+      'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo',
+      'which', 'whereis', 'command', 'locate', 'updatedb',
+      'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+      'exit', 'logout', 'help',
+      'ifconfig', 'ip', 'ping', 'traceroute', 'netstat', 'ss', 'route', 'arp',
+      'dhclient', 'nslookup', 'dig', 'curl', 'wget',
+    ];
+    if (!prefix) return commands.sort();
+    return commands.filter(c => c.startsWith(prefix)).sort();
+  }
+
+  private getPathCompletions(word: string): string[] {
+    // Determine directory to list and prefix to match
+    let dir: string;
+    let prefix: string;
+    let displayPrefix: string;
+
+    if (word.includes('/')) {
+      const lastSlash = word.lastIndexOf('/');
+      displayPrefix = word.slice(0, lastSlash + 1);
+      prefix = word.slice(lastSlash + 1);
+      dir = this.vfs.normalizePath(displayPrefix, this.cwd);
+    } else {
+      displayPrefix = '';
+      prefix = word;
+      dir = this.cwd;
+    }
+
+    const entries = this.vfs.listDirectory(dir);
+    if (!entries) return [];
+
+    const matches: string[] = [];
+    for (const entry of entries) {
+      if (entry.name === '.' || entry.name === '..') continue;
+      if (!prefix || entry.name.startsWith(prefix)) {
+        const suffix = entry.inode.type === 'directory' ? '/' : '';
+        matches.push(displayPrefix + entry.name + suffix);
+      }
+    }
+
+    return matches.sort();
+  }
 }
