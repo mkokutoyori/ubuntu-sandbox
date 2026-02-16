@@ -32,6 +32,8 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   let sortByTime = false;
   let recursive = false;
   let dirOnly = false;
+  let classify = false;   // -F: append indicator (/ @ * |)
+  let onePerLine = false;  // -1: force single column
   const paths: string[] = [];
 
   for (const arg of args) {
@@ -46,6 +48,8 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
           case 't': sortByTime = true; break;
           case 'R': recursive = true; break;
           case 'd': dirOnly = true; break;
+          case 'F': classify = true; break;
+          case '1': onePerLine = true; break;
         }
       }
     } else if (arg.startsWith('--')) {
@@ -74,9 +78,11 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
 
       if (inode.type !== 'directory' || dirOnly) {
         // Show single file/dir entry
-        allOutput.push(formatEntry(ctx, p, inode, absPath, longFormat, showInode));
+        const opts: LsOpts = { longFormat, showInode, classify, onePerLine };
+        allOutput.push(formatEntry(ctx, p, inode, absPath, opts));
       } else {
-        const result = listDir(ctx, absPath, p, longFormat, showAll, showInode, sortBySize, sortByTime, recursive);
+        const result = listDir(ctx, absPath, p, longFormat, showAll, showInode,
+          sortBySize, sortByTime, recursive, classify, onePerLine);
         allOutput.push(result);
       }
     }
@@ -85,9 +91,17 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   return allOutput.join('\n').trimEnd();
 }
 
+interface LsOpts {
+  longFormat: boolean;
+  showInode: boolean;
+  classify: boolean;
+  onePerLine: boolean;
+}
+
 function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   longFormat: boolean, showAll: boolean, showInode: boolean,
-  sortBySize: boolean, sortByTime: boolean, recursive: boolean): string {
+  sortBySize: boolean, sortByTime: boolean, recursive: boolean,
+  classify: boolean = false, onePerLine: boolean = false): string {
   const entries = ctx.vfs.listDirectory(absPath);
   if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
 
@@ -102,16 +116,58 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
     filtered.sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  const opts: LsOpts = { longFormat, showInode, classify, onePerLine };
   const lines: string[] = [];
 
   if (recursive) {
     lines.push(`${displayPath}:`);
   }
 
-  for (const entry of filtered) {
-    if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-    const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
-    lines.push(formatEntry(ctx, entry.name, entry.inode, childPath, longFormat, showInode));
+  if (longFormat) {
+    // Compute total blocks (simulate 4K blocks)
+    let totalBlocks = 0;
+    for (const entry of filtered) {
+      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
+      totalBlocks += Math.ceil(Math.max(entry.inode.size, 1) / 4096) * 8;
+    }
+    lines.push(`total ${totalBlocks}`);
+
+    // Pre-compute column widths for proper alignment
+    const displayEntries: { name: string; inode: INode; childPath: string }[] = [];
+    for (const entry of filtered) {
+      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
+      const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
+      displayEntries.push({ name: entry.name, inode: entry.inode, childPath });
+    }
+
+    let maxLinks = 1, maxOwner = 1, maxGroup = 1, maxSize = 1;
+    for (const e of displayEntries) {
+      maxLinks = Math.max(maxLinks, String(e.inode.linkCount).length);
+      maxOwner = Math.max(maxOwner, ctx.userMgr.uidToName(e.inode.uid).length);
+      maxGroup = Math.max(maxGroup, ctx.userMgr.gidToName(e.inode.gid).length);
+      maxSize = Math.max(maxSize, String(e.inode.size).length);
+    }
+
+    for (const e of displayEntries) {
+      lines.push(formatEntryLong(ctx, e.name, e.inode, e.childPath, opts,
+        maxLinks, maxOwner, maxGroup, maxSize));
+    }
+  } else {
+    // Short format: multi-column horizontal layout (like real ls)
+    const names: string[] = [];
+    for (const entry of filtered) {
+      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
+      let displayName = entry.name;
+      if (classify) displayName += classifySuffix(entry.inode);
+      if (showInode) displayName = `${entry.inode.id} ${displayName}`;
+      names.push(displayName);
+    }
+
+    if (onePerLine || names.length === 0) {
+      lines.push(...names);
+    } else {
+      lines.push(formatColumns(names));
+    }
   }
 
   if (recursive) {
@@ -121,7 +177,8 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
         const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
         const childDisplay = displayPath === '.' ? entry.name : displayPath + '/' + entry.name;
         lines.push('');
-        lines.push(listDir(ctx, childPath, childDisplay, longFormat, showAll, showInode, sortBySize, sortByTime, recursive));
+        lines.push(listDir(ctx, childPath, childDisplay, longFormat, showAll, showInode,
+          sortBySize, sortByTime, recursive, classify, onePerLine));
       }
     }
   }
@@ -129,33 +186,118 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   return lines.join('\n');
 }
 
-function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: string,
-  longFormat: boolean, showInode: boolean): string {
+/**
+ * Format multi-column horizontal layout like real `ls`.
+ * Fills columns left-to-right, top-to-bottom (column-major order).
+ * Assumes terminal width of 80 characters.
+ */
+function formatColumns(names: string[], termWidth: number = 80): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+
+  const maxLen = Math.max(...names.map(n => n.length));
+  const colWidth = maxLen + 2; // 2-space gap between columns
+
+  if (colWidth >= termWidth) {
+    // Each name on its own line
+    return names.join('\n');
+  }
+
+  const numCols = Math.max(1, Math.floor(termWidth / colWidth));
+  const numRows = Math.ceil(names.length / numCols);
+
+  const lines: string[] = [];
+  for (let row = 0; row < numRows; row++) {
+    const parts: string[] = [];
+    for (let col = 0; col < numCols; col++) {
+      const idx = col * numRows + row;
+      if (idx < names.length) {
+        // Last column: no padding
+        if (col === numCols - 1 || (col + 1) * numRows + row >= names.length) {
+          parts.push(names[idx]);
+        } else {
+          parts.push(names[idx].padEnd(colWidth));
+        }
+      }
+    }
+    lines.push(parts.join(''));
+  }
+  return lines.join('\n');
+}
+
+/** Returns the -F suffix character for an inode type */
+function classifySuffix(inode: INode): string {
+  switch (inode.type) {
+    case 'directory': return '/';
+    case 'symlink': return '@';
+    case 'fifo': return '|';
+    case 'file':
+      // Executable check: any execute bit set
+      if (inode.permissions & 0o111) return '*';
+      return '';
+    default: return '';
+  }
+}
+
+/**
+ * Format a date like real `ls -l`:
+ * - Within the last 6 months: "Mon DD HH:MM"
+ * - Older: "Mon DD  YYYY"
+ */
+function formatLsDate(mtime: number): string {
+  const date = new Date(mtime);
+  const now = Date.now();
+  const sixMonths = 6 * 30 * 24 * 60 * 60 * 1000;
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mon = monthNames[date.getMonth()];
+  const day = date.getDate().toString().padStart(2);
+
+  if (now - mtime < sixMonths) {
+    const hh = date.getHours().toString().padStart(2, '0');
+    const mm = date.getMinutes().toString().padStart(2, '0');
+    return `${mon} ${day} ${hh}:${mm}`;
+  } else {
+    return `${mon} ${day}  ${date.getFullYear()}`;
+  }
+}
+
+function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath: string,
+  opts: LsOpts, maxLinks: number, maxOwner: number, maxGroup: number, maxSize: number): string {
   let line = '';
 
-  if (showInode) {
+  if (opts.showInode) {
     line += `${inode.id} `;
   }
 
-  if (longFormat) {
-    const perms = ctx.vfs.formatPermissions(inode);
-    const owner = ctx.userMgr.uidToName(inode.uid);
-    const group = ctx.userMgr.gidToName(inode.gid);
-    const size = inode.size;
-    const date = new Date(inode.mtime);
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const dateStr = `${monthNames[date.getMonth()]} ${date.getDate().toString().padStart(2)} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  const perms = ctx.vfs.formatPermissions(inode);
+  const owner = ctx.userMgr.uidToName(inode.uid);
+  const group = ctx.userMgr.gidToName(inode.gid);
+  const dateStr = formatLsDate(inode.mtime);
 
-    line += `${perms} ${inode.linkCount} ${owner} ${group} ${size.toString().padStart(5)} ${dateStr} ${name}`;
+  line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${name}`;
 
-    // Symlink target
-    if (inode.type === 'symlink') {
-      line += ` -> ${inode.target}`;
-    }
-  } else {
-    line += name;
+  // Symlink target
+  if (inode.type === 'symlink') {
+    line += ` -> ${inode.target}`;
   }
 
+  return line;
+}
+
+function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: string,
+  opts: LsOpts): string {
+  if (opts.longFormat) {
+    return formatEntryLong(ctx, name, inode, absPath, opts, 1, 1, 1, 1);
+  }
+
+  let line = '';
+  if (opts.showInode) {
+    line += `${inode.id} `;
+  }
+  line += name;
+  if (opts.classify) {
+    line += classifySuffix(inode);
+  }
   return line;
 }
 

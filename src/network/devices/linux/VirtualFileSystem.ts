@@ -41,21 +41,34 @@ export class VirtualFileSystem {
     rootInode.children.set('.', rootInode.id);
     rootInode.children.set('..', rootInode.id);
 
-    // Create essential directories
+    // Create essential directories (modern Ubuntu/Debian layout)
+    // Real directories under /usr; top-level /bin, /sbin, /lib, /lib64 are symlinks
     const dirs = [
-      '/bin', '/sbin', '/usr', '/usr/bin', '/usr/sbin', '/usr/local', '/usr/local/bin',
+      '/usr', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/lib64',
+      '/usr/local', '/usr/local/bin',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
       '/etc/sudoers.d',
       '/home', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
+      '/boot', '/srv',
     ];
     for (const dir of dirs) {
       this.mkdirp(dir, 0o755, 0, 0);
     }
 
+    // Modern Linux root symlinks (bin -> usr/bin, etc.)
+    this.createSymlink('/bin', 'usr/bin', 0, 0);
+    this.createSymlink('/sbin', 'usr/sbin', 0, 0);
+    this.createSymlink('/lib', 'usr/lib', 0, 0);
+    this.createSymlink('/lib64', 'usr/lib64', 0, 0);
+
     // /tmp is world-writable with sticky bit
     const tmpInode = this.resolveInode('/tmp');
     if (tmpInode) tmpInode.permissions = 0o1777;
+
+    // /root is 0o700
+    const rootHome = this.resolveInode('/root');
+    if (rootHome) rootHome.permissions = 0o700;
 
     // Create special device files
     this.createCharDev('/dev/null', 'null');
@@ -67,14 +80,14 @@ export class VirtualFileSystem {
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
 
-    // Create binaries (stubs)
+    // Create binaries (stubs) — placed in /usr/bin since /bin -> usr/bin
     const binaries = ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
       'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'cd', 'bash', 'sh',
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'hostname', 'uname', 'tee', 'sleep',
       'kill', 'locate', 'updatedb'];
     for (const bin of binaries) {
-      this.createFileAt(`/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
+      this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }
     const usrBins = ['which', 'whereis', 'sudo'];
     for (const bin of usrBins) {
