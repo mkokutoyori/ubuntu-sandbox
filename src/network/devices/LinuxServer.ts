@@ -121,4 +121,5 @@ export class LinuxServer extends EndHost {
   }
 
   getOSType(): string { return 'linux'; }
+  getCwd(): string { return this.executor.getCwd(); }
 }
