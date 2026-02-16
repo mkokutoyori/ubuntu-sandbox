@@ -95,6 +95,12 @@ export class Switch extends Equipment {
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
 
+  // ─── MAC Move Detection ───────────────────────────────────────
+  private macMoveCount: number = 0;
+
+  // ─── Port VLAN State (active/suspended) ────────────────────────
+  private portVlanStates: Map<string, 'active' | 'suspended'> = new Map();
+
   // ─── Config Persistence ─────────────────────────────────────────
   private startupConfig: string | null = null;
   private readonly initialHostname: string;
@@ -105,8 +111,11 @@ export class Switch extends Equipment {
   private snoopingLog: string[] = [];
   private syslogServer: string | null = null;
 
+  // ─── Interface Descriptions ──────────────────────────────────────
+  private interfaceDescriptions: Map<string, string> = new Map();
+
   // ─── CLI Shell ──────────────────────────────────────────────────
-  private shell: CiscoSwitchShell;
+  private shell: CiscoSwitchShell | HuaweiVRPSwitchShell;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -114,16 +123,24 @@ export class Switch extends Equipment {
     this.createPorts(portCount);
     this.initDefaultVLAN();
     this.startMACAgingProcess();
-    this.shell = new CiscoSwitchShell();
+    this.shell = this.isHuawei() ? new HuaweiVRPSwitchShell() : new CiscoSwitchShell();
   }
 
+  /** Check if this switch is a Huawei device */
+  isHuawei(): boolean { return this.deviceType.includes('huawei'); }
+
   private createPorts(count: number): void {
-    // Cisco naming: FastEthernet for first 24, GigabitEthernet for uplinks
     const isCisco = this.deviceType.includes('cisco');
+    const isHuawei = this.deviceType.includes('huawei');
+    // Huawei: new ports start in listening (802.1D), Cisco: forwarding (portfast default)
+    const initialSTP: STPPortState = isHuawei ? 'listening' : 'forwarding';
+
     for (let i = 0; i < count; i++) {
       const portName = isCisco
         ? (i < 24 ? `FastEthernet0/${i}` : `GigabitEthernet0/${i - 24}`)
-        : `eth${i}`;
+        : isHuawei
+          ? `GigabitEthernet0/0/${i}`
+          : `eth${i}`;
       const port = new Port(portName, 'ethernet');
       this.addPort(port);
 
@@ -135,8 +152,10 @@ export class Switch extends Equipment {
         trunkAllowedVlans: new Set(Array.from({ length: 4094 }, (_, i) => i + 1)),
       });
 
-      // Default STP state: forwarding
-      this.stpStates.set(portName, 'forwarding');
+      // STP initial state
+      this.stpStates.set(portName, initialSTP);
+      // Port VLAN state
+      this.portVlanStates.set(portName, 'active');
     }
   }
 
@@ -171,7 +190,7 @@ export class Switch extends Equipment {
       if (port) port.setUp(true);
     }
     // Reset shell FSM to user mode
-    this.shell = new CiscoSwitchShell();
+    this.shell = this.isHuawei() ? new HuaweiVRPSwitchShell() : new CiscoSwitchShell();
     this.startMACAgingProcess();
     // Restore startup config (NVRAM) if available
     if (this.startupConfig) {
@@ -184,7 +203,17 @@ export class Switch extends Equipment {
   createVLAN(id: number, name?: string): boolean {
     if (id < 1 || id > 4094) return false;
     if (this.vlans.has(id)) return false;
-    this.vlans.set(id, { id, name: name || `VLAN${String(id).padStart(4, '0')}`, ports: new Set() });
+    const newVlan: VLANEntry = { id, name: name || `VLAN${String(id).padStart(4, '0')}`, ports: new Set() };
+    this.vlans.set(id, newVlan);
+
+    // Reactivate any suspended ports that were assigned to this VLAN
+    for (const [portName, cfg] of this.switchportConfigs) {
+      if (cfg.mode === 'access' && cfg.accessVlan === id && this.portVlanStates.get(portName) === 'suspended') {
+        this.portVlanStates.set(portName, 'active');
+        newVlan.ports.add(portName);
+      }
+    }
+
     Logger.info(this.id, 'switch:vlan-create', `${this.name}: created VLAN ${id}`);
     return true;
   }
@@ -193,14 +222,13 @@ export class Switch extends Equipment {
     if (id === 1) return false; // Can't delete default VLAN
     if (!this.vlans.has(id)) return false;
 
-    // Move ports back to VLAN 1
+    // Suspend ports that were in this VLAN (do NOT move to VLAN 1)
     const vlan = this.vlans.get(id)!;
-    const vlan1 = this.vlans.get(1)!;
     for (const portName of vlan.ports) {
       const cfg = this.switchportConfigs.get(portName);
       if (cfg && cfg.mode === 'access' && cfg.accessVlan === id) {
-        cfg.accessVlan = 1;
-        vlan1.ports.add(portName);
+        // Port stays assigned to deleted VLAN but becomes suspended
+        this.portVlanStates.set(portName, 'suspended');
       }
     }
 
@@ -300,6 +328,45 @@ export class Switch extends Equipment {
     this.stpStates.set(portName, state);
   }
 
+  /** Advance STP timer for a port: listening→learning→forwarding */
+  advanceSTPTimer(portName: string): void {
+    const current = this.stpStates.get(portName);
+    if (current === 'listening') {
+      this.stpStates.set(portName, 'learning');
+    } else if (current === 'learning') {
+      this.stpStates.set(portName, 'forwarding');
+    }
+  }
+
+  /** Set all ports to the given STP state */
+  setAllPortsSTPState(state: STPPortState): void {
+    for (const portName of this.stpStates.keys()) {
+      this.stpStates.set(portName, state);
+    }
+  }
+
+  // ─── MAC Move Detection API ───────────────────────────────────
+
+  getMACMoveCount(): number {
+    return this.macMoveCount;
+  }
+
+  // ─── Port VLAN State API ──────────────────────────────────────
+
+  getPortVlanState(portName: string): 'active' | 'suspended' {
+    return this.portVlanStates.get(portName) || 'active';
+  }
+
+  // ─── Interface Description API ────────────────────────────────
+
+  setInterfaceDescription(portName: string, desc: string): void {
+    this.interfaceDescriptions.set(portName, desc);
+  }
+
+  getInterfaceDescription(portName: string): string | undefined {
+    return this.interfaceDescriptions.get(portName);
+  }
+
   // ─── MAC Table API ────────────────────────────────────────────────
 
   getMACTable(): MACTableEntry[] {
@@ -340,9 +407,9 @@ export class Switch extends Equipment {
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     if (!this.isPoweredOn) return;
 
-    // STP: drop frames on blocking ports (except BPDUs — not simulated)
+    // STP: drop frames on blocking/disabled/listening ports
     const stpState = this.stpStates.get(portName);
-    if (stpState === 'blocking' || stpState === 'disabled') {
+    if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening') {
       Logger.debug(this.id, 'switch:stp-drop', `${this.name}: dropping frame on ${portName} (${stpState})`);
       return;
     }
@@ -361,28 +428,31 @@ export class Switch extends Equipment {
 
     if (cfg.mode === 'access') {
       ingressVlan = cfg.accessVlan;
-      // Strip any existing tag (access port doesn't expect tags)
     } else {
       // Trunk mode
       if (taggedFrame.dot1q) {
         ingressVlan = taggedFrame.dot1q.vid;
-        // Check if VLAN is allowed on this trunk
         if (!cfg.trunkAllowedVlans.has(ingressVlan)) {
           Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${ingressVlan} not allowed on trunk ${portName}`);
           return;
         }
       } else {
-        // Untagged frame on trunk → native VLAN
         ingressVlan = cfg.trunkNativeVlan;
       }
     }
 
-    // ─── Step 2: MAC Learning ───────────────────────────────────
+    // ─── Step 2: MAC Learning (allowed in learning + forwarding) ─
     const srcMAC = frame.srcMAC.toString().toLowerCase();
     const macKey = `${ingressVlan}:${srcMAC}`;
     const existing = this.macTable.get(macKey);
 
     if (!existing || existing.type === 'dynamic') {
+      // MAC move detection: if MAC exists on a different port
+      if (existing && existing.type === 'dynamic' && existing.port !== portName) {
+        this.macMoveCount++;
+        Logger.warn(this.id, 'switch:mac-move',
+          `${this.name}: MAC ${srcMAC} moved from ${existing.port} to ${portName} (VLAN ${ingressVlan})`);
+      }
       this.macTable.set(macKey, {
         mac: srcMAC,
         vlan: ingressVlan,
@@ -392,31 +462,27 @@ export class Switch extends Equipment {
         timestamp: Date.now(),
       });
       Logger.debug(this.id, 'switch:mac-learn', `${this.name}: learned ${srcMAC} VLAN ${ingressVlan} on ${portName}`);
-    } else if (existing.type === 'dynamic') {
-      // Refresh existing entry
-      existing.port = portName;
-      existing.age = this.macAgingTime;
-      existing.timestamp = Date.now();
     }
 
     // ─── Step 3: Forwarding Decision ────────────────────────────
+    // In learning state: learn MACs but do NOT forward frames
+    if (stpState === 'learning') {
+      return;
+    }
+
     const dstMAC = frame.dstMAC.toString().toLowerCase();
 
-    // Check for multicast: Broadcast (ff:ff:ff:ff:ff:ff) or IPv6 multicast (33:33:XX:XX:XX:XX)
     const dstOctets = frame.dstMAC.getOctets();
     const isMulticast = frame.dstMAC.isBroadcast() ||
                         (dstOctets[0] === 0x33 && dstOctets[1] === 0x33);
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
-      // Broadcast, multicast, or unknown unicast → flood within VLAN
       this.floodFrame(portName, frame, ingressVlan);
     } else {
-      // Known unicast
       const dstEntry = this.macTable.get(`${ingressVlan}:${dstMAC}`)!;
       if (dstEntry.port !== portName) {
         this.forwardToPort(dstEntry.port, frame, ingressVlan);
       }
-      // Else: src and dst on same port → drop (learned locally)
     }
   }
 
@@ -430,7 +496,7 @@ export class Switch extends Equipment {
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
 
       const stpState = this.stpStates.get(portName);
-      if (stpState === 'blocking' || stpState === 'disabled') continue;
+      if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') continue;
 
       if (cfg.mode === 'access') {
         // Only flood to access ports in the same VLAN
@@ -462,7 +528,7 @@ export class Switch extends Equipment {
     if (!port || !port.getIsUp()) return;
 
     const stpState = this.stpStates.get(portName);
-    if (stpState === 'blocking' || stpState === 'disabled') return;
+    if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
 
     if (cfg.mode === 'access') {
       // Access port: strip tag
@@ -524,7 +590,10 @@ export class Switch extends Equipment {
   // ─── Config Persistence (Running → Startup) ──────────────────────
 
   getRunningConfig(): string {
-    return this.shell.buildRunningConfig(this);
+    if ('buildRunningConfig' in this.shell) {
+      return (this.shell as any).buildRunningConfig(this);
+    }
+    return '';
   }
 
   writeMemory(): string {
@@ -619,24 +688,44 @@ export class Switch extends Equipment {
   _getSyslogServer(): string | null { return this.syslogServer; }
   _setSyslogServer(ip: string): void { this.syslogServer = ip; }
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
+  _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
 
   // ─── CLI ──────────────────────────────────────────────────────────
 
-  getOSType(): string { return 'cisco-ios'; }
+  getOSType(): string { return this.isHuawei() ? 'huawei-vrp' : 'cisco-ios'; }
 
   getPrompt(): string { return this.shell.getPrompt(this); }
 
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
   cliHelp(inputBeforeQuestion: string): string {
-    return this.shell.getHelp(inputBeforeQuestion);
+    if ('getHelp' in this.shell && typeof (this.shell as any).getHelp === 'function') {
+      return (this.shell as any).getHelp(inputBeforeQuestion);
+    }
+    return '';
   }
 
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
-    return this.shell.tabComplete(input);
+    if ('tabComplete' in this.shell && typeof (this.shell as any).tabComplete === 'function') {
+      return (this.shell as any).tabComplete(input);
+    }
+    return null;
   }
 
   getBootSequence(): string {
+    if (this.isHuawei()) {
+      return [
+        '',
+        `Huawei Versatile Routing Platform Software`,
+        `VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)`,
+        `Copyright (C) 2000-2025 HUAWEI TECH CO., LTD`,
+        '',
+        `${this.hostname} with ${this.getPortNames().length} GigabitEthernet interfaces`,
+        `Base ethernet MAC address: ${this.getPort(this.getPortNames()[0])?.getMAC() || '00:00:00:00:00:00'}`,
+        '',
+        'Press ENTER to get started.',
+      ].join('\n');
+    }
     return [
       '',
       `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2`,
@@ -1637,5 +1726,501 @@ export class CiscoSwitchShell {
     return name
       .replace('FastEthernet', 'Fa')
       .replace('GigabitEthernet', 'Gi');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HuaweiVRPSwitchShell - Huawei VRP CLI Engine for Switches
+// ═══════════════════════════════════════════════════════════════════════
+
+type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan';
+
+export class HuaweiVRPSwitchShell {
+  private mode: VRPSwitchMode = 'user';
+  private selectedInterface: string | null = null;
+  private selectedVlan: number | null = null;
+
+  getMode(): VRPSwitchMode { return this.mode; }
+
+  getPrompt(sw: Switch): string {
+    const host = sw.getHostname();
+    switch (this.mode) {
+      case 'user':      return `<${host}>`;
+      case 'system':    return `[${host}]`;
+      case 'interface': return `[${host}-${this.selectedInterface}]`;
+      case 'vlan':      return `[${host}-vlan${this.selectedVlan}]`;
+      default:          return `<${host}>`;
+    }
+  }
+
+  execute(sw: Switch, input: string): string {
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+
+    // Global navigation commands
+    const lower = trimmed.toLowerCase();
+    if (lower === 'return') {
+      this.mode = 'user';
+      this.selectedInterface = null;
+      this.selectedVlan = null;
+      return '';
+    }
+    if (lower === 'quit') return this.cmdQuit();
+
+    // Route to mode-specific handler
+    switch (this.mode) {
+      case 'user':      return this.executeUserMode(sw, trimmed);
+      case 'system':    return this.executeSystemMode(sw, trimmed);
+      case 'interface': return this.executeInterfaceMode(sw, trimmed);
+      case 'vlan':      return this.executeVlanMode(sw, trimmed);
+      default:          return `Error: Unrecognized command "${trimmed}"`;
+    }
+  }
+
+  private cmdQuit(): string {
+    switch (this.mode) {
+      case 'interface':
+        this.mode = 'system';
+        this.selectedInterface = null;
+        return '';
+      case 'vlan':
+        this.mode = 'system';
+        this.selectedVlan = null;
+        return '';
+      case 'system':
+        this.mode = 'user';
+        return '';
+      case 'user':
+        return '';
+      default:
+        return '';
+    }
+  }
+
+  // ─── User View (<hostname>) ──────────────────────────────────────
+
+  private executeUserMode(sw: Switch, input: string): string {
+    const lower = input.toLowerCase();
+    const parts = input.split(/\s+/);
+
+    if (lower === 'system-view') {
+      this.mode = 'system';
+      return 'Enter system view, return user view with return command.';
+    }
+
+    if (parts[0].toLowerCase() === 'display') {
+      return this.cmdDisplay(sw, parts.slice(1));
+    }
+
+    return `Error: Unrecognized command "${input}"`;
+  }
+
+  // ─── System View ([hostname]) ────────────────────────────────────
+
+  private executeSystemMode(sw: Switch, input: string): string {
+    const parts = input.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+
+    if (cmd === 'display') return this.cmdDisplay(sw, parts.slice(1));
+
+    if (cmd === 'sysname') {
+      if (parts.length < 2) return 'Error: Incomplete command.';
+      sw._setHostnameInternal(parts[1]);
+      return '';
+    }
+
+    if (cmd === 'vlan') {
+      return this.cmdVlan(sw, parts.slice(1));
+    }
+
+    if (cmd === 'undo') {
+      return this.cmdUndo(sw, parts.slice(1));
+    }
+
+    if (cmd === 'interface') {
+      if (parts.length < 2) return 'Error: Incomplete command.';
+      const portName = this.resolveInterfaceName(sw, parts[1]);
+      if (!portName) return `Error: Wrong parameter found at '^' position.`;
+      this.selectedInterface = portName;
+      this.mode = 'interface';
+      return '';
+    }
+
+    if (cmd === 'mac-address') {
+      // mac-address aging-time <seconds>
+      if (parts.length >= 3 && parts[1].toLowerCase() === 'aging-time') {
+        const seconds = parseInt(parts[2], 10);
+        if (isNaN(seconds) || seconds < 0) return 'Error: Invalid parameter.';
+        sw.setMACAgingTime(seconds);
+        return '';
+      }
+      return 'Error: Incomplete command.';
+    }
+
+    return `Error: Unrecognized command "${input}"`;
+  }
+
+  // ─── Interface View ([hostname-GigabitEthernet0/0/X]) ──────────
+
+  private executeInterfaceMode(sw: Switch, input: string): string {
+    const parts = input.split(/\s+/);
+    const lower = input.toLowerCase();
+
+    if (lower === 'shutdown') {
+      const port = sw.getPort(this.selectedInterface!);
+      if (port) port.setUp(false);
+      return '';
+    }
+
+    if (lower === 'undo shutdown') {
+      const port = sw.getPort(this.selectedInterface!);
+      if (port) port.setUp(true);
+      return '';
+    }
+
+    if (parts[0].toLowerCase() === 'description') {
+      if (parts.length < 2) return 'Error: Incomplete command.';
+      sw.setInterfaceDescription(this.selectedInterface!, parts.slice(1).join(' '));
+      return '';
+    }
+
+    if (parts[0].toLowerCase() === 'port') {
+      return this.cmdPort(sw, parts.slice(1));
+    }
+
+    if (parts[0].toLowerCase() === 'display') {
+      return this.cmdDisplay(sw, parts.slice(1));
+    }
+
+    return `Error: Unrecognized command "${input}"`;
+  }
+
+  // ─── VLAN View ([hostname-vlanX]) ────────────────────────────────
+
+  private executeVlanMode(sw: Switch, input: string): string {
+    const parts = input.split(/\s+/);
+
+    if (parts[0].toLowerCase() === 'name') {
+      if (parts.length < 2 || this.selectedVlan === null) return 'Error: Incomplete command.';
+      sw.renameVLAN(this.selectedVlan, parts[1]);
+      return '';
+    }
+
+    return `Error: Unrecognized command "${input}"`;
+  }
+
+  // ─── VLAN Command (system view) ─────────────────────────────────
+
+  private cmdVlan(sw: Switch, args: string[]): string {
+    if (args.length < 1) return 'Error: Incomplete command.';
+
+    // vlan batch <id> <id> ...
+    if (args[0].toLowerCase() === 'batch') {
+      for (let i = 1; i < args.length; i++) {
+        const id = parseInt(args[i], 10);
+        if (!isNaN(id) && id >= 1 && id <= 4094) {
+          sw.createVLAN(id);
+        }
+      }
+      return '';
+    }
+
+    // vlan <id> → enter VLAN config mode
+    const id = parseInt(args[0], 10);
+    if (isNaN(id) || id < 1 || id > 4094) return 'Error: Wrong parameter found.';
+    if (!sw.getVLAN(id)) sw.createVLAN(id);
+    this.selectedVlan = id;
+    this.mode = 'vlan';
+    return '';
+  }
+
+  // ─── Undo Command (system view) ─────────────────────────────────
+
+  private cmdUndo(sw: Switch, args: string[]): string {
+    if (args.length < 1) return 'Error: Incomplete command.';
+
+    if (args[0].toLowerCase() === 'vlan') {
+      if (args.length < 2) return 'Error: Incomplete command.';
+      const id = parseInt(args[1], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter.';
+      if (id === 1) return 'Error: Default VLAN 1 cannot be deleted.';
+      return sw.deleteVLAN(id) ? '' : `Error: VLAN ${id} does not exist.`;
+    }
+
+    if (args[0].toLowerCase() === 'shutdown') {
+      // undo shutdown in interface mode
+      if (this.selectedInterface) {
+        const port = sw.getPort(this.selectedInterface);
+        if (port) port.setUp(true);
+        return '';
+      }
+    }
+
+    return `Error: Unrecognized command "undo ${args.join(' ')}"`;
+  }
+
+  // ─── Port Command (interface view) ──────────────────────────────
+
+  private cmdPort(sw: Switch, args: string[]): string {
+    if (args.length < 1 || !this.selectedInterface) return 'Error: Incomplete command.';
+    const sub = args.join(' ').toLowerCase();
+
+    // port link-type access|trunk
+    if (sub.startsWith('link-type')) {
+      const mode = args[1]?.toLowerCase();
+      if (mode === 'access' || mode === 'trunk') {
+        sw.setSwitchportMode(this.selectedInterface, mode);
+        return '';
+      }
+      return 'Error: Wrong parameter.';
+    }
+
+    // port default vlan <id>
+    if (sub.startsWith('default vlan')) {
+      if (args.length < 3) return 'Error: Incomplete command.';
+      const vlanId = parseInt(args[2], 10);
+      if (isNaN(vlanId)) return 'Error: Wrong parameter.';
+      sw.setSwitchportAccessVlan(this.selectedInterface, vlanId);
+      return '';
+    }
+
+    // port trunk allow-pass vlan <id> [<id>...]
+    if (sub.startsWith('trunk allow-pass vlan')) {
+      if (args.length < 4) return 'Error: Incomplete command.';
+      const vlans = new Set<number>();
+      for (let i = 3; i < args.length; i++) {
+        const id = parseInt(args[i], 10);
+        if (!isNaN(id)) vlans.add(id);
+      }
+      sw.setTrunkAllowedVlans(this.selectedInterface, vlans);
+      return '';
+    }
+
+    // port trunk pvid vlan <id>
+    if (sub.startsWith('trunk pvid vlan')) {
+      if (args.length < 4) return 'Error: Incomplete command.';
+      const vlanId = parseInt(args[3], 10);
+      if (isNaN(vlanId)) return 'Error: Wrong parameter.';
+      sw.setTrunkNativeVlan(this.selectedInterface, vlanId);
+      return '';
+    }
+
+    return `Error: Unrecognized command "port ${args.join(' ')}"`;
+  }
+
+  // ─── Display Command ────────────────────────────────────────────
+
+  private cmdDisplay(sw: Switch, args: string[]): string {
+    if (args.length === 0) return 'Error: Incomplete command.';
+    const sub = args.join(' ').toLowerCase();
+
+    if (sub === 'version') return this.displayVersion(sw);
+    if (sub === 'vlan') return this.displayVlan(sw);
+    if (sub === 'interface brief') return this.displayInterfaceBrief(sw);
+    if (sub.startsWith('interface ')) return this.displayInterface(sw, args.slice(1).join(' '));
+    if (sub === 'mac-address') return this.displayMacAddress(sw);
+    if (sub === 'mac-address aging-time') return this.displayMacAgingTime(sw);
+    if (sub === 'current-configuration') return this.displayCurrentConfig(sw);
+    if (sub.startsWith('current-configuration interface ')) {
+      return this.displayCurrentConfigInterface(sw, args.slice(2).join(' '));
+    }
+
+    return `Error: Unrecognized command "display ${args.join(' ')}"`;
+  }
+
+  private displayVersion(sw: Switch): string {
+    return [
+      'Huawei Versatile Routing Platform Software',
+      'VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)',
+      'Copyright (C) 2000-2025 HUAWEI TECH CO., LTD',
+      '',
+      `BOARD TYPE:          S5720-28X-LI-AC`,
+      `CPLD Version:        1.0`,
+      `BootROM Version:     1.0`,
+      `${sw.getHostname()} uptime is 0 days, 0 hours, 0 minutes`,
+    ].join('\n');
+  }
+
+  private displayVlan(sw: Switch): string {
+    const vlans = sw.getVLANs();
+    const configs = sw._getSwitchportConfigs();
+
+    const lines = [
+      'VLAN ID  Name                          Status   Ports',
+      '-------  ----------------------------  -------  ----------------------------',
+    ];
+
+    for (const [id, vlan] of vlans) {
+      const name = vlan.name.padEnd(30);
+      const portsInVlan: string[] = [];
+      for (const [portName, cfg] of configs) {
+        if (cfg.mode === 'access' && cfg.accessVlan === id) {
+          portsInVlan.push(portName);
+        }
+      }
+      const portsStr = portsInVlan.join(', ');
+      lines.push(`${String(id).padEnd(9)}${name}active   ${portsStr}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private displayInterfaceBrief(sw: Switch): string {
+    const ports = sw._getPortsInternal();
+    const configs = sw._getSwitchportConfigs();
+
+    const lines = ['Interface                     PHY     Protocol  InUti  OutUti'];
+    for (const [portName, port] of ports) {
+      const phys = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : 'down';
+      const proto = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : 'down';
+      lines.push(`${portName.padEnd(30)}${phys.padEnd(8)}${proto.padEnd(10)}0%     0%`);
+    }
+    return lines.join('\n');
+  }
+
+  private displayInterface(sw: Switch, ifName: string): string {
+    const portName = this.resolveInterfaceName(sw, ifName) || ifName;
+    const port = sw.getPort(portName);
+    if (!port) return `Error: Wrong parameter found at '^' position.`;
+
+    const desc = sw.getInterfaceDescription(portName) || '';
+    const isUp = port.getIsUp();
+    const isConn = port.isConnected();
+
+    return [
+      `${portName} current state : ${isUp ? (isConn ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
+      `Line protocol current state : ${isConn ? 'UP' : 'DOWN'}`,
+      `Description: ${desc}`,
+      `The Maximum Transmit Unit is 1500`,
+      `Internet protocol processing : disabled`,
+      `Input:  0 packets, 0 bytes`,
+      `Output: 0 packets, 0 bytes`,
+    ].join('\n');
+  }
+
+  private displayMacAddress(sw: Switch): string {
+    const entries = sw.getMACTable();
+    const lines = [
+      'MAC address table of slot 0:',
+      '-------------------------------------------------------------------------------',
+      'MAC Address    VLAN/VSI   Learned-From   Type',
+      '-------------------------------------------------------------------------------',
+    ];
+
+    if (entries.length === 0) {
+      lines.push('No entries found.');
+    } else {
+      for (const e of entries) {
+        lines.push(`${e.mac.padEnd(15)}${String(e.vlan).padEnd(11)}${e.port.padEnd(15)}${e.type}`);
+      }
+    }
+
+    lines.push('-------------------------------------------------------------------------------');
+    lines.push(`Total items displayed = ${entries.length}`);
+    return lines.join('\n');
+  }
+
+  private displayMacAgingTime(sw: Switch): string {
+    return `Aging time: ${sw.getMACAgingTime()} seconds`;
+  }
+
+  private displayCurrentConfig(sw: Switch): string {
+    const lines = [
+      '#',
+      `sysname ${sw.getHostname()}`,
+      '#',
+    ];
+
+    // VLANs
+    for (const [id, vlan] of sw.getVLANs()) {
+      if (id === 1) continue;
+      lines.push(`vlan ${id}`);
+      lines.push(` name ${vlan.name}`);
+      lines.push('#');
+    }
+
+    // Interfaces
+    const ports = sw._getPortsInternal();
+    const configs = sw._getSwitchportConfigs();
+    const descs = sw._getInterfaceDescriptions();
+    for (const [portName, port] of ports) {
+      const cfg = configs.get(portName);
+      if (!cfg) continue;
+
+      lines.push(`interface ${portName}`);
+      const desc = descs.get(portName);
+      if (desc) lines.push(` description ${desc}`);
+      if (cfg.mode === 'trunk') {
+        lines.push(` port link-type trunk`);
+        if (cfg.trunkNativeVlan !== 1) {
+          lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
+        }
+        const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
+        if (allowedArr.length < 4094) {
+          lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
+        }
+      } else {
+        lines.push(` port link-type access`);
+        if (cfg.accessVlan !== 1) {
+          lines.push(` port default vlan ${cfg.accessVlan}`);
+        }
+      }
+      if (!port.getIsUp()) lines.push(` shutdown`);
+      lines.push('#');
+    }
+
+    lines.push('return');
+    return lines.join('\n');
+  }
+
+  private displayCurrentConfigInterface(sw: Switch, ifName: string): string {
+    const portName = this.resolveInterfaceName(sw, ifName) || ifName;
+    const port = sw.getPort(portName);
+    const cfg = sw.getSwitchportConfig(portName);
+    if (!port || !cfg) return `Error: Wrong parameter found at '^' position.`;
+
+    const lines = [`interface ${portName}`];
+    const desc = sw.getInterfaceDescription(portName);
+    if (desc) lines.push(` description ${desc}`);
+    if (cfg.mode === 'trunk') {
+      lines.push(` port link-type trunk`);
+      if (cfg.trunkNativeVlan !== 1) {
+        lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
+      }
+      const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
+      if (allowedArr.length < 4094) {
+        lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
+      }
+    } else {
+      lines.push(` port link-type access`);
+      if (cfg.accessVlan !== 1) {
+        lines.push(` port default vlan ${cfg.accessVlan}`);
+      }
+    }
+    if (!port.getIsUp()) lines.push(` shutdown`);
+    lines.push('#');
+    return lines.join('\n');
+  }
+
+  // ─── Interface Name Resolution ──────────────────────────────────
+
+  private resolveInterfaceName(sw: Switch, input: string): string | null {
+    // Direct match
+    for (const name of sw.getPortNames()) {
+      if (name.toLowerCase() === input.toLowerCase()) return name;
+    }
+
+    // Abbreviation: GE0/0/0 → GigabitEthernet0/0/0
+    const lower = input.toLowerCase();
+    const match = lower.match(/^(ge|gigabitethernet|gi)([\d/]+)$/);
+    if (match) {
+      const numbers = match[2];
+      const resolved = `GigabitEthernet${numbers}`;
+      for (const name of sw.getPortNames()) {
+        if (name === resolved) return name;
+      }
+    }
+
+    return null;
   }
 }

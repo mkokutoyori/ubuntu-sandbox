@@ -440,20 +440,22 @@ export class LinuxPC extends EndHost {
 
   private async cmdPing(args: string[]): Promise<string> {
     let count = 4;
+    let ttl: number | undefined;
     let targetStr = '';
 
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10); i++; }
+      else if (args[i] === '-t' && args[i + 1]) { ttl = parseInt(args[i + 1], 10); i++; }
       else if (!args[i].startsWith('-')) { targetStr = args[i]; }
     }
 
-    if (!targetStr) return 'Usage: ping [-c count] <destination>';
+    if (!targetStr) return 'Usage: ping [-c count] [-t ttl] <destination>';
 
     let targetIP: IPAddress;
     try { targetIP = new IPAddress(targetStr); }
     catch { return `ping: ${targetStr}: Name or service not known`; }
 
-    const results = await this.executePingSequence(targetIP, count);
+    const results = await this.executePingSequence(targetIP, count, 2000, ttl);
 
     // Format output
     return this.formatPingOutput(targetIP, count, results);
@@ -473,6 +475,17 @@ export class LinuxPC extends EndHost {
       for (const r of results) {
         if (r.success) {
           lines.push(`64 bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
+        } else if (r.error) {
+          // ICMP error messages from routers
+          if (r.error.includes('Time to live exceeded')) {
+            const match = r.error.match(/from ([\d.]+)/);
+            const fromIP = match ? match[1] : 'unknown';
+            lines.push(`From ${fromIP} icmp_seq=${r.seq} Time to live exceeded`);
+          } else if (r.error.includes('Destination unreachable')) {
+            const match = r.error.match(/from ([\d.]+)/);
+            const fromIP = match ? match[1] : 'unknown';
+            lines.push(`From ${fromIP} icmp_seq=${r.seq} Destination Host Unreachable`);
+          }
         }
       }
     }
