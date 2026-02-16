@@ -1,8 +1,14 @@
 /**
  * WindowsTerminal - Windows CMD Terminal Emulation
  *
- * Uses the real WindowsPC/WindowsServer device classes directly.
- * All commands go through device.executeCommand().
+ * Realistic Windows Command Prompt experience:
+ *   - Dynamic prompt with current working directory (updates after cd)
+ *   - Tab auto-completion for commands and file paths
+ *   - Command history (Up/Down arrows)
+ *   - cls properly clears the terminal output
+ *   - Ctrl+C interrupt, Ctrl+L clear
+ *   - Windows-authentic color scheme and Cascadia Mono font
+ *   - Proper scrollbar styling
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -12,7 +18,7 @@ type BaseDevice = Equipment;
 interface OutputLine {
   id: number;
   text: string;
-  type: 'normal' | 'error' | 'warning';
+  type: 'normal' | 'error' | 'warning' | 'prompt';
 }
 
 interface WindowsTerminalProps {
@@ -27,17 +33,15 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [currentPath] = useState('C:\\Users\\User');
+  const [tabSuggestions, setTabSuggestions] = useState<string[] | null>(null);
+  const [currentPrompt, setCurrentPrompt] = useState('C:\\Users\\User>');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Windows CMD prompt
-  const prompt = `${currentPath}>`;
-
   // Focus on mount
   useEffect(() => {
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
   // Scroll to bottom
@@ -45,19 +49,37 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [lines]);
+  }, [lines, tabSuggestions]);
 
   // Add line to output
   const addLine = useCallback((text: string, type: OutputLine['type'] = 'normal') => {
     setLines(prev => [...prev, { id: ++lineId, text, type }]);
   }, []);
 
+  // Refresh prompt from device (after cd, cls, etc.)
+  const refreshPrompt = useCallback(async () => {
+    try {
+      const cdResult = await device.executeCommand('cd');
+      if (cdResult && !cdResult.includes('not recognized')) {
+        setCurrentPrompt(cdResult.trim() + '>');
+      }
+    } catch { /* ignore */ }
+  }, [device]);
+
   // Execute command
   const executeCommand = useCallback(async (cmd: string) => {
     const trimmed = cmd.trim();
 
+    // Clear tab suggestions
+    setTabSuggestions(null);
+
     // Echo command with prompt
-    addLine(`${prompt}${cmd}`);
+    addLine(`${currentPrompt}${cmd}`, 'prompt');
+
+    if (!trimmed) {
+      setInput('');
+      return;
+    }
 
     // Handle exit
     if (trimmed.toLowerCase() === 'exit') {
@@ -67,34 +89,106 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
     }
 
     // Add to history
-    if (trimmed) {
-      setHistory(prev => [...prev.slice(-199), trimmed]);
-      setHistoryIndex(-1);
+    setHistory(prev => [...prev.slice(-199), trimmed]);
+    setHistoryIndex(-1);
+
+    // Handle cls — clear terminal
+    if (trimmed.toLowerCase() === 'cls') {
+      setLines([]);
+      setInput('');
+      await refreshPrompt();
+      return;
     }
 
     // Execute on device
     try {
       const result = await device.executeCommand(trimmed);
 
-      if (result) {
-        // Handle clear screen (cls)
-        if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
-          setLines([]);
-        } else {
-          addLine(result);
+      if (result !== undefined && result !== null && result !== '') {
+        // Split into individual lines for proper rendering
+        const resultLines = result.split('\n');
+        for (const line of resultLines) {
+          addLine(line);
         }
+      }
+
+      // Update prompt after directory-changing commands
+      const lower = trimmed.toLowerCase();
+      if (lower.startsWith('cd ') || lower.startsWith('cd\\') || lower === 'cd' || lower.startsWith('chdir')) {
+        await refreshPrompt();
       }
     } catch (err) {
       addLine(`Error: ${err}`, 'error');
     }
 
     setInput('');
-  }, [device, prompt, addLine, onRequestClose]);
+  }, [device, currentPrompt, addLine, onRequestClose, refreshPrompt]);
+
+  // Tab completion
+  const handleTab = useCallback(() => {
+    if (!('getCompletions' in device) || typeof (device as any).getCompletions !== 'function') {
+      return;
+    }
+    const completions: string[] = (device as any).getCompletions(input);
+    if (completions.length === 0) return;
+
+    if (completions.length === 1) {
+      // Single match → auto-complete
+      const parts = input.trimStart().split(/\s+/);
+      if (parts.length <= 1) {
+        setInput(completions[0] + ' ');
+      } else {
+        const lastArg = parts[parts.length - 1];
+        const lastSep = lastArg.lastIndexOf('\\');
+        if (lastSep >= 0) {
+          parts[parts.length - 1] = lastArg.substring(0, lastSep + 1) + completions[0];
+        } else {
+          parts[parts.length - 1] = completions[0];
+        }
+        setInput(parts.join(' '));
+      }
+      setTabSuggestions(null);
+    } else {
+      // Multiple matches → find common prefix
+      let common = completions[0];
+      for (let i = 1; i < completions.length; i++) {
+        while (common && !completions[i].toLowerCase().startsWith(common.toLowerCase())) {
+          common = common.slice(0, -1);
+        }
+      }
+
+      const parts = input.trimStart().split(/\s+/);
+      const word = parts[parts.length - 1] || '';
+
+      if (common.length > word.length) {
+        if (parts.length <= 1) {
+          setInput(common);
+        } else {
+          parts[parts.length - 1] = common;
+          setInput(parts.join(' '));
+        }
+        setTabSuggestions(null);
+      } else {
+        setTabSuggestions(completions);
+      }
+    }
+  }, [device, input]);
 
   // Keyboard handling
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Clear suggestions on non-tab keys
+    if (e.key !== 'Tab') {
+      setTabSuggestions(null);
+    }
+
     if (e.key === 'Enter') {
       executeCommand(input);
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      handleTab();
       return;
     }
 
@@ -121,57 +215,107 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
       return;
     }
 
+    // Ctrl+C — abort
     if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
-      addLine(`${prompt}${input}^C`, 'warning');
+      addLine(`${currentPrompt}${input}^C`, 'warning');
       setInput('');
     }
-  }, [input, history, historyIndex, prompt, addLine, executeCommand]);
 
-  const deviceType = device.getType();
-  const isServer = deviceType.includes('server');
+    // Ctrl+L — clear screen (like cls)
+    if (e.key === 'l' && e.ctrlKey) {
+      e.preventDefault();
+      setLines([]);
+    }
+
+    // Escape — clear input
+    if (e.key === 'Escape') {
+      setInput('');
+      setTabSuggestions(null);
+    }
+  }, [input, history, historyIndex, currentPrompt, addLine, executeCommand, handleTab]);
 
   return (
-    <div className="h-full w-full bg-[#0c0c0c] text-[#cccccc] flex flex-col font-mono text-sm">
-      {/* Header */}
-      <div className="border-b border-[#333333] px-3 py-2 text-xs text-[#808080] bg-[#1a1a1a]">
-        {device.getHostname()} — {isServer ? 'Windows Server' : 'Windows'} Command Prompt
-      </div>
-
-      {/* Output */}
+    <div
+      className="h-full w-full flex flex-col text-sm"
+      style={{
+        backgroundColor: '#0c0c0c',
+        color: '#cccccc',
+        fontFamily: "'Cascadia Mono', 'Consolas', 'Courier New', monospace",
+      }}
+    >
+      {/* Terminal output area */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-auto p-3 bg-[#0c0c0c]"
+        className="flex-1 overflow-auto px-2 py-1"
+        style={{
+          backgroundColor: '#0c0c0c',
+          lineHeight: '1.25',
+        }}
         onClick={() => inputRef.current?.focus()}
       >
-        {/* Windows header */}
-        <pre className="text-[#cccccc] whitespace-pre-wrap leading-5 mb-2">
-          Microsoft Windows [Version 10.0.19045.3803]{'\n'}
-          (c) Microsoft Corporation. All rights reserved.
+        {/* Windows version banner */}
+        <pre
+          className="whitespace-pre-wrap"
+          style={{ color: '#cccccc', margin: 0, fontFamily: 'inherit', lineHeight: '1.25' }}
+        >
+          {'Microsoft Windows [Version 10.0.22631.6649]\n(c) Microsoft Corporation. All rights reserved.'}
         </pre>
+        <div style={{ height: '1.25em' }} />
 
+        {/* Output lines */}
         {lines.map((line) => (
           <pre
             key={line.id}
-            className={`whitespace-pre-wrap leading-5 ${
-              line.type === 'error' ? 'text-red-400' :
-              line.type === 'warning' ? 'text-yellow-400' :
-              'text-[#cccccc]'
-            }`}
+            className="whitespace-pre-wrap"
+            style={{
+              margin: 0,
+              fontFamily: 'inherit',
+              lineHeight: '1.25',
+              color:
+                line.type === 'error' ? '#f14c4c' :
+                line.type === 'warning' ? '#cca700' :
+                '#cccccc',
+            }}
           >
             {line.text}
           </pre>
         ))}
 
-        {/* Input line */}
-        <div className="flex items-center">
-          <span className="text-[#cccccc] whitespace-pre">{prompt}</span>
+        {/* Tab completion suggestions */}
+        {tabSuggestions && (
+          <pre style={{
+            margin: 0,
+            fontFamily: 'inherit',
+            lineHeight: '1.25',
+            color: '#808080',
+            paddingTop: '2px',
+          }}>
+            {tabSuggestions.join('  ')}
+          </pre>
+        )}
+
+        {/* Active input line */}
+        <div className="flex items-center" style={{ minHeight: '1.25em' }}>
+          <span
+            className="whitespace-pre select-none"
+            style={{ color: '#cccccc', fontFamily: 'inherit' }}
+          >
+            {currentPrompt}
+          </span>
           <input
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent outline-none text-[#cccccc] caret-[#cccccc]"
+            className="flex-1 bg-transparent outline-none border-none p-0 m-0"
+            style={{
+              color: '#cccccc',
+              caretColor: '#cccccc',
+              fontFamily: 'inherit',
+              fontSize: 'inherit',
+              lineHeight: '1.25',
+            }}
             spellCheck={false}
             autoComplete="off"
           />

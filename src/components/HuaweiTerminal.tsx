@@ -170,9 +170,9 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
 
   return (
     <div className="h-full w-full bg-[#1a1a2e] text-cyan-300 flex flex-col font-mono text-sm">
-      {/* Header */}
-      <div className="border-b border-cyan-900/50 px-3 py-2 text-xs text-cyan-600 bg-[#0f0f1e]">
-        Huawei VRP — {device.getHostname()} (NE40E Router)
+      {/* Info bar */}
+      <div className="border-b border-cyan-900/50 px-3 py-1 text-xs text-cyan-600 bg-[#0f0f1e]">
+        {device.getHostname()} — NE40E Router
       </div>
 
       {/* Output */}
