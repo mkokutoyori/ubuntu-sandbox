@@ -1204,3 +1204,211 @@ esac
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 6: Prompts Interactifs (sudo, su, passwd)
+// Simuler les prompts de mot de passe comme un vrai terminal Ubuntu
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 6: Prompts Interactifs - Authentification', () => {
+
+  describe('I-UBU-01: sudo affiche le prompt [sudo] password', () => {
+    it('should show [sudo] password prompt on first sudo command', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // Premier sudo: doit afficher le prompt password
+      const out = await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      expect(out).toContain('[sudo] password for user:');
+    });
+
+    it('should not show sudo password prompt when already root', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      // Server = root, pas de prompt
+      const out = await server.executeCommand('sudo useradd -m -s /bin/bash alice');
+      expect(out).not.toContain('[sudo] password');
+    });
+
+    it('should show sudo prompt then execute command successfully', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // sudo useradd should show prompt AND succeed
+      const out = await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      expect(out).toContain('[sudo] password for user:');
+
+      // Verify user was actually created
+      const idOut = await pc.executeCommand('id alice');
+      expect(idOut).toContain('alice');
+    });
+
+    it('should show sudo prompt for sudo passwd', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+
+      const out = await pc.executeCommand('sudo passwd alice');
+      expect(out).toContain('[sudo] password for user:');
+      expect(out).toContain('New password:');
+      expect(out).toContain('Retype new password:');
+      expect(out).toContain('passwd: password updated successfully');
+    });
+  });
+
+  describe('I-UBU-02: su affiche Password: pour les non-root', () => {
+    it('should show Password: prompt when switching user with su', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // Créer un utilisateur
+      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      await pc.executeCommand('sudo passwd alice');
+
+      // su vers alice (non-root): doit demander le password
+      const out = await pc.executeCommand('su - alice');
+      expect(out).toContain('Password:');
+    });
+
+    it('should show Password: prompt for su without login shell', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m -s /bin/bash bob');
+      await pc.executeCommand('sudo passwd bob');
+
+      const out = await pc.executeCommand('su bob');
+      expect(out).toContain('Password:');
+    });
+
+    it('should NOT show Password: when sudo su (already elevated)', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // sudo su - pas besoin de password puisque déjà sudo
+      const out = await pc.executeCommand('sudo su');
+      expect(out).not.toContain('Password:');
+    });
+
+    it('should NOT show Password: when sudo su - username', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m -s /bin/bash bob');
+
+      // sudo su - bob : pas de prompt password car sudo
+      const out = await pc.executeCommand('sudo su - bob');
+      expect(out).not.toContain('Password:');
+    });
+
+    it('should NOT show Password: when already root and using su', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      await server.executeCommand('useradd -m -s /bin/bash alice');
+
+      // Root can su without password
+      const out = await server.executeCommand('su - alice');
+      expect(out).not.toContain('Password:');
+    });
+
+    it('should switch user correctly after password prompt', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      await pc.executeCommand('sudo passwd alice');
+
+      // su vers alice
+      await pc.executeCommand('su - alice');
+
+      // Vérifier qu'on est bien alice
+      const whoami = await pc.executeCommand('whoami');
+      expect(whoami.trim()).toBe('alice');
+    });
+  });
+
+  describe('I-UBU-03: passwd affiche les prompts interactifs', () => {
+    it('should show New password / Retype prompts when changing password', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+
+      const out = await pc.executeCommand('sudo passwd alice');
+      expect(out).toContain('New password:');
+      expect(out).toContain('Retype new password:');
+      expect(out).toContain('passwd: password updated successfully');
+    });
+
+    it('should show prompts for own password change (non-root)', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // User changes own password (no args)
+      const out = await pc.executeCommand('passwd');
+      expect(out).toContain('Changing password for user');
+      expect(out).toContain('Current password:');
+      expect(out).toContain('New password:');
+      expect(out).toContain('Retype new password:');
+      expect(out).toContain('passwd: password updated successfully');
+    });
+
+    it('should not show prompts for passwd -l (lock)', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m alice');
+      const out = await pc.executeCommand('sudo passwd -l alice');
+      expect(out).not.toContain('New password:');
+    });
+
+    it('should not show prompts for passwd -S (status)', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m alice');
+      const out = await pc.executeCommand('sudo passwd -S alice');
+      expect(out).not.toContain('New password:');
+    });
+  });
+
+  describe('I-UBU-04: Workflow complet interactif', () => {
+    it('should simulate a complete user creation workflow with prompts', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // Step 1: Create user with sudo
+      const createOut = await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      expect(createOut).toContain('[sudo] password for user:');
+
+      // Step 2: Set password for alice
+      const passwdOut = await pc.executeCommand('sudo passwd alice');
+      expect(passwdOut).toContain('[sudo] password for user:');
+      expect(passwdOut).toContain('New password:');
+      expect(passwdOut).toContain('Retype new password:');
+      expect(passwdOut).toContain('passwd: password updated successfully');
+
+      // Step 3: Switch to alice
+      const suOut = await pc.executeCommand('su - alice');
+      expect(suOut).toContain('Password:');
+
+      // Step 4: Verify we are alice
+      const whoami = await pc.executeCommand('whoami');
+      expect(whoami.trim()).toBe('alice');
+
+      // Step 5: Exit back to user
+      // (exit is handled by Terminal component, not executeCommand)
+    });
+
+    it('should simulate sudo su workflow without extra password', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // Create bob
+      await pc.executeCommand('sudo useradd -m -s /bin/bash bob');
+
+      // sudo su - bob: only sudo prompt, no su Password:
+      const out = await pc.executeCommand('sudo su - bob');
+      expect(out).toContain('[sudo] password for user:');
+      expect(out).not.toContain('Password:');
+
+      // Verify we are bob
+      const whoami = await pc.executeCommand('whoami');
+      expect(whoami.trim()).toBe('bob');
+    });
+
+    it('should reject useradd without sudo from normal user', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      const out = await pc.executeCommand('useradd alice');
+      expect(out).toContain('Permission denied');
+    });
+  });
+});
