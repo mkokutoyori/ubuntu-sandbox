@@ -12,11 +12,13 @@ import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } fro
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { executeScript, executeScriptContent } from './LinuxScriptExecutor';
+import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
   readonly cron: LinuxCronManager;
+  private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
@@ -49,6 +51,11 @@ export class LinuxCommandExecutor {
       this.userMgr.currentGid = gid;
       this.cwd = '/home/user';
     }
+  }
+
+  /** Set the network context for ip command support */
+  setIpNetworkContext(ctx: IpNetworkContext): void {
+    this.ipNetworkCtx = ctx;
   }
 
   private ctx(): ShellContext {
@@ -434,6 +441,13 @@ export class LinuxCommandExecutor {
       // true/false
       case 'true': return { output: '', exitCode: 0 };
       case 'false': return { output: '', exitCode: 1 };
+
+      // ip (iproute2) — delegated to LinuxIpCommand
+      case 'ip': {
+        if (!this.ipNetworkCtx) return { output: 'ip: network context not available', exitCode: 1 };
+        const out = executeIpCommand(this.ipNetworkCtx, args);
+        return { output: out, exitCode: out.includes('Error') || out.includes('unknown') || out.includes('Cannot find') || out.includes('RTNETLINK') || out.includes('does not exist') ? 1 : 0 };
+      }
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)
