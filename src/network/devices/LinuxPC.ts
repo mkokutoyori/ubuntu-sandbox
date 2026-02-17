@@ -3,14 +3,16 @@
  *
  * Extends EndHost (which provides the full L2/L3 network stack).
  * Uses LinuxCommandExecutor for filesystem, user management, and utility commands.
- * Networking commands (ifconfig, ip, ping, arp, dhclient, traceroute) are handled
+ * Networking commands (ifconfig, ping, arp, dhclient, traceroute) are handled
  * directly since they need access to EndHost internals.
+ * The `ip` command is handled by LinuxIpCommand via LinuxCommandExecutor.
  */
 
 import { EndHost, PingResult, HostRouteEntry } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
 
 export class LinuxPC extends EndHost {
   protected readonly defaultTTL = 64;
@@ -20,6 +22,7 @@ export class LinuxPC extends EndHost {
     super(type, name, x, y);
     this.createPorts();
     this.executor = new LinuxCommandExecutor(false); // non-root user
+    this.executor.setIpNetworkContext(this.buildIpNetworkContext());
   }
 
   private createPorts(): void {
@@ -71,7 +74,7 @@ export class LinuxPC extends EndHost {
    * that need EndHost internals to handle.
    */
   private containsNetworkCommand(input: string): boolean {
-    const networkCmds = ['ifconfig', 'ip', 'ping', 'arp', 'traceroute', 'dhclient', 'ps'];
+    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps'];
     // Also check for DHCP lease file paths (cat/rm of /var/lib/dhcp/)
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&]+/);
@@ -137,10 +140,6 @@ export class LinuxPC extends EndHost {
       case 'ifconfig': {
         const parts = noSudo.split(/\s+/);
         return this.cmdIfconfig(parts.slice(1));
-      }
-      case 'ip': {
-        const parts = noSudo.split(/\s+/);
-        return this.cmdIp(parts.slice(1));
       }
       case 'ping': {
         const parts = noSudo.split(/\s+/);
@@ -362,143 +361,130 @@ export class LinuxPC extends EndHost {
     return `${val.toFixed(1)} ${units[i]}`;
   }
 
-  // ─── ip (modern iproute2) ──────────────────────────────────────
+  // ─── IpNetworkContext adapter ──────────────────────────────────
 
-  private cmdIp(args: string[]): string {
-    if (args.length === 0) return 'Usage: ip { addr | route | neigh }';
-
-    switch (args[0]) {
-      case 'addr':
-      case 'address':
-      case 'a':
-        return this.cmdIpAddr(args.slice(1));
-      case 'route':
-      case 'r':
-        return this.cmdIpRoute(args.slice(1));
-      case 'neigh':
-      case 'neighbor':
-      case 'n':
-        return this.cmdIpNeigh();
-      default:
-        return `ip: unknown subcommand '${args[0]}'`;
-    }
-  }
-
-  private cmdIpAddr(args: string[] = []): string {
-    let filterIface: string | null = null;
-    if (args.length >= 2 && args[0] === 'show') {
-      filterIface = args[1];
-    }
-
-    const lines: string[] = [];
-    let idx = 1;
-    for (const [, port] of this.ports) {
-      if (filterIface && port.getName() !== filterIface) { idx++; continue; }
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      const mac = port.getMAC();
-      const state = port.isConnected() ? 'UP' : 'DOWN';
-      lines.push(`${idx}: ${port.getName()}: <BROADCAST,MULTICAST,${state}> mtu 1500 state ${state}`);
-      lines.push(`    link/ether ${mac} brd ff:ff:ff:ff:ff:ff`);
-      if (ip && mask) {
-        const dynFlag = this.isDHCPConfigured(port.getName()) ? ' dynamic' : '';
-        lines.push(`    inet ${ip}/${mask.toCIDR()}${dynFlag} scope global ${port.getName()}`);
-      }
-      idx++;
-    }
-    return lines.join('\n');
-  }
-
-  private cmdIpRoute(args: string[]): string {
-    if (args.length >= 4 && args[0] === 'add' && args[1] === 'default' && args[2] === 'via') {
-      try {
-        this.setDefaultGateway(new IPAddress(args[3]));
-        return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
-      }
-    }
-
-    if (args.length >= 4 && args[0] === 'add' && args[2] === 'via') {
-      try {
-        const netParts = args[1].split('/');
-        if (netParts.length !== 2) return 'Error: Invalid prefix (expected <network>/<cidr>)';
-        const network = new IPAddress(netParts[0]);
-        const mask = SubnetMask.fromCIDR(parseInt(netParts[1], 10));
-        const nextHop = new IPAddress(args[3]);
-        let metric = 100;
-        const metricIdx = args.indexOf('metric');
-        if (metricIdx !== -1 && args[metricIdx + 1]) {
-          metric = parseInt(args[metricIdx + 1], 10);
+  private buildIpNetworkContext(): IpNetworkContext {
+    const self = this;
+    return {
+      getInterfaceNames(): string[] {
+        const names: string[] = [];
+        for (const [name] of self.ports) names.push(name);
+        return names;
+      },
+      getInterfaceInfo(name: string): IpInterfaceInfo | null {
+        const port = self.ports.get(name);
+        if (!port) return null;
+        const ip = port.getIPAddress();
+        const mask = port.getSubnetMask();
+        const counters = port.getCounters();
+        return {
+          name: port.getName(),
+          mac: port.getMAC().toString(),
+          ip: ip ? ip.toString() : null,
+          mask: mask ? mask.toString() : null,
+          cidr: mask ? mask.toCIDR() : null,
+          mtu: port.getMTU(),
+          isUp: port.getIsUp(),
+          isConnected: port.isConnected(),
+          isDHCP: self.isDHCPConfigured(name),
+          counters: {
+            framesIn: counters.framesIn,
+            framesOut: counters.framesOut,
+            bytesIn: counters.bytesIn,
+            bytesOut: counters.bytesOut,
+          },
+        };
+      },
+      configureInterface(ifName: string, ip: string, cidr: number): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `Cannot find device "${ifName}"`;
+        try {
+          const mask = SubnetMask.fromCIDR(cidr);
+          self.configureInterface(ifName, new IPAddress(ip), mask);
+          return '';
+        } catch (e: any) {
+          return `Error: ${e.message}`;
         }
-        if (!this.addStaticRoute(network, mask, nextHop, metric)) {
-          return 'RTNETLINK answers: Network is unreachable';
-        }
+      },
+      removeInterfaceIP(ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `Cannot find device "${ifName}"`;
+        port.clearIP();
         return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
-      }
-    }
-
-    if (args.length >= 2 && args[0] === 'del' && args[1] === 'default') {
-      this.clearDefaultGateway();
-      return '';
-    }
-
-    if (args.length >= 2 && args[0] === 'del') {
-      try {
-        const netParts = args[1].split('/');
-        if (netParts.length !== 2) return 'Error: Invalid prefix';
-        const network = new IPAddress(netParts[0]);
-        const mask = SubnetMask.fromCIDR(parseInt(netParts[1], 10));
-        if (!this.removeRoute(network, mask)) {
-          return 'RTNETLINK answers: No such process';
+      },
+      getRoutingTable(): IpRouteEntry[] {
+        const table = self.getRoutingTable();
+        return table.map(r => ({
+          network: r.network.toString(),
+          cidr: r.mask.toCIDR(),
+          nextHop: r.nextHop ? r.nextHop.toString() : null,
+          iface: r.iface,
+          type: r.type,
+          metric: r.metric,
+          isDHCP: self.isDHCPConfigured(r.iface),
+          srcIp: r.type === 'connected' ? self.ports.get(r.iface)?.getIPAddress()?.toString() : undefined,
+        }));
+      },
+      addDefaultRoute(gateway: string): string {
+        try {
+          self.setDefaultGateway(new IPAddress(gateway));
+          return '';
+        } catch (e: any) {
+          return `Error: ${e.message}`;
         }
+      },
+      addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string {
+        try {
+          const mask = SubnetMask.fromCIDR(cidr);
+          if (!self.addStaticRoute(new IPAddress(network), mask, new IPAddress(gateway), metric ?? 100)) {
+            return 'RTNETLINK answers: Network is unreachable';
+          }
+          return '';
+        } catch (e: any) {
+          return `Error: ${e.message}`;
+        }
+      },
+      deleteDefaultRoute(): string {
+        if (!self.getDefaultGateway()) return 'RTNETLINK answers: No such process';
+        self.clearDefaultGateway();
         return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
-      }
-    }
-
-    return this.showRoutingTable();
-  }
-
-  private showRoutingTable(): string {
-    const table = this.getRoutingTable();
-    if (table.length === 0) return 'No routes configured';
-
-    const lines: string[] = [];
-    const sorted = [...table].sort((a, b) => {
-      const order = { connected: 0, static: 1, default: 2 };
-      return order[a.type] - order[b.type];
-    });
-
-    for (const route of sorted) {
-      if (route.type === 'default') {
-        const proto = this.isDHCPConfigured(route.iface) ? 'dhcp' : 'static';
-        const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
-        lines.push(`default via ${route.nextHop} dev ${route.iface} proto ${proto}${metricStr}`);
-      } else if (route.type === 'connected') {
-        const port = this.ports.get(route.iface);
-        const srcIP = port?.getIPAddress();
-        const srcStr = srcIP ? ` src ${srcIP}` : '';
-        lines.push(`${route.network}/${route.mask.toCIDR()} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric || 100}`);
-      } else {
-        // static
-        lines.push(`${route.network}/${route.mask.toCIDR()} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric || 100}`);
-      }
-    }
-
-    return lines.join('\n');
-  }
-
-  private cmdIpNeigh(): string {
-    if (this.arpTable.size === 0) return '';
-    const lines: string[] = [];
-    for (const [ip, entry] of this.arpTable) {
-      lines.push(`${ip} dev ${entry.iface} lladdr ${entry.mac} REACHABLE`);
-    }
-    return lines.join('\n');
+      },
+      deleteRoute(network: string, cidr: number): string {
+        try {
+          const mask = SubnetMask.fromCIDR(cidr);
+          if (!self.removeRoute(new IPAddress(network), mask)) {
+            return 'RTNETLINK answers: No such process';
+          }
+          return '';
+        } catch (e: any) {
+          return `Error: ${e.message}`;
+        }
+      },
+      getNeighborTable(): IpNeighborEntry[] {
+        const entries: IpNeighborEntry[] = [];
+        for (const [ip, entry] of self.arpTable) {
+          entries.push({
+            ip,
+            mac: entry.mac.toString(),
+            iface: entry.iface,
+            state: 'REACHABLE',
+          });
+        }
+        return entries;
+      },
+      setInterfaceUp(ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `Cannot find device "${ifName}"`;
+        port.setUp(true);
+        return '';
+      },
+      setInterfaceDown(ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `Cannot find device "${ifName}"`;
+        port.setUp(false);
+        return '';
+      },
+    };
   }
 
   // ─── ping ──────────────────────────────────────────────────────
