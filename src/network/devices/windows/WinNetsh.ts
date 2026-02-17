@@ -124,8 +124,6 @@ const SUB_CONTEXT_STUB: Record<string, string> = {
   advfirewall: 'advfirewall',
   branchcache: 'branchcache',
   bridge: 'bridge',
-  dhcpclient: 'dhcpclient',
-  dnsclient: 'dnsclient',
   firewall: 'firewall',
   http: 'http',
   ipsec: 'ipsec',
@@ -193,6 +191,16 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
   // netsh interface ...
   if (args[0].toLowerCase() === 'interface' || args[0].toLowerCase() === 'int') {
     return handleNetshInterface(ctx, args.slice(1));
+  }
+
+  // netsh dhcpclient ...
+  if (args[0].toLowerCase() === 'dhcpclient') {
+    return handleNetshDhcpclient(ctx, args.slice(1));
+  }
+
+  // netsh dnsclient ...
+  if (args[0].toLowerCase() === 'dnsclient') {
+    return handleNetshDnsclient(ctx, args.slice(1));
   }
 
   // netsh p2p ?
@@ -688,6 +696,230 @@ function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
   if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
 
   ctx.clearInterfaceIP(portName);
+  return 'Ok.';
+}
+
+// ─── netsh dhcpclient ───────────────────────────────────────────────
+
+const NETSH_DHCPCLIENT_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+help           - Displays a list of commands.
+list           - Lists DHCP protocol interfaces.
+trace          - Changes to the \`netsh dhcpclient trace' context.
+
+The following sub-contexts are available:
+ trace
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_DHCPCLIENT_TRACE_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+disable        - Disables DHCP client tracing.
+enable         - Enables DHCP client tracing.
+help           - Displays a list of commands.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
+    return NETSH_DHCPCLIENT_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+
+  if (sub === 'list') {
+    return handleDhcpclientList(ctx);
+  }
+
+  if (sub === 'trace') {
+    return handleDhcpclientTrace(ctx, args.slice(1));
+  }
+
+  return NETSH_DHCPCLIENT_HELP;
+}
+
+function handleDhcpclientList(ctx: WinCommandContext): string {
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('DHCP Protocol Interface List');
+  lines.push('----------------------------------------------------------------------');
+  lines.push(`${'Interface'.padEnd(20)}${'State'.padEnd(12)}${'IP Address'.padEnd(18)}Source`);
+  lines.push('----------------------------------------------------------------------');
+
+  for (const [name, port] of ctx.ports) {
+    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const isDHCP = ctx.isDHCPConfigured(name);
+    const dhcpState = ctx.getDHCPState(name);
+    const ip = port.getIPAddress();
+
+    let state: string;
+    let source: string;
+
+    if (isDHCP) {
+      state = dhcpState?.state ?? 'INIT';
+      source = 'DHCP';
+    } else if (ip) {
+      state = 'Static';
+      source = 'Manual';
+    } else {
+      state = dhcpState?.state ?? 'INIT';
+      source = '---';
+    }
+
+    const ipStr = ip ? ip.toString() : '---';
+    lines.push(`${displayName.padEnd(20)}${state.padEnd(12)}${ipStr.padEnd(18)}${source}`);
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+function handleDhcpclientTrace(ctx: WinCommandContext, args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
+    return NETSH_DHCPCLIENT_TRACE_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+
+  if (sub === 'enable') {
+    ctx.setDhcpTraceEnabled(true);
+    ctx.addDHCPEvent('TRACE', 'DHCP client tracing enabled');
+    return 'DHCP client tracing has been enabled.';
+  }
+
+  if (sub === 'disable') {
+    ctx.setDhcpTraceEnabled(false);
+    ctx.addDHCPEvent('TRACE', 'DHCP client tracing disabled');
+    return 'DHCP client tracing has been disabled.';
+  }
+
+  if (sub === 'show') {
+    if (args.length > 1 && args[1].toLowerCase() === 'status') {
+      const enabled = ctx.getDhcpTraceEnabled();
+      return `DHCP client tracing is currently ${enabled ? 'enabled' : 'disabled'}.`;
+    }
+    return `The following commands are available:\n\nCommands in this context:\nshow status    - Displays the current trace status.`;
+  }
+
+  return NETSH_DHCPCLIENT_TRACE_HELP;
+}
+
+// ─── netsh dnsclient ────────────────────────────────────────────────
+
+const NETSH_DNSCLIENT_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+help           - Displays a list of commands.
+set            - Sets configuration information.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_DNSCLIENT_SHOW_HELP = `The following commands are available:
+
+Commands in this context:
+show encryption - Displays DNS encryption settings.
+show state      - Displays the DNS client state.`;
+
+function handleNetshDnsclient(ctx: WinCommandContext, args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
+    return NETSH_DNSCLIENT_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+
+  if (sub === 'show') {
+    return handleDnsclientShow(ctx, args.slice(1));
+  }
+
+  if (sub === 'set') {
+    return handleDnsclientSet(ctx, args.slice(1));
+  }
+
+  return NETSH_DNSCLIENT_HELP;
+}
+
+function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+    return NETSH_DNSCLIENT_SHOW_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+
+  if (sub === 'state') {
+    return handleDnsclientShowState(ctx);
+  }
+
+  if (sub === 'encryption') {
+    return 'DNS over HTTPS (DoH) encryption settings:\n\n  No DNS encryption servers are configured.\n\n  DNS encryption is not enabled for any interface.';
+  }
+
+  return NETSH_DNSCLIENT_SHOW_HELP;
+}
+
+function handleDnsclientShowState(ctx: WinCommandContext): string {
+  const lines: string[] = [];
+  const suffix = ctx.getDnsSuffix();
+
+  lines.push('');
+  lines.push('DNS Client State');
+  lines.push('----------------------------------------------------------------------');
+  lines.push(`  Primary DNS Suffix:            ${suffix || '(none)'}`);
+  lines.push(`  DNS Suffix Search List:         ${suffix || '(none)'}`);
+  lines.push('');
+
+  for (const [name] of ctx.ports) {
+    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const dnsMode = ctx.getDnsMode(name);
+    const servers = ctx.getDnsServers(name);
+
+    lines.push(`  Interface: ${displayName}`);
+    lines.push(`    DNS Source:                  ${dnsMode === 'dhcp' ? 'DHCP' : 'Static'}`);
+    if (servers.length > 0) {
+      lines.push(`    DNS Servers:                 ${servers[0]}`);
+      for (let i = 1; i < servers.length; i++) {
+        lines.push(`                                 ${servers[i]}`);
+      }
+    } else {
+      lines.push(`    DNS Servers:                 (none)`);
+    }
+    if (suffix) {
+      lines.push(`    Connection DNS Suffix:       ${suffix}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function handleDnsclientSet(ctx: WinCommandContext, args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+    return 'Usage: set global [dnssuffix=]<string>';
+  }
+
+  if (args[0].toLowerCase() !== 'global') {
+    return 'Usage: set global [dnssuffix=]<string>';
+  }
+
+  const joined = args.slice(1).join(' ');
+
+  // set global dnssuffix=<value>
+  const match = joined.match(/dnssuffix=(.*)$/i);
+  if (!match) {
+    return 'Usage: set global [dnssuffix=]<string>';
+  }
+
+  const suffix = match[1].trim();
+  ctx.setDnsSuffix(suffix);
   return 'Ok.';
 }
 

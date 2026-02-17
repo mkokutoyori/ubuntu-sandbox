@@ -45,6 +45,10 @@ export class WindowsPC extends EndHost {
   private env: Map<string, string> = new Map();
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
+  /** DHCP client trace flag */
+  private dhcpTraceEnabled: boolean = false;
+  /** Primary DNS suffix (set via netsh dnsclient set global) */
+  private dnsSuffix: string = '';
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -326,6 +330,7 @@ export class WindowsPC extends EndHost {
         this.routingTable = [];
         this.arpTable.clear();
         this.dnsConfig.clear();
+        this.dnsSuffix = '';
       },
 
       // DNS management
@@ -371,6 +376,14 @@ export class WindowsPC extends EndHost {
         if (port) port.clearIP();
         this.dhcpInterfaces.add(ifName);
       },
+
+      // DHCP tracing
+      getDhcpTraceEnabled: () => this.dhcpTraceEnabled,
+      setDhcpTraceEnabled: (enabled: boolean) => { this.dhcpTraceEnabled = enabled; },
+
+      // DNS suffix
+      getDnsSuffix: () => this.dnsSuffix,
+      setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
     };
   }
 
