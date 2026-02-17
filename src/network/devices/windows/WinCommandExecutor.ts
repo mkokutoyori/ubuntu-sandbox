@@ -92,4 +92,12 @@ export interface WinCommandContext {
 
   // Switch interface to DHCP mode (address source)
   setAddressDhcp(ifName: string): void;
+
+  // DHCP tracing
+  getDhcpTraceEnabled(): boolean;
+  setDhcpTraceEnabled(enabled: boolean): void;
+
+  // DNS suffix
+  getDnsSuffix(): string;
+  setDnsSuffix(suffix: string): void;
 }
