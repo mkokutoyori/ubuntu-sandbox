@@ -33,6 +33,8 @@ export interface GroupEntry {
 export class LinuxUserManager {
   private users: Map<string, UserEntry> = new Map();
   private groups: Map<string, GroupEntry> = new Map();
+  /** Plaintext password store for simulation (username → password) */
+  private passwords: Map<string, string> = new Map();
   private nextUid = 1000;
   private nextGid = 1000;
   currentUser = 'root';
@@ -47,6 +49,7 @@ export class LinuxUserManager {
     // System users
     this.addUser({ username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash',
       password: 'x', locked: false, lastChange: this.daysSinceEpoch(), minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1 });
+    this.passwords.set('root', 'admin');
     this.addUser({ username: 'daemon', uid: 1, gid: 1, gecos: 'daemon', home: '/usr/sbin', shell: '/usr/sbin/nologin',
       password: '*', locked: true, lastChange: this.daysSinceEpoch(), minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1 });
     this.addUser({ username: 'nobody', uid: 65534, gid: 65534, gecos: 'nobody', home: '/nonexistent', shell: '/usr/sbin/nologin',
@@ -244,8 +247,16 @@ export class LinuxUserManager {
     if (!user) return `passwd: user '${username}' does not exist`;
     user.password = `$6$simulated$${password}`;
     user.lastChange = this.daysSinceEpoch();
+    this.passwords.set(username, password);
     this.syncToFilesystem();
     return '';
+  }
+
+  /** Verify a user's password. Returns true if correct. */
+  checkPassword(username: string, password: string): boolean {
+    const stored = this.passwords.get(username);
+    if (stored === undefined) return false;
+    return stored === password;
   }
 
   passwdStatus(username: string): string {
