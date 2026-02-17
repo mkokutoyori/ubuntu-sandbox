@@ -102,7 +102,7 @@ function ipconfigBasic(ctx: WinCommandContext): string {
     lines.push(`Ethernet adapter ${displayName}:`, '');
     lines.push(`   Connection-specific DNS Suffix  . :`);
 
-    if (!isConnected && !ip) {
+    if (!port.getIsUp() || (!isConnected && !ip)) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
     } else if (ip) {
       lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
@@ -140,7 +140,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
 
-    if (!isConnected && !ip) {
+    if (!port.getIsUp() || (!isConnected && !ip)) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);

@@ -43,6 +43,8 @@ export class WindowsPC extends EndHost {
   private cwd: string = 'C:\\Users\\User';
   /** Environment variables */
   private env: Map<string, string> = new Map();
+  /** Per-interface DNS configuration: portName → { servers, mode } */
+  private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -323,6 +325,51 @@ export class WindowsPC extends EndHost {
         this.defaultGateway = null;
         this.routingTable = [];
         this.arpTable.clear();
+        this.dnsConfig.clear();
+      },
+
+      // DNS management
+      getDnsServers: (ifName: string) => {
+        const cfg = this.dnsConfig.get(ifName);
+        return cfg ? [...cfg.servers] : [];
+      },
+      setDnsServers: (ifName: string, servers: string[]) => {
+        this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+      },
+      getDnsMode: (ifName: string) => {
+        return this.dnsConfig.get(ifName)?.mode ?? 'dhcp';
+      },
+      setDnsMode: (ifName: string, mode: 'static' | 'dhcp') => {
+        if (mode === 'dhcp') {
+          this.dnsConfig.set(ifName, { servers: [], mode: 'dhcp' });
+        } else {
+          const cfg = this.dnsConfig.get(ifName);
+          if (cfg) cfg.mode = 'static';
+          else this.dnsConfig.set(ifName, { servers: [], mode: 'static' });
+        }
+      },
+
+      // Interface admin state
+      setInterfaceAdmin: (ifName: string, enabled: boolean) => {
+        const port = this.ports.get(ifName);
+        if (port) port.setUp(enabled);
+      },
+      getInterfaceAdmin: (ifName: string) => {
+        const port = this.ports.get(ifName);
+        return port ? port.getIsUp() : false;
+      },
+
+      // IP address removal
+      clearInterfaceIP: (ifName: string) => {
+        const port = this.ports.get(ifName);
+        if (port) port.clearIP();
+      },
+
+      // Switch interface to DHCP address mode
+      setAddressDhcp: (ifName: string) => {
+        const port = this.ports.get(ifName);
+        if (port) port.clearIP();
+        this.dhcpInterfaces.add(ifName);
       },
     };
   }
