@@ -1206,200 +1206,145 @@ esac
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// GROUP 6: Prompts Interactifs (sudo, su, passwd)
-// Simuler les prompts de mot de passe comme un vrai terminal Ubuntu
+// GROUP 6: Authentification, Mots de Passe et Gestion des Fichiers Utilisateur
+// Backend: password infrastructure, fichiers créés par adduser, permissions
+// UI: prompts interactifs gérés par Terminal.tsx (non testés ici)
 // ═══════════════════════════════════════════════════════════════════
 
-describe('Group 6: Prompts Interactifs - Authentification', () => {
+describe('Group 6: Authentification et Fichiers Utilisateur', () => {
 
-  describe('I-UBU-01: sudo affiche le prompt [sudo] password', () => {
-    it('should show [sudo] password prompt on first sudo command', async () => {
+  describe('I-UBU-01: Infrastructure des mots de passe', () => {
+    it('should have default password "admin" for PC user', () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
-
-      // Premier sudo: doit afficher le prompt password
-      const out = await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-      expect(out).toContain('[sudo] password for user:');
+      expect(pc.checkPassword('user', 'admin')).toBe(true);
+      expect(pc.checkPassword('user', 'wrong')).toBe(false);
     });
 
-    it('should not show sudo password prompt when already root', async () => {
+    it('should have default password "admin" for root', () => {
       const server = new LinuxServer('linux-server', 'SRV1');
-
-      // Server = root, pas de prompt
-      const out = await server.executeCommand('sudo useradd -m -s /bin/bash alice');
-      expect(out).not.toContain('[sudo] password');
+      expect(server.checkPassword('root', 'admin')).toBe(true);
     });
 
-    it('should show sudo prompt then execute command successfully', async () => {
+    it('should allow setting and verifying passwords', async () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
-
-      // sudo useradd should show prompt AND succeed
-      const out = await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-      expect(out).toContain('[sudo] password for user:');
-
-      // Verify user was actually created
-      const idOut = await pc.executeCommand('id alice');
-      expect(idOut).toContain('alice');
-    });
-
-    it('should show sudo prompt for sudo passwd', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
       await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      pc.setUserPassword('alice', 'mypassword');
 
-      const out = await pc.executeCommand('sudo passwd alice');
-      expect(out).toContain('[sudo] password for user:');
-      expect(out).toContain('New password:');
-      expect(out).toContain('Retype new password:');
-      expect(out).toContain('passwd: password updated successfully');
+      expect(pc.checkPassword('alice', 'mypassword')).toBe(true);
+      expect(pc.checkPassword('alice', 'wrong')).toBe(false);
+    });
+
+    it('should return false for non-existent user', () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+      expect(pc.checkPassword('nobody_here', 'test')).toBe(false);
+    });
+
+    it('should expose getCurrentUid correctly', () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+      expect(pc.getCurrentUid()).toBe(1000); // regular user
+
+      const server = new LinuxServer('linux-server', 'SRV1');
+      expect(server.getCurrentUid()).toBe(0); // root
+    });
+
+    it('should expose userExists correctly', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+      expect(pc.userExists('user')).toBe(true);
+      expect(pc.userExists('alice')).toBe(false);
+
+      await pc.executeCommand('sudo useradd -m alice');
+      expect(pc.userExists('alice')).toBe(true);
     });
   });
 
-  describe('I-UBU-02: su affiche Password: pour les non-root', () => {
-    it('should show Password: prompt when switching user with su', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
+  describe('I-UBU-02: adduser crée les fichiers correctement', () => {
+    it('should create home directory with skeleton files via adduser', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
 
-      // Créer un utilisateur
-      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-      await pc.executeCommand('sudo passwd alice');
+      const out = await server.executeCommand('adduser tempuser');
+      expect(out).toContain("Adding user `tempuser'");
+      expect(out).toContain("Creating home directory `/home/tempuser'");
+      expect(out).toContain("Copying files from `/etc/skel'");
 
-      // su vers alice (non-root): doit demander le password
-      const out = await pc.executeCommand('su - alice');
-      expect(out).toContain('Password:');
+      // Verify home dir exists
+      const lsHome = await server.executeCommand('ls /home');
+      expect(lsHome).toContain('tempuser');
+
+      // Verify skeleton files
+      const lsFiles = await server.executeCommand('ls -la /home/tempuser/');
+      expect(lsFiles).toContain('.bash_logout');
+      expect(lsFiles).toContain('.bashrc');
+      expect(lsFiles).toContain('.profile');
+      expect(lsFiles).toContain('tempuser');
     });
 
-    it('should show Password: prompt for su without login shell', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      await pc.executeCommand('sudo useradd -m -s /bin/bash bob');
-      await pc.executeCommand('sudo passwd bob');
-
-      const out = await pc.executeCommand('su bob');
-      expect(out).toContain('Password:');
-    });
-
-    it('should NOT show Password: when sudo su (already elevated)', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      // sudo su - pas besoin de password puisque déjà sudo
-      const out = await pc.executeCommand('sudo su');
-      expect(out).not.toContain('Password:');
-    });
-
-    it('should NOT show Password: when sudo su - username', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      await pc.executeCommand('sudo useradd -m -s /bin/bash bob');
-
-      // sudo su - bob : pas de prompt password car sudo
-      const out = await pc.executeCommand('sudo su - bob');
-      expect(out).not.toContain('Password:');
-    });
-
-    it('should NOT show Password: when already root and using su', async () => {
+    it('should create home directory with skeleton files via useradd -m', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
 
       await server.executeCommand('useradd -m -s /bin/bash alice');
 
-      // Root can su without password
-      const out = await server.executeCommand('su - alice');
-      expect(out).not.toContain('Password:');
+      const lsHome = await server.executeCommand('ls /home');
+      expect(lsHome).toContain('alice');
+
+      const lsFiles = await server.executeCommand('ls -la /home/alice/');
+      expect(lsFiles).toContain('.bash_logout');
+      expect(lsFiles).toContain('.bashrc');
+      expect(lsFiles).toContain('.profile');
     });
 
-    it('should switch user correctly after password prompt', async () => {
+    it('should NOT create home directory with useradd without -m', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      await server.executeCommand('useradd mandeng');
+
+      const lsHome = await server.executeCommand('ls /home');
+      expect(lsHome).not.toContain('mandeng');
+    });
+
+    it('should remove home dir with deluser --remove-home', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      await server.executeCommand('adduser tempuser');
+      const lsBefore = await server.executeCommand('ls /home');
+      expect(lsBefore).toContain('tempuser');
+
+      const delOut = await server.executeCommand('deluser --remove-home tempuser');
+      expect(delOut).toContain('Looking for files to backup/remove');
+      expect(delOut).toContain('Removing files');
+      expect(delOut).toContain("Removing user `tempuser'");
+      expect(delOut).toContain('Done.');
+
+      const lsAfter = await server.executeCommand('ls /home');
+      expect(lsAfter).not.toContain('tempuser');
+    });
+  });
+
+  describe('I-UBU-03: sudo et su backend (sans prompts UI)', () => {
+    it('should execute sudo commands as root from non-root user', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // sudo useradd should succeed (executor handles elevation)
+      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
+      const id = await pc.executeCommand('id alice');
+      expect(id).toContain('alice');
+    });
+
+    it('should switch user with su command', async () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
 
       await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-      await pc.executeCommand('sudo passwd alice');
-
-      // su vers alice
       await pc.executeCommand('su - alice');
 
-      // Vérifier qu'on est bien alice
       const whoami = await pc.executeCommand('whoami');
       expect(whoami.trim()).toBe('alice');
     });
-  });
 
-  describe('I-UBU-03: passwd affiche les prompts interactifs', () => {
-    it('should show New password / Retype prompts when changing password', async () => {
+    it('should switch user with sudo su command', async () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
 
-      await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-
-      const out = await pc.executeCommand('sudo passwd alice');
-      expect(out).toContain('New password:');
-      expect(out).toContain('Retype new password:');
-      expect(out).toContain('passwd: password updated successfully');
-    });
-
-    it('should show prompts for own password change (non-root)', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      // User changes own password (no args)
-      const out = await pc.executeCommand('passwd');
-      expect(out).toContain('Changing password for user');
-      expect(out).toContain('Current password:');
-      expect(out).toContain('New password:');
-      expect(out).toContain('Retype new password:');
-      expect(out).toContain('passwd: password updated successfully');
-    });
-
-    it('should not show prompts for passwd -l (lock)', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      await pc.executeCommand('sudo useradd -m alice');
-      const out = await pc.executeCommand('sudo passwd -l alice');
-      expect(out).not.toContain('New password:');
-    });
-
-    it('should not show prompts for passwd -S (status)', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      await pc.executeCommand('sudo useradd -m alice');
-      const out = await pc.executeCommand('sudo passwd -S alice');
-      expect(out).not.toContain('New password:');
-    });
-  });
-
-  describe('I-UBU-04: Workflow complet interactif', () => {
-    it('should simulate a complete user creation workflow with prompts', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      // Step 1: Create user with sudo
-      const createOut = await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-      expect(createOut).toContain('[sudo] password for user:');
-
-      // Step 2: Set password for alice
-      const passwdOut = await pc.executeCommand('sudo passwd alice');
-      expect(passwdOut).toContain('[sudo] password for user:');
-      expect(passwdOut).toContain('New password:');
-      expect(passwdOut).toContain('Retype new password:');
-      expect(passwdOut).toContain('passwd: password updated successfully');
-
-      // Step 3: Switch to alice
-      const suOut = await pc.executeCommand('su - alice');
-      expect(suOut).toContain('Password:');
-
-      // Step 4: Verify we are alice
-      const whoami = await pc.executeCommand('whoami');
-      expect(whoami.trim()).toBe('alice');
-
-      // Step 5: Exit back to user
-      // (exit is handled by Terminal component, not executeCommand)
-    });
-
-    it('should simulate sudo su workflow without extra password', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-
-      // Create bob
       await pc.executeCommand('sudo useradd -m -s /bin/bash bob');
+      await pc.executeCommand('sudo su - bob');
 
-      // sudo su - bob: only sudo prompt, no su Password:
-      const out = await pc.executeCommand('sudo su - bob');
-      expect(out).toContain('[sudo] password for user:');
-      expect(out).not.toContain('Password:');
-
-      // Verify we are bob
       const whoami = await pc.executeCommand('whoami');
       expect(whoami.trim()).toBe('bob');
     });
@@ -1409,6 +1354,27 @@ describe('Group 6: Prompts Interactifs - Authentification', () => {
 
       const out = await pc.executeCommand('useradd alice');
       expect(out).toContain('Permission denied');
+    });
+
+    it('should handle passwd output correctly', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m alice');
+      const out = await pc.executeCommand('sudo passwd alice');
+      expect(out).toContain('passwd: password updated successfully');
+    });
+
+    it('should not show password prompts for passwd -l/-S', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      await pc.executeCommand('sudo useradd -m alice');
+
+      const lockOut = await pc.executeCommand('sudo passwd -l alice');
+      expect(lockOut).not.toContain('New password:');
+      expect(lockOut).toContain('password expiry information changed');
+
+      const statusOut = await pc.executeCommand('sudo passwd -S alice');
+      expect(statusOut).not.toContain('New password:');
     });
   });
 });

@@ -71,6 +71,18 @@ export abstract class Equipment {
   /** Handle exit/logout for su sessions. Override in subclasses. */
   handleExit(): { output: string; inSu: boolean } { return { output: '', inSu: false }; }
 
+  /** Check password for a user. Override in Linux devices. */
+  checkPassword(_username: string, _password: string): boolean { return false; }
+
+  /** Set password for a user. Override in Linux devices. */
+  setUserPassword(_username: string, _password: string): void {}
+
+  /** Check if a user exists. Override in Linux devices. */
+  userExists(_username: string): boolean { return false; }
+
+  /** Get current UID (0 = root). Override in Linux devices. */
+  getCurrentUid(): number { return 0; }
+
   /**
    * Get the OS type for terminal selection.
    * Override in subclasses for specific OS types.

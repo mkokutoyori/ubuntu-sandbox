@@ -614,5 +614,9 @@ export class LinuxPC extends EndHost {
   getCwd(): string { return this.executor.getCwd(); }
   getCompletions(partial: string): string[] { return this.executor.getCompletions(partial); }
   getCurrentUser(): string { return this.executor.getCurrentUser(); }
+  getCurrentUid(): number { return this.executor.getCurrentUid(); }
   handleExit(): { output: string; inSu: boolean } { return this.executor.handleExit(); }
+  checkPassword(username: string, password: string): boolean { return this.executor.checkPassword(username, password); }
+  setUserPassword(username: string, password: string): void { this.executor.setUserPassword(username, password); }
+  userExists(username: string): boolean { return this.executor.userExists(username); }
 }
