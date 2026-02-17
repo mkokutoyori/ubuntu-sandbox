@@ -128,6 +128,7 @@ export class LinuxCommandExecutor {
     // Strip sudo prefix
     let cmdArgs = [...args];
     let isSudo = false;
+    let sudoPromptLine = '';
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
@@ -139,6 +140,10 @@ export class LinuxCommandExecutor {
       // Handle sudo -u user cmd
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
         cmdArgs = cmdArgs.slice(2);
+      }
+      // Show [sudo] password prompt for non-root users
+      if (this.userMgr.currentUid !== 0) {
+        sudoPromptLine = `[sudo] password for ${this.userMgr.currentUser}:`;
       }
       // Temporarily become root for the command
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
@@ -205,6 +210,11 @@ export class LinuxCommandExecutor {
         this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
         output = ''; // stdout was redirected, don't display
       }
+    }
+
+    // Prepend [sudo] password prompt if applicable
+    if (sudoPromptLine) {
+      output = output ? `${sudoPromptLine}\n${output}` : sudoPromptLine;
     }
 
     return { output, exitCode };
@@ -509,6 +519,10 @@ export class LinuxCommandExecutor {
       return { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 };
     }
 
+    // Non-root users must authenticate — show Password: prompt
+    // (root can su to any user without password)
+    const passwordPrompt = this.userMgr.currentUid !== 0 ? 'Password:' : '';
+
     // Save current context to suStack
     this.suStack.push({
       user: this.userMgr.currentUser,
@@ -527,7 +541,7 @@ export class LinuxCommandExecutor {
       this.cwd = user.home;
     }
 
-    return { output: '', exitCode: 0 };
+    return { output: passwordPrompt, exitCode: 0 };
   }
 
   /** Handle exit/logout — pops su stack if in su session */
@@ -574,14 +588,31 @@ export class LinuxCommandExecutor {
     if (args[0] === '-S' && args[1]) {
       return { output: cmdPasswd(c, args), exitCode: 0 };
     }
-    // passwd username — simulate password change
+    // passwd username — simulate password change with interactive prompts
     if (args.length > 0 && !args[0].startsWith('-')) {
       const user = this.userMgr.getUser(args[0]);
       if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
       this.userMgr.setPassword(args[0], 'simulated');
-      return { output: 'passwd: password updated successfully', exitCode: 0 };
+      const lines = [
+        'New password:',
+        'Retype new password:',
+        'passwd: password updated successfully',
+      ];
+      return { output: lines.join('\n'), exitCode: 0 };
     }
-    return { output: cmdPasswd(c, args), exitCode: 0 };
+    // passwd (no args) — user changes own password
+    {
+      const currentUser = this.userMgr.currentUser;
+      this.userMgr.setPassword(currentUser, 'simulated');
+      const lines = [
+        `Changing password for ${currentUser}.`,
+        'Current password:',
+        'New password:',
+        'Retype new password:',
+        'passwd: password updated successfully',
+      ];
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
   }
 
   private handleUserdel(args: string[]): { output: string; exitCode: number } {
