@@ -160,10 +160,17 @@ export class CommandTrie {
         matchedKeywords.push(node.keyword);
         paramIdx = 0;
 
-        // If this node is greedy, collect remaining as args
+        // If this node is greedy AND has remaining tokens, check children first
+        // before consuming greedily. This allows registered subpaths to take
+        // precedence (e.g., "display interface brief" over "display interface <name>").
         if (node.greedy && i < tokens.length - 1) {
-          args.push(...tokens.slice(i + 1));
-          return { status: 'ok', node, args, matchedKeywords };
+          const nextTk = tokens[i + 1].toLowerCase();
+          const childMatch = node.children.get(nextTk) || this.prefixMatch(node, nextTk);
+          const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
+          if (!hasChildMatch) {
+            args.push(...tokens.slice(i + 1));
+            return { status: 'ok', node, args, matchedKeywords };
+          }
         }
         continue;
       }
@@ -176,10 +183,15 @@ export class CommandTrie {
         matchedKeywords.push(node.keyword);
         paramIdx = 0;
 
-        // If this node is greedy, collect remaining as args
+        // Same child-first check for greedy nodes
         if (node.greedy && i < tokens.length - 1) {
-          args.push(...tokens.slice(i + 1));
-          return { status: 'ok', node, args, matchedKeywords };
+          const nextTk = tokens[i + 1].toLowerCase();
+          const childMatch = node.children.get(nextTk) || this.prefixMatch(node, nextTk);
+          const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
+          if (!hasChildMatch) {
+            args.push(...tokens.slice(i + 1));
+            return { status: 'ok', node, args, matchedKeywords };
+          }
         }
         continue;
       }

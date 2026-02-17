@@ -121,9 +121,10 @@ describe('Group 2: Huawei Switch — Tab Completion', () => {
     expect(result).toBe('system-view ');
   });
 
-  it('2.3 — Tab complete "display v" → "display version " in user view', () => {
+  it('2.3 — Tab complete "display v" → null (ambiguous: version, vlan)', () => {
     const result = sw.cliTabComplete('display v');
-    expect(result).toBe('display version ');
+    // "v" matches both "version" and "vlan" → ambiguous → null
+    expect(result).toBeNull();
   });
 
   it('2.4 — Tab complete "display vl" → "display vlan " in user view', async () => {
