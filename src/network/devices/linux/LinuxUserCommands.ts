@@ -7,6 +7,7 @@ import { ShellContext } from './LinuxFileCommands';
 
 export function cmdUseradd(ctx: ShellContext, args: string[]): string {
   let m = false, s: string | undefined, G: string | undefined, d: string | undefined;
+  let g: string | undefined, c: string | undefined;
   let username = '';
 
   for (let i = 0; i < args.length; i++) {
@@ -15,6 +16,8 @@ export function cmdUseradd(ctx: ShellContext, args: string[]): string {
       case '-s': s = args[++i]; break;
       case '-G': G = args[++i]; break;
       case '-d': d = args[++i]; break;
+      case '-g': g = args[++i]; break;
+      case '-c': c = args[++i]; break;
       default:
         if (!args[i].startsWith('-')) username = args[i];
         break;
@@ -22,7 +25,7 @@ export function cmdUseradd(ctx: ShellContext, args: string[]): string {
   }
 
   if (!username) return 'useradd: missing username';
-  return ctx.userMgr.useradd(username, { m, s, G, d });
+  return ctx.userMgr.useradd(username, { m, s, G, d, g, c });
 }
 
 export function cmdUsermod(ctx: ShellContext, args: string[]): string {

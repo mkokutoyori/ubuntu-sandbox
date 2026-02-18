@@ -80,7 +80,10 @@ type InteractiveStep =
   | { type: 'output'; text: string }
   | { type: 'execute'; command: string }
   | { type: 'set-password'; username: string }
-  | { type: 'adduser-info'; command: string };
+  | { type: 'adduser-info'; command: string }
+  | { type: 'input'; prompt: string; field: string }
+  | { type: 'set-gecos'; username: string }
+  | { type: 'confirm'; prompt: string };
 
 interface InteractiveState {
   steps: InteractiveStep[];
@@ -90,6 +93,8 @@ interface InteractiveState {
   targetUser?: string;
   attemptsLeft: number;
   currentPromptText: string;
+  /** Collected chfn fields during adduser */
+  gecosFields?: { fullName: string; room: string; workPhone: string; homePhone: string; other: string };
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -146,29 +151,59 @@ function buildInteractiveSteps(
 
     // sudo adduser <user>
     if (subCmd === 'adduser' && subParts.length >= 2) {
-      const targetUser = subParts.filter(a => !a.startsWith('-'))[0];
+      const targetUser = subParts.filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
+      // Check if --disabled-password or --gecos flags are present (non-interactive)
+      const hasDisabledPassword = subParts.includes('--disabled-password') || subParts.includes('--disabled-login');
+      const gecosIdx = subParts.indexOf('--gecos');
+      const hasGecos = gecosIdx >= 0;
+
+      // If --disabled-password and --gecos are set, skip password and chfn prompts
+      if (hasDisabledPassword && hasGecos) {
+        return {
+          steps: [
+            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+            { type: 'adduser-info', command: trimmed },
+          ],
+          stepIndex: 0,
+          originalCommand: trimmed,
+          attemptsLeft: 3,
+          currentPromptText: `[sudo] password for ${currentUser}:`,
+          targetUser,
+        };
+      }
+
+      const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
+        { type: 'password', prompt: 'New password:' },
+        { type: 'password', prompt: 'Retype new password:' },
+        { type: 'set-password', username: targetUser },
+        { type: 'output', text: 'passwd: password updated successfully' },
+      ];
+
+      const chfnSteps: InteractiveStep[] = hasGecos ? [] : [
+        { type: 'output', text: `Changing the user information for ${targetUser}` },
+        { type: 'output', text: 'Enter the new value, or press ENTER for the default' },
+        { type: 'input', prompt: '\tFull Name []: ', field: 'fullName' },
+        { type: 'input', prompt: '\tRoom Number []: ', field: 'room' },
+        { type: 'input', prompt: '\tWork Phone []: ', field: 'workPhone' },
+        { type: 'input', prompt: '\tHome Phone []: ', field: 'homePhone' },
+        { type: 'input', prompt: '\tOther []: ', field: 'other' },
+        { type: 'confirm', prompt: 'Is the information correct? [Y/n] ' },
+        { type: 'set-gecos', username: targetUser },
+      ];
+
       return {
         steps: [
           { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
           { type: 'adduser-info', command: trimmed },
-          { type: 'password', prompt: 'New password:' },
-          { type: 'password', prompt: 'Retype new password:' },
-          { type: 'set-password', username: targetUser },
-          { type: 'output', text: 'passwd: password updated successfully' },
-          { type: 'output', text: `Changing the user information for ${targetUser}` },
-          { type: 'output', text: 'Enter the new value, or press ENTER for the default' },
-          { type: 'output', text: '\tFull Name []: ' },
-          { type: 'output', text: '\tRoom Number []: ' },
-          { type: 'output', text: '\tWork Phone []: ' },
-          { type: 'output', text: '\tHome Phone []: ' },
-          { type: 'output', text: '\tOther []: ' },
-          { type: 'output', text: 'Is the information correct? [Y/n] y' },
+          ...passwordSteps,
+          ...chfnSteps,
         ],
         stepIndex: 0,
         originalCommand: trimmed,
         attemptsLeft: 3,
         currentPromptText: `[sudo] password for ${currentUser}:`,
         targetUser,
+        gecosFields: { fullName: '', room: '', workPhone: '', homePhone: '', other: '' },
       };
     }
 
@@ -252,14 +287,18 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   const [tabSuggestions, setTabSuggestions] = useState<string[] | null>(null);
   const [interactive, setInteractive] = useState<InteractiveState | null>(null);
   const [passwordBuf, setPasswordBuf] = useState('');
+  const [inputBuf, setInputBuf] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const interactiveInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  const isPasswordMode = interactive !== null &&
-    interactive.stepIndex < interactive.steps.length &&
-    interactive.steps[interactive.stepIndex].type === 'password';
+  const currentStepType = interactive !== null && interactive.stepIndex < interactive.steps.length
+    ? interactive.steps[interactive.stepIndex].type
+    : null;
+  const isPasswordMode = currentStepType === 'password';
+  const isInputMode = currentStepType === 'input' || currentStepType === 'confirm';
 
   // Build prompt parts for colored rendering
   const promptParts = useMemo(() => {
@@ -283,10 +322,12 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   useEffect(() => {
     if (isPasswordMode) {
       hiddenInputRef.current?.focus();
+    } else if (isInputMode) {
+      interactiveInputRef.current?.focus();
     } else {
       inputRef.current?.focus();
     }
-  }, [isPasswordMode]);
+  }, [isPasswordMode, isInputMode]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -364,6 +405,23 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
         continue;
       }
 
+      if (step.type === 'input' || step.type === 'confirm') {
+        // Need visible text input — pause here
+        setInteractive({ ...state, stepIndex: idx, currentPromptText: step.prompt });
+        addLine(step.prompt);
+        return;
+      }
+
+      if (step.type === 'set-gecos') {
+        // Apply collected GECOS fields
+        if (state.gecosFields && 'setUserGecos' in device) {
+          const g = state.gecosFields;
+          (device as any).setUserGecos(step.username, g.fullName, g.room, g.workPhone, g.homePhone, g.other);
+        }
+        idx++;
+        continue;
+      }
+
       idx++;
     }
 
@@ -371,6 +429,7 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
     syncDeviceState();
     setInteractive(null);
     setPasswordBuf('');
+    setInputBuf('');
   }, [device, addLine, syncDeviceState]);
 
   // Handle password submission
@@ -470,6 +529,44 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
       return;
     }
   }, [interactive, device, addLine, processInteractiveSteps]);
+
+  // Handle text input submission (for chfn fields and confirm prompts)
+  const handleInputSubmit = useCallback(async (value: string) => {
+    if (!interactive) return;
+    const step = interactive.steps[interactive.stepIndex];
+
+    if (step.type === 'input') {
+      // Store the value in gecosFields
+      const field = step.field;
+      const gecosFields = { ...(interactive.gecosFields || { fullName: '', room: '', workPhone: '', homePhone: '', other: '' }) };
+      if (field === 'fullName') gecosFields.fullName = value;
+      else if (field === 'room') gecosFields.room = value;
+      else if (field === 'workPhone') gecosFields.workPhone = value;
+      else if (field === 'homePhone') gecosFields.homePhone = value;
+      else if (field === 'other') gecosFields.other = value;
+
+      const newState = { ...interactive, stepIndex: interactive.stepIndex + 1, gecosFields };
+      setInputBuf('');
+      processInteractiveSteps(newState);
+      return;
+    }
+
+    if (step.type === 'confirm') {
+      // Accept Y/y/empty as yes, n/N as abort
+      const answer = value.trim().toLowerCase();
+      if (answer === 'n') {
+        addLine('Aborted.');
+        setInteractive(null);
+        setInputBuf('');
+        return;
+      }
+      // Accept (default is yes)
+      const newState = { ...interactive, stepIndex: interactive.stepIndex + 1 };
+      setInputBuf('');
+      processInteractiveSteps(newState);
+      return;
+    }
+  }, [interactive, addLine, processInteractiveSteps]);
 
   // Execute command
   const executeCommand = useCallback(async (cmd: string) => {
@@ -657,6 +754,24 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
     }
   }, [passwordBuf, handlePasswordSubmit, addLine]);
 
+  // Keyboard handling for interactive text input mode (chfn fields, confirm)
+  const handleInteractiveInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = inputBuf;
+      setInputBuf('');
+      handleInputSubmit(val);
+      return;
+    }
+
+    if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
+      setInteractive(null);
+      setInputBuf('');
+      addLine('^C');
+    }
+  }, [inputBuf, handleInputSubmit, addLine]);
+
   const deviceType = device.getType();
 
   return (
@@ -677,6 +792,8 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
         onClick={() => {
           if (isPasswordMode) {
             hiddenInputRef.current?.focus();
+          } else if (isInputMode) {
+            interactiveInputRef.current?.focus();
           } else {
             inputRef.current?.focus();
           }
@@ -714,8 +831,31 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
           </div>
         )}
 
+        {/* Interactive text input (chfn fields, confirm prompts) */}
+        {isInputMode && (
+          <div className="flex items-center" style={{ minHeight: '1.35em' }}>
+            <input
+              ref={interactiveInputRef}
+              type="text"
+              value={inputBuf}
+              onChange={(e) => setInputBuf(e.target.value)}
+              onKeyDown={handleInteractiveInputKeyDown}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+        )}
+
         {/* Normal input line with colored prompt */}
-        {!isPasswordMode && (
+        {!isPasswordMode && !isInputMode && (
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             <ColoredPrompt user={promptParts.user} hostname={promptParts.hostname} path={promptParts.path} promptChar={promptParts.promptChar} />
             <input

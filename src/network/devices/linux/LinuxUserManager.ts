@@ -74,7 +74,7 @@ export class LinuxUserManager {
 
   private addUser(u: UserEntry): void {
     this.users.set(u.username, u);
-    if (u.uid >= this.nextUid) this.nextUid = u.uid + 1;
+    if (u.uid >= this.nextUid && u.uid < 65534) this.nextUid = u.uid + 1;
   }
 
   private addGroup(g: GroupEntry): void {
@@ -145,7 +145,7 @@ export class LinuxUserManager {
 
   // ─── User operations ──────────────────────────────────────────────
 
-  useradd(username: string, opts: { m?: boolean; s?: string; G?: string; d?: string; g?: string }): string {
+  useradd(username: string, opts: { m?: boolean; s?: string; G?: string; d?: string; g?: string; c?: string }): string {
     if (this.users.has(username)) return `useradd: user '${username}' already exists`;
 
     const uid = this.nextUid++;
@@ -163,9 +163,10 @@ export class LinuxUserManager {
 
     const home = opts.d || `/home/${username}`;
     const shell = opts.s || '/bin/sh';
+    const gecos = opts.c || '';
 
     this.addUser({
-      username, uid, gid, gecos: '', home, shell,
+      username, uid, gid, gecos, home, shell,
       password: '!', locked: false,
       lastChange: this.daysSinceEpoch(),
       minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1,
@@ -238,6 +239,7 @@ export class LinuxUserManager {
     }
 
     this.users.delete(username);
+    this.passwords.delete(username);
     this.syncToFilesystem();
     return '';
   }
@@ -250,6 +252,61 @@ export class LinuxUserManager {
     this.passwords.set(username, password);
     this.syncToFilesystem();
     return '';
+  }
+
+  /** Set GECOS fields (Full Name, Room, Work Phone, Home Phone, Other) */
+  setUserGecos(username: string, fullName: string, room: string, workPhone: string, homePhone: string, other: string): string {
+    const user = this.users.get(username);
+    if (!user) return `chfn: user '${username}' does not exist`;
+    user.gecos = [fullName, room, workPhone, homePhone, other].join(',');
+    this.syncToFilesystem();
+    return '';
+  }
+
+  /** chfn — change finger information. Only updates the specified fields. */
+  chfn(username: string, opts: { f?: string; r?: string; w?: string; h?: string }): string {
+    const user = this.users.get(username);
+    if (!user) return `chfn: user '${username}' does not exist`;
+
+    // Parse existing GECOS subfields
+    const parts = user.gecos.split(',');
+    const fullName = parts[0] || '';
+    const room = parts[1] || '';
+    const workPhone = parts[2] || '';
+    const homePhone = parts[3] || '';
+    const other = parts[4] || '';
+
+    // Update only what was specified
+    const newFullName = opts.f !== undefined ? opts.f : fullName;
+    const newRoom = opts.r !== undefined ? opts.r : room;
+    const newWorkPhone = opts.w !== undefined ? opts.w : workPhone;
+    const newHomePhone = opts.h !== undefined ? opts.h : homePhone;
+
+    user.gecos = [newFullName, newRoom, newWorkPhone, newHomePhone, other].join(',');
+    this.syncToFilesystem();
+    return '';
+  }
+
+  /** finger — display user information */
+  finger(username?: string): string {
+    const name = username || this.currentUser;
+    const user = this.users.get(name);
+    if (!user) return `finger: ${name}: no such user.`;
+
+    const parts = user.gecos.split(',');
+    const fullName = parts[0] || '';
+    const groups = this.getUserGroups(name);
+    const primaryGroup = this.getGroupByGid(user.gid);
+
+    const lines = [
+      `Login: ${user.username}${' '.repeat(Math.max(1, 24 - user.username.length - 7))}Name: ${fullName}`,
+      `Directory: ${user.home}${' '.repeat(Math.max(1, 24 - user.home.length - 11))}Shell: ${user.shell}`,
+    ];
+    if (parts[1]) lines.push(`Office: ${parts[1]}`);
+    if (parts[2]) lines.push(`Office Phone: ${parts[2]}`);
+    if (parts[3]) lines.push(`Home Phone: ${parts[3]}`);
+
+    return lines.join('\n');
   }
 
   /** Verify a user's password. Returns true if correct. */
