@@ -1,8 +1,16 @@
 /**
- * HuaweiTerminal - Huawei VRP Terminal Emulation
+ * HuaweiTerminal - Realistic Huawei VRP Terminal Emulation
  *
- * Uses the real Router domain class directly via device.executeCommand().
- * Emulates the look and feel of a Huawei VRP console session.
+ * Faithfully emulates a real Huawei VRP console session:
+ *   - Inline ? help (intercepted on keypress, not on Enter)
+ *     "dis?"    → prefix listing, preserves input "dis"
+ *     "display ?" → subcommand listing, preserves input "display "
+ *   - Tab completion (unique prefix → complete word, ambiguous → no change)
+ *   - ---- More ---- pager for long output (Space=page, Enter=line, Ctrl+C=quit)
+ *   - Ctrl+C (abort), Ctrl+Z (return to user view), Ctrl+A/E (cursor), Ctrl+L (clear)
+ *   - Command history (Up/Down arrows)
+ *   - Boot sequence with line-by-line animation
+ *   - Dynamic prompt updated after every command (mode-aware)
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -12,13 +20,16 @@ type BaseDevice = Equipment;
 interface OutputLine {
   id: number;
   text: string;
-  type: 'normal' | 'error' | 'boot';
+  type: 'normal' | 'error' | 'boot' | 'more';
 }
 
 interface HuaweiTerminalProps {
   device: BaseDevice;
   onRequestClose?: () => void;
 }
+
+/** Lines per page for ---- More ---- pager */
+const PAGE_SIZE = 24;
 
 let lineId = 0;
 
@@ -33,10 +44,15 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
   const [isBooting, setIsBooting] = useState(true);
   const [prompt, setPrompt] = useState('');
 
+  // ---- More ---- pager state
+  const [pagerLines, setPagerLines] = useState<string[] | null>(null);
+  const [pagerOffset, setPagerOffset] = useState(0);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Update prompt from device
+  // ─── Prompt ──────────────────────────────────────────────────────
+
   const updatePrompt = useCallback(() => {
     if ('getPrompt' in device && typeof (device as any).getPrompt === 'function') {
       setPrompt((device as any).getPrompt());
@@ -45,35 +61,51 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
     }
   }, [device]);
 
-  // Scroll to bottom
+  // ─── Scroll to bottom ────────────────────────────────────────────
+
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [output]);
+  }, [output, pagerLines]);
 
-  // Boot sequence on mount
+  // ─── Boot sequence ───────────────────────────────────────────────
+
   useEffect(() => {
     const boot = async () => {
       setIsBooting(true);
 
-      const bootLines = [
-        '',
-        'Huawei Versatile Routing Platform Software',
-        `VRP (R) software, Version 8.180 (${device.getHostname()} V800R021C10SPC100)`,
-        'Copyright (C) 2000-2025 HUAWEI TECH CO., LTD.',
-        '',
-        'HUAWEI ' + device.getHostname() + ' uplink board starts...',
-        'Loading system software...',
-        'System software loaded successfully.',
-        '',
-        `Info: ${device.getHostname()} system is ready.`,
-        '',
-      ];
+      // Get boot sequence from device if available
+      let bootText = '';
+      if ('getBootSequence' in device && typeof (device as any).getBootSequence === 'function') {
+        bootText = (device as any).getBootSequence();
+      }
 
-      for (const line of bootLines) {
-        await new Promise(r => setTimeout(r, 15));
-        setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
+      if (bootText) {
+        const lines = bootText.split('\n');
+        for (const line of lines) {
+          await new Promise(r => setTimeout(r, 12));
+          setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
+        }
+      } else {
+        // Fallback boot sequence
+        const bootLines = [
+          '',
+          'Huawei Versatile Routing Platform Software',
+          `VRP (R) software, Version 8.180 (${device.getHostname()} V800R021C10SPC100)`,
+          'Copyright (C) 2000-2025 HUAWEI TECH CO., LTD.',
+          '',
+          'HUAWEI ' + device.getHostname() + ' uplink board starts...',
+          'Loading system software...',
+          'System software loaded successfully.',
+          '',
+          `Info: ${device.getHostname()} system is ready.`,
+          '',
+        ];
+        for (const line of bootLines) {
+          await new Promise(r => setTimeout(r, 15));
+          setOutput(prev => [...prev, { id: ++lineId, text: line, type: 'boot' }]);
+        }
       }
 
       setOutput(prev => [...prev, { id: ++lineId, text: '', type: 'normal' }]);
@@ -85,16 +117,103 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
     boot();
   }, [device, updatePrompt]);
 
-  // Add line to output
+  // ─── Add output lines ────────────────────────────────────────────
+
   const addLine = useCallback((text: string, type: OutputLine['type'] = 'normal') => {
     setOutput(prev => [...prev, { id: ++lineId, text, type }]);
   }, []);
 
-  // Execute command
+  const addLines = useCallback((lines: string[], type: OutputLine['type'] = 'normal') => {
+    setOutput(prev => [
+      ...prev,
+      ...lines.map(text => ({ id: ++lineId, text, type })),
+    ]);
+  }, []);
+
+  // ─── ---- More ---- Pager ────────────────────────────────────────
+
+  const startPager = useCallback((allLines: string[]) => {
+    const firstPage = allLines.slice(0, PAGE_SIZE);
+    addLines(firstPage);
+
+    if (allLines.length > PAGE_SIZE) {
+      setPagerLines(allLines);
+      setPagerOffset(PAGE_SIZE);
+    }
+  }, [addLines]);
+
+  const pagerNextPage = useCallback(() => {
+    if (!pagerLines) return;
+    const nextChunk = pagerLines.slice(pagerOffset, pagerOffset + PAGE_SIZE);
+    addLines(nextChunk);
+
+    if (pagerOffset + PAGE_SIZE >= pagerLines.length) {
+      setPagerLines(null);
+      setPagerOffset(0);
+    } else {
+      setPagerOffset(prev => prev + PAGE_SIZE);
+    }
+  }, [pagerLines, pagerOffset, addLines]);
+
+  const pagerNextLine = useCallback(() => {
+    if (!pagerLines) return;
+    if (pagerOffset < pagerLines.length) {
+      addLine(pagerLines[pagerOffset]);
+      if (pagerOffset + 1 >= pagerLines.length) {
+        setPagerLines(null);
+        setPagerOffset(0);
+      } else {
+        setPagerOffset(prev => prev + 1);
+      }
+    }
+  }, [pagerLines, pagerOffset, addLine]);
+
+  const pagerQuit = useCallback(() => {
+    setPagerLines(null);
+    setPagerOffset(0);
+  }, []);
+
+  // ─── Help (? inline) ─────────────────────────────────────────────
+
+  const showInlineHelp = useCallback((currentInput: string) => {
+    // In real Huawei VRP, when user types "?", the terminal shows:
+    //   1. The current prompt + input + "?" (echo)
+    //   2. The help output
+    //   3. Re-displays the prompt + input (without ?) for continued typing
+
+    // Echo the line with ?
+    addLine(`${prompt}${currentInput}?`);
+
+    // Get help from the device
+    let helpText = '';
+    if ('cliHelp' in device && typeof (device as any).cliHelp === 'function') {
+      helpText = (device as any).cliHelp(currentInput);
+    } else {
+      helpText = 'Error: Help not available';
+    }
+
+    if (helpText) {
+      addLine(helpText);
+    }
+
+    // Input is NOT cleared — user continues typing where they left off
+  }, [device, prompt, addLine]);
+
+  // ─── Tab completion ──────────────────────────────────────────────
+
+  const doTabComplete = useCallback((currentInput: string): string | null => {
+    if ('cliTabComplete' in device && typeof (device as any).cliTabComplete === 'function') {
+      return (device as any).cliTabComplete(currentInput);
+    }
+    return null;
+  }, [device]);
+
+  // ─── Execute command ─────────────────────────────────────────────
+
   const executeCommand = useCallback(async (cmd: string) => {
     const trimmed = cmd.trim();
 
-    // Echo command
+    // Echo command with prompt
     addLine(`${prompt}${cmd}`);
 
     // Add to history
@@ -113,9 +232,14 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
         return;
       }
 
-      // Display result
+      // Display result with ---- More ---- pager if needed
       if (result) {
-        addLine(result);
+        const lines = result.split('\n');
+        if (lines.length > PAGE_SIZE) {
+          startPager(lines);
+        } else {
+          addLine(result);
+        }
       }
     } catch (err) {
       addLine(`Error: ${err}`, 'error');
@@ -124,15 +248,53 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
     // Update prompt (mode may have changed)
     updatePrompt();
     setInput('');
-  }, [device, prompt, addLine, updatePrompt, onRequestClose]);
+  }, [device, prompt, addLine, startPager, updatePrompt, onRequestClose]);
 
-  // Keyboard handling
+  // ─── Keyboard handling ───────────────────────────────────────────
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // ── ---- More ---- pager mode ─────────────────────────────────
+    if (pagerLines) {
+      e.preventDefault();
+      if (e.key === ' ') {
+        pagerNextPage();
+      } else if (e.key === 'Enter') {
+        pagerNextLine();
+      } else if (e.key === 'q' || e.key === 'Q' || (e.key === 'c' && e.ctrlKey)) {
+        pagerQuit();
+      }
+      return;
+    }
+
+    // ── Normal mode ─────────────────────────────────────────────
+
     if (e.key === 'Enter') {
       executeCommand(input);
       return;
     }
 
+    // ── ? (inline help — intercepted BEFORE it reaches the input) ──
+    // In real Huawei VRP, pressing '?' immediately shows help without
+    // needing to press Enter. The '?' is consumed and not added to input.
+    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      showInlineHelp(input);
+      // Input is NOT cleared — user continues typing where they left off
+      return;
+    }
+
+    // ── Tab (completion) ────────────────────────────────────────
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const completed = doTabComplete(input);
+      if (completed) {
+        setInput(completed);
+      }
+      // If no completion, real Huawei does nothing (silent)
+      return;
+    }
+
+    // ── History navigation ──────────────────────────────────────
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (history.length === 0) return;
@@ -156,26 +318,85 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
       return;
     }
 
+    // ── Ctrl+C (abort current line) ─────────────────────────────
     if (e.key === 'c' && e.ctrlKey) {
       e.preventDefault();
       addLine(`${prompt}${input}^C`);
       setInput('');
+      return;
     }
 
-    if (e.key === 'Tab') {
+    // ── Ctrl+Z (return to user view, like "return") ─────────────
+    if (e.key === 'z' && e.ctrlKey) {
       e.preventDefault();
-      executeCommand(input + '?');
+      addLine(`${prompt}${input}^Z`);
+      setInput('');
+      device.executeCommand('return').then(() => updatePrompt());
+      return;
     }
-  }, [input, history, historyIndex, prompt, addLine, executeCommand]);
+
+    // ── Ctrl+A (beginning of line) ──────────────────────────────
+    if (e.key === 'a' && e.ctrlKey) {
+      e.preventDefault();
+      const el = inputRef.current;
+      if (el) el.setSelectionRange(0, 0);
+      return;
+    }
+
+    // ── Ctrl+E (end of line) ────────────────────────────────────
+    if (e.key === 'e' && e.ctrlKey) {
+      e.preventDefault();
+      const el = inputRef.current;
+      if (el) el.setSelectionRange(input.length, input.length);
+      return;
+    }
+
+    // ── Ctrl+U (clear line) ─────────────────────────────────────
+    if (e.key === 'u' && e.ctrlKey) {
+      e.preventDefault();
+      setInput('');
+      return;
+    }
+
+    // ── Ctrl+W (delete word backward) ───────────────────────────
+    if (e.key === 'w' && e.ctrlKey) {
+      e.preventDefault();
+      const el = inputRef.current;
+      if (el) {
+        const pos = el.selectionStart ?? input.length;
+        let i = pos - 1;
+        while (i >= 0 && input[i] === ' ') i--;
+        while (i >= 0 && input[i] !== ' ') i--;
+        setInput(input.slice(0, i + 1) + input.slice(pos));
+      }
+      return;
+    }
+
+    // ── Ctrl+L (clear screen) ───────────────────────────────────
+    if (e.key === 'l' && e.ctrlKey) {
+      e.preventDefault();
+      setOutput([]);
+      return;
+    }
+  }, [input, history, historyIndex, prompt, pagerLines, addLine,
+      executeCommand, showInlineHelp, doTabComplete, pagerNextPage,
+      pagerNextLine, pagerQuit, updatePrompt, device]);
+
+  // Detect device sub-type for info bar
+  const deviceType = device.getType();
+  const isSwitch = deviceType.includes('switch');
+
+  // ─── Render ──────────────────────────────────────────────────────
 
   return (
     <div className="h-full w-full bg-[#1a1a2e] text-cyan-300 flex flex-col font-mono text-sm">
       {/* Info bar */}
-      <div className="border-b border-cyan-900/50 px-3 py-1 text-xs text-cyan-600 bg-[#0f0f1e]">
-        {device.getHostname()} — NE40E Router
+      <div className="border-b border-cyan-900/50 px-3 py-1 text-xs text-cyan-600 bg-[#0f0f1e] flex items-center justify-between">
+        <span>{device.getHostname()} — {isSwitch ? 'S5720 Switch' : 'AR2220 Router'}</span>
+        <span className="text-cyan-800 text-[10px]">? = help | Tab = complete</span>
       </div>
 
-      {/* Output */}
+      {/* Terminal output area */}
       <div
         ref={terminalRef}
         className="flex-1 overflow-auto p-3 bg-[#1a1a2e]"
@@ -187,6 +408,7 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
             className={`whitespace-pre-wrap leading-5 ${
               line.type === 'error' ? 'text-red-400' :
               line.type === 'boot' ? 'text-cyan-500' :
+              line.type === 'more' ? 'text-yellow-400' :
               'text-cyan-300'
             }`}
           >
@@ -194,8 +416,15 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
           </pre>
         ))}
 
-        {/* Input line */}
-        {!isBooting && (
+        {/* ---- More ---- indicator when paging */}
+        {pagerLines && !isBooting && (
+          <pre className="text-yellow-400 leading-5 animate-pulse">
+            {'  ---- More ----'}
+          </pre>
+        )}
+
+        {/* Input line (hidden during boot and paging) */}
+        {!isBooting && !pagerLines && (
           <div className="flex items-center">
             <span className="text-cyan-300 whitespace-pre">{prompt}</span>
             <input
@@ -208,6 +437,16 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
               autoComplete="off"
             />
           </div>
+        )}
+
+        {/* Pager: capture keys even when input is hidden */}
+        {pagerLines && !isBooting && (
+          <input
+            ref={inputRef}
+            className="opacity-0 absolute w-0 h-0"
+            onKeyDown={handleKeyDown}
+            autoFocus
+          />
         )}
 
         {/* Boot cursor */}
