@@ -5,83 +5,81 @@
  *   - dhcp enable / dhcp snooping enable (system mode)
  *   - dhcp server ip-pool (system mode)
  *   - DHCP pool configuration mode commands
+ *
+ * Provides registerDhcpSystemCommands() and buildDhcpPoolCommands() for CommandTrie.
  */
 
 import type { Router } from '../../Router';
 import type { HuaweiShellContext } from './HuaweiConfigCommands';
+import type { CommandTrie } from '../CommandTrie';
 
-// ─── DHCP Command (system mode) ──────────────────────────────────────
+// ─── Callbacks for shell-owned state ────────────────────────────────
 
-export function cmdDhcp(
-  router: Router,
+export interface DhcpStateCallbacks {
+  setDhcpEnabled(v: boolean): void;
+  setDhcpSnoopingEnabled(v: boolean): void;
+}
+
+// ─── System-mode DHCP Commands (register on system trie) ────────────
+
+export function registerDhcpSystemCommands(
+  trie: CommandTrie,
   ctx: HuaweiShellContext,
-  args: string[],
-  setDhcpEnabled: (v: boolean) => void,
-  setDhcpSnoopingEnabled: (v: boolean) => void,
-): string {
-  if (args.length === 0) return 'Error: Incomplete command.';
-  const sub = args[0].toLowerCase();
+  callbacks: DhcpStateCallbacks,
+): void {
+  const getRouter = () => ctx.r();
 
-  // dhcp enable
-  if (sub === 'enable') {
-    setDhcpEnabled(true);
-    router._getDHCPServerInternal().enable();
+  trie.register('dhcp enable', 'Enable DHCP service', () => {
+    callbacks.setDhcpEnabled(true);
+    getRouter()._getDHCPServerInternal().enable();
     return '';
-  }
+  });
 
-  // dhcp snooping enable
-  if (sub === 'snooping' && args.length >= 2 && args[1].toLowerCase() === 'enable') {
-    setDhcpSnoopingEnabled(true);
+  trie.register('dhcp snooping enable', 'Enable DHCP snooping', () => {
+    callbacks.setDhcpSnoopingEnabled(true);
     return '';
-  }
+  });
 
-  // dhcp server ip-pool <name> — alias for 'ip pool <name>'
-  if (sub === 'server' && args.length >= 3 && args[1].toLowerCase() === 'ip-pool') {
-    const poolName = args[2];
-    const dhcp = router._getDHCPServerInternal();
+  trie.registerGreedy('dhcp server ip-pool', 'Create DHCP server pool', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const poolName = args[0];
+    const dhcp = getRouter()._getDHCPServerInternal();
     if (!dhcp.getPool(poolName)) {
       dhcp.createPool(poolName);
     }
     ctx.setSelectedPool(poolName);
     ctx.setMode('dhcp-pool');
     return '';
-  }
-
-  return 'Error: Incomplete command.';
+  });
 }
 
-// ─── DHCP Pool Mode Commands ─────────────────────────────────────────
+// ─── DHCP Pool Mode Commands (register on pool trie) ────────────────
 
-export function executeDhcpPoolMode(router: Router, ctx: HuaweiShellContext, input: string): string {
-  const parts = input.split(/\s+/);
-  const cmd = parts[0].toLowerCase();
-  const dhcp = router._getDHCPServerInternal();
+export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
+  const getRouter = () => ctx.r();
 
-  if (cmd === 'gateway-list') {
-    if (parts.length < 2 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
-    dhcp.configurePoolRouter(ctx.getSelectedPool()!, parts[1]);
+  trie.registerGreedy('gateway-list', 'Set default gateway', (args) => {
+    if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
+    getRouter()._getDHCPServerInternal().configurePoolRouter(ctx.getSelectedPool()!, args[0]);
     return '';
-  }
+  });
 
-  if (cmd === 'network') {
-    if (parts.length < 2 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
-    const network = parts[1];
-    // mask can be keyword "mask" followed by mask, or just the mask
+  trie.registerGreedy('network', 'Set pool network range', (args) => {
+    if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
+    const network = args[0];
     let mask = '255.255.255.0';
-    if (parts.length >= 4 && parts[2].toLowerCase() === 'mask') {
-      mask = parts[3];
-    } else if (parts.length >= 3) {
-      mask = parts[2];
+    if (args.length >= 3 && args[1].toLowerCase() === 'mask') {
+      mask = args[2];
+    } else if (args.length >= 2) {
+      mask = args[1];
     }
-    dhcp.configurePoolNetwork(ctx.getSelectedPool()!, network, mask);
+    getRouter()._getDHCPServerInternal().configurePoolNetwork(ctx.getSelectedPool()!, network, mask);
     return '';
-  }
+  });
 
-  if (cmd === 'dns-list') {
-    if (parts.length < 2 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
-    dhcp.configurePoolDNS(ctx.getSelectedPool()!, parts.slice(1));
+  trie.registerGreedy('dns-list', 'Set DNS server list', (args) => {
+    if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
+    getRouter()._getDHCPServerInternal().configurePoolDNS(ctx.getSelectedPool()!, args);
     return '';
-  }
-
-  return `Error: Unrecognized command "${input}"`;
+  });
 }

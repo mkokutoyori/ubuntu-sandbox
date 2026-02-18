@@ -814,3 +814,277 @@ describe('Group 7: Inter-VLAN Routing (Huawei)', () => {
     expect(pingRouter).toContain('64 bytes from 10.0.10.1');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 8: Huawei Router — CLI Completion, Help & Abbreviation
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 8: Huawei Router — CLI Completion & Help', () => {
+
+  // ----------------------------------------------------------------
+  // 8.1 Command Abbreviation (unique prefix matching)
+  // ----------------------------------------------------------------
+  describe('8.1 Command Abbreviation', () => {
+
+    it('should accept "dis ver" as abbreviation for "display version"', async () => {
+      const r = new HuaweiRouter('R1');
+      const output = await r.executeCommand('dis ver');
+      expect(output).toContain('Huawei Versatile Routing Platform');
+    });
+
+    it('should accept "sys" as abbreviation for "system-view"', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('sys');
+      const prompt = r.getPrompt();
+      expect(prompt).toBe('[R1]');
+    });
+
+    it('should accept "dis ip int b" for "display ip interface brief"', async () => {
+      const r = new HuaweiRouter('R1');
+      r.configureInterface('GE0/0/0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+      const output = await r.executeCommand('dis ip int b');
+      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('10.0.0.1');
+    });
+
+    it('should accept "dis ip ro" for "display ip routing-table"', async () => {
+      const r = new HuaweiRouter('R1');
+      const output = await r.executeCommand('dis ip ro');
+      expect(output).toContain('Routing Tables: Public');
+    });
+
+    it('should accept abbreviations in system view', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      // "dis ver" in system view
+      const output = await r.executeCommand('dis ver');
+      expect(output).toContain('Huawei Versatile Routing Platform');
+    });
+
+    it('should report ambiguous commands', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      // "i" could match "interface" and "ip"
+      const output = await r.executeCommand('i');
+      expect(output).toContain('Ambiguous');
+    });
+
+    it('should accept "int GE0/0/0" to enter interface mode', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('int GE0/0/0');
+      const prompt = r.getPrompt();
+      expect(prompt).toContain('GE0/0/0');
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // 8.2 Help System (? command)
+  // ----------------------------------------------------------------
+  describe('8.2 Help System (?)', () => {
+
+    it('should list available commands in user mode with "?"', async () => {
+      const r = new HuaweiRouter('R1');
+      const help = r.cliHelp('');
+      expect(help).toContain('display');
+      expect(help).toContain('system-view');
+    });
+
+    it('should list display subcommands with "display ?"', async () => {
+      const r = new HuaweiRouter('R1');
+      const help = r.cliHelp('display ');
+      expect(help).toContain('version');
+      expect(help).toContain('ip');
+      expect(help).toContain('arp');
+      expect(help).toContain('current-configuration');
+      expect(help).toContain('interface');
+      expect(help).toContain('rip');
+    });
+
+    it('should show matching commands for partial input "dis?"', async () => {
+      const r = new HuaweiRouter('R1');
+      const help = r.cliHelp('dis');
+      expect(help).toContain('display');
+    });
+
+    it('should list "display ip" subcommands with "display ip ?"', async () => {
+      const r = new HuaweiRouter('R1');
+      const help = r.cliHelp('display ip ');
+      expect(help).toContain('routing-table');
+      expect(help).toContain('interface');
+      expect(help).toContain('traffic');
+      expect(help).toContain('pool');
+    });
+
+    it('should list system view commands when in system mode', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      const help = r.cliHelp('');
+      expect(help).toContain('interface');
+      expect(help).toContain('sysname');
+      expect(help).toContain('display');
+      expect(help).toContain('ip');
+      expect(help).toContain('arp');
+      expect(help).toContain('dhcp');
+    });
+
+    it('should list interface view commands', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GE0/0/0');
+      const help = r.cliHelp('');
+      expect(help).toContain('ip');
+      expect(help).toContain('shutdown');
+      expect(help).toContain('undo');
+      expect(help).toContain('display');
+      expect(help).toContain('dhcp');
+    });
+
+    it('should show <cr> when command is complete and executable', async () => {
+      const r = new HuaweiRouter('R1');
+      const help = r.cliHelp('display version ');
+      expect(help).toContain('<cr>');
+    });
+
+    it('should handle ? invoked via execute (inline ?)', async () => {
+      const r = new HuaweiRouter('R1');
+      // Typing "display ?" in the shell should return help
+      const output = await r.executeCommand('display ?');
+      expect(output).toContain('version');
+      expect(output).toContain('arp');
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // 8.3 Tab Completion
+  // ----------------------------------------------------------------
+  describe('8.3 Tab Completion', () => {
+
+    it('should complete "dis" to "display "', () => {
+      const r = new HuaweiRouter('R1');
+      const result = r.cliTabComplete('dis');
+      expect(result).toBe('display ');
+    });
+
+    it('should complete "display ver" to "display version "', () => {
+      const r = new HuaweiRouter('R1');
+      const result = r.cliTabComplete('display ver');
+      expect(result).toBe('display version ');
+    });
+
+    it('should complete "sys" to "system-view "', () => {
+      const r = new HuaweiRouter('R1');
+      const result = r.cliTabComplete('sys');
+      expect(result).toBe('system-view ');
+    });
+
+    it('should complete "display ip ro" to "display ip routing-table "', () => {
+      const r = new HuaweiRouter('R1');
+      const result = r.cliTabComplete('display ip ro');
+      expect(result).toBe('display ip routing-table ');
+    });
+
+    it('should return null for ambiguous input', () => {
+      const r = new HuaweiRouter('R1');
+      // "display " + "i" matches both "ip" and "interface"
+      const result = r.cliTabComplete('display i');
+      expect(result).toBeNull();
+    });
+
+    it('should complete in system view', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      const result = r.cliTabComplete('int');
+      expect(result).toBe('interface ');
+    });
+
+    it('should complete in interface view', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GE0/0/0');
+      const result = r.cliTabComplete('sh');
+      expect(result).toBe('shutdown ');
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // 8.4 Existing Commands Still Work (regression)
+  // ----------------------------------------------------------------
+  describe('8.4 Regression — Existing Commands', () => {
+
+    it('should still handle full "display current-configuration"', async () => {
+      const r = new HuaweiRouter('R1');
+      r.configureInterface('GE0/0/0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+      const output = await r.executeCommand('display current-configuration');
+      expect(output).toContain('sysname R1');
+      expect(output).toContain('interface GE0/0/0');
+      expect(output).toContain('10.0.0.1');
+    });
+
+    it('should still handle ip route-static in system view', async () => {
+      const r = new HuaweiRouter('R1');
+      r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
+      await r.executeCommand('system-view');
+      await r.executeCommand('ip route-static 10.0.0.0 255.255.255.0 192.168.1.2');
+      await r.executeCommand('return');
+      const table = await r.executeCommand('display ip routing-table');
+      expect(table).toContain('10.0.0.0');
+      expect(table).toContain('192.168.1.2');
+    });
+
+    it('should still handle arp static in system view', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('arp static 192.168.1.50 aaaa-bbbb-cccc');
+      await r.executeCommand('return');
+      const output = await r.executeCommand('display arp');
+      expect(output).toContain('192.168.1.50');
+    });
+
+    it('should still handle interface ip address configuration', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GE0/0/0');
+      await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r.executeCommand('undo shutdown');
+      await r.executeCommand('quit');
+      await r.executeCommand('return');
+      const output = await r.executeCommand('display ip interface brief');
+      expect(output).toContain('10.0.0.1');
+    });
+
+    it('should still handle dhcp pool configuration', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('dhcp enable');
+      await r.executeCommand('ip pool pool1');
+      await r.executeCommand('gateway-list 192.168.1.1');
+      await r.executeCommand('network 192.168.1.0 mask 255.255.255.0');
+      await r.executeCommand('dns-list 8.8.8.8');
+      await r.executeCommand('quit');
+      await r.executeCommand('return');
+      const output = await r.executeCommand('display ip pool name pool1');
+      expect(output).toContain('pool1');
+      expect(output).toContain('192.168.1.0');
+    });
+
+    it('should still handle quit and return navigation', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      expect(r.getPrompt()).toBe('[R1]');
+      await r.executeCommand('interface GE0/0/0');
+      expect(r.getPrompt()).toContain('GE0/0/0');
+      await r.executeCommand('quit');
+      expect(r.getPrompt()).toBe('[R1]');
+      await r.executeCommand('return');
+      expect(r.getPrompt()).toBe('<R1>');
+    });
+
+    it('should still handle sysname command', async () => {
+      const r = new HuaweiRouter('R1');
+      await r.executeCommand('system-view');
+      await r.executeCommand('sysname MyRouter');
+      expect(r.getPrompt()).toBe('[MyRouter]');
+    });
+  });
+});
