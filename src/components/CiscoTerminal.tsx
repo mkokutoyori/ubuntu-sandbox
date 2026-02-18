@@ -387,10 +387,10 @@ export const CiscoTerminal: React.FC<CiscoTerminalProps> = ({
 
   return (
     <div className="h-full w-full bg-black text-green-400 flex flex-col font-mono text-sm">
-      {/* Header bar */}
-      <div className="border-b border-green-900/50 px-3 py-2 text-xs text-green-600 bg-black/50 flex items-center justify-between">
-        <span>Cisco IOS — {device.getHostname()} ({isSwitch ? 'C2960 Switch' : 'C2911 Router'})</span>
-        <span className="text-green-800">? = help | Tab = complete</span>
+      {/* Info bar */}
+      <div className="border-b border-green-900/50 px-3 py-1 text-xs text-green-600 bg-black/50 flex items-center justify-between">
+        <span>{device.getHostname()} — {isSwitch ? 'C2960 Switch' : 'C2911 Router'}</span>
+        <span className="text-green-800 text-[10px]">? = help | Tab = complete</span>
       </div>
 
       {/* Terminal output area */}

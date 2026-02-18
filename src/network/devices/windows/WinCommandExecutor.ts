@@ -76,4 +76,28 @@ export interface WinCommandContext {
 
   // TCP/IP stack reset
   resetStack(): void;
+
+  // DNS management
+  getDnsServers(ifName: string): string[];
+  setDnsServers(ifName: string, servers: string[]): void;
+  getDnsMode(ifName: string): 'static' | 'dhcp';
+  setDnsMode(ifName: string, mode: 'static' | 'dhcp'): void;
+
+  // Interface admin state
+  setInterfaceAdmin(ifName: string, enabled: boolean): void;
+  getInterfaceAdmin(ifName: string): boolean;
+
+  // IP address removal
+  clearInterfaceIP(ifName: string): void;
+
+  // Switch interface to DHCP mode (address source)
+  setAddressDhcp(ifName: string): void;
+
+  // DHCP tracing
+  getDhcpTraceEnabled(): boolean;
+  setDhcpTraceEnabled(enabled: boolean): void;
+
+  // DNS suffix
+  getDnsSuffix(): string;
+  setDnsSuffix(suffix: string): void;
 }

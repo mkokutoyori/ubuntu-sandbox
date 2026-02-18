@@ -92,6 +92,7 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
 // ─── Basic output ─────────────────────────────────────────────────
 
 function ipconfigBasic(ctx: WinCommandContext): string {
+  const suffix = ctx.getDnsSuffix();
   const lines: string[] = ['Windows IP Configuration', ''];
   for (const [, port] of ctx.ports) {
     const ip = port.getIPAddress();
@@ -100,9 +101,9 @@ function ipconfigBasic(ctx: WinCommandContext): string {
     const isConnected = port.isConnected();
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
-    lines.push(`   Connection-specific DNS Suffix  . :`);
+    lines.push(`   Connection-specific DNS Suffix  . : ${suffix}`);
 
-    if (!isConnected && !ip) {
+    if (!port.getIsUp() || (!isConnected && !ip)) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
     } else if (ip) {
       lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
@@ -119,11 +120,12 @@ function ipconfigBasic(ctx: WinCommandContext): string {
 // ─── /all output ──────────────────────────────────────────────────
 
 function ipconfigAll(ctx: WinCommandContext): string {
+  const suffix = ctx.getDnsSuffix();
   const lines: string[] = [
     'Windows IP Configuration',
     '',
     `   Host Name . . . . . . . . . . . . : ${ctx.hostname}`,
-    `   Primary Dns Suffix  . . . . . . . :`,
+    `   Primary Dns Suffix  . . . . . . . : ${suffix}`,
     `   Node Type . . . . . . . . . . . . : Hybrid`,
     `   IP Routing Enabled. . . . . . . . : No`,
     `   WINS Proxy Enabled. . . . . . . . : No`,
@@ -140,7 +142,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
 
-    if (!isConnected && !ip) {
+    if (!port.getIsUp() || (!isConnected && !ip)) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);

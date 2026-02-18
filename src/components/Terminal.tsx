@@ -662,22 +662,11 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   return (
     <div className="h-full w-full bg-[#300a24] text-[#ffffff] flex flex-col text-sm"
       style={{ fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'Monaco', monospace" }}>
-      {/* Title bar — Ubuntu terminal style */}
-      <div className="flex items-center justify-between border-b border-[#5c3d50] px-3 py-1.5 bg-[#2c0a1f]">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5">
-            <button
-              onClick={onRequestClose}
-              className="w-3 h-3 rounded-full bg-[#ef5350] hover:bg-[#f44336] transition-colors"
-              title="Close"
-            />
-            <div className="w-3 h-3 rounded-full bg-[#555753]" />
-            <div className="w-3 h-3 rounded-full bg-[#555753]" />
-          </div>
-          <span className="text-xs text-[#c0a0b0] ml-2 select-none">
-            {promptParts.user}@{promptParts.hostname}: {promptParts.path}
-          </span>
-        </div>
+      {/* Terminal info bar */}
+      <div className="flex items-center border-b border-[#5c3d50] px-3 py-1 bg-[#2c0a1f]">
+        <span className="text-xs text-[#c0a0b0] select-none">
+          {promptParts.user}@{promptParts.hostname}: {promptParts.path}
+        </span>
       </div>
 
       {/* Terminal body */}
