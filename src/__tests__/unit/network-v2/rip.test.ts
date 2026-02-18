@@ -17,7 +17,8 @@ import {
   UDP_PORT_RIP, RIP_METRIC_INFINITY,
   resetCounters,
 } from '@/network/core/types';
-import { Router } from '@/network/devices/Router';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import type { RIPConfig } from '@/network/devices/Router';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
@@ -42,7 +43,7 @@ afterEach(() => {
 describe('Group 1: RIP API & Data Structures', () => {
 
   it('should enable and disable RIP', () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     expect(r1.isRIPEnabled()).toBe(false);
@@ -53,7 +54,7 @@ describe('Group 1: RIP API & Data Structures', () => {
   });
 
   it('should accept custom RIP configuration', () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     r1.enableRIP({
@@ -73,7 +74,7 @@ describe('Group 1: RIP API & Data Structures', () => {
   });
 
   it('should add networks to RIP advertisement list', () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r1.enableRIP();
 
@@ -90,7 +91,7 @@ describe('Group 1: RIP API & Data Structures', () => {
 
   it('should have AD=120 for RIP routes', () => {
     // This is verified functionally in Group 2; here we verify the type
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     // Connected routes have AD=0
@@ -102,8 +103,8 @@ describe('Group 1: RIP API & Data Structures', () => {
   });
 
   it('should remove all RIP routes when disabling RIP', () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -145,8 +146,8 @@ describe('Group 2: Route Exchange & Convergence', () => {
   it('should learn a remote network via RIP from a neighbor', () => {
     // Topology: R1 (10.0.1.0/24) --- R2 (10.0.1.0/24 + 192.168.1.0/24)
     // R1 should learn 192.168.1.0/24 via R2
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -182,8 +183,8 @@ describe('Group 2: Route Exchange & Convergence', () => {
   it('should learn routes bidirectionally', () => {
     // R1 has 172.16.0.0/16, R2 has 192.168.1.0/24
     // After exchange, each should know about the other's network
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r1.configureInterface('GigabitEthernet0/1', new IPAddress('172.16.0.1'), new SubnetMask('255.255.0.0'));
@@ -217,9 +218,9 @@ describe('Group 2: Route Exchange & Convergence', () => {
   it('should propagate routes through 3 routers (R1 → R2 → R3)', () => {
     // R1(172.16.0.0/16) --- R2 --- R3(192.168.1.0/24)
     // After 2 update cycles, R1 should know about 192.168.1.0/24 with metric=2
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const r3 = new CiscoRouter('R3');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r1.configureInterface('GigabitEthernet0/1', new IPAddress('172.16.0.1'), new SubnetMask('255.255.0.0'));
@@ -271,8 +272,8 @@ describe('Group 2: Route Exchange & Convergence', () => {
   });
 
   it('should not install RIP routes for own connected networks', () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     // Both share the 10.0.1.0/24 link
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
@@ -304,8 +305,8 @@ describe('Group 2: Route Exchange & Convergence', () => {
     // R1 and R2 learn each other's networks via RIP (no static routes)
     const pcA = new LinuxPC('linux-pc', 'PC_A');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     pcB.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -350,8 +351,8 @@ describe('Group 2: Route Exchange & Convergence', () => {
   });
 
   it('should prefer static route (AD=1) over RIP route (AD=120) for same prefix', () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r1.configureInterface('GigabitEthernet0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
@@ -401,9 +402,9 @@ describe('Group 3: Split Horizon & Poisoned Reverse', () => {
   it('should not advertise routes back to the interface they were learned from (split horizon)', () => {
     // R1 --- R2 --- R3
     // R3 has 192.168.1.0/24. R2 learns it. R2 should NOT advertise it back to R3.
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const r3 = new CiscoRouter('R3');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -458,8 +459,8 @@ describe('Group 3: Split Horizon & Poisoned Reverse', () => {
 describe('Group 4: Route Aging', () => {
 
   it('should invalidate a route (metric=16) after timeout expires', () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -497,8 +498,8 @@ describe('Group 4: Route Aging', () => {
   });
 
   it('should garbage-collect a route after GC timer expires', () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -537,8 +538,8 @@ describe('Group 4: Route Aging', () => {
   });
 
   it('should refresh timeout when update is received again', () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -580,7 +581,7 @@ describe('Group 4: Route Aging', () => {
 describe('Group 5: CLI Commands', () => {
 
   it('Cisco: "router rip" should enable RIP', async () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('enable');
@@ -592,7 +593,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Cisco: "network" should add network to RIP', async () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('enable');
@@ -608,7 +609,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Cisco: "show ip protocols" should display RIP info', async () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('enable');
@@ -627,8 +628,8 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Cisco: "show ip route" should show RIP routes with [120/metric]', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -655,7 +656,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Cisco: "no router rip" should disable RIP', async () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('enable');
@@ -669,7 +670,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Cisco: "show running-config" should include RIP config', async () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('enable');
@@ -686,7 +687,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Huawei: "rip" should enable RIP', async () => {
-    const r1 = new Router('router-huawei', 'HW1');
+    const r1 = new HuaweiRouter('HW1');
     r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('rip');
@@ -696,7 +697,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Huawei: "rip network <ip>" should add network', async () => {
-    const r1 = new Router('router-huawei', 'HW1');
+    const r1 = new HuaweiRouter('HW1');
     r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('rip');
@@ -709,7 +710,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Huawei: "display rip" should display RIP status', async () => {
-    const r1 = new Router('router-huawei', 'HW1');
+    const r1 = new HuaweiRouter('HW1');
     r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('rip');
@@ -725,7 +726,7 @@ describe('Group 5: CLI Commands', () => {
   });
 
   it('Huawei: "undo rip" should disable RIP', async () => {
-    const r1 = new Router('router-huawei', 'HW1');
+    const r1 = new HuaweiRouter('HW1');
     r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     await r1.executeCommand('rip');

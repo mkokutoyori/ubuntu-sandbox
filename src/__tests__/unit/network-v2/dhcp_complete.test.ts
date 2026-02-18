@@ -13,7 +13,7 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Router } from '@/network/devices/Router';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -65,7 +65,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
   // U-DHCP-02: Server Configuration Validation
   describe('U-DHCP-02: DHCP Server Configuration', () => {
     it('should configure DHCP pool on Cisco router', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       router.configureInterface('GigabitEthernet0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
       
       // Configure DHCP server
@@ -100,7 +100,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
     });
 
     it('should validate pool configuration errors', async () => {
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
 
       // Try to configure pool without network statement
       await router.executeCommand('enable');
@@ -119,7 +119,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
   // U-DHCP-03: Lease Database Management
   describe('U-DHCP-03: DHCP Lease Database', () => {
     it('should maintain bindings and show active leases', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       // ... configure DHCP pool as above ...
       
       // Check bindings (initially empty)
@@ -147,7 +147,7 @@ describe('Group 2: Functional — DORA Process', () => {
   describe('F-DHCP-01: Complete DORA Sequence', () => {
     it('should complete DORA process and obtain IP address', async () => {
       // Setup: Router as DHCP Server, Switch, Client
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       const switch1 = new CiscoSwitch('switch-cisco', 'SW1');
       const pc = new LinuxPC('linux-pc', 'PC1');
       
@@ -210,7 +210,7 @@ describe('Group 2: Functional — DORA Process', () => {
     });
 
     it('should handle multiple clients simultaneously', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       const switch1 = new CiscoSwitch('switch-cisco', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new WindowsPC('windows-pc', 'PC2');
@@ -264,7 +264,7 @@ describe('Group 2: Functional — DORA Process', () => {
     it('should renew lease at T1 (50% of lease time)', async () => {
       vi.useFakeTimers();
       
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       const pc = new LinuxPC('linux-pc', 'PC1');
       
       // Configure DHCP with short lease for testing
@@ -337,7 +337,7 @@ describe('Group 2: Functional — DORA Process', () => {
     });
 
     it('should handle DHCPNAK (server denies request)', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       const pc = new LinuxPC('linux-pc', 'PC1');
       
       // Configure server to NAK certain requests
@@ -357,7 +357,7 @@ describe('Group 2: Functional — DORA Process', () => {
     });
 
     it('should handle exhausted address pool', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       
       // Configure tiny pool
       await router.executeCommand('enable');
@@ -477,7 +477,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
   // Router DHCP Server Commands
   describe('Router: DHCP Server Monitoring', () => {
     it('should show detailed DHCP server statistics', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
       
       // Configure DHCP first
       await router.executeCommand('enable');
@@ -502,7 +502,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
     });
 
     it('should clear DHCP bindings and statistics', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
 
       // Enter privileged mode for clear/show commands
       await router.executeCommand('enable');
@@ -521,7 +521,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
     });
 
     it('should debug DHCP packets in real-time', async () => {
-      const router = new Router('router-cisco', 'DHCP-Server');
+      const router = new CiscoRouter('DHCP-Server');
 
       // Enter privileged mode first (debug commands require it)
       await router.executeCommand('enable');
@@ -541,7 +541,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
     });
 
     it('should configure DHCP relay agent', async () => {
-      const router = new Router('router-cisco', 'Relay-Agent');
+      const router = new CiscoRouter('Relay-Agent');
       
       // Configure interface to relay DHCP requests
       await router.executeCommand('enable');

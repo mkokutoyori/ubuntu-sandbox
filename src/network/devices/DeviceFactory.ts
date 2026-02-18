@@ -11,7 +11,8 @@ import { CiscoSwitch } from './CiscoSwitch';
 import { HuaweiSwitch } from './HuaweiSwitch';
 import { GenericSwitch } from './GenericSwitch';
 import { Hub } from './Hub';
-import { Router } from './Router';
+import { CiscoRouter } from './CiscoRouter';
+import { HuaweiRouter } from './HuaweiRouter';
 
 let deviceCounters: Map<string, number> = new Map();
 
@@ -49,9 +50,9 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 
     // Routers
     case 'router-cisco':
-      return new Router('router-cisco', nextName('Router'), x, y);
+      return new CiscoRouter(nextName('Router'), x, y);
     case 'router-huawei':
-      return new Router('router-huawei', nextName('Router'), x, y);
+      return new HuaweiRouter(nextName('Router'), x, y);
 
     // Firewalls (stub as LinuxPC for now)
     case 'firewall-cisco':

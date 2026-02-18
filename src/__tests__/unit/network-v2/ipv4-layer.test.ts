@@ -17,7 +17,7 @@ import {
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
-import { Router } from '@/network/devices/Router';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -178,7 +178,7 @@ describe('Group 2: Routing & TTL', () => {
       const pcB = new LinuxPC('linux-pc', 'PC_B');
       const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
       const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
 
       // Configure IPs
       pcA.getPort('eth0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -218,7 +218,7 @@ describe('Group 2: Routing & TTL', () => {
       const pcB = new LinuxPC('linux-pc', 'PC_B');
       const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
       const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
 
       pcA.getPort('eth0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
       pcB.getPort('eth0')!.configureIP(new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -298,8 +298,8 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       // PC_A (10.0.1.2) — R1 (10.0.1.1/10.0.2.1) — R2 (10.0.2.2/10.0.3.1) — PC_B (10.0.3.2)
       const pcA = new LinuxPC('linux-pc', 'PC_A');
       const pcB = new LinuxPC('linux-pc', 'PC_B');
-      const r1 = new Router('router-cisco', 'R1');
-      const r2 = new Router('router-cisco', 'R2');
+      const r1 = new CiscoRouter('R1');
+      const r2 = new CiscoRouter('R2');
 
       pcA.getPort('eth0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
       pcB.getPort('eth0')!.configureIP(new IPAddress('10.0.3.2'), new SubnetMask('255.255.255.0'));
@@ -340,7 +340,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
     it('should ping through router with Windows TTL (128)', async () => {
       const winPC = new WindowsPC('windows-pc', 'WinPC');
       const linPC = new LinuxPC('linux-pc', 'LinPC');
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
 
       winPC.getPort('eth0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
       linPC.getPort('eth0')!.configureIP(new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -367,7 +367,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
   // I-L3-04: Router show commands
   describe('I-L3-04: Router CLI commands', () => {
     it('should display routing table with connected and static routes', async () => {
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
       router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
       router.configureInterface('GigabitEthernet0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
       router.addStaticRoute(new IPAddress('10.0.3.0'), new SubnetMask('255.255.255.0'), new IPAddress('10.0.2.2'));
@@ -379,7 +379,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
     });
 
     it('should display interface brief', async () => {
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
       router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
       const output = await router.executeCommand('show ip interface brief');
@@ -392,7 +392,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
   describe('I-L3-05: Ping router interface', () => {
     it('should respond to ping addressed to router interface IP', async () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
 
       pc.getPort('eth0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
       router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));

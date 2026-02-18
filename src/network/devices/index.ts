@@ -9,6 +9,8 @@ export { GenericSwitch } from './GenericSwitch';
 export type { Dot1QTag, TaggedEthernetFrame, SwitchportMode, SwitchportConfig, MACTableEntry, VLANEntry, STPPortState, CLIMode } from './Switch';
 export { Hub } from './Hub';
 export { Router } from './Router';
+export { CiscoRouter } from './CiscoRouter';
+export { HuaweiRouter } from './HuaweiRouter';
 export type { RouteEntry, RouterCounters, RIPConfig } from './Router';
 export type { IRouterShell } from './shells/IRouterShell';
 export { CiscoIOSShell } from './shells/CiscoIOSShell';
