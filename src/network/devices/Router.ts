@@ -1863,18 +1863,12 @@ export abstract class Router extends Equipment {
 
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
   cliHelp(inputBeforeQuestion: string): string {
-    if ('getHelp' in this.shell && typeof (this.shell as any).getHelp === 'function') {
-      return (this.shell as any).getHelp(inputBeforeQuestion);
-    }
-    return '';
+    return this.shell.getHelp(inputBeforeQuestion);
   }
 
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
-    if ('tabComplete' in this.shell && typeof (this.shell as any).tabComplete === 'function') {
-      return (this.shell as any).tabComplete(input);
-    }
-    return null;
+    return this.shell.tabComplete(input);
   }
 
   getBanner(type: string): string {

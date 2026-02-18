@@ -1,11 +1,16 @@
 /**
  * HuaweiVRPShell - Huawei VRP CLI emulation for Router Management Plane
  *
- * Modes:
- *   - User view: <hostname> — display commands, ping, traceroute
+ * FSM-based CLI with CommandTrie for abbreviation/help support:
+ *   - User view: <hostname> — display commands, system-view
  *   - System view: [hostname] — configuration commands
  *   - Interface view: [hostname-GE0/0/X] — interface configuration
  *   - DHCP pool view: [hostname-ip-pool-name] — DHCP pool configuration
+ *
+ * Features:
+ *   - Abbreviation matching (e.g. "dis ip ro" → "display ip routing-table")
+ *   - Context-aware ? help listing valid completions
+ *   - Tab completion
  *
  * Command implementations are extracted into:
  *   - huawei/HuaweiDisplayCommands.ts  — display implementations
@@ -15,16 +20,23 @@
 
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
+import { CommandTrie } from './CommandTrie';
 
 // Extracted command modules
-import { dispatchDisplay, resolveHuaweiInterfaceName } from './huawei/HuaweiDisplayCommands';
+import {
+  type HuaweiDisplayState,
+  registerDisplayCommands,
+} from './huawei/HuaweiDisplayCommands';
 import {
   type HuaweiShellMode, type HuaweiShellContext,
-  cmdIp, cmdArpStatic, cmdRip, cmdUndo, executeInterfaceMode,
+  buildSystemCommands, buildInterfaceCommands,
+  cmdIpRouteStatic, cmdRip, cmdUndo,
 } from './huawei/HuaweiConfigCommands';
-import { cmdDhcp, executeDhcpPoolMode } from './huawei/HuaweiDhcpCommands';
+import {
+  registerDhcpSystemCommands, buildDhcpPoolCommands,
+} from './huawei/HuaweiDhcpCommands';
 
-export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext {
+export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState {
   private mode: HuaweiShellMode = 'user';
   private selectedInterface: string | null = null;
   private selectedPool: string | null = null;
@@ -35,6 +47,19 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext {
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
+
+  // Per-mode command tries
+  private userTrie = new CommandTrie();
+  private systemTrie = new CommandTrie();
+  private interfaceTrie = new CommandTrie();
+  private dhcpPoolTrie = new CommandTrie();
+
+  constructor() {
+    this.buildUserCommands();
+    this.buildSystemViewCommands();
+    this.buildInterfaceViewCommands();
+    this.buildDhcpPoolViewCommands();
+  }
 
   getOSType(): string { return 'huawei-vrp'; }
 
@@ -54,6 +79,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext {
   setSelectedPool(pool: string | null): void { this.selectedPool = pool; }
 
   getDhcpSelectGlobal(): Set<string> { return this.dhcpSelectGlobalSet; }
+
+  // ─── HuaweiDisplayState Implementation ─────────────────────────────
+
+  isDhcpEnabled(): boolean { return this.dhcpEnabled; }
+  isDhcpSnoopingEnabled(): boolean { return this.dhcpSnoopingEnabled; }
 
   // ─── Prompt Generation ─────────────────────────────────────────────
 
@@ -76,6 +106,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext {
 
     const lower = trimmed.toLowerCase();
 
+    // Handle ? for help (preserve trailing space for "display ?" vs "display?")
+    if (trimmed.endsWith('?')) {
+      const helpInput = trimmed.slice(0, -1);
+      return this.getHelp(helpInput);
+    }
+
     // Global navigation
     if (lower === 'return') {
       this.mode = 'user';
@@ -88,17 +124,35 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext {
     // Bind router reference
     this.routerRef = router;
 
-    let output: string;
-    switch (this.mode) {
-      case 'user':       output = this.executeUserMode(router, trimmed); break;
-      case 'system':     output = this.executeSystemMode(router, trimmed); break;
-      case 'interface':  output = this.executeInterfaceMode(router, trimmed); break;
-      case 'dhcp-pool':  output = executeDhcpPoolMode(router, this, trimmed); break;
-      default:           output = `Error: Unrecognized command "${trimmed}"`;
-    }
+    const output = this.executeOnTrie(trimmed);
 
     this.routerRef = null;
     return output;
+  }
+
+  private executeOnTrie(cmdPart: string): string {
+    const trie = this.getActiveTrie();
+    const result = trie.match(cmdPart);
+
+    switch (result.status) {
+      case 'ok':
+        if (result.node?.action) {
+          return result.node.action(result.args, cmdPart);
+        }
+        return '';
+
+      case 'ambiguous':
+        return result.error || `Error: Ambiguous command "${cmdPart}"`;
+
+      case 'incomplete':
+        return result.error || 'Error: Incomplete command.';
+
+      case 'invalid':
+        return result.error || `Error: Unrecognized command "${cmdPart}"`;
+
+      default:
+        return `Error: Unrecognized command "${cmdPart}"`;
+    }
   }
 
   private cmdQuit(): string {
@@ -121,84 +175,105 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext {
     }
   }
 
+  // ─── Help / Completion ─────────────────────────────────────────────
+
+  getHelp(input: string): string {
+    const trie = this.getActiveTrie();
+    const completions = trie.getCompletions(input);
+    if (completions.length === 0) return 'Error: Unrecognized command';
+    const maxKw = Math.max(...completions.map(c => c.keyword.length));
+    return completions
+      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+      .join('\n');
+  }
+
+  tabComplete(input: string): string | null {
+    const trie = this.getActiveTrie();
+    return trie.tabComplete(input);
+  }
+
+  // ─── Active Trie Selection ─────────────────────────────────────────
+
+  private getActiveTrie(): CommandTrie {
+    switch (this.mode) {
+      case 'user': return this.userTrie;
+      case 'system': return this.systemTrie;
+      case 'interface': return this.interfaceTrie;
+      case 'dhcp-pool': return this.dhcpPoolTrie;
+      default: return this.userTrie;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Command Registration (per-mode CommandTrie construction)
+  // ═══════════════════════════════════════════════════════════════════
+
   // ─── User View (<hostname>) ──────────────────────────────────────
 
-  private executeUserMode(router: Router, input: string): string {
-    const parts = input.split(/\s+/);
-    const cmd = parts[0].toLowerCase();
+  private buildUserCommands(): void {
+    const t = this.userTrie;
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
 
-    if (cmd === 'system-view') {
+    t.register('system-view', 'Enter system view', () => {
       this.mode = 'system';
       return 'Enter system view, return user view with return command.';
-    }
+    });
 
-    if (cmd === 'display') return dispatchDisplay(router, parts.slice(1), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
-    if (cmd === 'show') return dispatchDisplay(router, parts.slice(1), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet); // alias
+    // Display commands
+    registerDisplayCommands(t, getRouter, getState);
 
-    // Allow config commands in user view for backward compatibility
-    if (cmd === 'ip') return cmdIp(router, this, parts.slice(1));
-    if (cmd === 'rip') return cmdRip(router, parts.slice(1));
-    if (cmd === 'undo') return cmdUndo(router, this, parts.slice(1));
+    // Backward-compat aliases in user view
+    t.registerGreedy('ip route-static', 'Configure static route', (args) => {
+      return cmdIpRouteStatic(getRouter(), args);
+    });
 
-    return `Error: Unrecognized command "${input}"`;
+    t.registerGreedy('rip', 'Configure RIP routing', (args) => {
+      return cmdRip(getRouter(), args);
+    });
+
+    t.registerGreedy('undo', 'Undo configuration', (args) => {
+      return cmdUndo(getRouter(), this, args);
+    });
   }
 
   // ─── System View ([hostname]) ────────────────────────────────────
 
-  private executeSystemMode(router: Router, input: string): string {
-    const parts = input.split(/\s+/);
-    const cmd = parts[0].toLowerCase();
+  private buildSystemViewCommands(): void {
+    const t = this.systemTrie;
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
 
-    if (cmd === 'display') return dispatchDisplay(router, parts.slice(1), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+    // Display commands (available in all modes)
+    registerDisplayCommands(t, getRouter, getState);
 
-    if (cmd === 'sysname') {
-      if (parts.length < 2) return 'Error: Incomplete command.';
-      router._setHostnameInternal(parts[1]);
-      return '';
-    }
+    // System-mode config commands
+    buildSystemCommands(t, this);
 
-    if (cmd === 'interface') {
-      if (parts.length < 2) return 'Error: Incomplete command.';
-      const portName = resolveHuaweiInterfaceName(router, parts[1]);
-      if (!portName) return `Error: Wrong parameter found at '^' position.`;
-      this.selectedInterface = portName;
-      this.mode = 'interface';
-      return '';
-    }
-
-    if (cmd === 'ip') return cmdIp(router, this, parts.slice(1));
-    if (cmd === 'undo') return cmdUndo(router, this, parts.slice(1));
-    if (cmd === 'rip') return cmdRip(router, parts.slice(1));
-
-    if (cmd === 'arp') {
-      // arp static <ip> <mac>
-      if (parts.length >= 4 && parts[1].toLowerCase() === 'static') {
-        return cmdArpStatic(router, parts[2], parts[3]);
-      }
-      return 'Error: Incomplete command.';
-    }
-
-    if (cmd === 'dhcp') {
-      return cmdDhcp(router, this, parts.slice(1),
-        (v) => { this.dhcpEnabled = v; },
-        (v) => { this.dhcpSnoopingEnabled = v; },
-      );
-    }
-
-    return `Error: Unrecognized command "${input}"`;
+    // DHCP system-mode commands
+    registerDhcpSystemCommands(t, this, {
+      setDhcpEnabled: (v) => { this.dhcpEnabled = v; },
+      setDhcpSnoopingEnabled: (v) => { this.dhcpSnoopingEnabled = v; },
+    });
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
 
-  private executeInterfaceMode(router: Router, input: string): string {
-    const parts = input.split(/\s+/);
+  private buildInterfaceViewCommands(): void {
+    const t = this.interfaceTrie;
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
 
-    if (input.toLowerCase() === 'display') return 'Error: Incomplete command.';
-    if (parts[0].toLowerCase() === 'display') return dispatchDisplay(router, parts.slice(1), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+    // Display commands
+    registerDisplayCommands(t, getRouter, getState);
 
-    const result = executeInterfaceMode(router, this, input);
-    if (result !== null) return result;
+    // Interface-specific commands
+    buildInterfaceCommands(t, this);
+  }
 
-    return `Error: Unrecognized command "${input}"`;
+  // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
+
+  private buildDhcpPoolViewCommands(): void {
+    buildDhcpPoolCommands(this.dhcpPoolTrie, this);
   }
 }

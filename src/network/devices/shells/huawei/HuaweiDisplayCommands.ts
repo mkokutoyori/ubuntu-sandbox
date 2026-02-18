@@ -3,9 +3,21 @@
  *
  * Pure functions: Router → string (no side effects, no state mutation)
  * Used by HuaweiVRPShell for "display" commands.
+ *
+ * Also provides registerDisplayCommands() to wire them onto a CommandTrie.
  */
 
 import type { Router } from '../../Router';
+import type { CommandTrie } from '../CommandTrie';
+
+// ─── Display State Accessor (passed from shell) ─────────────────────
+export interface HuaweiDisplayState {
+  isDhcpEnabled(): boolean;
+  isDhcpSnoopingEnabled(): boolean;
+  getDhcpSelectGlobal(): Set<string>;
+}
+
+// ─── Pure Display Functions ──────────────────────────────────────────
 
 export function displayVersion(router: Router): string {
   return [
@@ -209,29 +221,38 @@ export function displayRip(router: Router): string {
   return lines.join('\n');
 }
 
-// ─── Display Command Dispatcher ──────────────────────────────────────
+// ─── Trie Registration ──────────────────────────────────────────────
 
-export function dispatchDisplay(
-  router: Router,
-  args: string[],
-  dhcpEnabled: boolean,
-  dhcpSnoopingEnabled: boolean,
-  dhcpSelectGlobal: Set<string>,
-): string {
-  if (args.length === 0) return 'Error: Incomplete command.';
-  const sub = args.join(' ').toLowerCase();
+/**
+ * Register all "display" commands on a CommandTrie.
+ * Used by HuaweiVRPShell to wire display commands onto per-mode tries.
+ */
+export function registerDisplayCommands(
+  trie: CommandTrie,
+  getRouter: () => Router,
+  getState: () => HuaweiDisplayState,
+): void {
+  trie.register('display version', 'Display version information', () => displayVersion(getRouter()));
+  trie.register('display ip routing-table', 'Display IP routing table', () => displayIpRoutingTable(getRouter()));
+  trie.register('display ip interface brief', 'Display interface summary', () => displayIpIntBrief(getRouter()));
+  trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
+  trie.register('display arp', 'Display ARP table', () => displayArp(getRouter()));
+  trie.register('display current-configuration', 'Display running configuration', () => {
+    const s = getState();
+    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+  });
+  trie.register('display counters', 'Display traffic counters', () => displayCounters(getRouter()));
+  trie.register('display rip', 'Display RIP information', () => displayRip(getRouter()));
 
-  if (sub === 'ip routing-table') return displayIpRoutingTable(router);
-  if (sub === 'ip interface brief') return displayIpIntBrief(router);
-  if (sub === 'arp') return displayArp(router);
-  if (sub === 'current-configuration' || sub === 'current') return displayCurrentConfig(router, dhcpEnabled, dhcpSnoopingEnabled, dhcpSelectGlobal);
-  if (sub === 'ip traffic' || sub === 'counters') return displayCounters(router);
-  if (sub === 'rip' || sub === 'rip 1') return displayRip(router);
-  if (sub === 'version') return displayVersion(router);
-  if (sub.startsWith('interface ')) return displayInterface(router, args.slice(1).join(' '));
-  if (sub.startsWith('ip pool name ')) return displayIpPool(router, args.slice(3).join(' '));
+  trie.registerGreedy('display interface', 'Display interface information', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    return displayInterface(getRouter(), args.join(' '));
+  });
 
-  return `Error: Unrecognized command "display ${args.join(' ')}"`;
+  trie.registerGreedy('display ip pool name', 'Display DHCP pool information', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    return displayIpPool(getRouter(), args.join(' '));
+  });
 }
 
 // ─── Interface Name Resolution (Huawei format) ──────────────────────

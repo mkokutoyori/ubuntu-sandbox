@@ -7,10 +7,14 @@
  *   - rip commands
  *   - undo commands
  *   - Interface mode commands
+ *
+ * Also provides buildSystemCommands() / buildInterfaceCommands() for CommandTrie wiring.
  */
 
 import { IPAddress, SubnetMask, MACAddress } from '../../../core/types';
 import type { Router } from '../../Router';
+import type { CommandTrie } from '../CommandTrie';
+import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -28,49 +32,41 @@ export interface HuaweiShellContext {
 
 // ─── IP Command ──────────────────────────────────────────────────────
 
-export function cmdIp(router: Router, ctx: HuaweiShellContext, args: string[]): string {
-  if (args.length === 0) return 'Error: Incomplete command.';
+export function cmdIpRouteStatic(router: Router, args: string[]): string {
+  if (args.length < 3) return 'Error: Incomplete command.';
+  try {
+    const network = new IPAddress(args[0]);
+    const mask = new SubnetMask(args[1]);
+    const nextHop = new IPAddress(args[2]);
 
-  // ip route-static <network> <mask> <next-hop> [preference <priority>] [tag <tag>]
-  if (args.length >= 4 && args[0] === 'route-static') {
-    try {
-      const network = new IPAddress(args[1]);
-      const mask = new SubnetMask(args[2]);
-      const nextHop = new IPAddress(args[3]);
-
-      // Parse optional preference (priority) and tag
-      let priority = 60; // Huawei default preference for static routes
-      for (let i = 4; i < args.length; i++) {
-        if (args[i] === 'preference' && args[i + 1]) {
-          priority = parseInt(args[i + 1], 10);
-          i++;
-        } else if (args[i] === 'tag' && args[i + 1]) {
-          i++;
-        }
+    // Parse optional preference (priority) and tag
+    let priority = 60; // Huawei default preference for static routes
+    for (let i = 3; i < args.length; i++) {
+      if (args[i] === 'preference' && args[i + 1]) {
+        priority = parseInt(args[i + 1], 10);
+        i++;
+      } else if (args[i] === 'tag' && args[i + 1]) {
+        i++;
       }
-
-      if (args[1] === '0.0.0.0' && args[2] === '0.0.0.0') {
-        return router.setDefaultRoute(nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
-      }
-      return router.addStaticRoute(network, mask, nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
-    } catch (e: any) {
-      return `Error: ${e.message}`;
     }
-  }
 
-  // ip pool <name> → enter DHCP pool configuration
-  if (args.length >= 2 && args[0] === 'pool') {
-    const poolName = args[1];
-    const dhcp = router._getDHCPServerInternal();
-    if (!dhcp.getPool(poolName)) {
-      dhcp.createPool(poolName);
+    if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
+      return router.setDefaultRoute(nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
     }
-    ctx.setSelectedPool(poolName);
-    ctx.setMode('dhcp-pool');
-    return '';
+    return router.addStaticRoute(network, mask, nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
+  } catch (e: any) {
+    return `Error: ${e.message}`;
   }
+}
 
-  return 'Error: Incomplete command.';
+export function cmdIpPool(router: Router, ctx: HuaweiShellContext, poolName: string): string {
+  const dhcp = router._getDHCPServerInternal();
+  if (!dhcp.getPool(poolName)) {
+    dhcp.createPool(poolName);
+  }
+  ctx.setSelectedPool(poolName);
+  ctx.setMode('dhcp-pool');
+  return '';
 }
 
 // ─── ARP Static Command ─────────────────────────────────────────────
@@ -162,48 +158,110 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
   return `Error: Unrecognized command "undo ${args.join(' ')}"`;
 }
 
-// ─── Interface Mode Commands ─────────────────────────────────────────
+// ─── Interface Mode Commands (individual handlers) ──────────────────
 
-export function executeInterfaceMode(router: Router, ctx: HuaweiShellContext, input: string): string {
-  const parts = input.split(/\s+/);
-  const lower = input.toLowerCase();
+function cmdShutdown(router: Router, ctx: HuaweiShellContext): string {
+  const port = router.getPort(ctx.getSelectedInterface()!);
+  if (port) port.setUp(false);
+  return '';
+}
 
-  if (lower === 'shutdown') {
-    const port = router.getPort(ctx.getSelectedInterface()!);
-    if (port) port.setUp(false);
+function cmdUndoShutdown(router: Router, ctx: HuaweiShellContext): string {
+  const port = router.getPort(ctx.getSelectedInterface()!);
+  if (port) port.setUp(true);
+  return '';
+}
+
+function cmdIpAddress(router: Router, ctx: HuaweiShellContext, args: string[]): string {
+  if (args.length < 2) return 'Error: Incomplete command.';
+  try {
+    const ip = new IPAddress(args[0]);
+    const mask = new SubnetMask(args[1]);
+    router.configureInterface(ctx.getSelectedInterface()!, ip, mask);
     return '';
+  } catch (e: any) {
+    return `Error: ${e.message}`;
   }
+}
 
-  if (lower === 'undo shutdown') {
-    const port = router.getPort(ctx.getSelectedInterface()!);
-    if (port) port.setUp(true);
+function cmdDhcpSelectGlobal(ctx: HuaweiShellContext): string {
+  ctx.getDhcpSelectGlobal().add(ctx.getSelectedInterface()!);
+  return '';
+}
+
+// ─── Trie Builders ──────────────────────────────────────────────────
+
+/**
+ * Register system-view commands on a CommandTrie.
+ */
+export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
+  const getRouter = () => ctx.r();
+
+  trie.registerGreedy('sysname', 'Set device name', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    getRouter()._setHostnameInternal(args[0]);
     return '';
-  }
+  });
 
-  // ip address <ip> <mask>
-  if (parts[0].toLowerCase() === 'ip' && parts.length >= 4 && parts[1].toLowerCase() === 'address') {
-    try {
-      const ip = new IPAddress(parts[2]);
-      const mask = new SubnetMask(parts[3]);
-      router.configureInterface(ctx.getSelectedInterface()!, ip, mask);
-      return '';
-    } catch (e: any) {
-      return `Error: ${e.message}`;
-    }
-  }
-
-  // dhcp select global
-  if (lower === 'dhcp select global') {
-    ctx.getDhcpSelectGlobal().add(ctx.getSelectedInterface()!);
+  trie.registerGreedy('interface', 'Enter interface view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const portName = resolveHuaweiInterfaceName(getRouter(), args.join(''));
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    ctx.setSelectedInterface(portName);
+    ctx.setMode('interface');
     return '';
-  }
+  });
 
-  // dhcp snooping enable (interface level)
-  if (lower === 'dhcp snooping enable') {
-    return '';
-  }
+  trie.registerGreedy('ip route-static', 'Configure static route', (args) => {
+    return cmdIpRouteStatic(getRouter(), args);
+  });
 
-  return null as any; // signal: not handled
+  trie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    return cmdIpPool(getRouter(), ctx, args[0]);
+  });
+
+  trie.registerGreedy('undo', 'Undo configuration', (args) => {
+    return cmdUndo(getRouter(), ctx, args);
+  });
+
+  trie.registerGreedy('rip', 'Configure RIP routing', (args) => {
+    return cmdRip(getRouter(), args);
+  });
+
+  trie.registerGreedy('arp static', 'Configure static ARP entry', (args) => {
+    if (args.length < 2) return 'Error: Incomplete command.';
+    return cmdArpStatic(getRouter(), args[0], args[1]);
+  });
+}
+
+/**
+ * Register interface-view commands on a CommandTrie.
+ */
+export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
+  const getRouter = () => ctx.r();
+
+  trie.registerGreedy('ip address', 'Configure IP address', (args) => {
+    return cmdIpAddress(getRouter(), ctx, args);
+  });
+
+  trie.register('shutdown', 'Shutdown interface', () => {
+    return cmdShutdown(getRouter(), ctx);
+  });
+
+  trie.register('undo shutdown', 'Enable interface', () => {
+    return cmdUndoShutdown(getRouter(), ctx);
+  });
+
+  trie.registerGreedy('undo', 'Undo configuration', (args) => {
+    return cmdUndo(getRouter(), ctx, args);
+  });
+
+  trie.register('dhcp select global', 'Enable DHCP on interface', () => {
+    return cmdDhcpSelectGlobal(ctx);
+  });
+
+  trie.register('dhcp snooping enable', 'Enable DHCP snooping on interface', () => '');
 }
 
 // ─── Utility Functions ───────────────────────────────────────────────
