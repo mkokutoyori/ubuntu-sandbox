@@ -14,7 +14,9 @@
  */
 
 import { DeviceType } from '../core/types';
-import { Switch, CiscoSwitchShell, HuaweiVRPSwitchShell, STPPortState } from './Switch';
+import { Switch, STPPortState } from './Switch';
+import type { ISwitchShell } from './shells/ISwitchShell';
+import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
 
 export class HuaweiSwitch extends Switch {
 
@@ -33,8 +35,8 @@ export class HuaweiSwitch extends Switch {
     return 'listening';
   }
 
-  protected createShell(): CiscoSwitchShell | HuaweiVRPSwitchShell {
-    return new HuaweiVRPSwitchShell();
+  protected createShell(): ISwitchShell {
+    return new HuaweiSwitchShell();
   }
 
   /**
