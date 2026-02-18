@@ -36,6 +36,8 @@ export { GenericSwitch } from './devices/GenericSwitch';
 export type { Dot1QTag, TaggedEthernetFrame, SwitchportMode, SwitchportConfig, MACTableEntry, VLANEntry, STPPortState, CLIMode } from './devices/Switch';
 export { Hub } from './devices/Hub';
 export { Router } from './devices/Router';
+export { CiscoRouter } from './devices/CiscoRouter';
+export { HuaweiRouter } from './devices/HuaweiRouter';
 export type { RouteEntry, RouterCounters, RIPConfig } from './devices/Router';
 export type { IRouterShell } from './devices/shells/IRouterShell';
 export { CiscoIOSShell } from './devices/shells/CiscoIOSShell';

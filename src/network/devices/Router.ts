@@ -226,12 +226,10 @@ export interface RAConfig {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
-import { CiscoIOSShell } from './shells/CiscoIOSShell';
-import { HuaweiVRPShell } from './shells/HuaweiVRPShell';
 
-// ─── Router ────────────────────────────────────────────────────────
+// ─── Router (Abstract Base) ──────────────────────────────────────────
 
-export class Router extends Equipment {
+export abstract class Router extends Equipment {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
@@ -279,9 +277,9 @@ export class Router extends Equipment {
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
 
-  constructor(type: DeviceType = 'router-cisco', name: string = 'Router', x: number = 0, y: number = 0) {
+  constructor(type: DeviceType, name: string = 'Router', x: number = 0, y: number = 0) {
     super(type, name, x, y);
-    this.shell = type.includes('huawei') ? new HuaweiVRPShell() : new CiscoIOSShell();
+    this.shell = this.createShell();
     this.createPorts();
   }
 
@@ -294,11 +292,13 @@ export class Router extends Equipment {
   }
 
   /** Vendor-specific interface naming convention */
-  private getVendorPortName(index: number): string {
-    if (this.deviceType.includes('huawei')) return `GE0/0/${index}`;
-    if (this.deviceType.includes('cisco')) return `GigabitEthernet0/${index}`;
-    return `eth${index}`;
-  }
+  protected abstract getVendorPortName(index: number): string;
+
+  /** Create the vendor-specific CLI shell */
+  protected abstract createShell(): IRouterShell;
+
+  /** Get the vendor-specific boot sequence */
+  abstract getBootSequence(): string;
 
   // ─── Interface IP Configuration ──────────────────────────────
 
@@ -1875,33 +1875,6 @@ export class Router extends Equipment {
       return (this.shell as any).tabComplete(input);
     }
     return null;
-  }
-
-  getBootSequence(): string {
-    const giPorts = [...this.ports.keys()].filter(n => n.startsWith('Gig'));
-    const faPorts = [...this.ports.keys()].filter(n => n.startsWith('Fast'));
-    return [
-      '',
-      'System Bootstrap, Version 15.0(1r)M15, RELEASE SOFTWARE (fc1)',
-      'Copyright (c) 2003-2025 by cisco Systems, Inc.',
-      '',
-      `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5, RELEASE SOFTWARE (fc1)`,
-      'Technical Support: http://www.cisco.com/techsupport',
-      `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
-      '',
-      'Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.',
-      'Processor board ID FTX1234567A',
-      `${giPorts.length} Gigabit Ethernet interfaces`,
-      ...(faPorts.length > 0 ? [`${faPorts.length} FastEthernet interfaces`] : []),
-      'DRAM configuration is 64 bits wide with parity enabled.',
-      '256K bytes of non-volatile configuration memory.',
-      '',
-      `Base ethernet MAC address: ${this.ports.values().next().value?.getMAC() || '00:00:00:00:00:00'}`,
-      '',
-      '--- System Configuration Dialog ---',
-      '',
-      'Press RETURN to get started.',
-    ].join('\n');
   }
 
   getBanner(type: string): string {

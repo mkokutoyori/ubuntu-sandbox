@@ -13,7 +13,7 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Router } from '@/network/devices/Router';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -67,7 +67,7 @@ describe('Group 1: Routing Table — LPM Selection', () => {
     });
 
     it('should select /24 static route over /8 static route for 10.1.1.50', () => {
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
       router.configureInterface('GigabitEthernet0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
       // Two static routes — /8 and /24 pointing to different gateways
@@ -174,7 +174,7 @@ describe('Group 2: Functional — Inter-Network Routing', () => {
       //   PC2 (10.0.2.2/24), Gateway: 10.0.2.1
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
 
       pc1.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
       pc2.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -339,7 +339,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
   // Router show ip route
   describe('Router: show ip route with metric', () => {
     it('should display routing table with connected and static routes', async () => {
-      const router = new Router('router-cisco', 'R1');
+      const router = new CiscoRouter('R1');
       router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
       router.configureInterface('GigabitEthernet0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
       router.addStaticRoute(

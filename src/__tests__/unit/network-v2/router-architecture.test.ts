@@ -15,8 +15,9 @@ import {
   resetCounters,
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { Router } from '@/network/devices/Router';
 import type { RouterCounters } from '@/network/devices/Router';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -39,7 +40,7 @@ describe('T-ROUT-01: LPM Precision — 3 routes on different interfaces', () => 
     //     GigabitEthernet0/0 = 10.0.0.1/8         (default route target network)
     //     GigabitEthernet0/1 = 192.168.0.1/16      (/16 route)
     //     GigabitEthernet0/2 = 192.168.1.1/24      (/24 route — most specific)
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     r1.configureInterface('GigabitEthernet0/0',
       new IPAddress('10.0.0.1'), new SubnetMask('255.0.0.0'));
@@ -81,7 +82,7 @@ describe('T-ROUT-01: LPM Precision — 3 routes on different interfaces', () => 
     const sender = new LinuxPC('linux-pc', 'Sender');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
     const pcC = new LinuxPC('linux-pc', 'PC_C');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     sender.configureInterface('eth0', new IPAddress('10.0.0.2'), new SubnetMask('255.0.0.0'));
     pcB.configureInterface('eth0', new IPAddress('192.168.0.2'), new SubnetMask('255.255.0.0'));
@@ -122,7 +123,7 @@ describe('T-ROUT-01: LPM Precision — 3 routes on different interfaces', () => 
     const sender = new LinuxPC('linux-pc', 'Sender');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
     const pcC = new LinuxPC('linux-pc', 'PC_C');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     sender.configureInterface('eth0', new IPAddress('10.0.0.2'), new SubnetMask('255.0.0.0'));
     pcB.configureInterface('eth0', new IPAddress('192.168.2.50'), new SubnetMask('255.255.0.0'));
@@ -157,7 +158,7 @@ describe('T-ROUT-01: LPM Precision — 3 routes on different interfaces', () => 
     // 8.8.8.8 does not match /24 or /16, so should fall through to default
     const sender = new LinuxPC('linux-pc', 'Sender');
     const defaultGw = new LinuxPC('linux-pc', 'DefaultGW');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     sender.configureInterface('eth0', new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     defaultGw.configureInterface('eth0', new IPAddress('172.16.0.2'), new SubnetMask('255.255.255.0'));
@@ -204,7 +205,7 @@ describe('T-ROUT-02: ICMP Error Generation', () => {
     // PC_A (10.0.1.2) → R1 (10.0.1.1 / 10.0.2.1) → PC_B (10.0.2.2)
     const pcA = new LinuxPC('linux-pc', 'PC_A');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     pcB.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -236,7 +237,7 @@ describe('T-ROUT-02: ICMP Error Generation', () => {
   it('should send ICMP Destination Unreachable when no route exists, and increment counter', async () => {
     // PC_A → R1 → ??? (no route to destination)
     const pcA = new LinuxPC('linux-pc', 'PC_A');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
@@ -260,7 +261,7 @@ describe('T-ROUT-02: ICMP Error Generation', () => {
   });
 
   it('should display counters via Cisco CLI "show counters"', async () => {
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     const output = await r1.executeCommand('show counters');
@@ -273,7 +274,7 @@ describe('T-ROUT-02: ICMP Error Generation', () => {
   });
 
   it('should display counters via Huawei CLI "display ip traffic"', async () => {
-    const r1 = new Router('router-huawei', 'R1');
+    const r1 = new HuaweiRouter('R1');
     r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     const output = await r1.executeCommand('display ip traffic');
@@ -288,7 +289,7 @@ describe('T-ROUT-02: ICMP Error Generation', () => {
     // We need to directly test the header sanity check.
     // Create a router + connected PC, then spy on the counters.
     const pcA = new LinuxPC('linux-pc', 'PC_A');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
@@ -351,7 +352,7 @@ describe('T-ROUT-03: L2 Rewrite — egress MAC verification', () => {
 
     const pcA = new LinuxPC('linux-pc', 'PC_A');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     pcB.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -401,8 +402,8 @@ describe('T-ROUT-03: L2 Rewrite — egress MAC verification', () => {
     // At each hop, srcMAC should be the forwarding router's egress interface
     const pcA = new LinuxPC('linux-pc', 'PC_A');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     pcB.configureInterface('eth0', new IPAddress('10.0.3.2'), new SubnetMask('255.255.255.0'));
@@ -472,7 +473,7 @@ describe('T-ROUT-03: L2 Rewrite — egress MAC verification', () => {
 
     const pcA = new LinuxPC('linux-pc', 'PC_A');
     const pcB = new LinuxPC('linux-pc', 'PC_B');
-    const r1 = new Router('router-cisco', 'R1');
+    const r1 = new CiscoRouter('R1');
 
     pcA.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     pcB.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -529,7 +530,7 @@ describe('T-ROUT-03: L2 Rewrite — egress MAC verification', () => {
 describe('T-ROUT-VENDOR: Huawei VRP CLI', () => {
 
   it('should use GE0/0/N port naming for Huawei routers', () => {
-    const r = new Router('router-huawei', 'HW1');
+    const r = new HuaweiRouter('HW1');
     expect(r.getPort('GE0/0/0')).toBeDefined();
     expect(r.getPort('GE0/0/1')).toBeDefined();
     expect(r.getPort('GE0/0/2')).toBeDefined();
@@ -537,7 +538,7 @@ describe('T-ROUT-VENDOR: Huawei VRP CLI', () => {
   });
 
   it('should display routing table in Huawei format', async () => {
-    const r = new Router('router-huawei', 'HW1');
+    const r = new HuaweiRouter('HW1');
     r.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r.configureInterface('GE0/0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
 
@@ -550,7 +551,7 @@ describe('T-ROUT-VENDOR: Huawei VRP CLI', () => {
   });
 
   it('should add static route via ip route-static command', async () => {
-    const r = new Router('router-huawei', 'HW1');
+    const r = new HuaweiRouter('HW1');
     r.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r.configureInterface('GE0/0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
 
@@ -565,7 +566,7 @@ describe('T-ROUT-VENDOR: Huawei VRP CLI', () => {
   });
 
   it('should display current-configuration in Huawei format', async () => {
-    const r = new Router('router-huawei', 'HW1');
+    const r = new HuaweiRouter('HW1');
     r.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
 
     const output = await r.executeCommand('display current-configuration');
@@ -575,8 +576,8 @@ describe('T-ROUT-VENDOR: Huawei VRP CLI', () => {
   });
 
   it('should report correct OS type for each vendor', () => {
-    const cisco = new Router('router-cisco', 'C1');
-    const huawei = new Router('router-huawei', 'H1');
+    const cisco = new CiscoRouter('C1');
+    const huawei = new HuaweiRouter('H1');
 
     expect(cisco.getOSType()).toBe('cisco-ios');
     expect(huawei.getOSType()).toBe('huawei-vrp');

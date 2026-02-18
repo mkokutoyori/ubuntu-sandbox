@@ -24,7 +24,7 @@ import {
   resetCounters,
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { Router } from '@/network/devices/Router';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -249,7 +249,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
   describe('2.1 Interface IP Configuration', () => {
 
     it('should configure IP address via system-view interface commands', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       await r.executeCommand('system-view');
       await r.executeCommand('interface GE0/0/0');
       await r.executeCommand('ip address 192.168.1.1 255.255.255.0');
@@ -269,7 +269,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
   describe('2.2 Static Routing', () => {
 
     it('should add a static route with next-hop IP', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       // First configure interface so next-hop is reachable
       r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
@@ -284,7 +284,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
     });
 
     it('should add a default route', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
       await r.executeCommand('system-view');
@@ -297,7 +297,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
     });
 
     it('should delete a static route with undo', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
       await r.executeCommand('system-view');
@@ -318,7 +318,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
   describe('2.3 Diagnostic Commands', () => {
 
     it('should display interface statistics', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       const output = await r.executeCommand('display interface GE0/0/0');
       expect(output).toContain('GE0/0/0');
       expect(output).toContain('Input:');
@@ -326,7 +326,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
     });
 
     it('should display IP traffic statistics', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       const output = await r.executeCommand('display ip traffic');
       expect(output).toContain('IP statistics:');
       expect(output).toContain('ICMP statistics:');
@@ -335,14 +335,14 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
     });
 
     it('should display version information', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       const output = await r.executeCommand('display version');
       expect(output).toContain('Huawei Versatile Routing Platform');
       expect(output).toContain('VRP');
     });
 
     it('should display ARP table', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       const output = await r.executeCommand('display arp');
       expect(output).toContain('IP ADDRESS');
       expect(output).toContain('MAC ADDRESS');
@@ -398,7 +398,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       // PC1 (10.0.1.2) → R1 (10.0.1.1/10.0.2.1) → PC2 (10.0.2.2)
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
-      const r1 = new Router('router-huawei', 'R1');
+      const r1 = new HuaweiRouter('R1');
 
       pc1.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
       pc2.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
@@ -429,7 +429,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
   describe('3.3 ICMP Destination Unreachable', () => {
 
     it('should generate "Destination Host Unreachable" when no route exists', async () => {
-      const r1 = new Router('router-huawei', 'R1');
+      const r1 = new HuaweiRouter('R1');
       const pc = new LinuxPC('linux-pc', 'PC');
 
       pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -456,8 +456,8 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
     it('should show each hop via ICMP Time Exceeded messages', async () => {
       // PC → R1 → R2 → PC2
       const pc = new LinuxPC('linux-pc', 'PC');
-      const r1 = new Router('router-huawei', 'R1');
-      const r2 = new Router('router-huawei', 'R2');
+      const r1 = new HuaweiRouter('R1');
+      const r2 = new HuaweiRouter('R2');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
 
       pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
@@ -518,7 +518,7 @@ describe('Group 4: ARP Protocol — Huawei Devices', () => {
   describe('4.2 Static ARP Configuration on Router', () => {
 
     it('should add a static ARP entry on Huawei router', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
       await r.executeCommand('system-view');
@@ -531,7 +531,7 @@ describe('Group 4: ARP Protocol — Huawei Devices', () => {
     });
 
     it('should delete a static ARP entry with undo', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       await r.executeCommand('system-view');
       await r.executeCommand('arp static 192.168.1.51 aaaa-bbbb-cccd');
       await r.executeCommand('undo arp static 192.168.1.51');
@@ -552,7 +552,7 @@ describe('Group 5: DHCP Protocol — Huawei Router as Server', () => {
   describe('5.1 DHCP Server Basic Setup', () => {
 
     it('should enable DHCP and create an IP pool', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       await r.executeCommand('system-view');
       await r.executeCommand('dhcp enable');
       await r.executeCommand('ip pool pool1');
@@ -575,7 +575,7 @@ describe('Group 5: DHCP Protocol — Huawei Router as Server', () => {
   describe('5.2 DHCP Client and Lease', () => {
 
     it('should assign an IP address to a Linux PC via DHCP', async () => {
-      const r = new Router('router-huawei', 'R1');
+      const r = new HuaweiRouter('R1');
       const pc = new LinuxPC('linux-pc', 'PC1');
 
       // Configure DHCP server on router
@@ -780,7 +780,7 @@ describe('Group 7: Inter-VLAN Routing (Huawei)', () => {
     //   Note: true 802.1Q sub-interfaces are not yet supported, so we test
     //   basic L2 reachability within a VLAN through the switch.
     const sw = new HuaweiSwitch('switch-huawei', 'SW1');
-    const r = new Router('router-huawei', 'R1');
+    const r = new HuaweiRouter('R1');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
 
     pc1.configureInterface('eth0', new IPAddress('10.0.10.10'), new SubnetMask('255.255.255.0'));

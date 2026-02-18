@@ -23,6 +23,7 @@ import {
 } from '@/network/core/types';
 import { Port } from '@/network/hardware/Port';
 import { Router } from '@/network/devices/Router';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
@@ -317,7 +318,7 @@ describe('IPv6 Implementation (RFC 8200)', () => {
     let r1: Router;
 
     beforeEach(() => {
-      r1 = new Router('router-cisco', 'R1', 0, 0);
+      r1 = new CiscoRouter('R1', 0, 0);
     });
 
     it('enables IPv6 unicast routing', () => {
@@ -511,7 +512,7 @@ describe('IPv6 Implementation (RFC 8200)', () => {
 
   describe('T-IPV6-09: Router Neighbor Cache', () => {
     it('has neighbor cache accessor', () => {
-      const r1 = new Router('router-cisco', 'R1', 0, 0);
+      const r1 = new CiscoRouter('R1', 0, 0);
       r1.enableIPv6Routing();
       const cache = r1.getNeighborCache();
       expect(cache).toBeInstanceOf(Map);
