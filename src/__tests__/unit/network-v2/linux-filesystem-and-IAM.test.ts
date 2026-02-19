@@ -1378,3 +1378,454 @@ describe('Group 6: Authentification et Fichiers Utilisateur', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 7: adduser/useradd Amélioré — Expérience Réaliste
+// Tests TDD pour une implémentation fidèle à Debian/Ubuntu
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 7: adduser/useradd Réaliste', () => {
+
+  // ─── 7.1: GECOS field support ──────────────────────────────────────
+
+  describe('G7-01: Support des champs GECOS', () => {
+    it('should store GECOS fields via setUserGecos', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser jean');
+
+      // Set GECOS fields (Full Name, Room, Work Phone, Home Phone, Other)
+      server.setUserGecos('jean', 'Jean Dupont', '101', '555-1234', '555-5678', 'Notes');
+
+      // Verify in /etc/passwd — GECOS format: Full Name,Room,Work Phone,Home Phone,Other
+      const passwd = await server.executeCommand('grep jean /etc/passwd');
+      expect(passwd).toContain('Jean Dupont,101,555-1234,555-5678,Notes');
+    });
+
+    it('should display GECOS in getent passwd', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser marie');
+      server.setUserGecos('marie', 'Marie Martin', '202', '', '', '');
+
+      const getent = await server.executeCommand('getent passwd marie');
+      // Format: marie:x:UID:GID:Marie Martin,202,,,:home:shell
+      expect(getent).toContain('Marie Martin,202,,,');
+    });
+
+    it('should support useradd -c "Full Name" for GECOS comment', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m -c "Pierre Durand" -s /bin/bash pierre');
+
+      const passwd = await server.executeCommand('grep pierre /etc/passwd');
+      expect(passwd).toContain('Pierre Durand');
+
+      const getent = await server.executeCommand('getent passwd pierre');
+      expect(getent).toContain('Pierre Durand');
+    });
+
+    it('should default GECOS to empty when not set', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m testnogecos');
+
+      const passwd = await server.executeCommand('grep testnogecos /etc/passwd');
+      // GECOS field should be empty (between the 4th and 5th colon)
+      expect(passwd).toMatch(/testnogecos:x:\d+:\d+::/);
+    });
+
+    it('should support chfn command to change GECOS fields', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser lucas');
+
+      // chfn -f "Full Name" -r "Room" -w "Work Phone" -h "Home Phone" username
+      await server.executeCommand('chfn -f "Lucas Bernard" -r "303" -w "555-9999" -h "555-0000" lucas');
+
+      const passwd = await server.executeCommand('grep lucas /etc/passwd');
+      expect(passwd).toContain('Lucas Bernard,303,555-9999,555-0000');
+    });
+
+    it('should support finger command to display user info', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser alice');
+      server.setUserGecos('alice', 'Alice Wonderland', '101', '555-1111', '555-2222', '');
+
+      const finger = await server.executeCommand('finger alice');
+      expect(finger).toContain('Login: alice');
+      expect(finger).toContain('Name: Alice Wonderland');
+      expect(finger).toContain('Directory: /home/alice');
+      expect(finger).toContain('Shell: /bin/bash');
+    });
+  });
+
+  // ─── 7.2: adduser realistic output ────────────────────────────────
+
+  describe('G7-02: adduser output réaliste Debian', () => {
+    it('should produce realistic Debian adduser output', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('adduser sophie');
+
+      // Must match real Debian adduser output format
+      expect(out).toContain("Adding user `sophie' ...");
+      expect(out).toContain("Adding new group `sophie'");
+      expect(out).toContain("Adding new user `sophie'");
+      expect(out).toContain("with group `sophie'");
+      expect(out).toContain("Creating home directory `/home/sophie' ...");
+      expect(out).toContain("Copying files from `/etc/skel' ...");
+    });
+
+    it('should reject adduser for existing user', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser testdup');
+
+      const out = await server.executeCommand('adduser testdup');
+      expect(out).toContain('already exists');
+    });
+
+    it('should reject adduser without username', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('adduser');
+      expect(out).toContain('missing');
+    });
+
+    it('should support adduser --gecos "Full Name" to skip prompts', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('adduser --gecos "Auto User" autouser');
+
+      expect(out).toContain("Adding user `autouser' ...");
+      // Verify GECOS was set
+      const passwd = await server.executeCommand('grep autouser /etc/passwd');
+      expect(passwd).toContain('Auto User');
+    });
+
+    it('should support adduser --disabled-password', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('adduser --disabled-password --gecos "No Pass User" nopassuser');
+
+      expect(out).toContain("Adding user `nopassuser' ...");
+      // User should exist but have no password set (locked or NP)
+      const status = await server.executeCommand('passwd -S nopassuser');
+      // Password status should be NP (no password) or L (locked)
+      expect(status).toMatch(/nopassuser\s+(NP|L)/);
+    });
+  });
+
+  // ─── 7.3: End-to-end user lifecycle ───────────────────────────────
+
+  describe('G7-03: Cycle de vie complet d\'un utilisateur', () => {
+    it('should create user, set password, login, verify identity', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      // 1. Create user
+      await server.executeCommand('adduser marc');
+
+      // 2. Set password
+      server.setUserPassword('marc', 'SecureP@ss1');
+      expect(server.checkPassword('marc', 'SecureP@ss1')).toBe(true);
+      expect(server.checkPassword('marc', 'wrong')).toBe(false);
+
+      // 3. Switch to the new user
+      await server.executeCommand('su - marc');
+
+      // 4. Verify identity
+      const whoami = await server.executeCommand('whoami');
+      expect(whoami.trim()).toBe('marc');
+
+      const id = await server.executeCommand('id');
+      expect(id).toContain('marc');
+
+      // 5. Verify we're in the correct home directory
+      const pwd = await server.executeCommand('pwd');
+      expect(pwd.trim()).toBe('/home/marc');
+
+      // 6. Verify skeleton files are accessible
+      const ls = await server.executeCommand('ls -la');
+      expect(ls).toContain('.bashrc');
+      expect(ls).toContain('.profile');
+      expect(ls).toContain('.bash_logout');
+
+      // 7. Exit back to root
+      const exitResult = server.handleExit();
+      expect(exitResult.inSu).toBe(true);
+
+      const whoamiAfter = await server.executeCommand('whoami');
+      expect(whoamiAfter.trim()).toBe('root');
+    });
+
+    it('should create user, change password via chpasswd, verify', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      // Create user with initial password
+      await server.executeCommand('adduser testpw');
+      server.setUserPassword('testpw', 'initial123');
+
+      // Change password via chpasswd
+      await server.executeCommand('echo "testpw:NewP@ss456" | chpasswd');
+
+      // Verify old password no longer works
+      expect(server.checkPassword('testpw', 'initial123')).toBe(false);
+
+      // Verify new password works
+      expect(server.checkPassword('testpw', 'NewP@ss456')).toBe(true);
+    });
+
+    it('should handle user creation, sudo group, and elevated commands', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+
+      // Create a new user and add to sudo group
+      await pc.executeCommand('sudo useradd -m -s /bin/bash admin2');
+      await pc.executeCommand('sudo usermod -aG sudo admin2');
+      pc.setUserPassword('admin2', 'admin2pass');
+
+      // Verify user is in sudo group
+      const groups = await pc.executeCommand('groups admin2');
+      expect(groups).toContain('sudo');
+
+      // Switch to that user
+      await pc.executeCommand('su - admin2');
+      const whoami = await pc.executeCommand('whoami');
+      expect(whoami.trim()).toBe('admin2');
+
+      // Check sudo -l
+      const sudoCheck = await pc.executeCommand('sudo -l -U admin2');
+      expect(sudoCheck).toContain('may run the following commands');
+
+      // Exit su session
+      pc.handleExit();
+    });
+
+    it('should handle multiple su sessions (nested su)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      // Create two users
+      await server.executeCommand('adduser user1');
+      server.setUserPassword('user1', 'pass1');
+      await server.executeCommand('adduser user2');
+      server.setUserPassword('user2', 'pass2');
+
+      // root → su user1 → su user2 → exit → exit → root
+      await server.executeCommand('su - user1');
+      expect((await server.executeCommand('whoami')).trim()).toBe('user1');
+
+      await server.executeCommand('su - user2');
+      expect((await server.executeCommand('whoami')).trim()).toBe('user2');
+      expect((await server.executeCommand('pwd')).trim()).toBe('/home/user2');
+
+      // Exit back to user1
+      server.handleExit();
+      expect((await server.executeCommand('whoami')).trim()).toBe('user1');
+
+      // Exit back to root
+      server.handleExit();
+      expect((await server.executeCommand('whoami')).trim()).toBe('root');
+    });
+
+    it('should handle complete user deletion lifecycle', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      // Create user with all trimmings
+      await server.executeCommand('adduser deletetest');
+      server.setUserPassword('deletetest', 'temp123');
+      server.setUserGecos('deletetest', 'Delete Test User', '', '', '', '');
+
+      // Verify everything exists
+      expect(server.userExists('deletetest')).toBe(true);
+      const home = await server.executeCommand('ls /home');
+      expect(home).toContain('deletetest');
+
+      // Delete user with home removal
+      await server.executeCommand('deluser --remove-home deletetest');
+
+      // Verify complete removal
+      expect(server.userExists('deletetest')).toBe(false);
+      const homeAfter = await server.executeCommand('ls /home');
+      expect(homeAfter).not.toContain('deletetest');
+
+      // Password check should return false for deleted user
+      expect(server.checkPassword('deletetest', 'temp123')).toBe(false);
+    });
+  });
+
+  // ─── 7.4: useradd flags and edge cases ────────────────────────────
+
+  describe('G7-04: useradd flags avancés', () => {
+    it('should support useradd -g to specify primary group', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('groupadd developers');
+
+      await server.executeCommand('useradd -m -g developers -s /bin/bash devuser');
+
+      const id = await server.executeCommand('id devuser');
+      expect(id).toContain('developers');
+
+      // Verify /etc/passwd has the correct GID
+      const passwd = await server.executeCommand('getent passwd devuser');
+      const gidFromGroup = await server.executeCommand('getent group developers');
+      const gid = gidFromGroup.split(':')[2];
+      expect(passwd).toContain(`:${gid}:`);
+    });
+
+    it('should support useradd -d for custom home directory', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m -d /opt/customhome -s /bin/bash customuser');
+
+      const passwd = await server.executeCommand('grep customuser /etc/passwd');
+      expect(passwd).toContain('/opt/customhome');
+
+      // Verify home directory was created
+      const ls = await server.executeCommand('ls /opt/customhome');
+      expect(ls).toBeDefined();
+    });
+
+    it('should support useradd -G for supplementary groups', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('groupadd grp1');
+      await server.executeCommand('groupadd grp2');
+
+      await server.executeCommand('useradd -m -G grp1,grp2 -s /bin/bash multigrp');
+
+      const groups = await server.executeCommand('groups multigrp');
+      expect(groups).toContain('grp1');
+      expect(groups).toContain('grp2');
+    });
+
+    it('should reject useradd for existing username', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m existuser');
+
+      const out = await server.executeCommand('useradd -m existuser');
+      expect(out).toContain('already exists');
+    });
+
+    it('should reject useradd -g with non-existent group', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      const out = await server.executeCommand('useradd -m -g nogroup_xyz badgrpuser');
+      expect(out).toContain("does not exist");
+    });
+  });
+
+  // ─── 7.5: /etc/passwd format compliance ───────────────────────────
+
+  describe('G7-05: Conformité format /etc/passwd', () => {
+    it('should have correct /etc/passwd format for all fields', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m -c "Full Name Here" -s /bin/bash fmtuser');
+
+      const entry = await server.executeCommand('grep fmtuser /etc/passwd');
+      // Format: username:x:UID:GID:GECOS:home:shell
+      const parts = entry.trim().split(':');
+      expect(parts[0]).toBe('fmtuser');        // username
+      expect(parts[1]).toBe('x');               // password placeholder
+      expect(parseInt(parts[2])).toBeGreaterThanOrEqual(1000); // UID >= 1000
+      expect(parseInt(parts[3])).toBeGreaterThanOrEqual(1000); // GID >= 1000
+      expect(parts[4]).toBe('Full Name Here');  // GECOS
+      expect(parts[5]).toBe('/home/fmtuser');   // home
+      expect(parts[6]).toBe('/bin/bash');        // shell
+    });
+
+    it('should show correct /etc/shadow format', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m shadowuser');
+      server.setUserPassword('shadowuser', 'test123');
+
+      const shadow = await server.executeCommand('cat /etc/shadow | grep shadowuser');
+      // Format: username:hash:lastchange:min:max:warn:inactive:expire:
+      const parts = shadow.trim().split(':');
+      expect(parts[0]).toBe('shadowuser');
+      // Hash should start with $6$ (simulated SHA-512)
+      expect(parts[1]).toMatch(/^\$6\$/);
+      // lastchange should be a number
+      expect(parseInt(parts[2])).toBeGreaterThan(0);
+    });
+
+    it('should have GECOS subfields separated by commas in /etc/passwd', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser gecosuser');
+      server.setUserGecos('gecosuser', 'Gecos User', '42', '555-WORK', '555-HOME', 'Extra');
+
+      const entry = await server.executeCommand('grep gecosuser /etc/passwd');
+      const gecos = entry.trim().split(':')[4];
+      const subfields = gecos.split(',');
+      expect(subfields[0]).toBe('Gecos User');   // Full Name
+      expect(subfields[1]).toBe('42');            // Room Number
+      expect(subfields[2]).toBe('555-WORK');      // Work Phone
+      expect(subfields[3]).toBe('555-HOME');      // Home Phone
+      expect(subfields[4]).toBe('Extra');          // Other
+    });
+  });
+
+  // ─── 7.6: chfn and finger commands ────────────────────────────────
+
+  describe('G7-06: chfn et finger', () => {
+    it('should update only specified chfn fields', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser chfnuser');
+      server.setUserGecos('chfnuser', 'Original Name', '100', '555-OLD', '555-HOME', '');
+
+      // Update only the full name
+      await server.executeCommand('chfn -f "New Name" chfnuser');
+
+      const passwd = await server.executeCommand('grep chfnuser /etc/passwd');
+      expect(passwd).toContain('New Name');
+      // Room should remain unchanged
+      expect(passwd).toContain(',100,');
+    });
+
+    it('should show "No such user" for finger on non-existent user', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('finger nonexistent');
+      expect(out).toContain('no such user');
+    });
+
+    it('should show current user info with finger without args', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('finger');
+      expect(out).toContain('Login');
+      expect(out).toContain('root');
+    });
+  });
+
+  // ─── 7.7: Password security and edge cases ───────────────────────
+
+  describe('G7-07: Sécurité des mots de passe', () => {
+    it('should not allow login with empty password for new user (no password set)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('useradd -m nopwuser');
+
+      // User created without password — checkPassword should fail
+      expect(server.checkPassword('nopwuser', '')).toBe(false);
+      expect(server.checkPassword('nopwuser', 'anything')).toBe(false);
+    });
+
+    it('should handle password change and verify old is invalid', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser pwchange');
+      server.setUserPassword('pwchange', 'OldPass123');
+
+      expect(server.checkPassword('pwchange', 'OldPass123')).toBe(true);
+
+      // Change password
+      server.setUserPassword('pwchange', 'NewPass456');
+
+      expect(server.checkPassword('pwchange', 'OldPass123')).toBe(false);
+      expect(server.checkPassword('pwchange', 'NewPass456')).toBe(true);
+    });
+
+    it('should handle locked user cannot authenticate', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('adduser locktest');
+      server.setUserPassword('locktest', 'mypass');
+
+      // Lock the user
+      await server.executeCommand('usermod -L locktest');
+
+      // Password check might still work (locked affects login, not password check)
+      // But the passwd status should show L
+      const status = await server.executeCommand('passwd -S locktest');
+      expect(status).toContain('L');
+
+      // Unlock
+      await server.executeCommand('usermod -U locktest');
+      const statusAfter = await server.executeCommand('passwd -S locktest');
+      expect(statusAfter).toContain('P');
+    });
+  });
+});

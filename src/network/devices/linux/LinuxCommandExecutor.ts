@@ -361,6 +361,8 @@ export class LinuxCommandExecutor {
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
       case 'gpasswd': return this.handleGpasswd(args);
+      case 'chfn': return this.handleChfn(args);
+      case 'finger': return this.handleFinger(args);
       case 'id': {
         const out = cmdId(c, args);
         return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
@@ -584,6 +586,11 @@ export class LinuxCommandExecutor {
     return !!this.userMgr.getUser(username);
   }
 
+  /** Set GECOS fields for a user */
+  setUserGecos(username: string, fullName: string, room: string, workPhone: string, homePhone: string, other: string): void {
+    this.userMgr.setUserGecos(username, fullName, room, workPhone, homePhone, other);
+  }
+
   // ─── Improved command handlers ────────────────────────────────────
 
   private handlePasswd(args: string[]): { output: string; exitCode: number } {
@@ -642,12 +649,18 @@ export class LinuxCommandExecutor {
     // Debian-style adduser — creates user, home, skeleton files
     // Interactive password prompts are handled by Terminal.tsx
     let username = '';
-    for (const a of args) {
-      if (!a.startsWith('-')) { username = a; break; }
+    let gecos: string | undefined;
+    let disabledPassword = false;
+
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--gecos') { gecos = args[++i]; continue; }
+      if (args[i] === '--disabled-password') { disabledPassword = true; continue; }
+      if (args[i] === '--disabled-login') { disabledPassword = true; continue; }
+      if (!args[i].startsWith('-')) { username = args[i]; }
     }
     if (!username) return { output: 'adduser: missing username', exitCode: 1 };
 
-    const result = this.userMgr.useradd(username, { m: true, s: '/bin/bash' });
+    const result = this.userMgr.useradd(username, { m: true, s: '/bin/bash', c: gecos });
     if (result) return { output: result, exitCode: 1 };
 
     const user = this.userMgr.getUser(username)!;
@@ -664,6 +677,34 @@ export class LinuxCommandExecutor {
       `Copying files from \`/etc/skel' ...`,
     ];
     return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private handleChfn(args: string[]): { output: string; exitCode: number } {
+    let f: string | undefined, r: string | undefined, w: string | undefined, h: string | undefined;
+    let username = '';
+
+    for (let i = 0; i < args.length; i++) {
+      switch (args[i]) {
+        case '-f': f = args[++i]; break;
+        case '-r': r = args[++i]; break;
+        case '-w': w = args[++i]; break;
+        case '-h': h = args[++i]; break;
+        default:
+          if (!args[i].startsWith('-')) username = args[i];
+          break;
+      }
+    }
+
+    if (!username) username = this.userMgr.currentUser;
+    const result = this.userMgr.chfn(username, { f, r, w, h });
+    if (result) return { output: result, exitCode: 1 };
+    return { output: '', exitCode: 0 };
+  }
+
+  private handleFinger(args: string[]): { output: string; exitCode: number } {
+    const username = args.find(a => !a.startsWith('-'));
+    const out = this.userMgr.finger(username);
+    return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {
