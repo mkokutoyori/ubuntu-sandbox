@@ -40,11 +40,19 @@ import {
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
 import { buildConfigRouterCommands } from './cisco/CiscoRipCommands';
+import {
+  type CiscoACLShellContext,
+  buildACLConfigCommands, buildACLInterfaceCommands,
+  buildNamedStdACLCommands, buildNamedExtACLCommands,
+  registerACLShowCommands,
+} from './cisco/CiscoAclCommands';
 
-export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
+export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   private mode: CiscoShellMode = 'user';
   private selectedInterface: string | null = null;
   private selectedDHCPPool: string | null = null;
+  private selectedACL: string | null = null;
+  private selectedACLType: 'standard' | 'extended' | null = null;
 
   /** Temporary reference set during execute() for closures */
   private routerRef: Router | null = null;
@@ -56,14 +64,20 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
   private configIfTrie = new CommandTrie();
   private configDhcpTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
+  private configStdNaclTrie = new CommandTrie();
+  private configExtNaclTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
     this.buildPrivilegedCommands();
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
+    buildACLConfigCommands(this.configTrie, this);
+    buildACLInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigRouterCommands(this.configRouterTrie, this);
+    buildNamedStdACLCommands(this.configStdNaclTrie, this);
+    buildNamedExtACLCommands(this.configExtNaclTrie, this);
   }
 
   getOSType(): string { return 'cisco-ios'; }
@@ -89,6 +103,11 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
     return resolveInterfaceName(this.r(), input);
   }
 
+  getSelectedACL(): string | null { return this.selectedACL; }
+  setSelectedACL(name: string | null): void { this.selectedACL = name; }
+  getSelectedACLType(): 'standard' | 'extended' | null { return this.selectedACLType; }
+  setSelectedACLType(type: 'standard' | 'extended' | null): void { this.selectedACLType = type; }
+
   // ─── Prompt Generation ─────────────────────────────────────────────
 
   getPrompt(router: Router): string {
@@ -100,6 +119,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
       case 'config-if':     return `${host}(config-if)#`;
       case 'config-dhcp':   return `${host}(dhcp-config)#`;
       case 'config-router': return `${host}(config-router)#`;
+      case 'config-std-nacl': return `${host}(config-std-nacl)#`;
+      case 'config-ext-nacl': return `${host}(config-ext-nacl)#`;
       default:              return `${host}>`;
     }
   }
@@ -238,6 +259,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
       case 'config-if': return this.configIfTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-router': return this.configRouterTrie;
+      case 'config-std-nacl': return this.configStdNaclTrie;
+      case 'config-ext-nacl': return this.configExtNaclTrie;
       default: return this.userTrie;
     }
   }
@@ -249,9 +272,13 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
       case 'config-if':
       case 'config-dhcp':
       case 'config-router':
+      case 'config-std-nacl':
+      case 'config-ext-nacl':
         this.mode = 'config';
         this.selectedInterface = null;
         this.selectedDHCPPool = null;
+        this.selectedACL = null;
+        this.selectedACLType = null;
         return '';
       case 'config':
         this.mode = 'privileged';
@@ -271,6 +298,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
       this.mode = 'privileged';
       this.selectedInterface = null;
       this.selectedDHCPPool = null;
+      this.selectedACL = null;
+      this.selectedACLType = null;
     }
     return '';
   }
@@ -350,6 +379,9 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext {
 
     // DHCP show commands
     registerDhcpShowCommands(trie, getRouter);
+
+    // ACL show commands
+    registerACLShowCommands(trie, getRouter);
 
     // show running-config interface <name>
     trie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {

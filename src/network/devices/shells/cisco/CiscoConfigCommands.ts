@@ -14,7 +14,7 @@ import { CommandTrie } from '../CommandTrie';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
-export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router';
+export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router' | 'config-std-nacl' | 'config-ext-nacl';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */

@@ -6,6 +6,7 @@
  */
 
 import type { Router } from '../../Router';
+import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 
 export function showVersion(router: Router): string {
   const ports = router._getPortsInternal();
@@ -126,6 +127,15 @@ export function showRunningConfig(router: Router): string {
     for (const h of helpers) {
       lines.push(` ip helper-address ${h}`);
     }
+    // ACL bindings on interface
+    lines.push(...runningConfigInterfaceACL(router, name));
+    lines.push('!');
+  }
+
+  // ACL configuration
+  const aclLines = runningConfigACL(router);
+  if (aclLines.length > 0) {
+    lines.push(...aclLines);
     lines.push('!');
   }
 
