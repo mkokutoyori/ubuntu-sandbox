@@ -54,6 +54,8 @@ import {
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { DHCPServer } from '../dhcp/DHCPServer';
+import { OSPFEngine } from '../ospf/OSPFEngine';
+import { OSPFv3Engine } from '../ospf/OSPFv3Engine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -67,7 +69,7 @@ export interface RouteEntry {
   /** Outgoing interface name */
   iface: string;
   /** Route type for display */
-  type: 'connected' | 'static' | 'default' | 'rip';
+  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf';
   /** Administrative distance (lower = preferred) */
   ad: number;
   /** Metric (lower = preferred when prefix lengths and ADs are equal) */
@@ -311,6 +313,10 @@ export abstract class Router extends Equipment {
 
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
+
+  // ── OSPF Engine (RFC 2328 / RFC 5340) ──────────────────────
+  private ospfEngine: OSPFEngine | null = null;
+  private ospfv3Engine: OSPFv3Engine | null = null;
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -2158,6 +2164,110 @@ export abstract class Router extends Equipment {
   // ─── DHCP Server Public API ────────────────────────────────────
 
   getDHCPServer(): DHCPServer { return this.dhcpServer; }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OSPF Engine Integration (RFC 2328 / RFC 5340)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Enable OSPF and create the engine with the given process ID.
+   * @internal Used by CLI shells
+   */
+  _enableOSPF(processId: number = 1): void {
+    if (this.ospfEngine) return;
+    this.ospfEngine = new OSPFEngine(processId);
+
+    // Auto-detect Router ID: highest interface IP
+    let highestIP = '0.0.0.0';
+    let highestNum = 0;
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      if (ip) {
+        const num = ip.toUint32();
+        if (num > highestNum) {
+          highestNum = num;
+          highestIP = ip.toString();
+        }
+      }
+    }
+    if (highestIP !== '0.0.0.0') {
+      this.ospfEngine.setRouterId(highestIP);
+    }
+
+    // Set up send callback for OSPF packets
+    this.ospfEngine.setSendCallback((iface, packet, destIP) => {
+      this.ospfSendPacket(iface, packet, destIP);
+    });
+
+    Logger.info(this.id, 'ospf:enabled',
+      `${this.name}: OSPFv2 process ${processId} enabled, Router ID ${highestIP}`);
+  }
+
+  /**
+   * Disable OSPF and remove all OSPF routes.
+   * @internal Used by CLI shells
+   */
+  _disableOSPF(): void {
+    if (this.ospfEngine) {
+      this.ospfEngine.shutdown();
+      this.ospfEngine = null;
+      // Remove OSPF routes from RIB
+      this.routingTable = this.routingTable.filter(r => r.type !== 'ospf');
+      Logger.info(this.id, 'ospf:disabled', `${this.name}: OSPF disabled`);
+    }
+  }
+
+  /** @internal Used by CLI shells */
+  _getOSPFEngineInternal(): OSPFEngine | null { return this.ospfEngine; }
+
+  /** @internal Used by CLI shells */
+  _getOSPFv3EngineInternal(): OSPFv3Engine | null { return this.ospfv3Engine; }
+
+  /** Check if OSPF is enabled */
+  isOSPFEnabled(): boolean { return this.ospfEngine !== null; }
+
+  /**
+   * Send an OSPF packet out an interface (encapsulated in IP).
+   * OSPF uses IP protocol 89 directly (not UDP).
+   */
+  private ospfSendPacket(outIface: string, ospfPkt: any, destIP: string): void {
+    const port = this.ports.get(outIface);
+    if (!port) return;
+    const myIP = port.getIPAddress();
+    if (!myIP) return;
+
+    // OSPF packets are encapsulated in IPv4 with protocol 89
+    const ipPkt = createIPv4Packet(
+      myIP,
+      new IPAddress(destIP),
+      89, // OSPF protocol number
+      1,  // TTL=1 (link-local)
+      ospfPkt,
+      64, // Approximate size
+    );
+
+    // Determine destination MAC
+    let dstMAC: MACAddress;
+    if (destIP === '224.0.0.5' || destIP === '224.0.0.6') {
+      // Multicast: 01:00:5e + lower 23 bits of IP
+      const ipOctets = new IPAddress(destIP).getOctets();
+      dstMAC = new MACAddress(
+        `01:00:5e:${(ipOctets[1] & 0x7f).toString(16).padStart(2, '0')}:` +
+        `${ipOctets[2].toString(16).padStart(2, '0')}:${ipOctets[3].toString(16).padStart(2, '0')}`
+      );
+    } else {
+      // Unicast: resolve via ARP cache
+      const cached = this.arpTable.get(destIP);
+      dstMAC = cached ? cached.mac : MACAddress.broadcast();
+    }
+
+    this.sendFrame(outIface, {
+      srcMAC: port.getMAC(),
+      dstMAC,
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+  }
 
   // ─── OS Info ───────────────────────────────────────────────────
 
