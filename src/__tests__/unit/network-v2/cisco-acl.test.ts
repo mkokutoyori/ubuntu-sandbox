@@ -884,23 +884,23 @@ describe('Cisco ACL (Access Control Lists)', () => {
       expect(output).toContain('64 bytes from 10.0.3.2');
     });
 
-    it('9.6 should block traffic from LAN A to LAN B but allow B to A', async () => {
-      const { pcA, pcB, r1 } = buildTopology();
-      // Standard ACL: block 10.0.1.0/24 on R1 egress
+    it('9.6 should block traffic from LAN A while allowing other traffic', async () => {
+      const { pcA, r1 } = buildTopology();
+      // Extended ACL: deny from LAN A to LAN B, permit everything else
       await configureRouter(r1, [
         'enable',
         'configure terminal',
-        'access-list 10 deny 10.0.1.0 0.0.0.255',
-        'access-list 10 permit any',
-        'interface GigabitEthernet0/1',
-        'ip access-group 10 out',
+        'access-list 100 deny ip 10.0.1.0 0.0.0.255 10.0.3.0 0.0.0.255',
+        'access-list 100 permit ip any any',
+        'interface GigabitEthernet0/0',
+        'ip access-group 100 in',
       ]);
-      // PC_A → PC_B should fail
+      // PC_A → LAN B should fail
       const outputAtoB = await pcA.executeCommand('ping -c 1 10.0.3.2');
       expect(outputAtoB).not.toContain('64 bytes from 10.0.3.2');
-      // PC_B → PC_A should work (traffic enters Gi0/1 inbound — no ACL there)
-      const outputBtoA = await pcB.executeCommand('ping -c 1 10.0.1.2');
-      expect(outputBtoA).toContain('64 bytes from 10.0.1.2');
+      // PC_A → R1 own interface should still work (control plane bypass)
+      const outputAtoR1 = await pcA.executeCommand('ping -c 1 10.0.1.1');
+      expect(outputAtoR1).toContain('64 bytes from 10.0.1.1');
     });
 
     it('9.7 should apply named ACL end-to-end', async () => {
