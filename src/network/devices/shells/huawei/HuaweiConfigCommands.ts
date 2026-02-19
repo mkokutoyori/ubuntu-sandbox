@@ -18,7 +18,7 @@ import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
-export type HuaweiShellMode = 'user' | 'system' | 'interface' | 'dhcp-pool';
+export type HuaweiShellMode = 'user' | 'system' | 'interface' | 'dhcp-pool' | 'ospf' | 'ospf-area';
 
 export interface HuaweiShellContext {
   r(): Router;

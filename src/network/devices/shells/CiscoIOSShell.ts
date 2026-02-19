@@ -46,6 +46,10 @@ import {
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   registerACLShowCommands,
 } from './cisco/CiscoAclCommands';
+import {
+  registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
+  registerOSPFInterfaceCommands, registerOSPFShowCommands,
+} from './cisco/CiscoOspfCommands';
 
 export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   private mode: CiscoShellMode = 'user';
@@ -63,7 +67,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private configTrie = new CommandTrie();
   private configIfTrie = new CommandTrie();
   private configDhcpTrie = new CommandTrie();
-  private configRouterTrie = new CommandTrie();
+  private configRouterTrie = new CommandTrie();        // RIP config-router
+  private configRouterOspfTrie = new CommandTrie();    // OSPF config-router
   private configStdNaclTrie = new CommandTrie();
   private configExtNaclTrie = new CommandTrie();
 
@@ -78,6 +83,10 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     buildConfigRouterCommands(this.configRouterTrie, this);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
+    // OSPF commands (separate trie from RIP)
+    registerOSPFConfigCommands(this.configTrie, this);
+    registerOSPFInterfaceCommands(this.configIfTrie, this);
+    buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
   }
 
   getOSType(): string { return 'cisco-ios'; }
@@ -119,6 +128,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-if':     return `${host}(config-if)#`;
       case 'config-dhcp':   return `${host}(dhcp-config)#`;
       case 'config-router': return `${host}(config-router)#`;
+      case 'config-router-ospf': return `${host}(config-router)#`;
       case 'config-std-nacl': return `${host}(config-std-nacl)#`;
       case 'config-ext-nacl': return `${host}(config-ext-nacl)#`;
       default:              return `${host}>`;
@@ -259,6 +269,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-if': return this.configIfTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-router': return this.configRouterTrie;
+      case 'config-router-ospf': return this.configRouterOspfTrie;
       case 'config-std-nacl': return this.configStdNaclTrie;
       case 'config-ext-nacl': return this.configExtNaclTrie;
       default: return this.userTrie;
@@ -272,6 +283,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-if':
       case 'config-dhcp':
       case 'config-router':
+      case 'config-router-ospf':
       case 'config-std-nacl':
       case 'config-ext-nacl':
         this.mode = 'config';
@@ -382,6 +394,9 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
     // ACL show commands
     registerACLShowCommands(trie, getRouter);
+
+    // OSPF show commands
+    registerOSPFShowCommands(trie, getRouter);
 
     // show running-config interface <name>
     trie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {

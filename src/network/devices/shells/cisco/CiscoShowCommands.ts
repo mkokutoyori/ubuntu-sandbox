@@ -32,21 +32,22 @@ export function showVersion(router: Router): string {
 
 export function showIpRoute(router: Router): string {
   const table = router.getRoutingTable();
-  const lines = ['Codes: C - connected, S - static, R - RIP, * - candidate default', ''];
+  const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default', ''];
   const sorted = [...table].sort((a, b) => {
-    const order: Record<string, number> = { connected: 0, rip: 1, static: 2, default: 3 };
-    return (order[a.type] ?? 4) - (order[b.type] ?? 4);
+    const order: Record<string, number> = { connected: 0, ospf: 1, rip: 2, static: 3, default: 4 };
+    return (order[a.type] ?? 5) - (order[b.type] ?? 5);
   });
   for (const r of sorted) {
     let code: string;
     switch (r.type) {
       case 'connected': code = 'C'; break;
       case 'rip': code = 'R'; break;
+      case 'ospf': code = 'O'; break;
       case 'default': code = 'S*'; break;
       default: code = 'S'; break;
     }
     const via = r.nextHop ? `via ${r.nextHop}` : 'is directly connected';
-    const metricStr = r.type === 'rip' ? ` [${r.ad}/${r.metric}]` : '';
+    const metricStr = (r.type === 'rip' || r.type === 'ospf') ? ` [${r.ad}/${r.metric}]` : '';
     lines.push(`${code}    ${r.network}/${r.mask.toCIDR()}${metricStr} ${via}, ${r.iface}`);
   }
   return lines.length > 2 ? lines.join('\n') : 'No routes configured.';

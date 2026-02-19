@@ -35,6 +35,10 @@ import {
 import {
   registerDhcpSystemCommands, buildDhcpPoolCommands,
 } from './huawei/HuaweiDhcpCommands';
+import {
+  registerOSPFSystemCommands, buildOSPFViewCommands, buildOSPFAreaViewCommands,
+  registerOSPFDisplayCommands,
+} from './huawei/HuaweiOspfCommands';
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState {
   private mode: HuaweiShellMode = 'user';
@@ -44,6 +48,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private dhcpSnoopingEnabled: boolean = false;
   /** Track which interfaces have 'dhcp select global' */
   private dhcpSelectGlobalSet: Set<string> = new Set();
+  /** OSPF area currently being configured */
+  private ospfArea: string | null = null;
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
@@ -53,12 +59,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private systemTrie = new CommandTrie();
   private interfaceTrie = new CommandTrie();
   private dhcpPoolTrie = new CommandTrie();
+  private ospfTrie = new CommandTrie();
+  private ospfAreaTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
     this.buildSystemViewCommands();
     this.buildInterfaceViewCommands();
     this.buildDhcpPoolViewCommands();
+    this.buildOSPFViewCommands();
+    this.buildOSPFAreaViewCommands();
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -94,6 +104,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'system':     return `[${host}]`;
       case 'interface':  return `[${host}-${this.selectedInterface}]`;
       case 'dhcp-pool':  return `[${host}-ip-pool-${this.selectedPool}]`;
+      case 'ospf':       return `[${host}-ospf-1]`;
+      case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       default:           return `<${host}>`;
     }
   }
@@ -165,6 +177,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'system';
         this.selectedPool = null;
         return '';
+      case 'ospf-area':
+        this.mode = 'ospf';
+        this.ospfArea = null;
+        return '';
+      case 'ospf':
+        this.mode = 'system';
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -200,6 +219,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'system': return this.systemTrie;
       case 'interface': return this.interfaceTrie;
       case 'dhcp-pool': return this.dhcpPoolTrie;
+      case 'ospf': return this.ospfTrie;
+      case 'ospf-area': return this.ospfAreaTrie;
       default: return this.userTrie;
     }
   }
@@ -222,6 +243,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Display commands
     registerDisplayCommands(t, getRouter, getState);
+
+    // OSPF display commands
+    registerOSPFDisplayCommands(t, getRouter);
 
     // Backward-compat aliases in user view
     t.registerGreedy('ip route-static', 'Configure static route', (args) => {
@@ -255,6 +279,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       setDhcpEnabled: (v) => { this.dhcpEnabled = v; },
       setDhcpSnoopingEnabled: (v) => { this.dhcpSnoopingEnabled = v; },
     });
+
+    // OSPF system-mode commands
+    registerOSPFSystemCommands(t, this as any, (area) => { this.ospfArea = area; });
+
+    // OSPF display commands
+    registerOSPFDisplayCommands(t, () => this.r());
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
@@ -275,5 +305,25 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   private buildDhcpPoolViewCommands(): void {
     buildDhcpPoolCommands(this.dhcpPoolTrie, this);
+  }
+
+  // ─── OSPF View ([hostname-ospf-1]) ────────────────────────────
+
+  private buildOSPFViewCommands(): void {
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
+    registerDisplayCommands(this.ospfTrie, getRouter, getState);
+    registerOSPFDisplayCommands(this.ospfTrie, getRouter);
+    buildOSPFViewCommands(this.ospfTrie, this as any, (area) => { this.ospfArea = area; });
+  }
+
+  // ─── OSPF Area View ([hostname-ospf-1-area-X]) ────────────────
+
+  private buildOSPFAreaViewCommands(): void {
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
+    registerDisplayCommands(this.ospfAreaTrie, getRouter, getState);
+    registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
+    buildOSPFAreaViewCommands(this.ospfAreaTrie, this as any, () => this.ospfArea);
   }
 }
