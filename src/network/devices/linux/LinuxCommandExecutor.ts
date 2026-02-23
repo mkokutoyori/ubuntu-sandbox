@@ -5,6 +5,7 @@
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
+import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
@@ -18,6 +19,7 @@ export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
   readonly cron: LinuxCronManager;
+  readonly firewall: LinuxFirewallManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
   private umask = 0o022;
@@ -30,6 +32,7 @@ export class LinuxCommandExecutor {
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
+    this.firewall = new LinuxFirewallManager();
     this.isServer = isServer;
 
     // Default environment
@@ -224,7 +227,7 @@ export class LinuxCommandExecutor {
 
     // Root-only commands — reject if not root
     const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp'];
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
     }
@@ -417,6 +420,12 @@ export class LinuxCommandExecutor {
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
+      }
+
+      // UFW (Uncomplicated Firewall)
+      case 'ufw': {
+        const out = this.firewall.execute(args);
+        return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
       }
 
       // Hostname
