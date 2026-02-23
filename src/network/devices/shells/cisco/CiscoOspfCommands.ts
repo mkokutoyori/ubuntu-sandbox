@@ -262,20 +262,39 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     return '';
   });
 
-  trie.registerGreedy('redistribute', 'Redistribute routes', (_args) => '');
+  trie.registerGreedy('redistribute', 'Redistribute routes', (args) => {
+    if (args.length < 1) return '';
+    const protocol = args[0].toLowerCase();
+    if (protocol === 'static') {
+      ctx.r()._getOSPFExtraConfig().redistributeV3Static = true;
+    }
+    return '';
+  });
 
   trie.registerGreedy('area', 'OSPFv3 area parameters', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     const v3 = ctx.r()._getOSPFv3EngineInternal();
-    if (!v3) return '% OSPFv3 is not enabled.';
+    if (!v3) {
+      // Create area even before engine exists
+      ctx.r()._enableOSPFv3(1);
+    }
+    const v3e = ctx.r()._getOSPFv3EngineInternal()!;
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
     if (subCmd === 'stub') {
-      v3.setAreaType(areaId, 'stub');
+      v3e.addArea(areaId, 'stub');
+      v3e.setAreaType(areaId, 'stub');
       return '';
     } else if (subCmd === 'range') {
+      if (args.length < 3) return '% Incomplete command.';
+      const extra = ctx.r()._getOSPFExtraConfig();
+      if (!extra.v3AreaRanges.has(areaId)) extra.v3AreaRanges.set(areaId, []);
+      extra.v3AreaRanges.get(areaId)!.push({ prefix: args[2] });
       return '';
     } else if (subCmd === 'virtual-link') {
+      if (args.length < 3) return '% Incomplete command.';
+      const extra = ctx.r()._getOSPFExtraConfig();
+      extra.v3VirtualLinks.set(areaId, args[2]);
       return '';
     }
     return '';
@@ -291,7 +310,13 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     return '';
   });
 
-  trie.registerGreedy('distribute-list', 'Filter routes', (_args) => '');
+  trie.registerGreedy('distribute-list', 'Filter routes', (args) => {
+    if (args.length < 3) return '';
+    // distribute-list prefix-list <name> in
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.v3DistributeList = { aclId: args[1], direction: args[2].toLowerCase() as 'in' | 'out' };
+    return '';
+  });
 
   trie.registerGreedy('bfd', 'BFD configuration', (args) => {
     if (args.length >= 1 && args[0].toLowerCase() === 'all-interfaces') {
@@ -514,8 +539,26 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   configIfTrie.registerGreedy('frame-relay', 'Frame relay configuration', (_args) => '');
 
   // Tunnel commands
-  configIfTrie.registerGreedy('tunnel source', 'Set tunnel source', (_args) => '');
-  configIfTrie.registerGreedy('tunnel destination', 'Set tunnel destination', (_args) => '');
+  configIfTrie.registerGreedy('tunnel source', 'Set tunnel source', (args) => {
+    if (args.length < 1) return '';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelSource = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel destination', 'Set tunnel destination', (args) => {
+    if (args.length < 1) return '';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelDest = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
 }
 
 // ─── Show Commands ───────────────────────────────────────────────────
@@ -757,7 +800,7 @@ function showIpRouteAll(router: Router): string {
       lines.push(`${code}    ${netStr}/${cidr} [${r.ad ?? 1}/${r.metric ?? 0}] ${nh}`);
     } else if (r.type === 'ospf') {
       const code = getOSPFRouteCode(router, netStr, cidr, r);
-      lines.push(`${code}     ${netStr}/${cidr} [110/${r.metric}] ${nh}, ${r.iface}`);
+      lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] ${nh}, ${r.iface}`);
     }
   }
   return lines.join('\n');
@@ -772,7 +815,7 @@ function showIpRouteOspf(router: Router): string {
       const netStr = r.network.toString();
       const cidr = maskToCIDR(r.mask.toString());
       const code = getOSPFRouteCode(router, netStr, cidr, r);
-      lines.push(`${code}     ${netStr}/${cidr} [110/${r.metric}] via ${r.nextHop || 'directly connected'}, ${r.iface}`);
+      lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] via ${r.nextHop || 'directly connected'}, ${r.iface}`);
     }
   }
   return lines.length > 0 ? lines.join('\n') : '';
@@ -885,6 +928,7 @@ function showIpv6OspfNeighbor(router: Router): string {
 function showIpv6OspfInterface(router: Router, ifName?: string): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return '% OSPFv3 is not configured';
+  router._ospfAutoConverge();
   const extra = router._getOSPFExtraConfig();
   const lines: string[] = [];
   const resolvedIfName = ifName ? resolveOSPFIfName(ifName) : undefined;
@@ -893,8 +937,11 @@ function showIpv6OspfInterface(router: Router, ifName?: string): string {
     const ntStr = iface.networkType === 'point-to-point' ? 'Point-to-point' : 'Broadcast';
     lines.push(`${name} is up, line protocol is up`);
     lines.push(`  Network Type ${ntStr}, Cost: ${iface.cost}, Priority: ${iface.priority}`);
-    lines.push(`  DR: ${iface.dr || '0.0.0.0'}`);
-    lines.push(`  BDR: ${iface.bdr || '0.0.0.0'}`);
+    // For DR/BDR display, resolve router-id to IPv6 address of the neighbor
+    const drAddr = resolveV3DRBDR(router, iface, iface.dr);
+    const bdrAddr = resolveV3DRBDR(router, iface, iface.bdr);
+    lines.push(`  DR: ${drAddr}`);
+    lines.push(`  BDR: ${bdrAddr}`);
     // Check IPsec auth
     const v3Pending = extra.pendingV3IfConfig?.get(name);
     if (v3Pending?.ipsecAuth) lines.push(`  IPsec authentication enabled`);
@@ -902,6 +949,26 @@ function showIpv6OspfInterface(router: Router, ifName?: string): string {
     lines.push('');
   }
   return lines.join('\n');
+}
+
+function resolveV3DRBDR(router: Router, iface: any, rid: string): string {
+  if (!rid || rid === '0.0.0.0') return '0.0.0.0';
+  // If the DR is ourselves, return our port's IPv6 address
+  const v3 = router._getOSPFv3EngineInternal();
+  if (v3 && rid === v3.getRouterId()) {
+    const port = router.getPort(iface.name);
+    if (port) {
+      const addrs = port.getIPv6Addresses?.();
+      const global = addrs?.find((a: any) => a.scope === 'global');
+      if (global) return global.address.toString();
+    }
+    return rid;
+  }
+  // Check neighbors for the router-id
+  for (const [, n] of iface.neighbors) {
+    if (n.routerId === rid) return n.ipAddress || rid;
+  }
+  return rid;
 }
 
 function showIpv6OspfDatabase(router: Router): string {
