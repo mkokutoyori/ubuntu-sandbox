@@ -118,10 +118,20 @@ export class OSPFEngine {
   }
 
   setAreaType(areaId: string, type: OSPFAreaType): void {
-    const area = this.config.areas.get(areaId);
-    if (area) {
-      area.type = type;
+    let area = this.config.areas.get(areaId);
+    if (!area) {
+      area = {
+        areaId,
+        type: 'normal',
+        interfaces: [],
+        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+      };
+      this.config.areas.set(areaId, area);
+      if (!this.lsdb.areas.has(areaId)) {
+        this.lsdb.areas.set(areaId, new Map());
+      }
     }
+    area.type = type;
   }
 
   setPassiveInterface(ifName: string): void {
@@ -1072,6 +1082,16 @@ export class OSPFEngine {
               metric: iface.cost,
             });
           }
+        } else if (iface.state === 'Waiting' || iface.state === 'Loopback') {
+          // Waiting state (no neighbors yet) or Loopback: advertise as stub
+          const networkAddr = this.computeNetwork(iface.ipAddress, iface.mask);
+          links.push({
+            linkId: networkAddr,
+            linkData: iface.mask,
+            type: 3, // Stub network
+            numTOS: 0,
+            metric: iface.cost,
+          });
         }
       }
     }

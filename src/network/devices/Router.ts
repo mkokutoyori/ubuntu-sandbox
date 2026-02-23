@@ -325,6 +325,7 @@ export abstract class Router extends Equipment {
     super(type, name, x, y);
     this.shell = this.createShell();
     this.createPorts();
+    this._setupPortMonitoring();
   }
 
   private createPorts(): void {
@@ -333,6 +334,34 @@ export abstract class Router extends Equipment {
       const portName = this.getVendorPortName(i);
       this.addPort(new Port(portName, 'ethernet'));
     }
+  }
+
+  /** Register link-change handlers on all ports to trigger OSPF convergence */
+  private _setupPortMonitoring(): void {
+    for (const [, port] of this.ports) {
+      port.onLinkChange((state) => {
+        if (state === 'up') {
+          this._ospfAutoConverge();
+        }
+      });
+    }
+  }
+
+  /**
+   * Create a virtual port (loopback, tunnel, subinterface, etc.).
+   * Returns true if created successfully.
+   * @internal Used by CLI shells
+   */
+  _createVirtualInterface(name: string): boolean {
+    if (this.ports.has(name)) return true; // already exists
+    const port = new Port(name, 'ethernet');
+    port.setUp(true); // virtual interfaces are always up
+    this.addPort(port);
+    // Register OSPF monitor
+    port.onLinkChange((state) => {
+      if (state === 'up') this._ospfAutoConverge();
+    });
+    return true;
   }
 
   /** Vendor-specific interface naming convention */
@@ -374,6 +403,11 @@ export abstract class Router extends Equipment {
 
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
+
+    // Trigger OSPF convergence if OSPF is enabled (needed for Loopback, etc.)
+    if (this.ospfEngine) {
+      this._ospfAutoConverge();
+    }
     return true;
   }
 
@@ -444,15 +478,12 @@ export abstract class Router extends Equipment {
 
   addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 0): boolean {
     const iface = this.findInterfaceForIP(nextHop);
-    if (!iface) {
-      Logger.warn(this.id, 'router:route-add-fail',
-        `${this.name}: next-hop ${nextHop} not reachable`);
-      return false;
-    }
+    // Static routes can be installed even when next-hop is not directly reachable (recursive lookup)
+    const ifaceName = iface ? iface.getName() : '';
 
     this.routingTable.push({
       network, mask, nextHop,
-      iface: iface.getName(),
+      iface: ifaceName,
       type: 'static',
       ad: 1,
       metric,
@@ -466,13 +497,14 @@ export abstract class Router extends Equipment {
   setDefaultRoute(nextHop: IPAddress, metric: number = 0): boolean {
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
     const iface = this.findInterfaceForIP(nextHop);
-    if (!iface) return false;
+    // Default routes can be installed even when next-hop is not directly reachable
+    const ifaceName = iface ? iface.getName() : '';
 
     this.routingTable.push({
       network: new IPAddress('0.0.0.0'),
       mask: new SubnetMask('0.0.0.0'),
       nextHop,
-      iface: iface.getName(),
+      iface: ifaceName,
       type: 'default',
       ad: 1,
       metric,
@@ -2267,6 +2299,1097 @@ export abstract class Router extends Equipment {
       etherType: ETHERTYPE_IPV4,
       payload: ipPkt,
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OSPF Auto-Convergence (simulated instant convergence for tests)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Trigger OSPF convergence: activate matching interfaces, discover neighbors
+   * via cables, exchange LSAs, and compute/install routes.
+   * Called after network commands and cable connects.
+   * @internal
+   */
+  _ospfAutoConverge(): void {
+    if (!this.ospfEngine) return;
+
+    // Step 1: Auto-activate interfaces matching OSPF network statements
+    const routerIfaces: Array<{ name: string; ip: string; mask: string }> = [];
+    for (const [portName, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (ip && mask) {
+        routerIfaces.push({ name: portName, ip: ip.toString(), mask: mask.toString() });
+      }
+    }
+
+    const matches = this.ospfEngine.matchInterfaces(routerIfaces);
+    for (const m of matches) {
+      if (!this.ospfEngine.getInterface(m.name)) {
+        // Apply pending config if any
+        const pending = this.ospfExtraConfig.pendingIfConfig.get(m.name);
+        this.ospfEngine.activateInterface(m.name, m.ip, m.mask, m.areaId, {
+          cost: pending?.cost,
+          priority: pending?.priority,
+          helloInterval: pending?.helloInterval,
+          deadInterval: pending?.deadInterval,
+          networkType: pending?.networkType as any,
+        });
+        // Apply auth settings after activation
+        if (pending) {
+          const iface = this.ospfEngine.getInterface(m.name);
+          if (iface) {
+            if (pending.authType !== undefined) iface.authType = pending.authType;
+            if (pending.authKey !== undefined) iface.authKey = pending.authKey;
+          }
+        }
+      }
+    }
+
+    // Step 2: Discover neighbors via cables (direct or through switches)
+    for (const [portName, port] of this.ports) {
+      const cable = port.getCable();
+      if (!cable) continue;
+
+      const localIface = this.ospfEngine.getInterface(portName);
+      if (!localIface) continue;
+      if (localIface.passive) continue;
+
+      // Get remote port
+      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      if (!remotePort) continue;
+
+      // Get remote equipment
+      const remoteEquipId = remotePort.getEquipmentId();
+      const remoteEquip = Equipment.getById(remoteEquipId);
+      if (!remoteEquip) continue;
+
+      // Collect candidate neighbor routers - either direct or through switch
+      const candidateRouters: Array<{ router: Router; port: Port }> = [];
+
+      if (remoteEquip instanceof Router) {
+        candidateRouters.push({ router: remoteEquip, port: remotePort });
+      } else {
+        // Remote device is a Switch/Hub - find all other routers connected to it
+        for (const swPort of remoteEquip.getPorts()) {
+          if (swPort === remotePort) continue; // skip the port we came from
+          const swCable = swPort.getCable();
+          if (!swCable) continue;
+          const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+          if (!otherEnd) continue;
+          const otherEquip = Equipment.getById(otherEnd.getEquipmentId());
+          if (otherEquip && otherEquip instanceof Router) {
+            candidateRouters.push({ router: otherEquip, port: otherEnd });
+          }
+        }
+      }
+
+      for (const { router: remoteRouter, port: rPort } of candidateRouters) {
+        if (!remoteRouter.ospfEngine) continue;
+
+        // Trigger auto-converge on remote side too
+        const remoteIfaces: Array<{ name: string; ip: string; mask: string }> = [];
+        for (const [rp, rPortInner] of remoteRouter.ports) {
+          const rIp = rPortInner.getIPAddress();
+          const rMask = rPortInner.getSubnetMask();
+          if (rIp && rMask) remoteIfaces.push({ name: rp, ip: rIp.toString(), mask: rMask.toString() });
+        }
+        const remoteMatches = remoteRouter.ospfEngine.matchInterfaces(remoteIfaces);
+        for (const rm of remoteMatches) {
+          if (!remoteRouter.ospfEngine.getInterface(rm.name)) {
+            const rPending = remoteRouter.ospfExtraConfig.pendingIfConfig.get(rm.name);
+            remoteRouter.ospfEngine.activateInterface(rm.name, rm.ip, rm.mask, rm.areaId, {
+              cost: rPending?.cost,
+              priority: rPending?.priority,
+              helloInterval: rPending?.helloInterval,
+              deadInterval: rPending?.deadInterval,
+              networkType: rPending?.networkType as any,
+            });
+            if (rPending) {
+              const iface = remoteRouter.ospfEngine.getInterface(rm.name);
+              if (iface) {
+                if (rPending.authType !== undefined) iface.authType = rPending.authType;
+                if (rPending.authKey !== undefined) iface.authKey = rPending.authKey;
+              }
+            }
+          }
+        }
+
+        const remoteIface = remoteRouter.ospfEngine.getInterface(rPort.getName());
+        if (!remoteIface) continue;
+        if (remoteIface.passive) continue;
+
+        // Check authentication compatibility
+        const localAuth = localIface.authType ?? 0;
+        const remoteAuth = remoteIface.authType ?? 0;
+        if (localAuth !== remoteAuth) continue;
+        if (localAuth !== 0 && localIface.authKey !== remoteIface.authKey) continue;
+
+        // Check hello/dead interval match
+        if (localIface.helloInterval !== remoteIface.helloInterval) continue;
+        if (localIface.deadInterval !== remoteIface.deadInterval) continue;
+
+        // Form bidirectional adjacency (instant convergence)
+        const localRid = this.ospfEngine.getRouterId();
+        const remoteRid = remoteRouter.ospfEngine.getRouterId();
+
+        this._ospfFormAdjacency(this.ospfEngine, localIface, remoteIface, remoteRid, rPort);
+        this._ospfFormAdjacency(remoteRouter.ospfEngine, remoteIface, localIface, localRid, port);
+      }
+    }
+
+    // Step 3: Exchange LSAs between adjacent routers and compute routes
+    this._ospfExchangeAndCompute();
+
+    // Step 4: OSPFv3 convergence for IPv6
+    this._ospfv3AutoConverge();
+  }
+
+  /**
+   * OSPFv3 auto-convergence: discover IPv6 neighbors and compute IPv6 routes.
+   */
+  private _ospfv3AutoConverge(): void {
+    if (!this.ospfv3Engine) return;
+
+    // Discover OSPFv3 neighbors via cables
+    for (const [portName, port] of this.ports) {
+      const cable = port.getCable();
+      if (!cable) continue;
+
+      const localIface = this.ospfv3Engine.getInterface(portName);
+      if (!localIface) continue;
+      if (localIface.passive) continue;
+
+      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      if (!remotePort) continue;
+
+      const remoteEquipId = remotePort.getEquipmentId();
+      const remoteEquip = Equipment.getById(remoteEquipId);
+      if (!remoteEquip) continue;
+
+      const candidateRouters: Array<{ router: Router; port: Port }> = [];
+      if (remoteEquip instanceof Router) {
+        candidateRouters.push({ router: remoteEquip, port: remotePort });
+      } else {
+        for (const swPort of remoteEquip.getPorts()) {
+          if (swPort === remotePort) continue;
+          const swCable = swPort.getCable();
+          if (!swCable) continue;
+          const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+          if (!otherEnd) continue;
+          const otherEquip = Equipment.getById(otherEnd.getEquipmentId());
+          if (otherEquip && otherEquip instanceof Router) {
+            candidateRouters.push({ router: otherEquip, port: otherEnd });
+          }
+        }
+      }
+
+      for (const { router: remoteRouter, port: rPort } of candidateRouters) {
+        if (!remoteRouter.ospfv3Engine) continue;
+
+        const remoteIface = remoteRouter.ospfv3Engine.getInterface(rPort.getName());
+        if (!remoteIface) continue;
+        if (remoteIface.passive) continue;
+
+        // Timer match check
+        if (localIface.helloInterval !== remoteIface.helloInterval) continue;
+        if (localIface.deadInterval !== remoteIface.deadInterval) continue;
+
+        // Form adjacency
+        const localRid = this.ospfv3Engine.getRouterId();
+        const remoteRid = remoteRouter.ospfv3Engine.getRouterId();
+
+        this._ospfv3FormAdjacency(this.ospfv3Engine, localIface, remoteRid, rPort);
+        this._ospfv3FormAdjacency(remoteRouter.ospfv3Engine, remoteIface, localRid, port);
+      }
+    }
+
+    // Compute and install IPv6 routes from OSPFv3
+    this._ospfv3ComputeRoutes();
+  }
+
+  private _ospfv3FormAdjacency(engine: any, localIface: any, remoteRid: string, remotePort: Port): void {
+    // Check if already a neighbor
+    if (localIface.neighbors.has(remoteRid)) return;
+
+    const remoteIPv6Addrs = remotePort.getIPv6Addresses?.();
+    const linkLocal = remoteIPv6Addrs?.find((a: any) => a.scope === 'link-local');
+    const globalAddr = remoteIPv6Addrs?.find((a: any) => a.scope === 'global');
+    const remoteIP = linkLocal?.address?.toString() || globalAddr?.address?.toString() || '::';
+
+    const neighbor: any = {
+      routerId: remoteRid,
+      ipAddress: remoteIP,
+      state: 'Full',
+      priority: localIface.priority ?? 1,
+      neighborDR: '0.0.0.0',
+      neighborBDR: '0.0.0.0',
+      deadTimer: null,
+      iface: localIface.name,
+      lsRequestList: [],
+      lsRetransmissionList: [],
+      dbSummaryList: [],
+      ddSeqNumber: 0,
+      options: 0x13,
+      lastHelloReceived: Date.now(),
+    };
+
+    localIface.neighbors.set(remoteRid, neighbor);
+
+    // DR/BDR election for broadcast
+    if (localIface.networkType === 'broadcast') {
+      const localRid = engine.getRouterId();
+      const allRids = [localRid];
+      for (const [rid] of localIface.neighbors) allRids.push(rid);
+
+      // Sort by priority first, then router-id (use priority from neighbors)
+      const candidates: Array<{ rid: string; priority: number }> = [];
+      candidates.push({ rid: localRid, priority: localIface.priority ?? 1 });
+      for (const [rid, n] of localIface.neighbors) {
+        candidates.push({ rid, priority: (n as any).priority ?? 1 });
+      }
+      candidates.sort((a, b) => {
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        const aNum = a.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
+        const bNum = b.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
+        return bNum - aNum;
+      });
+
+      localIface.dr = candidates[0]?.rid || '0.0.0.0';
+      localIface.bdr = candidates[1]?.rid || '0.0.0.0';
+
+      if (localIface.dr === localRid) localIface.state = 'DR';
+      else if (localIface.bdr === localRid) localIface.state = 'Backup';
+      else localIface.state = 'DROther';
+    }
+  }
+
+  /**
+   * Compute and install OSPFv3 IPv6 routes from adjacency information.
+   */
+  private _ospfv3ComputeRoutes(): void {
+    if (!this.ospfv3Engine) return;
+
+    // Collect all OSPFv3 routers in the domain
+    const visited = new Set<string>();
+    const queue: Router[] = [this];
+    const allRouters: Router[] = [];
+    visited.add(this.id);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      allRouters.push(current);
+
+      for (const [, port] of current.ports) {
+        const cable = port.getCable();
+        if (!cable) continue;
+        const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+        if (!remotePort) continue;
+        const remoteId = remotePort.getEquipmentId();
+        if (visited.has(remoteId)) continue;
+        const remoteEquip = Equipment.getById(remoteId);
+
+        if (remoteEquip instanceof Router && remoteEquip.ospfv3Engine) {
+          visited.add(remoteId);
+          queue.push(remoteEquip);
+        } else if (remoteEquip && !(remoteEquip instanceof Router)) {
+          for (const swPort of remoteEquip.getPorts()) {
+            if (swPort === remotePort) continue;
+            const swCable = swPort.getCable();
+            if (!swCable) continue;
+            const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+            if (!otherEnd) continue;
+            const otherId = otherEnd.getEquipmentId();
+            if (visited.has(otherId)) continue;
+            const otherEquip = Equipment.getById(otherId);
+            if (otherEquip instanceof Router && otherEquip.ospfv3Engine) {
+              visited.add(otherId);
+              queue.push(otherEquip);
+            }
+          }
+        }
+      }
+    }
+
+    // Remove old OSPFv3 routes from IPv6 table
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter((r: any) => r.type !== 'ospf');
+
+    // For each neighbor router, install routes for their connected IPv6 networks
+    for (const r of allRouters) {
+      if (r === this || !r.ospfv3Engine) continue;
+
+      // Check we have adjacency with this router
+      let hasAdjacency = false;
+      for (const [, iface] of this.ospfv3Engine.getInterfaces()) {
+        for (const [, n] of iface.neighbors) {
+          if ((n as any).routerId === r.ospfv3Engine.getRouterId()) {
+            hasAdjacency = true;
+            break;
+          }
+        }
+        if (hasAdjacency) break;
+      }
+
+      // Also check indirect adjacency (through other routers)
+      if (!hasAdjacency) {
+        // BFS to see if reachable via OSPFv3
+        const reachable = this._isOSPFv3Reachable(r, allRouters);
+        if (reachable) hasAdjacency = true;
+      }
+
+      if (!hasAdjacency) continue;
+
+      // Find next hop to reach this router
+      const nhInfo = this._findIPv6NextHopTo(r);
+      if (!nhInfo) continue;
+
+      // Install routes for remote router's IPv6 connected networks
+      for (const rEntry of r.ipv6RoutingTable) {
+        if (rEntry.type !== 'connected') continue;
+
+        // Skip if we already have this as connected
+        const alreadyConnected = this.ipv6RoutingTable.some(
+          (rt: any) => rt.type === 'connected' &&
+            rt.prefix?.toString() === rEntry.prefix?.toString() &&
+            rt.prefixLength === rEntry.prefixLength
+        );
+        if (alreadyConnected) continue;
+
+        // Skip link-local prefixes
+        const prefStr = rEntry.prefix?.toString() || '';
+        if (prefStr.startsWith('fe80')) continue;
+
+        const cost = nhInfo.cost || 1;
+        this.ipv6RoutingTable.push({
+          prefix: rEntry.prefix,
+          prefixLength: rEntry.prefixLength,
+          nextHop: nhInfo.nextHop,
+          iface: nhInfo.iface,
+          type: 'ospf' as any,
+          ad: 110,
+          metric: cost,
+        });
+      }
+
+      // Also install routes for remote router's OSPFv3 learned routes (for multi-hop)
+      for (const rEntry of r.ipv6RoutingTable) {
+        if ((rEntry as any).type !== 'ospf') continue;
+        const prefStr = rEntry.prefix?.toString() || '';
+        if (prefStr.startsWith('fe80')) continue;
+
+        const alreadyHave = this.ipv6RoutingTable.some(
+          (rt: any) => rt.prefix?.toString() === prefStr && rt.prefixLength === rEntry.prefixLength
+        );
+        if (alreadyHave) continue;
+
+        const cost = (nhInfo.cost || 1) + (rEntry.metric || 0);
+        this.ipv6RoutingTable.push({
+          prefix: rEntry.prefix,
+          prefixLength: rEntry.prefixLength,
+          nextHop: nhInfo.nextHop,
+          iface: nhInfo.iface,
+          type: 'ospf' as any,
+          ad: 110,
+          metric: cost,
+        });
+      }
+    }
+  }
+
+  private _isOSPFv3Reachable(target: Router, allRouters: Router[]): boolean {
+    const visited = new Set<string>();
+    const queue: Router[] = [this];
+    visited.add(this.id);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current.id === target.id) return true;
+      if (!current.ospfv3Engine) continue;
+
+      for (const [, iface] of current.ospfv3Engine.getInterfaces()) {
+        for (const [, n] of iface.neighbors) {
+          const nRid = (n as any).routerId;
+          const neighbor = allRouters.find(r => r.ospfv3Engine?.getRouterId() === nRid);
+          if (neighbor && !visited.has(neighbor.id)) {
+            visited.add(neighbor.id);
+            queue.push(neighbor);
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private _findIPv6NextHopTo(target: Router): { nextHop: any; iface: string; cost: number } | null {
+    for (const [portName, port] of this.ports) {
+      const cable = port.getCable();
+      if (!cable) continue;
+      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      if (!remotePort) continue;
+
+      if (remotePort.getEquipmentId() === target.id) {
+        const remoteAddrs = remotePort.getIPv6Addresses?.();
+        const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
+        const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
+        const nextHop = linkLocal?.address || globalAddr?.address;
+        if (nextHop) {
+          const v3Iface = this.ospfv3Engine?.getInterface(portName);
+          return { nextHop, iface: portName, cost: v3Iface?.cost ?? 1 };
+        }
+      }
+
+      // Through switch
+      const remoteEquip = Equipment.getById(remotePort.getEquipmentId());
+      if (remoteEquip && !(remoteEquip instanceof Router)) {
+        for (const swPort of remoteEquip.getPorts()) {
+          if (swPort === remotePort) continue;
+          const swCable = swPort.getCable();
+          if (!swCable) continue;
+          const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+          if (!otherEnd) continue;
+          if (otherEnd.getEquipmentId() === target.id) {
+            const remoteAddrs = otherEnd.getIPv6Addresses?.();
+            const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
+            const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
+            const nextHop = linkLocal?.address || globalAddr?.address;
+            if (nextHop) {
+              const v3Iface = this.ospfv3Engine?.getInterface(portName);
+              return { nextHop, iface: portName, cost: v3Iface?.cost ?? 1 };
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Form an OSPF adjacency on a local interface with a remote neighbor */
+  private _ospfFormAdjacency(
+    engine: OSPFEngine,
+    localIface: any,
+    remoteIface: any,
+    remoteRid: string,
+    remotePort: Port,
+  ): void {
+    const remoteIP = remotePort.getIPAddress()?.toString() ?? '0.0.0.0';
+
+    // Check if already a neighbor
+    const existing = Array.from(localIface.neighbors.values()).find(
+      (n: any) => n.routerId === remoteRid
+    );
+    if (existing) return;
+
+    // Create neighbor directly in FULL state
+    const neighbor: any = {
+      routerId: remoteRid,
+      ipAddress: remoteIP,
+      state: 'Full',
+      priority: remoteIface.priority ?? 1,
+      neighborDR: remoteIP,
+      neighborBDR: '0.0.0.0',
+      dr: remoteIface.dr ?? '0.0.0.0',
+      bdr: remoteIface.bdr ?? '0.0.0.0',
+      deadTimer: null,
+      iface: localIface.name,
+      lsRequestList: [],
+      lsRetransmissionList: [],
+      dbSummaryList: [],
+      ddSeqNumber: 0,
+      lastDD: null,
+      options: 0,
+      master: false,
+    };
+
+    localIface.neighbors.set(remoteRid, neighbor);
+
+    // Manually handle DR/BDR for broadcast - don't call drElection which fires AdjOK
+    if (localIface.networkType === 'broadcast') {
+      const localRid = engine.getRouterId();
+      // Build candidate list with priority and IP
+      const candidates: Array<{ rid: string; priority: number; ip: string }> = [];
+      candidates.push({ rid: localRid, priority: localIface.priority ?? 1, ip: localIface.ipAddress });
+      for (const [rid, n] of localIface.neighbors) {
+        candidates.push({ rid, priority: (n as any).priority ?? 1, ip: (n as any).ipAddress || '0.0.0.0' });
+      }
+      // Filter out priority 0 (ineligible for DR/BDR)
+      const eligible = candidates.filter(c => c.priority > 0);
+      // Sort by priority desc, then router-id desc
+      eligible.sort((a, b) => {
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        const aNum = a.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
+        const bNum = b.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
+        return bNum - aNum;
+      });
+      if (eligible.length >= 1) {
+        localIface.dr = eligible[0].ip;
+        localIface.state = eligible[0].rid === localRid ? 'DR' : (eligible.length >= 2 && eligible[1].rid === localRid ? 'Backup' : 'DROther');
+      }
+      if (eligible.length >= 2) {
+        localIface.bdr = eligible[1].ip;
+      }
+    }
+  }
+
+  /**
+   * Exchange LSAs between all connected OSPF routers and compute routes.
+   * This simulates the LSDB sync and SPF computation in one step.
+   */
+  private _ospfExchangeAndCompute(): void {
+    if (!this.ospfEngine) return;
+
+    // Collect all routers in the OSPF domain (BFS via cables, including through switches)
+    const visited = new Set<string>();
+    const queue: Router[] = [this];
+    const allRouters: Router[] = [];
+    visited.add(this.id);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      allRouters.push(current);
+
+      if (!current.ospfEngine) continue;
+
+      for (const [, port] of current.ports) {
+        const cable = port.getCable();
+        if (!cable) continue;
+        const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+        if (!remotePort) continue;
+        const remoteId = remotePort.getEquipmentId();
+        const remoteEquip = Equipment.getById(remoteId);
+
+        if (remoteEquip instanceof Router && remoteEquip.ospfEngine && !visited.has(remoteId)) {
+          visited.add(remoteId);
+          queue.push(remoteEquip);
+        } else if (remoteEquip && !(remoteEquip instanceof Router)) {
+          // Switch/Hub — find all other routers connected to it
+          for (const swPort of remoteEquip.getPorts()) {
+            if (swPort === remotePort) continue;
+            const swCable = swPort.getCable();
+            if (!swCable) continue;
+            const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+            if (!otherEnd) continue;
+            const otherId = otherEnd.getEquipmentId();
+            if (visited.has(otherId)) continue;
+            const otherEquip = Equipment.getById(otherId);
+            if (otherEquip instanceof Router && otherEquip.ospfEngine) {
+              visited.add(otherId);
+              queue.push(otherEquip);
+            }
+          }
+        }
+      }
+    }
+
+    // Ensure all routers have their interfaces properly activated (including Loopbacks)
+    for (const r of allRouters) {
+      if (!r.ospfEngine) continue;
+      const rIfaces: Array<{ name: string; ip: string; mask: string }> = [];
+      for (const [pName, p] of r.ports) {
+        const ip = p.getIPAddress();
+        const mask = p.getSubnetMask();
+        if (ip && mask) rIfaces.push({ name: pName, ip: ip.toString(), mask: mask.toString() });
+      }
+      const rMatches = r.ospfEngine.matchInterfaces(rIfaces);
+      for (const rm of rMatches) {
+        if (!r.ospfEngine.getInterface(rm.name)) {
+          const rPending = r.ospfExtraConfig.pendingIfConfig.get(rm.name);
+          r.ospfEngine.activateInterface(rm.name, rm.ip, rm.mask, rm.areaId, {
+            cost: rPending?.cost,
+            priority: rPending?.priority,
+            helloInterval: rPending?.helloInterval,
+            deadInterval: rPending?.deadInterval,
+            networkType: rPending?.networkType as any,
+          });
+          if (rPending) {
+            const iface = r.ospfEngine.getInterface(rm.name);
+            if (iface) {
+              if (rPending.authType !== undefined) iface.authType = rPending.authType;
+              if (rPending.authKey !== undefined) iface.authKey = rPending.authKey;
+            }
+          }
+        }
+      }
+    }
+
+    // Form adjacencies between all directly connected routers that haven't formed them yet
+    for (const r1 of allRouters) {
+      if (!r1.ospfEngine) continue;
+      for (const [portName, port] of r1.ports) {
+        const cable = port.getCable();
+        if (!cable) continue;
+        const localIface = r1.ospfEngine.getInterface(portName);
+        if (!localIface) continue;
+        if (localIface.passive) continue;
+
+        const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+        if (!remotePort) continue;
+
+        // Collect candidate routers (direct or through switch)
+        const candidates: Array<{ router: Router; port: Port }> = [];
+        const remoteEquip = Equipment.getById(remotePort.getEquipmentId());
+        if (remoteEquip instanceof Router && remoteEquip.ospfEngine) {
+          candidates.push({ router: remoteEquip, port: remotePort });
+        } else if (remoteEquip && !(remoteEquip instanceof Router)) {
+          for (const swPort of remoteEquip.getPorts()) {
+            if (swPort === remotePort) continue;
+            const swCable = swPort.getCable();
+            if (!swCable) continue;
+            const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+            if (!otherEnd) continue;
+            const otherEquip = Equipment.getById(otherEnd.getEquipmentId());
+            if (otherEquip instanceof Router && otherEquip.ospfEngine) {
+              candidates.push({ router: otherEquip, port: otherEnd });
+            }
+          }
+        }
+
+        for (const { router: r2, port: rPort } of candidates) {
+          if (!r2.ospfEngine) continue;
+          const remoteIface = r2.ospfEngine.getInterface(rPort.getName());
+          if (!remoteIface) continue;
+          if (remoteIface.passive) continue;
+
+          // Check auth and timer compatibility
+          const localAuth = localIface.authType ?? 0;
+          const remoteAuth = remoteIface.authType ?? 0;
+          if (localAuth !== remoteAuth) continue;
+          if (localAuth !== 0 && localIface.authKey !== remoteIface.authKey) continue;
+          if (localIface.helloInterval !== remoteIface.helloInterval) continue;
+          if (localIface.deadInterval !== remoteIface.deadInterval) continue;
+
+          const localRid = r1.ospfEngine.getRouterId();
+          const remoteRid = r2.ospfEngine.getRouterId();
+          r1._ospfFormAdjacency(r1.ospfEngine, localIface, remoteIface, remoteRid, rPort);
+          r2._ospfFormAdjacency(r2.ospfEngine, remoteIface, localIface, localRid, port);
+        }
+      }
+    }
+
+    // Each router originates its Router LSA for each area
+    for (const r of allRouters) {
+      if (!r.ospfEngine) continue;
+      for (const [areaId] of r.ospfEngine.getConfig().areas) {
+        r.ospfEngine.originateRouterLSA(areaId);
+      }
+      // Originate Network LSAs for DR interfaces
+      for (const [, iface] of r.ospfEngine.getInterfaces()) {
+        if (iface.state === 'DR') {
+          r.ospfEngine.originateNetworkLSA(iface);
+        }
+      }
+    }
+
+    // Sync LSDBs: copy all LSAs between routers that share an area
+    for (const r1 of allRouters) {
+      if (!r1.ospfEngine) continue;
+      for (const r2 of allRouters) {
+        if (r1 === r2 || !r2.ospfEngine) continue;
+        const r2LSDB = r2.ospfEngine.getLSDB();
+        // Copy area LSAs only for shared areas
+        const r1Areas = new Set(r1.ospfEngine.getConfig().areas.keys());
+        for (const [areaId, areaDB] of r2LSDB.areas) {
+          if (r1Areas.has(areaId)) {
+            for (const [, lsa] of areaDB) {
+              r1.ospfEngine.installLSA(areaId, lsa);
+            }
+          }
+        }
+        // Copy external LSAs to all routers
+        for (const [, lsa] of r2LSDB.external) {
+          r1.ospfEngine.installLSA('0', lsa);
+        }
+      }
+    }
+
+    // Run SPF and install routes for each router (including external, inter-area, stub)
+    for (const r of allRouters) {
+      if (!r.ospfEngine) continue;
+      const routes = r.ospfEngine.runSPF();
+
+      // Compute additional routes: external, inter-area, stub defaults
+      const extraRoutes = r._computeAdvancedOSPFRoutes(allRouters);
+      const allOSPFRoutes = [...routes, ...extraRoutes];
+
+      // Debug: log routes for debugging
+      if ((globalThis as any).__OSPF_DEBUG) {
+        const rid = r.ospfEngine.getRouterId();
+        console.log(`[OSPF-DBG] ${r.name} (${rid}): SPF routes=${routes.length}, extra=${extraRoutes.length}`);
+        for (const rt of routes) console.log(`  SPF: ${rt.network}/${rt.mask} via ${rt.nextHop} iface=${rt.iface} cost=${rt.cost}`);
+        for (const rt of extraRoutes) console.log(`  EXT: ${rt.network}/${rt.mask} via ${rt.nextHop} type=${rt.routeType}`);
+      }
+
+      r._installOSPFRoutes(allOSPFRoutes);
+    }
+  }
+
+  /**
+   * Compute advanced OSPF routes: external (E1/E2), inter-area (IA), stub defaults, NSSA.
+   */
+  private _computeAdvancedOSPFRoutes(allRouters: Router[]): any[] {
+    if (!this.ospfEngine) return [];
+    const routes: any[] = [];
+    const extra = this.ospfExtraConfig;
+    const myAreas = new Set(this.ospfEngine.getConfig().areas.keys());
+    const isABR = myAreas.size > 1;
+
+    // ── External routes (default-information originate, redistribute static) ──
+    for (const r of allRouters) {
+      if (r === this || !r.ospfEngine) continue;
+      const rExtra = r.ospfExtraConfig;
+
+      // default-information originate → inject default route as external
+      if (r.ospfEngine.getConfig().defaultInformationOriginate) {
+        // Check that originating router has a default route
+        const hasDefault = r.routingTable.some(rt => rt.type === 'default' || (rt.type === 'static' &&
+          rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
+        if (hasDefault) {
+          const nh = this._findNextHopTo(r);
+          if (nh) {
+            const metricType = rExtra.defaultInfoMetricType ?? 2;
+            const cost = metricType === 1 ? 1 + (nh.cost || 0) : 1;
+            routes.push({
+              network: '0.0.0.0', mask: '0.0.0.0',
+              nextHop: nh.nextHop, iface: nh.iface,
+              cost, routeType: metricType === 1 ? 'type1-external' : 'type2-external',
+              areaId: '0', advertisingRouter: r.ospfEngine.getRouterId(),
+              _metricType: metricType, _isDefault: true,
+            });
+          }
+        }
+      }
+
+      // redistribute static → inject static routes as external
+      if (rExtra.redistributeStatic) {
+        for (const rt of r.routingTable) {
+          if (rt.type !== 'static') continue;
+          if (rt.network.toString() === '0.0.0.0') continue; // skip default
+          const nh = this._findNextHopTo(r);
+          if (nh) {
+            const metricType = rExtra.redistributeStatic.metricType ?? 2;
+            const cost = metricType === 1 ? 20 + (nh.cost || 0) : 20;
+            routes.push({
+              network: rt.network.toString(), mask: rt.mask.toString(),
+              nextHop: nh.nextHop, iface: nh.iface,
+              cost, routeType: metricType === 1 ? 'type1-external' : 'type2-external',
+              areaId: '0', advertisingRouter: r.ospfEngine.getRouterId(),
+              _metricType: metricType,
+            });
+          }
+        }
+      }
+
+      // redistribute connected → inject connected routes as external
+      if (rExtra.redistributeConnected) {
+        for (const rt of r.routingTable) {
+          if (rt.type !== 'connected') continue;
+          // Skip interfaces that are already OSPF-enabled
+          const ospfIface = r.ospfEngine.getInterface(rt.iface);
+          if (ospfIface) continue;
+          const nh = this._findNextHopTo(r);
+          if (nh) {
+            routes.push({
+              network: rt.network.toString(), mask: rt.mask.toString(),
+              nextHop: nh.nextHop, iface: nh.iface,
+              cost: 20, routeType: 'type2-external',
+              areaId: '0', advertisingRouter: r.ospfEngine.getRouterId(),
+              _metricType: 2,
+            });
+          }
+        }
+      }
+    }
+
+    // ── Inter-area routes (O IA) ──
+    // For each router in a different area, advertise its intra-area routes to us
+    for (const r of allRouters) {
+      if (r === this || !r.ospfEngine) continue;
+      const rAreas = new Set(r.ospfEngine.getConfig().areas.keys());
+      const rIsABR = rAreas.size > 1;
+
+      if (rIsABR) {
+        // This router is an ABR - it can give us inter-area routes
+        const rRoutes = r.ospfEngine.getRoutes();
+        const rExtra = r.ospfExtraConfig;
+        for (const rt of rRoutes) {
+          // Only advertise routes from areas we don't have
+          if (myAreas.has(rt.areaId)) continue;
+
+          const nh = this._findNextHopTo(r);
+          if (!nh) continue;
+
+          // Check if ABR has area range summarization
+          let shouldAdvertise = true;
+          let summarized = false;
+
+          if (rExtra.areaRanges.has(rt.areaId)) {
+            const ranges = rExtra.areaRanges.get(rt.areaId)!;
+            for (const range of ranges) {
+              if (this._ipInSubnet(rt.network, range.network, range.mask)) {
+                shouldAdvertise = false; // suppress individual routes
+                summarized = true;
+              }
+            }
+          }
+          if (!shouldAdvertise) continue;
+
+          routes.push({
+            network: rt.network, mask: rt.mask,
+            nextHop: nh.nextHop, iface: nh.iface,
+            cost: rt.cost + (nh.cost || 0),
+            routeType: 'inter-area', areaId: rt.areaId,
+            advertisingRouter: r.ospfEngine.getRouterId(),
+          });
+        }
+
+        // Advertise summarized ranges
+        if (rExtra.areaRanges) {
+          for (const [areaId, ranges] of rExtra.areaRanges) {
+            if (myAreas.has(areaId)) continue;
+            const rRoutes2 = r.ospfEngine.getRoutes();
+            for (const range of ranges) {
+              // Check if any route in this area matches the range
+              const hasMatch = rRoutes2.some(
+                rt => rt.areaId === areaId && this._ipInSubnet(rt.network, range.network, range.mask)
+              );
+              if (hasMatch) {
+                const nh = this._findNextHopTo(r);
+                if (nh) {
+                  routes.push({
+                    network: range.network, mask: range.mask,
+                    nextHop: nh.nextHop, iface: nh.iface,
+                    cost: (nh.cost || 0) + 1,
+                    routeType: 'inter-area', areaId,
+                    advertisingRouter: r.ospfEngine.getRouterId(),
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ── Stub area default route ──
+    // If this router is in a stub area and the ABR advertises a default
+    for (const [areaId, area] of this.ospfEngine.getConfig().areas) {
+      if (area.type !== 'stub' && area.type !== 'totally-stubby') continue;
+      // Find ABR for this area
+      for (const r of allRouters) {
+        if (r === this || !r.ospfEngine) continue;
+        const rAreas = r.ospfEngine.getConfig().areas;
+        if (!rAreas.has(areaId)) continue;
+        if (rAreas.size <= 1) continue; // not an ABR
+        // This router is the ABR for our stub area
+        const nh = this._findNextHopTo(r);
+        if (nh) {
+          routes.push({
+            network: '0.0.0.0', mask: '0.0.0.0',
+            nextHop: nh.nextHop, iface: nh.iface,
+            cost: (nh.cost || 0) + 1,
+            routeType: 'inter-area', areaId,
+            advertisingRouter: r.ospfEngine.getRouterId(),
+            _isDefault: true, _isStubDefault: true,
+          });
+        }
+      }
+
+      // For totally-stubby areas, filter out inter-area routes from other areas
+      if (area.type === 'totally-stubby' && !isABR) {
+        const filtered = routes.filter(rt => {
+          if (rt.routeType === 'inter-area' && !rt._isStubDefault) return false;
+          return true;
+        });
+        routes.length = 0;
+        routes.push(...filtered);
+      }
+    }
+
+    // ── NSSA: Convert external routes from NSSA ASBR to Type 5 for backbone ──
+    // For routers in backbone seeing NSSA routes through ABR
+    for (const r of allRouters) {
+      if (r === this || !r.ospfEngine) continue;
+      const rExtra = r.ospfExtraConfig;
+      const rAreas = r.ospfEngine.getConfig().areas;
+
+      // Check if r is in an NSSA area and redistributes
+      for (const [areaId, area] of rAreas) {
+        if (area.type !== 'nssa') continue;
+        if (!rExtra.redistributeStatic) continue;
+
+        // r is in NSSA and redistributes static routes
+        // We need an ABR between us and r
+        for (const abr of allRouters) {
+          if (!abr.ospfEngine) continue;
+          const abrAreas = abr.ospfEngine.getConfig().areas;
+          if (!abrAreas.has(areaId) || abrAreas.size <= 1) continue;
+          // ABR connects NSSA to backbone
+          if (!myAreas.has('0') && !myAreas.has('0.0.0.0')) continue;
+
+          for (const rt of r.routingTable) {
+            if (rt.type !== 'static') continue;
+            if (rt.network.toString() === '0.0.0.0') continue;
+            const nh = this._findNextHopTo(abr);
+            if (nh) {
+              routes.push({
+                network: rt.network.toString(), mask: rt.mask.toString(),
+                nextHop: nh.nextHop, iface: nh.iface,
+                cost: 20, routeType: 'type2-external',
+                areaId: '0', advertisingRouter: r.ospfEngine.getRouterId(),
+                _metricType: 2,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return routes;
+  }
+
+  /** Find the next hop and interface to reach a target router */
+  private _findNextHopTo(target: Router): { nextHop: string; iface: string; cost: number } | null {
+    if (!this.ospfEngine) return null;
+
+    // Direct neighbor?
+    for (const [portName, port] of this.ports) {
+      const cable = port.getCable();
+      if (!cable) continue;
+      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      if (!remotePort) continue;
+      const remoteEquipId = remotePort.getEquipmentId();
+
+      if (remoteEquipId === target.id) {
+        const remoteIP = remotePort.getIPAddress()?.toString();
+        if (remoteIP) {
+          const localIface = this.ospfEngine.getInterface(portName);
+          const cost = localIface?.cost ?? 1;
+          return { nextHop: remoteIP, iface: portName, cost };
+        }
+      }
+
+      // Check through switch
+      const remoteEquip = Equipment.getById(remoteEquipId);
+      if (remoteEquip && !(remoteEquip instanceof Router)) {
+        for (const swPort of remoteEquip.getPorts()) {
+          if (swPort === remotePort) continue;
+          const swCable = swPort.getCable();
+          if (!swCable) continue;
+          const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
+          if (!otherEnd) continue;
+          if (otherEnd.getEquipmentId() === target.id) {
+            const remoteIP = otherEnd.getIPAddress()?.toString();
+            if (remoteIP) {
+              const localIface = this.ospfEngine.getInterface(portName);
+              const cost = localIface?.cost ?? 1;
+              return { nextHop: remoteIP, iface: portName, cost };
+            }
+          }
+        }
+      }
+    }
+
+    // Not directly connected - find via SPF routes
+    const ospfRoutes = this.ospfEngine.getRoutes();
+    for (const [, port] of target.ports) {
+      const ip = port.getIPAddress()?.toString();
+      if (!ip) continue;
+      for (const rt of ospfRoutes) {
+        if (rt.nextHop && this._ipInSubnet(ip, rt.network, rt.mask)) {
+          return { nextHop: rt.nextHop, iface: rt.iface, cost: rt.cost };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private _ipInSubnet(ip: string, network: string, mask: string): boolean {
+    const ipNum = this._ipToNum(ip);
+    const netNum = this._ipToNum(network);
+    const maskNum = this._ipToNum(mask);
+    return (ipNum & maskNum) === (netNum & maskNum);
+  }
+
+  private _ipToNum(ip: string): number {
+    const parts = ip.split('.').map(Number);
+    return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+  }
+
+  /** Install OSPF-computed routes into the RIB */
+  private _installOSPFRoutes(routes: any[]): void {
+    // Remove old OSPF routes
+    this.routingTable = this.routingTable.filter(r => r.type !== 'ospf');
+
+    for (const route of routes) {
+      const network = route.network || route.destination;
+      const mask = route.mask;
+      const iface = route.iface || route.interface || '';
+      const nextHop = route.nextHop;
+
+      if (!network || !mask) continue;
+
+      // Don't install if a connected route already covers it
+      const existing = this.routingTable.find(
+        r => r.type === 'connected' &&
+             r.network.toString() === network &&
+             r.mask.toString() === mask
+      );
+      if (existing) continue;
+
+      const entry: any = {
+        network: new IPAddress(network),
+        mask: new SubnetMask(mask),
+        nextHop: nextHop ? new IPAddress(nextHop) : null,
+        iface,
+        type: 'ospf' as any,
+        ad: 110,
+        metric: route.cost ?? 0,
+      };
+      // Preserve OSPF route metadata for display
+      if (route.routeType) entry.routeType = route.routeType;
+      if (route._metricType) entry._metricType = route._metricType;
+      if (route._isDefault) entry._isDefault = route._isDefault;
+      if (route._isStubDefault) entry._isStubDefault = route._isStubDefault;
+      this.routingTable.push(entry);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OSPF Extended Config (used by CLI commands)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** OSPF extra config that's not in the engine (advanced features) */
+  private ospfExtraConfig: {
+    spfThrottle?: { initial: number; hold: number; max: number };
+    maxLsa?: number;
+    gracefulRestart?: { enabled: boolean; gracePeriod: number };
+    bfdAllInterfaces?: boolean;
+    redistributeStatic?: { subnets: boolean; metricType: number };
+    redistributeConnected?: { subnets: boolean };
+    areaRanges: Map<string, Array<{ network: string; mask: string }>>;
+    virtualLinks: Map<string, string>; // areaId -> neighborRouterId
+    distributeList?: { aclId: string; direction: 'in' | 'out' };
+    defaultInfoMetricType?: number;
+    /** Pending per-interface OSPF config (applied when interface activates) */
+    pendingIfConfig: Map<string, { cost?: number; priority?: number; helloInterval?: number; deadInterval?: number; authType?: number; authKey?: string; demandCircuit?: boolean; networkType?: string }>;
+    /** Pending per-interface OSPFv3 config */
+    pendingV3IfConfig: Map<string, { cost?: number; priority?: number; networkType?: string; ipsecAuth?: boolean }>;
+  } = {
+    areaRanges: new Map(),
+    virtualLinks: new Map(),
+    pendingIfConfig: new Map(),
+    pendingV3IfConfig: new Map(),
+  };
+
+  /** @internal */
+  _getOSPFExtraConfig() { return this.ospfExtraConfig; }
+
+  /** @internal Used by CLI shells */
+  _enableOSPFv3(processId: number = 1): void {
+    if (this.ospfv3Engine) return;
+    this.ospfv3Engine = new OSPFv3Engine(processId);
+    Logger.info(this.id, 'ospfv3:enabled', `${this.name}: OSPFv3 process ${processId} enabled`);
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

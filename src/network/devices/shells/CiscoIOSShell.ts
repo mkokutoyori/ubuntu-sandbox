@@ -48,6 +48,7 @@ import {
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
+  buildConfigRouterOSPFv3Commands,
   registerOSPFInterfaceCommands, registerOSPFShowCommands,
 } from './cisco/CiscoOspfCommands';
 
@@ -69,6 +70,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private configDhcpTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();        // RIP config-router
   private configRouterOspfTrie = new CommandTrie();    // OSPF config-router
+  private configRouterOspfv3Trie = new CommandTrie();  // OSPFv3 config-router
   private configStdNaclTrie = new CommandTrie();
   private configExtNaclTrie = new CommandTrie();
 
@@ -87,6 +89,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     registerOSPFConfigCommands(this.configTrie, this);
     registerOSPFInterfaceCommands(this.configIfTrie, this);
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
+    buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
   }
 
   getOSType(): string { return 'cisco-ios'; }
@@ -129,6 +132,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-dhcp':   return `${host}(dhcp-config)#`;
       case 'config-router': return `${host}(config-router)#`;
       case 'config-router-ospf': return `${host}(config-router)#`;
+      case 'config-router-ospfv3': return `${host}(config-rtr)#`;
       case 'config-std-nacl': return `${host}(config-std-nacl)#`;
       case 'config-ext-nacl': return `${host}(config-ext-nacl)#`;
       default:              return `${host}>`;
@@ -270,6 +274,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
+      case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
       case 'config-std-nacl': return this.configStdNaclTrie;
       case 'config-ext-nacl': return this.configExtNaclTrie;
       default: return this.userTrie;
@@ -284,6 +289,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-dhcp':
       case 'config-router':
       case 'config-router-ospf':
+      case 'config-router-ospfv3':
       case 'config-std-nacl':
       case 'config-ext-nacl':
         this.mode = 'config';

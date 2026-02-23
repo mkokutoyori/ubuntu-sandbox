@@ -113,6 +113,10 @@ export class OSPFv3Engine {
     return this.config.passiveInterfaces.has(ifName);
   }
 
+  setDefaultInformationOriginate(flag: boolean): void {
+    (this.config as any).defaultInfoOriginate = flag;
+  }
+
   // ─── Area Management ──────────────────────────────────────────
 
   addArea(areaId: string, type: OSPFAreaType = 'normal'): void {
@@ -151,6 +155,7 @@ export class OSPFv3Engine {
       networkType?: OSPFNetworkType;
       helloInterval?: number;
       deadInterval?: number;
+      ipAddress?: string;
     }
   ): OSPFv3Interface {
     this.addArea(areaId);
