@@ -8,13 +8,13 @@
  * Uses CiscoShellContext to interact with shell state (mode, selected interface, etc.)
  */
 
-import { IPAddress, SubnetMask } from '../../../core/types';
+import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
-export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-std-nacl' | 'config-ext-nacl';
+export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3' | 'config-std-nacl' | 'config-ext-nacl';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */
@@ -53,8 +53,20 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    const ifName = ctx.resolveInterfaceName(args.join(' '));
-    if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
+    const raw = args.join(' ');
+    let ifName = ctx.resolveInterfaceName(raw);
+    if (!ifName) {
+      // Try creating virtual interface (Loopback, Tunnel, Serial subinterface)
+      const combined = raw.replace(/\s+/g, '');
+      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
+      if (vMatch) {
+        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
+        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        ctx.r()._createVirtualInterface(fullName);
+        ifName = fullName;
+      }
+      if (!ifName) return `% Invalid interface "${raw}"`;
+    }
     ctx.setSelectedInterface(ifName);
     ctx.setMode('config-if');
     return '';
@@ -96,6 +108,29 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   });
 
   trie.register('no shutdown', 'Enable (no-op in global config)', () => '');
+
+  // IPv6 static routes
+  trie.registerGreedy('ipv6 route', 'Configure IPv6 static route', (args) => {
+    if (args.length < 2) return '% Incomplete command.';
+    // ipv6 route <prefix>/<len> <next-hop>
+    const prefixStr = args[0];
+    const nextHopStr = args[1];
+    const slashIdx = prefixStr.indexOf('/');
+    if (slashIdx === -1) return '% Invalid prefix format';
+    const prefix = prefixStr.substring(0, slashIdx);
+    const prefixLen = parseInt(prefixStr.substring(slashIdx + 1), 10);
+    if (isNaN(prefixLen)) return '% Invalid prefix length';
+    try {
+      const prefixAddr = new IPv6Address(prefix);
+      const nextHop = new IPv6Address(nextHopStr);
+      ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+    } catch (e: any) {
+      // Store as unresolved static route for later redistribution
+      (ctx.r() as any)._ipv6StaticRoutes = (ctx.r() as any)._ipv6StaticRoutes || [];
+      (ctx.r() as any)._ipv6StaticRoutes.push({ prefix: prefixStr, nextHop: nextHopStr });
+    }
+    return '';
+  });
 }
 
 // ─── Interface Config Mode Commands ──────────────────────────────────
@@ -142,6 +177,28 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     }
     return '';
   });
+
+  // IPv6 address configuration
+  trie.registerGreedy('ipv6 address', 'Configure IPv6 address', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const addrStr = args[0];
+    // Handle eui-64 suffix
+    const isEUI64 = args.length > 1 && args[1].toLowerCase() === 'eui-64';
+    // Parse address/prefix
+    const slashIdx = addrStr.indexOf('/');
+    if (slashIdx === -1) return '% Invalid IPv6 address format (expected addr/prefix)';
+    const addr = addrStr.substring(0, slashIdx);
+    const prefixLen = parseInt(addrStr.substring(slashIdx + 1), 10);
+    if (isNaN(prefixLen)) return '% Invalid prefix length';
+    try {
+      const ipv6Addr = new IPv6Address(addr);
+      ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
+      return '';
+    } catch (e: any) {
+      return `% Invalid input: ${e.message}`;
+    }
+  });
 }
 
 // ─── IP Route Command (config mode) ─────────────────────────────────
@@ -175,6 +232,7 @@ export function resolveInterfaceName(router: Router, input: string): string | nu
 
   // Abbreviation expansion
   const prefixMap: Record<string, string> = {
+    'g': 'GigabitEthernet',
     'gi': 'GigabitEthernet',
     'gig': 'GigabitEthernet',
     'giga': 'GigabitEthernet',
@@ -185,6 +243,10 @@ export function resolveInterfaceName(router: Router, input: string): string | nu
     'fastethernet': 'FastEthernet',
     'se': 'Serial',
     'serial': 'Serial',
+    'lo': 'Loopback',
+    'loopback': 'Loopback',
+    'tu': 'Tunnel',
+    'tunnel': 'Tunnel',
     'ge': 'GE',
   };
 

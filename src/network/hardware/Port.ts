@@ -427,6 +427,7 @@ export class Port {
   connectCable(cable: Cable): void {
     this.cable = cable;
     Logger.debug(this.equipmentId, 'port:cable-connect', `${this.name}: cable connected`);
+    this.notifyLinkChange('up');
   }
 
   disconnectCable(): void {
