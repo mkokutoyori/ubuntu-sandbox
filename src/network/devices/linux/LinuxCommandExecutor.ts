@@ -6,6 +6,7 @@ import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
+import { LinuxLogManager } from './LinuxLogManager';
 import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
@@ -20,6 +21,7 @@ export class LinuxCommandExecutor {
   readonly userMgr: LinuxUserManager;
   readonly cron: LinuxCronManager;
   readonly firewall: LinuxFirewallManager;
+  readonly logMgr: LinuxLogManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
   private umask = 0o022;
@@ -33,6 +35,7 @@ export class LinuxCommandExecutor {
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
     this.firewall = new LinuxFirewallManager();
+    this.logMgr = new LinuxLogManager(this.vfs);
     this.isServer = isServer;
 
     // Default environment
@@ -426,6 +429,20 @@ export class LinuxCommandExecutor {
       case 'ufw': {
         const out = this.firewall.execute(args);
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
+      }
+
+      // Logging commands
+      case 'logger': {
+        const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);
+        return { output: out, exitCode: out ? 1 : 0 };
+      }
+      case 'journalctl': {
+        const out = this.logMgr.executeJournalctl(args);
+        return { output: out, exitCode: out.startsWith('Invalid') ? 1 : 0 };
+      }
+      case 'dmesg': {
+        const out = this.logMgr.executeDmesg(args, this.userMgr.currentUid);
+        return { output: out, exitCode: out.includes('Permission denied') ? 1 : 0 };
       }
 
       // Hostname
