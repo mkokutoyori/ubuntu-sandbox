@@ -53,7 +53,7 @@ export class IPSecEngine {
 
   // ── IKEv2 Configuration ──────────────────────────────────────────
   private ikev2Proposals: Map<string, IKEv2Proposal> = new Map();
-  private ikev2Policies: Map<number, IKEv2Policy> = new Map();
+  private ikev2Policies: Map<string, IKEv2Policy> = new Map();
   private ikev2Keyrings: Map<string, IKEv2Keyring> = new Map();
   private ikev2Profiles: Map<string, IKEv2Profile> = new Map();
 
@@ -182,11 +182,12 @@ export class IPSecEngine {
     return this.ikev2Proposals.get(name)!;
   }
 
-  getOrCreateIKEv2Policy(priority: number): IKEv2Policy {
-    if (!this.ikev2Policies.has(priority)) {
-      this.ikev2Policies.set(priority, { priority, proposalNames: [] });
+  getOrCreateIKEv2Policy(name: string | number): IKEv2Policy {
+    const key = String(name);
+    if (!this.ikev2Policies.has(key)) {
+      this.ikev2Policies.set(key, { priority: name, proposalNames: [] });
     }
-    return this.ikev2Policies.get(priority)!;
+    return this.ikev2Policies.get(key)!;
   }
 
   getOrCreateIKEv2Keyring(name: string): IKEv2Keyring {
@@ -1213,7 +1214,7 @@ export class IPSecEngine {
       if (prop.integrity.length) lines.push(` integrity ${prop.integrity.join(' ')}`);
       if (prop.dhGroup.length) lines.push(` group ${prop.dhGroup.join(' ')}`);
     }
-    for (const [, pol] of [...this.ikev2Policies.entries()].sort((a, b) => a[0] - b[0])) {
+    for (const [, pol] of this.ikev2Policies) {
       lines.push('!');
       lines.push(`crypto ikev2 policy ${pol.priority}`);
       for (const p of pol.proposalNames) lines.push(` proposal ${p}`);

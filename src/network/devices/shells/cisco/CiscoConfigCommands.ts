@@ -54,8 +54,8 @@ export interface CiscoShellContext {
   setSelectedIPSecProfile(p: string | null): void;
   getSelectedIKEv2Proposal(): string | null;
   setSelectedIKEv2Proposal(p: string | null): void;
-  getSelectedIKEv2Policy(): number | null;
-  setSelectedIKEv2Policy(n: number | null): void;
+  getSelectedIKEv2Policy(): string | null;
+  setSelectedIKEv2Policy(n: string | null): void;
   getSelectedIKEv2Keyring(): string | null;
   setSelectedIKEv2Keyring(k: string | null): void;
   getSelectedIKEv2KeyringPeer(): string | null;

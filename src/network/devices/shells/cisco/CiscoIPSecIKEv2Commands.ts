@@ -30,13 +30,12 @@ export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // crypto ikev2 policy N
+  // crypto ikev2 policy NAME|N
   trie.registerGreedy('crypto ikev2 policy', 'Define IKEv2 policy', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    const priority = parseInt(args[0], 10);
-    if (isNaN(priority)) return '% Invalid priority.';
-    eng(ctx).getOrCreateIKEv2Policy(priority);
-    ctx.setSelectedIKEv2Policy(priority);
+    const name = args[0];
+    eng(ctx).getOrCreateIKEv2Policy(name);
+    ctx.setSelectedIKEv2Policy(name);
     ctx.setMode('config-ikev2-policy');
     return '';
   });
