@@ -56,6 +56,8 @@ import { Logger } from '../core/Logger';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { OSPFEngine } from '../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../ospf/OSPFv3Engine';
+import { IPSecEngine } from '../ipsec/IPSecEngine';
+import { IP_PROTO_ESP, IP_PROTO_AH } from '../core/types';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -318,6 +320,9 @@ export abstract class Router extends Equipment {
   private ospfEngine: OSPFEngine | null = null;
   private ospfv3Engine: OSPFv3Engine | null = null;
 
+  // ── IPSec Engine ─────────────────────────────────────────────
+  private ipsecEngine: IPSecEngine | null = null;
+
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
 
@@ -336,12 +341,14 @@ export abstract class Router extends Equipment {
     }
   }
 
-  /** Register link-change handlers on all ports to trigger OSPF convergence */
+  /** Register link-change handlers on all ports to trigger OSPF convergence and DPD */
   private _setupPortMonitoring(): void {
-    for (const [, port] of this.ports) {
+    for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
         if (state === 'up') {
           this._ospfAutoConverge();
+        } else {
+          this.ipsecEngine?.onPortDown(name);
         }
       });
     }
@@ -1237,6 +1244,18 @@ export abstract class Router extends Equipment {
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    // IPSec inbound decapsulation
+    if (ipPkt.protocol === IP_PROTO_ESP && this.ipsecEngine) {
+      const inner = this.ipsecEngine.processInboundESP(ipPkt);
+      if (inner) this.processIPv4(inPort, inner);
+      return;
+    }
+    if (ipPkt.protocol === IP_PROTO_AH && this.ipsecEngine) {
+      const inner = this.ipsecEngine.processInboundAH(ipPkt);
+      if (inner) this.processIPv4(inPort, inner);
+      return;
+    }
+
     if (ipPkt.protocol === IP_PROTO_ICMP) {
       const icmp = ipPkt.payload as ICMPPacket;
       if (!icmp || icmp.type !== 'icmp') return;
@@ -1342,6 +1361,18 @@ export abstract class Router extends Equipment {
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-out',
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
+        return;
+      }
+    }
+
+    // Phase E.2c: IPSec outbound — check if this packet should be encrypted
+    if (this.ipsecEngine) {
+      const entry = this.ipsecEngine.findMatchingCryptoEntry(fwdPkt, route.iface);
+      if (entry) {
+        const encPkt = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
+        if (!encPkt) return; // negotiation failed — drop
+        // Re-send the encrypted outer packet (it will go through forwardPacket again)
+        this.processIPv4(route.iface, encPkt);
         return;
       }
     }
@@ -1994,6 +2025,17 @@ export abstract class Router extends Equipment {
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
 
+  /** @internal Lazily create + return the IPSec engine for this router */
+  _getOrCreateIPSecEngine(): IPSecEngine {
+    if (!this.ipsecEngine) {
+      this.ipsecEngine = new IPSecEngine(this);
+    }
+    return this.ipsecEngine;
+  }
+
+  /** @internal Return IPSec engine (null if not yet configured) */
+  _getIPSecEngineInternal(): IPSecEngine | null { return this.ipsecEngine; }
+
   // ─── ACL Public API ────────────────────────────────────────────
 
   getAccessLists(): AccessList[] {
@@ -2105,6 +2147,12 @@ export abstract class Router extends Equipment {
     const binding = this.interfaceACLBindings.get(ifName);
     if (!binding) return null;
     return direction === 'in' ? binding.inbound : binding.outbound;
+  }
+
+  /** Evaluate a named/numbered ACL by name — used by IPSecEngine for crypto ACL matching. */
+  evaluateACLByName(name: string, ipPkt: IPv4Packet): 'permit' | 'deny' | null {
+    const ref: number | string = /^\d+$/.test(name) ? parseInt(name, 10) : name;
+    return this.evaluateACL(ref, ipPkt);
   }
 
   /** Evaluate an ACL against a packet. Returns 'permit', 'deny', or null (no ACL). */

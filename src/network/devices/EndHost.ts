@@ -25,7 +25,7 @@ import {
   ARPPacket, ICMPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6,
-  createIPv4Packet, verifyIPv4Checksum,
+  createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
   NDPRouterAdvertisement, NDPOptionPrefixInfo,
@@ -163,6 +163,12 @@ export abstract class EndHost extends Equipment {
   protected dhcpClient: DHCPClient;
   /** Track DHCP-configured interfaces for 'dynamic' display */
   protected dhcpInterfaces: Set<string> = new Set();
+
+  // ─── IP Forwarding / NAT (for NAT-T topologies) ──────────────────
+  /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
+  protected ipForwardEnabled: boolean = false;
+  /** Interfaces on which MASQUERADE is applied (iptables POSTROUTING MASQUERADE) */
+  protected masqueradeOnInterfaces: Set<string> = new Set();
 
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
@@ -567,8 +573,65 @@ export abstract class EndHost extends Equipment {
         this.handleICMP(portName, ipPkt);
       }
       // Future: TCP, UDP dispatch here
+      return;
     }
-    // End hosts don't forward — they drop packets not addressed to them
+
+    // IP forwarding (NAT gateway mode)
+    if (this.ipForwardEnabled) {
+      this.forwardIPv4(portName, ipPkt);
+    }
+    // Otherwise: End hosts don't forward — drop packets not addressed to them
+  }
+
+  /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
+  private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
+    const newTTL = ipPkt.ttl - 1;
+    if (newTTL <= 0) return; // TTL expired — drop silently
+
+    const route = this.resolveRoute(ipPkt.destinationIP);
+    if (!route) return; // no route — drop
+
+    const outPortName = route.port.getName();
+    if (outPortName === inPort) return; // avoid looping back on same interface
+
+    // MASQUERADE: rewrite source IP to outgoing interface IP
+    let srcIP = ipPkt.sourceIP;
+    if (this.masqueradeOnInterfaces.has(outPortName)) {
+      const outPortIP = route.port.getIPAddress();
+      if (outPortIP) srcIP = outPortIP;
+    }
+
+    const fwdPkt: IPv4Packet = {
+      ...ipPkt,
+      sourceIP: srcIP,
+      ttl: newTTL,
+      headerChecksum: 0,
+    };
+    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+
+    const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
+    if (!nextHopMAC) return; // no ARP entry — drop (would need async resolution)
+
+    this.sendFrame(outPortName, {
+      srcMAC: route.port.getMAC(),
+      dstMAC: nextHopMAC.mac,
+      etherType: ETHERTYPE_IPV4,
+      payload: fwdPkt,
+    });
+  }
+
+  /**
+   * Return the apparent source IP the peer at `toIP` would see after MASQUERADE.
+   * Used by IPSecEngine.getApparentSourceIP().
+   */
+  getOutgoingMasqueradeIP(toIP: string): string | null {
+    try {
+      const route = this.resolveRoute(new IPAddress(toIP));
+      if (!route) return null;
+      const outPortName = route.port.getName();
+      if (!this.masqueradeOnInterfaces.has(outPortName)) return null;
+      return route.port.getIPAddress()?.toString() ?? null;
+    } catch { return null; }
   }
 
   // ─── ICMP Handling (RFC 792) ──────────────────────────────────
