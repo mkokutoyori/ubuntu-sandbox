@@ -581,6 +581,12 @@ export interface EthernetFrame {
 export const IP_PROTO_ICMP = 1;
 export const IP_PROTO_TCP  = 6;
 export const IP_PROTO_UDP  = 17;
+export const IP_PROTO_ESP  = 50;  // Encapsulating Security Payload (RFC 4303)
+export const IP_PROTO_AH   = 51;  // Authentication Header (RFC 4302)
+
+/** IKE / NAT-T UDP ports */
+export const UDP_PORT_IKE       = 500;   // RFC 2408 ISAKMP
+export const UDP_PORT_IKE_NAT_T = 4500;  // RFC 3948 UDP-Encapsulated ESP
 
 /**
  * IPv4 Packet — RFC 791 compliant header fields.
@@ -788,6 +794,68 @@ export interface UDPPacket {
   checksum: number;
   /** Upper-layer payload (RIP, DNS, etc.). */
   payload: RIPPacket | unknown;
+}
+
+// ─── IPSec: ESP Packet (IP protocol 50, RFC 4303) ───────────────────
+
+/**
+ * ESP (Encapsulating Security Payload) — used for IPSec tunnel/transport mode.
+ * In our simulator, no real encryption is performed; the inner packet is preserved.
+ */
+export interface ESPPacket {
+  type: 'esp';
+  /** Security Parameter Index — identifies the SA on the receiver */
+  spi: number;
+  /** Anti-replay sequence number */
+  sequenceNumber: number;
+  /** The protected inner IPv4 packet (tunnel mode) or upper-layer payload */
+  innerPacket: IPv4Packet;
+}
+
+// ─── IPSec: AH Packet (IP protocol 51, RFC 4302) ────────────────────
+
+/** AH (Authentication Header) — integrity only, no confidentiality */
+export interface AHPacket {
+  type: 'ah';
+  spi: number;
+  sequenceNumber: number;
+  innerPacket: IPv4Packet;
+}
+
+// ─── Simplified IKE negotiation payload (simulation-internal) ────────
+
+/**
+ * IKESimMessage — carried inside UDP/500 packets for IKE simulation.
+ * Not a real IKE PDU — collapses the multi-message IKE exchange into 2 messages.
+ */
+export interface IKESimMessage {
+  type: 'ike-sim';
+  phase: 1 | 2;
+  direction: 'request' | 'response';
+  // Phase 1 — ISAKMP policy proposals
+  isakmpPolicies?: Array<{
+    encryption: string; hash: string; auth: string; group: number; lifetime: number;
+  }>;
+  psk?: string;  // Pre-shared key (plaintext in simulation)
+  natKeepalive?: number;
+  ikev2?: boolean;   // IKEv2 negotiation
+  ikev2Proposals?: Array<{
+    encryption: string[]; integrity: string[]; group: number[];
+  }>;
+  // Phase 2 — transform set proposals
+  transformSets?: Array<{
+    transforms: string[]; mode: 'tunnel' | 'transport';
+  }>;
+  pfsGroup?: string;
+  saLifetime?: number;
+  // Response fields
+  success?: boolean;
+  errorReason?: string;
+  chosenPolicyIdx?: number;
+  chosenTransformIdx?: number;
+  initiatorSpiIn?: number;   // SPI for traffic: responder → initiator
+  responderSpiIn?: number;   // SPI for traffic: initiator → responder
+  natDetected?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

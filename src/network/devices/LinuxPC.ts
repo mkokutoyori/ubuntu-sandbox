@@ -74,7 +74,7 @@ export class LinuxPC extends EndHost {
    * that need EndHost internals to handle.
    */
   private containsNetworkCommand(input: string): boolean {
-    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps'];
+    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps', 'sysctl', 'iptables'];
     // Also check for DHCP lease file paths (cat/rm of /var/lib/dhcp/)
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&]+/);
@@ -187,6 +187,12 @@ export class LinuxPC extends EndHost {
           return '';
         }
         return null;
+      }
+      case 'sysctl': {
+        return this.cmdSysctl(noSudo.split(/\s+/).slice(1));
+      }
+      case 'iptables': {
+        return this.cmdIptables(noSudo.split(/\s+/).slice(1));
       }
       default:
         return null;
@@ -359,6 +365,39 @@ export class LinuxPC extends EndHost {
     const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
     const val = bytes / Math.pow(1024, i);
     return `${val.toFixed(1)} ${units[i]}`;
+  }
+
+  // ─── sysctl ────────────────────────────────────────────────────
+
+  private cmdSysctl(args: string[]): string {
+    // sysctl -w net.ipv4.ip_forward=1
+    const wIdx = args.indexOf('-w');
+    const params = wIdx !== -1 ? args.slice(wIdx + 1) : args.filter(a => !a.startsWith('-'));
+    for (const param of params) {
+      const [key, val] = param.split('=');
+      if (key === 'net.ipv4.ip_forward') {
+        this.ipForwardEnabled = val === '1';
+        return `net.ipv4.ip_forward = ${val ?? ''}`;
+      }
+    }
+    return '';
+  }
+
+  // ─── iptables ──────────────────────────────────────────────────
+
+  private cmdIptables(args: string[]): string {
+    // iptables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
+    const table = args.indexOf('-t') !== -1 ? args[args.indexOf('-t') + 1] : 'filter';
+    if (table !== 'nat') return ''; // only handle nat table
+    const chain = args.indexOf('-A') !== -1 ? args[args.indexOf('-A') + 1] : null;
+    if (chain === 'POSTROUTING') {
+      const jump = args.indexOf('-j') !== -1 ? args[args.indexOf('-j') + 1] : null;
+      const outIface = args.indexOf('-o') !== -1 ? args[args.indexOf('-o') + 1] : null;
+      if (jump === 'MASQUERADE' && outIface) {
+        this.masqueradeOnInterfaces.add(outIface);
+      }
+    }
+    return '';
   }
 
   // ─── IpNetworkContext adapter ──────────────────────────────────

@@ -14,7 +14,15 @@ import { CommandTrie } from '../CommandTrie';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
-export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3' | 'config-std-nacl' | 'config-ext-nacl';
+export type CiscoShellMode =
+  | 'user' | 'privileged' | 'config' | 'config-if'
+  | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
+  | 'config-std-nacl' | 'config-ext-nacl'
+  // IPSec modes
+  | 'config-isakmp' | 'config-tfset' | 'config-crypto-map'
+  | 'config-ipsec-profile'
+  | 'config-ikev2-proposal' | 'config-ikev2-policy'
+  | 'config-ikev2-keyring' | 'config-ikev2-keyring-peer' | 'config-ikev2-profile';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */
@@ -31,6 +39,29 @@ export interface CiscoShellContext {
   setSelectedDHCPPool(pool: string | null): void;
   /** Resolve interface name abbreviation to full name */
   resolveInterfaceName(input: string): string | null;
+  // IPSec context
+  getSelectedISAKMPPriority(): number | null;
+  setSelectedISAKMPPriority(p: number | null): void;
+  getSelectedTransformSet(): string | null;
+  setSelectedTransformSet(ts: string | null): void;
+  getSelectedCryptoMap(): string | null;
+  setSelectedCryptoMap(m: string | null): void;
+  getSelectedCryptoMapSeq(): number | null;
+  setSelectedCryptoMapSeq(seq: number | null): void;
+  getSelectedCryptoMapIsDynamic(): boolean;
+  setSelectedCryptoMapIsDynamic(d: boolean): void;
+  getSelectedIPSecProfile(): string | null;
+  setSelectedIPSecProfile(p: string | null): void;
+  getSelectedIKEv2Proposal(): string | null;
+  setSelectedIKEv2Proposal(p: string | null): void;
+  getSelectedIKEv2Policy(): number | null;
+  setSelectedIKEv2Policy(n: number | null): void;
+  getSelectedIKEv2Keyring(): string | null;
+  setSelectedIKEv2Keyring(k: string | null): void;
+  getSelectedIKEv2KeyringPeer(): string | null;
+  setSelectedIKEv2KeyringPeer(p: string | null): void;
+  getSelectedIKEv2Profile(): string | null;
+  setSelectedIKEv2Profile(p: string | null): void;
 }
 
 // ─── Global Config Mode Commands ─────────────────────────────────────
