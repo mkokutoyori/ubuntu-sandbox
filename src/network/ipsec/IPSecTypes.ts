@@ -63,7 +63,7 @@ export interface IKEv2Proposal {
 }
 
 export interface IKEv2Policy {
-  priority: number;
+  priority: string | number;
   proposalNames: string[];
   matchAddressLocal?: string;
 }

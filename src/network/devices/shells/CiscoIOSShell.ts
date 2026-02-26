@@ -79,7 +79,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private selectedCryptoMapIsDynamic: boolean = false;
   private selectedIPSecProfile: string | null = null;
   private selectedIKEv2Proposal: string | null = null;
-  private selectedIKEv2Policy: number | null = null;
+  private selectedIKEv2Policy: string | null = null;
   private selectedIKEv2Keyring: string | null = null;
   private selectedIKEv2KeyringPeer: string | null = null;
   private selectedIKEv2Profile: string | null = null;
@@ -183,8 +183,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   setSelectedIPSecProfile(p: string | null): void { this.selectedIPSecProfile = p; }
   getSelectedIKEv2Proposal(): string | null { return this.selectedIKEv2Proposal; }
   setSelectedIKEv2Proposal(p: string | null): void { this.selectedIKEv2Proposal = p; }
-  getSelectedIKEv2Policy(): number | null { return this.selectedIKEv2Policy; }
-  setSelectedIKEv2Policy(n: number | null): void { this.selectedIKEv2Policy = n; }
+  getSelectedIKEv2Policy(): string | null { return this.selectedIKEv2Policy; }
+  setSelectedIKEv2Policy(n: string | null): void { this.selectedIKEv2Policy = n; }
   getSelectedIKEv2Keyring(): string | null { return this.selectedIKEv2Keyring; }
   setSelectedIKEv2Keyring(k: string | null): void { this.selectedIKEv2Keyring = k; }
   getSelectedIKEv2KeyringPeer(): string | null { return this.selectedIKEv2KeyringPeer; }
