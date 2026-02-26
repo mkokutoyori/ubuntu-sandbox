@@ -73,6 +73,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private configRouterOspfv3Trie = new CommandTrie();  // OSPFv3 config-router
   private configStdNaclTrie = new CommandTrie();
   private configExtNaclTrie = new CommandTrie();
+  private configIpv6AclTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
@@ -90,6 +91,61 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     registerOSPFInterfaceCommands(this.configIfTrie, this);
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
+
+    // IPv6 access-list config mode command
+    this.configTrie.registerGreedy('ipv6 access-list', 'Configure IPv6 access list', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const name = args[0];
+      // Initialize the IPv6 ACL if not exists
+      const extra = this.r()._getOSPFExtraConfig();
+      if (!extra.ipv6AccessLists) (extra as any).ipv6AccessLists = new Map();
+      if (!(extra as any).ipv6AccessLists.has(name)) {
+        (extra as any).ipv6AccessLists.set(name, []);
+      }
+      this.selectedACL = name;
+      this.mode = 'config-ipv6-acl';
+      return '';
+    });
+
+    // IPv6 ACL mode: deny/permit commands
+    this.configIpv6AclTrie.registerGreedy('deny', 'Specify packets to deny', (args) => {
+      return this._handleIpv6AclEntry('deny', args);
+    });
+    this.configIpv6AclTrie.registerGreedy('permit', 'Specify packets to permit', (args) => {
+      return this._handleIpv6AclEntry('permit', args);
+    });
+  }
+
+  private _handleIpv6AclEntry(action: 'permit' | 'deny', args: string[]): string {
+    if (args.length < 2) return '% Incomplete command.';
+    const aclName = this.selectedACL;
+    if (!aclName) return '% No ACL selected';
+    const extra = this.r()._getOSPFExtraConfig();
+    if (!(extra as any).ipv6AccessLists) (extra as any).ipv6AccessLists = new Map();
+    const entries = (extra as any).ipv6AccessLists.get(aclName) || [];
+    // Format: deny/permit ipv6 <source> <dest>
+    // source can be: <prefix>/<len>, any
+    // dest is usually: any
+    const protocol = args[0].toLowerCase(); // usually 'ipv6'
+    const srcStr = args.length >= 2 ? args[1] : 'any';
+    let prefix = '';
+    let prefixLen = 0;
+    let isAny = false;
+    if (srcStr.toLowerCase() === 'any') {
+      isAny = true;
+    } else {
+      const slashIdx = srcStr.indexOf('/');
+      if (slashIdx >= 0) {
+        prefix = srcStr.substring(0, slashIdx);
+        prefixLen = parseInt(srcStr.substring(slashIdx + 1), 10);
+      } else {
+        prefix = srcStr;
+        prefixLen = 128;
+      }
+    }
+    entries.push({ action, prefix, prefixLen, isAny });
+    (extra as any).ipv6AccessLists.set(aclName, entries);
+    return '';
   }
 
   getOSType(): string { return 'cisco-ios'; }
@@ -135,6 +191,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-router-ospfv3': return `${host}(config-rtr)#`;
       case 'config-std-nacl': return `${host}(config-std-nacl)#`;
       case 'config-ext-nacl': return `${host}(config-ext-nacl)#`;
+      case 'config-ipv6-acl': return `${host}(config-ipv6-acl)#`;
       default:              return `${host}>`;
     }
   }
@@ -277,6 +334,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
       case 'config-std-nacl': return this.configStdNaclTrie;
       case 'config-ext-nacl': return this.configExtNaclTrie;
+      case 'config-ipv6-acl': return this.configIpv6AclTrie;
       default: return this.userTrie;
     }
   }
@@ -292,6 +350,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-router-ospfv3':
       case 'config-std-nacl':
       case 'config-ext-nacl':
+      case 'config-ipv6-acl':
         this.mode = 'config';
         this.selectedInterface = null;
         this.selectedDHCPPool = null;
@@ -374,6 +433,52 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
     // DHCP privileged commands (debug, clear)
     registerDhcpPrivilegedCommands(t, () => this.r());
+
+    // Auto-enter config mode for common config commands from privileged mode
+    // This matches behavior of many Cisco simulators where these commands
+    // implicitly enter configure terminal first.
+    t.registerGreedy('ipv6 router ospf', 'Configure IPv6 OSPF (auto-enters config)', (args) => {
+      const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
+      if (isNaN(processId) || processId < 1 || processId > 65535) return '% Invalid OSPFv3 process ID';
+      const router = this.r();
+      if (!router._getOSPFv3EngineInternal()) {
+        router._enableOSPFv3(processId);
+      }
+      this.mode = 'config-router-ospfv3';
+      return '';
+    });
+
+    t.registerGreedy('router ospf', 'Enter OSPF configuration (auto-enters config)', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const processId = parseInt(args[0], 10);
+      if (isNaN(processId) || processId < 1 || processId > 65535) return '% Invalid OSPF process ID';
+      const router = this.r();
+      if (!router._getOSPFEngineInternal()) {
+        router._enableOSPF(processId);
+      }
+      this.mode = 'config-router-ospf';
+      return '';
+    });
+
+    t.registerGreedy('interface', 'Select an interface to configure (auto-enters config)', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const ifPart = args[0];
+      let ifName = this.resolveInterfaceName(ifPart);
+      if (!ifName) {
+        const combined = ifPart.replace(/\s+/g, '');
+        const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
+        if (vMatch) {
+          const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
+          const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+          this.r()._createVirtualInterface(fullName);
+          ifName = fullName;
+        }
+        if (!ifName) return `% Invalid interface "${ifPart}"`;
+      }
+      this.selectedInterface = ifName;
+      this.mode = 'config-if';
+      return '';
+    });
 
     // ping (greedy to accept IP/hostname)
     t.registerGreedy('ping', 'Send echo messages', () => {

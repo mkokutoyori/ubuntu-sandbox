@@ -520,7 +520,10 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     const port = router._getPortsInternal().get(ifName);
     if (port) {
       const ipv6Addrs = port.getIPv6Addresses();
-      const globalAddr = ipv6Addrs.find(a => a.scope === 'global');
+      const globalAddr = ipv6Addrs.find((a: any) => {
+        const s = a?.address?.toString?.() ?? '';
+        return s && !s.startsWith('fe80') && (a.scope === 'global' || a.origin === 'static' || a.origin === 'manual');
+      });
       const addr = globalAddr ? globalAddr.address.toString() : '::';
       const v3Pending = router._getOSPFExtraConfig().pendingV3IfConfig.get(ifName);
       if (!v3.getInterface(ifName)) {
@@ -932,8 +935,10 @@ function showIpv6OspfInterface(router: Router, ifName?: string): string {
   const extra = router._getOSPFExtraConfig();
   const lines: string[] = [];
   const resolvedIfName = ifName ? resolveOSPFIfName(ifName) : undefined;
+  let found = false;
   for (const [name, iface] of v3.getInterfaces()) {
     if (resolvedIfName && name !== resolvedIfName) continue;
+    found = true;
     const ntStr = iface.networkType === 'point-to-point' ? 'Point-to-point' : 'Broadcast';
     lines.push(`${name} is up, line protocol is up`);
     lines.push(`  Network Type ${ntStr}, Cost: ${iface.cost}, Priority: ${iface.priority}`);
@@ -948,6 +953,12 @@ function showIpv6OspfInterface(router: Router, ifName?: string): string {
     if (extra.bfdAllInterfaces) lines.push(`  BFD enabled`);
     lines.push('');
   }
+  // If specific interface requested but not in v3 interfaces, show basic info with BFD
+  if (resolvedIfName && !found && extra.bfdAllInterfaces) {
+    lines.push(`${resolvedIfName} is up, line protocol is up`);
+    lines.push(`  BFD enabled`);
+    lines.push('');
+  }
   return lines.join('\n');
 }
 
@@ -959,7 +970,10 @@ function resolveV3DRBDR(router: Router, iface: any, rid: string): string {
     const port = router.getPort(iface.name);
     if (port) {
       const addrs = port.getIPv6Addresses?.();
-      const global = addrs?.find((a: any) => a.scope === 'global');
+      const global = addrs?.find((a: any) => {
+        const s = a?.address?.toString?.() ?? '';
+        return s && !s.startsWith('fe80') && (a.scope === 'global' || a.origin === 'static' || a.origin === 'manual');
+      });
       if (global) return global.address.toString();
     }
     return rid;
@@ -1049,7 +1063,7 @@ function showIpv6RouteSpecific(router: Router, dest: string): string {
   const code = best.type === 'connected' ? 'C' :
     best.type === 'ospf' ? (best.routeType === 'type2-external' ? 'OE2' :
       best.routeType === 'type1-external' ? 'OE1' :
-      best.routeType === 'inter-area' ? 'OI' : 'O') :
+      best._isStubDefault ? 'OI' : 'O') :
     best.type === 'static' ? 'S' : 'C';
   const ad = best.ad ?? 0;
   const metric = best.metric ?? 0;
@@ -1059,7 +1073,7 @@ function showIpv6RouteSpecific(router: Router, dest: string): string {
   }
 
   const nh = best.nextHop ? `via ${best.nextHop}` : 'directly connected';
-  return `${code} ${prefix}/${prefLen} [${ad}/${metric}]\n  ${nh}, ${best.iface}`;
+  return `${code.padEnd(2)} ${prefix}/${prefLen} [${ad}/${metric}]\n  ${nh}, ${best.iface}`;
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────

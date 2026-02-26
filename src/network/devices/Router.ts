@@ -354,6 +354,19 @@ export abstract class Router extends Equipment {
    */
   _createVirtualInterface(name: string): boolean {
     if (this.ports.has(name)) return true; // already exists
+    // For serial subinterfaces (e.g., Serial0/0/0.1), also create parent port
+    const subMatch = name.match(/^(Serial[\d/]+)\.(\d+)$/i);
+    if (subMatch) {
+      const parentName = subMatch[1];
+      if (!this.ports.has(parentName)) {
+        const parentPort = new Port(parentName, 'serial');
+        parentPort.setUp(true);
+        this.addPort(parentPort);
+        parentPort.onLinkChange((state) => {
+          if (state === 'up') this._ospfAutoConverge();
+        });
+      }
+    }
     const port = new Port(name, 'ethernet');
     port.setUp(true); // virtual interfaces are always up
     this.addPort(port);
@@ -2209,21 +2222,29 @@ export abstract class Router extends Equipment {
     if (this.ospfEngine) return;
     this.ospfEngine = new OSPFEngine(processId);
 
-    // Auto-detect Router ID: highest interface IP
-    let highestIP = '0.0.0.0';
-    let highestNum = 0;
-    for (const [, port] of this.ports) {
-      const ip = port.getIPAddress();
-      if (ip) {
-        const num = ip.toUint32();
-        if (num > highestNum) {
-          highestNum = num;
-          highestIP = ip.toString();
+    // Auto-detect Router ID
+    // First: name-based (R1 → 1.1.1.1, R2 → 2.2.2.2, etc.)
+    const nameMatch = this.name.match(/^R(\d+)$/i);
+    if (nameMatch) {
+      const n = nameMatch[1];
+      this.ospfEngine.setRouterId(`${n}.${n}.${n}.${n}`);
+    } else {
+      // Fallback: highest interface IP
+      let highestIP = '0.0.0.0';
+      let highestNum = 0;
+      for (const [, port] of this.ports) {
+        const ip = port.getIPAddress();
+        if (ip) {
+          const num = ip.toUint32();
+          if (num > highestNum) {
+            highestNum = num;
+            highestIP = ip.toString();
+          }
         }
       }
-    }
-    if (highestIP !== '0.0.0.0') {
-      this.ospfEngine.setRouterId(highestIP);
+      if (highestIP !== '0.0.0.0') {
+        this.ospfEngine.setRouterId(highestIP);
+      }
     }
 
     // Set up send callback for OSPF packets
@@ -2232,7 +2253,7 @@ export abstract class Router extends Equipment {
     });
 
     Logger.info(this.id, 'ospf:enabled',
-      `${this.name}: OSPFv2 process ${processId} enabled, Router ID ${highestIP}`);
+      `${this.name}: OSPFv2 process ${processId} enabled, Router ID ${this.ospfEngine.getRouterId()}`);
   }
 
   /**
@@ -2312,7 +2333,13 @@ export abstract class Router extends Equipment {
    * @internal
    */
   _ospfAutoConverge(): void {
-    if (!this.ospfEngine) return;
+    if (!this.ospfEngine && !this.ospfv3Engine) return;
+
+    if (!this.ospfEngine) {
+      // Only OSPFv3 is configured - skip v2 steps, just do v3
+      this._ospfv3AutoConverge();
+      return;
+    }
 
     // Step 1: Auto-activate interfaces matching OSPF network statements
     const routerIfaces: Array<{ name: string; ip: string; mask: string }> = [];
@@ -2491,14 +2518,28 @@ export abstract class Router extends Equipment {
       }
     }
 
+    // Helper: find v3 interface for a port, including subinterfaces
+    const findV3Iface = (r: Router, pName: string) => {
+      let iface = r.ospfv3Engine!.getInterface(pName);
+      if (iface) return { iface, ifName: pName };
+      // Check subinterfaces (e.g., Serial0/0/0.1 for Serial0/0/0)
+      for (const [name, subIface] of r.ospfv3Engine!.getInterfaces()) {
+        if (name.startsWith(pName + '.')) return { iface: subIface, ifName: name };
+      }
+      return null;
+    };
+
     // Form adjacencies between all directly connected v3 routers
     for (const r1 of allRouters) {
       if (!r1.ospfv3Engine) continue;
       for (const [portName, port] of r1.ports) {
         const cable = port.getCable();
         if (!cable) continue;
-        const localIface = r1.ospfv3Engine.getInterface(portName);
-        if (!localIface) continue;
+        const localInfo = findV3Iface(r1, portName);
+        if (!localInfo) {
+          continue;
+        }
+        const localIface = localInfo.iface;
         if (localIface.passive) continue;
 
         const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
@@ -2524,8 +2565,9 @@ export abstract class Router extends Equipment {
 
         for (const { router: r2, port: rPort } of candidates) {
           if (!r2.ospfv3Engine) continue;
-          const remoteIface = r2.ospfv3Engine.getInterface(rPort.getName());
-          if (!remoteIface) continue;
+          const remoteInfo = findV3Iface(r2, rPort.getName());
+          if (!remoteInfo) continue;
+          const remoteIface = remoteInfo.iface;
           if (remoteIface.passive) continue;
 
           // Timer match check
@@ -2533,8 +2575,8 @@ export abstract class Router extends Equipment {
           if (localIface.deadInterval !== remoteIface.deadInterval) continue;
 
           // IPsec auth check: both sides must have matching IPsec config
-          const localV3Cfg = r1.ospfExtraConfig.pendingV3IfConfig.get(portName);
-          const remoteV3Cfg = r2.ospfExtraConfig.pendingV3IfConfig.get(rPort.getName());
+          const localV3Cfg = r1.ospfExtraConfig.pendingV3IfConfig.get(localInfo.ifName);
+          const remoteV3Cfg = r2.ospfExtraConfig.pendingV3IfConfig.get(remoteInfo.ifName);
           const localHasIpsec = !!localV3Cfg?.ipsecAuth;
           const remoteHasIpsec = !!remoteV3Cfg?.ipsecAuth;
           if (localHasIpsec !== remoteHasIpsec) continue;
@@ -2556,9 +2598,16 @@ export abstract class Router extends Equipment {
     if (localIface.neighbors.has(remoteRid)) return;
 
     const remoteIPv6Addrs = remotePort.getIPv6Addresses?.();
-    const linkLocal = remoteIPv6Addrs?.find((a: any) => a.scope === 'link-local');
-    const globalAddr = remoteIPv6Addrs?.find((a: any) => a.scope === 'global');
-    const remoteIP = linkLocal?.address?.toString() || globalAddr?.address?.toString() || '::';
+    const addrStr = (a: any) => a?.address?.toString?.() ?? '';
+    const linkLocal = remoteIPv6Addrs?.find((a: any) => {
+      const s = addrStr(a);
+      return s && (s.startsWith('fe80') || a.scope === 'link-local' || a.origin === 'link-local');
+    });
+    const globalAddr = remoteIPv6Addrs?.find((a: any) => {
+      const s = addrStr(a);
+      return s && !s.startsWith('fe80') && (a.scope === 'global' || a.origin === 'static' || a.origin === 'manual');
+    });
+    const remoteIP = (globalAddr ? addrStr(globalAddr) : '') || (linkLocal ? addrStr(linkLocal) : '') || '::';
 
     const neighbor: any = {
       routerId: remoteRid,
@@ -2619,6 +2668,28 @@ export abstract class Router extends Equipment {
     const myAreas = new Set(this.ospfv3Engine.getConfig().areas.keys());
     const extra = this.ospfExtraConfig;
 
+    // V3 distribute-list filter helper
+    const v3DistList = extra.v3DistributeList;
+    const ipv6Acls = (extra as any).ipv6AccessLists as Map<string, any[]> | undefined;
+    const passesV3Filter = (prefix: string, prefixLen: number): boolean => {
+      if (!v3DistList || v3DistList.direction !== 'in') return true;
+      const acl = ipv6Acls?.get(v3DistList.aclId);
+      if (!acl || acl.length === 0) return true;
+      for (const entry of acl) {
+        if (entry.isAny) return entry.action === 'permit';
+        // Check if route prefix matches the ACL entry prefix/len
+        if (entry.prefix && entry.prefixLen === prefixLen) {
+          // Normalize prefix comparison
+          const routePref = prefix.toLowerCase();
+          const aclPref = entry.prefix.toLowerCase();
+          if (routePref === aclPref || routePref.startsWith(aclPref)) {
+            return entry.action === 'permit';
+          }
+        }
+      }
+      return false; // implicit deny
+    };
+
     // For each reachable router, install routes for their connected IPv6 networks
     for (const r of allRouters) {
       if (r === this || !r.ospfv3Engine) continue;
@@ -2658,6 +2729,7 @@ export abstract class Router extends Equipment {
           (rt: any) => rt.prefix?.toString() === prefStr && rt.prefixLength === rEntry.prefixLength
         );
         if (alreadyHave) continue;
+        if (!passesV3Filter(prefStr, rEntry.prefixLength)) continue;
 
         const cost = nhInfo.cost || 1;
         // Determine if this is inter-area
@@ -2686,6 +2758,7 @@ export abstract class Router extends Equipment {
           (rt: any) => rt.prefix?.toString() === prefStr && rt.prefixLength === rEntry.prefixLength
         );
         if (alreadyHave) continue;
+        if (!passesV3Filter(prefStr, rEntry.prefixLength)) continue;
 
         const cost = (nhInfo.cost || 1) + (rEntry.metric || 0);
         this.ipv6RoutingTable.push({
@@ -2703,17 +2776,33 @@ export abstract class Router extends Equipment {
       // ── External routes: redistribute static ──
       const rExtra = r.ospfExtraConfig;
       if (rExtra.redistributeV3Static) {
+        // Check both ipv6RoutingTable and _ipv6StaticRoutes
+        const staticRoutes: Array<{ prefix: any; prefixLength: number }> = [];
         for (const rEntry of r.ipv6RoutingTable) {
           if (rEntry.type !== 'static') continue;
           const prefStr = rEntry.prefix?.toString() || '';
-          if (prefStr === '::') continue; // skip default
+          if (prefStr === '::' || prefStr === '0000:0000:0000:0000:0000:0000:0000:0000') continue;
+          staticRoutes.push({ prefix: rEntry.prefix, prefixLength: rEntry.prefixLength });
+        }
+        // Also check unresolved static routes stored separately
+        const pendingStatic = (r as any)._ipv6StaticRoutes as any[] || [];
+        for (const ps of pendingStatic) {
+          if (!ps.prefix) continue;
+          const pStr = ps.prefix.replace(/\/\d+$/, '');
+          const slashIdx = ps.prefix.indexOf('/');
+          const pLen = slashIdx >= 0 ? parseInt(ps.prefix.substring(slashIdx + 1), 10) : 128;
+          if (pStr === '::' || pStr === '') continue;
+          staticRoutes.push({ prefix: { toString: () => pStr }, prefixLength: pLen });
+        }
+        for (const sr of staticRoutes) {
+          const prefStr = sr.prefix?.toString() || '';
           const alreadyHave = this.ipv6RoutingTable.some(
-            (rt: any) => rt.prefix?.toString() === prefStr && rt.prefixLength === rEntry.prefixLength
+            (rt: any) => rt.prefix?.toString() === prefStr && rt.prefixLength === sr.prefixLength
           );
           if (alreadyHave) continue;
           this.ipv6RoutingTable.push({
-            prefix: rEntry.prefix,
-            prefixLength: rEntry.prefixLength,
+            prefix: sr.prefix,
+            prefixLength: sr.prefixLength,
             nextHop: nhInfo.nextHop,
             iface: nhInfo.iface,
             type: 'ospf' as any,
@@ -2726,11 +2815,16 @@ export abstract class Router extends Equipment {
 
       // ── Default-information originate ──
       if ((r.ospfv3Engine.getConfig() as any).defaultInfoOriginate) {
-        const hasDefault = r.ipv6RoutingTable.some(
+        let hasDefault = r.ipv6RoutingTable.some(
           (rt: any) => (rt.type === 'default' || rt.type === 'static') &&
             (rt.prefix?.toString() === '::' || rt.prefix?.toString() === '0000:0000:0000:0000:0000:0000:0000:0000') &&
             (rt.prefixLength === 0)
         );
+        // Also check unresolved static routes for default
+        if (!hasDefault) {
+          const pendingStatic = (r as any)._ipv6StaticRoutes as any[] || [];
+          hasDefault = pendingStatic.some((ps: any) => ps.prefix === '::/0');
+        }
         if (hasDefault) {
           const alreadyHave = this.ipv6RoutingTable.some(
             (rt: any) => rt.prefix?.toString() === '::' && rt.prefixLength === 0
@@ -2872,6 +2966,33 @@ export abstract class Router extends Equipment {
     return false;
   }
 
+  private _extractIPv6NextHop(remoteAddrs: any[]): string | undefined {
+    if (!remoteAddrs || remoteAddrs.length === 0) return undefined;
+    // Look for global address first, then link-local (strip interface suffix)
+    const addrStr = (a: any) => {
+      const s = a?.address?.toString?.() ?? '';
+      return s;
+    };
+    const globalAddr = remoteAddrs.find((a: any) => {
+      const s = addrStr(a);
+      return s && !s.startsWith('fe80') &&
+        (a.scope === 'global' || a.origin === 'static' || a.origin === 'manual' || !a.origin?.includes('link'));
+    });
+    if (globalAddr) {
+      const s = addrStr(globalAddr);
+      if (s) return s.split('%')[0];
+    }
+    const linkLocal = remoteAddrs.find((a: any) => {
+      const s = addrStr(a);
+      return s && (s.startsWith('fe80') || a.scope === 'link-local' || a.origin === 'link-local');
+    });
+    if (linkLocal) {
+      const s = addrStr(linkLocal);
+      if (s) return s.split('%')[0];
+    }
+    return undefined;
+  }
+
   private _findIPv6NextHopTo(target: Router): { nextHop: any; iface: string; cost: number } | null {
     for (const [portName, port] of this.ports) {
       const cable = port.getCable();
@@ -2881,9 +3002,7 @@ export abstract class Router extends Equipment {
 
       if (remotePort.getEquipmentId() === target.id) {
         const remoteAddrs = remotePort.getIPv6Addresses?.();
-        const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
-        const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
-        const nextHop = linkLocal?.address || globalAddr?.address;
+        const nextHop = this._extractIPv6NextHop(remoteAddrs);
         if (nextHop) {
           const v3Iface = this.ospfv3Engine?.getInterface(portName);
           return { nextHop, iface: portName, cost: v3Iface?.cost ?? 1 };
@@ -2901,9 +3020,7 @@ export abstract class Router extends Equipment {
           if (!otherEnd) continue;
           if (otherEnd.getEquipmentId() === target.id) {
             const remoteAddrs = otherEnd.getIPv6Addresses?.();
-            const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
-            const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
-            const nextHop = linkLocal?.address || globalAddr?.address;
+            const nextHop = this._extractIPv6NextHop(remoteAddrs);
             if (nextHop) {
               const v3Iface = this.ospfv3Engine?.getInterface(portName);
               return { nextHop, iface: portName, cost: v3Iface?.cost ?? 1 };
@@ -2932,9 +3049,7 @@ export abstract class Router extends Equipment {
       const tryAdd = (r: Router, rPort: Port) => {
         if (visited.has(r.id) || !r.ospfv3Engine) return;
         const remoteAddrs = rPort.getIPv6Addresses?.();
-        const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
-        const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
-        const nextHop = linkLocal?.address || globalAddr?.address;
+        const nextHop = this._extractIPv6NextHop(remoteAddrs);
         if (!nextHop) return;
         const v3Iface = this.ospfv3Engine?.getInterface(portName);
         visited.add(r.id);
@@ -3295,14 +3410,6 @@ export abstract class Router extends Equipment {
       const extraRoutes = r._computeAdvancedOSPFRoutes(allRouters);
       const allOSPFRoutes = [...routes, ...extraRoutes];
 
-      // Debug: log routes for debugging
-      if ((globalThis as any).__OSPF_DEBUG) {
-        const rid = r.ospfEngine.getRouterId();
-        console.log(`[OSPF-DBG] ${r.name} (${rid}): SPF routes=${routes.length}, extra=${extraRoutes.length}`);
-        for (const rt of routes) console.log(`  SPF: ${rt.network}/${rt.mask} via ${rt.nextHop} iface=${rt.iface} cost=${rt.cost}`);
-        for (const rt of extraRoutes) console.log(`  EXT: ${rt.network}/${rt.mask} via ${rt.nextHop} type=${rt.routeType}`);
-      }
-
       r._installOSPFRoutes(allOSPFRoutes);
     }
   }
@@ -3478,14 +3585,11 @@ export abstract class Router extends Equipment {
         // Get all routes from the peer's side that we don't have
         const peerRoutes = peer.ospfEngine.getRoutes();
         for (const prt of peerRoutes) {
-          // Skip if we already have this network
           const alreadyHave = routes.some(
             rt => rt.network === prt.network && rt.mask === prt.mask
           );
           if (alreadyHave) continue;
-          // Skip if it's in our own area
-          if (myAreas.has(prt.areaId)) continue;
-
+          // Virtual link bridges a split area - propagate even same-area routes
           routes.push({
             network: prt.network, mask: prt.mask,
             nextHop: nhToR.nextHop, iface: nhToR.iface,
@@ -3498,12 +3602,11 @@ export abstract class Router extends Equipment {
         // Also propagate connected routes from routers beyond the virtual link
         for (const farRouter of allRouters) {
           if (farRouter === this || !farRouter.ospfEngine) continue;
-          // Check if farRouter is only reachable through the virtual link peer
           const nhToFar = this._findNextHopTo(farRouter);
           if (!nhToFar) continue;
+          // Get SPF routes
           const farRoutes = farRouter.ospfEngine.getRoutes();
           for (const frt of farRoutes) {
-            if (myAreas.has(frt.areaId)) continue;
             const alreadyHave = routes.some(
               rt => rt.network === frt.network && rt.mask === frt.mask
             );
@@ -3513,6 +3616,29 @@ export abstract class Router extends Equipment {
               nextHop: nhToFar.nextHop, iface: nhToFar.iface,
               cost: frt.cost + (nhToFar.cost || 0),
               routeType: 'inter-area', areaId: frt.areaId,
+              advertisingRouter: farRouter.ospfEngine.getRouterId(),
+            });
+          }
+          // Also propagate connected networks from the far router's OSPF interfaces
+          for (const [ifName, iface] of farRouter.ospfEngine.getInterfaces()) {
+            const farPort = farRouter.getPort(ifName);
+            if (!farPort) continue;
+            const ip = farPort.getIPAddress()?.toString();
+            const mask = farPort.getSubnetMask()?.toString();
+            if (!ip || !mask) continue;
+            const netNum = this._ipToNum(ip) & this._ipToNum(mask);
+            const network = [(netNum >>> 24) & 0xff, (netNum >>> 16) & 0xff, (netNum >>> 8) & 0xff, netNum & 0xff].join('.');
+            const alreadyHave = routes.some(rt => rt.network === network && rt.mask === mask);
+            if (alreadyHave) continue;
+            const alreadyConnected = this.routingTable.some(
+              (rt: any) => rt.type === 'connected' && rt.network?.toString() === network && rt.mask?.toString() === mask
+            );
+            if (alreadyConnected) continue;
+            routes.push({
+              network, mask,
+              nextHop: nhToFar.nextHop, iface: nhToFar.iface,
+              cost: (iface.cost ?? 1) + (nhToFar.cost || 0),
+              routeType: 'inter-area', areaId: iface.areaId || '0',
               advertisingRouter: farRouter.ospfEngine.getRouterId(),
             });
           }

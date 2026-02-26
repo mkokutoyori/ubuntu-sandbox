@@ -14,7 +14,7 @@ import { CommandTrie } from '../CommandTrie';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
-export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3' | 'config-std-nacl' | 'config-ext-nacl';
+export type CiscoShellMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3' | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-acl';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */
@@ -53,11 +53,12 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    const raw = args.join(' ');
-    let ifName = ctx.resolveInterfaceName(raw);
+    // Strip type hints like 'point-to-point', 'multipoint' from the name
+    const ifPart = args[0];
+    let ifName = ctx.resolveInterfaceName(ifPart);
     if (!ifName) {
       // Try creating virtual interface (Loopback, Tunnel, Serial subinterface)
-      const combined = raw.replace(/\s+/g, '');
+      const combined = ifPart.replace(/\s+/g, '');
       const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
       if (vMatch) {
         const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
@@ -65,7 +66,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;
       }
-      if (!ifName) return `% Invalid interface "${raw}"`;
+      if (!ifName) return `% Invalid interface "${ifPart}"`;
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode('config-if');
@@ -123,7 +124,12 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     try {
       const prefixAddr = new IPv6Address(prefix);
       const nextHop = new IPv6Address(nextHopStr);
-      ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+      const added = ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+      if (!added) {
+        // Next-hop not reachable yet - store for later redistribution
+        (ctx.r() as any)._ipv6StaticRoutes = (ctx.r() as any)._ipv6StaticRoutes || [];
+        (ctx.r() as any)._ipv6StaticRoutes.push({ prefix: prefixStr, nextHop: nextHopStr });
+      }
     } catch (e: any) {
       // Store as unresolved static route for later redistribution
       (ctx.r() as any)._ipv6StaticRoutes = (ctx.r() as any)._ipv6StaticRoutes || [];
@@ -178,6 +184,27 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
+  // Allow switching interfaces from within config-if mode (real Cisco IOS behavior)
+  trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const ifPart = args[0];
+    let ifName = ctx.resolveInterfaceName(ifPart);
+    if (!ifName) {
+      const combined = ifPart.replace(/\s+/g, '');
+      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
+      if (vMatch) {
+        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
+        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        ctx.r()._createVirtualInterface(fullName);
+        ifName = fullName;
+      }
+      if (!ifName) return `% Invalid interface "${ifPart}"`;
+    }
+    ctx.setSelectedInterface(ifName);
+    ctx.setMode('config-if');
+    return '';
+  });
+
   // IPv6 address configuration
   trie.registerGreedy('ipv6 address', 'Configure IPv6 address', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -192,8 +219,23 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const prefixLen = parseInt(addrStr.substring(slashIdx + 1), 10);
     if (isNaN(prefixLen)) return '% Invalid prefix length';
     try {
-      const ipv6Addr = new IPv6Address(addr);
-      ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
+      if (isEUI64) {
+        // Compose EUI-64 address: prefix + MAC-derived interface ID
+        const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+        if (port) {
+          const prefix = new IPv6Address(addr);
+          const fullAddr = port.addSLAACAddress(prefix, prefixLen);
+          // Re-add as static origin (addSLAACAddress stores as 'slaac')
+          const addrs = port.getIPv6Addresses?.() ?? [];
+          const entry = addrs.find((a: any) => a.address.equals(fullAddr));
+          if (entry) (entry as any).origin = 'static';
+          // Add connected route
+          ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, fullAddr, prefixLen);
+        }
+      } else {
+        const ipv6Addr = new IPv6Address(addr);
+        ctx.r().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
+      }
       return '';
     } catch (e: any) {
       return `% Invalid input: ${e.message}`;

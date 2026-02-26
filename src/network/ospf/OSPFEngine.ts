@@ -1250,7 +1250,8 @@ export class OSPFEngine {
       nextHop: null,
       outInterface: null,
     };
-    tree.set(rootVertex.id, rootVertex);
+    const spfKey = (v: SPFVertex) => `${v.type === 'router' ? 'R' : 'N'}:${v.id}`;
+    tree.set(spfKey(rootVertex), rootVertex);
 
     // Process root's links
     this.addCandidatesFromVertex(rootVertex, areaId, areaDB, tree, candidates);
@@ -1262,7 +1263,7 @@ export class OSPFEngine {
       const best = candidates.shift()!;
 
       // Add to tree
-      tree.set(best.id, best);
+      tree.set(spfKey(best), best);
 
       // Process this vertex's links
       this.addCandidatesFromVertex(best, areaId, areaDB, tree, candidates);
@@ -1270,7 +1271,7 @@ export class OSPFEngine {
 
     // Extract routes from SPF tree
     for (const [id, vertex] of tree) {
-      if (id === this.config.routerId) continue; // Skip self
+      if (id === `R:${this.config.routerId}`) continue; // Skip self
 
       if (vertex.type === 'router') {
         // Router vertex — add routes to its stub networks
@@ -1332,7 +1333,7 @@ export class OSPFEngine {
           const neighborKey = makeLSDBKey(1, link.linkId, link.linkId);
           const neighborLSA = areaDB.get(neighborKey) as RouterLSA | undefined;
           if (!neighborLSA) continue;
-          if (tree.has(link.linkId)) continue;
+          if (tree.has('R:' + link.linkId)) continue;
 
           const newDist = vertex.distance + link.metric;
           const nextHop = vertex.distance === 0 ? this.getDirectNextHop(link.linkId) : vertex.nextHop;
@@ -1360,7 +1361,7 @@ export class OSPFEngine {
             }
           }
           if (!networkLSA) continue;
-          if (tree.has(drIP)) continue;
+          if (tree.has('N:' + drIP)) continue;
 
           const newDist = vertex.distance + link.metric;
           const nextHop = vertex.distance === 0 ? null : vertex.nextHop;
@@ -1381,7 +1382,7 @@ export class OSPFEngine {
       const nLSA = vertex.lsa as NetworkLSA;
       for (const routerId of nLSA.attachedRouters) {
         if (routerId === this.config.routerId) continue;
-        if (tree.has(routerId)) continue;
+        if (tree.has('R:' + routerId)) continue;
 
         const routerKey = makeLSDBKey(1, routerId, routerId);
         const routerLSA = areaDB.get(routerKey) as RouterLSA | undefined;
@@ -1407,7 +1408,7 @@ export class OSPFEngine {
   }
 
   private addOrUpdateCandidate(candidates: SPFVertex[], newVertex: SPFVertex): void {
-    const existing = candidates.find(c => c.id === newVertex.id);
+    const existing = candidates.find(c => c.id === newVertex.id && c.type === newVertex.type);
     if (existing) {
       if (newVertex.distance < existing.distance) {
         existing.distance = newVertex.distance;
