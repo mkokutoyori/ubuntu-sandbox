@@ -128,6 +128,12 @@ export interface OSPFNeighbor {
   lastHelloReceived: number;
   /** Options field from Hello */
   options: number;
+  /** DD retransmission timer handle (RFC 2328 §10.6) */
+  ddRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  /** LSR retransmission timer handle (RFC 2328 §10.9) */
+  lsrRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  /** Last DD packet sent (for retransmission on timeout) */
+  lastSentDD: OSPFDDPacket | null;
 }
 
 // ─── Interface State Machine (RFC 2328 §9.1) ────────────────────────

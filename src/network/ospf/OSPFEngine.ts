@@ -434,6 +434,9 @@ export class OSPFEngine {
       dbSummaryList: [],
       lastHelloReceived: Date.now(),
       options: hello.options,
+      ddRetransmitTimer: null,
+      lsrRetransmitTimer: null,
+      lastSentDD: null,
     };
   }
 
@@ -443,9 +446,18 @@ export class OSPFEngine {
     const oldState = neighbor.state;
 
     switch (event) {
+      // RFC 2328 §10.3: Start event — used for NBMA networks (Attempt state)
+      case 'Start':
+        if (neighbor.state === 'Down') {
+          neighbor.state = 'Attempt';
+          // On NBMA, send a Hello directly to the configured neighbor
+          this.sendHelloTo(iface, neighbor.ipAddress);
+        }
+        break;
+
       case 'HelloReceived':
         this.resetDeadTimer(iface, neighbor);
-        if (neighbor.state === 'Down') {
+        if (neighbor.state === 'Down' || neighbor.state === 'Attempt') {
           neighbor.state = 'Init';
         }
         break;
@@ -463,6 +475,8 @@ export class OSPFEngine {
 
       case 'NegotiationDone':
         if (neighbor.state === 'ExStart') {
+          // Cancel DD retransmission timer — negotiation complete
+          this.cancelDDRetransmitTimer(neighbor);
           neighbor.state = 'Exchange';
           this.sendDDWithSummary(iface, neighbor);
         }
@@ -482,6 +496,8 @@ export class OSPFEngine {
 
       case 'LoadingDone':
         if (neighbor.state === 'Loading') {
+          // Cancel LSR retransmission timer — loading complete
+          this.cancelLSRRetransmitTimer(neighbor);
           neighbor.state = 'Full';
           this.onAdjacencyFull(iface, neighbor);
         }
@@ -495,6 +511,8 @@ export class OSPFEngine {
           }
         } else if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
           if (!this.shouldFormAdjacency(iface, neighbor)) {
+            this.cancelDDRetransmitTimer(neighbor);
+            this.cancelLSRRetransmitTimer(neighbor);
             neighbor.state = 'TwoWay';
             neighbor.lsRequestList = [];
             neighbor.lsRetransmissionList = [];
@@ -506,6 +524,8 @@ export class OSPFEngine {
       case 'SeqNumberMismatch':
       case 'BadLSReq':
         if (['Exchange', 'Loading', 'Full'].includes(neighbor.state)) {
+          this.cancelDDRetransmitTimer(neighbor);
+          this.cancelLSRRetransmitTimer(neighbor);
           neighbor.state = 'ExStart';
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
@@ -516,6 +536,8 @@ export class OSPFEngine {
 
       case 'OneWay':
         if (neighbor.state !== 'Down' && neighbor.state !== 'Init') {
+          this.cancelDDRetransmitTimer(neighbor);
+          this.cancelLSRRetransmitTimer(neighbor);
           neighbor.state = 'Init';
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
@@ -526,6 +548,8 @@ export class OSPFEngine {
       case 'KillNbr':
       case 'LLDown':
         this.clearDeadTimer(neighbor);
+        this.cancelDDRetransmitTimer(neighbor);
+        this.cancelLSRRetransmitTimer(neighbor);
         neighbor.state = 'Down';
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
@@ -534,6 +558,8 @@ export class OSPFEngine {
 
       case 'InactivityTimer':
         this.clearDeadTimer(neighbor);
+        this.cancelDDRetransmitTimer(neighbor);
+        this.cancelLSRRetransmitTimer(neighbor);
         neighbor.state = 'Down';
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
@@ -558,6 +584,16 @@ export class OSPFEngine {
     }
   }
 
+  /**
+   * Called when a neighbor adjacency reaches Full state (RFC 2328 §10.4).
+   * Triggers Router-LSA re-origination and schedules SPF.
+   */
+  private onAdjacencyFull(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    const msg = `OSPF: Adjacency with ${neighbor.routerId} (${iface.name}) is now Full`;
+    this.eventLog.push(msg);
+    // Router-LSA and SPF are triggered in neighborEvent via the state change check
+  }
+
   private resetDeadTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     this.clearDeadTimer(neighbor);
     neighbor.deadTimer = setTimeout(() => {
@@ -570,6 +606,74 @@ export class OSPFEngine {
       clearTimeout(neighbor.deadTimer);
       neighbor.deadTimer = null;
     }
+  }
+
+  /**
+   * Start DD retransmission timer (RFC 2328 §10.6).
+   * Resends the last DD packet if no response within RxmtInterval.
+   */
+  private startDDRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    this.cancelDDRetransmitTimer(neighbor);
+    neighbor.ddRetransmitTimer = setTimeout(() => {
+      neighbor.ddRetransmitTimer = null;
+      if (neighbor.state === 'ExStart' && neighbor.lastSentDD) {
+        // Retransmit the last DD packet
+        this.sendCallback?.(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+        this.startDDRetransmitTimer(iface, neighbor);
+      }
+    }, iface.retransmitInterval * 1000);
+  }
+
+  private cancelDDRetransmitTimer(neighbor: OSPFNeighbor): void {
+    if (neighbor.ddRetransmitTimer) {
+      clearTimeout(neighbor.ddRetransmitTimer);
+      neighbor.ddRetransmitTimer = null;
+    }
+  }
+
+  /**
+   * Start LSR retransmission timer (RFC 2328 §10.9).
+   * Resends the LS Request if no LSU response within RxmtInterval.
+   */
+  private startLSRRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    this.cancelLSRRetransmitTimer(neighbor);
+    neighbor.lsrRetransmitTimer = setTimeout(() => {
+      neighbor.lsrRetransmitTimer = null;
+      if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
+        this.sendLSRequest(iface, neighbor);
+      }
+    }, iface.retransmitInterval * 1000);
+  }
+
+  private cancelLSRRetransmitTimer(neighbor: OSPFNeighbor): void {
+    if (neighbor.lsrRetransmitTimer) {
+      clearTimeout(neighbor.lsrRetransmitTimer);
+      neighbor.lsrRetransmitTimer = null;
+    }
+  }
+
+  /**
+   * Send a Hello directly to a specific IP (for NBMA Attempt state).
+   * RFC 2328 §9.5
+   */
+  private sendHelloTo(iface: OSPFInterface, destIP: string): void {
+    if (!this.sendCallback) return;
+    const hello: OSPFHelloPacket = {
+      type: 'ospf',
+      version: OSPF_VERSION_2,
+      packetType: 1,
+      routerId: this.config.routerId,
+      areaId: iface.areaId,
+      networkMask: iface.mask,
+      helloInterval: iface.helloInterval,
+      options: 0x02,
+      priority: iface.priority,
+      deadInterval: iface.deadInterval,
+      designatedRouter: iface.dr,
+      backupDesignatedRouter: iface.bdr,
+      neighbors: Array.from(iface.neighbors.keys()),
+    };
+    this.sendCallback(iface.name, hello, destIP);
   }
 
   /**
@@ -690,13 +794,13 @@ export class OSPFEngine {
 
   private startDDExchange(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     neighbor.ddSeqNumber = Math.floor(Date.now() / 1000) & 0xFFFFFFFF;
-    // We start as Master; will resolve in NegotiationDone
+    // Higher Router ID becomes Master (RFC 2328 §10.6)
     neighbor.isMaster = this.config.routerId > neighbor.routerId;
 
     // Build DB summary list from our LSDB
     neighbor.dbSummaryList = this.getLSDBHeaders(iface.areaId);
 
-    // Send initial DD with I, M, MS flags
+    // Send initial DD with I (Init), M (More), MS (Master if applicable) flags
     const flags = DD_FLAG_INIT | DD_FLAG_MORE | (neighbor.isMaster ? DD_FLAG_MASTER : 0);
 
     const dd: OSPFDDPacket = {
@@ -712,11 +816,16 @@ export class OSPFEngine {
       lsaHeaders: [],
     };
 
+    // Store for potential retransmission (RFC 2328 §10.6)
+    neighbor.lastSentDD = dd;
     this.sendCallback?.(iface.name, dd, neighbor.ipAddress);
+
+    // Start retransmission timer in case no response arrives
+    this.startDDRetransmitTimer(iface, neighbor);
   }
 
   /**
-   * Process incoming Database Description packet
+   * Process incoming Database Description packet (RFC 2328 §10.6).
    */
   processDD(ifaceName: string, srcIP: string, dd: OSPFDDPacket): void {
     const iface = this.interfaces.get(ifaceName);
@@ -726,19 +835,39 @@ export class OSPFEngine {
     if (!neighbor) return;
 
     if (neighbor.state === 'ExStart') {
-      // Negotiation phase
+      // Negotiation phase: determine Master/Slave
       const isInit = (dd.flags & DD_FLAG_INIT) !== 0;
       const isMaster = (dd.flags & DD_FLAG_MASTER) !== 0;
 
       if (isInit && isMaster && dd.routerId > this.config.routerId) {
-        // They are master
+        // Remote is Master (higher RID) — we become Slave
         neighbor.isMaster = false;
         neighbor.ddSeqNumber = dd.ddSequenceNumber;
+        // NegotiationDone transitions to Exchange and calls sendDDWithSummary
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
+        // After transitioning to Exchange, check if slave has no more headers
+        // and master also sent !MORE — fire ExchangeDone if applicable
+        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+          // We (slave) have no more to send and master also done: exchange complete
+          this.neighborEvent(iface, neighbor, 'ExchangeDone');
+        }
       } else if (!isInit && !isMaster && dd.ddSequenceNumber === neighbor.ddSeqNumber) {
-        // We are master and they acknowledged
+        // Remote is Slave acknowledging our sequence number — we are Master
+        // Process any LSA headers the Slave included in this first Exchange DD
+        for (const header of dd.lsaHeaders) {
+          const existing = this.lookupLSA(iface.areaId, header.lsType, header.linkStateId, header.advertisingRouter);
+          if (!existing || header.lsSequenceNumber > existing.lsSequenceNumber) {
+            neighbor.lsRequestList.push(header);
+          }
+        }
         neighbor.isMaster = true;
+        // NegotiationDone transitions to Exchange and calls sendDDWithSummary
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
+        // If Slave sent !MORE (all their headers in one shot) AND we (Master) have no more,
+        // then exchange is complete from both sides
+        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+          this.neighborEvent(iface, neighbor, 'ExchangeDone');
+        }
       }
     } else if (neighbor.state === 'Exchange') {
       // Process LSA headers from the DD
@@ -749,8 +878,8 @@ export class OSPFEngine {
         }
       }
 
-      // Check if exchange is done (no More flag)
-      if (!(dd.flags & DD_FLAG_MORE)) {
+      // Check if exchange is done (no More flag from remote, and we've sent all ours)
+      if (!(dd.flags & DD_FLAG_MORE) && neighbor.dbSummaryList.length === 0) {
         this.neighborEvent(iface, neighbor, 'ExchangeDone');
       }
     }
@@ -799,6 +928,9 @@ export class OSPFEngine {
     };
 
     this.sendCallback?.(iface.name, lsr, neighbor.ipAddress);
+
+    // Start retransmission timer for LSR (RFC 2328 §10.9)
+    this.startLSRRetransmitTimer(iface, neighbor);
   }
 
   /**

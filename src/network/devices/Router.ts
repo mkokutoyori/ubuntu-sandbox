@@ -56,6 +56,7 @@ import { Logger } from '../core/Logger';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { OSPFEngine } from '../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../ospf/OSPFv3Engine';
+import type { OSPFNeighbor } from '../ospf/types';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import { IP_PROTO_ESP, IP_PROTO_AH } from '../core/types';
 
@@ -3065,7 +3066,12 @@ export abstract class Router extends Equipment {
     return parts.map(p => (p || '0').padStart(4, '0')).join(':');
   }
 
-  /** Form an OSPF adjacency on a local interface with a remote neighbor */
+  /**
+   * Register a neighbor entry on a local OSPF interface in Down state.
+   * State machine transitions (Down → Init → … → Full) are driven separately
+   * by _ospfDriveStateMachine() after all neighbor entries are created.
+   * RFC 2328 §10.3
+   */
   private _ospfFormAdjacency(
     engine: OSPFEngine,
     localIface: any,
@@ -3075,59 +3081,162 @@ export abstract class Router extends Equipment {
   ): void {
     const remoteIP = remotePort.getIPAddress()?.toString() ?? '0.0.0.0';
 
-    // Check if already a neighbor
-    const existing = Array.from(localIface.neighbors.values()).find(
-      (n: any) => n.routerId === remoteRid
-    );
-    if (existing) return;
+    // Idempotent: skip if already registered
+    if (localIface.neighbors.has(remoteRid)) return;
 
-    // Create neighbor directly in FULL state
-    const neighbor: any = {
+    // Create neighbor entry in Down state (RFC 2328 §10.1)
+    const neighbor: OSPFNeighbor = {
       routerId: remoteRid,
       ipAddress: remoteIP,
-      state: 'Full',
-      priority: remoteIface.priority ?? 1,
-      neighborDR: remoteIP,
-      neighborBDR: '0.0.0.0',
-      dr: remoteIface.dr ?? '0.0.0.0',
-      bdr: remoteIface.bdr ?? '0.0.0.0',
-      deadTimer: null,
       iface: localIface.name,
+      state: 'Down',
+      priority: remoteIface.priority ?? 1,
+      // neighborDR/BDR will be updated after DR election
+      neighborDR: remoteIface.dr ?? '0.0.0.0',
+      neighborBDR: remoteIface.bdr ?? '0.0.0.0',
+      deadTimer: null,
+      ddSeqNumber: 0,
+      isMaster: false,
       lsRequestList: [],
       lsRetransmissionList: [],
       dbSummaryList: [],
-      ddSeqNumber: 0,
-      lastDD: null,
+      lastHelloReceived: Date.now(),
       options: 0,
-      master: false,
+      ddRetransmitTimer: null,
+      lsrRetransmitTimer: null,
+      lastSentDD: null,
     };
 
     localIface.neighbors.set(remoteRid, neighbor);
+  }
 
-    // Manually handle DR/BDR for broadcast - don't call drElection which fires AdjOK
-    if (localIface.networkType === 'broadcast') {
-      const localRid = engine.getRouterId();
-      // Build candidate list with priority and IP
-      const candidates: Array<{ rid: string; priority: number; ip: string }> = [];
-      candidates.push({ rid: localRid, priority: localIface.priority ?? 1, ip: localIface.ipAddress });
-      for (const [rid, n] of localIface.neighbors) {
-        candidates.push({ rid, priority: (n as any).priority ?? 1, ip: (n as any).ipAddress || '0.0.0.0' });
+  /**
+   * Drive the OSPF neighbor state machine for all routers in the domain.
+   * Simulates the full RFC 2328 §10.3 sequence:
+   *   Down → Init → 2-Way → ExStart → Exchange → Loading → Full
+   *
+   * Since this is a simulation (no real async network), states are driven
+   * synchronously. Retransmission timers are started but cancelled immediately
+   * once the next state is reached. Actual packet-based exchange is Step 2.
+   */
+  private _ospfDriveStateMachine(allRouters: Router[]): void {
+    // ── Phase A: HelloReceived — Down → Init ────────────────────────
+    for (const r of allRouters) {
+      if (!r.ospfEngine) continue;
+      for (const [, iface] of r.ospfEngine.getInterfaces()) {
+        if (iface.passive) continue;
+        for (const [, neighbor] of iface.neighbors) {
+          if (neighbor.state === 'Down') {
+            r.ospfEngine.neighborEvent(iface, neighbor, 'HelloReceived');
+          }
+        }
       }
-      // Filter out priority 0 (ineligible for DR/BDR)
-      const eligible = candidates.filter(c => c.priority > 0);
-      // Sort by priority desc, then router-id desc
-      eligible.sort((a, b) => {
-        if (b.priority !== a.priority) return b.priority - a.priority;
-        const aNum = a.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
-        const bNum = b.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
-        return bNum - aNum;
-      });
-      if (eligible.length >= 1) {
-        localIface.dr = eligible[0].ip;
-        localIface.state = eligible[0].rid === localRid ? 'DR' : (eligible.length >= 2 && eligible[1].rid === localRid ? 'Backup' : 'DROther');
+    }
+
+    // ── Phase B: TwoWayReceived — Init → 2-Way or ExStart ──────────
+    // For P2P/P2MP interfaces: goes directly to ExStart (startDDExchange
+    //   sets isMaster, ddSeqNumber, dbSummaryList; sendCallback is null so
+    //   the initial DD packet is not transmitted — it is simulated in Phase D).
+    // For broadcast/NBMA: stays in 2-Way pending DR election (Phase C).
+    for (const r of allRouters) {
+      if (!r.ospfEngine) continue;
+      for (const [, iface] of r.ospfEngine.getInterfaces()) {
+        if (iface.passive) continue;
+        for (const [, neighbor] of iface.neighbors) {
+          if (neighbor.state === 'Init') {
+            r.ospfEngine.neighborEvent(iface, neighbor, 'TwoWayReceived');
+          }
+        }
       }
-      if (eligible.length >= 2) {
-        localIface.bdr = eligible[1].ip;
+    }
+
+    // ── Phase C: DR election — broadcast interfaces ────────────────
+    // drElection() sets iface.state (DR / Backup / DROther) and fires
+    // AdjOK to all ≥2-Way neighbors, which moves eligible ones to ExStart.
+    for (const r of allRouters) {
+      if (!r.ospfEngine) continue;
+      for (const [, iface] of r.ospfEngine.getInterfaces()) {
+        if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
+          r.ospfEngine.drElection(iface);
+        }
+      }
+    }
+
+    // ── Phase D: Simulate DD exchange — ExStart → Exchange → Loading → Full
+    // For each ExStart neighbor we manually:
+    //   1. Populate lsRequestList from the remote LSDB (what we're missing).
+    //   2. Fire NegotiationDone → Exchange (cancels DD retransmit timer).
+    //   3. Fire ExchangeDone → Loading (lsRequestList non-empty) or Full.
+    //   4. Fire LoadingDone → Full (if in Loading; cancels LSR retransmit timer).
+    // The direct LSDB copy that follows _ospfDriveStateMachine ensures every
+    // router ends up with the complete LSDB regardless of exchange ordering.
+    for (const r1 of allRouters) {
+      if (!r1.ospfEngine) continue;
+      for (const [, iface] of r1.ospfEngine.getInterfaces()) {
+        if (iface.passive) continue;
+        for (const [remoteRid, neighbor] of iface.neighbors) {
+          if (neighbor.state !== 'ExStart') continue;
+
+          // Find the remote router by Router ID
+          const r2 = allRouters.find(r => r.ospfEngine?.getRouterId() === remoteRid);
+          if (!r2?.ospfEngine) continue;
+
+          // Populate lsRequestList: LSAs in r2's LSDB that r1 doesn't have yet
+          const r2LSDB = r2.ospfEngine.getLSDB();
+          const areaDB = r2LSDB.areas.get(iface.areaId);
+          if (areaDB) {
+            for (const lsa of areaDB.values()) {
+              const existing = r1.ospfEngine.lookupLSA(
+                iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter,
+              );
+              if (!existing || lsa.lsSequenceNumber > existing.lsSequenceNumber) {
+                neighbor.lsRequestList.push({
+                  lsAge: lsa.lsAge,
+                  options: lsa.options,
+                  lsType: lsa.lsType,
+                  linkStateId: lsa.linkStateId,
+                  advertisingRouter: lsa.advertisingRouter,
+                  lsSequenceNumber: lsa.lsSequenceNumber,
+                  checksum: lsa.checksum,
+                  length: lsa.length,
+                });
+              }
+            }
+          }
+          // Also include external LSAs that r1 is missing
+          for (const lsa of r2LSDB.external.values()) {
+            const existing = r1.ospfEngine.lookupLSA(
+              '0', lsa.lsType, lsa.linkStateId, lsa.advertisingRouter,
+            );
+            if (!existing || lsa.lsSequenceNumber > existing.lsSequenceNumber) {
+              neighbor.lsRequestList.push({
+                lsAge: lsa.lsAge,
+                options: (lsa as any).options ?? 0,
+                lsType: lsa.lsType,
+                linkStateId: lsa.linkStateId,
+                advertisingRouter: lsa.advertisingRouter,
+                lsSequenceNumber: lsa.lsSequenceNumber,
+                checksum: (lsa as any).checksum ?? 0,
+                length: (lsa as any).length ?? 0,
+              });
+            }
+          }
+
+          // NegotiationDone: ExStart → Exchange
+          // (Cancels DD retransmit timer; sendDDWithSummary is called but
+          //  sendCallback is null so no packet is actually transmitted.)
+          r1.ospfEngine.neighborEvent(iface, neighbor, 'NegotiationDone');
+          if (neighbor.state !== 'Exchange') continue;
+
+          // ExchangeDone: Exchange → Loading (requests pending) or Full
+          r1.ospfEngine.neighborEvent(iface, neighbor, 'ExchangeDone');
+
+          // LoadingDone: Loading → Full
+          // (Cancels LSR retransmit timer started by sendLSRequest above.)
+          if (neighbor.state === 'Loading') {
+            r1.ospfEngine.neighborEvent(iface, neighbor, 'LoadingDone');
+          }
+        }
       }
     }
   }
@@ -3298,7 +3407,12 @@ export abstract class Router extends Equipment {
       }
     }
 
+    // Drive the OSPF neighbor state machine for all routers:
+    // Down → Init → 2-Way → ExStart → Exchange → Loading → Full (RFC 2328 §10.3)
+    this._ospfDriveStateMachine(allRouters);
+
     // Each router originates its Router LSA for each area
+    // (only Full neighbors are included in Router-LSA links)
     for (const r of allRouters) {
       if (!r.ospfEngine) continue;
       for (const [areaId] of r.ospfEngine.getConfig().areas) {
@@ -3312,7 +3426,9 @@ export abstract class Router extends Equipment {
       }
     }
 
-    // Sync LSDBs: copy all LSAs between routers that share an area
+    // Sync LSDBs: copy all LSAs between routers that share an area.
+    // This ensures full LSDB consistency across all routers regardless of
+    // DD exchange ordering. Real flooding is implemented in Step 2.
     for (const r1 of allRouters) {
       if (!r1.ospfEngine) continue;
       for (const r2 of allRouters) {
