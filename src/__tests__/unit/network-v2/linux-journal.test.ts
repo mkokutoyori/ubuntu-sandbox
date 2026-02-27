@@ -879,7 +879,7 @@ CRITICAL: System overheating at 10:35
       expect(noInfo).not.toContain('INFO');
       
       // Extraire seulement les heures
-      const hours = await server.executeCommand('sed -n "s/.*at \([0-9:]\+\)$/\1/p" /tmp/simple.log');
+      const hours = await server.executeCommand('sed -n "s/.*at \\([0-9:]\\+\\)$/\\1/p" /tmp/simple.log');
       
       // Ajouter un préfixe
       const prefixed = await server.executeCommand('sed "s/^/[LOG] /" /tmp/simple.log');

@@ -49,8 +49,11 @@ export class VirtualFileSystem {
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
       '/etc/sudoers.d',
       '/home', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
-      '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
+      '/var/log/apt', '/var/log/journal', '/var/lib/logrotate',
+      '/dev', '/proc', '/proc/sys', '/proc/sys/kernel', '/proc/sys/kernel/random',
+      '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
+      '/etc/systemd', '/etc/rsyslog.d', '/etc/logrotate.d', '/etc/audit',
     ];
     for (const dir of dirs) {
       this.mkdirp(dir, 0o755, 0, 0);
@@ -98,6 +101,169 @@ export class VirtualFileSystem {
     for (const bin of sbinBins) {
       this.createFileAt(`/usr/sbin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }
+
+    // Additional binary stubs for journal/logging/system tools
+    const extraBins = ['journalctl', 'systemctl', 'logrotate', 'sed', 'logger',
+      'auditctl', 'ausearch', 'aureport', 'gzip', 'gunzip', 'md5sum',
+      'netstat', 'watch', 'systemd-cat', 'multitail'];
+    for (const bin of extraBins) {
+      this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
+    }
+
+    // Create default log files
+    this.createFileAt('/var/log/syslog',
+      'Jan 01 00:00:01 localhost kernel: [    0.000000] Linux version 5.15.0-generic\n' +
+      'Jan 01 00:00:01 localhost systemd[1]: Started systemd-journald.service - Journal Service.\n' +
+      'Jan 01 00:00:02 localhost systemd[1]: Started rsyslog.service - System Logging Service.\n',
+      0o640, 0, 0);
+    this.createFileAt('/var/log/auth.log',
+      'Jan 01 00:00:01 localhost sshd[512]: Server listening on 0.0.0.0 port 22.\n' +
+      'Jan 01 00:00:02 localhost sshd[513]: authentication for root from 192.168.1.100\n' +
+      'Jan 01 00:00:03 localhost sshd[514]: Failed password for invalid user admin from 192.168.1.200 port 54321\n' +
+      'Jan 01 00:00:04 localhost sshd[515]: Invalid user hacker from 192.168.1.200\n' +
+      'Jan 01 00:00:05 localhost systemd-logind[345]: session opened for user root\n',
+      0o640, 0, 0);
+    this.createFileAt('/var/log/kern.log',
+      'Jan 01 00:00:01 localhost kernel: [    0.000000] Linux version 5.15.0-generic\n' +
+      'Jan 01 00:00:01 localhost kernel: [    0.000001] Command line: BOOT_IMAGE=/vmlinuz\n',
+      0o640, 0, 0);
+    this.createFileAt('/var/log/messages',
+      'Jan 01 00:00:01 localhost systemd[1]: Starting system services\n',
+      0o640, 0, 0);
+    this.createFileAt('/var/log/secure', '', 0o640, 0, 0);
+    this.createFileAt('/var/log/boot.log',
+      '[  OK  ] Started systemd-journald.service - Journal Service.\n' +
+      '[  OK  ] Started systemd-logind.service - Login Service.\n',
+      0o640, 0, 0);
+    this.createFileAt('/var/log/dpkg.log',
+      '2024-01-01 00:00:00 status installed base-files:amd64 12ubuntu4\n',
+      0o644, 0, 0);
+    this.createFileAt('/var/log/apt/history.log',
+      'Start-Date: 2024-01-01  00:00:00\nCommandline: apt install openssh-server\nEnd-Date: 2024-01-01  00:00:10\n',
+      0o644, 0, 0);
+    this.createFileAt('/var/log/apt/term.log',
+      'Log started: 2024-01-01  00:00:00\nSetting up openssh-server (1:8.9p1-3ubuntu0.4)\n',
+      0o644, 0, 0);
+
+    // System configuration files for journald, rsyslog, logrotate
+    this.createFileAt('/etc/systemd/journald.conf',
+      '[Journal]\n' +
+      '#Storage=auto\n' +
+      '#Compress=yes\n' +
+      '#Seal=yes\n' +
+      '#SplitMode=uid\n' +
+      '#SyncIntervalSec=5m\n' +
+      '#RateLimitIntervalSec=30s\n' +
+      '#RateLimitBurst=10000\n' +
+      '#SystemMaxUse=\n' +
+      '#SystemKeepFree=\n' +
+      '#SystemMaxFileSize=\n' +
+      '#SystemMaxFiles=100\n' +
+      '#RuntimeMaxUse=\n' +
+      '#RuntimeKeepFree=\n' +
+      '#RuntimeMaxFileSize=\n' +
+      '#RuntimeMaxFiles=100\n' +
+      '#MaxRetentionSec=\n' +
+      '#MaxFileSec=1month\n' +
+      '#ForwardToSyslog=yes\n' +
+      '#ForwardToKMsg=no\n' +
+      '#ForwardToConsole=no\n' +
+      '#ForwardToWall=yes\n' +
+      '#TTYPath=/dev/console\n' +
+      '#MaxLevelStore=debug\n' +
+      '#MaxLevelSyslog=debug\n' +
+      '#MaxLevelKMsg=notice\n' +
+      '#MaxLevelConsole=info\n' +
+      '#MaxLevelWall=emerg\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/etc/rsyslog.conf',
+      '# /etc/rsyslog.conf - rsyslog configuration file\n' +
+      '#\n' +
+      '# For more information install rsyslog-doc and see\n' +
+      '# http://www.rsyslog.com/doc/\n' +
+      '\n' +
+      '#################\n' +
+      '#### MODULES ####\n' +
+      '#################\n' +
+      '\n' +
+      'module(load="imuxsock") # provides support for local system logging\n' +
+      'module(load="imklog")   # provides kernel logging support\n' +
+      '\n' +
+      '###########################\n' +
+      '#### GLOBAL DIRECTIVES ####\n' +
+      '###########################\n' +
+      '\n' +
+      '$FileOwner syslog\n' +
+      '$FileGroup adm\n' +
+      '$FileCreateMode 0640\n' +
+      '$DirCreateMode 0755\n' +
+      '$Umask 0022\n' +
+      '\n' +
+      '###############\n' +
+      '#### RULES ####\n' +
+      '###############\n' +
+      '\n' +
+      '# Log all info and higher\n' +
+      '*.info                          /var/log/messages\n' +
+      '\n' +
+      '# Log auth messages\n' +
+      'auth,authpriv.*                 /var/log/auth.log\n' +
+      '\n' +
+      '# Log kernel messages\n' +
+      'kern.*                          /var/log/kern.log\n' +
+      '\n' +
+      '# Include config files in /etc/rsyslog.d/\n' +
+      '$IncludeConfig /etc/rsyslog.d/*.conf\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/etc/logrotate.conf',
+      '# see "man logrotate" for details\n' +
+      '\n' +
+      '# global options\n' +
+      'weekly\n' +
+      '\n' +
+      '# keep 4 weeks worth of backlogs\n' +
+      'rotate 4\n' +
+      '\n' +
+      '# create new (empty) log files after rotating old ones\n' +
+      'create\n' +
+      '\n' +
+      '# use date as a suffix of the rotated file\n' +
+      '#dateext\n' +
+      '\n' +
+      '# compress rotated log files\n' +
+      '#compress\n' +
+      '\n' +
+      '# packages drop log rotation information into this directory\n' +
+      'include /etc/logrotate.d\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/var/lib/logrotate/status',
+      'logrotate state -- version 2\n' +
+      '"/var/log/syslog" 2024-1-1-0:0:0\n' +
+      '"/var/log/auth.log" 2024-1-1-0:0:0\n',
+      0o644, 0, 0);
+
+    // Proc filesystem entries
+    this.createFileAt('/proc/sys/kernel/random/boot_id',
+      'a1b2c3d4-e5f6-7890-1234-567890abcdef\n',
+      0o444, 0, 0);
+
+    // Audit configuration
+    this.createFileAt('/etc/audit/auditd.conf',
+      'log_file = /var/log/audit/audit.log\n' +
+      'log_group = root\n' +
+      'log_format = RAW\n' +
+      'flush = INCREMENTAL_ASYNC\n' +
+      'freq = 50\n' +
+      'max_log_file = 8\n' +
+      'num_logs = 5\n' +
+      'priority_boost = 4\n' +
+      'disp_qos = lossy\n' +
+      'dispatcher = /sbin/audispd\n' +
+      'name_format = NONE\n',
+      0o640, 0, 0);
   }
 
   private allocInode(type: FileType, permissions: number, uid: number, gid: number): INode {

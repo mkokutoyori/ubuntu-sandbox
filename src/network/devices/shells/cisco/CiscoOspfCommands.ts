@@ -789,7 +789,7 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
 function showIpRouteAll(router: Router): string {
   router._ospfAutoConverge();
   const rt = (router as any).routingTable as any[];
-  const lines: string[] = ['Codes: C - connected, S - static, O - OSPF, O IA - OSPF inter area',
+  const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
     '       O E1 - OSPF external type 1, O E2 - OSPF external type 2',
     ''];
   for (const r of rt) {
@@ -801,6 +801,8 @@ function showIpRouteAll(router: Router): string {
     } else if (r.type === 'static' || r.type === 'default') {
       const code = netStr === '0.0.0.0' && cidr === 0 ? 'S*' : 'S';
       lines.push(`${code}    ${netStr}/${cidr} [${r.ad ?? 1}/${r.metric ?? 0}] ${nh}`);
+    } else if (r.type === 'rip') {
+      lines.push(`R    ${netStr}/${cidr} [${r.ad ?? 120}/${r.metric}] ${nh}, ${r.iface}`);
     } else if (r.type === 'ospf') {
       const code = getOSPFRouteCode(router, netStr, cidr, r);
       lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] ${nh}, ${r.iface}`);

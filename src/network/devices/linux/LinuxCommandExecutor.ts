@@ -13,6 +13,7 @@ import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } f
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { executeScript, executeScriptContent } from './LinuxScriptExecutor';
 import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
+import { cmdJournalctl, cmdSystemctl, cmdLogrotate, cmdSed, cmdLogger, cmdAuditctl, cmdAusearch, cmdAureport, cmdGzip, cmdGunzip, cmdMd5sum, cmdNetstat, cmdWatch, cmdSystemdCat } from './LinuxJournalCommands';
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -450,6 +451,23 @@ export class LinuxCommandExecutor {
         const out = executeIpCommand(this.ipNetworkCtx, args);
         return { output: out, exitCode: out.includes('Error') || out.includes('unknown') || out.includes('Cannot find') || out.includes('RTNETLINK') || out.includes('does not exist') ? 1 : 0 };
       }
+
+      // Journal & logging commands
+      case 'journalctl': return { output: cmdJournalctl(c, args), exitCode: 0 };
+      case 'systemctl': return { output: cmdSystemctl(c, args), exitCode: 0 };
+      case 'logrotate': return { output: cmdLogrotate(c, args), exitCode: 0 };
+      case 'sed': return { output: cmdSed(c, args), exitCode: 0 };
+      case 'logger': return { output: cmdLogger(c, args), exitCode: 0 };
+      case 'auditctl': return { output: cmdAuditctl(c, args), exitCode: 0 };
+      case 'ausearch': return { output: cmdAusearch(c, args), exitCode: 0 };
+      case 'aureport': return { output: cmdAureport(c, args), exitCode: 0 };
+      case 'gzip': return { output: cmdGzip(c, args), exitCode: 0 };
+      case 'gunzip': return { output: cmdGunzip(c, args), exitCode: 0 };
+      case 'md5sum': return { output: cmdMd5sum(c, args), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(c, args), exitCode: 0 };
+      case 'watch': return { output: cmdWatch(c, args), exitCode: 0 };
+      case 'systemd-cat': return { output: cmdSystemdCat(c, args), exitCode: 0 };
+      case 'multitail': return { output: '', exitCode: 0 };
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)
