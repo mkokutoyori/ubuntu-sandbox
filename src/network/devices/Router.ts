@@ -3113,12 +3113,27 @@ export abstract class Router extends Equipment {
    * _ospfDeliverPacket, enabling real DD/LSR/LSU/LSAck packet exchange.
    * Must be called before _ospfDriveStateMachine so that Phase B's
    * startDDExchange calls propagate packets synchronously through the chain.
+   *
+   * @param allRouters  All routers participating in the OSPF domain.
+   * @param useDelay    When true, each packet is deferred by the sending
+   *                    interface's propagationDelayMs (live simulation mode).
+   *                    When false (default), delivery is synchronous.
    */
-  private _ospfSetupSendCallbacks(allRouters: Router[]): void {
+  private _ospfSetupSendCallbacks(allRouters: Router[], useDelay = false): void {
     for (const r of allRouters) {
       if (!r.ospfEngine) continue;
       r.ospfEngine.setSendCallback((ifaceName, packet, destIP) => {
-        r._ospfDeliverPacket(ifaceName, packet, destIP);
+        if (!useDelay) {
+          r._ospfDeliverPacket(ifaceName, packet, destIP);
+          return;
+        }
+        const iface = r.ospfEngine!.getInterface(ifaceName);
+        const delay = iface?.propagationDelayMs ?? 0;
+        if (delay > 0) {
+          setTimeout(() => r._ospfDeliverPacket(ifaceName, packet, destIP), delay);
+        } else {
+          r._ospfDeliverPacket(ifaceName, packet, destIP);
+        }
       });
     }
   }
@@ -3462,6 +3477,12 @@ export abstract class Router extends Equipment {
         }
       }
     }
+
+    // Re-wire sendCallbacks with delay enabled for live simulation.
+    // Convergence above used synchronous (useDelay=false) delivery so the
+    // full ExStart→Full chain ran in a single call stack.  After SPF, any
+    // subsequently originated/flooded LSAs will experience propagation delay.
+    this._ospfSetupSendCallbacks(allRouters, true);
 
     // Run SPF and install routes for each router (including external, inter-area, stub)
     for (const r of allRouters) {

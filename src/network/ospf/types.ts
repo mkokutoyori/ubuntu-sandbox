@@ -194,6 +194,10 @@ export interface OSPFInterface {
   authType: number;
   /** Authentication key */
   authKey: string;
+  /** Interface MTU in bytes (used for DD/LSR/LSU fragmentation) */
+  mtu: number;
+  /** One-way propagation delay in milliseconds (0 = synchronous delivery) */
+  propagationDelayMs: number;
 }
 
 // ─── LSA Types (RFC 2328 §12) ───────────────────────────────────────

@@ -34,6 +34,104 @@ import {
   createDefaultOSPFConfig,
 } from './types';
 
+// ─── LSA Checksum: Fletcher-16 (RFC 2328 Appendix C.1) ─────────────
+
+/**
+ * Convert a dotted-decimal IP string to a 4-byte array.
+ * Returns [0,0,0,0] for invalid input.
+ */
+function ipToBytes(ip: string): number[] {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return [0, 0, 0, 0];
+  return parts.map(n => parseInt(n, 10) & 0xFF);
+}
+
+/**
+ * Serialize an LSA to a byte array starting from offset 2 of the LSA header
+ * (i.e. skipping the 2-byte lsAge field), with the checksum field zeroed.
+ * This is the byte sequence over which Fletcher-16 is computed.
+ */
+function serializeLSAForChecksum(lsa: LSA): number[] {
+  const bytes: number[] = [];
+
+  // --- LSA common header (from byte 2, skipping lsAge) ---
+  bytes.push(lsa.options & 0xFF);                             // options: 1 byte
+  bytes.push(lsa.lsType & 0xFF);                              // lsType: 1 byte
+  bytes.push(...ipToBytes(lsa.linkStateId));                  // linkStateId: 4 bytes
+  bytes.push(...ipToBytes(lsa.advertisingRouter));            // advertisingRouter: 4 bytes
+
+  const seq = lsa.lsSequenceNumber >>> 0;
+  bytes.push(
+    (seq >>> 24) & 0xFF, (seq >>> 16) & 0xFF,
+    (seq >>> 8)  & 0xFF,  seq         & 0xFF,
+  );                                                          // seqNumber: 4 bytes
+
+  bytes.push(0, 0);                                           // checksum: 2 bytes (zeroed)
+
+  const len = lsa.length ?? 24;
+  bytes.push((len >>> 8) & 0xFF, len & 0xFF);                 // length: 2 bytes
+
+  // --- LSA type-specific body ---
+  if (lsa.lsType === 1) {
+    const r = lsa as RouterLSA;
+    bytes.push(r.flags & 0xFF, 0);                            // flags + padding: 2 bytes
+    bytes.push((r.numLinks >>> 8) & 0xFF, r.numLinks & 0xFF); // numLinks: 2 bytes
+    for (const link of r.links) {
+      bytes.push(...ipToBytes(link.linkId));
+      bytes.push(...ipToBytes(link.linkData));
+      bytes.push(link.type & 0xFF, link.numTOS & 0xFF);
+      bytes.push((link.metric >>> 8) & 0xFF, link.metric & 0xFF);
+    }
+  } else if (lsa.lsType === 2) {
+    const n = lsa as NetworkLSA;
+    bytes.push(...ipToBytes(n.networkMask));
+    for (const r of n.attachedRouters) {
+      bytes.push(...ipToBytes(r));
+    }
+  } else if (lsa.lsType === 3 || lsa.lsType === 4) {
+    const s = lsa as SummaryLSA;
+    bytes.push(...ipToBytes(s.networkMask));
+    bytes.push(0); // padding
+    bytes.push((s.metric >>> 16) & 0xFF, (s.metric >>> 8) & 0xFF, s.metric & 0xFF);
+  } else if (lsa.lsType === 5) {
+    const e = lsa as ExternalLSA;
+    bytes.push(...ipToBytes(e.networkMask));
+    bytes.push(e.metricType === 2 ? 0x80 : 0x00);
+    bytes.push((e.metric >>> 16) & 0xFF, (e.metric >>> 8) & 0xFF, e.metric & 0xFF);
+    bytes.push(...ipToBytes(e.forwardingAddress));
+    const tag = e.externalRouteTag >>> 0;
+    bytes.push((tag >>> 24) & 0xFF, (tag >>> 16) & 0xFF, (tag >>> 8) & 0xFF, tag & 0xFF);
+  }
+
+  return bytes;
+}
+
+/**
+ * Compute the Fletcher-16 checksum of an LSA (RFC 2328 §12.4.7).
+ * The lsAge field is excluded; the checksum field is treated as zero.
+ * Returns the 16-bit checksum as (C0 << 8) | C1.
+ */
+export function computeOSPFLSAChecksum(lsa: LSA): number {
+  const bytes = serializeLSAForChecksum(lsa);
+  let c0 = 0, c1 = 0;
+  for (const b of bytes) {
+    c0 = (c0 + b) % 255;
+    c1 = (c1 + c0) % 255;
+  }
+  const result = ((c0 & 0xFF) << 8) | (c1 & 0xFF);
+  // Avoid returning 0x0000 (treated as "unset") — remap to a sentinel
+  return result !== 0 ? result : 0xFFFF;
+}
+
+/**
+ * Verify the stored checksum of an LSA matches the computed value.
+ * An LSA with checksum 0 is always considered invalid (not yet computed).
+ */
+export function verifyOSPFLSAChecksum(lsa: LSA): boolean {
+  if (lsa.checksum === 0) return false;
+  return lsa.checksum === computeOSPFLSAChecksum(lsa);
+}
+
 // ─── Callback type for sending packets ─────────────────────────────
 
 export type OSPFSendCallback = (
@@ -200,6 +298,10 @@ export class OSPFEngine {
       networkType?: OSPFNetworkType;
       helloInterval?: number;
       deadInterval?: number;
+      /** Interface MTU in bytes (default 1500) */
+      mtu?: number;
+      /** One-way propagation delay in ms (default 0 = synchronous) */
+      propagationDelayMs?: number;
     }
   ): OSPFInterface {
     const bandwidth = 1_000_000_000; // 1 Gbps default (GigabitEthernet)
@@ -226,6 +328,8 @@ export class OSPFEngine {
       passive: this.config.passiveInterfaces.has(name),
       authType: 0,
       authKey: '',
+      mtu: options?.mtu ?? 1500,
+      propagationDelayMs: options?.propagationDelayMs ?? 0,
     };
 
     this.interfaces.set(name, iface);
@@ -901,7 +1005,11 @@ export class OSPFEngine {
   }
 
   private sendDDWithSummary(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
-    const headers = neighbor.dbSummaryList.splice(0, 10); // Send up to 10 headers at a time
+    // RFC 2328 §10.6: each DD packet must fit within the interface MTU.
+    // DD packet overhead = 24 (OSPF header) + 8 (DD fields) = 32 bytes.
+    // Each LSA summary header = 20 bytes.
+    const maxHeaders = Math.max(1, Math.floor((iface.mtu - 32) / 20));
+    const headers = neighbor.dbSummaryList.splice(0, maxHeaders);
     const hasMore = neighbor.dbSummaryList.length > 0;
 
     const flags = (hasMore ? DD_FLAG_MORE : 0) | (neighbor.isMaster ? DD_FLAG_MASTER : 0);
@@ -912,7 +1020,7 @@ export class OSPFEngine {
       packetType: 2,
       routerId: this.config.routerId,
       areaId: iface.areaId,
-      interfaceMTU: 1500,
+      interfaceMTU: iface.mtu,
       options: 0x02,
       flags,
       ddSequenceNumber: neighbor.ddSeqNumber,
@@ -927,7 +1035,10 @@ export class OSPFEngine {
   private sendLSRequest(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     if (neighbor.lsRequestList.length === 0) return;
 
-    const requests = neighbor.lsRequestList.slice(0, 10).map(h => ({
+    // RFC 2328 §10.9: LS Request packet overhead = 24 (OSPF header) bytes.
+    // Each request entry = 12 bytes (lsType 4 + linkStateId 4 + advertisingRouter 4).
+    const maxRequests = Math.max(1, Math.floor((iface.mtu - 24) / 12));
+    const requests = neighbor.lsRequestList.slice(0, maxRequests).map(h => ({
       lsType: h.lsType,
       linkStateId: h.linkStateId,
       advertisingRouter: h.advertisingRouter,
@@ -963,19 +1074,41 @@ export class OSPFEngine {
       }
     }
 
-    if (lsas.length > 0) {
+    if (lsas.length === 0) return;
+
+    // RFC 2328 §13.2: fragment the LS Update to stay within interface MTU.
+    // LSU overhead = 24 (OSPF header) + 4 (numLSAs field) = 28 bytes.
+    // Each LSA's wire size is given by lsa.length (defaulting to 24 for a
+    // minimal Router-LSA with zero links).
+    const lsuOverhead = 28;
+    let batch: LSA[] = [];
+    let batchBytes = lsuOverhead;
+
+    const flushBatch = () => {
+      if (batch.length === 0) return;
       const lsu: OSPFLSUpdatePacket = {
         type: 'ospf',
         version: OSPF_VERSION_2,
         packetType: 4,
         routerId: this.config.routerId,
         areaId: iface.areaId,
-        numLSAs: lsas.length,
-        lsas,
+        numLSAs: batch.length,
+        lsas: batch,
       };
-
       this.sendCallback?.(iface.name, lsu, srcIP);
+      batch = [];
+      batchBytes = lsuOverhead;
+    };
+
+    for (const lsa of lsas) {
+      const lsaSize = lsa.length ?? 24;
+      if (batch.length > 0 && batchBytes + lsaSize > iface.mtu) {
+        flushBatch();
+      }
+      batch.push(lsa);
+      batchBytes += lsaSize;
     }
+    flushBatch();
   }
 
   /**
@@ -994,6 +1127,9 @@ export class OSPFEngine {
     for (const lsa of lsu.lsas) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       const areaDB = this.lsdb.areas.get(iface.areaId);
+
+      // Validate checksum (RFC 2328 §13 step 1) — drop silently if invalid
+      if (!verifyOSPFLSAChecksum(lsa)) continue;
 
       // Skip if LSA is MaxAge and not in DB
       if (lsa.lsAge >= OSPF_MAX_AGE) {
@@ -1033,9 +1169,13 @@ export class OSPFEngine {
       this.sendCallback?.(iface.name, ack, srcIP);
     }
 
-    // Check if loading is done
+    // Check if loading is done (RFC 2328 §10.9)
     if (neighbor.state === 'Loading' && neighbor.lsRequestList.length === 0) {
       this.neighborEvent(iface, neighbor, 'LoadingDone');
+    } else if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
+      // More LSAs still needed — send the next batch of LSRs immediately
+      // (enables synchronous completion across MTU-fragmented exchanges)
+      this.sendLSRequest(iface, neighbor);
     }
 
     // Schedule SPF if LSDB changed
@@ -1091,6 +1231,11 @@ export class OSPFEngine {
   // ─── LSDB Management ──────────────────────────────────────────
 
   installLSA(areaId: string, lsa: LSA): void {
+    // Always (re-)compute the checksum so that locally originated LSAs and
+    // test fixtures with arbitrary placeholder values (e.g. 0x1234) carry a
+    // valid Fletcher-16 before they are stored or forwarded.
+    lsa.checksum = computeOSPFLSAChecksum(lsa);
+
     const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
 
     if (lsa.lsType === 5) {
