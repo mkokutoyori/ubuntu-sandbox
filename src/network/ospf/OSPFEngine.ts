@@ -34,6 +34,104 @@ import {
   createDefaultOSPFConfig,
 } from './types';
 
+// ─── LSA Checksum: Fletcher-16 (RFC 2328 Appendix C.1) ─────────────
+
+/**
+ * Convert a dotted-decimal IP string to a 4-byte array.
+ * Returns [0,0,0,0] for invalid input.
+ */
+function ipToBytes(ip: string): number[] {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return [0, 0, 0, 0];
+  return parts.map(n => parseInt(n, 10) & 0xFF);
+}
+
+/**
+ * Serialize an LSA to a byte array starting from offset 2 of the LSA header
+ * (i.e. skipping the 2-byte lsAge field), with the checksum field zeroed.
+ * This is the byte sequence over which Fletcher-16 is computed.
+ */
+function serializeLSAForChecksum(lsa: LSA): number[] {
+  const bytes: number[] = [];
+
+  // --- LSA common header (from byte 2, skipping lsAge) ---
+  bytes.push(lsa.options & 0xFF);                             // options: 1 byte
+  bytes.push(lsa.lsType & 0xFF);                              // lsType: 1 byte
+  bytes.push(...ipToBytes(lsa.linkStateId));                  // linkStateId: 4 bytes
+  bytes.push(...ipToBytes(lsa.advertisingRouter));            // advertisingRouter: 4 bytes
+
+  const seq = lsa.lsSequenceNumber >>> 0;
+  bytes.push(
+    (seq >>> 24) & 0xFF, (seq >>> 16) & 0xFF,
+    (seq >>> 8)  & 0xFF,  seq         & 0xFF,
+  );                                                          // seqNumber: 4 bytes
+
+  bytes.push(0, 0);                                           // checksum: 2 bytes (zeroed)
+
+  const len = lsa.length ?? 24;
+  bytes.push((len >>> 8) & 0xFF, len & 0xFF);                 // length: 2 bytes
+
+  // --- LSA type-specific body ---
+  if (lsa.lsType === 1) {
+    const r = lsa as RouterLSA;
+    bytes.push(r.flags & 0xFF, 0);                            // flags + padding: 2 bytes
+    bytes.push((r.numLinks >>> 8) & 0xFF, r.numLinks & 0xFF); // numLinks: 2 bytes
+    for (const link of r.links) {
+      bytes.push(...ipToBytes(link.linkId));
+      bytes.push(...ipToBytes(link.linkData));
+      bytes.push(link.type & 0xFF, link.numTOS & 0xFF);
+      bytes.push((link.metric >>> 8) & 0xFF, link.metric & 0xFF);
+    }
+  } else if (lsa.lsType === 2) {
+    const n = lsa as NetworkLSA;
+    bytes.push(...ipToBytes(n.networkMask));
+    for (const r of n.attachedRouters) {
+      bytes.push(...ipToBytes(r));
+    }
+  } else if (lsa.lsType === 3 || lsa.lsType === 4) {
+    const s = lsa as SummaryLSA;
+    bytes.push(...ipToBytes(s.networkMask));
+    bytes.push(0); // padding
+    bytes.push((s.metric >>> 16) & 0xFF, (s.metric >>> 8) & 0xFF, s.metric & 0xFF);
+  } else if (lsa.lsType === 5) {
+    const e = lsa as ExternalLSA;
+    bytes.push(...ipToBytes(e.networkMask));
+    bytes.push(e.metricType === 2 ? 0x80 : 0x00);
+    bytes.push((e.metric >>> 16) & 0xFF, (e.metric >>> 8) & 0xFF, e.metric & 0xFF);
+    bytes.push(...ipToBytes(e.forwardingAddress));
+    const tag = e.externalRouteTag >>> 0;
+    bytes.push((tag >>> 24) & 0xFF, (tag >>> 16) & 0xFF, (tag >>> 8) & 0xFF, tag & 0xFF);
+  }
+
+  return bytes;
+}
+
+/**
+ * Compute the Fletcher-16 checksum of an LSA (RFC 2328 §12.4.7).
+ * The lsAge field is excluded; the checksum field is treated as zero.
+ * Returns the 16-bit checksum as (C0 << 8) | C1.
+ */
+export function computeOSPFLSAChecksum(lsa: LSA): number {
+  const bytes = serializeLSAForChecksum(lsa);
+  let c0 = 0, c1 = 0;
+  for (const b of bytes) {
+    c0 = (c0 + b) % 255;
+    c1 = (c1 + c0) % 255;
+  }
+  const result = ((c0 & 0xFF) << 8) | (c1 & 0xFF);
+  // Avoid returning 0x0000 (treated as "unset") — remap to a sentinel
+  return result !== 0 ? result : 0xFFFF;
+}
+
+/**
+ * Verify the stored checksum of an LSA matches the computed value.
+ * An LSA with checksum 0 is always considered invalid (not yet computed).
+ */
+export function verifyOSPFLSAChecksum(lsa: LSA): boolean {
+  if (lsa.checksum === 0) return false;
+  return lsa.checksum === computeOSPFLSAChecksum(lsa);
+}
+
 // ─── Callback type for sending packets ─────────────────────────────
 
 export type OSPFSendCallback = (
@@ -86,6 +184,21 @@ export class OSPFEngine {
 
   setSendCallback(cb: OSPFSendCallback): void {
     this.sendCallback = cb;
+  }
+
+  /**
+   * Re-deliver the stored lastSentDD for a master ExStart neighbor.
+   * Called by the Router simulation after all drElections have run, to kick
+   * off DD negotiation for pairs where the remote was still in Init/TwoWay
+   * when the master first fired startDDExchange (RFC 2328 §10.6 retransmit).
+   */
+  triggerDDRetransmit(ifaceName: string, neighborRid: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (!iface) return;
+    const neighbor = iface.neighbors.get(neighborRid);
+    if (!neighbor || neighbor.state !== 'ExStart' || !neighbor.isMaster) return;
+    if (!neighbor.lastSentDD) return;
+    this.sendCallback?.(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
   }
 
   /**
@@ -185,6 +298,10 @@ export class OSPFEngine {
       networkType?: OSPFNetworkType;
       helloInterval?: number;
       deadInterval?: number;
+      /** Interface MTU in bytes (default 1500) */
+      mtu?: number;
+      /** One-way propagation delay in ms (default 0 = synchronous) */
+      propagationDelayMs?: number;
     }
   ): OSPFInterface {
     const bandwidth = 1_000_000_000; // 1 Gbps default (GigabitEthernet)
@@ -211,6 +328,8 @@ export class OSPFEngine {
       passive: this.config.passiveInterfaces.has(name),
       authType: 0,
       authKey: '',
+      mtu: options?.mtu ?? 1500,
+      propagationDelayMs: options?.propagationDelayMs ?? 0,
     };
 
     this.interfaces.set(name, iface);
@@ -434,6 +553,9 @@ export class OSPFEngine {
       dbSummaryList: [],
       lastHelloReceived: Date.now(),
       options: hello.options,
+      ddRetransmitTimer: null,
+      lsrRetransmitTimer: null,
+      lastSentDD: null,
     };
   }
 
@@ -443,9 +565,18 @@ export class OSPFEngine {
     const oldState = neighbor.state;
 
     switch (event) {
+      // RFC 2328 §10.3: Start event — used for NBMA networks (Attempt state)
+      case 'Start':
+        if (neighbor.state === 'Down') {
+          neighbor.state = 'Attempt';
+          // On NBMA, send a Hello directly to the configured neighbor
+          this.sendHelloTo(iface, neighbor.ipAddress);
+        }
+        break;
+
       case 'HelloReceived':
         this.resetDeadTimer(iface, neighbor);
-        if (neighbor.state === 'Down') {
+        if (neighbor.state === 'Down' || neighbor.state === 'Attempt') {
           neighbor.state = 'Init';
         }
         break;
@@ -463,6 +594,8 @@ export class OSPFEngine {
 
       case 'NegotiationDone':
         if (neighbor.state === 'ExStart') {
+          // Cancel DD retransmission timer — negotiation complete
+          this.cancelDDRetransmitTimer(neighbor);
           neighbor.state = 'Exchange';
           this.sendDDWithSummary(iface, neighbor);
         }
@@ -482,6 +615,8 @@ export class OSPFEngine {
 
       case 'LoadingDone':
         if (neighbor.state === 'Loading') {
+          // Cancel LSR retransmission timer — loading complete
+          this.cancelLSRRetransmitTimer(neighbor);
           neighbor.state = 'Full';
           this.onAdjacencyFull(iface, neighbor);
         }
@@ -495,6 +630,8 @@ export class OSPFEngine {
           }
         } else if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
           if (!this.shouldFormAdjacency(iface, neighbor)) {
+            this.cancelDDRetransmitTimer(neighbor);
+            this.cancelLSRRetransmitTimer(neighbor);
             neighbor.state = 'TwoWay';
             neighbor.lsRequestList = [];
             neighbor.lsRetransmissionList = [];
@@ -506,6 +643,8 @@ export class OSPFEngine {
       case 'SeqNumberMismatch':
       case 'BadLSReq':
         if (['Exchange', 'Loading', 'Full'].includes(neighbor.state)) {
+          this.cancelDDRetransmitTimer(neighbor);
+          this.cancelLSRRetransmitTimer(neighbor);
           neighbor.state = 'ExStart';
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
@@ -516,6 +655,8 @@ export class OSPFEngine {
 
       case 'OneWay':
         if (neighbor.state !== 'Down' && neighbor.state !== 'Init') {
+          this.cancelDDRetransmitTimer(neighbor);
+          this.cancelLSRRetransmitTimer(neighbor);
           neighbor.state = 'Init';
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
@@ -526,6 +667,8 @@ export class OSPFEngine {
       case 'KillNbr':
       case 'LLDown':
         this.clearDeadTimer(neighbor);
+        this.cancelDDRetransmitTimer(neighbor);
+        this.cancelLSRRetransmitTimer(neighbor);
         neighbor.state = 'Down';
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
@@ -534,6 +677,8 @@ export class OSPFEngine {
 
       case 'InactivityTimer':
         this.clearDeadTimer(neighbor);
+        this.cancelDDRetransmitTimer(neighbor);
+        this.cancelLSRRetransmitTimer(neighbor);
         neighbor.state = 'Down';
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
@@ -558,6 +703,16 @@ export class OSPFEngine {
     }
   }
 
+  /**
+   * Called when a neighbor adjacency reaches Full state (RFC 2328 §10.4).
+   * Triggers Router-LSA re-origination and schedules SPF.
+   */
+  private onAdjacencyFull(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    const msg = `OSPF: Adjacency with ${neighbor.routerId} (${iface.name}) is now Full`;
+    this.eventLog.push(msg);
+    // Router-LSA and SPF are triggered in neighborEvent via the state change check
+  }
+
   private resetDeadTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     this.clearDeadTimer(neighbor);
     neighbor.deadTimer = setTimeout(() => {
@@ -570,6 +725,74 @@ export class OSPFEngine {
       clearTimeout(neighbor.deadTimer);
       neighbor.deadTimer = null;
     }
+  }
+
+  /**
+   * Start DD retransmission timer (RFC 2328 §10.6).
+   * Resends the last DD packet if no response within RxmtInterval.
+   */
+  private startDDRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    this.cancelDDRetransmitTimer(neighbor);
+    neighbor.ddRetransmitTimer = setTimeout(() => {
+      neighbor.ddRetransmitTimer = null;
+      if (neighbor.state === 'ExStart' && neighbor.lastSentDD) {
+        // Retransmit the last DD packet
+        this.sendCallback?.(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+        this.startDDRetransmitTimer(iface, neighbor);
+      }
+    }, iface.retransmitInterval * 1000);
+  }
+
+  private cancelDDRetransmitTimer(neighbor: OSPFNeighbor): void {
+    if (neighbor.ddRetransmitTimer) {
+      clearTimeout(neighbor.ddRetransmitTimer);
+      neighbor.ddRetransmitTimer = null;
+    }
+  }
+
+  /**
+   * Start LSR retransmission timer (RFC 2328 §10.9).
+   * Resends the LS Request if no LSU response within RxmtInterval.
+   */
+  private startLSRRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    this.cancelLSRRetransmitTimer(neighbor);
+    neighbor.lsrRetransmitTimer = setTimeout(() => {
+      neighbor.lsrRetransmitTimer = null;
+      if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
+        this.sendLSRequest(iface, neighbor);
+      }
+    }, iface.retransmitInterval * 1000);
+  }
+
+  private cancelLSRRetransmitTimer(neighbor: OSPFNeighbor): void {
+    if (neighbor.lsrRetransmitTimer) {
+      clearTimeout(neighbor.lsrRetransmitTimer);
+      neighbor.lsrRetransmitTimer = null;
+    }
+  }
+
+  /**
+   * Send a Hello directly to a specific IP (for NBMA Attempt state).
+   * RFC 2328 §9.5
+   */
+  private sendHelloTo(iface: OSPFInterface, destIP: string): void {
+    if (!this.sendCallback) return;
+    const hello: OSPFHelloPacket = {
+      type: 'ospf',
+      version: OSPF_VERSION_2,
+      packetType: 1,
+      routerId: this.config.routerId,
+      areaId: iface.areaId,
+      networkMask: iface.mask,
+      helloInterval: iface.helloInterval,
+      options: 0x02,
+      priority: iface.priority,
+      deadInterval: iface.deadInterval,
+      designatedRouter: iface.dr,
+      backupDesignatedRouter: iface.bdr,
+      neighbors: Array.from(iface.neighbors.keys()),
+    };
+    this.sendCallback(iface.name, hello, destIP);
   }
 
   /**
@@ -690,13 +913,13 @@ export class OSPFEngine {
 
   private startDDExchange(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     neighbor.ddSeqNumber = Math.floor(Date.now() / 1000) & 0xFFFFFFFF;
-    // We start as Master; will resolve in NegotiationDone
+    // Higher Router ID becomes Master (RFC 2328 §10.6)
     neighbor.isMaster = this.config.routerId > neighbor.routerId;
 
     // Build DB summary list from our LSDB
     neighbor.dbSummaryList = this.getLSDBHeaders(iface.areaId);
 
-    // Send initial DD with I, M, MS flags
+    // Send initial DD with I (Init), M (More), MS (Master if applicable) flags
     const flags = DD_FLAG_INIT | DD_FLAG_MORE | (neighbor.isMaster ? DD_FLAG_MASTER : 0);
 
     const dd: OSPFDDPacket = {
@@ -712,11 +935,16 @@ export class OSPFEngine {
       lsaHeaders: [],
     };
 
+    // Store for potential retransmission (RFC 2328 §10.6)
+    neighbor.lastSentDD = dd;
     this.sendCallback?.(iface.name, dd, neighbor.ipAddress);
+
+    // Start retransmission timer in case no response arrives
+    this.startDDRetransmitTimer(iface, neighbor);
   }
 
   /**
-   * Process incoming Database Description packet
+   * Process incoming Database Description packet (RFC 2328 §10.6).
    */
   processDD(ifaceName: string, srcIP: string, dd: OSPFDDPacket): void {
     const iface = this.interfaces.get(ifaceName);
@@ -726,19 +954,39 @@ export class OSPFEngine {
     if (!neighbor) return;
 
     if (neighbor.state === 'ExStart') {
-      // Negotiation phase
+      // Negotiation phase: determine Master/Slave
       const isInit = (dd.flags & DD_FLAG_INIT) !== 0;
       const isMaster = (dd.flags & DD_FLAG_MASTER) !== 0;
 
       if (isInit && isMaster && dd.routerId > this.config.routerId) {
-        // They are master
+        // Remote is Master (higher RID) — we become Slave
         neighbor.isMaster = false;
         neighbor.ddSeqNumber = dd.ddSequenceNumber;
+        // NegotiationDone transitions to Exchange and calls sendDDWithSummary
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
+        // After transitioning to Exchange, check if slave has no more headers
+        // and master also sent !MORE — fire ExchangeDone if applicable
+        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+          // We (slave) have no more to send and master also done: exchange complete
+          this.neighborEvent(iface, neighbor, 'ExchangeDone');
+        }
       } else if (!isInit && !isMaster && dd.ddSequenceNumber === neighbor.ddSeqNumber) {
-        // We are master and they acknowledged
+        // Remote is Slave acknowledging our sequence number — we are Master
+        // Process any LSA headers the Slave included in this first Exchange DD
+        for (const header of dd.lsaHeaders) {
+          const existing = this.lookupLSA(iface.areaId, header.lsType, header.linkStateId, header.advertisingRouter);
+          if (!existing || header.lsSequenceNumber > existing.lsSequenceNumber) {
+            neighbor.lsRequestList.push(header);
+          }
+        }
         neighbor.isMaster = true;
+        // NegotiationDone transitions to Exchange and calls sendDDWithSummary
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
+        // If Slave sent !MORE (all their headers in one shot) AND we (Master) have no more,
+        // then exchange is complete from both sides
+        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+          this.neighborEvent(iface, neighbor, 'ExchangeDone');
+        }
       }
     } else if (neighbor.state === 'Exchange') {
       // Process LSA headers from the DD
@@ -749,15 +997,19 @@ export class OSPFEngine {
         }
       }
 
-      // Check if exchange is done (no More flag)
-      if (!(dd.flags & DD_FLAG_MORE)) {
+      // Check if exchange is done (no More flag from remote, and we've sent all ours)
+      if (!(dd.flags & DD_FLAG_MORE) && neighbor.dbSummaryList.length === 0) {
         this.neighborEvent(iface, neighbor, 'ExchangeDone');
       }
     }
   }
 
   private sendDDWithSummary(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
-    const headers = neighbor.dbSummaryList.splice(0, 10); // Send up to 10 headers at a time
+    // RFC 2328 §10.6: each DD packet must fit within the interface MTU.
+    // DD packet overhead = 24 (OSPF header) + 8 (DD fields) = 32 bytes.
+    // Each LSA summary header = 20 bytes.
+    const maxHeaders = Math.max(1, Math.floor((iface.mtu - 32) / 20));
+    const headers = neighbor.dbSummaryList.splice(0, maxHeaders);
     const hasMore = neighbor.dbSummaryList.length > 0;
 
     const flags = (hasMore ? DD_FLAG_MORE : 0) | (neighbor.isMaster ? DD_FLAG_MASTER : 0);
@@ -768,7 +1020,7 @@ export class OSPFEngine {
       packetType: 2,
       routerId: this.config.routerId,
       areaId: iface.areaId,
-      interfaceMTU: 1500,
+      interfaceMTU: iface.mtu,
       options: 0x02,
       flags,
       ddSequenceNumber: neighbor.ddSeqNumber,
@@ -783,7 +1035,10 @@ export class OSPFEngine {
   private sendLSRequest(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     if (neighbor.lsRequestList.length === 0) return;
 
-    const requests = neighbor.lsRequestList.slice(0, 10).map(h => ({
+    // RFC 2328 §10.9: LS Request packet overhead = 24 (OSPF header) bytes.
+    // Each request entry = 12 bytes (lsType 4 + linkStateId 4 + advertisingRouter 4).
+    const maxRequests = Math.max(1, Math.floor((iface.mtu - 24) / 12));
+    const requests = neighbor.lsRequestList.slice(0, maxRequests).map(h => ({
       lsType: h.lsType,
       linkStateId: h.linkStateId,
       advertisingRouter: h.advertisingRouter,
@@ -799,6 +1054,9 @@ export class OSPFEngine {
     };
 
     this.sendCallback?.(iface.name, lsr, neighbor.ipAddress);
+
+    // Start retransmission timer for LSR (RFC 2328 §10.9)
+    this.startLSRRetransmitTimer(iface, neighbor);
   }
 
   /**
@@ -816,19 +1074,41 @@ export class OSPFEngine {
       }
     }
 
-    if (lsas.length > 0) {
+    if (lsas.length === 0) return;
+
+    // RFC 2328 §13.2: fragment the LS Update to stay within interface MTU.
+    // LSU overhead = 24 (OSPF header) + 4 (numLSAs field) = 28 bytes.
+    // Each LSA's wire size is given by lsa.length (defaulting to 24 for a
+    // minimal Router-LSA with zero links).
+    const lsuOverhead = 28;
+    let batch: LSA[] = [];
+    let batchBytes = lsuOverhead;
+
+    const flushBatch = () => {
+      if (batch.length === 0) return;
       const lsu: OSPFLSUpdatePacket = {
         type: 'ospf',
         version: OSPF_VERSION_2,
         packetType: 4,
         routerId: this.config.routerId,
         areaId: iface.areaId,
-        numLSAs: lsas.length,
-        lsas,
+        numLSAs: batch.length,
+        lsas: batch,
       };
-
       this.sendCallback?.(iface.name, lsu, srcIP);
+      batch = [];
+      batchBytes = lsuOverhead;
+    };
+
+    for (const lsa of lsas) {
+      const lsaSize = lsa.length ?? 24;
+      if (batch.length > 0 && batchBytes + lsaSize > iface.mtu) {
+        flushBatch();
+      }
+      batch.push(lsa);
+      batchBytes += lsaSize;
     }
+    flushBatch();
   }
 
   /**
@@ -847,6 +1127,9 @@ export class OSPFEngine {
     for (const lsa of lsu.lsas) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       const areaDB = this.lsdb.areas.get(iface.areaId);
+
+      // Validate checksum (RFC 2328 §13 step 1) — drop silently if invalid
+      if (!verifyOSPFLSAChecksum(lsa)) continue;
 
       // Skip if LSA is MaxAge and not in DB
       if (lsa.lsAge >= OSPF_MAX_AGE) {
@@ -886,9 +1169,13 @@ export class OSPFEngine {
       this.sendCallback?.(iface.name, ack, srcIP);
     }
 
-    // Check if loading is done
+    // Check if loading is done (RFC 2328 §10.9)
     if (neighbor.state === 'Loading' && neighbor.lsRequestList.length === 0) {
       this.neighborEvent(iface, neighbor, 'LoadingDone');
+    } else if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
+      // More LSAs still needed — send the next batch of LSRs immediately
+      // (enables synchronous completion across MTU-fragmented exchanges)
+      this.sendLSRequest(iface, neighbor);
     }
 
     // Schedule SPF if LSDB changed
@@ -944,6 +1231,11 @@ export class OSPFEngine {
   // ─── LSDB Management ──────────────────────────────────────────
 
   installLSA(areaId: string, lsa: LSA): void {
+    // Always (re-)compute the checksum so that locally originated LSAs and
+    // test fixtures with arbitrary placeholder values (e.g. 0x1234) carry a
+    // valid Fletcher-16 before they are stored or forwarded.
+    lsa.checksum = computeOSPFLSAChecksum(lsa);
+
     const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
 
     if (lsa.lsType === 5) {

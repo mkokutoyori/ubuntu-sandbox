@@ -128,6 +128,12 @@ export interface OSPFNeighbor {
   lastHelloReceived: number;
   /** Options field from Hello */
   options: number;
+  /** DD retransmission timer handle (RFC 2328 §10.6) */
+  ddRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  /** LSR retransmission timer handle (RFC 2328 §10.9) */
+  lsrRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  /** Last DD packet sent (for retransmission on timeout) */
+  lastSentDD: OSPFDDPacket | null;
 }
 
 // ─── Interface State Machine (RFC 2328 §9.1) ────────────────────────
@@ -188,6 +194,10 @@ export interface OSPFInterface {
   authType: number;
   /** Authentication key */
   authKey: string;
+  /** Interface MTU in bytes (used for DD/LSR/LSU fragmentation) */
+  mtu: number;
+  /** One-way propagation delay in milliseconds (0 = synchronous delivery) */
+  propagationDelayMs: number;
 }
 
 // ─── LSA Types (RFC 2328 §12) ───────────────────────────────────────
