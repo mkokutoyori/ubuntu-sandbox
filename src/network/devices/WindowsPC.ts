@@ -255,7 +255,7 @@ export class WindowsPC extends EndHost {
         'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
         'netstat', 'dir', 'cd', 'mkdir', 'md', 'rmdir', 'rd', 'type',
         'copy', 'move', 'ren', 'rename', 'del', 'erase', 'echo', 'set',
-        'tree',
+        'tree', 'powershell', 'exit',
       ];
       return commands.filter(c => c.startsWith(prefix)).sort();
     }

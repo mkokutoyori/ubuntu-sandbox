@@ -46,6 +46,9 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   const deviceIsFullyImplemented = isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
+  // Windows shell mode (for dynamic title bar)
+  const [winShellMode, setWinShellMode] = useState<'cmd' | 'powershell'>('cmd');
+
   // Resizable state
   const [dimensions, setDimensions] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -203,7 +206,10 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
             <span className="text-[11px] font-medium text-white/80 truncate">
               {deviceName}
               {isLinuxDevice && !isDatabaseDevice && ' — Ubuntu Linux'}
-              {isWindowsDevice && ' — Command Prompt'}
+              {isWindowsDevice && (winShellMode === 'powershell'
+                ? ' — Windows PowerShell'
+                : ' — Command Prompt'
+              )}
               {isCiscoDevice && ' — Cisco IOS'}
               {isHuaweiDevice && ' — Huawei VRP'}
               {isDatabaseDevice && ` — ${
@@ -251,7 +257,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
           ) : isHuaweiDevice ? (
             <HuaweiTerminal device={device} onRequestClose={onClose} />
           ) : isWindowsDevice ? (
-            <WindowsTerminal device={device} onRequestClose={onClose} />
+            <WindowsTerminal device={device} onRequestClose={onClose} onShellModeChange={setWinShellMode} />
           ) : (
             <Terminal device={device} onRequestClose={onClose} />
           )}
