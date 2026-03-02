@@ -89,6 +89,21 @@ export class OSPFEngine {
   }
 
   /**
+   * Re-deliver the stored lastSentDD for a master ExStart neighbor.
+   * Called by the Router simulation after all drElections have run, to kick
+   * off DD negotiation for pairs where the remote was still in Init/TwoWay
+   * when the master first fired startDDExchange (RFC 2328 §10.6 retransmit).
+   */
+  triggerDDRetransmit(ifaceName: string, neighborRid: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (!iface) return;
+    const neighbor = iface.neighbors.get(neighborRid);
+    if (!neighbor || neighbor.state !== 'ExStart' || !neighbor.isMaster) return;
+    if (!neighbor.lastSentDD) return;
+    this.sendCallback?.(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+  }
+
+  /**
    * Add a network statement: "network <network> <wildcard> area <areaId>"
    * This determines which interfaces participate in OSPF.
    */
