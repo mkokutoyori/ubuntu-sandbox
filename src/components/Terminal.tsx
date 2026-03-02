@@ -9,11 +9,24 @@
  * - Ctrl+C interrupt, Ctrl+L clear
  * - Ubuntu terminal look & feel
  * - Interactive password prompts (sudo, su, passwd, adduser)
+ * - Integrated text editors: nano, vi, vim
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Equipment } from '@/network';
+import { NanoEditor } from '@/components/editors/NanoEditor';
+import { VimEditor } from '@/components/editors/VimEditor';
 type BaseDevice = Equipment;
+
+// ─── Editor State ───────────────────────────────────────────────
+
+interface EditorOverlayState {
+  editor: 'nano' | 'vi' | 'vim';
+  filePath: string;
+  absolutePath: string;
+  content: string;
+  isNewFile: boolean;
+}
 
 // ─── ANSI Color Parsing ────────────────────────────────────────────
 
@@ -288,6 +301,7 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   const [interactive, setInteractive] = useState<InteractiveState | null>(null);
   const [passwordBuf, setPasswordBuf] = useState('');
   const [inputBuf, setInputBuf] = useState('');
+  const [editorState, setEditorState] = useState<EditorOverlayState | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
@@ -568,6 +582,50 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
     }
   }, [interactive, addLine, processInteractiveSteps]);
 
+  // ─── Editor integration ─────────────────────────────────────────
+
+  /** Parse editor command and open the editor overlay */
+  const openEditor = useCallback((editorCmd: 'nano' | 'vi' | 'vim', args: string[]) => {
+    // Extract file path (skip flags like -w, -m, etc.)
+    let filePath = '';
+    for (const arg of args) {
+      if (!arg.startsWith('-') && !arg.startsWith('+')) {
+        filePath = arg;
+        break;
+      }
+    }
+
+    if (!filePath) {
+      // Open editor with empty buffer (no file name)
+      filePath = editorCmd === 'nano' ? 'New Buffer' : '';
+    }
+
+    const absolutePath = device.resolveAbsolutePath(filePath);
+    const existingContent = device.readFileForEditor(absolutePath);
+    const isNewFile = existingContent === null;
+    const content = existingContent ?? '';
+
+    setEditorState({
+      editor: editorCmd,
+      filePath: absolutePath,
+      absolutePath,
+      content,
+      isNewFile,
+    });
+  }, [device]);
+
+  /** Save file from editor */
+  const handleEditorSave = useCallback((content: string, filePath: string) => {
+    device.writeFileFromEditor(filePath, content);
+  }, [device]);
+
+  /** Exit editor and return to terminal */
+  const handleEditorExit = useCallback(() => {
+    setEditorState(null);
+    // Re-focus terminal input on next tick
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
   // Execute command
   const executeCommand = useCallback(async (cmd: string) => {
     const trimmed = cmd.trim();
@@ -596,6 +654,19 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
     if (trimmed) {
       setHistory(prev => [...prev.slice(-199), trimmed]);
       setHistoryIndex(-1);
+    }
+
+    // ── Intercept text editor commands (nano, vi, vim) ──
+    {
+      // Handle "sudo nano file" pattern too
+      const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
+      const parts = noSudo.split(/\s+/);
+      const editorCmd = parts[0];
+      if (editorCmd === 'nano' || editorCmd === 'vi' || editorCmd === 'vim') {
+        openEditor(editorCmd as 'nano' | 'vi' | 'vim', parts.slice(1));
+        setInput('');
+        return;
+      }
     }
 
     // Check if this command needs interactive prompts
@@ -773,6 +844,36 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   }, [inputBuf, handleInputSubmit, addLine]);
 
   const deviceType = device.getType();
+
+  // ── Editor overlay: when active, the editor takes over the full terminal area ──
+  if (editorState) {
+    if (editorState.editor === 'nano') {
+      return (
+        <div className="h-full w-full flex flex-col">
+          <NanoEditor
+            filePath={editorState.absolutePath}
+            initialContent={editorState.content}
+            isNewFile={editorState.isNewFile}
+            onSave={handleEditorSave}
+            onExit={handleEditorExit}
+          />
+        </div>
+      );
+    }
+    // vi or vim
+    return (
+      <div className="h-full w-full flex flex-col">
+        <VimEditor
+          filePath={editorState.absolutePath}
+          initialContent={editorState.content}
+          isNewFile={editorState.isNewFile}
+          editorName={editorState.editor === 'vi' ? 'vi' : 'vim'}
+          onSave={handleEditorSave}
+          onExit={handleEditorExit}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full bg-[#300a24] text-[#ffffff] flex flex-col text-sm"

@@ -636,6 +636,23 @@ export class LinuxPC extends EndHost {
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'linux'; }
+
+  readFileForEditor(path: string): string | null {
+    const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    return this.executor.vfs.readFile(absPath);
+  }
+
+  writeFileFromEditor(path: string, content: string): boolean {
+    const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    const uid = this.executor.getCurrentUid();
+    const gid = uid === 0 ? 0 : 1000;
+    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
+  }
+
+  resolveAbsolutePath(path: string): string {
+    return this.executor.vfs.normalizePath(path, this.executor.getCwd());
+  }
+
   getCwd(): string { return this.executor.getCwd(); }
   getCompletions(partial: string): string[] { return this.executor.getCompletions(partial); }
   getCurrentUser(): string { return this.executor.getCurrentUser(); }

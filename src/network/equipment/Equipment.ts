@@ -83,6 +83,15 @@ export abstract class Equipment {
   /** Get current UID (0 = root). Override in Linux devices. */
   getCurrentUid(): number { return 0; }
 
+  /** Read file content for editor. Override in devices with filesystem. */
+  readFileForEditor(_path: string): string | null { return null; }
+
+  /** Write file content from editor. Override in devices with filesystem. */
+  writeFileFromEditor(_path: string, _content: string): boolean { return false; }
+
+  /** Resolve absolute path from relative path + cwd. Override in devices with filesystem. */
+  resolveAbsolutePath(path: string): string { return path; }
+
   /**
    * Get the OS type for terminal selection.
    * Override in subclasses for specific OS types.

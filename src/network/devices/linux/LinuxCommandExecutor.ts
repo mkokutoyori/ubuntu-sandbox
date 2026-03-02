@@ -869,6 +869,7 @@ export class LinuxCommandExecutor {
       'exit', 'logout', 'help',
       'ifconfig', 'ip', 'ping', 'traceroute', 'netstat', 'ss', 'route', 'arp',
       'dhclient', 'nslookup', 'dig', 'curl', 'wget',
+      'nano', 'vi', 'vim',
     ];
     if (!prefix) return commands.sort();
     return commands.filter(c => c.startsWith(prefix)).sort();
