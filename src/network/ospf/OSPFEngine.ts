@@ -27,7 +27,8 @@ import {
   DD_FLAG_INIT, DD_FLAG_MORE, DD_FLAG_MASTER,
   OSPF_DEFAULT_HELLO_INTERVAL, OSPF_DEFAULT_DEAD_INTERVAL,
   OSPF_DEFAULT_RETRANSMIT_INTERVAL, OSPF_DEFAULT_TRANSMIT_DELAY,
-  OSPF_MAX_AGE, OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
+  OSPF_MAX_AGE, OSPF_LS_REFRESH_TIME, OSPF_MIN_LS_INTERVAL, OSPF_MIN_LS_ARRIVAL,
+  OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
   OSPF_BACKBONE_AREA, OSPF_ALL_SPF_ROUTERS, OSPF_ALL_DR_ROUTERS,
   OSPF_AD_INTRA_AREA, OSPF_AD_INTER_AREA, OSPF_AD_EXTERNAL,
   OSPF_INFINITY_METRIC,
@@ -152,6 +153,22 @@ export class OSPFEngine {
 
   /** Current LSA sequence number */
   private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
+
+  /** LSA aging timer (fires every 1 second) */
+  private lsAgeTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** MinLSInterval: last flood timestamp (ms) per LSA key, for self-originated LSAs */
+  private lastFloodTime: Map<string, number> = new Map();
+
+  /** MinLSArrival: last install timestamp (ms) per LSA key, for received LSAs */
+  private lsArrivalTimes: Map<string, number> = new Map();
+
+  /** SPF throttle — configurable via setThrottleSPF() */
+  private spfThrottleInitial = 200;    // ms: initial delay before first SPF
+  private spfThrottleHold = 1_000;     // ms: base hold interval
+  private spfThrottleMax = 10_000;     // ms: maximum hold interval
+  private spfCurrentHold = 1_000;      // ms: current hold (doubles on each rapid re-schedule)
+  private spfLastRunAt = 0;            // timestamp (ms) when SPF last ran
 
   /** SPF scheduling */
   private spfTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1140,6 +1157,19 @@ export class OSPFEngine {
       const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
 
       if (!existing || this.isNewerLSA(lsa, existing)) {
+        // MinLSArrival (RFC 2328 §13.1): do not install an LSA instance if the same
+        // LSA (same type/linkStateId/advertisingRouter) was installed less than
+        // MinLSArrival seconds ago. This prevents flooding storms.
+        const arrKey = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+        const now = Date.now();
+        if (this.lsArrivalTimes.has(arrKey)) {
+          const lastArrival = this.lsArrivalTimes.get(arrKey)!;
+          if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
+            continue; // Drop — arrived too quickly (MinLSArrival)
+          }
+        }
+        this.lsArrivalTimes.set(arrKey, now);
+
         // Install the LSA
         this.installLSA(iface.areaId, lsa);
         lsdbChanged = true;
@@ -1630,7 +1660,25 @@ export class OSPFEngine {
 
   // ─── LSA Flooding (RFC 2328 §13.3) ─────────────────────────────
 
-  private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null): void {
+  private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null, force = false): void {
+    const isSelfOriginated = lsa.advertisingRouter === this.config.routerId;
+
+    // MinLSInterval (RFC 2328 §12.4): self-originated LSAs must not be re-flooded
+    // more than once every MinLSInterval seconds.
+    // We only record (and check) the last flood time when we actually sent to at
+    // least one neighbor — if there are no Full neighbors, the "flood" is a no-op
+    // and we do not start the rate-limiting clock.
+    if (!force && isSelfOriginated) {
+      const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+      if (this.lastFloodTime.has(key)) {
+        const lastTime = this.lastFloodTime.get(key)!;
+        if (Date.now() - lastTime < OSPF_MIN_LS_INTERVAL * 1000) {
+          return; // MinLSInterval not yet elapsed — suppress redundant flood
+        }
+      }
+    }
+
+    let sentToAny = false;
     for (const [ifName, iface] of this.interfaces) {
       if (ifName === excludeIface) continue;
       if (iface.areaId !== areaId && lsa.lsType !== 5) continue;
@@ -1656,8 +1704,17 @@ export class OSPFEngine {
             : neighbor.ipAddress;
 
           this.sendCallback?.(iface.name, lsu, destIP);
+          sentToAny = true;
         }
       }
+    }
+
+    // Record the flood time only when we actually reached at least one neighbor.
+    // This way, calling floodLSA with no neighbors does not start the MinLSInterval
+    // clock — the first real flood (with neighbors present) is never suppressed.
+    if (isSelfOriginated && sentToAny) {
+      const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+      this.lastFloodTime.set(key, Date.now());
     }
   }
 
@@ -1667,12 +1724,52 @@ export class OSPFEngine {
     if (this.spfPending) return;
     this.spfPending = true;
 
+    // Exponential back-off (RFC 2328 §16.5 / Cisco 'timers throttle spf'):
+    //   - First SPF after a quiet period → use initial delay, reset hold counter
+    //   - Rapid re-schedules                → use current hold, double it for next time
+    const now = Date.now();
+    const timeSinceLastRun = now - this.spfLastRunAt;
+
+    let delay: number;
+    if (this.spfLastRunAt === 0 || timeSinceLastRun > this.spfThrottleMax) {
+      // First run ever, or quiet period elapsed → reset and use initial delay
+      delay = this.spfThrottleInitial;
+      this.spfCurrentHold = this.spfThrottleHold;
+    } else {
+      // Rapid topology change → use current hold, then double it (capped at max)
+      delay = this.spfCurrentHold;
+      this.spfCurrentHold = Math.min(this.spfCurrentHold * 2, this.spfThrottleMax);
+    }
+
     if (this.spfTimer) clearTimeout(this.spfTimer);
     this.spfTimer = setTimeout(() => {
       this.spfPending = false;
       this.spfTimer = null;
+      this.spfLastRunAt = Date.now();
       this.runSPF();
-    }, 200); // 200ms delay
+    }, delay);
+  }
+
+  /**
+   * Configure SPF throttle timers (Cisco: 'timers throttle spf <initial> <hold> <max>').
+   * RFC 2328 §16.5: prevents SPF thrashing on rapid topology changes.
+   * @param initial  Initial delay before first SPF (ms)
+   * @param hold     Base hold interval; doubles on each rapid re-schedule (ms)
+   * @param max      Maximum hold interval (ms)
+   */
+  setThrottleSPF(initial: number, hold: number, max: number): void {
+    this.spfThrottleInitial = initial;
+    this.spfThrottleHold = hold;
+    this.spfThrottleMax = max;
+    this.spfCurrentHold = hold;
+  }
+
+  getThrottleSPFConfig(): { initial: number; hold: number; max: number } {
+    return {
+      initial: this.spfThrottleInitial,
+      hold: this.spfThrottleHold,
+      max: this.spfThrottleMax,
+    };
   }
 
   /**
@@ -2059,9 +2156,100 @@ export class OSPFEngine {
     return count;
   }
 
+  // ─── LSA Aging (RFC 2328 §14) ──────────────────────────────────
+
+  /**
+   * Start the 1-second LSA aging timer.
+   * Each tick increments every LSA's lsAge by 1.
+   * LSAs reaching MaxAge (3600s) are purged; own LSAs reaching LS_REFRESH_TIME
+   * (1800s) are re-originated (seq bumped, age reset).
+   */
+  startLSAgeTimer(): void {
+    if (this.lsAgeTimer) return;
+    this.lsAgeTimer = setInterval(() => this.tickLSAge(), 1_000);
+  }
+
+  /** Stop the LSA aging timer. */
+  stopLSAgeTimer(): void {
+    if (this.lsAgeTimer) {
+      clearInterval(this.lsAgeTimer);
+      this.lsAgeTimer = null;
+    }
+  }
+
+  /**
+   * One aging tick: increment every LSA's lsAge by 1 second.
+   *   - If age >= MaxAge (3600): purge from LSDB and trigger SPF.
+   *   - If age == LS_REFRESH_TIME (1800) and we are the originator: refresh the
+   *     LSA (bump seq, reset age to 0, reflood — bypassing MinLSInterval).
+   *
+   * Can be called directly in tests instead of relying on setInterval.
+   */
+  tickLSAge(): void {
+    let changed = false;
+
+    for (const [areaId, areaDB] of this.lsdb.areas) {
+      const toDelete: string[] = [];
+      for (const [key, lsa] of areaDB) {
+        lsa.lsAge += 1;
+        if (lsa.lsAge >= OSPF_MAX_AGE) {
+          toDelete.push(key);
+          this.lsArrivalTimes.delete(key);
+          changed = true;
+        } else if (
+          lsa.advertisingRouter === this.config.routerId &&
+          lsa.lsAge === OSPF_LS_REFRESH_TIME
+        ) {
+          this.refreshOwnLSA(areaId, lsa);
+        }
+      }
+      for (const key of toDelete) {
+        areaDB.delete(key);
+      }
+    }
+
+    // Age external LSAs
+    const toDeleteExt: string[] = [];
+    for (const [key, lsa] of this.lsdb.external) {
+      lsa.lsAge += 1;
+      if (lsa.lsAge >= OSPF_MAX_AGE) {
+        toDeleteExt.push(key);
+        this.lsArrivalTimes.delete(key);
+        changed = true;
+      } else if (
+        lsa.advertisingRouter === this.config.routerId &&
+        lsa.lsAge === OSPF_LS_REFRESH_TIME
+      ) {
+        this.refreshOwnLSA(OSPF_BACKBONE_AREA, lsa);
+      }
+    }
+    for (const key of toDeleteExt) {
+      this.lsdb.external.delete(key);
+    }
+
+    if (changed) {
+      this.scheduleSPF();
+    }
+  }
+
+  /**
+   * Refresh a self-originated LSA: bump the sequence number, reset age to 0,
+   * recompute the checksum, and reflood (bypassing MinLSInterval since this
+   * is a mandatory periodic refresh, not a topology-driven re-origination).
+   */
+  private refreshOwnLSA(areaId: string, lsa: LSA): void {
+    lsa.lsAge = 0;
+    lsa.lsSequenceNumber = this.nextSeqNumber();
+    lsa.checksum = computeOSPFLSAChecksum(lsa);
+    this.floodLSA(areaId, lsa, null, true); // force=true bypasses MinLSInterval
+  }
+
   // ─── Cleanup ──────────────────────────────────────────────────
 
   shutdown(): void {
+    // Stop LSA aging timer
+    this.stopLSAgeTimer();
+
     // Stop all hello timers
     for (const [, iface] of this.interfaces) {
       if (iface.helloTimer) {
@@ -2086,6 +2274,10 @@ export class OSPFEngine {
     this.interfaces.clear();
     this.lsdb = createEmptyLSDB();
     this.ospfRoutes = [];
+    this.lastFloodTime.clear();
+    this.lsArrivalTimes.clear();
+    this.spfLastRunAt = 0;
+    this.spfCurrentHold = this.spfThrottleHold;
   }
 
   // ─── Utility ──────────────────────────────────────────────────
