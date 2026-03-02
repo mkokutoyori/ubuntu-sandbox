@@ -17,7 +17,8 @@
 import {
   OSPFConfig, OSPFInterface, OSPFNeighbor, OSPFNeighborState, OSPFNeighborEvent,
   OSPFInterfaceState, OSPFArea, OSPFAreaType, OSPFNetworkType,
-  LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ExternalLSA,
+  LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ASBRSummaryLSA,
+  ExternalLSA, NSSAExternalLSA,
   RouterLSALink, RouterLinkType,
   LSDB, LSDBKey, makeLSDBKey, createEmptyLSDB,
   OSPFPacket, OSPFHelloPacket, OSPFDDPacket, OSPFLSUpdatePacket, OSPFLSAckPacket,
@@ -93,8 +94,8 @@ function serializeLSAForChecksum(lsa: LSA): number[] {
     bytes.push(...ipToBytes(s.networkMask));
     bytes.push(0); // padding
     bytes.push((s.metric >>> 16) & 0xFF, (s.metric >>> 8) & 0xFF, s.metric & 0xFF);
-  } else if (lsa.lsType === 5) {
-    const e = lsa as ExternalLSA;
+  } else if (lsa.lsType === 5 || lsa.lsType === 7) {
+    const e = lsa as ExternalLSA | NSSAExternalLSA;
     bytes.push(...ipToBytes(e.networkMask));
     bytes.push(e.metricType === 2 ? 0x80 : 0x00);
     bytes.push((e.metric >>> 16) & 0xFF, (e.metric >>> 8) & 0xFF, e.metric & 0xFF);
@@ -1240,6 +1241,20 @@ export class OSPFEngine {
 
     if (lsa.lsType === 5) {
       this.lsdb.external.set(key, lsa as ExternalLSA);
+    } else if (lsa.lsType === 7) {
+      // Type 7 (NSSA External) is area-scoped — stored in area LSDB
+      let areaDB = this.lsdb.areas.get(areaId);
+      if (!areaDB) {
+        areaDB = new Map();
+        this.lsdb.areas.set(areaId, areaDB);
+      }
+      areaDB.set(key, lsa);
+
+      // ABR auto-translation: if we are an ABR connected to backbone, translate Type 7 → Type 5
+      const area = this.config.areas.get(areaId);
+      if (area?.type === 'nssa' && this.isABR() && lsa.advertisingRouter !== this.config.routerId) {
+        this.translateNSSAtoExternal(lsa as NSSAExternalLSA);
+      }
     } else {
       let areaDB = this.lsdb.areas.get(areaId);
       if (!areaDB) {
@@ -1456,6 +1471,163 @@ export class OSPFEngine {
     return false;
   }
 
+  // ─── ABR / ASBR Detection ──────────────────────────────────────
+
+  /**
+   * Returns true if this router has interfaces in more than one area (ABR).
+   * RFC 2328 §1.2: A router attached to multiple areas is called an ABR.
+   */
+  isABR(): boolean {
+    const areas = new Set<string>();
+    for (const [, iface] of this.interfaces) {
+      areas.add(iface.areaId);
+    }
+    return areas.size > 1;
+  }
+
+  /**
+   * Returns true if redistribution is configured (ASBR).
+   * RFC 2328 §1.2: An ASBR imports routes from other protocols.
+   */
+  isASBR(): boolean {
+    return this.config.redistributeConnected ||
+           this.config.redistributeStatic ||
+           this.config.defaultInformationOriginate;
+  }
+
+  /**
+   * Configure connected route redistribution.
+   */
+  setRedistributeConnected(enable: boolean): void {
+    this.config.redistributeConnected = enable;
+  }
+
+  /**
+   * Configure static route redistribution.
+   */
+  setRedistributeStatic(enable: boolean): void {
+    this.config.redistributeStatic = enable;
+  }
+
+  // ─── Type 3 Summary LSA (RFC 2328 §12.4.3) ────────────────────
+
+  /**
+   * Originate a Summary-LSA (Type 3) for an IP network into the given area.
+   * Called by ABR to advertise intra-area routes from one area into another.
+   * RFC 2328 §12.4.3
+   */
+  originateSummaryLSA(intoAreaId: string, network: string, mask: string, metric: number): SummaryLSA {
+    const lsa: SummaryLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 3,
+      linkStateId: network,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      // 20-byte header + 4 (networkMask) + 4 (TOS count 1B pad + 3B metric) = 28
+      length: 28,
+      networkMask: mask,
+      metric,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(intoAreaId, lsa);
+    this.floodLSA(intoAreaId, lsa, null);
+    return lsa;
+  }
+
+  // ─── Type 4 Summary ASBR LSA (RFC 2328 §12.4.4) ───────────────
+
+  /**
+   * Originate a Summary-LSA (Type 4) advertising an ASBR into the given area.
+   * Called by ABR when it knows of an ASBR in an adjacent area.
+   * RFC 2328 §12.4.4: Link State ID = ASBR Router ID, networkMask = 0.0.0.0.
+   */
+  originateASBRSummaryLSA(intoAreaId: string, asbrRouterId: string, metric: number): ASBRSummaryLSA {
+    const lsa: ASBRSummaryLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 4,
+      linkStateId: asbrRouterId,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      length: 28,
+      networkMask: '0.0.0.0',
+      metric,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(intoAreaId, lsa);
+    this.floodLSA(intoAreaId, lsa, null);
+    return lsa;
+  }
+
+  // ─── Type 7 NSSA External LSA (RFC 3101) ───────────────────────
+
+  /**
+   * Originate an NSSA-External-LSA (Type 7) for an external route.
+   * Only originated by ASBRs in NSSA areas.
+   * RFC 3101 §2.4
+   */
+  originateNSSAExternalLSA(
+    areaId: string,
+    network: string,
+    mask: string,
+    metric: number,
+    metricType: 1 | 2 = 2,
+    forwardingAddress: string = '0.0.0.0',
+  ): NSSAExternalLSA {
+    const lsa: NSSAExternalLSA = {
+      lsAge: 0,
+      // N-bit (0x08) set to indicate NSSA LSA; E-bit also set
+      options: 0x08 | 0x02,
+      lsType: 7,
+      linkStateId: network,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      // Same structure as Type 5: 20-byte header + 16 bytes body = 36
+      length: 36,
+      networkMask: mask,
+      metricType,
+      metric,
+      forwardingAddress,
+      externalRouteTag: 0,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(areaId, lsa);
+    this.floodLSA(areaId, lsa, null);
+    return lsa;
+  }
+
+  /**
+   * Translate an NSSA-External-LSA (Type 7) into an AS-External-LSA (Type 5).
+   * Called by the ABR with the highest Router ID when it receives a Type 7.
+   * RFC 3101 §3.2: The ABR becomes the advertising router of the Type 5.
+   */
+  translateNSSAtoExternal(nssaLsa: NSSAExternalLSA): ExternalLSA {
+    const lsa: ExternalLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 5,
+      linkStateId: nssaLsa.linkStateId,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      length: 36,
+      networkMask: nssaLsa.networkMask,
+      metricType: nssaLsa.metricType,
+      metric: nssaLsa.metric,
+      forwardingAddress: nssaLsa.forwardingAddress,
+      externalRouteTag: nssaLsa.externalRouteTag,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    // Type 5 goes directly into external LSDB and is flooded everywhere
+    this.lsdb.external.set(makeLSDBKey(5, lsa.linkStateId, lsa.advertisingRouter), lsa);
+    this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
+    return lsa;
+  }
+
   // ─── LSA Flooding (RFC 2328 §13.3) ─────────────────────────────
 
   private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null): void {
@@ -1506,16 +1678,69 @@ export class OSPFEngine {
   /**
    * Run Dijkstra's SPF algorithm on the LSDB.
    * RFC 2328 §16.1
+   * If this router is an ABR, also originates Type 3/4 Summary LSAs.
    */
   runSPF(): OSPFRouteEntry[] {
     this.ospfRoutes = [];
 
+    // Step 1: Compute intra-area routes for each area
+    const intraAreaRoutesByArea = new Map<string, OSPFRouteEntry[]>();
     for (const [areaId] of this.config.areas) {
       const areaRoutes = this.runSPFForArea(areaId);
+      intraAreaRoutesByArea.set(areaId, areaRoutes);
       this.ospfRoutes.push(...areaRoutes);
     }
 
+    // Step 2: If ABR, originate Type 3 Summary LSAs for intra-area routes
+    //         into other areas, and Type 4 for any ASBRs found
+    if (this.isABR()) {
+      this.originateSummariesAsABR(intraAreaRoutesByArea);
+    }
+
     return this.ospfRoutes;
+  }
+
+  /**
+   * ABR summary origination (RFC 2328 §12.4.3 / §12.4.4).
+   * For each intra-area route in area A, originate a Type 3 LSA into every
+   * other area B connected to this ABR.
+   * For each ASBR (Router-LSA with E-bit) found in an area, originate a
+   * Type 4 LSA into every other area.
+   */
+  private originateSummariesAsABR(intraAreaRoutesByArea: Map<string, OSPFRouteEntry[]>): void {
+    const myAreas = Array.from(this.config.areas.keys());
+
+    for (const sourceAreaId of myAreas) {
+      const routes = intraAreaRoutesByArea.get(sourceAreaId) ?? [];
+
+      for (const targetAreaId of myAreas) {
+        if (targetAreaId === sourceAreaId) continue;
+
+        // Don't advertise into totally-stubby areas or NSSA (Type 3 not allowed)
+        const targetArea = this.config.areas.get(targetAreaId);
+        if (targetArea?.type === 'totally-stubby') continue;
+
+        for (const route of routes) {
+          if (route.routeType !== 'intra-area') continue;
+          if (route.network === '0.0.0.0') continue; // skip default route
+          this.originateSummaryLSA(targetAreaId, route.network, route.mask, route.cost);
+        }
+
+        // Also check for ASBRs (Router-LSA E-bit) in the source area
+        const sourceDB = this.lsdb.areas.get(sourceAreaId);
+        if (!sourceDB) continue;
+        for (const [, lsa] of sourceDB) {
+          if (lsa.lsType !== 1) continue;
+          const rLsa = lsa as RouterLSA;
+          if ((rLsa.flags & 0x02) === 0) continue; // E-bit not set — not an ASBR
+          if (rLsa.advertisingRouter === this.config.routerId) continue; // Don't advertise self
+          // Find cost to ASBR from intra-area routes
+          const asbrVertex = routes.find(rt => rt.advertisingRouter === rLsa.advertisingRouter);
+          const metric = asbrVertex ? asbrVertex.cost : 1;
+          this.originateASBRSummaryLSA(targetAreaId, rLsa.advertisingRouter, metric);
+        }
+      }
+    }
   }
 
   private runSPFForArea(areaId: string): OSPFRouteEntry[] {
@@ -1560,7 +1785,7 @@ export class OSPFEngine {
       this.addCandidatesFromVertex(best, areaId, areaDB, tree, candidates);
     }
 
-    // Extract routes from SPF tree
+    // Extract intra-area routes from SPF tree
     for (const [id, vertex] of tree) {
       if (id === this.config.routerId) continue; // Skip self
 
@@ -1604,6 +1829,37 @@ export class OSPFEngine {
           });
         }
       }
+    }
+
+    // Step 2: Process Type 3 Summary LSAs → inter-area routes (RFC 2328 §16.2)
+    for (const [, lsa] of areaDB) {
+      if (lsa.lsType !== 3) continue;
+      const sumLsa = lsa as SummaryLSA;
+      if (sumLsa.lsAge >= OSPF_MAX_AGE) continue;
+      if (sumLsa.metric >= OSPF_INFINITY_METRIC) continue;
+      if (sumLsa.advertisingRouter === this.config.routerId) continue; // own LSA
+
+      // The advertising router must be an ABR reachable from us in the SPF tree
+      const abrVertex = tree.get(sumLsa.advertisingRouter);
+      if (!abrVertex) continue;
+
+      const totalCost = abrVertex.distance + sumLsa.metric;
+      if (totalCost >= OSPF_INFINITY_METRIC) continue;
+
+      const nextHop = abrVertex.nextHop || abrVertex.id;
+      const outIface = abrVertex.outInterface || this.findIfaceForNextHop(nextHop);
+      if (!outIface) continue;
+
+      routes.push({
+        network: sumLsa.linkStateId,
+        mask: sumLsa.networkMask,
+        routeType: 'inter-area',
+        areaId,
+        nextHop,
+        iface: outIface,
+        cost: totalCost,
+        advertisingRouter: sumLsa.advertisingRouter,
+      });
     }
 
     return routes;

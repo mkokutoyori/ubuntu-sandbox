@@ -21,6 +21,7 @@ import {
   LSA, LSDB, LSDBKey, makeLSDBKey, createEmptyLSDB,
   OSPFPacketHeader, OSPFHelloPacket,
   OSPFv3Interface, OSPFv3HelloPacket,
+  OSPFv3LinkLSA, OSPFv3IntraAreaPrefixLSA, OSPFv3Prefix,
   OSPFRouteEntry,
   SPFVertex,
   DD_FLAG_INIT, DD_FLAG_MORE, DD_FLAG_MASTER,
@@ -59,6 +60,14 @@ export class OSPFv3Engine {
   private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
   private nextInterfaceId: number = 1;
   private eventLog: string[] = [];
+
+  /**
+   * Storage for OSPFv3-specific LSAs that don't fit in the standard LSDB:
+   *   - Link-LSAs (0x0008): link-scoped, one per interface
+   *   - Intra-Area-Prefix-LSAs (0x2009): area-scoped
+   */
+  private linkLSAs: Map<string, OSPFv3LinkLSA> = new Map();          // key: ifaceName
+  private intraPrefixLSAs: Map<string, OSPFv3IntraAreaPrefixLSA> = new Map(); // key: areaId
 
   /** SPF scheduling */
   private spfTimer: ReturnType<typeof setTimeout> | null = null;
@@ -189,6 +198,10 @@ export class OSPFv3Engine {
 
     // Bring interface up
     this.interfaceUp(name);
+
+    // Originate Link-LSA for this interface (RFC 5340 §4.4.1)
+    const linkLocalAddr = options?.ipAddress ?? 'fe80::1';
+    this.originateLinkLSA(name, linkLocalAddr, []);
 
     return iface;
   }
@@ -377,6 +390,9 @@ export class OSPFv3Engine {
       dbSummaryList: [],
       lastHelloReceived: Date.now(),
       options: hello.options,
+      ddRetransmitTimer: null,
+      lsrRetransmitTimer: null,
+      lastSentDD: null,
     };
   }
 
@@ -504,6 +520,90 @@ export class OSPFv3Engine {
     areaDB.set(key, lsa);
   }
 
+  // ─── OSPFv3 Link-LSA (RFC 5340 §4.4.1) ───────────────────────
+
+  /**
+   * Originate a Link-LSA (Type 0x0008) for the given interface.
+   * Link-LSAs are link-scoped and carry the link-local address and prefixes.
+   * RFC 5340 §4.4.1
+   */
+  originateLinkLSA(
+    ifaceName: string,
+    linkLocalAddress: string,
+    prefixes: OSPFv3Prefix[] = [],
+  ): OSPFv3LinkLSA {
+    const iface = this.interfaces.get(ifaceName);
+    const interfaceId = iface?.interfaceId ?? this.nextInterfaceId;
+    const priority = iface?.priority ?? 1;
+
+    const lsa: OSPFv3LinkLSA = {
+      lsAge: 0,
+      lsType: OSPFV3_LSA_LINK,
+      linkStateId: String(interfaceId),
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.seqNumber++,
+      checksum: 0,
+      length: 24 + 4 + 16 + prefixes.length * 8, // header + priority/options + addr + prefixes
+      priority,
+      options: 0x13, // V6, E, R bits
+      linkLocalAddress,
+      prefixes,
+    };
+
+    this.linkLSAs.set(ifaceName, lsa);
+
+    if (this.sendCallback && iface) {
+      // Flood Link-LSA on the link
+      // (In production would send via the interface to AllSPFRouters)
+    }
+
+    return lsa;
+  }
+
+  /**
+   * Retrieve the Link-LSA for the named interface.
+   */
+  getLinkLSA(ifaceName: string): OSPFv3LinkLSA | undefined {
+    return this.linkLSAs.get(ifaceName);
+  }
+
+  // ─── OSPFv3 Intra-Area-Prefix-LSA (RFC 5340 §4.4.3) ──────────
+
+  /**
+   * Originate an Intra-Area-Prefix-LSA (Type 0x2009) for the given area.
+   * This LSA carries all IPv6 prefixes associated with the router.
+   * RFC 5340 §4.4.3
+   */
+  originateIntraAreaPrefixLSA(
+    areaId: string,
+    prefixes: OSPFv3Prefix[] = [],
+  ): OSPFv3IntraAreaPrefixLSA {
+    const lsa: OSPFv3IntraAreaPrefixLSA = {
+      lsAge: 0,
+      lsType: OSPFV3_LSA_INTRA_AREA_PREFIX,
+      linkStateId: '0', // 0 when referencing a Router-LSA
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.seqNumber++,
+      checksum: 0,
+      length: 24 + 8 + prefixes.length * 8, // header + ref fields + prefixes
+      numPrefixes: prefixes.length,
+      referencedLSType: 0x2001,   // References Router-LSA
+      referencedLSId: '0',        // Router-LSA link state ID = 0
+      referencedAdvRouter: this.config.routerId,
+      prefixes,
+    };
+
+    this.intraPrefixLSAs.set(areaId, lsa);
+    return lsa;
+  }
+
+  /**
+   * Retrieve the Intra-Area-Prefix-LSA for the given area.
+   */
+  getIntraAreaPrefixLSA(areaId: string): OSPFv3IntraAreaPrefixLSA | undefined {
+    return this.intraPrefixLSAs.get(areaId);
+  }
+
   // ─── Routes ───────────────────────────────────────────────────
 
   getRoutes(): OSPFRouteEntry[] {
@@ -549,5 +649,7 @@ export class OSPFv3Engine {
     this.interfaces.clear();
     this.lsdb = createEmptyLSDB();
     this.ospfRoutes = [];
+    this.linkLSAs.clear();
+    this.intraPrefixLSAs.clear();
   }
 }
