@@ -79,6 +79,11 @@ export class LinuxFirewallManager {
   private logging = false;
   private loggingLevel = 'low';
 
+  // Rate limiting state: key = "srcIP:ruleIndex" → timestamps of recent hits
+  private rateLimitHits: Map<string, number[]> = new Map();
+  private readonly RATE_LIMIT_MAX = 6;      // Max connections
+  private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
+
   constructor(vfs?: VirtualFileSystem) {
     if (vfs) this.vfs = vfs;
   }
@@ -100,9 +105,13 @@ export class LinuxFirewallManager {
     );
 
     // First-match wins (like real iptables/ufw)
-    for (const rule of candidateRules) {
+    for (let i = 0; i < candidateRules.length; i++) {
+      const rule = candidateRules[i];
       if (this.ruleMatchesPacket(rule, pkt)) {
         this.logPacketVerdict(pkt, rule);
+        if (rule.action === 'LIMIT') {
+          return this.evaluateRateLimit(pkt, i);
+        }
         return this.actionToVerdict(rule.action);
       }
     }
@@ -202,8 +211,36 @@ export class LinuxFirewallManager {
       case 'ALLOW': return 'accept';
       case 'DENY': return 'drop';
       case 'REJECT': return 'reject';
-      case 'LIMIT': return 'accept'; // LIMIT acts as accept (rate limiting not simulated)
+      case 'LIMIT': return 'accept'; // Fallback (real LIMIT uses evaluateRateLimit)
     }
+  }
+
+  /**
+   * Evaluate rate limiting: allow up to RATE_LIMIT_MAX hits per source IP
+   * within RATE_LIMIT_WINDOW. Beyond that, drop.
+   */
+  private evaluateRateLimit(pkt: PacketInfo, ruleIdx: number): FirewallVerdict {
+    const key = `${pkt.srcIP}:${ruleIdx}`;
+    const now = Date.now();
+
+    let hits = this.rateLimitHits.get(key);
+    if (!hits) {
+      hits = [];
+      this.rateLimitHits.set(key, hits);
+    }
+
+    // Purge expired entries
+    const cutoff = now - this.RATE_LIMIT_WINDOW;
+    while (hits.length > 0 && hits[0] < cutoff) {
+      hits.shift();
+    }
+
+    if (hits.length >= this.RATE_LIMIT_MAX) {
+      return 'drop'; // Rate limit exceeded
+    }
+
+    hits.push(now);
+    return 'accept';
   }
 
   private logPacketVerdict(pkt: PacketInfo, rule: UfwRule): void {

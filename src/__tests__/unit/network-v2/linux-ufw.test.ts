@@ -1240,9 +1240,73 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     });
   });
 
-  // ─── 8.18: IPv6 firewall filtering ──────────────────────────────
+  // ─── 8.18: Rate limiting (LIMIT) ──────────────────────────────
 
-  describe('G8-18: Filtrage IPv6', () => {
+  describe('G8-18: Rate limiting', () => {
+    it('should accept packets under the rate limit', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['limit', '22/tcp']);
+      fw.execute(['enable']);
+
+      // First few packets should be accepted (under 6 in 30s)
+      const result = fw.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      });
+      expect(result).toBe('accept');
+    });
+
+    it('should drop packets over the rate limit', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['limit', '22/tcp']);
+      fw.execute(['enable']);
+
+      const pkt = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      };
+
+      // Send 6 packets (under limit) — all should be accepted
+      for (let i = 0; i < 6; i++) {
+        expect(fw.filterPacket(pkt)).toBe('accept');
+      }
+
+      // 7th packet should be dropped (over limit)
+      expect(fw.filterPacket(pkt)).toBe('drop');
+    });
+
+    it('should track rate limit per source IP', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['limit', '22/tcp']);
+      fw.execute(['enable']);
+
+      const pkt1 = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      };
+      const pkt2 = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: '10.0.0.99', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      };
+
+      // Exhaust limit for 10.0.0.1
+      for (let i = 0; i < 7; i++) fw.filterPacket(pkt1);
+
+      // 10.0.0.99 should still be accepted (different source)
+      expect(fw.filterPacket(pkt2)).toBe('accept');
+    });
+  });
+
+  // ─── 8.19: IPv6 firewall filtering ──────────────────────────────
+
+  describe('G8-19: Filtrage IPv6', () => {
     it('should use v6 rules for IPv6 packet filtering via filterPacket', async () => {
       const srv = new LinuxServer('linux-server', 'SRV1');
 
