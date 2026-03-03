@@ -149,15 +149,15 @@ export class LinuxFirewallManager {
     lines.push(separator);
 
     // Rules — show v4 first, then v6 (like real ufw)
-    const v4Rules = this.rules.filter(r => !r.v6);
-    const v6Rules = this.rules.filter(r => r.v6);
-    const orderedRules = [...v4Rules, ...v6Rules];
+    const orderedRules = this.getOrderedRules();
 
     orderedRules.forEach((rule, idx) => {
       const num = numbered ? `[ ${idx + 1}] ` : '';
       const v6Tag = rule.v6 ? ' (v6)' : '';
       const ifaceTag = rule.iface ? ` on ${rule.iface}` : '';
-      const toStr = `${rule.port}${v6Tag}`;
+      // 'To' column: show destination if specific, otherwise just port
+      const destPart = rule.to !== 'Anywhere' ? `${rule.to} ${rule.port}` : rule.port;
+      const toStr = `${destPart}${v6Tag}`;
       const fromStr = `${rule.from}${v6Tag}`;
       const dirStr = rule.direction === 'out' ? 'OUT' : 'IN';
       const actionStr = `${rule.action} ${dirStr}${ifaceTag}`;
@@ -362,6 +362,12 @@ export class LinuxFirewallManager {
     return { action, direction, port: portStr, from, to, iface, v6: false, comment };
   }
 
+  private getOrderedRules(): UfwRule[] {
+    const v4Rules = this.rules.filter(r => !r.v6);
+    const v6Rules = this.rules.filter(r => r.v6);
+    return [...v4Rules, ...v6Rules];
+  }
+
   // ─── Delete rule ─────────────────────────────────────────────────
 
   private cmdDelete(args: string[]): string {
@@ -370,28 +376,28 @@ export class LinuxFirewallManager {
     // ufw delete <number>
     const num = parseInt(args[0]);
     if (!isNaN(num) && args.length === 1) {
-      if (num < 1 || num > this.rules.length) {
+      const ordered = this.getOrderedRules();
+      if (num < 1 || num > ordered.length) {
         return 'ERROR: could not find a rule matching that number';
       }
-      // Find the matching IPv4 rule (numbered rules are only v4)
-      const v4Rules = this.rules.filter(r => !r.v6);
-      if (num < 1 || num > v4Rules.length) {
-        return 'ERROR: could not find a rule matching that number';
+      const target = ordered[num - 1];
+      // If deleting a v4 rule, also remove its v6 counterpart
+      if (!target.v6) {
+        const hasV6 = this.rules.some(r =>
+          r.v6 && r.action === target.action && r.port === target.port &&
+          r.from === target.from && r.direction === target.direction && r.iface === target.iface
+        );
+        this.rules = this.rules.filter(r => {
+          if (r === target) return false;
+          if (r.v6 && r.action === target.action && r.port === target.port &&
+              r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
+          return true;
+        });
+        return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
       }
-      const target = v4Rules[num - 1];
-      // Check if a matching v6 rule exists
-      const hasV6 = this.rules.some(r =>
-        r.v6 && r.action === target.action && r.port === target.port &&
-        r.from === target.from && r.direction === target.direction && r.iface === target.iface
-      );
-      // Remove both v4 and matching v6 rule
-      this.rules = this.rules.filter(r => {
-        if (r === target) return false;
-        if (r.v6 && r.action === target.action && r.port === target.port &&
-            r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
-        return true;
-      });
-      return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
+      // Deleting a v6 rule directly (only removes that one)
+      this.rules = this.rules.filter(r => r !== target);
+      return 'Rule deleted (v6)';
     }
 
     // ufw delete allow|deny|reject <port>
@@ -453,8 +459,8 @@ export class LinuxFirewallManager {
 
     // Insert v4 rule
     this.rules.splice(insertIdx, 0, { ...parsed, v6: false });
-    // Insert v6 rule right after if from Anywhere
-    if (parsed.from === 'Anywhere') {
+    // Insert v6 rule right after if applicable
+    if (this.ruleGetsV6(parsed)) {
       this.rules.splice(insertIdx + 1, 0, { ...parsed, v6: true });
     }
 

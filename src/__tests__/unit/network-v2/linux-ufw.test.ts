@@ -741,5 +741,70 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 22 comment SSH from office');
       expect(out).toContain('Rule added');
     });
+
+    it('should show destination IP in status To column', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 10.0.0.1 to 192.168.1.1 port 443 proto tcp');
+      await server.executeCommand('ufw enable');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('192.168.1.1');
+      expect(status).toContain('443/tcp');
+    });
+  });
+
+  // ─── 8.14: Numbered delete consistency ────────────────────────────
+
+  describe('G8-14: Consistance delete numéroté', () => {
+    it('should delete the correct rule by number in v4+v6 ordering', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');   // v4 rule 1, v6 rule (later)
+      await server.executeCommand('ufw allow 80/tcp');   // v4 rule 2, v6 rule (later)
+      await server.executeCommand('ufw enable');
+
+      // status numbered shows: [1] 22/tcp, [2] 80/tcp, [3] 22/tcp (v6), [4] 80/tcp (v6)
+      const status = await server.executeCommand('ufw status numbered');
+      expect(status).toContain('[ 1]');
+      expect(status).toContain('[ 4]');
+
+      // Delete rule 2 (80/tcp v4) — should also remove v6 counterpart
+      const out = await server.executeCommand('ufw delete 2');
+      expect(out).toContain('Rule deleted');
+      expect(out).toContain('Rule deleted (v6)');
+
+      const after = await server.executeCommand('ufw status');
+      expect(after).toContain('22/tcp');
+      expect(after).not.toContain('80/tcp');
+    });
+
+    it('should delete v6 rule directly when targeting its number', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw enable');
+
+      // [1] 22/tcp, [2] 80/tcp, [3] 22/tcp (v6), [4] 80/tcp (v6)
+      // Delete rule 3 (22/tcp v6 only)
+      const out = await server.executeCommand('ufw delete 3');
+      expect(out).toBe('Rule deleted (v6)');
+
+      // 22/tcp v4 should still exist
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('22/tcp');
+      // But v6 of 22 should be gone, 80/tcp v6 should still exist
+      const lines = status.split('\n');
+      const v6_22 = lines.filter(l => l.includes('22/tcp') && l.includes('(v6)'));
+      expect(v6_22.length).toBe(0);
+      const v6_80 = lines.filter(l => l.includes('80/tcp') && l.includes('(v6)'));
+      expect(v6_80.length).toBe(1);
+    });
+
+    it('should error on out-of-range numbered delete', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      // 2 rules total: v4 + v6
+      const out = await server.executeCommand('ufw delete 5');
+      expect(out).toContain('ERROR');
+    });
   });
 });
