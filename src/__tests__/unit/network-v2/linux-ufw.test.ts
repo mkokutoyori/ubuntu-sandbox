@@ -1198,9 +1198,51 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     });
   });
 
-  // ─── 8.17: IPv6 firewall filtering ──────────────────────────────
+  // ─── 8.17: ufw show subcommands ────────────────────────────────
 
-  describe('G8-17: Filtrage IPv6', () => {
+  describe('G8-17: ufw show subcommands', () => {
+    it('should show raw iptables-style output', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw show raw');
+      expect(out).toContain('Chain');
+      expect(out).toContain('ufw-user-input');
+      expect(out).toContain('ACCEPT');
+      expect(out).toContain('dpt:22');
+    });
+
+    it('should show added rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw deny 23');
+      await server.executeCommand('ufw allow from 10.0.0.1');
+
+      const out = await server.executeCommand('ufw show added');
+      expect(out).toContain('ufw allow 22/tcp');
+      expect(out).toContain('ufw deny 23');
+      expect(out).toContain('ufw allow from 10.0.0.1');
+    });
+
+    it('should show listening ports', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      const out = await server.executeCommand('ufw show listening');
+      // Should show header at minimum
+      expect(out).toContain('tcp');
+    });
+
+    it('should error on invalid show subcommand', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw show badcmd');
+      expect(out).toContain('ERROR');
+    });
+  });
+
+  // ─── 8.18: IPv6 firewall filtering ──────────────────────────────
+
+  describe('G8-18: Filtrage IPv6', () => {
     it('should use v6 rules for IPv6 packet filtering via filterPacket', async () => {
       const srv = new LinuxServer('linux-server', 'SRV1');
 

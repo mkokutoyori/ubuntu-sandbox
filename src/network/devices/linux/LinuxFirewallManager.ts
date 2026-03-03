@@ -240,6 +240,7 @@ export class LinuxFirewallManager {
       case 'reload':   return this.cmdReload();
       case 'logging':  return this.cmdLogging(args.slice(1));
       case 'app':      return this.cmdApp(args.slice(1));
+      case 'show':     return this.cmdShow(args.slice(1));
       case 'version':  return 'ufw 0.36.1';
       default:
         return `ERROR: Invalid syntax\n\n${this.showUsage()}`;
@@ -690,6 +691,117 @@ export class LinuxFirewallManager {
     return 'ERROR: invalid app command';
   }
 
+  // ─── Show subcommands ───────────────────────────────────────────
+
+  private cmdShow(args: string[]): string {
+    if (args.length === 0) return 'ERROR: wrong number of arguments';
+
+    switch (args[0]) {
+      case 'raw':      return this.cmdShowRaw();
+      case 'added':    return this.cmdShowAdded();
+      case 'listening': return this.cmdShowListening();
+      default:
+        return `ERROR: unsupported show command '${args[0]}'`;
+    }
+  }
+
+  private cmdShowRaw(): string {
+    const lines: string[] = [];
+    lines.push('IPV4 (raw):');
+    lines.push('Chain ufw-user-input (1 references)');
+    lines.push(' pkts bytes target     prot opt in     out     source               destination');
+
+    const v4Rules = this.rules.filter(r => !r.v6);
+    for (const rule of v4Rules) {
+      const chain = rule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
+      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
+      const proto = this.extractProtoFromPort(rule.port);
+      const portNum = this.extractPortNum(rule.port);
+      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
+      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
+      const dpt = portNum ? ` dpt:${portNum}` : '';
+      const iface = rule.iface || '*';
+      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${rule.direction === 'in' ? iface.padEnd(6) : '*'.padEnd(6)} ${rule.direction === 'out' ? iface.padEnd(6) : '*'.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    }
+
+    lines.push('');
+    lines.push('Chain ufw-user-output (1 references)');
+    lines.push(' pkts bytes target     prot opt in     out     source               destination');
+
+    const v4Out = v4Rules.filter(r => r.direction === 'out');
+    for (const rule of v4Out) {
+      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
+      const proto = this.extractProtoFromPort(rule.port);
+      const portNum = this.extractPortNum(rule.port);
+      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
+      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
+      const dpt = portNum ? ` dpt:${portNum}` : '';
+      const iface = rule.iface || '*';
+      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${'*'.padEnd(6)} ${iface.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private cmdShowAdded(): string {
+    const lines: string[] = ['Added user rules (see \'ufw status\' for running firewall):'];
+    const v4Rules = this.rules.filter(r => !r.v6);
+    for (const rule of v4Rules) {
+      const parts: string[] = ['ufw'];
+      parts.push(rule.action.toLowerCase());
+      if (rule.direction !== 'in') parts.push(rule.direction);
+      if (rule.iface) {
+        parts.push('on');
+        parts.push(rule.iface);
+      }
+      if (rule.from !== 'Anywhere' || rule.to !== 'Anywhere') {
+        parts.push('from');
+        parts.push(rule.from === 'Anywhere' ? 'any' : rule.from);
+        if (rule.to !== 'Anywhere' || rule.port !== 'Anywhere') {
+          parts.push('to');
+          parts.push(rule.to === 'Anywhere' ? 'any' : rule.to);
+        }
+        if (rule.port !== 'Anywhere') {
+          const portMatch = rule.port.match(/^(.+)\/(tcp|udp)$/);
+          if (portMatch) {
+            parts.push('port');
+            parts.push(portMatch[1]);
+            parts.push('proto');
+            parts.push(portMatch[2]);
+          } else {
+            parts.push('port');
+            parts.push(rule.port);
+          }
+        }
+      } else {
+        parts.push(rule.port);
+      }
+      lines.push(parts.join(' '));
+    }
+    return lines.join('\n');
+  }
+
+  private cmdShowListening(): string {
+    // Simulated listening ports (UFW doesn't actually know what's listening)
+    const lines: string[] = [];
+    lines.push('tcp:');
+    lines.push('  22 [ ssh ]');
+    lines.push('udp:');
+    lines.push('  (none)');
+    return lines.join('\n');
+  }
+
+  private extractProtoFromPort(port: string): string | null {
+    const match = port.match(/\/(tcp|udp)$/);
+    return match ? match[1] : null;
+  }
+
+  private extractPortNum(port: string): string | null {
+    if (port === 'Anywhere') return null;
+    const match = port.match(/^(\d[\d:,]*)/);
+    return match ? match[1] : null;
+  }
+
   // ─── VFS persistence ─────────────────────────────────────────────
 
   private syncToVfs(): void {
@@ -824,6 +936,7 @@ export class LinuxFirewallManager {
       ' insert NUM RULE                 insert RULE at NUM',
       ' reload                          reload firewall',
       ' reset                           reset firewall',
+      ' show ARG                        show firewall report',
       ' status                          show firewall status',
       ' status numbered                 show firewall status as numbered list',
       ' status verbose                  show verbose firewall status',
