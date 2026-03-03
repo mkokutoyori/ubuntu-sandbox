@@ -16,8 +16,9 @@
 
 import {
   OSPFConfig, OSPFInterface, OSPFNeighbor, OSPFNeighborState, OSPFNeighborEvent,
-  OSPFInterfaceState, OSPFArea, OSPFAreaType, OSPFNetworkType,
-  LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ExternalLSA,
+  OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType,
+  LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ASBRSummaryLSA,
+  ExternalLSA, NSSAExternalLSA,
   RouterLSALink, RouterLinkType,
   LSDB, LSDBKey, makeLSDBKey, createEmptyLSDB,
   OSPFPacket, OSPFHelloPacket, OSPFDDPacket, OSPFLSUpdatePacket, OSPFLSAckPacket,
@@ -26,7 +27,8 @@ import {
   DD_FLAG_INIT, DD_FLAG_MORE, DD_FLAG_MASTER,
   OSPF_DEFAULT_HELLO_INTERVAL, OSPF_DEFAULT_DEAD_INTERVAL,
   OSPF_DEFAULT_RETRANSMIT_INTERVAL, OSPF_DEFAULT_TRANSMIT_DELAY,
-  OSPF_MAX_AGE, OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
+  OSPF_MAX_AGE, OSPF_LS_REFRESH_TIME, OSPF_MIN_LS_INTERVAL, OSPF_MIN_LS_ARRIVAL,
+  OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
   OSPF_BACKBONE_AREA, OSPF_ALL_SPF_ROUTERS, OSPF_ALL_DR_ROUTERS,
   OSPF_AD_INTRA_AREA, OSPF_AD_INTER_AREA, OSPF_AD_EXTERNAL,
   OSPF_INFINITY_METRIC,
@@ -93,8 +95,8 @@ function serializeLSAForChecksum(lsa: LSA): number[] {
     bytes.push(...ipToBytes(s.networkMask));
     bytes.push(0); // padding
     bytes.push((s.metric >>> 16) & 0xFF, (s.metric >>> 8) & 0xFF, s.metric & 0xFF);
-  } else if (lsa.lsType === 5) {
-    const e = lsa as ExternalLSA;
+  } else if (lsa.lsType === 5 || lsa.lsType === 7) {
+    const e = lsa as ExternalLSA | NSSAExternalLSA;
     bytes.push(...ipToBytes(e.networkMask));
     bytes.push(e.metricType === 2 ? 0x80 : 0x00);
     bytes.push((e.metric >>> 16) & 0xFF, (e.metric >>> 8) & 0xFF, e.metric & 0xFF);
@@ -151,6 +153,22 @@ export class OSPFEngine {
 
   /** Current LSA sequence number */
   private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
+
+  /** LSA aging timer (fires every 1 second) */
+  private lsAgeTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** MinLSInterval: last flood timestamp (ms) per LSA key, for self-originated LSAs */
+  private lastFloodTime: Map<string, number> = new Map();
+
+  /** MinLSArrival: last install timestamp (ms) per LSA key, for received LSAs */
+  private lsArrivalTimes: Map<string, number> = new Map();
+
+  /** SPF throttle — configurable via setThrottleSPF() */
+  private spfThrottleInitial = 200;    // ms: initial delay before first SPF
+  private spfThrottleHold = 1_000;     // ms: base hold interval
+  private spfThrottleMax = 10_000;     // ms: maximum hold interval
+  private spfCurrentHold = 1_000;      // ms: current hold (doubles on each rapid re-schedule)
+  private spfLastRunAt = 0;            // timestamp (ms) when SPF last ran
 
   /** SPF scheduling */
   private spfTimer: ReturnType<typeof setTimeout> | null = null;
@@ -245,6 +263,43 @@ export class OSPFEngine {
       }
     }
     area.type = type;
+  }
+
+  /**
+   * Configure NSSA-specific options for an area.
+   * Cisco equivalents: `area X nssa no-summary` / `area X nssa default-information-originate`
+   * Sets area type to 'nssa' and applies the given options.
+   */
+  configureNSSA(
+    areaId: string,
+    options: { noSummary?: boolean; defaultInfoOriginate?: boolean } = {},
+  ): void {
+    this.setAreaType(areaId, 'nssa');
+    const area = this.config.areas.get(areaId)!;
+    if (options.noSummary !== undefined) area.nssaNoSummary = options.noSummary;
+    if (options.defaultInfoOriginate !== undefined) area.nssaDefaultInfoOriginate = options.defaultInfoOriginate;
+  }
+
+  /**
+   * Add (or replace) an area range for route summarization at this ABR.
+   * Cisco: `area X range <network> <mask> [not-advertise]`
+   * RFC 2328 §12.4.3.1
+   */
+  addAreaRange(areaId: string, network: string, mask: string, advertise = true): void {
+    let area = this.config.areas.get(areaId);
+    if (!area) {
+      area = {
+        areaId,
+        type: 'normal',
+        interfaces: [],
+        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+      };
+      this.config.areas.set(areaId, area);
+    }
+    if (!area.ranges) area.ranges = [];
+    // Replace any existing entry with the same network/mask
+    area.ranges = area.ranges.filter(r => r.network !== network || r.mask !== mask);
+    area.ranges.push({ network, mask, advertise });
   }
 
   setPassiveInterface(ifName: string): void {
@@ -413,6 +468,7 @@ export class OSPFEngine {
       // Broadcast or NBMA: enter Waiting state for DR election
       iface.state = 'Waiting';
       iface.waitTimer = setTimeout(() => {
+        iface.waitTimer = null;
         this.drElection(iface);
       }, iface.deadInterval * 1000);
     }
@@ -484,11 +540,17 @@ export class OSPFEngine {
     const neighborId = hello.routerId;
     let neighbor = iface.neighbors.get(neighborId);
 
+    const isNewNeighbor = !neighbor;
     if (!neighbor) {
       // New neighbor discovered
       neighbor = this.createNeighbor(neighborId, srcIP, ifaceName, hello);
       iface.neighbors.set(neighborId, neighbor);
     }
+
+    // Snapshot previous declarations for NbrChange detection
+    const prevPriority = neighbor.priority;
+    const prevDR = neighbor.neighborDR;
+    const prevBDR = neighbor.neighborBDR;
 
     // Update neighbor fields
     neighbor.ipAddress = srcIP;
@@ -514,18 +576,25 @@ export class OSPFEngine {
       }
     }
 
-    // Check for DR/BDR changes
+    // Check for DR/BDR changes (RFC 2328 §9.4)
     if (iface.state === 'Waiting') {
-      // Check if this hello triggers end of waiting
-      if (hello.designatedRouter === srcIP && hello.backupDesignatedRouter === '0.0.0.0') {
-        // Neighbor claims to be DR with no BDR — might trigger election
-      }
+      // BackupSeen case 1: neighbor declares itself BDR
       if (hello.backupDesignatedRouter === srcIP) {
-        // Neighbor claims to be BDR — end wait timer
-        if (iface.waitTimer) {
-          clearTimeout(iface.waitTimer);
-          iface.waitTimer = null;
-        }
+        if (iface.waitTimer) { clearTimeout(iface.waitTimer); iface.waitTimer = null; }
+        this.drElection(iface);
+      }
+      // BackupSeen case 2: neighbor declares itself DR with no BDR
+      else if (hello.designatedRouter === srcIP && hello.backupDesignatedRouter === '0.0.0.0') {
+        if (iface.waitTimer) { clearTimeout(iface.waitTimer); iface.waitTimer = null; }
+        this.drElection(iface);
+      }
+    } else if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
+      // NbrChange: new neighbor or changed priority/DR/BDR declaration → re-run election
+      const nbrChange = isNewNeighbor
+        || prevPriority !== hello.priority
+        || prevDR !== hello.designatedRouter
+        || prevBDR !== hello.backupDesignatedRouter;
+      if (nbrChange) {
         this.drElection(iface);
       }
     }
@@ -685,6 +754,11 @@ export class OSPFEngine {
         neighbor.dbSummaryList = [];
         // Remove from interface neighbors
         iface.neighbors.delete(neighbor.routerId);
+        // Re-run DR election on broadcast/NBMA when a neighbor departs (RFC 2328 §9.4 NbrChange)
+        if ((iface.networkType === 'broadcast' || iface.networkType === 'nbma') &&
+            iface.state !== 'Waiting') {
+          this.drElection(iface);
+        }
         break;
     }
 
@@ -863,20 +937,29 @@ export class OSPFEngine {
       return;
     }
 
+    const sortCandidates = (pool: typeof candidates) =>
+      pool.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId));
+
     // Step 1: Elect BDR (candidates not declaring themselves as DR)
     const bdrCandidates = candidates.filter(c => c.declaredDR !== c.ipAddress);
     // Among BDR candidates: prefer those declaring themselves BDR, then highest priority, then highest Router ID
     const bdrDeclaring = bdrCandidates.filter(c => c.declaredBDR === c.ipAddress);
     const bdrPool = bdrDeclaring.length > 0 ? bdrDeclaring : bdrCandidates;
-    const bdr = bdrPool.length > 0
-      ? bdrPool.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId))[0]
-      : null;
+    let bdr = bdrPool.length > 0 ? sortCandidates(bdrPool)[0] : null;
 
     // Step 2: Elect DR (candidates declaring themselves as DR)
     const drDeclaring = candidates.filter(c => c.declaredDR === c.ipAddress);
-    const dr = drDeclaring.length > 0
-      ? drDeclaring.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId))[0]
-      : bdr;
+    const dr = drDeclaring.length > 0 ? sortCandidates(drDeclaring)[0] : bdr;
+
+    // Step 3 (RFC 2328 §9.4 second pass): if BDR was promoted to DR (dr === bdr),
+    // re-elect BDR from remaining candidates excluding the new DR.
+    if (dr && bdr && dr.routerId === bdr.routerId) {
+      const newDRIp = dr.ipAddress;
+      const bdrCandidates2 = candidates.filter(c => c.ipAddress !== newDRIp && c.declaredDR !== c.ipAddress);
+      const bdrDeclaring2 = bdrCandidates2.filter(c => c.declaredBDR === c.ipAddress);
+      const bdrPool2 = bdrDeclaring2.length > 0 ? bdrDeclaring2 : bdrCandidates2;
+      bdr = bdrPool2.length > 0 ? sortCandidates(bdrPool2)[0] : null;
+    }
 
     iface.dr = dr?.ipAddress ?? '0.0.0.0';
     iface.bdr = bdr?.ipAddress ?? '0.0.0.0';
@@ -1139,6 +1222,19 @@ export class OSPFEngine {
       const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
 
       if (!existing || this.isNewerLSA(lsa, existing)) {
+        // MinLSArrival (RFC 2328 §13.1): do not install an LSA instance if the same
+        // LSA (same type/linkStateId/advertisingRouter) was installed less than
+        // MinLSArrival seconds ago. This prevents flooding storms.
+        const arrKey = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+        const now = Date.now();
+        if (this.lsArrivalTimes.has(arrKey)) {
+          const lastArrival = this.lsArrivalTimes.get(arrKey)!;
+          if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
+            continue; // Drop — arrived too quickly (MinLSArrival)
+          }
+        }
+        this.lsArrivalTimes.set(arrKey, now);
+
         // Install the LSA
         this.installLSA(iface.areaId, lsa);
         lsdbChanged = true;
@@ -1240,6 +1336,20 @@ export class OSPFEngine {
 
     if (lsa.lsType === 5) {
       this.lsdb.external.set(key, lsa as ExternalLSA);
+    } else if (lsa.lsType === 7) {
+      // Type 7 (NSSA External) is area-scoped — stored in area LSDB
+      let areaDB = this.lsdb.areas.get(areaId);
+      if (!areaDB) {
+        areaDB = new Map();
+        this.lsdb.areas.set(areaId, areaDB);
+      }
+      areaDB.set(key, lsa);
+
+      // ABR auto-translation: if we are an ABR connected to backbone, translate Type 7 → Type 5
+      const area = this.config.areas.get(areaId);
+      if (area?.type === 'nssa' && this.isABR() && lsa.advertisingRouter !== this.config.routerId) {
+        this.translateNSSAtoExternal(lsa as NSSAExternalLSA);
+      }
     } else {
       let areaDB = this.lsdb.areas.get(areaId);
       if (!areaDB) {
@@ -1456,9 +1566,254 @@ export class OSPFEngine {
     return false;
   }
 
+  // ─── ABR / ASBR Detection ──────────────────────────────────────
+
+  /**
+   * Returns true if this router has interfaces in more than one area (ABR).
+   * RFC 2328 §1.2: A router attached to multiple areas is called an ABR.
+   */
+  isABR(): boolean {
+    const areas = new Set<string>();
+    for (const [, iface] of this.interfaces) {
+      areas.add(iface.areaId);
+    }
+    return areas.size > 1;
+  }
+
+  /**
+   * Returns true if redistribution is configured (ASBR).
+   * RFC 2328 §1.2: An ASBR imports routes from other protocols.
+   */
+  isASBR(): boolean {
+    return this.config.redistributeConnected ||
+           this.config.redistributeStatic ||
+           this.config.defaultInformationOriginate;
+  }
+
+  /**
+   * Configure connected route redistribution.
+   */
+  setRedistributeConnected(enable: boolean): void {
+    this.config.redistributeConnected = enable;
+  }
+
+  /**
+   * Configure static route redistribution.
+   */
+  setRedistributeStatic(enable: boolean): void {
+    this.config.redistributeStatic = enable;
+  }
+
+  // ─── Type 3 Summary LSA (RFC 2328 §12.4.3) ────────────────────
+
+  /**
+   * Originate a Summary-LSA (Type 3) for an IP network into the given area.
+   * Called by ABR to advertise intra-area routes from one area into another.
+   * RFC 2328 §12.4.3
+   */
+  originateSummaryLSA(intoAreaId: string, network: string, mask: string, metric: number): SummaryLSA {
+    const lsa: SummaryLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 3,
+      linkStateId: network,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      // 20-byte header + 4 (networkMask) + 4 (TOS count 1B pad + 3B metric) = 28
+      length: 28,
+      networkMask: mask,
+      metric,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(intoAreaId, lsa);
+    this.floodLSA(intoAreaId, lsa, null);
+    return lsa;
+  }
+
+  // ─── Type 4 Summary ASBR LSA (RFC 2328 §12.4.4) ───────────────
+
+  /**
+   * Originate a Summary-LSA (Type 4) advertising an ASBR into the given area.
+   * Called by ABR when it knows of an ASBR in an adjacent area.
+   * RFC 2328 §12.4.4: Link State ID = ASBR Router ID, networkMask = 0.0.0.0.
+   */
+  originateASBRSummaryLSA(intoAreaId: string, asbrRouterId: string, metric: number): ASBRSummaryLSA {
+    const lsa: ASBRSummaryLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 4,
+      linkStateId: asbrRouterId,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      length: 28,
+      networkMask: '0.0.0.0',
+      metric,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(intoAreaId, lsa);
+    this.floodLSA(intoAreaId, lsa, null);
+    return lsa;
+  }
+
+  // ─── Type 7 NSSA External LSA (RFC 3101) ───────────────────────
+
+  /**
+   * Originate an NSSA-External-LSA (Type 7) for an external route.
+   * Only originated by ASBRs in NSSA areas.
+   * RFC 3101 §2.4
+   */
+  originateNSSAExternalLSA(
+    areaId: string,
+    network: string,
+    mask: string,
+    metric: number,
+    metricType: 1 | 2 = 2,
+    forwardingAddress: string = '0.0.0.0',
+  ): NSSAExternalLSA {
+    const lsa: NSSAExternalLSA = {
+      lsAge: 0,
+      // N-bit (0x08) set to indicate NSSA LSA; E-bit also set
+      options: 0x08 | 0x02,
+      lsType: 7,
+      linkStateId: network,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      // Same structure as Type 5: 20-byte header + 16 bytes body = 36
+      length: 36,
+      networkMask: mask,
+      metricType,
+      metric,
+      forwardingAddress,
+      externalRouteTag: 0,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(areaId, lsa);
+    this.floodLSA(areaId, lsa, null);
+    return lsa;
+  }
+
+  /**
+   * Translate an NSSA-External-LSA (Type 7) into an AS-External-LSA (Type 5).
+   * Called by the ABR with the highest Router ID when it receives a Type 7.
+   * RFC 3101 §3.2: The ABR becomes the advertising router of the Type 5.
+   */
+  translateNSSAtoExternal(nssaLsa: NSSAExternalLSA): ExternalLSA {
+    const lsa: ExternalLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 5,
+      linkStateId: nssaLsa.linkStateId,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      length: 36,
+      networkMask: nssaLsa.networkMask,
+      metricType: nssaLsa.metricType,
+      metric: nssaLsa.metric,
+      forwardingAddress: nssaLsa.forwardingAddress,
+      externalRouteTag: nssaLsa.externalRouteTag,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    // Type 5 goes directly into external LSDB and is flooded everywhere
+    this.lsdb.external.set(makeLSDBKey(5, lsa.linkStateId, lsa.advertisingRouter), lsa);
+    this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
+    return lsa;
+  }
+
+  /**
+   * Originate an AS-External-LSA (Type 5) for a redistributed route.
+   * Type 5 LSAs are AS-wide and stored in the external LSDB.
+   * RFC 2328 §12.4.5
+   */
+  originateExternalLSA(
+    network: string,
+    mask: string,
+    metric: number,
+    metricType: 1 | 2 = 2,
+    forwardingAddress: string = '0.0.0.0',
+  ): ExternalLSA {
+    const lsa: ExternalLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 5,
+      linkStateId: network,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      length: 36,
+      networkMask: mask,
+      metricType,
+      metric,
+      forwardingAddress,
+      externalRouteTag: 0,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(OSPF_BACKBONE_AREA, lsa);
+    this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
+    return lsa;
+  }
+
+  /**
+   * Redistribute an external route into OSPF.
+   * Automatically chooses Type 7 for NSSA areas and Type 5 for normal/backbone areas.
+   * Cisco equivalent: `redistribute <protocol>` on an ASBR.
+   * RFC 3101 §2.4, RFC 2328 §12.4.5
+   */
+  redistributeExternalRoute(
+    network: string,
+    mask: string,
+    metric: number,
+    metricType: 1 | 2 = 2,
+    forwardingAddress: string = '0.0.0.0',
+  ): void {
+    // Collect all areas this router has interfaces in
+    const usedAreaIds = new Set<string>();
+    for (const [, iface] of this.interfaces) {
+      usedAreaIds.add(iface.areaId);
+    }
+
+    let generatedType5 = false;
+    for (const areaId of usedAreaIds) {
+      const area = this.config.areas.get(areaId);
+      if (area?.type === 'nssa') {
+        // NSSA area: originate Type 7 (area-scoped)
+        this.originateNSSAExternalLSA(areaId, network, mask, metric, metricType, forwardingAddress);
+      } else if (!generatedType5) {
+        // Normal/backbone: originate Type 5 once (AS-wide)
+        this.originateExternalLSA(network, mask, metric, metricType, forwardingAddress);
+        generatedType5 = true;
+      }
+    }
+    // Fallback: no interfaces configured yet — originate Type 5
+    if (!generatedType5 && usedAreaIds.size === 0) {
+      this.originateExternalLSA(network, mask, metric, metricType, forwardingAddress);
+    }
+  }
+
   // ─── LSA Flooding (RFC 2328 §13.3) ─────────────────────────────
 
-  private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null): void {
+  private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null, force = false): void {
+    const isSelfOriginated = lsa.advertisingRouter === this.config.routerId;
+
+    // MinLSInterval (RFC 2328 §12.4): self-originated LSAs must not be re-flooded
+    // more than once every MinLSInterval seconds.
+    // We only record (and check) the last flood time when we actually sent to at
+    // least one neighbor — if there are no Full neighbors, the "flood" is a no-op
+    // and we do not start the rate-limiting clock.
+    if (!force && isSelfOriginated) {
+      const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+      if (this.lastFloodTime.has(key)) {
+        const lastTime = this.lastFloodTime.get(key)!;
+        if (Date.now() - lastTime < OSPF_MIN_LS_INTERVAL * 1000) {
+          return; // MinLSInterval not yet elapsed — suppress redundant flood
+        }
+      }
+    }
+
+    let sentToAny = false;
     for (const [ifName, iface] of this.interfaces) {
       if (ifName === excludeIface) continue;
       if (iface.areaId !== areaId && lsa.lsType !== 5) continue;
@@ -1484,8 +1839,17 @@ export class OSPFEngine {
             : neighbor.ipAddress;
 
           this.sendCallback?.(iface.name, lsu, destIP);
+          sentToAny = true;
         }
       }
+    }
+
+    // Record the flood time only when we actually reached at least one neighbor.
+    // This way, calling floodLSA with no neighbors does not start the MinLSInterval
+    // clock — the first real flood (with neighbors present) is never suppressed.
+    if (isSelfOriginated && sentToAny) {
+      const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+      this.lastFloodTime.set(key, Date.now());
     }
   }
 
@@ -1495,27 +1859,225 @@ export class OSPFEngine {
     if (this.spfPending) return;
     this.spfPending = true;
 
+    // Exponential back-off (RFC 2328 §16.5 / Cisco 'timers throttle spf'):
+    //   - First SPF after a quiet period → use initial delay, reset hold counter
+    //   - Rapid re-schedules                → use current hold, double it for next time
+    const now = Date.now();
+    const timeSinceLastRun = now - this.spfLastRunAt;
+
+    let delay: number;
+    if (this.spfLastRunAt === 0 || timeSinceLastRun > this.spfThrottleMax) {
+      // First run ever, or quiet period elapsed → reset and use initial delay
+      delay = this.spfThrottleInitial;
+      this.spfCurrentHold = this.spfThrottleHold;
+    } else {
+      // Rapid topology change → use current hold, then double it (capped at max)
+      delay = this.spfCurrentHold;
+      this.spfCurrentHold = Math.min(this.spfCurrentHold * 2, this.spfThrottleMax);
+    }
+
     if (this.spfTimer) clearTimeout(this.spfTimer);
     this.spfTimer = setTimeout(() => {
       this.spfPending = false;
       this.spfTimer = null;
+      this.spfLastRunAt = Date.now();
       this.runSPF();
-    }, 200); // 200ms delay
+    }, delay);
+  }
+
+  /**
+   * Configure SPF throttle timers (Cisco: 'timers throttle spf <initial> <hold> <max>').
+   * RFC 2328 §16.5: prevents SPF thrashing on rapid topology changes.
+   * @param initial  Initial delay before first SPF (ms)
+   * @param hold     Base hold interval; doubles on each rapid re-schedule (ms)
+   * @param max      Maximum hold interval (ms)
+   */
+  setThrottleSPF(initial: number, hold: number, max: number): void {
+    this.spfThrottleInitial = initial;
+    this.spfThrottleHold = hold;
+    this.spfThrottleMax = max;
+    this.spfCurrentHold = hold;
+  }
+
+  getThrottleSPFConfig(): { initial: number; hold: number; max: number } {
+    return {
+      initial: this.spfThrottleInitial,
+      hold: this.spfThrottleHold,
+      max: this.spfThrottleMax,
+    };
   }
 
   /**
    * Run Dijkstra's SPF algorithm on the LSDB.
    * RFC 2328 §16.1
+   * If this router is an ABR, also originates Type 3/4 Summary LSAs.
    */
   runSPF(): OSPFRouteEntry[] {
     this.ospfRoutes = [];
 
+    // Step 1: Compute intra-area routes for each area
+    const intraAreaRoutesByArea = new Map<string, OSPFRouteEntry[]>();
     for (const [areaId] of this.config.areas) {
       const areaRoutes = this.runSPFForArea(areaId);
+      intraAreaRoutesByArea.set(areaId, areaRoutes);
       this.ospfRoutes.push(...areaRoutes);
     }
 
+    // Step 2: If ABR, originate Type 3 Summary LSAs for intra-area routes
+    //         into other areas, and Type 4 for any ASBRs found
+    if (this.isABR()) {
+      this.originateSummariesAsABR(intraAreaRoutesByArea);
+    }
+
     return this.ospfRoutes;
+  }
+
+  /**
+   * ABR summary origination (RFC 2328 §12.4.3 / §12.4.4).
+   * For each intra-area route in area A, originate a Type 3 LSA into every
+   * other area B connected to this ABR.
+   * For each ASBR (Router-LSA with E-bit) found in an area, originate a
+   * Type 4 LSA into every other area.
+   */
+  /**
+   * Originate Type 3 / Type 4 Summary LSAs for each intra-area route into all
+   * other areas (RFC 2328 §12.4.3).  Handles:
+   *  - Totally-stubby and Totally-NSSA areas (skip Type 3; inject Type 3 default)
+   *  - NSSA default-information-originate (inject Type 7 default)
+   *  - Area ranges (aggregate + suppress individual routes)
+   *
+   * Exposed as public so unit tests can drive it with hand-crafted route maps
+   * without running full SPF.
+   */
+  originateSummariesAsABR(intraAreaRoutesByArea: Map<string, OSPFRouteEntry[]>): void {
+    const myAreas = Array.from(this.config.areas.keys());
+    const nssaDefaultsDone = new Set<string>(); // avoid duplicate default per target area
+
+    for (const sourceAreaId of myAreas) {
+      const routes = intraAreaRoutesByArea.get(sourceAreaId) ?? [];
+      const intraRoutes = routes.filter(r => r.routeType === 'intra-area' && r.network !== '0.0.0.0');
+
+      for (const targetAreaId of myAreas) {
+        if (targetAreaId === sourceAreaId) continue;
+
+        const targetArea = this.config.areas.get(targetAreaId);
+
+        // Skip Type 3 into totally-stubby areas
+        if (targetArea?.type === 'totally-stubby') continue;
+
+        // Skip Type 3 into Totally NSSA areas (will inject default below)
+        if (targetArea?.type === 'nssa' && targetArea.nssaNoSummary) continue;
+
+        // Apply area ranges from the source area
+        const { individual, aggregates } = this.applyAreaRanges(sourceAreaId, intraRoutes);
+
+        for (const route of individual) {
+          this.originateSummaryLSA(targetAreaId, route.network, route.mask, route.cost);
+        }
+        for (const [, agg] of aggregates) {
+          if (agg.advertise) {
+            this.originateSummaryLSA(targetAreaId, agg.network, agg.mask, agg.metric);
+          }
+        }
+
+        // Type 4 ASBR summaries — do not flood into NSSA (RFC 3101 §3.4)
+        if (targetArea?.type !== 'nssa') {
+          const sourceDB = this.lsdb.areas.get(sourceAreaId);
+          if (sourceDB) {
+            for (const [, lsa] of sourceDB) {
+              if (lsa.lsType !== 1) continue;
+              const rLsa = lsa as RouterLSA;
+              if ((rLsa.flags & 0x02) === 0) continue; // E-bit not set
+              if (rLsa.advertisingRouter === this.config.routerId) continue;
+              const asbrVertex = routes.find(rt => rt.advertisingRouter === rLsa.advertisingRouter);
+              const metric = asbrVertex ? asbrVertex.cost : 1;
+              this.originateASBRSummaryLSA(targetAreaId, rLsa.advertisingRouter, metric);
+            }
+          }
+        }
+      }
+    }
+
+    // Post-pass: NSSA-specific defaults (once per target area)
+    for (const [areaId, area] of this.config.areas) {
+      if (area.type !== 'nssa') continue;
+      if (nssaDefaultsDone.has(areaId)) continue;
+      nssaDefaultsDone.add(areaId);
+
+      // Totally NSSA: inject Type 3 default (0.0.0.0/0) into the area
+      if (area.nssaNoSummary) {
+        this.originateSummaryLSA(areaId, '0.0.0.0', '0.0.0.0', 1);
+      }
+
+      // nssa default-information-originate: inject Type 7 default
+      if (area.nssaDefaultInfoOriginate) {
+        this.originateNSSAExternalLSA(areaId, '0.0.0.0', '0.0.0.0', 1);
+      }
+    }
+  }
+
+  // ─── Area Range helpers ─────────────────────────────────────────
+
+  /**
+   * Apply area ranges to a list of routes from a given area.
+   * Returns individual routes (not covered by any range) and aggregate entries
+   * (one per matching range, with metric = max covered route cost).
+   */
+  private applyAreaRanges(
+    areaId: string,
+    routes: OSPFRouteEntry[],
+  ): {
+    individual: OSPFRouteEntry[];
+    aggregates: Map<string, { network: string; mask: string; metric: number; advertise: boolean }>;
+  } {
+    const area = this.config.areas.get(areaId);
+    const ranges = area?.ranges ?? [];
+
+    if (ranges.length === 0) {
+      return { individual: [...routes], aggregates: new Map() };
+    }
+
+    const aggregates = new Map<string, { network: string; mask: string; metric: number; advertise: boolean }>();
+    const individual: OSPFRouteEntry[] = [];
+
+    for (const route of routes) {
+      const match = ranges.find(r => this.routeInRange(route.network, route.mask, r.network, r.mask));
+      if (match) {
+        const key = `${match.network}:${match.mask}`;
+        const existing = aggregates.get(key);
+        if (!existing) {
+          aggregates.set(key, { network: match.network, mask: match.mask, metric: route.cost, advertise: match.advertise });
+        } else if (route.cost > existing.metric) {
+          existing.metric = route.cost;
+        }
+        // Individual route is suppressed (omitted from `individual`)
+      } else {
+        individual.push(route);
+      }
+    }
+
+    return { individual, aggregates };
+  }
+
+  /**
+   * Returns true when routeNet/routeMask is a subnet of (or equal to) rangeNet/rangeMask.
+   * The range mask must be at least as general (shorter prefix) as the route mask.
+   */
+  private routeInRange(
+    routeNet: string, routeMask: string,
+    rangeNet: string, rangeMask: string,
+  ): boolean {
+    const rMask    = this.ipToNum(rangeMask);
+    // Use >>> 0 after each & to stay in unsigned territory for comparison
+    const rNet     = (this.ipToNum(rangeNet)  & rMask) >>> 0;
+    const route    = (this.ipToNum(routeNet)  & rMask) >>> 0;
+    const rMaskNum = this.ipToNum(routeMask);
+    // The range mask must be at least as long (more specific) as the range mask
+    return route === rNet && ((rMaskNum & rMask) >>> 0) === rMask;
+  }
+
+  private ipToNum(ip: string): number {
+    return ip.split('.').reduce((acc: number, oct: string) => (acc << 8) | parseInt(oct, 10), 0) >>> 0;
   }
 
   private runSPFForArea(areaId: string): OSPFRouteEntry[] {
@@ -1560,7 +2122,7 @@ export class OSPFEngine {
       this.addCandidatesFromVertex(best, areaId, areaDB, tree, candidates);
     }
 
-    // Extract routes from SPF tree
+    // Extract intra-area routes from SPF tree
     for (const [id, vertex] of tree) {
       if (id === this.config.routerId) continue; // Skip self
 
@@ -1604,6 +2166,37 @@ export class OSPFEngine {
           });
         }
       }
+    }
+
+    // Step 2: Process Type 3 Summary LSAs → inter-area routes (RFC 2328 §16.2)
+    for (const [, lsa] of areaDB) {
+      if (lsa.lsType !== 3) continue;
+      const sumLsa = lsa as SummaryLSA;
+      if (sumLsa.lsAge >= OSPF_MAX_AGE) continue;
+      if (sumLsa.metric >= OSPF_INFINITY_METRIC) continue;
+      if (sumLsa.advertisingRouter === this.config.routerId) continue; // own LSA
+
+      // The advertising router must be an ABR reachable from us in the SPF tree
+      const abrVertex = tree.get(sumLsa.advertisingRouter);
+      if (!abrVertex) continue;
+
+      const totalCost = abrVertex.distance + sumLsa.metric;
+      if (totalCost >= OSPF_INFINITY_METRIC) continue;
+
+      const nextHop = abrVertex.nextHop || abrVertex.id;
+      const outIface = abrVertex.outInterface || this.findIfaceForNextHop(nextHop);
+      if (!outIface) continue;
+
+      routes.push({
+        network: sumLsa.linkStateId,
+        mask: sumLsa.networkMask,
+        routeType: 'inter-area',
+        areaId,
+        nextHop,
+        iface: outIface,
+        cost: totalCost,
+        advertisingRouter: sumLsa.advertisingRouter,
+      });
     }
 
     return routes;
@@ -1803,9 +2396,100 @@ export class OSPFEngine {
     return count;
   }
 
+  // ─── LSA Aging (RFC 2328 §14) ──────────────────────────────────
+
+  /**
+   * Start the 1-second LSA aging timer.
+   * Each tick increments every LSA's lsAge by 1.
+   * LSAs reaching MaxAge (3600s) are purged; own LSAs reaching LS_REFRESH_TIME
+   * (1800s) are re-originated (seq bumped, age reset).
+   */
+  startLSAgeTimer(): void {
+    if (this.lsAgeTimer) return;
+    this.lsAgeTimer = setInterval(() => this.tickLSAge(), 1_000);
+  }
+
+  /** Stop the LSA aging timer. */
+  stopLSAgeTimer(): void {
+    if (this.lsAgeTimer) {
+      clearInterval(this.lsAgeTimer);
+      this.lsAgeTimer = null;
+    }
+  }
+
+  /**
+   * One aging tick: increment every LSA's lsAge by 1 second.
+   *   - If age >= MaxAge (3600): purge from LSDB and trigger SPF.
+   *   - If age == LS_REFRESH_TIME (1800) and we are the originator: refresh the
+   *     LSA (bump seq, reset age to 0, reflood — bypassing MinLSInterval).
+   *
+   * Can be called directly in tests instead of relying on setInterval.
+   */
+  tickLSAge(): void {
+    let changed = false;
+
+    for (const [areaId, areaDB] of this.lsdb.areas) {
+      const toDelete: string[] = [];
+      for (const [key, lsa] of areaDB) {
+        lsa.lsAge += 1;
+        if (lsa.lsAge >= OSPF_MAX_AGE) {
+          toDelete.push(key);
+          this.lsArrivalTimes.delete(key);
+          changed = true;
+        } else if (
+          lsa.advertisingRouter === this.config.routerId &&
+          lsa.lsAge === OSPF_LS_REFRESH_TIME
+        ) {
+          this.refreshOwnLSA(areaId, lsa);
+        }
+      }
+      for (const key of toDelete) {
+        areaDB.delete(key);
+      }
+    }
+
+    // Age external LSAs
+    const toDeleteExt: string[] = [];
+    for (const [key, lsa] of this.lsdb.external) {
+      lsa.lsAge += 1;
+      if (lsa.lsAge >= OSPF_MAX_AGE) {
+        toDeleteExt.push(key);
+        this.lsArrivalTimes.delete(key);
+        changed = true;
+      } else if (
+        lsa.advertisingRouter === this.config.routerId &&
+        lsa.lsAge === OSPF_LS_REFRESH_TIME
+      ) {
+        this.refreshOwnLSA(OSPF_BACKBONE_AREA, lsa);
+      }
+    }
+    for (const key of toDeleteExt) {
+      this.lsdb.external.delete(key);
+    }
+
+    if (changed) {
+      this.scheduleSPF();
+    }
+  }
+
+  /**
+   * Refresh a self-originated LSA: bump the sequence number, reset age to 0,
+   * recompute the checksum, and reflood (bypassing MinLSInterval since this
+   * is a mandatory periodic refresh, not a topology-driven re-origination).
+   */
+  private refreshOwnLSA(areaId: string, lsa: LSA): void {
+    lsa.lsAge = 0;
+    lsa.lsSequenceNumber = this.nextSeqNumber();
+    lsa.checksum = computeOSPFLSAChecksum(lsa);
+    this.floodLSA(areaId, lsa, null, true); // force=true bypasses MinLSInterval
+  }
+
   // ─── Cleanup ──────────────────────────────────────────────────
 
   shutdown(): void {
+    // Stop LSA aging timer
+    this.stopLSAgeTimer();
+
     // Stop all hello timers
     for (const [, iface] of this.interfaces) {
       if (iface.helloTimer) {
@@ -1830,6 +2514,10 @@ export class OSPFEngine {
     this.interfaces.clear();
     this.lsdb = createEmptyLSDB();
     this.ospfRoutes = [];
+    this.lastFloodTime.clear();
+    this.lsArrivalTimes.clear();
+    this.spfLastRunAt = 0;
+    this.spfCurrentHold = this.spfThrottleHold;
   }
 
   // ─── Utility ──────────────────────────────────────────────────

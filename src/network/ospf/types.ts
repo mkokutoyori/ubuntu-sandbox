@@ -57,6 +57,16 @@ export const OSPF_INFINITY_METRIC = 0xFFFF;
 
 export type OSPFAreaType = 'normal' | 'stub' | 'totally-stubby' | 'nssa';
 
+/** A single area range entry (Cisco: `area X range <network> <mask> [not-advertise]`) */
+export interface OSPFAreaRange {
+  /** Summary network address */
+  network: string;
+  /** Summary network mask */
+  mask: string;
+  /** If false the range is suppressed (not-advertise); default true */
+  advertise: boolean;
+}
+
 export interface OSPFArea {
   /** Area ID (e.g., "0.0.0.0" for backbone) */
   areaId: string;
@@ -66,6 +76,12 @@ export interface OSPFArea {
   interfaces: string[];
   /** Is this the backbone area? */
   isBackbone: boolean;
+  /** Area ranges for route summarization at this ABR (Cisco: `area X range`) */
+  ranges?: OSPFAreaRange[];
+  /** NSSA no-summary: block Type-3 into this NSSA and inject a Type-3 default */
+  nssaNoSummary?: boolean;
+  /** NSSA default-information-originate: inject a Type-7 default into this NSSA */
+  nssaDefaultInfoOriginate?: boolean;
 }
 
 export const OSPF_BACKBONE_AREA = '0.0.0.0';
@@ -207,7 +223,8 @@ export type LSAType =
   | 2   // Network-LSA
   | 3   // Summary-LSA (IP network)
   | 4   // Summary-LSA (ASBR)
-  | 5;  // AS-External-LSA
+  | 5   // AS-External-LSA
+  | 7;  // NSSA-External-LSA (RFC 3101)
 
 export interface LSAHeader {
   /** LSA Age (seconds, 0-3600) */
@@ -301,7 +318,81 @@ export interface ExternalLSA extends LSAHeader {
   externalRouteTag: number;
 }
 
-export type LSA = RouterLSA | NetworkLSA | SummaryLSA | ASBRSummaryLSA | ExternalLSA;
+/** Type 7: NSSA-External-LSA (RFC 3101) — same structure as ExternalLSA but area-scoped */
+export interface NSSAExternalLSA extends LSAHeader {
+  lsType: 7;
+  /** Network mask */
+  networkMask: string;
+  /** Metric type: 1=comparable to internal, 2=larger than any internal */
+  metricType: 1 | 2;
+  /** External metric */
+  metric: number;
+  /** Forwarding address ("0.0.0.0" = use advertising router) */
+  forwardingAddress: string;
+  /** External route tag */
+  externalRouteTag: number;
+}
+
+export type LSA = RouterLSA | NetworkLSA | SummaryLSA | ASBRSummaryLSA | ExternalLSA | NSSAExternalLSA;
+
+// ─── OSPFv3 LSA Types (RFC 5340) ─────────────────────────────────────────
+
+export interface OSPFv3Prefix {
+  /** IPv6 prefix string (e.g. "2001:db8::") */
+  prefix: string;
+  /** Prefix length in bits */
+  prefixLen: number;
+  /** Metric for this prefix */
+  metric: number;
+  /** Prefix options (NU, LA, P, DN bits) */
+  prefixOptions: number;
+}
+
+/** OSPFv3 Link-LSA (Type 0x0008) — link-scoped, one per interface */
+export interface OSPFv3LinkLSA {
+  lsAge: number;
+  /** LSA type = 0x0008 */
+  lsType: 0x0008;
+  /** Link State ID = interface ID */
+  linkStateId: string;
+  /** Advertising Router ID */
+  advertisingRouter: string;
+  lsSequenceNumber: number;
+  checksum: number;
+  length: number;
+  /** Router priority for this interface */
+  priority: number;
+  /** Options (V6, E, R bits) */
+  options: number;
+  /** IPv6 link-local address of the interface */
+  linkLocalAddress: string;
+  /** List of IPv6 prefixes reachable via this link */
+  prefixes: OSPFv3Prefix[];
+}
+
+/** OSPFv3 Intra-Area-Prefix-LSA (Type 0x2009) — area-scoped */
+export interface OSPFv3IntraAreaPrefixLSA {
+  lsAge: number;
+  /** LSA type = 0x2009 */
+  lsType: 0x2009;
+  /** Link State ID (0 when referencing Router-LSA, DR IP when referencing Network-LSA) */
+  linkStateId: string;
+  /** Advertising Router ID */
+  advertisingRouter: string;
+  lsSequenceNumber: number;
+  checksum: number;
+  length: number;
+  /** Number of IPv6 prefixes */
+  numPrefixes: number;
+  /** Type of the referenced LSA (0x2001=Router, 0x2002=Network) */
+  referencedLSType: number;
+  /** Link State ID of the referenced LSA */
+  referencedLSId: string;
+  /** Advertising Router of the referenced LSA */
+  referencedAdvRouter: string;
+  /** IPv6 prefixes */
+  prefixes: OSPFv3Prefix[];
+}
 
 // ─── Link State Database ─────────────────────────────────────────────
 
