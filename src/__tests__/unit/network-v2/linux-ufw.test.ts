@@ -365,6 +365,46 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const out = await server.executeCommand('ufw delete allow 9999/tcp');
       expect(out).toContain('Could not delete non-existent rule');
     });
+
+    it('should delete rule with direction (ufw delete allow in 22/tcp)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow in 22/tcp');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw delete allow in 22/tcp');
+      expect(out).toContain('Rule deleted');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).not.toContain('22/tcp');
+      expect(status).toContain('80/tcp');
+    });
+
+    it('should delete rule with from syntax (ufw delete allow from 10.0.0.1)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 10.0.0.1');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw delete allow from 10.0.0.1');
+      expect(out).toContain('Rule deleted');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).not.toContain('10.0.0.1');
+      expect(status).toContain('80/tcp');
+    });
+
+    it('should delete deny rule by spec', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw deny 23');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw delete deny 23');
+      expect(out).toContain('Rule deleted');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).not.toContain('23');
+    });
   });
 
   // ─── 8.7: Insert rules ────────────────────────────────────────────
