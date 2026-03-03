@@ -34,7 +34,7 @@ export class LinuxCommandExecutor {
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
-    this.firewall = new LinuxFirewallManager();
+    this.firewall = new LinuxFirewallManager(this.vfs);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.isServer = isServer;
 

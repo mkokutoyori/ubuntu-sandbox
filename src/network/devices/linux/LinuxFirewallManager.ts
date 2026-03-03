@@ -2,7 +2,11 @@
  * LinuxFirewallManager — UFW (Uncomplicated Firewall) state manager.
  * Manages firewall rules, default policies, logging, and status.
  * Output matches real Ubuntu/Debian `ufw` behavior.
+ * Persists configuration and rules to /etc/ufw/ in the VFS.
+ * Writes log entries to /var/log/ufw.log.
  */
+
+import type { VirtualFileSystem } from './VirtualFileSystem';
 
 // ─── Service name → port mapping ─────────────────────────────────────
 const SERVICE_PORTS: Record<string, { port: string; proto: string }> = {
@@ -35,26 +39,34 @@ const APP_PROFILES: Record<string, { title: string; description: string; ports: 
 // ─── Types ───────────────────────────────────────────────────────────
 
 type Action = 'ALLOW' | 'DENY' | 'REJECT' | 'LIMIT';
-type Direction = 'incoming' | 'outgoing';
+type RuleDirection = 'in' | 'out';
 type DefaultPolicy = 'allow' | 'deny' | 'reject';
 
 interface UfwRule {
   action: Action;
+  direction: RuleDirection;
   port: string;       // e.g. '22/tcp', '80/tcp', '53', '6000:6007/tcp'
   from: string;       // e.g. 'Anywhere', '192.168.1.100', '10.0.0.0/24'
-  to: string;         // e.g. 'Anywhere'
+  to: string;         // e.g. 'Anywhere', '192.168.1.1'
+  iface: string;      // e.g. '', 'eth0', 'ens33' — empty = all interfaces
   v6: boolean;        // IPv6 duplicate rule
+  comment: string;    // optional comment
 }
 
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export class LinuxFirewallManager {
+  private vfs: VirtualFileSystem | null = null;
   private enabled = false;
   private rules: UfwRule[] = [];
   private defaultIncoming: DefaultPolicy = 'deny';
   private defaultOutgoing: DefaultPolicy = 'allow';
   private logging = false;
   private loggingLevel = 'low';
+
+  constructor(vfs?: VirtualFileSystem) {
+    if (vfs) this.vfs = vfs;
+  }
 
   /**
    * Execute a ufw subcommand. Returns output string.
@@ -91,11 +103,15 @@ export class LinuxFirewallManager {
 
   private cmdEnable(): string {
     this.enabled = true;
+    this.syncToVfs();
+    this.logUfw('UFW enabled');
     return 'Firewall is active and enabled on system startup';
   }
 
   private cmdDisable(): string {
+    this.logUfw('UFW disabled');
     this.enabled = false;
+    this.syncToVfs();
     return 'Firewall stopped and disabled on system startup';
   }
 
@@ -106,11 +122,13 @@ export class LinuxFirewallManager {
     this.defaultOutgoing = 'allow';
     this.logging = false;
     this.loggingLevel = 'low';
+    this.syncToVfs();
     return 'Resetting all rules to installed defaults. Proceed with operation (y|n)? y\n' +
            'Backing up user rules ... done';
   }
 
   private cmdReload(): string {
+    this.syncToVfs();
     return 'Firewall reloaded';
   }
 
@@ -146,15 +164,18 @@ export class LinuxFirewallManager {
     lines.push(separator);
 
     // Rules — show v4 first, then v6 (like real ufw)
-    const v4Rules = this.rules.filter(r => !r.v6);
-    const v6Rules = this.rules.filter(r => r.v6);
-    const orderedRules = [...v4Rules, ...v6Rules];
+    const orderedRules = this.getOrderedRules();
 
     orderedRules.forEach((rule, idx) => {
       const num = numbered ? `[ ${idx + 1}] ` : '';
-      const toStr = rule.v6 ? `${rule.port} (v6)` : rule.port;
-      const fromStr = rule.v6 ? `${rule.from} (v6)` : rule.from;
-      const actionStr = rule.action + ' IN';
+      const v6Tag = rule.v6 ? ' (v6)' : '';
+      const ifaceTag = rule.iface ? ` on ${rule.iface}` : '';
+      // 'To' column: show destination if specific, otherwise just port
+      const destPart = rule.to !== 'Anywhere' ? `${rule.to} ${rule.port}` : rule.port;
+      const toStr = `${destPart}${v6Tag}`;
+      const fromStr = `${rule.from}${v6Tag}`;
+      const dirStr = rule.direction === 'out' ? 'OUT' : 'IN';
+      const actionStr = `${rule.action} ${dirStr}${ifaceTag}`;
       lines.push(`${num}${toStr.padEnd(toWidth)}${actionStr.padEnd(actionWidth)}${fromStr}`);
     });
 
@@ -175,10 +196,12 @@ export class LinuxFirewallManager {
 
     if (direction === 'incoming') {
       this.defaultIncoming = policy;
+      this.syncToVfs();
       return `Default incoming policy changed to '${policy}'`;
     }
     if (direction === 'outgoing') {
       this.defaultOutgoing = policy;
+      this.syncToVfs();
       return `Default outgoing policy changed to '${policy}'`;
     }
 
@@ -195,53 +218,112 @@ export class LinuxFirewallManager {
 
     // Check for duplicates
     const dup = this.rules.find(r =>
-      !r.v6 && r.action === parsed.action && r.port === parsed.port && r.from === parsed.from
+      !r.v6 && r.action === parsed.action && r.port === parsed.port &&
+      r.from === parsed.from && r.to === parsed.to &&
+      r.direction === parsed.direction && r.iface === parsed.iface
     );
     if (dup) {
-      return `Skipping adding existing rule\nSkipping adding existing rule (v6)`;
+      const addsV6 = this.ruleGetsV6(parsed);
+      return addsV6
+        ? 'Skipping adding existing rule\nSkipping adding existing rule (v6)'
+        : 'Skipping adding existing rule';
     }
 
     // Add IPv4 rule
     this.rules.push({ ...parsed, v6: false });
-    // Add IPv6 rule
-    if (parsed.from === 'Anywhere') {
+    // Add IPv6 duplicate if source/dest are not IPv4-specific
+    const addsV6 = this.ruleGetsV6(parsed);
+    if (addsV6) {
       this.rules.push({ ...parsed, v6: true });
     }
 
-    return parsed.from === 'Anywhere'
+    this.syncToVfs();
+    return addsV6
       ? 'Rule added\nRule added (v6)'
       : 'Rule added';
   }
 
-  private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
-    const first = args[0];
+  private ruleGetsV6(rule: UfwRule): boolean {
+    // IPv6 duplicate is added only when from and to are not IPv4-specific
+    const isIpv4 = (addr: string) => /^\d+\.\d+\.\d+\.\d+/.test(addr);
+    return !isIpv4(rule.from) && !isIpv4(rule.to);
+  }
 
-    // ufw allow from <ip> [to any [port <port> [proto <proto>]]]
-    if (first === 'from') {
-      return this.parseFromRule(action, args);
+  private validatePort(portStr: string): string | null {
+    // portStr can be: "22", "22/tcp", "6000:6007/tcp", "6000:6007/udp"
+    const match = portStr.match(/^(\d+)(?::(\d+))?(\/(?:tcp|udp))?$/);
+    if (!match) return `ERROR: Invalid port '${portStr}'`;
+
+    const p1 = parseInt(match[1]);
+    const p2 = match[2] ? parseInt(match[2]) : null;
+
+    if (p1 < 1 || p1 > 65535) return `ERROR: Invalid port '${portStr}'`;
+    if (p2 !== null) {
+      if (p2 < 1 || p2 > 65535) return `ERROR: Invalid port '${portStr}'`;
+      if (p1 >= p2) return `ERROR: Invalid port range '${portStr}'`;
+    }
+    return null; // valid
+  }
+
+  private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
+    let i = 0;
+
+    // Parse optional direction: in | out
+    let direction: RuleDirection = 'in';
+    if (args[i] === 'in' || args[i] === 'out') {
+      direction = args[i] as RuleDirection;
+      i++;
     }
 
-    // ufw allow <service_name>
+    // Parse optional interface: on <iface>
+    let iface = '';
+    if (i < args.length && args[i] === 'on') {
+      i++;
+      if (i >= args.length) return 'ERROR: missing interface name';
+      iface = args[i];
+      i++;
+    }
+
+    if (i >= args.length) return 'ERROR: wrong number of arguments';
+    const first = args[i];
+    const remaining = args.slice(i);
+
+    // ufw allow [in|out] [on <iface>] from <ip> [to <dest> [port <port> [proto <proto>]]]
+    if (first === 'from') {
+      return this.parseFromRule(action, direction, iface, remaining);
+    }
+
+    // ufw allow [in|out] [on <iface>] <service_name>
     const service = SERVICE_PORTS[first];
     if (service) {
       const portStr = service.proto ? `${service.port}/${service.proto}` : service.port;
-      return { action, port: portStr, from: 'Anywhere', to: 'Anywhere', v6: false };
+      return { action, direction, port: portStr, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
     }
 
-    // ufw allow <port>[/<proto>]
-    // ufw allow <port1>:<port2>/<proto>
+    // ufw allow [in|out] [on <iface>] <app_profile_name>
+    const profile = APP_PROFILES[remaining.join(' ')];
+    if (profile) {
+      return { action, direction, port: profile.ports, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
+    }
+
+    // ufw allow [in|out] [on <iface>] <port>[/<proto>]
+    // ufw allow [in|out] [on <iface>] <port1>:<port2>/<proto>
     if (/^\d+/.test(first)) {
-      return { action, port: first, from: 'Anywhere', to: 'Anywhere', v6: false };
+      const err = this.validatePort(first);
+      if (err) return err;
+      return { action, direction, port: first, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
     }
 
     return 'ERROR: invalid rule syntax';
   }
 
-  private parseFromRule(action: Action, args: string[]): UfwRule | string {
-    // from <source> [to any [port <port> [proto <proto>]]]
+  private parseFromRule(action: Action, direction: RuleDirection, iface: string, args: string[]): UfwRule | string {
+    // from <source> [to <dest>|any [port <port> [proto <proto>]]] [comment <text>]
     let from = 'Anywhere';
+    let to = 'Anywhere';
     let port = '';
     let proto = '';
+    let comment = '';
 
     let i = 0;
     // 'from'
@@ -252,10 +334,12 @@ export class LinuxFirewallManager {
       i++;
     }
 
-    // 'to any'
+    // 'to <dest>'
     if (i < args.length && args[i] === 'to') {
       i++; // 'to'
-      if (i < args.length && args[i] === 'any') i++; // 'any'
+      if (i >= args.length) return 'ERROR: missing destination address';
+      to = args[i] === 'any' ? 'Anywhere' : args[i];
+      i++;
     }
 
     // 'port <port>'
@@ -274,11 +358,32 @@ export class LinuxFirewallManager {
       i++;
     }
 
+    // 'comment <text>'
+    if (i < args.length && args[i] === 'comment') {
+      i++;
+      if (i >= args.length) return 'ERROR: missing comment text';
+      comment = args.slice(i).join(' ');
+      i = args.length;
+    }
+
     const portStr = port
       ? (proto ? `${port}/${proto}` : port)
       : 'Anywhere';
 
-    return { action, port: portStr, from, to: 'Anywhere', v6: false };
+    // Validate port if specified
+    if (port) {
+      const fullPort = proto ? `${port}/${proto}` : port;
+      const err = this.validatePort(fullPort.match(/^\d/) ? fullPort : port);
+      if (err) return err;
+    }
+
+    return { action, direction, port: portStr, from, to, iface, v6: false, comment };
+  }
+
+  private getOrderedRules(): UfwRule[] {
+    const v4Rules = this.rules.filter(r => !r.v6);
+    const v6Rules = this.rules.filter(r => r.v6);
+    return [...v4Rules, ...v6Rules];
   }
 
   // ─── Delete rule ─────────────────────────────────────────────────
@@ -289,22 +394,30 @@ export class LinuxFirewallManager {
     // ufw delete <number>
     const num = parseInt(args[0]);
     if (!isNaN(num) && args.length === 1) {
-      if (num < 1 || num > this.rules.length) {
+      const ordered = this.getOrderedRules();
+      if (num < 1 || num > ordered.length) {
         return 'ERROR: could not find a rule matching that number';
       }
-      // Find the matching IPv4 rule (numbered rules are only v4)
-      const v4Rules = this.rules.filter(r => !r.v6);
-      if (num < 1 || num > v4Rules.length) {
-        return 'ERROR: could not find a rule matching that number';
+      const target = ordered[num - 1];
+      // If deleting a v4 rule, also remove its v6 counterpart
+      if (!target.v6) {
+        const hasV6 = this.rules.some(r =>
+          r.v6 && r.action === target.action && r.port === target.port &&
+          r.from === target.from && r.direction === target.direction && r.iface === target.iface
+        );
+        this.rules = this.rules.filter(r => {
+          if (r === target) return false;
+          if (r.v6 && r.action === target.action && r.port === target.port &&
+              r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
+          return true;
+        });
+        this.syncToVfs();
+        return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
       }
-      const target = v4Rules[num - 1];
-      // Remove both v4 and matching v6 rule
-      this.rules = this.rules.filter(r => {
-        if (r === target) return false;
-        if (r.v6 && r.action === target.action && r.port === target.port && r.from === target.from) return false;
-        return true;
-      });
-      return 'Rule deleted\nRule deleted (v6)';
+      // Deleting a v6 rule directly (only removes that one)
+      this.rules = this.rules.filter(r => r !== target);
+      this.syncToVfs();
+      return 'Rule deleted (v6)';
     }
 
     // ufw delete allow|deny|reject <port>
@@ -314,14 +427,20 @@ export class LinuxFirewallManager {
       const parsed = this.parseRuleArgs(action, ruleArgs);
       if (typeof parsed === 'string') return parsed;
 
+      const hadV6 = this.rules.some(r =>
+        r.v6 && r.action === parsed.action && r.port === parsed.port &&
+        r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface
+      );
       const before = this.rules.length;
       this.rules = this.rules.filter(r =>
-        !(r.action === parsed.action && r.port === parsed.port && r.from === parsed.from)
+        !(r.action === parsed.action && r.port === parsed.port &&
+          r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface)
       );
       if (this.rules.length === before) {
         return 'Could not delete non-existent rule';
       }
-      return 'Rule deleted\nRule deleted (v6)';
+      this.syncToVfs();
+      return hadV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
     }
 
     return 'ERROR: invalid delete syntax';
@@ -334,7 +453,7 @@ export class LinuxFirewallManager {
 
     const pos = parseInt(args[0]);
     if (isNaN(pos) || pos < 1) {
-      return 'ERROR: Invalid position \'0\'';
+      return `ERROR: Invalid position '${args[0]}'`;
     }
 
     const action = args[1].toUpperCase() as Action;
@@ -361,11 +480,12 @@ export class LinuxFirewallManager {
 
     // Insert v4 rule
     this.rules.splice(insertIdx, 0, { ...parsed, v6: false });
-    // Insert v6 rule right after if from Anywhere
-    if (parsed.from === 'Anywhere') {
+    // Insert v6 rule right after if applicable
+    if (this.ruleGetsV6(parsed)) {
       this.rules.splice(insertIdx + 1, 0, { ...parsed, v6: true });
     }
 
+    this.syncToVfs();
     return 'Rule inserted';
   }
 
@@ -377,6 +497,7 @@ export class LinuxFirewallManager {
     const level = args[0];
     if (level === 'off') {
       this.logging = false;
+      this.syncToVfs();
       return 'Logging disabled';
     }
 
@@ -389,7 +510,8 @@ export class LinuxFirewallManager {
       return `ERROR: unsupported logging level '${level}'`;
     }
 
-    return `Logging enabled`;
+    this.syncToVfs();
+    return `Logging enabled (${this.loggingLevel})`;
   }
 
   // ─── App profiles ────────────────────────────────────────────────
@@ -419,6 +541,121 @@ export class LinuxFirewallManager {
     }
 
     return 'ERROR: invalid app command';
+  }
+
+  // ─── VFS persistence ─────────────────────────────────────────────
+
+  private syncToVfs(): void {
+    if (!this.vfs) return;
+
+    // Write /etc/ufw/ufw.conf
+    const ufwConf = [
+      '# /etc/ufw/ufw.conf',
+      '#',
+      '',
+      '# Set to yes to start on boot',
+      `ENABLED=${this.enabled ? 'yes' : 'no'}`,
+      '',
+      "# Please use the 'ufw' command to set the loglevel.",
+      '# Loglevel is matched on a snmp-like basis.',
+      `LOGLEVEL=${this.logging ? this.loggingLevel : 'off'}`,
+      '',
+    ].join('\n');
+    this.vfs.writeFile('/etc/ufw/ufw.conf', ufwConf, 0, 0, 0o022);
+
+    // Write /etc/ufw/user.rules (IPv4)
+    const v4Rules = this.rules.filter(r => !r.v6);
+    this.vfs.writeFile('/etc/ufw/user.rules', this.generateIptablesRules(v4Rules, false), 0, 0, 0o022);
+
+    // Write /etc/ufw/user6.rules (IPv6)
+    const v6Rules = this.rules.filter(r => r.v6);
+    this.vfs.writeFile('/etc/ufw/user6.rules', this.generateIptablesRules(v6Rules, true), 0, 0, 0o022);
+  }
+
+  private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {
+    const prefix = ipv6 ? 'ufw6' : 'ufw';
+    const lines: string[] = [
+      '*filter',
+      `:${prefix}-user-input - [0:0]`,
+      `:${prefix}-user-output - [0:0]`,
+      `:${prefix}-user-forward - [0:0]`,
+      `:${prefix}-user-limit-accept - [0:0]`,
+    ];
+
+    // Default policies
+    lines.push(`### default incoming: ${this.defaultIncoming}`);
+    lines.push(`### default outgoing: ${this.defaultOutgoing}`);
+    lines.push('');
+
+    for (const rule of rules) {
+      const chain = rule.direction === 'out' ? `${prefix}-user-output` : `${prefix}-user-input`;
+      const target = this.actionToIptablesTarget(rule.action, prefix);
+      const parts: string[] = [`-A ${chain}`];
+
+      // Interface
+      if (rule.iface) {
+        parts.push(rule.direction === 'out' ? `-o ${rule.iface}` : `-i ${rule.iface}`);
+      }
+
+      // Protocol & port
+      const portMatch = rule.port.match(/^(.+)\/(tcp|udp)$/);
+      if (portMatch) {
+        parts.push(`-p ${portMatch[2]} --dport ${portMatch[1]}`);
+      } else if (rule.port !== 'Anywhere' && /^\d+/.test(rule.port)) {
+        parts.push(`-p tcp --dport ${rule.port}`);
+        parts.push(`-p udp --dport ${rule.port}`);
+      }
+
+      // Source
+      if (rule.from !== 'Anywhere') {
+        parts.push(`-s ${rule.from}`);
+      }
+
+      // Destination
+      if (rule.to !== 'Anywhere') {
+        parts.push(`-d ${rule.to}`);
+      }
+
+      parts.push(`-j ${target}`);
+
+      // Comment
+      if (rule.comment) {
+        parts.push(`-m comment --comment '${rule.comment}'`);
+      }
+
+      lines.push(parts.join(' '));
+    }
+
+    lines.push('COMMIT');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  private actionToIptablesTarget(action: Action, prefix: string): string {
+    switch (action) {
+      case 'ALLOW': return 'ACCEPT';
+      case 'DENY': return 'DROP';
+      case 'REJECT': return 'REJECT';
+      case 'LIMIT': return `${prefix}-user-limit-accept`;
+    }
+  }
+
+  // ─── Logging to /var/log/ufw.log ───────────────────────────────
+
+  private logUfw(message: string): void {
+    if (!this.vfs) return;
+
+    const now = new Date();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const ts = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, ' ')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const line = `${ts} localhost kernel: [UFW] ${message}`;
+
+    const existing = this.vfs.readFile('/var/log/ufw.log');
+    if (existing !== null) {
+      this.vfs.writeFile('/var/log/ufw.log', existing + line + '\n', 0, 0, 0o022);
+    } else {
+      this.vfs.createFileAt('/var/log/ufw.log', line + '\n', 0o640, 0, 4);
+    }
   }
 
   // ─── Usage ───────────────────────────────────────────────────────

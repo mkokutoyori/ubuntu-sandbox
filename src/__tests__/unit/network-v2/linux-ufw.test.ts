@@ -513,6 +513,77 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     });
   });
 
+  // ─── 8.10b: Bug fix validations ──────────────────────────────────
+
+  describe('G8-10b: Bug fix validations', () => {
+    it('should include logging level in enable output', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw logging on');
+      expect(out).toContain('Logging enabled (low)');
+    });
+
+    it('should include correct logging level for medium', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw logging medium');
+      expect(out).toContain('Logging enabled (medium)');
+    });
+
+    it('should show correct position in insert error', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw insert -1 allow 80/tcp');
+      expect(out).toContain("Invalid position '-1'");
+    });
+
+    it('should reject invalid port number (99999)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow 99999/tcp');
+      expect(out).toContain('ERROR');
+      expect(out).toContain('Invalid port');
+    });
+
+    it('should reject invalid port range (8000:6000)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow 8000:6000/tcp');
+      expect(out).toContain('ERROR');
+      expect(out).toContain('Invalid port range');
+    });
+
+    it('should reject port 0', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow 0/tcp');
+      expect(out).toContain('ERROR');
+    });
+
+    it('should not say v6 deleted when deleting IP-specific rule', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 192.168.1.1 to any port 22');
+      const out = await server.executeCommand('ufw delete 1');
+      expect(out).toBe('Rule deleted');
+      expect(out).not.toContain('(v6)');
+    });
+
+    it('should say v6 deleted when deleting Anywhere rule', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      const out = await server.executeCommand('ufw delete 1');
+      expect(out).toContain('Rule deleted (v6)');
+    });
+
+    it('should not say v6 in skip message for IP-specific duplicate', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 10.0.0.1 to any port 80');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 80');
+      expect(out).toBe('Skipping adding existing rule');
+      expect(out).not.toContain('(v6)');
+    });
+
+    it('should validate port in from-rule syntax too', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 70000');
+      expect(out).toContain('ERROR');
+    });
+  });
+
   // ─── 8.11: Complex rule combinations ──────────────────────────────
 
   describe('G8-11: Combinaisons de règles complexes', () => {
@@ -576,6 +647,282 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       // Should have separator line with dashes
       const separatorLine = lines.find(l => l.includes('--'));
       expect(separatorLine).toBeDefined();
+    });
+  });
+
+  // ─── 8.12: Direction, interface, destination IP, app profiles, comments ────
+
+  describe('G8-12: Direction et interface', () => {
+    it('should allow rule with "in" direction', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow in 22/tcp');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('ALLOW IN');
+      expect(status).toContain('22/tcp');
+    });
+
+    it('should allow rule with "out" direction', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow out 53');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('ALLOW OUT');
+      expect(status).toContain('53');
+    });
+
+    it('should allow rule with interface "on eth0"', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow in on eth0 80/tcp');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('on eth0');
+      expect(status).toContain('80/tcp');
+    });
+
+    it('should deny outgoing on specific interface', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw deny out on ens33 25/tcp');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('DENY OUT on ens33');
+    });
+
+    it('should allow direction with from syntax', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow in on eth0 from 10.0.0.0/24 to any port 22');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('on eth0');
+      expect(status).toContain('10.0.0.0/24');
+      expect(status).toContain('22');
+    });
+  });
+
+  describe('G8-13: Destination IP et app profiles comme règles', () => {
+    it('should allow rule to specific destination IP', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to 192.168.1.1 port 443 proto tcp');
+      expect(out).toContain('Rule added');
+    });
+
+    it('should allow app profile as rule target (OpenSSH)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow OpenSSH');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('22/tcp');
+    });
+
+    it('should allow multi-word app profile (Nginx Full)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow Nginx Full');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('80,443/tcp');
+    });
+
+    it('should support comment on from-rule', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 22 comment SSH from office');
+      expect(out).toContain('Rule added');
+    });
+
+    it('should show destination IP in status To column', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 10.0.0.1 to 192.168.1.1 port 443 proto tcp');
+      await server.executeCommand('ufw enable');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('192.168.1.1');
+      expect(status).toContain('443/tcp');
+    });
+  });
+
+  // ─── 8.14: Numbered delete consistency ────────────────────────────
+
+  describe('G8-14: Consistance delete numéroté', () => {
+    it('should delete the correct rule by number in v4+v6 ordering', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');   // v4 rule 1, v6 rule (later)
+      await server.executeCommand('ufw allow 80/tcp');   // v4 rule 2, v6 rule (later)
+      await server.executeCommand('ufw enable');
+
+      // status numbered shows: [1] 22/tcp, [2] 80/tcp, [3] 22/tcp (v6), [4] 80/tcp (v6)
+      const status = await server.executeCommand('ufw status numbered');
+      expect(status).toContain('[ 1]');
+      expect(status).toContain('[ 4]');
+
+      // Delete rule 2 (80/tcp v4) — should also remove v6 counterpart
+      const out = await server.executeCommand('ufw delete 2');
+      expect(out).toContain('Rule deleted');
+      expect(out).toContain('Rule deleted (v6)');
+
+      const after = await server.executeCommand('ufw status');
+      expect(after).toContain('22/tcp');
+      expect(after).not.toContain('80/tcp');
+    });
+
+    it('should delete v6 rule directly when targeting its number', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw enable');
+
+      // [1] 22/tcp, [2] 80/tcp, [3] 22/tcp (v6), [4] 80/tcp (v6)
+      // Delete rule 3 (22/tcp v6 only)
+      const out = await server.executeCommand('ufw delete 3');
+      expect(out).toBe('Rule deleted (v6)');
+
+      // 22/tcp v4 should still exist
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('22/tcp');
+      // But v6 of 22 should be gone, 80/tcp v6 should still exist
+      const lines = status.split('\n');
+      const v6_22 = lines.filter(l => l.includes('22/tcp') && l.includes('(v6)'));
+      expect(v6_22.length).toBe(0);
+      const v6_80 = lines.filter(l => l.includes('80/tcp') && l.includes('(v6)'));
+      expect(v6_80.length).toBe(1);
+    });
+
+    it('should error on out-of-range numbered delete', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      // 2 rules total: v4 + v6
+      const out = await server.executeCommand('ufw delete 5');
+      expect(out).toContain('ERROR');
+    });
+  });
+
+  // ─── 8.15: VFS persistence ──────────────────────────────────────
+
+  describe('G8-15: Persistence VFS', () => {
+    it('should have /etc/ufw/ directory with default config files', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ls /etc/ufw');
+      expect(out).toContain('ufw.conf');
+      expect(out).toContain('before.rules');
+      expect(out).toContain('after.rules');
+      expect(out).toContain('before6.rules');
+      expect(out).toContain('after6.rules');
+      expect(out).toContain('user.rules');
+      expect(out).toContain('user6.rules');
+      expect(out).toContain('sysctl.conf');
+      expect(out).toContain('applications.d');
+    });
+
+    it('should have app profile files in /etc/ufw/applications.d/', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ls /etc/ufw/applications.d');
+      expect(out).toContain('openssh-server');
+      expect(out).toContain('apache2');
+      expect(out).toContain('nginx');
+    });
+
+    it('should read app profile content', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('cat /etc/ufw/applications.d/openssh-server');
+      expect(out).toContain('[OpenSSH]');
+      expect(out).toContain('ports=22/tcp');
+    });
+
+    it('should update ufw.conf ENABLED=yes on enable', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('ENABLED=yes');
+    });
+
+    it('should update ufw.conf ENABLED=no on disable', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+      await server.executeCommand('ufw disable');
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('ENABLED=no');
+    });
+
+    it('should update ufw.conf LOGLEVEL on logging change', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw logging medium');
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('LOGLEVEL=medium');
+    });
+
+    it('should persist rules to /etc/ufw/user.rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw deny 23');
+      const rules = await server.executeCommand('cat /etc/ufw/user.rules');
+      expect(rules).toContain('--dport 22');
+      expect(rules).toContain('ACCEPT');
+      expect(rules).toContain('--dport 23');
+      expect(rules).toContain('DROP');
+    });
+
+    it('should persist IPv6 rules to /etc/ufw/user6.rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 80/tcp');
+      const rules = await server.executeCommand('cat /etc/ufw/user6.rules');
+      expect(rules).toContain('--dport 80');
+      expect(rules).toContain('ufw6-user-input');
+    });
+
+    it('should create /var/log/ufw.log on enable', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+      const log = await server.executeCommand('cat /var/log/ufw.log');
+      expect(log).toContain('[UFW]');
+      expect(log).toContain('UFW enabled');
+    });
+
+    it('should have ufw binary stub in /usr/sbin/', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('which ufw');
+      expect(out).toContain('/usr/sbin/ufw');
+    });
+
+    it('should show default policies in user.rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw default reject incoming');
+      await server.executeCommand('ufw allow 22/tcp');
+      const rules = await server.executeCommand('cat /etc/ufw/user.rules');
+      expect(rules).toContain('default incoming: reject');
+    });
+
+    it('should read before.rules content', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('cat /etc/ufw/before.rules');
+      expect(out).toContain('ufw-before-input');
+      expect(out).toContain('RELATED,ESTABLISHED');
+      expect(out).toContain('ICMP');
+      expect(out).toContain('COMMIT');
+    });
+
+    it('should reset config files on ufw reset', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw enable');
+      await server.executeCommand('ufw reset');
+
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('ENABLED=no');
+
+      const rules = await server.executeCommand('cat /etc/ufw/user.rules');
+      expect(rules).not.toContain('--dport 22');
     });
   });
 });
