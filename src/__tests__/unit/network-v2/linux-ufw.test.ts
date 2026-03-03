@@ -513,6 +513,77 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     });
   });
 
+  // ─── 8.10b: Bug fix validations ──────────────────────────────────
+
+  describe('G8-10b: Bug fix validations', () => {
+    it('should include logging level in enable output', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw logging on');
+      expect(out).toContain('Logging enabled (low)');
+    });
+
+    it('should include correct logging level for medium', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw logging medium');
+      expect(out).toContain('Logging enabled (medium)');
+    });
+
+    it('should show correct position in insert error', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw insert -1 allow 80/tcp');
+      expect(out).toContain("Invalid position '-1'");
+    });
+
+    it('should reject invalid port number (99999)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow 99999/tcp');
+      expect(out).toContain('ERROR');
+      expect(out).toContain('Invalid port');
+    });
+
+    it('should reject invalid port range (8000:6000)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow 8000:6000/tcp');
+      expect(out).toContain('ERROR');
+      expect(out).toContain('Invalid port range');
+    });
+
+    it('should reject port 0', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow 0/tcp');
+      expect(out).toContain('ERROR');
+    });
+
+    it('should not say v6 deleted when deleting IP-specific rule', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 192.168.1.1 to any port 22');
+      const out = await server.executeCommand('ufw delete 1');
+      expect(out).toBe('Rule deleted');
+      expect(out).not.toContain('(v6)');
+    });
+
+    it('should say v6 deleted when deleting Anywhere rule', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      const out = await server.executeCommand('ufw delete 1');
+      expect(out).toContain('Rule deleted (v6)');
+    });
+
+    it('should not say v6 in skip message for IP-specific duplicate', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 10.0.0.1 to any port 80');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 80');
+      expect(out).toBe('Skipping adding existing rule');
+      expect(out).not.toContain('(v6)');
+    });
+
+    it('should validate port in from-rule syntax too', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 70000');
+      expect(out).toContain('ERROR');
+    });
+  });
+
   // ─── 8.11: Complex rule combinations ──────────────────────────────
 
   describe('G8-11: Combinaisons de règles complexes', () => {

@@ -195,10 +195,14 @@ export class LinuxFirewallManager {
 
     // Check for duplicates
     const dup = this.rules.find(r =>
-      !r.v6 && r.action === parsed.action && r.port === parsed.port && r.from === parsed.from
+      !r.v6 && r.action === parsed.action && r.port === parsed.port &&
+      r.from === parsed.from && r.to === parsed.to
     );
     if (dup) {
-      return `Skipping adding existing rule\nSkipping adding existing rule (v6)`;
+      const hasV6 = parsed.from === 'Anywhere';
+      return hasV6
+        ? 'Skipping adding existing rule\nSkipping adding existing rule (v6)'
+        : 'Skipping adding existing rule';
     }
 
     // Add IPv4 rule
@@ -211,6 +215,22 @@ export class LinuxFirewallManager {
     return parsed.from === 'Anywhere'
       ? 'Rule added\nRule added (v6)'
       : 'Rule added';
+  }
+
+  private validatePort(portStr: string): string | null {
+    // portStr can be: "22", "22/tcp", "6000:6007/tcp", "6000:6007/udp"
+    const match = portStr.match(/^(\d+)(?::(\d+))?(\/(?:tcp|udp))?$/);
+    if (!match) return `ERROR: Invalid port '${portStr}'`;
+
+    const p1 = parseInt(match[1]);
+    const p2 = match[2] ? parseInt(match[2]) : null;
+
+    if (p1 < 1 || p1 > 65535) return `ERROR: Invalid port '${portStr}'`;
+    if (p2 !== null) {
+      if (p2 < 1 || p2 > 65535) return `ERROR: Invalid port '${portStr}'`;
+      if (p1 >= p2) return `ERROR: Invalid port range '${portStr}'`;
+    }
+    return null; // valid
   }
 
   private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
@@ -231,6 +251,8 @@ export class LinuxFirewallManager {
     // ufw allow <port>[/<proto>]
     // ufw allow <port1>:<port2>/<proto>
     if (/^\d+/.test(first)) {
+      const err = this.validatePort(first);
+      if (err) return err;
       return { action, port: first, from: 'Anywhere', to: 'Anywhere', v6: false };
     }
 
@@ -278,6 +300,13 @@ export class LinuxFirewallManager {
       ? (proto ? `${port}/${proto}` : port)
       : 'Anywhere';
 
+    // Validate port if specified
+    if (port) {
+      const fullPort = proto ? `${port}/${proto}` : port;
+      const err = this.validatePort(fullPort.match(/^\d/) ? fullPort : port);
+      if (err) return err;
+    }
+
     return { action, port: portStr, from, to: 'Anywhere', v6: false };
   }
 
@@ -298,13 +327,17 @@ export class LinuxFirewallManager {
         return 'ERROR: could not find a rule matching that number';
       }
       const target = v4Rules[num - 1];
+      // Check if a matching v6 rule exists
+      const hasV6 = this.rules.some(r =>
+        r.v6 && r.action === target.action && r.port === target.port && r.from === target.from
+      );
       // Remove both v4 and matching v6 rule
       this.rules = this.rules.filter(r => {
         if (r === target) return false;
         if (r.v6 && r.action === target.action && r.port === target.port && r.from === target.from) return false;
         return true;
       });
-      return 'Rule deleted\nRule deleted (v6)';
+      return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
     }
 
     // ufw delete allow|deny|reject <port>
@@ -314,6 +347,9 @@ export class LinuxFirewallManager {
       const parsed = this.parseRuleArgs(action, ruleArgs);
       if (typeof parsed === 'string') return parsed;
 
+      const hadV6 = this.rules.some(r =>
+        r.v6 && r.action === parsed.action && r.port === parsed.port && r.from === parsed.from
+      );
       const before = this.rules.length;
       this.rules = this.rules.filter(r =>
         !(r.action === parsed.action && r.port === parsed.port && r.from === parsed.from)
@@ -321,7 +357,7 @@ export class LinuxFirewallManager {
       if (this.rules.length === before) {
         return 'Could not delete non-existent rule';
       }
-      return 'Rule deleted\nRule deleted (v6)';
+      return hadV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
     }
 
     return 'ERROR: invalid delete syntax';
@@ -334,7 +370,7 @@ export class LinuxFirewallManager {
 
     const pos = parseInt(args[0]);
     if (isNaN(pos) || pos < 1) {
-      return 'ERROR: Invalid position \'0\'';
+      return `ERROR: Invalid position '${args[0]}'`;
     }
 
     const action = args[1].toUpperCase() as Action;
@@ -389,7 +425,7 @@ export class LinuxFirewallManager {
       return `ERROR: unsupported logging level '${level}'`;
     }
 
-    return `Logging enabled`;
+    return `Logging enabled (${this.loggingLevel})`;
   }
 
   // ─── App profiles ────────────────────────────────────────────────
