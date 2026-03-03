@@ -22,9 +22,9 @@ import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket,
+  ARPPacket, ICMPPacket, UDPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_ICMPV6,
+  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
@@ -545,6 +545,31 @@ export abstract class EndHost extends Equipment {
     }
   }
 
+  // ─── Firewall Hook ─────────────────────────────────────────────
+
+  /**
+   * Firewall hook for incoming packets. Override in subclasses to implement
+   * real packet filtering (e.g. Linux UFW, Windows Firewall).
+   * Return 'accept' to allow, 'drop' to silently discard, 'reject' to drop + ICMP error.
+   * Default: accept all.
+   */
+  protected firewallFilter(
+    _portName: string, _ipPkt: IPv4Packet, _direction: 'in' | 'out',
+  ): 'accept' | 'drop' | 'reject' {
+    return 'accept';
+  }
+
+  /**
+   * Extract port info from an IPv4 packet for firewall evaluation.
+   */
+  protected extractPorts(ipPkt: IPv4Packet): { srcPort: number; dstPort: number } {
+    if ((ipPkt.protocol === IP_PROTO_TCP || ipPkt.protocol === IP_PROTO_UDP) && ipPkt.payload) {
+      const transport = ipPkt.payload as UDPPacket;
+      return { srcPort: transport.sourcePort ?? 0, dstPort: transport.destinationPort ?? 0 };
+    }
+    return { srcPort: 0, dstPort: 0 };
+  }
+
   // ─── IPv4 Handling (RFC 791) ──────────────────────────────────
 
   private handleIPv4(portName: string, ipPkt: IPv4Packet): void {
@@ -568,6 +593,14 @@ export abstract class EndHost extends Equipment {
     const isBroadcast = myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask);
 
     if (isForUs || isBroadcast) {
+      // ── Firewall: filter incoming packets ──
+      const verdict = this.firewallFilter(portName, ipPkt, 'in');
+      if (verdict === 'drop' || verdict === 'reject') {
+        Logger.info(this.id, 'ipv4:firewall-blocked',
+          `${this.name}: firewall ${verdict} ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
+        return;
+      }
+
       // Deliver to upper layer
       if (ipPkt.protocol === IP_PROTO_ICMP) {
         this.handleICMP(portName, ipPkt);
@@ -704,6 +737,11 @@ export abstract class EndHost extends Equipment {
     if (!route) return;
 
     const outPortName = route.port.getName();
+
+    // Firewall: filter outgoing reply
+    const verdict = this.firewallFilter(outPortName, replyIP, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return;
+
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
     if (!nextHopMAC) return;
 

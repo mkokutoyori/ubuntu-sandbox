@@ -9,8 +9,9 @@
 
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
-import { IPAddress, SubnetMask, DeviceType } from '../core/types';
+import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import type { PacketInfo } from './linux/LinuxFirewallManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
 
 export class LinuxServer extends EndHost {
@@ -240,6 +241,24 @@ export class LinuxServer extends EndHost {
         return '';
       },
     };
+  }
+
+  // ─── Firewall filtering ────────────────────────────────────────
+
+  protected override firewallFilter(
+    portName: string, ipPkt: IPv4Packet, direction: 'in' | 'out',
+  ): 'accept' | 'drop' | 'reject' {
+    const ports = this.extractPorts(ipPkt);
+    const pkt: PacketInfo = {
+      direction,
+      protocol: ipPkt.protocol,
+      srcIP: ipPkt.sourceIP.toString(),
+      dstIP: ipPkt.destinationIP.toString(),
+      srcPort: ports.srcPort,
+      dstPort: ports.dstPort,
+      iface: portName,
+    };
+    return this.executor.firewall.filterPacket(pkt);
   }
 
   getOSType(): string { return 'linux'; }

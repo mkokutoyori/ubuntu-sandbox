@@ -53,6 +53,20 @@ interface UfwRule {
   comment: string;    // optional comment
 }
 
+// ─── Packet filtering types ─────────────────────────────────────────
+
+export type FirewallVerdict = 'accept' | 'drop' | 'reject';
+
+export interface PacketInfo {
+  direction: 'in' | 'out';
+  protocol: number;         // 1=ICMP, 6=TCP, 17=UDP
+  srcIP: string;
+  dstIP: string;
+  srcPort: number;          // 0 for ICMP
+  dstPort: number;          // 0 for ICMP
+  iface: string;            // interface name (e.g. 'eth0')
+}
+
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export class LinuxFirewallManager {
@@ -66,6 +80,137 @@ export class LinuxFirewallManager {
 
   constructor(vfs?: VirtualFileSystem) {
     if (vfs) this.vfs = vfs;
+  }
+
+  // ─── Real packet filtering ─────────────────────────────────────
+
+  /**
+   * Evaluate firewall rules against an actual packet.
+   * Returns 'accept', 'drop', or 'reject'.
+   * If firewall is disabled, always accepts.
+   */
+  filterPacket(pkt: PacketInfo): FirewallVerdict {
+    if (!this.enabled) return 'accept';
+
+    // Get rules matching this direction (only non-v6 rules for IPv4 traffic)
+    const candidateRules = this.rules.filter(r =>
+      !r.v6 && r.direction === pkt.direction
+    );
+
+    // First-match wins (like real iptables/ufw)
+    for (const rule of candidateRules) {
+      if (this.ruleMatchesPacket(rule, pkt)) {
+        this.logPacketVerdict(pkt, rule);
+        return this.actionToVerdict(rule.action);
+      }
+    }
+
+    // No rule matched → apply default policy
+    const defaultPolicy = pkt.direction === 'in' ? this.defaultIncoming : this.defaultOutgoing;
+    return defaultPolicy === 'allow' ? 'accept' : (defaultPolicy === 'reject' ? 'reject' : 'drop');
+  }
+
+  /** Check whether UFW is currently enabled. */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  private ruleMatchesPacket(rule: UfwRule, pkt: PacketInfo): boolean {
+    // Interface check
+    if (rule.iface && rule.iface !== pkt.iface) return false;
+
+    // Source IP check
+    if (rule.from !== 'Anywhere') {
+      if (!this.ipMatchesSpec(pkt.srcIP, rule.from)) return false;
+    }
+
+    // Destination IP check
+    if (rule.to !== 'Anywhere') {
+      if (!this.ipMatchesSpec(pkt.dstIP, rule.to)) return false;
+    }
+
+    // Port/protocol check
+    if (rule.port !== 'Anywhere') {
+      if (!this.portMatchesRule(rule.port, pkt)) return false;
+    }
+
+    return true;
+  }
+
+  private ipMatchesSpec(ip: string, spec: string): boolean {
+    // Exact IP match
+    if (!spec.includes('/')) return ip === spec;
+
+    // CIDR match (e.g. 10.0.0.0/24)
+    const [network, prefixStr] = spec.split('/');
+    const prefix = parseInt(prefixStr);
+    if (isNaN(prefix)) return false;
+
+    const ipNum = this.ipToNumber(ip);
+    const netNum = this.ipToNumber(network);
+    if (ipNum === null || netNum === null) return false;
+
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    return (ipNum & mask) === (netNum & mask);
+  }
+
+  private ipToNumber(ip: string): number | null {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return null;
+    const octets = parts.map(p => parseInt(p));
+    if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
+    return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  }
+
+  private portMatchesRule(rulePort: string, pkt: PacketInfo): boolean {
+    // Parse rule port: "22/tcp", "53", "6000:6007/tcp", "80,443/tcp"
+    const protoMatch = rulePort.match(/^(.+)\/(tcp|udp)$/);
+    const portSpec = protoMatch ? protoMatch[1] : rulePort;
+    const ruleProto = protoMatch ? protoMatch[2] : null;
+
+    // Protocol check: if rule specifies tcp/udp, packet protocol must match
+    if (ruleProto) {
+      const protoNum = ruleProto === 'tcp' ? 6 : 17;
+      if (pkt.protocol !== protoNum) return false;
+    } else {
+      // No protocol specified — rule applies to both tcp and udp
+      if (pkt.protocol !== 6 && pkt.protocol !== 17) return false;
+    }
+
+    // Port range: "6000:6007"
+    if (portSpec.includes(':')) {
+      const [startStr, endStr] = portSpec.split(':');
+      const start = parseInt(startStr);
+      const end = parseInt(endStr);
+      return pkt.dstPort >= start && pkt.dstPort <= end;
+    }
+
+    // Multi-port: "80,443"
+    if (portSpec.includes(',')) {
+      const ports = portSpec.split(',').map(p => parseInt(p));
+      return ports.includes(pkt.dstPort);
+    }
+
+    // Single port
+    return pkt.dstPort === parseInt(portSpec);
+  }
+
+  private actionToVerdict(action: Action): FirewallVerdict {
+    switch (action) {
+      case 'ALLOW': return 'accept';
+      case 'DENY': return 'drop';
+      case 'REJECT': return 'reject';
+      case 'LIMIT': return 'accept'; // LIMIT acts as accept (rate limiting not simulated)
+    }
+  }
+
+  private logPacketVerdict(pkt: PacketInfo, rule: UfwRule): void {
+    if (!this.logging) return;
+    const proto = pkt.protocol === 6 ? 'TCP' : pkt.protocol === 17 ? 'UDP' : 'ICMP';
+    const msg = `[UFW BLOCK] IN=${pkt.direction === 'in' ? pkt.iface : ''} OUT=${pkt.direction === 'out' ? pkt.iface : ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}` +
+      (pkt.dstPort ? ` DPT=${pkt.dstPort}` : '') +
+      (pkt.srcPort ? ` SPT=${pkt.srcPort}` : '');
+    this.logUfw(msg);
   }
 
   /**

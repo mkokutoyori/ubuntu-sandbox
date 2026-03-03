@@ -4,9 +4,12 @@
  * Fidèle au comportement réel de ufw sur Ubuntu/Debian.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
+import { MACAddress, resetCounters } from '@/network/core/types';
+import { Logger } from '@/network/core/Logger';
 
 // ═══════════════════════════════════════════════════════════════════
 // GROUP 8: UFW — Uncomplicated Firewall
@@ -923,6 +926,174 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
 
       const rules = await server.executeCommand('cat /etc/ufw/user.rules');
       expect(rules).not.toContain('--dport 22');
+    });
+  });
+
+  // ─── 8.16: Real packet filtering ──────────────────────────────────
+
+  describe('G8-16: Filtrage réel du trafic', () => {
+    beforeEach(() => {
+      resetCounters();
+      MACAddress.resetCounter();
+      Logger.reset();
+    });
+
+    function connectTwoPCs() {
+      const pc1 = new LinuxPC('linux-pc', 'PC1', 0, 0);
+      const pc2 = new LinuxPC('linux-pc', 'PC2', 200, 0);
+      const cable = new Cable('cable-1');
+      cable.connect(pc1.getPort('eth0')!, pc2.getPort('eth0')!);
+      return { pc1, pc2, cable };
+    }
+
+    function connectPCtoServer() {
+      const pc = new LinuxPC('linux-pc', 'Client', 0, 0);
+      const srv = new LinuxServer('linux-server', 'Server', 200, 0);
+      const cable = new Cable('cable-1');
+      cable.connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
+      return { pc, srv, cable };
+    }
+
+    it('should allow ping when firewall is disabled', async () => {
+      const { pc1, pc2 } = connectTwoPCs();
+      await pc1.executeCommand('ifconfig eth0 10.0.0.1');
+      await pc2.executeCommand('ifconfig eth0 10.0.0.2');
+
+      const result = await pc1.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should block incoming ping when ufw enabled with default deny incoming', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall on server (default: deny incoming)
+      await srv.executeCommand('ufw enable');
+
+      // Ping from PC to server → server should drop the incoming ICMP
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow ping after adding allow rule for source IP', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall and allow traffic from 10.0.0.1
+      await srv.executeCommand('ufw allow from 10.0.0.1');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should block ping from non-whitelisted IP', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.99');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Only allow from 10.0.0.1 — pc is 10.0.0.99
+      await srv.executeCommand('ufw allow from 10.0.0.1');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should stop blocking after disabling the firewall', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable → block
+      await srv.executeCommand('ufw enable');
+      const blocked = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(blocked).toContain('0 received');
+
+      // Disable → allow again
+      await srv.executeCommand('ufw disable');
+      const allowed = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(allowed).toContain('1 received');
+      expect(allowed).toContain('0% packet loss');
+    });
+
+    it('should block ping on LinuxPC with ufw deny incoming', async () => {
+      const { pc1, pc2 } = connectTwoPCs();
+      await pc1.executeCommand('ifconfig eth0 10.0.0.1');
+      await pc2.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall on PC2
+      await pc2.executeCommand('sudo ufw enable');
+
+      const result = await pc1.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow CIDR-based source filtering', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.50');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Allow entire 10.0.0.0/24 subnet
+      await srv.executeCommand('ufw allow from 10.0.0.0/24');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should block when source IP is outside allowed CIDR', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 192.168.1.50');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Allow only 10.0.0.0/24 — PC is on 192.168.1.0/24
+      await srv.executeCommand('ufw allow from 10.0.0.0/24');
+      await srv.executeCommand('ufw enable');
+
+      // Different subnet, no route, should fail
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      // Even if the packet arrives, firewall should block it
+      expect(result).toContain('0 received');
+    });
+
+    it('should respect first-match wins: deny before allow', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Deny from 10.0.0.1 first, then allow all — deny should win
+      await srv.executeCommand('ufw deny from 10.0.0.1');
+      await srv.executeCommand('ufw allow from 10.0.0.0/24');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow after reset clears all rules', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall (blocks)
+      await srv.executeCommand('ufw enable');
+      const blocked = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(blocked).toContain('0 received');
+
+      // Reset clears everything (also disables)
+      await srv.executeCommand('ufw reset');
+      const after = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(after).toContain('1 received');
     });
   });
 });
