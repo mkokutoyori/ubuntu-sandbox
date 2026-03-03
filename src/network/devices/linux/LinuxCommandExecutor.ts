@@ -6,6 +6,7 @@ import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
+import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
@@ -21,6 +22,7 @@ export class LinuxCommandExecutor {
   readonly userMgr: LinuxUserManager;
   readonly cron: LinuxCronManager;
   readonly firewall: LinuxFirewallManager;
+  readonly iptables: LinuxIptablesManager;
   readonly logMgr: LinuxLogManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
@@ -35,6 +37,7 @@ export class LinuxCommandExecutor {
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
     this.firewall = new LinuxFirewallManager(this.vfs);
+    this.iptables = new LinuxIptablesManager(this.vfs);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.isServer = isServer;
 
@@ -230,7 +233,8 @@ export class LinuxCommandExecutor {
 
     // Root-only commands — reject if not root
     const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw'];
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw',
+      'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
     }
@@ -429,6 +433,18 @@ export class LinuxCommandExecutor {
       case 'ufw': {
         const out = this.firewall.execute(args);
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
+      }
+
+      // iptables (netfilter)
+      case 'iptables': {
+        return this.iptables.execute(args);
+      }
+      case 'iptables-save': {
+        return { output: this.iptables.executeSave(), exitCode: 0 };
+      }
+      case 'iptables-restore': {
+        const content = stdin ?? '';
+        return this.iptables.executeRestore(content);
       }
 
       // Logging commands
