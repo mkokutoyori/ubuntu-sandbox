@@ -53,6 +53,21 @@ interface UfwRule {
   comment: string;    // optional comment
 }
 
+// ─── Packet filtering types ─────────────────────────────────────────
+
+export type FirewallVerdict = 'accept' | 'drop' | 'reject';
+
+export interface PacketInfo {
+  direction: 'in' | 'out';
+  protocol: number;         // 1=ICMP, 6=TCP, 17=UDP
+  srcIP: string;
+  dstIP: string;
+  srcPort: number;          // 0 for ICMP
+  dstPort: number;          // 0 for ICMP
+  iface: string;            // interface name (e.g. 'eth0')
+  isV6?: boolean;           // true for IPv6 packets (uses v6 rules)
+}
+
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export class LinuxFirewallManager {
@@ -64,8 +79,177 @@ export class LinuxFirewallManager {
   private logging = false;
   private loggingLevel = 'low';
 
+  // Rate limiting state: key = "srcIP:ruleIndex" → timestamps of recent hits
+  private rateLimitHits: Map<string, number[]> = new Map();
+  private readonly RATE_LIMIT_MAX = 6;      // Max connections
+  private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
+
   constructor(vfs?: VirtualFileSystem) {
     if (vfs) this.vfs = vfs;
+  }
+
+  // ─── Real packet filtering ─────────────────────────────────────
+
+  /**
+   * Evaluate firewall rules against an actual packet.
+   * Returns 'accept', 'drop', or 'reject'.
+   * If firewall is disabled, always accepts.
+   */
+  filterPacket(pkt: PacketInfo): FirewallVerdict {
+    if (!this.enabled) return 'accept';
+
+    // Get rules matching this direction and IP version
+    const useV6 = pkt.isV6 === true;
+    const candidateRules = this.rules.filter(r =>
+      r.v6 === useV6 && r.direction === pkt.direction
+    );
+
+    // First-match wins (like real iptables/ufw)
+    for (let i = 0; i < candidateRules.length; i++) {
+      const rule = candidateRules[i];
+      if (this.ruleMatchesPacket(rule, pkt)) {
+        this.logPacketVerdict(pkt, rule);
+        if (rule.action === 'LIMIT') {
+          return this.evaluateRateLimit(pkt, i);
+        }
+        return this.actionToVerdict(rule.action);
+      }
+    }
+
+    // No rule matched → apply default policy
+    const defaultPolicy = pkt.direction === 'in' ? this.defaultIncoming : this.defaultOutgoing;
+    return defaultPolicy === 'allow' ? 'accept' : (defaultPolicy === 'reject' ? 'reject' : 'drop');
+  }
+
+  /** Check whether UFW is currently enabled. */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  private ruleMatchesPacket(rule: UfwRule, pkt: PacketInfo): boolean {
+    // Interface check
+    if (rule.iface && rule.iface !== pkt.iface) return false;
+
+    // Source IP check
+    if (rule.from !== 'Anywhere') {
+      if (!this.ipMatchesSpec(pkt.srcIP, rule.from)) return false;
+    }
+
+    // Destination IP check
+    if (rule.to !== 'Anywhere') {
+      if (!this.ipMatchesSpec(pkt.dstIP, rule.to)) return false;
+    }
+
+    // Port/protocol check
+    if (rule.port !== 'Anywhere') {
+      if (!this.portMatchesRule(rule.port, pkt)) return false;
+    }
+
+    return true;
+  }
+
+  private ipMatchesSpec(ip: string, spec: string): boolean {
+    // Exact IP match
+    if (!spec.includes('/')) return ip === spec;
+
+    // CIDR match (e.g. 10.0.0.0/24)
+    const [network, prefixStr] = spec.split('/');
+    const prefix = parseInt(prefixStr);
+    if (isNaN(prefix)) return false;
+
+    const ipNum = this.ipToNumber(ip);
+    const netNum = this.ipToNumber(network);
+    if (ipNum === null || netNum === null) return false;
+
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    return (ipNum & mask) === (netNum & mask);
+  }
+
+  private ipToNumber(ip: string): number | null {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return null;
+    const octets = parts.map(p => parseInt(p));
+    if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
+    return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  }
+
+  private portMatchesRule(rulePort: string, pkt: PacketInfo): boolean {
+    // Parse rule port: "22/tcp", "53", "6000:6007/tcp", "80,443/tcp"
+    const protoMatch = rulePort.match(/^(.+)\/(tcp|udp)$/);
+    const portSpec = protoMatch ? protoMatch[1] : rulePort;
+    const ruleProto = protoMatch ? protoMatch[2] : null;
+
+    // Protocol check: if rule specifies tcp/udp, packet protocol must match
+    if (ruleProto) {
+      const protoNum = ruleProto === 'tcp' ? 6 : 17;
+      if (pkt.protocol !== protoNum) return false;
+    } else {
+      // No protocol specified — rule applies to both tcp and udp
+      if (pkt.protocol !== 6 && pkt.protocol !== 17) return false;
+    }
+
+    // Port range: "6000:6007"
+    if (portSpec.includes(':')) {
+      const [startStr, endStr] = portSpec.split(':');
+      const start = parseInt(startStr);
+      const end = parseInt(endStr);
+      return pkt.dstPort >= start && pkt.dstPort <= end;
+    }
+
+    // Multi-port: "80,443"
+    if (portSpec.includes(',')) {
+      const ports = portSpec.split(',').map(p => parseInt(p));
+      return ports.includes(pkt.dstPort);
+    }
+
+    // Single port
+    return pkt.dstPort === parseInt(portSpec);
+  }
+
+  private actionToVerdict(action: Action): FirewallVerdict {
+    switch (action) {
+      case 'ALLOW': return 'accept';
+      case 'DENY': return 'drop';
+      case 'REJECT': return 'reject';
+      case 'LIMIT': return 'accept'; // Fallback (real LIMIT uses evaluateRateLimit)
+    }
+  }
+
+  /**
+   * Evaluate rate limiting: allow up to RATE_LIMIT_MAX hits per source IP
+   * within RATE_LIMIT_WINDOW. Beyond that, drop.
+   */
+  private evaluateRateLimit(pkt: PacketInfo, ruleIdx: number): FirewallVerdict {
+    const key = `${pkt.srcIP}:${ruleIdx}`;
+    const now = Date.now();
+
+    let hits = this.rateLimitHits.get(key);
+    if (!hits) {
+      hits = [];
+      this.rateLimitHits.set(key, hits);
+    }
+
+    // Purge expired entries
+    const cutoff = now - this.RATE_LIMIT_WINDOW;
+    while (hits.length > 0 && hits[0] < cutoff) {
+      hits.shift();
+    }
+
+    if (hits.length >= this.RATE_LIMIT_MAX) {
+      return 'drop'; // Rate limit exceeded
+    }
+
+    hits.push(now);
+    return 'accept';
+  }
+
+  private logPacketVerdict(pkt: PacketInfo, rule: UfwRule): void {
+    if (!this.logging) return;
+    const proto = pkt.protocol === 6 ? 'TCP' : pkt.protocol === 17 ? 'UDP' : 'ICMP';
+    const msg = `[UFW BLOCK] IN=${pkt.direction === 'in' ? pkt.iface : ''} OUT=${pkt.direction === 'out' ? pkt.iface : ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}` +
+      (pkt.dstPort ? ` DPT=${pkt.dstPort}` : '') +
+      (pkt.srcPort ? ` SPT=${pkt.srcPort}` : '');
+    this.logUfw(msg);
   }
 
   /**
@@ -89,10 +273,12 @@ export class LinuxFirewallManager {
       case 'limit':    return this.cmdAddRule('LIMIT', args.slice(1));
       case 'delete':   return this.cmdDelete(args.slice(1));
       case 'insert':   return this.cmdInsert(args.slice(1));
+      case 'prepend':  return this.cmdPrepend(args.slice(1));
       case 'reset':    return this.cmdReset();
       case 'reload':   return this.cmdReload();
       case 'logging':  return this.cmdLogging(args.slice(1));
       case 'app':      return this.cmdApp(args.slice(1));
+      case 'show':     return this.cmdShow(args.slice(1));
       case 'version':  return 'ufw 0.36.1';
       default:
         return `ERROR: Invalid syntax\n\n${this.showUsage()}`;
@@ -128,8 +314,35 @@ export class LinuxFirewallManager {
   }
 
   private cmdReload(): string {
+    this.loadFromVfs();
     this.syncToVfs();
     return 'Firewall reloaded';
+  }
+
+  /** Re-read configuration from /etc/ufw/ufw.conf in the VFS. */
+  private loadFromVfs(): void {
+    if (!this.vfs) return;
+
+    const ufwConf = this.vfs.readFile('/etc/ufw/ufw.conf');
+    if (ufwConf) {
+      // Parse ENABLED=yes/no
+      const enabledMatch = ufwConf.match(/ENABLED\s*=\s*(yes|no)/);
+      if (enabledMatch) {
+        this.enabled = enabledMatch[1] === 'yes';
+      }
+
+      // Parse LOGLEVEL=off|low|medium|high|full
+      const logMatch = ufwConf.match(/LOGLEVEL\s*=\s*(\w+)/);
+      if (logMatch) {
+        const level = logMatch[1];
+        if (level === 'off') {
+          this.logging = false;
+        } else if (['low', 'medium', 'high', 'full'].includes(level)) {
+          this.logging = true;
+          this.loggingLevel = level;
+        }
+      }
+    }
   }
 
   private cmdStatus(args: string[]): string {
@@ -489,6 +702,31 @@ export class LinuxFirewallManager {
     return 'Rule inserted';
   }
 
+  // ─── Prepend rule ───────────────────────────────────────────────
+
+  private cmdPrepend(args: string[]): string {
+    if (args.length < 2) return 'ERROR: wrong number of arguments';
+
+    const action = args[0].toUpperCase() as Action;
+    if (!['ALLOW', 'DENY', 'REJECT', 'LIMIT'].includes(action)) {
+      return 'ERROR: invalid action';
+    }
+
+    const ruleArgs = args.slice(1);
+    const parsed = this.parseRuleArgs(action, ruleArgs);
+    if (typeof parsed === 'string') return parsed;
+
+    // Prepend = insert at position 0
+    this.rules.unshift({ ...parsed, v6: false });
+    if (this.ruleGetsV6(parsed)) {
+      // Insert v6 right after the v4 rule
+      this.rules.splice(1, 0, { ...parsed, v6: true });
+    }
+
+    this.syncToVfs();
+    return 'Rule prepended';
+  }
+
   // ─── Logging ─────────────────────────────────────────────────────
 
   private cmdLogging(args: string[]): string {
@@ -541,6 +779,117 @@ export class LinuxFirewallManager {
     }
 
     return 'ERROR: invalid app command';
+  }
+
+  // ─── Show subcommands ───────────────────────────────────────────
+
+  private cmdShow(args: string[]): string {
+    if (args.length === 0) return 'ERROR: wrong number of arguments';
+
+    switch (args[0]) {
+      case 'raw':      return this.cmdShowRaw();
+      case 'added':    return this.cmdShowAdded();
+      case 'listening': return this.cmdShowListening();
+      default:
+        return `ERROR: unsupported show command '${args[0]}'`;
+    }
+  }
+
+  private cmdShowRaw(): string {
+    const lines: string[] = [];
+    lines.push('IPV4 (raw):');
+    lines.push('Chain ufw-user-input (1 references)');
+    lines.push(' pkts bytes target     prot opt in     out     source               destination');
+
+    const v4Rules = this.rules.filter(r => !r.v6);
+    for (const rule of v4Rules) {
+      const chain = rule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
+      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
+      const proto = this.extractProtoFromPort(rule.port);
+      const portNum = this.extractPortNum(rule.port);
+      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
+      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
+      const dpt = portNum ? ` dpt:${portNum}` : '';
+      const iface = rule.iface || '*';
+      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${rule.direction === 'in' ? iface.padEnd(6) : '*'.padEnd(6)} ${rule.direction === 'out' ? iface.padEnd(6) : '*'.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    }
+
+    lines.push('');
+    lines.push('Chain ufw-user-output (1 references)');
+    lines.push(' pkts bytes target     prot opt in     out     source               destination');
+
+    const v4Out = v4Rules.filter(r => r.direction === 'out');
+    for (const rule of v4Out) {
+      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
+      const proto = this.extractProtoFromPort(rule.port);
+      const portNum = this.extractPortNum(rule.port);
+      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
+      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
+      const dpt = portNum ? ` dpt:${portNum}` : '';
+      const iface = rule.iface || '*';
+      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${'*'.padEnd(6)} ${iface.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private cmdShowAdded(): string {
+    const lines: string[] = ['Added user rules (see \'ufw status\' for running firewall):'];
+    const v4Rules = this.rules.filter(r => !r.v6);
+    for (const rule of v4Rules) {
+      const parts: string[] = ['ufw'];
+      parts.push(rule.action.toLowerCase());
+      if (rule.direction !== 'in') parts.push(rule.direction);
+      if (rule.iface) {
+        parts.push('on');
+        parts.push(rule.iface);
+      }
+      if (rule.from !== 'Anywhere' || rule.to !== 'Anywhere') {
+        parts.push('from');
+        parts.push(rule.from === 'Anywhere' ? 'any' : rule.from);
+        if (rule.to !== 'Anywhere' || rule.port !== 'Anywhere') {
+          parts.push('to');
+          parts.push(rule.to === 'Anywhere' ? 'any' : rule.to);
+        }
+        if (rule.port !== 'Anywhere') {
+          const portMatch = rule.port.match(/^(.+)\/(tcp|udp)$/);
+          if (portMatch) {
+            parts.push('port');
+            parts.push(portMatch[1]);
+            parts.push('proto');
+            parts.push(portMatch[2]);
+          } else {
+            parts.push('port');
+            parts.push(rule.port);
+          }
+        }
+      } else {
+        parts.push(rule.port);
+      }
+      lines.push(parts.join(' '));
+    }
+    return lines.join('\n');
+  }
+
+  private cmdShowListening(): string {
+    // Simulated listening ports (UFW doesn't actually know what's listening)
+    const lines: string[] = [];
+    lines.push('tcp:');
+    lines.push('  22 [ ssh ]');
+    lines.push('udp:');
+    lines.push('  (none)');
+    return lines.join('\n');
+  }
+
+  private extractProtoFromPort(port: string): string | null {
+    const match = port.match(/\/(tcp|udp)$/);
+    return match ? match[1] : null;
+  }
+
+  private extractPortNum(port: string): string | null {
+    if (port === 'Anywhere') return null;
+    const match = port.match(/^(\d[\d:,]*)/);
+    return match ? match[1] : null;
   }
 
   // ─── VFS persistence ─────────────────────────────────────────────
@@ -675,8 +1024,10 @@ export class LinuxFirewallManager {
       ' limit ARGS                      add limit rule',
       ' delete RULE|NUM                 delete RULE',
       ' insert NUM RULE                 insert RULE at NUM',
+      ' prepend RULE                    prepend RULE to top',
       ' reload                          reload firewall',
       ' reset                           reset firewall',
+      ' show ARG                        show firewall report',
       ' status                          show firewall status',
       ' status numbered                 show firewall status as numbered list',
       ' status verbose                  show verbose firewall status',

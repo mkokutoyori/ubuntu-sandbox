@@ -4,9 +4,12 @@
  * Fidèle au comportement réel de ufw sur Ubuntu/Debian.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
+import { MACAddress, resetCounters } from '@/network/core/types';
+import { Logger } from '@/network/core/Logger';
 
 // ═══════════════════════════════════════════════════════════════════
 // GROUP 8: UFW — Uncomplicated Firewall
@@ -82,6 +85,33 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await server.executeCommand('ufw enable');
       const out = await server.executeCommand('ufw reload');
       expect(out).toContain('Firewall reloaded');
+    });
+
+    it('should re-read ufw.conf on reload', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw logging medium');
+      await server.executeCommand('ufw enable');
+
+      // Manually edit ufw.conf to change LOGLEVEL
+      await server.executeCommand('echo "ENABLED=yes\nLOGLEVEL=high" > /etc/ufw/ufw.conf');
+
+      // Reload should pick up the new log level
+      await server.executeCommand('ufw reload');
+
+      const status = await server.executeCommand('ufw status verbose');
+      expect(status).toContain('on (high)');
+    });
+
+    it('should re-apply ENABLED state from ufw.conf on reload', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+
+      // Manually set ENABLED=no in config
+      await server.executeCommand('echo "ENABLED=no\nLOGLEVEL=off" > /etc/ufw/ufw.conf');
+      await server.executeCommand('ufw reload');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('Status: inactive');
     });
   });
 
@@ -361,6 +391,46 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw delete allow 9999/tcp');
       expect(out).toContain('Could not delete non-existent rule');
+    });
+
+    it('should delete rule with direction (ufw delete allow in 22/tcp)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow in 22/tcp');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw delete allow in 22/tcp');
+      expect(out).toContain('Rule deleted');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).not.toContain('22/tcp');
+      expect(status).toContain('80/tcp');
+    });
+
+    it('should delete rule with from syntax (ufw delete allow from 10.0.0.1)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow from 10.0.0.1');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw delete allow from 10.0.0.1');
+      expect(out).toContain('Rule deleted');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).not.toContain('10.0.0.1');
+      expect(status).toContain('80/tcp');
+    });
+
+    it('should delete deny rule by spec', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw deny 23');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw delete deny 23');
+      expect(out).toContain('Rule deleted');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).not.toContain('23');
     });
   });
 
@@ -923,6 +993,482 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
 
       const rules = await server.executeCommand('cat /etc/ufw/user.rules');
       expect(rules).not.toContain('--dport 22');
+    });
+  });
+
+  // ─── 8.16: Real packet filtering ──────────────────────────────────
+
+  describe('G8-16: Filtrage réel du trafic', () => {
+    beforeEach(() => {
+      resetCounters();
+      MACAddress.resetCounter();
+      Logger.reset();
+    });
+
+    function connectTwoPCs() {
+      const pc1 = new LinuxPC('linux-pc', 'PC1', 0, 0);
+      const pc2 = new LinuxPC('linux-pc', 'PC2', 200, 0);
+      const cable = new Cable('cable-1');
+      cable.connect(pc1.getPort('eth0')!, pc2.getPort('eth0')!);
+      return { pc1, pc2, cable };
+    }
+
+    function connectPCtoServer() {
+      const pc = new LinuxPC('linux-pc', 'Client', 0, 0);
+      const srv = new LinuxServer('linux-server', 'Server', 200, 0);
+      const cable = new Cable('cable-1');
+      cable.connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
+      return { pc, srv, cable };
+    }
+
+    it('should allow ping when firewall is disabled', async () => {
+      const { pc1, pc2 } = connectTwoPCs();
+      await pc1.executeCommand('ifconfig eth0 10.0.0.1');
+      await pc2.executeCommand('ifconfig eth0 10.0.0.2');
+
+      const result = await pc1.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should block incoming ping when ufw enabled with default deny incoming', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall on server (default: deny incoming)
+      await srv.executeCommand('ufw enable');
+
+      // Ping from PC to server → server should drop the incoming ICMP
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow ping after adding allow rule for source IP', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall and allow traffic from 10.0.0.1
+      await srv.executeCommand('ufw allow from 10.0.0.1');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should block ping from non-whitelisted IP', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.99');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Only allow from 10.0.0.1 — pc is 10.0.0.99
+      await srv.executeCommand('ufw allow from 10.0.0.1');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should stop blocking after disabling the firewall', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable → block
+      await srv.executeCommand('ufw enable');
+      const blocked = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(blocked).toContain('0 received');
+
+      // Disable → allow again
+      await srv.executeCommand('ufw disable');
+      const allowed = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(allowed).toContain('1 received');
+      expect(allowed).toContain('0% packet loss');
+    });
+
+    it('should block ping on LinuxPC with ufw deny incoming', async () => {
+      const { pc1, pc2 } = connectTwoPCs();
+      await pc1.executeCommand('ifconfig eth0 10.0.0.1');
+      await pc2.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall on PC2
+      await pc2.executeCommand('sudo ufw enable');
+
+      const result = await pc1.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow CIDR-based source filtering', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.50');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Allow entire 10.0.0.0/24 subnet
+      await srv.executeCommand('ufw allow from 10.0.0.0/24');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should block when source IP is outside allowed CIDR', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 192.168.1.50');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Allow only 10.0.0.0/24 — PC is on 192.168.1.0/24
+      await srv.executeCommand('ufw allow from 10.0.0.0/24');
+      await srv.executeCommand('ufw enable');
+
+      // Different subnet, no route, should fail
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      // Even if the packet arrives, firewall should block it
+      expect(result).toContain('0 received');
+    });
+
+    it('should respect first-match wins: deny before allow', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Deny from 10.0.0.1 first, then allow all — deny should win
+      await srv.executeCommand('ufw deny from 10.0.0.1');
+      await srv.executeCommand('ufw allow from 10.0.0.0/24');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow after reset clears all rules', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Enable firewall (blocks)
+      await srv.executeCommand('ufw enable');
+      const blocked = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(blocked).toContain('0 received');
+
+      // Reset clears everything (also disables)
+      await srv.executeCommand('ufw reset');
+      const after = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(after).toContain('1 received');
+    });
+
+    it('should block outgoing ping when ufw default deny outgoing', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Allow incoming (so reply could come back), deny outgoing (blocks sent pings)
+      await pc.executeCommand('sudo ufw default allow incoming');
+      await pc.executeCommand('sudo ufw default deny outgoing');
+      await pc.executeCommand('sudo ufw enable');
+
+      // PC tries to send ping → outgoing filter should block it before it leaves
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow outgoing ping when outgoing rule allows it', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Deny outgoing by default, but allow to 10.0.0.2, and allow incoming for replies
+      await pc.executeCommand('sudo ufw default allow incoming');
+      await pc.executeCommand('sudo ufw default deny outgoing');
+      await pc.executeCommand('sudo ufw allow out from any to 10.0.0.2');
+      await pc.executeCommand('sudo ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
+
+    it('should send ICMP destination-unreachable on reject (not silent drop)', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Set default incoming to reject (sends ICMP error back instead of silent drop)
+      await srv.executeCommand('ufw default reject incoming');
+      await srv.executeCommand('ufw enable');
+
+      // Ping should fail fast with "Destination Host Unreachable" instead of timeout
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('0 received');
+    });
+
+    it('should send ICMP unreachable on reject rule match', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Reject traffic from 10.0.0.1 specifically
+      await srv.executeCommand('ufw reject from 10.0.0.1');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('0 received');
+    });
+  });
+
+  // ─── 8.17: ufw show subcommands ────────────────────────────────
+
+  describe('G8-17: ufw show subcommands', () => {
+    it('should show raw iptables-style output', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw enable');
+
+      const out = await server.executeCommand('ufw show raw');
+      expect(out).toContain('Chain');
+      expect(out).toContain('ufw-user-input');
+      expect(out).toContain('ACCEPT');
+      expect(out).toContain('dpt:22');
+    });
+
+    it('should show added rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw deny 23');
+      await server.executeCommand('ufw allow from 10.0.0.1');
+
+      const out = await server.executeCommand('ufw show added');
+      expect(out).toContain('ufw allow 22/tcp');
+      expect(out).toContain('ufw deny 23');
+      expect(out).toContain('ufw allow from 10.0.0.1');
+    });
+
+    it('should show listening ports', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+
+      const out = await server.executeCommand('ufw show listening');
+      // Should show header at minimum
+      expect(out).toContain('tcp');
+    });
+
+    it('should error on invalid show subcommand', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw show badcmd');
+      expect(out).toContain('ERROR');
+    });
+  });
+
+  // ─── 8.17b: ufw prepend ────────────────────────────────────────
+
+  describe('G8-17b: ufw prepend', () => {
+    it('should prepend rule at position 1', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw allow 80/tcp');
+
+      const out = await server.executeCommand('ufw prepend deny 23');
+      expect(out).toContain('Rule prepended');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status numbered');
+      // deny 23 should be first
+      const lines = status.split('\n');
+      const rule1 = lines.find(l => l.includes('[ 1]'));
+      expect(rule1).toContain('23');
+      expect(rule1).toContain('DENY');
+    });
+
+    it('should prepend rule before existing rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw allow 443/tcp');
+      await server.executeCommand('ufw prepend deny from 10.0.0.1');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status numbered');
+      const lines = status.split('\n');
+      const rule1 = lines.find(l => l.includes('[ 1]'));
+      expect(rule1).toContain('DENY');
+      expect(rule1).toContain('10.0.0.1');
+    });
+
+    it('should prepend to empty rule set', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw prepend allow 22/tcp');
+      expect(out).toContain('Rule prepended');
+    });
+  });
+
+  // ─── 8.18: Rate limiting (LIMIT) ──────────────────────────────
+
+  describe('G8-18: Rate limiting', () => {
+    it('should accept packets under the rate limit', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['limit', '22/tcp']);
+      fw.execute(['enable']);
+
+      // First few packets should be accepted (under 6 in 30s)
+      const result = fw.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      });
+      expect(result).toBe('accept');
+    });
+
+    it('should drop packets over the rate limit', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['limit', '22/tcp']);
+      fw.execute(['enable']);
+
+      const pkt = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      };
+
+      // Send 6 packets (under limit) — all should be accepted
+      for (let i = 0; i < 6; i++) {
+        expect(fw.filterPacket(pkt)).toBe('accept');
+      }
+
+      // 7th packet should be dropped (over limit)
+      expect(fw.filterPacket(pkt)).toBe('drop');
+    });
+
+    it('should track rate limit per source IP', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['limit', '22/tcp']);
+      fw.execute(['enable']);
+
+      const pkt1 = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      };
+      const pkt2 = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: '10.0.0.99', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 22, iface: 'eth0',
+      };
+
+      // Exhaust limit for 10.0.0.1
+      for (let i = 0; i < 7; i++) fw.filterPacket(pkt1);
+
+      // 10.0.0.99 should still be accepted (different source)
+      expect(fw.filterPacket(pkt2)).toBe('accept');
+    });
+  });
+
+  // ─── 8.19: IPv6 firewall filtering ──────────────────────────────
+
+  describe('G8-19: Filtrage IPv6', () => {
+    it('should use v6 rules for IPv6 packet filtering via filterPacket', async () => {
+      const srv = new LinuxServer('linux-server', 'SRV1');
+
+      // Add a rule that generates both v4 and v6 entries
+      await srv.executeCommand('ufw allow 22/tcp');
+      await srv.executeCommand('ufw enable');
+
+      // v6 rules should exist in status
+      const status = await srv.executeCommand('ufw status');
+      expect(status).toContain('22/tcp (v6)');
+    });
+
+    it('should apply default policy for v6 packets when no v6 rule matches', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['enable']);
+
+      // Default deny incoming — IPv6 packet should be dropped
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6, // TCP
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('drop');
+    });
+
+    it('should match v6 allow rule for IPv6 packets', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['allow', '80/tcp']); // adds v4 and v6 rule
+      fw.execute(['enable']);
+
+      // IPv6 TCP packet to port 80 should be allowed via v6 rule
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6,
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('accept');
+    });
+
+    it('should not use v4 rules for IPv6 packets', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      // Add rule from specific IPv4 → no v6 counterpart
+      fw.execute(['allow', 'from', '10.0.0.1', 'to', 'any', 'port', '80']);
+      fw.execute(['enable']);
+
+      // IPv6 packet should NOT match the v4-only rule → default deny
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6,
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('drop');
+    });
+
+    it('should deny IPv6 packet when v6 rule removed but v4 rule remains', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      // allow 80/tcp → creates v4 rule + v6 rule
+      fw.execute(['allow', '80/tcp']);
+      fw.execute(['enable']);
+
+      // Delete ONLY the v6 rule (rule 2 in ordered list: [1] 80/tcp v4, [2] 80/tcp v6)
+      fw.execute(['delete', '2']);
+
+      // IPv6 packet to port 80 → v6 rule removed, should fall to default deny
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6,
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('drop');
     });
   });
 });
