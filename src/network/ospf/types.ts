@@ -655,16 +655,20 @@ export interface OSPFRouteEntry {
   routeType: OSPFRouteType;
   /** Area where this route was learned (for intra/inter) */
   areaId: string;
-  /** Next-hop IP */
+  /** Primary next-hop IP (first ECMP path) */
   nextHop: string;
-  /** Outgoing interface */
+  /** Primary outgoing interface (first ECMP path) */
   iface: string;
   /** OSPF metric (cost) */
   cost: number;
-  /** For type-2 external: forwarding metric */
+  /** For type-2 external: path cost to ASBR (for tie-breaking) */
   type2Cost?: number;
   /** Advertising Router ID */
   advertisingRouter: string;
+  /** ECMP: all equal-cost next-hop IPs (includes primary nextHop) */
+  nextHops?: string[];
+  /** ECMP: all equal-cost outgoing interfaces (includes primary iface) */
+  ifaces?: string[];
 }
 
 // ─── Initial LSA Sequence Number ─────────────────────────────────────
