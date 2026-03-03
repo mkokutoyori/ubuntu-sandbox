@@ -1127,5 +1127,34 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(result).toContain('1 received');
       expect(result).toContain('0% packet loss');
     });
+
+    it('should send ICMP destination-unreachable on reject (not silent drop)', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Set default incoming to reject (sends ICMP error back instead of silent drop)
+      await srv.executeCommand('ufw default reject incoming');
+      await srv.executeCommand('ufw enable');
+
+      // Ping should fail fast with "Destination Host Unreachable" instead of timeout
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('0 received');
+    });
+
+    it('should send ICMP unreachable on reject rule match', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Reject traffic from 10.0.0.1 specifically
+      await srv.executeCommand('ufw reject from 10.0.0.1');
+      await srv.executeCommand('ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('0 received');
+    });
   });
 });

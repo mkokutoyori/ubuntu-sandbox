@@ -598,6 +598,9 @@ export abstract class EndHost extends Equipment {
       if (verdict === 'drop' || verdict === 'reject') {
         Logger.info(this.id, 'ipv4:firewall-blocked',
           `${this.name}: firewall ${verdict} ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
+        if (verdict === 'reject') {
+          this.sendICMPReject(portName, ipPkt);
+        }
         return;
       }
 
@@ -750,6 +753,45 @@ export abstract class EndHost extends Equipment {
       dstMAC: nextHopMAC.mac,
       etherType: ETHERTYPE_IPV4,
       payload: replyIP,
+    });
+  }
+
+  /**
+   * Send ICMP destination-unreachable (admin prohibited) back to the sender.
+   * Used when firewall verdict is 'reject' (as opposed to silent 'drop').
+   */
+  private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
+    const port = this.ports.get(portName);
+    if (!port) return;
+    const myIP = port.getIPAddress();
+    if (!myIP) return;
+
+    const icmpError: ICMPPacket = {
+      type: 'icmp',
+      icmpType: 'destination-unreachable',
+      code: 13, // Communication administratively prohibited
+      id: 0,
+      sequence: 0,
+      dataSize: 0,
+    };
+
+    const errorIP = createIPv4Packet(
+      myIP,
+      offendingPkt.sourceIP,
+      IP_PROTO_ICMP,
+      this.defaultTTL,
+      icmpError,
+      8,
+    );
+
+    const targetMAC = this.arpTable.get(offendingPkt.sourceIP.toString());
+    if (!targetMAC) return;
+
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(),
+      dstMAC: targetMAC.mac,
+      etherType: ETHERTYPE_IPV4,
+      payload: errorIP,
     });
   }
 
