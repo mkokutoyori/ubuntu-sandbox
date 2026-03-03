@@ -16,7 +16,7 @@
 
 import {
   OSPFConfig, OSPFInterface, OSPFNeighbor, OSPFNeighborState, OSPFNeighborEvent,
-  OSPFInterfaceState, OSPFArea, OSPFAreaType, OSPFNetworkType,
+  OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType,
   LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ASBRSummaryLSA,
   ExternalLSA, NSSAExternalLSA,
   RouterLSALink, RouterLinkType,
@@ -263,6 +263,43 @@ export class OSPFEngine {
       }
     }
     area.type = type;
+  }
+
+  /**
+   * Configure NSSA-specific options for an area.
+   * Cisco equivalents: `area X nssa no-summary` / `area X nssa default-information-originate`
+   * Sets area type to 'nssa' and applies the given options.
+   */
+  configureNSSA(
+    areaId: string,
+    options: { noSummary?: boolean; defaultInfoOriginate?: boolean } = {},
+  ): void {
+    this.setAreaType(areaId, 'nssa');
+    const area = this.config.areas.get(areaId)!;
+    if (options.noSummary !== undefined) area.nssaNoSummary = options.noSummary;
+    if (options.defaultInfoOriginate !== undefined) area.nssaDefaultInfoOriginate = options.defaultInfoOriginate;
+  }
+
+  /**
+   * Add (or replace) an area range for route summarization at this ABR.
+   * Cisco: `area X range <network> <mask> [not-advertise]`
+   * RFC 2328 §12.4.3.1
+   */
+  addAreaRange(areaId: string, network: string, mask: string, advertise = true): void {
+    let area = this.config.areas.get(areaId);
+    if (!area) {
+      area = {
+        areaId,
+        type: 'normal',
+        interfaces: [],
+        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+      };
+      this.config.areas.set(areaId, area);
+    }
+    if (!area.ranges) area.ranges = [];
+    // Replace any existing entry with the same network/mask
+    area.ranges = area.ranges.filter(r => r.network !== network || r.mask !== mask);
+    area.ranges.push({ network, mask, advertise });
   }
 
   setPassiveInterface(ifName: string): void {
@@ -1686,6 +1723,76 @@ export class OSPFEngine {
     return lsa;
   }
 
+  /**
+   * Originate an AS-External-LSA (Type 5) for a redistributed route.
+   * Type 5 LSAs are AS-wide and stored in the external LSDB.
+   * RFC 2328 §12.4.5
+   */
+  originateExternalLSA(
+    network: string,
+    mask: string,
+    metric: number,
+    metricType: 1 | 2 = 2,
+    forwardingAddress: string = '0.0.0.0',
+  ): ExternalLSA {
+    const lsa: ExternalLSA = {
+      lsAge: 0,
+      options: 0x02,
+      lsType: 5,
+      linkStateId: network,
+      advertisingRouter: this.config.routerId,
+      lsSequenceNumber: this.nextSeqNumber(),
+      checksum: 0,
+      length: 36,
+      networkMask: mask,
+      metricType,
+      metric,
+      forwardingAddress,
+      externalRouteTag: 0,
+    };
+    lsa.checksum = this.computeLSAChecksum(lsa);
+    this.installLSA(OSPF_BACKBONE_AREA, lsa);
+    this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
+    return lsa;
+  }
+
+  /**
+   * Redistribute an external route into OSPF.
+   * Automatically chooses Type 7 for NSSA areas and Type 5 for normal/backbone areas.
+   * Cisco equivalent: `redistribute <protocol>` on an ASBR.
+   * RFC 3101 §2.4, RFC 2328 §12.4.5
+   */
+  redistributeExternalRoute(
+    network: string,
+    mask: string,
+    metric: number,
+    metricType: 1 | 2 = 2,
+    forwardingAddress: string = '0.0.0.0',
+  ): void {
+    // Collect all areas this router has interfaces in
+    const usedAreaIds = new Set<string>();
+    for (const [, iface] of this.interfaces) {
+      usedAreaIds.add(iface.areaId);
+    }
+
+    let generatedType5 = false;
+    for (const areaId of usedAreaIds) {
+      const area = this.config.areas.get(areaId);
+      if (area?.type === 'nssa') {
+        // NSSA area: originate Type 7 (area-scoped)
+        this.originateNSSAExternalLSA(areaId, network, mask, metric, metricType, forwardingAddress);
+      } else if (!generatedType5) {
+        // Normal/backbone: originate Type 5 once (AS-wide)
+        this.originateExternalLSA(network, mask, metric, metricType, forwardingAddress);
+        generatedType5 = true;
+      }
+    }
+    // Fallback: no interfaces configured yet — originate Type 5
+    if (!generatedType5 && usedAreaIds.size === 0) {
+      this.originateExternalLSA(network, mask, metric, metricType, forwardingAddress);
+    }
+  }
+
   // ─── LSA Flooding (RFC 2328 §13.3) ─────────────────────────────
 
   private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null, force = false): void {
@@ -1832,40 +1939,145 @@ export class OSPFEngine {
    * For each ASBR (Router-LSA with E-bit) found in an area, originate a
    * Type 4 LSA into every other area.
    */
-  private originateSummariesAsABR(intraAreaRoutesByArea: Map<string, OSPFRouteEntry[]>): void {
+  /**
+   * Originate Type 3 / Type 4 Summary LSAs for each intra-area route into all
+   * other areas (RFC 2328 §12.4.3).  Handles:
+   *  - Totally-stubby and Totally-NSSA areas (skip Type 3; inject Type 3 default)
+   *  - NSSA default-information-originate (inject Type 7 default)
+   *  - Area ranges (aggregate + suppress individual routes)
+   *
+   * Exposed as public so unit tests can drive it with hand-crafted route maps
+   * without running full SPF.
+   */
+  originateSummariesAsABR(intraAreaRoutesByArea: Map<string, OSPFRouteEntry[]>): void {
     const myAreas = Array.from(this.config.areas.keys());
+    const nssaDefaultsDone = new Set<string>(); // avoid duplicate default per target area
 
     for (const sourceAreaId of myAreas) {
       const routes = intraAreaRoutesByArea.get(sourceAreaId) ?? [];
+      const intraRoutes = routes.filter(r => r.routeType === 'intra-area' && r.network !== '0.0.0.0');
 
       for (const targetAreaId of myAreas) {
         if (targetAreaId === sourceAreaId) continue;
 
-        // Don't advertise into totally-stubby areas or NSSA (Type 3 not allowed)
         const targetArea = this.config.areas.get(targetAreaId);
+
+        // Skip Type 3 into totally-stubby areas
         if (targetArea?.type === 'totally-stubby') continue;
 
-        for (const route of routes) {
-          if (route.routeType !== 'intra-area') continue;
-          if (route.network === '0.0.0.0') continue; // skip default route
+        // Skip Type 3 into Totally NSSA areas (will inject default below)
+        if (targetArea?.type === 'nssa' && targetArea.nssaNoSummary) continue;
+
+        // Apply area ranges from the source area
+        const { individual, aggregates } = this.applyAreaRanges(sourceAreaId, intraRoutes);
+
+        for (const route of individual) {
           this.originateSummaryLSA(targetAreaId, route.network, route.mask, route.cost);
         }
+        for (const [, agg] of aggregates) {
+          if (agg.advertise) {
+            this.originateSummaryLSA(targetAreaId, agg.network, agg.mask, agg.metric);
+          }
+        }
 
-        // Also check for ASBRs (Router-LSA E-bit) in the source area
-        const sourceDB = this.lsdb.areas.get(sourceAreaId);
-        if (!sourceDB) continue;
-        for (const [, lsa] of sourceDB) {
-          if (lsa.lsType !== 1) continue;
-          const rLsa = lsa as RouterLSA;
-          if ((rLsa.flags & 0x02) === 0) continue; // E-bit not set — not an ASBR
-          if (rLsa.advertisingRouter === this.config.routerId) continue; // Don't advertise self
-          // Find cost to ASBR from intra-area routes
-          const asbrVertex = routes.find(rt => rt.advertisingRouter === rLsa.advertisingRouter);
-          const metric = asbrVertex ? asbrVertex.cost : 1;
-          this.originateASBRSummaryLSA(targetAreaId, rLsa.advertisingRouter, metric);
+        // Type 4 ASBR summaries — do not flood into NSSA (RFC 3101 §3.4)
+        if (targetArea?.type !== 'nssa') {
+          const sourceDB = this.lsdb.areas.get(sourceAreaId);
+          if (sourceDB) {
+            for (const [, lsa] of sourceDB) {
+              if (lsa.lsType !== 1) continue;
+              const rLsa = lsa as RouterLSA;
+              if ((rLsa.flags & 0x02) === 0) continue; // E-bit not set
+              if (rLsa.advertisingRouter === this.config.routerId) continue;
+              const asbrVertex = routes.find(rt => rt.advertisingRouter === rLsa.advertisingRouter);
+              const metric = asbrVertex ? asbrVertex.cost : 1;
+              this.originateASBRSummaryLSA(targetAreaId, rLsa.advertisingRouter, metric);
+            }
+          }
         }
       }
     }
+
+    // Post-pass: NSSA-specific defaults (once per target area)
+    for (const [areaId, area] of this.config.areas) {
+      if (area.type !== 'nssa') continue;
+      if (nssaDefaultsDone.has(areaId)) continue;
+      nssaDefaultsDone.add(areaId);
+
+      // Totally NSSA: inject Type 3 default (0.0.0.0/0) into the area
+      if (area.nssaNoSummary) {
+        this.originateSummaryLSA(areaId, '0.0.0.0', '0.0.0.0', 1);
+      }
+
+      // nssa default-information-originate: inject Type 7 default
+      if (area.nssaDefaultInfoOriginate) {
+        this.originateNSSAExternalLSA(areaId, '0.0.0.0', '0.0.0.0', 1);
+      }
+    }
+  }
+
+  // ─── Area Range helpers ─────────────────────────────────────────
+
+  /**
+   * Apply area ranges to a list of routes from a given area.
+   * Returns individual routes (not covered by any range) and aggregate entries
+   * (one per matching range, with metric = max covered route cost).
+   */
+  private applyAreaRanges(
+    areaId: string,
+    routes: OSPFRouteEntry[],
+  ): {
+    individual: OSPFRouteEntry[];
+    aggregates: Map<string, { network: string; mask: string; metric: number; advertise: boolean }>;
+  } {
+    const area = this.config.areas.get(areaId);
+    const ranges = area?.ranges ?? [];
+
+    if (ranges.length === 0) {
+      return { individual: [...routes], aggregates: new Map() };
+    }
+
+    const aggregates = new Map<string, { network: string; mask: string; metric: number; advertise: boolean }>();
+    const individual: OSPFRouteEntry[] = [];
+
+    for (const route of routes) {
+      const match = ranges.find(r => this.routeInRange(route.network, route.mask, r.network, r.mask));
+      if (match) {
+        const key = `${match.network}:${match.mask}`;
+        const existing = aggregates.get(key);
+        if (!existing) {
+          aggregates.set(key, { network: match.network, mask: match.mask, metric: route.cost, advertise: match.advertise });
+        } else if (route.cost > existing.metric) {
+          existing.metric = route.cost;
+        }
+        // Individual route is suppressed (omitted from `individual`)
+      } else {
+        individual.push(route);
+      }
+    }
+
+    return { individual, aggregates };
+  }
+
+  /**
+   * Returns true when routeNet/routeMask is a subnet of (or equal to) rangeNet/rangeMask.
+   * The range mask must be at least as general (shorter prefix) as the route mask.
+   */
+  private routeInRange(
+    routeNet: string, routeMask: string,
+    rangeNet: string, rangeMask: string,
+  ): boolean {
+    const rMask    = this.ipToNum(rangeMask);
+    // Use >>> 0 after each & to stay in unsigned territory for comparison
+    const rNet     = (this.ipToNum(rangeNet)  & rMask) >>> 0;
+    const route    = (this.ipToNum(routeNet)  & rMask) >>> 0;
+    const rMaskNum = this.ipToNum(routeMask);
+    // The range mask must be at least as long (more specific) as the range mask
+    return route === rNet && ((rMaskNum & rMask) >>> 0) === rMask;
+  }
+
+  private ipToNum(ip: string): number {
+    return ip.split('.').reduce((acc: number, oct: string) => (acc << 8) | parseInt(oct, 10), 0) >>> 0;
   }
 
   private runSPFForArea(areaId: string): OSPFRouteEntry[] {

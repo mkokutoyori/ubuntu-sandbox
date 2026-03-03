@@ -57,6 +57,16 @@ export const OSPF_INFINITY_METRIC = 0xFFFF;
 
 export type OSPFAreaType = 'normal' | 'stub' | 'totally-stubby' | 'nssa';
 
+/** A single area range entry (Cisco: `area X range <network> <mask> [not-advertise]`) */
+export interface OSPFAreaRange {
+  /** Summary network address */
+  network: string;
+  /** Summary network mask */
+  mask: string;
+  /** If false the range is suppressed (not-advertise); default true */
+  advertise: boolean;
+}
+
 export interface OSPFArea {
   /** Area ID (e.g., "0.0.0.0" for backbone) */
   areaId: string;
@@ -66,6 +76,12 @@ export interface OSPFArea {
   interfaces: string[];
   /** Is this the backbone area? */
   isBackbone: boolean;
+  /** Area ranges for route summarization at this ABR (Cisco: `area X range`) */
+  ranges?: OSPFAreaRange[];
+  /** NSSA no-summary: block Type-3 into this NSSA and inject a Type-3 default */
+  nssaNoSummary?: boolean;
+  /** NSSA default-information-originate: inject a Type-7 default into this NSSA */
+  nssaDefaultInfoOriginate?: boolean;
 }
 
 export const OSPF_BACKBONE_AREA = '0.0.0.0';
