@@ -174,8 +174,24 @@ export class OSPFEngine {
   private spfTimer: ReturnType<typeof setTimeout> | null = null;
   private spfPending = false;
 
+  /** Partial SPF: cached SPF trees per area (skip Dijkstra when only leaves change) */
+  private spfTreeCache: Map<string, Map<string, SPFVertex>> = new Map();
+  /** Whether the pending SPF must be a full Dijkstra run (true) or just a partial re-scan */
+  private spfNeedsFullRun = true;
+  /** Type of the last completed SPF run (used by tests) */
+  private lastSPFType: 'full' | 'partial' | null = null;
+  /** Guard: true while SPF/partial-SPF is executing; prevents re-entrant scheduling */
+  private spfRunning = false;
+
   /** Event log for adjacency changes */
   private eventLog: string[] = [];
+
+  /** Virtual links: keyed by peer Router ID */
+  private virtualLinks: Map<string, {
+    transitAreaId: string;
+    peerRouterId: string;
+    iface: OSPFInterface;
+  }> = new Map();
 
   constructor(processId: number = 1) {
     this.config = createDefaultOSPFConfig(processId);
@@ -263,6 +279,88 @@ export class OSPFEngine {
       }
     }
     area.type = type;
+  }
+
+  // ─── Virtual Link Configuration (RFC 2328 §15) ─────────────────
+
+  /**
+   * Configure a virtual link through a transit area to a remote backbone endpoint.
+   * Cisco: `area <transitAreaId> virtual-link <peerRouterId>`
+   * RFC 2328 §15: Transit area must be a non-stub, non-NSSA area.
+   */
+  addVirtualLink(transitAreaId: string, peerRouterId: string): void {
+    const area = this.config.areas.get(transitAreaId);
+    if (!area) {
+      throw new Error(`Transit area ${transitAreaId} is not configured`);
+    }
+    if (area.type === 'stub' || area.type === 'totally-stubby') {
+      throw new Error(
+        `Area ${transitAreaId} is a ${area.type} area and cannot be a virtual link transit area (RFC 2328 §15)`
+      );
+    }
+    if (area.type === 'nssa') {
+      throw new Error(
+        `Area ${transitAreaId} is an NSSA area and cannot be a virtual link transit area (RFC 2328 §15)`
+      );
+    }
+
+    const vlIfaceName = `vl-${transitAreaId}-${peerRouterId}`;
+
+    const vlIface: OSPFInterface = {
+      name: vlIfaceName,
+      ipAddress: '0.0.0.0',       // updated to our transit IP when a transit iface is found
+      mask: '255.255.255.255',
+      areaId: OSPF_BACKBONE_AREA,  // VL is a backbone link (RFC 2328 §15)
+      state: 'PointToPoint',
+      networkType: 'point-to-point',
+      helloInterval: OSPF_DEFAULT_HELLO_INTERVAL,
+      deadInterval: OSPF_DEFAULT_DEAD_INTERVAL,
+      retransmitInterval: OSPF_DEFAULT_RETRANSMIT_INTERVAL,
+      transmitDelay: OSPF_DEFAULT_TRANSMIT_DELAY,
+      priority: 0,                 // VL never participates in DR election
+      dr: '0.0.0.0',
+      bdr: '0.0.0.0',
+      cost: 1,                     // updated from transit area SPF tree after each SPF run
+      helloTimer: null,
+      waitTimer: null,
+      neighbors: new Map(),
+      passive: false,
+      authType: 0,
+      authKey: '',
+      mtu: 1500,
+      propagationDelayMs: 0,
+    };
+
+    this.virtualLinks.set(peerRouterId, { transitAreaId, peerRouterId, iface: vlIface });
+
+    // Ensure backbone area exists (VL is a backbone link)
+    if (!this.config.areas.has(OSPF_BACKBONE_AREA)) {
+      this.config.areas.set(OSPF_BACKBONE_AREA, {
+        areaId: OSPF_BACKBONE_AREA,
+        type: 'normal',
+        interfaces: [],
+        isBackbone: true,
+      });
+    }
+    if (!this.lsdb.areas.has(OSPF_BACKBONE_AREA)) {
+      this.lsdb.areas.set(OSPF_BACKBONE_AREA, new Map());
+    }
+  }
+
+  /**
+   * Return all configured virtual links, keyed by peer Router ID.
+   */
+  getVirtualLinks(): Map<string, { transitAreaId: string; peerRouterId: string; iface: OSPFInterface }> {
+    return this.virtualLinks;
+  }
+
+  /**
+   * Send a VL Hello for the given peer, using the transit area SPF path.
+   * This is normally called automatically by the VL hello timer; exposed
+   * as public for test inspection.
+   */
+  sendVLHelloForPeer(peerRouterId: string): void {
+    this.sendVLHello(peerRouterId);
   }
 
   /**
@@ -456,6 +554,91 @@ export class OSPFEngine {
     }
   }
 
+  // ─── Virtual Link Helpers ──────────────────────────────────────
+
+  /**
+   * If the incoming packet is a VL packet (backbone areaId on a transit interface
+   * for a configured peer), return the synthetic VL interface; otherwise null.
+   */
+  private resolveVLIface(
+    ifaceName: string,
+    peerRouterId: string,
+    packetAreaId: string,
+  ): OSPFInterface | null {
+    if (packetAreaId !== OSPF_BACKBONE_AREA) return null;
+    const transitIface = this.interfaces.get(ifaceName);
+    if (!transitIface || transitIface.areaId === OSPF_BACKBONE_AREA) return null;
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl || vl.transitAreaId !== transitIface.areaId) return null;
+    // Keep the VL iface's IP in sync with our transit interface IP
+    vl.iface.ipAddress = transitIface.ipAddress;
+    return vl.iface;
+  }
+
+  /**
+   * Send a VL Hello to the peer, routing it through the transit area.
+   * The packet carries areaId = '0.0.0.0' (backbone) per RFC 2328 §15.
+   * Sending is deferred until a transit path to the peer is known (SPF tree cache).
+   */
+  private sendVLHello(peerRouterId: string): void {
+    if (!this.sendCallback) return;
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl) return;
+
+    // Determine transit interface and destination IP
+    let transitIfaceName: string | null = null;
+    let destIP: string | null = null;
+
+    // Option 1: Use the SPF tree for the transit area to find the path
+    const transitTree = this.spfTreeCache.get(vl.transitAreaId);
+    if (transitTree) {
+      const peerVertex = transitTree.get(peerRouterId);
+      if (peerVertex?.outInterface) {
+        transitIfaceName = peerVertex.outInterface;
+        // Update VL cost from transit area path cost
+        vl.iface.cost = peerVertex.distance;
+      }
+    }
+
+    // Option 2: Fall back to the VL neighbor's known IP (from a previously received Hello)
+    const vlNeighbor = vl.iface.neighbors.get(peerRouterId);
+    if (vlNeighbor?.ipAddress) {
+      destIP = vlNeighbor.ipAddress;
+      // If we don't have a transit iface from SPF, find one by area
+      if (!transitIfaceName) {
+        for (const [, iface] of this.interfaces) {
+          if (iface.areaId === vl.transitAreaId) {
+            transitIfaceName = iface.name;
+            vl.iface.ipAddress = iface.ipAddress;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!transitIfaceName || !destIP) return; // No path available yet
+
+    const neighborIds = Array.from(vl.iface.neighbors.keys());
+
+    const hello: OSPFHelloPacket = {
+      type: 'ospf',
+      version: OSPF_VERSION_2,
+      packetType: 1,
+      routerId: this.config.routerId,
+      areaId: OSPF_BACKBONE_AREA,     // VL packets carry backbone area ID
+      networkMask: '0.0.0.0',          // RFC 2328 §A.3.2: VL hellos have mask 0.0.0.0
+      helloInterval: vl.iface.helloInterval,
+      options: 0x02,
+      priority: 0,                      // VL never becomes DR
+      deadInterval: vl.iface.deadInterval,
+      designatedRouter: '0.0.0.0',
+      backupDesignatedRouter: '0.0.0.0',
+      neighbors: neighborIds,
+    };
+
+    this.sendCallback(transitIfaceName, hello, destIP);
+  }
+
   // ─── Interface State Machine ───────────────────────────────────
 
   private interfaceUp(name: string): void {
@@ -527,7 +710,15 @@ export class OSPFEngine {
    * Process an incoming Hello packet (RFC 2328 §10.5)
    */
   processHello(ifaceName: string, srcIP: string, hello: OSPFHelloPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    // VL detection: backbone Hello on transit interface → process on VL synthetic iface
+    const vlIface = this.resolveVLIface(ifaceName, hello.routerId, hello.areaId);
+    const physIface = this.interfaces.get(ifaceName);
+    if (!physIface) return;
+
+    // Drop backbone packets arriving on non-backbone interfaces if sender is not a VL peer
+    if (!vlIface && hello.areaId === OSPF_BACKBONE_AREA && physIface.areaId !== OSPF_BACKBONE_AREA) return;
+
+    const iface = vlIface ?? physIface;
     if (!iface) return;
 
     // Validate hello parameters
@@ -1030,7 +1221,8 @@ export class OSPFEngine {
    * Process incoming Database Description packet (RFC 2328 §10.6).
    */
   processDD(ifaceName: string, srcIP: string, dd: OSPFDDPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, dd.routerId, dd.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const neighbor = iface.neighbors.get(dd.routerId);
@@ -1146,7 +1338,8 @@ export class OSPFEngine {
    * Process incoming LS Request
    */
   processLSRequest(ifaceName: string, srcIP: string, lsr: OSPFLSRequestPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, lsr.routerId, lsr.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const lsas: LSA[] = [];
@@ -1198,7 +1391,8 @@ export class OSPFEngine {
    * Process incoming LS Update (RFC 2328 §13)
    */
   processLSUpdate(ifaceName: string, srcIP: string, lsu: OSPFLSUpdatePacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, lsu.routerId, lsu.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const neighbor = this.findNeighborByIP(iface, srcIP);
@@ -1206,6 +1400,7 @@ export class OSPFEngine {
 
     const ackedHeaders: LSAHeader[] = [];
     let lsdbChanged = false;
+    let topologyChanged = false; // true if any Type 1/2 LSA was installed (needs full SPF)
 
     for (const lsa of lsu.lsas) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
@@ -1238,6 +1433,7 @@ export class OSPFEngine {
         // Install the LSA
         this.installLSA(iface.areaId, lsa);
         lsdbChanged = true;
+        if (lsa.lsType === 1 || lsa.lsType === 2) topologyChanged = true;
 
         // Remove from neighbor's LS request list
         neighbor.lsRequestList = neighbor.lsRequestList.filter(
@@ -1276,7 +1472,7 @@ export class OSPFEngine {
 
     // Schedule SPF if LSDB changed
     if (lsdbChanged) {
-      this.scheduleSPF();
+      this.scheduleSPF(topologyChanged);
     }
   }
 
@@ -1284,7 +1480,8 @@ export class OSPFEngine {
    * Process incoming LS Acknowledgment
    */
   processLSAck(ifaceName: string, srcIP: string, ack: OSPFLSAckPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, ack.routerId, ack.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const neighbor = this.findNeighborByIP(iface, srcIP);
@@ -1357,6 +1554,15 @@ export class OSPFEngine {
         this.lsdb.areas.set(areaId, areaDB);
       }
       areaDB.set(key, lsa);
+    }
+
+    // Schedule SPF: Type 1 (Router) and Type 2 (Network) LSAs change topology → full SPF.
+    // All other LSA types only affect route metrics/reachability → partial SPF.
+    // Guard: do not schedule recursively while SPF is already running (e.g. during ABR
+    // summary origination which is called from within runSPF).
+    if (!this.spfRunning) {
+      const isTopologyChange = lsa.lsType === 1 || lsa.lsType === 2;
+      this.scheduleSPF(isTopologyChange);
     }
   }
 
@@ -1493,6 +1699,23 @@ export class OSPFEngine {
             type: 3, // Stub network
             numTOS: 0,
             metric: iface.cost,
+          });
+        }
+      }
+    }
+
+    // Virtual link type 4 links (RFC 2328 §12.4.1.1) — only in backbone Router-LSA
+    if (areaId === OSPF_BACKBONE_AREA) {
+      for (const [peerRouterId, vl] of this.virtualLinks) {
+        const vlNeighbor = vl.iface.neighbors.get(peerRouterId);
+        if (vlNeighbor && vlNeighbor.state === 'Full') {
+          flags |= 0x04; // V-bit: this router is a virtual link endpoint
+          links.push({
+            linkId: peerRouterId,
+            linkData: vl.iface.ipAddress || '0.0.0.0',
+            type: 4, // Virtual link
+            numTOS: 0,
+            metric: vl.iface.cost,
           });
         }
       }
@@ -1855,7 +2078,18 @@ export class OSPFEngine {
 
   // ─── SPF Calculation (Dijkstra - RFC 2328 §16) ─────────────────
 
-  scheduleSPF(): void {
+  /**
+   * Schedule an SPF calculation.
+   * @param isTopologyChange  true  → topology (Type 1/2 LSA) changed → full Dijkstra required
+   *                          false → only leaves/summaries/externals changed → partial SPF
+   *
+   * If a full-SPF is already pending, a subsequent partial-SPF request does NOT downgrade it.
+   * If a partial-SPF is pending and a full-SPF arrives, the pending run is upgraded to full.
+   */
+  scheduleSPF(isTopologyChange = true): void {
+    // Upgrade a pending partial to full if needed; never downgrade full → partial.
+    if (isTopologyChange) this.spfNeedsFullRun = true;
+
     if (this.spfPending) return;
     this.spfPending = true;
 
@@ -1881,7 +2115,12 @@ export class OSPFEngine {
       this.spfPending = false;
       this.spfTimer = null;
       this.spfLastRunAt = Date.now();
-      this.runSPF();
+      if (this.spfNeedsFullRun) {
+        this.spfNeedsFullRun = false;
+        this.runSPF();
+      } else {
+        this.runPartialSPF();
+      }
     }, delay);
   }
 
@@ -1907,29 +2146,77 @@ export class OSPFEngine {
     };
   }
 
+  /** Return the type of SPF that was last executed ('full', 'partial', or null if never run). */
+  getLastSPFType(): 'full' | 'partial' | null {
+    return this.lastSPFType;
+  }
+
   /**
-   * Run Dijkstra's SPF algorithm on the LSDB.
-   * RFC 2328 §16.1
+   * Run Dijkstra's SPF algorithm on the LSDB (full recalculation).
+   * RFC 2328 §16.1–§16.4
    * If this router is an ABR, also originates Type 3/4 Summary LSAs.
    */
   runSPF(): OSPFRouteEntry[] {
+    this.spfRunning = true;
+    this.lastSPFType = 'full';
     this.ospfRoutes = [];
 
-    // Step 1: Compute intra-area routes for each area
+    // Step 1: Compute intra-area + inter-area routes for each area via Dijkstra
     const intraAreaRoutesByArea = new Map<string, OSPFRouteEntry[]>();
     for (const [areaId] of this.config.areas) {
-      const areaRoutes = this.runSPFForArea(areaId);
+      const { routes: areaRoutes, tree } = this.runSPFForArea(areaId);
       intraAreaRoutesByArea.set(areaId, areaRoutes);
+      this.spfTreeCache.set(areaId, tree);
       this.ospfRoutes.push(...areaRoutes);
     }
 
-    // Step 2: If ABR, originate Type 3 Summary LSAs for intra-area routes
-    //         into other areas, and Type 4 for any ASBRs found
+    // Step 2: Merge equal-cost routes to the same destination (ECMP deduplication)
+    this.ospfRoutes = this.mergeRoutesByDestination(this.ospfRoutes);
+
+    // Step 3: Process external routes (Type 5 / Type 7) — RFC 2328 §16.4
+    const externalRoutes = this.processExternalRoutes(this.spfTreeCache, this.ospfRoutes);
+    this.ospfRoutes.push(...externalRoutes);
+
+    // Step 4: If ABR, originate Type 3 Summary LSAs into other areas
     if (this.isABR()) {
       this.originateSummariesAsABR(intraAreaRoutesByArea);
     }
 
+    this.spfRunning = false;
     return this.ospfRoutes;
+  }
+
+  /**
+   * Partial SPF: re-use the cached SPF tree (skip Dijkstra), only recompute
+   * inter-area and external routes.  Called when only Type 3/4/5/7 LSAs changed.
+   * RFC 2328: equivalent to re-running §16.2–§16.4 without §16.1.
+   */
+  private runPartialSPF(): void {
+    this.spfRunning = true;
+    this.lastSPFType = 'partial';
+
+    // Rebuild routes from the cached tree (no Dijkstra re-run)
+    const intraAreaRoutesByArea = new Map<string, OSPFRouteEntry[]>();
+    const allRoutes: OSPFRouteEntry[] = [];
+
+    for (const [areaId] of this.config.areas) {
+      const tree = this.spfTreeCache.get(areaId);
+      if (!tree) continue;
+
+      const routes = this.buildRoutesFromTree(areaId, tree);
+      intraAreaRoutesByArea.set(areaId, routes);
+      allRoutes.push(...routes);
+    }
+
+    // ECMP merge
+    const merged = this.mergeRoutesByDestination(allRoutes);
+
+    // External routes
+    const externalRoutes = this.processExternalRoutes(this.spfTreeCache, merged);
+    merged.push(...externalRoutes);
+
+    this.ospfRoutes = merged;
+    this.spfRunning = false;
   }
 
   /**
@@ -1955,7 +2242,19 @@ export class OSPFEngine {
 
     for (const sourceAreaId of myAreas) {
       const routes = intraAreaRoutesByArea.get(sourceAreaId) ?? [];
-      const intraRoutes = routes.filter(r => r.routeType === 'intra-area' && r.network !== '0.0.0.0');
+
+      // Determine which routes to propagate from this source area:
+      //   – From a non-backbone area: propagate only intra-area routes (to backbone and other areas).
+      //   – From the backbone: propagate intra-area routes AND inter-area routes that were learned
+      //     from other areas (RFC 2328 §12.4.3: backbone routes propagated into non-backbone areas).
+      const intraRoutes = routes.filter(r => {
+        if (r.network === '0.0.0.0') return false;
+        if (r.routeType === 'intra-area') return true;
+        // Backbone inter-area routes (learned from other areas via Type 3 LSAs) should be
+        // propagated into non-backbone areas — this is the backbone pass-through function.
+        if (r.routeType === 'inter-area' && sourceAreaId === OSPF_BACKBONE_AREA) return true;
+        return false;
+      });
 
       for (const targetAreaId of myAreas) {
         if (targetAreaId === sourceAreaId) continue;
@@ -2080,20 +2379,20 @@ export class OSPFEngine {
     return ip.split('.').reduce((acc: number, oct: string) => (acc << 8) | parseInt(oct, 10), 0) >>> 0;
   }
 
-  private runSPFForArea(areaId: string): OSPFRouteEntry[] {
+  /** Run Dijkstra for one area; return both the SPF tree and derived routes. */
+  private runSPFForArea(areaId: string): { routes: OSPFRouteEntry[]; tree: Map<string, SPFVertex> } {
     const areaDB = this.lsdb.areas.get(areaId);
-    if (!areaDB) return [];
+    const emptyTree = new Map<string, SPFVertex>();
+    if (!areaDB) return { routes: [], tree: emptyTree };
 
-    const routes: OSPFRouteEntry[] = [];
-
-    // Candidate list (priority queue) and SPF tree
+    // ── Dijkstra ────────────────────────────────────────────────────────────
     const tree: Map<string, SPFVertex> = new Map();
     const candidates: SPFVertex[] = [];
 
     // Start with our own Router-LSA
     const rootKey = makeLSDBKey(1, this.config.routerId, this.config.routerId);
     const rootLSA = areaDB.get(rootKey) as RouterLSA | undefined;
-    if (!rootLSA) return [];
+    if (!rootLSA) return { routes: [], tree: emptyTree };
 
     const rootVertex: SPFVertex = {
       id: this.config.routerId,
@@ -2106,28 +2405,34 @@ export class OSPFEngine {
     };
     tree.set(rootVertex.id, rootVertex);
 
-    // Process root's links
     this.addCandidatesFromVertex(rootVertex, areaId, areaDB, tree, candidates);
 
-    // Dijkstra loop
     while (candidates.length > 0) {
-      // Find candidate with minimum distance
       candidates.sort((a, b) => a.distance - b.distance);
       const best = candidates.shift()!;
-
-      // Add to tree
       tree.set(best.id, best);
-
-      // Process this vertex's links
       this.addCandidatesFromVertex(best, areaId, areaDB, tree, candidates);
     }
+    // ── End Dijkstra ─────────────────────────────────────────────────────────
 
-    // Extract intra-area routes from SPF tree
+    const routes = this.buildRoutesFromTree(areaId, tree);
+    return { routes, tree };
+  }
+
+  /**
+   * Build intra-area + inter-area routes from a pre-computed SPF tree.
+   * Used by both full SPF (fresh tree) and partial SPF (cached tree).
+   */
+  private buildRoutesFromTree(areaId: string, tree: Map<string, SPFVertex>): OSPFRouteEntry[] {
+    const routes: OSPFRouteEntry[] = [];
+    const areaDB = this.lsdb.areas.get(areaId);
+    if (!areaDB) return routes;
+
+    // Intra-area routes from tree vertices
     for (const [id, vertex] of tree) {
-      if (id === this.config.routerId) continue; // Skip self
+      if (id === this.config.routerId) continue;
 
       if (vertex.type === 'router') {
-        // Router vertex — add routes to its stub networks
         const rLSA = vertex.lsa as RouterLSA;
         for (const link of rLSA.links) {
           if (link.type === 3) { // Stub network
@@ -2148,7 +2453,6 @@ export class OSPFEngine {
           }
         }
       } else if (vertex.type === 'network') {
-        // Network vertex — add route to the network
         const nLSA = vertex.lsa as NetworkLSA;
         const nextHop = vertex.nextHop || '';
         const outIface = vertex.outInterface || this.findIfaceForNextHop(nextHop);
@@ -2168,15 +2472,14 @@ export class OSPFEngine {
       }
     }
 
-    // Step 2: Process Type 3 Summary LSAs → inter-area routes (RFC 2328 §16.2)
+    // Inter-area routes from Type 3 Summary LSAs (RFC 2328 §16.2)
     for (const [, lsa] of areaDB) {
       if (lsa.lsType !== 3) continue;
       const sumLsa = lsa as SummaryLSA;
       if (sumLsa.lsAge >= OSPF_MAX_AGE) continue;
       if (sumLsa.metric >= OSPF_INFINITY_METRIC) continue;
-      if (sumLsa.advertisingRouter === this.config.routerId) continue; // own LSA
+      if (sumLsa.advertisingRouter === this.config.routerId) continue;
 
-      // The advertising router must be an ABR reachable from us in the SPF tree
       const abrVertex = tree.get(sumLsa.advertisingRouter);
       if (!abrVertex) continue;
 
@@ -2197,6 +2500,180 @@ export class OSPFEngine {
         cost: totalCost,
         advertisingRouter: sumLsa.advertisingRouter,
       });
+    }
+
+    return routes;
+  }
+
+  /**
+   * Merge routes with the same (network, mask) destination:
+   * – Keep only routes with minimum cost.
+   * – Merge equal-cost routes into one entry with nextHops/ifaces arrays (ECMP, max 16).
+   * RFC 2328 §16 / Cisco: up to 16 equal-cost paths installed.
+   */
+  private mergeRoutesByDestination(routes: OSPFRouteEntry[]): OSPFRouteEntry[] {
+    const ECMP_MAX = 16;
+    const byDest = new Map<string, OSPFRouteEntry>();
+
+    for (const r of routes) {
+      const key = `${r.network}/${r.mask}`;
+      const existing = byDest.get(key);
+
+      if (!existing) {
+        // First route for this destination
+        byDest.set(key, { ...r, nextHops: [r.nextHop], ifaces: [r.iface] });
+      } else if (r.cost < existing.cost) {
+        // Strictly better path — replace
+        byDest.set(key, { ...r, nextHops: [r.nextHop], ifaces: [r.iface] });
+      } else if (r.cost === existing.cost && (existing.nextHops!.length) < ECMP_MAX) {
+        // Equal cost — add ECMP path if not already present
+        if (!existing.nextHops!.includes(r.nextHop)) {
+          existing.nextHops!.push(r.nextHop);
+          existing.ifaces!.push(r.iface);
+        }
+      }
+      // Worse cost → discard
+    }
+
+    return Array.from(byDest.values());
+  }
+
+  /**
+   * Build external routes from Type 5 (AS-external) and Type 7 (NSSA external) LSAs.
+   * RFC 2328 §16.4: E1 total cost = path-to-ASBR + external-metric;
+   *                 E2 cost = external-metric only (type2Cost holds path-to-ASBR for tie-breaking).
+   * If forwarding address ≠ 0.0.0.0, use route to FA instead of route to ASBR.
+   */
+  private processExternalRoutes(
+    trees: Map<string, Map<string, SPFVertex>>,
+    currentRoutes: OSPFRouteEntry[],
+  ): OSPFRouteEntry[] {
+    const routes: OSPFRouteEntry[] = [];
+
+    const findASBRInTrees = (asbrId: string): SPFVertex | undefined => {
+      for (const [, tree] of trees) {
+        const v = tree.get(asbrId);
+        if (v) return v;
+      }
+      return undefined;
+    };
+
+    const resolveNextHopForAddress = (addr: string): { nextHop: string; iface: string; cost: number } | null => {
+      // Find a route that covers addr in the current (intra/inter-area) routing table
+      for (const r of currentRoutes) {
+        if (this.isInSameSubnet(addr, r.network, r.mask)) {
+          return { nextHop: r.nextHop, iface: r.iface, cost: r.cost };
+        }
+      }
+      // Also check directly connected interfaces
+      for (const [, iface] of this.interfaces) {
+        if (this.isInSameSubnet(addr, iface.ipAddress, iface.mask)) {
+          return { nextHop: addr, iface: iface.name, cost: 0 };
+        }
+      }
+      return null;
+    };
+
+    // ── Type 5 AS-External LSAs ──────────────────────────────────────────────
+    for (const [, extLsa] of this.lsdb.external) {
+      if (extLsa.lsAge >= OSPF_MAX_AGE) continue;
+      if (extLsa.metric >= OSPF_INFINITY_METRIC) continue;
+
+      const asbrVertex = findASBRInTrees(extLsa.advertisingRouter);
+      if (!asbrVertex) continue; // ASBR unreachable
+
+      let nextHop: string;
+      let outIface: string;
+      let pathCost: number;
+
+      if (extLsa.forwardingAddress !== '0.0.0.0') {
+        // Use route to forwarding address
+        const faRoute = resolveNextHopForAddress(extLsa.forwardingAddress);
+        if (!faRoute) continue; // FA unreachable → route not installed
+        nextHop = faRoute.nextHop;
+        outIface = faRoute.iface;
+        pathCost = faRoute.cost;
+      } else {
+        nextHop = asbrVertex.nextHop || asbrVertex.id;
+        outIface = asbrVertex.outInterface || this.findIfaceForNextHop(nextHop) || '';
+        pathCost = asbrVertex.distance;
+      }
+
+      if (!outIface) continue;
+
+      if (extLsa.metricType === 1) {
+        routes.push({
+          network: extLsa.linkStateId,
+          mask: extLsa.networkMask,
+          routeType: 'external-type1',
+          areaId: OSPF_BACKBONE_AREA,
+          nextHop,
+          iface: outIface,
+          cost: pathCost + extLsa.metric,
+          advertisingRouter: extLsa.advertisingRouter,
+        });
+      } else {
+        routes.push({
+          network: extLsa.linkStateId,
+          mask: extLsa.networkMask,
+          routeType: 'external-type2',
+          areaId: OSPF_BACKBONE_AREA,
+          nextHop,
+          iface: outIface,
+          cost: extLsa.metric,
+          type2Cost: pathCost,
+          advertisingRouter: extLsa.advertisingRouter,
+        });
+      }
+    }
+
+    // ── Type 7 NSSA-External LSAs ────────────────────────────────────────────
+    for (const [areaId, areaDB] of this.lsdb.areas) {
+      const area = this.config.areas.get(areaId);
+      if (area?.type !== 'nssa') continue;
+
+      const areaTree = trees.get(areaId);
+      if (!areaTree) continue;
+
+      for (const [, lsa] of areaDB) {
+        if (lsa.lsType !== 7) continue;
+        const n7 = lsa as NSSAExternalLSA;
+        if (n7.lsAge >= OSPF_MAX_AGE) continue;
+        if (n7.metric >= OSPF_INFINITY_METRIC) continue;
+
+        const asbrVertex = areaTree.get(n7.advertisingRouter);
+        if (!asbrVertex) continue;
+
+        const pathCost = asbrVertex.distance;
+        const nextHop = asbrVertex.nextHop || asbrVertex.id;
+        const outIface = asbrVertex.outInterface || this.findIfaceForNextHop(nextHop) || '';
+        if (!outIface) continue;
+
+        if (n7.metricType === 1) {
+          routes.push({
+            network: n7.linkStateId,
+            mask: n7.networkMask,
+            routeType: 'external-type1',
+            areaId,
+            nextHop,
+            iface: outIface,
+            cost: pathCost + n7.metric,
+            advertisingRouter: n7.advertisingRouter,
+          });
+        } else {
+          routes.push({
+            network: n7.linkStateId,
+            mask: n7.networkMask,
+            routeType: 'external-type2',
+            areaId,
+            nextHop,
+            iface: outIface,
+            cost: n7.metric,
+            type2Cost: pathCost,
+            advertisingRouter: n7.advertisingRouter,
+          });
+        }
+      }
     }
 
     return routes;
@@ -2258,6 +2735,31 @@ export class OSPFEngine {
             parent: vertex,
             lsa: networkLSA,
             nextHop: nextHop,
+            outInterface: outIface,
+          });
+        } else if (link.type === 4) {
+          // Virtual link — only meaningful in backbone SPF (RFC 2328 §15)
+          if (areaId !== OSPF_BACKBONE_AREA) continue;
+          const peerRouterId = link.linkId;
+          const neighborKey = makeLSDBKey(1, peerRouterId, peerRouterId);
+          const neighborLSA = areaDB.get(neighborKey) as RouterLSA | undefined;
+          if (!neighborLSA) continue;
+          if (tree.has(peerRouterId)) continue;
+
+          const newDist = vertex.distance + link.metric;
+
+          // Next-hop and outgoing interface: use the VL neighbor's known transit IP
+          // and the transit area interface (from SPF cache or direct lookup).
+          const nextHop = vertex.distance === 0 ? this.getVLNextHop(peerRouterId) : vertex.nextHop;
+          const outIface = vertex.distance === 0 ? this.getVLOutIface(peerRouterId) : vertex.outInterface;
+
+          this.addOrUpdateCandidate(candidates, {
+            id: peerRouterId,
+            type: 'router',
+            distance: newDist,
+            parent: vertex,
+            lsa: neighborLSA,
+            nextHop,
             outInterface: outIface,
           });
         }
@@ -2346,6 +2848,32 @@ export class OSPFEngine {
       if (this.isInSameSubnet(nextHop, iface.ipAddress, iface.mask)) {
         return iface.name;
       }
+    }
+    return null;
+  }
+
+  /** Get the next-hop IP toward a VL peer (the peer's transit area IP from Hello). */
+  private getVLNextHop(peerRouterId: string): string | null {
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl) return null;
+    const neighbor = vl.iface.neighbors.get(peerRouterId);
+    if (neighbor?.ipAddress) return neighbor.ipAddress;
+    return null;
+  }
+
+  /** Get the outgoing interface name toward a VL peer (transit area interface). */
+  private getVLOutIface(peerRouterId: string): string | null {
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl) return null;
+    // Prefer transit area SPF tree
+    const transitTree = this.spfTreeCache.get(vl.transitAreaId);
+    if (transitTree) {
+      const peerVertex = transitTree.get(peerRouterId);
+      if (peerVertex?.outInterface) return peerVertex.outInterface;
+    }
+    // Fall back: any interface in the transit area
+    for (const [, iface] of this.interfaces) {
+      if (iface.areaId === vl.transitAreaId) return iface.name;
     }
     return null;
   }
