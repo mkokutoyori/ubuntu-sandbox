@@ -48,6 +48,7 @@ export class VirtualFileSystem {
       '/usr/local', '/usr/local/bin',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
       '/etc/sudoers.d',
+      '/etc/ufw', '/etc/ufw/applications.d',
       '/home', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
@@ -79,6 +80,67 @@ export class VirtualFileSystem {
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
+
+    // UFW default config files
+    this.createFileAt('/etc/ufw/ufw.conf',
+      '# /etc/ufw/ufw.conf\n#\n\n# Set to yes to start on boot\nENABLED=no\n\n# Please use the \'ufw\' command to set the loglevel.\n# Loglevel is matched on a snmp-like basis.\nLOGLEVEL=low\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/etc/ufw/sysctl.conf',
+      '#\n# Configuration file for setting network variables. Please note these\n# settings override /etc/sysctl.conf.\n#\n\n' +
+      '# Uncomment this to allow this host to route packets between interfaces\n#net/ipv4/ip_forward=1\n#net/ipv6/conf/default/forwarding=1\n#net/ipv6/conf/all/forwarding=1\n\n' +
+      '# Disable ICMP redirects\nnet/ipv4/conf/default/accept_redirects=0\nnet/ipv4/conf/all/accept_redirects=0\nnet/ipv6/conf/default/accept_redirects=0\nnet/ipv6/conf/all/accept_redirects=0\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/etc/ufw/before.rules',
+      '# Rules that should be run before the ufw user rules.\n*filter\n:ufw-before-input - [0:0]\n:ufw-before-output - [0:0]\n:ufw-before-forward - [0:0]\n\n' +
+      '# allow all on loopback\n-A ufw-before-input -i lo -j ACCEPT\n-A ufw-before-output -o lo -j ACCEPT\n\n' +
+      '# allow ESTABLISHED,RELATED connections\n-A ufw-before-input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A ufw-before-output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n\n' +
+      '# allow ICMP\n-A ufw-before-input -p icmp --icmp-type destination-unreachable -j ACCEPT\n-A ufw-before-input -p icmp --icmp-type time-exceeded -j ACCEPT\n-A ufw-before-input -p icmp --icmp-type parameter-problem -j ACCEPT\n-A ufw-before-input -p icmp --icmp-type echo-request -j ACCEPT\n\nCOMMIT\n',
+      0o640, 0, 0);
+
+    this.createFileAt('/etc/ufw/after.rules',
+      '# Rules that should be run after the ufw user rules.\n*filter\n:ufw-after-input - [0:0]\n:ufw-after-output - [0:0]\n:ufw-after-forward - [0:0]\n\n' +
+      '# don\'t log noisy services by default\n-A ufw-after-input -p udp --dport 137 -j ufw-skip-to-policy-input\n-A ufw-after-input -p udp --dport 138 -j ufw-skip-to-policy-input\n-A ufw-after-input -p tcp --dport 139 -j ufw-skip-to-policy-input\n-A ufw-after-input -p tcp --dport 445 -j ufw-skip-to-policy-input\n-A ufw-after-input -p udp --dport 67 -j ufw-skip-to-policy-input\n-A ufw-after-input -p udp --dport 68 -j ufw-skip-to-policy-input\n\nCOMMIT\n',
+      0o640, 0, 0);
+
+    this.createFileAt('/etc/ufw/before6.rules',
+      '# Rules that should be run before the ufw user rules (IPv6).\n*filter\n:ufw6-before-input - [0:0]\n:ufw6-before-output - [0:0]\n:ufw6-before-forward - [0:0]\n\n' +
+      '-A ufw6-before-input -i lo -j ACCEPT\n-A ufw6-before-output -o lo -j ACCEPT\n-A ufw6-before-input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A ufw6-before-output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n\n' +
+      '-A ufw6-before-input -p icmpv6 -j ACCEPT\n-A ufw6-before-output -p icmpv6 -j ACCEPT\n\nCOMMIT\n',
+      0o640, 0, 0);
+
+    this.createFileAt('/etc/ufw/after6.rules',
+      '# Rules that should be run after the ufw user rules (IPv6).\n*filter\n:ufw6-after-input - [0:0]\n:ufw6-after-output - [0:0]\n:ufw6-after-forward - [0:0]\n\nCOMMIT\n',
+      0o640, 0, 0);
+
+    this.createFileAt('/etc/ufw/user.rules',
+      '*filter\n:ufw-user-input - [0:0]\n:ufw-user-output - [0:0]\n:ufw-user-forward - [0:0]\n:ufw-user-limit-accept - [0:0]\nCOMMIT\n',
+      0o640, 0, 0);
+
+    this.createFileAt('/etc/ufw/user6.rules',
+      '*filter\n:ufw6-user-input - [0:0]\n:ufw6-user-output - [0:0]\n:ufw6-user-forward - [0:0]\n:ufw6-user-limit-accept - [0:0]\nCOMMIT\n',
+      0o640, 0, 0);
+
+    // UFW application profiles
+    this.createFileAt('/etc/ufw/applications.d/openssh-server',
+      '[OpenSSH]\ntitle=Secure Shell server\ndescription=OpenSSH is a free implementation of the Secure Shell protocol.\nports=22/tcp\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/etc/ufw/applications.d/apache2',
+      '[Apache]\ntitle=Apache HTTP Server\ndescription=Apache v2 is the next generation of the omnipresent Apache web server.\nports=80/tcp\n\n' +
+      '[Apache Full]\ntitle=Apache HTTP + HTTPS\ndescription=Apache v2 is the next generation of the omnipresent Apache web server.\nports=80,443/tcp\n\n' +
+      '[Apache Secure]\ntitle=Apache HTTPS\ndescription=Apache v2 is the next generation of the omnipresent Apache web server.\nports=443/tcp\n',
+      0o644, 0, 0);
+
+    this.createFileAt('/etc/ufw/applications.d/nginx',
+      '[Nginx HTTP]\ntitle=Nginx HTTP Server\ndescription=Small, but very powerful and efficient web server.\nports=80/tcp\n\n' +
+      '[Nginx Full]\ntitle=Nginx HTTP + HTTPS\ndescription=Small, but very powerful and efficient web server.\nports=80,443/tcp\n\n' +
+      '[Nginx HTTPS]\ntitle=Nginx HTTPS Server\ndescription=Small, but very powerful and efficient web server.\nports=443/tcp\n',
+      0o644, 0, 0);
+
+    // UFW binary stub
+    this.createFileAt('/usr/sbin/ufw', '#!/bin/bash\n# ufw binary stub\n', 0o755, 0, 0);
 
     // Create binaries (stubs) — placed in /usr/bin since /bin -> usr/bin
     const binaries = ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',

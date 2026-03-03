@@ -807,4 +807,122 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(out).toContain('ERROR');
     });
   });
+
+  // ─── 8.15: VFS persistence ──────────────────────────────────────
+
+  describe('G8-15: Persistence VFS', () => {
+    it('should have /etc/ufw/ directory with default config files', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ls /etc/ufw');
+      expect(out).toContain('ufw.conf');
+      expect(out).toContain('before.rules');
+      expect(out).toContain('after.rules');
+      expect(out).toContain('before6.rules');
+      expect(out).toContain('after6.rules');
+      expect(out).toContain('user.rules');
+      expect(out).toContain('user6.rules');
+      expect(out).toContain('sysctl.conf');
+      expect(out).toContain('applications.d');
+    });
+
+    it('should have app profile files in /etc/ufw/applications.d/', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ls /etc/ufw/applications.d');
+      expect(out).toContain('openssh-server');
+      expect(out).toContain('apache2');
+      expect(out).toContain('nginx');
+    });
+
+    it('should read app profile content', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('cat /etc/ufw/applications.d/openssh-server');
+      expect(out).toContain('[OpenSSH]');
+      expect(out).toContain('ports=22/tcp');
+    });
+
+    it('should update ufw.conf ENABLED=yes on enable', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('ENABLED=yes');
+    });
+
+    it('should update ufw.conf ENABLED=no on disable', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+      await server.executeCommand('ufw disable');
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('ENABLED=no');
+    });
+
+    it('should update ufw.conf LOGLEVEL on logging change', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw logging medium');
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('LOGLEVEL=medium');
+    });
+
+    it('should persist rules to /etc/ufw/user.rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw deny 23');
+      const rules = await server.executeCommand('cat /etc/ufw/user.rules');
+      expect(rules).toContain('--dport 22');
+      expect(rules).toContain('ACCEPT');
+      expect(rules).toContain('--dport 23');
+      expect(rules).toContain('DROP');
+    });
+
+    it('should persist IPv6 rules to /etc/ufw/user6.rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 80/tcp');
+      const rules = await server.executeCommand('cat /etc/ufw/user6.rules');
+      expect(rules).toContain('--dport 80');
+      expect(rules).toContain('ufw6-user-input');
+    });
+
+    it('should create /var/log/ufw.log on enable', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+      const log = await server.executeCommand('cat /var/log/ufw.log');
+      expect(log).toContain('[UFW]');
+      expect(log).toContain('UFW enabled');
+    });
+
+    it('should have ufw binary stub in /usr/sbin/', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('which ufw');
+      expect(out).toContain('/usr/sbin/ufw');
+    });
+
+    it('should show default policies in user.rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw default reject incoming');
+      await server.executeCommand('ufw allow 22/tcp');
+      const rules = await server.executeCommand('cat /etc/ufw/user.rules');
+      expect(rules).toContain('default incoming: reject');
+    });
+
+    it('should read before.rules content', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('cat /etc/ufw/before.rules');
+      expect(out).toContain('ufw-before-input');
+      expect(out).toContain('RELATED,ESTABLISHED');
+      expect(out).toContain('ICMP');
+      expect(out).toContain('COMMIT');
+    });
+
+    it('should reset config files on ufw reset', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw enable');
+      await server.executeCommand('ufw reset');
+
+      const conf = await server.executeCommand('cat /etc/ufw/ufw.conf');
+      expect(conf).toContain('ENABLED=no');
+
+      const rules = await server.executeCommand('cat /etc/ufw/user.rules');
+      expect(rules).not.toContain('--dport 22');
+    });
+  });
 });

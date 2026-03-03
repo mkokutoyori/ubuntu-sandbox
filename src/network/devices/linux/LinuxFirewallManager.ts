@@ -2,7 +2,11 @@
  * LinuxFirewallManager — UFW (Uncomplicated Firewall) state manager.
  * Manages firewall rules, default policies, logging, and status.
  * Output matches real Ubuntu/Debian `ufw` behavior.
+ * Persists configuration and rules to /etc/ufw/ in the VFS.
+ * Writes log entries to /var/log/ufw.log.
  */
+
+import type { VirtualFileSystem } from './VirtualFileSystem';
 
 // ─── Service name → port mapping ─────────────────────────────────────
 const SERVICE_PORTS: Record<string, { port: string; proto: string }> = {
@@ -52,12 +56,17 @@ interface UfwRule {
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export class LinuxFirewallManager {
+  private vfs: VirtualFileSystem | null = null;
   private enabled = false;
   private rules: UfwRule[] = [];
   private defaultIncoming: DefaultPolicy = 'deny';
   private defaultOutgoing: DefaultPolicy = 'allow';
   private logging = false;
   private loggingLevel = 'low';
+
+  constructor(vfs?: VirtualFileSystem) {
+    if (vfs) this.vfs = vfs;
+  }
 
   /**
    * Execute a ufw subcommand. Returns output string.
@@ -94,11 +103,15 @@ export class LinuxFirewallManager {
 
   private cmdEnable(): string {
     this.enabled = true;
+    this.syncToVfs();
+    this.logUfw('UFW enabled');
     return 'Firewall is active and enabled on system startup';
   }
 
   private cmdDisable(): string {
+    this.logUfw('UFW disabled');
     this.enabled = false;
+    this.syncToVfs();
     return 'Firewall stopped and disabled on system startup';
   }
 
@@ -109,11 +122,13 @@ export class LinuxFirewallManager {
     this.defaultOutgoing = 'allow';
     this.logging = false;
     this.loggingLevel = 'low';
+    this.syncToVfs();
     return 'Resetting all rules to installed defaults. Proceed with operation (y|n)? y\n' +
            'Backing up user rules ... done';
   }
 
   private cmdReload(): string {
+    this.syncToVfs();
     return 'Firewall reloaded';
   }
 
@@ -181,10 +196,12 @@ export class LinuxFirewallManager {
 
     if (direction === 'incoming') {
       this.defaultIncoming = policy;
+      this.syncToVfs();
       return `Default incoming policy changed to '${policy}'`;
     }
     if (direction === 'outgoing') {
       this.defaultOutgoing = policy;
+      this.syncToVfs();
       return `Default outgoing policy changed to '${policy}'`;
     }
 
@@ -220,6 +237,7 @@ export class LinuxFirewallManager {
       this.rules.push({ ...parsed, v6: true });
     }
 
+    this.syncToVfs();
     return addsV6
       ? 'Rule added\nRule added (v6)'
       : 'Rule added';
@@ -393,10 +411,12 @@ export class LinuxFirewallManager {
               r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
           return true;
         });
+        this.syncToVfs();
         return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
       }
       // Deleting a v6 rule directly (only removes that one)
       this.rules = this.rules.filter(r => r !== target);
+      this.syncToVfs();
       return 'Rule deleted (v6)';
     }
 
@@ -419,6 +439,7 @@ export class LinuxFirewallManager {
       if (this.rules.length === before) {
         return 'Could not delete non-existent rule';
       }
+      this.syncToVfs();
       return hadV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
     }
 
@@ -464,6 +485,7 @@ export class LinuxFirewallManager {
       this.rules.splice(insertIdx + 1, 0, { ...parsed, v6: true });
     }
 
+    this.syncToVfs();
     return 'Rule inserted';
   }
 
@@ -475,6 +497,7 @@ export class LinuxFirewallManager {
     const level = args[0];
     if (level === 'off') {
       this.logging = false;
+      this.syncToVfs();
       return 'Logging disabled';
     }
 
@@ -487,6 +510,7 @@ export class LinuxFirewallManager {
       return `ERROR: unsupported logging level '${level}'`;
     }
 
+    this.syncToVfs();
     return `Logging enabled (${this.loggingLevel})`;
   }
 
@@ -517,6 +541,121 @@ export class LinuxFirewallManager {
     }
 
     return 'ERROR: invalid app command';
+  }
+
+  // ─── VFS persistence ─────────────────────────────────────────────
+
+  private syncToVfs(): void {
+    if (!this.vfs) return;
+
+    // Write /etc/ufw/ufw.conf
+    const ufwConf = [
+      '# /etc/ufw/ufw.conf',
+      '#',
+      '',
+      '# Set to yes to start on boot',
+      `ENABLED=${this.enabled ? 'yes' : 'no'}`,
+      '',
+      "# Please use the 'ufw' command to set the loglevel.",
+      '# Loglevel is matched on a snmp-like basis.',
+      `LOGLEVEL=${this.logging ? this.loggingLevel : 'off'}`,
+      '',
+    ].join('\n');
+    this.vfs.writeFile('/etc/ufw/ufw.conf', ufwConf, 0, 0, 0o022);
+
+    // Write /etc/ufw/user.rules (IPv4)
+    const v4Rules = this.rules.filter(r => !r.v6);
+    this.vfs.writeFile('/etc/ufw/user.rules', this.generateIptablesRules(v4Rules, false), 0, 0, 0o022);
+
+    // Write /etc/ufw/user6.rules (IPv6)
+    const v6Rules = this.rules.filter(r => r.v6);
+    this.vfs.writeFile('/etc/ufw/user6.rules', this.generateIptablesRules(v6Rules, true), 0, 0, 0o022);
+  }
+
+  private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {
+    const prefix = ipv6 ? 'ufw6' : 'ufw';
+    const lines: string[] = [
+      '*filter',
+      `:${prefix}-user-input - [0:0]`,
+      `:${prefix}-user-output - [0:0]`,
+      `:${prefix}-user-forward - [0:0]`,
+      `:${prefix}-user-limit-accept - [0:0]`,
+    ];
+
+    // Default policies
+    lines.push(`### default incoming: ${this.defaultIncoming}`);
+    lines.push(`### default outgoing: ${this.defaultOutgoing}`);
+    lines.push('');
+
+    for (const rule of rules) {
+      const chain = rule.direction === 'out' ? `${prefix}-user-output` : `${prefix}-user-input`;
+      const target = this.actionToIptablesTarget(rule.action, prefix);
+      const parts: string[] = [`-A ${chain}`];
+
+      // Interface
+      if (rule.iface) {
+        parts.push(rule.direction === 'out' ? `-o ${rule.iface}` : `-i ${rule.iface}`);
+      }
+
+      // Protocol & port
+      const portMatch = rule.port.match(/^(.+)\/(tcp|udp)$/);
+      if (portMatch) {
+        parts.push(`-p ${portMatch[2]} --dport ${portMatch[1]}`);
+      } else if (rule.port !== 'Anywhere' && /^\d+/.test(rule.port)) {
+        parts.push(`-p tcp --dport ${rule.port}`);
+        parts.push(`-p udp --dport ${rule.port}`);
+      }
+
+      // Source
+      if (rule.from !== 'Anywhere') {
+        parts.push(`-s ${rule.from}`);
+      }
+
+      // Destination
+      if (rule.to !== 'Anywhere') {
+        parts.push(`-d ${rule.to}`);
+      }
+
+      parts.push(`-j ${target}`);
+
+      // Comment
+      if (rule.comment) {
+        parts.push(`-m comment --comment '${rule.comment}'`);
+      }
+
+      lines.push(parts.join(' '));
+    }
+
+    lines.push('COMMIT');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  private actionToIptablesTarget(action: Action, prefix: string): string {
+    switch (action) {
+      case 'ALLOW': return 'ACCEPT';
+      case 'DENY': return 'DROP';
+      case 'REJECT': return 'REJECT';
+      case 'LIMIT': return `${prefix}-user-limit-accept`;
+    }
+  }
+
+  // ─── Logging to /var/log/ufw.log ───────────────────────────────
+
+  private logUfw(message: string): void {
+    if (!this.vfs) return;
+
+    const now = new Date();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const ts = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, ' ')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const line = `${ts} localhost kernel: [UFW] ${message}`;
+
+    const existing = this.vfs.readFile('/var/log/ufw.log');
+    if (existing !== null) {
+      this.vfs.writeFile('/var/log/ufw.log', existing + line + '\n', 0, 0, 0o022);
+    } else {
+      this.vfs.createFileAt('/var/log/ufw.log', line + '\n', 0o640, 0, 4);
+    }
   }
 
   // ─── Usage ───────────────────────────────────────────────────────
