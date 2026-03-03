@@ -1240,6 +1240,47 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     });
   });
 
+  // ─── 8.17b: ufw prepend ────────────────────────────────────────
+
+  describe('G8-17b: ufw prepend', () => {
+    it('should prepend rule at position 1', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 22/tcp');
+      await server.executeCommand('ufw allow 80/tcp');
+
+      const out = await server.executeCommand('ufw prepend deny 23');
+      expect(out).toContain('Rule prepended');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status numbered');
+      // deny 23 should be first
+      const lines = status.split('\n');
+      const rule1 = lines.find(l => l.includes('[ 1]'));
+      expect(rule1).toContain('23');
+      expect(rule1).toContain('DENY');
+    });
+
+    it('should prepend rule before existing rules', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw allow 80/tcp');
+      await server.executeCommand('ufw allow 443/tcp');
+      await server.executeCommand('ufw prepend deny from 10.0.0.1');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status numbered');
+      const lines = status.split('\n');
+      const rule1 = lines.find(l => l.includes('[ 1]'));
+      expect(rule1).toContain('DENY');
+      expect(rule1).toContain('10.0.0.1');
+    });
+
+    it('should prepend to empty rule set', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw prepend allow 22/tcp');
+      expect(out).toContain('Rule prepended');
+    });
+  });
+
   // ─── 8.18: Rate limiting (LIMIT) ──────────────────────────────
 
   describe('G8-18: Rate limiting', () => {

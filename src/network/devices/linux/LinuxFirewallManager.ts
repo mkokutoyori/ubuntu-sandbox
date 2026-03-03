@@ -273,6 +273,7 @@ export class LinuxFirewallManager {
       case 'limit':    return this.cmdAddRule('LIMIT', args.slice(1));
       case 'delete':   return this.cmdDelete(args.slice(1));
       case 'insert':   return this.cmdInsert(args.slice(1));
+      case 'prepend':  return this.cmdPrepend(args.slice(1));
       case 'reset':    return this.cmdReset();
       case 'reload':   return this.cmdReload();
       case 'logging':  return this.cmdLogging(args.slice(1));
@@ -674,6 +675,31 @@ export class LinuxFirewallManager {
     return 'Rule inserted';
   }
 
+  // ─── Prepend rule ───────────────────────────────────────────────
+
+  private cmdPrepend(args: string[]): string {
+    if (args.length < 2) return 'ERROR: wrong number of arguments';
+
+    const action = args[0].toUpperCase() as Action;
+    if (!['ALLOW', 'DENY', 'REJECT', 'LIMIT'].includes(action)) {
+      return 'ERROR: invalid action';
+    }
+
+    const ruleArgs = args.slice(1);
+    const parsed = this.parseRuleArgs(action, ruleArgs);
+    if (typeof parsed === 'string') return parsed;
+
+    // Prepend = insert at position 0
+    this.rules.unshift({ ...parsed, v6: false });
+    if (this.ruleGetsV6(parsed)) {
+      // Insert v6 right after the v4 rule
+      this.rules.splice(1, 0, { ...parsed, v6: true });
+    }
+
+    this.syncToVfs();
+    return 'Rule prepended';
+  }
+
   // ─── Logging ─────────────────────────────────────────────────────
 
   private cmdLogging(args: string[]): string {
@@ -971,6 +997,7 @@ export class LinuxFirewallManager {
       ' limit ARGS                      add limit rule',
       ' delete RULE|NUM                 delete RULE',
       ' insert NUM RULE                 insert RULE at NUM',
+      ' prepend RULE                    prepend RULE to top',
       ' reload                          reload firewall',
       ' reset                           reset firewall',
       ' show ARG                        show firewall report',
