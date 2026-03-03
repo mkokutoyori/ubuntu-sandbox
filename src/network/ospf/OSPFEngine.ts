@@ -431,6 +431,7 @@ export class OSPFEngine {
       // Broadcast or NBMA: enter Waiting state for DR election
       iface.state = 'Waiting';
       iface.waitTimer = setTimeout(() => {
+        iface.waitTimer = null;
         this.drElection(iface);
       }, iface.deadInterval * 1000);
     }
@@ -502,11 +503,17 @@ export class OSPFEngine {
     const neighborId = hello.routerId;
     let neighbor = iface.neighbors.get(neighborId);
 
+    const isNewNeighbor = !neighbor;
     if (!neighbor) {
       // New neighbor discovered
       neighbor = this.createNeighbor(neighborId, srcIP, ifaceName, hello);
       iface.neighbors.set(neighborId, neighbor);
     }
+
+    // Snapshot previous declarations for NbrChange detection
+    const prevPriority = neighbor.priority;
+    const prevDR = neighbor.neighborDR;
+    const prevBDR = neighbor.neighborBDR;
 
     // Update neighbor fields
     neighbor.ipAddress = srcIP;
@@ -532,18 +539,25 @@ export class OSPFEngine {
       }
     }
 
-    // Check for DR/BDR changes
+    // Check for DR/BDR changes (RFC 2328 §9.4)
     if (iface.state === 'Waiting') {
-      // Check if this hello triggers end of waiting
-      if (hello.designatedRouter === srcIP && hello.backupDesignatedRouter === '0.0.0.0') {
-        // Neighbor claims to be DR with no BDR — might trigger election
-      }
+      // BackupSeen case 1: neighbor declares itself BDR
       if (hello.backupDesignatedRouter === srcIP) {
-        // Neighbor claims to be BDR — end wait timer
-        if (iface.waitTimer) {
-          clearTimeout(iface.waitTimer);
-          iface.waitTimer = null;
-        }
+        if (iface.waitTimer) { clearTimeout(iface.waitTimer); iface.waitTimer = null; }
+        this.drElection(iface);
+      }
+      // BackupSeen case 2: neighbor declares itself DR with no BDR
+      else if (hello.designatedRouter === srcIP && hello.backupDesignatedRouter === '0.0.0.0') {
+        if (iface.waitTimer) { clearTimeout(iface.waitTimer); iface.waitTimer = null; }
+        this.drElection(iface);
+      }
+    } else if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
+      // NbrChange: new neighbor or changed priority/DR/BDR declaration → re-run election
+      const nbrChange = isNewNeighbor
+        || prevPriority !== hello.priority
+        || prevDR !== hello.designatedRouter
+        || prevBDR !== hello.backupDesignatedRouter;
+      if (nbrChange) {
         this.drElection(iface);
       }
     }
@@ -703,6 +717,11 @@ export class OSPFEngine {
         neighbor.dbSummaryList = [];
         // Remove from interface neighbors
         iface.neighbors.delete(neighbor.routerId);
+        // Re-run DR election on broadcast/NBMA when a neighbor departs (RFC 2328 §9.4 NbrChange)
+        if ((iface.networkType === 'broadcast' || iface.networkType === 'nbma') &&
+            iface.state !== 'Waiting') {
+          this.drElection(iface);
+        }
         break;
     }
 
@@ -881,20 +900,29 @@ export class OSPFEngine {
       return;
     }
 
+    const sortCandidates = (pool: typeof candidates) =>
+      pool.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId));
+
     // Step 1: Elect BDR (candidates not declaring themselves as DR)
     const bdrCandidates = candidates.filter(c => c.declaredDR !== c.ipAddress);
     // Among BDR candidates: prefer those declaring themselves BDR, then highest priority, then highest Router ID
     const bdrDeclaring = bdrCandidates.filter(c => c.declaredBDR === c.ipAddress);
     const bdrPool = bdrDeclaring.length > 0 ? bdrDeclaring : bdrCandidates;
-    const bdr = bdrPool.length > 0
-      ? bdrPool.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId))[0]
-      : null;
+    let bdr = bdrPool.length > 0 ? sortCandidates(bdrPool)[0] : null;
 
     // Step 2: Elect DR (candidates declaring themselves as DR)
     const drDeclaring = candidates.filter(c => c.declaredDR === c.ipAddress);
-    const dr = drDeclaring.length > 0
-      ? drDeclaring.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId))[0]
-      : bdr;
+    const dr = drDeclaring.length > 0 ? sortCandidates(drDeclaring)[0] : bdr;
+
+    // Step 3 (RFC 2328 §9.4 second pass): if BDR was promoted to DR (dr === bdr),
+    // re-elect BDR from remaining candidates excluding the new DR.
+    if (dr && bdr && dr.routerId === bdr.routerId) {
+      const newDRIp = dr.ipAddress;
+      const bdrCandidates2 = candidates.filter(c => c.ipAddress !== newDRIp && c.declaredDR !== c.ipAddress);
+      const bdrDeclaring2 = bdrCandidates2.filter(c => c.declaredBDR === c.ipAddress);
+      const bdrPool2 = bdrDeclaring2.length > 0 ? bdrDeclaring2 : bdrCandidates2;
+      bdr = bdrPool2.length > 0 ? sortCandidates(bdrPool2)[0] : null;
+    }
 
     iface.dr = dr?.ipAddress ?? '0.0.0.0';
     iface.bdr = bdr?.ipAddress ?? '0.0.0.0';
