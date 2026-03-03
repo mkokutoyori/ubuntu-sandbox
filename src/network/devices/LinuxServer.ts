@@ -258,7 +258,11 @@ export class LinuxServer extends EndHost {
       dstPort: ports.dstPort,
       iface: portName,
     };
-    return this.executor.firewall.filterPacket(pkt);
+    // UFW takes priority when enabled; otherwise use raw iptables rules
+    if (this.executor.firewall.isEnabled()) {
+      return this.executor.firewall.filterPacket(pkt);
+    }
+    return this.executor.iptables.filterPacket(pkt);
   }
 
   getOSType(): string { return 'linux'; }

@@ -387,18 +387,23 @@ export class LinuxPC extends EndHost {
   // ─── iptables ──────────────────────────────────────────────────
 
   private cmdIptables(args: string[]): string {
-    // iptables -t nat -A POSTROUTING -o IFACE -j MASQUERADE
+    // Delegate to the executor's iptables manager
+    const result = this.executor.iptables.execute(args);
+
+    // Also handle MASQUERADE for NAT (updates internal masquerade state)
     const table = args.indexOf('-t') !== -1 ? args[args.indexOf('-t') + 1] : 'filter';
-    if (table !== 'nat') return ''; // only handle nat table
-    const chain = args.indexOf('-A') !== -1 ? args[args.indexOf('-A') + 1] : null;
-    if (chain === 'POSTROUTING') {
-      const jump = args.indexOf('-j') !== -1 ? args[args.indexOf('-j') + 1] : null;
-      const outIface = args.indexOf('-o') !== -1 ? args[args.indexOf('-o') + 1] : null;
-      if (jump === 'MASQUERADE' && outIface) {
-        this.masqueradeOnInterfaces.add(outIface);
+    if (table === 'nat') {
+      const chain = args.indexOf('-A') !== -1 ? args[args.indexOf('-A') + 1] : null;
+      if (chain === 'POSTROUTING') {
+        const jump = args.indexOf('-j') !== -1 ? args[args.indexOf('-j') + 1] : null;
+        const outIface = args.indexOf('-o') !== -1 ? args[args.indexOf('-o') + 1] : null;
+        if (jump === 'MASQUERADE' && outIface) {
+          this.masqueradeOnInterfaces.add(outIface);
+        }
       }
     }
-    return '';
+
+    return result.output;
   }
 
   // ─── IpNetworkContext adapter ──────────────────────────────────
@@ -649,7 +654,11 @@ export class LinuxPC extends EndHost {
       dstPort: ports.dstPort,
       iface: portName,
     };
-    return this.executor.firewall.filterPacket(pkt);
+    // UFW takes priority when enabled; otherwise use raw iptables rules
+    if (this.executor.firewall.isEnabled()) {
+      return this.executor.firewall.filterPacket(pkt);
+    }
+    return this.executor.iptables.filterPacket(pkt);
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

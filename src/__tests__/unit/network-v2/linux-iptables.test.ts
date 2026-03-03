@@ -5,6 +5,9 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
+import { MACAddress, resetCounters } from '@/network/core/types';
 
 // ═══════════════════════════════════════════════════════════════════
 // IPTABLES — Linux Netfilter Firewall
@@ -702,6 +705,151 @@ describe('iptables', () => {
 
       const fwdOut = await server.executeCommand('iptables -S FORWARD');
       expect(fwdOut).toContain('-d 192.168.1.10');
+    });
+  });
+
+  // ─── Real packet filtering ────────────────────────────────────
+
+  describe('real packet filtering', () => {
+
+    beforeEach(() => {
+      resetCounters();
+      MACAddress.resetCounter();
+    });
+
+    function connectPCtoServer() {
+      const pc = new LinuxPC('linux-pc', 'Client', 0, 0);
+      const srv = new LinuxServer('linux-server', 'Server', 200, 0);
+      const cable = new Cable('cable-ipt');
+      cable.connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
+      return { pc, srv };
+    }
+
+    async function setupIPs(pc: LinuxPC, srv: LinuxServer) {
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+    }
+
+    it('should accept all packets when iptables has default ACCEPT policy', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+    });
+
+    it('should drop incoming ICMP when INPUT policy is DROP', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -P INPUT DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should allow ICMP when explicit ACCEPT rule exists with DROP policy', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -P INPUT DROP');
+      await srv.executeCommand('iptables -A INPUT -p icmp -j ACCEPT');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+    });
+
+    it('should drop specific source IP', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should accept from allowed source with DROP policy', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -P INPUT DROP');
+      await srv.executeCommand('iptables -A INPUT -s 10.0.0.1 -j ACCEPT');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+    });
+
+    it('should respect first-match-wins ordering', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP');
+      await srv.executeCommand('iptables -A INPUT -j ACCEPT');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should filter by interface name', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -i eth0 -j DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should not match wrong interface', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -i eth1 -j DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+    });
+
+    it('should filter by CIDR source', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -s 10.0.0.0/24 -j DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should block outgoing packets with OUTPUT DROP policy', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      // Block output on the PC (the one pinging)
+      await pc.executeCommand('sudo iptables -P OUTPUT DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should send ICMP reject when using REJECT target', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -p icmp -j REJECT');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('Destination Host Unreachable');
+    });
+
+    it('should handle negated source (!)', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      // Drop everything NOT from 10.0.0.99 (pc is 10.0.0.1, so it matches negation)
+      await srv.executeCommand('iptables -I INPUT ! -s 10.0.0.99 -j DROP');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+    });
+
+    it('should update packet counters', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await setupIPs(pc, srv);
+      await srv.executeCommand('iptables -A INPUT -p icmp -j ACCEPT');
+      await pc.executeCommand('ping -c 1 10.0.0.2');
+
+      const out = await srv.executeCommand('iptables -L INPUT -v');
+      expect(out).toMatch(/[1-9]\d*/);
     });
   });
 });

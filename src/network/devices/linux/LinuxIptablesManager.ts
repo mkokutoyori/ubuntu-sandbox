@@ -6,6 +6,7 @@
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
+import type { PacketInfo, FirewallVerdict } from './LinuxFirewallManager';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -94,6 +95,150 @@ export class LinuxIptablesManager {
       }
       this.tables.set(tableName as TableName, table);
     }
+  }
+
+  // ─── Real packet filtering ─────────────────────────────────────
+
+  /**
+   * Evaluate iptables filter table rules against an actual packet.
+   * Returns 'accept', 'drop', or 'reject'.
+   */
+  filterPacket(pkt: PacketInfo): FirewallVerdict {
+    const filterTable = this.tables.get('filter')!;
+    const chainName = pkt.direction === 'in' ? 'INPUT' : 'OUTPUT';
+    const chain = filterTable.chains.get(chainName)!;
+
+    return this.evaluateChain(filterTable, chain, pkt);
+  }
+
+  /**
+   * Check if iptables has any non-default configuration (rules or policy changes).
+   * Used to decide whether to apply iptables filtering.
+   */
+  hasNonDefaultConfig(): boolean {
+    const filterTable = this.tables.get('filter')!;
+    for (const chain of filterTable.chains.values()) {
+      if (chain.rules.length > 0) return true;
+      if (chain.policy !== null && chain.policy !== 'ACCEPT') return true;
+    }
+    return false;
+  }
+
+  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo): FirewallVerdict {
+    for (const rule of chain.rules) {
+      if (this.ruleMatchesPacket(rule, pkt)) {
+        // Update counters
+        rule.pkts++;
+        rule.bytes += 64; // estimated packet size
+        chain.pkts++;
+        chain.bytes += 64;
+
+        // If target is a custom chain, evaluate it
+        const targetChain = table.chains.get(rule.target);
+        if (targetChain && targetChain.policy === null) {
+          const result = this.evaluateChain(table, targetChain, pkt);
+          // If the chain returns 'accept' from RETURN, continue with next rule
+          // (In real iptables, RETURN goes back to calling chain)
+          if (result !== 'accept') return result;
+          continue;
+        }
+
+        switch (rule.target) {
+          case 'ACCEPT': return 'accept';
+          case 'DROP': return 'drop';
+          case 'REJECT': return 'reject';
+          case 'RETURN': return 'accept'; // Return to calling chain
+          case 'LOG': continue; // LOG doesn't terminate, continue to next rule
+          default: continue;
+        }
+      }
+    }
+
+    // No rule matched — apply chain policy
+    if (chain.policy === 'DROP') return 'drop';
+    return 'accept';
+  }
+
+  private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
+    // Protocol check
+    if (rule.protocol && rule.protocol !== 'all') {
+      const protoNum = rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17 : rule.protocol === 'icmp' ? 1 : -1;
+      const matches = pkt.protocol === protoNum;
+      if (rule.negProtocol ? matches : !matches) return false;
+    }
+
+    // Source IP check
+    if (rule.source && rule.source !== '0.0.0.0/0') {
+      const matches = this.ipMatchesSpec(pkt.srcIP, rule.source);
+      if (rule.negSource ? matches : !matches) return false;
+    }
+
+    // Destination IP check
+    if (rule.destination && rule.destination !== '0.0.0.0/0') {
+      const matches = this.ipMatchesSpec(pkt.dstIP, rule.destination);
+      if (rule.negDestination ? matches : !matches) return false;
+    }
+
+    // Input interface check
+    if (rule.inInterface) {
+      const matches = pkt.iface === rule.inInterface;
+      if (rule.negInInterface ? matches : !matches) return false;
+    }
+
+    // Output interface check
+    if (rule.outInterface) {
+      const matches = pkt.iface === rule.outInterface;
+      if (rule.negOutInterface ? matches : !matches) return false;
+    }
+
+    // Destination port check
+    if (rule.dport) {
+      if (!this.portMatchesSpec(pkt.dstPort, rule.dport)) return false;
+    }
+
+    // Source port check
+    if (rule.sport) {
+      if (!this.portMatchesSpec(pkt.srcPort, rule.sport)) return false;
+    }
+
+    return true;
+  }
+
+  private ipMatchesSpec(ip: string, spec: string): boolean {
+    if (!spec.includes('/')) return ip === spec;
+
+    const [network, prefixStr] = spec.split('/');
+    const prefix = parseInt(prefixStr);
+    if (isNaN(prefix)) return false;
+
+    const ipNum = this.ipToNumber(ip);
+    const netNum = this.ipToNumber(network);
+    if (ipNum === null || netNum === null) return false;
+
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    return (ipNum & mask) === (netNum & mask);
+  }
+
+  private ipToNumber(ip: string): number | null {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return null;
+    const octets = parts.map(p => parseInt(p));
+    if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
+    return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  }
+
+  private portMatchesSpec(port: number, spec: string): boolean {
+    // Port range: "6000:6007"
+    if (spec.includes(':')) {
+      const [startStr, endStr] = spec.split(':');
+      return port >= parseInt(startStr) && port <= parseInt(endStr);
+    }
+    // Multi-port: "80,443,8080"
+    if (spec.includes(',')) {
+      return spec.split(',').map(p => parseInt(p)).includes(port);
+    }
+    // Single port
+    return port === parseInt(spec);
   }
 
   // ─── Main entry point ─────────────────────────────────────────
