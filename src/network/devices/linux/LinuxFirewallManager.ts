@@ -314,8 +314,35 @@ export class LinuxFirewallManager {
   }
 
   private cmdReload(): string {
+    this.loadFromVfs();
     this.syncToVfs();
     return 'Firewall reloaded';
+  }
+
+  /** Re-read configuration from /etc/ufw/ufw.conf in the VFS. */
+  private loadFromVfs(): void {
+    if (!this.vfs) return;
+
+    const ufwConf = this.vfs.readFile('/etc/ufw/ufw.conf');
+    if (ufwConf) {
+      // Parse ENABLED=yes/no
+      const enabledMatch = ufwConf.match(/ENABLED\s*=\s*(yes|no)/);
+      if (enabledMatch) {
+        this.enabled = enabledMatch[1] === 'yes';
+      }
+
+      // Parse LOGLEVEL=off|low|medium|high|full
+      const logMatch = ufwConf.match(/LOGLEVEL\s*=\s*(\w+)/);
+      if (logMatch) {
+        const level = logMatch[1];
+        if (level === 'off') {
+          this.logging = false;
+        } else if (['low', 'medium', 'high', 'full'].includes(level)) {
+          this.logging = true;
+          this.loggingLevel = level;
+        }
+      }
+    }
   }
 
   private cmdStatus(args: string[]): string {

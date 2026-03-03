@@ -86,6 +86,33 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const out = await server.executeCommand('ufw reload');
       expect(out).toContain('Firewall reloaded');
     });
+
+    it('should re-read ufw.conf on reload', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw logging medium');
+      await server.executeCommand('ufw enable');
+
+      // Manually edit ufw.conf to change LOGLEVEL
+      await server.executeCommand('echo "ENABLED=yes\nLOGLEVEL=high" > /etc/ufw/ufw.conf');
+
+      // Reload should pick up the new log level
+      await server.executeCommand('ufw reload');
+
+      const status = await server.executeCommand('ufw status verbose');
+      expect(status).toContain('on (high)');
+    });
+
+    it('should re-apply ENABLED state from ufw.conf on reload', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      await server.executeCommand('ufw enable');
+
+      // Manually set ENABLED=no in config
+      await server.executeCommand('echo "ENABLED=no\nLOGLEVEL=off" > /etc/ufw/ufw.conf');
+      await server.executeCommand('ufw reload');
+
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('Status: inactive');
+    });
   });
 
   // ─── 8.2: Default policies ─────────────────────────────────────────
