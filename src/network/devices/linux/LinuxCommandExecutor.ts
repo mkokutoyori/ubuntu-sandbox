@@ -886,6 +886,7 @@ export class LinuxCommandExecutor {
       'ifconfig', 'ip', 'ping', 'traceroute', 'netstat', 'ss', 'route', 'arp',
       'dhclient', 'nslookup', 'dig', 'curl', 'wget',
       'nano', 'vi', 'vim',
+      'iptables', 'iptables-save', 'iptables-restore',
     ];
     if (!prefix) return commands.sort();
     return commands.filter(c => c.startsWith(prefix)).sort();

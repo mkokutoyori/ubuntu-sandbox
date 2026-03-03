@@ -48,7 +48,7 @@ export class VirtualFileSystem {
       '/usr/local', '/usr/local/bin',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
       '/etc/sudoers.d',
-      '/etc/ufw', '/etc/ufw/applications.d',
+      '/etc/ufw', '/etc/ufw/applications.d', '/etc/iptables',
       '/home', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
@@ -156,7 +156,7 @@ export class VirtualFileSystem {
       this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }
     const sbinBins = ['useradd', 'usermod', 'userdel', 'groupadd', 'groupmod', 'groupdel',
-      'chpasswd', 'chage'];
+      'chpasswd', 'chage', 'iptables', 'iptables-save', 'iptables-restore'];
     for (const bin of sbinBins) {
       this.createFileAt(`/usr/sbin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }

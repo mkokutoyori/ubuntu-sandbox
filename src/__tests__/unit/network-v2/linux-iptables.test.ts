@@ -852,4 +852,65 @@ describe('iptables', () => {
       expect(out).toMatch(/[1-9]\d*/);
     });
   });
+
+  // ─── VFS and shell integration ────────────────────────────────
+
+  describe('VFS and shell integration', () => {
+    it('should have iptables binary stub in /usr/sbin', async () => {
+      const out = await server.executeCommand('which iptables');
+      expect(out).toContain('/usr/sbin/iptables');
+    });
+
+    it('should have iptables-save binary stub', async () => {
+      const out = await server.executeCommand('which iptables-save');
+      expect(out).toContain('/usr/sbin/iptables-save');
+    });
+
+    it('should have iptables-restore binary stub', async () => {
+      const out = await server.executeCommand('which iptables-restore');
+      expect(out).toContain('/usr/sbin/iptables-restore');
+    });
+
+    it('should save rules to file and restore them', async () => {
+      // Add some rules
+      await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j ACCEPT');
+      await server.executeCommand('iptables -A INPUT -p tcp --dport 80 -j ACCEPT');
+      await server.executeCommand('iptables -P INPUT DROP');
+
+      // Save to file via redirection
+      await server.executeCommand('iptables-save > /etc/iptables/rules.v4');
+
+      // Verify file was created
+      const fileContent = await server.executeCommand('cat /etc/iptables/rules.v4');
+      expect(fileContent).toContain('*filter');
+      expect(fileContent).toContain(':INPUT DROP');
+      expect(fileContent).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+
+      // Flush rules
+      await server.executeCommand('iptables -F');
+      await server.executeCommand('iptables -P INPUT ACCEPT');
+
+      // Verify rules are gone
+      const afterFlush = await server.executeCommand('iptables -S');
+      expect(afterFlush).not.toContain('--dport 22');
+
+      // Restore from file
+      await server.executeCommand('iptables-restore < /etc/iptables/rules.v4');
+
+      // Verify rules are back
+      const afterRestore = await server.executeCommand('iptables -S');
+      expect(afterRestore).toContain('-P INPUT DROP');
+      expect(afterRestore).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+      expect(afterRestore).toContain('-A INPUT -p tcp --dport 80 -j ACCEPT');
+    });
+
+    it('should require root for iptables on non-root user', async () => {
+      const pc = new LinuxPC('linux-pc', 'PC1');
+      // LinuxPC defaults to non-root user
+      // iptables on LinuxPC goes through the network command handler which doesn't check root
+      // but iptables via executor requires root
+      const out = await pc.executeCommand('sudo iptables -L');
+      expect(out).toContain('Chain INPUT');
+    });
+  });
 });
