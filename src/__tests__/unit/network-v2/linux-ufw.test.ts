@@ -1157,4 +1157,104 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(result).toContain('0 received');
     });
   });
+
+  // ─── 8.17: IPv6 firewall filtering ──────────────────────────────
+
+  describe('G8-17: Filtrage IPv6', () => {
+    it('should use v6 rules for IPv6 packet filtering via filterPacket', async () => {
+      const srv = new LinuxServer('linux-server', 'SRV1');
+
+      // Add a rule that generates both v4 and v6 entries
+      await srv.executeCommand('ufw allow 22/tcp');
+      await srv.executeCommand('ufw enable');
+
+      // v6 rules should exist in status
+      const status = await srv.executeCommand('ufw status');
+      expect(status).toContain('22/tcp (v6)');
+    });
+
+    it('should apply default policy for v6 packets when no v6 rule matches', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['enable']);
+
+      // Default deny incoming — IPv6 packet should be dropped
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6, // TCP
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('drop');
+    });
+
+    it('should match v6 allow rule for IPv6 packets', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      fw.execute(['allow', '80/tcp']); // adds v4 and v6 rule
+      fw.execute(['enable']);
+
+      // IPv6 TCP packet to port 80 should be allowed via v6 rule
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6,
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('accept');
+    });
+
+    it('should not use v4 rules for IPv6 packets', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      // Add rule from specific IPv4 → no v6 counterpart
+      fw.execute(['allow', 'from', '10.0.0.1', 'to', 'any', 'port', '80']);
+      fw.execute(['enable']);
+
+      // IPv6 packet should NOT match the v4-only rule → default deny
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6,
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('drop');
+    });
+
+    it('should deny IPv6 packet when v6 rule removed but v4 rule remains', async () => {
+      const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
+      const fw = new LinuxFirewallManager();
+      // allow 80/tcp → creates v4 rule + v6 rule
+      fw.execute(['allow', '80/tcp']);
+      fw.execute(['enable']);
+
+      // Delete ONLY the v6 rule (rule 2 in ordered list: [1] 80/tcp v4, [2] 80/tcp v6)
+      fw.execute(['delete', '2']);
+
+      // IPv6 packet to port 80 → v6 rule removed, should fall to default deny
+      const result = fw.filterPacket({
+        direction: 'in',
+        protocol: 6,
+        srcIP: '2001:db8::1',
+        dstIP: '2001:db8::2',
+        srcPort: 12345,
+        dstPort: 80,
+        iface: 'eth0',
+        isV6: true,
+      });
+      expect(result).toBe('drop');
+    });
+  });
 });

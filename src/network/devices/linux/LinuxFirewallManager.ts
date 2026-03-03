@@ -65,6 +65,7 @@ export interface PacketInfo {
   srcPort: number;          // 0 for ICMP
   dstPort: number;          // 0 for ICMP
   iface: string;            // interface name (e.g. 'eth0')
+  isV6?: boolean;           // true for IPv6 packets (uses v6 rules)
 }
 
 // ─── Manager ─────────────────────────────────────────────────────────
@@ -92,9 +93,10 @@ export class LinuxFirewallManager {
   filterPacket(pkt: PacketInfo): FirewallVerdict {
     if (!this.enabled) return 'accept';
 
-    // Get rules matching this direction (only non-v6 rules for IPv4 traffic)
+    // Get rules matching this direction and IP version
+    const useV6 = pkt.isV6 === true;
     const candidateRules = this.rules.filter(r =>
-      !r.v6 && r.direction === pkt.direction
+      r.v6 === useV6 && r.direction === pkt.direction
     );
 
     // First-match wins (like real iptables/ufw)
