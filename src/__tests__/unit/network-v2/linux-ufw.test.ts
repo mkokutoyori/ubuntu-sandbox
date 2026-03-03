@@ -649,4 +649,97 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(separatorLine).toBeDefined();
     });
   });
+
+  // ─── 8.12: Direction, interface, destination IP, app profiles, comments ────
+
+  describe('G8-12: Direction et interface', () => {
+    it('should allow rule with "in" direction', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow in 22/tcp');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('ALLOW IN');
+      expect(status).toContain('22/tcp');
+    });
+
+    it('should allow rule with "out" direction', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow out 53');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('ALLOW OUT');
+      expect(status).toContain('53');
+    });
+
+    it('should allow rule with interface "on eth0"', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow in on eth0 80/tcp');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('on eth0');
+      expect(status).toContain('80/tcp');
+    });
+
+    it('should deny outgoing on specific interface', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw deny out on ens33 25/tcp');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('DENY OUT on ens33');
+    });
+
+    it('should allow direction with from syntax', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow in on eth0 from 10.0.0.0/24 to any port 22');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('on eth0');
+      expect(status).toContain('10.0.0.0/24');
+      expect(status).toContain('22');
+    });
+  });
+
+  describe('G8-13: Destination IP et app profiles comme règles', () => {
+    it('should allow rule to specific destination IP', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to 192.168.1.1 port 443 proto tcp');
+      expect(out).toContain('Rule added');
+    });
+
+    it('should allow app profile as rule target (OpenSSH)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow OpenSSH');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('22/tcp');
+    });
+
+    it('should allow multi-word app profile (Nginx Full)', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow Nginx Full');
+      expect(out).toContain('Rule added');
+
+      await server.executeCommand('ufw enable');
+      const status = await server.executeCommand('ufw status');
+      expect(status).toContain('80,443/tcp');
+    });
+
+    it('should support comment on from-rule', async () => {
+      const server = new LinuxServer('linux-server', 'SRV1');
+      const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 22 comment SSH from office');
+      expect(out).toContain('Rule added');
+    });
+  });
 });

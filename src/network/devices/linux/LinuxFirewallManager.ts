@@ -35,15 +35,18 @@ const APP_PROFILES: Record<string, { title: string; description: string; ports: 
 // ─── Types ───────────────────────────────────────────────────────────
 
 type Action = 'ALLOW' | 'DENY' | 'REJECT' | 'LIMIT';
-type Direction = 'incoming' | 'outgoing';
+type RuleDirection = 'in' | 'out';
 type DefaultPolicy = 'allow' | 'deny' | 'reject';
 
 interface UfwRule {
   action: Action;
+  direction: RuleDirection;
   port: string;       // e.g. '22/tcp', '80/tcp', '53', '6000:6007/tcp'
   from: string;       // e.g. 'Anywhere', '192.168.1.100', '10.0.0.0/24'
-  to: string;         // e.g. 'Anywhere'
+  to: string;         // e.g. 'Anywhere', '192.168.1.1'
+  iface: string;      // e.g. '', 'eth0', 'ens33' — empty = all interfaces
   v6: boolean;        // IPv6 duplicate rule
+  comment: string;    // optional comment
 }
 
 // ─── Manager ─────────────────────────────────────────────────────────
@@ -152,9 +155,12 @@ export class LinuxFirewallManager {
 
     orderedRules.forEach((rule, idx) => {
       const num = numbered ? `[ ${idx + 1}] ` : '';
-      const toStr = rule.v6 ? `${rule.port} (v6)` : rule.port;
-      const fromStr = rule.v6 ? `${rule.from} (v6)` : rule.from;
-      const actionStr = rule.action + ' IN';
+      const v6Tag = rule.v6 ? ' (v6)' : '';
+      const ifaceTag = rule.iface ? ` on ${rule.iface}` : '';
+      const toStr = `${rule.port}${v6Tag}`;
+      const fromStr = `${rule.from}${v6Tag}`;
+      const dirStr = rule.direction === 'out' ? 'OUT' : 'IN';
+      const actionStr = `${rule.action} ${dirStr}${ifaceTag}`;
       lines.push(`${num}${toStr.padEnd(toWidth)}${actionStr.padEnd(actionWidth)}${fromStr}`);
     });
 
@@ -196,25 +202,33 @@ export class LinuxFirewallManager {
     // Check for duplicates
     const dup = this.rules.find(r =>
       !r.v6 && r.action === parsed.action && r.port === parsed.port &&
-      r.from === parsed.from && r.to === parsed.to
+      r.from === parsed.from && r.to === parsed.to &&
+      r.direction === parsed.direction && r.iface === parsed.iface
     );
     if (dup) {
-      const hasV6 = parsed.from === 'Anywhere';
-      return hasV6
+      const addsV6 = this.ruleGetsV6(parsed);
+      return addsV6
         ? 'Skipping adding existing rule\nSkipping adding existing rule (v6)'
         : 'Skipping adding existing rule';
     }
 
     // Add IPv4 rule
     this.rules.push({ ...parsed, v6: false });
-    // Add IPv6 rule
-    if (parsed.from === 'Anywhere') {
+    // Add IPv6 duplicate if source/dest are not IPv4-specific
+    const addsV6 = this.ruleGetsV6(parsed);
+    if (addsV6) {
       this.rules.push({ ...parsed, v6: true });
     }
 
-    return parsed.from === 'Anywhere'
+    return addsV6
       ? 'Rule added\nRule added (v6)'
       : 'Rule added';
+  }
+
+  private ruleGetsV6(rule: UfwRule): boolean {
+    // IPv6 duplicate is added only when from and to are not IPv4-specific
+    const isIpv4 = (addr: string) => /^\d+\.\d+\.\d+\.\d+/.test(addr);
+    return !isIpv4(rule.from) && !isIpv4(rule.to);
   }
 
   private validatePort(portStr: string): string | null {
@@ -234,36 +248,64 @@ export class LinuxFirewallManager {
   }
 
   private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
-    const first = args[0];
+    let i = 0;
 
-    // ufw allow from <ip> [to any [port <port> [proto <proto>]]]
-    if (first === 'from') {
-      return this.parseFromRule(action, args);
+    // Parse optional direction: in | out
+    let direction: RuleDirection = 'in';
+    if (args[i] === 'in' || args[i] === 'out') {
+      direction = args[i] as RuleDirection;
+      i++;
     }
 
-    // ufw allow <service_name>
+    // Parse optional interface: on <iface>
+    let iface = '';
+    if (i < args.length && args[i] === 'on') {
+      i++;
+      if (i >= args.length) return 'ERROR: missing interface name';
+      iface = args[i];
+      i++;
+    }
+
+    if (i >= args.length) return 'ERROR: wrong number of arguments';
+    const first = args[i];
+    const remaining = args.slice(i);
+
+    // ufw allow [in|out] [on <iface>] from <ip> [to <dest> [port <port> [proto <proto>]]]
+    if (first === 'from') {
+      return this.parseFromRule(action, direction, iface, remaining);
+    }
+
+    // ufw allow [in|out] [on <iface>] <service_name>
     const service = SERVICE_PORTS[first];
     if (service) {
       const portStr = service.proto ? `${service.port}/${service.proto}` : service.port;
-      return { action, port: portStr, from: 'Anywhere', to: 'Anywhere', v6: false };
+      return { action, direction, port: portStr, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
     }
 
-    // ufw allow <port>[/<proto>]
-    // ufw allow <port1>:<port2>/<proto>
+    // ufw allow [in|out] [on <iface>] <app_profile_name>
+    const profile = APP_PROFILES[remaining.join(' ')];
+    if (profile) {
+      return { action, direction, port: profile.ports, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
+    }
+
+    // ufw allow [in|out] [on <iface>] <port>[/<proto>]
+    // ufw allow [in|out] [on <iface>] <port1>:<port2>/<proto>
     if (/^\d+/.test(first)) {
       const err = this.validatePort(first);
       if (err) return err;
-      return { action, port: first, from: 'Anywhere', to: 'Anywhere', v6: false };
+      return { action, direction, port: first, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
     }
 
     return 'ERROR: invalid rule syntax';
   }
 
-  private parseFromRule(action: Action, args: string[]): UfwRule | string {
-    // from <source> [to any [port <port> [proto <proto>]]]
+  private parseFromRule(action: Action, direction: RuleDirection, iface: string, args: string[]): UfwRule | string {
+    // from <source> [to <dest>|any [port <port> [proto <proto>]]] [comment <text>]
     let from = 'Anywhere';
+    let to = 'Anywhere';
     let port = '';
     let proto = '';
+    let comment = '';
 
     let i = 0;
     // 'from'
@@ -274,10 +316,12 @@ export class LinuxFirewallManager {
       i++;
     }
 
-    // 'to any'
+    // 'to <dest>'
     if (i < args.length && args[i] === 'to') {
       i++; // 'to'
-      if (i < args.length && args[i] === 'any') i++; // 'any'
+      if (i >= args.length) return 'ERROR: missing destination address';
+      to = args[i] === 'any' ? 'Anywhere' : args[i];
+      i++;
     }
 
     // 'port <port>'
@@ -296,6 +340,14 @@ export class LinuxFirewallManager {
       i++;
     }
 
+    // 'comment <text>'
+    if (i < args.length && args[i] === 'comment') {
+      i++;
+      if (i >= args.length) return 'ERROR: missing comment text';
+      comment = args.slice(i).join(' ');
+      i = args.length;
+    }
+
     const portStr = port
       ? (proto ? `${port}/${proto}` : port)
       : 'Anywhere';
@@ -307,7 +359,7 @@ export class LinuxFirewallManager {
       if (err) return err;
     }
 
-    return { action, port: portStr, from, to: 'Anywhere', v6: false };
+    return { action, direction, port: portStr, from, to, iface, v6: false, comment };
   }
 
   // ─── Delete rule ─────────────────────────────────────────────────
@@ -329,12 +381,14 @@ export class LinuxFirewallManager {
       const target = v4Rules[num - 1];
       // Check if a matching v6 rule exists
       const hasV6 = this.rules.some(r =>
-        r.v6 && r.action === target.action && r.port === target.port && r.from === target.from
+        r.v6 && r.action === target.action && r.port === target.port &&
+        r.from === target.from && r.direction === target.direction && r.iface === target.iface
       );
       // Remove both v4 and matching v6 rule
       this.rules = this.rules.filter(r => {
         if (r === target) return false;
-        if (r.v6 && r.action === target.action && r.port === target.port && r.from === target.from) return false;
+        if (r.v6 && r.action === target.action && r.port === target.port &&
+            r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
         return true;
       });
       return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
@@ -348,11 +402,13 @@ export class LinuxFirewallManager {
       if (typeof parsed === 'string') return parsed;
 
       const hadV6 = this.rules.some(r =>
-        r.v6 && r.action === parsed.action && r.port === parsed.port && r.from === parsed.from
+        r.v6 && r.action === parsed.action && r.port === parsed.port &&
+        r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface
       );
       const before = this.rules.length;
       this.rules = this.rules.filter(r =>
-        !(r.action === parsed.action && r.port === parsed.port && r.from === parsed.from)
+        !(r.action === parsed.action && r.port === parsed.port &&
+          r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface)
       );
       if (this.rules.length === before) {
         return 'Could not delete non-existent rule';
