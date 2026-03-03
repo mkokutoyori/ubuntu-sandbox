@@ -855,6 +855,15 @@ export abstract class EndHost extends Equipment {
         icmpSize,
       );
 
+      // Firewall: filter outgoing initiated packets
+      const verdict = this.firewallFilter(portName, ipPkt, 'out');
+      if (verdict === 'drop' || verdict === 'reject') {
+        clearTimeout(timer);
+        this.pendingPings.delete(key);
+        reject('blocked by firewall');
+        return;
+      }
+
       this.sendFrame(portName, {
         srcMAC: port.getMAC(),
         dstMAC: targetMAC,

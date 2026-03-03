@@ -1095,5 +1095,37 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const after = await pc.executeCommand('ping -c 1 10.0.0.2');
       expect(after).toContain('1 received');
     });
+
+    it('should block outgoing ping when ufw default deny outgoing', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Allow incoming (so reply could come back), deny outgoing (blocks sent pings)
+      await pc.executeCommand('sudo ufw default allow incoming');
+      await pc.executeCommand('sudo ufw default deny outgoing');
+      await pc.executeCommand('sudo ufw enable');
+
+      // PC tries to send ping → outgoing filter should block it before it leaves
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('0 received');
+      expect(result).toContain('100% packet loss');
+    });
+
+    it('should allow outgoing ping when outgoing rule allows it', async () => {
+      const { pc, srv } = connectPCtoServer();
+      await pc.executeCommand('ifconfig eth0 10.0.0.1');
+      await srv.executeCommand('ifconfig eth0 10.0.0.2');
+
+      // Deny outgoing by default, but allow to 10.0.0.2, and allow incoming for replies
+      await pc.executeCommand('sudo ufw default allow incoming');
+      await pc.executeCommand('sudo ufw default deny outgoing');
+      await pc.executeCommand('sudo ufw allow out from any to 10.0.0.2');
+      await pc.executeCommand('sudo ufw enable');
+
+      const result = await pc.executeCommand('ping -c 1 10.0.0.2');
+      expect(result).toContain('1 received');
+      expect(result).toContain('0% packet loss');
+    });
   });
 });
