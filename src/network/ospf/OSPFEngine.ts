@@ -186,6 +186,13 @@ export class OSPFEngine {
   /** Event log for adjacency changes */
   private eventLog: string[] = [];
 
+  /** Virtual links: keyed by peer Router ID */
+  private virtualLinks: Map<string, {
+    transitAreaId: string;
+    peerRouterId: string;
+    iface: OSPFInterface;
+  }> = new Map();
+
   constructor(processId: number = 1) {
     this.config = createDefaultOSPFConfig(processId);
     this.lsdb = createEmptyLSDB();
@@ -272,6 +279,88 @@ export class OSPFEngine {
       }
     }
     area.type = type;
+  }
+
+  // ─── Virtual Link Configuration (RFC 2328 §15) ─────────────────
+
+  /**
+   * Configure a virtual link through a transit area to a remote backbone endpoint.
+   * Cisco: `area <transitAreaId> virtual-link <peerRouterId>`
+   * RFC 2328 §15: Transit area must be a non-stub, non-NSSA area.
+   */
+  addVirtualLink(transitAreaId: string, peerRouterId: string): void {
+    const area = this.config.areas.get(transitAreaId);
+    if (!area) {
+      throw new Error(`Transit area ${transitAreaId} is not configured`);
+    }
+    if (area.type === 'stub' || area.type === 'totally-stubby') {
+      throw new Error(
+        `Area ${transitAreaId} is a ${area.type} area and cannot be a virtual link transit area (RFC 2328 §15)`
+      );
+    }
+    if (area.type === 'nssa') {
+      throw new Error(
+        `Area ${transitAreaId} is an NSSA area and cannot be a virtual link transit area (RFC 2328 §15)`
+      );
+    }
+
+    const vlIfaceName = `vl-${transitAreaId}-${peerRouterId}`;
+
+    const vlIface: OSPFInterface = {
+      name: vlIfaceName,
+      ipAddress: '0.0.0.0',       // updated to our transit IP when a transit iface is found
+      mask: '255.255.255.255',
+      areaId: OSPF_BACKBONE_AREA,  // VL is a backbone link (RFC 2328 §15)
+      state: 'PointToPoint',
+      networkType: 'point-to-point',
+      helloInterval: OSPF_DEFAULT_HELLO_INTERVAL,
+      deadInterval: OSPF_DEFAULT_DEAD_INTERVAL,
+      retransmitInterval: OSPF_DEFAULT_RETRANSMIT_INTERVAL,
+      transmitDelay: OSPF_DEFAULT_TRANSMIT_DELAY,
+      priority: 0,                 // VL never participates in DR election
+      dr: '0.0.0.0',
+      bdr: '0.0.0.0',
+      cost: 1,                     // updated from transit area SPF tree after each SPF run
+      helloTimer: null,
+      waitTimer: null,
+      neighbors: new Map(),
+      passive: false,
+      authType: 0,
+      authKey: '',
+      mtu: 1500,
+      propagationDelayMs: 0,
+    };
+
+    this.virtualLinks.set(peerRouterId, { transitAreaId, peerRouterId, iface: vlIface });
+
+    // Ensure backbone area exists (VL is a backbone link)
+    if (!this.config.areas.has(OSPF_BACKBONE_AREA)) {
+      this.config.areas.set(OSPF_BACKBONE_AREA, {
+        areaId: OSPF_BACKBONE_AREA,
+        type: 'normal',
+        interfaces: [],
+        isBackbone: true,
+      });
+    }
+    if (!this.lsdb.areas.has(OSPF_BACKBONE_AREA)) {
+      this.lsdb.areas.set(OSPF_BACKBONE_AREA, new Map());
+    }
+  }
+
+  /**
+   * Return all configured virtual links, keyed by peer Router ID.
+   */
+  getVirtualLinks(): Map<string, { transitAreaId: string; peerRouterId: string; iface: OSPFInterface }> {
+    return this.virtualLinks;
+  }
+
+  /**
+   * Send a VL Hello for the given peer, using the transit area SPF path.
+   * This is normally called automatically by the VL hello timer; exposed
+   * as public for test inspection.
+   */
+  sendVLHelloForPeer(peerRouterId: string): void {
+    this.sendVLHello(peerRouterId);
   }
 
   /**
@@ -465,6 +554,91 @@ export class OSPFEngine {
     }
   }
 
+  // ─── Virtual Link Helpers ──────────────────────────────────────
+
+  /**
+   * If the incoming packet is a VL packet (backbone areaId on a transit interface
+   * for a configured peer), return the synthetic VL interface; otherwise null.
+   */
+  private resolveVLIface(
+    ifaceName: string,
+    peerRouterId: string,
+    packetAreaId: string,
+  ): OSPFInterface | null {
+    if (packetAreaId !== OSPF_BACKBONE_AREA) return null;
+    const transitIface = this.interfaces.get(ifaceName);
+    if (!transitIface || transitIface.areaId === OSPF_BACKBONE_AREA) return null;
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl || vl.transitAreaId !== transitIface.areaId) return null;
+    // Keep the VL iface's IP in sync with our transit interface IP
+    vl.iface.ipAddress = transitIface.ipAddress;
+    return vl.iface;
+  }
+
+  /**
+   * Send a VL Hello to the peer, routing it through the transit area.
+   * The packet carries areaId = '0.0.0.0' (backbone) per RFC 2328 §15.
+   * Sending is deferred until a transit path to the peer is known (SPF tree cache).
+   */
+  private sendVLHello(peerRouterId: string): void {
+    if (!this.sendCallback) return;
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl) return;
+
+    // Determine transit interface and destination IP
+    let transitIfaceName: string | null = null;
+    let destIP: string | null = null;
+
+    // Option 1: Use the SPF tree for the transit area to find the path
+    const transitTree = this.spfTreeCache.get(vl.transitAreaId);
+    if (transitTree) {
+      const peerVertex = transitTree.get(peerRouterId);
+      if (peerVertex?.outInterface) {
+        transitIfaceName = peerVertex.outInterface;
+        // Update VL cost from transit area path cost
+        vl.iface.cost = peerVertex.distance;
+      }
+    }
+
+    // Option 2: Fall back to the VL neighbor's known IP (from a previously received Hello)
+    const vlNeighbor = vl.iface.neighbors.get(peerRouterId);
+    if (vlNeighbor?.ipAddress) {
+      destIP = vlNeighbor.ipAddress;
+      // If we don't have a transit iface from SPF, find one by area
+      if (!transitIfaceName) {
+        for (const [, iface] of this.interfaces) {
+          if (iface.areaId === vl.transitAreaId) {
+            transitIfaceName = iface.name;
+            vl.iface.ipAddress = iface.ipAddress;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!transitIfaceName || !destIP) return; // No path available yet
+
+    const neighborIds = Array.from(vl.iface.neighbors.keys());
+
+    const hello: OSPFHelloPacket = {
+      type: 'ospf',
+      version: OSPF_VERSION_2,
+      packetType: 1,
+      routerId: this.config.routerId,
+      areaId: OSPF_BACKBONE_AREA,     // VL packets carry backbone area ID
+      networkMask: '0.0.0.0',          // RFC 2328 §A.3.2: VL hellos have mask 0.0.0.0
+      helloInterval: vl.iface.helloInterval,
+      options: 0x02,
+      priority: 0,                      // VL never becomes DR
+      deadInterval: vl.iface.deadInterval,
+      designatedRouter: '0.0.0.0',
+      backupDesignatedRouter: '0.0.0.0',
+      neighbors: neighborIds,
+    };
+
+    this.sendCallback(transitIfaceName, hello, destIP);
+  }
+
   // ─── Interface State Machine ───────────────────────────────────
 
   private interfaceUp(name: string): void {
@@ -536,7 +710,15 @@ export class OSPFEngine {
    * Process an incoming Hello packet (RFC 2328 §10.5)
    */
   processHello(ifaceName: string, srcIP: string, hello: OSPFHelloPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    // VL detection: backbone Hello on transit interface → process on VL synthetic iface
+    const vlIface = this.resolveVLIface(ifaceName, hello.routerId, hello.areaId);
+    const physIface = this.interfaces.get(ifaceName);
+    if (!physIface) return;
+
+    // Drop backbone packets arriving on non-backbone interfaces if sender is not a VL peer
+    if (!vlIface && hello.areaId === OSPF_BACKBONE_AREA && physIface.areaId !== OSPF_BACKBONE_AREA) return;
+
+    const iface = vlIface ?? physIface;
     if (!iface) return;
 
     // Validate hello parameters
@@ -1039,7 +1221,8 @@ export class OSPFEngine {
    * Process incoming Database Description packet (RFC 2328 §10.6).
    */
   processDD(ifaceName: string, srcIP: string, dd: OSPFDDPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, dd.routerId, dd.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const neighbor = iface.neighbors.get(dd.routerId);
@@ -1155,7 +1338,8 @@ export class OSPFEngine {
    * Process incoming LS Request
    */
   processLSRequest(ifaceName: string, srcIP: string, lsr: OSPFLSRequestPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, lsr.routerId, lsr.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const lsas: LSA[] = [];
@@ -1207,7 +1391,8 @@ export class OSPFEngine {
    * Process incoming LS Update (RFC 2328 §13)
    */
   processLSUpdate(ifaceName: string, srcIP: string, lsu: OSPFLSUpdatePacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, lsu.routerId, lsu.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const neighbor = this.findNeighborByIP(iface, srcIP);
@@ -1295,7 +1480,8 @@ export class OSPFEngine {
    * Process incoming LS Acknowledgment
    */
   processLSAck(ifaceName: string, srcIP: string, ack: OSPFLSAckPacket): void {
-    const iface = this.interfaces.get(ifaceName);
+    const iface = this.resolveVLIface(ifaceName, ack.routerId, ack.areaId)
+      ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
     const neighbor = this.findNeighborByIP(iface, srcIP);
@@ -1513,6 +1699,23 @@ export class OSPFEngine {
             type: 3, // Stub network
             numTOS: 0,
             metric: iface.cost,
+          });
+        }
+      }
+    }
+
+    // Virtual link type 4 links (RFC 2328 §12.4.1.1) — only in backbone Router-LSA
+    if (areaId === OSPF_BACKBONE_AREA) {
+      for (const [peerRouterId, vl] of this.virtualLinks) {
+        const vlNeighbor = vl.iface.neighbors.get(peerRouterId);
+        if (vlNeighbor && vlNeighbor.state === 'Full') {
+          flags |= 0x04; // V-bit: this router is a virtual link endpoint
+          links.push({
+            linkId: peerRouterId,
+            linkData: vl.iface.ipAddress || '0.0.0.0',
+            type: 4, // Virtual link
+            numTOS: 0,
+            metric: vl.iface.cost,
           });
         }
       }
@@ -2534,6 +2737,31 @@ export class OSPFEngine {
             nextHop: nextHop,
             outInterface: outIface,
           });
+        } else if (link.type === 4) {
+          // Virtual link — only meaningful in backbone SPF (RFC 2328 §15)
+          if (areaId !== OSPF_BACKBONE_AREA) continue;
+          const peerRouterId = link.linkId;
+          const neighborKey = makeLSDBKey(1, peerRouterId, peerRouterId);
+          const neighborLSA = areaDB.get(neighborKey) as RouterLSA | undefined;
+          if (!neighborLSA) continue;
+          if (tree.has(peerRouterId)) continue;
+
+          const newDist = vertex.distance + link.metric;
+
+          // Next-hop and outgoing interface: use the VL neighbor's known transit IP
+          // and the transit area interface (from SPF cache or direct lookup).
+          const nextHop = vertex.distance === 0 ? this.getVLNextHop(peerRouterId) : vertex.nextHop;
+          const outIface = vertex.distance === 0 ? this.getVLOutIface(peerRouterId) : vertex.outInterface;
+
+          this.addOrUpdateCandidate(candidates, {
+            id: peerRouterId,
+            type: 'router',
+            distance: newDist,
+            parent: vertex,
+            lsa: neighborLSA,
+            nextHop,
+            outInterface: outIface,
+          });
         }
       }
     } else if (vertex.type === 'network') {
@@ -2620,6 +2848,32 @@ export class OSPFEngine {
       if (this.isInSameSubnet(nextHop, iface.ipAddress, iface.mask)) {
         return iface.name;
       }
+    }
+    return null;
+  }
+
+  /** Get the next-hop IP toward a VL peer (the peer's transit area IP from Hello). */
+  private getVLNextHop(peerRouterId: string): string | null {
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl) return null;
+    const neighbor = vl.iface.neighbors.get(peerRouterId);
+    if (neighbor?.ipAddress) return neighbor.ipAddress;
+    return null;
+  }
+
+  /** Get the outgoing interface name toward a VL peer (transit area interface). */
+  private getVLOutIface(peerRouterId: string): string | null {
+    const vl = this.virtualLinks.get(peerRouterId);
+    if (!vl) return null;
+    // Prefer transit area SPF tree
+    const transitTree = this.spfTreeCache.get(vl.transitAreaId);
+    if (transitTree) {
+      const peerVertex = transitTree.get(peerRouterId);
+      if (peerVertex?.outInterface) return peerVertex.outInterface;
+    }
+    // Fall back: any interface in the transit area
+    for (const [, iface] of this.interfaces) {
+      if (iface.areaId === vl.transitAreaId) return iface.name;
     }
     return null;
   }
