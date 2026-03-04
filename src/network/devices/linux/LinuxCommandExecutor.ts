@@ -7,6 +7,7 @@ import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
+import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
@@ -23,6 +24,7 @@ export class LinuxCommandExecutor {
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
+  readonly iptables: LinuxIptablesManager;
   readonly logMgr: LinuxLogManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
