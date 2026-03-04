@@ -11,7 +11,7 @@ import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
-import type { PacketInfo } from './linux/LinuxFirewallManager';
+import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
 
 export class LinuxServer extends EndHost {
@@ -258,7 +258,8 @@ export class LinuxServer extends EndHost {
       dstPort: ports.dstPort,
       iface: portName,
     };
-    return this.executor.firewall.filterPacket(pkt);
+    // Packet filtering is ALWAYS done by iptables (the single source of truth).
+    return this.executor.iptables.filterPacket(pkt);
   }
 
   getOSType(): string { return 'linux'; }

@@ -49,6 +49,7 @@ export class VirtualFileSystem {
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',
+      '/etc/iptables',
       '/home', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
@@ -142,6 +143,11 @@ export class VirtualFileSystem {
     // UFW binary stub
     this.createFileAt('/usr/sbin/ufw', '#!/bin/bash\n# ufw binary stub\n', 0o755, 0, 0);
 
+    // iptables binary stubs
+    this.createFileAt('/usr/sbin/iptables', '#!/bin/bash\n# iptables binary stub\n', 0o755, 0, 0);
+    this.createFileAt('/usr/sbin/iptables-save', '#!/bin/bash\n# iptables-save binary stub\n', 0o755, 0, 0);
+    this.createFileAt('/usr/sbin/iptables-restore', '#!/bin/bash\n# iptables-restore binary stub\n', 0o755, 0, 0);
+
     // Create binaries (stubs) — placed in /usr/bin since /bin -> usr/bin
     const binaries = ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
@@ -156,7 +162,7 @@ export class VirtualFileSystem {
       this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }
     const sbinBins = ['useradd', 'usermod', 'userdel', 'groupadd', 'groupmod', 'groupdel',
-      'chpasswd', 'chage'];
+      'chpasswd', 'chage', 'iptables', 'iptables-save', 'iptables-restore'];
     for (const bin of sbinBins) {
       this.createFileAt(`/usr/sbin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }

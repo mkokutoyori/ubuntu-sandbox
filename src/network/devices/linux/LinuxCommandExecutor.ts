@@ -5,7 +5,9 @@
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
+import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
+import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
@@ -20,7 +22,9 @@ export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
   readonly cron: LinuxCronManager;
+  readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
+  readonly iptables: LinuxIptablesManager;
   readonly logMgr: LinuxLogManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
@@ -34,7 +38,8 @@ export class LinuxCommandExecutor {
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
-    this.firewall = new LinuxFirewallManager(this.vfs);
+    this.iptables = new LinuxIptablesManager(this.vfs);
+    this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.isServer = isServer;
 
@@ -230,7 +235,8 @@ export class LinuxCommandExecutor {
 
     // Root-only commands — reject if not root
     const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw'];
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw',
+      'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
     }
@@ -429,6 +435,25 @@ export class LinuxCommandExecutor {
       case 'ufw': {
         const out = this.firewall.execute(args);
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
+      }
+
+      // iptables — real packet filtering firewall
+      case 'iptables': {
+        const result = this.iptables.execute(args);
+        return { output: result.output, exitCode: result.exitCode };
+      }
+
+      // iptables-save — dump all rules in iptables-save format
+      case 'iptables-save': {
+        return { output: this.iptables.executeSave(), exitCode: 0 };
+      }
+
+      // iptables-restore — load rules from stdin
+      case 'iptables-restore': {
+        const input = stdin ?? '';
+        if (!input) return { output: 'iptables-restore: unable to read from stdin', exitCode: 1 };
+        const result = this.iptables.executeRestore(input);
+        return { output: result.output, exitCode: result.exitCode };
       }
 
       // Logging commands
@@ -869,7 +894,9 @@ export class LinuxCommandExecutor {
       'exit', 'logout', 'help',
       'ifconfig', 'ip', 'ping', 'traceroute', 'netstat', 'ss', 'route', 'arp',
       'dhclient', 'nslookup', 'dig', 'curl', 'wget',
+      'iptables', 'iptables-save', 'iptables-restore',
       'nano', 'vi', 'vim',
+      'iptables', 'iptables-save', 'iptables-restore',
     ];
     if (!prefix) return commands.sort();
     return commands.filter(c => c.startsWith(prefix)).sort();
