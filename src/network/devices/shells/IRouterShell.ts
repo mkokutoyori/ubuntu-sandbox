@@ -9,7 +9,7 @@ import type { Router } from '../Router';
 
 export interface IRouterShell {
   /** Execute a raw CLI command string and return the output */
-  execute(router: Router, rawInput: string): string;
+  execute(router: Router, rawInput: string): string | Promise<string>;
   /** Get the OS type identifier */
   getOSType(): string;
   /** Get the current CLI prompt string (e.g. "Router#", "<Router>") */

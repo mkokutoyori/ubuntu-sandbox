@@ -496,7 +496,7 @@ function handleSetAddressStatic(ctx: WinCommandContext, joined: string): string 
   const match = joined.match(
     /address\s+"([^"]+)"\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
   ) || joined.match(
-    /address\s+(.+?)\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
+    /address\s+(?:name=)?(.+?)\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i
   );
 
   if (!match) {
@@ -521,7 +521,7 @@ function handleSetAddressStatic(ctx: WinCommandContext, joined: string): string 
 
 function handleSetAddressDhcp(ctx: WinCommandContext, joined: string): string {
   const match = joined.match(/address\s+"([^"]+)"\s+dhcp/i)
-    || joined.match(/address\s+(.+?)\s+dhcp/i);
+    || joined.match(/address\s+(?:name=)?(.+?)\s+dhcp/i);
 
   if (!match) {
     return 'Usage: netsh interface ip set address "name" dhcp';
@@ -538,7 +538,7 @@ function handleSetAddressDhcp(ctx: WinCommandContext, joined: string): string {
 
 function handleSetDnsStatic(ctx: WinCommandContext, joined: string): string {
   const match = joined.match(/dns\s+"([^"]+)"\s+static\s+(\d+\.\d+\.\d+\.\d+)/i)
-    || joined.match(/dns\s+(.+?)\s+static\s+(\d+\.\d+\.\d+\.\d+)/i);
+    || joined.match(/dns\s+(?:name=)?(.+?)\s+static\s+(\d+\.\d+\.\d+\.\d+)/i);
 
   if (!match) {
     return 'Usage: netsh interface ip set dns "name" static <ip>';
@@ -554,7 +554,7 @@ function handleSetDnsStatic(ctx: WinCommandContext, joined: string): string {
 
 function handleSetDnsDhcp(ctx: WinCommandContext, joined: string): string {
   const match = joined.match(/dns\s+"([^"]+)"\s+dhcp/i)
-    || joined.match(/dns\s+(.+?)\s+dhcp/i);
+    || joined.match(/dns\s+(?:name=)?(.+?)\s+dhcp/i);
 
   if (!match) {
     return 'Usage: netsh interface ip set dns "name" dhcp';
@@ -588,7 +588,7 @@ function handleInterfaceIpAdd(ctx: WinCommandContext, joined: string): string {
 
 function handleAddDns(ctx: WinCommandContext, joined: string): string {
   const match = joined.match(/dns\s+"([^"]+)"\s+(\d+\.\d+\.\d+\.\d+)/i)
-    || joined.match(/dns\s+(.+?)\s+(\d+\.\d+\.\d+\.\d+)/i);
+    || joined.match(/dns\s+(?:name=)?(.+?)\s+(\d+\.\d+\.\d+\.\d+)/i);
 
   if (!match) {
     return 'Usage: netsh interface ip add dns "name" <ip>';
@@ -655,7 +655,7 @@ function handleInterfaceIpDelete(ctx: WinCommandContext, joined: string): string
 
 function handleDeleteDns(ctx: WinCommandContext, joined: string): string {
   const match = joined.match(/dns\s+"([^"]+)"\s+(\d+\.\d+\.\d+\.\d+)/i)
-    || joined.match(/dns\s+(.+?)\s+(\d+\.\d+\.\d+\.\d+)/i);
+    || joined.match(/dns\s+(?:name=)?(.+?)\s+(\d+\.\d+\.\d+\.\d+)/i);
 
   if (!match) {
     return 'Usage: netsh interface ip delete dns "name" <ip>';
@@ -695,7 +695,7 @@ function handleDeleteRoute(ctx: WinCommandContext, joined: string): string {
 function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
   // delete address "Ethernet 0" addr=192.168.1.10
   const match = joined.match(/address\s+"([^"]+)"\s+addr=(\d+\.\d+\.\d+\.\d+)/i)
-    || joined.match(/address\s+(.+?)\s+addr=(\d+\.\d+\.\d+\.\d+)/i);
+    || joined.match(/address\s+(?:name=)?(.+?)\s+addr=(\d+\.\d+\.\d+\.\d+)/i);
 
   if (!match) {
     return 'Usage: netsh interface ip delete address "name" addr=<ip>';

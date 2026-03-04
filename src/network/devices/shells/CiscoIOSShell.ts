@@ -26,6 +26,7 @@
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
+import { IPAddress } from '../../core/types';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -86,6 +87,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
   /** Temporary reference set during execute() for closures */
   private routerRef: Router | null = null;
+  /** When a command needs async execution (e.g. ping), it stores a promise here */
+  private _pendingAsync: Promise<string> | null = null;
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -222,7 +225,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
   // ─── Main Execute ──────────────────────────────────────────────────
 
-  execute(router: Router, rawInput: string): string {
+  execute(router: Router, rawInput: string): string | Promise<string> {
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
 
@@ -280,6 +283,15 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     }
 
     let output = this.executeOnTrie(cmdPart);
+
+    // Check if the command set up an async operation (e.g. ping)
+    if (this._pendingAsync) {
+      const asyncOp = this._pendingAsync;
+      this._pendingAsync = null;
+      this.routerRef = null;
+      return asyncOp.then(result => this.applyPipeFilter(result, pipeFilter));
+    }
+
     this.routerRef = null;
 
     return this.applyPipeFilter(output, pipeFilter);
@@ -308,6 +320,72 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       default:
         return `% Unrecognized command "${cmdPart}"`;
     }
+  }
+
+  // ─── Ping Command ──────────────────────────────────────────────────
+
+  private _handlePing(args: string[]): string {
+    const target = args[0]?.trim();
+    if (!target) {
+      return '% Ping requires a target IP address.';
+    }
+
+    // Validate IP
+    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!ipMatch) {
+      return `% Unrecognized host or address, or protocol not running.`;
+    }
+    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
+    if (octets.some(o => o > 255)) {
+      return `% Unrecognized host or address, or protocol not running.`;
+    }
+
+    const targetIP = new IPAddress(target);
+    const router = this.r();
+    const count = 5;
+    const timeoutMs = 2000;
+
+    // Store async operation — execute() will detect this and return the promise
+    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs).then(results => {
+      return this._formatCiscoPing(target, count, timeoutMs, results);
+    });
+
+    return ''; // placeholder, execute() returns the promise instead
+  }
+
+  private _formatCiscoPing(
+    target: string,
+    count: number,
+    timeoutMs: number,
+    results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>,
+  ): string {
+    const lines: string[] = [];
+    lines.push(`Type escape sequence to abort.`);
+    lines.push(`Sending ${count}, 100-byte ICMP Echos to ${target}, timeout is ${timeoutMs / 1000} seconds:`);
+
+    // Build the "!!!!!" or "....." line
+    const chars = results.map(r => r.success ? '!' : '.');
+    // If no results at all (unreachable), show dots
+    if (results.length === 0) {
+      for (let i = 0; i < count; i++) chars.push('.');
+    }
+    lines.push(chars.join(''));
+
+    const successes = results.filter(r => r.success).length;
+    const total = results.length || count;
+    const pct = Math.round((successes / total) * 100);
+    lines.push(`Success rate is ${pct} percent (${successes}/${total})`);
+
+    if (successes > 0) {
+      const rtts = results.filter(r => r.success).map(r => r.rttMs);
+      const min = Math.min(...rtts);
+      const max = Math.max(...rtts);
+      const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+      // Append round-trip info on same line
+      lines[lines.length - 1] += `, round-trip min/avg/max = ${min.toFixed(0)}/${avg.toFixed(0)}/${max.toFixed(0)} ms`;
+    }
+
+    return lines.join('\n');
   }
 
   private applyPipeFilter(output: string, pipeFilter: { type: string; pattern: string } | null): string {
@@ -452,8 +530,9 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     // show commands (limited in user mode)
     this.registerShowCommands(t);
 
-    t.registerGreedy('ping', 'Send echo messages', () => {
-      return '% Use "enable" to access privileged commands first.';
+    // ping is available in user mode on real Cisco IOS
+    t.registerGreedy('ping', 'Send echo messages', (args) => {
+      return this._handlePing(args);
     });
   }
 
@@ -492,8 +571,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     buildIPSecPrivilegedCommands(t, this);
 
     // ping (greedy to accept IP/hostname)
-    t.registerGreedy('ping', 'Send echo messages', () => {
-      return '% Ping requires a target IP address.';
+    t.registerGreedy('ping', 'Send echo messages', (args) => {
+      return this._handlePing(args);
     });
   }
 

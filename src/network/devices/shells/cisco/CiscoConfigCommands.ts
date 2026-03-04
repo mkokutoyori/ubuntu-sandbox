@@ -167,6 +167,27 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 // ─── Interface Config Mode Commands ──────────────────────────────────
 
 export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  // Allow switching interfaces directly from config-if mode (real Cisco IOS behavior)
+  trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const raw = args.join(' ');
+    let ifName = resolveInterfaceName(ctx.r(), raw);
+    if (!ifName) {
+      const combined = raw.replace(/\s+/g, '');
+      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
+      if (vMatch) {
+        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
+        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        ctx.r()._createVirtualInterface(fullName);
+        ifName = fullName;
+      }
+      if (!ifName) return `% Invalid interface "${raw}"`;
+    }
+    ctx.setSelectedInterface(ifName);
+    ctx.setMode('config-if');
+    return '';
+  });
+
   trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     if (!ctx.getSelectedInterface()) return '% No interface selected';

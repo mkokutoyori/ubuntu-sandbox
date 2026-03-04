@@ -455,3 +455,84 @@ describe('Group 7: netsh interface set interface — Rename', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 8: netsh name= prefix syntax
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 8: netsh name= prefix syntax', () => {
+
+  describe('N-28: set address with name= prefix', () => {
+    it('should configure static IP using name= syntax', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      const result = await pc.executeCommand(
+        'netsh interface ipv4 set address name="Ethernet 0" static 192.168.2.10 255.255.255.0 192.168.2.1'
+      );
+      expect(result).toContain('Ok');
+
+      const ipconfig = await pc.executeCommand('ipconfig');
+      expect(ipconfig).toContain('192.168.2.10');
+      expect(ipconfig).toContain('192.168.2.1');
+    });
+  });
+
+  describe('N-29: set address with name= and no gateway', () => {
+    it('should configure static IP without gateway using name=', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      const result = await pc.executeCommand(
+        'netsh interface ip set address name="Ethernet 0" static 10.0.0.50 255.255.255.0'
+      );
+      expect(result).toContain('Ok');
+
+      const ipconfig = await pc.executeCommand('ipconfig');
+      expect(ipconfig).toContain('10.0.0.50');
+    });
+  });
+
+  describe('N-30: set address dhcp with name= prefix', () => {
+    it('should switch to DHCP using name= syntax', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      await pc.executeCommand('netsh interface ip set address "Ethernet 0" static 10.0.0.5 255.255.255.0');
+      const result = await pc.executeCommand(
+        'netsh interface ip set address name="Ethernet 0" dhcp'
+      );
+      expect(result).toContain('Ok');
+    });
+  });
+
+  describe('N-31: set dns with name= prefix', () => {
+    it('should set DNS server using name= syntax', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      const result = await pc.executeCommand(
+        'netsh interface ip set dns name="Ethernet 0" static 8.8.8.8'
+      );
+      expect(result).toContain('Ok');
+
+      const dnsOutput = await pc.executeCommand('netsh interface ip show dns');
+      expect(dnsOutput).toContain('8.8.8.8');
+    });
+  });
+
+  describe('N-32: add dns with name= prefix', () => {
+    it('should add DNS server using name= syntax', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      await pc.executeCommand('netsh interface ip set dns name="Ethernet 0" static 8.8.8.8');
+      const result = await pc.executeCommand(
+        'netsh interface ip add dns name="Ethernet 0" 8.8.4.4'
+      );
+      expect(result).toContain('Ok');
+    });
+  });
+
+  describe('N-33: ipv4 context alias works like ip', () => {
+    it('should accept ipv4 as alias for ip context', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      const result = await pc.executeCommand(
+        'netsh interface ipv4 set address "Ethernet 0" static 172.16.0.1 255.255.0.0'
+      );
+      expect(result).toContain('Ok');
+      const ipconfig = await pc.executeCommand('ipconfig');
+      expect(ipconfig).toContain('172.16.0.1');
+    });
+  });
+});
