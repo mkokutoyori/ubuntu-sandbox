@@ -70,6 +70,7 @@ interface UfwRule {
   iface: string;      // e.g. '', 'eth0', 'ens33' — empty = all interfaces
   v6: boolean;        // IPv6 duplicate rule
   comment: string;    // optional comment
+  route: boolean;     // true = route rule (FORWARD chain) vs normal rule (INPUT/OUTPUT)
 }
 
 // ─── Manager ─────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ export class LinuxFirewallManager {
   private rules: UfwRule[] = [];
   private defaultIncoming: DefaultPolicy = 'deny';
   private defaultOutgoing: DefaultPolicy = 'allow';
+  private defaultRouted: DefaultPolicy | 'disabled' = 'disabled';
   private logging = false;
   private loggingLevel = 'low';
 
@@ -123,6 +125,7 @@ export class LinuxFirewallManager {
       case 'deny':     return this.cmdAddRule('DENY', args.slice(1));
       case 'reject':   return this.cmdAddRule('REJECT', args.slice(1));
       case 'limit':    return this.cmdAddRule('LIMIT', args.slice(1));
+      case 'route':    return this.cmdRoute(args.slice(1));
       case 'delete':   return this.cmdDelete(args.slice(1));
       case 'insert':   return this.cmdInsert(args.slice(1));
       case 'prepend':  return this.cmdPrepend(args.slice(1));
@@ -161,6 +164,7 @@ export class LinuxFirewallManager {
     // Create UFW chains
     ipt.createChain('filter', 'ufw-user-input');
     ipt.createChain('filter', 'ufw-user-output');
+    ipt.createChain('filter', 'ufw-user-forward');
     ipt.createChain('filter', 'ufw-user-limit');
     ipt.createChain('filter', 'ufw-user-limit-accept');
 
@@ -172,12 +176,15 @@ export class LinuxFirewallManager {
       target: 'ACCEPT',
     }));
 
-    // Add jumps from INPUT → ufw-user-input and OUTPUT → ufw-user-output
+    // Add jumps from INPUT/OUTPUT/FORWARD → ufw-user-* chains
     ipt.appendRule('filter', 'INPUT', LinuxIptablesManager.createRule({
       target: 'ufw-user-input',
     }));
     ipt.appendRule('filter', 'OUTPUT', LinuxIptablesManager.createRule({
       target: 'ufw-user-output',
+    }));
+    ipt.appendRule('filter', 'FORWARD', LinuxIptablesManager.createRule({
+      target: 'ufw-user-forward',
     }));
 
     // Set chain policies based on UFW defaults
@@ -201,17 +208,19 @@ export class LinuxFirewallManager {
   private teardownIptablesChains(): void {
     const ipt = this.iptables;
 
-    // Reset INPUT/OUTPUT policies to ACCEPT
+    // Reset INPUT/OUTPUT/FORWARD policies to ACCEPT
     ipt.setPolicy('filter', 'INPUT', 'ACCEPT');
     ipt.setPolicy('filter', 'OUTPUT', 'ACCEPT');
+    ipt.setPolicy('filter', 'FORWARD', 'ACCEPT');
 
     // Flush and remove all ufw chains
-    // First remove jumps from INPUT/OUTPUT
+    // First remove jumps from INPUT/OUTPUT/FORWARD
     ipt.flushChain('filter', 'INPUT');
     ipt.flushChain('filter', 'OUTPUT');
+    ipt.flushChain('filter', 'FORWARD');
 
     // Flush UFW chains
-    const ufwChains = ['ufw-user-input', 'ufw-user-output', 'ufw-user-limit', 'ufw-user-limit-accept'];
+    const ufwChains = ['ufw-user-input', 'ufw-user-output', 'ufw-user-forward', 'ufw-user-limit', 'ufw-user-limit-accept'];
     for (const chain of ufwChains) {
       ipt.flushChain('filter', chain);
       ipt.deleteChain('filter', chain);
@@ -233,6 +242,13 @@ export class LinuxFirewallManager {
     const outPolicy = this.defaultOutgoing === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
     ipt.setPolicy('filter', 'INPUT', inPolicy);
     ipt.setPolicy('filter', 'OUTPUT', outPolicy);
+    // FORWARD chain policy: 'disabled' means DROP (no forwarding unless explicit rules)
+    if (this.defaultRouted !== 'disabled') {
+      const fwdPolicy = this.defaultRouted === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
+      ipt.setPolicy('filter', 'FORWARD', fwdPolicy);
+    } else {
+      ipt.setPolicy('filter', 'FORWARD', 'DROP');
+    }
 
     // For 'reject' defaults, add catch-all REJECT rules at end of ufw chains
     // These are added/removed in rebuildIptablesRules after user rules are injected
@@ -256,6 +272,12 @@ export class LinuxFirewallManager {
         targetOptions: { '--reject-with': 'icmp-port-unreachable' },
       }));
     }
+    if (this.defaultRouted === 'reject') {
+      ipt.appendRule('filter', 'ufw-user-forward', LinuxIptablesManager.createRule({
+        target: 'REJECT',
+        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+      }));
+    }
   }
 
   /**
@@ -263,7 +285,8 @@ export class LinuxFirewallManager {
    */
   private injectRuleToIptables(ufwRule: UfwRule): void {
     const ipt = this.iptables;
-    const chain = ufwRule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
+    const chain = ufwRule.route ? 'ufw-user-forward'
+                : ufwRule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
 
     // Determine target
     let target: string;
@@ -283,12 +306,23 @@ export class LinuxFirewallManager {
     const protos = proto ? [proto] : (portNum ? ['tcp', 'udp'] : ['']);
 
     for (const p of protos) {
+      // For route rules, iface is the in-interface and outIface is the out-interface
+      let inIf = '';
+      let outIf = '';
+      if (ufwRule.route) {
+        inIf = ufwRule.iface || '';
+        outIf = (ufwRule as any).outIface || '';
+      } else {
+        inIf = (ufwRule.iface && ufwRule.direction === 'in') ? ufwRule.iface : '';
+        outIf = (ufwRule.iface && ufwRule.direction === 'out') ? ufwRule.iface : '';
+      }
+
       const rule = LinuxIptablesManager.createRule({
         protocol: p || '',
         source: ufwRule.from !== 'Anywhere' ? ufwRule.from : '',
         destination: ufwRule.to !== 'Anywhere' ? ufwRule.to : '',
-        inInterface: (ufwRule.iface && ufwRule.direction === 'in') ? ufwRule.iface : '',
-        outInterface: (ufwRule.iface && ufwRule.direction === 'out') ? ufwRule.iface : '',
+        inInterface: inIf,
+        outInterface: outIf,
         dport: portNum,
         target,
       });
@@ -325,6 +359,7 @@ export class LinuxFirewallManager {
     // Flush user chains (keep the chains themselves and the jumps)
     ipt.flushChain('filter', 'ufw-user-input');
     ipt.flushChain('filter', 'ufw-user-output');
+    ipt.flushChain('filter', 'ufw-user-forward');
 
     // Re-inject all rules
     for (const rule of this.rules) {
@@ -405,6 +440,7 @@ export class LinuxFirewallManager {
     this.rules = [];
     this.defaultIncoming = 'deny';
     this.defaultOutgoing = 'allow';
+    this.defaultRouted = 'disabled';
     this.logging = false;
     this.loggingLevel = 'low';
     this.rateLimitHits.clear();
@@ -460,7 +496,7 @@ export class LinuxFirewallManager {
 
     if (verbose) {
       lines.push(`Logging: ${this.logging ? `on (${this.loggingLevel})` : 'off'}`);
-      lines.push(`Default: ${this.defaultIncoming} (incoming), ${this.defaultOutgoing} (outgoing), disabled (routed)`);
+      lines.push(`Default: ${this.defaultIncoming} (incoming), ${this.defaultOutgoing} (outgoing), ${this.defaultRouted} (routed)`);
       lines.push(`New profiles: skip`);
       lines.push('');
     }
@@ -486,12 +522,15 @@ export class LinuxFirewallManager {
       const num = numbered ? `[ ${idx + 1}] ` : '';
       const v6Tag = rule.v6 ? ' (v6)' : '';
       const ifaceTag = rule.iface ? ` on ${rule.iface}` : '';
+      const outIfaceTag = (rule as any).outIface ? ` on ${(rule as any).outIface}` : '';
       // 'To' column: show destination if specific, otherwise just port
       const destPart = rule.to !== 'Anywhere' ? `${rule.to} ${rule.port}` : rule.port;
       const toStr = `${destPart}${v6Tag}`;
       const fromStr = `${rule.from}${v6Tag}`;
-      const dirStr = rule.direction === 'out' ? 'OUT' : 'IN';
-      const actionStr = `${rule.action} ${dirStr}${ifaceTag}`;
+      const dirStr = rule.route ? 'FWD' : (rule.direction === 'out' ? 'OUT' : 'IN');
+      const actionStr = rule.route
+        ? `${rule.action} ${dirStr}${ifaceTag}${outIfaceTag}`
+        : `${rule.action} ${dirStr}${ifaceTag}`;
       lines.push(`${num}${toStr.padEnd(toWidth)}${actionStr.padEnd(actionWidth)}${fromStr}`);
     });
 
@@ -521,6 +560,15 @@ export class LinuxFirewallManager {
       if (this.enabled) this.applyDefaultPolicies();
       this.syncToVfs();
       return `Default outgoing policy changed to '${policy}'`;
+    }
+    if (direction === 'routed') {
+      this.defaultRouted = policy;
+      if (this.enabled) {
+        this.applyDefaultPolicies();
+        this.rebuildIptablesRules();
+      }
+      this.syncToVfs();
+      return `Default routed policy changed to '${policy}'`;
     }
 
     return "ERROR: unsupported direction '" + direction + "'";
@@ -617,13 +665,13 @@ export class LinuxFirewallManager {
     const service = SERVICE_PORTS[first];
     if (service) {
       const portStr = service.proto ? `${service.port}/${service.proto}` : service.port;
-      return { action, direction, port: portStr, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
+      return { action, direction, port: portStr, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '', route: false };
     }
 
     // ufw allow [in|out] [on <iface>] <app_profile_name>
     const profile = APP_PROFILES[remaining.join(' ')];
     if (profile) {
-      return { action, direction, port: profile.ports, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
+      return { action, direction, port: profile.ports, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '', route: false };
     }
 
     // ufw allow [in|out] [on <iface>] <port>[/<proto>]
@@ -631,7 +679,7 @@ export class LinuxFirewallManager {
     if (/^\d+/.test(first)) {
       const err = this.validatePort(first);
       if (err) return err;
-      return { action, direction, port: first, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '' };
+      return { action, direction, port: first, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '', route: false };
     }
 
     return 'ERROR: invalid rule syntax';
@@ -697,13 +745,139 @@ export class LinuxFirewallManager {
       if (err) return err;
     }
 
-    return { action, direction, port: portStr, from, to, iface, v6: false, comment };
+    return { action, direction, port: portStr, from, to, iface, v6: false, comment, route: false };
   }
 
   private getOrderedRules(): UfwRule[] {
     const v4Rules = this.rules.filter(r => !r.v6);
     const v6Rules = this.rules.filter(r => r.v6);
     return [...v4Rules, ...v6Rules];
+  }
+
+  // ─── Route rule (FORWARD chain) ──────────────────────────────────
+
+  /**
+   * Handle `ufw route allow|deny|reject [in on <iface>] [out on <iface>] ...`
+   * Route rules map to the FORWARD chain for filtering forwarded packets.
+   */
+  private cmdRoute(args: string[]): string {
+    if (args.length < 2) return 'ERROR: wrong number of arguments';
+
+    const action = args[0].toUpperCase() as Action;
+    if (!['ALLOW', 'DENY', 'REJECT', 'LIMIT'].includes(action)) {
+      return 'ERROR: invalid action';
+    }
+
+    // Parse: ufw route allow in on eth0 out on eth1 from <src> to <dest> port <port> proto <proto>
+    let inIface = '';
+    let outIface = '';
+    let i = 1;
+
+    // Parse direction/interface pairs
+    while (i < args.length) {
+      if (args[i] === 'in' && args[i + 1] === 'on' && args[i + 2]) {
+        inIface = args[i + 2];
+        i += 3;
+      } else if (args[i] === 'out' && args[i + 1] === 'on' && args[i + 2]) {
+        outIface = args[i + 2];
+        i += 3;
+      } else {
+        break;
+      }
+    }
+
+    // Parse the rest (from/to/port/proto or port spec)
+    const remaining = args.slice(i);
+    let from = 'Anywhere';
+    let to = 'Anywhere';
+    let port = '';
+    let proto = '';
+    let comment = '';
+
+    if (remaining.length > 0 && remaining[0] === 'from') {
+      // Parse from/to/port/proto syntax
+      let j = 0;
+      if (remaining[j] === 'from') {
+        j++;
+        from = remaining[j] === 'any' ? 'Anywhere' : remaining[j] || 'Anywhere';
+        j++;
+      }
+      if (j < remaining.length && remaining[j] === 'to') {
+        j++;
+        to = remaining[j] === 'any' ? 'Anywhere' : remaining[j] || 'Anywhere';
+        j++;
+      }
+      if (j < remaining.length && remaining[j] === 'port') {
+        j++;
+        port = remaining[j] || '';
+        j++;
+      }
+      if (j < remaining.length && remaining[j] === 'proto') {
+        j++;
+        proto = remaining[j] || '';
+        j++;
+      }
+      if (j < remaining.length && remaining[j] === 'comment') {
+        j++;
+        comment = remaining.slice(j).join(' ');
+      }
+    } else if (remaining.length > 0 && /^\d/.test(remaining[0])) {
+      // Port specification
+      port = remaining[0];
+      const portMatch = port.match(/^(.+)\/(tcp|udp)$/);
+      if (portMatch) {
+        proto = portMatch[2];
+        port = portMatch[1];
+      }
+    }
+
+    const portStr = port
+      ? (proto ? `${port}/${proto}` : port)
+      : 'Anywhere';
+
+    // Validate port if specified
+    if (port) {
+      const fullPort = proto ? `${port}/${proto}` : port;
+      const err = this.validatePort(fullPort.match(/^\d/) ? fullPort : port);
+      if (err) return err;
+    }
+
+    const rule: UfwRule = {
+      action,
+      direction: 'in', // Route rules show as "in" in status
+      port: portStr,
+      from,
+      to,
+      iface: inIface,  // inbound interface
+      v6: false,
+      comment,
+      route: true,
+    };
+
+    // Store outIface in the iface field if only out is specified
+    // For display and iptables injection we need both
+    (rule as any).outIface = outIface;
+
+    // Check for duplicates
+    const dup = this.rules.find(r =>
+      !r.v6 && r.route && r.action === rule.action && r.port === rule.port &&
+      r.from === rule.from && r.to === rule.to && r.iface === inIface &&
+      (r as any).outIface === outIface
+    );
+    if (dup) return 'Skipping adding existing rule';
+
+    // Add IPv4 rule
+    this.rules.push({ ...rule, v6: false });
+    const addsV6 = this.ruleGetsV6(rule);
+    if (addsV6) {
+      this.rules.push({ ...rule, v6: true });
+    }
+
+    this.rebuildIptablesRules();
+    this.syncToVfs();
+    return addsV6
+      ? 'Rule added\nRule added (v6)'
+      : 'Rule added';
   }
 
   // ─── Delete rule ─────────────────────────────────────────────────
@@ -949,11 +1123,17 @@ export class LinuxFirewallManager {
     const v4Rules = this.rules.filter(r => !r.v6);
     for (const rule of v4Rules) {
       const parts: string[] = ['ufw'];
+      if (rule.route) parts.push('route');
       parts.push(rule.action.toLowerCase());
-      if (rule.direction !== 'in') parts.push(rule.direction);
-      if (rule.iface) {
-        parts.push('on');
-        parts.push(rule.iface);
+      if (rule.route) {
+        if (rule.iface) { parts.push('in'); parts.push('on'); parts.push(rule.iface); }
+        if ((rule as any).outIface) { parts.push('out'); parts.push('on'); parts.push((rule as any).outIface); }
+      } else {
+        if (rule.direction !== 'in') parts.push(rule.direction);
+        if (rule.iface) {
+          parts.push('on');
+          parts.push(rule.iface);
+        }
       }
       if (rule.from !== 'Anywhere' || rule.to !== 'Anywhere') {
         parts.push('from');
@@ -1139,6 +1319,7 @@ export class LinuxFirewallManager {
       ' limit ARGS                      add limit rule',
       ' delete RULE|NUM                 delete RULE',
       ' insert NUM RULE                 insert RULE at NUM',
+      ' route RULE                      add route RULE (FORWARD chain)',
       ' prepend RULE                    prepend RULE to top',
       ' reload                          reload firewall',
       ' reset                           reset firewall',

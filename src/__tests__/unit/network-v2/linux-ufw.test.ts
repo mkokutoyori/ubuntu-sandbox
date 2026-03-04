@@ -1485,4 +1485,156 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(result).toBe('drop');
     });
   });
+
+  // ─── Route rules (FORWARD chain) ──────────────────────────────
+
+  describe('UFW route rules', () => {
+    let server: LinuxServer;
+
+    beforeEach(() => {
+      server = new LinuxServer('linux-server', 'SRV1');
+    });
+
+    it('should add a route allow rule', async () => {
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('ufw route allow in on eth0 out on eth1');
+      expect(out).toContain('Rule added');
+    });
+
+    it('should display route rules in status with FWD direction', async () => {
+      await server.executeCommand('ufw route allow in on eth0 out on eth1 from 10.0.0.0/24 to 192.168.1.0/24');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('ufw status');
+      expect(out).toContain('FWD');
+      expect(out).toContain('ALLOW');
+    });
+
+    it('should show route rules in show added output', async () => {
+      await server.executeCommand('ufw route allow in on eth0 out on eth1');
+      const out = await server.executeCommand('ufw show added');
+      expect(out).toContain('ufw route allow');
+      expect(out).toContain('in on eth0');
+      expect(out).toContain('out on eth1');
+    });
+
+    it('should inject route rules into ufw-user-forward iptables chain', async () => {
+      await server.executeCommand('ufw route allow in on eth0 out on eth1 from 10.0.0.0/24 to 192.168.1.0/24');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('iptables -S ufw-user-forward');
+      expect(out).toContain('-A ufw-user-forward');
+      expect(out).toContain('-s 10.0.0.0/24');
+      expect(out).toContain('-d 192.168.1.0/24');
+      expect(out).toContain('-i eth0');
+      expect(out).toContain('-o eth1');
+      expect(out).toContain('ACCEPT');
+    });
+
+    it('should add route deny rule', async () => {
+      const out = await server.executeCommand('ufw route deny in on eth0 out on eth1 from 10.0.0.0/24 to any');
+      expect(out).toContain('Rule added');
+      await server.executeCommand('ufw enable');
+      const ipt = await server.executeCommand('iptables -S ufw-user-forward');
+      expect(ipt).toContain('DROP');
+    });
+
+    it('should add route rules with port and proto', async () => {
+      await server.executeCommand('ufw route allow in on eth0 out on eth1 from any to any port 80 proto tcp');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('iptables -S ufw-user-forward');
+      expect(out).toContain('--dport 80');
+      expect(out).toContain('-p tcp');
+    });
+
+    it('should filter forwarded packets through route rules', async () => {
+      await server.executeCommand('ufw enable');
+      await server.executeCommand('ufw default deny routed');
+      await server.executeCommand('ufw route allow in on eth0 out on eth1 from 10.0.0.0/24 to 192.168.1.0/24');
+
+      const ipt = (server as any).executor.iptables;
+
+      // Allowed: matches route rule
+      const v1 = ipt.filterPacket({
+        direction: 'forward', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0', outIface: 'eth1',
+      });
+      expect(v1).toBe('accept');
+
+      // Blocked: different source network → FORWARD policy DROP
+      const v2 = ipt.filterPacket({
+        direction: 'forward', protocol: 6,
+        srcIP: '172.16.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0', outIface: 'eth1',
+      });
+      expect(v2).toBe('drop');
+    });
+  });
+
+  // ─── Default routed policy ─────────────────────────────────────
+
+  describe('UFW default routed policy', () => {
+    let server: LinuxServer;
+
+    beforeEach(() => {
+      server = new LinuxServer('linux-server', 'SRV1');
+    });
+
+    it('should change default routed policy to allow', async () => {
+      const out = await server.executeCommand('ufw default allow routed');
+      expect(out).toContain("Default routed policy changed to 'allow'");
+    });
+
+    it('should change default routed policy to deny', async () => {
+      const out = await server.executeCommand('ufw default deny routed');
+      expect(out).toContain("Default routed policy changed to 'deny'");
+    });
+
+    it('should change default routed policy to reject', async () => {
+      const out = await server.executeCommand('ufw default reject routed');
+      expect(out).toContain("Default routed policy changed to 'reject'");
+    });
+
+    it('should show routed policy in status verbose', async () => {
+      await server.executeCommand('ufw default allow routed');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('ufw status verbose');
+      expect(out).toContain('allow (routed)');
+    });
+
+    it('should show disabled routed policy by default', async () => {
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('ufw status verbose');
+      expect(out).toContain('disabled (routed)');
+    });
+
+    it('should set FORWARD chain policy to DROP when routed is deny', async () => {
+      await server.executeCommand('ufw default deny routed');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('iptables -S FORWARD');
+      expect(out).toContain('-P FORWARD DROP');
+    });
+
+    it('should set FORWARD chain policy to ACCEPT when routed is allow', async () => {
+      await server.executeCommand('ufw default allow routed');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('iptables -S FORWARD');
+      expect(out).toContain('-P FORWARD ACCEPT');
+    });
+
+    it('should create ufw-user-forward chain on enable', async () => {
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('iptables -S ufw-user-forward');
+      // Chain should exist (no error)
+      expect(out).not.toContain('No chain');
+    });
+
+    it('should reset routed policy on ufw reset', async () => {
+      await server.executeCommand('ufw default allow routed');
+      await server.executeCommand('ufw enable');
+      await server.executeCommand('ufw reset');
+      await server.executeCommand('ufw enable');
+      const out = await server.executeCommand('ufw status verbose');
+      expect(out).toContain('disabled (routed)');
+    });
+  });
 });

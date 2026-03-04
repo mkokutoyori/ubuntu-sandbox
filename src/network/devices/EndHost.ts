@@ -554,9 +554,21 @@ export abstract class EndHost extends Equipment {
    * Default: accept all.
    */
   protected firewallFilter(
-    _portName: string, _ipPkt: IPv4Packet, _direction: 'in' | 'out',
+    _portName: string, _ipPkt: IPv4Packet, _direction: 'in' | 'out' | 'forward',
+    _outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     return 'accept';
+  }
+
+  /**
+   * Evaluate NAT table for a forwarded packet.
+   * Subclasses (LinuxPC, LinuxServer) override this to use iptables nat table.
+   * Returns null (no NAT) by default.
+   */
+  protected evaluateNat(
+    _ipPkt: IPv4Packet, _inPort: string, _outPort: string,
+  ): { action: string; address?: string } | null {
+    return null;
   }
 
   /**
@@ -630,9 +642,32 @@ export abstract class EndHost extends Equipment {
     const outPortName = route.port.getName();
     if (outPortName === inPort) return; // avoid looping back on same interface
 
-    // MASQUERADE: rewrite source IP to outgoing interface IP
+    // ── Firewall: filter forwarded packets (FORWARD chain) ──
+    const verdict = this.firewallFilter(inPort, ipPkt, 'forward', outPortName);
+    if (verdict === 'drop' || verdict === 'reject') {
+      Logger.info(this.id, 'ipv4:firewall-forward-blocked',
+        `${this.name}: firewall ${verdict} FORWARD ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${inPort}→${outPortName}`);
+      if (verdict === 'reject') {
+        this.sendICMPReject(inPort, ipPkt);
+      }
+      return;
+    }
+
+    // NAT: apply POSTROUTING rules (MASQUERADE/SNAT)
     let srcIP = ipPkt.sourceIP;
-    if (this.masqueradeOnInterfaces.has(outPortName)) {
+    let dstIP = ipPkt.destinationIP;
+    const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
+    if (natResult) {
+      if (natResult.action === 'MASQUERADE') {
+        const outPortIP = route.port.getIPAddress();
+        if (outPortIP) srcIP = outPortIP;
+      } else if (natResult.action === 'SNAT' && natResult.address) {
+        try { srcIP = new IPAddress(natResult.address.split(':')[0]); } catch { /* keep original */ }
+      } else if (natResult.action === 'DNAT' && natResult.address) {
+        try { dstIP = new IPAddress(natResult.address.split(':')[0]); } catch { /* keep original */ }
+      }
+    } else if (this.masqueradeOnInterfaces.has(outPortName)) {
+      // Fallback: legacy masquerade support
       const outPortIP = route.port.getIPAddress();
       if (outPortIP) srcIP = outPortIP;
     }
@@ -640,6 +675,7 @@ export abstract class EndHost extends Equipment {
     const fwdPkt: IPv4Packet = {
       ...ipPkt,
       sourceIP: srcIP,
+      destinationIP: dstIP,
       ttl: newTTL,
       headerChecksum: 0,
     };

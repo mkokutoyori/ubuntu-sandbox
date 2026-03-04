@@ -246,7 +246,8 @@ export class LinuxServer extends EndHost {
   // ─── Firewall filtering ────────────────────────────────────────
 
   protected override firewallFilter(
-    portName: string, ipPkt: IPv4Packet, direction: 'in' | 'out',
+    portName: string, ipPkt: IPv4Packet, direction: 'in' | 'out' | 'forward',
+    outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     const ports = this.extractPorts(ipPkt);
     const pkt: PacketInfo = {
@@ -257,9 +258,27 @@ export class LinuxServer extends EndHost {
       srcPort: ports.srcPort,
       dstPort: ports.dstPort,
       iface: portName,
+      outIface: outPortName,
     };
     // Packet filtering is ALWAYS done by iptables (the single source of truth).
     return this.executor.iptables.filterPacket(pkt);
+  }
+
+  protected override evaluateNat(
+    ipPkt: IPv4Packet, inPort: string, outPort: string,
+  ): { action: string; address?: string } | null {
+    const ports = this.extractPorts(ipPkt);
+    const pkt: PacketInfo = {
+      direction: 'forward',
+      protocol: ipPkt.protocol,
+      srcIP: ipPkt.sourceIP.toString(),
+      dstIP: ipPkt.destinationIP.toString(),
+      srcPort: ports.srcPort,
+      dstPort: ports.dstPort,
+      iface: inPort,
+      outIface: outPort,
+    };
+    return this.executor.iptables.evaluateNat(pkt, 'POSTROUTING');
   }
 
   getOSType(): string { return 'linux'; }
