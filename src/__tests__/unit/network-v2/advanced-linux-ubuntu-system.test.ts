@@ -1090,7 +1090,7 @@ describe('Group 3: Advanced Permission & Access Control', () => {
       await server.executeCommand('sudo setfacl --restore=/tmp/acl-backup.txt')
       
       // Set ACL via numeric format
-      await server.executeCommand('sudo setfacl -m u:1001:7 /acl-test/file1.txt')  # UID 1001 gets rwx
+      await server.executeCommand('sudo setfacl -m u:1001:7 /acl-test/file1.txt')  // UID 1001 gets rwx
       
       // Set ACL for non-existent user/group (for future use)
       await server.executeCommand('sudo setfacl -m u:futureuser:rwx /acl-test/dir1')
@@ -1968,61 +1968,61 @@ find $BACKUP_DIR -name "*.gz" -mtime +$RETENTION_DAYS -delete
       expect(snapshotStatus).toContain('root_snapshot');
       expect(snapshotStatus).toContain('s');
       
-      # Test snapshot usage
+      // Test snapshot usage
       await server.executeCommand('sudo touch /mnt/original/testfile');
       const snapshotTest = await server.executeCommand('ls /mnt/snapshot/testfile');
       expect(snapshotTest).toBe('');
       
-      # Merge snapshot
+      // Merge snapshot
       await server.executeCommand('sudo lvconvert --merge /dev/vg_snap/root_snapshot');
       
-      # 2. Btrfs Snapshots
-      # Create Btrfs filesystem
+      // 2. Btrfs Snapshots
+      // Create Btrfs filesystem
       await server.executeCommand('sudo mkfs.btrfs -f /dev/sdc');
       await server.executeCommand('sudo mkdir -p /btrfs');
       await server.executeCommand('sudo mount /dev/sdc /btrfs');
       
-      # Create subvolume
+      // Create subvolume
       await server.executeCommand('sudo btrfs subvolume create /btrfs/data');
       
-      # Create read-write snapshot
+      // Create read-write snapshot
       await server.executeCommand('sudo btrfs subvolume snapshot /btrfs/data /btrfs/data-snapshot-$(date +%Y%m%d)');
       
-      # Create read-only snapshot
+      // Create read-only snapshot
       await server.executeCommand('sudo btrfs subvolume snapshot -r /btrfs/data /btrfs/data-ro-snapshot-$(date +%Y%m%d)');
       
-      # List snapshots
+      // List snapshots
       const btrfsSnapshots = await server.executeCommand('sudo btrfs subvolume list /btrfs');
       expect(btrfsSnapshots).toContain('data-snapshot');
       
-      # Send snapshot to another location
+      // Send snapshot to another location
       await server.executeCommand('sudo btrfs send /btrfs/data-ro-snapshot-* | sudo btrfs receive /backup/');
       
-      # Delete snapshot
+      // Delete snapshot
       await server.executeCommand('sudo btrfs subvolume delete /btrfs/data-snapshot-*');
       
-      # 3. ZFS Snapshots
+      // 3. ZFS Snapshots
       await server.executeCommand('sudo apt-get install -y zfsutils-linux');
       
-      # Create ZFS pool
+      // Create ZFS pool
       await server.executeCommand('sudo zpool create tank /dev/sdd');
       
-      # Create dataset
+      // Create dataset
       await server.executeCommand('sudo zfs create tank/data');
       
-      # Create snapshot
+      // Create snapshot
       await server.executeCommand('sudo zfs snapshot tank/data@$(date +%Y%m%d)');
       
-      # Clone snapshot
+      // Clone snapshot
       await server.executeCommand('sudo zfs clone tank/data@$(date +%Y%m%d) tank/data-clone');
       
-      # Rollback to snapshot
+      // Rollback to snapshot
       await server.executeCommand('sudo zfs rollback tank/data@$(date +%Y%m%d)');
       
-      # Send snapshot to file
+      // Send snapshot to file
       await server.executeCommand('sudo zfs send tank/data@$(date +%Y%m%d) | gzip > /backup/zfs-snapshot.gz');
       
-      # 4. Automated snapshot management
+      // 4. Automated snapshot management
       const snapshotScript = `
 #!/bin/bash
 # LVM snapshots
@@ -2042,27 +2042,27 @@ zfs list -t snapshot -o name | grep auto_ | sort -r | tail -n +8 | xargs -n1 zfs
       await server.executeCommand(`echo '${snapshotScript}' | sudo tee /usr/local/bin/create-snapshots.sh`);
       await server.executeCommand('sudo chmod +x /usr/local/bin/create-snapshots.sh');
       
-      # Schedule snapshots
+      // Schedule snapshots
       await server.executeCommand('echo "0 */4 * * * root /usr/local/bin/create-snapshots.sh" | sudo tee /etc/cron.d/snapshots');
       
-      # 5. Disaster recovery test
-      # Simulate data loss
-      await server.executeCommand('sudo rm -rf /mnt/original/important-data')
+      // 5. Disaster recovery test
+      // Simulate data loss
+      await server.executeCommand('sudo rm -rf /mnt/original/important-data');
       
-      # Restore from LVM snapshot
-      await server.executeCommand('sudo umount /mnt/original')
-      await server.executeCommand('sudo lvconvert --merge /dev/vg_snap/root_snapshot')
-      await server.executeCommand('sudo mount /dev/vg_snap/lv_root /mnt/original')
+      // Restore from LVM snapshot
+      await server.executeCommand('sudo umount /mnt/original');
+      await server.executeCommand('sudo lvconvert --merge /dev/vg_snap/root_snapshot');
+      await server.executeCommand('sudo mount /dev/vg_snap/lv_root /mnt/original');
       
-      # Verify restoration
-      const restoredData = await server.executeCommand('ls /mnt/original/important-data')
-      expect(restoredData).toContain('file') || expect(restoredData).toBe('')
+      // Verify restoration
+      const restoredData = await server.executeCommand('ls /mnt/original/important-data');
+      expect(restoredData).toContain('file') || expect(restoredData).toBe('');
       
-      # Cleanup
-      await server.executeCommand('sudo umount /mnt/original /mnt/snapshot /btrfs')
-      await server.executeCommand('sudo vgremove -f vg_snap')
-      await server.executeCommand('sudo pvremove /dev/sdb /dev/sdc /dev/sdd')
-      await server.executeCommand('sudo rm -rf /backup')
+      // Cleanup
+      await server.executeCommand('sudo umount /mnt/original /mnt/snapshot /btrfs');
+      await server.executeCommand('sudo vgremove -f vg_snap');
+      await server.executeCommand('sudo pvremove /dev/sdb /dev/sdc /dev/sdd');
+      await server.executeCommand('sudo rm -rf /backup');
     });
   });
 });
@@ -2081,7 +2081,7 @@ describe('Group 7: Container & Virtualization Integration', () => {
       // Install Docker
       await server.executeCommand('sudo apt-get install -y docker.io docker-compose containerd runc');
       
-      # Configure Docker daemon with security options
+      // Configure Docker daemon with security options
       const daemonJson = `
 {
   "data-root": "/var/lib/docker",
@@ -2113,15 +2113,15 @@ describe('Group 7: Container & Virtualization Integration', () => {
       await server.executeCommand(`echo '${daemonJson}' | sudo tee /etc/docker/daemon.json`);
       await server.executeCommand('sudo systemctl restart docker');
       
-      # Create Docker network
+      // Create Docker network
       await server.executeCommand('sudo docker network create --driver bridge --subnet=172.20.0.0/16 --ip-range=172.20.5.0/24 --gateway=172.20.0.1 app-network');
       
-      # Create Docker volumes
+      // Create Docker volumes
       await server.executeCommand('sudo docker volume create db-data');
       await server.executeCommand('sudo docker volume create app-data');
       await server.executeCommand('sudo docker volume create logs');
       
-      # Run container with security constraints
+      // Run container with security constraints
       await server.executeCommand('sudo docker run -d \
         --name secure-nginx \
         --network app-network \
@@ -2142,10 +2142,10 @@ describe('Group 7: Container & Virtualization Integration', () => {
         -p 80:80 \
         nginx:alpine');
       
-      # Run container with user namespace
+      // Run container with user namespace
       await server.executeCommand('sudo docker run -d --name userns --userns=host alpine sleep 3600');
       
-      # Create Docker Compose file
+      // Create Docker Compose file
       const composeFile = `
 version: '3.8'
 services:
@@ -2222,36 +2222,36 @@ volumes:
       await server.executeCommand(`echo '${composeFile}' > docker-compose.yml`);
       await server.executeCommand('sudo docker-compose up -d');
       
-      # Monitor containers
+      // Monitor containers
       const containers = await server.executeCommand('sudo docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"');
       expect(containers).toContain('nginx');
       expect(containers).toContain('postgres');
       
-      # Check container logs
+      // Check container logs
       const logs = await server.executeCommand('sudo docker logs nginx --tail 10');
       expect(logs).toContain('started') || expect(logs).toBe('');
       
-      # Inspect container
+      // Inspect container
       const inspect = await server.executeCommand('sudo docker inspect nginx --format "{{.State.Status}}"');
       expect(inspect).toContain('running');
       
-      # Check resource usage
+      // Check resource usage
       const stats = await server.executeCommand('sudo docker stats --no-stream');
       expect(stats).toContain('CPU %');
       expect(stats).toContain('MEM USAGE');
       
-      # Execute command in container
+      // Execute command in container
       const execOutput = await server.executeCommand('sudo docker exec nginx nginx -t');
       expect(execOutput).toContain('successful') || expect(execOutput).toContain('test is successful');
       
-      # Create image from container
+      // Create image from container
       await server.executeCommand('sudo docker commit nginx nginx-custom:latest');
       
-      # Save and load image
+      // Save and load image
       await server.executeCommand('sudo docker save nginx-custom:latest | gzip > nginx-custom.tar.gz');
       await server.executeCommand('sudo docker load < nginx-custom.tar.gz');
       
-      # Cleanup
+      // Cleanup
       await server.executeCommand('sudo docker-compose down -v');
       await server.executeCommand('sudo docker rm -f secure-nginx userns');
       await server.executeCommand('sudo docker network rm app-network');
@@ -2272,82 +2272,82 @@ describe('Group 8: Performance Monitoring & Tuning', () => {
     it('should implement comprehensive performance monitoring and tuning', async () => {
       const server = new LinuxServer('linux-server', 'PERF-SRV');
       
-      # 1. System Monitoring Tools
-      # Install monitoring tools
+      // 1. System Monitoring Tools
+      // Install monitoring tools
       await server.executeCommand('sudo apt-get install -y htop iotop iftop nethogs nmon dstat sysstat bpftrace perf-tools-unstable');
       
-      # Monitor CPU with mpstat
+      // Monitor CPU with mpstat
       const mpstatOutput = await server.executeCommand('mpstat 1 3');
       expect(mpstatOutput).toContain('CPU');
       expect(mpstatOutput).toContain('%usr');
       
-      # Monitor memory with vmstat
+      // Monitor memory with vmstat
       const vmstatOutput = await server.executeCommand('vmstat 1 3');
       expect(vmstatOutput).toContain('memory');
       expect(vmstatOutput).toContain('swap');
       
-      # Monitor I/O with iostat
+      // Monitor I/O with iostat
       const iostatOutput = await server.executeCommand('iostat -dx 1 3');
       expect(iostatOutput).toContain('Device');
       expect(iostatOutput).toContain('await');
       
-      # 2. Process Monitoring
-      # Show process tree
+      // 2. Process Monitoring
+      // Show process tree
       const pstreeOutput = await server.executeCommand('pstree -p');
       expect(pstreeOutput).toContain('systemd');
       
-      # Show resource usage by process
+      // Show resource usage by process
       const pidstatOutput = await server.executeCommand('pidstat 1 3');
       expect(pidstatOutput).toContain('PID');
       expect(pidstatOutput).toContain('%CPU');
       
-      # 3. Network Monitoring
-      # Monitor network with ss
+      // 3. Network Monitoring
+      // Monitor network with ss
       const ssOutput = await server.executeCommand('ss -tulpn');
       expect(ssOutput).toContain('LISTEN');
       
-      # Monitor network with netstat
+      // Monitor network with netstat
       const netstatOutput = await server.executeCommand('netstat -tulpn');
       expect(netstatOutput).toContain('Active Internet connections');
       
-      # Monitor bandwidth with iftop
+      // Monitor bandwidth with iftop
       await server.executeCommand('timeout 5 iftop -i eth0');
       
-      # 4. Disk Monitoring
-      # Check disk usage
+      // 4. Disk Monitoring
+      // Check disk usage
       const dfOutput = await server.executeCommand('df -hT');
       expect(dfOutput).toContain('Filesystem');
       expect(dfOutput).toContain('Type');
       
-      # Check inode usage
+      // Check inode usage
       const inodeOutput = await server.executeCommand('df -i');
       expect(inodeOutput).toContain('Inodes');
       
-      # Monitor disk I/O with iotop
+      // Monitor disk I/O with iotop
       await server.executeCommand('timeout 5 iotop -o');
       
-      # 5. Log Monitoring
-      # Monitor system logs in real-time
+      // 5. Log Monitoring
+      // Monitor system logs in real-time
       await server.executeCommand('timeout 5 tail -f /var/log/syslog');
       
-      # Show kernel messages
+      // Show kernel messages
       const dmesgOutput = await server.executeCommand('dmesg | tail -20');
       expect(dmesgOutput).toContain('kernel');
       
-      # 6. Performance Profiling
-      # Use perf for CPU profiling
+      // 6. Performance Profiling
+      // Use perf for CPU profiling
       await server.executeCommand('sudo perf record -F 99 -a -g -- sleep 5');
       await server.executeCommand('sudo perf report --stdio | head -50');
       
-      # Use strace for system call tracing
+      // Use strace for system call tracing
       const straceOutput = await server.executeCommand('strace -c ls >/dev/null');
       expect(straceOutput).toContain('calls');
       
-      # Use ltrace for library call tracing
+      // Use ltrace for library call tracing
       const ltraceOutput = await server.executeCommand('ltrace -c ls >/dev/null 2>&1');
       
-      # 7. System Tuning
-      # Tune kernel parameters
+      // 7. System Tuning
+      // Tune kernel parameters
       const tuningParams = `
 # Increase TCP buffer sizes
 net.core.rmem_max = 16777216
@@ -2374,53 +2374,53 @@ net.ipv4.tcp_tw_reuse = 1
       await server.executeCommand(`echo '${tuningParams}' | sudo tee /etc/sysctl.d/99-performance.conf`);
       await server.executeCommand('sudo sysctl -p /etc/sysctl.d/99-performance.conf');
       
-      # Tune disk scheduler
+      // Tune disk scheduler
       await server.executeCommand('echo deadline | sudo tee /sys/block/sda/queue/scheduler');
       
-      # Tune swappiness
+      // Tune swappiness
       await server.executeCommand('echo 10 | sudo tee /proc/sys/vm/swappiness');
       
-      # Tune dirty ratios
+      // Tune dirty ratios
       await server.executeCommand('echo 10 | sudo tee /proc/sys/vm/dirty_background_ratio');
       await server.executeCommand('echo 20 | sudo tee /proc/sys/vm/dirty_ratio');
       
-      # 8. Benchmarking
-      # CPU benchmark
+      // 8. Benchmarking
+      // CPU benchmark
       const cpuBench = await server.executeCommand('sysbench cpu --cpu-max-prime=20000 run');
       expect(cpuBench).toContain('total time');
       
-      # Memory benchmark
+      // Memory benchmark
       const memBench = await server.executeCommand('sysbench memory --memory-block-size=1K --memory-total-size=10G run');
       expect(memBench).toContain('Operations');
       
-      # Disk benchmark
+      // Disk benchmark
       const diskBench = await server.executeCommand('fio --name=randwrite --ioengine=libaio --iodepth=1 --rw=randwrite --bs=4k --direct=1 --size=1G --numjobs=1 --runtime=60 --group_reporting');
       expect(diskBench).toContain('IOPS');
       
-      # Network benchmark
+      // Network benchmark
       await server.executeCommand('iperf3 -s -D');
       const netBench = await server.executeCommand('iperf3 -c localhost -t 5');
       expect(netBench).toContain('Gbits/sec') || expect(netBench).toContain('Mbits/sec');
       
-      # 9. Resource Limits
-      # Set ulimits
+      // 9. Resource Limits
+      // Set ulimits
       await server.executeCommand('ulimit -n 65535');
       await server.executeCommand('ulimit -u unlimited');
       
-      # 10. Monitoring Dashboard
-      # Install and configure netdata
+      // 10. Monitoring Dashboard
+      // Install and configure netdata
       await server.executeCommand('bash <(curl -Ss https://my-netdata.io/kickstart.sh) --non-interactive');
       
       const netdataStatus = await server.executeCommand('sudo systemctl status netdata');
       expect(netdataStatus).toContain('active (running)');
       
-      # Install and configure Prometheus node exporter
+      // Install and configure Prometheus node exporter
       await server.executeCommand('sudo apt-get install -y prometheus-node-exporter');
       
       const nodeExporterStatus = await server.executeCommand('sudo systemctl status prometheus-node-exporter');
       expect(nodeExporterStatus).toContain('active (running)');
       
-      # Cleanup
+      // Cleanup
       await server.executeCommand('sudo systemctl stop netdata');
       await server.executeCommand('sudo systemctl stop prometheus-node-exporter');
       await server.executeCommand('sudo rm -f /etc/sysctl.d/99-performance.conf');
