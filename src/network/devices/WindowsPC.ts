@@ -384,6 +384,20 @@ export class WindowsPC extends EndHost {
       // DNS suffix
       getDnsSuffix: () => this.dnsSuffix,
       setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
+
+      // Interface renaming
+      renameInterface: (oldName: string, newName: string): boolean => {
+        const port = this.ports.get(oldName);
+        if (!port || this.ports.has(newName)) return false;
+        this.ports.delete(oldName);
+        this.ports.set(newName, port);
+        // Migrate DNS config
+        const dns = this.dnsConfig.get(oldName);
+        if (dns) { this.dnsConfig.delete(oldName); this.dnsConfig.set(newName, dns); }
+        // Migrate DHCP state
+        if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
+        return true;
+      },
     };
   }
 

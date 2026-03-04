@@ -392,3 +392,66 @@ describe('Group 6: netsh integration scenarios', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 7: netsh interface set interface — Rename
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 7: netsh interface set interface — Rename', () => {
+
+  describe('N-23: rename interface with quoted names', () => {
+    it('should rename an interface and reflect in show interface', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      // Rename "Ethernet 0" to "LAN"
+      const result = await pc.executeCommand('netsh interface set interface "Ethernet 0" newname="LAN"');
+      expect(result).toContain('Ok');
+
+      // Show interfaces should now have "LAN" instead of "Ethernet 0"
+      const show = await pc.executeCommand('netsh interface show interface');
+      expect(show).toContain('LAN');
+    });
+  });
+
+  describe('N-24: renamed interface preserves IP configuration', () => {
+    it('should keep IP after rename', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      await pc.executeCommand('netsh interface ip set address "Ethernet 0" static 10.0.0.5 255.255.255.0');
+      await pc.executeCommand('netsh interface set interface "Ethernet 0" newname="MyNetwork"');
+
+      // IP config should still show the address
+      const ipconfig = await pc.executeCommand('ipconfig');
+      expect(ipconfig).toContain('10.0.0.5');
+    });
+  });
+
+  describe('N-25: rename non-existent interface', () => {
+    it('should return error for unknown interface', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      const result = await pc.executeCommand('netsh interface set interface "NonExistent" newname="Test"');
+      expect(result).toContain('was not found');
+    });
+  });
+
+  describe('N-26: configure IP on renamed interface', () => {
+    it('should allow IP configuration on renamed interface', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      await pc.executeCommand('netsh interface set interface "Ethernet 0" newname="WAN"');
+      const result = await pc.executeCommand('netsh interface ip set address "WAN" static 172.16.0.1 255.255.0.0');
+      expect(result).toContain('Ok');
+
+      const ipconfig = await pc.executeCommand('ipconfig');
+      expect(ipconfig).toContain('172.16.0.1');
+    });
+  });
+
+  describe('N-27: rename with name= prefix', () => {
+    it('should support name= syntax', async () => {
+      const pc = new WindowsPC('windows-pc', 'PC1');
+      const result = await pc.executeCommand('netsh interface set interface name="Ethernet 0" newname="Corp LAN"');
+      expect(result).toContain('Ok');
+
+      const show = await pc.executeCommand('netsh interface show interface');
+      expect(show).toContain('Corp LAN');
+    });
+  });
+});

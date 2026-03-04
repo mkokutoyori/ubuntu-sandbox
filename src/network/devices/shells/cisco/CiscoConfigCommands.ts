@@ -178,6 +178,19 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     }
   });
 
+  trie.registerGreedy('description', 'Set interface description', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    if (args.length < 1) return '% Incomplete command.';
+    ctx.r().setInterfaceDescription(ctx.getSelectedInterface()!, args.join(' '));
+    return '';
+  });
+
+  trie.register('no description', 'Remove interface description', () => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    ctx.r().setInterfaceDescription(ctx.getSelectedInterface()!, '');
+    return '';
+  });
+
   trie.register('no shutdown', 'Enable interface', () => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
