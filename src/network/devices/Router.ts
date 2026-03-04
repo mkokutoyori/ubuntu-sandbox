@@ -2361,7 +2361,12 @@ export abstract class Router extends Equipment {
    * @internal
    */
   _ospfAutoConverge(): void {
-    if (!this.ospfEngine) return;
+    if (!this.ospfEngine && !this.ospfv3Engine) return;
+    // OSPFv3-only mode: skip OSPFv2 steps, jump straight to step 4
+    if (!this.ospfEngine) {
+      this._ospfv3AutoConverge();
+      return;
+    }
 
     // Step 1: Auto-activate interfaces matching OSPF network statements
     const routerIfaces: Array<{ name: string; ip: string; mask: string }> = [];
