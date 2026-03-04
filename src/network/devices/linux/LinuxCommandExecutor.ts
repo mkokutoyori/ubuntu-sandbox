@@ -33,6 +33,8 @@ export class LinuxCommandExecutor {
   private env: Map<string, string> = new Map();
   // Stack for su sessions: stores previous user context
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
+  // Command history (like bash HISTFILE)
+  private commandHistory: string[] = [];
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -86,6 +88,9 @@ export class LinuxCommandExecutor {
   execute(input: string): string {
     const trimmed = input.trim();
     if (!trimmed) return '';
+
+    // Track command in history (store the raw input, like bash)
+    this.commandHistory.push(trimmed);
 
     const chains = splitChains(trimmed);
     const allOutputs: string[] = [];
@@ -474,6 +479,9 @@ export class LinuxCommandExecutor {
       case 'hostname':
         return { output: args[0] || 'localhost', exitCode: 0 };
 
+      // history — command history management
+      case 'history': return this.handleHistory(args);
+
       // clear - send ANSI escape to clear terminal
       case 'clear': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
       case 'reset': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
@@ -515,6 +523,61 @@ export class LinuxCommandExecutor {
         return { output: `${cmd}: command not found`, exitCode: 127 };
       }
     }
+  }
+
+  private handleHistory(args: string[]): { output: string; exitCode: number } {
+    // history -c : clear history
+    if (args[0] === '-c') {
+      this.commandHistory.length = 0;
+      return { output: '', exitCode: 0 };
+    }
+
+    // history -d N : delete entry at position N (1-based)
+    if (args[0] === '-d') {
+      const pos = parseInt(args[1], 10);
+      if (isNaN(pos) || pos < 1 || pos > this.commandHistory.length) {
+        return { output: `bash: history: ${args[1] || ''}: history position out of range`, exitCode: 1 };
+      }
+      this.commandHistory.splice(pos - 1, 1);
+      return { output: '', exitCode: 0 };
+    }
+
+    // history -w : write history to ~/.bash_history
+    if (args[0] === '-w') {
+      const home = this.userMgr.getUser(this.userMgr.currentUser)?.home || '/root';
+      const histFile = home + '/.bash_history';
+      this.vfs.writeFile(histFile, this.commandHistory.join('\n'), this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+      return { output: '', exitCode: 0 };
+    }
+
+    // history -r : read history from ~/.bash_history (append to current history)
+    if (args[0] === '-r') {
+      const home = this.userMgr.getUser(this.userMgr.currentUser)?.home || '/root';
+      const histFile = home + '/.bash_history';
+      const content = this.vfs.readFile(histFile);
+      if (content) {
+        const lines = content.split('\n').filter(l => l.length > 0);
+        this.commandHistory.push(...lines);
+      }
+      return { output: '', exitCode: 0 };
+    }
+
+    // history [N] : display last N entries (or all)
+    let count = this.commandHistory.length;
+    if (args.length > 0 && !args[0].startsWith('-')) {
+      const n = parseInt(args[0], 10);
+      if (!isNaN(n) && n > 0) {
+        count = Math.min(n, this.commandHistory.length);
+      }
+    }
+
+    const start = this.commandHistory.length - count;
+    const lines: string[] = [];
+    for (let i = start; i < this.commandHistory.length; i++) {
+      const num = (i + 1).toString().padStart(5);
+      lines.push(`${num}  ${this.commandHistory[i]}`);
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   private handleCrontab(args: string[], stdin?: string): { output: string; exitCode: number } {

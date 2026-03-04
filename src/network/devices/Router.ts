@@ -314,6 +314,9 @@ export abstract class Router extends Equipment {
   private accessLists: AccessList[] = [];
   private interfaceACLBindings: Map<string, InterfaceACLBinding> = new Map();
 
+  // ── Interface Descriptions ──────────────────────────────────
+  private interfaceDescriptions: Map<string, string> = new Map();
+
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
 
@@ -2025,6 +2028,12 @@ export abstract class Router extends Equipment {
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
+  /** @internal Used by CLI shells */
+  setInterfaceDescription(portName: string, desc: string): void { this.interfaceDescriptions.set(portName, desc); }
+  /** @internal Used by CLI shells */
+  getInterfaceDescription(portName: string): string | undefined { return this.interfaceDescriptions.get(portName); }
+  /** @internal Used by CLI shells */
+  _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
 
   /** @internal Lazily create + return the IPSec engine for this router */
   _getOrCreateIPSecEngine(): IPSecEngine {

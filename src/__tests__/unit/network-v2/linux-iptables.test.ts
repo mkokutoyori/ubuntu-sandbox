@@ -913,4 +913,293 @@ describe('iptables', () => {
       expect(out).toContain('Chain INPUT');
     });
   });
+
+  // ─── FORWARD chain filtering ──────────────────────────────────
+
+  describe('FORWARD chain filtering', () => {
+    it('should have default ACCEPT policy on FORWARD chain', async () => {
+      const out = await server.executeCommand('iptables -S FORWARD');
+      expect(out).toContain('-P FORWARD ACCEPT');
+    });
+
+    it('should set FORWARD policy to DROP', async () => {
+      await server.executeCommand('iptables -P FORWARD DROP');
+      const out = await server.executeCommand('iptables -S FORWARD');
+      expect(out).toContain('-P FORWARD DROP');
+    });
+
+    it('should add rules to FORWARD chain', async () => {
+      await server.executeCommand('iptables -A FORWARD -s 10.0.0.0/24 -d 192.168.1.0/24 -j ACCEPT');
+      const out = await server.executeCommand('iptables -S FORWARD');
+      expect(out).toContain('-A FORWARD -s 10.0.0.0/24 -d 192.168.1.0/24 -j ACCEPT');
+    });
+
+    it('should add rules with both -i and -o interfaces to FORWARD', async () => {
+      await server.executeCommand('iptables -A FORWARD -i eth0 -o eth1 -j ACCEPT');
+      const out = await server.executeCommand('iptables -L FORWARD -v');
+      expect(out).toContain('eth0');
+      expect(out).toContain('eth1');
+    });
+
+    it('should filter forwarded packets through FORWARD chain', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -P FORWARD DROP');
+      await server.executeCommand('iptables -A FORWARD -s 10.0.0.1 -j ACCEPT');
+
+      // Allowed source
+      const v1 = ipt.filterPacket({
+        direction: 'forward', protocol: 1,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 0, dstPort: 0, iface: 'eth0', outIface: 'eth1',
+      });
+      expect(v1).toBe('accept');
+
+      // Blocked source (policy DROP)
+      const v2 = ipt.filterPacket({
+        direction: 'forward', protocol: 1,
+        srcIP: '10.0.0.2', dstIP: '192.168.1.1',
+        srcPort: 0, dstPort: 0, iface: 'eth0', outIface: 'eth1',
+      });
+      expect(v2).toBe('drop');
+    });
+
+    it('should match -o outInterface for FORWARD chain', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -A FORWARD -o eth1 -j DROP');
+
+      const v1 = ipt.filterPacket({
+        direction: 'forward', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0', outIface: 'eth1',
+      });
+      expect(v1).toBe('drop');
+
+      // Different out interface → not matched → ACCEPT (default policy)
+      const v2 = ipt.filterPacket({
+        direction: 'forward', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0', outIface: 'eth2',
+      });
+      expect(v2).toBe('accept');
+    });
+  });
+
+  // ─── Match extensions: iprange ─────────────────────────────────
+
+  describe('iprange match extension', () => {
+    it('should parse iprange match in rules', async () => {
+      await server.executeCommand('iptables -A INPUT -m iprange --src-range 10.0.0.10-10.0.0.50 -j DROP');
+      const out = await server.executeCommand('iptables -S INPUT');
+      expect(out).toContain('--src-range 10.0.0.10-10.0.0.50');
+    });
+
+    it('should filter packets by source IP range', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -A INPUT -m iprange --src-range 10.0.0.10-10.0.0.50 -j DROP');
+
+      // IP within range → DROP
+      const v1 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.25', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+      expect(v1).toBe('drop');
+
+      // IP outside range → ACCEPT (default policy)
+      const v2 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.5', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+      expect(v2).toBe('accept');
+    });
+
+    it('should filter by destination IP range', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -A INPUT -m iprange --dst-range 192.168.1.100-192.168.1.200 -j DROP');
+
+      const v1 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.150',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+      expect(v1).toBe('drop');
+
+      const v2 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.50',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+      expect(v2).toBe('accept');
+    });
+  });
+
+  // ─── Match extensions: mac ─────────────────────────────────────
+
+  describe('mac match extension', () => {
+    it('should parse mac match in rules', async () => {
+      await server.executeCommand('iptables -A INPUT -m mac --mac-source AA:BB:CC:DD:EE:FF -j DROP');
+      const out = await server.executeCommand('iptables -S INPUT');
+      expect(out).toContain('--mac-source AA:BB:CC:DD:EE:FF');
+    });
+
+    it('should filter by MAC address', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -A INPUT -m mac --mac-source AA:BB:CC:DD:EE:FF -j DROP');
+
+      // Matching MAC → DROP
+      const v1 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+      });
+      expect(v1).toBe('drop');
+
+      // Different MAC → ACCEPT
+      const v2 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+        macAddress: '11:22:33:44:55:66',
+      });
+      expect(v2).toBe('accept');
+    });
+
+    it('should be case insensitive for MAC matching', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -A INPUT -m mac --mac-source aa:bb:cc:dd:ee:ff -j DROP');
+
+      const v = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+      });
+      expect(v).toBe('drop');
+    });
+  });
+
+  // ─── Match extensions: state/conntrack ────────────────────────
+
+  describe('state/conntrack match extension', () => {
+    it('should parse state match in rules', async () => {
+      await server.executeCommand('iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT');
+      const out = await server.executeCommand('iptables -S INPUT');
+      expect(out).toContain('-m state --state ESTABLISHED,RELATED -j ACCEPT');
+    });
+
+    it('should parse conntrack match with --ctstate', async () => {
+      await server.executeCommand('iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT');
+      const out = await server.executeCommand('iptables -S INPUT');
+      expect(out).toContain('-m conntrack --ctstate ESTABLISHED');
+    });
+
+    it('should match NEW state for first packet', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -P INPUT DROP');
+      await server.executeCommand('iptables -A INPUT -m state --state NEW -j ACCEPT');
+
+      // First packet from this source → NEW → ACCEPT
+      const v = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.99', dstIP: '192.168.1.1',
+        srcPort: 5555, dstPort: 80, iface: 'eth0',
+      });
+      expect(v).toBe('accept');
+    });
+
+    it('should track connections and match ESTABLISHED state', async () => {
+      const ipt = (server as any).executor.iptables;
+      // First simulate an accepted incoming packet to establish the connection
+      ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+
+      // Now set strict rules: only allow ESTABLISHED
+      await server.executeCommand('iptables -P INPUT DROP');
+      await server.executeCommand('iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT');
+
+      // Reply from same connection → ESTABLISHED → ACCEPT
+      const v1 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '192.168.1.1',
+        srcPort: 1234, dstPort: 80, iface: 'eth0',
+      });
+      expect(v1).toBe('accept');
+
+      // New connection from different source → not ESTABLISHED → DROP
+      const v2 = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.99', dstIP: '192.168.1.1',
+        srcPort: 9999, dstPort: 80, iface: 'eth0',
+      });
+      expect(v2).toBe('drop');
+    });
+  });
+
+  // ─── NAT table ────────────────────────────────────────────────
+
+  describe('NAT table', () => {
+    it('should add rules to nat table POSTROUTING', async () => {
+      await server.executeCommand('iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE');
+      const out = await server.executeCommand('iptables -t nat -S POSTROUTING');
+      expect(out).toContain('-A POSTROUTING -o eth0 -j MASQUERADE');
+    });
+
+    it('should add DNAT rules to PREROUTING', async () => {
+      await server.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80');
+      const out = await server.executeCommand('iptables -t nat -S PREROUTING');
+      expect(out).toContain('-A PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80');
+    });
+
+    it('should add SNAT rules to POSTROUTING', async () => {
+      await server.executeCommand('iptables -t nat -A POSTROUTING -o eth0 -j SNAT --to-source 1.2.3.4');
+      const out = await server.executeCommand('iptables -t nat -S POSTROUTING');
+      expect(out).toContain('-A POSTROUTING -o eth0 -j SNAT --to-source 1.2.3.4');
+    });
+
+    it('should evaluate nat table POSTROUTING and return MASQUERADE', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE');
+
+      const result = ipt.evaluateNat({
+        direction: 'forward', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '8.8.8.8',
+        srcPort: 1234, dstPort: 80, iface: 'eth1', outIface: 'eth0',
+      }, 'POSTROUTING');
+      expect(result).toEqual({ action: 'MASQUERADE' });
+    });
+
+    it('should evaluate DNAT and return target address', async () => {
+      const ipt = (server as any).executor.iptables;
+      await server.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80');
+
+      const result = ipt.evaluateNat({
+        direction: 'in', protocol: 6,
+        srcIP: '1.2.3.4', dstIP: '10.0.0.1',
+        srcPort: 5555, dstPort: 8080, iface: 'eth0',
+      }, 'PREROUTING');
+      expect(result).toEqual({ action: 'DNAT', address: '192.168.1.10:80' });
+    });
+
+    it('should return null when no nat rule matches', async () => {
+      const ipt = (server as any).executor.iptables;
+      const result = ipt.evaluateNat({
+        direction: 'forward', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '8.8.8.8',
+        srcPort: 1234, dstPort: 80, iface: 'eth1', outIface: 'eth0',
+      }, 'POSTROUTING');
+      expect(result).toBeNull();
+    });
+
+    it('should show nat table rules in iptables-save', async () => {
+      await server.executeCommand('iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE');
+      const save = await server.executeCommand('iptables-save');
+      expect(save).toContain('*nat');
+      expect(save).toContain('-A POSTROUTING -o eth0 -j MASQUERADE');
+    });
+  });
 });

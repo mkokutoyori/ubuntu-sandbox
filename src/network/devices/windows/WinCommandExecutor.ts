@@ -100,4 +100,7 @@ export interface WinCommandContext {
   // DNS suffix
   getDnsSuffix(): string;
   setDnsSuffix(suffix: string): void;
+
+  // Interface renaming
+  renameInterface(oldName: string, newName: string): boolean;
 }

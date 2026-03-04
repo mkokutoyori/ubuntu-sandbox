@@ -114,8 +114,11 @@ export function showRunningConfig(router: Router): string {
   }
 
   lines.push('!');
+  const descs = router._getInterfaceDescriptions();
   for (const [name, port] of ports) {
     lines.push(`interface ${name}`);
+    const desc = descs.get(name);
+    if (desc) lines.push(` description ${desc}`);
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     if (ip && mask) {

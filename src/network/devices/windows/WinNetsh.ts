@@ -304,24 +304,34 @@ function handleNetshInterfaceShow(ctx: WinCommandContext, args: string[]): strin
 
 function handleNetshInterfaceSet(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
-    return 'Usage: set interface [name=]<string> [[admin=]enable|disable]';
+    return 'Usage: set interface [name=]<string> [[admin=]enable|disable] [[newname=]<string>]';
   }
 
   if (args[0].toLowerCase() !== 'interface') {
-    return 'Usage: set interface [name=]<string> [[admin=]enable|disable]';
+    return 'Usage: set interface [name=]<string> [[admin=]enable|disable] [[newname=]<string>]';
   }
 
   const joined = args.slice(1).join(' ');
 
-  // Parse: "Ethernet 0" admin=enable OR name="Ethernet 0" admin=disable
-  const match = joined.match(/"([^"]+)"\s+admin=(enable|disable)/i)
-    || joined.match(/(.+?)\s+admin=(enable|disable)/i);
-
-  if (!match) {
-    return 'Usage: set interface [name=]<string> [[admin=]enable|disable]';
+  // Try newname= rename: everything before "newname=" is the interface name
+  const renameMatch = joined.match(/^(?:name=)?(.+?)\s+newname=(.+)$/i);
+  if (renameMatch) {
+    const oldName = renameMatch[1].replace(/^["']|["']$/g, '').trim();
+    const newName = renameMatch[2].replace(/^["']|["']$/g, '').trim();
+    const portName = resolveAdapterName(oldName, ctx.ports);
+    if (!ctx.ports.has(portName)) return `The interface "${oldName}" was not found.`;
+    if (!ctx.renameInterface(portName, newName)) return `The interface name "${newName}" is already in use.`;
+    return 'Ok.';
   }
 
-  const ifName = match[1].replace(/^name=/, '');
+  // Try admin=enable/disable: everything before "admin=" is the interface name
+  const match = joined.match(/^(?:name=)?(.+?)\s+admin=(enable|disable)$/i);
+
+  if (!match) {
+    return 'Usage: set interface [name=]<string> [[admin=]enable|disable] [[newname=]<string>]';
+  }
+
+  const ifName = match[1].replace(/^["']|["']$/g, '').trim();
   const enable = match[2].toLowerCase() === 'enable';
 
   const portName = resolveAdapterName(ifName, ctx.ports);

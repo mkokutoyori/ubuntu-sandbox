@@ -22,13 +22,15 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 export type FirewallVerdict = 'accept' | 'drop' | 'reject';
 
 export interface PacketInfo {
-  direction: 'in' | 'out';
+  direction: 'in' | 'out' | 'forward';
   protocol: number;         // 1=ICMP, 6=TCP, 17=UDP
   srcIP: string;
   dstIP: string;
   srcPort: number;          // 0 for ICMP
   dstPort: number;          // 0 for ICMP
-  iface: string;            // interface name (e.g. 'eth0')
+  iface: string;            // interface name (e.g. 'eth0') — inbound iface
+  outIface?: string;        // outbound interface (only for FORWARD packets)
+  macAddress?: string;      // source MAC address (for -m mac --mac-source)
   isV6?: boolean;           // true for IPv6 packets
 }
 
@@ -88,6 +90,13 @@ const TABLE_BUILTIN_CHAINS: Record<TableName, string[]> = {
   raw: ['PREROUTING', 'OUTPUT'],
 };
 
+// ─── NAT result ────────────────────────────────────────────────────
+
+export interface NatResult {
+  action: 'MASQUERADE' | 'DNAT' | 'SNAT' | 'REDIRECT';
+  address?: string;   // for DNAT: "ip:port", for SNAT: "ip", for REDIRECT: "port"
+}
+
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
 const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'all']);
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
@@ -100,6 +109,10 @@ export class LinuxIptablesManager {
   private tables: Map<TableName, IptablesTable> = new Map();
   // Rate limiting state for limit match extension: key = "srcIP:ruleKey" → timestamps
   private rateLimitHits: Map<string, number[]> = new Map();
+  // Connection tracking: "proto:srcIP:srcPort:dstIP:dstPort" → timestamp
+  // Used for state/conntrack match extensions
+  private conntrack: Map<string, number> = new Map();
+  private readonly CONNTRACK_TIMEOUT = 300_000; // 5 minutes
 
   constructor(vfs?: VirtualFileSystem) {
     if (vfs) this.vfs = vfs;
@@ -133,12 +146,95 @@ export class LinuxIptablesManager {
    * Evaluate the filter table against an actual packet.
    * This is THE only packet filtering engine in the system.
    * UFW translates its rules into iptables rules; this method evaluates them.
+   *
+   * Supports INPUT, OUTPUT, and FORWARD chains based on pkt.direction.
    */
   filterPacket(pkt: PacketInfo): FirewallVerdict {
     const filterTable = this.tables.get('filter')!;
-    const chainName = pkt.direction === 'in' ? 'INPUT' : 'OUTPUT';
+    const chainName = pkt.direction === 'in' ? 'INPUT'
+                    : pkt.direction === 'out' ? 'OUTPUT'
+                    : 'FORWARD';
     const chain = filterTable.chains.get(chainName)!;
-    return this.evaluateChain(filterTable, chain, pkt, 0);
+    const verdict = this.evaluateChain(filterTable, chain, pkt, 0);
+
+    // Track established connections for accepted packets
+    if (verdict === 'accept' && (pkt.direction === 'in' || pkt.direction === 'forward')) {
+      this.trackConnection(pkt);
+    }
+
+    return verdict;
+  }
+
+  /**
+   * Evaluate nat table for a packet (PREROUTING or POSTROUTING).
+   * Returns DNAT/SNAT/MASQUERADE target info or null.
+   */
+  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'POSTROUTING'): NatResult | null {
+    const natTable = this.tables.get('nat');
+    if (!natTable) return null;
+    const chain = natTable.chains.get(hook);
+    if (!chain) return null;
+
+    for (const rule of chain.rules) {
+      if (this.ruleMatchesPacket(rule, pkt)) {
+        rule.pkts++;
+        rule.bytes += 64;
+        chain.pkts++;
+        chain.bytes += 64;
+
+        switch (rule.target) {
+          case 'MASQUERADE':
+            return { action: 'MASQUERADE' };
+          case 'DNAT': {
+            const toDest = rule.targetOptions['--to-destination'] || '';
+            return { action: 'DNAT', address: toDest };
+          }
+          case 'SNAT': {
+            const toSrc = rule.targetOptions['--to-source'] || '';
+            return { action: 'SNAT', address: toSrc };
+          }
+          case 'REDIRECT': {
+            const toPort = rule.targetOptions['--to-port'] || rule.targetOptions['--to-ports'] || '';
+            return { action: 'REDIRECT', address: toPort };
+          }
+          default: continue;
+        }
+      }
+    }
+    return null;
+  }
+
+  // ─── Connection tracking ──────────────────────────────────────
+
+  /** Track a connection for state/conntrack matching (ESTABLISHED,RELATED) */
+  private trackConnection(pkt: PacketInfo): void {
+    // Track the reply direction: so the reply (dst→src) is ESTABLISHED
+    const replyKey = `${pkt.protocol}:${pkt.dstIP}:${pkt.dstPort}:${pkt.srcIP}:${pkt.srcPort}`;
+    this.conntrack.set(replyKey, Date.now());
+    // Also track original direction
+    const origKey = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    this.conntrack.set(origKey, Date.now());
+    // Periodically clean old entries (keep it simple — clean on every 50th insert)
+    if (this.conntrack.size > 200) this.cleanConntrack();
+  }
+
+  /** Check if a packet matches an ESTABLISHED or RELATED connection */
+  private isEstablished(pkt: PacketInfo): boolean {
+    const key = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    const ts = this.conntrack.get(key);
+    if (!ts) return false;
+    if (Date.now() - ts > this.CONNTRACK_TIMEOUT) {
+      this.conntrack.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  private cleanConntrack(): void {
+    const now = Date.now();
+    for (const [key, ts] of this.conntrack) {
+      if (now - ts > this.CONNTRACK_TIMEOUT) this.conntrack.delete(key);
+    }
   }
 
   /**
@@ -223,9 +319,10 @@ export class LinuxIptablesManager {
       if (rule.negInInterface ? matches : !matches) return false;
     }
 
-    // Output interface
+    // Output interface — for FORWARD packets, match against outIface
     if (rule.outInterface) {
-      const matches = pkt.iface === rule.outInterface;
+      const outIf = pkt.outIface || pkt.iface;
+      const matches = outIf === rule.outInterface;
       if (rule.negOutInterface ? matches : !matches) return false;
     }
 
@@ -274,8 +371,39 @@ export class LinuxIptablesManager {
         }
         hits.push(now);
       }
-      // state/conntrack: in this simulator, we don't track connection state,
-      // but we accept the rule as "matches all" for simplicity
+      // state/conntrack: evaluate connection tracking
+      if (m.module === 'state' || m.module === 'conntrack') {
+        const states = (m.options.get('--state') || m.options.get('--ctstate') || '').toUpperCase();
+        if (states) {
+          const stateList = states.split(',');
+          const isEstab = this.isEstablished(pkt);
+          // NEW: packet not in conntrack table
+          // ESTABLISHED: packet matches an existing connection
+          // RELATED: simplified — treat same as ESTABLISHED
+          const matchesState =
+            (stateList.includes('ESTABLISHED') && isEstab) ||
+            (stateList.includes('RELATED') && isEstab) ||
+            (stateList.includes('NEW') && !isEstab);
+          if (!matchesState) return false;
+        }
+      }
+      // mac match: check source MAC address
+      if (m.module === 'mac') {
+        const macSrc = m.options.get('--mac-source');
+        if (macSrc && pkt.macAddress) {
+          if (pkt.macAddress.toLowerCase() !== macSrc.toLowerCase()) return false;
+        } else if (macSrc && !pkt.macAddress) {
+          return false; // no MAC info → can't match
+        }
+      }
+      // iprange match: check IP ranges
+      if (m.module === 'iprange') {
+        const srcRange = m.options.get('--src-range');
+        const dstRange = m.options.get('--dst-range');
+        if (srcRange && !this.ipInRange(pkt.srcIP, srcRange)) return false;
+        if (dstRange && !this.ipInRange(pkt.dstIP, dstRange)) return false;
+      }
+      // comment match: no filtering effect, just stored
     }
 
     return true;
@@ -310,6 +438,17 @@ export class LinuxIptablesManager {
       return spec.split(',').map(p => parseInt(p)).includes(port);
     }
     return port === parseInt(spec);
+  }
+
+  /** Check if an IP address is within a range like "192.168.1.10-192.168.1.50" */
+  private ipInRange(ip: string, range: string): boolean {
+    const parts = range.split('-');
+    if (parts.length !== 2) return false;
+    const ipNum = this.ipToNumber(ip);
+    const startNum = this.ipToNumber(parts[0].trim());
+    const endNum = this.ipToNumber(parts[1].trim());
+    if (ipNum === null || startNum === null || endNum === null) return false;
+    return ipNum >= startNum && ipNum <= endNum;
   }
 
   // ═══════════════════════════════════════════════════════════════════

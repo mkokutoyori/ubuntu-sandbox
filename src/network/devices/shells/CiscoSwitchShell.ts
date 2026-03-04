@@ -180,11 +180,14 @@ export class CiscoSwitchShell implements ISwitchShell {
     // Interfaces
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
+    const descs = sw._getInterfaceDescriptions();
     for (const [portName, port] of ports) {
       const cfg = configs.get(portName);
       if (!cfg) continue;
 
       lines.push(`interface ${portName}`);
+      const desc = descs.get(portName);
+      if (desc) lines.push(` description ${desc}`);
       if (cfg.mode === 'trunk') {
         lines.push(` switchport mode trunk`);
         if (cfg.trunkNativeVlan !== 1) {
@@ -564,7 +567,21 @@ export class CiscoSwitchShell implements ISwitchShell {
       });
     });
 
-    this.configIfTrie.registerGreedy('description', 'Interface description', () => '');
+    this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
+      if (!this.swRef || !this.selectedInterface || args.length < 1) return '% Incomplete command.';
+      return this.applyToSelectedInterfaces(portName => {
+        this.swRef!.setInterfaceDescription(portName, args.join(' '));
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('no description', 'Remove interface description', () => {
+      if (!this.swRef || !this.selectedInterface) return '';
+      return this.applyToSelectedInterfaces(portName => {
+        this.swRef!.setInterfaceDescription(portName, '');
+        return '';
+      });
+    });
 
     this.configIfTrie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
       if (!this.swRef) return '';
@@ -667,7 +684,7 @@ export class CiscoSwitchShell implements ISwitchShell {
     for (const [portName, port] of ports) {
       const cfg = configs.get(portName);
       const shortName = this.abbreviateInterface(portName).padEnd(12);
-      const desc = ''.padEnd(19);
+      const desc = (sw.getInterfaceDescription(portName) || '').slice(0, 17).padEnd(19);
       const status = (port.getIsUp() ? (port.isConnected() ? 'connected' : 'notconnect') : 'disabled').padEnd(13);
       const vlanStr = cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1);
       const duplex = 'a-full';

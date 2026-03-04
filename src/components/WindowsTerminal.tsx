@@ -14,8 +14,9 @@
  *   - Shell nesting: powershell from CMD, cmd from PS, exit to return
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Equipment } from '@/network';
+import { PowerShellExecutor, PS_BANNER, PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
 type BaseDevice = Equipment;
 
 interface OutputLine {
@@ -39,26 +40,6 @@ interface ShellEntry {
 
 let lineId = 0;
 
-// ─── PowerShell Version Table ────────────────────────────────────
-
-const PS_VERSION_TABLE = `
-Name                           Value
-----                           -----
-PSVersion                      5.1.22621.4391
-PSEdition                      Desktop
-PSCompatibleVersions           {1.0, 2.0, 3.0, 4.0...}
-BuildVersion                   10.0.22621.4391
-CLRVersion                     4.0.30319.42000
-WSManStackVersion              3.0
-PSRemotingProtocolVersion      2.3
-SerializationVersion           1.1.0.1`.trim();
-
-const PS_BANNER = `Windows PowerShell
-Copyright (C) Microsoft Corporation. All rights reserved.
-
-Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
-`;
-
 export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequestClose, onShellModeChange }) => {
   const [lines, setLines] = useState<OutputLine[]>([]);
   const [input, setInput] = useState('');
@@ -72,6 +53,9 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
   const [shellStack, setShellStack] = useState<ShellEntry[]>([]);
   // PowerShell current location (separate from CMD cwd)
   const [psCwd, setPsCwd] = useState('C:\\Users\\User');
+
+  // PowerShell executor (decoupled from React)
+  const psExecutor = useMemo(() => new PowerShellExecutor(device as any), [device]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -129,357 +113,21 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
     return shellMode === 'powershell' ? getPsPrompt() : currentPrompt;
   }, [shellMode, currentPrompt, getPsPrompt]);
 
-  // ─── PowerShell cmdlet execution ───────────────────────────────
+  // ─── PowerShell cmdlet execution (delegated to PowerShellExecutor) ──
 
   const executePSCmdlet = useCallback(async (cmdline: string): Promise<string | null> => {
-    const trimmed = cmdline.trim();
-    if (!trimmed) return '';
-
-    // Parse pipeline: support | for filtering
-    if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
-      const parts = trimmed.split('|').map(s => s.trim());
-      let output = await executePSCmdlet(parts[0]) ?? '';
-      for (let i = 1; i < parts.length; i++) {
-        const filter = parts[i].trim();
-        const filterLower = filter.toLowerCase();
-        if (filterLower.startsWith('where-object') || filterLower.startsWith('where') || filterLower.startsWith('?')) {
-          // Simple Where-Object: just pass through for now
-        } else if (filterLower.startsWith('select-string') || filterLower.startsWith('sls')) {
-          const pattern = filter.split(/\s+/).slice(1).join(' ').replace(/['"]/g, '');
-          if (pattern) {
-            output = output.split('\n').filter(l => l.toLowerCase().includes(pattern.toLowerCase())).join('\n');
-          }
-        } else if (filterLower.startsWith('select-object') || filterLower.startsWith('select')) {
-          // Pass through
-        } else if (filterLower.startsWith('format-table') || filterLower.startsWith('ft')) {
-          // Pass through (already formatted)
-        } else if (filterLower.startsWith('format-list') || filterLower.startsWith('fl')) {
-          // Pass through
-        } else if (filterLower.startsWith('out-string')) {
-          // Pass through
-        } else if (filterLower.startsWith('measure-object') || filterLower.startsWith('measure')) {
-          const lineCount = output.split('\n').length;
-          output = `Count    : ${lineCount}\nAverage  : \nSum      : \nMaximum  : \nMinimum  : \nProperty :`;
-        } else if (filterLower.startsWith('sort-object') || filterLower.startsWith('sort')) {
-          const outputLines = output.split('\n');
-          outputLines.sort();
-          output = outputLines.join('\n');
-        }
-      }
-      return output;
+    // Sync state to executor before each call
+    psExecutor.setCwd(psCwd);
+    psExecutor.setHistory(history);
+    const result = await psExecutor.execute(cmdline);
+    // Sync cwd back from executor
+    const newCwd = psExecutor.getCwd();
+    if (newCwd !== psCwd) {
+      setPsCwd(newCwd);
+      setCurrentPrompt(newCwd + '>');
     }
-
-    // Parse the command
-    const parts = trimmed.split(/\s+/);
-    const cmd = parts[0];
-    const cmdLower = cmd.toLowerCase();
-    const args = parts.slice(1);
-
-    // ─── PowerShell variables ────────────────────────────────────
-    if (cmdLower === '$psversiontable') {
-      return PS_VERSION_TABLE;
-    }
-    if (cmdLower === '$host') {
-      return `Name             : ConsoleHost\nVersion          : 5.1.22621.4391\nInstanceId       : ${crypto.randomUUID?.() ?? '00000000-0000-0000-0000-000000000000'}\nUI               : System.Management.Automation.Internal.Host.InternalHostUserInterface\nCurrentCulture   : en-US\nCurrentUICulture : en-US`;
-    }
-    if (cmdLower === '$pwd') {
-      return `\nPath\n----\n${psCwd}\n`;
-    }
-    if (cmdLower.startsWith('$env:')) {
-      const varName = cmd.slice(5);
-      // Map common env vars
-      const envMap: Record<string, string> = {
-        'USERNAME': 'User', 'COMPUTERNAME': device.getHostname(),
-        'USERPROFILE': 'C:\\Users\\User', 'SYSTEMROOT': 'C:\\Windows',
-        'WINDIR': 'C:\\Windows', 'TEMP': 'C:\\Users\\User\\AppData\\Local\\Temp',
-        'PATH': 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-        'HOMEDRIVE': 'C:', 'HOMEPATH': '\\Users\\User',
-        'PROCESSOR_ARCHITECTURE': 'AMD64', 'OS': 'Windows_NT',
-        'COMSPEC': 'C:\\Windows\\System32\\cmd.exe',
-        'PSModulePath': 'C:\\Users\\User\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules',
-      };
-      return envMap[varName.toUpperCase()] ?? '';
-    }
-    if (cmdLower === '$true') return 'True';
-    if (cmdLower === '$false') return 'False';
-    if (cmdLower === '$null') return '';
-    if (cmdLower === '$pid') return String(Math.floor(Math.random() * 10000 + 1000));
-
-    // ─── PowerShell cmdlets → mapped to device commands ──────────
-
-    // Get-ChildItem / ls / dir / gci
-    if (cmdLower === 'get-childitem' || cmdLower === 'gci' || cmdLower === 'ls' || cmdLower === 'dir') {
-      return await device.executeCommand('dir ' + args.join(' '));
-    }
-
-    // Set-Location / cd / sl / chdir
-    if (cmdLower === 'set-location' || cmdLower === 'sl' || cmdLower === 'cd' || cmdLower === 'chdir') {
-      const target = args.join(' ') || 'C:\\Users\\User';
-      const result = await device.executeCommand('cd ' + target);
-      // Update PS cwd
-      const cdResult = await device.executeCommand('cd');
-      if (cdResult && !cdResult.includes('not recognized')) {
-        setPsCwd(cdResult.trim());
-        setCurrentPrompt(cdResult.trim() + '>');
-      }
-      return result || '';
-    }
-
-    // Get-Location / pwd / gl
-    if (cmdLower === 'get-location' || cmdLower === 'gl' || cmdLower === 'pwd') {
-      return `\nPath\n----\n${psCwd}\n`;
-    }
-
-    // Get-Content / cat / type / gc
-    if (cmdLower === 'get-content' || cmdLower === 'gc' || cmdLower === 'cat' || cmdLower === 'type') {
-      return await device.executeCommand('type ' + args.join(' '));
-    }
-
-    // Set-Content / sc
-    if (cmdLower === 'set-content' || cmdLower === 'sc') {
-      // Parse: Set-Content -Path file -Value "content"
-      let path = '', value = '';
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-        else if (args[i] === '-Value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
-        else if (!path) { path = args[i]; }
-      }
-      if (path && value) {
-        return await device.executeCommand(`echo ${value} > ${path}`);
-      }
-      return '';
-    }
-
-    // New-Item / ni
-    if (cmdLower === 'new-item' || cmdLower === 'ni') {
-      let itemType = 'File', path = '';
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '-ItemType' && args[i + 1]) { itemType = args[++i]; }
-        else if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-        else if (args[i] === '-Name' && args[i + 1]) { path = args[++i]; }
-        else if (!args[i].startsWith('-') && !path) { path = args[i]; }
-      }
-      if (itemType.toLowerCase() === 'directory') {
-        return await device.executeCommand('mkdir ' + path);
-      }
-      return await device.executeCommand('echo. > ' + path);
-    }
-
-    // Remove-Item / ri / rm / rmdir / del
-    if (cmdLower === 'remove-item' || cmdLower === 'ri' || cmdLower === 'rm' || cmdLower === 'del' || cmdLower === 'erase') {
-      const target = args.filter(a => !a.startsWith('-')).join(' ');
-      return await device.executeCommand('del ' + target);
-    }
-
-    // Copy-Item / cpi / copy / cp
-    if (cmdLower === 'copy-item' || cmdLower === 'cpi' || cmdLower === 'copy' || cmdLower === 'cp') {
-      const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await device.executeCommand('copy ' + nonFlags.join(' '));
-    }
-
-    // Move-Item / mi / move / mv
-    if (cmdLower === 'move-item' || cmdLower === 'mi' || cmdLower === 'move' || cmdLower === 'mv') {
-      const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await device.executeCommand('move ' + nonFlags.join(' '));
-    }
-
-    // Rename-Item / rni / ren
-    if (cmdLower === 'rename-item' || cmdLower === 'rni' || cmdLower === 'ren') {
-      const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await device.executeCommand('ren ' + nonFlags.join(' '));
-    }
-
-    // Write-Host / Write-Output / echo
-    if (cmdLower === 'write-host' || cmdLower === 'write-output' || cmdLower === 'echo') {
-      return args.join(' ').replace(/^["']|["']$/g, '');
-    }
-
-    // Clear-Host / cls / clear
-    if (cmdLower === 'clear-host' || cmdLower === 'cls' || cmdLower === 'clear') {
-      return null; // Special: handled by caller
-    }
-
-    // Get-Process / gps / ps
-    if (cmdLower === 'get-process' || cmdLower === 'gps') {
-      return await device.executeCommand('tasklist');
-    }
-
-    // Get-Help
-    if (cmdLower === 'get-help') {
-      const topic = args[0] || '';
-      return `TOPIC\n    Windows PowerShell Help System\n\nSHORT DESCRIPTION\n    Displays help about Windows PowerShell cmdlets and concepts.\n\nLONG DESCRIPTION\n    Windows PowerShell Help describes cmdlets, functions, scripts, and modules.\n\n    To get help for a cmdlet, type: Get-Help <cmdlet-name>\n\n${topic ? `Get-Help ${topic}: No help found for topic "${topic}".` : ''}`;
-    }
-
-    // Get-Command / gcm
-    if (cmdLower === 'get-command' || cmdLower === 'gcm') {
-      return [
-        'CommandType     Name                                               Version    Source',
-        '-----------     ----                                               -------    ------',
-        'Cmdlet          Clear-Host                                         3.1.0.0    Microsoft.PowerShell.Core',
-        'Cmdlet          Copy-Item                                          3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Get-ChildItem                                      3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Get-Command                                        3.0.0.0    Microsoft.PowerShell.Core',
-        'Cmdlet          Get-Content                                        3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Get-Help                                           3.0.0.0    Microsoft.PowerShell.Core',
-        'Cmdlet          Get-Location                                       3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Get-NetAdapter                                     2.0.0.0    NetAdapter',
-        'Cmdlet          Get-NetIPAddress                                   1.0.0.0    NetTCPIP',
-        'Cmdlet          Get-NetIPConfiguration                             1.0.0.0    NetTCPIP',
-        'Cmdlet          Get-Process                                        3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Move-Item                                          3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          New-Item                                           3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Remove-Item                                        3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Rename-Item                                        3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Set-Content                                        3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Set-Location                                       3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Test-Connection                                    3.1.0.0    Microsoft.PowerShell.Management',
-        'Cmdlet          Write-Host                                         3.1.0.0    Microsoft.PowerShell.Utility',
-        'Cmdlet          Write-Output                                       3.1.0.0    Microsoft.PowerShell.Utility',
-      ].join('\n');
-    }
-
-    // Get-NetIPConfiguration
-    if (cmdLower === 'get-netipconfiguration') {
-      return await device.executeCommand('ipconfig');
-    }
-
-    // Get-NetIPAddress
-    if (cmdLower === 'get-netipaddress') {
-      return await device.executeCommand('ipconfig');
-    }
-
-    // Get-NetAdapter
-    if (cmdLower === 'get-netadapter') {
-      return await device.executeCommand('ipconfig /all');
-    }
-
-    // Test-Connection (PowerShell ping)
-    if (cmdLower === 'test-connection') {
-      let target = '';
-      let count = '4';
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '-ComputerName' && args[i + 1]) { target = args[++i]; }
-        else if (args[i] === '-Count' && args[i + 1]) { count = args[++i]; }
-        else if (!args[i].startsWith('-')) { target = args[i]; }
-      }
-      if (!target) return 'Test-Connection : Parameter \'ComputerName\' is required.';
-      return await device.executeCommand(`ping -n ${count} ${target}`);
-    }
-
-    // Resolve-DnsName
-    if (cmdLower === 'resolve-dnsname') {
-      return `Resolve-DnsName: DNS resolution is not available in this simulation.`;
-    }
-
-    // Get-Date
-    if (cmdLower === 'get-date') {
-      const now = new Date();
-      return now.toString();
-    }
-
-    // Get-History / h / history
-    if (cmdLower === 'get-history' || cmdLower === 'h' || cmdLower === 'history') {
-      if (history.length === 0) return '';
-      return history.map((h, i) => `  ${i + 1}  ${h}`).join('\n');
-    }
-
-    // hostname
-    if (cmdLower === 'hostname') {
-      return device.getHostname();
-    }
-
-    // ipconfig (also works in PS)
-    if (cmdLower === 'ipconfig') {
-      return await device.executeCommand('ipconfig ' + args.join(' '));
-    }
-
-    // ping (also works in PS)
-    if (cmdLower === 'ping') {
-      return await device.executeCommand('ping ' + args.join(' '));
-    }
-
-    // netsh (also works in PS)
-    if (cmdLower === 'netsh') {
-      return await device.executeCommand('netsh ' + args.join(' '));
-    }
-
-    // tracert (also works in PS)
-    if (cmdLower === 'tracert') {
-      return await device.executeCommand('tracert ' + args.join(' '));
-    }
-
-    // route (also works in PS)
-    if (cmdLower === 'route') {
-      return await device.executeCommand('route ' + args.join(' '));
-    }
-
-    // arp (also works in PS)
-    if (cmdLower === 'arp') {
-      return await device.executeCommand('arp ' + args.join(' '));
-    }
-
-    // systeminfo
-    if (cmdLower === 'systeminfo') {
-      return await device.executeCommand('systeminfo');
-    }
-
-    // ver
-    if (cmdLower === 'ver') {
-      return await device.executeCommand('ver');
-    }
-
-    // Get-ExecutionPolicy
-    if (cmdLower === 'get-executionpolicy') {
-      return 'RemoteSigned';
-    }
-
-    // Set-ExecutionPolicy
-    if (cmdLower === 'set-executionpolicy') {
-      return '';
-    }
-
-    // Get-Service / gsv
-    if (cmdLower === 'get-service' || cmdLower === 'gsv') {
-      return [
-        'Status   Name               DisplayName',
-        '------   ----               -----------',
-        'Running  Dhcp               DHCP Client',
-        'Running  Dnscache           DNS Client',
-        'Running  EventLog           Windows Event Log',
-        'Running  LanmanServer       Server',
-        'Running  LanmanWorkstation  Workstation',
-        'Running  mpssvc             Windows Defender Firewall',
-        'Running  RpcSs              Remote Procedure Call (RPC)',
-        'Running  Spooler            Print Spooler',
-        'Running  W32Time            Windows Time',
-        'Running  WinRM              Windows Remote Management (WS-Manag...',
-      ].join('\n');
-    }
-
-    // Get-WmiObject / gwmi (deprecated but still used)
-    if (cmdLower === 'get-wmiobject' || cmdLower === 'gwmi' || cmdLower === 'get-ciminstance') {
-      const className = args.find(a => !a.startsWith('-')) || '';
-      if (className.toLowerCase() === 'win32_operatingsystem') {
-        return `SystemDirectory : C:\\Windows\\system32\nOrganization    : \nBuildNumber     : 22631\nRegisteredUser  : User\nSerialNumber    : 00000-00000-00000-AA000\nVersion         : 10.0.22631`;
-      }
-      if (className.toLowerCase() === 'win32_computersystem') {
-        return `Domain              : WORKGROUP\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
-      }
-      return `Get-CimInstance : Invalid class "${className}"`;
-    }
-
-    // If nothing matched, try passing to device as-is (for CMD-compatible commands)
-    try {
-      const result = await device.executeCommand(trimmed);
-      // If device says "not recognized", format as PS error
-      if (result.includes('not recognized')) {
-        return `${cmd} : The term '${cmd}' is not recognized as the name of a cmdlet, function, script file, or operable\nprogram. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.\nAt line:1 char:1\n+ ${trimmed}\n+ ${'~'.repeat(trimmed.length)}\n    + CategoryInfo          : ObjectNotFound: (${cmd}:String) [], CommandNotFoundException\n    + FullyQualifiedErrorId : CommandNotFoundException`;
-      }
-      return result;
-    } catch {
-      return `${cmd} : The term '${cmd}' is not recognized as the name of a cmdlet, function, script file, or operable\nprogram.`;
-    }
-  }, [device, psCwd, history]);
+    return result;
+  }, [psExecutor, psCwd, history]);
 
   // ─── Enter PowerShell mode ─────────────────────────────────────
 
@@ -618,22 +266,7 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
       const parts = input.trimStart().split(/\s+/);
       if (parts.length <= 1) {
         const prefix = (parts[0] || '').toLowerCase();
-        const psCmdlets = [
-          'Get-ChildItem', 'Set-Location', 'Get-Location', 'Get-Content', 'Set-Content',
-          'New-Item', 'Remove-Item', 'Copy-Item', 'Move-Item', 'Rename-Item',
-          'Write-Host', 'Write-Output', 'Clear-Host', 'Get-Process', 'Get-Help',
-          'Get-Command', 'Get-NetIPConfiguration', 'Get-NetIPAddress', 'Get-NetAdapter',
-          'Test-Connection', 'Get-Date', 'Get-History', 'Get-ExecutionPolicy',
-          'Set-ExecutionPolicy', 'Get-Service', 'Get-CimInstance', 'Resolve-DnsName',
-          'Select-String', 'Measure-Object', 'Sort-Object', 'Select-Object',
-          'Format-Table', 'Format-List', 'Where-Object', 'ForEach-Object',
-          // Aliases
-          'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'echo', 'cls', 'clear',
-          'cp', 'mv', 'rm', 'del', 'ren', 'mkdir', 'rmdir',
-          'ipconfig', 'ping', 'netsh', 'tracert', 'arp', 'route',
-          'hostname', 'systeminfo', 'ver', 'exit', 'cmd',
-        ];
-        const matches = psCmdlets.filter(c => c.toLowerCase().startsWith(prefix));
+        const matches = PS_CMDLETS_LIST.filter(c => c.toLowerCase().startsWith(prefix));
         if (matches.length === 1) {
           setInput(matches[0] + ' ');
           setTabSuggestions(null);
@@ -750,10 +383,10 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
 
   const isPowerShell = shellMode === 'powershell';
 
-  // Color scheme depends on active shell
-  const bgColor = isPowerShell ? '#012456' : '#0c0c0c';
-  const textColor = isPowerShell ? '#eeedf0' : '#cccccc';
-  const promptColor = isPowerShell ? '#eeedf0' : '#cccccc';
+  // Color scheme: same for both CMD and PowerShell (no blue background switch)
+  const bgColor = '#0c0c0c';
+  const textColor = '#cccccc';
+  const promptColor = '#cccccc';
 
   return (
     <div
