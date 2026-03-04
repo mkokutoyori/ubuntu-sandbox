@@ -11,7 +11,7 @@
 import { EndHost, PingResult, HostRouteEntry } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
-import type { PacketInfo } from './linux/LinuxFirewallManager';
+import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
 
@@ -193,7 +193,15 @@ export class LinuxPC extends EndHost {
         return this.cmdSysctl(noSudo.split(/\s+/).slice(1));
       }
       case 'iptables': {
-        return this.cmdIptables(noSudo.split(/\s+/).slice(1));
+        // Delegate to executor (which dispatches to LinuxIptablesManager)
+        // But we also handle NAT/MASQUERADE setup locally for routing
+        const iptArgs = noSudo.split(/\s+/).slice(1);
+        this.handleIptablesNat(iptArgs);
+        const result = this.executor.iptables.execute(iptArgs);
+        return result.output;
+      }
+      case 'iptables-save': {
+        return this.executor.iptables.executeSave();
       }
       default:
         return null;
@@ -384,26 +392,24 @@ export class LinuxPC extends EndHost {
     return '';
   }
 
-  // ─── iptables ──────────────────────────────────────────────────
+  // ─── iptables NAT helper ──────────────────────────────────────
 
-  private cmdIptables(args: string[]): string {
-    // Delegate to the executor's iptables manager
-    const result = this.executor.iptables.execute(args);
-
-    // Also handle MASQUERADE for NAT (updates internal masquerade state)
+  /**
+   * Extract MASQUERADE setup from iptables nat commands for routing.
+   * The actual iptables rule is handled by the iptables manager;
+   * this just hooks into the routing layer for NAT behavior.
+   */
+  private handleIptablesNat(args: string[]): void {
     const table = args.indexOf('-t') !== -1 ? args[args.indexOf('-t') + 1] : 'filter';
-    if (table === 'nat') {
-      const chain = args.indexOf('-A') !== -1 ? args[args.indexOf('-A') + 1] : null;
-      if (chain === 'POSTROUTING') {
-        const jump = args.indexOf('-j') !== -1 ? args[args.indexOf('-j') + 1] : null;
-        const outIface = args.indexOf('-o') !== -1 ? args[args.indexOf('-o') + 1] : null;
-        if (jump === 'MASQUERADE' && outIface) {
-          this.masqueradeOnInterfaces.add(outIface);
-        }
+    if (table !== 'nat') return;
+    const chain = args.indexOf('-A') !== -1 ? args[args.indexOf('-A') + 1] : null;
+    if (chain === 'POSTROUTING') {
+      const jump = args.indexOf('-j') !== -1 ? args[args.indexOf('-j') + 1] : null;
+      const outIface = args.indexOf('-o') !== -1 ? args[args.indexOf('-o') + 1] : null;
+      if (jump === 'MASQUERADE' && outIface) {
+        this.masqueradeOnInterfaces.add(outIface);
       }
     }
-
-    return result.output;
   }
 
   // ─── IpNetworkContext adapter ──────────────────────────────────
@@ -654,10 +660,8 @@ export class LinuxPC extends EndHost {
       dstPort: ports.dstPort,
       iface: portName,
     };
-    // UFW takes priority when enabled; otherwise use raw iptables rules
-    if (this.executor.firewall.isEnabled()) {
-      return this.executor.firewall.filterPacket(pkt);
-    }
+    // Packet filtering is ALWAYS done by iptables (the single source of truth).
+    // UFW translates its rules into iptables rules — iptables evaluates them.
     return this.executor.iptables.filterPacket(pkt);
   }
 

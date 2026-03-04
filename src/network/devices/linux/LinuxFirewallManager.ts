@@ -1,12 +1,31 @@
 /**
  * LinuxFirewallManager — UFW (Uncomplicated Firewall) state manager.
- * Manages firewall rules, default policies, logging, and status.
- * Output matches real Ubuntu/Debian `ufw` behavior.
- * Persists configuration and rules to /etc/ufw/ in the VFS.
- * Writes log entries to /var/log/ufw.log.
+ *
+ * UFW is a FRONTEND to iptables. It does NOT maintain its own packet filtering
+ * engine. Instead, every UFW rule is translated into real iptables rules that
+ * are injected into LinuxIptablesManager via its programmatic API.
+ *
+ * Architecture (like real Linux):
+ *   ufw allow 22/tcp
+ *     → creates iptables rule: -A ufw-user-input -p tcp --dport 22 -j ACCEPT
+ *     → injects it into LinuxIptablesManager filter table
+ *   ufw enable
+ *     → creates ufw-* chains in iptables filter table
+ *     → sets up jumps from INPUT/OUTPUT to ufw chains
+ *     → sets INPUT/OUTPUT default policies based on ufw defaults
+ *   ufw disable
+ *     → removes ufw chains from iptables
+ *     → resets INPUT/OUTPUT policies to ACCEPT
+ *
+ * Packet filtering is ALWAYS done by LinuxIptablesManager.filterPacket().
+ * UFW never evaluates packets directly.
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
+import { LinuxIptablesManager } from './LinuxIptablesManager';
+
+// Re-export types from LinuxIptablesManager for backward compatibility
+export type { FirewallVerdict, PacketInfo } from './LinuxIptablesManager';
 
 // ─── Service name → port mapping ─────────────────────────────────────
 const SERVICE_PORTS: Record<string, { port: string; proto: string }> = {
@@ -53,25 +72,11 @@ interface UfwRule {
   comment: string;    // optional comment
 }
 
-// ─── Packet filtering types ─────────────────────────────────────────
-
-export type FirewallVerdict = 'accept' | 'drop' | 'reject';
-
-export interface PacketInfo {
-  direction: 'in' | 'out';
-  protocol: number;         // 1=ICMP, 6=TCP, 17=UDP
-  srcIP: string;
-  dstIP: string;
-  srcPort: number;          // 0 for ICMP
-  dstPort: number;          // 0 for ICMP
-  iface: string;            // interface name (e.g. 'eth0')
-  isV6?: boolean;           // true for IPv6 packets (uses v6 rules)
-}
-
 // ─── Manager ─────────────────────────────────────────────────────────
 
 export class LinuxFirewallManager {
   private vfs: VirtualFileSystem | null = null;
+  private iptables: LinuxIptablesManager;
   private enabled = false;
   private rules: UfwRule[] = [];
   private defaultIncoming: DefaultPolicy = 'deny';
@@ -84,41 +89,9 @@ export class LinuxFirewallManager {
   private readonly RATE_LIMIT_MAX = 6;      // Max connections
   private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
 
-  constructor(vfs?: VirtualFileSystem) {
+  constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager) {
     if (vfs) this.vfs = vfs;
-  }
-
-  // ─── Real packet filtering ─────────────────────────────────────
-
-  /**
-   * Evaluate firewall rules against an actual packet.
-   * Returns 'accept', 'drop', or 'reject'.
-   * If firewall is disabled, always accepts.
-   */
-  filterPacket(pkt: PacketInfo): FirewallVerdict {
-    if (!this.enabled) return 'accept';
-
-    // Get rules matching this direction and IP version
-    const useV6 = pkt.isV6 === true;
-    const candidateRules = this.rules.filter(r =>
-      r.v6 === useV6 && r.direction === pkt.direction
-    );
-
-    // First-match wins (like real iptables/ufw)
-    for (let i = 0; i < candidateRules.length; i++) {
-      const rule = candidateRules[i];
-      if (this.ruleMatchesPacket(rule, pkt)) {
-        this.logPacketVerdict(pkt, rule);
-        if (rule.action === 'LIMIT') {
-          return this.evaluateRateLimit(pkt, i);
-        }
-        return this.actionToVerdict(rule.action);
-      }
-    }
-
-    // No rule matched → apply default policy
-    const defaultPolicy = pkt.direction === 'in' ? this.defaultIncoming : this.defaultOutgoing;
-    return defaultPolicy === 'allow' ? 'accept' : (defaultPolicy === 'reject' ? 'reject' : 'drop');
+    this.iptables = iptables;
   }
 
   /** Check whether UFW is currently enabled. */
@@ -126,130 +99,9 @@ export class LinuxFirewallManager {
     return this.enabled;
   }
 
-  private ruleMatchesPacket(rule: UfwRule, pkt: PacketInfo): boolean {
-    // Interface check
-    if (rule.iface && rule.iface !== pkt.iface) return false;
-
-    // Source IP check
-    if (rule.from !== 'Anywhere') {
-      if (!this.ipMatchesSpec(pkt.srcIP, rule.from)) return false;
-    }
-
-    // Destination IP check
-    if (rule.to !== 'Anywhere') {
-      if (!this.ipMatchesSpec(pkt.dstIP, rule.to)) return false;
-    }
-
-    // Port/protocol check
-    if (rule.port !== 'Anywhere') {
-      if (!this.portMatchesRule(rule.port, pkt)) return false;
-    }
-
-    return true;
-  }
-
-  private ipMatchesSpec(ip: string, spec: string): boolean {
-    // Exact IP match
-    if (!spec.includes('/')) return ip === spec;
-
-    // CIDR match (e.g. 10.0.0.0/24)
-    const [network, prefixStr] = spec.split('/');
-    const prefix = parseInt(prefixStr);
-    if (isNaN(prefix)) return false;
-
-    const ipNum = this.ipToNumber(ip);
-    const netNum = this.ipToNumber(network);
-    if (ipNum === null || netNum === null) return false;
-
-    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
-    return (ipNum & mask) === (netNum & mask);
-  }
-
-  private ipToNumber(ip: string): number | null {
-    const parts = ip.split('.');
-    if (parts.length !== 4) return null;
-    const octets = parts.map(p => parseInt(p));
-    if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
-    return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
-  }
-
-  private portMatchesRule(rulePort: string, pkt: PacketInfo): boolean {
-    // Parse rule port: "22/tcp", "53", "6000:6007/tcp", "80,443/tcp"
-    const protoMatch = rulePort.match(/^(.+)\/(tcp|udp)$/);
-    const portSpec = protoMatch ? protoMatch[1] : rulePort;
-    const ruleProto = protoMatch ? protoMatch[2] : null;
-
-    // Protocol check: if rule specifies tcp/udp, packet protocol must match
-    if (ruleProto) {
-      const protoNum = ruleProto === 'tcp' ? 6 : 17;
-      if (pkt.protocol !== protoNum) return false;
-    } else {
-      // No protocol specified — rule applies to both tcp and udp
-      if (pkt.protocol !== 6 && pkt.protocol !== 17) return false;
-    }
-
-    // Port range: "6000:6007"
-    if (portSpec.includes(':')) {
-      const [startStr, endStr] = portSpec.split(':');
-      const start = parseInt(startStr);
-      const end = parseInt(endStr);
-      return pkt.dstPort >= start && pkt.dstPort <= end;
-    }
-
-    // Multi-port: "80,443"
-    if (portSpec.includes(',')) {
-      const ports = portSpec.split(',').map(p => parseInt(p));
-      return ports.includes(pkt.dstPort);
-    }
-
-    // Single port
-    return pkt.dstPort === parseInt(portSpec);
-  }
-
-  private actionToVerdict(action: Action): FirewallVerdict {
-    switch (action) {
-      case 'ALLOW': return 'accept';
-      case 'DENY': return 'drop';
-      case 'REJECT': return 'reject';
-      case 'LIMIT': return 'accept'; // Fallback (real LIMIT uses evaluateRateLimit)
-    }
-  }
-
-  /**
-   * Evaluate rate limiting: allow up to RATE_LIMIT_MAX hits per source IP
-   * within RATE_LIMIT_WINDOW. Beyond that, drop.
-   */
-  private evaluateRateLimit(pkt: PacketInfo, ruleIdx: number): FirewallVerdict {
-    const key = `${pkt.srcIP}:${ruleIdx}`;
-    const now = Date.now();
-
-    let hits = this.rateLimitHits.get(key);
-    if (!hits) {
-      hits = [];
-      this.rateLimitHits.set(key, hits);
-    }
-
-    // Purge expired entries
-    const cutoff = now - this.RATE_LIMIT_WINDOW;
-    while (hits.length > 0 && hits[0] < cutoff) {
-      hits.shift();
-    }
-
-    if (hits.length >= this.RATE_LIMIT_MAX) {
-      return 'drop'; // Rate limit exceeded
-    }
-
-    hits.push(now);
-    return 'accept';
-  }
-
-  private logPacketVerdict(pkt: PacketInfo, rule: UfwRule): void {
-    if (!this.logging) return;
-    const proto = pkt.protocol === 6 ? 'TCP' : pkt.protocol === 17 ? 'UDP' : 'ICMP';
-    const msg = `[UFW BLOCK] IN=${pkt.direction === 'in' ? pkt.iface : ''} OUT=${pkt.direction === 'out' ? pkt.iface : ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}` +
-      (pkt.dstPort ? ` DPT=${pkt.dstPort}` : '') +
-      (pkt.srcPort ? ` SPT=${pkt.srcPort}` : '');
-    this.logUfw(msg);
+  /** Get the iptables manager (for direct access) */
+  getIptables(): LinuxIptablesManager {
+    return this.iptables;
   }
 
   /**
@@ -285,10 +137,251 @@ export class LinuxFirewallManager {
     }
   }
 
-  // ─── Subcommands ─────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // IPTABLES INTEGRATION — translating UFW rules into real iptables rules
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Set up iptables chains and rules for UFW.
+   * Called when `ufw enable` is run.
+   *
+   * Real UFW creates these chains in the filter table:
+   *   ufw-before-input, ufw-after-input, ufw-user-input
+   *   ufw-before-output, ufw-after-output, ufw-user-output
+   *   ufw-before-forward, ufw-after-forward, ufw-user-forward
+   *   ufw-user-limit, ufw-user-limit-accept
+   *
+   * For simplicity, we create the essential ones:
+   *   ufw-user-input, ufw-user-output, ufw-user-limit, ufw-user-limit-accept
+   * And add jumps from INPUT → ufw-user-input, OUTPUT → ufw-user-output.
+   */
+  private setupIptablesChains(): void {
+    const ipt = this.iptables;
+
+    // Create UFW chains
+    ipt.createChain('filter', 'ufw-user-input');
+    ipt.createChain('filter', 'ufw-user-output');
+    ipt.createChain('filter', 'ufw-user-limit');
+    ipt.createChain('filter', 'ufw-user-limit-accept');
+
+    // Set up ufw-user-limit chain: REJECT and RETURN
+    ipt.appendRule('filter', 'ufw-user-limit', LinuxIptablesManager.createRule({
+      target: 'REJECT', targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+    }));
+    ipt.appendRule('filter', 'ufw-user-limit-accept', LinuxIptablesManager.createRule({
+      target: 'ACCEPT',
+    }));
+
+    // Add jumps from INPUT → ufw-user-input and OUTPUT → ufw-user-output
+    ipt.appendRule('filter', 'INPUT', LinuxIptablesManager.createRule({
+      target: 'ufw-user-input',
+    }));
+    ipt.appendRule('filter', 'OUTPUT', LinuxIptablesManager.createRule({
+      target: 'ufw-user-output',
+    }));
+
+    // Set chain policies based on UFW defaults
+    this.applyDefaultPolicies();
+
+    // Inject all current UFW rules into iptables
+    for (const rule of this.rules) {
+      if (!rule.v6) {
+        this.injectRuleToIptables(rule);
+      }
+    }
+
+    // Add catch-all REJECT rules if default policy is 'reject'
+    this.addRejectCatchAll();
+  }
+
+  /**
+   * Remove all UFW chains and rules from iptables.
+   * Called when `ufw disable` is run.
+   */
+  private teardownIptablesChains(): void {
+    const ipt = this.iptables;
+
+    // Reset INPUT/OUTPUT policies to ACCEPT
+    ipt.setPolicy('filter', 'INPUT', 'ACCEPT');
+    ipt.setPolicy('filter', 'OUTPUT', 'ACCEPT');
+
+    // Flush and remove all ufw chains
+    // First remove jumps from INPUT/OUTPUT
+    ipt.flushChain('filter', 'INPUT');
+    ipt.flushChain('filter', 'OUTPUT');
+
+    // Flush UFW chains
+    const ufwChains = ['ufw-user-input', 'ufw-user-output', 'ufw-user-limit', 'ufw-user-limit-accept'];
+    for (const chain of ufwChains) {
+      ipt.flushChain('filter', chain);
+      ipt.deleteChain('filter', chain);
+    }
+  }
+
+  /**
+   * Apply UFW default policies to iptables chains.
+   *
+   * iptables only supports ACCEPT and DROP as chain policies (not REJECT).
+   * When UFW default is 'reject', we set the chain policy to DROP but also
+   * add a catch-all REJECT rule at the END of the ufw-user-input/output chain
+   * so that unmatched packets get a proper ICMP reject response.
+   */
+  private applyDefaultPolicies(): void {
+    const ipt = this.iptables;
+    // 'deny' → DROP, 'reject' → DROP (with REJECT catch-all), 'allow' → ACCEPT
+    const inPolicy = this.defaultIncoming === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
+    const outPolicy = this.defaultOutgoing === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
+    ipt.setPolicy('filter', 'INPUT', inPolicy);
+    ipt.setPolicy('filter', 'OUTPUT', outPolicy);
+
+    // For 'reject' defaults, add catch-all REJECT rules at end of ufw chains
+    // These are added/removed in rebuildIptablesRules after user rules are injected
+  }
+
+  /**
+   * Add catch-all REJECT rules when default policy is 'reject'.
+   * Called after all user rules are injected into the chain.
+   */
+  private addRejectCatchAll(): void {
+    const ipt = this.iptables;
+    if (this.defaultIncoming === 'reject') {
+      ipt.appendRule('filter', 'ufw-user-input', LinuxIptablesManager.createRule({
+        target: 'REJECT',
+        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+      }));
+    }
+    if (this.defaultOutgoing === 'reject') {
+      ipt.appendRule('filter', 'ufw-user-output', LinuxIptablesManager.createRule({
+        target: 'REJECT',
+        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+      }));
+    }
+  }
+
+  /**
+   * Translate a single UFW rule into iptables rule(s) and inject into iptables.
+   */
+  private injectRuleToIptables(ufwRule: UfwRule): void {
+    const ipt = this.iptables;
+    const chain = ufwRule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
+
+    // Determine target
+    let target: string;
+    switch (ufwRule.action) {
+      case 'ALLOW': target = 'ACCEPT'; break;
+      case 'DENY': target = 'DROP'; break;
+      case 'REJECT': target = 'REJECT'; break;
+      case 'LIMIT': target = 'ufw-user-limit-accept'; break;
+    }
+
+    // Parse port spec
+    const portMatch = ufwRule.port.match(/^(.+)\/(tcp|udp)$/);
+    const portNum = portMatch ? portMatch[1] : (ufwRule.port !== 'Anywhere' && /^\d/.test(ufwRule.port) ? ufwRule.port : '');
+    const proto = portMatch ? portMatch[2] : '';
+
+    // For rules without specific protocol (e.g. port "53" → both tcp and udp)
+    const protos = proto ? [proto] : (portNum ? ['tcp', 'udp'] : ['']);
+
+    for (const p of protos) {
+      const rule = LinuxIptablesManager.createRule({
+        protocol: p || '',
+        source: ufwRule.from !== 'Anywhere' ? ufwRule.from : '',
+        destination: ufwRule.to !== 'Anywhere' ? ufwRule.to : '',
+        inInterface: (ufwRule.iface && ufwRule.direction === 'in') ? ufwRule.iface : '',
+        outInterface: (ufwRule.iface && ufwRule.direction === 'out') ? ufwRule.iface : '',
+        dport: portNum,
+        target,
+      });
+
+      // Add comment extension if present
+      if (ufwRule.comment) {
+        rule.matches.push({
+          module: 'comment',
+          options: new Map([['--comment', ufwRule.comment]]),
+        });
+      }
+
+      // For LIMIT rules, add limit match extension
+      if (ufwRule.action === 'LIMIT') {
+        rule.matches.push({
+          module: 'limit',
+          options: new Map([['--limit', '6/minute'], ['--limit-burst', '6']]),
+        });
+      }
+
+      ipt.appendRule('filter', chain, rule);
+    }
+  }
+
+  /**
+   * Rebuild all iptables rules from the current UFW state.
+   * Called after any rule modification when UFW is enabled.
+   */
+  private rebuildIptablesRules(): void {
+    if (!this.enabled) return;
+
+    const ipt = this.iptables;
+
+    // Flush user chains (keep the chains themselves and the jumps)
+    ipt.flushChain('filter', 'ufw-user-input');
+    ipt.flushChain('filter', 'ufw-user-output');
+
+    // Re-inject all rules
+    for (const rule of this.rules) {
+      if (!rule.v6) {
+        this.injectRuleToIptables(rule);
+      }
+    }
+
+    // Update policies
+    this.applyDefaultPolicies();
+
+    // Add catch-all REJECT rules if default policy is 'reject'
+    this.addRejectCatchAll();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Rate limiting (managed at UFW level since iptables limit module
+  // is stateless — we need stateful per-source tracking)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Check rate limit for a given source IP and rule index.
+   * Called by the iptables manager via the rate limit callback.
+   */
+  evaluateRateLimit(srcIP: string, ruleIdx: number): boolean {
+    const key = `${srcIP}:${ruleIdx}`;
+    const now = Date.now();
+
+    let hits = this.rateLimitHits.get(key);
+    if (!hits) {
+      hits = [];
+      this.rateLimitHits.set(key, hits);
+    }
+
+    // Purge expired entries
+    const cutoff = now - this.RATE_LIMIT_WINDOW;
+    while (hits.length > 0 && hits[0] < cutoff) {
+      hits.shift();
+    }
+
+    if (hits.length >= this.RATE_LIMIT_MAX) {
+      return false; // Rate limit exceeded
+    }
+
+    hits.push(now);
+    return true; // Under limit
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Subcommands
+  // ═══════════════════════════════════════════════════════════════════
 
   private cmdEnable(): string {
-    this.enabled = true;
+    if (!this.enabled) {
+      this.enabled = true;
+      this.setupIptablesChains();
+    }
     this.syncToVfs();
     this.logUfw('UFW enabled');
     return 'Firewall is active and enabled on system startup';
@@ -296,18 +389,25 @@ export class LinuxFirewallManager {
 
   private cmdDisable(): string {
     this.logUfw('UFW disabled');
+    if (this.enabled) {
+      this.teardownIptablesChains();
+    }
     this.enabled = false;
     this.syncToVfs();
     return 'Firewall stopped and disabled on system startup';
   }
 
   private cmdReset(): string {
+    if (this.enabled) {
+      this.teardownIptablesChains();
+    }
     this.enabled = false;
     this.rules = [];
     this.defaultIncoming = 'deny';
     this.defaultOutgoing = 'allow';
     this.logging = false;
     this.loggingLevel = 'low';
+    this.rateLimitHits.clear();
     this.syncToVfs();
     return 'Resetting all rules to installed defaults. Proceed with operation (y|n)? y\n' +
            'Backing up user rules ... done';
@@ -315,6 +415,9 @@ export class LinuxFirewallManager {
 
   private cmdReload(): string {
     this.loadFromVfs();
+    if (this.enabled) {
+      this.rebuildIptablesRules();
+    }
     this.syncToVfs();
     return 'Firewall reloaded';
   }
@@ -409,11 +512,13 @@ export class LinuxFirewallManager {
 
     if (direction === 'incoming') {
       this.defaultIncoming = policy;
+      if (this.enabled) this.applyDefaultPolicies();
       this.syncToVfs();
       return `Default incoming policy changed to '${policy}'`;
     }
     if (direction === 'outgoing') {
       this.defaultOutgoing = policy;
+      if (this.enabled) this.applyDefaultPolicies();
       this.syncToVfs();
       return `Default outgoing policy changed to '${policy}'`;
     }
@@ -450,6 +555,8 @@ export class LinuxFirewallManager {
       this.rules.push({ ...parsed, v6: true });
     }
 
+    // Rebuild iptables rules if enabled
+    this.rebuildIptablesRules();
     this.syncToVfs();
     return addsV6
       ? 'Rule added\nRule added (v6)'
@@ -624,11 +731,13 @@ export class LinuxFirewallManager {
               r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
           return true;
         });
+        this.rebuildIptablesRules();
         this.syncToVfs();
         return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
       }
       // Deleting a v6 rule directly (only removes that one)
       this.rules = this.rules.filter(r => r !== target);
+      this.rebuildIptablesRules();
       this.syncToVfs();
       return 'Rule deleted (v6)';
     }
@@ -652,6 +761,7 @@ export class LinuxFirewallManager {
       if (this.rules.length === before) {
         return 'Could not delete non-existent rule';
       }
+      this.rebuildIptablesRules();
       this.syncToVfs();
       return hadV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
     }
@@ -698,6 +808,7 @@ export class LinuxFirewallManager {
       this.rules.splice(insertIdx + 1, 0, { ...parsed, v6: true });
     }
 
+    this.rebuildIptablesRules();
     this.syncToVfs();
     return 'Rule inserted';
   }
@@ -723,6 +834,7 @@ export class LinuxFirewallManager {
       this.rules.splice(1, 0, { ...parsed, v6: true });
     }
 
+    this.rebuildIptablesRules();
     this.syncToVfs();
     return 'Rule prepended';
   }
@@ -803,7 +915,6 @@ export class LinuxFirewallManager {
 
     const v4Rules = this.rules.filter(r => !r.v6);
     for (const rule of v4Rules) {
-      const chain = rule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
       const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
       const proto = this.extractProtoFromPort(rule.port);
       const portNum = this.extractPortNum(rule.port);
@@ -912,13 +1023,17 @@ export class LinuxFirewallManager {
     ].join('\n');
     this.vfs.writeFile('/etc/ufw/ufw.conf', ufwConf, 0, 0, 0o022);
 
-    // Write /etc/ufw/user.rules (IPv4)
+    // Write /etc/ufw/user.rules (IPv4) — the iptables-save format rules
     const v4Rules = this.rules.filter(r => !r.v6);
     this.vfs.writeFile('/etc/ufw/user.rules', this.generateIptablesRules(v4Rules, false), 0, 0, 0o022);
 
     // Write /etc/ufw/user6.rules (IPv6)
     const v6Rules = this.rules.filter(r => r.v6);
     this.vfs.writeFile('/etc/ufw/user6.rules', this.generateIptablesRules(v6Rules, true), 0, 0, 0o022);
+
+    // Also persist iptables state to /etc/iptables/rules.v4
+    const iptSave = this.iptables.executeSave();
+    this.vfs.writeFile('/etc/iptables/rules.v4', iptSave, 0, 0, 0o022);
   }
 
   private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {

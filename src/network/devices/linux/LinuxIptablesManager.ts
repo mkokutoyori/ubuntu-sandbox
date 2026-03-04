@@ -1,44 +1,67 @@
 /**
  * LinuxIptablesManager — iptables (netfilter) state manager.
- * Faithfully reproduces real Linux iptables command behavior.
- * Manages tables (filter, nat, mangle, raw), chains, rules, policies,
- * match extensions, and targets.
+ *
+ * THE single source of truth for all packet filtering.
+ * UFW is a frontend that translates its rules into iptables rules here.
+ *
+ * Faithfully reproduces real Linux iptables command behavior:
+ * - 4 tables: filter, nat, mangle, raw
+ * - Built-in chains with policies (ACCEPT/DROP)
+ * - User-defined chains with reference counting
+ * - Full rule matching: protocol, src/dst IP/CIDR, interfaces, ports, negation
+ * - Match extensions: state, conntrack, multiport, comment, limit, mac, iprange
+ * - Targets: ACCEPT, DROP, REJECT, LOG, MASQUERADE, DNAT, SNAT, REDIRECT, RETURN
+ * - iptables-save / iptables-restore
+ * - Real packet filtering with counter updates
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
-import type { PacketInfo, FirewallVerdict } from './LinuxFirewallManager';
 
-// ─── Types ───────────────────────────────────────────────────────────
+// ─── Packet filtering types (shared with UFW) ───────────────────────
+
+export type FirewallVerdict = 'accept' | 'drop' | 'reject';
+
+export interface PacketInfo {
+  direction: 'in' | 'out';
+  protocol: number;         // 1=ICMP, 6=TCP, 17=UDP
+  srcIP: string;
+  dstIP: string;
+  srcPort: number;          // 0 for ICMP
+  dstPort: number;          // 0 for ICMP
+  iface: string;            // interface name (e.g. 'eth0')
+  isV6?: boolean;           // true for IPv6 packets
+}
+
+// ─── Internal types ──────────────────────────────────────────────────
 
 type TableName = 'filter' | 'nat' | 'mangle' | 'raw';
 type BuiltinPolicy = 'ACCEPT' | 'DROP';
 
-interface IptablesMatchExtension {
+interface MatchExtension {
   module: string;               // e.g. 'state', 'conntrack', 'multiport', 'comment', 'limit', 'mac', 'iprange'
   options: Map<string, string>; // e.g. '--state' => 'ESTABLISHED,RELATED'
 }
 
-interface IptablesTargetOptions {
-  [key: string]: string; // e.g. '--reject-with' => 'icmp-port-unreachable', '--log-prefix' => '"INPUT_DROP: "'
+interface TargetOptions {
+  [key: string]: string;
 }
 
 interface IptablesRule {
   protocol: string;       // 'tcp', 'udp', 'icmp', 'all', ''
-  source: string;         // '0.0.0.0/0' or specific IP/CIDR
-  destination: string;    // '0.0.0.0/0' or specific IP/CIDR
-  inInterface: string;    // '' or 'eth0', etc.
-  outInterface: string;   // '' or 'eth0', etc.
+  source: string;         // '' or IP/CIDR
+  destination: string;    // '' or IP/CIDR
+  inInterface: string;    // '' or 'eth0'
+  outInterface: string;   // '' or 'eth0'
   sport: string;          // '' or '1024' or '1024:65535'
   dport: string;          // '' or '22' or '6000:6007'
-  target: string;         // 'ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', or chain name
-  targetOptions: IptablesTargetOptions;
-  matches: IptablesMatchExtension[];
+  target: string;         // 'ACCEPT', 'DROP', 'REJECT', 'LOG', chain name, etc.
+  targetOptions: TargetOptions;
+  matches: MatchExtension[];
   negSource: boolean;
   negDestination: boolean;
   negProtocol: boolean;
   negInInterface: boolean;
   negOutInterface: boolean;
-  // Counters
   pkts: number;
   bytes: number;
 }
@@ -66,6 +89,9 @@ const TABLE_BUILTIN_CHAINS: Record<TableName, string[]> = {
 };
 
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
+const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'all']);
+const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
+const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN']);
 
 // ─── Manager ─────────────────────────────────────────────────────────
 
@@ -97,66 +123,68 @@ export class LinuxIptablesManager {
     }
   }
 
-  // ─── Real packet filtering ─────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // REAL PACKET FILTERING — the single source of truth
+  // ═══════════════════════════════════════════════════════════════════
 
   /**
-   * Evaluate iptables filter table rules against an actual packet.
-   * Returns 'accept', 'drop', or 'reject'.
+   * Evaluate the filter table against an actual packet.
+   * This is THE only packet filtering engine in the system.
+   * UFW translates its rules into iptables rules; this method evaluates them.
    */
   filterPacket(pkt: PacketInfo): FirewallVerdict {
     const filterTable = this.tables.get('filter')!;
     const chainName = pkt.direction === 'in' ? 'INPUT' : 'OUTPUT';
     const chain = filterTable.chains.get(chainName)!;
-
-    return this.evaluateChain(filterTable, chain, pkt);
+    return this.evaluateChain(filterTable, chain, pkt, 0);
   }
 
-  /**
-   * Check if iptables has any non-default configuration (rules or policy changes).
-   * Used to decide whether to apply iptables filtering.
-   */
-  hasNonDefaultConfig(): boolean {
-    const filterTable = this.tables.get('filter')!;
-    for (const chain of filterTable.chains.values()) {
-      if (chain.rules.length > 0) return true;
-      if (chain.policy !== null && chain.policy !== 'ACCEPT') return true;
-    }
-    return false;
-  }
+  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number): FirewallVerdict {
+    if (depth > 20) return 'accept'; // prevent infinite loops
 
-  private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo): FirewallVerdict {
     for (const rule of chain.rules) {
       if (this.ruleMatchesPacket(rule, pkt)) {
         // Update counters
         rule.pkts++;
-        rule.bytes += 64; // estimated packet size
+        rule.bytes += 64;
         chain.pkts++;
         chain.bytes += 64;
 
-        // If target is a custom chain, evaluate it
+        // If target is a user-defined chain, jump into it
         const targetChain = table.chains.get(rule.target);
         if (targetChain && targetChain.policy === null) {
-          const result = this.evaluateChain(table, targetChain, pkt);
-          // If the chain returns 'accept' from RETURN, continue with next rule
-          // (In real iptables, RETURN goes back to calling chain)
-          if (result !== 'accept') return result;
-          continue;
+          const result = this.evaluateChain(table, targetChain, pkt, depth + 1);
+          // RETURN from sub-chain means continue in the calling chain
+          if (result === 'accept' && !this.chainHasTerminatingMatch(targetChain, pkt)) {
+            continue;
+          }
+          return result;
         }
 
         switch (rule.target) {
           case 'ACCEPT': return 'accept';
           case 'DROP': return 'drop';
           case 'REJECT': return 'reject';
-          case 'RETURN': return 'accept'; // Return to calling chain
-          case 'LOG': continue; // LOG doesn't terminate, continue to next rule
+          case 'RETURN': return 'accept'; // return to calling chain
+          case 'LOG': continue; // LOG doesn't terminate; continue to next rule
           default: continue;
         }
       }
     }
 
-    // No rule matched — apply chain policy
+    // No rule matched → apply chain policy (only built-in chains have policies)
     if (chain.policy === 'DROP') return 'drop';
     return 'accept';
+  }
+
+  /** Check if a chain has a rule that matches and terminates (ACCEPT/DROP/REJECT) */
+  private chainHasTerminatingMatch(chain: IptablesChain, pkt: PacketInfo): boolean {
+    for (const rule of chain.rules) {
+      if (this.ruleMatchesPacket(rule, pkt)) {
+        if (['ACCEPT', 'DROP', 'REJECT'].includes(rule.target)) return true;
+      }
+    }
+    return false;
   }
 
   private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
@@ -168,37 +196,49 @@ export class LinuxIptablesManager {
     }
 
     // Source IP check
-    if (rule.source && rule.source !== '0.0.0.0/0') {
+    if (rule.source) {
       const matches = this.ipMatchesSpec(pkt.srcIP, rule.source);
       if (rule.negSource ? matches : !matches) return false;
     }
 
     // Destination IP check
-    if (rule.destination && rule.destination !== '0.0.0.0/0') {
+    if (rule.destination) {
       const matches = this.ipMatchesSpec(pkt.dstIP, rule.destination);
       if (rule.negDestination ? matches : !matches) return false;
     }
 
-    // Input interface check
+    // Input interface
     if (rule.inInterface) {
       const matches = pkt.iface === rule.inInterface;
       if (rule.negInInterface ? matches : !matches) return false;
     }
 
-    // Output interface check
+    // Output interface
     if (rule.outInterface) {
       const matches = pkt.iface === rule.outInterface;
       if (rule.negOutInterface ? matches : !matches) return false;
     }
 
-    // Destination port check
+    // Destination port
     if (rule.dport) {
       if (!this.portMatchesSpec(pkt.dstPort, rule.dport)) return false;
     }
 
-    // Source port check
+    // Source port
     if (rule.sport) {
       if (!this.portMatchesSpec(pkt.srcPort, rule.sport)) return false;
+    }
+
+    // Match extensions: multiport
+    for (const m of rule.matches) {
+      if (m.module === 'multiport') {
+        const dports = m.options.get('--dports');
+        const sports = m.options.get('--sports');
+        if (dports && !this.portMatchesSpec(pkt.dstPort, dports)) return false;
+        if (sports && !this.portMatchesSpec(pkt.srcPort, sports)) return false;
+      }
+      // state/conntrack: in this simulator, we don't track connection state,
+      // but we accept the rule as "matches all" for simplicity
     }
 
     return true;
@@ -206,15 +246,12 @@ export class LinuxIptablesManager {
 
   private ipMatchesSpec(ip: string, spec: string): boolean {
     if (!spec.includes('/')) return ip === spec;
-
     const [network, prefixStr] = spec.split('/');
     const prefix = parseInt(prefixStr);
     if (isNaN(prefix)) return false;
-
     const ipNum = this.ipToNumber(ip);
     const netNum = this.ipToNumber(network);
     if (ipNum === null || netNum === null) return false;
-
     const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
     return (ipNum & mask) === (netNum & mask);
   }
@@ -228,529 +265,364 @@ export class LinuxIptablesManager {
   }
 
   private portMatchesSpec(port: number, spec: string): boolean {
-    // Port range: "6000:6007"
     if (spec.includes(':')) {
-      const [startStr, endStr] = spec.split(':');
-      return port >= parseInt(startStr) && port <= parseInt(endStr);
+      const [s, e] = spec.split(':');
+      return port >= parseInt(s) && port <= parseInt(e);
     }
-    // Multi-port: "80,443,8080"
     if (spec.includes(',')) {
       return spec.split(',').map(p => parseInt(p)).includes(port);
     }
-    // Single port
     return port === parseInt(spec);
   }
 
-  // ─── Main entry point ─────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // PROGRAMMATIC API — used by UFW to inject/remove iptables rules
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Get the filter table (used by UFW to manipulate chains) */
+  getTable(name: TableName): IptablesTable | undefined {
+    return this.tables.get(name);
+  }
+
+  /** Append a rule programmatically (used by UFW) */
+  appendRule(tableName: TableName, chainName: string, rule: IptablesRule): boolean {
+    const table = this.tables.get(tableName);
+    if (!table) return false;
+    const chain = table.chains.get(chainName);
+    if (!chain) return false;
+    chain.rules.push(rule);
+    return true;
+  }
+
+  /** Insert a rule at a position (1-indexed) programmatically */
+  insertRule(tableName: TableName, chainName: string, pos: number, rule: IptablesRule): boolean {
+    const table = this.tables.get(tableName);
+    if (!table) return false;
+    const chain = table.chains.get(chainName);
+    if (!chain) return false;
+    const idx = Math.min(Math.max(pos - 1, 0), chain.rules.length);
+    chain.rules.splice(idx, 0, rule);
+    return true;
+  }
+
+  /** Flush all rules from a chain */
+  flushChain(tableName: TableName, chainName: string): boolean {
+    const table = this.tables.get(tableName);
+    if (!table) return false;
+    const chain = table.chains.get(chainName);
+    if (!chain) return false;
+    chain.rules = [];
+    return true;
+  }
+
+  /** Set the policy of a built-in chain */
+  setPolicy(tableName: TableName, chainName: string, policy: BuiltinPolicy): boolean {
+    const table = this.tables.get(tableName);
+    if (!table) return false;
+    const chain = table.chains.get(chainName);
+    if (!chain || chain.policy === null) return false;
+    chain.policy = policy;
+    return true;
+  }
+
+  /** Get the policy of a chain */
+  getPolicy(tableName: TableName, chainName: string): string | null {
+    const table = this.tables.get(tableName);
+    if (!table) return null;
+    const chain = table.chains.get(chainName);
+    return chain?.policy ?? null;
+  }
+
+  /** Create a new user-defined chain */
+  createChain(tableName: TableName, chainName: string): boolean {
+    const table = this.tables.get(tableName);
+    if (!table) return false;
+    if (table.chains.has(chainName)) return false;
+    table.chains.set(chainName, { name: chainName, policy: null, rules: [], pkts: 0, bytes: 0 });
+    return true;
+  }
+
+  /** Delete a user-defined chain */
+  deleteChain(tableName: TableName, chainName: string): string | null {
+    const table = this.tables.get(tableName);
+    if (!table) return 'table not found';
+    const chain = table.chains.get(chainName);
+    if (!chain) return 'No chain/target/match by that name';
+    if (chain.policy !== null) return `Can't delete built-in chain`;
+    if (chain.rules.length > 0) return 'Directory not empty';
+    table.chains.delete(chainName);
+    return null;
+  }
+
+  /** Create a default empty rule (helper for UFW) */
+  static createRule(overrides?: Partial<IptablesRule>): IptablesRule {
+    return {
+      protocol: '', source: '', destination: '',
+      inInterface: '', outInterface: '',
+      sport: '', dport: '',
+      target: '', targetOptions: {}, matches: [],
+      negSource: false, negDestination: false, negProtocol: false,
+      negInInterface: false, negOutInterface: false,
+      pkts: 0, bytes: 0,
+      ...overrides,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // COMMAND-LINE INTERFACE — iptables [-t table] <command>
+  // ═══════════════════════════════════════════════════════════════════
 
   execute(args: string[]): { output: string; exitCode: number } {
-    if (args.length === 0) {
-      return { output: this.showUsage(), exitCode: 2 };
-    }
+    if (args.length === 0) return { output: this.showUsage(), exitCode: 2 };
 
-    // Parse table option (-t)
+    // Parse -t table
     let tableName: TableName = 'filter';
-    const argsCopy = [...args];
-    const tIdx = argsCopy.indexOf('-t');
-    if (tIdx !== -1 && tIdx + 1 < argsCopy.length) {
-      const tName = argsCopy[tIdx + 1];
-      if (!VALID_TABLES.has(tName)) {
-        return { output: `iptables v1.8.7 (nf_tables): can't initialize iptables table \`${tName}': Table does not exist`, exitCode: 1 };
+    const a = [...args];
+    const tIdx = a.indexOf('-t');
+    if (tIdx !== -1 && tIdx + 1 < a.length) {
+      const t = a[tIdx + 1];
+      if (!VALID_TABLES.has(t)) {
+        return { output: `iptables v1.8.7 (nf_tables): can't initialize iptables table \`${t}': Table does not exist`, exitCode: 1 };
       }
-      tableName = tName as TableName;
-      argsCopy.splice(tIdx, 2);
+      tableName = t as TableName;
+      a.splice(tIdx, 2);
     }
 
     const table = this.tables.get(tableName)!;
+    if (a.length === 0) return { output: this.showUsage(), exitCode: 2 };
 
-    // Parse command
-    if (argsCopy.length === 0) {
-      return { output: this.showUsage(), exitCode: 2 };
-    }
-
-    const cmd = argsCopy[0];
-    const cmdArgs = argsCopy.slice(1);
+    const cmd = a[0];
+    const rest = a.slice(1);
 
     switch (cmd) {
-      case '-L': case '--list':
-        return this.cmdList(table, cmdArgs);
-      case '-S': case '--list-rules':
-        return this.cmdListRules(table, cmdArgs);
-      case '-F': case '--flush':
-        return this.cmdFlush(table, cmdArgs);
-      case '-P': case '--policy':
-        return this.cmdPolicy(table, cmdArgs);
-      case '-A': case '--append':
-        return this.cmdAppend(table, cmdArgs);
-      case '-D': case '--delete':
-        return this.cmdDelete(table, cmdArgs);
-      case '-I': case '--insert':
-        return this.cmdInsert(table, cmdArgs);
-      case '-R': case '--replace':
-        return this.cmdReplace(table, cmdArgs);
-      case '-C': case '--check':
-        return this.cmdCheck(table, cmdArgs);
-      case '-N': case '--new-chain':
-        return this.cmdNewChain(table, cmdArgs);
-      case '-X': case '--delete-chain':
-        return this.cmdDeleteChain(table, cmdArgs);
-      case '-E': case '--rename-chain':
-        return this.cmdRenameChain(table, cmdArgs);
-      case '-Z': case '--zero':
-        return this.cmdZero(table, cmdArgs);
+      case '-L': case '--list':       return this.cmdList(table, rest);
+      case '-S': case '--list-rules': return this.cmdListRules(table, rest);
+      case '-F': case '--flush':      return this.cmdFlush(table, rest);
+      case '-P': case '--policy':     return this.cmdPolicy(table, rest);
+      case '-A': case '--append':     return this.cmdAppend(table, rest);
+      case '-D': case '--delete':     return this.cmdDelete(table, rest);
+      case '-I': case '--insert':     return this.cmdInsert(table, rest);
+      case '-R': case '--replace':    return this.cmdReplace(table, rest);
+      case '-C': case '--check':      return this.cmdCheck(table, rest);
+      case '-N': case '--new-chain':  return this.cmdNewChain(table, rest);
+      case '-X': case '--delete-chain': return this.cmdDeleteChain(table, rest);
+      case '-E': case '--rename-chain': return this.cmdRenameChain(table, rest);
+      case '-Z': case '--zero':       return this.cmdZero(table, rest);
       default:
         return { output: `iptables v1.8.7 (nf_tables): unknown option "${cmd}"`, exitCode: 2 };
     }
   }
 
-  // ─── iptables-save ────────────────────────────────────────────
-
-  executeSave(): string {
-    const lines: string[] = [];
-    lines.push(`# Generated by iptables-save`);
-
-    for (const [tableName, table] of this.tables) {
-      // Only output tables that have non-default state
-      const hasRules = Array.from(table.chains.values()).some(c => c.rules.length > 0);
-      const hasNonDefaultPolicy = Array.from(table.chains.values()).some(c => c.policy !== null && c.policy !== 'ACCEPT');
-      const hasCustomChains = Array.from(table.chains.values()).some(c => c.policy === null);
-
-      if (!hasRules && !hasNonDefaultPolicy && !hasCustomChains && tableName !== 'filter') continue;
-
-      lines.push(`*${tableName}`);
-
-      // Chain declarations with counters
-      for (const [chainName, chain] of table.chains) {
-        if (chain.policy !== null) {
-          lines.push(`:${chainName} ${chain.policy} [${chain.pkts}:${chain.bytes}]`);
-        } else {
-          lines.push(`:${chainName} - [${chain.pkts}:${chain.bytes}]`);
-        }
-      }
-
-      // Rules
-      for (const [chainName, chain] of table.chains) {
-        for (const rule of chain.rules) {
-          lines.push(this.formatRuleAsCommand('A', chainName, rule));
-        }
-      }
-
-      lines.push('COMMIT');
-    }
-
-    return lines.join('\n');
-  }
-
-  // ─── iptables-restore ─────────────────────────────────────────
-
-  executeRestore(input: string): { output: string; exitCode: number } {
-    const lines = input.split('\n');
-    let currentTable: IptablesTable | null = null;
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-
-      // Table declaration: *filter, *nat, etc.
-      if (line.startsWith('*')) {
-        const tableName = line.slice(1);
-        if (!VALID_TABLES.has(tableName)) {
-          return { output: `iptables-restore: line failed: ${line}`, exitCode: 1 };
-        }
-        currentTable = this.tables.get(tableName as TableName)!;
-        // Flush all chains in this table
-        for (const chain of currentTable.chains.values()) {
-          chain.rules = [];
-        }
-        continue;
-      }
-
-      if (line === 'COMMIT') {
-        currentTable = null;
-        continue;
-      }
-
-      if (!currentTable) continue;
-
-      // Chain declaration: :INPUT ACCEPT [0:0]
-      if (line.startsWith(':')) {
-        const match = line.match(/^:(\S+)\s+(\S+)\s+\[(\d+):(\d+)\]/);
-        if (match) {
-          const [, chainName, policy, pkts, bytes] = match;
-          let chain = currentTable.chains.get(chainName);
-          if (!chain) {
-            chain = { name: chainName, policy: null, rules: [], pkts: 0, bytes: 0 };
-            currentTable.chains.set(chainName, chain);
-          }
-          if (policy !== '-') {
-            chain.policy = policy as BuiltinPolicy;
-          }
-          chain.pkts = parseInt(pkts);
-          chain.bytes = parseInt(bytes);
-        }
-        continue;
-      }
-
-      // Rule: -A INPUT -p tcp --dport 22 -j ACCEPT
-      if (line.startsWith('-A ')) {
-        const ruleArgs = this.splitCommandLine(line.slice(3));
-        const result = this.cmdAppend(currentTable, ruleArgs);
-        if (result.exitCode !== 0) {
-          return { output: `iptables-restore: line failed: ${line}`, exitCode: 1 };
-        }
-      }
-    }
-
-    return { output: '', exitCode: 0 };
-  }
-
-  // ─── -L (list) ────────────────────────────────────────────────
+  // ─── -L ────────────────────────────────────────────────────────
 
   private cmdList(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
     let chainName = '';
-    let numeric = false;
-    let verbose = false;
-    let lineNumbers = false;
+    let numeric = false, verbose = false, lineNumbers = false;
 
-    for (let i = 0; i < args.length; i++) {
-      switch (args[i]) {
+    for (const arg of args) {
+      switch (arg) {
         case '-n': case '--numeric': numeric = true; break;
         case '-v': case '--verbose': verbose = true; break;
         case '--line-numbers': lineNumbers = true; break;
-        default:
-          if (!args[i].startsWith('-')) chainName = args[i];
-          break;
+        default: if (!arg.startsWith('-')) chainName = arg; break;
       }
     }
 
     if (chainName) {
       const chain = table.chains.get(chainName);
-      if (!chain) {
-        return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-      }
-      return { output: this.formatChainList(chain, table, verbose, numeric, lineNumbers), exitCode: 0 };
+      if (!chain) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+      return { output: this.fmtChainList(chain, table, verbose, numeric, lineNumbers), exitCode: 0 };
     }
 
-    // List all chains
-    const lines: string[] = [];
+    const parts: string[] = [];
     for (const chain of table.chains.values()) {
-      if (lines.length > 0) lines.push('');
-      lines.push(this.formatChainList(chain, table, verbose, numeric, lineNumbers));
+      if (parts.length > 0) parts.push('');
+      parts.push(this.fmtChainList(chain, table, verbose, numeric, lineNumbers));
     }
-    return { output: lines.join('\n'), exitCode: 0 };
+    return { output: parts.join('\n'), exitCode: 0 };
   }
 
-  private formatChainList(chain: IptablesChain, table: IptablesTable, verbose: boolean, numeric: boolean, lineNumbers: boolean): string {
+  private fmtChainList(chain: IptablesChain, table: IptablesTable, verbose: boolean, numeric: boolean, lineNumbers: boolean): string {
     const lines: string[] = [];
-
-    // Chain header
     if (chain.policy !== null) {
       lines.push(`Chain ${chain.name} (policy ${chain.policy})`);
     } else {
-      const refs = this.countChainReferences(chain.name, table);
-      lines.push(`Chain ${chain.name} (${refs} references)`);
+      lines.push(`Chain ${chain.name} (${this.countRefs(chain.name, table)} references)`);
     }
 
-    // Column headers
+    const numCol = lineNumbers ? 'num   ' : '';
     if (verbose) {
-      const numCol = lineNumbers ? 'num   ' : '';
       lines.push(`${numCol} pkts bytes target     prot opt in     out     source               destination`);
     } else {
-      const numCol = lineNumbers ? 'num   ' : '';
       lines.push(`${numCol}target     prot opt source               destination`);
     }
 
-    // Rules
     for (let i = 0; i < chain.rules.length; i++) {
-      const rule = chain.rules[i];
-      const numCol = lineNumbers ? `${i + 1}     `.slice(0, 6) : '';
-
-      const target = rule.target.padEnd(10);
-      const prot = (rule.negProtocol ? '!' : '') + (rule.protocol || 'all');
-      const protStr = prot.padEnd(4);
+      const r = chain.rules[i];
+      const num = lineNumbers ? `${i + 1}     `.slice(0, 6) : '';
+      const target = r.target.padEnd(10);
+      const prot = ((r.negProtocol ? '!' : '') + (r.protocol || 'all')).padEnd(4);
       const opt = '--  ';
-      const src = this.formatAddrForList(rule.source, rule.negSource, numeric);
-      const dst = this.formatAddrForList(rule.destination, rule.negDestination, numeric);
-      const extra = this.formatRuleExtrasForList(rule);
+      const src = this.fmtAddr(r.source, r.negSource, numeric);
+      const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
+      const extra = this.fmtRuleExtras(r);
 
       if (verbose) {
-        const pkts = String(rule.pkts).padStart(5);
-        const bytes = String(rule.bytes).padStart(5);
-        const inIf = (rule.negInInterface ? '!' : '') + (rule.inInterface || '*');
-        const outIf = (rule.negOutInterface ? '!' : '') + (rule.outInterface || '*');
-        lines.push(`${numCol}${pkts} ${bytes} ${target} ${protStr} ${opt}${inIf.padEnd(6)} ${outIf.padEnd(6)} ${src.padEnd(20)} ${dst}${extra}`);
+        const pkts = String(r.pkts).padStart(5);
+        const bytes = String(r.bytes).padStart(5);
+        const inIf = ((r.negInInterface ? '!' : '') + (r.inInterface || '*')).padEnd(6);
+        const outIf = ((r.negOutInterface ? '!' : '') + (r.outInterface || '*')).padEnd(6);
+        lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${src.padEnd(20)} ${dst}${extra}`);
       } else {
-        lines.push(`${numCol}${target} ${protStr} ${opt}${src.padEnd(20)} ${dst}${extra}`);
+        lines.push(`${num}${target} ${prot} ${opt}${src.padEnd(20)} ${dst}${extra}`);
       }
     }
-
     return lines.join('\n');
   }
 
-  private formatAddrForList(addr: string, negated: boolean, numeric: boolean): string {
-    const neg = negated ? '!' : '';
-    if (!addr || addr === '0.0.0.0/0') {
-      return numeric ? `${neg}0.0.0.0/0` : `${neg}anywhere`;
-    }
-    return `${neg}${addr}`;
+  private fmtAddr(addr: string, neg: boolean, numeric: boolean): string {
+    const n = neg ? '!' : '';
+    if (!addr) return numeric ? `${n}0.0.0.0/0` : `${n}anywhere`;
+    return `${n}${addr}`;
   }
 
-  private formatRuleExtrasForList(rule: IptablesRule): string {
+  private fmtRuleExtras(r: IptablesRule): string {
     const parts: string[] = [];
-
-    if (rule.dport) {
-      parts.push(`${rule.protocol} dpt:${rule.dport}`);
+    if (r.dport) parts.push(`${r.protocol} dpt:${r.dport}`);
+    if (r.sport) parts.push(`${r.protocol} spt:${r.sport}`);
+    for (const m of r.matches) {
+      for (const [opt, val] of m.options) parts.push(`${opt.replace('--', '')}:${val}`);
     }
-    if (rule.sport) {
-      parts.push(`${rule.protocol} spt:${rule.sport}`);
-    }
-
-    for (const m of rule.matches) {
-      for (const [opt, val] of m.options) {
-        parts.push(`${opt.replace('--', '')}:${val}`);
-      }
-    }
-
-    for (const [opt, val] of Object.entries(rule.targetOptions)) {
-      parts.push(`${opt.replace('--', '')} ${val}`);
-    }
-
+    for (const [opt, val] of Object.entries(r.targetOptions)) parts.push(`${opt.replace('--', '')} ${val}`);
     return parts.length > 0 ? ' ' + parts.join(' ') : '';
   }
 
-  private countChainReferences(chainName: string, table: IptablesTable): number {
-    let count = 0;
-    for (const chain of table.chains.values()) {
-      for (const rule of chain.rules) {
-        if (rule.target === chainName) count++;
-      }
-    }
-    return count;
+  private countRefs(name: string, table: IptablesTable): number {
+    let n = 0;
+    for (const c of table.chains.values()) for (const r of c.rules) if (r.target === name) n++;
+    return n;
   }
 
-  // ─── -S (list rules as commands) ──────────────────────────────
+  // ─── -S ────────────────────────────────────────────────────────
 
   private cmdListRules(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    let chainName = '';
-    for (const arg of args) {
-      if (!arg.startsWith('-')) { chainName = arg; break; }
-    }
-
+    const chainName = args.find(a => !a.startsWith('-'));
     if (chainName) {
       const chain = table.chains.get(chainName);
-      if (!chain) {
-        return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-      }
-      return { output: this.formatChainRules(chain), exitCode: 0 };
+      if (!chain) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+      return { output: this.fmtChainRules(chain), exitCode: 0 };
     }
-
-    // All chains
-    const lines: string[] = [];
-    for (const chain of table.chains.values()) {
-      lines.push(this.formatChainRules(chain));
-    }
-    return { output: lines.join('\n'), exitCode: 0 };
+    const parts: string[] = [];
+    for (const chain of table.chains.values()) parts.push(this.fmtChainRules(chain));
+    return { output: parts.join('\n'), exitCode: 0 };
   }
 
-  private formatChainRules(chain: IptablesChain): string {
+  private fmtChainRules(chain: IptablesChain): string {
     const lines: string[] = [];
-
-    // Policy line for built-in chains
-    if (chain.policy !== null) {
-      lines.push(`-P ${chain.name} ${chain.policy}`);
-    }
-
-    // Rules
-    for (const rule of chain.rules) {
-      lines.push(this.formatRuleAsCommand('A', chain.name, rule));
-    }
-
+    if (chain.policy !== null) lines.push(`-P ${chain.name} ${chain.policy}`);
+    for (const rule of chain.rules) lines.push(this.fmtRuleCmd('A', chain.name, rule));
     return lines.join('\n');
   }
 
-  private formatRuleAsCommand(action: string, chainName: string, rule: IptablesRule): string {
-    const parts: string[] = [`-${action} ${chainName}`];
-
-    // Source
-    if (rule.source && rule.source !== '0.0.0.0/0') {
-      if (rule.negSource) parts.push('!');
-      parts.push(`-s ${rule.source}`);
-    }
-
-    // Destination
-    if (rule.destination && rule.destination !== '0.0.0.0/0') {
-      if (rule.negDestination) parts.push('!');
-      parts.push(`-d ${rule.destination}`);
-    }
-
-    // In interface
-    if (rule.inInterface) {
-      if (rule.negInInterface) parts.push('!');
-      parts.push(`-i ${rule.inInterface}`);
-    }
-
-    // Out interface
-    if (rule.outInterface) {
-      if (rule.negOutInterface) parts.push('!');
-      parts.push(`-o ${rule.outInterface}`);
-    }
-
-    // Protocol
-    if (rule.protocol && rule.protocol !== 'all') {
-      if (rule.negProtocol) parts.push('!');
-      parts.push(`-p ${rule.protocol}`);
-    }
-
-    // Ports
-    if (rule.sport) {
-      parts.push(`--sport ${rule.sport}`);
-    }
-    if (rule.dport) {
-      parts.push(`--dport ${rule.dport}`);
-    }
-
-    // Match extensions
+  fmtRuleCmd(action: string, chainName: string, rule: IptablesRule): string {
+    const p: string[] = [`-${action} ${chainName}`];
+    if (rule.source)       { if (rule.negSource) p.push('!'); p.push(`-s ${rule.source}`); }
+    if (rule.destination)  { if (rule.negDestination) p.push('!'); p.push(`-d ${rule.destination}`); }
+    if (rule.inInterface)  { if (rule.negInInterface) p.push('!'); p.push(`-i ${rule.inInterface}`); }
+    if (rule.outInterface) { if (rule.negOutInterface) p.push('!'); p.push(`-o ${rule.outInterface}`); }
+    if (rule.protocol && rule.protocol !== 'all') { if (rule.negProtocol) p.push('!'); p.push(`-p ${rule.protocol}`); }
+    if (rule.sport) p.push(`--sport ${rule.sport}`);
+    if (rule.dport) p.push(`--dport ${rule.dport}`);
     for (const m of rule.matches) {
-      parts.push(`-m ${m.module}`);
-      for (const [opt, val] of m.options) {
-        parts.push(`${opt} ${this.quoteIfNeeded(val)}`);
-      }
+      p.push(`-m ${m.module}`);
+      for (const [opt, val] of m.options) p.push(`${opt} ${this.quote(val)}`);
     }
-
-    // Target
     if (rule.target) {
-      parts.push(`-j ${rule.target}`);
-
-      // Target options
-      for (const [opt, val] of Object.entries(rule.targetOptions)) {
-        parts.push(`${opt} ${this.quoteIfNeeded(val)}`);
-      }
+      p.push(`-j ${rule.target}`);
+      for (const [opt, val] of Object.entries(rule.targetOptions)) p.push(`${opt} ${this.quote(val)}`);
     }
-
-    return parts.join(' ');
+    return p.join(' ');
   }
 
-  // ─── -F (flush) ───────────────────────────────────────────────
+  private quote(v: string): string { return v.includes(' ') ? `"${v}"` : v; }
+
+  // ─── -F ────────────────────────────────────────────────────────
 
   private cmdFlush(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    const chainName = args.find(a => !a.startsWith('-'));
-
-    if (chainName) {
-      const chain = table.chains.get(chainName);
-      if (!chain) {
-        return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-      }
-      chain.rules = [];
+    const cn = args.find(a => !a.startsWith('-'));
+    if (cn) {
+      const ch = table.chains.get(cn);
+      if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+      ch.rules = [];
     } else {
-      for (const chain of table.chains.values()) {
-        chain.rules = [];
-      }
+      for (const ch of table.chains.values()) ch.rules = [];
     }
-
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -P (policy) ──────────────────────────────────────────────
+  // ─── -P ────────────────────────────────────────────────────────
 
   private cmdPolicy(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length < 2) {
-      return { output: 'iptables v1.8.7 (nf_tables): -P requires a chain and a policy', exitCode: 2 };
-    }
-
-    const chainName = args[0];
-    const policy = args[1];
-
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
-    if (chain.policy === null) {
-      return { output: `iptables: Can't set policy on user-defined chain \`${chainName}'`, exitCode: 1 };
-    }
-
-    if (policy !== 'ACCEPT' && policy !== 'DROP') {
-      return { output: `iptables v1.8.7 (nf_tables): Bad policy name. Try ACCEPT or DROP.`, exitCode: 2 };
-    }
-
-    chain.policy = policy;
+    if (args.length < 2) return { output: 'iptables v1.8.7 (nf_tables): -P requires a chain and a policy', exitCode: 2 };
+    const [cn, pol] = args;
+    const ch = table.chains.get(cn);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+    if (ch.policy === null) return { output: `iptables: Can't set policy on user-defined chain \`${cn}'`, exitCode: 1 };
+    if (!VALID_BUILTIN_POLICIES.has(pol)) return { output: 'iptables v1.8.7 (nf_tables): Bad policy name. Try ACCEPT or DROP.', exitCode: 2 };
+    ch.policy = pol as BuiltinPolicy;
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -A (append) ──────────────────────────────────────────────
+  // ─── -A ────────────────────────────────────────────────────────
 
   private cmdAppend(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length === 0) {
-      return { output: 'iptables v1.8.7 (nf_tables): -A requires a chain name', exitCode: 2 };
+    if (args.length === 0) return { output: 'iptables v1.8.7 (nf_tables): -A requires a chain name', exitCode: 2 };
+    const cn = args[0];
+    const ch = table.chains.get(cn);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+    const r = this.parseRule(args.slice(1));
+    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    // Validate target exists if it's a chain jump
+    if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
+      return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     }
-
-    const chainName = args[0];
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
-    const rule = this.parseRule(args.slice(1));
-    if (typeof rule === 'string') {
-      return { output: rule, exitCode: 1 };
-    }
-
-    chain.rules.push(rule);
+    ch.rules.push(r);
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -D (delete) ──────────────────────────────────────────────
+  // ─── -D ────────────────────────────────────────────────────────
 
   private cmdDelete(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length < 2) {
-      return { output: 'iptables v1.8.7 (nf_tables): -D requires a chain and rule specification or number', exitCode: 2 };
-    }
+    if (args.length < 2) return { output: 'iptables v1.8.7 (nf_tables): -D requires a chain and rule specification or number', exitCode: 2 };
+    const cn = args[0];
+    const ch = table.chains.get(cn);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
 
-    const chainName = args[0];
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
-    // Delete by number: iptables -D INPUT 1
+    // Delete by number
     if (args.length === 2 && /^\d+$/.test(args[1])) {
       const num = parseInt(args[1]);
-      if (num < 1 || num > chain.rules.length) {
-        return { output: `iptables: Index of deletion too big.`, exitCode: 1 };
-      }
-      chain.rules.splice(num - 1, 1);
+      if (num < 1 || num > ch.rules.length) return { output: 'iptables: Index of deletion too big.', exitCode: 1 };
+      ch.rules.splice(num - 1, 1);
       return { output: '', exitCode: 0 };
     }
 
     // Delete by specification
-    const ruleSpec = this.parseRule(args.slice(1));
-    if (typeof ruleSpec === 'string') {
-      return { output: ruleSpec, exitCode: 1 };
-    }
-
-    const idx = chain.rules.findIndex(r => this.rulesMatch(r, ruleSpec));
-    if (idx === -1) {
-      return { output: `iptables: Bad rule (does a matching rule exist in that chain?).`, exitCode: 1 };
-    }
-
-    chain.rules.splice(idx, 1);
+    const spec = this.parseRule(args.slice(1));
+    if (typeof spec === 'string') return { output: spec, exitCode: 1 };
+    const idx = ch.rules.findIndex(r => this.rulesEqual(r, spec));
+    if (idx === -1) return { output: 'iptables: Bad rule (does a matching rule exist in that chain?).', exitCode: 1 };
+    ch.rules.splice(idx, 1);
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -I (insert) ──────────────────────────────────────────────
+  // ─── -I ────────────────────────────────────────────────────────
 
   private cmdInsert(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length === 0) {
-      return { output: 'iptables v1.8.7 (nf_tables): -I requires a chain name', exitCode: 2 };
-    }
+    if (args.length === 0) return { output: 'iptables v1.8.7 (nf_tables): -I requires a chain name', exitCode: 2 };
+    const cn = args[0];
+    const ch = table.chains.get(cn);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
 
-    const chainName = args[0];
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
-    // Check if next arg is a number (position)
     let pos = 1;
     let ruleArgs: string[];
     if (args.length > 1 && /^\d+$/.test(args[1])) {
@@ -760,391 +632,318 @@ export class LinuxIptablesManager {
       ruleArgs = args.slice(1);
     }
 
-    const rule = this.parseRule(ruleArgs);
-    if (typeof rule === 'string') {
-      return { output: rule, exitCode: 1 };
-    }
-
-    // Insert at position (1-indexed)
-    const idx = Math.min(pos - 1, chain.rules.length);
-    chain.rules.splice(idx, 0, rule);
+    const r = this.parseRule(ruleArgs);
+    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    ch.rules.splice(Math.min(pos - 1, ch.rules.length), 0, r);
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -R (replace) ─────────────────────────────────────────────
+  // ─── -R ────────────────────────────────────────────────────────
 
   private cmdReplace(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length < 3) {
-      return { output: 'iptables v1.8.7 (nf_tables): -R requires a chain, rule number, and rule specification', exitCode: 2 };
-    }
-
-    const chainName = args[0];
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
+    if (args.length < 3) return { output: 'iptables v1.8.7 (nf_tables): -R requires a chain, rule number, and rule specification', exitCode: 2 };
+    const cn = args[0];
+    const ch = table.chains.get(cn);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     const num = parseInt(args[1]);
-    if (isNaN(num) || num < 1 || num > chain.rules.length) {
-      return { output: `iptables: Index of replacement too big.`, exitCode: 1 };
-    }
-
-    const rule = this.parseRule(args.slice(2));
-    if (typeof rule === 'string') {
-      return { output: rule, exitCode: 1 };
-    }
-
-    chain.rules[num - 1] = rule;
+    if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
+    const r = this.parseRule(args.slice(2));
+    if (typeof r === 'string') return { output: r, exitCode: 1 };
+    ch.rules[num - 1] = r;
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -C (check) ───────────────────────────────────────────────
+  // ─── -C ────────────────────────────────────────────────────────
 
   private cmdCheck(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length < 2) {
-      return { output: 'iptables v1.8.7 (nf_tables): -C requires a chain and rule specification', exitCode: 2 };
+    if (args.length < 2) return { output: 'iptables v1.8.7 (nf_tables): -C requires a chain and rule specification', exitCode: 2 };
+    const cn = args[0];
+    const ch = table.chains.get(cn);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+    const spec = this.parseRule(args.slice(1));
+    if (typeof spec === 'string') return { output: spec, exitCode: 1 };
+    if (!ch.rules.some(r => this.rulesEqual(r, spec))) {
+      return { output: 'iptables: Bad rule (does a matching rule exist in that chain?).', exitCode: 1 };
     }
-
-    const chainName = args[0];
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
-    const ruleSpec = this.parseRule(args.slice(1));
-    if (typeof ruleSpec === 'string') {
-      return { output: ruleSpec, exitCode: 1 };
-    }
-
-    const found = chain.rules.some(r => this.rulesMatch(r, ruleSpec));
-    if (!found) {
-      return { output: `iptables: Bad rule (does a matching rule exist in that chain?).`, exitCode: 1 };
-    }
-
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -N (new chain) ───────────────────────────────────────────
+  // ─── -N ────────────────────────────────────────────────────────
 
   private cmdNewChain(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length === 0) {
-      return { output: 'iptables v1.8.7 (nf_tables): -N requires a chain name', exitCode: 2 };
-    }
-
-    const chainName = args[0];
-    if (table.chains.has(chainName)) {
-      return { output: `iptables: Chain already exists.`, exitCode: 1 };
-    }
-
-    table.chains.set(chainName, {
-      name: chainName,
-      policy: null,
-      rules: [],
-      pkts: 0,
-      bytes: 0,
-    });
-
+    if (args.length === 0) return { output: 'iptables v1.8.7 (nf_tables): -N requires a chain name', exitCode: 2 };
+    if (table.chains.has(args[0])) return { output: 'iptables: Chain already exists.', exitCode: 1 };
+    table.chains.set(args[0], { name: args[0], policy: null, rules: [], pkts: 0, bytes: 0 });
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -X (delete chain) ────────────────────────────────────────
+  // ─── -X ────────────────────────────────────────────────────────
 
   private cmdDeleteChain(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
     if (args.length === 0) {
-      // Delete all empty user-defined chains
-      const toDelete: string[] = [];
-      for (const [name, chain] of table.chains) {
-        if (chain.policy === null && chain.rules.length === 0) {
-          toDelete.push(name);
-        }
-      }
-      for (const name of toDelete) {
-        table.chains.delete(name);
-      }
+      const del: string[] = [];
+      for (const [n, c] of table.chains) if (c.policy === null && c.rules.length === 0) del.push(n);
+      for (const n of del) table.chains.delete(n);
       return { output: '', exitCode: 0 };
     }
-
-    const chainName = args[0];
-    const chain = table.chains.get(chainName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
+    const err = this.deleteChain(table.name, args[0]);
+    if (err) {
+      if (err.includes('built-in')) return { output: `iptables: ${err}`, exitCode: 1 };
+      return { output: `iptables: ${err}.`, exitCode: 1 };
     }
-
-    if (chain.policy !== null) {
-      return { output: `iptables: Can't delete built-in chain \`${chainName}'`, exitCode: 1 };
-    }
-
-    if (chain.rules.length > 0) {
-      return { output: `iptables: Directory not empty.`, exitCode: 1 };
-    }
-
-    table.chains.delete(chainName);
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -E (rename chain) ────────────────────────────────────────
+  // ─── -E ────────────────────────────────────────────────────────
 
   private cmdRenameChain(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    if (args.length < 2) {
-      return { output: 'iptables v1.8.7 (nf_tables): -E requires old and new chain names', exitCode: 2 };
-    }
-
-    const oldName = args[0];
-    const newName = args[1];
-
-    const chain = table.chains.get(oldName);
-    if (!chain) {
-      return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-    }
-
-    if (chain.policy !== null) {
-      return { output: `iptables: Can't rename built-in chain.`, exitCode: 1 };
-    }
-
-    if (table.chains.has(newName)) {
-      return { output: `iptables: File exists.`, exitCode: 1 };
-    }
-
-    table.chains.delete(oldName);
-    chain.name = newName;
-    table.chains.set(newName, chain);
-
-    // Update references in rules
-    for (const c of table.chains.values()) {
-      for (const rule of c.rules) {
-        if (rule.target === oldName) {
-          rule.target = newName;
-        }
-      }
-    }
-
+    if (args.length < 2) return { output: 'iptables v1.8.7 (nf_tables): -E requires old and new chain names', exitCode: 2 };
+    const [oldN, newN] = args;
+    const ch = table.chains.get(oldN);
+    if (!ch) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+    if (ch.policy !== null) return { output: "iptables: Can't rename built-in chain.", exitCode: 1 };
+    if (table.chains.has(newN)) return { output: 'iptables: File exists.', exitCode: 1 };
+    table.chains.delete(oldN);
+    ch.name = newN;
+    table.chains.set(newN, ch);
+    for (const c of table.chains.values()) for (const r of c.rules) if (r.target === oldN) r.target = newN;
     return { output: '', exitCode: 0 };
   }
 
-  // ─── -Z (zero counters) ───────────────────────────────────────
+  // ─── -Z ────────────────────────────────────────────────────────
 
   private cmdZero(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
-    const chainName = args.find(a => !a.startsWith('-'));
-
-    if (chainName) {
-      const chain = table.chains.get(chainName);
-      if (!chain) {
-        return { output: `iptables: No chain/target/match by that name.`, exitCode: 1 };
-      }
-      chain.pkts = 0;
-      chain.bytes = 0;
-      for (const rule of chain.rules) {
-        rule.pkts = 0;
-        rule.bytes = 0;
-      }
-    } else {
-      for (const chain of table.chains.values()) {
-        chain.pkts = 0;
-        chain.bytes = 0;
-        for (const rule of chain.rules) {
-          rule.pkts = 0;
-          rule.bytes = 0;
-        }
-      }
+    const cn = args.find(a => !a.startsWith('-'));
+    const chains = cn ? [table.chains.get(cn)].filter(Boolean) as IptablesChain[] : [...table.chains.values()];
+    if (cn && !table.chains.has(cn)) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
+    for (const ch of chains) {
+      ch.pkts = 0; ch.bytes = 0;
+      for (const r of ch.rules) { r.pkts = 0; r.bytes = 0; }
     }
-
     return { output: '', exitCode: 0 };
   }
 
-  // ─── Rule parsing ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // iptables-save / iptables-restore
+  // ═══════════════════════════════════════════════════════════════════
 
-  private parseRule(args: string[]): IptablesRule | string {
-    const rule: IptablesRule = {
-      protocol: '',
-      source: '',
-      destination: '',
-      inInterface: '',
-      outInterface: '',
-      sport: '',
-      dport: '',
-      target: '',
-      targetOptions: {},
-      matches: [],
-      negSource: false,
-      negDestination: false,
-      negProtocol: false,
-      negInInterface: false,
-      negOutInterface: false,
-      pkts: 0,
-      bytes: 0,
-    };
+  executeSave(): string {
+    const lines: string[] = ['# Generated by iptables-save'];
+    for (const [tn, table] of this.tables) {
+      const hasContent = [...table.chains.values()].some(c => c.rules.length > 0 || (c.policy !== null && c.policy !== 'ACCEPT') || c.policy === null);
+      if (!hasContent && tn !== 'filter') continue;
 
-    let i = 0;
-    while (i < args.length) {
-      const arg = args[i];
-
-      // Check for negation
-      const isNeg = arg === '!';
-      if (isNeg) {
-        i++;
-        if (i >= args.length) break;
+      lines.push(`*${tn}`);
+      for (const [, ch] of table.chains) {
+        lines.push(`:${ch.name} ${ch.policy ?? '-'} [${ch.pkts}:${ch.bytes}]`);
       }
+      for (const [, ch] of table.chains) {
+        for (const r of ch.rules) lines.push(this.fmtRuleCmd('A', ch.name, r));
+      }
+      lines.push('COMMIT');
+    }
+    return lines.join('\n');
+  }
+
+  executeRestore(input: string): { output: string; exitCode: number } {
+    const lines = input.split('\n');
+    let curTable: IptablesTable | null = null;
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+
+      if (line.startsWith('*')) {
+        const tn = line.slice(1);
+        if (!VALID_TABLES.has(tn)) return { output: `iptables-restore: line failed: ${line}`, exitCode: 1 };
+        curTable = this.tables.get(tn as TableName)!;
+        for (const ch of curTable.chains.values()) ch.rules = [];
+        continue;
+      }
+      if (line === 'COMMIT') { curTable = null; continue; }
+      if (!curTable) continue;
+
+      if (line.startsWith(':')) {
+        const m = line.match(/^:(\S+)\s+(\S+)\s+\[(\d+):(\d+)\]/);
+        if (m) {
+          let ch = curTable.chains.get(m[1]);
+          if (!ch) { ch = { name: m[1], policy: null, rules: [], pkts: 0, bytes: 0 }; curTable.chains.set(m[1], ch); }
+          if (m[2] !== '-') ch.policy = m[2] as BuiltinPolicy;
+          ch.pkts = parseInt(m[3]); ch.bytes = parseInt(m[4]);
+        }
+        continue;
+      }
+
+      if (line.startsWith('-A ')) {
+        const ruleArgs = this.tokenize(line.slice(3));
+        const res = this.cmdAppend(curTable, ruleArgs);
+        if (res.exitCode !== 0) return { output: `iptables-restore: line failed: ${line}`, exitCode: 1 };
+      }
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Rule parsing & validation
+  // ═══════════════════════════════════════════════════════════════════
+
+  parseRule(args: string[]): IptablesRule | string {
+    const rule = LinuxIptablesManager.createRule();
+    let i = 0;
+
+    while (i < args.length) {
+      const isNeg = args[i] === '!';
+      if (isNeg) { i++; if (i >= args.length) break; }
 
       switch (args[i]) {
         case '-p': case '--protocol':
           i++;
+          if (i >= args.length) return 'iptables: option "-p" requires an argument';
           if (isNeg) rule.negProtocol = true;
-          rule.protocol = args[i] || '';
+          rule.protocol = args[i];
+          if (rule.protocol !== 'all' && !VALID_PROTOCOLS.has(rule.protocol)) {
+            return `iptables v1.8.7 (nf_tables): unknown protocol "${rule.protocol}"`;
+          }
           break;
 
         case '-s': case '--source':
           i++;
+          if (i >= args.length) return 'iptables: option "-s" requires an argument';
           if (isNeg) rule.negSource = true;
-          rule.source = args[i] || '';
+          rule.source = args[i];
+          if (!this.validateIPSpec(rule.source)) return `iptables: host/network \`${rule.source}' not found`;
           break;
 
         case '-d': case '--destination':
           i++;
+          if (i >= args.length) return 'iptables: option "-d" requires an argument';
           if (isNeg) rule.negDestination = true;
-          rule.destination = args[i] || '';
+          rule.destination = args[i];
+          if (!this.validateIPSpec(rule.destination)) return `iptables: host/network \`${rule.destination}' not found`;
           break;
 
         case '-i': case '--in-interface':
           i++;
+          if (i >= args.length) return 'iptables: option "-i" requires an argument';
           if (isNeg) rule.negInInterface = true;
-          rule.inInterface = args[i] || '';
+          rule.inInterface = args[i];
           break;
 
         case '-o': case '--out-interface':
           i++;
+          if (i >= args.length) return 'iptables: option "-o" requires an argument';
           if (isNeg) rule.negOutInterface = true;
-          rule.outInterface = args[i] || '';
+          rule.outInterface = args[i];
           break;
 
         case '--sport': case '--source-port':
           i++;
-          rule.sport = args[i] || '';
+          if (i >= args.length) return 'iptables: option "--sport" requires an argument';
+          rule.sport = args[i];
+          if (!this.validatePortSpec(rule.sport)) return `iptables: invalid port/service \`${rule.sport}' specified`;
           break;
 
         case '--dport': case '--destination-port':
           i++;
-          rule.dport = args[i] || '';
+          if (i >= args.length) return 'iptables: option "--dport" requires an argument';
+          rule.dport = args[i];
+          if (!this.validatePortSpec(rule.dport)) return `iptables: invalid port/service \`${rule.dport}' specified`;
           break;
 
-        case '-j': case '--jump':
+        case '-j': case '--jump': {
           i++;
-          rule.target = args[i] || '';
-          // Parse target options (everything after target until next flag or end)
+          if (i >= args.length) return 'iptables: option "-j" requires an argument';
+          rule.target = args[i];
           i++;
+          // Parse target options
           while (i < args.length && args[i].startsWith('--')) {
-            const optName = args[i];
-            i++;
-            if (i < args.length && !args[i].startsWith('-') || (i < args.length && args[i].startsWith('--'))) {
-              // Handle quoted values
-              rule.targetOptions[optName] = args[i] || '';
-              i++;
+            const optName = args[i]; i++;
+            if (i < args.length && !args[i].startsWith('-')) {
+              rule.targetOptions[optName] = args[i]; i++;
+            } else if (i < args.length && args[i].startsWith('--')) {
+              rule.targetOptions[optName] = args[i]; i++;
             } else {
               rule.targetOptions[optName] = '';
             }
           }
-          continue; // Skip the i++ at end of loop
+          continue;
+        }
 
-        case '-m': case '--match':
+        case '-m': case '--match': {
           i++;
-          if (i >= args.length) break;
-          const matchModule = args[i];
-          const matchExt: IptablesMatchExtension = {
-            module: matchModule,
-            options: new Map(),
-          };
-          // Parse match options
+          if (i >= args.length) return 'iptables: option "-m" requires an argument';
+          const mod = args[i];
+          const ext: MatchExtension = { module: mod, options: new Map() };
           i++;
           while (i < args.length && args[i].startsWith('--')) {
-            const optName = args[i];
-            i++;
+            const on = args[i]; i++;
             if (i < args.length && !args[i].startsWith('-')) {
-              matchExt.options.set(optName, args[i]);
-              i++;
+              ext.options.set(on, args[i]); i++;
             } else {
-              // Option without value
-              matchExt.options.set(optName, '');
+              ext.options.set(on, '');
             }
           }
-          rule.matches.push(matchExt);
-          continue; // Skip the i++ at end of loop
+          rule.matches.push(ext);
+          continue;
+        }
 
-        default:
-          break;
+        default: break;
       }
-
       i++;
     }
-
     return rule;
   }
 
-  private rulesMatch(a: IptablesRule, b: IptablesRule): boolean {
-    return a.protocol === b.protocol &&
-      a.source === b.source &&
-      a.destination === b.destination &&
-      a.inInterface === b.inInterface &&
-      a.outInterface === b.outInterface &&
-      a.sport === b.sport &&
-      a.dport === b.dport &&
-      a.target === b.target &&
-      a.negSource === b.negSource &&
-      a.negDestination === b.negDestination &&
-      a.negProtocol === b.negProtocol &&
-      a.negInInterface === b.negInInterface &&
-      a.negOutInterface === b.negOutInterface &&
-      this.matchExtensionsEqual(a.matches, b.matches);
+  // ─── Validation helpers ────────────────────────────────────────
+
+  private validateIPSpec(spec: string): boolean {
+    if (spec.includes('/')) {
+      const [ip, prefix] = spec.split('/');
+      const p = parseInt(prefix);
+      if (isNaN(p) || p < 0 || p > 32) return false;
+      return this.ipToNumber(ip) !== null;
+    }
+    return this.ipToNumber(spec) !== null;
   }
 
-  private matchExtensionsEqual(a: IptablesMatchExtension[], b: IptablesMatchExtension[]): boolean {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i].module !== b[i].module) return false;
-      if (a[i].options.size !== b[i].options.size) return false;
-      for (const [key, val] of a[i].options) {
-        if (b[i].options.get(key) !== val) return false;
-      }
+  private validatePortSpec(spec: string): boolean {
+    if (spec.includes(':')) {
+      const [s, e] = spec.split(':');
+      const si = parseInt(s), ei = parseInt(e);
+      return !isNaN(si) && !isNaN(ei) && si >= 0 && si <= 65535 && ei >= 0 && ei <= 65535;
     }
-    return true;
+    if (spec.includes(',')) {
+      return spec.split(',').every(p => { const n = parseInt(p); return !isNaN(n) && n >= 0 && n <= 65535; });
+    }
+    const n = parseInt(spec);
+    return !isNaN(n) && n >= 0 && n <= 65535;
   }
 
   // ─── Helpers ──────────────────────────────────────────────────
 
-  private quoteIfNeeded(val: string): string {
-    if (val.includes(' ') || val.includes(':') && val.includes(' ')) {
-      return `"${val}"`;
-    }
-    return val;
+  private rulesEqual(a: IptablesRule, b: IptablesRule): boolean {
+    return a.protocol === b.protocol && a.source === b.source && a.destination === b.destination &&
+      a.inInterface === b.inInterface && a.outInterface === b.outInterface &&
+      a.sport === b.sport && a.dport === b.dport && a.target === b.target &&
+      a.negSource === b.negSource && a.negDestination === b.negDestination &&
+      a.negProtocol === b.negProtocol && a.negInInterface === b.negInInterface &&
+      a.negOutInterface === b.negOutInterface &&
+      a.matches.length === b.matches.length &&
+      a.matches.every((m, i) => m.module === b.matches[i].module &&
+        m.options.size === b.matches[i].options.size &&
+        [...m.options].every(([k, v]) => b.matches[i].options.get(k) === v));
   }
 
-  private splitCommandLine(line: string): string[] {
-    // Simple tokenizer that respects quotes
+  private tokenize(line: string): string[] {
     const tokens: string[] = [];
-    let current = '';
-    let inQuote = false;
-    let quoteChar = '';
-
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuote) {
-        if (ch === quoteChar) {
-          inQuote = false;
-        } else {
-          current += ch;
-        }
-      } else if (ch === '"' || ch === "'") {
-        inQuote = true;
-        quoteChar = ch;
-      } else if (ch === ' ' || ch === '\t') {
-        if (current) {
-          tokens.push(current);
-          current = '';
-        }
-      } else {
-        current += ch;
-      }
+    let cur = '', inQ = false, qc = '';
+    for (const ch of line) {
+      if (inQ) { if (ch === qc) inQ = false; else cur += ch; }
+      else if (ch === '"' || ch === "'") { inQ = true; qc = ch; }
+      else if (ch === ' ' || ch === '\t') { if (cur) { tokens.push(cur); cur = ''; } }
+      else cur += ch;
     }
-    if (current) tokens.push(current);
-
+    if (cur) tokens.push(cur);
     return tokens;
   }
 

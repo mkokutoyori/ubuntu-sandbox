@@ -5,6 +5,7 @@
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
+import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxLogManager } from './LinuxLogManager';
@@ -21,6 +22,7 @@ export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
   readonly cron: LinuxCronManager;
+  readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly iptables: LinuxIptablesManager;
   readonly logMgr: LinuxLogManager;
@@ -36,8 +38,8 @@ export class LinuxCommandExecutor {
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
-    this.firewall = new LinuxFirewallManager(this.vfs);
     this.iptables = new LinuxIptablesManager(this.vfs);
+    this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.isServer = isServer;
 
@@ -435,16 +437,23 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
       }
 
-      // iptables (netfilter)
+      // iptables — real packet filtering firewall
       case 'iptables': {
-        return this.iptables.execute(args);
+        const result = this.iptables.execute(args);
+        return { output: result.output, exitCode: result.exitCode };
       }
+
+      // iptables-save — dump all rules in iptables-save format
       case 'iptables-save': {
         return { output: this.iptables.executeSave(), exitCode: 0 };
       }
+
+      // iptables-restore — load rules from stdin
       case 'iptables-restore': {
-        const content = stdin ?? '';
-        return this.iptables.executeRestore(content);
+        const input = stdin ?? '';
+        if (!input) return { output: 'iptables-restore: unable to read from stdin', exitCode: 1 };
+        const result = this.iptables.executeRestore(input);
+        return { output: result.output, exitCode: result.exitCode };
       }
 
       // Logging commands
@@ -885,6 +894,7 @@ export class LinuxCommandExecutor {
       'exit', 'logout', 'help',
       'ifconfig', 'ip', 'ping', 'traceroute', 'netstat', 'ss', 'route', 'arp',
       'dhclient', 'nslookup', 'dig', 'curl', 'wget',
+      'iptables', 'iptables-save', 'iptables-restore',
       'nano', 'vi', 'vim',
       'iptables', 'iptables-save', 'iptables-restore',
     ];
