@@ -162,9 +162,22 @@ export function cmdDel(ctx: WinFileCommandContext, args: string[]): string {
 // ─── tree ──────────────────────────────────────────────────────────
 
 export function cmdTree(ctx: WinFileCommandContext, args: string[]): string {
-  const target = args.length > 0 ? args[0] : '.';
+  let showFiles = false;
+  const pathArgs: string[] = [];
+
+  for (const arg of args) {
+    if (arg.toLowerCase() === '/f') {
+      showFiles = true;
+    } else if (arg.toLowerCase() === '/a') {
+      // ASCII mode - already default in our implementation
+    } else {
+      pathArgs.push(arg);
+    }
+  }
+
+  const target = pathArgs.length > 0 ? pathArgs[0] : '.';
   const absPath = ctx.fs.normalizePath(target, ctx.cwd);
-  return ctx.fs.tree(absPath);
+  return ctx.fs.tree(absPath, showFiles);
 }
 
 // ─── set ───────────────────────────────────────────────────────────

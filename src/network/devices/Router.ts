@@ -317,6 +317,15 @@ export abstract class Router extends Equipment {
   // ── Interface Descriptions ──────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
 
+  // ── Pending Pings (for router-initiated ping) ─────────────
+  private pendingPings: Map<string, {
+    resolve: (result: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void;
+    reject: (reason: string) => void;
+    timer: ReturnType<typeof setTimeout>;
+    sentAt: number;
+  }> = new Map();
+  private pingIdCounter = 1;
+
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
 
@@ -1290,6 +1299,22 @@ export abstract class Router extends Equipment {
             etherType: ETHERTYPE_IPV4, payload: replyIP,
           });
         }
+      } else if (icmp.icmpType === 'echo-reply') {
+        // Match against pending pings (router-initiated)
+        const key = `ping-${icmp.id}-${icmp.sequence}`;
+        const pending = this.pendingPings.get(key);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingPings.delete(key);
+          const rtt = performance.now() - pending.sentAt;
+          pending.resolve({
+            success: true,
+            rttMs: rtt,
+            ttl: ipPkt.ttl,
+            seq: icmp.sequence,
+            fromIP: ipPkt.sourceIP.toString(),
+          });
+        }
       }
     } else if (ipPkt.protocol === IP_PROTO_UDP) {
       const udp = ipPkt.payload as UDPPacket;
@@ -2034,6 +2059,144 @@ export abstract class Router extends Equipment {
   getInterfaceDescription(portName: string): string | undefined { return this.interfaceDescriptions.get(portName); }
   /** @internal Used by CLI shells */
   _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
+
+  // ─── Ping (router-initiated ICMP echo) ────────────────────────
+
+  /**
+   * Execute a full ping sequence from this router.
+   * Used by the Cisco IOS `ping` CLI command.
+   */
+  async executePingSequence(
+    targetIP: IPAddress,
+    count: number = 5,
+    timeoutMs: number = 2000,
+  ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
+    // Self-ping: check all interface IPs
+    for (const [, port] of this.ports) {
+      const myIP = port.getIPAddress();
+      if (myIP && myIP.equals(targetIP)) {
+        const results = [];
+        for (let seq = 1; seq <= count; seq++) {
+          results.push({ success: true, rttMs: 0.01, ttl: this.defaultTTL, seq, fromIP: targetIP.toString() });
+        }
+        return results;
+      }
+    }
+
+    // Route lookup
+    const route = this.lookupRoute(targetIP);
+    if (!route) {
+      return []; // empty = unreachable
+    }
+
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return [];
+
+    const myIP = outPort.getIPAddress();
+    if (!myIP) return [];
+
+    // Determine next-hop IP
+    const nextHopIP = route.nextHop || targetIP;
+
+    // ARP resolution for next-hop
+    const existingArp = this.arpTable.get(nextHopIP.toString());
+    let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
+
+    if (!nextHopMAC) {
+      // Send ARP request and wait
+      nextHopMAC = await this._resolveARPForPing(route.iface, outPort, nextHopIP, timeoutMs);
+      if (!nextHopMAC) return []; // ARP failed
+    }
+
+    // Send pings
+    const results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }> = [];
+    for (let seq = 1; seq <= count; seq++) {
+      try {
+        const result = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
+        results.push(result);
+      } catch {
+        results.push({ success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' });
+      }
+    }
+    return results;
+  }
+
+  /** @internal Resolve ARP for ping, returns MAC or null on timeout */
+  private _resolveARPForPing(iface: string, port: Port, nextHopIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
+    return new Promise((resolve) => {
+      const myIP = port.getIPAddress()!;
+      const key = nextHopIP.toString();
+
+      const timer = setTimeout(() => {
+        // Clean up pending entry
+        const pending = this.pendingARPs.get(key);
+        if (pending) {
+          const idx = pending.findIndex(p => p.timer === timer);
+          if (idx >= 0) pending.splice(idx, 1);
+          if (pending.length === 0) this.pendingARPs.delete(key);
+        }
+        resolve(null);
+      }, timeoutMs);
+
+      const entry = {
+        resolve: (mac: MACAddress) => resolve(mac),
+        reject: () => resolve(null),
+        timer,
+      };
+
+      // Register in pendingARPs so the ARP reply handler resolves it
+      if (!this.pendingARPs.has(key)) {
+        this.pendingARPs.set(key, []);
+      }
+      this.pendingARPs.get(key)!.push(entry);
+
+      // Send ARP request
+      const arpReq: ARPPacket = {
+        type: 'arp', operation: 'request',
+        senderMAC: port.getMAC(), senderIP: myIP,
+        targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
+      };
+      this.sendFrame(iface, {
+        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP, payload: arpReq,
+      });
+    });
+  }
+
+  /** @internal Send a single ping and wait for reply */
+  private _sendPing(
+    iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
+    dstMAC: MACAddress, seq: number, timeoutMs: number,
+  ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
+    this.pingIdCounter++;
+    const id = this.pingIdCounter;
+
+    return new Promise((resolve, reject) => {
+      const key = `ping-${id}-${seq}`;
+      const sentAt = performance.now();
+
+      const timer = setTimeout(() => {
+        this.pendingPings.delete(key);
+        reject('timeout');
+      }, timeoutMs);
+
+      this.pendingPings.set(key, { resolve, reject, timer, sentAt });
+
+      // Build ICMP echo request
+      const icmp: ICMPPacket = {
+        type: 'icmp', icmpType: 'echo-request', code: 0,
+        id, sequence: seq, dataSize: 92, // 100 - 8 = 92 bytes of data (Cisco sends 100-byte ICMP)
+      };
+
+      const icmpSize = 8 + 92;
+      const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
+
+      this.sendFrame(iface, {
+        srcMAC: port.getMAC(), dstMAC: dstMAC,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+    });
+  }
 
   /** @internal Lazily create + return the IPSec engine for this router */
   _getOrCreateIPSecEngine(): IPSecEngine {

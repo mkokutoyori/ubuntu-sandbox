@@ -69,6 +69,112 @@ export class WindowsFileSystem {
       this.mkdirp(dir);
     }
 
+    // Additional realistic Windows directories
+    const extraDirs = [
+      'C:\\Users\\User\\AppData\\Local\\Temp',
+      'C:\\Users\\User\\AppData\\Local\\Microsoft',
+      'C:\\Users\\User\\AppData\\Roaming\\Microsoft',
+      'C:\\Users\\User\\Favorites',
+      'C:\\Users\\User\\Contacts',
+      'C:\\Users\\User\\Saved Games',
+      'C:\\Users\\User\\Links',
+      'C:\\Users\\User\\Searches',
+      'C:\\Users\\User\\OneDrive',
+      'C:\\Users\\User\\OneDrive\\Documents',
+      'C:\\Users\\Default',
+      'C:\\Windows\\System32\\config',
+      'C:\\Windows\\System32\\WindowsPowerShell',
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+      'C:\\Windows\\System32\\wbem',
+      'C:\\Windows\\Fonts',
+      'C:\\Windows\\INF',
+      'C:\\Windows\\Prefetch',
+      'C:\\Windows\\Microsoft.NET',
+      'C:\\Windows\\Microsoft.NET\\Framework64',
+      'C:\\Windows\\WinSxS',
+      'C:\\Windows\\Cursors',
+      'C:\\Windows\\Help',
+      'C:\\Windows\\Globalization',
+      'C:\\Windows\\Boot',
+      'C:\\Windows\\Panther',
+      'C:\\Windows\\System32\\oobe',
+      'C:\\Windows\\System32\\Tasks',
+      'C:\\Program Files\\Common Files',
+      'C:\\Program Files\\Internet Explorer',
+      'C:\\Program Files\\Windows Defender',
+      'C:\\Program Files\\Windows NT',
+      'C:\\Program Files (x86)\\Common Files',
+      'C:\\Program Files (x86)\\Internet Explorer',
+    ];
+    for (const dir of extraDirs) {
+      this.mkdirp(dir);
+    }
+
+    // Realistic system files
+    const systemFiles: Array<[string, string, number, string[]]> = [
+      // [path, content, size, attributes]
+      ['C:\\Windows\\System32\\cmd.exe', '', 289792, ['system']],
+      ['C:\\Windows\\System32\\notepad.exe', '', 201216, ['system']],
+      ['C:\\Windows\\System32\\calc.exe', '', 26112, ['system']],
+      ['C:\\Windows\\System32\\mspaint.exe', '', 6656, ['system']],
+      ['C:\\Windows\\System32\\taskmgr.exe', '', 368128, ['system']],
+      ['C:\\Windows\\System32\\regedit.exe', '', 360448, ['system']],
+      ['C:\\Windows\\System32\\explorer.exe', '', 4883944, ['system']],
+      ['C:\\Windows\\System32\\mmc.exe', '', 147968, ['system']],
+      ['C:\\Windows\\System32\\net.exe', '', 62464, ['system']],
+      ['C:\\Windows\\System32\\ping.exe', '', 22528, ['system']],
+      ['C:\\Windows\\System32\\ipconfig.exe', '', 26624, ['system']],
+      ['C:\\Windows\\System32\\netsh.exe', '', 96768, ['system']],
+      ['C:\\Windows\\System32\\tracert.exe', '', 13312, ['system']],
+      ['C:\\Windows\\System32\\nslookup.exe', '', 80896, ['system']],
+      ['C:\\Windows\\System32\\hostname.exe', '', 11264, ['system']],
+      ['C:\\Windows\\System32\\shutdown.exe', '', 28672, ['system']],
+      ['C:\\Windows\\System32\\where.exe', '', 22016, ['system']],
+      ['C:\\Windows\\System32\\findstr.exe', '', 32256, ['system']],
+      ['C:\\Windows\\System32\\attrib.exe', '', 15872, ['system']],
+      ['C:\\Windows\\System32\\xcopy.exe', '', 51712, ['system']],
+      ['C:\\Windows\\System32\\sfc.exe', '', 19456, ['system']],
+      ['C:\\Windows\\System32\\dism.exe', '', 280064, ['system']],
+      ['C:\\Windows\\System32\\wbem\\wmic.exe', '', 47104, ['system']],
+      ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '', 452608, ['system']],
+      ['C:\\Windows\\System32\\drivers\\etc\\hosts', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This is a sample HOSTS file.\n#\n# 127.0.0.1       localhost\n# ::1             localhost\n', 824, []],
+      ['C:\\Windows\\System32\\drivers\\etc\\networks', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This file contains network name/number mappings.\n#\nloopback        127\n', 407, []],
+      ['C:\\Windows\\System32\\drivers\\etc\\protocol', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\nicmp    1   ICMP\ntcp     6   TCP\nudp    17   UDP\n', 1795, []],
+      ['C:\\Windows\\System32\\drivers\\etc\\services', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\necho           7/tcp\nftp           21/tcp\nssh           22/tcp\ntelnet        23/tcp\nsmtp          25/tcp\ndns           53/tcp\nhttp          80/tcp\nhttps        443/tcp\n', 17463, []],
+      ['C:\\Windows\\notepad.exe', '', 201216, ['system']],
+      ['C:\\Windows\\explorer.exe', '', 4883944, ['system']],
+      ['C:\\Windows\\regedit.exe', '', 360448, ['system']],
+      ['C:\\Windows\\write.exe', '', 10752, ['system']],
+      ['C:\\Windows\\win.ini', '; for 16-bit app support\n[fonts]\n[extensions]\n[mci extensions]\n[files]\n[Mail]\nMAPI=1\n', 92, ['hidden']],
+      ['C:\\Windows\\System32\\config\\SYSTEM', '', 26214400, ['system', 'hidden']],
+      ['C:\\Windows\\System32\\config\\SOFTWARE', '', 104857600, ['system', 'hidden']],
+      ['C:\\Windows\\System32\\config\\SAM', '', 262144, ['system', 'hidden']],
+      ['C:\\Windows\\System32\\config\\SECURITY', '', 262144, ['system', 'hidden']],
+      // User files
+      ['C:\\Users\\User\\Desktop\\desktop.ini', '[.ShellClassInfo]\nLocalizedResourceName=@%SystemRoot%\\system32\\shell32.dll,-21769\n', 282, ['system', 'hidden']],
+      ['C:\\Users\\User\\Documents\\desktop.ini', '[.ShellClassInfo]\nLocalizedResourceName=@%SystemRoot%\\system32\\shell32.dll,-21770\n', 282, ['system', 'hidden']],
+      ['C:\\Users\\User\\NTUSER.DAT', '', 3145728, ['system', 'hidden']],
+      ['C:\\Users\\User\\ntuser.dat.LOG1', '', 524288, ['system', 'hidden']],
+      ['C:\\Users\\User\\ntuser.ini', '', 20, ['system', 'hidden']],
+      // Program Files
+      ['C:\\Program Files\\desktop.ini', '[.ShellClassInfo]\nLocalizedResourceName=@%SystemRoot%\\system32\\shell32.dll,-21781\n', 174, ['system', 'hidden']],
+      ['C:\\Program Files (x86)\\desktop.ini', '[.ShellClassInfo]\nLocalizedResourceName=@%SystemRoot%\\system32\\shell32.dll,-21781\n', 174, ['system', 'hidden']],
+    ];
+
+    for (const [path, content, size, attrs] of systemFiles) {
+      // Ensure parent directory exists
+      const lastSep = path.lastIndexOf('\\');
+      if (lastSep > 2) {
+        this.mkdirp(path.substring(0, lastSep));
+      }
+      this.createFile(path, content);
+      const entry = this.resolve(path);
+      if (entry) {
+        entry.size = size;
+        for (const attr of attrs) entry.attributes.add(attr);
+      }
+    }
+
     // Mark system directories as hidden/system
     const systemDirs = ['C:\\PerfLogs', 'C:\\Windows'];
     for (const sd of systemDirs) {
@@ -462,26 +568,31 @@ export class WindowsFileSystem {
 
   // ─── Tree Display ────────────────────────────────────────────────
 
-  tree(absPath: string): string {
+  tree(absPath: string, showFiles = false): string {
     const entry = this.resolve(absPath);
     if (!entry || entry.type !== 'directory') return 'Invalid path - ' + absPath;
 
     const lines: string[] = [absPath];
-    this._tree(entry, '', lines);
+    this._tree(entry, '', lines, showFiles);
     return lines.join('\n');
   }
 
-  private _tree(entry: WinFSEntry, prefix: string, lines: string[]): void {
-    const children = Array.from(entry.children.values())
-      .filter(c => c.type === 'directory')
+  private _tree(entry: WinFSEntry, prefix: string, lines: string[], showFiles: boolean): void {
+    let children = Array.from(entry.children.values())
       .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    if (!showFiles) {
+      children = children.filter(c => c.type === 'directory');
+    }
 
     for (let i = 0; i < children.length; i++) {
       const isLast = i === children.length - 1;
       const connector = isLast ? '└───' : '├───';
       const extension = isLast ? '    ' : '│   ';
       lines.push(prefix + connector + children[i].name);
-      this._tree(children[i], prefix + extension, lines);
+      if (children[i].type === 'directory') {
+        this._tree(children[i], prefix + extension, lines, showFiles);
+      }
     }
   }
 
