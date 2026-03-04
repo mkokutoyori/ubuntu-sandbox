@@ -98,6 +98,8 @@ const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQU
 export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
   private tables: Map<TableName, IptablesTable> = new Map();
+  // Rate limiting state for limit match extension: key = "srcIP:ruleKey" → timestamps
+  private rateLimitHits: Map<string, number[]> = new Map();
 
   constructor(vfs?: VirtualFileSystem) {
     if (vfs) this.vfs = vfs;
@@ -139,8 +141,29 @@ export class LinuxIptablesManager {
     return this.evaluateChain(filterTable, chain, pkt, 0);
   }
 
+  /**
+   * Evaluate a chain against a packet.
+   * Returns { verdict, terminated } where terminated=true means a rule explicitly
+   * decided the packet's fate (ACCEPT/DROP/REJECT). terminated=false means the
+   * chain was exhausted without a terminal decision (equivalent to RETURN).
+   */
   private evaluateChain(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number): FirewallVerdict {
-    if (depth > 20) return 'accept'; // prevent infinite loops
+    if (depth > 20) return 'accept';
+
+    const innerResult = this.evaluateChainInner(table, chain, pkt, depth);
+    if (innerResult !== null) return innerResult;
+
+    // No rule matched → apply chain policy (only built-in chains have policies)
+    if (chain.policy === 'DROP') return 'drop';
+    return 'accept';
+  }
+
+  /**
+   * Inner chain evaluation. Returns null if the chain was exhausted (RETURN behavior),
+   * or a FirewallVerdict if a terminal decision was made.
+   */
+  private evaluateChainInner(table: IptablesTable, chain: IptablesChain, pkt: PacketInfo, depth: number): FirewallVerdict | null {
+    if (depth > 20) return 'accept';
 
     for (const rule of chain.rules) {
       if (this.ruleMatchesPacket(rule, pkt)) {
@@ -153,11 +176,9 @@ export class LinuxIptablesManager {
         // If target is a user-defined chain, jump into it
         const targetChain = table.chains.get(rule.target);
         if (targetChain && targetChain.policy === null) {
-          const result = this.evaluateChain(table, targetChain, pkt, depth + 1);
-          // RETURN from sub-chain means continue in the calling chain
-          if (result === 'accept' && !this.chainHasTerminatingMatch(targetChain, pkt)) {
-            continue;
-          }
+          const result = this.evaluateChainInner(table, targetChain, pkt, depth + 1);
+          // null = sub-chain fell through (RETURN) → continue in calling chain
+          if (result === null) continue;
           return result;
         }
 
@@ -165,26 +186,15 @@ export class LinuxIptablesManager {
           case 'ACCEPT': return 'accept';
           case 'DROP': return 'drop';
           case 'REJECT': return 'reject';
-          case 'RETURN': return 'accept'; // return to calling chain
+          case 'RETURN': return null; // return to calling chain
           case 'LOG': continue; // LOG doesn't terminate; continue to next rule
           default: continue;
         }
       }
     }
 
-    // No rule matched → apply chain policy (only built-in chains have policies)
-    if (chain.policy === 'DROP') return 'drop';
-    return 'accept';
-  }
-
-  /** Check if a chain has a rule that matches and terminates (ACCEPT/DROP/REJECT) */
-  private chainHasTerminatingMatch(chain: IptablesChain, pkt: PacketInfo): boolean {
-    for (const rule of chain.rules) {
-      if (this.ruleMatchesPacket(rule, pkt)) {
-        if (['ACCEPT', 'DROP', 'REJECT'].includes(rule.target)) return true;
-      }
-    }
-    return false;
+    // Chain exhausted without terminal decision
+    return null;
   }
 
   private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
@@ -229,13 +239,40 @@ export class LinuxIptablesManager {
       if (!this.portMatchesSpec(pkt.srcPort, rule.sport)) return false;
     }
 
-    // Match extensions: multiport
+    // Match extensions
     for (const m of rule.matches) {
       if (m.module === 'multiport') {
         const dports = m.options.get('--dports');
         const sports = m.options.get('--sports');
         if (dports && !this.portMatchesSpec(pkt.dstPort, dports)) return false;
         if (sports && !this.portMatchesSpec(pkt.srcPort, sports)) return false;
+      }
+      // limit match: enforce rate limiting per source IP
+      if (m.module === 'limit') {
+        const limitStr = m.options.get('--limit') || '6/minute';
+        const burstStr = m.options.get('--limit-burst') || '6';
+        const burst = parseInt(burstStr) || 6;
+        // Parse rate: "N/second", "N/minute", "N/hour"
+        const rateMatch = limitStr.match(/^(\d+)\/(second|minute|hour)$/);
+        const windowMs = rateMatch
+          ? (rateMatch[2] === 'second' ? 1000 : rateMatch[2] === 'minute' ? 60000 : 3600000)
+          : 60000;
+
+        // Build key from src IP + rule port spec for per-source tracking
+        const ruleKey = `${pkt.srcIP}:${rule.protocol}:${rule.dport}`;
+        const now = Date.now();
+        let hits = this.rateLimitHits.get(ruleKey);
+        if (!hits) {
+          hits = [];
+          this.rateLimitHits.set(ruleKey, hits);
+        }
+        // Purge expired entries
+        const cutoff = now - windowMs;
+        while (hits.length > 0 && hits[0] < cutoff) hits.shift();
+        if (hits.length >= burst) {
+          return false; // Rate limit exceeded → rule doesn't match → fall through to next rule
+        }
+        hits.push(now);
       }
       // state/conntrack: in this simulator, we don't track connection state,
       // but we accept the rule as "matches all" for simplicity
