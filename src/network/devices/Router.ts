@@ -2782,8 +2782,8 @@ export abstract class Router extends Equipment {
     if (localIface.neighbors.has(remoteRid)) return;
 
     const remoteIPv6Addrs = remotePort.getIPv6Addresses?.();
-    const linkLocal = remoteIPv6Addrs?.find((a: any) => a.scope === 'link-local');
-    const globalAddr = remoteIPv6Addrs?.find((a: any) => a.scope === 'global');
+    const linkLocal = remoteIPv6Addrs?.find((a: any) => a.origin === 'link-local');
+    const globalAddr = remoteIPv6Addrs?.find((a: any) => a.origin !== 'link-local');
     const remoteIP = linkLocal?.address?.toString() || globalAddr?.address?.toString() || '::';
 
     const neighbor: any = {
@@ -2952,7 +2952,8 @@ export abstract class Router extends Equipment {
 
       // ── Default-information originate ──
       if ((r.ospfv3Engine.getConfig() as any).defaultInfoOriginate) {
-        const hasDefault = r.ipv6RoutingTable.some(
+        const alwaysInject = (r.ospfv3Engine.getConfig() as any).defaultInfoOriginate === 'always';
+        const hasDefault = alwaysInject || r.ipv6RoutingTable.some(
           (rt: any) => (rt.type === 'default' || rt.type === 'static') &&
             (rt.prefix?.toString() === '::' || rt.prefix?.toString() === '0000:0000:0000:0000:0000:0000:0000:0000') &&
             (rt.prefixLength === 0)
@@ -3107,8 +3108,8 @@ export abstract class Router extends Equipment {
 
       if (remotePort.getEquipmentId() === target.id) {
         const remoteAddrs = remotePort.getIPv6Addresses?.();
-        const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
-        const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
+        const linkLocal = remoteAddrs?.find((a: any) => a.origin === 'link-local');
+        const globalAddr = remoteAddrs?.find((a: any) => a.origin !== 'link-local');
         const nextHop = linkLocal?.address || globalAddr?.address;
         if (nextHop) {
           const v3Iface = this.ospfv3Engine?.getInterface(portName);
@@ -3127,8 +3128,8 @@ export abstract class Router extends Equipment {
           if (!otherEnd) continue;
           if (otherEnd.getEquipmentId() === target.id) {
             const remoteAddrs = otherEnd.getIPv6Addresses?.();
-            const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
-            const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
+            const linkLocal = remoteAddrs?.find((a: any) => a.origin === 'link-local');
+            const globalAddr = remoteAddrs?.find((a: any) => a.origin !== 'link-local');
             const nextHop = linkLocal?.address || globalAddr?.address;
             if (nextHop) {
               const v3Iface = this.ospfv3Engine?.getInterface(portName);
@@ -3158,8 +3159,8 @@ export abstract class Router extends Equipment {
       const tryAdd = (r: Router, rPort: Port) => {
         if (visited.has(r.id) || !r.ospfv3Engine) return;
         const remoteAddrs = rPort.getIPv6Addresses?.();
-        const linkLocal = remoteAddrs?.find((a: any) => a.scope === 'link-local');
-        const globalAddr = remoteAddrs?.find((a: any) => a.scope === 'global');
+        const linkLocal = remoteAddrs?.find((a: any) => a.origin === 'link-local');
+        const globalAddr = remoteAddrs?.find((a: any) => a.origin !== 'link-local');
         const nextHop = linkLocal?.address || globalAddr?.address;
         if (!nextHop) return;
         const v3Iface = this.ospfv3Engine?.getInterface(portName);
@@ -3871,8 +3872,6 @@ export abstract class Router extends Equipment {
             rt => rt.network === prt.network && rt.mask === prt.mask
           );
           if (alreadyHave) continue;
-          // Skip if it's in our own area
-          if (myAreas.has(prt.areaId)) continue;
 
           routes.push({
             network: prt.network, mask: prt.mask,
