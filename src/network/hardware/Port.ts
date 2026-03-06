@@ -430,6 +430,19 @@ export class Port {
     this.notifyLinkChange('up');
   }
 
+  /** Set cable reference without triggering link-change notifications.
+   *  Used by Cable.connect to ensure both ends are wired before any
+   *  _ospfAutoConverge (or similar) fires and tries to deliver packets. */
+  _setCableNoNotify(cable: Cable): void {
+    this.cable = cable;
+    Logger.debug(this.equipmentId, 'port:cable-connect', `${this.name}: cable connected`);
+  }
+
+  /** Fire link-up handlers. Used by Cable.connect after both ends are wired. */
+  _notifyLinkUp(): void {
+    this.notifyLinkChange('up');
+  }
+
   disconnectCable(): void {
     this.cable = null;
     this.negotiatedSpeed = null;
