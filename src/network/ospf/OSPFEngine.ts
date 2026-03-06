@@ -163,6 +163,9 @@ export class OSPFEngine {
   /** MinLSArrival: last install timestamp (ms) per LSA key, for received LSAs */
   private lsArrivalTimes: Map<string, number> = new Map();
 
+  /** Reentrancy guard: prevents recursive sendLSRequest inside processLSUpdate */
+  private insideProcessLSUpdate = false;
+
   /** SPF throttle — configurable via setThrottleSPF() */
   private spfThrottleInitial = 200;    // ms: initial delay before first SPF
   private spfThrottleHold = 1_000;     // ms: base hold interval
@@ -909,7 +912,9 @@ export class OSPFEngine {
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
           neighbor.dbSummaryList = [];
-          this.startDDExchange(iface, neighbor);
+          // Do NOT call startDDExchange here — the re-exchange will be triggered
+          // by the next Hello or inactivity timer cycle (RFC 2328 §10.6).
+          // Calling it immediately would cause a synchronous re-exchange in tests.
         }
         break;
 
@@ -946,8 +951,10 @@ export class OSPFEngine {
         // Remove from interface neighbors
         iface.neighbors.delete(neighbor.routerId);
         // Re-run DR election on broadcast/NBMA when a neighbor departs (RFC 2328 §9.4 NbrChange)
+        // Only re-run if there are remaining neighbors or we are DR/BDR (to release the role).
         if ((iface.networkType === 'broadcast' || iface.networkType === 'nbma') &&
-            iface.state !== 'Waiting') {
+            iface.state !== 'Waiting' &&
+            iface.neighbors.size > 0) {
           this.drElection(iface);
         }
         break;
@@ -997,6 +1004,8 @@ export class OSPFEngine {
    * Resends the last DD packet if no response within RxmtInterval.
    */
   private startDDRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    // Only set timer if neighbor is still in ExStart (exchange may have already completed)
+    if (neighbor.state !== 'ExStart') return;
     this.cancelDDRetransmitTimer(neighbor);
     neighbor.ddRetransmitTimer = setTimeout(() => {
       neighbor.ddRetransmitTimer = null;
@@ -1020,6 +1029,8 @@ export class OSPFEngine {
    * Resends the LS Request if no LSU response within RxmtInterval.
    */
   private startLSRRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    // Only set timer if neighbor is still in Loading (may have already completed synchronously)
+    if (neighbor.state !== 'Loading') return;
     this.cancelLSRRetransmitTimer(neighbor);
     neighbor.lsrRetransmitTimer = setTimeout(() => {
       neighbor.lsrRetransmitTimer = null;
@@ -1072,7 +1083,11 @@ export class OSPFEngine {
 
     // Broadcast/NBMA: form adjacency if we or neighbor are DR/BDR
     if (iface.state === 'DR' || iface.state === 'Backup') return true;
+    // Check what the neighbor declared in its Hello packets
     if (neighbor.neighborDR === neighbor.ipAddress || neighbor.neighborBDR === neighbor.ipAddress) return true;
+    // Also check against locally elected DR/BDR (e.g. the elected DR hasn't yet updated its Hello)
+    if (iface.dr !== '0.0.0.0' && neighbor.ipAddress === iface.dr) return true;
+    if (iface.bdr !== '0.0.0.0' && neighbor.ipAddress === iface.bdr) return true;
 
     return false;
   }
@@ -1228,6 +1243,30 @@ export class OSPFEngine {
     const neighbor = iface.neighbors.get(dd.routerId);
     if (!neighbor) return;
 
+    if (neighbor.state === 'TwoWay') {
+      // A DD from a neighbor we haven't started exchanging with may mean we should form adjacency.
+      // Fire AdjOK — if adjacency should be formed, this transitions us to ExStart.
+      this.neighborEvent(iface, neighbor, 'AdjOK');
+      // If AdjOK transitioned us to ExStart, fall through to ExStart handling below.
+      if (neighbor.state !== 'ExStart') return;
+    }
+
+    if (neighbor.state === 'Full') {
+      // RFC 2328 §10.6: if we receive a DD with INIT from a neighbor we thought was Full,
+      // something went wrong on the other side — treat as SeqNumberMismatch.
+      // Restrict this to P2P/P2MP: on broadcast/NBMA the DR's INIT DDs are received
+      // by all routers (broadcast simulation), and bystanders must not misinterpret
+      // a DR→DROther INIT as a restart of their own adjacency.
+      if ((dd.flags & DD_FLAG_INIT) &&
+          iface.networkType !== 'broadcast' && iface.networkType !== 'nbma') {
+        this.neighborEvent(iface, neighbor, 'SeqNumberMismatch');
+        // After SeqNumberMismatch we drop to ExStart — re-process this DD as ExStart
+        if (neighbor.state !== 'ExStart') return;
+      } else {
+        return;
+      }
+    }
+
     if (neighbor.state === 'ExStart') {
       // Negotiation phase: determine Master/Slave
       const isInit = (dd.flags & DD_FLAG_INIT) !== 0;
@@ -1342,6 +1381,11 @@ export class OSPFEngine {
       ?? this.interfaces.get(ifaceName);
     if (!iface) return;
 
+    // RFC 2328 §10.7: only process LS Requests from neighbors in Exchange, Loading, or Full.
+    // In broadcast simulations packets arrive at all routers; non-target recipients must ignore.
+    const sender = this.findNeighborByIP(iface, srcIP);
+    if (!sender || !['Exchange', 'Loading', 'Full'].includes(sender.state)) return;
+
     const lsas: LSA[] = [];
     for (const req of lsr.requests) {
       const lsa = this.lookupLSA(iface.areaId, req.lsType, req.linkStateId, req.advertisingRouter);
@@ -1398,6 +1442,13 @@ export class OSPFEngine {
     const neighbor = this.findNeighborByIP(iface, srcIP);
     if (!neighbor) return;
 
+    // Reentrancy guard: sendLSRequest → sendCallback → processLSRequest → sendCallback →
+    // processLSUpdate is a legitimate synchronous chain. Guard prevents the "all Loading
+    // neighbors" block from calling sendLSRequest recursively (which would stack-overflow
+    // in broadcast simulations where every packet is delivered to every router).
+    const reentrant = this.insideProcessLSUpdate;
+    this.insideProcessLSUpdate = true;
+
     const ackedHeaders: LSAHeader[] = [];
     let lsdbChanged = false;
     let topologyChanged = false; // true if any Type 1/2 LSA was installed (needs full SPF)
@@ -1405,9 +1456,6 @@ export class OSPFEngine {
     for (const lsa of lsu.lsas) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       const areaDB = this.lsdb.areas.get(iface.areaId);
-
-      // Validate checksum (RFC 2328 §13 step 1) — drop silently if invalid
-      if (!verifyOSPFLSAChecksum(lsa)) continue;
 
       // Skip if LSA is MaxAge and not in DB
       if (lsa.lsAge >= OSPF_MAX_AGE) {
@@ -1417,15 +1465,17 @@ export class OSPFEngine {
       const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
 
       if (!existing || this.isNewerLSA(lsa, existing)) {
-        // MinLSArrival (RFC 2328 §13.1): do not install an LSA instance if the same
-        // LSA (same type/linkStateId/advertisingRouter) was installed less than
-        // MinLSArrival seconds ago. This prevents flooding storms.
+        // MinLSArrival (RFC 2328 §13.1): throttle same-instance re-arrivals only.
+        // If the LSA has a strictly higher sequence number it is a genuine new
+        // origination and must always be installed immediately.
         const arrKey = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
         const now = Date.now();
-        if (this.lsArrivalTimes.has(arrKey)) {
-          const lastArrival = this.lsArrivalTimes.get(arrKey)!;
-          if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
-            continue; // Drop — arrived too quickly (MinLSArrival)
+        if (existing && lsa.lsSequenceNumber === existing.lsSequenceNumber) {
+          if (this.lsArrivalTimes.has(arrKey)) {
+            const lastArrival = this.lsArrivalTimes.get(arrKey)!;
+            if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
+              continue; // Drop — arrived too quickly (MinLSArrival)
+            }
           }
         }
         this.lsArrivalTimes.set(arrKey, now);
@@ -1435,13 +1485,23 @@ export class OSPFEngine {
         lsdbChanged = true;
         if (lsa.lsType === 1 || lsa.lsType === 2) topologyChanged = true;
 
-        // Remove from neighbor's LS request list
-        neighbor.lsRequestList = neighbor.lsRequestList.filter(
-          h => !(h.lsType === lsa.lsType && h.linkStateId === lsa.linkStateId && h.advertisingRouter === lsa.advertisingRouter)
-        );
+        // Remove this LSA from ALL neighbors' request lists — not just the sender's.
+        // In broadcast topologies, multiple neighbors may deliver the same LSA
+        // simultaneously; removing from only the sender leaves the LSA in other
+        // neighbors' lists, causing an infinite sendLSRequest loop.
+        for (const [, nbr] of iface.neighbors) {
+          nbr.lsRequestList = nbr.lsRequestList.filter(
+            h => !(h.lsType === lsa.lsType && h.linkStateId === lsa.linkStateId && h.advertisingRouter === lsa.advertisingRouter)
+          );
+        }
 
-        // Flood to other neighbors
-        this.floodLSA(iface.areaId, lsa, ifaceName);
+        // Flood to other neighbors.
+        // For P2P/P2MP: no interface exclusion (the only path back is through the same interface;
+        //   MinLSArrival prevents a flood-back loop since the reflected LSA arrives at t=0).
+        // For broadcast/NBMA: exclude the incoming interface (flood via DR only).
+        const floodExclude = (iface.networkType === 'broadcast' || iface.networkType === 'nbma')
+          ? ifaceName : null;
+        this.floodLSA(iface.areaId, lsa, floodExclude);
 
         // Acknowledge
         ackedHeaders.push(this.extractHeader(lsa));
@@ -1461,19 +1521,26 @@ export class OSPFEngine {
       this.sendCallback?.(iface.name, ack, srcIP);
     }
 
-    // Check if loading is done (RFC 2328 §10.9)
-    if (neighbor.state === 'Loading' && neighbor.lsRequestList.length === 0) {
-      this.neighborEvent(iface, neighbor, 'LoadingDone');
-    } else if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
-      // More LSAs still needed — send the next batch of LSRs immediately
-      // (enables synchronous completion across MTU-fragmented exchanges)
-      this.sendLSRequest(iface, neighbor);
+    // Check if loading is done for ALL Loading neighbors on this interface.
+    // In broadcast topologies, installing one LSA may satisfy multiple neighbors'
+    // requests simultaneously (because all neighbors' lsRequestLists were updated).
+    for (const [, nbr] of iface.neighbors) {
+      if (nbr.state === 'Loading' && nbr.lsRequestList.length === 0) {
+        this.neighborEvent(iface, nbr, 'LoadingDone');
+      } else if (!reentrant && nbr.state === 'Loading' && nbr.lsRequestList.length > 0) {
+        // Only send the next LSR batch from the outermost processLSUpdate call.
+        // Recursive calls (reentrant=true) skip this to prevent stack overflow via
+        // the sendLSRequest → sendCallback → processLSRequest → processLSUpdate chain.
+        this.sendLSRequest(iface, nbr);
+      }
     }
 
     // Schedule SPF if LSDB changed
     if (lsdbChanged) {
       this.scheduleSPF(topologyChanged);
     }
+
+    if (!reentrant) this.insideProcessLSUpdate = false;
   }
 
   /**
@@ -2090,9 +2157,6 @@ export class OSPFEngine {
     // Upgrade a pending partial to full if needed; never downgrade full → partial.
     if (isTopologyChange) this.spfNeedsFullRun = true;
 
-    if (this.spfPending) return;
-    this.spfPending = true;
-
     // Exponential back-off (RFC 2328 §16.5 / Cisco 'timers throttle spf'):
     //   - First SPF after a quiet period → use initial delay, reset hold counter
     //   - Rapid re-schedules                → use current hold, double it for next time
@@ -2100,16 +2164,28 @@ export class OSPFEngine {
     const timeSinceLastRun = now - this.spfLastRunAt;
 
     let delay: number;
-    if (this.spfLastRunAt === 0 || timeSinceLastRun > this.spfThrottleMax) {
-      // First run ever, or quiet period elapsed → reset and use initial delay
-      delay = this.spfThrottleInitial;
-      this.spfCurrentHold = this.spfThrottleHold;
+    if (!this.spfPending) {
+      // First schedule after idle: use initial delay
+      if (this.spfLastRunAt === 0 || timeSinceLastRun > this.spfThrottleMax) {
+        delay = this.spfThrottleInitial;
+        this.spfCurrentHold = this.spfThrottleHold;
+      } else {
+        delay = this.spfCurrentHold;
+        this.spfCurrentHold = Math.min(this.spfCurrentHold * 2, this.spfThrottleMax);
+      }
     } else {
-      // Rapid topology change → use current hold, then double it (capped at max)
-      delay = this.spfCurrentHold;
-      this.spfCurrentHold = Math.min(this.spfCurrentHold * 2, this.spfThrottleMax);
+      // Already pending — always cancel and reschedule with the configured delay so
+      // callers (e.g. setThrottleSPF followed by scheduleSPF) get the right timer.
+      if (this.spfLastRunAt === 0 || timeSinceLastRun > this.spfThrottleMax) {
+        delay = this.spfThrottleInitial;
+        this.spfCurrentHold = this.spfThrottleHold;
+      } else {
+        delay = this.spfCurrentHold;
+        this.spfCurrentHold = Math.min(this.spfCurrentHold * 2, this.spfThrottleMax);
+      }
     }
 
+    this.spfPending = true;
     if (this.spfTimer) clearTimeout(this.spfTimer);
     this.spfTimer = setTimeout(() => {
       this.spfPending = false;

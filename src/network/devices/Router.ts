@@ -2533,7 +2533,12 @@ export abstract class Router extends Equipment {
    * @internal
    */
   _ospfAutoConverge(): void {
-    if (!this.ospfEngine) return;
+    if (!this.ospfEngine && !this.ospfv3Engine) return;
+    // OSPFv3-only mode: skip OSPFv2 steps, jump straight to step 4
+    if (!this.ospfEngine) {
+      this._ospfv3AutoConverge();
+      return;
+    }
 
     // Step 1: Auto-activate interfaces matching OSPF network statements
     const routerIfaces: Array<{ name: string; ip: string; mask: string }> = [];
@@ -3336,8 +3341,15 @@ export abstract class Router extends Equipment {
       state: 'Down',
       priority: remoteIface.priority ?? 1,
       // neighborDR/BDR will be updated after DR election
-      neighborDR: remoteIface.dr ?? '0.0.0.0',
-      neighborBDR: remoteIface.bdr ?? '0.0.0.0',
+      // neighborDR/BDR start at 0.0.0.0 — in the simulation, Hellos are not
+      // exchanged, so we never receive the neighbor's declared DR/BDR via Hello.
+      // Capturing remoteIface.dr here would snapshot a stale value from a prior
+      // solo drElection (when the remote had no peers), which would make the
+      // remote look like a self-declared DR and exclude it from BDR candidates.
+      // drElection() uses iface.dr/bdr on the *self* candidate and iface.dr/bdr
+      // on local-elected state; 0.0.0.0 here is the correct "not yet announced" value.
+      neighborDR: '0.0.0.0',
+      neighborBDR: '0.0.0.0',
       deadTimer: null,
       ddSeqNumber: 0,
       isMaster: false,
@@ -3435,6 +3447,12 @@ export abstract class Router extends Equipment {
       if (!r.ospfEngine) continue;
       for (const [, iface] of r.ospfEngine.getInterfaces()) {
         if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
+          // Reset declared DR/BDR before each election so that stale solo-elected
+          // values (from when a router configured OSPF before any cables were
+          // connected) do not bias the self-candidate and corrupt BDR selection.
+          // drElection() will re-derive DR/BDR purely from candidate priorities/RIDs.
+          iface.dr = '0.0.0.0';
+          iface.bdr = '0.0.0.0';
           r.ospfEngine.drElection(iface);
         }
       }

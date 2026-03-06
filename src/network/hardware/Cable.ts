@@ -115,8 +115,13 @@ export class Cable {
   connect(portA: Port, portB: Port): void {
     this.portA = portA;
     this.portB = portB;
-    portA.connectCable(this);
-    portB.connectCable(this);
+    // Set cable references on BOTH ports before triggering any link-change
+    // notifications. This ensures that when _ospfAutoConverge fires for portA,
+    // portB's cable is already set so reverse packet delivery works correctly.
+    portA._setCableNoNotify(this);
+    portB._setCableNoNotify(this);
+    portA._notifyLinkUp();
+    portB._notifyLinkUp();
 
     // Trigger auto-negotiation between ports through this cable
     this.negotiateLink();
