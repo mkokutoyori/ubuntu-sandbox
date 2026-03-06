@@ -45,6 +45,7 @@ import {
   type CiscoACLShellContext,
   buildACLConfigCommands, buildACLInterfaceCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
+  buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
   registerACLShowCommands,
 } from './cisco/CiscoAclCommands';
 import {
@@ -101,6 +102,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private configRouterOspfv3Trie = new CommandTrie();  // OSPFv3 config-router
   private configStdNaclTrie = new CommandTrie();
   private configExtNaclTrie = new CommandTrie();
+  private configIpv6NaclTrie = new CommandTrie();
   // IPSec sub-mode tries
   private configIsakmpTrie = new CommandTrie();
   private configTfsetTrie = new CommandTrie();
@@ -123,6 +125,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     buildConfigRouterCommands(this.configRouterTrie, this);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
+    buildIPv6ACLGlobalCommands(this.configTrie, this);
+    buildIPv6ACLModeCommands(this.configIpv6NaclTrie, this);
     // OSPF commands (separate trie from RIP)
     registerOSPFConfigCommands(this.configTrie, this);
     registerOSPFInterfaceCommands(this.configIfTrie, this);
@@ -210,6 +214,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-router-ospfv3': return `${host}(config-rtr)#`;
       case 'config-std-nacl': return `${host}(config-std-nacl)#`;
       case 'config-ext-nacl': return `${host}(config-ext-nacl)#`;
+      case 'config-ipv6-nacl': return `${host}(config-ipv6-nacl)#`;
       case 'config-isakmp':   return `${host}(config-isakmp)#`;
       case 'config-tfset':    return `${host}(cfg-crypto-trans)#`;
       case 'config-crypto-map': return `${host}(config-crypto-map)#`;
@@ -436,6 +441,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
       case 'config-std-nacl': return this.configStdNaclTrie;
       case 'config-ext-nacl': return this.configExtNaclTrie;
+      case 'config-ipv6-nacl': return this.configIpv6NaclTrie;
       case 'config-isakmp': return this.configIsakmpTrie;
       case 'config-tfset': return this.configTfsetTrie;
       case 'config-crypto-map': return this.configCryptoMapTrie;
@@ -464,6 +470,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       case 'config-router-ospfv3':
       case 'config-std-nacl':
       case 'config-ext-nacl':
+      case 'config-ipv6-nacl':
       case 'config-isakmp':
       case 'config-tfset':
       case 'config-crypto-map':

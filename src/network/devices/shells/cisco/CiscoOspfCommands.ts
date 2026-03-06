@@ -255,10 +255,11 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     return '';
   });
 
-  trie.registerGreedy('default-information originate', 'Distribute default route', (_args) => {
+  trie.registerGreedy('default-information originate', 'Distribute default route', (args) => {
     const v3 = ctx.r()._getOSPFv3EngineInternal();
     if (!v3) return '% OSPFv3 is not enabled.';
-    v3.setDefaultInformationOriginate(true);
+    const always = args[0]?.toLowerCase() === 'always';
+    v3.setDefaultInformationOriginate(always ? 'always' : true);
     return '';
   });
 
@@ -959,7 +960,7 @@ function resolveV3DRBDR(router: Router, iface: any, rid: string): string {
     const port = router.getPort(iface.name);
     if (port) {
       const addrs = port.getIPv6Addresses?.();
-      const global = addrs?.find((a: any) => a.scope === 'global');
+      const global = addrs?.find((a: any) => a.origin !== 'link-local');
       if (global) return global.address.toString();
     }
     return rid;
@@ -1059,7 +1060,7 @@ function showIpv6RouteSpecific(router: Router, dest: string): string {
   }
 
   const nh = best.nextHop ? `via ${best.nextHop}` : 'directly connected';
-  return `${code} ${prefix}/${prefLen} [${ad}/${metric}]\n  ${nh}, ${best.iface}`;
+  return `${code}  ${prefix}/${prefLen} [${ad}/${metric}]\n  ${nh}, ${best.iface}`;
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────

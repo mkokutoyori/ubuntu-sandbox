@@ -122,7 +122,7 @@ export class OSPFv3Engine {
     return this.config.passiveInterfaces.has(ifName);
   }
 
-  setDefaultInformationOriginate(flag: boolean): void {
+  setDefaultInformationOriginate(flag: boolean | 'always'): void {
     (this.config as any).defaultInfoOriginate = flag;
   }
 

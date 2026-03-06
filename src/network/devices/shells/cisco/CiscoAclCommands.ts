@@ -370,3 +370,67 @@ export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Rout
   trie.register('show access-lists', 'Display all access lists', () => showAccessLists(getRouter()));
   trie.register('show ip access-lists', 'Display IP access lists', () => showAccessLists(getRouter()));
 }
+
+// ─── IPv6 Named ACL Commands ──────────────────────────────────────────
+
+function addIPv6ACLEntry(router: Router, name: string, action: 'permit' | 'deny', prefixStr: string | null): void {
+  const r = router as any;
+  if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
+  let acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+  if (!acl) {
+    acl = { name, entries: [] };
+    r.ipv6AccessLists.push(acl);
+  }
+  if (prefixStr) {
+    const slash = prefixStr.indexOf('/');
+    const prefix = slash !== -1 ? prefixStr.substring(0, slash) : prefixStr;
+    const prefixLength = slash !== -1 ? parseInt(prefixStr.substring(slash + 1), 10) : 128;
+    acl.entries.push({ action, prefix, prefixLength });
+  } else {
+    acl.entries.push({ action });
+  }
+}
+
+/**
+ * Register 'ipv6 access-list <name>' in the global config trie.
+ * Entering this command creates/selects the ACL and enters config-ipv6-nacl mode.
+ */
+export function buildIPv6ACLGlobalCommands(configTrie: CommandTrie, ctx: CiscoACLShellContext): void {
+  configTrie.registerGreedy('ipv6 access-list', 'Define IPv6 named access list', (args) => {
+    const name = args[0];
+    if (!name) return '% Incomplete command.';
+    // Ensure the ACL exists
+    addIPv6ACLEntry(ctx.r(), name, 'permit', null);
+    const r = ctx.r() as any;
+    const acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+    if (acl) acl.entries = []; // reset if re-entering
+    ctx.setSelectedACL(name);
+    ctx.setMode('config-ipv6-nacl');
+    return '';
+  });
+}
+
+/**
+ * Register permit/deny commands for the config-ipv6-nacl mode trie.
+ */
+export function buildIPv6ACLModeCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
+  trie.registerGreedy('deny', 'Deny matching IPv6 packets', (args) => {
+    const name = ctx.getSelectedACL();
+    if (!name) return '% No ACL selected';
+    // deny ipv6 <src-prefix/len> any
+    if (args[0]?.toLowerCase() !== 'ipv6') return '% Invalid command';
+    const prefixStr = args[1];
+    if (!prefixStr) return '% Incomplete command.';
+    addIPv6ACLEntry(ctx.r(), name, 'deny', prefixStr);
+    return '';
+  });
+
+  trie.registerGreedy('permit', 'Permit matching IPv6 packets', (args) => {
+    const name = ctx.getSelectedACL();
+    if (!name) return '% No ACL selected';
+    if (args[0]?.toLowerCase() !== 'ipv6') return '% Invalid command';
+    // permit ipv6 any any → no specific prefix (permit all)
+    addIPv6ACLEntry(ctx.r(), name, 'permit', null);
+    return '';
+  });
+}

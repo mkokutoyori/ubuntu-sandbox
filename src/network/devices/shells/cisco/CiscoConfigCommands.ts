@@ -17,7 +17,7 @@ import { CommandTrie } from '../CommandTrie';
 export type CiscoShellMode =
   | 'user' | 'privileged' | 'config' | 'config-if'
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
-  | 'config-std-nacl' | 'config-ext-nacl'
+  | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
   // IPSec modes
   | 'config-isakmp' | 'config-tfset' | 'config-crypto-map'
   | 'config-ipsec-profile'

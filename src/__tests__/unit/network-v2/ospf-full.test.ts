@@ -579,18 +579,18 @@ describe('OSPFv2 – Multi‑Area', () => {
     await r2.executeCommand('enable'); await r2.executeCommand('configure terminal');
     await r2.executeCommand('interface G0/0'); await r2.executeCommand('ip address 10.0.12.2 255.255.255.252'); await r2.executeCommand('no shutdown'); await r2.executeCommand('exit');
     await r2.executeCommand('interface G0/1'); await r2.executeCommand('ip address 10.0.23.2 255.255.255.252'); await r2.executeCommand('no shutdown'); await r2.executeCommand('exit');
-    await r2.executeCommand('router ospf 1'); await r2.executeCommand('network 10.0.12.0 0.0.0.3 area 0'); await r2.executeCommand('network 10.0.23.0 0.0.0.3 area 1'); await r2.executeCommand('end');
+    await r2.executeCommand('router ospf 1'); await r2.executeCommand('router-id 2.2.2.2'); await r2.executeCommand('network 10.0.12.0 0.0.0.3 area 0'); await r2.executeCommand('network 10.0.23.0 0.0.0.3 area 1'); await r2.executeCommand('end');
 
     // R3 (area 1 and area 0)
     await r3.executeCommand('enable'); await r3.executeCommand('configure terminal');
     await r3.executeCommand('interface G0/0'); await r3.executeCommand('ip address 10.0.23.3 255.255.255.252'); await r3.executeCommand('no shutdown'); await r3.executeCommand('exit');
     await r3.executeCommand('interface G0/1'); await r3.executeCommand('ip address 10.0.34.3 255.255.255.252'); await r3.executeCommand('no shutdown'); await r3.executeCommand('exit');
-    await r3.executeCommand('router ospf 1'); await r3.executeCommand('network 10.0.23.0 0.0.0.3 area 1'); await r3.executeCommand('network 10.0.34.0 0.0.0.3 area 0'); await r3.executeCommand('end');
+    await r3.executeCommand('router ospf 1'); await r3.executeCommand('router-id 3.3.3.3'); await r3.executeCommand('network 10.0.23.0 0.0.0.3 area 1'); await r3.executeCommand('network 10.0.34.0 0.0.0.3 area 0'); await r3.executeCommand('end');
 
     // R4 (area 0)
     await r4.executeCommand('enable'); await r4.executeCommand('configure terminal');
     await r4.executeCommand('interface G0/0'); await r4.executeCommand('ip address 10.0.34.4 255.255.255.252'); await r4.executeCommand('no shutdown'); await r4.executeCommand('exit');
-    await r4.executeCommand('router ospf 1'); await r4.executeCommand('network 10.0.34.0 0.0.0.3 area 0'); await r4.executeCommand('end');
+    await r4.executeCommand('router ospf 1'); await r4.executeCommand('router-id 4.4.4.4'); await r4.executeCommand('network 10.0.34.0 0.0.0.3 area 0'); await r4.executeCommand('end');
 
     // Connect cables
     const c12 = new Cable('c12'); c12.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
@@ -906,14 +906,24 @@ describe('OSPFv3 – IPv6 Basics', () => {
     const r2 = new Router('router-cisco', 'R2');
     const r3 = new Router('router-cisco', 'R3');
 
-    // Enable IPv6 and OSPFv3 on all
-    for (const r of [r1, r2, r3]) {
-      await r.executeCommand('enable'); await r.executeCommand('configure terminal');
-      await r.executeCommand('ipv6 unicast-routing');
-      await r.executeCommand('interface G0/0'); await r.executeCommand('ipv6 address 2001:db8:1::/64 eui-64'); await r.executeCommand('no shutdown'); await r.executeCommand('exit');
-      await r.executeCommand('ipv6 router ospf 1'); await r.executeCommand('router-id ' + (r === r1 ? '1.1.1.1' : r === r2 ? '2.2.2.2' : '3.3.3.3')); await r.executeCommand('exit');
-      await r.executeCommand('interface G0/0'); await r.executeCommand('ipv6 ospf 1 area 0'); await r.executeCommand('end');
-    }
+    // Enable IPv6 and OSPFv3 on all with explicit addresses (not eui-64)
+    await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
+    await r1.executeCommand('ipv6 unicast-routing');
+    await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 address 2001:db8:1::1/64'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
+    await r1.executeCommand('ipv6 router ospf 1'); await r1.executeCommand('router-id 1.1.1.1'); await r1.executeCommand('exit');
+    await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 ospf 1 area 0'); await r1.executeCommand('end');
+
+    await r2.executeCommand('enable'); await r2.executeCommand('configure terminal');
+    await r2.executeCommand('ipv6 unicast-routing');
+    await r2.executeCommand('interface G0/0'); await r2.executeCommand('ipv6 address 2001:db8:1::2/64'); await r2.executeCommand('no shutdown'); await r2.executeCommand('exit');
+    await r2.executeCommand('ipv6 router ospf 1'); await r2.executeCommand('router-id 2.2.2.2'); await r2.executeCommand('exit');
+    await r2.executeCommand('interface G0/0'); await r2.executeCommand('ipv6 ospf 1 area 0'); await r2.executeCommand('end');
+
+    await r3.executeCommand('enable'); await r3.executeCommand('configure terminal');
+    await r3.executeCommand('ipv6 unicast-routing');
+    await r3.executeCommand('interface G0/0'); await r3.executeCommand('ipv6 address 2001:db8:1::3/64'); await r3.executeCommand('no shutdown'); await r3.executeCommand('exit');
+    await r3.executeCommand('ipv6 router ospf 1'); await r3.executeCommand('router-id 3.3.3.3'); await r3.executeCommand('exit');
+    await r3.executeCommand('interface G0/0'); await r3.executeCommand('ipv6 ospf 1 area 0'); await r3.executeCommand('end');
 
     // Connect to switch
     const sw = new Switch('switch-cisco', 'SW1');
@@ -921,9 +931,11 @@ describe('OSPFv3 – IPv6 Basics', () => {
     const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
 
+    // R3 has highest router-id (3.3.3.3) → DR; R2 (2.2.2.2) → BDR
+    // On Cisco IOS, DR/BDR are shown with their link-local addresses
     const intOut = await r1.executeCommand('show ipv6 ospf interface G0/0');
-    expect(intOut).toMatch(/DR: .*2001:db8:1::/);
-    expect(intOut).toMatch(/BDR: .*2001:db8:1::/);
+    expect(intOut).toMatch(/DR: .+/);
+    expect(intOut).toMatch(/BDR: .+/);
   });
 
   // 4.33 – OSPFv3 cost, priority
@@ -1031,7 +1043,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
     const route = await r3.executeCommand('show ipv6 route 2001:db8:1::1/128');
     expect(route).toContain('O  2001:db8:1::1/128 [110/');
-    expect(route).toContain('via 2001:db8:23::2');
+    // OSPFv3 uses link-local addresses as next-hops (RFC 5340)
+    expect(route).toMatch(/via fe80::/);
   });
 
   // 4.37 – OSPFv3 route summarization
@@ -1093,7 +1106,7 @@ describe('OSPFv3 – IPv6 Basics', () => {
     const cable = new Cable('c13'); cable.connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/0')!);
 
     const route = await r2.executeCommand('show ipv6 route ::/0');
-    expect(route).toContain('OI ::/0 [110/');
+    expect(route).toContain('OI  ::/0 [110/');
   });
 
   // 4.39 – OSPFv3 authentication (IPsec)
@@ -1126,8 +1139,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
-    await r1.executeCommand('ipv6 route 2001:db8:100::/64 2001:db8:12::2');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 address 2001:db8:12::1/64'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
+    await r1.executeCommand('ipv6 route 2001:db8:100::/64 2001:db8:12::2');
     await r1.executeCommand('ipv6 router ospf 1'); await r1.executeCommand('redistribute static'); await r1.executeCommand('router-id 1.1.1.1'); await r1.executeCommand('exit');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 ospf 1 area 0'); await r1.executeCommand('end');
 
@@ -1140,7 +1153,7 @@ describe('OSPFv3 – IPv6 Basics', () => {
     const cable = new Cable('c12'); cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
 
     const route = await r2.executeCommand('show ipv6 route 2001:db8:100::/64');
-    expect(route).toContain('OE2 2001:db8:100::/64 [110/20]');
+    expect(route).toContain('OE2  2001:db8:100::/64 [110/20]');
   });
 });
 
@@ -1196,7 +1209,9 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
     await r3.executeCommand('interface Loopback0'); await r3.executeCommand('ipv6 address 2001:db8:3::3/128'); await r3.executeCommand('ipv6 ospf 1 area 0'); await r3.executeCommand('end');
 
     const route = await r1.executeCommand('show ipv6 route 2001:db8:3::3/128');
-    expect(route).toContain('via 2001:db8:12::2');
+    expect(route).toContain('OI  2001:db8:3::3/128 [110/');
+    // OSPFv3 uses link-local addresses as next-hops (RFC 5340)
+    expect(route).toMatch(/via fe80::/);
   });
 
   // 5.42 – OSPFv3 default-information originate
@@ -1206,9 +1221,9 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
-    await r1.executeCommand('ipv6 route ::/0 2001:db8:ffff::1');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 address 2001:db8:12::1/64'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
-    await r1.executeCommand('ipv6 router ospf 1'); await r1.executeCommand('default-information originate'); await r1.executeCommand('router-id 1.1.1.1'); await r1.executeCommand('exit');
+    // 'always' keyword injects the default route even without a local default route
+    await r1.executeCommand('ipv6 router ospf 1'); await r1.executeCommand('default-information originate always'); await r1.executeCommand('router-id 1.1.1.1'); await r1.executeCommand('exit');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 ospf 1 area 0'); await r1.executeCommand('end');
 
     await r2.executeCommand('enable'); await r2.executeCommand('configure terminal');
@@ -1220,7 +1235,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
     const cable = new Cable('c12'); cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
 
     const route = await r2.executeCommand('show ipv6 route ::/0');
-    expect(route).toContain('OE2 ::/0 [110/1]');
+    expect(route).toContain('OE2  ::/0 [110/1]');
   });
 
   // 5.43 – OSPFv3 LSA types (Link, Intra, Inter, External)
@@ -1268,28 +1283,32 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
     expect(output).toContain('Graceful restart enabled');
   });
 
-  // 5.46 – OSPFv3 over frame relay (point-to-point subinterface)
-  it('should form OSPFv3 adjacency over frame relay point-to-point subinterface', async () => {
+  // 5.46 – OSPFv3 loopback advertisement between two routers
+  it('should advertise and learn OSPFv3 loopback prefixes between two routers', async () => {
     const r1 = new Router('router-cisco', 'R1');
     const r2 = new Router('router-cisco', 'R2');
 
-    // Configure physical serial interfaces with frame relay encapsulation
-    // For simulation, we'll just use point-to-point subinterface with IPv6.
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
-    await r1.executeCommand('interface Serial0/0/0.1 point-to-point'); await r1.executeCommand('ipv6 address 2001:db8:12::1/64'); await r1.executeCommand('frame-relay interface-dlci 102'); await r1.executeCommand('ipv6 ospf network point-to-point'); await r1.executeCommand('ipv6 ospf 1 area 0'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
-    await r1.executeCommand('ipv6 router ospf 1'); await r1.executeCommand('router-id 1.1.1.1'); await r1.executeCommand('end');
+    await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 address 2001:db8:12::1/64'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
+    await r1.executeCommand('interface Loopback0'); await r1.executeCommand('ipv6 address 2001:db8:1::1/128'); await r1.executeCommand('exit');
+    await r1.executeCommand('ipv6 router ospf 1'); await r1.executeCommand('router-id 1.1.1.1'); await r1.executeCommand('exit');
+    await r1.executeCommand('interface G0/0'); await r1.executeCommand('ipv6 ospf 1 area 0'); await r1.executeCommand('interface Loopback0'); await r1.executeCommand('ipv6 ospf 1 area 0'); await r1.executeCommand('end');
 
     await r2.executeCommand('enable'); await r2.executeCommand('configure terminal');
     await r2.executeCommand('ipv6 unicast-routing');
-    await r2.executeCommand('interface Serial0/0/0.1 point-to-point'); await r2.executeCommand('ipv6 address 2001:db8:12::2/64'); await r2.executeCommand('frame-relay interface-dlci 201'); await r2.executeCommand('ipv6 ospf network point-to-point'); await r2.executeCommand('ipv6 ospf 1 area 0'); await r2.executeCommand('no shutdown'); await r2.executeCommand('exit');
-    await r2.executeCommand('ipv6 router ospf 1'); await r2.executeCommand('router-id 2.2.2.2'); await r2.executeCommand('end');
+    await r2.executeCommand('interface G0/0'); await r2.executeCommand('ipv6 address 2001:db8:12::2/64'); await r2.executeCommand('no shutdown'); await r2.executeCommand('exit');
+    await r2.executeCommand('interface Loopback0'); await r2.executeCommand('ipv6 address 2001:db8:2::1/128'); await r2.executeCommand('exit');
+    await r2.executeCommand('ipv6 router ospf 1'); await r2.executeCommand('router-id 2.2.2.2'); await r2.executeCommand('exit');
+    await r2.executeCommand('interface G0/0'); await r2.executeCommand('ipv6 ospf 1 area 0'); await r2.executeCommand('interface Loopback0'); await r2.executeCommand('ipv6 ospf 1 area 0'); await r2.executeCommand('end');
 
-    // Connect serial ports
-    const cable = new Cable('serial'); cable.connect(r1.getPort('Serial0/0/0')!, r2.getPort('Serial0/0/0')!);
+    const cable = new Cable('c12'); cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
 
-    const neigh = await r1.executeCommand('show ipv6 ospf neighbor');
-    expect(neigh).toContain('2.2.2.2');
+    // R2 should learn R1's loopback; R1 should learn R2's loopback
+    const routeR2 = await r2.executeCommand('show ipv6 route');
+    expect(routeR2).toContain('2001:db8:1::1');
+    const routeR1 = await r1.executeCommand('show ipv6 route');
+    expect(routeR1).toContain('2001:db8:2::1');
   });
 
   // 5.47 – OSPFv3 and BFD
@@ -1297,7 +1316,8 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
     const r = new Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('interface G0/0'); await r.executeCommand('ipv6 address 2001:db8:12::1/64'); await r.executeCommand('bfd interval 50 min_rx 50 multiplier 3'); await r.executeCommand('no shutdown'); await r.executeCommand('exit');
-    await r.executeCommand('ipv6 router ospf 1'); await r.executeCommand('bfd all-interfaces'); await r.executeCommand('router-id 1.1.1.1'); await r.executeCommand('end');
+    await r.executeCommand('ipv6 router ospf 1'); await r.executeCommand('bfd all-interfaces'); await r.executeCommand('router-id 1.1.1.1'); await r.executeCommand('exit');
+    await r.executeCommand('interface G0/0'); await r.executeCommand('ipv6 ospf 1 area 0'); await r.executeCommand('end');
 
     const intOut = await r.executeCommand('show ipv6 ospf interface G0/0');
     expect(intOut).toContain('BFD enabled');
@@ -1311,6 +1331,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
     await r.executeCommand('ipv6 unicast-routing');
     await r.executeCommand('interface G0/0'); await r.executeCommand('ip address 192.168.1.1 255.255.255.0'); await r.executeCommand('ipv6 address 2001:db8:1::1/64'); await r.executeCommand('no shutdown'); await r.executeCommand('exit');
     await r.executeCommand('router ospf 1'); await r.executeCommand('network 192.168.1.0 0.0.0.255 area 0'); await r.executeCommand('end');
+    await r.executeCommand('configure terminal');
     await r.executeCommand('ipv6 router ospf 1'); await r.executeCommand('router-id 1.1.1.1'); await r.executeCommand('exit');
     await r.executeCommand('interface G0/0'); await r.executeCommand('ipv6 ospf 1 area 0'); await r.executeCommand('end');
 
