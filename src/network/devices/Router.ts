@@ -2562,12 +2562,14 @@ export abstract class Router extends Equipment {
           deadInterval: pending?.deadInterval,
           networkType: pending?.networkType as any,
         });
-        // Apply auth settings after activation
+        // Apply auth settings and other pending configs after activation
         if (pending) {
           const iface = this.ospfEngine.getInterface(m.name);
           if (iface) {
             if (pending.authType !== undefined) iface.authType = pending.authType;
             if (pending.authKey !== undefined) iface.authKey = pending.authKey;
+            if (pending.retransmitInterval !== undefined) iface.retransmitInterval = pending.retransmitInterval;
+            if (pending.transmitDelay !== undefined) iface.transmitDelay = pending.transmitDelay;
           }
         }
       }
@@ -4219,7 +4221,7 @@ export abstract class Router extends Equipment {
     distributeList?: { aclId: string; direction: 'in' | 'out' };
     defaultInfoMetricType?: number;
     /** Pending per-interface OSPF config (applied when interface activates) */
-    pendingIfConfig: Map<string, { cost?: number; priority?: number; helloInterval?: number; deadInterval?: number; authType?: number; authKey?: string; demandCircuit?: boolean; networkType?: string }>;
+    pendingIfConfig: Map<string, { cost?: number; priority?: number; helloInterval?: number; deadInterval?: number; authType?: number; authKey?: string; demandCircuit?: boolean; networkType?: string; mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number }>;
     /** Pending per-interface OSPFv3 config */
     pendingV3IfConfig: Map<string, { cost?: number; priority?: number; networkType?: string; ipsecAuth?: boolean }>;
     /** OSPFv3 redistribute static */
@@ -4230,6 +4232,16 @@ export abstract class Router extends Equipment {
     v3VirtualLinks: Map<string, string>;
     /** OSPFv3 distribute-list */
     v3DistributeList?: { aclId: string; direction: 'in' | 'out' };
+    /** RFC 3137 stub router: max-metric router-lsa */
+    maxMetric?: { enabled: boolean; onStartup?: number };
+    /** NBMA manual neighbors */
+    nbmaNeighbors?: Array<{ ip: string; priority?: number; pollInterval?: number }>;
+    /** ASBR summary-address entries */
+    summaryAddresses?: Array<{ network: string; mask: string }>;
+    /** OSPF capabilities */
+    capabilities?: { transit?: boolean; opaque?: boolean };
+    /** Log adjacency changes */
+    logAdjacencyChanges?: boolean;
   } = {
     areaRanges: new Map(),
     virtualLinks: new Map(),

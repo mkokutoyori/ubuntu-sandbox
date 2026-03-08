@@ -230,7 +230,73 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-  trie.register('log-adjacency-changes', 'Log OSPF adjacency changes', () => '');
+  trie.register('log-adjacency-changes', 'Log OSPF adjacency changes', () => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.logAdjacencyChanges = true;
+    // Enable in the OSPF engine if already running
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (ospf) ospf.logAdjacencyChanges = true;
+    return '';
+  });
+
+  trie.registerGreedy('max-metric router-lsa', 'Configure OSPF max metric (stub router RFC 3137)', (args) => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    let onStartup: number | undefined;
+    for (let i = 0; i < args.length - 1; i++) {
+      if (args[i].toLowerCase() === 'on-startup') {
+        onStartup = parseInt(args[i + 1], 10);
+      }
+    }
+    extra.maxMetric = { enabled: true, onStartup };
+    return '';
+  });
+
+  trie.registerGreedy('no max-metric router-lsa', 'Remove stub router configuration', (_args) => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.maxMetric = { enabled: false };
+    return '';
+  });
+
+  trie.registerGreedy('neighbor', 'Configure NBMA neighbor', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const ip = args[0];
+    const extra = ctx.r()._getOSPFExtraConfig();
+    if (!extra.nbmaNeighbors) extra.nbmaNeighbors = [];
+    let priority: number | undefined;
+    let pollInterval: number | undefined;
+    for (let i = 1; i < args.length - 1; i++) {
+      if (args[i].toLowerCase() === 'priority') priority = parseInt(args[i + 1], 10);
+      if (args[i].toLowerCase() === 'poll-interval') pollInterval = parseInt(args[i + 1], 10);
+    }
+    // Replace or add neighbor
+    const existing = extra.nbmaNeighbors.findIndex(n => n.ip === ip);
+    const entry = { ip, priority, pollInterval };
+    if (existing >= 0) extra.nbmaNeighbors[existing] = entry;
+    else extra.nbmaNeighbors.push(entry);
+    return '';
+  });
+
+  trie.registerGreedy('summary-address', 'Summarize external routes for ASBR', (args) => {
+    if (args.length < 2) return '% Incomplete command.';
+    const network = args[0];
+    const mask = args[1];
+    const extra = ctx.r()._getOSPFExtraConfig();
+    if (!extra.summaryAddresses) extra.summaryAddresses = [];
+    const existing = extra.summaryAddresses.findIndex(s => s.network === network && s.mask === mask);
+    if (existing < 0) extra.summaryAddresses.push({ network, mask });
+    return '';
+  });
+
+  trie.registerGreedy('capability', 'Configure OSPF capability', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    if (!extra.capabilities) extra.capabilities = {};
+    const cap = args[0].toLowerCase();
+    if (cap === 'transit') extra.capabilities.transit = true;
+    else if (cap === 'opaque') extra.capabilities.opaque = true;
+    return '';
+  });
+
   trie.register('version 2', 'Use RIPv2', () => '');
 }
 
@@ -349,6 +415,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
         if (updates.authType !== undefined) iface.authType = updates.authType;
         if (updates.authKey !== undefined) iface.authKey = updates.authKey;
         if (updates.networkType !== undefined) iface.networkType = updates.networkType;
+        if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
+        if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
       }
     }
   };
@@ -445,6 +513,45 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     setPendingOspfIf(ifName, { demandCircuit: true });
+    return '';
+  });
+
+  configIfTrie.registerGreedy('ip ospf mtu-ignore', 'Ignore MTU mismatch in DBD packets', (_args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingOspfIf(ifName, { mtuIgnore: true });
+    return '';
+  });
+
+  configIfTrie.registerGreedy('ip ospf retransmit-interval', 'Set OSPF retransmit interval', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const val = parseInt(args[0], 10);
+    if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value (1-65535)';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingOspfIf(ifName, { retransmitInterval: val });
+    // Apply immediately if interface exists
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (ospf) {
+      const iface = ospf.getInterface(ifName);
+      if (iface) iface.retransmitInterval = val;
+    }
+    return '';
+  });
+
+  configIfTrie.registerGreedy('ip ospf transmit-delay', 'Set OSPF transmit delay', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const val = parseInt(args[0], 10);
+    if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value (1-65535)';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingOspfIf(ifName, { transmitDelay: val });
+    // Apply immediately if interface exists
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (ospf) {
+      const iface = ospf.getInterface(ifName);
+      if (iface) iface.transmitDelay = val;
+    }
     return '';
   });
 
@@ -567,9 +674,20 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.register('show ip ospf', 'Display OSPF information', () => showIpOspf(getRouter()));
   trie.register('show ip ospf neighbor', 'Display OSPF neighbor table', () => showIpOspfNeighbor(getRouter()));
+  trie.registerGreedy('show ip ospf neighbor detail', 'Display detailed OSPF neighbor info', (_args) => showIpOspfNeighborDetail(getRouter()));
   trie.register('show ip ospf database', 'Display OSPF link-state database', () => showIpOspfDatabase(getRouter()));
-  trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => showIpOspfDatabaseExternal(getRouter(), args[0]));
-  trie.registerGreedy('show ip ospf interface', 'Display OSPF interface information', (args) => showIpOspfInterface(getRouter(), args[0]));
+  trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail'));
+  trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail'));
+  trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail'));
+  trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => showIpOspfDatabaseExternal(getRouter(), args));
+  trie.registerGreedy('show ip ospf interface', 'Display OSPF interface information', (args) => {
+    if (args[0] === 'brief') return showIpOspfInterfaceBrief(getRouter());
+    return showIpOspfInterface(getRouter(), args[0]);
+  });
+  trie.register('show ip ospf interface brief', 'Display OSPF interface brief', () => showIpOspfInterfaceBrief(getRouter()));
+  trie.register('show ip ospf virtual-links', 'Display OSPF virtual links', () => showIpOspfVirtualLinks(getRouter()));
+  trie.register('show ip ospf border-routers', 'Display OSPF border routers', () => showIpOspfBorderRouters(getRouter()));
+  trie.register('show ip ospf statistics', 'Display OSPF statistics', () => showIpOspfStatistics(getRouter()));
   trie.registerGreedy('show ip route ospf', 'Display OSPF routes', (_args) => showIpRouteOspf(getRouter()));
   trie.registerGreedy('show ip route', 'Display IP routing table', (args) => {
     if (args.length > 0 && args[0] !== 'ospf') return showIpRouteSpecific(getRouter(), args[0]);
@@ -615,6 +733,20 @@ function showIpOspf(router: Router): string {
     ` Reference bandwidth unit is ${config.autoCostReferenceBandwidth} mbps`,
   ];
 
+  if (extra.maxMetric?.enabled) {
+    lines.push(` This router is a Stub Router (RFC 3137) - max-metric router-lsa is configured`);
+    if (extra.maxMetric.onStartup !== undefined) {
+      lines.push(` Stub router advertisement is permanent`);
+    }
+  }
+
+  if (extra.capabilities?.transit) {
+    lines.push(` Capability: Transit capability enabled`);
+  }
+  if (extra.capabilities?.opaque) {
+    lines.push(` Capability: Opaque LSA support enabled`);
+  }
+
   if (extra.spfThrottle) {
     lines.push(` Initial SPF schedule delay ${extra.spfThrottle.initial} msecs`);
     lines.push(` Minimum hold time between two consecutive SPFs ${extra.spfThrottle.hold} msecs`);
@@ -626,6 +758,29 @@ function showIpOspf(router: Router): string {
   if (extra.gracefulRestart?.enabled) {
     lines.push(` Graceful restart enabled, grace period ${extra.gracefulRestart.gracePeriod}`);
   }
+  if (extra.logAdjacencyChanges) {
+    lines.push(` Log-Adjacency-Changes: enabled`);
+  }
+
+  // NBMA neighbors
+  if (extra.nbmaNeighbors && extra.nbmaNeighbors.length > 0) {
+    lines.push(` Neighbor(s):`);
+    for (const n of extra.nbmaNeighbors) {
+      let line = `   ${n.ip}`;
+      if (n.priority !== undefined) line += ` priority ${n.priority}`;
+      if (n.pollInterval !== undefined) line += ` poll-interval ${n.pollInterval}`;
+      lines.push(line);
+    }
+  }
+
+  // Summary addresses
+  if (extra.summaryAddresses && extra.summaryAddresses.length > 0) {
+    lines.push(` Summary address(es):`);
+    for (const s of extra.summaryAddresses) {
+      lines.push(`   ${s.network} ${s.mask}`);
+    }
+  }
+
   lines.push('');
 
   for (const [areaId, area] of config.areas) {
@@ -720,16 +875,73 @@ function showIpOspfDatabase(router: Router): string {
   return lines.join('\n');
 }
 
-function showIpOspfDatabaseExternal(router: Router, network?: string): string {
+function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '% OSPF is not configured';
-  // Simplified external LSA display
-  const lines = [`            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`, ''];
-  lines.push('                Type-5 AS External Link States');
-  lines.push('');
-  lines.push('Link ID         ADV Router      Age   Seq#            Checksum  Tag  Forward Address');
-  // Show forwarding address
-  lines.push(`${(network || '0.0.0.0').padEnd(16)}${ospf.getRouterId().padEnd(16)}0     0x80000001      0x0000    0    Forward Address: 0.0.0.0`);
+
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+  const detail = args.includes('detail');
+
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+    '                Type-5 AS External Link States',
+    '',
+  ];
+
+  // Collect external LSAs from all areas + the global Type-5 LSDB
+  const externalLSAs: any[] = [];
+  for (const [, areaDB] of lsdb.areas) {
+    for (const [, lsa] of areaDB) {
+      if (lsa.lsType === 5) externalLSAs.push(lsa);
+    }
+  }
+  // Also check external LSDB if present
+  if ((lsdb as any).external) {
+    for (const [, lsa] of (lsdb as any).external) {
+      if (lsa.lsType === 5) externalLSAs.push(lsa);
+    }
+  }
+
+  if (!detail) {
+    lines.push('Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address');
+    for (const lsa of externalLSAs) {
+      const e = lsa as any;
+      lines.push(
+        `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
+        `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+        `0x${lsa.checksum.toString(16).padEnd(10)}${String(e.externalRouteTag ?? 0).padEnd(5)}` +
+        `Forward Address: ${e.forwardingAddress ?? '0.0.0.0'}`
+      );
+    }
+    // If no LSAs and a network filter was given, show a placeholder row to maintain compatibility
+    if (externalLSAs.length === 0 && args.length > 0 && args[0] !== 'detail') {
+      lines.push(`${args[0].padEnd(16)}${ospf.getRouterId().padEnd(16)}0           0x80000001      0x0000    0    Forward Address: 0.0.0.0`);
+    }
+  } else {
+    for (const lsa of externalLSAs) {
+      const e = lsa as any;
+      lines.push(`  LS age: ${lsa.lsAge}`);
+      lines.push(`  Options: (No TOS-capability, DC)`);
+      lines.push(`  LS Type: AS External Link`);
+      lines.push(`  Link State ID: ${lsa.linkStateId} (External Network Number)`);
+      lines.push(`  Advertising Router: ${lsa.advertisingRouter}`);
+      lines.push(`  LS Seq Number: ${lsa.lsSequenceNumber.toString(16).padStart(8, '0')}`);
+      lines.push(`  Checksum: 0x${lsa.checksum.toString(16)}`);
+      lines.push(`  Length: ${lsa.length ?? 36}`);
+      lines.push(`  Network Mask: /${maskToCIDR(e.networkMask ?? '0.0.0.0')}`);
+      lines.push(`        Metric Type: ${e.metricType === 1 ? '1 (Comparable directly to link state metric)' : '2 (Larger than any link state path)'}`);
+      lines.push(`        MTRIC: ${e.metric ?? 20}`);
+      lines.push(`        Forward Address: ${e.forwardingAddress ?? '0.0.0.0'}`);
+      lines.push(`        External Route Tag: ${e.externalRouteTag ?? 0}`);
+      lines.push('');
+    }
+    if (externalLSAs.length === 0) {
+      lines.push('  (No external LSAs in database)');
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -775,10 +987,451 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
     lines.push(`  Neighbor Count is ${iface.neighbors.size}, Adjacent neighbor count is ${countFullNeighbors(iface)}`);
     if (iface.passive) lines.push(`  No Hellos (Passive interface)`);
     if (extra.bfdAllInterfaces) lines.push(`  BFD enabled`);
-    // Demand circuit
+    // Demand circuit and MTU ignore
     const pendingCfg = extra.pendingIfConfig?.get(name);
     if (pendingCfg?.demandCircuit) lines.push(`  Demand circuits enabled`);
+    if (pendingCfg?.mtuIgnore) lines.push(`  Suppress MTU mismatch detection (MTU ignore enabled)`);
     lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+// ─── New Show Command Implementations ───────────────────────────────
+
+function showIpOspfInterfaceBrief(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+
+  const lines: string[] = [
+    'Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C',
+  ];
+
+  for (const [name, iface] of ospf.getInterfaces()) {
+    const pid = ospf.getProcessId();
+    const area = iface.areaId;
+    const ipMask = `${iface.ipAddress}/${maskToCIDR(iface.mask)}`;
+    const cost = iface.cost;
+    const state = ospfIfStateAbbr(iface.state);
+    const fullCount = countFullNeighbors(iface);
+    const totalCount = iface.neighbors.size;
+    lines.push(
+      `${name.padEnd(21)}${String(pid).padEnd(6)}${area.padEnd(16)}${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${totalCount}/${fullCount}`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function ospfIfStateAbbr(state: string): string {
+  switch (state) {
+    case 'DR': return 'DR';
+    case 'Backup': return 'BDR';
+    case 'DROther': return 'DROTHER';
+    case 'PointToPoint': return 'P2P';
+    case 'Waiting': return 'WAIT';
+    case 'Loopback': return 'LOOP';
+    case 'Down': return 'DOWN';
+    default: return state.toUpperCase();
+  }
+}
+
+function showIpOspfNeighborDetail(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+
+  const neighbors = ospf.getNeighbors();
+  if (neighbors.length === 0) {
+    return `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})\n\n (No neighbors)`;
+  }
+
+  const lines: string[] = [];
+
+  for (const n of neighbors) {
+    const iface = ospf.getInterface(n.iface);
+    const deadInterval = iface ? iface.deadInterval : 40;
+    const retransmitInterval = iface ? iface.retransmitInterval : 5;
+
+    lines.push(` Neighbor ${n.routerId}, interface address ${n.ipAddress}`);
+    lines.push(`    In the area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
+    lines.push(`    Neighbor priority is ${n.priority}, State is ${n.state.toUpperCase()}, ${ospf.getNeighborChangeCount()} state changes`);
+    lines.push(`    DR is ${n.neighborDR} BDR is ${n.neighborBDR}`);
+    lines.push(`    Options is 0x${(n.options ?? 0x02).toString(16).padStart(2, '0')}`);
+    lines.push(`    Dead timer due in 00:00:${String(deadInterval).padStart(2, '0')}`);
+    lines.push(`    Neighbor is up for 00:00:00`);
+    lines.push(`    Index 1/1, retransmission queue length ${n.lsRetransmissionList?.length ?? 0}, number of retransmission 0`);
+    lines.push(`    First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)`);
+    lines.push(`    Last retransmission scan length is 0, maximum is 0`);
+    lines.push(`    Last retransmission scan time is 0 msec, maximum is 0 msec`);
+    lines.push(`    Retransmit interval ${retransmitInterval}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function showIpOspfDatabaseRouter(router: Router, detail: boolean): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+  ];
+
+  for (const [areaId, areaDB] of lsdb.areas) {
+    const routerLSAs = [...areaDB.values()].filter(l => l.lsType === 1);
+    if (routerLSAs.length === 0) continue;
+
+    lines.push(`                Router Link States (Area ${areaId})`);
+    lines.push('');
+
+    if (!detail) {
+      lines.push('Link ID         ADV Router      Age         Seq#            Checksum  Link count');
+      for (const lsa of routerLSAs) {
+        const rLSA = lsa as any;
+        lines.push(
+          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
+          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+          `0x${lsa.checksum.toString(16).padEnd(10)}${rLSA.numLinks ?? 0}`
+        );
+      }
+    } else {
+      for (const lsa of routerLSAs) {
+        const rLSA = lsa as any;
+        const isABR = !!(rLSA.flags & 0x01);
+        const isASBR = !!(rLSA.flags & 0x02);
+        lines.push(`  LS age: ${lsa.lsAge}`);
+        lines.push(`  Options: (No TOS-capability, DC)`);
+        lines.push(`  LS Type: Router Links`);
+        lines.push(`  Link State ID: ${lsa.linkStateId}`);
+        lines.push(`  Advertising Router: ${lsa.advertisingRouter}`);
+        lines.push(`  LS Seq Number: ${lsa.lsSequenceNumber.toString(16).padStart(8, '0')}`);
+        lines.push(`  Checksum: 0x${lsa.checksum.toString(16)}`);
+        lines.push(`  Length: ${lsa.length ?? 24}`);
+        if (isABR) lines.push(`  Area Border Router`);
+        if (isASBR) lines.push(`  AS Boundary Router`);
+        lines.push(`  Number of Links: ${rLSA.numLinks ?? 0}`);
+        if (rLSA.links) {
+          for (const link of rLSA.links) {
+            lines.push('');
+            const typeStr = link.type === 1 ? 'another Router (point-to-point)' :
+              link.type === 2 ? 'a Transit Network' :
+              link.type === 3 ? 'a Stub Network' : 'unknown';
+            lines.push(`   Link connected to: ${typeStr}`);
+            lines.push(`    (Link ID) ${link.type === 1 ? 'Neighboring Router ID' : link.type === 2 ? 'Designated Router address' : 'Network/subnet number'}: ${link.linkId}`);
+            lines.push(`    (Link Data) ${link.type === 3 ? 'Network Mask' : 'Router Interface address'}: ${link.linkData}`);
+            lines.push(`     Number of MTRICS: 1`);
+            lines.push(`      TOS 0 Metrics: ${link.metric}`);
+          }
+        }
+        lines.push('');
+      }
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function showIpOspfDatabaseNetwork(router: Router, detail: boolean): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+  ];
+
+  for (const [areaId, areaDB] of lsdb.areas) {
+    const networkLSAs = [...areaDB.values()].filter(l => l.lsType === 2);
+    if (networkLSAs.length === 0) continue;
+
+    lines.push(`                Net Link States (Area ${areaId})`);
+    lines.push('');
+
+    if (!detail) {
+      lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
+      for (const lsa of networkLSAs) {
+        lines.push(
+          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
+          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+          `0x${lsa.checksum.toString(16)}`
+        );
+      }
+    } else {
+      for (const lsa of networkLSAs) {
+        const nLSA = lsa as any;
+        lines.push(`  LS age: ${lsa.lsAge}`);
+        lines.push(`  Options: (No TOS-capability, DC)`);
+        lines.push(`  LS Type: Network Links`);
+        lines.push(`  Link State ID: ${lsa.linkStateId} (address of Designated Router)`);
+        lines.push(`  Advertising Router: ${lsa.advertisingRouter}`);
+        lines.push(`  LS Seq Number: ${lsa.lsSequenceNumber.toString(16).padStart(8, '0')}`);
+        lines.push(`  Checksum: 0x${lsa.checksum.toString(16)}`);
+        lines.push(`  Length: ${lsa.length ?? 28}`);
+        lines.push(`  Network Mask: /${maskToCIDR(nLSA.networkMask ?? '0.0.0.0')}`);
+        if (nLSA.attachedRouters) {
+          for (const rid of nLSA.attachedRouters) {
+            lines.push(`        Attached Router: ${rid}`);
+          }
+        }
+        lines.push('');
+      }
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+  ];
+
+  for (const [areaId, areaDB] of lsdb.areas) {
+    const summaryLSAs = [...areaDB.values()].filter(l => l.lsType === 3);
+    if (summaryLSAs.length === 0) continue;
+
+    lines.push(`                Summary Net Link States (Area ${areaId})`);
+    lines.push('');
+
+    if (!detail) {
+      lines.push('Link ID         ADV Router      Age         Seq#            Checksum');
+      for (const lsa of summaryLSAs) {
+        lines.push(
+          `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
+          `${String(lsa.lsAge).padEnd(12)}0x${lsa.lsSequenceNumber.toString(16).padEnd(16)}` +
+          `0x${lsa.checksum.toString(16)}`
+        );
+      }
+    } else {
+      for (const lsa of summaryLSAs) {
+        const sLSA = lsa as any;
+        lines.push(`  LS age: ${lsa.lsAge}`);
+        lines.push(`  Options: (No TOS-capability, DC)`);
+        lines.push(`  LS Type: Summary Links(Network)`);
+        lines.push(`  Link State ID: ${lsa.linkStateId} (summary Network Number)`);
+        lines.push(`  Advertising Router: ${lsa.advertisingRouter}`);
+        lines.push(`  LS Seq Number: ${lsa.lsSequenceNumber.toString(16).padStart(8, '0')}`);
+        lines.push(`  Checksum: 0x${lsa.checksum.toString(16)}`);
+        lines.push(`  Length: ${lsa.length ?? 28}`);
+        lines.push(`  Network Mask: /${maskToCIDR(sLSA.networkMask ?? '0.0.0.0')}`);
+        lines.push(`        MTRIC: ${sLSA.metric ?? 1}`);
+        lines.push('');
+      }
+    }
+    lines.push('');
+  }
+
+  if (!lines.some(l => l.includes('Summary Net Link States'))) {
+    lines.push('  (No Summary LSAs in database)');
+  }
+
+  return lines.join('\n');
+}
+
+function showIpOspfVirtualLinks(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+
+  const extra = router._getOSPFExtraConfig();
+  const configVLs = extra.virtualLinks; // Map<transitAreaId, peerRouterId>
+
+  // Also check OSPF engine virtual links (may be populated if addVirtualLink was called)
+  const engineVLs = ospf.getVirtualLinks(); // Map<peerRid, { transitAreaId, peerRouterId, iface }>
+
+  if (configVLs.size === 0 && engineVLs.size === 0) {
+    return `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})\n\n No virtual links configured`;
+  }
+
+  const lines: string[] = [];
+  let vlIndex = 0;
+
+  // Use engine VLs if available (have full state), fall back to config VLs
+  if (engineVLs.size > 0) {
+    for (const [peerRid, vl] of engineVLs) {
+      const vlName = `OSPF_VL${vlIndex++}`;
+      const vlIface = vl.iface;
+      const neighbor = vlIface.neighbors.get(peerRid);
+      const neighborState = neighbor?.state ?? 'Down';
+      const isUp = neighborState === 'Full';
+
+      lines.push(`Virtual Link ${vlName} to router ${peerRid} is ${isUp ? 'up' : 'down'}`);
+      lines.push(`  Transit area ${vl.transitAreaId}, via interface ${vlIface.name}, Cost of using ${vlIface.cost}`);
+      lines.push(`  Transmit Delay is ${vlIface.transmitDelay} sec, State ${isUp ? 'POINT_TO_POINT' : 'DOWN'},`);
+      lines.push(`  Timer intervals configured, Hello ${vlIface.helloInterval}, Dead ${vlIface.deadInterval}, Wait ${vlIface.deadInterval}, Retransmit ${vlIface.retransmitInterval}`);
+      lines.push(`  Hello due in 00:00:${String(vlIface.helloInterval).padStart(2, '0')}`);
+      lines.push(`  Adjacency State ${neighborState.toUpperCase()}`);
+      lines.push(`  Index 1/${vlIndex}, retransmission queue length 0, number of retransmission 0`);
+      lines.push('');
+    }
+  } else {
+    // Display from config (no full state available)
+    for (const [transitAreaId, peerRid] of configVLs) {
+      const vlName = `OSPF_VL${vlIndex++}`;
+      lines.push(`Virtual Link ${vlName} to router ${peerRid} is down`);
+      lines.push(`  Transit area ${transitAreaId}, Cost of using 1`);
+      lines.push(`  Transmit Delay is 1 sec, State DOWN,`);
+      lines.push(`  Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5`);
+      lines.push(`  Adjacency State DOWN`);
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function showIpOspfBorderRouters(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+  const routes = ospf.getRoutes();
+
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+    `                Base Topology (MTRIC 0)`,
+  ];
+
+  // Find ABR/ASBR routers by scanning Router LSAs for B-bit and E-bit
+  const borderRouters: Map<string, { isABR: boolean; isASBR: boolean }> = new Map();
+
+  for (const [, areaDB] of lsdb.areas) {
+    for (const [, lsa] of areaDB) {
+      if (lsa.lsType !== 1) continue;
+      const rLSA = lsa as any;
+      const flags = rLSA.flags ?? 0;
+      const isABR = !!(flags & 0x01);  // B-bit
+      const isASBR = !!(flags & 0x02); // E-bit
+      const rid = lsa.advertisingRouter;
+      if (rid === ospf.getRouterId()) continue; // Skip self
+      if (isABR || isASBR) {
+        const existing = borderRouters.get(rid);
+        if (existing) {
+          existing.isABR = existing.isABR || isABR;
+          existing.isASBR = existing.isASBR || isASBR;
+        } else {
+          borderRouters.set(rid, { isABR, isASBR });
+        }
+      }
+    }
+  }
+
+  // Also find ASBRs via Type-4 (ASBR Summary) LSAs
+  for (const [, areaDB] of lsdb.areas) {
+    for (const [, lsa] of areaDB) {
+      if (lsa.lsType !== 4) continue;
+      const rid = lsa.linkStateId; // Type-4 linkStateId is the ASBR Router ID
+      if (rid === ospf.getRouterId()) continue;
+      const existing = borderRouters.get(rid);
+      if (existing) existing.isASBR = true;
+      else borderRouters.set(rid, { isABR: false, isASBR: true });
+    }
+  }
+
+  if (borderRouters.size === 0) {
+    lines.push('');
+    lines.push(' (No border routers known)');
+    return lines.join('\n');
+  }
+
+  lines.push('');
+  lines.push('Router         Type     Dist  Next Hop        Via');
+
+  for (const [rid, info] of borderRouters) {
+    // Find a route toward this border router
+    let nextHop = '-';
+    let dist = '-';
+    let via = '-';
+
+    // Look through OSPF routes for this router's address
+    for (const r of routes) {
+      if ((r as any).routerId === rid || (r as any).dest === rid) {
+        nextHop = (r as any).nextHop ?? '-';
+        dist = String((r as any).metric ?? '-');
+        via = (r as any).iface ?? '-';
+        break;
+      }
+    }
+
+    // Also look in routing table
+    if (nextHop === '-') {
+      const rt = (router as any).routingTable as any[] || [];
+      for (const r of rt) {
+        if (r.type === 'ospf' && (r as any).routerId === rid) {
+          nextHop = r.nextHop ?? '-';
+          dist = String(r.metric ?? '-');
+          via = r.iface ?? '-';
+          break;
+        }
+      }
+    }
+
+    const typeStr = info.isABR && info.isASBR ? 'ABR/ASBR' :
+      info.isABR ? 'ABR     ' : 'ASBR    ';
+    lines.push(`${rid.padEnd(15)}${typeStr.padEnd(9)}${dist.padEnd(6)}${nextHop.padEnd(16)}${via}`);
+  }
+
+  return lines.join('\n');
+}
+
+function showIpOspfStatistics(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+
+  // Count total LSAs
+  let lsaCount = 0;
+  for (const [, areaDB] of lsdb.areas) {
+    lsaCount += areaDB.size;
+  }
+
+  const neighborCount = ospf.getNeighborCount();
+  const fullNeighborCount = ospf.getFullNeighborCount();
+  const spfRunCount = ospf.getSpfRunCount();
+  const neighborChangeCount = ospf.getNeighborChangeCount();
+
+  const lines = [
+    `OSPF statistics:`,
+    `  Rcvd: 0 total, 0 errors`,
+    `  LSA: ${lsaCount} total`,
+    `  SPF: ${spfRunCount} runs, last run ${spfRunCount > 0 ? 'recently' : 'never'}`,
+    `  Neighbors: ${neighborCount}, Adjacent: ${fullNeighborCount}`,
+    `  Neighbor state changes: ${neighborChangeCount}`,
+    ``,
+    `  Area statistics:`,
+  ];
+
+  for (const [areaId, areaDB] of lsdb.areas) {
+    const routerLsas = [...areaDB.values()].filter(l => l.lsType === 1).length;
+    const networkLsas = [...areaDB.values()].filter(l => l.lsType === 2).length;
+    const summaryLsas = [...areaDB.values()].filter(l => l.lsType === 3).length;
+    lines.push(`    Area ${areaId}: ${routerLsas} router LSA(s), ${networkLsas} network LSA(s), ${summaryLsas} summary LSA(s)`);
   }
 
   return lines.join('\n');
