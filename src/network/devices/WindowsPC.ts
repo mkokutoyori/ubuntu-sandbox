@@ -482,6 +482,16 @@ export class WindowsPC extends EndHost {
     return lines.join('\n');
   }
 
+  // ─── PSDeviceContext implementation ───────────────────────────
+
+  getFileSystem(): WindowsFileSystem { return this.fs; }
+  getPorts(): Map<string, Port> { return this.ports; }
+  getCwd(): string { return this.cwd; }
+  getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
+  getDnsServers(ifName: string): string[] {
+    const cfg = this.dnsConfig.get(ifName);
+    return cfg ? [...cfg.servers] : [];
+  }
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'windows'; }
