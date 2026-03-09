@@ -282,7 +282,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
 
     // La SA doit utiliser AES-256, pas 3DES
     const ipsecSA = await r1.executeCommand('show crypto ipsec sa');
-    expect(ipsecSA).toContain('esp-aes');
+    expect(ipsecSA).toContain('esp-256-aes');
     expect(ipsecSA).not.toContain('esp-3des');
   });
 

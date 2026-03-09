@@ -314,7 +314,7 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
     // L'algorithme AH
     expect(sa).toContain('ah-sha256-hmac');
     // L'algorithme ESP
-    expect(sa).toContain('esp-aes');
+    expect(sa).toContain('esp-256-aes');
 
     expect(sa).toContain('#pkts encaps: 3');
     expect(sa).toContain('#recv errors 0');

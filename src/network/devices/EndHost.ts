@@ -584,6 +584,17 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv4 Handling (RFC 791) ──────────────────────────────────
 
+  /** Simulation shortcut: receive an IPv4 packet via global registry (bypasses L2/cable) */
+  _globalReceiveIPv4(pkt: IPv4Packet): void {
+    for (const [name, port] of this.ports) {
+      const ip = port.getIPAddress();
+      if (ip && ip.equals(pkt.destinationIP)) {
+        this.handleIPv4(name, pkt);
+        return;
+      }
+    }
+  }
+
   private handleIPv4(portName: string, ipPkt: IPv4Packet): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
@@ -782,7 +793,22 @@ export abstract class EndHost extends Equipment {
     if (verdict === 'drop' || verdict === 'reject') return;
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
-    if (!nextHopMAC) return;
+    if (!nextHopMAC) {
+      // No ARP entry — try global simulation delivery to the next-hop Equipment
+      const nhIP = route.nextHopIP.toString();
+      for (const equip of Equipment.getAllEquipment()) {
+        const ports = (equip as any)._getPortsInternal?.() || (equip as any).ports;
+        if (ports instanceof Map) {
+          for (const [, p] of ports) {
+            if ((p as any).getIPAddress?.()?.toString() === nhIP) {
+              (equip as any)._globalReceiveIPv4?.(replyIP);
+              return;
+            }
+          }
+        }
+      }
+      return;
+    }
 
     this.sendFrame(outPortName, {
       srcMAC: route.port.getMAC(),

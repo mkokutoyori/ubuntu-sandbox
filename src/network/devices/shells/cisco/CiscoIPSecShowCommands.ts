@@ -13,6 +13,9 @@ export function registerIPSecShowCommands(
 ): void {
   const eng = () => (getRouter() as any)._getIPSecEngineInternal?.();
 
+  trie.register('show crypto isakmp', 'Display IKEv1 ISAKMP global config', () =>
+    eng()?.showCryptoISAKMP() ?? 'IPSec not configured.');
+
   trie.register('show crypto isakmp sa', 'Display IKEv1 ISAKMP SAs', () =>
     eng()?.showCryptoISAKMPSA() ?? 'IPSec not configured.');
 
@@ -39,4 +42,13 @@ export function registerIPSecShowCommands(
 
   trie.register('show crypto session', 'Display crypto session status', () =>
     eng()?.showCryptoSession() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ipsec sa detail', 'Display detailed IPSec SAs', () =>
+    eng()?.showCryptoIPSecSADetail() ?? 'IPSec not configured.');
+
+  trie.register('show crypto dynamic-map', 'Display dynamic crypto maps', () =>
+    eng()?.showCryptoDynamicMap() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ipsec profile', 'Display IPSec profiles', () =>
+    eng()?.showCryptoIPSecProfile() ?? 'IPSec not configured.');
 }

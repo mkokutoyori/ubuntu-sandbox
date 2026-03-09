@@ -127,6 +127,15 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  // ── crypto ipsec security-association lifetime seconds N ──────────
+  trie.registerGreedy('crypto ipsec security-association lifetime seconds', 'Set global IPSec SA lifetime', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const secs = parseInt(args[0], 10);
+    if (isNaN(secs)) return '% Invalid lifetime value.';
+    eng(ctx).setGlobalSALifetime(secs);
+    return '';
+  });
+
   // ── crypto ipsec profile NAME ─────────────────────────────────────
   trie.registerGreedy('crypto ipsec profile', 'Define an IPSec profile (for GRE)', (args) => {
     if (args.length < 1) return '% Incomplete command.';

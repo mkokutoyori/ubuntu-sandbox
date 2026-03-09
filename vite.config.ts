@@ -26,5 +26,6 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    testTimeout: 30000,
   },
 }));

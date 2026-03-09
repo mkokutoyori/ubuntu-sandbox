@@ -534,9 +534,11 @@ export abstract class Router extends Equipment {
 
   /** Longest Prefix Match (LPM) — tiebreaking: prefix → AD → metric */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
-    let bestRoute: RouteEntry | null = null;
-    let bestPrefix = -1;
     const destInt = destIP.toUint32();
+
+    // First pass: collect all LPM candidates (same longest prefix)
+    const candidates: RouteEntry[] = [];
+    let bestPrefix = -1;
 
     for (const route of this.routingTable) {
       const netInt = route.network.toUint32();
@@ -546,13 +548,35 @@ export abstract class Router extends Equipment {
       if ((destInt & maskInt) === (netInt & maskInt)) {
         if (prefix > bestPrefix) {
           bestPrefix = prefix;
-          bestRoute = route;
-        } else if (prefix === bestPrefix && bestRoute) {
-          if (route.ad < bestRoute.ad ||
-              (route.ad === bestRoute.ad && route.metric < bestRoute.metric)) {
-            bestRoute = route;
-          }
+          candidates.length = 0;
         }
+        if (prefix === bestPrefix) {
+          candidates.push(route);
+        }
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Second pass: prefer routes via connected interfaces.
+    // Only skip a disconnected non-connected route if a connected alternative exists.
+    const activeRoutes = candidates.filter(r => {
+      const isVirtual = r.iface.startsWith('Loopback') || r.iface.startsWith('Tunnel');
+      if (isVirtual || r.type === 'connected') return true; // always keep
+      const port = this.ports.get(r.iface);
+      return !port || port.isConnected();
+    });
+
+    // If connected alternatives exist, use only them; otherwise fall back to all candidates
+    const routesToUse = activeRoutes.length > 0 ? activeRoutes : candidates;
+
+    // Select best route by AD, then metric
+    let bestRoute: RouteEntry | null = null;
+    for (const r of routesToUse) {
+      if (!bestRoute) { bestRoute = r; continue; }
+      if (r.ad < bestRoute.ad ||
+          (r.ad === bestRoute.ad && r.metric < bestRoute.metric)) {
+        bestRoute = r;
       }
     }
     return bestRoute;
@@ -1274,10 +1298,8 @@ export abstract class Router extends Equipment {
       if (!icmp || icmp.type !== 'icmp') return;
 
       if (icmp.icmpType === 'echo-request') {
-        const port = this.ports.get(inPort);
-        if (!port) return;
-        const myIP = port.getIPAddress();
-        if (!myIP) return;
+        // Use destination IP of the request as reply source (the addressed interface)
+        const myIP = ipPkt.destinationIP;
 
         const replyICMP: ICMPPacket = {
           type: 'icmp', icmpType: 'echo-reply', code: 0,
@@ -1289,15 +1311,23 @@ export abstract class Router extends Equipment {
           replyICMP, 8 + icmp.dataSize,
         );
 
+        this.counters.icmpOutEchoReps++;
+        this.counters.icmpOutMsgs++;
+
+        // Try direct ARP path first (fast path: sender on directly connected subnet)
         const targetMAC = this.arpTable.get(ipPkt.sourceIP.toString());
         if (targetMAC) {
-          this.counters.icmpOutEchoReps++;
-          this.counters.icmpOutMsgs++;
-          this.counters.ifOutOctets += replyIP.totalLength;
-          this.sendFrame(inPort, {
-            srcMAC: port.getMAC(), dstMAC: targetMAC.mac,
-            etherType: ETHERTYPE_IPV4, payload: replyIP,
-          });
+          const port = this.ports.get(inPort);
+          if (port) {
+            this.counters.ifOutOctets += replyIP.totalLength;
+            this.sendFrame(inPort, {
+              srcMAC: port.getMAC(), dstMAC: targetMAC.mac,
+              etherType: ETHERTYPE_IPV4, payload: replyIP,
+            });
+          }
+        } else {
+          // Fall back to full forwarding (handles loopback-addressed pings, etc.)
+          this.forwardPacket(inPort, replyIP);
         }
       } else if (icmp.icmpType === 'echo-reply') {
         // Match against pending pings (router-initiated)
@@ -1411,13 +1441,42 @@ export abstract class Router extends Equipment {
     if (cached) {
       this.counters.ipForwDatagrams++;
       this.counters.ifOutOctets += fwdPkt.totalLength;
-      this.sendFrame(route.iface, {
+      const sent = this.sendFrame(route.iface, {
         srcMAC: outPort.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_IPV4, payload: fwdPkt,
       });
+      if (!sent) {
+        // Cable disconnected but ARP cache still has entry — try global simulation delivery
+        const globalDest = IPSecEngine.findEquipmentByIP(nextHopIP.toString());
+        (globalDest as any)?._globalReceiveIPv4?.(fwdPkt);
+      }
     } else {
       this.queueAndResolve(fwdPkt, route.iface, nextHopIP, outPort);
     }
+  }
+
+  /** Simulation shortcut: receive an IPv4 packet via global registry (bypasses L2/cable) */
+  _globalReceiveIPv4(pkt: IPv4Packet): void {
+    // Find the ingress port that owns the destination IP
+    let inPort = '';
+    for (const [name, port] of this.ports) {
+      const ip = port.getIPAddress();
+      if (ip && ip.equals(pkt.destinationIP)) { inPort = name; break; }
+    }
+    if (!inPort) {
+      for (const [name, port] of this.ports) {
+        const ip = port.getIPAddress();
+        const mask = port.getSubnetMask();
+        if (ip && mask && pkt.destinationIP.isInSameSubnet(ip, mask)) { inPort = name; break; }
+      }
+    }
+    if (!inPort) {
+      for (const [name, port] of this.ports) {
+        if (port.getIPAddress()) { inPort = name; break; }
+      }
+    }
+    if (!inPort) return;
+    this.processIPv4(inPort, pkt);
   }
 
   // ─── ICMP Error Generation (Control Plane) ────────────────────
@@ -1484,10 +1543,26 @@ export abstract class Router extends Equipment {
         senderMAC: port.getMAC(), senderIP: myIP,
         targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
       };
-      this.sendFrame(iface, {
-        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP, payload: arpReq,
-      });
+      if (port.isConnected()) {
+        this.sendFrame(iface, {
+          srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+          etherType: ETHERTYPE_ARP, payload: arpReq,
+        });
+      }
+      // If ARP did not succeed synchronously (packet still queued = no cable response or no cable),
+      // try global simulation delivery as immediate fallback
+      const stillQueued = this.packetQueue.some(
+        q => q.nextHopIP.equals(nextHopIP) && q.outIface === iface
+      );
+      if (stillQueued) {
+        clearTimeout(timer);
+        this.packetQueue = this.packetQueue.filter(
+          q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
+        );
+        this.pendingARPs.delete(key);
+        const globalDest = IPSecEngine.findEquipmentByIP(nextHopIP.toString());
+        if (globalDest) (globalDest as any)._globalReceiveIPv4?.(pkt);
+      }
     }
   }
 
@@ -2070,6 +2145,7 @@ export abstract class Router extends Equipment {
     targetIP: IPAddress,
     count: number = 5,
     timeoutMs: number = 2000,
+    sourceIPOverride?: IPAddress,
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     // Self-ping: check all interface IPs
     for (const [, port] of this.ports) {
@@ -2092,7 +2168,7 @@ export abstract class Router extends Equipment {
     const outPort = this.ports.get(route.iface);
     if (!outPort) return [];
 
-    const myIP = outPort.getIPAddress();
+    const myIP = sourceIPOverride ?? outPort.getIPAddress();
     if (!myIP) return [];
 
     // Determine next-hop IP
@@ -2191,9 +2267,32 @@ export abstract class Router extends Equipment {
       const icmpSize = 8 + 92;
       const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
 
+      // Apply IPSec outbound processing if there is a matching crypto entry
+      let pktToSend = ipPkt;
+      let macDst = dstMAC;
+      if (this.ipsecEngine) {
+        const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
+        if (entry) {
+          const encPkt = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
+          if (!encPkt) {
+            this.pendingPings.delete(key);
+            clearTimeout(timer);
+            reject('ipsec-failed');
+            return;
+          }
+          pktToSend = encPkt;
+          // Re-resolve ARP for the encrypted packet's destination (peer IP)
+          const encDstStr = encPkt.destinationIP.toString();
+          const cached = this.arpTable.get(encDstStr);
+          if (cached) {
+            macDst = cached.mac;
+          }
+        }
+      }
+
       this.sendFrame(iface, {
-        srcMAC: port.getMAC(), dstMAC: dstMAC,
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+        srcMAC: port.getMAC(), dstMAC: macDst,
+        etherType: ETHERTYPE_IPV4, payload: pktToSend,
       });
     });
   }

@@ -236,7 +236,7 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
     expect(ipsecSA).toContain('#send errors 0');
     expect(ipsecSA).toContain('#recv errors 0');
     // L'algorithme utilisé (AES-256 + SHA256) doit apparaître dans les SAs ESP
-    expect(ipsecSA).toContain('esp-aes');
+    expect(ipsecSA).toContain('esp-256-aes');
     expect(ipsecSA).toContain('inbound esp sas:');
     expect(ipsecSA).toContain('outbound esp sas:');
 
@@ -360,16 +360,17 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
     await pc2.executeCommand('ping -c 3 192.168.1.10');
 
     // R1 : 6 envoyés depuis son LAN + 3 reçus depuis l'autre côté
-    //       (les replies ICMP du premier ping s'ajoutent aux 3 du second)
+    //       Les replies ICMP traversent aussi le VPN donc total = 9 dans chaque sens
     const sa_R1 = await r1.executeCommand('show crypto ipsec sa');
-    // Encaps = 6 (pings de PC1 → PC2) + les éventuels ICMP reply de R2 pour le ping de PC2
-    expect(sa_R1).toContain('#pkts encaps: 6');
-    expect(sa_R1).toContain('#pkts decaps: 6'); // replies du premier ping + 3 pings initiés par PC2
+    // Encaps = 6 (pings PC1→PC2) + 3 (replies PC1→PC2 pour le ping de PC2) = 9
+    expect(sa_R1).toContain('#pkts encaps: 9');
+    // Decaps = 6 (replies PC2→PC1) + 3 (pings PC2→PC1) = 9
+    expect(sa_R1).toContain('#pkts decaps: 9');
 
     // R2 : symétrique
     const sa_R2 = await r2.executeCommand('show crypto ipsec sa');
-    expect(sa_R2).toContain('#pkts encaps: 6');
-    expect(sa_R2).toContain('#pkts decaps: 6');
+    expect(sa_R2).toContain('#pkts encaps: 9');
+    expect(sa_R2).toContain('#pkts decaps: 9');
 
     // Zéro erreur dans les deux sens
     expect(sa_R1).toContain('#send errors 0');

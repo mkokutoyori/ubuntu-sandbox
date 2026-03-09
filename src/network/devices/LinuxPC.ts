@@ -557,7 +557,7 @@ export class LinuxPC extends EndHost {
     try { targetIP = new IPAddress(targetStr); }
     catch { return `ping: ${targetStr}: Name or service not known`; }
 
-    const results = await this.executePingSequence(targetIP, count, 2000, ttl);
+    const results = await this.executePingSequence(targetIP, count, 100, ttl);
     return this.formatPingOutput(targetIP, count, results);
   }
 

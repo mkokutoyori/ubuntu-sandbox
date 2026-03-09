@@ -61,6 +61,9 @@ export class IPSecEngine {
   private ipsecProfiles: Map<string, IPSecProfile> = new Map();
   private tunnelProtection: Map<string, TunnelProtection> = new Map();
 
+  /** Global default IPSec SA lifetime in seconds (overrides per-entry default of 3600) */
+  private globalSALifetimeSecs: number | null = null;
+
   // ── SA Database ──────────────────────────────────────────────────
   /** peerIP → IKE_SA */
   private ikeSADB: Map<string, IKE_SA> = new Map();
@@ -99,6 +102,10 @@ export class IPSecEngine {
 
   addPreSharedKey(address: string, key: string): void {
     this.preSharedKeys.set(address, key);
+  }
+
+  setGlobalSALifetime(seconds: number): void {
+    this.globalSALifetimeSecs = seconds;
   }
 
   setNATKeepalive(interval: number): void {
@@ -217,26 +224,40 @@ export class IPSecEngine {
     this.tunnelProtection.set(ifName, { profileName, shared });
   }
 
+  getTunnelProtection(ifName: string): { profileName: string; shared: boolean } | undefined {
+    return this.tunnelProtection.get(ifName);
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // Port link-down handler (DPD simulation)
   // ══════════════════════════════════════════════════════════════════
 
   onPortDown(portName: string): void {
-    // Find all SAs whose peer was reached via this port and clear them
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    const port = ports.get(portName);
-    if (!port) return;
+    // Find all SAs whose peer was reached via this port and clear them.
+    // Use the raw routing table (not filtered by connectivity) since the port
+    // is already down when this is called.
+    const routingTable: any[] = (this.router as any)._getRoutingTableInternal?.() || [];
 
-    // Clear SAs for all peers
     const toDelete: string[] = [];
     for (const [peerIP] of this.ikeSADB) {
-      // Check if we'd reach this peer via the downed port
+      // Check using raw routing table to find which interface this peer was reached via
+      let reachedViaPort = false;
       try {
-        const route = (this.router as any).lookupRoute(new IPAddress(peerIP));
-        if (route && route.iface === portName) {
-          toDelete.push(peerIP);
+        const destInt = new IPAddress(peerIP).toUint32();
+        let bestPrefix = -1;
+        let bestIface: string | null = null;
+        for (const route of routingTable) {
+          const netInt = route.network.toUint32();
+          const maskInt = route.mask.toUint32();
+          const prefix = route.mask.toCIDR();
+          if ((destInt & maskInt) === (netInt & maskInt) && prefix > bestPrefix) {
+            bestPrefix = prefix;
+            bestIface = route.iface;
+          }
         }
-      } catch { toDelete.push(peerIP); }
+        if (bestIface === portName) reachedViaPort = true;
+      } catch { reachedViaPort = true; }
+      if (reachedViaPort) toDelete.push(peerIP);
     }
     for (const ip of toDelete) {
       this.clearSAsForPeer(ip);
@@ -253,6 +274,26 @@ export class IPSecEngine {
       this.spiToSA.delete(sa.spiIn);
     }
     this.ipsecSADB.delete(peerIP);
+
+    // Simulate IKE DELETE message to peer (bidirectional teardown)
+    const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    if (peerRouter) {
+      const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+      if (peerEngine) {
+        const myPorts = (this.router as any)._getPortsInternal() as Map<string, any>;
+        for (const [, port] of myPorts) {
+          const myIP = (port as any).getIPAddress?.()?.toString();
+          if (myIP && (peerEngine.ikeSADB.has(myIP) || peerEngine.ipsecSADB.has(myIP))) {
+            const peerIkeSA = peerEngine.ikeSADB.get(myIP);
+            if (peerIkeSA) { peerIkeSA.status = 'MM_NO_STATE'; peerEngine.ikeSADB.delete(myIP); }
+            peerEngine.ikev2SADB.delete(myIP);
+            const peerSAs = peerEngine.ipsecSADB.get(myIP) || [];
+            for (const sa of peerSAs) { peerEngine.spiToSA.delete(sa.spiIn); }
+            peerEngine.ipsecSADB.delete(myIP);
+          }
+        }
+      }
+    }
   }
 
   clearAllSAs(): void {
@@ -297,6 +338,8 @@ export class IPSecEngine {
       const dynMap = this.dynamicCryptoMaps.get(dynMapName);
       if (!dynMap) continue;
       for (const [, dynEntry] of dynMap.entries) {
+        // Don't double-encrypt already-encrypted packets (no ACL = match all, but skip ESP/AH)
+        if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) continue;
         if (!dynEntry.aclName || this.matchACL(dynEntry.aclName, pkt)) {
           // Build a synthetic CryptoMapEntry for the dynamic case
           return {
@@ -349,33 +392,73 @@ export class IPSecEngine {
   }
 
   private determinePeer(entry: CryptoMapEntry, egressIface: string, pkt: IPv4Packet): string | null {
-    if (entry.peers.length > 0 && entry.peers[0] !== '0.0.0.0') {
-      return entry.peers[0];
+    const validPeers = entry.peers.filter(p => p !== '0.0.0.0');
+
+    if (validPeers.length === 1) {
+      return validPeers[0];
     }
-    // Tunnel protection: peer is the tunnel destination
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    const port = ports.get(egressIface);
-    if (port) {
-      const tunnelDst = port.getTunnelDestination?.();
-      if (tunnelDst) return tunnelDst.toString();
+
+    if (validPeers.length > 1) {
+      // Failover: pick the peer reachable via the current egress interface
+      for (const peer of validPeers) {
+        try {
+          const route = (this.router as any).lookupRoute(new IPAddress(peer));
+          if (route && route.iface === egressIface) return peer;
+        } catch { /* ignore */ }
+      }
+      return validPeers[0];
     }
-    // Dynamic: peer = packet destination
+
+    // No static peer — tunnel protection or dynamic map
+    // Try to get tunnel destination from OSPF extra config
+    const ospfExtra = (this.router as any)._getOSPFExtraConfig?.();
+    if (ospfExtra) {
+      const tunCfg = ospfExtra.pendingIfConfig?.get(egressIface);
+      const tunDest = (tunCfg as any)?.tunnelDest;
+      if (tunDest) return tunDest;
+    }
+
+    // Dynamic map: use route lookup to find actual next-hop peer (a router)
+    try {
+      const route = (this.router as any).lookupRoute(pkt.destinationIP);
+      if (route?.nextHop) {
+        const nhStr = route.nextHop.toString();
+        if (IPSecEngine.findRouterByIP(nhStr)) return nhStr;
+      }
+    } catch { /* ignore */ }
+
+    // Final fallback
     return pkt.destinationIP.toString();
   }
 
   private getBestIPSecSA(peerIP: string): IPSec_SA | null {
     const sas = this.ipsecSADB.get(peerIP);
-    return sas && sas.length > 0 ? sas[0] : null;
+    return sas && sas.length > 0 ? sas[sas.length - 1] : null;
   }
 
   private encapsulate(innerPkt: IPv4Packet, sa: IPSec_SA, egressIface: string): IPv4Packet | null {
-    // Determine local IP on egress interface
+    // Determine local IP for the outer packet.
+    // For tunnel interfaces (GRE over IPSec), use the tunnel source interface IP.
     const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
     let localIP: IPAddress | null = null;
-    for (const [name, port] of ports) {
-      if (name === egressIface) {
-        localIP = port.getIPAddress?.() || null;
-        break;
+
+    // Check if egressIface is a tunnel — use tunnel source interface
+    if (egressIface.startsWith('Tunnel')) {
+      const ospfExtra = (this.router as any)._getOSPFExtraConfig?.();
+      const tunCfg = ospfExtra?.pendingIfConfig?.get(egressIface);
+      const tunSrcIface = (tunCfg as any)?.tunnelSource;
+      if (tunSrcIface) {
+        const srcPort = ports.get(tunSrcIface);
+        localIP = srcPort?.getIPAddress?.() || null;
+      }
+    }
+
+    if (!localIP) {
+      for (const [name, port] of ports) {
+        if (name === egressIface) {
+          localIP = port.getIPAddress?.() || null;
+          break;
+        }
       }
     }
     if (!localIP) return null;
@@ -507,7 +590,9 @@ export class IPSecEngine {
     if (!matchedPolicy) {
       Logger.info(this.router.id, 'ipsec:no-policy', `${this.router.name}: No common IKE policy with ${peerIP}`);
       this.createFailedIKESA(peerIP, egressIface, 'No matching policy');
-      peerEngine.createFailedIKESA(apparentSrcIP, '', 'No matching policy');
+      if (peerEngine.ifaceCryptoMap.size > 0 || peerEngine.tunnelProtection.size > 0) {
+        peerEngine.createFailedIKESA(apparentSrcIP, '', 'No matching policy');
+      }
       return false;
     }
 
@@ -518,7 +603,16 @@ export class IPSecEngine {
     if (!myPSK || !peerPSK || myPSK !== peerPSK) {
       Logger.info(this.router.id, 'ipsec:psk-fail', `${this.router.name}: PSK mismatch with ${peerIP}`);
       this.createFailedIKESA(peerIP, egressIface, 'PSK mismatch');
-      peerEngine.createFailedIKESA(apparentSrcIP, '', 'PSK mismatch');
+      if (peerEngine.ifaceCryptoMap.size > 0 || peerEngine.tunnelProtection.size > 0) {
+        peerEngine.createFailedIKESA(apparentSrcIP, '', 'PSK mismatch');
+      }
+      return false;
+    }
+
+    // If peer has no crypto map applied to any interface, do not create IKE SA on peer
+    if (peerEngine.ifaceCryptoMap.size === 0 && peerEngine.tunnelProtection.size === 0) {
+      Logger.info(this.router.id, 'ipsec:no-peer-map',
+        `${this.router.name}: Peer ${peerIP} has no crypto map applied, IKE not triggered`);
       return false;
     }
 
@@ -542,7 +636,7 @@ export class IPSecEngine {
     };
     this.ikeSADB.set(peerIP, ikeSA);
 
-    const peerLocalIP = peerEngine.getLocalIP('') || peerIP;
+    const peerLocalIP = peerEngine.getLocalIPForPeer(apparentSrcIP) || peerIP;
     const peerIkeSA: IKE_SA = {
       peerIP: apparentSrcIP, localIP: peerLocalIP,
       status: 'QM_IDLE',
@@ -594,7 +688,14 @@ export class IPSecEngine {
       return false;
     }
 
-    const lifetime = entry.saLifetimeSeconds ?? 3600;
+    // PFS group mismatch check
+    if (entry.pfsGroup && peerEntry?.pfsGroup && entry.pfsGroup !== peerEntry.pfsGroup) {
+      Logger.info(this.router.id, 'ipsec:pfs-mismatch',
+        `${this.router.name}: PFS group mismatch with ${peerIP} (${entry.pfsGroup} vs ${peerEntry.pfsGroup})`);
+      return false;
+    }
+
+    const lifetime = entry.saLifetimeSeconds ?? this.globalSALifetimeSecs ?? 3600;
     const spiInitIn  = nextSPI(); // initiator's inbound SPI (what responder will use as outbound)
     const spiRespIn  = nextSPI(); // responder's inbound SPI (what initiator will use as outbound)
 
@@ -626,7 +727,7 @@ export class IPSecEngine {
     this.spiToSA.set(spiInitIn, sa);
 
     // Responder SA (on peer engine)
-    const peerLocalIP = peerEngine.getLocalIP(peerEntry?.aclName ? '' : '') || peerIP;
+    const peerLocalIP = peerEngine.getLocalIPForPeer(apparentSrcIP) || peerIP;
     const peerSA: IPSec_SA = {
       peerIP: apparentSrcIP,
       localIP: peerLocalIP,
@@ -703,7 +804,7 @@ export class IPSecEngine {
     };
     this.ikev2SADB.set(peerIP, ikev2SA);
 
-    const peerLocalIP = peerEngine.getLocalIP('') || peerIP;
+    const peerLocalIP = peerEngine.getLocalIPForPeer(apparentSrcIP) || peerIP;
     peerEngine.ikev2SADB.set(apparentSrcIP, {
       peerIP: apparentSrcIP, localIP: peerLocalIP,
       status: 'READY',
@@ -767,6 +868,14 @@ export class IPSecEngine {
       if (ip) return ip.toString();
     }
     return null;
+  }
+
+  private getLocalIPForPeer(peerIP: string): string | null {
+    try {
+      const route = (this.router as any).lookupRoute(new IPAddress(peerIP));
+      if (route?.iface) return this.getLocalIP(route.iface);
+    } catch { /* ignore */ }
+    return this.getLocalIP('');
   }
 
   private findEntryForPeer(peerApparentIP: string, _ports: any): CryptoMapEntry | null {
@@ -859,7 +968,7 @@ export class IPSecEngine {
 
   showCryptoISAKMPSA(): string {
     if (this.ikeSADB.size === 0) {
-      return 'IPv4 Crypto ISAKMP SA\ndst             src             state          conn-id status\n';
+      return 'IPv4 Crypto ISAKMP SA\ndst             src             state          conn-id status\n\nno sa\n';
     }
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {
@@ -903,25 +1012,32 @@ export class IPSecEngine {
   }
 
   showCryptoISAKMPPolicy(): string {
-    if (this.isakmpPolicies.size === 0) {
-      return 'Default protection suite of priority 65507\n\tencryption algorithm:   DES - Data Encryption Standard (56 bit keys).\n\thash algorithm:         Secure Hash Standard\n\tauthentication method:  Rivest-Shamir-Adleman Signature\n\tDiffie-Hellman group:  #1 (768 bit)\n\tlifetime:               86400 seconds, no volume limit';
-    }
-    const lines: string[] = [];
+    const dhBits = (g: number): number => {
+      const map: Record<number, number> = { 1: 768, 2: 1024, 5: 1536, 14: 2048, 19: 256, 20: 384, 21: 521, 24: 2048 };
+      return map[g] ?? 2048;
+    };
+    const lines: string[] = ['Global IKE policy'];
     for (const [, p] of [...this.isakmpPolicies.entries()].sort((a, b) => a[0] - b[0])) {
       lines.push(`Protection suite of priority ${p.priority}`);
       lines.push(`\tencryption algorithm:   ${this.formatEncForPolicy(p.encryption)}`);
       lines.push(`\thash algorithm:         ${this.formatHashForPolicy(p.hash)}`);
       lines.push(`\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth}`);
-      lines.push(`\tDiffie-Hellman group:  #${p.group}`);
+      lines.push(`\tDiffie-Hellman group:   #${p.group} (${dhBits(p.group)} bit)`);
       lines.push(`\tlifetime:               ${p.lifetime} seconds, no volume limit`);
     }
+    lines.push('Default protection suite');
+    lines.push('\tencryption algorithm:   DES - Data Encryption Standard (56 bit keys)');
+    lines.push('\thash algorithm:         Secure Hash Standard');
+    lines.push('\tauthentication method:  Rivest-Shamir-Adleman Signature');
+    lines.push('\tDiffie-Hellman group:   #1 (768 bit)');
+    lines.push('\tlifetime:               86400 seconds, no volume limit');
     return lines.join('\n');
   }
 
   private formatEncForPolicy(enc: string): string {
-    if (enc === 'aes 256') return 'AES - Advanced Encryption Standard (256 bit keys).';
-    if (enc === 'aes 192') return 'AES - Advanced Encryption Standard (192 bit keys).';
-    if (enc === 'aes') return 'AES - Advanced Encryption Standard (128 bit keys).';
+    if (enc === 'aes 256') return 'AES - Advanced Encryption Standard (256 bit keys)';
+    if (enc === 'aes 192') return 'AES - Advanced Encryption Standard (192 bit keys)';
+    if (enc === 'aes') return 'AES - Advanced Encryption Standard (128 bit keys)';
     if (enc === '3des') return 'Three key triple DES';
     return enc.toUpperCase();
   }
@@ -980,11 +1096,11 @@ export class IPSecEngine {
         }
         if (sa.hasAH) {
           lines.push(`    inbound ah sas:`);
-          lines.push(`     spi: ${spiHex(sa.spiIn)}(${sa.spiIn})`);
+          lines.push(`     spi: ${spiHex(sa.spiIn)}(${sa.spiIn}) (ah)`);
           lines.push(`       transform: ${this.formatTransforms(sa.transforms.filter(t => t.startsWith('ah')))} ,`);
           lines.push(`       in use settings ={${sa.mode}, }`);
           lines.push(`    outbound ah sas:`);
-          lines.push(`     spi: ${spiHex(sa.spiOut)}(${sa.spiOut})`);
+          lines.push(`     spi: ${spiHex(sa.spiOut)}(${sa.spiOut}) (ah)`);
           lines.push(`       transform: ${this.formatTransforms(sa.transforms.filter(t => t.startsWith('ah')))} ,`);
           lines.push(`       in use settings ={${sa.mode}, }`);
         }
@@ -1019,6 +1135,85 @@ export class IPSecEngine {
     return octets.join('.');
   }
 
+  showCryptoIPSecSADetail(): string {
+    const lines: string[] = [];
+    for (const [peerIP, sas] of this.ipsecSADB) {
+      for (const sa of sas) {
+        const elapsed = Math.floor((Date.now() - sa.created) / 1000);
+        const remaining = Math.max(0, sa.lifetime - elapsed);
+        lines.push('');
+        lines.push(`interface: ${sa.outIface || 'GigabitEthernet0/1'}`);
+        lines.push(`    Crypto map tag: CMAP, local addr ${sa.localIP}`);
+        lines.push('');
+        lines.push(`   protected vrf: (none)`);
+        lines.push(`   local  ident (addr/mask/prot/port): (${this.getACLSrc(sa.aclName)})`);
+        lines.push(`   remote ident (addr/mask/prot/port): (${this.getACLDst(sa.aclName)})`);
+        lines.push(`   current_peer ${peerIP} port ${sa.natT ? '4500' : '500'}`);
+        lines.push(`    PERMIT, flags={origin_is_acl,}`);
+        lines.push(`   #pkts encaps: ${sa.pktsEncaps}, #pkts encrypt: ${sa.pktsEncaps}, #pkts digest: ${sa.pktsEncaps}`);
+        lines.push(`   #pkts decaps: ${sa.pktsDecaps}, #pkts decrypt: ${sa.pktsDecaps}, #pkts verify: ${sa.pktsDecaps}`);
+        lines.push(`   #pkts compressed: 0, #pkts decompressed: 0`);
+        lines.push(`   #pkts not compressed: 0, #pkts compr. failed: 0`);
+        lines.push(`   #send errors ${sa.sendErrors}, #recv errors ${sa.recvErrors}`);
+        lines.push('');
+        lines.push(`    local crypto endpt.: ${sa.localIP} remote crypto endpt.: ${peerIP}`);
+        lines.push(`    path mtu 1500, ip mtu 1500, ip mtu idb GigabitEthernet0/1`);
+        lines.push(`    current outbound spi: ${spiHex(sa.spiOut)}(${sa.spiOut})`);
+        lines.push('');
+        lines.push(`   sa timing: remaining key lifetime (k/sec): (4608000/${remaining})`);
+        if (sa.pfsGroup) {
+          lines.push(`   PFS (Y/N): Y, DH group: ${sa.pfsGroup}`);
+        } else {
+          lines.push(`   PFS (Y/N): N`);
+        }
+        if (sa.hasESP) {
+          lines.push(`    inbound esp sas:`);
+          lines.push(`     spi: ${spiHex(sa.spiIn)}(${sa.spiIn})`);
+          lines.push(`       transform: ${this.formatTransforms(sa.transforms)} ,`);
+          lines.push(`       in use settings ={${sa.mode}, }`);
+          lines.push(`    outbound esp sas:`);
+          lines.push(`     spi: ${spiHex(sa.spiOut)}(${sa.spiOut})`);
+          lines.push(`       transform: ${this.formatTransforms(sa.transforms)} ,`);
+          lines.push(`       in use settings ={${sa.mode}, }`);
+        }
+      }
+    }
+    return lines.length ? lines.join('\n') : 'No IPSec SAs established.';
+  }
+
+  showCryptoDynamicMap(): string {
+    if (this.dynamicCryptoMaps.size === 0) return 'No dynamic crypto maps configured.';
+    const lines: string[] = [];
+    for (const [, dm] of this.dynamicCryptoMaps) {
+      for (const [seq, entry] of [...dm.entries.entries()].sort((a, b) => a[0] - b[0])) {
+        lines.push(`Crypto Map "${dm.name}" ${seq} ipsec-isakmp (dynamic)`);
+        if (entry.transformSets.length > 0) {
+          lines.push(`\tTransform sets={`);
+          for (const ts of entry.transformSets) {
+            lines.push(`\t\t${ts}: { ${this.transformSets.get(ts)?.transforms.join(' ') || ''} },`);
+          }
+          lines.push(`\t}`);
+        }
+        lines.push(`\tSecurity association lifetime: 4608000 kilobytes/${entry.saLifetimeSeconds || 3600} seconds`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoIPSecProfile(): string {
+    if (this.ipsecProfiles.size === 0) return 'No IPSec profiles configured.';
+    const lines: string[] = [];
+    for (const [, prof] of this.ipsecProfiles) {
+      lines.push(`IPSEC profile ${prof.name}`);
+      if (prof.transformSetName) {
+        const ts = this.transformSets.get(prof.transformSetName);
+        lines.push(`\tTransform sets={${prof.transformSetName}: { ${ts?.transforms.join(' ') || ''} }, }`);
+      }
+      lines.push(`\tSecurity association lifetime: 4608000 kilobytes/3600 seconds`);
+    }
+    return lines.join('\n');
+  }
+
   showCryptoIPSecTransformSet(): string {
     if (this.transformSets.size === 0) return 'No transform sets defined.';
     const lines: string[] = [];
@@ -1036,7 +1231,7 @@ export class IPSecEngine {
     const lines: string[] = [];
     for (const [, cmap] of this.cryptoMaps) {
       for (const [, entry] of [...cmap.staticEntries.entries()].sort((a, b) => a[0] - b[0])) {
-        lines.push(`Crypto Map IPv4 "${cmap.name}" ${entry.seq} ipsec-isakmp`);
+        lines.push(`Crypto Map "${cmap.name}" ${entry.seq} ipsec-isakmp`);
         lines.push(`\tPeer = ${entry.peers.join(', ')}`);
         lines.push(`\tExtended IP access list ${entry.aclName}`);
         lines.push(`\tSecurity association lifetime: 4608000 kilobytes/${entry.saLifetimeSeconds || 3600} seconds`);
@@ -1059,7 +1254,7 @@ export class IPSecEngine {
         for (const iface of appliedOn) lines.push(`\t\t${iface}`);
       }
       for (const [seq, dynMapName] of cmap.dynamicEntries) {
-        lines.push(`Crypto Map IPv4 "${cmap.name}" ${seq} ipsec-isakmp dynamic ${dynMapName}`);
+        lines.push(`Crypto Map "${cmap.name}" ${seq} ipsec-isakmp dynamic ${dynMapName}`);
       }
     }
     return lines.length ? lines.join('\n') : 'No crypto maps configured.';
@@ -1074,7 +1269,7 @@ export class IPSecEngine {
     ];
     let tid = 1;
     for (const [, sa] of this.ikev2SADB) {
-      lines.push(`${String(tid++).padEnd(10)}${sa.localIP.padEnd(22)}${sa.peerIP.padEnd(22)}none/none            ${sa.status}`);
+      lines.push(`${String(tid++).padEnd(10)}${sa.localIP.padEnd(22)}${sa.peerIP.padEnd(22)}none/none            ${sa.status}     ${sa.role}`);
     }
     return lines.join('\n');
   }
@@ -1083,16 +1278,20 @@ export class IPSecEngine {
     const base = this.showCryptoIKEv2SA();
     const extra: string[] = [];
     for (const [, sa] of this.ikev2SADB) {
+      const spiLocalHex = sa.spiLocal.replace(/^0x/i, '').padStart(16, '0').toUpperCase();
+      const spiRemoteHex = sa.spiRemote.replace(/^0x/i, '').padStart(16, '0').toUpperCase();
       extra.push('');
       extra.push(`IKEv2 SA Details for ${sa.peerIP}`);
-      extra.push(`  Role: ${sa.role}`);
-      extra.push(`  Local SPI  : ${sa.spiLocal}`);
-      extra.push(`  Remote SPI : ${sa.spiRemote}`);
-      extra.push(`  Encryption : ${sa.encryptionUsed}`);
-      extra.push(`  Integrity  : ${sa.integrityUsed}`);
-      extra.push(`  DH Group   : ${sa.dhGroupUsed}`);
-      extra.push(`  Status     : ${sa.status}`);
-      if (sa.natT) extra.push(`  NAT-T      : enabled (port 4500)`);
+      extra.push(`  Role         : ${sa.role}`);
+      extra.push(`  Local SPI    : ${spiLocalHex}`);
+      extra.push(`  Remote SPI   : ${spiRemoteHex}`);
+      extra.push(`  Encryption   : ${sa.encryptionUsed.toUpperCase()}`);
+      extra.push(`  Integrity    : ${sa.integrityUsed.toUpperCase()}`);
+      extra.push(`  DH group ${sa.dhGroupUsed}`);
+      extra.push(`  Auth method  : pre-share`);
+      extra.push(`  Child SA count: 1`);
+      extra.push(`  Status       : ${sa.status}`);
+      if (sa.natT) extra.push(`  NAT-T        : enabled (port 4500)`);
     }
     return base + '\n' + extra.join('\n');
   }
@@ -1136,22 +1335,11 @@ export class IPSecEngine {
   }
 
   private formatTransforms(transforms: string[]): string {
-    // Convert CLI names to display names
     return transforms.map(t => {
       const map: Record<string, string> = {
-        'esp-aes': 'esp-128-aes',
         'esp-aes 256': 'esp-256-aes',
         'esp-aes 192': 'esp-192-aes',
-        'esp-3des': 'esp-3des',
-        'esp-sha-hmac': 'esp-sha-hmac',
-        'esp-sha256-hmac': 'esp-sha256-hmac',
-        'esp-sha384-hmac': 'esp-sha384-hmac',
-        'esp-sha512-hmac': 'esp-sha512-hmac',
-        'esp-md5-hmac': 'esp-md5-hmac',
         'esp-gcm 256': 'esp-gcm-256',
-        'esp-gcm': 'esp-gcm',
-        'ah-sha256-hmac': 'ah-sha256-hmac',
-        'ah-sha-hmac': 'ah-sha-hmac',
       };
       return map[t] || t;
     }).join(' ');

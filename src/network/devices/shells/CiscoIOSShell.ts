@@ -347,11 +347,30 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
     const targetIP = new IPAddress(target);
     const router = this.r();
-    const count = 5;
-    const timeoutMs = 2000;
+
+    // Parse extended ping options: source <iface> repeat <count>
+    let count = 5;
+    let sourceIPOverride: IPAddress | undefined;
+    for (let i = 1; i < args.length; i++) {
+      if (args[i].toLowerCase() === 'repeat' && args[i + 1]) {
+        const n = parseInt(args[i + 1], 10);
+        if (!isNaN(n) && n > 0) count = n;
+        i++;
+      } else if (args[i].toLowerCase() === 'source' && args[i + 1]) {
+        const srcIfName = resolveInterfaceName(router, args[i + 1]);
+        if (srcIfName) {
+          const srcPort = (router as any)._getPortsInternal?.()?.get(srcIfName);
+          const srcIP = srcPort?.getIPAddress?.();
+          if (srcIP) sourceIPOverride = srcIP;
+        }
+        i++;
+      }
+    }
+
+    const timeoutMs = 100;
 
     // Store async operation — execute() will detect this and return the promise
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs).then(results => {
+    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIPOverride).then(results => {
       return this._formatCiscoPing(target, count, timeoutMs, results);
     });
 
@@ -618,5 +637,38 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     });
 
     trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter()));
+
+    // show interface <ifname>
+    trie.registerGreedy('show interface', 'Display interface status', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const router = getRouter();
+      const ifName = resolveInterfaceName(router, args.join(' '));
+      if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
+      const ports: Map<string, any> = (router as any)._getPortsInternal?.() ?? new Map();
+      const port = ports.get(ifName);
+      if (!port) return `% Interface ${ifName} not found`;
+      const isUp = port.getIsUp?.() ?? true;
+      const ipAddr = port.getIPAddress?.();
+      const status = isUp ? 'up' : 'administratively down';
+      const lines: string[] = [];
+      lines.push(`${ifName} is ${status}, line protocol is ${isUp ? 'up' : 'down'}`);
+      if (ipAddr) {
+        const mask = port.getSubnetMask?.();
+        lines.push(`  Internet address is ${ipAddr}${mask ? '/' + mask.toCIDR() : ''}`);
+      } else {
+        lines.push(`  Internet address is unassigned`);
+      }
+      lines.push(`  MTU 1500 bytes, BW 1000000 Kbit/sec`);
+      // Show tunnel protection if applicable
+      const eng = (router as any)._getIPSecEngineInternal?.();
+      if (eng) {
+        const tp = eng.getTunnelProtection?.(ifName);
+        if (tp) {
+          lines.push(`  Tunnel protection via IPSec (profile "${tp.profileName}"${tp.shared ? ', shared' : ''})`);
+          lines.push(`  tunnel protection ipsec profile ${tp.profileName}`);
+        }
+      }
+      return lines.join('\n');
+    });
   }
 }
