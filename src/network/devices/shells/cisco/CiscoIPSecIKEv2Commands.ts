@@ -59,6 +59,31 @@ export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     ctx.setMode('config-ikev2-profile');
     return '';
   });
+
+  // ── no forms ───────────────────────────────────────────────────────
+  trie.registerGreedy('no crypto ikev2 proposal', 'Remove IKEv2 proposal', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeIKEv2Proposal(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('no crypto ikev2 policy', 'Remove IKEv2 policy', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeIKEv2Policy(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('no crypto ikev2 keyring', 'Remove IKEv2 keyring', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeIKEv2Keyring(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('no crypto ikev2 profile', 'Remove IKEv2 profile', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeIKEv2Profile(args[0]);
+    return '';
+  });
 }
 
 // ─── config-ikev2-proposal sub-mode ──────────────────────────────────

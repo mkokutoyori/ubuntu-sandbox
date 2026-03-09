@@ -152,13 +152,22 @@ export interface IPSec_SA {
   pktsDecaps: number;      // packets decrypted (inbound)
   sendErrors: number;
   recvErrors: number;
+  pktsReplay: number;      // anti-replay drops
+  bytesEncaps: number;     // bytes encrypted (for kilobyte lifetime)
+  bytesDecaps: number;     // bytes decrypted
   created: number;
   lifetime: number;        // seconds
+  lifetimeKB: number;      // kilobytes (0 = unlimited, default 4608000)
   pfsGroup?: string;
   natT: boolean;
   outIface: string;        // outgoing interface name
   hasESP: boolean;
   hasAH: boolean;
+  // Anti-replay window (RFC 4303)
+  replayWindowSize: number;        // default 64
+  outboundSeqNum: number;          // next outbound sequence number
+  replayBitmap: number;            // bitmap for replay window (up to 32 bits)
+  replayWindowLastSeq: number;     // highest sequence number seen
 }
 
 // ─── DPD / NAT-T Config ──────────────────────────────────────────────

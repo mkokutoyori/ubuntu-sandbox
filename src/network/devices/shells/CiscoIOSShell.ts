@@ -330,7 +330,41 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   // ─── Ping Command ──────────────────────────────────────────────────
 
   private _handlePing(args: string[]): string {
-    const target = args[0]?.trim();
+    if (args.length === 0) {
+      return '% Ping requires a target IP address.';
+    }
+
+    // Parse ping options: ping <target> [source <ip|iface>] [repeat <count>] [timeout <sec>] [size <bytes>]
+    let target = '';
+    let count = 5;
+    let timeoutMs = 2000;
+    let sourceIP: string | null = null;
+
+    let i = 0;
+    // First non-keyword arg is the target
+    target = args[i++]?.trim() || '';
+
+    while (i < args.length) {
+      const kw = args[i]?.toLowerCase();
+      if (kw === 'source' && args[i + 1]) {
+        sourceIP = args[i + 1];
+        i += 2;
+      } else if (kw === 'repeat' && args[i + 1]) {
+        const n = parseInt(args[i + 1], 10);
+        if (!isNaN(n) && n > 0) count = n;
+        i += 2;
+      } else if (kw === 'timeout' && args[i + 1]) {
+        const n = parseInt(args[i + 1], 10);
+        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
+        i += 2;
+      } else if (kw === 'size' && args[i + 1]) {
+        // Accept but don't change actual payload (simulation)
+        i += 2;
+      } else {
+        i++;
+      }
+    }
+
     if (!target) {
       return '% Ping requires a target IP address.';
     }
@@ -345,10 +379,15 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       return `% Unrecognized host or address, or protocol not running.`;
     }
 
+    // Resolve source interface name to IP if needed
+    if (sourceIP) {
+      const router = this.r();
+      const resolved = this._resolveSourceIP(router, sourceIP);
+      if (resolved) sourceIP = resolved;
+    }
+
     const targetIP = new IPAddress(target);
     const router = this.r();
-    const count = 5;
-    const timeoutMs = 2000;
 
     // Store async operation — execute() will detect this and return the promise
     this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs).then(results => {
@@ -356,6 +395,30 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     });
 
     return ''; // placeholder, execute() returns the promise instead
+  }
+
+  private _resolveSourceIP(router: any, source: string): string | null {
+    // If it looks like an IP address, return as-is
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(source)) return source;
+    // Otherwise try to resolve as interface name
+    const ports = router._getPortsInternal?.() as Map<string, any> | undefined;
+    if (!ports) return null;
+    // Try exact match first
+    const port = ports.get(source);
+    if (port) {
+      const ip = port.getIPAddress?.();
+      return ip ? ip.toString() : null;
+    }
+    // Try resolving interface name (e.g., "Loopback0" -> "Loopback0")
+    const resolved = resolveInterfaceName(router, source);
+    if (resolved) {
+      const rPort = ports.get(resolved);
+      if (rPort) {
+        const ip = rPort.getIPAddress?.();
+        return ip ? ip.toString() : null;
+      }
+    }
+    return null;
   }
 
   private _formatCiscoPing(

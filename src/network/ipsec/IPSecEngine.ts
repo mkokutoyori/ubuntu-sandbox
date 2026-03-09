@@ -51,6 +51,11 @@ export class IPSecEngine {
   private natKeepaliveInterval: number = 0;
   private dpdConfig: DPDConfig | null = null;
   private globalSALifetimeSeconds: number = 3600;
+  private globalSALifetimeKB: number = 4608000; // 4608000 KB default
+  private replayWindowSize: number = 64;       // RFC 4303 default
+  private debugIsakmp: boolean = false;
+  private debugIpsec: boolean = false;
+  private debugIkev2: boolean = false;
 
   // ── IKEv2 Configuration ──────────────────────────────────────────
   private ikev2Proposals: Map<string, IKEv2Proposal> = new Map();
@@ -112,6 +117,27 @@ export class IPSecEngine {
 
   setGlobalSALifetime(seconds: number): void {
     this.globalSALifetimeSeconds = seconds;
+  }
+
+  setGlobalSALifetimeKB(kb: number): void {
+    this.globalSALifetimeKB = kb;
+  }
+
+  setReplayWindowSize(size: number): void {
+    this.replayWindowSize = size;
+  }
+
+  setDebug(type: 'isakmp' | 'ipsec' | 'ikev2', enabled: boolean): void {
+    if (type === 'isakmp') this.debugIsakmp = enabled;
+    else if (type === 'ipsec') this.debugIpsec = enabled;
+    else if (type === 'ikev2') this.debugIkev2 = enabled;
+  }
+
+  isDebugEnabled(type: 'isakmp' | 'ipsec' | 'ikev2'): boolean {
+    if (type === 'isakmp') return this.debugIsakmp;
+    if (type === 'ipsec') return this.debugIpsec;
+    if (type === 'ikev2') return this.debugIkev2;
+    return false;
   }
 
   addTransformSet(name: string, transforms: string[], mode: 'tunnel' | 'transport' = 'tunnel'): void {
@@ -220,6 +246,70 @@ export class IPSecEngine {
 
   setTunnelProtection(ifName: string, profileName: string, shared: boolean = false): void {
     this.tunnelProtection.set(ifName, { profileName, shared });
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Configuration removal
+  // ══════════════════════════════════════════════════════════════════
+
+  removeISAKMPPolicy(priority: number): void {
+    this.isakmpPolicies.delete(priority);
+  }
+
+  removePreSharedKey(address: string): void {
+    this.preSharedKeys.delete(address);
+  }
+
+  removeTransformSet(name: string): void {
+    this.transformSets.delete(name);
+  }
+
+  removeCryptoMap(mapName: string): void {
+    this.cryptoMaps.delete(mapName);
+    // Also remove interface associations
+    for (const [iface, name] of this.ifaceCryptoMap) {
+      if (name === mapName) this.ifaceCryptoMap.delete(iface);
+    }
+  }
+
+  removeCryptoMapEntry(mapName: string, seq: number): void {
+    const cmap = this.cryptoMaps.get(mapName);
+    if (cmap) {
+      cmap.staticEntries.delete(seq);
+      cmap.dynamicEntries.delete(seq);
+    }
+  }
+
+  removeDynamicCryptoMap(name: string): void {
+    this.dynamicCryptoMaps.delete(name);
+  }
+
+  removeIKEv2Proposal(name: string): void {
+    this.ikev2Proposals.delete(name);
+  }
+
+  removeIKEv2Policy(name: string): void {
+    this.ikev2Policies.delete(String(name));
+  }
+
+  removeIKEv2Keyring(name: string): void {
+    this.ikev2Keyrings.delete(name);
+  }
+
+  removeIKEv2Profile(name: string): void {
+    this.ikev2Profiles.delete(name);
+  }
+
+  removeIPSecProfile(name: string): void {
+    this.ipsecProfiles.delete(name);
+    // Also remove tunnel protection refs
+    for (const [iface, tp] of this.tunnelProtection) {
+      if (tp.profileName === name) this.tunnelProtection.delete(iface);
+    }
+  }
+
+  removeTunnelProtection(ifName: string): void {
+    this.tunnelProtection.delete(ifName);
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -342,6 +432,17 @@ export class IPSecEngine {
 
     // Get or establish SA
     let sa = this.getBestIPSecSA(peerIP);
+
+    // Check if SA has expired (lifetime-based rekeying)
+    if (sa && this.isSAExpired(sa)) {
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC: SA with ${peerIP} expired, initiating rekey`);
+      }
+      this.clearSAsForPeer(peerIP);
+      sa = null;
+    }
+
     if (!sa) {
       const ok = this.negotiateTunnel(peerIP, entry, egressIface);
       if (!ok) return null;
@@ -351,6 +452,23 @@ export class IPSecEngine {
 
     // Wrap in ESP (or AH for AH-only)
     return this.encapsulate(pkt, sa, egressIface);
+  }
+
+  /**
+   * Check if an SA has expired based on time or kilobyte lifetime.
+   */
+  private isSAExpired(sa: IPSec_SA): boolean {
+    // Time-based expiration
+    const elapsedSec = Math.floor((Date.now() - sa.created) / 1000);
+    if (elapsedSec >= sa.lifetime) return true;
+
+    // Volume-based expiration (kilobytes)
+    if (sa.lifetimeKB > 0) {
+      const usedKB = Math.floor((sa.bytesEncaps + sa.bytesDecaps) / 1024);
+      if (usedKB >= sa.lifetimeKB) return true;
+    }
+
+    return false;
   }
 
   private determinePeer(entry: CryptoMapEntry, egressIface: string, pkt: IPv4Packet): string | null {
@@ -392,12 +510,19 @@ export class IPSecEngine {
     if (!localIP) return null;
 
     sa.pktsEncaps++;
+    sa.outboundSeqNum++;
+    sa.bytesEncaps += innerPkt.totalLength;
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC(o): sa created, (sa) sa_dest=${sa.peerIP}, spi=${spiHex(sa.spiOut)}, seqnum=${sa.outboundSeqNum}`);
+    }
 
     if (sa.hasESP) {
       const espPayload: ESPPacket = {
         type: 'esp',
         spi: sa.spiOut,
-        sequenceNumber: sa.pktsEncaps,
+        sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
       const outerSize = 20 + 8 + innerPkt.totalLength; // IP + ESP header + inner
@@ -413,7 +538,7 @@ export class IPSecEngine {
       const ahPayload: AHPacket = {
         type: 'ah',
         spi: sa.spiOut,
-        sequenceNumber: sa.pktsEncaps,
+        sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
       const outerSize = 20 + 12 + innerPkt.totalLength;
@@ -444,7 +569,24 @@ export class IPSecEngine {
       return null;
     }
 
+    // Anti-replay check (RFC 4303)
+    if (!this.checkAntiReplay(sa, esp.sequenceNumber)) {
+      sa.pktsReplay++;
+      sa.recvErrors++;
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC(i): anti-replay check FAILED, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}`);
+      }
+      return null;
+    }
+
     sa.pktsDecaps++;
+    sa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC(i): decaps ok, spi=${spiHex(esp.spi)}, seqnum=${esp.sequenceNumber}`);
+    }
     return esp.innerPacket;
   }
 
@@ -455,8 +597,56 @@ export class IPSecEngine {
     const sa = this.spiToSA.get(ah.spi);
     if (!sa) return null;
 
+    // Anti-replay check
+    if (!this.checkAntiReplay(sa, ah.sequenceNumber)) {
+      sa.pktsReplay++;
+      sa.recvErrors++;
+      return null;
+    }
+
     sa.pktsDecaps++;
+    sa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
     return ah.innerPacket;
+  }
+
+  /**
+   * RFC 4303 anti-replay window check.
+   * Returns true if the packet is acceptable, false if it's a replay.
+   */
+  private checkAntiReplay(sa: IPSec_SA, seqNum: number): boolean {
+    if (sa.replayWindowSize === 0) return true; // anti-replay disabled
+    if (seqNum === 0) return false; // seq 0 is invalid
+
+    const windowSize = Math.min(sa.replayWindowSize, 32); // bitmap limited to 32 bits
+    const lastSeq = sa.replayWindowLastSeq;
+
+    if (seqNum > lastSeq) {
+      // New packet ahead of window — slide window forward
+      const shift = seqNum - lastSeq;
+      if (shift < windowSize) {
+        sa.replayBitmap = (sa.replayBitmap << shift) | 1;
+      } else {
+        sa.replayBitmap = 1; // completely new window
+      }
+      sa.replayWindowLastSeq = seqNum;
+      return true;
+    }
+
+    const diff = lastSeq - seqNum;
+    if (diff >= windowSize) {
+      // Too old, outside the window
+      return false;
+    }
+
+    // Check if already seen (bit set in bitmap)
+    const bitMask = 1 << diff;
+    if (sa.replayBitmap & bitMask) {
+      return false; // duplicate
+    }
+
+    // Mark as seen
+    sa.replayBitmap |= bitMask;
+    return true;
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -515,7 +705,20 @@ export class IPSecEngine {
       if (matchedPolicy) break;
     }
 
+    if (this.debugIsakmp) {
+      Logger.info(this.router.id, 'debug:isakmp',
+        `ISAKMP: begin IKE Main Mode exchange with ${peerIP}`);
+      for (const mp of myPolicies) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: sending policy ${mp.priority} enc=${mp.encryption} hash=${mp.hash} auth=${mp.auth} group=${mp.group}`);
+      }
+    }
+
     if (!matchedPolicy) {
+      if (this.debugIsakmp) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: (0:0): phase 1 SA policy not acceptable! (local:${myPolicies.length} remote:${peerPolicies.length})`);
+      }
       Logger.info(this.router.id, 'ipsec:no-policy', `${this.router.name}: No common IKE policy with ${peerIP}`);
       this.createFailedIKESA(peerIP, egressIface, 'No matching policy');
       peerEngine.createFailedIKESA(apparentSrcIP, '', 'No matching policy');
@@ -527,10 +730,21 @@ export class IPSecEngine {
     const peerPSK = peerEngine.preSharedKeys.get(apparentSrcIP) || peerEngine.preSharedKeys.get('0.0.0.0');
 
     if (!myPSK || !peerPSK || myPSK !== peerPSK) {
+      if (this.debugIsakmp) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: (0:0): pre-shared key authentication FAILED with ${peerIP}`);
+      }
       Logger.info(this.router.id, 'ipsec:psk-fail', `${this.router.name}: PSK mismatch with ${peerIP}`);
       this.createFailedIKESA(peerIP, egressIface, 'PSK mismatch');
       peerEngine.createFailedIKESA(apparentSrcIP, '', 'PSK mismatch');
       return false;
+    }
+
+    if (this.debugIsakmp) {
+      Logger.info(this.router.id, 'debug:isakmp',
+        `ISAKMP: (${spiHex(0)}:0): SA matched policy ${matchedPolicy.priority}, enc=${matchedPolicy.encryption} hash=${matchedPolicy.hash} group=${matchedPolicy.group}`);
+      Logger.info(this.router.id, 'debug:isakmp',
+        `ISAKMP: (${spiHex(0)}:0): pre-shared key authentication passed with ${peerIP}`);
     }
 
     const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
@@ -621,6 +835,8 @@ export class IPSecEngine {
 
     const localIP = this.getLocalIP(egressIface) || '';
 
+    const lifetimeKB = this.globalSALifetimeKB;
+
     // Initiator SA
     const sa: IPSec_SA = {
       peerIP, localIP,
@@ -631,12 +847,19 @@ export class IPSecEngine {
       aclName: entry.aclName,
       pktsEncaps: 0, pktsDecaps: 0,
       sendErrors: 0, recvErrors: 0,
+      pktsReplay: 0,
+      bytesEncaps: 0, bytesDecaps: 0,
       created: Date.now(),
       lifetime,
+      lifetimeKB,
       pfsGroup: entry.pfsGroup,
       natT,
       outIface: egressIface,
       hasESP, hasAH,
+      replayWindowSize: this.replayWindowSize,
+      outboundSeqNum: 0,
+      replayBitmap: 0,
+      replayWindowLastSeq: 0,
     };
     const existing = this.ipsecSADB.get(peerIP) || [];
     existing.push(sa);
@@ -657,17 +880,31 @@ export class IPSecEngine {
       aclName: peerEntry?.aclName || entry.aclName,
       pktsEncaps: 0, pktsDecaps: 0,
       sendErrors: 0, recvErrors: 0,
+      pktsReplay: 0,
+      bytesEncaps: 0, bytesDecaps: 0,
       created: Date.now(),
       lifetime,
+      lifetimeKB,
       pfsGroup: entry.pfsGroup,
       natT,
       outIface: peerEgressIface,
       hasESP, hasAH,
+      replayWindowSize: peerEngine.replayWindowSize,
+      outboundSeqNum: 0,
+      replayBitmap: 0,
+      replayWindowLastSeq: 0,
     };
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
     peerExisting.push(peerSA);
     peerEngine.ipsecSADB.set(apparentSrcIP, peerExisting);
     peerEngine.spiToSA.set(spiRespIn, peerSA);
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC(key_engine): got a queue event with 1 KMI message(s)`);
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC(spi): obtained new SPI for SA, spi_in=${spiHex(spiInitIn)} spi_out=${spiHex(spiRespIn)}`);
+    }
 
     Logger.info(this.router.id, 'ipsec:sa-up',
       `${this.router.name}: IPSec SA UP with ${peerIP} [${chosenTs.transforms.join(',')}]`);
@@ -989,6 +1226,7 @@ export class IPSecEngine {
         lines.push(`   #pkts compressed: 0, #pkts decompressed: 0`);
         lines.push(`   #pkts not compressed: 0, #pkts compr. failed: 0`);
         lines.push(`   #pkts not decompressed: 0, #pkts decompress failed: 0`);
+        lines.push(`   #pkts replay: ${sa.pktsReplay}`);
         lines.push(`   #send errors ${sa.sendErrors}, #recv errors ${sa.recvErrors}`);
         lines.push('');
         lines.push(`    local crypto endpt.: ${sa.localIP} remote crypto endpt.: ${peerIP}`);
@@ -1030,11 +1268,19 @@ export class IPSecEngine {
     const extra: string[] = [];
     for (const [, sas] of this.ipsecSADB) {
       for (const sa of sas) {
+        const elapsedSec = Math.floor((Date.now() - sa.created) / 1000);
+        const remainingSec = Math.max(0, sa.lifetime - elapsedSec);
+        const usedKB = Math.floor((sa.bytesEncaps + sa.bytesDecaps) / 1024);
+        const remainingKB = Math.max(0, sa.lifetimeKB - usedKB);
         extra.push('');
-        extra.push(`   sa timing: remaining key lifetime (k/sec): (4608000/${Math.max(0, sa.lifetime - Math.floor((Date.now() - sa.created) / 1000))})`);
-        extra.push(`   SA lifetime: ${sa.lifetime}`);
+        extra.push(`   sa timing: remaining key lifetime (k/sec): (${remainingKB}/${remainingSec})`);
+        extra.push(`   SA lifetime: ${sa.lifetime} seconds, ${sa.lifetimeKB} kilobytes`);
+        extra.push(`   Replay window size: ${sa.replayWindowSize}`);
+        extra.push(`   Outbound sequence number: ${sa.outboundSeqNum}`);
         if (sa.pfsGroup) {
           extra.push(`   PFS (Y/N): Y, DH group: ${sa.pfsGroup}`);
+        } else {
+          extra.push(`   PFS (Y/N): N`);
         }
       }
     }
@@ -1228,7 +1474,7 @@ export class IPSecEngine {
   }
 
   private formatTransforms(transforms: string[]): string {
-    // Convert CLI names to display names
+    // Convert CLI names to Cisco IOS display names
     return transforms.map(t => {
       const map: Record<string, string> = {
         'esp-aes': 'esp-aes',
@@ -1249,8 +1495,48 @@ export class IPSecEngine {
     }).join(' ');
   }
 
+  showCryptoEngineBrief(): string {
+    const lines: string[] = [
+      'crypto engine name:  Cisco Software Crypto Engine',
+      `crypto engine type:  software`,
+      `State: Enabled`,
+    ];
+    let totalSAs = 0;
+    for (const [, sas] of this.ipsecSADB) totalSAs += sas.length;
+    lines.push(`Number of IPSec SAs: ${totalSAs}`);
+    lines.push(`Number of IKEv1 SAs: ${this.ikeSADB.size}`);
+    lines.push(`Number of IKEv2 SAs: ${this.ikev2SADB.size}`);
+    return lines.join('\n');
+  }
+
+  showCryptoEngineConfiguration(): string {
+    const lines: string[] = [
+      'crypto engine name:  Cisco Software Crypto Engine',
+      `Crypto engine state: Enabled`,
+      ``,
+      `IPSec global SA lifetime: ${this.globalSALifetimeSeconds} seconds`,
+      `IPSec global SA lifetime: ${this.globalSALifetimeKB} kilobytes`,
+      `Anti-replay window size: ${this.replayWindowSize}`,
+    ];
+    if (this.debugIsakmp) lines.push('debug crypto isakmp: ENABLED');
+    if (this.debugIpsec) lines.push('debug crypto ipsec: ENABLED');
+    if (this.debugIkev2) lines.push('debug crypto ikev2: ENABLED');
+    return lines.join('\n');
+  }
+
   showRunningConfig(): string[] {
     const lines: string[] = [];
+
+    // Global IPSec settings
+    if (this.globalSALifetimeSeconds !== 3600) {
+      lines.push(`crypto ipsec security-association lifetime seconds ${this.globalSALifetimeSeconds}`);
+    }
+    if (this.globalSALifetimeKB !== 4608000) {
+      lines.push(`crypto ipsec security-association lifetime kilobytes ${this.globalSALifetimeKB}`);
+    }
+    if (this.replayWindowSize !== 64) {
+      lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
+    }
 
     // ISAKMP policies
     for (const [, p] of [...this.isakmpPolicies.entries()].sort((a, b) => a[0] - b[0])) {

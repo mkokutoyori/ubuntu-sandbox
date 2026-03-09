@@ -73,6 +73,92 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  // ── no crypto isakmp policy N ────────────────────────────────────
+  trie.registerGreedy('no crypto isakmp policy', 'Remove an IKE policy', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const priority = parseInt(args[0], 10);
+    if (isNaN(priority)) return '% Invalid priority.';
+    eng(ctx).removeISAKMPPolicy(priority);
+    return '';
+  });
+
+  // ── no crypto isakmp key KEY address IP ─────────────────────────
+  trie.registerGreedy('no crypto isakmp key', 'Remove IKE pre-shared key', (args) => {
+    const addrIdx = args.indexOf('address');
+    const addr = addrIdx >= 0 ? (args[addrIdx + 1] || '0.0.0.0') : '0.0.0.0';
+    eng(ctx).removePreSharedKey(addr);
+    return '';
+  });
+
+  // ── no crypto ipsec transform-set NAME ──────────────────────────
+  trie.registerGreedy('no crypto ipsec transform-set', 'Remove IPSec transform set', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeTransformSet(args[0]);
+    return '';
+  });
+
+  // ── no crypto map NAME [SEQ] ────────────────────────────────────
+  trie.registerGreedy('no crypto map', 'Remove crypto map or entry', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const mapName = args[0];
+    if (args.length >= 2) {
+      const seq = parseInt(args[1], 10);
+      if (!isNaN(seq)) {
+        eng(ctx).removeCryptoMapEntry(mapName, seq);
+        return '';
+      }
+    }
+    eng(ctx).removeCryptoMap(mapName);
+    return '';
+  });
+
+  // ── no crypto dynamic-map NAME ──────────────────────────────────
+  trie.registerGreedy('no crypto dynamic-map', 'Remove dynamic crypto map', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeDynamicCryptoMap(args[0]);
+    return '';
+  });
+
+  // ── no crypto ipsec profile NAME ────────────────────────────────
+  trie.registerGreedy('no crypto ipsec profile', 'Remove IPSec profile', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeIPSecProfile(args[0]);
+    return '';
+  });
+
+  // ── crypto ipsec security-association lifetime seconds N ─────────
+  trie.registerGreedy('crypto ipsec security-association lifetime seconds', 'Set global IPSec SA lifetime (seconds)', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const n = parseInt(args[0], 10);
+    if (isNaN(n) || n < 120 || n > 86400) return '% Invalid value. Range: 120-86400';
+    eng(ctx).setGlobalSALifetime(n);
+    return '';
+  });
+
+  // ── crypto ipsec security-association lifetime kilobytes N ──────
+  trie.registerGreedy('crypto ipsec security-association lifetime kilobytes', 'Set global IPSec SA lifetime (KB)', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const n = parseInt(args[0], 10);
+    if (isNaN(n) || n < 1) return '% Invalid value.';
+    eng(ctx).setGlobalSALifetimeKB(n);
+    return '';
+  });
+
+  // ── crypto ipsec security-association replay window-size N ──────
+  trie.registerGreedy('crypto ipsec security-association replay window-size', 'Set anti-replay window size', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const n = parseInt(args[0], 10);
+    if (isNaN(n) || n < 0 || n > 1024) return '% Invalid value. Range: 0-1024';
+    eng(ctx).setReplayWindowSize(n);
+    return '';
+  });
+
+  // ── no crypto ipsec security-association replay ─────────────────
+  trie.register('no crypto ipsec security-association replay', 'Disable anti-replay', () => {
+    eng(ctx).setReplayWindowSize(0);
+    return '';
+  });
+
   // ── crypto ipsec transform-set NAME transforms... ─────────────────
   // Syntax: crypto ipsec transform-set MYTS esp-aes esp-sha-hmac
   //    OR:  crypto ipsec transform-set MYTS esp-aes 256 esp-sha256-hmac
@@ -330,6 +416,13 @@ export function buildIPSecIfCommands(trie: CommandTrie, ctx: CiscoShellContext):
     eng(ctx).setTunnelProtection(iface, profileName, shared);
     return '';
   });
+
+  trie.register('no tunnel protection ipsec profile', 'Remove IPSec profile from tunnel', () => {
+    const iface = ctx.getSelectedInterface();
+    if (!iface) return '% No interface selected';
+    eng(ctx).removeTunnelProtection(iface);
+    return '';
+  });
 }
 
 // ─── Privileged mode: clear crypto commands ──────────────────────────
@@ -360,6 +453,70 @@ export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellC
       engine.clearAllSAs();
     }
     return '';
+  });
+
+  // ── debug crypto commands ─────────────────────────────────────────
+  trie.register('debug crypto isakmp', 'Enable IKE/ISAKMP debug output', () => {
+    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('isakmp', true);
+    return 'Crypto ISAKMP debugging is on';
+  });
+
+  trie.register('no debug crypto isakmp', 'Disable IKE/ISAKMP debug output', () => {
+    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('isakmp', false);
+    return 'Crypto ISAKMP debugging is off';
+  });
+
+  trie.register('debug crypto ipsec', 'Enable IPSec debug output', () => {
+    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('ipsec', true);
+    return 'Crypto IPSEC debugging is on';
+  });
+
+  trie.register('no debug crypto ipsec', 'Disable IPSec debug output', () => {
+    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('ipsec', false);
+    return 'Crypto IPSEC debugging is off';
+  });
+
+  trie.register('debug crypto ikev2', 'Enable IKEv2 debug output', () => {
+    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('ikev2', true);
+    return 'Crypto IKEv2 debugging is on';
+  });
+
+  trie.register('no debug crypto ikev2', 'Disable IKEv2 debug output', () => {
+    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('ikev2', false);
+    return 'Crypto IKEv2 debugging is off';
+  });
+
+  trie.register('undebug all', 'Disable all debugging', () => {
+    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+    if (engine) {
+      engine.setDebug('isakmp', false);
+      engine.setDebug('ipsec', false);
+      engine.setDebug('ikev2', false);
+    }
+    return 'All possible debugging has been turned off';
+  });
+
+  trie.register('no debug all', 'Disable all debugging', () => {
+    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+    if (engine) {
+      engine.setDebug('isakmp', false);
+      engine.setDebug('ipsec', false);
+      engine.setDebug('ikev2', false);
+    }
+    return 'All possible debugging has been turned off';
+  });
+
+  // ── show crypto engine ─────────────────────────────────────────────
+  trie.register('show crypto engine brief', 'Display crypto engine information', () => {
+    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+    if (!engine) return 'IPSec not configured.';
+    return engine.showCryptoEngineBrief();
+  });
+
+  trie.register('show crypto engine configuration', 'Display crypto engine config', () => {
+    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+    if (!engine) return 'IPSec not configured.';
+    return engine.showCryptoEngineConfiguration();
   });
 }
 
