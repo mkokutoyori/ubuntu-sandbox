@@ -22,14 +22,26 @@ export function registerIPSecShowCommands(
   trie.register('show crypto isakmp policy', 'Display IKEv1 ISAKMP policies', () =>
     eng()?.showCryptoISAKMPPolicy() ?? 'IPSec not configured.');
 
+  trie.register('show crypto isakmp', 'Display IKE global config', () =>
+    eng()?.showCryptoISAKMP() ?? 'IPSec not configured.');
+
   trie.register('show crypto ipsec sa', 'Display IPSec SAs', () =>
     eng()?.showCryptoIPSecSA() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ipsec sa detail', 'Display detailed IPSec SAs', () =>
+    eng()?.showCryptoIPSecSADetail() ?? 'IPSec not configured.');
 
   trie.register('show crypto ipsec transform-set', 'Display IPSec transform sets', () =>
     eng()?.showCryptoIPSecTransformSet() ?? 'IPSec not configured.');
 
+  trie.register('show crypto ipsec profile', 'Display IPSec profiles', () =>
+    eng()?.showCryptoIPSecProfile() ?? 'IPSec not configured.');
+
   trie.register('show crypto map', 'Display crypto maps', () =>
     eng()?.showCryptoMap() ?? 'IPSec not configured.');
+
+  trie.register('show crypto dynamic-map', 'Display dynamic crypto maps', () =>
+    eng()?.showCryptoDynamicMap() ?? 'IPSec not configured.');
 
   trie.register('show crypto ikev2 sa', 'Display IKEv2 SAs', () =>
     eng()?.showCryptoIKEv2SA() ?? 'IPSec not configured.');
