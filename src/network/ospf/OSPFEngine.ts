@@ -186,6 +186,15 @@ export class OSPFEngine {
   /** Guard: true while SPF/partial-SPF is executing; prevents re-entrant scheduling */
   private spfRunning = false;
 
+  /** Total number of SPF runs performed */
+  private spfRunCount = 0;
+
+  /** Total number of neighbor state changes logged */
+  private neighborChangeCount = 0;
+
+  /** Whether to log adjacency changes */
+  logAdjacencyChanges = false;
+
   /** Event log for adjacency changes */
   private eventLog: string[] = [];
 
@@ -963,8 +972,10 @@ export class OSPFEngine {
     if (oldState !== neighbor.state) {
       const msg = `OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${oldState} -> ${neighbor.state} (${event})`;
       this.eventLog.push(msg);
-      if (this.config.logAdjacencyChanges) {
-        // Log event (could be picked up by syslog)
+      this.neighborChangeCount++;
+      if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
+        // Log adjacency change event
+        this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${oldState} to ${neighbor.state}, ${event}`);
       }
 
       // Re-originate Router-LSA on adjacency changes
@@ -2235,6 +2246,7 @@ export class OSPFEngine {
   runSPF(): OSPFRouteEntry[] {
     this.spfRunning = true;
     this.lastSPFType = 'full';
+    this.spfRunCount++;
     this.ospfRoutes = [];
 
     // Step 1: Compute intra-area + inter-area routes for each area via Dijkstra
@@ -2998,6 +3010,14 @@ export class OSPFEngine {
       }
     }
     return count;
+  }
+
+  getSpfRunCount(): number {
+    return this.spfRunCount;
+  }
+
+  getNeighborChangeCount(): number {
+    return this.neighborChangeCount;
   }
 
   // ─── LSA Aging (RFC 2328 §14) ──────────────────────────────────
