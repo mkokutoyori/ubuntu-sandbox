@@ -1,10 +1,11 @@
 /**
- * TerminalModal - Modal window for device terminal
- * Uses the existing Linux terminal for Linux devices
- * Will use device-specific terminals for other equipment types
+ * TerminalModal - Terminal window for device terminals
+ * Supports two modes:
+ * - Modal (default): centered floating modal with resize handles
+ * - Embedded: fills parent container (for tiling layout)
  *
  * Features:
- * - Resizable via drag handles
+ * - Resizable via drag handles (modal mode only)
  * - Fullscreen mode
  * - Horizontal scrolling
  */
@@ -30,9 +31,11 @@ interface TerminalModalProps {
   device: BaseDevice;
   onClose: () => void;
   onMinimize?: () => void;
+  /** When true, fills parent container instead of rendering as a fixed modal */
+  embedded?: boolean;
 }
 
-export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProps) {
+export function TerminalModal({ device, onClose, onMinimize, embedded = false }: TerminalModalProps) {
   const deviceName = device.getName();
   const deviceType = device.getDeviceType();
   const isPoweredOn = device.getIsPoweredOn();
@@ -57,7 +60,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   // Windows shell mode (for dynamic title bar)
   const [winShellMode, setWinShellMode] = useState<'cmd' | 'powershell'>('cmd');
 
-  // Resizable state
+  // Resizable state (only used in modal mode)
   const [dimensions, setDimensions] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -136,7 +139,10 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
 
   if (!isPoweredOn) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className={embedded
+        ? "w-full h-full flex items-center justify-center bg-slate-900"
+        : "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      }>
         <div className={cn(
           "w-[400px] p-6 flex flex-col items-center",
           "bg-slate-900 rounded-xl",
@@ -161,7 +167,10 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   // Show message for non-implemented device types
   if (!isLinuxDevice && !isWindowsDevice && !isCiscoDevice && !isHuaweiDevice && !deviceIsFullyImplemented) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className={embedded
+        ? "w-full h-full flex items-center justify-center bg-slate-900"
+        : "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      }>
         <div className={cn(
           "w-[500px] p-6 flex flex-col items-center",
           "bg-slate-900 rounded-xl",
@@ -187,6 +196,91 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
     );
   }
 
+  // ── Title bar (shared between modal and embedded mode) ──
+  const titleBar = (
+    <div className="flex items-center justify-between h-8 bg-[#1f1f1f] border-b border-[#3f3f3f] shrink-0 select-none">
+      {/* Left: icon + title */}
+      <div className="flex items-center gap-2 pl-3 min-w-0">
+        <span className="text-[11px] font-medium text-white/80 truncate">
+          {deviceName}
+          {isLinuxDevice && !isDatabaseDevice && ' — Ubuntu Linux'}
+          {isWindowsDevice && (winShellMode === 'powershell'
+            ? ' — Windows PowerShell'
+            : ' — Command Prompt'
+          )}
+          {isCiscoDevice && ' — Cisco IOS'}
+          {isHuaweiDevice && ' — Huawei VRP'}
+          {isDatabaseDevice && ` — ${
+            deviceType === 'db-oracle' ? 'Oracle' :
+            deviceType === 'db-mysql' ? 'MySQL' :
+            deviceType === 'db-postgres' ? 'PostgreSQL' :
+            deviceType === 'db-sqlserver' ? 'SQL Server' : 'Database'
+          }`}
+        </span>
+      </div>
+      {/* Right: window control buttons (Windows 10/11 style) */}
+      <div className="flex items-stretch h-full">
+        <button
+          onClick={onMinimize}
+          className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
+          title="Minimize"
+        >
+          <Minus className="w-4 h-4 text-white/70" />
+        </button>
+        {!embedded && (
+          <button
+            onClick={toggleFullscreen}
+            className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
+            title={isFullscreen ? 'Restore Down' : 'Maximize'}
+          >
+            {isFullscreen ? (
+              <Copy className="w-3.5 h-3.5 text-white/70" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5 text-white/70" />
+            )}
+          </button>
+        )}
+        <button
+          onClick={handleClose}
+          className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group"
+          title="Close"
+        >
+          <X className="w-4 h-4 text-white/70 group-hover:text-white" />
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Terminal content ──
+  const terminalContent = (
+    <div className="flex-1 overflow-hidden">
+      {isCiscoDevice ? (
+        <CiscoTerminal device={device} onRequestClose={handleClose} />
+      ) : isHuaweiDevice ? (
+        <HuaweiTerminal device={device} onRequestClose={handleClose} />
+      ) : isWindowsDevice ? (
+        <WindowsTerminal device={device} onRequestClose={handleClose} onShellModeChange={setWinShellMode} />
+      ) : (
+        <Terminal device={device} onRequestClose={handleClose} />
+      )}
+    </div>
+  );
+
+  // ── Embedded mode: fill parent container ──
+  if (embedded) {
+    return (
+      <div className={cn(
+        "w-full h-full flex flex-col",
+        "bg-[#0c0c0c] overflow-hidden",
+        "border border-[#3f3f3f]"
+      )}>
+        {titleBar}
+        {terminalContent}
+      </div>
+    );
+  }
+
+  // ── Modal mode: centered floating window ──
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
@@ -207,69 +301,8 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
           height: `${dimensions.height}px`,
         }}
       >
-        {/* ── Windows-style title bar ── */}
-        <div className="flex items-center justify-between h-8 bg-[#1f1f1f] border-b border-[#3f3f3f] shrink-0 select-none">
-          {/* Left: icon + title */}
-          <div className="flex items-center gap-2 pl-3 min-w-0">
-            <span className="text-[11px] font-medium text-white/80 truncate">
-              {deviceName}
-              {isLinuxDevice && !isDatabaseDevice && ' — Ubuntu Linux'}
-              {isWindowsDevice && (winShellMode === 'powershell'
-                ? ' — Windows PowerShell'
-                : ' — Command Prompt'
-              )}
-              {isCiscoDevice && ' — Cisco IOS'}
-              {isHuaweiDevice && ' — Huawei VRP'}
-              {isDatabaseDevice && ` — ${
-                deviceType === 'db-oracle' ? 'Oracle' :
-                deviceType === 'db-mysql' ? 'MySQL' :
-                deviceType === 'db-postgres' ? 'PostgreSQL' :
-                deviceType === 'db-sqlserver' ? 'SQL Server' : 'Database'
-              }`}
-            </span>
-          </div>
-          {/* Right: window control buttons (Windows 10/11 style) */}
-          <div className="flex items-stretch h-full">
-            <button
-              onClick={onMinimize}
-              className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
-              title="Minimize"
-            >
-              <Minus className="w-4 h-4 text-white/70" />
-            </button>
-            <button
-              onClick={toggleFullscreen}
-              className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
-              title={isFullscreen ? 'Restore Down' : 'Maximize'}
-            >
-              {isFullscreen ? (
-                <Copy className="w-3.5 h-3.5 text-white/70" />
-              ) : (
-                <Maximize2 className="w-3.5 h-3.5 text-white/70" />
-              )}
-            </button>
-            <button
-              onClick={handleClose}
-              className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group"
-              title="Close"
-            >
-              <X className="w-4 h-4 text-white/70 group-hover:text-white" />
-            </button>
-          </div>
-        </div>
-
-        {/* Terminal content - Use the appropriate terminal based on OS type */}
-        <div className="flex-1 overflow-hidden">
-          {isCiscoDevice ? (
-            <CiscoTerminal device={device} onRequestClose={handleClose} />
-          ) : isHuaweiDevice ? (
-            <HuaweiTerminal device={device} onRequestClose={handleClose} />
-          ) : isWindowsDevice ? (
-            <WindowsTerminal device={device} onRequestClose={handleClose} onShellModeChange={setWinShellMode} />
-          ) : (
-            <Terminal device={device} onRequestClose={handleClose} />
-          )}
-        </div>
+        {titleBar}
+        {terminalContent}
 
         {/* Resize handles - only show when not fullscreen */}
         {!isFullscreen && (
