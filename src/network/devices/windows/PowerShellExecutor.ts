@@ -328,6 +328,46 @@ export class PowerShellExecutor {
       return this.formatGetCimInstance(args);
     }
 
+    // Test-Path
+    if (cmdLower === 'test-path') {
+      return this.handleTestPath(args);
+    }
+
+    // Out-File
+    if (cmdLower === 'out-file') {
+      return this.handleOutFile(args);
+    }
+
+    // Add-Content / ac
+    if (cmdLower === 'add-content' || cmdLower === 'ac') {
+      return this.handleAddContent(args);
+    }
+
+    // Clear-Content / clc
+    if (cmdLower === 'clear-content' || cmdLower === 'clc') {
+      return this.handleClearContent(args);
+    }
+
+    // Get-Item / gi
+    if (cmdLower === 'get-item' || cmdLower === 'gi') {
+      return this.handleGetItem(args);
+    }
+
+    // Resolve-Path / rvpa
+    if (cmdLower === 'resolve-path' || cmdLower === 'rvpa') {
+      return this.handleResolvePath(args);
+    }
+
+    // Split-Path
+    if (cmdLower === 'split-path') {
+      return this.handleSplitPath(args);
+    }
+
+    // Join-Path
+    if (cmdLower === 'join-path') {
+      return this.handleJoinPath(args);
+    }
+
     // Fallback: try device command
     return this.executeFallback(cmdline);
   }
@@ -650,6 +690,121 @@ export class PowerShellExecutor {
       return `Domain              : WORKGROUP\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${this.device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
     }
     return `Get-CimInstance : Invalid class "${className}"`;
+  }
+
+  // ─── File management cmdlets ────────────────────────────────────
+
+  private handleTestPath(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    if (!target) return 'False';
+    const absPath = fs.normalizePath(target, this.cwd);
+    return fs.exists(absPath) ? 'True' : 'False';
+  }
+
+  private async handleOutFile(args: string[]): Promise<string> {
+    let filePath = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-FilePath' && args[i + 1]) { filePath = args[++i]; }
+      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
+    }
+    if (!filePath) return "Out-File : Cannot bind argument to parameter 'FilePath' because it is an empty string.";
+    // Out-File with no pipeline input creates empty file
+    return await this.device.executeCommand(`echo. > ${filePath}`);
+  }
+
+  private async handleAddContent(args: string[]): Promise<string> {
+    let filePath = '', value = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { filePath = args[++i]; }
+      else if (args[i] === '-Value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
+    }
+    if (!filePath) return "Add-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    if (value) {
+      return await this.device.executeCommand(`echo ${value} >> ${filePath}`);
+    }
+    return '';
+  }
+
+  private async handleClearContent(args: string[]): Promise<string> {
+    let filePath = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { filePath = args[++i]; }
+      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
+    }
+    if (!filePath) return "Clear-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const fs = this.device.getFileSystem();
+    const absPath = fs.normalizePath(filePath, this.cwd);
+    if (!fs.exists(absPath)) return `Clear-Content : Cannot find path '${filePath}' because it does not exist.`;
+    fs.createFile(absPath, '');
+    return '';
+  }
+
+  private handleGetItem(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    if (!target) return "Get-Item : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const absPath = fs.normalizePath(target, this.cwd);
+    const entry = fs.resolve(absPath);
+    if (!entry) return `Get-Item : Cannot find path '${target}' because it does not exist.`;
+
+    const mode = this.formatPSMode(entry);
+    const mtime = this.formatPSDate(entry.mtime);
+    const length = entry.type === 'file' ? String(entry.size) : '';
+    const lines: string[] = [];
+    lines.push('');
+    lines.push(`    Directory: ${absPath.substring(0, absPath.lastIndexOf('\\')) || absPath}`);
+    lines.push('');
+    lines.push('Mode                 LastWriteTime         Length Name');
+    lines.push('----                 -------------         ------ ----');
+    lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
+    return lines.join('\n');
+  }
+
+  private handleResolvePath(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    if (!target) return "Resolve-Path : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const absPath = fs.normalizePath(target, this.cwd);
+    if (!fs.exists(absPath)) return `Resolve-Path : Cannot find path '${target}' because it does not exist.`;
+    return `\nPath\n----\n${absPath}\n`;
+  }
+
+  private handleSplitPath(args: string[]): string {
+    let target = '';
+    let leaf = false;
+    let parent = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Leaf') { leaf = true; continue; }
+      if (args[i] === '-Parent') { parent = true; continue; }
+      if (args[i] === '-Path' && args[i + 1]) { target = args[++i]; continue; }
+      if (!args[i].startsWith('-') && !target) { target = args[i]; }
+    }
+    if (!target) return '';
+    if (leaf) {
+      const lastSep = target.lastIndexOf('\\');
+      return lastSep >= 0 ? target.substring(lastSep + 1) : target;
+    }
+    // Default: parent
+    const lastSep = target.lastIndexOf('\\');
+    return lastSep >= 0 ? target.substring(0, lastSep) : '';
+  }
+
+  private handleJoinPath(args: string[]): string {
+    let parentPath = '', childPath = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { parentPath = args[++i]; continue; }
+      if (args[i] === '-ChildPath' && args[i + 1]) { childPath = args[++i]; continue; }
+      if (!args[i].startsWith('-')) {
+        if (!parentPath) { parentPath = args[i]; }
+        else if (!childPath) { childPath = args[i]; }
+      }
+    }
+    if (!parentPath) return '';
+    if (!childPath) return parentPath;
+    const sep = parentPath.endsWith('\\') ? '' : '\\';
+    return `${parentPath}${sep}${childPath}`;
   }
 
   private async executeFallback(cmdline: string): Promise<string> {
