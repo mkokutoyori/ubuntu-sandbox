@@ -495,7 +495,7 @@ export class WindowsPC extends EndHost {
   // ─── PSDeviceContext implementation ───────────────────────────
 
   getFileSystem(): WindowsFileSystem { return this.fs; }
-  getPorts(): Map<string, Port> { return this.ports; }
+  getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
   getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
