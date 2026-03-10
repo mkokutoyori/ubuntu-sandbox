@@ -59,7 +59,7 @@ export interface PSDeviceContext {
   /** Get the virtual file system (for PS-style direct formatting) */
   getFileSystem(): WindowsFileSystem;
   /** Get all ports with their network info */
-  getPorts(): Map<string, Port>;
+  getPortsMap(): Map<string, Port>;
   /** Get current working directory */
   getCwd(): string;
   /** Get default gateway IP or null */
@@ -547,7 +547,7 @@ export class PowerShellExecutor {
   }
 
   private formatGetNetIPConfiguration(): string {
-    const ports = this.device.getPorts();
+    const ports = this.device.getPortsMap();
     const lines: string[] = [];
     let idx = 0;
     for (const [name, port] of ports) {
@@ -570,7 +570,7 @@ export class PowerShellExecutor {
   }
 
   private formatGetNetIPAddress(): string {
-    const ports = this.device.getPorts();
+    const ports = this.device.getPortsMap();
     const lines: string[] = [];
     let idx = 0;
     for (const [name, port] of ports) {
@@ -607,7 +607,7 @@ export class PowerShellExecutor {
   }
 
   private formatGetNetAdapter(): string {
-    const ports = this.device.getPorts();
+    const ports = this.device.getPortsMap();
     const lines: string[] = [];
     lines.push('Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed');
     lines.push('----                      --------------------                    ------- ------       ----------         ---------');
