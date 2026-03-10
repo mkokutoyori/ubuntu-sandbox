@@ -46,6 +46,14 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
   const deviceIsFullyImplemented = isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
+  // Wrap onClose to reset Linux terminal session state (cwd, su stack)
+  const handleClose = useCallback(() => {
+    if (isLinuxDevice && typeof (device as any).resetSession === 'function') {
+      (device as any).resetSession();
+    }
+    onClose();
+  }, [device, isLinuxDevice, onClose]);
+
   // Windows shell mode (for dynamic title bar)
   const [winShellMode, setWinShellMode] = useState<'cmd' | 'powershell'>('cmd');
 
@@ -140,7 +148,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
             {deviceName} is currently powered off. Please power on the device to access the terminal.
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors"
           >
             Close
@@ -169,7 +177,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
             Currently implemented: Linux PC, Linux Server, Windows PC, Windows Server, Database Servers
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors"
           >
             Close
@@ -241,7 +249,7 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
               )}
             </button>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group"
               title="Close"
             >
@@ -253,13 +261,13 @@ export function TerminalModal({ device, onClose, onMinimize }: TerminalModalProp
         {/* Terminal content - Use the appropriate terminal based on OS type */}
         <div className="flex-1 overflow-hidden">
           {isCiscoDevice ? (
-            <CiscoTerminal device={device} onRequestClose={onClose} />
+            <CiscoTerminal device={device} onRequestClose={handleClose} />
           ) : isHuaweiDevice ? (
-            <HuaweiTerminal device={device} onRequestClose={onClose} />
+            <HuaweiTerminal device={device} onRequestClose={handleClose} />
           ) : isWindowsDevice ? (
-            <WindowsTerminal device={device} onRequestClose={onClose} onShellModeChange={setWinShellMode} />
+            <WindowsTerminal device={device} onRequestClose={handleClose} onShellModeChange={setWinShellMode} />
           ) : (
-            <Terminal device={device} onRequestClose={onClose} />
+            <Terminal device={device} onRequestClose={handleClose} />
           )}
         </div>
 
