@@ -10,6 +10,9 @@
  * Used by WindowsTerminal to process commands when in PowerShell mode.
  */
 
+import type { WindowsFileSystem, WinDirEntry } from './WindowsFileSystem';
+import type { Port } from '../../hardware/Port';
+
 // ─── Constants ────────────────────────────────────────────────────
 
 export const PS_VERSION_TABLE = `
@@ -53,6 +56,18 @@ export interface PSDeviceContext {
   executeCommand(cmd: string): Promise<string>;
   /** Get device hostname */
   getHostname(): string;
+  /** Get the virtual file system (for PS-style direct formatting) */
+  getFileSystem(): WindowsFileSystem;
+  /** Get all ports with their network info */
+  getPorts(): Map<string, Port>;
+  /** Get current working directory */
+  getCwd(): string;
+  /** Get default gateway IP or null */
+  getDefaultGateway(): string | null;
+  /** Get DNS servers for an interface */
+  getDnsServers(ifName: string): string[];
+  /** Check if interface uses DHCP */
+  isDHCPConfigured(ifName: string): boolean;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -173,7 +188,7 @@ export class PowerShellExecutor {
 
     // Get-ChildItem / ls / dir / gci
     if (cmdLower === 'get-childitem' || cmdLower === 'gci' || cmdLower === 'ls' || cmdLower === 'dir') {
-      return this.formatGetChildItem(await this.device.executeCommand('dir ' + args.join(' ')));
+      return this.formatGetChildItem(args.join(' '));
     }
 
     // Set-Location / cd / sl / chdir
@@ -240,7 +255,7 @@ export class PowerShellExecutor {
 
     // Get-Process / gps / ps
     if (cmdLower === 'get-process' || cmdLower === 'gps') {
-      return await this.device.executeCommand('tasklist');
+      return this.formatGetProcess();
     }
 
     // Get-Help
@@ -255,17 +270,17 @@ export class PowerShellExecutor {
 
     // Get-NetIPConfiguration
     if (cmdLower === 'get-netipconfiguration') {
-      return this.formatGetNetIPConfiguration(await this.device.executeCommand('ipconfig'));
+      return this.formatGetNetIPConfiguration();
     }
 
     // Get-NetIPAddress
     if (cmdLower === 'get-netipaddress') {
-      return this.formatGetNetIPAddress(await this.device.executeCommand('ipconfig'));
+      return this.formatGetNetIPAddress();
     }
 
     // Get-NetAdapter
     if (cmdLower === 'get-netadapter') {
-      return this.formatGetNetAdapter(await this.device.executeCommand('ipconfig /all'));
+      return this.formatGetNetAdapter();
     }
 
     // Test-Connection (PowerShell ping)
@@ -311,6 +326,46 @@ export class PowerShellExecutor {
     // Get-WmiObject / gwmi / Get-CimInstance
     if (cmdLower === 'get-wmiobject' || cmdLower === 'gwmi' || cmdLower === 'get-ciminstance') {
       return this.formatGetCimInstance(args);
+    }
+
+    // Test-Path
+    if (cmdLower === 'test-path') {
+      return this.handleTestPath(args);
+    }
+
+    // Out-File
+    if (cmdLower === 'out-file') {
+      return this.handleOutFile(args);
+    }
+
+    // Add-Content / ac
+    if (cmdLower === 'add-content' || cmdLower === 'ac') {
+      return this.handleAddContent(args);
+    }
+
+    // Clear-Content / clc
+    if (cmdLower === 'clear-content' || cmdLower === 'clc') {
+      return this.handleClearContent(args);
+    }
+
+    // Get-Item / gi
+    if (cmdLower === 'get-item' || cmdLower === 'gi') {
+      return this.handleGetItem(args);
+    }
+
+    // Resolve-Path / rvpa
+    if (cmdLower === 'resolve-path' || cmdLower === 'rvpa') {
+      return this.handleResolvePath(args);
+    }
+
+    // Split-Path
+    if (cmdLower === 'split-path') {
+      return this.handleSplitPath(args);
+    }
+
+    // Join-Path
+    if (cmdLower === 'join-path') {
+      return this.handleJoinPath(args);
     }
 
     // Fallback: try device command
@@ -375,7 +430,42 @@ export class PowerShellExecutor {
       else if (!args[i].startsWith('-')) { target = args[i]; }
     }
     if (!target) return "Test-Connection : Parameter 'ComputerName' is required.";
-    return await this.device.executeCommand(`ping -n ${count} ${target}`);
+
+    // Execute the underlying ping to get results
+    const pingOutput = await this.device.executeCommand(`ping -n ${count} ${target}`);
+
+    // Transform CMD ping output to PS Test-Connection table format
+    return this.formatTestConnection(pingOutput, target);
+  }
+
+  private formatTestConnection(pingOutput: string, target: string): string {
+    const lines: string[] = [];
+    const source = String(this.device.getHostname());
+
+    // Parse Reply lines from CMD ping output
+    const replyLines = pingOutput.split('\n').filter(l => l.trim().startsWith('Reply from'));
+    const timeoutLines = pingOutput.split('\n').filter(l => l.trim() === 'Request timed out.');
+
+    if (replyLines.length === 0 && timeoutLines.length > 0) {
+      return `Test-Connection : Testing connection to computer '${target}' failed: host unreachable.`;
+    }
+
+    lines.push('Source           Destination       IPV4Address      Bytes    Time(ms)');
+    lines.push('------           -----------       -----------      -----    --------');
+
+    for (const line of replyLines) {
+      const ipMatch = line.match(/Reply from ([\d.]+)/);
+      const timeMatch = line.match(/time[=<](\d+)/);
+      const bytesMatch = line.match(/bytes=(\d+)/);
+      const ip = ipMatch ? ipMatch[1] : target;
+      const time = timeMatch ? timeMatch[1] : '0';
+      const bytes = bytesMatch ? bytesMatch[1] : '32';
+      lines.push(
+        `${source.padEnd(17)}${target.padEnd(18)}${ip.padEnd(17)}${bytes.padEnd(9)}${time}`
+      );
+    }
+
+    return lines.join('\n');
   }
 
   private formatGetHelp(topic?: string): string {
@@ -412,22 +502,166 @@ export class PowerShellExecutor {
   // ─── PowerShell-style output formatting ─────────────────────────
   // These methods transform CMD-style output into PS-style output
 
-  private formatGetChildItem(dirOutput: string): string {
-    // For now, return as-is. Can be enhanced to show PS-style table format.
-    return dirOutput;
+  private formatGetChildItem(path: string): string {
+    const fs = this.device.getFileSystem();
+    const absPath = fs.normalizePath(path || '.', this.cwd);
+    const entries = fs.listDirectory(absPath);
+    if (entries.length === 0) return '';
+
+    const lines: string[] = [];
+    lines.push('');
+    lines.push(`    Directory: ${absPath}`);
+    lines.push('');
+    lines.push('Mode                 LastWriteTime         Length Name');
+    lines.push('----                 -------------         ------ ----');
+
+    for (const { entry } of entries) {
+      const mode = this.formatPSMode(entry);
+      const mtime = this.formatPSDate(entry.mtime);
+      const length = entry.type === 'file' ? String(entry.size) : '';
+      lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
+    }
+
+    return lines.join('\n');
   }
 
-  private formatGetNetIPConfiguration(ipconfigOutput: string): string {
-    // For now, return ipconfig output. Can be enhanced to show PS object format.
-    return ipconfigOutput;
+  private formatPSMode(entry: { type: string; attributes: Set<string> }): string {
+    const d = entry.type === 'directory' ? 'd' : '-';
+    const a = entry.attributes.has('archive') ? 'a' : '-';
+    const r = entry.attributes.has('readonly') ? 'r' : '-';
+    const h = entry.attributes.has('hidden') ? 'h' : '-';
+    const s = entry.attributes.has('system') ? 's' : '-';
+    const l = '-'; // reparse point / link
+    return d + a + r + h + s + l;
   }
 
-  private formatGetNetIPAddress(ipconfigOutput: string): string {
-    return ipconfigOutput;
+  private formatPSDate(date: Date): string {
+    const m = String(date.getMonth() + 1).padStart(2, ' ');
+    const d = String(date.getDate()).padStart(2, ' ');
+    const y = date.getFullYear();
+    let h = date.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const min = String(date.getMinutes()).padStart(2, '0');
+    return `${m}/${d}/${y}  ${String(h).padStart(2)}:${min} ${ampm}`;
   }
 
-  private formatGetNetAdapter(ipconfigAllOutput: string): string {
-    return ipconfigAllOutput;
+  private formatGetNetIPConfiguration(): string {
+    const ports = this.device.getPorts();
+    const lines: string[] = [];
+    let idx = 0;
+    for (const [name, port] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const ip = port.getIPAddress()?.toString() ?? '';
+      const mask = port.getSubnetMask()?.toString() ?? '';
+      const gw = this.device.getDefaultGateway() ?? '';
+      const dns = this.device.getDnsServers(name);
+
+      if (idx > 0) lines.push('');
+      lines.push(`InterfaceAlias       : ${displayName}`);
+      lines.push(`InterfaceIndex       : ${idx + 1}`);
+      lines.push(`IPv4Address          : ${ip || 'Not configured'}`);
+      if (mask) lines.push(`IPv4SubnetMask       : ${mask}`);
+      lines.push(`IPv4DefaultGateway   : ${gw}`);
+      lines.push(`DNSServer            : ${dns.length > 0 ? dns.join(', ') : ''}`);
+      idx++;
+    }
+    return lines.join('\n');
+  }
+
+  private formatGetNetIPAddress(): string {
+    const ports = this.device.getPorts();
+    const lines: string[] = [];
+    let idx = 0;
+    for (const [name, port] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const ip = port.getIPAddress()?.toString() ?? '';
+      const mask = port.getSubnetMask()?.toString() ?? '';
+      // Calculate prefix length from mask
+      const prefixLength = mask ? this.maskToPrefixLength(mask) : 0;
+
+      if (idx > 0) lines.push('');
+      lines.push(`IPAddress         : ${ip || 'Not configured'}`);
+      lines.push(`InterfaceIndex    : ${idx + 1}`);
+      lines.push(`InterfaceAlias    : ${displayName}`);
+      lines.push(`AddressFamily     : IPv4`);
+      lines.push(`Type              : Unicast`);
+      lines.push(`PrefixLength      : ${prefixLength}`);
+      lines.push(`PrefixOrigin      : ${this.device.isDHCPConfigured(name) ? 'Dhcp' : 'Manual'}`);
+      lines.push(`SuffixOrigin      : ${this.device.isDHCPConfigured(name) ? 'Dhcp' : 'Manual'}`);
+      lines.push(`AddressState      : ${ip ? 'Preferred' : 'Invalid'}`);
+      idx++;
+    }
+    // Add loopback
+    if (lines.length > 0) lines.push('');
+    lines.push('IPAddress         : 127.0.0.1');
+    lines.push('InterfaceIndex    : 1');
+    lines.push('InterfaceAlias    : Loopback Pseudo-Interface 1');
+    lines.push('AddressFamily     : IPv4');
+    lines.push('Type              : Unicast');
+    lines.push('PrefixLength      : 8');
+    lines.push('PrefixOrigin      : WellKnown');
+    lines.push('SuffixOrigin      : WellKnown');
+    lines.push('AddressState      : Preferred');
+    return lines.join('\n');
+  }
+
+  private formatGetNetAdapter(): string {
+    const ports = this.device.getPorts();
+    const lines: string[] = [];
+    lines.push('Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed');
+    lines.push('----                      --------------------                    ------- ------       ----------         ---------');
+    let idx = 0;
+    for (const [name, port] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
+      const status = port.getIsUp() ? 'Up' : 'Disconnected';
+      const ifIndex = idx + 2;
+      lines.push(
+        `${displayName.padEnd(26)}${('Intel(R) Ethernet Connection').padEnd(40)}${String(ifIndex).padStart(7)} ${status.padEnd(13)}${mac.padEnd(19)}1 Gbps`
+      );
+      idx++;
+    }
+    return lines.join('\n');
+  }
+
+  private maskToPrefixLength(mask: string): number {
+    const parts = mask.split('.').map(Number);
+    let bits = 0;
+    for (const p of parts) {
+      bits += (p >>> 0).toString(2).split('').filter(b => b === '1').length;
+    }
+    return bits;
+  }
+
+  private formatGetProcess(): string {
+    const lines: string[] = [];
+    lines.push('');
+    lines.push('Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName');
+    lines.push('-------  ------    -----      -----     ------     --  -- -----------');
+
+    const processes: Array<[string, number, number, number, number, number, number, number]> = [
+      // [name, handles, npm, pm, ws, cpu, pid, si]
+      ['cmd',              52,   5,   2036,    3556,   0.02,  5120, 1],
+      ['conhost',         186,  12,   7032,   13568,   0.08,  5132, 1],
+      ['csrss',           596,  18,   3256,    6144,   3.45,   472, 0],
+      ['dwm',            1258,  35,  78320,   98816,  24.56,  1024, 1],
+      ['explorer',       2456,  89, 112640,  165888,  45.23,  2848, 1],
+      ['lsass',           856,  23,  12288,   15360,   1.23,   636, 0],
+      ['services',        416,  14,   6144,    9216,   0.98,   620, 0],
+      ['smss',             53,   3,    512,    1280,   0.05,   340, 0],
+      ['svchost',         648,  22,  18432,   24576,   2.34,   784, 0],
+      ['svchost',         423,  15,  10240,   14336,   1.56,   836, 0],
+      ['System',          188,   0,    144,    1024,   0.00,     4, 0],
+      ['wininit',         108,   5,   2560,    4608,   0.12,   548, 0],
+    ];
+
+    for (const [name, handles, npm, pm, ws, cpu, pid, si] of processes) {
+      lines.push(
+        `${String(handles).padStart(7)}  ${String(npm).padStart(6)}    ${String(pm).padStart(5)}      ${String(ws).padStart(5)}     ${cpu.toFixed(2).padStart(6)}  ${String(pid).padStart(4)}   ${si} ${name}`
+      );
+    }
+    return lines.join('\n');
   }
 
   private formatGetService(): string {
@@ -456,6 +690,121 @@ export class PowerShellExecutor {
       return `Domain              : WORKGROUP\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${this.device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
     }
     return `Get-CimInstance : Invalid class "${className}"`;
+  }
+
+  // ─── File management cmdlets ────────────────────────────────────
+
+  private handleTestPath(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    if (!target) return 'False';
+    const absPath = fs.normalizePath(target, this.cwd);
+    return fs.exists(absPath) ? 'True' : 'False';
+  }
+
+  private async handleOutFile(args: string[]): Promise<string> {
+    let filePath = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-FilePath' && args[i + 1]) { filePath = args[++i]; }
+      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
+    }
+    if (!filePath) return "Out-File : Cannot bind argument to parameter 'FilePath' because it is an empty string.";
+    // Out-File with no pipeline input creates empty file
+    return await this.device.executeCommand(`echo. > ${filePath}`);
+  }
+
+  private async handleAddContent(args: string[]): Promise<string> {
+    let filePath = '', value = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { filePath = args[++i]; }
+      else if (args[i] === '-Value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
+    }
+    if (!filePath) return "Add-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    if (value) {
+      return await this.device.executeCommand(`echo ${value} >> ${filePath}`);
+    }
+    return '';
+  }
+
+  private async handleClearContent(args: string[]): Promise<string> {
+    let filePath = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { filePath = args[++i]; }
+      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
+    }
+    if (!filePath) return "Clear-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const fs = this.device.getFileSystem();
+    const absPath = fs.normalizePath(filePath, this.cwd);
+    if (!fs.exists(absPath)) return `Clear-Content : Cannot find path '${filePath}' because it does not exist.`;
+    fs.createFile(absPath, '');
+    return '';
+  }
+
+  private handleGetItem(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    if (!target) return "Get-Item : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const absPath = fs.normalizePath(target, this.cwd);
+    const entry = fs.resolve(absPath);
+    if (!entry) return `Get-Item : Cannot find path '${target}' because it does not exist.`;
+
+    const mode = this.formatPSMode(entry);
+    const mtime = this.formatPSDate(entry.mtime);
+    const length = entry.type === 'file' ? String(entry.size) : '';
+    const lines: string[] = [];
+    lines.push('');
+    lines.push(`    Directory: ${absPath.substring(0, absPath.lastIndexOf('\\')) || absPath}`);
+    lines.push('');
+    lines.push('Mode                 LastWriteTime         Length Name');
+    lines.push('----                 -------------         ------ ----');
+    lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
+    return lines.join('\n');
+  }
+
+  private handleResolvePath(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    if (!target) return "Resolve-Path : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const absPath = fs.normalizePath(target, this.cwd);
+    if (!fs.exists(absPath)) return `Resolve-Path : Cannot find path '${target}' because it does not exist.`;
+    return `\nPath\n----\n${absPath}\n`;
+  }
+
+  private handleSplitPath(args: string[]): string {
+    let target = '';
+    let leaf = false;
+    let parent = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Leaf') { leaf = true; continue; }
+      if (args[i] === '-Parent') { parent = true; continue; }
+      if (args[i] === '-Path' && args[i + 1]) { target = args[++i]; continue; }
+      if (!args[i].startsWith('-') && !target) { target = args[i]; }
+    }
+    if (!target) return '';
+    if (leaf) {
+      const lastSep = target.lastIndexOf('\\');
+      return lastSep >= 0 ? target.substring(lastSep + 1) : target;
+    }
+    // Default: parent
+    const lastSep = target.lastIndexOf('\\');
+    return lastSep >= 0 ? target.substring(0, lastSep) : '';
+  }
+
+  private handleJoinPath(args: string[]): string {
+    let parentPath = '', childPath = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { parentPath = args[++i]; continue; }
+      if (args[i] === '-ChildPath' && args[i + 1]) { childPath = args[++i]; continue; }
+      if (!args[i].startsWith('-')) {
+        if (!parentPath) { parentPath = args[i]; }
+        else if (!childPath) { childPath = args[i]; }
+      }
+    }
+    if (!parentPath) return '';
+    if (!childPath) return parentPath;
+    const sep = parentPath.endsWith('\\') ? '' : '\\';
+    return `${parentPath}${sep}${childPath}`;
   }
 
   private async executeFallback(cmdline: string): Promise<string> {

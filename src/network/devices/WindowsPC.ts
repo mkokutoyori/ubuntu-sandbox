@@ -29,6 +29,8 @@ import { cmdDir } from './windows/WinDir';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
+  cmdAttrib, cmdFind, cmdFindstr, cmdWhere, cmdMore, cmdFc,
+  cmdXcopy, cmdSort,
 } from './windows/WinFileCommands';
 
 export class WindowsPC extends EndHost {
@@ -130,6 +132,14 @@ export class WindowsPC extends EndHost {
       case 'set':     return cmdSet(fileCtx, args);
       case 'tasklist': return cmdTasklist(fileCtx);
       case 'netstat': return cmdNetstat(fileCtx);
+      case 'attrib':  return cmdAttrib(fileCtx, args);
+      case 'find':    return cmdFind(fileCtx, args);
+      case 'findstr': return cmdFindstr(fileCtx, args);
+      case 'where':   return cmdWhere(fileCtx, args);
+      case 'more':    return cmdMore(fileCtx, args);
+      case 'fc':      return cmdFc(fileCtx, args);
+      case 'xcopy':   return cmdXcopy(fileCtx, args);
+      case 'sort':    return cmdSort(fileCtx, args);
       case 'echo':    return args.join(' ');
       case 'cls':     return '';
       case 'ver':     return '\nMicrosoft Windows [Version 10.0.22631.6649]';
@@ -482,6 +492,16 @@ export class WindowsPC extends EndHost {
     return lines.join('\n');
   }
 
+  // ─── PSDeviceContext implementation ───────────────────────────
+
+  getFileSystem(): WindowsFileSystem { return this.fs; }
+  getPorts(): Map<string, Port> { return this.ports; }
+  getCwd(): string { return this.cwd; }
+  getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
+  getDnsServers(ifName: string): string[] {
+    const cfg = this.dnsConfig.get(ifName);
+    return cfg ? [...cfg.servers] : [];
+  }
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'windows'; }

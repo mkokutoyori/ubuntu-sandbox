@@ -5,7 +5,8 @@
  * but specifically for filesystem operations).
  *
  * Commands: type, copy, move, ren/rename, del/erase, echo (with redirect),
- *           mkdir/md, rmdir/rd, cd/chdir, cls, tree, set
+ *           mkdir/md, rmdir/rd, cd/chdir, cls, tree, set,
+ *           attrib, find, findstr, where, more, fc, xcopy, sort
  */
 
 import { WindowsFileSystem } from './WindowsFileSystem';
@@ -261,5 +262,374 @@ export function cmdNetstat(ctx: WinFileCommandContext): string {
   lines.push('');
   lines.push('  Proto  Local Address          Foreign Address        State');
   // No active connections in a fresh system
+  return lines.join('\n');
+}
+
+// ─── attrib ───────────────────────────────────────────────────────
+
+export function cmdAttrib(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length === 0) {
+    return attribList(ctx, ctx.cwd);
+  }
+
+  const setAttrs: string[] = [];
+  const removeAttrs: string[] = [];
+  const pathParts: string[] = [];
+
+  for (const arg of args) {
+    const lower = arg.toLowerCase();
+    if (lower === '/s' || lower === '/d') continue;
+    if (arg.match(/^\+[rahsRAHS]$/)) { setAttrs.push(arg[1].toLowerCase()); continue; }
+    if (arg.match(/^-[rahsRAHS]$/)) { removeAttrs.push(arg[1].toLowerCase()); continue; }
+    pathParts.push(arg);
+  }
+
+  const target = pathParts.join(' ');
+
+  if (setAttrs.length === 0 && removeAttrs.length === 0) {
+    const absPath = target ? ctx.fs.normalizePath(target, ctx.cwd) : ctx.cwd;
+    if (ctx.fs.isDirectory(absPath)) return attribList(ctx, absPath);
+    const entry = ctx.fs.resolve(absPath);
+    if (!entry) return 'File not found - ' + target;
+    return formatAttrib(entry, absPath);
+  }
+
+  if (!target) return 'The syntax of the command is incorrect.';
+  const absPath = ctx.fs.normalizePath(target, ctx.cwd);
+  const entry = ctx.fs.resolve(absPath);
+  if (!entry) return 'File not found - ' + target;
+
+  const attrMap: Record<string, string> = { r: 'readonly', a: 'archive', h: 'hidden', s: 'system' };
+  for (const a of setAttrs) { if (attrMap[a]) entry.attributes.add(attrMap[a]); }
+  for (const a of removeAttrs) { if (attrMap[a]) entry.attributes.delete(attrMap[a]); }
+  return '';
+}
+
+function attribList(ctx: WinFileCommandContext, dirPath: string): string {
+  const entries = ctx.fs.listDirectory(dirPath);
+  const lines: string[] = [];
+  for (const { name, entry } of entries) {
+    const childPath = dirPath.endsWith('\\') ? dirPath + name : dirPath + '\\' + name;
+    lines.push(formatAttrib(entry, childPath));
+  }
+  return lines.join('\n');
+}
+
+function formatAttrib(entry: { attributes: Set<string> }, path: string): string {
+  const a = entry.attributes.has('archive') ? 'A' : ' ';
+  const s = entry.attributes.has('system') ? 'S' : ' ';
+  const h = entry.attributes.has('hidden') ? 'H' : ' ';
+  const r = entry.attributes.has('readonly') ? 'R' : ' ';
+  return `${a}  ${s}${h}${r}        ${path}`;
+}
+
+// ─── find ─────────────────────────────────────────────────────────
+
+export function cmdFind(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length === 0) return 'FIND: Parameter format not correct';
+
+  let ignoreCase = false;
+  let countOnly = false;
+  let invertMatch = false;
+  let showLineNumbers = false;
+  let searchString = '';
+  const filePaths: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const lower = args[i].toLowerCase();
+    if (lower === '/i') { ignoreCase = true; continue; }
+    if (lower === '/c') { countOnly = true; continue; }
+    if (lower === '/v') { invertMatch = true; continue; }
+    if (lower === '/n') { showLineNumbers = true; continue; }
+    if (!searchString && args[i].startsWith('"')) {
+      let str = args[i].substring(1);
+      while (i < args.length - 1 && !str.endsWith('"')) {
+        i++;
+        str += ' ' + args[i];
+      }
+      if (str.endsWith('"')) str = str.slice(0, -1);
+      searchString = str;
+      continue;
+    }
+    if (!searchString) { searchString = args[i]; continue; }
+    filePaths.push(args[i]);
+  }
+
+  if (!searchString) return 'FIND: Parameter format not correct';
+  if (filePaths.length === 0) return 'FIND: Parameter format not correct';
+
+  const lines: string[] = [];
+  for (const fp of filePaths) {
+    const absPath = ctx.fs.normalizePath(fp, ctx.cwd);
+    const result = ctx.fs.readFile(absPath);
+    if (!result.ok) { lines.push(`File not found - ${fp}`); continue; }
+
+    lines.push(`---------- ${fp.toUpperCase()}`);
+    const fileLines = result.content!.split('\n');
+    let count = 0;
+
+    for (let n = 0; n < fileLines.length; n++) {
+      const line = fileLines[n];
+      const haystack = ignoreCase ? line.toLowerCase() : line;
+      const needle = ignoreCase ? searchString.toLowerCase() : searchString;
+      const found = haystack.includes(needle);
+      const match = invertMatch ? !found : found;
+      if (match) {
+        count++;
+        if (!countOnly) {
+          lines.push(showLineNumbers ? `[${n + 1}]${line}` : line);
+        }
+      }
+    }
+    if (countOnly) lines.push(`---------- ${fp.toUpperCase()}: ${count}`);
+  }
+  return lines.join('\n');
+}
+
+// ─── findstr ──────────────────────────────────────────────────────
+
+export function cmdFindstr(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length === 0) return 'FINDSTR: Wrong number of arguments';
+
+  let ignoreCase = false;
+  let useRegex = false;
+  let showLineNumbers = false;
+  let invertMatch = false;
+  let searchPattern = '';
+  const filePaths: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const lower = args[i].toLowerCase();
+    if (lower === '/i') { ignoreCase = true; continue; }
+    if (lower === '/r') { useRegex = true; continue; }
+    if (lower === '/n') { showLineNumbers = true; continue; }
+    if (lower === '/v') { invertMatch = true; continue; }
+    if (lower === '/l') { useRegex = false; continue; }
+    if (!searchPattern && args[i].startsWith('"')) {
+      let str = args[i].substring(1);
+      while (i < args.length - 1 && !str.endsWith('"')) {
+        i++;
+        str += ' ' + args[i];
+      }
+      if (str.endsWith('"')) str = str.slice(0, -1);
+      searchPattern = str;
+      continue;
+    }
+    if (!searchPattern) { searchPattern = args[i]; continue; }
+    filePaths.push(args[i]);
+  }
+
+  if (!searchPattern) return 'FINDSTR: Wrong number of arguments';
+  if (filePaths.length === 0) return 'FINDSTR: Wrong number of arguments';
+
+  const flags = ignoreCase ? 'i' : '';
+  let regex: RegExp;
+  try {
+    regex = useRegex
+      ? new RegExp(searchPattern, flags)
+      : new RegExp(searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+  } catch {
+    return `FINDSTR: Cannot open ${searchPattern}`;
+  }
+
+  const lines: string[] = [];
+  for (const fp of filePaths) {
+    const absPath = ctx.fs.normalizePath(fp, ctx.cwd);
+    const result = ctx.fs.readFile(absPath);
+    if (!result.ok) continue;
+
+    const fileLines = result.content!.split('\n');
+    for (let n = 0; n < fileLines.length; n++) {
+      const line = fileLines[n];
+      const found = regex.test(line);
+      const match = invertMatch ? !found : found;
+      if (match) {
+        const prefix = filePaths.length > 1 ? `${fp}:` : '';
+        const lineNum = showLineNumbers ? `${n + 1}:` : '';
+        lines.push(`${prefix}${lineNum}${line}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+// ─── where ────────────────────────────────────────────────────────
+
+export function cmdWhere(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length === 0) return 'ERROR: A pattern must be specified.';
+
+  const patterns: string[] = [];
+  for (const arg of args) {
+    if (arg.toLowerCase() === '/r') continue;
+    patterns.push(arg);
+  }
+  if (patterns.length === 0) return 'ERROR: A pattern must be specified.';
+
+  const pattern = patterns[0];
+  const searchDirs = [ctx.cwd];
+  const pathVar = ctx.env.get('PATH') || '';
+  if (pathVar) {
+    for (const dir of pathVar.split(';')) {
+      if (dir.trim()) searchDirs.push(dir.trim());
+    }
+  }
+
+  const results: string[] = [];
+  for (const dir of searchDirs) {
+    if (!ctx.fs.isDirectory(dir)) continue;
+    const entries = ctx.fs.listDirectory(dir);
+    for (const { name, entry } of entries) {
+      if (entry.type !== 'file') continue;
+      if (matchPattern(name, pattern)) {
+        results.push(dir.endsWith('\\') ? dir + name : dir + '\\' + name);
+      }
+    }
+  }
+
+  if (results.length === 0) return 'INFO: Could not find files for the given pattern(s).';
+  return results.join('\n');
+}
+
+function matchPattern(name: string, pattern: string): boolean {
+  const regex = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  return new RegExp('^' + regex + '$', 'i').test(name);
+}
+
+// ─── more ─────────────────────────────────────────────────────────
+
+export function cmdMore(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length === 0) return '';
+  const path = args.join(' ');
+  const absPath = ctx.fs.normalizePath(path, ctx.cwd);
+  const result = ctx.fs.readFile(absPath);
+  if (!result.ok) return `Cannot access file ${path}`;
+  return result.content!;
+}
+
+// ─── fc (file compare) ───────────────────────────────────────────
+
+export function cmdFc(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length < 2) return 'FC: Insufficient number of file specifications';
+
+  let ignoreCase = false;
+  const filePaths: string[] = [];
+  for (const arg of args) {
+    const lower = arg.toLowerCase();
+    if (lower === '/n' || lower === '/l' || lower === '/a') continue;
+    if (lower === '/c') { ignoreCase = true; continue; }
+    filePaths.push(arg);
+  }
+
+  if (filePaths.length < 2) return 'FC: Insufficient number of file specifications';
+
+  const absPath1 = ctx.fs.normalizePath(filePaths[0], ctx.cwd);
+  const absPath2 = ctx.fs.normalizePath(filePaths[1], ctx.cwd);
+
+  const r1 = ctx.fs.readFile(absPath1);
+  if (!r1.ok) return `FC: cannot open ${filePaths[0]} - No such file or directory`;
+  const r2 = ctx.fs.readFile(absPath2);
+  if (!r2.ok) return `FC: cannot open ${filePaths[1]} - No such file or directory`;
+
+  const lines1 = r1.content!.split('\n');
+  const lines2 = r2.content!.split('\n');
+
+  const lines: string[] = [];
+  lines.push(`Comparing files ${filePaths[0].toUpperCase()} and ${filePaths[1].toUpperCase()}`);
+
+  let hasDiff = false;
+  const maxLen = Math.max(lines1.length, lines2.length);
+  for (let i = 0; i < maxLen; i++) {
+    const l1 = i < lines1.length ? lines1[i] : '';
+    const l2 = i < lines2.length ? lines2[i] : '';
+    const a = ignoreCase ? l1.toLowerCase() : l1;
+    const b = ignoreCase ? l2.toLowerCase() : l2;
+    if (a !== b) {
+      hasDiff = true;
+      lines.push(`***** ${filePaths[0].toUpperCase()}`);
+      lines.push(l1);
+      lines.push(`***** ${filePaths[1].toUpperCase()}`);
+      lines.push(l2);
+      lines.push('*****');
+    }
+  }
+
+  if (!hasDiff) lines.push('FC: no differences encountered');
+  return lines.join('\n');
+}
+
+// ─── xcopy ────────────────────────────────────────────────────────
+
+export function cmdXcopy(ctx: WinFileCommandContext, args: string[]): string {
+  if (args.length < 2) return 'Invalid number of parameters';
+
+  let recursive = false;
+  const pathParts: string[] = [];
+
+  for (const arg of args) {
+    const lower = arg.toLowerCase();
+    if (lower === '/s') { recursive = true; continue; }
+    if (lower === '/e') { recursive = true; continue; }
+    if (lower === '/y' || lower === '/i' || lower === '/q' || lower === '/h') continue;
+    pathParts.push(arg);
+  }
+
+  if (pathParts.length < 2) return 'Invalid number of parameters';
+
+  const srcPath = ctx.fs.normalizePath(pathParts[0], ctx.cwd);
+  const destPath = ctx.fs.normalizePath(pathParts[1], ctx.cwd);
+
+  if (!ctx.fs.exists(srcPath)) return `File not found - ${pathParts[0]}`;
+
+  if (ctx.fs.isFile(srcPath)) {
+    const result = ctx.fs.copyFile(srcPath, destPath);
+    if (!result.ok) return result.error!;
+    return '1 File(s) copied';
+  }
+
+  if (!ctx.fs.isDirectory(srcPath)) return `File not found - ${pathParts[0]}`;
+
+  ctx.fs.mkdirp(destPath);
+  const count = xcopyDir(ctx, srcPath, destPath, recursive);
+  return `${count} File(s) copied`;
+}
+
+function xcopyDir(ctx: WinFileCommandContext, src: string, dest: string, recursive: boolean): number {
+  const entries = ctx.fs.listDirectory(src);
+  let count = 0;
+  for (const { name, entry } of entries) {
+    const srcChild = src + '\\' + name;
+    const destChild = dest + '\\' + name;
+    if (entry.type === 'file') {
+      ctx.fs.copyFile(srcChild, destChild);
+      count++;
+    } else if (entry.type === 'directory' && recursive) {
+      ctx.fs.mkdirp(destChild);
+      count += xcopyDir(ctx, srcChild, destChild, recursive);
+    }
+  }
+  return count;
+}
+
+// ─── sort ─────────────────────────────────────────────────────────
+
+export function cmdSort(ctx: WinFileCommandContext, args: string[]): string {
+  let reverse = false;
+  const filePaths: string[] = [];
+  for (const arg of args) {
+    if (arg.toLowerCase() === '/r') { reverse = true; continue; }
+    filePaths.push(arg);
+  }
+  if (filePaths.length === 0) return '';
+
+  const absPath = ctx.fs.normalizePath(filePaths[0], ctx.cwd);
+  const result = ctx.fs.readFile(absPath);
+  if (!result.ok) return 'The system cannot find the file specified.';
+
+  const lines = result.content!.split('\n');
+  lines.sort((a, b) => a.localeCompare(b));
+  if (reverse) lines.reverse();
   return lines.join('\n');
 }
