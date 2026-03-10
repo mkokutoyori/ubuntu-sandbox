@@ -676,6 +676,19 @@ export class LinuxCommandExecutor {
     return { output: '', inSu: false };
   }
 
+  /** Reset terminal session — clear su stack and restore original user/cwd */
+  resetSession(): void {
+    // Pop all su contexts to return to original user
+    while (this.suStack.length > 0) {
+      const prev = this.suStack.pop()!;
+      this.userMgr.currentUser = prev.user;
+      this.userMgr.currentUid = prev.uid;
+      this.userMgr.currentGid = prev.gid;
+      this.cwd = prev.cwd;
+      this.umask = prev.umask;
+    }
+  }
+
   /** Is the current session inside a `su` context? */
   isInSu(): boolean { return this.suStack.length > 0; }
 

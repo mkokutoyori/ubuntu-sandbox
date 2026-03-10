@@ -304,6 +304,7 @@ export class LinuxServer extends EndHost {
   getCurrentUser(): string { return this.executor.getCurrentUser(); }
   getCurrentUid(): number { return this.executor.getCurrentUid(); }
   handleExit(): { output: string; inSu: boolean } { return this.executor.handleExit(); }
+  resetSession(): void { this.executor.resetSession(); }
   checkPassword(username: string, password: string): boolean { return this.executor.checkPassword(username, password); }
   setUserPassword(username: string, password: string): void { this.executor.setUserPassword(username, password); }
   userExists(username: string): boolean { return this.executor.userExists(username); }
