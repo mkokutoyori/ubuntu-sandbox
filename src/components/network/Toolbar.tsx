@@ -10,9 +10,11 @@ interface ToolbarProps {
   onProjectNameChange: (name: string) => void;
   onClearAll?: () => void;
   hasDevices?: boolean;
+  onExport?: () => void;
+  onImport?: () => void;
 }
 
-export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevices }: ToolbarProps) {
+export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevices, onExport, onImport }: ToolbarProps) {
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
       {/* Left section - Project name */}
@@ -52,8 +54,8 @@ export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevic
         <ToolbarButton icon={Save} label="Save" />
         <ToolbarButton icon={FolderOpen} label="Open" />
         <div className="w-px h-6 bg-white/10 mx-2" />
-        <ToolbarButton icon={Download} label="Export" />
-        <ToolbarButton icon={Upload} label="Import" />
+        <ToolbarButton icon={Download} label="Export" onClick={onExport} />
+        <ToolbarButton icon={Upload} label="Import" onClick={onImport} />
         <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolbarButton icon={Play} label="Simulate" variant="primary" />
         <ToolbarButton icon={Pause} label="Pause" />

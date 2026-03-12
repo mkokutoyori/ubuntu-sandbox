@@ -20,6 +20,7 @@ import { Equipment } from '@/network';
 import type { DeviceType } from '@/network';
 type BaseDevice = Equipment;
 import { useNetworkStore } from '@/store/networkStore';
+import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
 import { cn } from '@/lib/utils';
 
 /** Available tiling layout modes */
@@ -38,8 +39,42 @@ export function NetworkDesigner() {
   // Focused terminal index (for stack and master-stack modes)
   const [focusedIndex, setFocusedIndex] = useState(0);
 
-  const { getDevices, clearAll } = useNetworkStore();
+  const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
   const devices = getDevices();
+
+  // ── Export/Import handlers ──
+  const handleExport = useCallback(() => {
+    const topology = exportTopology(projectName, deviceInstances, connections);
+    downloadTopologyJSON(topology);
+  }, [projectName, deviceInstances, connections]);
+
+  const handleImport = useCallback(async () => {
+    try {
+      const data = await openTopologyFile();
+      const result = importTopology(data);
+
+      // Clear current state first (disconnect existing cables)
+      clearAll();
+
+      // Apply imported state directly to the store
+      useNetworkStore.setState({
+        deviceInstances: result.deviceInstances,
+        connections: result.connections,
+        selectedDeviceId: null,
+        selectedConnectionId: null,
+      });
+
+      setProjectName(result.projectName);
+
+      // Close any open terminals
+      setOpenTerminals(new Map());
+      setMinimizedTerminals(new Set());
+    } catch (err) {
+      if (err instanceof Error && err.message !== 'No file selected') {
+        alert(`Import failed: ${err.message}`);
+      }
+    }
+  }, [clearAll]);
 
   const handleOpenTerminal = useCallback((device: BaseDevice) => {
     if (device.getIsPoweredOn()) {
@@ -258,6 +293,8 @@ export function NetworkDesigner() {
         onProjectNameChange={setProjectName}
         onClearAll={clearAll}
         hasDevices={devices.length > 0}
+        onExport={handleExport}
+        onImport={handleImport}
       />
 
       <div className={cn(
