@@ -53,6 +53,8 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
   const [shellStack, setShellStack] = useState<ShellEntry[]>([]);
   // PowerShell current location (separate from CMD cwd)
   const [psCwd, setPsCwd] = useState('C:\\Users\\User');
+  // Whether the CMD banner has been cleared (by cls)
+  const [bannerCleared, setBannerCleared] = useState(false);
 
   // PowerShell executor (decoupled from React)
   const psExecutor = useMemo(() => new PowerShellExecutor(device as any), [device]);
@@ -192,9 +194,10 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
         return;
       }
 
-      // Handle cls — clear terminal
+      // Handle cls — clear terminal (including banner)
       if (lower === 'cls') {
         setLines([]);
+        setBannerCleared(true);
         setInput('');
         await refreshPrompt();
         return;
@@ -233,6 +236,7 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
     // Handle Clear-Host / cls / clear
     if (lower === 'clear-host' || lower === 'cls' || lower === 'clear') {
       setLines([]);
+      setBannerCleared(true);
       setInput('');
       return;
     }
@@ -370,6 +374,7 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
     if (e.key === 'l' && e.ctrlKey) {
       e.preventDefault();
       setLines([]);
+      setBannerCleared(true);
     }
 
     // Escape — clear input
@@ -407,8 +412,8 @@ export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequ
         }}
         onClick={() => inputRef.current?.focus()}
       >
-        {/* Banner: only show CMD banner if we started in CMD mode */}
-        {!isPowerShell && shellStack.length === 0 && (
+        {/* Banner: only show CMD banner if we started in CMD mode and cls hasn't been called */}
+        {!isPowerShell && shellStack.length === 0 && !bannerCleared && (
           <>
             <pre
               className="whitespace-pre-wrap"
