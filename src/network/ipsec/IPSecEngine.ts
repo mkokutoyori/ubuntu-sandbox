@@ -1707,6 +1707,54 @@ export class IPSecEngine {
     return lines.join('\n');
   }
 
+  showCryptoIKEv2Proposal(): string {
+    if (this.ikev2Proposals.size === 0) return 'No IKEv2 proposals configured.';
+    const lines: string[] = [];
+    for (const [name, prop] of this.ikev2Proposals) {
+      lines.push(`IKEv2 Proposal: ${name}`);
+      lines.push(`  Encryption  : ${prop.encryption.length > 0 ? prop.encryption.join(', ') : '(none)'}`);
+      lines.push(`  Integrity   : ${prop.integrity.length > 0 ? prop.integrity.join(', ') : '(none)'}`);
+      lines.push(`  DH Group    : ${prop.dhGroup.length > 0 ? prop.dhGroup.join(', ') : '(none)'}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoIKEv2Policy(): string {
+    if (this.ikev2Policies.size === 0) return 'No IKEv2 policies configured.';
+    const lines: string[] = [];
+    for (const [key, pol] of this.ikev2Policies) {
+      lines.push(`IKEv2 Policy : ${key}`);
+      lines.push(`  Match fvrf  : any`);
+      lines.push(`  Proposals   : ${pol.proposalNames.length > 0 ? pol.proposalNames.join(', ') : '(none)'}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoIKEv2Profile(): string {
+    if (this.ikev2Profiles.size === 0) return 'No IKEv2 profiles configured.';
+    const lines: string[] = [];
+    for (const [name, prof] of this.ikev2Profiles) {
+      lines.push(`IKEv2 Profile: ${name}`);
+      lines.push(`  Match identity : ${prof.matchIdentity || 'any'}`);
+      lines.push(`  Local auth     : ${prof.localAuth || 'pre-share'}`);
+      lines.push(`  Remote auth    : ${prof.remoteAuth || 'pre-share'}`);
+      if (prof.keyringName) lines.push(`  Keyring        : ${prof.keyringName}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoISAKMPKey(): string {
+    if (this.preSharedKeys.size === 0) return 'No pre-shared keys configured.';
+    const lines: string[] = ['Keychain  Hostname / Address   Preshared Key'];
+    for (const [addr, key] of this.preSharedKeys) {
+      lines.push(`default   ${addr.padEnd(21)}${key.replace(/./g, '*')}`);
+    }
+    return lines.join('\n');
+  }
+
   showRunningConfig(): string[] {
     const lines: string[] = [];
 

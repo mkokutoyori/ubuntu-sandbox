@@ -510,6 +510,10 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: out.includes('Error') || out.includes('unknown') || out.includes('Cannot find') || out.includes('RTNETLINK') || out.includes('does not exist') ? 1 : 0 };
       }
 
+      // ipsec (strongSwan) — IPsec management
+      case 'ipsec':
+        return this.handleIPSec(args);
+
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
@@ -899,6 +903,60 @@ export class LinuxCommandExecutor {
       };
     }
     return { output: cmdSudoCheck(this.ctx(), args), exitCode: 0 };
+  }
+
+  // ─── IPSec (strongSwan) ─────────────────────────────────────────
+
+  private ipsecStarted = false;
+
+  private handleIPSec(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0) {
+      return { output: 'Usage: ipsec <command> [arguments]\n\nCommands:\n  start        start the IPsec subsystem\n  stop         stop the IPsec subsystem\n  restart      restart the IPsec subsystem\n  status       show IPsec status\n  statusall    show detailed IPsec status\n  up <conn>    bring up a connection\n  down <conn>  tear down a connection\n  reload       reload configuration\n  version      show strongSwan version', exitCode: 0 };
+    }
+
+    switch (args[0]) {
+      case 'start':
+        this.ipsecStarted = true;
+        return { output: 'Starting strongSwan 5.9.8 IPsec [starter]...', exitCode: 0 };
+      case 'stop':
+        this.ipsecStarted = false;
+        return { output: 'Stopping strongSwan IPsec...', exitCode: 0 };
+      case 'restart':
+        this.ipsecStarted = true;
+        return { output: 'Stopping strongSwan IPsec...\nStarting strongSwan 5.9.8 IPsec [starter]...', exitCode: 0 };
+      case 'reload':
+        if (!this.ipsecStarted) return { output: 'IPsec is not running', exitCode: 1 };
+        return { output: 'Reloading strongSwan IPsec configuration...', exitCode: 0 };
+      case 'status':
+        if (!this.ipsecStarted) return { output: 'IPsec is not running', exitCode: 1 };
+        return { output: 'Security Associations (0 up, 0 connecting):\n  none', exitCode: 0 };
+      case 'statusall':
+        if (!this.ipsecStarted) return { output: 'IPsec is not running', exitCode: 1 };
+        return {
+          output: 'Status of IKE charon daemon (strongSwan 5.9.8, Linux 5.15.0-generic, x86_64):\n' +
+            '  uptime: 0 seconds, since now\n' +
+            '  worker threads: 16 of 16 idle, 5/0/0/0 working, job queue: 0/0/0/0\n' +
+            '  loaded plugins: charon aes sha2 sha1 md5 hmac pem x509 kernel-netlink\n' +
+            'Security Associations (0 up, 0 connecting):\n  none',
+          exitCode: 0,
+        };
+      case 'up': {
+        if (!this.ipsecStarted) return { output: 'IPsec is not running', exitCode: 1 };
+        const conn = args[1] || '';
+        if (!conn) return { output: 'Usage: ipsec up <connection-name>', exitCode: 1 };
+        return { output: `initiating IKE_SA ${conn}[1] to 0.0.0.0\ngenerating IKE_SA_INIT request`, exitCode: 0 };
+      }
+      case 'down': {
+        if (!this.ipsecStarted) return { output: 'IPsec is not running', exitCode: 1 };
+        const conn = args[1] || '';
+        if (!conn) return { output: 'Usage: ipsec down <connection-name>', exitCode: 1 };
+        return { output: `closing IKE_SA ${conn}[1]`, exitCode: 0 };
+      }
+      case 'version':
+        return { output: 'Linux strongSwan U5.9.8/K5.15.0-generic\nUniversity of Applied Sciences Rapperswil, Switzerland', exitCode: 0 };
+      default:
+        return { output: `unknown command: ${args[0]}`, exitCode: 1 };
+    }
   }
 
   // ─── Skeleton files ───────────────────────────────────────────────

@@ -13,11 +13,13 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
-import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
+import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 
 export class LinuxPC extends EndHost {
   protected readonly defaultTTL = 64;
   private executor: LinuxCommandExecutor;
+  /** XFRM (IPsec) state/policy database for ip xfrm commands */
+  private xfrmCtx: IpXfrmContext = { states: [], policies: [] };
 
   constructor(type: DeviceType = 'linux-pc', name: string = 'LinuxPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -535,6 +537,7 @@ export class LinuxPC extends EndHost {
         port.setUp(false);
         return '';
       },
+      xfrm: self.xfrmCtx,
     };
   }
 

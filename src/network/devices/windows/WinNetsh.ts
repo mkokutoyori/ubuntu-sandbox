@@ -126,7 +126,7 @@ const SUB_CONTEXT_STUB: Record<string, string> = {
   bridge: 'bridge',
   firewall: 'firewall',
   http: 'http',
-  ipsec: 'ipsec',
+  // ipsec is now handled explicitly
   lan: 'lan',
   mbn: 'mbn',
   namespace: 'namespace',
@@ -201,6 +201,11 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
   // netsh dnsclient ...
   if (args[0].toLowerCase() === 'dnsclient') {
     return handleNetshDnsclient(ctx, args.slice(1));
+  }
+
+  // netsh ipsec ...
+  if (args[0].toLowerCase() === 'ipsec') {
+    return handleNetshIPSec(args.slice(1));
   }
 
   // netsh p2p ?
@@ -931,6 +936,394 @@ function handleDnsclientSet(ctx: WinCommandContext, args: string[]): string {
   const suffix = match[1].trim();
   ctx.setDnsSuffix(suffix);
   return 'Ok.';
+}
+
+// ─── netsh ipsec ────────────────────────────────────────────────────
+
+const NETSH_IPSEC_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+dump           - Displays a configuration script.
+dynamic        - Changes to the \`netsh ipsec dynamic' context.
+help           - Displays a list of commands.
+static         - Changes to the \`netsh ipsec static' context.
+
+The following sub-contexts are available:
+ dynamic static
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_IPSEC_STATIC_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a new policy, filter list, filter, filter action, or rule.
+delete         - Deletes a policy, filter list, filter, filter action, or rule.
+dump           - Displays a configuration script.
+exportpolicy   - Exports all policies from the policy store.
+help           - Displays a list of commands.
+importpolicy   - Imports policies from a file to the policy store.
+set            - Modifies existing policies, filter lists, filter actions, and rules.
+show           - Displays details of policies, filter lists, filters, and filter actions.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_IPSEC_DYNAMIC_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds policy, filter, filter action to SPD.
+delete         - Deletes policy, filter, filter action from SPD.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+set            - Modifies policy, filter, filter action in SPD.
+show           - Displays policy, filter, filter action from SPD.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+// In-memory IPsec policy store for Windows simulator
+interface WinIPSecPolicy {
+  name: string;
+  description: string;
+  assigned: boolean;
+}
+interface WinIPSecFilterList {
+  name: string;
+  filters: WinIPSecFilter[];
+}
+interface WinIPSecFilter {
+  srcAddr: string;
+  dstAddr: string;
+  protocol: string;
+  srcPort: string;
+  dstPort: string;
+  mirrored: boolean;
+}
+interface WinIPSecFilterAction {
+  name: string;
+  action: 'permit' | 'block' | 'negotiate';
+  description: string;
+}
+interface WinIPSecRule {
+  name: string;
+  policy: string;
+  filterlist: string;
+  filteraction: string;
+}
+
+const winIPSecPolicies: WinIPSecPolicy[] = [];
+const winIPSecFilterLists: WinIPSecFilterList[] = [];
+const winIPSecFilterActions: WinIPSecFilterAction[] = [];
+const winIPSecRules: WinIPSecRule[] = [];
+
+function handleNetshIPSec(args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
+    return NETSH_IPSEC_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+
+  if (sub === 'static') {
+    return handleNetshIPSecStatic(args.slice(1));
+  }
+
+  if (sub === 'dynamic') {
+    return handleNetshIPSecDynamic(args.slice(1));
+  }
+
+  return NETSH_IPSEC_HELP;
+}
+
+function handleNetshIPSecStatic(args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
+    return NETSH_IPSEC_STATIC_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+
+  if (sub === 'add') return handleIPSecStaticAdd(args.slice(1));
+  if (sub === 'delete') return handleIPSecStaticDelete(args.slice(1));
+  if (sub === 'show') return handleIPSecStaticShow(args.slice(1));
+  if (sub === 'set') return handleIPSecStaticSet(args.slice(1));
+
+  return NETSH_IPSEC_STATIC_HELP;
+}
+
+function parseNameValue(args: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const arg of args) {
+    const eq = arg.indexOf('=');
+    if (eq > 0) {
+      result[arg.slice(0, eq).toLowerCase()] = arg.slice(eq + 1);
+    }
+  }
+  return result;
+}
+
+function handleIPSecStaticAdd(args: string[]): string {
+  if (args.length === 0) return 'Usage: add policy|filterlist|filter|filteraction|rule name=<name> ...';
+  const obj = args[0].toLowerCase();
+  const params = parseNameValue(args.slice(1));
+
+  switch (obj) {
+    case 'policy': {
+      const name = params['name'];
+      if (!name) return 'Error: name= is required.';
+      if (winIPSecPolicies.find(p => p.name === name)) return `The policy "${name}" already exists.`;
+      winIPSecPolicies.push({
+        name,
+        description: params['description'] || '',
+        assigned: params['assign']?.toLowerCase() === 'yes',
+      });
+      return 'Ok.';
+    }
+    case 'filterlist': {
+      const name = params['name'];
+      if (!name) return 'Error: name= is required.';
+      if (winIPSecFilterLists.find(fl => fl.name === name)) return `The filter list "${name}" already exists.`;
+      winIPSecFilterLists.push({ name, filters: [] });
+      return 'Ok.';
+    }
+    case 'filter': {
+      const filterlist = params['filterlist'];
+      if (!filterlist) return 'Error: filterlist= is required.';
+      const fl = winIPSecFilterLists.find(f => f.name === filterlist);
+      if (!fl) return `The filter list "${filterlist}" was not found.`;
+      fl.filters.push({
+        srcAddr: params['srcaddr'] || 'any',
+        dstAddr: params['dstaddr'] || 'any',
+        protocol: params['protocol'] || 'any',
+        srcPort: params['srcport'] || '0',
+        dstPort: params['dstport'] || '0',
+        mirrored: params['mirrored']?.toLowerCase() !== 'no',
+      });
+      return 'Ok.';
+    }
+    case 'filteraction': {
+      const name = params['name'];
+      if (!name) return 'Error: name= is required.';
+      const actionStr = (params['action'] || 'negotiate').toLowerCase();
+      const action = actionStr === 'permit' ? 'permit' : actionStr === 'block' ? 'block' : 'negotiate';
+      winIPSecFilterActions.push({ name, action, description: params['description'] || '' });
+      return 'Ok.';
+    }
+    case 'rule': {
+      const name = params['name'];
+      const policy = params['policy'];
+      if (!name || !policy) return 'Error: name= and policy= are required.';
+      winIPSecRules.push({
+        name,
+        policy,
+        filterlist: params['filterlist'] || '',
+        filteraction: params['filteraction'] || '',
+      });
+      return 'Ok.';
+    }
+    default:
+      return 'Usage: add policy|filterlist|filter|filteraction|rule name=<name> ...';
+  }
+}
+
+function handleIPSecStaticDelete(args: string[]): string {
+  if (args.length === 0) return 'Usage: delete policy|filterlist|filteraction|rule name=<name>';
+  const obj = args[0].toLowerCase();
+  const params = parseNameValue(args.slice(1));
+  const name = params['name'];
+
+  switch (obj) {
+    case 'policy': {
+      if (name === 'all') { winIPSecPolicies.length = 0; return 'Ok.'; }
+      const idx = winIPSecPolicies.findIndex(p => p.name === name);
+      if (idx < 0) return `The policy "${name}" was not found.`;
+      winIPSecPolicies.splice(idx, 1);
+      return 'Ok.';
+    }
+    case 'filterlist': {
+      if (name === 'all') { winIPSecFilterLists.length = 0; return 'Ok.'; }
+      const idx = winIPSecFilterLists.findIndex(f => f.name === name);
+      if (idx < 0) return `The filter list "${name}" was not found.`;
+      winIPSecFilterLists.splice(idx, 1);
+      return 'Ok.';
+    }
+    case 'filteraction': {
+      if (name === 'all') { winIPSecFilterActions.length = 0; return 'Ok.'; }
+      const idx = winIPSecFilterActions.findIndex(f => f.name === name);
+      if (idx < 0) return `The filter action "${name}" was not found.`;
+      winIPSecFilterActions.splice(idx, 1);
+      return 'Ok.';
+    }
+    case 'rule': {
+      const policy = params['policy'] || '';
+      const idx = winIPSecRules.findIndex(r => r.name === name && (!policy || r.policy === policy));
+      if (idx < 0) return `The rule "${name}" was not found.`;
+      winIPSecRules.splice(idx, 1);
+      return 'Ok.';
+    }
+    default:
+      return 'Usage: delete policy|filterlist|filteraction|rule name=<name>';
+  }
+}
+
+function handleIPSecStaticShow(args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+    return 'Usage: show all|policy|filterlist|filteraction|rule [name=<name>]';
+  }
+  const obj = args[0].toLowerCase();
+  const params = parseNameValue(args.slice(1));
+
+  switch (obj) {
+    case 'all':
+      return [
+        showPolicies(), showFilterLists(), showFilterActions(), showRules(),
+      ].filter(Boolean).join('\n\n') || 'No IPsec configuration.';
+    case 'policy':
+      return showPolicies(params['name']) || 'No policies configured.';
+    case 'filterlist':
+      return showFilterLists(params['name']) || 'No filter lists configured.';
+    case 'filteraction':
+      return showFilterActions(params['name']) || 'No filter actions configured.';
+    case 'rule':
+      return showRules(params['name']) || 'No rules configured.';
+    default:
+      return 'Usage: show all|policy|filterlist|filteraction|rule [name=<name>]';
+  }
+}
+
+function showPolicies(name?: string): string {
+  const items = name ? winIPSecPolicies.filter(p => p.name === name) : winIPSecPolicies;
+  if (items.length === 0) return '';
+  const lines = ['IPSec Policies:', '---'];
+  for (const p of items) {
+    lines.push(`  Policy Name: ${p.name}`);
+    if (p.description) lines.push(`  Description: ${p.description}`);
+    lines.push(`  Assigned:    ${p.assigned ? 'YES' : 'NO'}`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function showFilterLists(name?: string): string {
+  const items = name ? winIPSecFilterLists.filter(f => f.name === name) : winIPSecFilterLists;
+  if (items.length === 0) return '';
+  const lines = ['IPSec Filter Lists:', '---'];
+  for (const fl of items) {
+    lines.push(`  Filter List Name: ${fl.name}`);
+    lines.push(`  Filters: ${fl.filters.length}`);
+    for (const f of fl.filters) {
+      lines.push(`    ${f.srcAddr}:${f.srcPort} -> ${f.dstAddr}:${f.dstPort} proto=${f.protocol} mirror=${f.mirrored ? 'yes' : 'no'}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function showFilterActions(name?: string): string {
+  const items = name ? winIPSecFilterActions.filter(f => f.name === name) : winIPSecFilterActions;
+  if (items.length === 0) return '';
+  const lines = ['IPSec Filter Actions:', '---'];
+  for (const fa of items) {
+    lines.push(`  Filter Action Name: ${fa.name}`);
+    lines.push(`  Action:             ${fa.action}`);
+    if (fa.description) lines.push(`  Description:        ${fa.description}`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function showRules(name?: string): string {
+  const items = name ? winIPSecRules.filter(r => r.name === name) : winIPSecRules;
+  if (items.length === 0) return '';
+  const lines = ['IPSec Rules:', '---'];
+  for (const r of items) {
+    lines.push(`  Rule Name:     ${r.name}`);
+    lines.push(`  Policy:        ${r.policy}`);
+    lines.push(`  Filter List:   ${r.filterlist}`);
+    lines.push(`  Filter Action: ${r.filteraction}`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function handleIPSecStaticSet(args: string[]): string {
+  if (args.length === 0) return 'Usage: set policy|filteraction name=<name> ...';
+  const obj = args[0].toLowerCase();
+  const params = parseNameValue(args.slice(1));
+
+  if (obj === 'policy') {
+    const name = params['name'];
+    if (!name) return 'Error: name= is required.';
+    const policy = winIPSecPolicies.find(p => p.name === name);
+    if (!policy) return `The policy "${name}" was not found.`;
+    if (params['assign'] !== undefined) policy.assigned = params['assign'].toLowerCase() === 'yes';
+    if (params['description'] !== undefined) policy.description = params['description'];
+    return 'Ok.';
+  }
+
+  return 'Usage: set policy|filteraction name=<name> ...';
+}
+
+function handleNetshIPSecDynamic(args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
+    return NETSH_IPSEC_DYNAMIC_HELP;
+  }
+
+  const sub = args[0].toLowerCase();
+  if (sub === 'show') {
+    return handleIPSecDynamicShow(args.slice(1));
+  }
+
+  return NETSH_IPSEC_DYNAMIC_HELP;
+}
+
+function handleIPSecDynamicShow(args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+    return 'Usage: show all|mmsas|qmsas|mmfilter|mmpolicy|qmfilter|qmpolicy|stats|ikestats';
+  }
+  const obj = args[0].toLowerCase();
+
+  switch (obj) {
+    case 'all':
+      return 'Main Mode SAs: 0\nQuick Mode SAs: 0\n\nNo active IPsec security associations.';
+    case 'mmsas':
+      return 'No Main Mode Security Associations.';
+    case 'qmsas':
+      return 'No Quick Mode Security Associations.';
+    case 'stats':
+    case 'ikestats':
+      return [
+        'IKE Statistics',
+        '---',
+        '  Active Acquire:               0',
+        '  Active Receive:               0',
+        '  Acquire Failures:             0',
+        '  Receive Failures:             0',
+        '  Send Failures:                0',
+        '  Acquire Heap Size:            0',
+        '  Receive Heap Size:            0',
+        '  Negotiation Failures:         0',
+        '  Authentication Failures:      0',
+        '  Invalid Cookies Received:     0',
+        '  Total Acquire:                0',
+        '  Total Get SPI:                0',
+        '  Key Additions:                0',
+        '  Key Updates:                  0',
+        '  Get SPI Failures:             0',
+        '  Key Addition Failures:        0',
+        '  Key Update Failures:          0',
+        '  ISADB List Size:              0',
+        '  Connection List Size:         0',
+        '  IKE Main Mode:                0',
+        '  IKE Quick Mode:               0',
+        '  Soft Associations:            0',
+        '  Invalid Packets Received:     0',
+      ].join('\n');
+    default:
+      return 'Usage: show all|mmsas|qmsas|mmfilter|mmpolicy|qmfilter|qmpolicy|stats|ikestats';
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
