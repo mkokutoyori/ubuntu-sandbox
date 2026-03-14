@@ -5,6 +5,54 @@
  * crypto maps, dynamic maps, and SA databases.
  */
 
+// ─── SPD (Security Policy Database) — RFC 4301 §4.4.1 ───────────────
+
+/**
+ * SPD action per RFC 4301: every packet is evaluated against the SPD
+ * and one of three actions is taken.
+ *   PROTECT — apply IPsec (encrypt/authenticate via SA)
+ *   BYPASS  — allow in cleartext (e.g. IKE, OSPF, ICMP)
+ *   DISCARD — silently drop
+ */
+export type SPDAction = 'PROTECT' | 'BYPASS' | 'DISCARD';
+
+/** Traffic direction to which a security policy applies. */
+export type SPDDirection = 'in' | 'out';
+
+/**
+ * A single entry in the Security Policy Database (SPD).
+ * Selectors follow RFC 4301 §4.4.1.1 (simplified for the simulator).
+ */
+export interface SecurityPolicy {
+  /** Unique numeric ID for ordering (lower = higher priority) */
+  id: number;
+  /** Human-readable name / label */
+  name: string;
+  /** Direction: inbound or outbound */
+  direction: SPDDirection;
+  /** Action to apply */
+  action: SPDAction;
+  /** Selector: source IP / CIDR ('' = any) */
+  srcAddress: string;
+  /** Selector: source wildcard mask (Cisco-style, '' = host) */
+  srcWildcard: string;
+  /** Selector: destination IP / CIDR ('' = any) */
+  dstAddress: string;
+  /** Selector: destination wildcard mask ('' = host) */
+  dstWildcard: string;
+  /** Selector: IP protocol number (0 = any) */
+  protocol: number;
+  /** Selector: source port (0 = any, TCP/UDP only) */
+  srcPort: number;
+  /** Selector: destination port (0 = any, TCP/UDP only) */
+  dstPort: number;
+  /**
+   * For PROTECT: name of the crypto map / IPsec profile to use.
+   * Ignored for BYPASS / DISCARD.
+   */
+  cryptoMapName?: string;
+}
+
 // ─── IKEv1 Configuration ─────────────────────────────────────────────
 
 export interface ISAKMPPolicy {
@@ -163,10 +211,10 @@ export interface IPSec_SA {
   outIface: string;        // outgoing interface name
   hasESP: boolean;
   hasAH: boolean;
-  // Anti-replay window (RFC 4303)
-  replayWindowSize: number;        // default 64
+  // Anti-replay window (RFC 4303) — supports up to 1024-bit windows
+  replayWindowSize: number;        // default 64, max 1024
   outboundSeqNum: number;          // next outbound sequence number
-  replayBitmap: number;            // bitmap for replay window (up to 32 bits)
+  replayBitmap: Uint32Array;       // bitmap for replay window (ceil(windowSize/32) words)
   replayWindowLastSeq: number;     // highest sequence number seen
 }
 

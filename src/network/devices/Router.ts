@@ -1237,7 +1237,21 @@ export abstract class Router extends Equipment {
       return;
     }
 
-    // C.1b: Inbound ACL check (only for transit/forwarded traffic)
+    // C.1b: SPD inbound check (RFC 4301 §4.4.1) — DISCARD/BYPASS before ACL
+    if (this.ipsecEngine) {
+      const spdResult = this.ipsecEngine.evaluateSPD(ipPkt, 'in');
+      if (spdResult) {
+        if (spdResult.action === 'DISCARD') {
+          Logger.info(this.id, 'ipsec:spd-discard',
+            `${this.name}: SPD DISCARD inbound: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+          return;
+        }
+        // BYPASS → skip IPsec processing, continue to ACL/forward
+        // PROTECT → already handled by ESP/AH decapsulation above
+      }
+    }
+
+    // C.1c: Inbound ACL check (only for transit/forwarded traffic)
     const inboundBinding = this.interfaceACLBindings.get(inPort);
     if (inboundBinding?.inbound !== null && inboundBinding?.inbound !== undefined) {
       const verdict = this.evaluateACL(inboundBinding.inbound, ipPkt);
@@ -1394,15 +1408,37 @@ export abstract class Router extends Equipment {
       }
     }
 
-    // Phase E.2c: IPSec outbound — check if this packet should be encrypted
+    // Phase E.2c: SPD outbound check (RFC 4301 §4.4.1) + IPSec encryption
     if (this.ipsecEngine) {
-      const entry = this.ipsecEngine.findMatchingCryptoEntry(fwdPkt, route.iface);
-      if (entry) {
-        const encPkt = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
-        if (!encPkt) return; // negotiation failed — drop
-        // Re-send the encrypted outer packet (it will go through forwardPacket again)
-        this.processIPv4(route.iface, encPkt);
-        return;
+      // Evaluate SPD first — explicit BYPASS/DISCARD overrides crypto maps
+      const spdResult = this.ipsecEngine.evaluateSPD(fwdPkt, 'out');
+      if (spdResult) {
+        if (spdResult.action === 'DISCARD') {
+          Logger.info(this.id, 'ipsec:spd-discard',
+            `${this.name}: SPD DISCARD outbound: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
+          return;
+        }
+        if (spdResult.action === 'BYPASS') {
+          // Skip IPsec — fall through to normal forwarding
+        } else {
+          // PROTECT — use crypto map / tunnel protection as before
+          const entry = this.ipsecEngine.findMatchingCryptoEntry(fwdPkt, route.iface);
+          if (entry) {
+            const encPkt = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
+            if (!encPkt) return; // negotiation failed — drop
+            this.processIPv4(route.iface, encPkt);
+            return;
+          }
+        }
+      } else {
+        // No explicit SPD policy — fall back to crypto map matching (legacy behavior)
+        const entry = this.ipsecEngine.findMatchingCryptoEntry(fwdPkt, route.iface);
+        if (entry) {
+          const encPkt = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
+          if (!encPkt) return;
+          this.processIPv4(route.iface, encPkt);
+          return;
+        }
       }
     }
 

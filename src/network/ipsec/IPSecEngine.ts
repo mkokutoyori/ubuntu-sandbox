@@ -20,6 +20,7 @@ import {
   DynamicCryptoMapEntry, IKEv2Proposal, IKEv2Policy, IKEv2Keyring, IKEv2Profile,
   IPSecProfile, TunnelProtection,
   IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig,
+  SecurityPolicy, SPDAction, SPDDirection,
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
@@ -27,14 +28,29 @@ import { Logger } from '../core/Logger';
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
 
-let spiCounter = 0x1000;
-function nextSPI(): number {
-  spiCounter = (spiCounter + 1) & 0xffffffff;
-  return spiCounter;
+/**
+ * Generate a random SPI in the valid range [256, 0xFFFFFFFF].
+ * SPIs 0-255 are reserved by IANA (RFC 4303 §2.1).
+ */
+function randomSPI(): number {
+  // Use Math.random to produce a 32-bit value, then clamp to [256, 0xFFFFFFFF]
+  const raw = (Math.random() * 0xFFFFFF00 + 0x100) >>> 0;
+  return raw || 0x100; // ensure never 0
 }
+
 function spiHex(spi: number): string {
-  return `0x${spi.toString(16).toUpperCase().padStart(8, '0')}`;
+  return `0x${(spi >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
 }
+
+/** Allocate a Uint32Array bitmap large enough for the given window size. */
+function createReplayBitmap(windowSize: number): Uint32Array {
+  if (windowSize <= 0) return new Uint32Array(0);
+  const words = Math.ceil(windowSize / 32);
+  return new Uint32Array(words);
+}
+
+/** Maximum sequence number before overflow (2^32 - 1). */
+const SEQ_NUM_MAX = 0xFFFFFFFF;
 
 export class IPSecEngine {
   private readonly router: Router;
@@ -66,6 +82,10 @@ export class IPSecEngine {
   // ── IPSec Profiles (GRE/tunnel protection) ───────────────────────
   private ipsecProfiles: Map<string, IPSecProfile> = new Map();
   private tunnelProtection: Map<string, TunnelProtection> = new Map();
+
+  // ── SPD (Security Policy Database) — RFC 4301 §4.4.1 ───────────
+  private spd: SecurityPolicy[] = [];
+  private spdNextId: number = 1;
 
   // ── SA Database ──────────────────────────────────────────────────
   /** peerIP → IKE_SA */
@@ -246,6 +266,80 @@ export class IPSecEngine {
 
   setTunnelProtection(ifName: string, profileName: string, shared: boolean = false): void {
     this.tunnelProtection.set(ifName, { profileName, shared });
+  }
+
+  // ── SPD Configuration (RFC 4301 §4.4.1) ─────────────────────────
+
+  /**
+   * Add a security policy to the SPD.
+   * Policies are evaluated in order of ascending id (lower = higher priority).
+   */
+  addSecurityPolicy(policy: Omit<SecurityPolicy, 'id'>): SecurityPolicy {
+    const sp: SecurityPolicy = { id: this.spdNextId++, ...policy };
+    this.spd.push(sp);
+    this.spd.sort((a, b) => a.id - b.id);
+    return sp;
+  }
+
+  removeSecurityPolicy(id: number): void {
+    this.spd = this.spd.filter(p => p.id !== id);
+  }
+
+  removeSecurityPolicyByName(name: string): void {
+    this.spd = this.spd.filter(p => p.name !== name);
+  }
+
+  clearSecurityPolicies(): void {
+    this.spd = [];
+  }
+
+  getSecurityPolicies(): ReadonlyArray<SecurityPolicy> {
+    return this.spd;
+  }
+
+  /**
+   * Evaluate the SPD for a given packet + direction.
+   * Returns the matching action (PROTECT / BYPASS / DISCARD).
+   * If no explicit policy matches, returns null (caller decides default).
+   */
+  evaluateSPD(pkt: IPv4Packet, direction: SPDDirection): { action: SPDAction; policy: SecurityPolicy } | null {
+    const srcIP = pkt.sourceIP.toString();
+    const dstIP = pkt.destinationIP.toString();
+    const proto = pkt.protocol;
+
+    for (const sp of this.spd) {
+      if (sp.direction !== direction) continue;
+      if (!this.spdSelectorMatch(sp, srcIP, dstIP, proto)) continue;
+      return { action: sp.action, policy: sp };
+    }
+    return null;
+  }
+
+  private spdSelectorMatch(sp: SecurityPolicy, srcIP: string, dstIP: string, proto: number): boolean {
+    // Protocol check
+    if (sp.protocol !== 0 && sp.protocol !== proto) return false;
+    // Source address check
+    if (sp.srcAddress && !this.ipMatchesWithWildcard(srcIP, sp.srcAddress, sp.srcWildcard)) return false;
+    // Destination address check
+    if (sp.dstAddress && !this.ipMatchesWithWildcard(dstIP, sp.dstAddress, sp.dstWildcard)) return false;
+    return true;
+  }
+
+  /**
+   * Check if `ip` falls within `baseIP` + wildcard mask (Cisco-style).
+   * e.g. ip=10.0.0.5, base=10.0.0.0, wildcard=0.0.0.255 → true
+   */
+  private ipMatchesWithWildcard(ip: string, baseIP: string, wildcard: string): boolean {
+    if (!baseIP || baseIP === 'any') return true;
+    if (baseIP === 'host') return ip === wildcard; // special case: 'host' + actual IP
+    const ipParts = ip.split('.').map(Number);
+    const baseParts = baseIP.split('.').map(Number);
+    const wcParts = wildcard ? wildcard.split('.').map(Number) : [0, 0, 0, 0];
+    if (ipParts.length !== 4 || baseParts.length !== 4) return false;
+    for (let i = 0; i < 4; i++) {
+      if ((ipParts[i] & ~wcParts[i]) !== (baseParts[i] & ~wcParts[i])) return false;
+    }
+    return true;
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -433,11 +527,12 @@ export class IPSecEngine {
     // Get or establish SA
     let sa = this.getBestIPSecSA(peerIP);
 
-    // Check if SA has expired (lifetime-based rekeying)
-    if (sa && this.isSAExpired(sa)) {
+    // Check if SA has expired (lifetime-based rekeying) or sequence overflow
+    if (sa && (this.isSAExpired(sa) || sa.outboundSeqNum >= SEQ_NUM_MAX)) {
       if (this.debugIpsec) {
+        const reason = sa.outboundSeqNum >= SEQ_NUM_MAX ? 'sequence number overflow' : 'lifetime expired';
         Logger.info(this.router.id, 'debug:ipsec',
-          `IPSEC: SA with ${peerIP} expired, initiating rekey`);
+          `IPSEC: SA with ${peerIP} ${reason}, initiating rekey`);
       }
       this.clearSAsForPeer(peerIP);
       sa = null;
@@ -508,6 +603,17 @@ export class IPSecEngine {
       }
     }
     if (!localIP) return null;
+
+    // RFC 4303 §3.3.3: if sequence number is about to overflow, the SA MUST
+    // be renegotiated (new SA) before sending further traffic.
+    if (sa.outboundSeqNum >= SEQ_NUM_MAX) {
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC: sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+      }
+      sa.sendErrors++;
+      return null; // caller will detect null → rekeying happens on next attempt
+    }
 
     sa.pktsEncaps++;
     sa.outboundSeqNum++;
@@ -611,22 +717,27 @@ export class IPSecEngine {
 
   /**
    * RFC 4303 anti-replay window check.
+   * Supports window sizes up to 1024 bits using a Uint32Array bitmap.
    * Returns true if the packet is acceptable, false if it's a replay.
    */
   private checkAntiReplay(sa: IPSec_SA, seqNum: number): boolean {
     if (sa.replayWindowSize === 0) return true; // anti-replay disabled
-    if (seqNum === 0) return false; // seq 0 is invalid
+    if (seqNum === 0) return false; // seq 0 is invalid per RFC 4303
 
-    const windowSize = Math.min(sa.replayWindowSize, 32); // bitmap limited to 32 bits
+    const windowSize = sa.replayWindowSize;
+    const bitmap = sa.replayBitmap;
     const lastSeq = sa.replayWindowLastSeq;
 
     if (seqNum > lastSeq) {
-      // New packet ahead of window — slide window forward
+      // New packet ahead of window — slide bitmap forward
       const shift = seqNum - lastSeq;
       if (shift < windowSize) {
-        sa.replayBitmap = (sa.replayBitmap << shift) | 1;
+        this.bitmapShiftLeft(bitmap, shift);
+        this.bitmapSetBit(bitmap, 0); // mark current position
       } else {
-        sa.replayBitmap = 1; // completely new window
+        // Completely new window — clear and set bit 0
+        bitmap.fill(0);
+        this.bitmapSetBit(bitmap, 0);
       }
       sa.replayWindowLastSeq = seqNum;
       return true;
@@ -634,19 +745,62 @@ export class IPSecEngine {
 
     const diff = lastSeq - seqNum;
     if (diff >= windowSize) {
-      // Too old, outside the window
+      // Too old, falls outside the window
       return false;
     }
 
-    // Check if already seen (bit set in bitmap)
-    const bitMask = 1 << diff;
-    if (sa.replayBitmap & bitMask) {
+    // Check if already seen
+    if (this.bitmapGetBit(bitmap, diff)) {
       return false; // duplicate
     }
 
     // Mark as seen
-    sa.replayBitmap |= bitMask;
+    this.bitmapSetBit(bitmap, diff);
     return true;
+  }
+
+  // ── Bitmap helpers for Uint32Array-based anti-replay window ─────
+
+  private bitmapSetBit(bitmap: Uint32Array, bit: number): void {
+    const wordIdx = bit >>> 5;     // bit / 32
+    const bitIdx  = bit & 0x1f;    // bit % 32
+    if (wordIdx < bitmap.length) {
+      bitmap[wordIdx] |= (1 << bitIdx);
+    }
+  }
+
+  private bitmapGetBit(bitmap: Uint32Array, bit: number): boolean {
+    const wordIdx = bit >>> 5;
+    const bitIdx  = bit & 0x1f;
+    if (wordIdx >= bitmap.length) return false;
+    return (bitmap[wordIdx] & (1 << bitIdx)) !== 0;
+  }
+
+  /**
+   * Shift the entire bitmap left by `count` bits (higher indices → lower).
+   * Equivalent to sliding the replay window forward.
+   */
+  private bitmapShiftLeft(bitmap: Uint32Array, count: number): void {
+    if (count <= 0) return;
+    if (count >= bitmap.length * 32) {
+      bitmap.fill(0);
+      return;
+    }
+    const wordShift = count >>> 5;
+    const bitShift  = count & 0x1f;
+
+    if (wordShift > 0) {
+      // Shift whole words
+      for (let i = bitmap.length - 1; i >= 0; i--) {
+        bitmap[i] = i >= wordShift ? bitmap[i - wordShift] : 0;
+      }
+    }
+    if (bitShift > 0) {
+      // Shift remaining bits within words (MSB direction)
+      for (let i = bitmap.length - 1; i >= 0; i--) {
+        bitmap[i] = (bitmap[i] << bitShift) | (i > 0 ? (bitmap[i - 1] >>> (32 - bitShift)) : 0);
+      }
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -698,9 +852,10 @@ export class IPSecEngine {
     const peerPolicies = [...peerEngine.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
 
     let matchedPolicy: ISAKMPPolicy | null = null;
+    let matchedPeerPolicy: ISAKMPPolicy | null = null;
     for (const mp of myPolicies) {
       for (const pp of peerPolicies) {
-        if (this.policiesCompatible(mp, pp)) { matchedPolicy = mp; break; }
+        if (this.policiesCompatible(mp, pp)) { matchedPolicy = mp; matchedPeerPolicy = pp; break; }
       }
       if (matchedPolicy) break;
     }
@@ -751,14 +906,20 @@ export class IPSecEngine {
       && apparentSrcIP !== localIP;
 
     // Create IKE SA on both sides
-    const spi = nextSPI();
+    // RFC 2409 §5.5: negotiate IKE lifetime as min(initiator, responder)
+    const negotiatedIKELifetime = Math.min(
+      matchedPolicy.lifetime,
+      matchedPeerPolicy!.lifetime,
+    );
+
+    const spi = randomSPI();
     const ikeSA: IKE_SA = {
       peerIP, localIP,
       status: 'QM_IDLE',
       encryption: matchedPolicy.encryption,
       hash: matchedPolicy.hash,
       group: matchedPolicy.group,
-      lifetime: matchedPolicy.lifetime,
+      lifetime: negotiatedIKELifetime,
       created: Date.now(),
       spi: spiHex(spi),
       role: 'initiator',
@@ -774,9 +935,9 @@ export class IPSecEngine {
       encryption: matchedPolicy.encryption,
       hash: matchedPolicy.hash,
       group: matchedPolicy.group,
-      lifetime: matchedPolicy.lifetime,
+      lifetime: negotiatedIKELifetime,
       created: Date.now(),
-      spi: spiHex(nextSPI()),
+      spi: spiHex(randomSPI()),
       role: 'responder',
       natT,
       dpdEnabled: peerEngine.dpdConfig !== null,
@@ -826,16 +987,22 @@ export class IPSecEngine {
       return false;
     }
 
-    const lifetime = entry.saLifetimeSeconds ?? this.globalSALifetimeSeconds;
-    const spiInitIn  = nextSPI(); // initiator's inbound SPI (what responder will use as outbound)
-    const spiRespIn  = nextSPI(); // responder's inbound SPI (what initiator will use as outbound)
+    // RFC 2409 §5.5 / RFC 7296 §2.8: negotiate lifetime as min(initiator, responder)
+    const myLifetime = entry.saLifetimeSeconds ?? this.globalSALifetimeSeconds;
+    const peerLifetime = peerEntry?.saLifetimeSeconds ?? peerEngine.globalSALifetimeSeconds;
+    const lifetime = Math.min(myLifetime, peerLifetime);
+
+    const myLifetimeKB = this.globalSALifetimeKB;
+    const peerLifetimeKB = peerEngine.globalSALifetimeKB;
+    const lifetimeKB = Math.min(myLifetimeKB, peerLifetimeKB);
+
+    const spiInitIn  = randomSPI(); // initiator's inbound SPI (what responder will use as outbound)
+    const spiRespIn  = randomSPI(); // responder's inbound SPI (what initiator will use as outbound)
 
     const hasESP = chosenTs.transforms.some(t => t.startsWith('esp'));
     const hasAH  = chosenTs.transforms.some(t => t.startsWith('ah'));
 
     const localIP = this.getLocalIP(egressIface) || '';
-
-    const lifetimeKB = this.globalSALifetimeKB;
 
     // Initiator SA
     const sa: IPSec_SA = {
@@ -858,7 +1025,7 @@ export class IPSecEngine {
       hasESP, hasAH,
       replayWindowSize: this.replayWindowSize,
       outboundSeqNum: 0,
-      replayBitmap: 0,
+      replayBitmap: createReplayBitmap(this.replayWindowSize),
       replayWindowLastSeq: 0,
     };
     const existing = this.ipsecSADB.get(peerIP) || [];
@@ -891,7 +1058,7 @@ export class IPSecEngine {
       hasESP, hasAH,
       replayWindowSize: peerEngine.replayWindowSize,
       outboundSeqNum: 0,
-      replayBitmap: 0,
+      replayBitmap: createReplayBitmap(peerEngine.replayWindowSize),
       replayWindowLastSeq: 0,
     };
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
@@ -942,8 +1109,8 @@ export class IPSecEngine {
 
     const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
       && apparentSrcIP !== localIP;
-    const spiL = spiHex(nextSPI());
-    const spiR = spiHex(nextSPI());
+    const spiL = spiHex(randomSPI());
+    const spiR = spiHex(randomSPI());
 
     const ikev2SA: IKEv2_SA = {
       peerIP, localIP,
@@ -1044,7 +1211,7 @@ export class IPSecEngine {
       status: 'MM_NO_STATE',
       encryption: '', hash: '', group: 0, lifetime: 0,
       created: Date.now(),
-      spi: spiHex(nextSPI()),
+      spi: spiHex(randomSPI()),
       role: 'initiator',
       natT: false,
       dpdEnabled: false,
@@ -1521,6 +1688,22 @@ export class IPSecEngine {
     if (this.debugIsakmp) lines.push('debug crypto isakmp: ENABLED');
     if (this.debugIpsec) lines.push('debug crypto ipsec: ENABLED');
     if (this.debugIkev2) lines.push('debug crypto ikev2: ENABLED');
+    return lines.join('\n');
+  }
+
+  showSecurityPolicy(): string {
+    if (this.spd.length === 0) return 'No security policies configured (SPD empty).';
+    const lines: string[] = ['Security Policy Database (SPD) — RFC 4301', ''];
+    lines.push('ID    Direction  Action    Source                Destination           Proto');
+    lines.push('─'.repeat(85));
+    for (const sp of this.spd) {
+      const src = sp.srcAddress ? `${sp.srcAddress}/${sp.srcWildcard || '0.0.0.0'}` : 'any';
+      const dst = sp.dstAddress ? `${sp.dstAddress}/${sp.dstWildcard || '0.0.0.0'}` : 'any';
+      const proto = sp.protocol === 0 ? 'any' : String(sp.protocol);
+      lines.push(
+        `${String(sp.id).padEnd(6)}${sp.direction.padEnd(11)}${sp.action.padEnd(10)}${src.padEnd(22)}${dst.padEnd(22)}${proto}`
+      );
+    }
     return lines.join('\n');
   }
 
