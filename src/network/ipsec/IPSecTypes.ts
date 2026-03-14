@@ -219,9 +219,13 @@ export interface IPSec_SA {
   hasAH: boolean;
   // Anti-replay window (RFC 4303) — supports up to 1024-bit windows
   replayWindowSize: number;        // default 64, max 1024
-  outboundSeqNum: number;          // next outbound sequence number
+  outboundSeqNum: number;          // next outbound sequence number (low 32 bits)
   replayBitmap: Uint32Array;       // bitmap for replay window (ceil(windowSize/32) words)
   replayWindowLastSeq: number;     // highest sequence number seen
+  // Extended Sequence Numbers (RFC 4303 §2.2.1)
+  esnEnabled: boolean;             // true if 64-bit sequence numbers are in use
+  outboundSeqNumHigh: number;      // high 32 bits of outbound sequence counter
+  replayWindowLastSeqHigh: number; // high 32 bits of last received sequence
 }
 
 // ─── DPD / NAT-T Config ──────────────────────────────────────────────

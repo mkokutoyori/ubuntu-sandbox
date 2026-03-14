@@ -159,6 +159,17 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  // ── crypto ipsec security-association esn ──────────────────────
+  trie.register('crypto ipsec security-association esn', 'Enable Extended Sequence Numbers (64-bit)', () => {
+    eng(ctx).setESN(true);
+    return '';
+  });
+
+  trie.register('no crypto ipsec security-association esn', 'Disable Extended Sequence Numbers', () => {
+    eng(ctx).setESN(false);
+    return '';
+  });
+
   // ── crypto isakmp aggressive-mode ───────────────────────────────
   trie.register('crypto isakmp aggressive-mode disable', 'Disable Aggressive Mode', () => {
     eng(ctx).setAggressiveMode(false);

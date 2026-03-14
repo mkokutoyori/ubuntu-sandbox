@@ -419,6 +419,19 @@ export class IPSecEngine {
     return this.aggressiveMode;
   }
 
+  // ── Extended Sequence Numbers (RFC 4303 §2.2.1) ────────────────
+
+  private esnDefault: boolean = false;
+
+  /** Enable or disable ESN for newly created SAs */
+  setESN(enabled: boolean): void {
+    this.esnDefault = enabled;
+  }
+
+  isESNEnabled(): boolean {
+    return this.esnDefault;
+  }
+
   // ── DPD Simulation (RFC 3706) ────────────────────────────────────
   // In a real implementation, R-U-THERE / R-U-THERE-ACK messages are
   // sent over IKE. Here we simulate this by checking peer reachability.
@@ -683,9 +696,13 @@ export class IPSecEngine {
     let sa = this.getBestIPSecSA(peerIP);
 
     // Check if SA has expired (lifetime-based rekeying) or sequence overflow
-    if (sa && (this.isSAExpired(sa) || sa.outboundSeqNum >= SEQ_NUM_MAX)) {
+    // ESN SAs only overflow when both high and low 32 bits are exhausted
+    const seqOverflow = sa ? (sa.esnEnabled
+      ? (sa.outboundSeqNum >= SEQ_NUM_MAX && sa.outboundSeqNumHigh >= SEQ_NUM_MAX)
+      : sa.outboundSeqNum >= SEQ_NUM_MAX) : false;
+    if (sa && (this.isSAExpired(sa) || seqOverflow)) {
       if (this.debugIpsec) {
-        const reason = sa.outboundSeqNum >= SEQ_NUM_MAX ? 'sequence number overflow' : 'lifetime expired';
+        const reason = seqOverflow ? 'sequence number overflow' : 'lifetime expired';
         Logger.info(this.router.id, 'debug:ipsec',
           `IPSEC: SA with ${peerIP} ${reason}, initiating rekey`);
       }
@@ -759,15 +776,30 @@ export class IPSecEngine {
     }
     if (!localIP) return null;
 
-    // RFC 4303 §3.3.3: if sequence number is about to overflow, the SA MUST
-    // be renegotiated (new SA) before sending further traffic.
+    // RFC 4303 §3.3.3 / §2.2.1: sequence number overflow handling
     if (sa.outboundSeqNum >= SEQ_NUM_MAX) {
-      if (this.debugIpsec) {
-        Logger.info(this.router.id, 'debug:ipsec',
-          `IPSEC: sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+      if (sa.esnEnabled) {
+        // ESN: roll over low 32 bits, increment high 32 bits
+        sa.outboundSeqNumHigh++;
+        sa.outboundSeqNum = 0;
+        if (sa.outboundSeqNumHigh >= SEQ_NUM_MAX) {
+          // Full 64-bit space exhausted — must rekey
+          if (this.debugIpsec) {
+            Logger.info(this.router.id, 'debug:ipsec',
+              `IPSEC: ESN 64-bit sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+          }
+          sa.sendErrors++;
+          return null;
+        }
+      } else {
+        // Standard 32-bit: must renegotiate
+        if (this.debugIpsec) {
+          Logger.info(this.router.id, 'debug:ipsec',
+            `IPSEC: sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+        }
+        sa.sendErrors++;
+        return null;
       }
-      sa.sendErrors++;
-      return null; // caller will detect null → rekeying happens on next attempt
     }
 
     sa.pktsEncaps++;
@@ -779,7 +811,43 @@ export class IPSecEngine {
         `IPSEC(o): sa created, (sa) sa_dest=${sa.peerIP}, spi=${spiHex(sa.spiOut)}, seqnum=${sa.outboundSeqNum}`);
     }
 
-    if (sa.hasESP) {
+    // SA Bundle (RFC 4301 §4.5): when both AH and ESP are present,
+    // apply ESP first (encryption), then AH (integrity of outer header).
+    // Order: inner → ESP encapsulation → AH authentication
+    if (sa.hasESP && sa.hasAH) {
+      // Step 1: ESP encapsulate
+      const espPayload: ESPPacket = {
+        type: 'esp',
+        spi: sa.spiOut,
+        sequenceNumber: sa.outboundSeqNum,
+        innerPacket: innerPkt,
+      };
+      const espSize = 20 + 8 + innerPkt.totalLength;
+      const espPkt = createIPv4Packet(
+        localIP,
+        new IPAddress(sa.peerIP),
+        IP_PROTO_ESP,
+        64,
+        espPayload,
+        espSize,
+      );
+      // Step 2: AH wrap the ESP packet
+      const ahPayload: AHPacket = {
+        type: 'ah',
+        spi: sa.spiOut,
+        sequenceNumber: sa.outboundSeqNum,
+        innerPacket: espPkt,
+      };
+      const outerSize = 20 + 12 + espSize;
+      return createIPv4Packet(
+        localIP,
+        new IPAddress(sa.peerIP),
+        IP_PROTO_AH,
+        64,
+        ahPayload,
+        outerSize,
+      );
+    } else if (sa.hasESP) {
       const espPayload: ESPPacket = {
         type: 'esp',
         spi: sa.spiOut,
@@ -879,6 +947,13 @@ export class IPSecEngine {
     if (sa.replayWindowSize === 0) return true; // anti-replay disabled
     if (seqNum === 0) return false; // seq 0 is invalid per RFC 4303
 
+    // RFC 4303 §3.4.3: ESN anti-replay uses 64-bit sequence space.
+    // The received packet only carries the low 32 bits; the receiver
+    // infers the high 32 bits from context (current window position).
+    if (sa.esnEnabled) {
+      return this.checkAntiReplayESN(sa, seqNum);
+    }
+
     const windowSize = sa.replayWindowSize;
     const bitmap = sa.replayBitmap;
     const lastSeq = sa.replayWindowLastSeq;
@@ -910,6 +985,64 @@ export class IPSecEngine {
     }
 
     // Mark as seen
+    this.bitmapSetBit(bitmap, diff);
+    return true;
+  }
+
+  /**
+   * RFC 4303 §3.4.3 Appendix A: ESN anti-replay check.
+   * The receiver reconstructs the full 64-bit sequence number from the
+   * 32-bit value in the packet and the locally tracked high-order bits.
+   */
+  private checkAntiReplayESN(sa: IPSec_SA, seqLow: number): boolean {
+    const windowSize = sa.replayWindowSize;
+    const bitmap = sa.replayBitmap;
+    const lastSeqLow = sa.replayWindowLastSeq;
+    const lastSeqHigh = sa.replayWindowLastSeqHigh;
+
+    // Reconstruct full 64-bit sequence: determine the high 32 bits
+    let seqHigh: number;
+    if (seqLow >= lastSeqLow) {
+      // Same high-order epoch — no wraparound
+      seqHigh = lastSeqHigh;
+    } else {
+      // Low bits wrapped around — the high bits incremented
+      seqHigh = lastSeqHigh + 1;
+    }
+
+    // Compare 64-bit values using (high, low) tuple
+    const isAhead = seqHigh > lastSeqHigh ||
+      (seqHigh === lastSeqHigh && seqLow > lastSeqLow);
+
+    if (isAhead) {
+      // Advance window — compute shift in 32-bit space (simplified for simulator)
+      const shift = seqHigh === lastSeqHigh
+        ? seqLow - lastSeqLow
+        : seqLow + (SEQ_NUM_MAX - lastSeqLow) + 1;
+
+      if (shift < windowSize) {
+        this.bitmapShiftLeft(bitmap, shift);
+        this.bitmapSetBit(bitmap, 0);
+      } else {
+        bitmap.fill(0);
+        this.bitmapSetBit(bitmap, 0);
+      }
+      sa.replayWindowLastSeq = seqLow;
+      sa.replayWindowLastSeqHigh = seqHigh;
+      return true;
+    }
+
+    // Packet is within or behind the window — compute position
+    const diff = seqHigh === lastSeqHigh
+      ? lastSeqLow - seqLow
+      : lastSeqLow + (SEQ_NUM_MAX - seqLow) + 1;
+
+    if (diff >= windowSize) {
+      return false; // too old
+    }
+    if (this.bitmapGetBit(bitmap, diff)) {
+      return false; // duplicate
+    }
     this.bitmapSetBit(bitmap, diff);
     return true;
   }
@@ -1201,6 +1334,9 @@ export class IPSecEngine {
       outboundSeqNum: 0,
       replayBitmap: createReplayBitmap(this.replayWindowSize),
       replayWindowLastSeq: 0,
+      esnEnabled: this.esnDefault,
+      outboundSeqNumHigh: 0,
+      replayWindowLastSeqHigh: 0,
     };
     const existing = this.ipsecSADB.get(peerIP) || [];
     existing.push(sa);
@@ -1234,6 +1370,9 @@ export class IPSecEngine {
       outboundSeqNum: 0,
       replayBitmap: createReplayBitmap(peerEngine.replayWindowSize),
       replayWindowLastSeq: 0,
+      esnEnabled: peerEngine.esnDefault,
+      outboundSeqNumHigh: 0,
+      replayWindowLastSeqHigh: 0,
     };
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
     peerExisting.push(peerSA);
@@ -1624,7 +1763,13 @@ export class IPSecEngine {
         extra.push(`   sa timing: remaining key lifetime (k/sec): (${remainingKB}/${remainingSec})`);
         extra.push(`   SA lifetime: ${sa.lifetime} seconds, ${sa.lifetimeKB} kilobytes`);
         extra.push(`   Replay window size: ${sa.replayWindowSize}`);
-        extra.push(`   Outbound sequence number: ${sa.outboundSeqNum}`);
+        if (sa.esnEnabled) {
+          extra.push(`   Extended Sequence Number (ESN): Y`);
+          extra.push(`   Outbound sequence number: ${sa.outboundSeqNumHigh}:${sa.outboundSeqNum}`);
+        } else {
+          extra.push(`   Extended Sequence Number (ESN): N`);
+          extra.push(`   Outbound sequence number: ${sa.outboundSeqNum}`);
+        }
         if (sa.pfsGroup) {
           extra.push(`   PFS (Y/N): Y, DH group: ${sa.pfsGroup}`);
         } else {
@@ -1951,6 +2096,9 @@ export class IPSecEngine {
     }
     if (this.aggressiveMode) {
       lines.push(`no crypto isakmp aggressive-mode disable`);
+    }
+    if (this.esnDefault) {
+      lines.push(`crypto ipsec security-association esn`);
     }
 
     // ISAKMP policies
