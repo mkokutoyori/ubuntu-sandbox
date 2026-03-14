@@ -159,6 +159,33 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  // ── crypto isakmp aggressive-mode ───────────────────────────────
+  trie.register('crypto isakmp aggressive-mode disable', 'Disable Aggressive Mode', () => {
+    eng(ctx).setAggressiveMode(false);
+    return '';
+  });
+
+  trie.register('no crypto isakmp aggressive-mode disable', 'Enable Aggressive Mode (default)', () => {
+    eng(ctx).setAggressiveMode(true);
+    return '';
+  });
+
+  // ── crypto isakmp keepalive ───────────────────────────────────
+  trie.registerGreedy('crypto isakmp keepalive', 'Configure IKE DPD keepalive', (args) => {
+    if (args.length < 2) return '% Usage: crypto isakmp keepalive INTERVAL RETRIES [periodic|on-demand]';
+    const interval = parseInt(args[0], 10);
+    const retries = parseInt(args[1], 10);
+    if (isNaN(interval) || isNaN(retries)) return '% Invalid values.';
+    const mode = (args[2]?.toLowerCase() === 'on-demand' ? 'on-demand' : 'periodic') as 'periodic' | 'on-demand';
+    eng(ctx).setDPD(interval, retries, mode);
+    return '';
+  });
+
+  trie.register('no crypto isakmp keepalive', 'Disable IKE DPD', () => {
+    (eng(ctx) as any).dpdConfig = null;
+    return '';
+  });
+
   // ── crypto ipsec security-policy NAME action direction selectors ─────
   // RFC 4301 SPD configuration:
   //   crypto ipsec security-policy NAME PROTECT|BYPASS|DISCARD in|out [src SRC WILDCARD] [dst DST WILDCARD] [proto N]

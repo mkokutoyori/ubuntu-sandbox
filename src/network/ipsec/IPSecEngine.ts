@@ -407,6 +407,161 @@ export class IPSecEngine {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // ── Aggressive Mode IKEv1 ──────────────────────────────────────
+
+  private aggressiveMode: boolean = false;
+
+  setAggressiveMode(enabled: boolean): void {
+    this.aggressiveMode = enabled;
+  }
+
+  isAggressiveMode(): boolean {
+    return this.aggressiveMode;
+  }
+
+  // ── DPD Simulation (RFC 3706) ────────────────────────────────────
+  // In a real implementation, R-U-THERE / R-U-THERE-ACK messages are
+  // sent over IKE. Here we simulate this by checking peer reachability.
+
+  /**
+   * Simulate DPD check for all IKE SAs. Called periodically by the
+   * simulation tick or explicitly by the user.
+   *
+   * For each SA with DPD enabled, checks:
+   *  - periodic mode: peer reachability every `interval` seconds
+   *  - on-demand mode: only when traffic is expected but none received
+   *
+   * If a peer fails `retries` consecutive checks, clear its SAs.
+   */
+  runDPDCheck(): string[] {
+    const events: string[] = [];
+    if (!this.dpdConfig) return events;
+
+    const now = Date.now();
+    const intervalMs = this.dpdConfig.interval * 1000;
+
+    for (const [peerIP, ikeSA] of this.ikeSADB) {
+      if (!ikeSA.dpdEnabled || ikeSA.status !== 'QM_IDLE') continue;
+
+      // Initialize DPD tracking on first check
+      if (ikeSA.lastDPDActivity === undefined) {
+        ikeSA.lastDPDActivity = now;
+        ikeSA.dpdTimeouts = 0;
+        continue;
+      }
+
+      // Check if it's time for a DPD probe
+      if (now - ikeSA.lastDPDActivity < intervalMs) continue;
+
+      // In on-demand mode, only probe if there are active IPsec SAs
+      if (this.dpdConfig.mode === 'on-demand') {
+        const sas = this.ipsecSADB.get(peerIP);
+        if (!sas || sas.length === 0) {
+          ikeSA.lastDPDActivity = now;
+          continue;
+        }
+      }
+
+      // Simulate R-U-THERE: check if peer router is reachable
+      const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+      if (peerRouter) {
+        const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+        if (peerEngine && peerEngine.ikeSADB.has(ikeSA.localIP)) {
+          // Peer responded — R-U-THERE-ACK
+          ikeSA.lastDPDActivity = now;
+          ikeSA.dpdTimeouts = 0;
+          if (this.debugIsakmp) {
+            Logger.info(this.router.id, 'debug:isakmp',
+              `ISAKMP: DPD R-U-THERE-ACK received from ${peerIP}`);
+          }
+          continue;
+        }
+      }
+
+      // Peer unreachable — increment timeout counter
+      ikeSA.dpdTimeouts = (ikeSA.dpdTimeouts || 0) + 1;
+      ikeSA.lastDPDActivity = now;
+
+      if (this.debugIsakmp) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: DPD R-U-THERE timeout ${ikeSA.dpdTimeouts}/${this.dpdConfig.retries} for peer ${peerIP}`);
+      }
+
+      if (ikeSA.dpdTimeouts >= this.dpdConfig.retries) {
+        events.push(`DPD: peer ${peerIP} declared dead after ${ikeSA.dpdTimeouts} timeouts`);
+        Logger.info(this.router.id, 'ipsec:dpd-dead',
+          `${this.router.name}: DPD declared peer ${peerIP} dead — clearing SAs`);
+        this.clearSAsForPeer(peerIP);
+      }
+    }
+
+    return events;
+  }
+
+  // ── IKE SA Rekeying (RFC 7296 §2.8) ─────────────────────────────
+
+  /**
+   * Check all IKE SAs for lifetime expiration and rekey if needed.
+   * In a real implementation, CREATE_CHILD_SA exchange is used.
+   * Here we simply create a new IKE SA and migrate Child SAs.
+   */
+  recheckIKESALifetimes(): void {
+    const now = Date.now();
+    const toRekey: string[] = [];
+
+    for (const [peerIP, ikeSA] of this.ikeSADB) {
+      if (ikeSA.status !== 'QM_IDLE') continue;
+      const elapsedSec = Math.floor((now - ikeSA.created) / 1000);
+      if (elapsedSec >= ikeSA.lifetime) {
+        toRekey.push(peerIP);
+      }
+    }
+
+    for (const peerIP of toRekey) {
+      this.rekeyIKESA(peerIP);
+    }
+  }
+
+  private rekeyIKESA(peerIP: string): void {
+    const oldSA = this.ikeSADB.get(peerIP);
+    if (!oldSA) return;
+
+    if (this.debugIsakmp) {
+      Logger.info(this.router.id, 'debug:isakmp',
+        `ISAKMP: IKE SA with ${peerIP} expired (lifetime ${oldSA.lifetime}s) — rekeying`);
+    }
+
+    // Create new IKE SA with same parameters but fresh SPI and timestamp
+    const newSA: IKE_SA = {
+      ...oldSA,
+      spi: spiHex(randomSPI()),
+      created: Date.now(),
+      lastDPDActivity: Date.now(),
+      dpdTimeouts: 0,
+    };
+    this.ikeSADB.set(peerIP, newSA);
+
+    // Rekey on peer side too
+    const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    if (peerRouter) {
+      const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+      const peerSA = peerEngine?.ikeSADB.get(oldSA.localIP);
+      if (peerEngine && peerSA) {
+        const newPeerSA: IKE_SA = {
+          ...peerSA,
+          spi: spiHex(randomSPI()),
+          created: Date.now(),
+          lastDPDActivity: Date.now(),
+          dpdTimeouts: 0,
+        };
+        peerEngine.ikeSADB.set(oldSA.localIP, newPeerSA);
+      }
+    }
+
+    Logger.info(this.router.id, 'ipsec:rekey-ike',
+      `${this.router.name}: IKE SA with ${peerIP} rekeyed successfully`);
+  }
+
   // Port link-down handler (DPD simulation)
   // ══════════════════════════════════════════════════════════════════
 
@@ -860,9 +1015,13 @@ export class IPSecEngine {
       if (matchedPolicy) break;
     }
 
+    // Determine exchange mode: aggressive if either side has it enabled
+    const useAggressive = this.aggressiveMode || peerEngine.aggressiveMode;
+    const modeName = useAggressive ? 'Aggressive' : 'Main';
+
     if (this.debugIsakmp) {
       Logger.info(this.router.id, 'debug:isakmp',
-        `ISAKMP: begin IKE Main Mode exchange with ${peerIP}`);
+        `ISAKMP: begin IKE ${modeName} Mode exchange with ${peerIP}`);
       for (const mp of myPolicies) {
         Logger.info(this.router.id, 'debug:isakmp',
           `ISAKMP: sending policy ${mp.priority} enc=${mp.encryption} hash=${mp.hash} auth=${mp.auth} group=${mp.group}`);
@@ -913,19 +1072,31 @@ export class IPSecEngine {
     );
 
     const spi = randomSPI();
+    const now = Date.now();
     const ikeSA: IKE_SA = {
       peerIP, localIP,
-      status: 'QM_IDLE',
+      status: useAggressive ? 'AM_ACTIVE' : 'QM_IDLE',
       encryption: matchedPolicy.encryption,
       hash: matchedPolicy.hash,
       group: matchedPolicy.group,
       lifetime: negotiatedIKELifetime,
-      created: Date.now(),
+      created: now,
       spi: spiHex(spi),
       role: 'initiator',
       natT,
       dpdEnabled: this.dpdConfig !== null,
+      lastDPDActivity: now,
+      dpdTimeouts: 0,
+      exchangeMode: useAggressive ? 'aggressive' : 'main',
     };
+    // Aggressive mode transitions immediately to QM_IDLE after 3 messages (vs 6 in main)
+    if (useAggressive) {
+      ikeSA.status = 'QM_IDLE';
+      if (this.debugIsakmp) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: Aggressive Mode completed in 3 exchanges (vs 6 for Main Mode)`);
+      }
+    }
     this.ikeSADB.set(peerIP, ikeSA);
 
     const peerLocalIP = peerEngine.getLocalIP('') || peerIP;
@@ -936,11 +1107,14 @@ export class IPSecEngine {
       hash: matchedPolicy.hash,
       group: matchedPolicy.group,
       lifetime: negotiatedIKELifetime,
-      created: Date.now(),
+      created: now,
       spi: spiHex(randomSPI()),
       role: 'responder',
       natT,
       dpdEnabled: peerEngine.dpdConfig !== null,
+      lastDPDActivity: now,
+      dpdTimeouts: 0,
+      exchangeMode: useAggressive ? 'aggressive' : 'main',
     };
     peerEngine.ikeSADB.set(apparentSrcIP, peerIkeSA);
 
@@ -1301,6 +1475,7 @@ export class IPSecEngine {
       extra.push('');
       extra.push(`Crypto ISAKMP SA towards ${sa.peerIP}`);
       extra.push(`   Status: ${sa.status}, role: ${sa.role}`);
+      extra.push(`   Exchange mode: ${sa.exchangeMode || 'main'}`);
       extra.push(`   Encryption: ${sa.encryption}, Hash: ${sa.hash}, DH Group: ${sa.group}`);
       extra.push(`   Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
       if (sa.natT) {
@@ -1309,6 +1484,9 @@ export class IPSecEngine {
       }
       if (sa.dpdEnabled && this.dpdConfig) {
         extra.push(`   DPD: keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
+        if (sa.dpdTimeouts !== undefined && sa.dpdTimeouts > 0) {
+          extra.push(`   DPD: ${sa.dpdTimeouts} consecutive timeout(s)`);
+        }
       }
     }
     return base + extra.join('\n');
@@ -1321,6 +1499,9 @@ export class IPSecEngine {
     }
     if (this.dpdConfig) {
       lines.push(`IKE Keepalive: keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
+    }
+    if (this.aggressiveMode) {
+      lines.push('IKE Exchange Mode: Aggressive');
     }
     if (lines.length === 0) lines.push('IKE global config:');
     return lines.join('\n');
@@ -1767,6 +1948,9 @@ export class IPSecEngine {
     }
     if (this.replayWindowSize !== 64) {
       lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
+    }
+    if (this.aggressiveMode) {
+      lines.push(`no crypto isakmp aggressive-mode disable`);
     }
 
     // ISAKMP policies

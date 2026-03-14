@@ -169,6 +169,12 @@ export interface IKE_SA {
   role: 'initiator' | 'responder';
   natT: boolean;         // NAT-T detected
   dpdEnabled: boolean;
+  /** Timestamp of last DPD activity (sent or received) */
+  lastDPDActivity?: number;
+  /** Number of consecutive DPD timeouts */
+  dpdTimeouts?: number;
+  /** IKE exchange mode: main (default) or aggressive */
+  exchangeMode?: 'main' | 'aggressive';
 }
 
 export interface IKEv2_SA {
