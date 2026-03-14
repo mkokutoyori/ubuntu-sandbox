@@ -159,6 +159,59 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  // ── crypto ipsec security-policy NAME action direction selectors ─────
+  // RFC 4301 SPD configuration:
+  //   crypto ipsec security-policy NAME PROTECT|BYPASS|DISCARD in|out [src SRC WILDCARD] [dst DST WILDCARD] [proto N]
+  trie.registerGreedy('crypto ipsec security-policy', 'Define an IPSec security policy (SPD)', (args) => {
+    if (args.length < 3) return '% Usage: crypto ipsec security-policy NAME PROTECT|BYPASS|DISCARD in|out [src IP WILDCARD] [dst IP WILDCARD] [proto N]';
+    const name = args[0];
+    const action = args[1].toUpperCase();
+    if (action !== 'PROTECT' && action !== 'BYPASS' && action !== 'DISCARD') {
+      return '% Invalid action. Use PROTECT, BYPASS, or DISCARD.';
+    }
+    const direction = args[2].toLowerCase();
+    if (direction !== 'in' && direction !== 'out') {
+      return '% Invalid direction. Use in or out.';
+    }
+
+    let srcAddress = '', srcWildcard = '', dstAddress = '', dstWildcard = '';
+    let protocol = 0;
+    let i = 3;
+    while (i < args.length) {
+      const kw = args[i].toLowerCase();
+      if (kw === 'src' && args[i + 1]) {
+        srcAddress = args[i + 1];
+        srcWildcard = args[i + 2] || '0.0.0.0';
+        i += 3;
+      } else if (kw === 'dst' && args[i + 1]) {
+        dstAddress = args[i + 1];
+        dstWildcard = args[i + 2] || '0.0.0.0';
+        i += 3;
+      } else if (kw === 'proto' && args[i + 1]) {
+        protocol = parseInt(args[i + 1], 10) || 0;
+        i += 2;
+      } else {
+        i++;
+      }
+    }
+
+    eng(ctx).addSecurityPolicy({
+      name,
+      direction: direction as 'in' | 'out',
+      action: action as 'PROTECT' | 'BYPASS' | 'DISCARD',
+      srcAddress, srcWildcard, dstAddress, dstWildcard,
+      protocol, srcPort: 0, dstPort: 0,
+    });
+    return '';
+  });
+
+  // ── no crypto ipsec security-policy NAME ──────────────────────────
+  trie.registerGreedy('no crypto ipsec security-policy', 'Remove an IPSec security policy', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeSecurityPolicyByName(args[0]);
+    return '';
+  });
+
   // ── crypto ipsec transform-set NAME transforms... ─────────────────
   // Syntax: crypto ipsec transform-set MYTS esp-aes esp-sha-hmac
   //    OR:  crypto ipsec transform-set MYTS esp-aes 256 esp-sha256-hmac

@@ -51,4 +51,7 @@ export function registerIPSecShowCommands(
 
   trie.register('show crypto session', 'Display crypto session status', () =>
     eng()?.showCryptoSession() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ipsec security-policy', 'Display IPSec security policies (SPD)', () =>
+    eng()?.showSecurityPolicy() ?? 'IPSec not configured.');
 }
