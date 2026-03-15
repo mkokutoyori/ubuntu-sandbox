@@ -197,6 +197,31 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  // ── crypto ikev2 dpd N {periodic|on-demand} ─────────────────────
+  trie.registerGreedy('crypto ikev2 dpd', 'Configure IKEv2 DPD (liveness check)', (args) => {
+    if (args.length < 2) return '% Usage: crypto ikev2 dpd INTERVAL {periodic|on-demand}';
+    const interval = parseInt(args[0], 10);
+    if (isNaN(interval) || interval < 0) return '% Invalid interval';
+    eng(ctx).setIKEv2DPD(interval);
+    return '';
+  });
+
+  trie.register('no crypto ikev2 dpd', 'Disable IKEv2 DPD', () => {
+    eng(ctx).setIKEv2DPD(0);
+    return '';
+  });
+
+  // ── crypto ipsec df-bit {copy|set|clear} ──────────────────────
+  trie.registerGreedy('crypto ipsec df-bit', 'Set DF bit handling for IPSec outer header', (args) => {
+    if (args.length < 1) return '% Usage: crypto ipsec df-bit {copy|set|clear}';
+    const mode = args[0].toLowerCase();
+    if (mode !== 'copy' && mode !== 'set' && mode !== 'clear') {
+      return '% Invalid mode. Use copy, set, or clear.';
+    }
+    eng(ctx).setDFBitPolicy(mode as 'copy' | 'set' | 'clear');
+    return '';
+  });
+
   // ── crypto ipsec security-policy NAME action direction selectors ─────
   // RFC 4301 SPD configuration:
   //   crypto ipsec security-policy NAME PROTECT|BYPASS|DISCARD in|out [src SRC WILDCARD] [dst DST WILDCARD] [proto N]

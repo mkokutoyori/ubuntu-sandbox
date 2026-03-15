@@ -1,14 +1,21 @@
 /**
  * NetworkDesigner - Main component for network topology design
  * Integrates all UI components with Sprint 1 device classes
+ *
+ * Terminal management uses a tiling system:
+ *   - Multiple terminals visible simultaneously in a split layout
+ *   - Tiles can be split horizontally/vertically, resized, closed
+ *   - Terminal state (output, history, cwd) persists across all manipulations
+ *   - Minimize hides the tile view and returns to the canvas
+ *   - Minimized terminals can be restored from the taskbar
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { DevicePalette } from './DevicePalette';
 import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Toolbar } from './Toolbar';
-import { TerminalModal } from './TerminalModal';
+import { TerminalTileManager } from './TerminalTileManager';
 import { MinimizedTerminals } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
@@ -19,12 +26,12 @@ import { useNetworkStore } from '@/store/networkStore';
 export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
   const [, setDraggingDevice] = useState<DeviceType | null>(null);
-  // Track the currently active (visible) terminal
-  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
-  // Track all open terminals (both active and minimized) - keeps them mounted
+
+  // Track all open terminals — used by both tiling view and minimized taskbar
   const [openTerminals, setOpenTerminals] = useState<Map<string, BaseDevice>>(new Map());
-  // Track which terminals are minimized
-  const [minimizedTerminals, setMinimizedTerminals] = useState<Set<string>>(new Set());
+  // Whether the tile view is visible (false = minimized to taskbar)
+  const [tilesVisible, setTilesVisible] = useState(false);
+
   // Sidepane collapse state
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -33,97 +40,58 @@ export function NetworkDesigner() {
   const { getDevices, clearAll } = useNetworkStore();
   const devices = getDevices();
 
+  // ── Open a terminal (from canvas double-click or restore) ──
   const handleOpenTerminal = useCallback((device: BaseDevice) => {
-    if (device.getIsPoweredOn()) {
-      const deviceId = device.getId();
+    if (!device.getIsPoweredOn()) return;
+    const deviceId = device.getId();
 
-      // If this terminal is already open and not minimized, do nothing
-      if (openTerminals.has(deviceId) && !minimizedTerminals.has(deviceId)) {
-        return;
-      }
+    setOpenTerminals(prev => {
+      if (prev.has(deviceId)) return prev; // already open
+      const newMap = new Map(prev);
+      newMap.set(deviceId, device);
+      return newMap;
+    });
+    // Show the tile view
+    setTilesVisible(true);
+  }, []);
 
-      // Minimize any currently visible terminal (except the one we're opening)
-      setMinimizedTerminals(prev => {
-        const newSet = new Set(prev);
-        // Minimize all non-minimized terminals
-        openTerminals.forEach((_, id) => {
-          if (!prev.has(id) && id !== deviceId) {
-            newSet.add(id);
-          }
-        });
-        // Make sure the one we're opening is not minimized
-        newSet.delete(deviceId);
-        return newSet;
-      });
-
-      // Add to open terminals if not already open
-      setOpenTerminals(prev => {
-        if (!prev.has(deviceId)) {
-          const newMap = new Map(prev);
-          newMap.set(deviceId, device);
-          return newMap;
-        }
-        return prev;
-      });
-
-      // Set as active terminal
-      setActiveTerminalId(deviceId);
-    }
-  }, [openTerminals, minimizedTerminals]);
-
-  const handleCloseTerminal = useCallback((deviceId: string) => {
-    // Remove from all tracking
+  // ── Close a single terminal ──
+  const handleCloseDevice = useCallback((deviceId: string) => {
     setOpenTerminals(prev => {
       const newMap = new Map(prev);
       newMap.delete(deviceId);
       return newMap;
     });
-    setMinimizedTerminals(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(deviceId);
-      return newSet;
-    });
-    if (activeTerminalId === deviceId) {
-      setActiveTerminalId(null);
-    }
-  }, [activeTerminalId]);
-
-  const handleMinimizeTerminal = useCallback(() => {
-    if (activeTerminalId) {
-      // Add to minimized set (terminal stays in openTerminals)
-      setMinimizedTerminals(prev => {
-        const newSet = new Set(prev);
-        newSet.add(activeTerminalId);
-        return newSet;
-      });
-      // No active terminal
-      setActiveTerminalId(null);
-    }
-  }, [activeTerminalId]);
-
-  const handleRestoreTerminal = useCallback((device: BaseDevice) => {
-    const deviceId = device.getId();
-    // Remove from minimized
-    setMinimizedTerminals(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(deviceId);
-      return newSet;
-    });
-    // Set as active
-    setActiveTerminalId(deviceId);
   }, []);
 
-  // Get minimized terminals as Map for MinimizedTerminals component
-  const minimizedTerminalsMap = new Map<string, BaseDevice>();
-  minimizedTerminals.forEach(deviceId => {
-    const device = openTerminals.get(deviceId);
-    if (device) {
-      minimizedTerminalsMap.set(deviceId, device);
-    }
-  });
+  // ── All tiles closed ──
+  const handleAllClosed = useCallback(() => {
+    setTilesVisible(false);
+    setOpenTerminals(new Map());
+  }, []);
 
-  // Get the active device
-  const activeDevice = activeTerminalId ? openTerminals.get(activeTerminalId) : null;
+  // ── Minimize all tiles (return to canvas, keep terminals alive) ──
+  const handleMinimizeAll = useCallback(() => {
+    setTilesVisible(false);
+  }, []);
+
+  // ── Restore from minimized taskbar ──
+  const handleRestoreTerminal = useCallback((device: BaseDevice) => {
+    setTilesVisible(true);
+  }, []);
+
+  // ── Close from minimized taskbar ──
+  const handleCloseFromTaskbar = useCallback((deviceId: string) => {
+    setOpenTerminals(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(deviceId);
+      if (newMap.size === 0) setTilesVisible(false);
+      return newMap;
+    });
+  }, []);
+
+  // Build minimized map: when tiles are hidden, all open terminals are "minimized"
+  const minimizedTerminalsMap = !tilesVisible ? openTerminals : new Map<string, BaseDevice>();
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
@@ -182,32 +150,21 @@ export function NetworkDesigner() {
         </div>
       </div>
 
-      {/* All open terminals - keep mounted for state preservation */}
-      {Array.from(openTerminals.entries()).map(([deviceId, device]) => {
-        const isMinimized = minimizedTerminals.has(deviceId);
+      {/* Tile-based terminal manager */}
+      <TerminalTileManager
+        devices={openTerminals}
+        visible={tilesVisible}
+        onCloseDevice={handleCloseDevice}
+        onAllClosed={handleAllClosed}
+        onMinimizeAll={handleMinimizeAll}
+      />
 
-        // Keep all terminals mounted but hide minimized ones
-        // This preserves terminal state (history, output, etc.)
-        return (
-          <div
-            key={deviceId}
-            style={{ display: isMinimized ? 'none' : 'block' }}
-          >
-            <TerminalModal
-              device={device}
-              onClose={() => handleCloseTerminal(deviceId)}
-              onMinimize={handleMinimizeTerminal}
-            />
-          </div>
-        );
-      })}
-
-      {/* Minimized Terminals Taskbar */}
+      {/* Minimized Terminals Taskbar — shown when tiles are hidden */}
       {minimizedTerminalsMap.size > 0 && (
         <MinimizedTerminals
           terminals={minimizedTerminalsMap}
           onRestore={handleRestoreTerminal}
-          onClose={handleCloseTerminal}
+          onClose={handleCloseFromTaskbar}
         />
       )}
     </div>

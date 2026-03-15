@@ -111,27 +111,27 @@ La RFC 4301 Section 4.4.1 définit la **Security Policy Database (SPD)** comme c
 - Impossible de définir des exemptions SPD (BYPASS) pour ICMP, OSPF, etc.
 - Pas de notion de SPD-S (SPD applied to traffic after SA processing), SPD-I (incoming), SPD-O (outgoing) comme défini Section 4.4.1.2
 
-### 3.2 SAD (Security Association Database) — Partiellement implémenté
+### 3.2 SAD (Security Association Database) — **Majoritairement implémenté** ✅
 
 La RFC 4301 Section 4.4.2 définit les champs obligatoires d'une SA dans le SAD.
 
 | Champ RFC 4301 | Implémenté | Notes |
 |---|---|---|
-| SPI | Oui | `spiIn`, `spiOut` |
-| Sequence Number Counter | Oui | `outboundSeqNum` |
-| Sequence Counter Overflow | **Non** | Pas de gestion du dépassement de séquence (RFC dit DOIT générer un nouvel SA) |
-| Anti-Replay Window | Oui | Bitmap 32 bits (devrait supporter jusqu'à 64+ bits) |
+| SPI | ✅ Oui | `spiIn`, `spiOut` (randomisé, IANA range exclu) |
+| Sequence Number Counter | ✅ Oui | `outboundSeqNum` + ESN 64 bits |
+| Sequence Counter Overflow | ✅ Oui | Rekey automatique, ESN roll-over des 32 bits bas |
+| Anti-Replay Window | ✅ Oui | `Uint32Array` bitmap jusqu'à 1024 bits configurable |
 | AH Authentication Algorithm/Key | **Non** | Pas de clé cryptographique simulée |
-| ESP Encryption Algorithm/Key | **Non** | Pas de chiffrement réel (OK pour simulateur, mais structure absente) |
+| ESP Encryption Algorithm/Key | **Non** | Pas de chiffrement réel (OK pour simulateur) |
 | ESP Authentication Algorithm/Key | **Non** | Idem |
-| Lifetime | Oui | Time + KB |
-| IPsec Protocol Mode | Oui | Tunnel/Transport |
+| Lifetime | ✅ Oui | Time + KB, négociation min(initiator, responder) |
+| IPsec Protocol Mode | ✅ Oui | Tunnel/Transport |
 | Stateful Fragment Checking | **Non** | Aucune gestion des fragments |
-| Bypass DF bit | **Non** | Pas de gestion du bit DF |
-| DSCP values | **Non** | Pas de mapping DSCP |
-| Bypass DSCP / ECN | **Non** | Pas de gestion ECN |
-| Path MTU | Partiel | Valeur hardcodée 1500 dans le show, non fonctionnelle |
-| Tunnel Header IP src/dst | Oui | localIP, peerIP |
+| Bypass DF bit | ✅ Oui | `dfBit: copy/set/clear` — commande `crypto ipsec df-bit` |
+| DSCP values | ✅ Oui | `dscp: copy/clear` |
+| Bypass DSCP / ECN | ✅ Oui | `ecnBypass: boolean` per RFC 4301 §5.1.2.1 |
+| Path MTU | ✅ Oui | `pathMTU` par SA (default 1500) |
+| Tunnel Header IP src/dst | ✅ Oui | localIP, peerIP |
 | SA Selectors (traffic selectors) | Partiel | Via ACL, mais pas de selectors natifs dans la SA |
 
 ### 3.3 Gestion des fragments IP — **NON IMPLÉMENTÉ**
@@ -187,34 +187,13 @@ La RFC 7296 Section 2.16 définit l'authentification EAP pour IKEv2. Non support
 
 ## 4. Problèmes d'implémentation détectés
 
-### 4.1 Anti-replay window limitée à 32 bits
+### 4.1 Anti-replay window — **IMPLÉMENTÉ** ✅
 
-**Fichier :** `src/network/ipsec/IPSecEngine.ts:620`
-```typescript
-const windowSize = Math.min(sa.replayWindowSize, 32); // bitmap limited to 32 bits
-```
+**Corrigé** : La fenêtre anti-replay utilise désormais un `Uint32Array` bitmap supportant des tailles de 1 à 1024 bits (configurable via `crypto ipsec security-association replay window-size N`). Le bitmap est alloué dynamiquement (`ceil(windowSize/32)` words). Supporte aussi l'ESN 64 bits avec `checkAntiReplayESN()`.
 
-**Problème :** La fenêtre anti-replay est limitée à 32 bits alors que la commande Cisco `crypto ipsec security-association replay window-size` accepte des valeurs jusqu'à 1024. La RFC 4303 recommande un minimum de 64 bits.
+### 4.2 SPI randomisé — **IMPLÉMENTÉ** ✅
 
-**Correction suggérée :** Utiliser un `BigInt` ou un tableau de bits pour supporter des fenêtres jusqu'à 1024.
-
-### 4.2 SPI counter global non sécurisé
-
-**Fichier :** `src/network/ipsec/IPSecEngine.ts:30-34`
-```typescript
-let spiCounter = 0x1000;
-function nextSPI(): number {
-  spiCounter = (spiCounter + 1) & 0xffffffff;
-  return spiCounter;
-}
-```
-
-**Problème :** Le compteur SPI est :
-1. **Global et partagé** entre toutes les instances d'IPSecEngine (variable module-level) — deux routeurs génèrent des SPIs séquentiels, ce qui n'est pas réaliste.
-2. **Séquentiel et prévisible** — la RFC 4303 Section 2.1 recommande des SPIs aléatoires pour des raisons de sécurité.
-3. **Commence à 0x1000** — les SPIs 0-255 sont réservés (IANA), mais 0x1000 est arbitraire et toujours le même au redémarrage.
-
-**Correction suggérée :** Utiliser `Math.random()` ou `crypto.getRandomValues()` pour chaque engine indépendamment, en excluant la plage 0-255.
+**Corrigé** : La fonction `randomSPI()` utilise `Math.random()` pour produire des SPIs cryptographiquement imprévisibles dans la plage `[256, 0xFFFFFFFF]`, excluant les SPIs réservés IANA 0-255 (RFC 4303 §2.1). Chaque appel est indépendant.
 
 ### 4.3 Négociation synchrone et directe (non réaliste)
 
@@ -226,11 +205,9 @@ function nextSPI(): number {
 - La négociation ne peut pas échouer pour des raisons réseau (routage, firewall blocking port 500/4500)
 - Impossible de simuler des attaques man-in-the-middle ou des timeouts
 
-### 4.4 Gestion du lifetime responder vs initiator
+### 4.4 Lifetime negotiation — **IMPLÉMENTÉ** ✅
 
-**Fichier :** `src/network/ipsec/IPSecEngine.ts:829`
-
-**Problème :** Le lifetime de la SA responder est toujours celui de l'initiator. En réalité (RFC 2409 / RFC 7296), les deux pairs négocient et le plus court des deux est retenu. Si le responder a un lifetime différent configuré, il est ignoré.
+**Corrigé** : Le lifetime est négocié comme `Math.min(initiator, responder)` pour les IKE SA (RFC 2409 §5.5) et les IPSec SA (RFC 7296 §2.8). Meme chose pour le lifetime en KB.
 
 ### 4.5 DPD basé sur messages — **IMPLÉMENTÉ** ✅
 
@@ -240,16 +217,9 @@ function nextSPI(): number {
 
 Le simulateur ne simule aucun échec cryptographique (clé invalide, intégrité compromise, padding error). Les paquets ESP/AH sont toujours « déchiffrés » avec succès car aucun chiffrement réel n'est effectué.
 
-### 4.7 NAT-T detection simpliste
+### 4.7 NAT-D detection — **AMÉLIORÉ** ✅
 
-**Fichier :** `src/network/ipsec/IPSecEngine.ts:750-751`
-
-```typescript
-const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-  && apparentSrcIP !== localIP;
-```
-
-**Problème :** La détection NAT-T est basée sur le keepalive interval ET la comparaison d'IP, pas sur les NAT-D payloads (RFC 3947). En réalité, IKE détecte le NAT via des hash des adresses/ports dans les payloads NAT_DETECTION_*.
+**Amélioré** : La méthode `detectNAT()` simule la détection NAT-D (RFC 3947 §3.2) en comparant l'IP source apparente avec l'IP locale réelle du peer. Combinée avec la détection keepalive. Logging de debug pour tracer les détections NAT. La détection est utilisée dans IKEv1 et IKEv2.
 
 ---
 

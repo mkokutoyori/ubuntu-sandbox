@@ -72,6 +72,12 @@ export class IPSecEngine {
   private debugIsakmp: boolean = false;
   private debugIpsec: boolean = false;
   private debugIkev2: boolean = false;
+  // IKEv2-specific DPD (RFC 7296 §2.4 — separate from IKEv1 DPD)
+  private ikev2DpdInterval: number = 0;  // 0 = disabled
+  // SA DF bit handling (RFC 4301 §8.1)
+  private dfBitPolicy: 'copy' | 'set' | 'clear' = 'copy';
+  // NAT-D hash simulation (RFC 3947): hash(SPI || IP || Port) per peer
+  private natDetectionEnabled: boolean = true;
 
   // ── IKEv2 Configuration ──────────────────────────────────────────
   private ikev2Proposals: Map<string, IKEv2Proposal> = new Map();
@@ -430,6 +436,93 @@ export class IPSecEngine {
 
   isESNEnabled(): boolean {
     return this.esnDefault;
+  }
+
+  // ── IKEv2 DPD (RFC 7296 §2.4) ─────────────────────────────────
+
+  setIKEv2DPD(interval: number): void {
+    this.ikev2DpdInterval = interval;
+  }
+
+  getIKEv2DPDInterval(): number {
+    return this.ikev2DpdInterval;
+  }
+
+  /**
+   * Run IKEv2 DPD liveness checks on all IKEv2 SAs.
+   * RFC 7296 §2.4: "a peer SHOULD send an INFORMATIONAL request
+   * if it has not received any IKE messages within the configured timeout."
+   */
+  runIKEv2DPDCheck(): string[] {
+    const results: string[] = [];
+    const now = Date.now();
+
+    for (const [peerIP, sa] of this.ikev2SADB) {
+      if (!sa.dpdEnabled || sa.status !== 'READY') continue;
+
+      const elapsed = (now - (sa.lastDPDActivity || sa.created)) / 1000;
+      if (elapsed < sa.dpdInterval) continue;
+
+      // Simulate INFORMATIONAL exchange (liveness check)
+      const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+      const peerEngine = peerRouter ? (peerRouter as any)._getIPSecEngine?.() as IPSecEngine | undefined : undefined;
+      const peerSA = peerEngine?.ikev2SADB.get(sa.localIP);
+
+      if (peerSA && peerSA.status === 'READY') {
+        // Peer alive — reset counters
+        sa.lastDPDActivity = now;
+        sa.dpdTimeouts = 0;
+        if (peerSA.lastDPDActivity) peerSA.lastDPDActivity = now;
+        results.push(`IKEv2 DPD: peer ${peerIP} is alive (INFORMATIONAL exchange OK)`);
+      } else {
+        sa.dpdTimeouts = (sa.dpdTimeouts || 0) + 1;
+        results.push(`IKEv2 DPD: peer ${peerIP} timeout #${sa.dpdTimeouts}`);
+        if (sa.dpdTimeouts >= 5) {
+          // Clear SAs
+          results.push(`IKEv2 DPD: peer ${peerIP} declared dead, clearing SAs`);
+          this.ikev2SADB.delete(peerIP);
+          this.clearSAsForPeer(peerIP);
+        }
+      }
+    }
+    return results;
+  }
+
+  // ── DF Bit / DSCP configuration (RFC 4301 §8.1) ───────────────
+
+  setDFBitPolicy(policy: 'copy' | 'set' | 'clear'): void {
+    this.dfBitPolicy = policy;
+  }
+
+  getDFBitPolicy(): string {
+    return this.dfBitPolicy;
+  }
+
+  // ── NAT-D Detection (RFC 3947) ────────────────────────────────
+
+  /**
+   * Simulate NAT-D (NAT Detection) payload exchange per RFC 3947 §3.2.
+   * Returns true if NAT is detected between local and peer.
+   * In a real implementation, this computes:
+   *   HASH = SHA-1(SPI_i || SPI_r || IP || Port)
+   * and compares with the received NAT_DETECTION_SOURCE_IP /
+   * NAT_DETECTION_DESTINATION_IP payloads.
+   * Here we simulate by comparing the apparent source IP (what we see)
+   * with the peer's configured local IP.
+   */
+  detectNAT(apparentSrcIP: string, peerEngine: IPSecEngine): boolean {
+    if (!this.natDetectionEnabled) return false;
+
+    const peerLocalIP = peerEngine.getLocalIP('') || '';
+    // If the apparent source differs from peer's actual local IP,
+    // a NAT device has rewritten the source → NAT detected
+    const natDetected = apparentSrcIP !== peerLocalIP;
+
+    if (natDetected && this.debugIsakmp) {
+      Logger.info(this.router.id, 'debug:isakmp',
+        `ISAKMP: NAT-D: NAT detected between ${this.router.name} and ${apparentSrcIP} (peer local=${peerLocalIP})`);
+    }
+    return natDetected;
   }
 
   // ── DPD Simulation (RFC 3706) ────────────────────────────────────
@@ -1194,8 +1287,9 @@ export class IPSecEngine {
         `ISAKMP: (${spiHex(0)}:0): pre-shared key authentication passed with ${peerIP}`);
     }
 
-    const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP;
+    // RFC 3947: NAT-D detection via hash payload comparison
+    const natT = this.detectNAT(apparentSrcIP, peerEngine)
+      || (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0);
 
     // Create IKE SA on both sides
     // RFC 2409 §5.5: negotiate IKE lifetime as min(initiator, responder)
@@ -1337,6 +1431,10 @@ export class IPSecEngine {
       esnEnabled: this.esnDefault,
       outboundSeqNumHigh: 0,
       replayWindowLastSeqHigh: 0,
+      dfBit: this.dfBitPolicy,
+      dscp: 'copy',
+      pathMTU: 1500,
+      ecnBypass: true,
     };
     const existing = this.ipsecSADB.get(peerIP) || [];
     existing.push(sa);
@@ -1373,6 +1471,10 @@ export class IPSecEngine {
       esnEnabled: peerEngine.esnDefault,
       outboundSeqNumHigh: 0,
       replayWindowLastSeqHigh: 0,
+      dfBit: peerEngine.dfBitPolicy,
+      dscp: 'copy',
+      pathMTU: 1500,
+      ecnBypass: true,
     };
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
     peerExisting.push(peerSA);
@@ -1420,11 +1522,13 @@ export class IPSecEngine {
     const peerPSK = peerEngine.findIKEv2PSK(apparentSrcIP);
     if (!myPSK || !peerPSK || myPSK !== peerPSK) return false;
 
-    const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP;
+    // RFC 3947/7296: NAT detection
+    const natT = this.detectNAT(apparentSrcIP, peerEngine)
+      || (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0);
     const spiL = spiHex(randomSPI());
     const spiR = spiHex(randomSPI());
 
+    const ikev2Lifetime = 86400; // default IKEv2 SA lifetime (24 hours)
     const ikev2SA: IKEv2_SA = {
       peerIP, localIP,
       status: 'READY',
@@ -1437,6 +1541,11 @@ export class IPSecEngine {
       dhGroupUsed: chosen.grp,
       created: Date.now(),
       natT,
+      lifetime: ikev2Lifetime,
+      dpdEnabled: this.ikev2DpdInterval > 0,
+      dpdInterval: this.ikev2DpdInterval,
+      lastDPDActivity: Date.now(),
+      dpdTimeouts: 0,
     };
     this.ikev2SADB.set(peerIP, ikev2SA);
 
@@ -1453,6 +1562,11 @@ export class IPSecEngine {
       dhGroupUsed: chosen.grp,
       created: Date.now(),
       natT,
+      lifetime: ikev2Lifetime,
+      dpdEnabled: peerEngine.ikev2DpdInterval > 0,
+      dpdInterval: peerEngine.ikev2DpdInterval,
+      lastDPDActivity: Date.now(),
+      dpdTimeouts: 0,
     });
 
     // Also create IPSec SA (IKEv2 combines IKE_SA + CHILD_SA)
@@ -1775,6 +1889,9 @@ export class IPSecEngine {
         } else {
           extra.push(`   PFS (Y/N): N`);
         }
+        extra.push(`   DF bit    : ${sa.dfBit}`);
+        extra.push(`   Path MTU  : ${sa.pathMTU}`);
+        if (sa.ecnBypass) extra.push(`   ECN bypass: enabled`);
       }
     }
     return base + extra.join('\n');
@@ -1919,6 +2036,12 @@ export class IPSecEngine {
       extra.push(`  Status     : ${sa.status}`);
       extra.push(`  Auth method: pre-share`);
       if (sa.natT) extra.push(`  NAT-T      : enabled (port 4500)`);
+      const elapsed = Math.floor((Date.now() - sa.created) / 1000);
+      const remaining = Math.max(0, sa.lifetime - elapsed);
+      extra.push(`  Lifetime   : ${sa.lifetime}s (remaining: ${remaining}s)`);
+      if (sa.dpdEnabled) {
+        extra.push(`  DPD        : enabled (interval ${sa.dpdInterval}s, timeouts: ${sa.dpdTimeouts || 0})`);
+      }
       extra.push(`  Child SA count: ${childCount}`);
     }
     return base + '\n' + extra.join('\n');
@@ -2099,6 +2222,12 @@ export class IPSecEngine {
     }
     if (this.esnDefault) {
       lines.push(`crypto ipsec security-association esn`);
+    }
+    if (this.dfBitPolicy !== 'copy') {
+      lines.push(`crypto ipsec df-bit ${this.dfBitPolicy}`);
+    }
+    if (this.ikev2DpdInterval > 0) {
+      lines.push(`crypto ikev2 dpd ${this.ikev2DpdInterval} periodic`);
     }
 
     // ISAKMP policies

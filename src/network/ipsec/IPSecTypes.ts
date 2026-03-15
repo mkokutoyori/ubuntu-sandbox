@@ -190,6 +190,12 @@ export interface IKEv2_SA {
   dhGroupUsed: number;
   created: number;
   natT: boolean;
+  lifetime: number;         // seconds
+  // IKEv2 DPD (RFC 7296 §2.4 — liveness check)
+  dpdEnabled: boolean;
+  dpdInterval: number;      // seconds between liveness probes
+  lastDPDActivity?: number; // timestamp of last INFORMATIONAL exchange
+  dpdTimeouts?: number;     // consecutive timeout counter
 }
 
 // ─── IPSec SA Database ────────────────────────────────────────────────
@@ -226,6 +232,11 @@ export interface IPSec_SA {
   esnEnabled: boolean;             // true if 64-bit sequence numbers are in use
   outboundSeqNumHigh: number;      // high 32 bits of outbound sequence counter
   replayWindowLastSeqHigh: number; // high 32 bits of last received sequence
+  // SAD fields per RFC 4301 §4.4.2
+  dfBit: 'copy' | 'set' | 'clear'; // DF bit handling: copy from inner, set, or clear
+  dscp: 'copy' | 'clear';          // DSCP/TOS handling: copy from inner or clear
+  pathMTU: number;                  // Path MTU for this SA (default 1500)
+  ecnBypass: boolean;               // ECN bypass per RFC 4301 §5.1.2.1
 }
 
 // ─── DPD / NAT-T Config ──────────────────────────────────────────────
