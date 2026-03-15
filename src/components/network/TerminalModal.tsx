@@ -19,6 +19,7 @@ import { CiscoTerminal } from '@/components/CiscoTerminal';
 import { HuaweiTerminal } from '@/components/HuaweiTerminal';
 type BaseDevice = Equipment;
 import { preInstallForDevice } from '@/terminal/packages';
+import { clearTerminalState } from '@/terminal/terminalStateCache';
 import { cn } from '@/lib/utils';
 
 // Minimum and default dimensions
@@ -49,8 +50,9 @@ export function TerminalModal({ device, onClose, onMinimize, embedded = false }:
   const deviceIsFullyImplemented = isFullyImplemented(deviceType);
   const isDatabaseDevice = deviceType.startsWith('db-');
 
-  // Wrap onClose to reset Linux terminal session state (cwd, su stack)
+  // Wrap onClose to reset Linux terminal session state (cwd, su stack) and clear cache
   const handleClose = useCallback(() => {
+    clearTerminalState(device.getId());
     if (isLinuxDevice && typeof (device as any).resetSession === 'function') {
       (device as any).resetSession();
     }

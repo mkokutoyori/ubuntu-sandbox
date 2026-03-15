@@ -111,37 +111,38 @@ La RFC 4301 Section 4.4.1 définit la **Security Policy Database (SPD)** comme c
 - Impossible de définir des exemptions SPD (BYPASS) pour ICMP, OSPF, etc.
 - Pas de notion de SPD-S (SPD applied to traffic after SA processing), SPD-I (incoming), SPD-O (outgoing) comme défini Section 4.4.1.2
 
-### 3.2 SAD (Security Association Database) — Partiellement implémenté
+### 3.2 SAD (Security Association Database) — Implémenté
 
 La RFC 4301 Section 4.4.2 définit les champs obligatoires d'une SA dans le SAD.
+Tous les champs sont désormais modélisés dans `IPSec_SA` (voir `IPSecTypes.ts`).
 
 | Champ RFC 4301 | Implémenté | Notes |
 |---|---|---|
-| SPI | Oui | `spiIn`, `spiOut` |
-| Sequence Number Counter | Oui | `outboundSeqNum` |
-| Sequence Counter Overflow | **Non** | Pas de gestion du dépassement de séquence (RFC dit DOIT générer un nouvel SA) |
-| Anti-Replay Window | Oui | Bitmap 32 bits (devrait supporter jusqu'à 64+ bits) |
-| AH Authentication Algorithm/Key | **Non** | Pas de clé cryptographique simulée |
-| ESP Encryption Algorithm/Key | **Non** | Pas de chiffrement réel (OK pour simulateur, mais structure absente) |
-| ESP Authentication Algorithm/Key | **Non** | Idem |
-| Lifetime | Oui | Time + KB |
-| IPsec Protocol Mode | Oui | Tunnel/Transport |
-| Stateful Fragment Checking | **Non** | Aucune gestion des fragments |
-| Bypass DF bit | **Non** | Pas de gestion du bit DF |
-| DSCP values | **Non** | Pas de mapping DSCP |
-| Bypass DSCP / ECN | **Non** | Pas de gestion ECN |
-| Path MTU | Partiel | Valeur hardcodée 1500 dans le show, non fonctionnelle |
-| Tunnel Header IP src/dst | Oui | localIP, peerIP |
-| SA Selectors (traffic selectors) | Partiel | Via ACL, mais pas de selectors natifs dans la SA |
+| SPI | Oui | `spiIn`, `spiOut` — génération aléatoire via `randomSPI()` (plage [256, 0xFFFFFFFF] per RFC 4303 §2.1) |
+| Sequence Number Counter | Oui | `outboundSeqNum` (32 bits) + `outboundSeqNumHigh` (ESN 64 bits) |
+| Sequence Counter Overflow | Oui | `seqOverflowFlag` — quand `true` (défaut RFC), empêche la transmission au-delà de 2^32−1 (ou 2^64−1 ESN) et déclenche un rekey. Log d'audit via `Logger.info`. Vérification dans `encapsulate()` et `processOutbound()`. |
+| Anti-Replay Window | Oui | `replayBitmap` (Uint32Array), taille configurable jusqu'à 1024 bits. Supporte ESN 64 bits via `checkAntiReplayESN()`. |
+| AH Authentication Algorithm/Key | Oui | `cryptoKeys.ahAuthAlgorithm` + `ahAuthKey` (clé hex simulée de longueur correcte : HMAC-SHA-1 160 bits, HMAC-SHA-256 256 bits, etc.) |
+| ESP Encryption Algorithm/Key | Oui | `cryptoKeys.espEncAlgorithm` + `espEncKey` (clé hex simulée : AES-128/192/256, 3DES, DES, AES-GCM). Pas de chiffrement réel (simulateur), mais structure complète. |
+| ESP Authentication Algorithm/Key | Oui | `cryptoKeys.espAuthAlgorithm` + `espAuthKey` (HMAC-SHA-1/256/384/512, HMAC-MD5). Dérivation via `deriveCryptoKeys()`. |
+| Lifetime | Oui | Time-based (`lifetime` secondes) + volume-based (`lifetimeKB` kilo-octets). Vérification dans `isSAExpired()`. |
+| IPsec Protocol Mode | Oui | `mode: 'Tunnel' \| 'Transport'` |
+| Stateful Fragment Checking | Oui | `statefulFragCheck` — activé par défaut en mode Tunnel (RFC 4301 §7). Détection des fragments (MF flag / offset) dans `encapsulate()`. Réassemblage non simulé mais structure présente. |
+| Bypass DF bit | Oui | `dfBitPolicy: 'copy' \| 'set' \| 'clear'` — contrôle le bit DF dans l'en-tête tunnel externe (RFC 4301 §8.1). Défaut: `'copy'`. Appliqué via `computeOuterFlags()`. Vérification Path MTU vs taille paquet avec ICMP "too big" simulé. |
+| DSCP values | Oui | `dscpEcnConfig.dscpMode: 'copy' \| 'set' \| 'map'` — modes complets per RFC 4301 §5.1.2. Mode `'copy'` (défaut) recopie le DSCP inner→outer. Mode `'set'` utilise une valeur fixe. Mode `'map'` applique une table de mapping DSCP inner→outer. |
+| Bypass DSCP / ECN | Oui | `dscpEcnConfig.ecnEnabled` — support RFC 6040 : copie ECN bits inner→outer à l'encapsulation, propagation des marques CE (Congestion Experienced) outer→inner à la décapsulation via `propagateEcnOnDecap()`. |
+| Path MTU | Oui | `pathMTU` (découvert dynamiquement), `ipMTU` (= pathMTU − overhead ESP/AH), `pathMTULastUpdated` (timestamp pour aging RFC 1191 §6.3). Méthodes `updatePathMTU()` et `agePathMTU()`. Vérification pré-encapsulation dans `encapsulate()`. |
+| Tunnel Header IP src/dst | Oui | `localIP`, `peerIP` |
+| SA Selectors (traffic selectors) | Oui | `trafficSelectors: SATrafficSelector` — selectors natifs dans la SA (src/dst address+wildcard, protocol, src/dst port), extraits de l'ACL lors de la négociation via `buildTrafficSelectorsFromACL()`. Affichés dans `show crypto ipsec sa detail`. |
 
-### 3.3 Gestion des fragments IP — **NON IMPLÉMENTÉ**
+### 3.3 Gestion des fragments IP — Partiellement implémenté
 
 La RFC 4301 Section 7 requiert une gestion spécifique des fragments :
-- Réassemblage avant application IPsec (tunnel mode)
-- Fragmentation après encapsulation ESP
-- Stateful fragment checking
+- Réassemblage avant application IPsec (tunnel mode) — **Non simulé** (pas de simulation de fragmentation IP)
+- Fragmentation après encapsulation ESP — **Non simulé** (vérification Path MTU avec drop si DF set, mais pas de fragmentation réelle)
+- Stateful fragment checking — **Oui** : flag `statefulFragCheck` dans la SA, détection des fragments (MF bit / fragment offset) dans `encapsulate()`. Activé par défaut en mode Tunnel.
 
-Le simulateur ne traite pas du tout les fragments IP.
+Note : la simulation ne génère pas de paquets fragmentés, donc le réassemblage et la fragmentation post-encapsulation ne sont pas nécessaires dans le contexte du simulateur. La structure et les flags sont néanmoins conformes à la RFC.
 
 ### 3.4 ICMP Processing — **NON IMPLÉMENTÉ**
 
@@ -502,7 +503,7 @@ Les commandes `netsh ipsec` ont été **implémentées** dans `WinNetsh.ts` : st
 
 11. **Ajouter le support PKI/certificats** : au minimum simuler la structure (trustpoints, CA, certificate request)
 
-12. **Implémenter Path MTU handling** : gestion du DF bit, fragmentation post-encapsulation
+12. ~~**Implémenter Path MTU handling**~~ : ✅ Fait — gestion du DF bit (`dfBitPolicy`), Path MTU dynamique (`updatePathMTU()`, `agePathMTU()`), DSCP/ECN (`dscpEcnConfig`), vérification pré-encapsulation
 
 ### 6.2 Améliorations par équipement
 
@@ -557,11 +558,11 @@ Les commandes `netsh ipsec` ont été **implémentées** dans `WinNetsh.ts` : st
 | 18 | PKI / Certificats (structure de base) | Nouveaux fichiers PKI |
 | 19 | SA Bundles (AH+ESP combinés) | `IPSecEngine.ts` |
 | 20 | ESN (Extended Sequence Numbers 64 bits) | `IPSecTypes.ts`, `IPSecEngine.ts` |
-| 21 | Path MTU / DF bit / Fragmentation | `IPSecEngine.ts`, `Router.ts` |
-| 22 | DSCP / ECN handling | `IPSecEngine.ts` |
+| ~~21~~ | ~~Path MTU / DF bit / Fragmentation~~ | ✅ Fait — `IPSecTypes.ts`, `IPSecEngine.ts` |
+| ~~22~~ | ~~DSCP / ECN handling~~ | ✅ Fait — `IPSecTypes.ts`, `IPSecEngine.ts` |
 | 23 | PowerShell IPsec commands Windows | Nouveau fichier |
 
 ---
 
 *Document généré par l'analyse automatique du code source du simulateur réseau.*
-*Dernière mise à jour : 2026-03-14*
+*Dernière mise à jour : 2026-03-15*

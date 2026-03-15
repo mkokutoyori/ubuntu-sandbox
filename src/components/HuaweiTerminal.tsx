@@ -15,6 +15,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Equipment } from '@/network';
+import { getTerminalState, saveTerminalState } from '@/terminal/terminalStateCache';
 type BaseDevice = Equipment;
 
 interface OutputLine {
@@ -37,11 +38,18 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
   device,
   onRequestClose,
 }) => {
-  const [output, setOutput] = useState<OutputLine[]>([]);
+  const deviceId = device.getId();
+  const cached = getTerminalState(deviceId);
+
+  const [output, setOutput] = useState<OutputLine[]>(() =>
+    (cached?.lines as OutputLine[]) || []
+  );
   const [input, setInput] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(() =>
+    cached?.history || []
+  );
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [isBooting, setIsBooting] = useState(true);
+  const [isBooting, setIsBooting] = useState(() => !cached?.lines?.length);
   const [prompt, setPrompt] = useState('');
 
   // ---- More ---- pager state
@@ -50,6 +58,21 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
+
+  // Persist terminal state to cache on unmount
+  const outputRef = useRef(output);
+  const historyRef = useRef(history);
+  outputRef.current = output;
+  historyRef.current = history;
+
+  useEffect(() => {
+    return () => {
+      saveTerminalState(deviceId, {
+        lines: outputRef.current,
+        history: historyRef.current,
+      });
+    };
+  }, [deviceId]);
 
   // ─── Prompt ──────────────────────────────────────────────────────
 
@@ -72,6 +95,13 @@ export const HuaweiTerminal: React.FC<HuaweiTerminalProps> = ({
   // ─── Boot sequence ───────────────────────────────────────────────
 
   useEffect(() => {
+    // Skip boot if restoring from cache
+    if (!isBooting) {
+      updatePrompt();
+      setTimeout(() => inputRef.current?.focus(), 50);
+      return;
+    }
+
     const boot = async () => {
       setIsBooting(true);
 
