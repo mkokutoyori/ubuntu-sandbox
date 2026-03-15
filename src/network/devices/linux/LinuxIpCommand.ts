@@ -53,6 +53,42 @@ export interface IpNetworkContext {
   getNeighborTable(): IpNeighborEntry[];
   setInterfaceUp(ifName: string): string;
   setInterfaceDown(ifName: string): string;
+  /** Optional XFRM (IPsec) context for ip xfrm commands */
+  xfrm?: IpXfrmContext;
+}
+
+// ─── XFRM types (Linux kernel IPsec transform framework) ────────────
+
+export interface XfrmState {
+  src: string;
+  dst: string;
+  proto: 'esp' | 'ah' | 'comp';
+  spi: string;         // hex string, e.g. "0xc0ffeee1"
+  mode: 'tunnel' | 'transport';
+  encAlg?: string;      // e.g. "aes", "3des"
+  encKey?: string;
+  authAlg?: string;     // e.g. "hmac(sha256)"
+  authKey?: string;
+  reqid?: number;
+  replayWindow?: number;
+}
+
+export interface XfrmPolicy {
+  src: string;          // e.g. "10.0.0.0/24"
+  dst: string;          // e.g. "10.0.1.0/24"
+  dir: 'in' | 'out' | 'fwd';
+  action: 'allow' | 'block';
+  priority?: number;
+  tmplSrc?: string;
+  tmplDst?: string;
+  tmplProto?: 'esp' | 'ah' | 'comp';
+  tmplMode?: 'tunnel' | 'transport';
+  tmplReqid?: number;
+}
+
+export interface IpXfrmContext {
+  states: XfrmState[];
+  policies: XfrmPolicy[];
 }
 
 // ─── Help Text ──────────────────────────────────────────────────────
@@ -222,6 +258,10 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'neighbour':
     case 'n':
       return ipNeigh(ctx, subArgs);
+
+    case 'xfrm':
+    case 'x':
+      return ipXfrm(ctx, subArgs);
 
     default:
       return `Object "${object}" is unknown, try "ip help".`;
@@ -622,4 +662,245 @@ function ipNeigh(ctx: IpNetworkContext, args: string[]): string {
     lines.push(`${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`);
   }
   return lines.join('\n');
+}
+
+// ─── ip xfrm ────────────────────────────────────────────────────────
+
+const IP_XFRM_HELP = `Usage: ip xfrm XFRM-OBJECT { COMMAND | help }
+where  XFRM-OBJECT := state | policy | monitor`;
+
+const IP_XFRM_STATE_HELP = `Usage: ip xfrm state { add | update | allocspi | delete | get | deleteall | list | flush | count } [ID] [XFRM-LIST]
+ID := [ src ADDR ] [ dst ADDR ] [ proto XFRM-PROTO ] [ spi SPI ]
+XFRM-PROTO := esp | ah | comp
+XFRM-LIST := [ XFRM-LIST ] XFRM-INFO
+XFRM-INFO := [ mode MODE ] [ reqid REQID ] [ flag FLAG-LIST ]
+             [ enc-alg ALGO [ enc-key KEY ] ] [ auth-alg ALGO [ auth-key KEY ] ]
+MODE := transport | tunnel`;
+
+const IP_XFRM_POLICY_HELP = `Usage: ip xfrm policy { add | update | delete | deleteall | get | list | flush | count } [ SELECTOR ] [ dir DIR ] [ OPTS ]
+SELECTOR := [ src ADDR[/PLEN] ] [ dst ADDR[/PLEN] ]
+DIR := in | out | fwd
+OPTS := [ action ACTION ] [ priority PRIORITY ]
+        [ tmpl src ADDR dst ADDR [ proto PROTO ] [ mode MODE ] [ reqid REQID ] ]
+ACTION := allow | block`;
+
+function ipXfrm(ctx: IpNetworkContext, args: string[]): string {
+  if (args.length === 0 || args[0] === 'help') return IP_XFRM_HELP;
+
+  const xfrm = ctx.xfrm;
+  if (!xfrm) return 'RTNETLINK answers: Operation not supported';
+
+  switch (args[0]) {
+    case 'state':
+    case 'sta':
+      return ipXfrmState(xfrm, args.slice(1));
+    case 'policy':
+    case 'pol':
+      return ipXfrmPolicy(xfrm, args.slice(1));
+    case 'monitor':
+      return ''; // no-op in simulator
+    default:
+      return `Object "${args[0]}" is unknown, try "ip xfrm help".`;
+  }
+}
+
+function ipXfrmState(xfrm: IpXfrmContext, args: string[]): string {
+  if (args.length === 0 || args[0] === 'help') return IP_XFRM_STATE_HELP;
+
+  switch (args[0]) {
+    case 'add':
+    case 'update':
+      return xfrmStateAdd(xfrm, args.slice(1));
+    case 'list':
+    case 'ls':
+    case 'show':
+      return xfrmStateList(xfrm);
+    case 'delete':
+    case 'del':
+      return xfrmStateDel(xfrm, args.slice(1));
+    case 'deleteall':
+      xfrm.states.length = 0;
+      return '';
+    case 'flush':
+      xfrm.states.length = 0;
+      return '';
+    case 'count':
+      return `${xfrm.states.length}`;
+    default:
+      return IP_XFRM_STATE_HELP;
+  }
+}
+
+function xfrmStateAdd(xfrm: IpXfrmContext, args: string[]): string {
+  const state: XfrmState = {
+    src: '0.0.0.0', dst: '0.0.0.0', proto: 'esp',
+    spi: '0x0', mode: 'tunnel',
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case 'src':   state.src = args[++i] || '0.0.0.0'; break;
+      case 'dst':   state.dst = args[++i] || '0.0.0.0'; break;
+      case 'proto': state.proto = (args[++i] || 'esp') as 'esp' | 'ah' | 'comp'; break;
+      case 'spi':   state.spi = args[++i] || '0x0'; break;
+      case 'mode':  state.mode = (args[++i] || 'tunnel') as 'tunnel' | 'transport'; break;
+      case 'reqid': state.reqid = parseInt(args[++i] || '0', 10); break;
+      case 'replay-window': state.replayWindow = parseInt(args[++i] || '0', 10); break;
+      case 'enc':
+      case 'enc-alg':
+        state.encAlg = args[++i] || '';
+        if (i + 1 < args.length && !args[i + 1].startsWith('-') && !['src', 'dst', 'proto', 'spi', 'mode', 'reqid', 'auth', 'auth-alg', 'enc', 'enc-alg', 'replay-window'].includes(args[i + 1])) {
+          state.encKey = args[++i];
+        }
+        break;
+      case 'auth':
+      case 'auth-alg':
+        state.authAlg = args[++i] || '';
+        if (i + 1 < args.length && !args[i + 1].startsWith('-') && !['src', 'dst', 'proto', 'spi', 'mode', 'reqid', 'auth', 'auth-alg', 'enc', 'enc-alg', 'replay-window'].includes(args[i + 1])) {
+          state.authKey = args[++i];
+        }
+        break;
+    }
+  }
+
+  // Remove existing state with same src/dst/proto/spi
+  const idx = xfrm.states.findIndex(s => s.src === state.src && s.dst === state.dst && s.proto === state.proto && s.spi === state.spi);
+  if (idx >= 0) xfrm.states[idx] = state;
+  else xfrm.states.push(state);
+  return '';
+}
+
+function xfrmStateList(xfrm: IpXfrmContext): string {
+  if (xfrm.states.length === 0) return '';
+  const lines: string[] = [];
+  for (const s of xfrm.states) {
+    lines.push(`src ${s.src} dst ${s.dst}`);
+    lines.push(`\tproto ${s.proto} spi ${s.spi} reqid ${s.reqid ?? 0} mode ${s.mode}`);
+    lines.push(`\treplay-window ${s.replayWindow ?? 0}`);
+    if (s.authAlg) {
+      lines.push(`\tauth ${s.authAlg} ${s.authKey ? s.authKey.slice(0, 8) + '...' : '(key omitted)'}`);
+    }
+    if (s.encAlg) {
+      lines.push(`\tenc ${s.encAlg} ${s.encKey ? s.encKey.slice(0, 8) + '...' : '(key omitted)'}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function xfrmStateDel(xfrm: IpXfrmContext, args: string[]): string {
+  let src = '', dst = '', proto = '', spi = '';
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case 'src':   src = args[++i] || ''; break;
+      case 'dst':   dst = args[++i] || ''; break;
+      case 'proto': proto = args[++i] || ''; break;
+      case 'spi':   spi = args[++i] || ''; break;
+    }
+  }
+  const idx = xfrm.states.findIndex(s =>
+    (!src || s.src === src) && (!dst || s.dst === dst) &&
+    (!proto || s.proto === proto) && (!spi || s.spi === spi));
+  if (idx >= 0) {
+    xfrm.states.splice(idx, 1);
+    return '';
+  }
+  return 'RTNETLINK answers: No such file or directory';
+}
+
+function ipXfrmPolicy(xfrm: IpXfrmContext, args: string[]): string {
+  if (args.length === 0 || args[0] === 'help') return IP_XFRM_POLICY_HELP;
+
+  switch (args[0]) {
+    case 'add':
+    case 'update':
+      return xfrmPolicyAdd(xfrm, args.slice(1));
+    case 'list':
+    case 'ls':
+    case 'show':
+      return xfrmPolicyList(xfrm);
+    case 'delete':
+    case 'del':
+      return xfrmPolicyDel(xfrm, args.slice(1));
+    case 'deleteall':
+      xfrm.policies.length = 0;
+      return '';
+    case 'flush':
+      xfrm.policies.length = 0;
+      return '';
+    case 'count':
+      return `${xfrm.policies.length}`;
+    default:
+      return IP_XFRM_POLICY_HELP;
+  }
+}
+
+function xfrmPolicyAdd(xfrm: IpXfrmContext, args: string[]): string {
+  const policy: XfrmPolicy = {
+    src: '0.0.0.0/0', dst: '0.0.0.0/0', dir: 'out', action: 'allow',
+  };
+
+  let inTmpl = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'tmpl') {
+      inTmpl = true;
+      continue;
+    }
+    if (inTmpl) {
+      switch (args[i]) {
+        case 'src':   policy.tmplSrc = args[++i] || ''; break;
+        case 'dst':   policy.tmplDst = args[++i] || ''; break;
+        case 'proto': policy.tmplProto = (args[++i] || 'esp') as 'esp' | 'ah' | 'comp'; break;
+        case 'mode':  policy.tmplMode = (args[++i] || 'tunnel') as 'tunnel' | 'transport'; break;
+        case 'reqid': policy.tmplReqid = parseInt(args[++i] || '0', 10); break;
+        default:
+          // If we hit a non-tmpl keyword, leave tmpl mode
+          inTmpl = false;
+          i--; // re-process this arg
+          break;
+      }
+    } else {
+      switch (args[i]) {
+        case 'src':      policy.src = args[++i] || '0.0.0.0/0'; break;
+        case 'dst':      policy.dst = args[++i] || '0.0.0.0/0'; break;
+        case 'dir':      policy.dir = (args[++i] || 'out') as 'in' | 'out' | 'fwd'; break;
+        case 'action':   policy.action = (args[++i] || 'allow') as 'allow' | 'block'; break;
+        case 'priority': policy.priority = parseInt(args[++i] || '0', 10); break;
+      }
+    }
+  }
+
+  xfrm.policies.push(policy);
+  return '';
+}
+
+function xfrmPolicyList(xfrm: IpXfrmContext): string {
+  if (xfrm.policies.length === 0) return '';
+  const lines: string[] = [];
+  for (const p of xfrm.policies) {
+    lines.push(`src ${p.src} dst ${p.dst}`);
+    lines.push(`\tdir ${p.dir} action ${p.action}${p.priority !== undefined ? ` priority ${p.priority}` : ''}`);
+    if (p.tmplSrc || p.tmplDst) {
+      lines.push(`\ttmpl src ${p.tmplSrc || '0.0.0.0'} dst ${p.tmplDst || '0.0.0.0'}`);
+      lines.push(`\t\tproto ${p.tmplProto || 'esp'} mode ${p.tmplMode || 'tunnel'} reqid ${p.tmplReqid ?? 0}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function xfrmPolicyDel(xfrm: IpXfrmContext, args: string[]): string {
+  let src = '', dst = '', dir = '';
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case 'src': src = args[++i] || ''; break;
+      case 'dst': dst = args[++i] || ''; break;
+      case 'dir': dir = args[++i] || ''; break;
+    }
+  }
+  const idx = xfrm.policies.findIndex(p =>
+    (!src || p.src === src) && (!dst || p.dst === dst) && (!dir || p.dir === dir));
+  if (idx >= 0) {
+    xfrm.policies.splice(idx, 1);
+    return '';
+  }
+  return 'RTNETLINK answers: No such file or directory';
 }

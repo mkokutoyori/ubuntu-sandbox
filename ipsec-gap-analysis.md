@@ -21,7 +21,7 @@
 
 ## 1. Résumé exécutif
 
-L'implémentation IPsec du simulateur couvre les fondamentaux du protocole (IKEv1/IKEv2 avec PSK, ESP/AH encapsulation, SA negotiation, anti-replay, NAT-T, DPD). Cependant, l'analyse révèle **des lacunes significatives par rapport à la RFC 4301** et **un déséquilibre important entre les équipements** : les routeurs Cisco disposent d'un ensemble complet de commandes IPsec, tandis que les routeurs Huawei, les switches et les PC (Linux/Windows) n'ont **aucune commande IPsec**.
+L'implémentation IPsec du simulateur couvre les fondamentaux du protocole (IKEv1/IKEv2 avec PSK, ESP/AH encapsulation, SA negotiation, anti-replay, NAT-T, DPD). Cependant, l'analyse révèle **des lacunes significatives par rapport à la RFC 4301** et **un déséquilibre important entre les équipements** : les routeurs Cisco disposent d'un ensemble complet de commandes IPsec. Les routeurs Huawei, PC Linux (`ip xfrm` + strongSwan) et PC Windows (`netsh ipsec`) ont désormais été implémentés. Les fonctionnalités avancées (ESN, SA Bundles, DPD basé messages, IKE rekeying, Aggressive Mode) ont été ajoutées au moteur IPSec.
 
 ### Statistiques clés
 
@@ -151,17 +151,25 @@ La RFC 4301 Section 6 exige un traitement spécial des messages ICMP en relation
 
 La RFC 4301 Section 4.1 mentionne que les SA multicast sont unidirectionnelles. Aucun support multicast dans l'implémentation IPsec actuelle.
 
-### 3.6 Extended Sequence Numbers (ESN) — **NON IMPLÉMENTÉ**
+### 3.6 Extended Sequence Numbers (ESN) — **IMPLÉMENTÉ** ✅
 
-La RFC 4303 Section 2.2.1 définit les Extended Sequence Numbers (64 bits). Le simulateur utilise uniquement des séquences 32 bits et ne gère pas le dépassement.
+La RFC 4303 Section 2.2.1 définit les Extended Sequence Numbers (64 bits). **Implémenté** :
+- Champ `esnEnabled` dans `IPSec_SA` avec compteur 64 bits (`outboundSeqNumHigh` + `outboundSeqNum`)
+- Anti-replay ESN avec reconstruction du numéro de séquence 64 bits (`checkAntiReplayESN`)
+- Débordement des 32 bits bas incrémente les 32 bits hauts au lieu de déclencher un rekey
+- Commande Cisco : `crypto ipsec security-association esn` / `no ... esn`
 
-### 3.7 SA Bundle (combined AH+ESP) — **NON IMPLÉMENTÉ**
+### 3.7 SA Bundle (combined AH+ESP) — **IMPLÉMENTÉ** ✅
 
-La RFC 4301 permet l'utilisation combinée d'AH et ESP sur un même flux (SA bundle). Le simulateur traite ESP OU AH, mais pas les deux en séquence sur un même paquet (bien que `hasESP` et `hasAH` soient dans la SA, l'encapsulation choisit l'un ou l'autre).
+La RFC 4301 Section 4.5 permet l'utilisation combinée d'AH et ESP sur un même flux (SA bundle). **Implémenté** :
+- `encapsulate()` applique ESP d'abord (chiffrement), puis AH (intégrité de l'en-tête externe)
+- Décapsulation automatique via le traitement récursif `processIPv4` dans Router.ts
 
-### 3.8 IKE SA Rekeying — **NON IMPLÉMENTÉ**
+### 3.8 IKE SA Rekeying — **IMPLÉMENTÉ** ✅
 
-La RFC 7296 Section 2.8 définit les procédures de rekeying IKE SA. Le simulateur ne gère que le rekeying des Child SA (IPsec SA) par expiration. L'IKE SA elle-même n'est jamais renouvelée.
+La RFC 7296 Section 2.8 définit les procédures de rekeying IKE SA. **Implémenté** :
+- `recheckIKESALifetimes()` vérifie l'expiration des IKE SA
+- `rekeyIKESA()` crée une nouvelle IKE SA avec SPI/timestamp frais, renouvelle côté peer aussi
 
 ### 3.9 Certificate-based Authentication (RSA/ECDSA) — **NON IMPLÉMENTÉ**
 
@@ -224,11 +232,9 @@ function nextSPI(): number {
 
 **Problème :** Le lifetime de la SA responder est toujours celui de l'initiator. En réalité (RFC 2409 / RFC 7296), les deux pairs négocient et le plus court des deux est retenu. Si le responder a un lifetime différent configuré, il est ignoré.
 
-### 4.5 DPD simplifié — link-down uniquement
+### 4.5 DPD basé sur messages — **IMPLÉMENTÉ** ✅
 
-**Fichier :** `src/network/ipsec/IPSecEngine.ts:319-339`
-
-**Problème :** Le DPD (Dead Peer Detection, RFC 3706) ne fonctionne que via la détection de port-down physique. En réalité, le DPD envoie des messages IKE R-U-THERE/R-U-THERE-ACK à intervalles réguliers. Sans lien physique down (ex: pair crashé mais lien up), le DPD ne se déclenche jamais.
+**Implémenté** : `runDPDCheck()` simule R-U-THERE/R-U-THERE-ACK en vérifiant la joignabilité du peer et l'existence de l'IKE SA correspondante. Supporte les modes `periodic` et `on-demand`, avec compteur de timeouts consécutifs et suppression des SAs après épuisement des retries. Commande Cisco : `crypto isakmp keepalive N R [periodic|on-demand]`.
 
 ### 4.6 Pas de gestion des erreurs de chiffrement/déchiffrement
 
@@ -299,9 +305,9 @@ L'implémentation Cisco est la plus complète mais il manque :
 | `clear crypto session remote X.X.X.X` | L'actuel existe mais parsing limité | Moyenne |
 | `clear crypto isakmp sa peer X.X.X.X` | Clear par peer spécifique | Moyenne |
 
-### 5.2 Routeur Huawei (VRP) — **AUCUNE commande IPsec**
+### 5.2 Routeur Huawei (VRP) — **IMPLÉMENTÉ** ✅
 
-Le fichier `HuaweiConfigCommands.ts` ne contient **aucune commande** liée à IPsec. Voici ce qui devrait être implémenté pour être au niveau d'un routeur Huawei AR réel :
+Les commandes IPsec Huawei VRP ont été implémentées dans `HuaweiIPSecCommands.ts` et intégrées dans `HuaweiVRPShell.ts`. Couverture complète des sub-views (ike-proposal, ike-peer, ipsec-proposal, ipsec-policy) avec navigation quit/return. Commandes display et interface également implémentées. Détail ci-dessous :
 
 #### Configuration IPsec (Huawei VRP — system-view)
 
@@ -378,9 +384,9 @@ Les switches Huawei (ex: S5700 série) ne supportent généralement **pas** IPse
 |---|---|
 | Même set que Huawei Router si L3 | Basse |
 
-### 5.5 PC Linux — Commandes IPsec manquantes
+### 5.5 PC Linux — **IMPLÉMENTÉ** ✅
 
-Aucune commande IPsec n'est implémentée. Un PC Linux réel offre :
+Les commandes IPsec Linux ont été implémentées : `ip xfrm state/policy` (add/update/list/delete/deleteall/flush/count) dans `LinuxIpCommand.ts` et `ipsec` (strongSwan: start/stop/restart/reload/status/statusall/up/down/version) dans `LinuxCommandExecutor.ts`. Stockage XFRM via `IpXfrmContext` sur `LinuxPC`. Détail des commandes couvertes :
 
 #### ip xfrm (Netkey/XFRM — kernel IPsec)
 
@@ -417,9 +423,9 @@ Aucune commande IPsec n'est implémentée. Un PC Linux réel offre :
 | `/etc/strongswan.conf` | Configuration du daemon strongSwan | Moyenne |
 | `/etc/swanctl/swanctl.conf` | Configuration swanctl (format moderne) | Basse |
 
-### 5.6 PC Windows — Commandes IPsec manquantes
+### 5.6 PC Windows — **IMPLÉMENTÉ** ✅
 
-Le contexte `netsh ipsec` est **déclaré** dans `WinNetsh.ts` (ligne 129: `ipsec: 'ipsec'`) mais **aucune sous-commande n'est implémentée**. Un vrai Windows offre :
+Les commandes `netsh ipsec` ont été **implémentées** dans `WinNetsh.ts` : static (add/delete/show/set pour policy, filterlist, filter, filteraction, rule) et dynamic (show all/mmsas/qmsas/stats/ikestats). Détail des commandes couvertes :
 
 #### netsh ipsec static
 

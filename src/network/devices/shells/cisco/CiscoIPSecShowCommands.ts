@@ -54,4 +54,22 @@ export function registerIPSecShowCommands(
 
   trie.register('show crypto ipsec security-policy', 'Display IPSec security policies (SPD)', () =>
     eng()?.showSecurityPolicy() ?? 'IPSec not configured.');
+
+  trie.register('show crypto engine brief', 'Display crypto engine brief', () =>
+    eng()?.showCryptoEngineBrief() ?? 'IPSec not configured.');
+
+  trie.register('show crypto engine configuration', 'Display crypto engine configuration', () =>
+    eng()?.showCryptoEngineConfiguration() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ikev2 proposal', 'Display IKEv2 proposals', () =>
+    eng()?.showCryptoIKEv2Proposal() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ikev2 policy', 'Display IKEv2 policies', () =>
+    eng()?.showCryptoIKEv2Policy() ?? 'IPSec not configured.');
+
+  trie.register('show crypto ikev2 profile', 'Display IKEv2 profiles', () =>
+    eng()?.showCryptoIKEv2Profile() ?? 'IPSec not configured.');
+
+  trie.register('show crypto isakmp key', 'Display ISAKMP pre-shared keys', () =>
+    eng()?.showCryptoISAKMPKey() ?? 'IPSec not configured.');
 }

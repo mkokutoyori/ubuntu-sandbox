@@ -39,9 +39,16 @@ import {
   registerOSPFSystemCommands, buildOSPFViewCommands, buildOSPFAreaViewCommands,
   registerOSPFDisplayCommands,
 } from './huawei/HuaweiOspfCommands';
+import {
+  type HuaweiIPSecContext,
+  registerHuaweiIPSecSystemCommands, registerHuaweiIPSecInterfaceCommands,
+  registerHuaweiIPSecDisplayCommands,
+  buildHuaweiIKEProposalCommands, buildHuaweiIKEPeerCommands,
+  buildHuaweiIPSecProposalCommands, buildHuaweiIPSecPolicyCommands,
+} from './huawei/HuaweiIPSecCommands';
 
-export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState {
-  private mode: HuaweiShellMode = 'user';
+export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext {
+  private mode: HuaweiShellMode | string = 'user';
   private selectedInterface: string | null = null;
   private selectedPool: string | null = null;
   private dhcpEnabled: boolean = false;
@@ -50,6 +57,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private dhcpSelectGlobalSet: Set<string> = new Set();
   /** OSPF area currently being configured */
   private ospfArea: string | null = null;
+
+  // ── IPSec sub-mode selections ──────────────────────────────────
+  private selectedIKEProposal: number | null = null;
+  private selectedIKEPeer: string | null = null;
+  private selectedIPSecProposal: string | null = null;
+  private selectedIPSecPolicy: string | null = null;
+  private selectedIPSecPolicySeq: number | null = null;
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
@@ -61,6 +75,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private dhcpPoolTrie = new CommandTrie();
   private ospfTrie = new CommandTrie();
   private ospfAreaTrie = new CommandTrie();
+  // IPSec sub-mode tries
+  private ikeProposalTrie = new CommandTrie();
+  private ikePeerTrie = new CommandTrie();
+  private ipsecProposalTrie = new CommandTrie();
+  private ipsecPolicyTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
@@ -69,6 +88,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildDhcpPoolViewCommands();
     this.buildOSPFViewCommands();
     this.buildOSPFAreaViewCommands();
+    this.buildIPSecSubViewCommands();
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -90,6 +110,19 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   getDhcpSelectGlobal(): Set<string> { return this.dhcpSelectGlobalSet; }
 
+  // ─── HuaweiIPSecContext Implementation ──────────────────────────────
+
+  setSelectedIKEProposal(n: number | null): void { this.selectedIKEProposal = n; }
+  getSelectedIKEProposal(): number | null { return this.selectedIKEProposal; }
+  setSelectedIKEPeer(name: string | null): void { this.selectedIKEPeer = name; }
+  getSelectedIKEPeer(): string | null { return this.selectedIKEPeer; }
+  setSelectedIPSecProposal(name: string | null): void { this.selectedIPSecProposal = name; }
+  getSelectedIPSecProposal(): string | null { return this.selectedIPSecProposal; }
+  setSelectedIPSecPolicy(name: string | null): void { this.selectedIPSecPolicy = name; }
+  getSelectedIPSecPolicy(): string | null { return this.selectedIPSecPolicy; }
+  setSelectedIPSecPolicySeq(seq: number | null): void { this.selectedIPSecPolicySeq = seq; }
+  getSelectedIPSecPolicySeq(): number | null { return this.selectedIPSecPolicySeq; }
+
   // ─── HuaweiDisplayState Implementation ─────────────────────────────
 
   isDhcpEnabled(): boolean { return this.dhcpEnabled; }
@@ -106,6 +139,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool':  return `[${host}-ip-pool-${this.selectedPool}]`;
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
+      case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
+      case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
+      case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
+      case 'ipsec-policy':  return `[${host}-ipsec-policy-${this.selectedIPSecPolicy}-${this.selectedIPSecPolicySeq}]`;
       default:           return `<${host}>`;
     }
   }
@@ -129,6 +166,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.mode = 'user';
       this.selectedInterface = null;
       this.selectedPool = null;
+      this.selectedIKEProposal = null;
+      this.selectedIKEPeer = null;
+      this.selectedIPSecProposal = null;
+      this.selectedIPSecPolicy = null;
+      this.selectedIPSecPolicySeq = null;
       return '';
     }
     if (lower === 'quit') return this.cmdQuit();
@@ -184,6 +226,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':
         this.mode = 'system';
         return '';
+      case 'ike-proposal':
+        this.mode = 'system';
+        this.selectedIKEProposal = null;
+        return '';
+      case 'ike-peer':
+        this.mode = 'system';
+        this.selectedIKEPeer = null;
+        return '';
+      case 'ipsec-proposal':
+        this.mode = 'system';
+        this.selectedIPSecProposal = null;
+        return '';
+      case 'ipsec-policy':
+        this.mode = 'system';
+        this.selectedIPSecPolicy = null;
+        this.selectedIPSecPolicySeq = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -221,6 +280,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool': return this.dhcpPoolTrie;
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
+      case 'ike-proposal': return this.ikeProposalTrie;
+      case 'ike-peer': return this.ikePeerTrie;
+      case 'ipsec-proposal': return this.ipsecProposalTrie;
+      case 'ipsec-policy': return this.ipsecPolicyTrie;
       default: return this.userTrie;
     }
   }
@@ -246,6 +309,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
+
+    // IPSec display commands
+    registerHuaweiIPSecDisplayCommands(t, getRouter);
 
     // Backward-compat aliases in user view
     t.registerGreedy('ip route-static', 'Configure static route', (args) => {
@@ -285,6 +351,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // OSPF display commands
     registerOSPFDisplayCommands(t, () => this.r());
+
+    // IPSec system-mode commands
+    registerHuaweiIPSecSystemCommands(t, this);
+
+    // IPSec display commands
+    registerHuaweiIPSecDisplayCommands(t, () => this.r());
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
@@ -299,6 +371,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Interface-specific commands
     buildInterfaceCommands(t, this);
+
+    // IPSec interface commands
+    registerHuaweiIPSecInterfaceCommands(t, this);
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
@@ -315,6 +390,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfTrie, getRouter);
     buildOSPFViewCommands(this.ospfTrie, this as any, (area) => { this.ospfArea = area; });
+  }
+
+  // ─── IPSec Sub-Views ─────────────────────────────────────────
+
+  private buildIPSecSubViewCommands(): void {
+    buildHuaweiIKEProposalCommands(this.ikeProposalTrie, this);
+    buildHuaweiIKEPeerCommands(this.ikePeerTrie, this);
+    buildHuaweiIPSecProposalCommands(this.ipsecProposalTrie, this);
+    buildHuaweiIPSecPolicyCommands(this.ipsecPolicyTrie, this);
   }
 
   // ─── OSPF Area View ([hostname-ospf-1-area-X]) ────────────────

@@ -407,6 +407,174 @@ export class IPSecEngine {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // ── Aggressive Mode IKEv1 ──────────────────────────────────────
+
+  private aggressiveMode: boolean = false;
+
+  setAggressiveMode(enabled: boolean): void {
+    this.aggressiveMode = enabled;
+  }
+
+  isAggressiveMode(): boolean {
+    return this.aggressiveMode;
+  }
+
+  // ── Extended Sequence Numbers (RFC 4303 §2.2.1) ────────────────
+
+  private esnDefault: boolean = false;
+
+  /** Enable or disable ESN for newly created SAs */
+  setESN(enabled: boolean): void {
+    this.esnDefault = enabled;
+  }
+
+  isESNEnabled(): boolean {
+    return this.esnDefault;
+  }
+
+  // ── DPD Simulation (RFC 3706) ────────────────────────────────────
+  // In a real implementation, R-U-THERE / R-U-THERE-ACK messages are
+  // sent over IKE. Here we simulate this by checking peer reachability.
+
+  /**
+   * Simulate DPD check for all IKE SAs. Called periodically by the
+   * simulation tick or explicitly by the user.
+   *
+   * For each SA with DPD enabled, checks:
+   *  - periodic mode: peer reachability every `interval` seconds
+   *  - on-demand mode: only when traffic is expected but none received
+   *
+   * If a peer fails `retries` consecutive checks, clear its SAs.
+   */
+  runDPDCheck(): string[] {
+    const events: string[] = [];
+    if (!this.dpdConfig) return events;
+
+    const now = Date.now();
+    const intervalMs = this.dpdConfig.interval * 1000;
+
+    for (const [peerIP, ikeSA] of this.ikeSADB) {
+      if (!ikeSA.dpdEnabled || ikeSA.status !== 'QM_IDLE') continue;
+
+      // Initialize DPD tracking on first check
+      if (ikeSA.lastDPDActivity === undefined) {
+        ikeSA.lastDPDActivity = now;
+        ikeSA.dpdTimeouts = 0;
+        continue;
+      }
+
+      // Check if it's time for a DPD probe
+      if (now - ikeSA.lastDPDActivity < intervalMs) continue;
+
+      // In on-demand mode, only probe if there are active IPsec SAs
+      if (this.dpdConfig.mode === 'on-demand') {
+        const sas = this.ipsecSADB.get(peerIP);
+        if (!sas || sas.length === 0) {
+          ikeSA.lastDPDActivity = now;
+          continue;
+        }
+      }
+
+      // Simulate R-U-THERE: check if peer router is reachable
+      const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+      if (peerRouter) {
+        const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+        if (peerEngine && peerEngine.ikeSADB.has(ikeSA.localIP)) {
+          // Peer responded — R-U-THERE-ACK
+          ikeSA.lastDPDActivity = now;
+          ikeSA.dpdTimeouts = 0;
+          if (this.debugIsakmp) {
+            Logger.info(this.router.id, 'debug:isakmp',
+              `ISAKMP: DPD R-U-THERE-ACK received from ${peerIP}`);
+          }
+          continue;
+        }
+      }
+
+      // Peer unreachable — increment timeout counter
+      ikeSA.dpdTimeouts = (ikeSA.dpdTimeouts || 0) + 1;
+      ikeSA.lastDPDActivity = now;
+
+      if (this.debugIsakmp) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: DPD R-U-THERE timeout ${ikeSA.dpdTimeouts}/${this.dpdConfig.retries} for peer ${peerIP}`);
+      }
+
+      if (ikeSA.dpdTimeouts >= this.dpdConfig.retries) {
+        events.push(`DPD: peer ${peerIP} declared dead after ${ikeSA.dpdTimeouts} timeouts`);
+        Logger.info(this.router.id, 'ipsec:dpd-dead',
+          `${this.router.name}: DPD declared peer ${peerIP} dead — clearing SAs`);
+        this.clearSAsForPeer(peerIP);
+      }
+    }
+
+    return events;
+  }
+
+  // ── IKE SA Rekeying (RFC 7296 §2.8) ─────────────────────────────
+
+  /**
+   * Check all IKE SAs for lifetime expiration and rekey if needed.
+   * In a real implementation, CREATE_CHILD_SA exchange is used.
+   * Here we simply create a new IKE SA and migrate Child SAs.
+   */
+  recheckIKESALifetimes(): void {
+    const now = Date.now();
+    const toRekey: string[] = [];
+
+    for (const [peerIP, ikeSA] of this.ikeSADB) {
+      if (ikeSA.status !== 'QM_IDLE') continue;
+      const elapsedSec = Math.floor((now - ikeSA.created) / 1000);
+      if (elapsedSec >= ikeSA.lifetime) {
+        toRekey.push(peerIP);
+      }
+    }
+
+    for (const peerIP of toRekey) {
+      this.rekeyIKESA(peerIP);
+    }
+  }
+
+  private rekeyIKESA(peerIP: string): void {
+    const oldSA = this.ikeSADB.get(peerIP);
+    if (!oldSA) return;
+
+    if (this.debugIsakmp) {
+      Logger.info(this.router.id, 'debug:isakmp',
+        `ISAKMP: IKE SA with ${peerIP} expired (lifetime ${oldSA.lifetime}s) — rekeying`);
+    }
+
+    // Create new IKE SA with same parameters but fresh SPI and timestamp
+    const newSA: IKE_SA = {
+      ...oldSA,
+      spi: spiHex(randomSPI()),
+      created: Date.now(),
+      lastDPDActivity: Date.now(),
+      dpdTimeouts: 0,
+    };
+    this.ikeSADB.set(peerIP, newSA);
+
+    // Rekey on peer side too
+    const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    if (peerRouter) {
+      const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+      const peerSA = peerEngine?.ikeSADB.get(oldSA.localIP);
+      if (peerEngine && peerSA) {
+        const newPeerSA: IKE_SA = {
+          ...peerSA,
+          spi: spiHex(randomSPI()),
+          created: Date.now(),
+          lastDPDActivity: Date.now(),
+          dpdTimeouts: 0,
+        };
+        peerEngine.ikeSADB.set(oldSA.localIP, newPeerSA);
+      }
+    }
+
+    Logger.info(this.router.id, 'ipsec:rekey-ike',
+      `${this.router.name}: IKE SA with ${peerIP} rekeyed successfully`);
+  }
+
   // Port link-down handler (DPD simulation)
   // ══════════════════════════════════════════════════════════════════
 
@@ -528,9 +696,13 @@ export class IPSecEngine {
     let sa = this.getBestIPSecSA(peerIP);
 
     // Check if SA has expired (lifetime-based rekeying) or sequence overflow
-    if (sa && (this.isSAExpired(sa) || sa.outboundSeqNum >= SEQ_NUM_MAX)) {
+    // ESN SAs only overflow when both high and low 32 bits are exhausted
+    const seqOverflow = sa ? (sa.esnEnabled
+      ? (sa.outboundSeqNum >= SEQ_NUM_MAX && sa.outboundSeqNumHigh >= SEQ_NUM_MAX)
+      : sa.outboundSeqNum >= SEQ_NUM_MAX) : false;
+    if (sa && (this.isSAExpired(sa) || seqOverflow)) {
       if (this.debugIpsec) {
-        const reason = sa.outboundSeqNum >= SEQ_NUM_MAX ? 'sequence number overflow' : 'lifetime expired';
+        const reason = seqOverflow ? 'sequence number overflow' : 'lifetime expired';
         Logger.info(this.router.id, 'debug:ipsec',
           `IPSEC: SA with ${peerIP} ${reason}, initiating rekey`);
       }
@@ -604,15 +776,30 @@ export class IPSecEngine {
     }
     if (!localIP) return null;
 
-    // RFC 4303 §3.3.3: if sequence number is about to overflow, the SA MUST
-    // be renegotiated (new SA) before sending further traffic.
+    // RFC 4303 §3.3.3 / §2.2.1: sequence number overflow handling
     if (sa.outboundSeqNum >= SEQ_NUM_MAX) {
-      if (this.debugIpsec) {
-        Logger.info(this.router.id, 'debug:ipsec',
-          `IPSEC: sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+      if (sa.esnEnabled) {
+        // ESN: roll over low 32 bits, increment high 32 bits
+        sa.outboundSeqNumHigh++;
+        sa.outboundSeqNum = 0;
+        if (sa.outboundSeqNumHigh >= SEQ_NUM_MAX) {
+          // Full 64-bit space exhausted — must rekey
+          if (this.debugIpsec) {
+            Logger.info(this.router.id, 'debug:ipsec',
+              `IPSEC: ESN 64-bit sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+          }
+          sa.sendErrors++;
+          return null;
+        }
+      } else {
+        // Standard 32-bit: must renegotiate
+        if (this.debugIpsec) {
+          Logger.info(this.router.id, 'debug:ipsec',
+            `IPSEC: sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
+        }
+        sa.sendErrors++;
+        return null;
       }
-      sa.sendErrors++;
-      return null; // caller will detect null → rekeying happens on next attempt
     }
 
     sa.pktsEncaps++;
@@ -624,7 +811,43 @@ export class IPSecEngine {
         `IPSEC(o): sa created, (sa) sa_dest=${sa.peerIP}, spi=${spiHex(sa.spiOut)}, seqnum=${sa.outboundSeqNum}`);
     }
 
-    if (sa.hasESP) {
+    // SA Bundle (RFC 4301 §4.5): when both AH and ESP are present,
+    // apply ESP first (encryption), then AH (integrity of outer header).
+    // Order: inner → ESP encapsulation → AH authentication
+    if (sa.hasESP && sa.hasAH) {
+      // Step 1: ESP encapsulate
+      const espPayload: ESPPacket = {
+        type: 'esp',
+        spi: sa.spiOut,
+        sequenceNumber: sa.outboundSeqNum,
+        innerPacket: innerPkt,
+      };
+      const espSize = 20 + 8 + innerPkt.totalLength;
+      const espPkt = createIPv4Packet(
+        localIP,
+        new IPAddress(sa.peerIP),
+        IP_PROTO_ESP,
+        64,
+        espPayload,
+        espSize,
+      );
+      // Step 2: AH wrap the ESP packet
+      const ahPayload: AHPacket = {
+        type: 'ah',
+        spi: sa.spiOut,
+        sequenceNumber: sa.outboundSeqNum,
+        innerPacket: espPkt,
+      };
+      const outerSize = 20 + 12 + espSize;
+      return createIPv4Packet(
+        localIP,
+        new IPAddress(sa.peerIP),
+        IP_PROTO_AH,
+        64,
+        ahPayload,
+        outerSize,
+      );
+    } else if (sa.hasESP) {
       const espPayload: ESPPacket = {
         type: 'esp',
         spi: sa.spiOut,
@@ -724,6 +947,13 @@ export class IPSecEngine {
     if (sa.replayWindowSize === 0) return true; // anti-replay disabled
     if (seqNum === 0) return false; // seq 0 is invalid per RFC 4303
 
+    // RFC 4303 §3.4.3: ESN anti-replay uses 64-bit sequence space.
+    // The received packet only carries the low 32 bits; the receiver
+    // infers the high 32 bits from context (current window position).
+    if (sa.esnEnabled) {
+      return this.checkAntiReplayESN(sa, seqNum);
+    }
+
     const windowSize = sa.replayWindowSize;
     const bitmap = sa.replayBitmap;
     const lastSeq = sa.replayWindowLastSeq;
@@ -755,6 +985,64 @@ export class IPSecEngine {
     }
 
     // Mark as seen
+    this.bitmapSetBit(bitmap, diff);
+    return true;
+  }
+
+  /**
+   * RFC 4303 §3.4.3 Appendix A: ESN anti-replay check.
+   * The receiver reconstructs the full 64-bit sequence number from the
+   * 32-bit value in the packet and the locally tracked high-order bits.
+   */
+  private checkAntiReplayESN(sa: IPSec_SA, seqLow: number): boolean {
+    const windowSize = sa.replayWindowSize;
+    const bitmap = sa.replayBitmap;
+    const lastSeqLow = sa.replayWindowLastSeq;
+    const lastSeqHigh = sa.replayWindowLastSeqHigh;
+
+    // Reconstruct full 64-bit sequence: determine the high 32 bits
+    let seqHigh: number;
+    if (seqLow >= lastSeqLow) {
+      // Same high-order epoch — no wraparound
+      seqHigh = lastSeqHigh;
+    } else {
+      // Low bits wrapped around — the high bits incremented
+      seqHigh = lastSeqHigh + 1;
+    }
+
+    // Compare 64-bit values using (high, low) tuple
+    const isAhead = seqHigh > lastSeqHigh ||
+      (seqHigh === lastSeqHigh && seqLow > lastSeqLow);
+
+    if (isAhead) {
+      // Advance window — compute shift in 32-bit space (simplified for simulator)
+      const shift = seqHigh === lastSeqHigh
+        ? seqLow - lastSeqLow
+        : seqLow + (SEQ_NUM_MAX - lastSeqLow) + 1;
+
+      if (shift < windowSize) {
+        this.bitmapShiftLeft(bitmap, shift);
+        this.bitmapSetBit(bitmap, 0);
+      } else {
+        bitmap.fill(0);
+        this.bitmapSetBit(bitmap, 0);
+      }
+      sa.replayWindowLastSeq = seqLow;
+      sa.replayWindowLastSeqHigh = seqHigh;
+      return true;
+    }
+
+    // Packet is within or behind the window — compute position
+    const diff = seqHigh === lastSeqHigh
+      ? lastSeqLow - seqLow
+      : lastSeqLow + (SEQ_NUM_MAX - seqLow) + 1;
+
+    if (diff >= windowSize) {
+      return false; // too old
+    }
+    if (this.bitmapGetBit(bitmap, diff)) {
+      return false; // duplicate
+    }
     this.bitmapSetBit(bitmap, diff);
     return true;
   }
@@ -860,9 +1148,13 @@ export class IPSecEngine {
       if (matchedPolicy) break;
     }
 
+    // Determine exchange mode: aggressive if either side has it enabled
+    const useAggressive = this.aggressiveMode || peerEngine.aggressiveMode;
+    const modeName = useAggressive ? 'Aggressive' : 'Main';
+
     if (this.debugIsakmp) {
       Logger.info(this.router.id, 'debug:isakmp',
-        `ISAKMP: begin IKE Main Mode exchange with ${peerIP}`);
+        `ISAKMP: begin IKE ${modeName} Mode exchange with ${peerIP}`);
       for (const mp of myPolicies) {
         Logger.info(this.router.id, 'debug:isakmp',
           `ISAKMP: sending policy ${mp.priority} enc=${mp.encryption} hash=${mp.hash} auth=${mp.auth} group=${mp.group}`);
@@ -913,19 +1205,31 @@ export class IPSecEngine {
     );
 
     const spi = randomSPI();
+    const now = Date.now();
     const ikeSA: IKE_SA = {
       peerIP, localIP,
-      status: 'QM_IDLE',
+      status: useAggressive ? 'AM_ACTIVE' : 'QM_IDLE',
       encryption: matchedPolicy.encryption,
       hash: matchedPolicy.hash,
       group: matchedPolicy.group,
       lifetime: negotiatedIKELifetime,
-      created: Date.now(),
+      created: now,
       spi: spiHex(spi),
       role: 'initiator',
       natT,
       dpdEnabled: this.dpdConfig !== null,
+      lastDPDActivity: now,
+      dpdTimeouts: 0,
+      exchangeMode: useAggressive ? 'aggressive' : 'main',
     };
+    // Aggressive mode transitions immediately to QM_IDLE after 3 messages (vs 6 in main)
+    if (useAggressive) {
+      ikeSA.status = 'QM_IDLE';
+      if (this.debugIsakmp) {
+        Logger.info(this.router.id, 'debug:isakmp',
+          `ISAKMP: Aggressive Mode completed in 3 exchanges (vs 6 for Main Mode)`);
+      }
+    }
     this.ikeSADB.set(peerIP, ikeSA);
 
     const peerLocalIP = peerEngine.getLocalIP('') || peerIP;
@@ -936,11 +1240,14 @@ export class IPSecEngine {
       hash: matchedPolicy.hash,
       group: matchedPolicy.group,
       lifetime: negotiatedIKELifetime,
-      created: Date.now(),
+      created: now,
       spi: spiHex(randomSPI()),
       role: 'responder',
       natT,
       dpdEnabled: peerEngine.dpdConfig !== null,
+      lastDPDActivity: now,
+      dpdTimeouts: 0,
+      exchangeMode: useAggressive ? 'aggressive' : 'main',
     };
     peerEngine.ikeSADB.set(apparentSrcIP, peerIkeSA);
 
@@ -1027,6 +1334,9 @@ export class IPSecEngine {
       outboundSeqNum: 0,
       replayBitmap: createReplayBitmap(this.replayWindowSize),
       replayWindowLastSeq: 0,
+      esnEnabled: this.esnDefault,
+      outboundSeqNumHigh: 0,
+      replayWindowLastSeqHigh: 0,
     };
     const existing = this.ipsecSADB.get(peerIP) || [];
     existing.push(sa);
@@ -1060,6 +1370,9 @@ export class IPSecEngine {
       outboundSeqNum: 0,
       replayBitmap: createReplayBitmap(peerEngine.replayWindowSize),
       replayWindowLastSeq: 0,
+      esnEnabled: peerEngine.esnDefault,
+      outboundSeqNumHigh: 0,
+      replayWindowLastSeqHigh: 0,
     };
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
     peerExisting.push(peerSA);
@@ -1301,6 +1614,7 @@ export class IPSecEngine {
       extra.push('');
       extra.push(`Crypto ISAKMP SA towards ${sa.peerIP}`);
       extra.push(`   Status: ${sa.status}, role: ${sa.role}`);
+      extra.push(`   Exchange mode: ${sa.exchangeMode || 'main'}`);
       extra.push(`   Encryption: ${sa.encryption}, Hash: ${sa.hash}, DH Group: ${sa.group}`);
       extra.push(`   Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
       if (sa.natT) {
@@ -1309,6 +1623,9 @@ export class IPSecEngine {
       }
       if (sa.dpdEnabled && this.dpdConfig) {
         extra.push(`   DPD: keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
+        if (sa.dpdTimeouts !== undefined && sa.dpdTimeouts > 0) {
+          extra.push(`   DPD: ${sa.dpdTimeouts} consecutive timeout(s)`);
+        }
       }
     }
     return base + extra.join('\n');
@@ -1321,6 +1638,9 @@ export class IPSecEngine {
     }
     if (this.dpdConfig) {
       lines.push(`IKE Keepalive: keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
+    }
+    if (this.aggressiveMode) {
+      lines.push('IKE Exchange Mode: Aggressive');
     }
     if (lines.length === 0) lines.push('IKE global config:');
     return lines.join('\n');
@@ -1443,7 +1763,13 @@ export class IPSecEngine {
         extra.push(`   sa timing: remaining key lifetime (k/sec): (${remainingKB}/${remainingSec})`);
         extra.push(`   SA lifetime: ${sa.lifetime} seconds, ${sa.lifetimeKB} kilobytes`);
         extra.push(`   Replay window size: ${sa.replayWindowSize}`);
-        extra.push(`   Outbound sequence number: ${sa.outboundSeqNum}`);
+        if (sa.esnEnabled) {
+          extra.push(`   Extended Sequence Number (ESN): Y`);
+          extra.push(`   Outbound sequence number: ${sa.outboundSeqNumHigh}:${sa.outboundSeqNum}`);
+        } else {
+          extra.push(`   Extended Sequence Number (ESN): N`);
+          extra.push(`   Outbound sequence number: ${sa.outboundSeqNum}`);
+        }
         if (sa.pfsGroup) {
           extra.push(`   PFS (Y/N): Y, DH group: ${sa.pfsGroup}`);
         } else {
@@ -1707,6 +2033,54 @@ export class IPSecEngine {
     return lines.join('\n');
   }
 
+  showCryptoIKEv2Proposal(): string {
+    if (this.ikev2Proposals.size === 0) return 'No IKEv2 proposals configured.';
+    const lines: string[] = [];
+    for (const [name, prop] of this.ikev2Proposals) {
+      lines.push(`IKEv2 Proposal: ${name}`);
+      lines.push(`  Encryption  : ${prop.encryption.length > 0 ? prop.encryption.join(', ') : '(none)'}`);
+      lines.push(`  Integrity   : ${prop.integrity.length > 0 ? prop.integrity.join(', ') : '(none)'}`);
+      lines.push(`  DH Group    : ${prop.dhGroup.length > 0 ? prop.dhGroup.join(', ') : '(none)'}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoIKEv2Policy(): string {
+    if (this.ikev2Policies.size === 0) return 'No IKEv2 policies configured.';
+    const lines: string[] = [];
+    for (const [key, pol] of this.ikev2Policies) {
+      lines.push(`IKEv2 Policy : ${key}`);
+      lines.push(`  Match fvrf  : any`);
+      lines.push(`  Proposals   : ${pol.proposalNames.length > 0 ? pol.proposalNames.join(', ') : '(none)'}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoIKEv2Profile(): string {
+    if (this.ikev2Profiles.size === 0) return 'No IKEv2 profiles configured.';
+    const lines: string[] = [];
+    for (const [name, prof] of this.ikev2Profiles) {
+      lines.push(`IKEv2 Profile: ${name}`);
+      lines.push(`  Match identity : ${prof.matchIdentity || 'any'}`);
+      lines.push(`  Local auth     : ${prof.localAuth || 'pre-share'}`);
+      lines.push(`  Remote auth    : ${prof.remoteAuth || 'pre-share'}`);
+      if (prof.keyringName) lines.push(`  Keyring        : ${prof.keyringName}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoISAKMPKey(): string {
+    if (this.preSharedKeys.size === 0) return 'No pre-shared keys configured.';
+    const lines: string[] = ['Keychain  Hostname / Address   Preshared Key'];
+    for (const [addr, key] of this.preSharedKeys) {
+      lines.push(`default   ${addr.padEnd(21)}${key.replace(/./g, '*')}`);
+    }
+    return lines.join('\n');
+  }
+
   showRunningConfig(): string[] {
     const lines: string[] = [];
 
@@ -1719,6 +2093,12 @@ export class IPSecEngine {
     }
     if (this.replayWindowSize !== 64) {
       lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
+    }
+    if (this.aggressiveMode) {
+      lines.push(`no crypto isakmp aggressive-mode disable`);
+    }
+    if (this.esnDefault) {
+      lines.push(`crypto ipsec security-association esn`);
     }
 
     // ISAKMP policies
