@@ -192,15 +192,180 @@ export interface IKEv2_SA {
   natT: boolean;
 }
 
-// ─── IPSec SA Database ────────────────────────────────────────────────
+// ─── SA Traffic Selectors (RFC 4301 §4.4.2.1) ────────────────────────
+
+/**
+ * Traffic selectors cached inside each SA.
+ * These record the negotiated selectors from the SPD policy that
+ * triggered SA creation, as required by RFC 4301 §4.4.2 field #12.
+ */
+export interface SATrafficSelector {
+  /** Source IP range — CIDR or single address ('' = any) */
+  srcAddress: string;
+  /** Source wildcard mask (Cisco-style, '' = host) */
+  srcWildcard: string;
+  /** Destination IP range ('' = any) */
+  dstAddress: string;
+  /** Destination wildcard mask ('' = host) */
+  dstWildcard: string;
+  /** IP protocol number (0 = any) */
+  protocol: number;
+  /** Source port (0 = any) */
+  srcPort: number;
+  /** Destination port (0 = any) */
+  dstPort: number;
+}
+
+// ─── Cryptographic Key Material (RFC 4301 §4.4.2 fields #7-9) ────────
+
+/**
+ * Simulated cryptographic key material for an SA.
+ * In a real implementation these would hold the actual keying material
+ * derived from IKE (KEYMAT). In this simulator the keys are generated
+ * as random hex strings of the correct length for the algorithm.
+ * No real encryption/decryption is performed, but the structure is
+ * complete per RFC 4301 §4.4.2.
+ */
+export interface SACryptoKeys {
+  // ── ESP keys (RFC 4303) ──
+  /** ESP encryption algorithm name (e.g. 'aes-cbc-128', '3des', 'null') */
+  espEncAlgorithm: string;
+  /** ESP encryption key — hex string of appropriate length */
+  espEncKey: string;
+  /** ESP encryption key length in bits */
+  espEncKeyLength: number;
+  /** ESP authentication (integrity) algorithm (e.g. 'hmac-sha-256', 'hmac-sha-1') */
+  espAuthAlgorithm: string;
+  /** ESP authentication key — hex string */
+  espAuthKey: string;
+  /** ESP authentication key length in bits */
+  espAuthKeyLength: number;
+
+  // ── AH keys (RFC 4302) ──
+  /** AH authentication algorithm (e.g. 'hmac-sha-256', 'hmac-md5') */
+  ahAuthAlgorithm: string;
+  /** AH authentication key — hex string */
+  ahAuthKey: string;
+  /** AH authentication key length in bits */
+  ahAuthKeyLength: number;
+}
+
+// ─── DSCP / ECN Mapping (RFC 4301 §4.4.2 fields #14-15) ──────────────
+
+/**
+ * Determines how DSCP and ECN bits in the inner header are handled
+ * when constructing the outer (tunnel) header, per RFC 4301 §5.1.2.
+ */
+export interface SADscpEcnConfig {
+  /**
+   * How to set the DSCP field in the outer tunnel header:
+   *   - 'copy'  : copy inner DSCP to outer (RFC 4301 default)
+   *   - 'set'   : use a fixed DSCP value (dscpValue)
+   *   - 'map'   : apply a mapping table (dscpMap)
+   */
+  dscpMode: 'copy' | 'set' | 'map';
+  /** Fixed DSCP value when mode='set' (0-63) */
+  dscpValue: number;
+  /** DSCP mapping table inner→outer when mode='map' */
+  dscpMap: Map<number, number>;
+  /**
+   * ECN handling per RFC 6040:
+   *   - true  : copy ECN bits from inner to outer on encap;
+   *             on decap, propagate CE marks from outer to inner
+   *   - false : clear ECN in outer header
+   */
+  ecnEnabled: boolean;
+}
+
+// ─── IPSec SA Database (RFC 4301 §4.4.2) ─────────────────────────────
 
 export interface IPSec_SA {
   peerIP: string;
   localIP: string;
+
+  // ── Field #1: SPI (RFC 4301 §4.4.2) ──
   spiIn: number;           // SPI for inbound packets (from peer to me)
   spiOut: number;          // SPI for outbound packets (from me to peer)
-  transforms: string[];
+
+  // ── Field #2: Sequence Number Counter (RFC 4301 §4.4.2) ──
+  outboundSeqNum: number;          // next outbound sequence number (low 32 bits)
+
+  // ── Field #3: Sequence Counter Overflow (RFC 4301 §4.4.2) ──
+  /**
+   * RFC 4301: "The flag indicating whether overflow of the sequence
+   * number counter should generate an auditable event and prevent
+   * transmission of additional packets on the SA."
+   *
+   * When true (default), an SA MUST NOT transmit further packets once
+   * the sequence number reaches 2^32−1 (or 2^64−1 with ESN) and
+   * MUST trigger a rekey. When false, wrapping is allowed (violates RFC).
+   */
+  seqOverflowFlag: boolean;
+
+  // ── Field #4: Anti-Replay Window (RFC 4303 §3.4.3) ──
+  replayWindowSize: number;        // default 64, max 1024
+  replayBitmap: Uint32Array;       // bitmap for replay window (ceil(windowSize/32) words)
+  replayWindowLastSeq: number;     // highest sequence number seen
+
+  // ── Field #5: Extended Sequence Numbers (RFC 4303 §2.2.1) ──
+  esnEnabled: boolean;             // true if 64-bit sequence numbers are in use
+  outboundSeqNumHigh: number;      // high 32 bits of outbound sequence counter
+  replayWindowLastSeqHigh: number; // high 32 bits of last received sequence
+
+  // ── Fields #6-9: Cryptographic Keys (RFC 4301 §4.4.2) ──
+  /**
+   * Simulated key material for ESP/AH algorithms.
+   * Keys are random hex strings of the correct length for the negotiated
+   * algorithms. No real crypto operations are performed.
+   */
+  cryptoKeys: SACryptoKeys;
+
+  // ── Field #10: Lifetime (RFC 4301 §4.4.2) ──
+  created: number;
+  lifetime: number;        // seconds
+  lifetimeKB: number;      // kilobytes (0 = unlimited, default 4608000)
+
+  // ── Field #11: IPsec Protocol Mode (RFC 4301 §4.4.2) ──
   mode: 'Tunnel' | 'Transport';
+
+  // ── Field #12: SA Traffic Selectors (RFC 4301 §4.4.2) ──
+  trafficSelectors: SATrafficSelector;
+
+  // ── Field #13: Stateful Fragment Checking (RFC 4301 §7) ──
+  /**
+   * RFC 4301 §7: "Stateful fragment checking — a flag that indicates
+   * whether or not stateful fragment checking applies to this SA."
+   * When enabled, the system reassembles fragments before applying
+   * IPsec processing (tunnel mode) and tracks fragment state.
+   */
+  statefulFragCheck: boolean;
+
+  // ── Field #14: Bypass DF bit (RFC 4301 §8.1) ──
+  /**
+   * Controls the DF (Don't Fragment) bit in the outer tunnel header:
+   *   - 'copy'  : copy DF from inner packet to outer (default)
+   *   - 'set'   : always set DF in outer header
+   *   - 'clear' : always clear DF in outer header
+   */
+  dfBitPolicy: 'copy' | 'set' | 'clear';
+
+  // ── Field #15: DSCP / ECN (RFC 4301 §5.1.2 / RFC 6040) ──
+  dscpEcnConfig: SADscpEcnConfig;
+
+  // ── Field #16: Path MTU (RFC 4301 §8.2) ──
+  /**
+   * Discovered Path MTU for this SA. Used to determine whether
+   * post-encapsulation fragmentation or ICMP "too big" is needed.
+   * Updated dynamically when ICMP "Fragmentation Needed" is received.
+   */
+  pathMTU: number;
+  /** Maximum inner payload size = pathMTU minus ESP/AH overhead */
+  ipMTU: number;
+  /** Timestamp of last Path MTU update (for aging, RFC 1191 §6.3) */
+  pathMTULastUpdated: number;
+
+  // ── Existing operational fields ──
+  transforms: string[];
   aclName: string;
   pktsEncaps: number;      // packets encrypted (outbound)
   pktsDecaps: number;      // packets decrypted (inbound)
@@ -209,23 +374,11 @@ export interface IPSec_SA {
   pktsReplay: number;      // anti-replay drops
   bytesEncaps: number;     // bytes encrypted (for kilobyte lifetime)
   bytesDecaps: number;     // bytes decrypted
-  created: number;
-  lifetime: number;        // seconds
-  lifetimeKB: number;      // kilobytes (0 = unlimited, default 4608000)
   pfsGroup?: string;
   natT: boolean;
   outIface: string;        // outgoing interface name
   hasESP: boolean;
   hasAH: boolean;
-  // Anti-replay window (RFC 4303) — supports up to 1024-bit windows
-  replayWindowSize: number;        // default 64, max 1024
-  outboundSeqNum: number;          // next outbound sequence number (low 32 bits)
-  replayBitmap: Uint32Array;       // bitmap for replay window (ceil(windowSize/32) words)
-  replayWindowLastSeq: number;     // highest sequence number seen
-  // Extended Sequence Numbers (RFC 4303 §2.2.1)
-  esnEnabled: boolean;             // true if 64-bit sequence numbers are in use
-  outboundSeqNumHigh: number;      // high 32 bits of outbound sequence counter
-  replayWindowLastSeqHigh: number; // high 32 bits of last received sequence
 }
 
 // ─── DPD / NAT-T Config ──────────────────────────────────────────────

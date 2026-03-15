@@ -21,6 +21,7 @@ import {
   IPSecProfile, TunnelProtection,
   IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig,
   SecurityPolicy, SPDAction, SPDDirection,
+  SACryptoKeys, SATrafficSelector, SADscpEcnConfig,
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
@@ -51,6 +52,124 @@ function createReplayBitmap(windowSize: number): Uint32Array {
 
 /** Maximum sequence number before overflow (2^32 - 1). */
 const SEQ_NUM_MAX = 0xFFFFFFFF;
+
+/** Default Path MTU (Ethernet). */
+const DEFAULT_PATH_MTU = 1500;
+
+/** ESP overhead: SPI(4) + SeqNum(4) + padding(max 255) + padLen(1) + nextHdr(1) + ICV(typical 12-32) */
+const ESP_OVERHEAD_BASE = 50; // conservative estimate for typical ESP
+/** AH overhead: NextHdr(1) + PayloadLen(1) + Reserved(2) + SPI(4) + SeqNum(4) + ICV(12-32) */
+const AH_OVERHEAD_BASE = 24;
+
+/**
+ * Generate a random hex key of the specified bit length.
+ * Used to simulate IKE-derived KEYMAT for SA keying material.
+ */
+function generateSimulatedKey(bits: number): string {
+  const bytes = bits / 8;
+  const hex: string[] = [];
+  for (let i = 0; i < bytes; i++) {
+    hex.push(Math.floor(Math.random() * 256).toString(16).padStart(2, '0'));
+  }
+  return hex.join('');
+}
+
+/**
+ * Derive key lengths and algorithm names from a transform set's transforms array.
+ * Returns a SACryptoKeys structure with simulated key material.
+ */
+function deriveCryptoKeys(transforms: string[]): SACryptoKeys {
+  let espEncAlgorithm = 'null';
+  let espEncKeyLength = 0;
+  let espAuthAlgorithm = 'none';
+  let espAuthKeyLength = 0;
+  let ahAuthAlgorithm = 'none';
+  let ahAuthKeyLength = 0;
+
+  for (const t of transforms) {
+    // ESP encryption algorithms
+    if (t === 'esp-aes' || t === 'esp-aes-128') {
+      espEncAlgorithm = 'aes-cbc-128'; espEncKeyLength = 128;
+    } else if (t === 'esp-aes-192' || t === 'esp-aes 192') {
+      espEncAlgorithm = 'aes-cbc-192'; espEncKeyLength = 192;
+    } else if (t === 'esp-aes-256' || t === 'esp-aes 256') {
+      espEncAlgorithm = 'aes-cbc-256'; espEncKeyLength = 256;
+    } else if (t === 'esp-3des') {
+      espEncAlgorithm = '3des-cbc'; espEncKeyLength = 192;
+    } else if (t === 'esp-des') {
+      espEncAlgorithm = 'des-cbc'; espEncKeyLength = 64;
+    } else if (t === 'esp-gcm' || t === 'esp-gcm-128') {
+      espEncAlgorithm = 'aes-gcm-128'; espEncKeyLength = 128; espAuthAlgorithm = 'aes-gcm'; espAuthKeyLength = 0;
+    } else if (t === 'esp-gcm-256') {
+      espEncAlgorithm = 'aes-gcm-256'; espEncKeyLength = 256; espAuthAlgorithm = 'aes-gcm'; espAuthKeyLength = 0;
+    } else if (t === 'esp-null') {
+      espEncAlgorithm = 'null'; espEncKeyLength = 0;
+    }
+    // ESP authentication algorithms
+    else if (t === 'esp-sha-hmac' || t === 'esp-sha1-hmac') {
+      espAuthAlgorithm = 'hmac-sha-1'; espAuthKeyLength = 160;
+    } else if (t === 'esp-sha256-hmac' || t === 'esp-sha-256-hmac') {
+      espAuthAlgorithm = 'hmac-sha-256'; espAuthKeyLength = 256;
+    } else if (t === 'esp-sha384-hmac') {
+      espAuthAlgorithm = 'hmac-sha-384'; espAuthKeyLength = 384;
+    } else if (t === 'esp-sha512-hmac') {
+      espAuthAlgorithm = 'hmac-sha-512'; espAuthKeyLength = 512;
+    } else if (t === 'esp-md5-hmac') {
+      espAuthAlgorithm = 'hmac-md5'; espAuthKeyLength = 128;
+    }
+    // AH authentication algorithms
+    else if (t === 'ah-sha-hmac' || t === 'ah-sha1-hmac') {
+      ahAuthAlgorithm = 'hmac-sha-1'; ahAuthKeyLength = 160;
+    } else if (t === 'ah-sha256-hmac' || t === 'ah-sha-256-hmac') {
+      ahAuthAlgorithm = 'hmac-sha-256'; ahAuthKeyLength = 256;
+    } else if (t === 'ah-sha384-hmac') {
+      ahAuthAlgorithm = 'hmac-sha-384'; ahAuthKeyLength = 384;
+    } else if (t === 'ah-sha512-hmac') {
+      ahAuthAlgorithm = 'hmac-sha-512'; ahAuthKeyLength = 512;
+    } else if (t === 'ah-md5-hmac') {
+      ahAuthAlgorithm = 'hmac-md5'; ahAuthKeyLength = 128;
+    }
+  }
+
+  return {
+    espEncAlgorithm,
+    espEncKey: espEncKeyLength > 0 ? generateSimulatedKey(espEncKeyLength) : '',
+    espEncKeyLength,
+    espAuthAlgorithm,
+    espAuthKey: espAuthKeyLength > 0 ? generateSimulatedKey(espAuthKeyLength) : '',
+    espAuthKeyLength,
+    ahAuthAlgorithm,
+    ahAuthKey: ahAuthKeyLength > 0 ? generateSimulatedKey(ahAuthKeyLength) : '',
+    ahAuthKeyLength,
+  };
+}
+
+/** Compute overhead for ESP/AH encapsulation to derive ipMTU from pathMTU. */
+function computeIPSecOverhead(hasESP: boolean, hasAH: boolean): number {
+  let overhead = 20; // outer IP header
+  if (hasESP) overhead += ESP_OVERHEAD_BASE;
+  if (hasAH) overhead += AH_OVERHEAD_BASE;
+  return overhead;
+}
+
+/** Create default DSCP/ECN config per RFC 4301 §5.1.2 defaults. */
+function defaultDscpEcnConfig(): SADscpEcnConfig {
+  return {
+    dscpMode: 'copy',
+    dscpValue: 0,
+    dscpMap: new Map(),
+    ecnEnabled: true, // RFC 6040 recommends ECN support
+  };
+}
+
+/** Create default traffic selectors (any/any). */
+function defaultTrafficSelectors(): SATrafficSelector {
+  return {
+    srcAddress: '', srcWildcard: '',
+    dstAddress: '', dstWildcard: '',
+    protocol: 0, srcPort: 0, dstPort: 0,
+  };
+}
 
 export class IPSecEngine {
   private readonly router: Router;
@@ -776,7 +895,41 @@ export class IPSecEngine {
     }
     if (!localIP) return null;
 
-    // RFC 4303 §3.3.3 / §2.2.1: sequence number overflow handling
+    // ── RFC 4301 §7: Stateful Fragment Checking ──
+    // In tunnel mode, fragments should be reassembled before IPsec processing.
+    // Check if the inner packet is a fragment (MF set or offset > 0).
+    if (sa.statefulFragCheck && sa.mode === 'Tunnel') {
+      const isFragment = (innerPkt.flags & 0x1) !== 0 || innerPkt.fragmentOffset !== 0;
+      if (isFragment) {
+        // In a real implementation, fragments would be reassembled here.
+        // For the simulator, we log and pass through (reassembly not simulated).
+        if (this.debugIpsec) {
+          Logger.info(this.router.id, 'debug:ipsec',
+            `IPSEC: fragment detected on SA ${spiHex(sa.spiOut)}, stateful frag check active`);
+        }
+      }
+    }
+
+    // ── RFC 4301 §8.2: Path MTU Check ──
+    // After encapsulation, the outer packet must not exceed the path MTU.
+    const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
+    const estimatedOuterSize = innerPkt.totalLength + overhead;
+    if (estimatedOuterSize > sa.pathMTU) {
+      // Check inner packet DF bit
+      const innerDF = (innerPkt.flags & 0x2) !== 0;
+      if (innerDF && sa.dfBitPolicy !== 'clear') {
+        // Cannot fragment — would send ICMP Fragmentation Needed in a real impl
+        if (this.debugIpsec) {
+          Logger.info(this.router.id, 'debug:ipsec',
+            `IPSEC: packet too large (${estimatedOuterSize} > MTU ${sa.pathMTU}), DF set, dropping`);
+        }
+        sa.sendErrors++;
+        return null;
+      }
+      // If DF is clear or dfBitPolicy='clear', fragmentation would happen post-encapsulation
+    }
+
+    // ── RFC 4303 §3.3.3 / §2.2.1: Sequence Number Overflow Handling ──
     if (sa.outboundSeqNum >= SEQ_NUM_MAX) {
       if (sa.esnEnabled) {
         // ESN: roll over low 32 bits, increment high 32 bits
@@ -788,17 +941,21 @@ export class IPSecEngine {
             Logger.info(this.router.id, 'debug:ipsec',
               `IPSEC: ESN 64-bit sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
           }
-          sa.sendErrors++;
-          return null;
+          if (sa.seqOverflowFlag) {
+            sa.sendErrors++;
+            return null;
+          }
         }
       } else {
-        // Standard 32-bit: must renegotiate
+        // Standard 32-bit: RFC 4301 says MUST generate auditable event
         if (this.debugIpsec) {
           Logger.info(this.router.id, 'debug:ipsec',
             `IPSEC: sequence number overflow on SA with ${sa.peerIP}, triggering rekey`);
         }
-        sa.sendErrors++;
-        return null;
+        if (sa.seqOverflowFlag) {
+          sa.sendErrors++;
+          return null;
+        }
       }
     }
 
@@ -810,6 +967,21 @@ export class IPSecEngine {
       Logger.info(this.router.id, 'debug:ipsec',
         `IPSEC(o): sa created, (sa) sa_dest=${sa.peerIP}, spi=${spiHex(sa.spiOut)}, seqnum=${sa.outboundSeqNum}`);
     }
+
+    // ── RFC 4301 §5.1.2: Compute outer header TOS (DSCP+ECN) ──
+    const outerTos = this.computeOuterTos(innerPkt, sa);
+
+    // ── RFC 4301 §8.1: Compute outer DF bit ──
+    const outerFlags = this.computeOuterFlags(innerPkt, sa);
+
+    /** Helper: create outer IP packet with SA-derived TOS and flags. */
+    const makeOuterPkt = (proto: number, payload: ESPPacket | AHPacket, size: number): IPv4Packet => {
+      const pkt = createIPv4Packet(localIP!, new IPAddress(sa.peerIP), proto, 64, payload, size);
+      pkt.tos = outerTos;
+      pkt.flags = outerFlags;
+      pkt.headerChecksum = computeIPv4Checksum(pkt);
+      return pkt;
+    };
 
     // SA Bundle (RFC 4301 §4.5): when both AH and ESP are present,
     // apply ESP first (encryption), then AH (integrity of outer header).
@@ -823,14 +995,7 @@ export class IPSecEngine {
         innerPacket: innerPkt,
       };
       const espSize = 20 + 8 + innerPkt.totalLength;
-      const espPkt = createIPv4Packet(
-        localIP,
-        new IPAddress(sa.peerIP),
-        IP_PROTO_ESP,
-        64,
-        espPayload,
-        espSize,
-      );
+      const espPkt = makeOuterPkt(IP_PROTO_ESP, espPayload, espSize);
       // Step 2: AH wrap the ESP packet
       const ahPayload: AHPacket = {
         type: 'ah',
@@ -839,14 +1004,7 @@ export class IPSecEngine {
         innerPacket: espPkt,
       };
       const outerSize = 20 + 12 + espSize;
-      return createIPv4Packet(
-        localIP,
-        new IPAddress(sa.peerIP),
-        IP_PROTO_AH,
-        64,
-        ahPayload,
-        outerSize,
-      );
+      return makeOuterPkt(IP_PROTO_AH, ahPayload, outerSize);
     } else if (sa.hasESP) {
       const espPayload: ESPPacket = {
         type: 'esp',
@@ -855,14 +1013,7 @@ export class IPSecEngine {
         innerPacket: innerPkt,
       };
       const outerSize = 20 + 8 + innerPkt.totalLength; // IP + ESP header + inner
-      return createIPv4Packet(
-        localIP,
-        new IPAddress(sa.peerIP),
-        IP_PROTO_ESP,
-        64,
-        espPayload,
-        outerSize,
-      );
+      return makeOuterPkt(IP_PROTO_ESP, espPayload, outerSize);
     } else if (sa.hasAH) {
       const ahPayload: AHPacket = {
         type: 'ah',
@@ -871,16 +1022,119 @@ export class IPSecEngine {
         innerPacket: innerPkt,
       };
       const outerSize = 20 + 12 + innerPkt.totalLength;
-      return createIPv4Packet(
-        localIP,
-        new IPAddress(sa.peerIP),
-        IP_PROTO_AH,
-        64,
-        ahPayload,
-        outerSize,
-      );
+      return makeOuterPkt(IP_PROTO_AH, ahPayload, outerSize);
     }
     return null;
+  }
+
+  // ── RFC 4301 §5.1.2: DSCP/ECN handling for tunnel header ──────────
+
+  /**
+   * Compute the TOS byte for the outer tunnel header per RFC 4301 §5.1.2.
+   *   - DSCP (bits 7-2): controlled by SA's dscpEcnConfig
+   *   - ECN  (bits 1-0): per RFC 6040
+   */
+  private computeOuterTos(innerPkt: IPv4Packet, sa: IPSec_SA): number {
+    const innerDscp = (innerPkt.tos >> 2) & 0x3f; // bits 7-2
+    const innerEcn  = innerPkt.tos & 0x03;         // bits 1-0
+
+    let outerDscp: number;
+    switch (sa.dscpEcnConfig.dscpMode) {
+      case 'copy':
+        outerDscp = innerDscp;
+        break;
+      case 'set':
+        outerDscp = sa.dscpEcnConfig.dscpValue & 0x3f;
+        break;
+      case 'map':
+        outerDscp = sa.dscpEcnConfig.dscpMap.get(innerDscp) ?? innerDscp;
+        break;
+      default:
+        outerDscp = innerDscp;
+    }
+
+    // RFC 6040: copy ECN if enabled, otherwise clear
+    const outerEcn = sa.dscpEcnConfig.ecnEnabled ? innerEcn : 0;
+
+    return (outerDscp << 2) | outerEcn;
+  }
+
+  /**
+   * After inbound decapsulation (tunnel mode), propagate ECN marks
+   * from the outer header to the inner header per RFC 6040 §4.
+   */
+  private propagateEcnOnDecap(outerPkt: IPv4Packet, innerPkt: IPv4Packet, sa: IPSec_SA): void {
+    if (!sa.dscpEcnConfig.ecnEnabled) return;
+    if (sa.mode !== 'Tunnel') return;
+
+    const outerEcn = outerPkt.tos & 0x03;
+    // RFC 6040: if outer has CE (Congestion Experienced = 0b11), set inner CE too
+    if (outerEcn === 0b11) {
+      innerPkt.tos = (innerPkt.tos & 0xfc) | 0b11;
+    }
+  }
+
+  // ── RFC 4301 §8.1: DF bit policy for outer header ─────────────────
+
+  /**
+   * Compute the flags field for the outer tunnel header.
+   * Controls the DF bit per the SA's dfBitPolicy.
+   */
+  private computeOuterFlags(innerPkt: IPv4Packet, sa: IPSec_SA): number {
+    switch (sa.dfBitPolicy) {
+      case 'copy':
+        return innerPkt.flags; // preserve DF from inner
+      case 'set':
+        return innerPkt.flags | 0b010; // force DF on
+      case 'clear':
+        return innerPkt.flags & ~0b010; // force DF off
+      default:
+        return innerPkt.flags;
+    }
+  }
+
+  // ── RFC 4301 §8.2: Path MTU management ─────────────────────────────
+
+  /**
+   * Update the path MTU for an SA, typically called when an ICMP
+   * "Fragmentation Needed" (type 3, code 4) is received referencing
+   * this SA's outer packets. Per RFC 1191 §6.3.
+   */
+  updatePathMTU(spi: number, newMTU: number): void {
+    const sa = this.spiToSA.get(spi);
+    if (!sa) return;
+
+    if (newMTU < 576) newMTU = 576; // RFC 791 minimum
+    if (newMTU > 65535) return;
+
+    sa.pathMTU = newMTU;
+    const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
+    sa.ipMTU = Math.max(0, newMTU - overhead);
+    sa.pathMTULastUpdated = Date.now();
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC: Path MTU updated for SA ${spiHex(spi)}: pathMTU=${sa.pathMTU} ipMTU=${sa.ipMTU}`);
+    }
+  }
+
+  /**
+   * Age Path MTU values (RFC 1191 §6.3: increase PMTU after timeout).
+   * Call periodically (e.g. every 10 minutes). If a PMTU value is older
+   * than ageThresholdMs, reset it to DEFAULT_PATH_MTU.
+   */
+  agePathMTU(ageThresholdMs: number = 600000): void {
+    const now = Date.now();
+    for (const [, sas] of this.ipsecSADB) {
+      for (const sa of sas) {
+        if (sa.pathMTU < DEFAULT_PATH_MTU && (now - sa.pathMTULastUpdated) > ageThresholdMs) {
+          sa.pathMTU = DEFAULT_PATH_MTU;
+          const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
+          sa.ipMTU = DEFAULT_PATH_MTU - overhead;
+          sa.pathMTULastUpdated = now;
+        }
+      }
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -912,6 +1166,11 @@ export class IPSecEngine {
     sa.pktsDecaps++;
     sa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
 
+    // RFC 6040: propagate ECN congestion marks from outer to inner
+    if (esp.innerPacket) {
+      this.propagateEcnOnDecap(outerPkt, esp.innerPacket, sa);
+    }
+
     if (this.debugIpsec) {
       Logger.info(this.router.id, 'debug:ipsec',
         `IPSEC(i): decaps ok, spi=${spiHex(esp.spi)}, seqnum=${esp.sequenceNumber}`);
@@ -935,6 +1194,12 @@ export class IPSecEngine {
 
     sa.pktsDecaps++;
     sa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
+
+    // RFC 6040: propagate ECN congestion marks from outer to inner
+    if (ah.innerPacket) {
+      this.propagateEcnOnDecap(outerPkt, ah.innerPacket, sa);
+    }
+
     return ah.innerPacket;
   }
 
@@ -1311,32 +1576,57 @@ export class IPSecEngine {
 
     const localIP = this.getLocalIP(egressIface) || '';
 
+    // Derive cryptographic key material from negotiated transforms (RFC 4301 §4.4.2 fields #7-9)
+    const cryptoKeys = deriveCryptoKeys(chosenTs.transforms);
+    // Peer gets its own independent KEYMAT (simulated)
+    const peerCryptoKeys = deriveCryptoKeys(chosenTs.transforms);
+
+    // Build traffic selectors from the ACL (RFC 4301 §4.4.2 field #12)
+    const trafficSelectors = this.buildTrafficSelectorsFromACL(entry.aclName);
+
+    // Compute Path MTU and inner IP MTU (RFC 4301 §8.2)
+    const saMode = chosenTs.mode === 'transport' ? 'Transport' : 'Tunnel';
+    const overhead = saMode === 'Tunnel' ? computeIPSecOverhead(hasESP, hasAH) : (hasESP ? ESP_OVERHEAD_BASE : 0) + (hasAH ? AH_OVERHEAD_BASE : 0);
+    const pathMTU = DEFAULT_PATH_MTU;
+    const ipMTU = pathMTU - overhead;
+
+    const now = Date.now();
+
     // Initiator SA
     const sa: IPSec_SA = {
       peerIP, localIP,
       spiIn: spiInitIn,
       spiOut: spiRespIn,
-      transforms: chosenTs.transforms,
-      mode: chosenTs.mode === 'transport' ? 'Transport' : 'Tunnel',
-      aclName: entry.aclName,
-      pktsEncaps: 0, pktsDecaps: 0,
-      sendErrors: 0, recvErrors: 0,
-      pktsReplay: 0,
-      bytesEncaps: 0, bytesDecaps: 0,
-      created: Date.now(),
-      lifetime,
-      lifetimeKB,
-      pfsGroup: entry.pfsGroup,
-      natT,
-      outIface: egressIface,
-      hasESP, hasAH,
-      replayWindowSize: this.replayWindowSize,
       outboundSeqNum: 0,
+      seqOverflowFlag: true,  // RFC 4301 MUST prevent overflow by default
+      replayWindowSize: this.replayWindowSize,
       replayBitmap: createReplayBitmap(this.replayWindowSize),
       replayWindowLastSeq: 0,
       esnEnabled: this.esnDefault,
       outboundSeqNumHigh: 0,
       replayWindowLastSeqHigh: 0,
+      cryptoKeys,
+      created: now,
+      lifetime,
+      lifetimeKB,
+      mode: saMode,
+      trafficSelectors,
+      statefulFragCheck: saMode === 'Tunnel',  // RFC 4301 §7: enabled for tunnel mode
+      dfBitPolicy: 'copy',    // RFC 4301 §8.1 default
+      dscpEcnConfig: defaultDscpEcnConfig(),
+      pathMTU,
+      ipMTU,
+      pathMTULastUpdated: now,
+      transforms: chosenTs.transforms,
+      aclName: entry.aclName,
+      pktsEncaps: 0, pktsDecaps: 0,
+      sendErrors: 0, recvErrors: 0,
+      pktsReplay: 0,
+      bytesEncaps: 0, bytesDecaps: 0,
+      pfsGroup: entry.pfsGroup,
+      natT,
+      outIface: egressIface,
+      hasESP, hasAH,
     };
     const existing = this.ipsecSADB.get(peerIP) || [];
     existing.push(sa);
@@ -1347,32 +1637,42 @@ export class IPSecEngine {
     const peerLocalIP = peerEngine.getLocalIP(peerEntry?.aclName ? '' : '') || peerIP;
     // Find peer's egress interface for this SA
     const peerEgressIface = peerEngine.findInterfaceForPeer(apparentSrcIP) || '';
+    const peerTrafficSelectors = peerEngine.buildTrafficSelectorsFromACL(peerEntry?.aclName || entry.aclName);
     const peerSA: IPSec_SA = {
       peerIP: apparentSrcIP,
       localIP: peerLocalIP,
       spiIn: spiRespIn,
       spiOut: spiInitIn,
-      transforms: chosenTs.transforms,
-      mode: chosenTs.mode === 'transport' ? 'Transport' : 'Tunnel',
-      aclName: peerEntry?.aclName || entry.aclName,
-      pktsEncaps: 0, pktsDecaps: 0,
-      sendErrors: 0, recvErrors: 0,
-      pktsReplay: 0,
-      bytesEncaps: 0, bytesDecaps: 0,
-      created: Date.now(),
-      lifetime,
-      lifetimeKB,
-      pfsGroup: entry.pfsGroup,
-      natT,
-      outIface: peerEgressIface,
-      hasESP, hasAH,
-      replayWindowSize: peerEngine.replayWindowSize,
       outboundSeqNum: 0,
+      seqOverflowFlag: true,
+      replayWindowSize: peerEngine.replayWindowSize,
       replayBitmap: createReplayBitmap(peerEngine.replayWindowSize),
       replayWindowLastSeq: 0,
       esnEnabled: peerEngine.esnDefault,
       outboundSeqNumHigh: 0,
       replayWindowLastSeqHigh: 0,
+      cryptoKeys: peerCryptoKeys,
+      created: now,
+      lifetime,
+      lifetimeKB,
+      mode: saMode,
+      trafficSelectors: peerTrafficSelectors,
+      statefulFragCheck: saMode === 'Tunnel',
+      dfBitPolicy: 'copy',
+      dscpEcnConfig: defaultDscpEcnConfig(),
+      pathMTU,
+      ipMTU,
+      pathMTULastUpdated: now,
+      transforms: chosenTs.transforms,
+      aclName: peerEntry?.aclName || entry.aclName,
+      pktsEncaps: 0, pktsDecaps: 0,
+      sendErrors: 0, recvErrors: 0,
+      pktsReplay: 0,
+      bytesEncaps: 0, bytesDecaps: 0,
+      pfsGroup: entry.pfsGroup,
+      natT,
+      outIface: peerEgressIface,
+      hasESP, hasAH,
     };
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
     peerExisting.push(peerSA);
@@ -1717,7 +2017,7 @@ export class IPSecEngine {
         lines.push(`   #send errors ${sa.sendErrors}, #recv errors ${sa.recvErrors}`);
         lines.push('');
         lines.push(`    local crypto endpt.: ${sa.localIP} remote crypto endpt.: ${peerIP}`);
-        lines.push(`    path mtu 1500, ip mtu 1500, ip mtu idb ${iface}`);
+        lines.push(`    plaintext mtu ${sa.ipMTU}, path mtu ${sa.pathMTU}, ip mtu ${sa.pathMTU}, ip mtu idb ${iface}`);
         lines.push(`    current outbound spi: ${spiHex(sa.spiOut)}(${sa.spiOut})`);
         if (sa.natT) {
           lines.push(`    UDP encap: src port 4500, dst port 4500`);
@@ -1770,10 +2070,33 @@ export class IPSecEngine {
           extra.push(`   Extended Sequence Number (ESN): N`);
           extra.push(`   Outbound sequence number: ${sa.outboundSeqNum}`);
         }
+        extra.push(`   Sequence Counter Overflow flag: ${sa.seqOverflowFlag ? 'Y' : 'N'}`);
         if (sa.pfsGroup) {
           extra.push(`   PFS (Y/N): Y, DH group: ${sa.pfsGroup}`);
         } else {
           extra.push(`   PFS (Y/N): N`);
+        }
+        // Cryptographic keys (simulated)
+        const ck = sa.cryptoKeys;
+        if (ck.espEncAlgorithm !== 'null') {
+          extra.push(`   ESP encryption: ${ck.espEncAlgorithm} (${ck.espEncKeyLength}-bit key)`);
+        }
+        if (ck.espAuthAlgorithm !== 'none' && ck.espAuthAlgorithm !== 'aes-gcm') {
+          extra.push(`   ESP authentication: ${ck.espAuthAlgorithm} (${ck.espAuthKeyLength}-bit key)`);
+        }
+        if (ck.ahAuthAlgorithm !== 'none') {
+          extra.push(`   AH authentication: ${ck.ahAuthAlgorithm} (${ck.ahAuthKeyLength}-bit key)`);
+        }
+        // DF bit, DSCP/ECN, fragment checking
+        extra.push(`   DF bit policy: ${sa.dfBitPolicy}`);
+        extra.push(`   DSCP mode: ${sa.dscpEcnConfig.dscpMode}${sa.dscpEcnConfig.dscpMode === 'set' ? ' (value=' + sa.dscpEcnConfig.dscpValue + ')' : ''}`);
+        extra.push(`   ECN support: ${sa.dscpEcnConfig.ecnEnabled ? 'Y' : 'N'}`);
+        extra.push(`   Stateful fragment checking: ${sa.statefulFragCheck ? 'Y' : 'N'}`);
+        extra.push(`   Path MTU: ${sa.pathMTU}, IP MTU: ${sa.ipMTU}`);
+        // Traffic selectors
+        const ts = sa.trafficSelectors;
+        if (ts.srcAddress || ts.dstAddress) {
+          extra.push(`   Traffic selectors: src=${ts.srcAddress || 'any'}/${ts.srcWildcard || '0'} dst=${ts.dstAddress || 'any'}/${ts.dstWildcard || '0'} proto=${ts.protocol || 'any'}`);
         }
       }
     }
@@ -1844,6 +2167,28 @@ export class IPSecEngine {
     if (!wc?.getOctets) return '255.255.255.255';
     const octets = wc.getOctets().map((o: number) => (~o & 0xff));
     return octets.join('.');
+  }
+
+  /**
+   * Build SA traffic selectors from an ACL (RFC 4301 §4.4.2 field #12).
+   * Extracts the first matching ACE's source/destination selectors.
+   */
+  buildTrafficSelectorsFromACL(aclName: string): SATrafficSelector {
+    const acl = (this.router as any)._getAccessListsInternal?.()?.find((a: any) =>
+      a.name === aclName || String(a.id) === aclName);
+    if (acl?.entries?.[0]) {
+      const e = acl.entries[0];
+      return {
+        srcAddress: e.srcIP?.toString?.() || '',
+        srcWildcard: e.srcWildcard?.toString?.() || '',
+        dstAddress: e.dstIP?.toString?.() || '',
+        dstWildcard: e.dstWildcard?.toString?.() || '',
+        protocol: typeof e.protocol === 'number' ? e.protocol : 0,
+        srcPort: e.srcPort || 0,
+        dstPort: e.dstPort || 0,
+      };
+    }
+    return defaultTrafficSelectors();
   }
 
   showCryptoIPSecTransformSet(): string {
