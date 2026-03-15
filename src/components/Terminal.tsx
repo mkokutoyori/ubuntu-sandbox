@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Equipment } from '@/network';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
+import { getTerminalState, saveTerminalState } from '@/terminal/terminalStateCache';
 type BaseDevice = Equipment;
 
 // ─── Editor State ───────────────────────────────────────────────
@@ -291,9 +292,16 @@ function buildInteractiveSteps(
 }
 
 export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) => {
-  const [lines, setLines] = useState<OutputLine[]>([]);
+  const deviceId = device.getId();
+  const cached = getTerminalState(deviceId);
+
+  const [lines, setLines] = useState<OutputLine[]>(() =>
+    (cached?.lines as OutputLine[]) || []
+  );
   const [input, setInput] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(() =>
+    cached?.history || []
+  );
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [currentPath, setCurrentPath] = useState(() => device.getCwd() || '/home/user');
   const [currentUser, setCurrentUser] = useState(() => device.getCurrentUser() || 'user');
@@ -307,6 +315,21 @@ export const Terminal: React.FC<TerminalProps> = ({ device, onRequestClose }) =>
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const interactiveInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
+
+  // Persist terminal state to cache on changes
+  const linesRef = useRef(lines);
+  const historyRef = useRef(history);
+  linesRef.current = lines;
+  historyRef.current = history;
+
+  useEffect(() => {
+    return () => {
+      saveTerminalState(deviceId, {
+        lines: linesRef.current,
+        history: historyRef.current,
+      });
+    };
+  }, [deviceId]);
 
   const currentStepType = interactive !== null && interactive.stepIndex < interactive.steps.length
     ? interactive.steps[interactive.stepIndex].type

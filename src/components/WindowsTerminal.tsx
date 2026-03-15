@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Equipment } from '@/network';
 import { PowerShellExecutor, PS_BANNER, PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
+import { getTerminalState, saveTerminalState } from '@/terminal/terminalStateCache';
 type BaseDevice = Equipment;
 
 interface OutputLine {
@@ -41,26 +42,75 @@ interface ShellEntry {
 let lineId = 0;
 
 export const WindowsTerminal: React.FC<WindowsTerminalProps> = ({ device, onRequestClose, onShellModeChange }) => {
-  const [lines, setLines] = useState<OutputLine[]>([]);
+  const deviceId = device.getId();
+  const cached = getTerminalState(deviceId);
+
+  const [lines, setLines] = useState<OutputLine[]>(() =>
+    (cached?.lines as OutputLine[]) || []
+  );
   const [input, setInput] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(() =>
+    cached?.history || []
+  );
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [tabSuggestions, setTabSuggestions] = useState<string[] | null>(null);
-  const [currentPrompt, setCurrentPrompt] = useState('C:\\Users\\User>');
+  const [currentPrompt, setCurrentPrompt] = useState(() =>
+    (cached?.extra?.currentPrompt as string) || 'C:\\Users\\User>'
+  );
   // Shell mode: 'cmd' or 'powershell'
-  const [shellMode, setShellMode] = useState<'cmd' | 'powershell'>('cmd');
+  const [shellMode, setShellMode] = useState<'cmd' | 'powershell'>(() =>
+    (cached?.extra?.shellMode as 'cmd' | 'powershell') || 'cmd'
+  );
   // Shell stack for nesting
-  const [shellStack, setShellStack] = useState<ShellEntry[]>([]);
+  const [shellStack, setShellStack] = useState<ShellEntry[]>(() =>
+    (cached?.extra?.shellStack as ShellEntry[]) || []
+  );
   // PowerShell current location (separate from CMD cwd)
-  const [psCwd, setPsCwd] = useState('C:\\Users\\User');
+  const [psCwd, setPsCwd] = useState(() =>
+    (cached?.extra?.psCwd as string) || 'C:\\Users\\User'
+  );
   // Whether the CMD banner has been cleared (by cls)
-  const [bannerCleared, setBannerCleared] = useState(false);
+  const [bannerCleared, setBannerCleared] = useState(() =>
+    (cached?.extra?.bannerCleared as boolean) || false
+  );
 
   // PowerShell executor (decoupled from React)
   const psExecutor = useMemo(() => new PowerShellExecutor(device as any), [device]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
+
+  // Persist terminal state to cache on unmount
+  const linesRef = useRef(lines);
+  const historyRef = useRef(history);
+  const shellModeRef = useRef(shellMode);
+  const currentPromptRef = useRef(currentPrompt);
+  const shellStackRef = useRef(shellStack);
+  const psCwdRef = useRef(psCwd);
+  const bannerClearedRef = useRef(bannerCleared);
+  linesRef.current = lines;
+  historyRef.current = history;
+  shellModeRef.current = shellMode;
+  currentPromptRef.current = currentPrompt;
+  shellStackRef.current = shellStack;
+  psCwdRef.current = psCwd;
+  bannerClearedRef.current = bannerCleared;
+
+  useEffect(() => {
+    return () => {
+      saveTerminalState(deviceId, {
+        lines: linesRef.current,
+        history: historyRef.current,
+        extra: {
+          shellMode: shellModeRef.current,
+          currentPrompt: currentPromptRef.current,
+          shellStack: shellStackRef.current,
+          psCwd: psCwdRef.current,
+          bannerCleared: bannerClearedRef.current,
+        },
+      });
+    };
+  }, [deviceId]);
 
   // Focus on mount
   useEffect(() => {
