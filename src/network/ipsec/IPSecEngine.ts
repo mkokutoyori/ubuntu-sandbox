@@ -11,8 +11,9 @@
 
 import {
   IPAddress, SubnetMask,
-  IPv4Packet, ESPPacket, AHPacket,
-  IP_PROTO_ESP, IP_PROTO_AH,
+  IPv4Packet, ESPPacket, AHPacket, UDPPacket,
+  IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_UDP,
+  UDP_PORT_IKE_NAT_T,
   createIPv4Packet, computeIPv4Checksum, nextIPv4Id,
 } from '../core/types';
 import {
@@ -1318,6 +1319,19 @@ export class IPSecEngine {
    * May return multiple packets when post-encapsulation fragmentation is needed.
    */
   processOutbound(pkt: IPv4Packet, egressIface: string, entry: CryptoMapEntry): IPv4Packet[] | null {
+    // Check if egress port is actually up (cable connected)
+    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
+    const outPort = ports.get(egressIface);
+    if (outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+      // Port is down — trigger DPD-like SA clearing for any peer on this interface
+      const peerIP = this.determinePeer(entry, egressIface, pkt);
+      if (peerIP) {
+        // Clear existing SAs for this unreachable peer (DPD on-demand behavior)
+        this.clearSAsForPeer(peerIP);
+      }
+      return null;
+    }
+
     // Determine peer IP
     let peerIP = this.determinePeer(entry, egressIface, pkt);
     if (!peerIP) return null;
@@ -1557,6 +1571,19 @@ export class IPSecEngine {
         sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
+      // NAT-T: wrap ESP in UDP 4500 (RFC 3948)
+      if (sa.natT) {
+        const udpPayload: UDPPacket = {
+          type: 'udp',
+          sourcePort: UDP_PORT_IKE_NAT_T,
+          destinationPort: UDP_PORT_IKE_NAT_T,
+          length: 8 + 8 + innerPkt.totalLength, // UDP header + ESP header + inner
+          checksum: 0,
+          payload: espPayload,
+        };
+        const outerSize = 20 + 8 + 8 + innerPkt.totalLength; // IP + UDP + ESP + inner
+        return makeOuterPkt(IP_PROTO_UDP, udpPayload, outerSize);
+      }
       const outerSize = 20 + 8 + innerPkt.totalLength; // IP + ESP header + inner
       return makeOuterPkt(IP_PROTO_ESP, espPayload, outerSize);
     } else if (sa.hasAH) {
@@ -2025,8 +2052,29 @@ export class IPSecEngine {
    * Synchronous — completes immediately by directly calling the peer's engine.
    */
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
-    // Find peer router
-    const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    // Check if egress port is actually up (cable connected)
+    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
+    const outPort = ports.get(egressIface);
+    if (outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+      Logger.info(this.router.id, 'ipsec:port-down',
+        `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
+      this.createFailedIKESA(peerIP, egressIface, 'Interface down');
+      return false;
+    }
+
+    // Find peer router (may be directly reachable or behind NAT)
+    let peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    let forceNatT = false;
+
+    // NAT-T: if peerIP is not a Router, check if it's a NAT device with DNAT rules
+    if (!peerRouter) {
+      const natResult = IPSecEngine.findRouterBehindNAT(peerIP);
+      if (natResult) {
+        peerRouter = natResult.router;
+        forceNatT = true; // Peer is behind NAT — force NAT-T
+      }
+    }
+
     if (!peerRouter) {
       Logger.info(this.router.id, 'ipsec:no-peer',
         `${this.router.name}: IKE peer ${peerIP} unreachable`);
@@ -2049,9 +2097,9 @@ export class IPSecEngine {
       : this.ikev2Policies.size > 0 && this.ikev2Keyrings.size > 0 && this.ikev2Profiles.size > 0;
 
     if (useIKEv2) {
-      return this.negotiateIKEv2(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface);
+      return this.negotiateIKEv2(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
     }
-    return this.negotiateIKEv1(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface);
+    return this.negotiateIKEv1(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
   }
 
   // ── IKEv1 ──────────────────────────────────────────────────────
@@ -2059,6 +2107,7 @@ export class IPSecEngine {
   private negotiateIKEv1(
     peerIP: string, peerEngine: IPSecEngine, entry: CryptoMapEntry,
     localIP: string, apparentSrcIP: string, egressIface: string,
+    forceNatT: boolean = false,
   ): boolean {
     // Phase 1: find matching ISAKMP policy
     const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
@@ -2119,8 +2168,8 @@ export class IPSecEngine {
         `ISAKMP: (${spiHex(0)}:0): pre-shared key authentication passed with ${peerIP}`);
     }
 
-    const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP;
+    const natT = forceNatT || ((this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
+      && apparentSrcIP !== localIP);
 
     // Create IKE SA on both sides
     // RFC 2409 §5.5: negotiate IKE lifetime as min(initiator, responder)
@@ -2356,6 +2405,7 @@ export class IPSecEngine {
   private negotiateIKEv2(
     peerIP: string, peerEngine: IPSecEngine, entry: CryptoMapEntry,
     localIP: string, apparentSrcIP: string, egressIface: string,
+    forceNatT: boolean = false,
   ): boolean {
     // Find common IKEv2 proposal
     const myProposals = [...this.ikev2Proposals.values()];
@@ -2380,8 +2430,8 @@ export class IPSecEngine {
     const peerPSK = peerEngine.findIKEv2PSK(apparentSrcIP);
     if (!myPSK || !peerPSK || myPSK !== peerPSK) return false;
 
-    const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP;
+    const natT = forceNatT || ((this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
+      && apparentSrcIP !== localIP);
     const spiL = spiHex(randomSPI());
     const spiR = spiHex(randomSPI());
 
@@ -2550,13 +2600,60 @@ export class IPSecEngine {
     return null;
   }
 
+  /**
+   * NAT-T: Find a Router behind a NAT device.
+   * When a peer IP belongs to a non-Router device (e.g. LinuxPC acting as NAT),
+   * check its iptables PREROUTING DNAT rules for UDP 500 to discover the real Router.
+   */
+  static findRouterBehindNAT(natIP: string): { router: Router; realPeerIP: string } | null {
+    const natDevice = IPSecEngine.findEquipmentByIP(natIP);
+    if (!natDevice) return null;
+    // If it IS a Router already, skip
+    if ((natDevice as any)._getIPSecEngineInternal) return null;
+
+    // Check for iptables DNAT rules targeting UDP 500 (IKE)
+    const iptables = (natDevice as any).executor?.iptables || (natDevice as any).iptables;
+    if (iptables && typeof iptables.evaluateNat === 'function') {
+      // Find which interface on the NAT device has this IP
+      let inIface = '';
+      const devPorts = (natDevice as any).ports;
+      if (devPorts instanceof Map) {
+        for (const [name, port] of devPorts) {
+          if ((port as any).getIPAddress?.()?.toString() === natIP) {
+            inIface = name;
+            break;
+          }
+        }
+      }
+      // Simulate an inbound UDP 500 packet to see if DNAT applies
+      const testPkt = {
+        direction: 'in' as const,
+        protocol: 17,  // UDP
+        srcIP: '0.0.0.0',
+        dstIP: natIP,
+        srcPort: 500,
+        dstPort: 500,
+        iface: inIface,
+      };
+      const natResult = iptables.evaluateNat(testPkt, 'PREROUTING');
+      if (natResult && natResult.action === 'DNAT' && natResult.address) {
+        const realIP = natResult.address.split(':')[0];
+        const realRouter = IPSecEngine.findRouterByIP(realIP);
+        if (realRouter) {
+          return { router: realRouter, realPeerIP: realIP };
+        }
+      }
+    }
+    return null;
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // Show commands
   // ══════════════════════════════════════════════════════════════════
 
   showCryptoISAKMPSA(): string {
     if (this.ikeSADB.size === 0) {
-      return 'IPv4 Crypto ISAKMP SA\ndst             src             state          conn-id status\n';
+      return 'IPv4 Crypto ISAKMP SA\ndst             src             state          conn-id status\n\nThere are no IKEv1 SAs (no SA established)';
     }
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {

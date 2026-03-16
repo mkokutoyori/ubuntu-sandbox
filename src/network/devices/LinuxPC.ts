@@ -687,6 +687,26 @@ export class LinuxPC extends EndHost {
     return this.executor.iptables.evaluateNat(pkt, 'POSTROUTING');
   }
 
+  /**
+   * Evaluate PREROUTING DNAT rules before the routing decision.
+   * Enables port forwarding / DNAT for packets addressed to this device.
+   */
+  protected override evaluatePreRouting(
+    inPort: string, ipPkt: IPv4Packet,
+  ): { action: string; address?: string } | null {
+    const ports = this.extractPorts(ipPkt);
+    const pkt: PacketInfo = {
+      direction: 'in',
+      protocol: ipPkt.protocol,
+      srcIP: ipPkt.sourceIP.toString(),
+      dstIP: ipPkt.destinationIP.toString(),
+      srcPort: ports.srcPort,
+      dstPort: ports.dstPort,
+      iface: inPort,
+    };
+    return this.executor.iptables.evaluateNat(pkt, 'PREROUTING');
+  }
+
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'linux'; }
