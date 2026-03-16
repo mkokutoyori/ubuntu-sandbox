@@ -390,7 +390,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     const router = this.r();
 
     // Store async operation — execute() will detect this and return the promise
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs).then(results => {
+    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIP ?? undefined).then(results => {
       return this._formatCiscoPing(target, count, timeoutMs, results);
     });
 

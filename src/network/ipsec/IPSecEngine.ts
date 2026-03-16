@@ -2262,10 +2262,18 @@ export class IPSecEngine {
     }
 
     // Check PFS compatibility
+    // PFS mismatch blocks negotiation when the responder already has an existing
+    // IPSec SA for this peer (re-establishment after one-sided clear/rekey).
+    // On fresh initial negotiation the initiator's PFS group is used.
     if (entry.pfsGroup && peerEntry?.pfsGroup && entry.pfsGroup !== peerEntry.pfsGroup) {
-      Logger.info(this.router.id, 'ipsec:pfs-mismatch',
-        `${this.router.name}: PFS group mismatch with ${peerIP} (${entry.pfsGroup} vs ${peerEntry.pfsGroup})`);
-      return false;
+      const responderHasIPSecSA = (peerEngine.ipsecSADB.get(apparentSrcIP)?.length ?? 0) > 0;
+      if (responderHasIPSecSA) {
+        Logger.info(this.router.id, 'ipsec:pfs-mismatch',
+          `${this.router.name}: PFS group mismatch with ${peerIP} (${entry.pfsGroup} vs ${peerEntry.pfsGroup})`);
+        return false;
+      }
+      Logger.info(this.router.id, 'ipsec:pfs-mismatch-warn',
+        `${this.router.name}: PFS group mismatch with ${peerIP} (${entry.pfsGroup} vs ${peerEntry.pfsGroup}), using initiator group for initial SA`);
     }
 
     // RFC 2409 §5.5 / RFC 7296 §2.8: negotiate lifetime as min(initiator, responder)
