@@ -960,10 +960,9 @@ export class OSPFEngine {
         // Remove from interface neighbors
         iface.neighbors.delete(neighbor.routerId);
         // Re-run DR election on broadcast/NBMA when a neighbor departs (RFC 2328 §9.4 NbrChange)
-        // Only re-run if there are remaining neighbors or we are DR/BDR (to release the role).
+        // Must run even when last neighbor departs so we can promote ourselves to DR.
         if ((iface.networkType === 'broadcast' || iface.networkType === 'nbma') &&
-            iface.state !== 'Waiting' &&
-            iface.neighbors.size > 0) {
+            iface.state !== 'Waiting') {
           this.drElection(iface);
         }
         break;
@@ -1465,6 +1464,9 @@ export class OSPFEngine {
     let topologyChanged = false; // true if any Type 1/2 LSA was installed (needs full SPF)
 
     for (const lsa of lsu.lsas) {
+      // RFC 2328 §13 step 1: Validate checksum — discard if invalid.
+      if (!verifyOSPFLSAChecksum(lsa)) continue;
+
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       const areaDB = this.lsdb.areas.get(iface.areaId);
 
@@ -1476,17 +1478,16 @@ export class OSPFEngine {
       const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
 
       if (!existing || this.isNewerLSA(lsa, existing)) {
-        // MinLSArrival (RFC 2328 §13.1): throttle same-instance re-arrivals only.
-        // If the LSA has a strictly higher sequence number it is a genuine new
-        // origination and must always be installed immediately.
+        // MinLSArrival (RFC 2328 §13, step 5b): rate-limit acceptance of any
+        // instance of the same LSA (same LS type / Link State ID / Adv Router)
+        // to at most once per MinLSArrival (1 second).  This applies regardless
+        // of whether the incoming LSA has a higher sequence number.
         const arrKey = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
         const now = Date.now();
-        if (existing && lsa.lsSequenceNumber === existing.lsSequenceNumber) {
-          if (this.lsArrivalTimes.has(arrKey)) {
-            const lastArrival = this.lsArrivalTimes.get(arrKey)!;
-            if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
-              continue; // Drop — arrived too quickly (MinLSArrival)
-            }
+        if (existing && this.lsArrivalTimes.has(arrKey)) {
+          const lastArrival = this.lsArrivalTimes.get(arrKey)!;
+          if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
+            continue; // Drop — arrived too quickly (MinLSArrival)
           }
         }
         this.lsArrivalTimes.set(arrKey, now);
