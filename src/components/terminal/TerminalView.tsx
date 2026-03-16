@@ -114,28 +114,31 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     }
   });
 
-  // Focus management
+  // Focus management — use currentInputMode for Linux sessions to stay
+  // in sync with the rendering logic (which also reads currentInputMode).
+  const effectiveMode = session.getSessionType() === 'linux'
+    ? (session as LinuxTerminalSession).currentInputMode
+    : session.inputMode;
+
   useEffect(() => {
-    const mode = session.inputMode;
-    if (mode.type === 'password') hiddenInputRef.current?.focus();
-    else if (mode.type === 'interactive-text') interactiveInputRef.current?.focus();
-    else if (mode.type === 'reverse-search') {
+    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
+    else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
+    else if (effectiveMode.type === 'reverse-search') {
       setTimeout(() => reverseSearchRef.current?.focus(), 30);
     }
-    else if (mode.type === 'normal') {
+    else if (effectiveMode.type === 'normal') {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
-  }, [session.inputMode.type]);
+  }, [effectiveMode.type]);
 
-  // Focus input on click
+  // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
-    const mode = session.inputMode;
-    if (mode.type === 'password') hiddenInputRef.current?.focus();
-    else if (mode.type === 'interactive-text') interactiveInputRef.current?.focus();
-    else if (mode.type === 'reverse-search') reverseSearchRef.current?.focus();
-    else if (mode.type === 'booting') return;
+    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
+    else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
+    else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus();
+    else if (effectiveMode.type === 'booting') return;
     else inputRef.current?.focus();
-  }, [session.inputMode]);
+  }, [effectiveMode]);
 
   // Key handler bridge — converts React event to session KeyEvent
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -305,8 +308,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               value={(session as LinuxTerminalSession).getPasswordBuf()}
               onChange={(e) => (session as LinuxTerminalSession).setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="absolute opacity-0 w-0 h-0"
-              style={{ position: 'absolute', left: '-9999px' }}
+              className="absolute overflow-hidden"
+              style={{
+                position: 'absolute',
+                width: '1px',
+                height: '1px',
+                padding: 0,
+                margin: '-1px',
+                clip: 'rect(0, 0, 0, 0)',
+                whiteSpace: 'nowrap',
+                borderWidth: 0,
+              }}
               autoComplete="off"
               autoFocus
             />
