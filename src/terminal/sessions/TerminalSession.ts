@@ -8,6 +8,13 @@
  *   - Subclasses override template methods for vendor-specific behaviour.
  *   - Multiple sessions can exist per device (multi-terminal support).
  *
+ * Robustness:
+ *   - Scrollback buffer is capped (MAX_SCROLLBACK_LINES) to prevent OOM.
+ *   - Device power-off is detected before command execution.
+ *   - Command execution has an optional timeout guard.
+ *   - Input is sanitized against control characters.
+ *   - Line ID counter uses safe modular arithmetic.
+ *
  * Hierarchy:
  *   TerminalSession (base)
  *   ├── LinuxTerminalSession     — interactive prompts, ANSI, editors
@@ -18,6 +25,21 @@
  */
 
 import { Equipment } from '@/network';
+
+// ─── Constants ────────────────────────────────────────────────────
+
+/** Maximum number of output lines kept in memory per session. */
+const MAX_SCROLLBACK_LINES = 5000;
+
+/** Default command execution timeout in milliseconds (30 s). */
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+
+/**
+ * Safe upper bound for the line ID counter.
+ * When reached, wraps back to 1.  At ~5 000 lines/session and
+ * typical usage, this gives >400 000 unique IDs before wrapping.
+ */
+const LINE_ID_WRAP = 2_000_000_000;
 
 // ─── Shared types ─────────────────────────────────────────────────
 
@@ -71,10 +93,66 @@ export interface KeyEvent {
   shiftKey: boolean;
 }
 
-// ─── Line ID generator (module-scoped, monotonic) ─────────────────
+// ─── Line ID generator (module-scoped, monotonic, wrap-safe) ──────
 
 let _lineIdCounter = 0;
-export function nextLineId(): number { return ++_lineIdCounter; }
+
+export function nextLineId(): number {
+  _lineIdCounter = (_lineIdCounter + 1) % LINE_ID_WRAP;
+  return _lineIdCounter;
+}
+
+// ─── Input sanitisation ──────────────────────────────────────────
+
+/**
+ * Strip dangerous control characters from user input.
+ * Keeps printable ASCII + common whitespace + unicode text.
+ * Removes: NUL, BEL, ESC sequences, DEL, and C0/C1 control chars
+ * (except TAB and LF which are benign).
+ */
+function sanitiseInput(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
+// ─── Command timeout helper ──────────────────────────────────────
+
+export class CommandTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Command timed out after ${timeoutMs}ms`);
+    this.name = 'CommandTimeoutError';
+  }
+}
+
+/**
+ * Races a promise against a timeout.
+ * If the promise resolves/rejects before the deadline, its result is returned.
+ * Otherwise, a CommandTimeoutError is thrown.
+ */
+export function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new CommandTimeoutError(timeoutMs)),
+      timeoutMs,
+    );
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+// ─── Device availability guard ───────────────────────────────────
+
+export class DeviceOfflineError extends Error {
+  constructor(deviceName: string) {
+    super(`Device "${deviceName}" is powered off`);
+    this.name = 'DeviceOfflineError';
+  }
+}
 
 // ─── Abstract Base Class ──────────────────────────────────────────
 
@@ -89,6 +167,9 @@ export abstract class TerminalSession {
   input: string = '';
   inputMode: InputMode = { type: 'normal' };
   disposed: boolean = false;
+
+  /** Maximum number of output lines before oldest lines are trimmed. */
+  protected maxScrollback: number = MAX_SCROLLBACK_LINES;
 
   // ── Version-based observer (for useSyncExternalStore) ──
   private _version = 0;
@@ -117,12 +198,13 @@ export abstract class TerminalSession {
   // ── Public API ──────────────────────────────────────────────────
 
   setInput(value: string): void {
-    this.input = value;
+    this.input = sanitiseInput(value);
     this.notify();
   }
 
   addLine(text: string, type: string = 'normal'): void {
     this.lines.push({ id: nextLineId(), text, type });
+    this.enforceScrollbackLimit();
     this.notify();
   }
 
@@ -130,6 +212,7 @@ export abstract class TerminalSession {
     for (const text of texts) {
       this.lines.push({ id: nextLineId(), text, type });
     }
+    this.enforceScrollbackLimit();
     this.notify();
   }
 
@@ -141,6 +224,60 @@ export abstract class TerminalSession {
   dispose(): void {
     this.disposed = true;
     this._listeners.clear();
+  }
+
+  // ── Scrollback management ─────────────────────────────────────
+
+  /**
+   * Trim the oldest lines when the buffer exceeds maxScrollback.
+   * Keeps the most recent lines.
+   */
+  private enforceScrollbackLimit(): void {
+    if (this.lines.length > this.maxScrollback) {
+      const excess = this.lines.length - this.maxScrollback;
+      this.lines = this.lines.slice(excess);
+    }
+  }
+
+  // ── Device availability ────────────────────────────────────────
+
+  /**
+   * Check whether the device is still powered on.
+   * Subclasses should call this before executing commands.
+   *
+   * @throws DeviceOfflineError if the device is off.
+   */
+  protected assertDeviceOnline(): void {
+    if (!this.device.getIsPoweredOn()) {
+      throw new DeviceOfflineError(this.device.getName());
+    }
+  }
+
+  /**
+   * Convenience: check if device is online (no throw).
+   */
+  protected isDeviceOnline(): boolean {
+    return this.device.getIsPoweredOn();
+  }
+
+  // ── Command execution helpers ─────────────────────────────────
+
+  /**
+   * Execute a command on the device with timeout and power-off guard.
+   * Subclasses should prefer this over calling device.executeCommand() directly.
+   *
+   * @param command   The command string to execute.
+   * @param timeoutMs Optional timeout override (defaults to DEFAULT_COMMAND_TIMEOUT_MS).
+   * @returns The command output, or undefined/null if none.
+   * @throws DeviceOfflineError if the device is powered off.
+   * @throws CommandTimeoutError if execution exceeds the timeout.
+   */
+  protected async executeOnDevice(
+    command: string,
+    timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+  ): Promise<string> {
+    this.assertDeviceOnline();
+    return withTimeout(this.device.executeCommand(command), timeoutMs);
   }
 
   // ── Keyboard handling ───────────────────────────────────────────

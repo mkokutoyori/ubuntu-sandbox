@@ -129,7 +129,15 @@ export abstract class CLITerminalSession extends TerminalSession {
     if (e.key === 'z' && e.ctrlKey) {
       this.addLine(`${this.prompt}${this.input}^Z`);
       this.input = '';
-      this.device.executeCommand(this.getCtrlZCommand()).then(() => this.updatePrompt());
+      this.executeOnDevice(this.getCtrlZCommand())
+        .then(() => this.updatePrompt())
+        .catch((err) => {
+          if (err instanceof Error && err.name === 'DeviceOfflineError') {
+            this.addLine('% Device is powered off', 'error');
+          } else {
+            this.addLine(`% Error: ${err}`, 'error');
+          }
+        });
       this.notify();
       return true;
     }
@@ -169,7 +177,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
 
     try {
-      const result = await this.device.executeCommand(trimmed);
+      const result = await this.executeOnDevice(trimmed);
 
       if (result === 'Connection closed.') {
         this._onRequestClose?.();
@@ -185,7 +193,15 @@ export abstract class CLITerminalSession extends TerminalSession {
         }
       }
     } catch (err) {
-      this.addLine(`% Error: ${err}`, 'error');
+      if (err instanceof Error && err.name === 'DeviceOfflineError') {
+        this.addLine('% Device is powered off — session disconnected', 'error');
+        return;
+      }
+      if (err instanceof Error && err.name === 'CommandTimeoutError') {
+        this.addLine('% Command execution timed out', 'error');
+      } else {
+        this.addLine(`% Error: ${err}`, 'error');
+      }
     }
 
     this.updatePrompt();

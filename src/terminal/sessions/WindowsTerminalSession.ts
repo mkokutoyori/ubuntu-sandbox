@@ -10,7 +10,7 @@
 
 import { Equipment } from '@/network';
 import {
-  TerminalSession, TerminalTheme, SessionType, KeyEvent,
+  TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
 } from './TerminalSession';
 import { PowerShellExecutor, PS_BANNER, PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
 
@@ -168,9 +168,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    // Execute on device
+    // Execute on device (with timeout + device-online guard)
     try {
-      const result = await this.device.executeCommand(trimmed);
+      const result = await this.executeOnDevice(trimmed);
       if (result !== undefined && result !== null && result !== '') {
         this.addMultiLine(result);
       }
@@ -178,7 +178,15 @@ export class WindowsTerminalSession extends TerminalSession {
         await this.refreshPrompt();
       }
     } catch (err) {
-      this.addLine(`Error: ${err}`, 'error');
+      if (err instanceof Error && err.name === 'DeviceOfflineError') {
+        this.addLine('Device is powered off — session disconnected', 'error');
+        return;
+      }
+      if (err instanceof Error && err.name === 'CommandTimeoutError') {
+        this.addLine('Command execution timed out', 'error');
+      } else {
+        this.addLine(`Error: ${err}`, 'error');
+      }
     }
   }
 
@@ -219,11 +227,13 @@ export class WindowsTerminalSession extends TerminalSession {
 
     // Update PS cwd after location changes
     if (lower.startsWith('set-location') || lower.startsWith('sl ') || lower.startsWith('cd ') || lower === 'cd') {
-      const cdResult = await this.device.executeCommand('cd');
-      if (cdResult && !cdResult.includes('not recognized')) {
-        this.psCwd = cdResult.trim();
-        this.currentPrompt = cdResult.trim() + '>';
-      }
+      try {
+        const cdResult = await this.executeOnDevice('cd');
+        if (cdResult && !cdResult.includes('not recognized')) {
+          this.psCwd = cdResult.trim();
+          this.currentPrompt = cdResult.trim() + '>';
+        }
+      } catch { /* ignore — cwd refresh is best-effort */ }
     }
 
     this.notify();
@@ -232,7 +242,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private addMultiLine(text: string, type: string = 'normal'): void {
     const lines = text.split('\n');
     for (const line of lines) {
-      this.lines.push({ id: this.lines.length + 1, text: line, type });
+      this.lines.push({ id: nextLineId(), text: line, type });
     }
     this.notify();
   }
@@ -245,7 +255,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this._onShellModeChange?.('powershell');
     const bannerLines = PS_BANNER.split('\n');
     for (const line of bannerLines) {
-      this.lines.push({ id: this.lines.length + 1, text: line, type: 'ps-header' });
+      this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
     }
     this.notify();
   }
@@ -266,13 +276,13 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private async refreshPrompt(): Promise<void> {
     try {
-      const cdResult = await this.device.executeCommand('cd');
+      const cdResult = await this.executeOnDevice('cd');
       if (cdResult && !cdResult.includes('not recognized')) {
         const cwd = cdResult.trim();
         this.currentPrompt = cwd + '>';
         this.psCwd = cwd;
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore — prompt refresh is best-effort */ }
     this.notify();
   }
 

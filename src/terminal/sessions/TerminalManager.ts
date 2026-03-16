@@ -164,6 +164,20 @@ export class TerminalManager {
   get size(): number {
     return this.sessions.size;
   }
+
+  /**
+   * Close all sessions for a specific device.
+   * Useful when a device is powered off or deleted.
+   */
+  closeAllForDevice(deviceId: string): void {
+    const sessionIds = this.deviceSessions.get(deviceId);
+    if (!sessionIds || sessionIds.length === 0) return;
+
+    // Copy the array since closeTerminal mutates it
+    for (const sessionId of [...sessionIds]) {
+      this.closeTerminal(sessionId);
+    }
+  }
 }
 
 // ── Singleton ─────────────────────────────────────────────────────
