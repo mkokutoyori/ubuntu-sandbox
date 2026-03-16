@@ -152,9 +152,17 @@ La RFC 4301 Section 6 exige un traitement spécial des messages ICMP en relation
 - **ICMPPacket étendu** — Ajout des champs optionnels `mtu` (Next-Hop MTU) et `originalPacket` (paquet déclencheur) à l'interface `ICMPPacket` dans `types.ts`.
 - **Path MTU aging** — `agePathMTU()` (RFC 1191 §6.3) réinitialise le PMTU au défaut (1500) après expiration du timer, permettant au mécanisme de PMTU Discovery de re-tester un chemin plus large.
 
-### 3.5 Multicast IPsec — **NON IMPLÉMENTÉ**
+### 3.5 Multicast IPsec — **IMPLÉMENTÉ** ✅
 
-La RFC 4301 Section 4.1 mentionne que les SA multicast sont unidirectionnelles. Aucun support multicast dans l'implémentation IPsec actuelle.
+La RFC 4301 Section 4.1 mentionne que les SA multicast sont unidirectionnelles. **Implémenté** :
+- **MulticastIPSecSA type** — Nouveau type dans `IPSecTypes.ts` modélisant les SA multicast avec : groupe multicast, émetteur unique, SPI, keying material partagé, liste de récepteurs, compteurs de paquets/octets.
+- **Unidirectionnalité (RFC 4301 §4.1)** — Oui : seul l'émetteur autorisé (`senderAddress`) peut encapsuler. Les récepteurs ne peuvent que décapsuler.
+- **Lookup par (SPI, adresse groupe)** — Oui : `findMulticastSAForInbound(spi, groupAddress)` utilise la clé composée `SPI|groupAddress` conformément à la RFC 4301 §4.1.
+- **Anti-replay désactivé par défaut** — Oui : `antiReplayEnabled: false` par défaut pour le multicast, conformément à la recommandation RFC 4301 §4.1 (les paquets multicast peuvent arriver dans le désordre via des chemins différents).
+- **Gestion des récepteurs** — `addMulticastReceiver()` / `removeMulticastReceiver()` : installation/suppression automatique de la SA sur l'engine du récepteur avec keying material partagé.
+- **Data plane multicast** — `processMulticastOutbound()` (encapsulation ESP/AH par l'émetteur) et `processMulticastInboundESP()` / `processMulticastInboundAH()` (décapsulation par les récepteurs).
+- **Détection d'adresse multicast** — `isMulticast()` / `isMulticastAddress()` vérifie la plage 224.0.0.0/4 (RFC 5771).
+- **Show command** — `showCryptoIPSecMulticastSA()` affiche toutes les SA multicast avec groupe, émetteur, SPI, rôle, récepteurs, compteurs, lifetime.
 
 ### 3.6 Extended Sequence Numbers (ESN) — **IMPLÉMENTÉ** ✅
 
