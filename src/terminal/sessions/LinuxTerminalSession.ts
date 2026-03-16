@@ -1,0 +1,667 @@
+/**
+ * LinuxTerminalSession — Ubuntu terminal emulation model.
+ *
+ * Features ported from the original Terminal.tsx:
+ *   - Interactive multi-step prompts (sudo, su, passwd, adduser)
+ *   - ANSI color support (handled in the view via AnsiRenderer)
+ *   - Text editors (nano, vi, vim) via EditorOverlay
+ *   - Colored prompt (user@host:path$)
+ *   - Tab completion
+ */
+
+import { Equipment } from '@/network';
+import {
+  TerminalSession, TerminalTheme, SessionType,
+  KeyEvent, InputMode, nextLineId,
+} from './TerminalSession';
+
+// ─── Interactive prompt types ─────────────────────────────────────
+
+type InteractiveStep =
+  | { type: 'password'; prompt: string }
+  | { type: 'output'; text: string }
+  | { type: 'execute'; command: string }
+  | { type: 'set-password'; username: string }
+  | { type: 'adduser-info'; command: string }
+  | { type: 'input'; prompt: string; field: string }
+  | { type: 'set-gecos'; username: string }
+  | { type: 'confirm'; prompt: string };
+
+interface InteractiveState {
+  steps: InteractiveStep[];
+  stepIndex: number;
+  originalCommand: string;
+  collectedPassword?: string;
+  targetUser?: string;
+  attemptsLeft: number;
+  currentPromptText: string;
+  gecosFields?: { fullName: string; room: string; workPhone: string; homePhone: string; other: string };
+}
+
+// ─── Theme ────────────────────────────────────────────────────────
+
+const LINUX_THEME: TerminalTheme = {
+  sessionType: 'linux',
+  backgroundColor: '#300a24',
+  textColor: '#ffffff',
+  errorColor: '#ef2929',
+  promptColor: '#8ae234',
+  fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'Monaco', monospace",
+  infoBarBg: '#2c0a1f',
+  infoBarText: '#c0a0b0',
+  infoBarBorder: '#5c3d50',
+};
+
+// ─── Session ──────────────────────────────────────────────────────
+
+export class LinuxTerminalSession extends TerminalSession {
+  currentPath: string;
+  currentUser: string;
+  private interactive: InteractiveState | null = null;
+  private passwordBuf: string = '';
+  private inputBuf: string = '';
+  /** Tab suggestions currently shown (null = hidden) */
+  tabSuggestions: string[] | null = null;
+
+  constructor(id: string, device: Equipment) {
+    super(id, device);
+    this.currentPath = device.getCwd() || '/home/user';
+    this.currentUser = device.getCurrentUser() || 'user';
+  }
+
+  // ── Template implementations ────────────────────────────────────
+
+  getSessionType(): SessionType { return 'linux'; }
+  getTheme(): TerminalTheme { return LINUX_THEME; }
+
+  getPrompt(): string {
+    const hostname = this.device.getHostname() || 'localhost';
+    const user = this.currentUser;
+    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
+    let path = this.currentPath;
+    if (path === homeDir) path = '~';
+    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
+    const promptChar = user === 'root' ? '#' : '$';
+    return `${user}@${hostname}:${path}${promptChar} `;
+  }
+
+  /** Structured prompt parts for the colored prompt renderer. */
+  getPromptParts() {
+    const hostname = this.device.getHostname() || 'localhost';
+    const user = this.currentUser;
+    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
+    let path = this.currentPath;
+    if (path === homeDir) path = '~';
+    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
+    const promptChar = user === 'root' ? '#' : '$';
+    return { user, hostname, path, promptChar };
+  }
+
+  getInfoBarContent() {
+    const p = this.getPromptParts();
+    return { left: `${p.user}@${p.hostname}: ${p.path}` };
+  }
+
+  async init(): Promise<void> {
+    // Linux terminal has no boot sequence — ready immediately
+  }
+
+  // ── Input mode ──────────────────────────────────────────────────
+
+  get currentInputMode(): InputMode {
+    if (this.interactive) {
+      const step = this.interactive.steps[this.interactive.stepIndex];
+      if (!step) return { type: 'normal' };
+      if (step.type === 'password') return { type: 'password', promptText: step.prompt };
+      if (step.type === 'input' || step.type === 'confirm') return { type: 'interactive-text', promptText: step.prompt };
+    }
+    return this.inputMode;
+  }
+
+  // ── Key handling ────────────────────────────────────────────────
+
+  handleKey(e: KeyEvent): boolean {
+    if (this.disposed) return false;
+
+    // Password mode
+    if (this.interactive) {
+      const step = this.interactive.steps[this.interactive.stepIndex];
+      if (step?.type === 'password') return this.handlePasswordKey(e);
+      if (step?.type === 'input' || step?.type === 'confirm') return this.handleInteractiveTextKey(e);
+    }
+
+    // Editor mode is handled by the view component (NanoEditor / VimEditor)
+    if (this.inputMode.type === 'editor') return false;
+
+    return super.handleKey(e);
+  }
+
+  protected handleModeKey(_e: KeyEvent): boolean {
+    // All mode handling is done in the overridden handleKey above
+    return false;
+  }
+
+  protected handleNormalKey(e: KeyEvent): boolean {
+    // Ctrl+A → beginning of line (handled by view's input element, but consume)
+    if (e.key === 'a' && e.ctrlKey) return true;
+    // Ctrl+E → end of line
+    if (e.key === 'e' && e.ctrlKey) return true;
+
+    // Tab
+    if (e.key === 'Tab') {
+      this.onTab();
+      return true;
+    }
+
+    // Clear tab suggestions on any non-Tab key
+    if (this.tabSuggestions && e.key !== 'Tab') {
+      this.tabSuggestions = null;
+      this.notify();
+    }
+
+    return super.handleNormalKey(e);
+  }
+
+  // ── Password mode keys ─────────────────────────────────────────
+
+  private handlePasswordKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const pw = this.passwordBuf;
+      this.passwordBuf = '';
+      this.handlePasswordSubmit(pw);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.interactive = null;
+      this.passwordBuf = '';
+      this.addLine('^C');
+      this.inputMode = { type: 'normal' };
+      this.notify();
+      return true;
+    }
+    // All other keys are captured by the hidden password input in the view
+    return false;
+  }
+
+  /** Called by the view's hidden password <input> onChange */
+  setPasswordBuf(value: string): void {
+    this.passwordBuf = value;
+  }
+
+  // ── Interactive text mode keys ──────────────────────────────────
+
+  private handleInteractiveTextKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const val = this.inputBuf;
+      this.inputBuf = '';
+      this.handleInputSubmit(val);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.interactive = null;
+      this.inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.addLine('^C');
+      return true;
+    }
+    return false;
+  }
+
+  /** Called by the view's interactive text <input> onChange */
+  setInputBuf(value: string): void {
+    this.inputBuf = value;
+    // No notify needed — the view manages this input's own React state
+  }
+
+  getInputBuf(): string { return this.inputBuf; }
+  getPasswordBuf(): string { return this.passwordBuf; }
+
+  // ── Command execution ───────────────────────────────────────────
+
+  protected onEnter(): void {
+    const cmd = this.input;
+    this.input = '';
+    this.tabSuggestions = null;
+    this.executeCommand(cmd);
+    this.notify();
+  }
+
+  private async executeCommand(cmd: string): Promise<void> {
+    const trimmed = cmd.trim();
+
+    // Echo command with prompt
+    this.addLine(`${this.getPrompt()}${cmd}`);
+
+    // Handle exit/logout
+    if (trimmed === 'exit' || trimmed === 'logout') {
+      const exitResult = this.device.handleExit();
+      if (exitResult.inSu) {
+        if (exitResult.output) this.addLine(exitResult.output);
+        this.syncDeviceState();
+        return;
+      }
+      // Signal close — the view/manager will handle it
+      this._onRequestClose?.();
+      return;
+    }
+
+    // Add to history
+    this.pushHistory(trimmed);
+
+    // Intercept editor commands
+    {
+      const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
+      const parts = noSudo.split(/\s+/);
+      const editorCmd = parts[0];
+      if (editorCmd === 'nano' || editorCmd === 'vi' || editorCmd === 'vim') {
+        this.openEditor(editorCmd as 'nano' | 'vi' | 'vim', parts.slice(1));
+        return;
+      }
+    }
+
+    // Check if this command needs interactive prompts
+    const interactiveState = this.buildInteractiveSteps(trimmed);
+    if (interactiveState) {
+      this.interactive = interactiveState;
+      this.passwordBuf = '';
+      this.processInteractiveSteps(interactiveState);
+      return;
+    }
+
+    // Execute directly
+    try {
+      const result = await this.device.executeCommand(trimmed);
+      if (result) {
+        if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
+          this.clear();
+        } else {
+          this.addLine(result);
+        }
+      }
+      this.syncDeviceState();
+    } catch (err) {
+      this.addLine(`Error: ${err}`, 'error');
+    }
+  }
+
+  // ── Tab completion ──────────────────────────────────────────────
+
+  protected onTab(): void {
+    const completions = this.device.getCompletions(this.input);
+    if (completions.length === 0) return;
+
+    if (completions.length === 1) {
+      const parts = this.input.trimStart().split(/\s+/);
+      if (parts.length <= 1) {
+        this.input = completions[0] + ' ';
+      } else {
+        parts[parts.length - 1] = completions[0];
+        this.input = parts.slice(0, -1).join(' ') + ' ' + completions[0];
+      }
+      this.tabSuggestions = null;
+    } else {
+      const parts = this.input.trimStart().split(/\s+/);
+      const word = parts[parts.length - 1] || '';
+      let common = completions[0];
+      for (let i = 1; i < completions.length; i++) {
+        while (!completions[i].startsWith(common)) common = common.slice(0, -1);
+      }
+      if (common.length > word.length) {
+        if (parts.length <= 1) {
+          this.input = common;
+        } else {
+          parts[parts.length - 1] = common;
+          this.input = parts.slice(0, -1).join(' ') + ' ' + common;
+        }
+        this.tabSuggestions = null;
+      } else {
+        this.tabSuggestions = completions;
+      }
+    }
+    this.notify();
+  }
+
+  // ── Editor integration ──────────────────────────────────────────
+
+  private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
+    let filePath = '';
+    for (const arg of args) {
+      if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
+    }
+    if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
+
+    const absolutePath = this.device.resolveAbsolutePath(filePath);
+    const existingContent = this.device.readFileForEditor(absolutePath);
+    const isNewFile = existingContent === null;
+
+    this.inputMode = {
+      type: 'editor',
+      editorType: editorCmd,
+      filePath: absolutePath,
+      absolutePath,
+      content: existingContent ?? '',
+      isNewFile,
+    };
+    this.notify();
+  }
+
+  /** Called by the view when editor saves a file. */
+  editorSave(content: string, filePath: string): void {
+    this.device.writeFileFromEditor(filePath, content);
+  }
+
+  /** Called by the view when editor exits. */
+  editorExit(): void {
+    this.inputMode = { type: 'normal' };
+    this.notify();
+  }
+
+  // ── Device state sync ───────────────────────────────────────────
+
+  private syncDeviceState(): void {
+    const cwd = this.device.getCwd();
+    if (cwd) this.currentPath = cwd;
+    this.currentUser = this.device.getCurrentUser();
+    this.notify();
+  }
+
+  // ── Close callback ─────────────────────────────────────────────
+
+  private _onRequestClose?: () => void;
+  onRequestClose(cb: () => void): void { this._onRequestClose = cb; }
+
+  // ── Interactive prompt builder ──────────────────────────────────
+
+  private buildInteractiveSteps(command: string): InteractiveState | null {
+    const trimmed = command.trim();
+    const parts = trimmed.split(/\s+/);
+    const currentUser = this.device.getCurrentUser();
+    const currentUid = this.device.getCurrentUid();
+    const isRoot = currentUid === 0;
+
+    if (parts[0] === 'sudo' && !isRoot) {
+      const subParts = parts.slice(1);
+      const subCmd = subParts[0];
+
+      if (subCmd === 'passwd' && subParts.length >= 2 && !subParts[1].startsWith('-')) {
+        const targetUser = subParts[subParts.length - 1];
+        return {
+          steps: [
+            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+            { type: 'password', prompt: 'New password:' },
+            { type: 'password', prompt: 'Retype new password:' },
+            { type: 'set-password', username: targetUser },
+            { type: 'output', text: 'passwd: password updated successfully' },
+          ],
+          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+          currentPromptText: `[sudo] password for ${currentUser}:`,
+        };
+      }
+
+      if (subCmd === 'adduser' && subParts.length >= 2) {
+        const targetUser = subParts.filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
+        const hasDisabledPassword = subParts.includes('--disabled-password') || subParts.includes('--disabled-login');
+        const hasGecos = subParts.indexOf('--gecos') >= 0;
+
+        if (hasDisabledPassword && hasGecos) {
+          return {
+            steps: [
+              { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+              { type: 'adduser-info', command: trimmed },
+            ],
+            stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+            currentPromptText: `[sudo] password for ${currentUser}:`,
+            targetUser,
+          };
+        }
+
+        const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
+          { type: 'password', prompt: 'New password:' },
+          { type: 'password', prompt: 'Retype new password:' },
+          { type: 'set-password', username: targetUser },
+          { type: 'output', text: 'passwd: password updated successfully' },
+        ];
+        const chfnSteps: InteractiveStep[] = hasGecos ? [] : [
+          { type: 'output', text: `Changing the user information for ${targetUser}` },
+          { type: 'output', text: 'Enter the new value, or press ENTER for the default' },
+          { type: 'input', prompt: '\tFull Name []: ', field: 'fullName' },
+          { type: 'input', prompt: '\tRoom Number []: ', field: 'room' },
+          { type: 'input', prompt: '\tWork Phone []: ', field: 'workPhone' },
+          { type: 'input', prompt: '\tHome Phone []: ', field: 'homePhone' },
+          { type: 'input', prompt: '\tOther []: ', field: 'other' },
+          { type: 'confirm', prompt: 'Is the information correct? [Y/n] ' },
+          { type: 'set-gecos', username: targetUser },
+        ];
+
+        return {
+          steps: [
+            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+            { type: 'adduser-info', command: trimmed },
+            ...passwordSteps,
+            ...chfnSteps,
+          ],
+          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+          currentPromptText: `[sudo] password for ${currentUser}:`,
+          targetUser,
+          gecosFields: { fullName: '', room: '', workPhone: '', homePhone: '', other: '' },
+        };
+      }
+
+      if (subCmd === 'su') {
+        return {
+          steps: [
+            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+            { type: 'execute', command: trimmed },
+          ],
+          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+          currentPromptText: `[sudo] password for ${currentUser}:`,
+        };
+      }
+
+      return {
+        steps: [
+          { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+          { type: 'execute', command: trimmed },
+        ],
+        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+        currentPromptText: `[sudo] password for ${currentUser}:`,
+      };
+    }
+
+    if (parts[0] === 'su' && !isRoot) {
+      let targetUser = 'root';
+      for (const p of parts.slice(1)) {
+        if (p !== '-' && p !== '-l' && p !== '--login' && !p.startsWith('-')) targetUser = p;
+      }
+      return {
+        steps: [
+          { type: 'password', prompt: 'Password:' },
+          { type: 'execute', command: trimmed },
+        ],
+        stepIndex: 0, originalCommand: trimmed, targetUser, attemptsLeft: 3,
+        currentPromptText: 'Password:',
+      };
+    }
+
+    if (parts[0] === 'passwd' && parts.length === 1 && !isRoot) {
+      return {
+        steps: [
+          { type: 'output', text: `Changing password for ${currentUser}.` },
+          { type: 'password', prompt: 'Current password:' },
+          { type: 'password', prompt: 'New password:' },
+          { type: 'password', prompt: 'Retype new password:' },
+          { type: 'set-password', username: currentUser },
+          { type: 'output', text: 'passwd: password updated successfully' },
+        ],
+        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+        currentPromptText: '',
+      };
+    }
+
+    return null;
+  }
+
+  // ── Interactive step processing ─────────────────────────────────
+
+  private async processInteractiveSteps(state: InteractiveState): Promise<void> {
+    let idx = state.stepIndex;
+    while (idx < state.steps.length) {
+      const step = state.steps[idx];
+
+      if (step.type === 'password') {
+        this.interactive = { ...state, stepIndex: idx, currentPromptText: step.prompt };
+        this.inputMode = { type: 'password', promptText: step.prompt };
+        this.addLine(step.prompt);
+        return;
+      }
+      if (step.type === 'output') { this.addLine(step.text); idx++; continue; }
+      if (step.type === 'execute') {
+        try {
+          const result = await this.device.executeCommand(step.command);
+          if (result) {
+            if (result.includes('\x1b[2J') || result.includes('\x1b[H')) this.clear();
+            else this.addLine(result);
+          }
+        } catch (err) { this.addLine(`Error: ${err}`, 'error'); }
+        this.syncDeviceState();
+        idx++; continue;
+      }
+      if (step.type === 'set-password') {
+        if (state.collectedPassword) this.device.setUserPassword(step.username, state.collectedPassword);
+        idx++; continue;
+      }
+      if (step.type === 'adduser-info') {
+        try {
+          const result = await this.device.executeCommand(step.command);
+          if (result) this.addLine(result);
+        } catch (err) { this.addLine(`Error: ${err}`, 'error'); }
+        idx++; continue;
+      }
+      if (step.type === 'input' || step.type === 'confirm') {
+        this.interactive = { ...state, stepIndex: idx, currentPromptText: step.prompt };
+        this.inputMode = { type: 'interactive-text', promptText: step.prompt };
+        this.addLine(step.prompt);
+        return;
+      }
+      if (step.type === 'set-gecos') {
+        if (state.gecosFields && 'setUserGecos' in this.device) {
+          const g = state.gecosFields;
+          (this.device as any).setUserGecos(step.username, g.fullName, g.room, g.workPhone, g.homePhone, g.other);
+        }
+        idx++; continue;
+      }
+      idx++;
+    }
+
+    // All steps done
+    this.syncDeviceState();
+    this.interactive = null;
+    this.passwordBuf = '';
+    this.inputBuf = '';
+    this.inputMode = { type: 'normal' };
+    this.notify();
+  }
+
+  private handlePasswordSubmit(password: string): void {
+    if (!this.interactive) return;
+    const step = this.interactive.steps[this.interactive.stepIndex] as { type: 'password'; prompt: string };
+
+    const isSudoPrompt = step.prompt.startsWith('[sudo]');
+    const isSuPrompt = step.prompt === 'Password:' && this.interactive.originalCommand.startsWith('su');
+    const isCurrentPassword = step.prompt === 'Current password:';
+    const isNewPassword = step.prompt === 'New password:';
+    const isRetypePassword = step.prompt === 'Retype new password:';
+
+    if (isSudoPrompt) {
+      const currentUser = this.device.getCurrentUser();
+      if (!this.device.checkPassword(currentUser, password)) {
+        const left = this.interactive.attemptsLeft - 1;
+        if (left <= 0) {
+          this.addLine('sudo: 3 incorrect password attempts');
+          this.interactive = null; this.inputMode = { type: 'normal' };
+          this.notify(); return;
+        }
+        this.addLine('Sorry, try again.');
+        this.addLine(step.prompt);
+        this.interactive = { ...this.interactive, attemptsLeft: left };
+        this.notify(); return;
+      }
+      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
+      return;
+    }
+
+    if (isSuPrompt) {
+      const targetUser = this.interactive.targetUser || 'root';
+      if (!this.device.checkPassword(targetUser, password)) {
+        this.addLine('su: Authentication failure');
+        this.interactive = null; this.inputMode = { type: 'normal' };
+        this.notify(); return;
+      }
+      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
+      return;
+    }
+
+    if (isCurrentPassword) {
+      const currentUser = this.device.getCurrentUser();
+      if (!this.device.checkPassword(currentUser, password)) {
+        this.addLine('passwd: Authentication token manipulation error');
+        this.addLine('passwd: password unchanged');
+        this.interactive = null; this.inputMode = { type: 'normal' };
+        this.notify(); return;
+      }
+      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
+      return;
+    }
+
+    if (isNewPassword) {
+      this.processInteractiveSteps({
+        ...this.interactive, stepIndex: this.interactive.stepIndex + 1,
+        collectedPassword: password,
+      });
+      return;
+    }
+
+    if (isRetypePassword) {
+      if (password !== this.interactive.collectedPassword) {
+        this.addLine('Sorry, passwords do not match.');
+        this.addLine('passwd: Authentication token manipulation error');
+        this.addLine('passwd: password unchanged');
+        this.interactive = null; this.inputMode = { type: 'normal' };
+        this.notify(); return;
+      }
+      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
+      return;
+    }
+  }
+
+  private handleInputSubmit(value: string): void {
+    if (!this.interactive) return;
+    const step = this.interactive.steps[this.interactive.stepIndex];
+
+    if (step.type === 'input') {
+      const field = (step as { field: string }).field;
+      const gecosFields = {
+        ...(this.interactive.gecosFields || { fullName: '', room: '', workPhone: '', homePhone: '', other: '' }),
+      };
+      if (field === 'fullName') gecosFields.fullName = value;
+      else if (field === 'room') gecosFields.room = value;
+      else if (field === 'workPhone') gecosFields.workPhone = value;
+      else if (field === 'homePhone') gecosFields.homePhone = value;
+      else if (field === 'other') gecosFields.other = value;
+
+      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1, gecosFields });
+      return;
+    }
+
+    if (step.type === 'confirm') {
+      const answer = value.trim().toLowerCase();
+      if (answer === 'n') {
+        this.addLine('Aborted.');
+        this.interactive = null; this.inputMode = { type: 'normal' };
+        this.notify(); return;
+      }
+      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
+      return;
+    }
+  }
+}
