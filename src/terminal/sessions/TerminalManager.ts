@@ -92,6 +92,13 @@ export class TerminalManager {
     deviceSessions.push(sessionId);
     this.deviceSessions.set(deviceId, deviceSessions);
 
+    // Wire up the exit/logout close callback so typing "exit" closes the terminal
+    if (typeof (session as any).onRequestClose === 'function') {
+      (session as any).onRequestClose(() => {
+        this.closeTerminal(sessionId);
+      });
+    }
+
     // Start initialization asynchronously (boot sequence, etc.)
     session.init().catch(() => {});
 
