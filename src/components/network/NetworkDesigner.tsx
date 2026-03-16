@@ -6,9 +6,12 @@
  *   - Multiple layout modes: stack, split-h, split-v, grid, master-stack
  *   - Keyboard shortcuts: Mod+h/v/g/s/m to change layout
  *   - Focused terminal concept for stack/master modes
+ *
+ * Terminal state managed by TerminalManager singleton — sessions survive
+ * mount/unmount and are consistent across all tile views.
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useSyncExternalStore } from 'react';
 import { DevicePalette } from './DevicePalette';
 import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -18,10 +21,10 @@ import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
 import type { DeviceType } from '@/network';
-type BaseDevice = Equipment;
 import { useNetworkStore } from '@/store/networkStore';
 import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
 import { cn } from '@/lib/utils';
+import { getTerminalManager } from '@/terminal/sessions';
 
 /** Available tiling layout modes */
 export type TileLayout = 'stack' | 'split-h' | 'split-v' | 'grid' | 'master-stack';
@@ -29,18 +32,27 @@ export type TileLayout = 'stack' | 'split-h' | 'split-v' | 'grid' | 'master-stac
 export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
   const [, setDraggingDevice] = useState<DeviceType | null>(null);
-  const [openTerminals, setOpenTerminals] = useState<Map<string, BaseDevice>>(new Map());
-  const [minimizedTerminals, setMinimizedTerminals] = useState<Set<string>>(new Set());
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
   // Tiling state
   const [tileLayout, setTileLayout] = useState<TileLayout>('grid');
-  // Focused terminal index (for stack and master-stack modes)
   const [focusedIndex, setFocusedIndex] = useState(0);
+
+  // Minimized sessions (by session ID)
+  const [minimizedSessions, setMinimizedSessions] = useState<Set<string>>(new Set());
 
   const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
   const devices = getDevices();
+
+  // Subscribe to TerminalManager for reactive updates
+  const manager = getTerminalManager();
+  useSyncExternalStore(manager.subscribe, manager.getVersion);
+
+  // Derive session list from manager
+  const allSessions = useMemo(() => {
+    return Array.from(manager.getAllSessions().entries());
+  }, [manager.getVersion()]);
 
   // ── Export/Import handlers ──
   const handleExport = useCallback(() => {
@@ -66,98 +78,84 @@ export function NetworkDesigner() {
 
       setProjectName(result.projectName);
 
-      // Close any open terminals
-      setOpenTerminals(new Map());
-      setMinimizedTerminals(new Set());
+      // Close all open terminals
+      for (const [sessionId] of allSessions) {
+        manager.closeTerminal(sessionId);
+      }
+      setMinimizedSessions(new Set());
     } catch (err) {
       if (err instanceof Error && err.message !== 'No file selected') {
         alert(`Import failed: ${err.message}`);
       }
     }
-  }, [clearAll]);
+  }, [clearAll, allSessions, manager]);
 
-  const handleOpenTerminal = useCallback((device: BaseDevice) => {
-    if (device.getIsPoweredOn()) {
-      const deviceId = device.getId();
+  const handleOpenTerminal = useCallback((device: Equipment) => {
+    if (!device.getIsPoweredOn()) return;
 
-      if (openTerminals.has(deviceId) && !minimizedTerminals.has(deviceId)) {
-        return;
-      }
-
-      if (openTerminals.has(deviceId) && minimizedTerminals.has(deviceId)) {
-        setMinimizedTerminals(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(deviceId);
-          return newSet;
-        });
-        return;
-      }
-
-      setOpenTerminals(prev => {
-        const newMap = new Map(prev);
-        newMap.set(deviceId, device);
-        return newMap;
+    // Open a new session (multi-terminal per device is supported)
+    const sessionId = manager.openTerminal(device);
+    if (sessionId) {
+      // If it was somehow minimized, un-minimize it
+      setMinimizedSessions(prev => {
+        if (prev.has(sessionId)) {
+          const next = new Set(prev);
+          next.delete(sessionId);
+          return next;
+        }
+        return prev;
       });
     }
-  }, [openTerminals, minimizedTerminals]);
+  }, [manager]);
 
-  const handleCloseTerminal = useCallback((deviceId: string) => {
-    setOpenTerminals(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(deviceId);
-      return newMap;
+  const handleCloseTerminal = useCallback((sessionId: string) => {
+    manager.closeTerminal(sessionId);
+    setMinimizedSessions(prev => {
+      if (prev.has(sessionId)) {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      }
+      return prev;
     });
-    setMinimizedTerminals(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(deviceId);
-      return newSet;
-    });
-  }, []);
+  }, [manager]);
 
-  const handleToggleTerminal = useCallback((device: BaseDevice) => {
-    const deviceId = device.getId();
-    setMinimizedTerminals(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(deviceId)) {
-        newSet.delete(deviceId);
+  const handleToggleTerminal = useCallback((sessionId: string) => {
+    setMinimizedSessions(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
       } else {
-        newSet.add(deviceId);
+        next.add(sessionId);
       }
-      return newSet;
+      return next;
     });
   }, []);
 
-  const handleMinimizeTerminal = useCallback((deviceId: string) => {
-    setMinimizedTerminals(prev => {
-      const newSet = new Set(prev);
-      newSet.add(deviceId);
-      return newSet;
+  const handleMinimizeTerminal = useCallback((sessionId: string) => {
+    setMinimizedSessions(prev => {
+      const next = new Set(prev);
+      next.add(sessionId);
+      return next;
     });
   }, []);
 
-  // Get visible (non-minimized) terminals
-  const visibleTerminals = useMemo(() => {
-    const result: Array<[string, BaseDevice]> = [];
-    openTerminals.forEach((device, id) => {
-      if (!minimizedTerminals.has(id)) {
-        result.push([id, device]);
-      }
-    });
-    return result;
-  }, [openTerminals, minimizedTerminals]);
+  // Get visible (non-minimized) sessions
+  const visibleSessions = useMemo(() => {
+    return allSessions.filter(([id]) => !minimizedSessions.has(id));
+  }, [allSessions, minimizedSessions]);
 
   // Clamp focused index
   useEffect(() => {
-    if (focusedIndex >= visibleTerminals.length) {
-      setFocusedIndex(Math.max(0, visibleTerminals.length - 1));
+    if (focusedIndex >= visibleSessions.length) {
+      setFocusedIndex(Math.max(0, visibleSessions.length - 1));
     }
-  }, [visibleTerminals.length, focusedIndex]);
+  }, [visibleSessions.length, focusedIndex]);
 
   // Keyboard shortcuts for tiling (Alt+key)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Only activate when terminals are visible
-      if (visibleTerminals.length === 0) return;
+      if (visibleSessions.length === 0) return;
 
       if (e.altKey) {
         switch (e.key.toLowerCase()) {
@@ -166,59 +164,61 @@ export function NetworkDesigner() {
           case 'g': e.preventDefault(); setTileLayout('grid'); break;
           case 's': e.preventDefault(); setTileLayout('stack'); break;
           case 'm': e.preventDefault(); setTileLayout('master-stack'); break;
-          case 'j': // Focus next
+          case 'j':
             e.preventDefault();
-            setFocusedIndex(prev => (prev + 1) % visibleTerminals.length);
+            setFocusedIndex(prev => (prev + 1) % visibleSessions.length);
             break;
-          case 'k': // Focus prev
+          case 'k':
             e.preventDefault();
-            setFocusedIndex(prev => (prev - 1 + visibleTerminals.length) % visibleTerminals.length);
+            setFocusedIndex(prev => (prev - 1 + visibleSessions.length) % visibleSessions.length);
             break;
         }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [visibleTerminals.length]);
+  }, [visibleSessions.length]);
 
-  const hasOpenTerminals = openTerminals.size > 0;
-  const hasVisibleTerminals = visibleTerminals.length > 0;
+  const hasOpenTerminals = allSessions.length > 0;
+  const hasVisibleTerminals = visibleSessions.length > 0;
 
   // ── Render tiled terminals based on layout mode ──
   const renderTiledTerminals = () => {
-    const count = visibleTerminals.length;
+    const count = visibleSessions.length;
     if (count === 0) return null;
 
-    const renderTerminal = (deviceId: string, device: BaseDevice) => (
-      <div key={deviceId} className="min-h-0 min-w-0 w-full h-full">
-        <TerminalModal
-          device={device}
-          onClose={() => handleCloseTerminal(deviceId)}
-          onMinimize={() => handleMinimizeTerminal(deviceId)}
-          embedded
-        />
-      </div>
-    );
+    const renderTerminal = (sessionId: string) => {
+      const session = manager.getSession(sessionId);
+      if (!session) return null;
+      return (
+        <div key={sessionId} className="min-h-0 min-w-0 w-full h-full">
+          <TerminalModal
+            session={session}
+            onClose={() => handleCloseTerminal(sessionId)}
+            onMinimize={() => handleMinimizeTerminal(sessionId)}
+            embedded
+          />
+        </div>
+      );
+    };
 
     switch (tileLayout) {
       case 'stack': {
-        // Only show focused terminal
         const idx = Math.min(focusedIndex, count - 1);
-        const [deviceId, device] = visibleTerminals[idx];
+        const [sessionId] = visibleSessions[idx];
         return (
           <div className="w-full h-full">
-            {renderTerminal(deviceId, device)}
+            {renderTerminal(sessionId)}
           </div>
         );
       }
 
       case 'split-h': {
-        // All terminals side by side horizontally
         return (
           <div className="w-full h-full flex gap-1">
-            {visibleTerminals.map(([id, dev]) => (
+            {visibleSessions.map(([id]) => (
               <div key={id} className="flex-1 min-w-0 h-full">
-                {renderTerminal(id, dev)}
+                {renderTerminal(id)}
               </div>
             ))}
           </div>
@@ -226,12 +226,11 @@ export function NetworkDesigner() {
       }
 
       case 'split-v': {
-        // All terminals stacked vertically
         return (
           <div className="w-full h-full flex flex-col gap-1">
-            {visibleTerminals.map(([id, dev]) => (
+            {visibleSessions.map(([id]) => (
               <div key={id} className="flex-1 min-h-0 w-full">
-                {renderTerminal(id, dev)}
+                {renderTerminal(id)}
               </div>
             ))}
           </div>
@@ -240,25 +239,22 @@ export function NetworkDesigner() {
 
       case 'master-stack': {
         if (count === 1) {
-          const [id, dev] = visibleTerminals[0];
-          return <div className="w-full h-full">{renderTerminal(id, dev)}</div>;
+          const [id] = visibleSessions[0];
+          return <div className="w-full h-full">{renderTerminal(id)}</div>;
         }
-        // Master on the left (60%), stack on the right (40%)
         const masterIdx = Math.min(focusedIndex, count - 1);
-        const [masterId, masterDev] = visibleTerminals[masterIdx];
-        const stackTerminals = visibleTerminals.filter((_, i) => i !== masterIdx);
+        const [masterId] = visibleSessions[masterIdx];
+        const stackSessions = visibleSessions.filter((_, i) => i !== masterIdx);
 
         return (
           <div className="w-full h-full flex gap-1">
-            {/* Master pane */}
             <div className="h-full min-w-0" style={{ flex: '0 0 60%' }}>
-              {renderTerminal(masterId, masterDev)}
+              {renderTerminal(masterId)}
             </div>
-            {/* Stack pane */}
             <div className="h-full min-w-0 flex flex-col gap-1" style={{ flex: '0 0 calc(40% - 4px)' }}>
-              {stackTerminals.map(([id, dev]) => (
+              {stackSessions.map(([id]) => (
                 <div key={id} className="flex-1 min-h-0 w-full">
-                  {renderTerminal(id, dev)}
+                  {renderTerminal(id)}
                 </div>
               ))}
             </div>
@@ -268,7 +264,6 @@ export function NetworkDesigner() {
 
       case 'grid':
       default: {
-        // Auto grid
         const cols = count <= 1 ? 1 : count <= 4 ? 2 : 3;
         const rows = Math.ceil(count / cols);
         return (
@@ -279,7 +274,7 @@ export function NetworkDesigner() {
               gridTemplateRows: `repeat(${rows}, 1fr)`,
             }}
           >
-            {visibleTerminals.map(([id, dev]) => renderTerminal(id, dev))}
+            {visibleSessions.map(([id]) => renderTerminal(id))}
           </div>
         );
       }
@@ -345,32 +340,19 @@ export function NetworkDesigner() {
         </div>
       )}
 
-      {/* Keep minimized terminals mounted but hidden */}
-      {Array.from(openTerminals.entries()).map(([deviceId, device]) => {
-        if (!minimizedTerminals.has(deviceId)) return null;
-        return (
-          <div key={deviceId} style={{ display: 'none' }}>
-            <TerminalModal
-              device={device}
-              onClose={() => handleCloseTerminal(deviceId)}
-              onMinimize={() => handleMinimizeTerminal(deviceId)}
-              embedded
-            />
-          </div>
-        );
-      })}
+      {/* No hidden divs needed — session state lives in TerminalManager, not React */}
 
       {/* ── Always-visible terminal taskbar ── */}
       {hasOpenTerminals && (
         <TerminalTaskbar
-          terminals={openTerminals}
-          minimizedIds={minimizedTerminals}
+          sessions={allSessions}
+          minimizedIds={minimizedSessions}
           onToggle={handleToggleTerminal}
           onClose={handleCloseTerminal}
           tileLayout={tileLayout}
           onLayoutChange={setTileLayout}
           focusedIndex={focusedIndex}
-          visibleCount={visibleTerminals.length}
+          visibleCount={visibleSessions.length}
           onFocusChange={setFocusedIndex}
         />
       )}

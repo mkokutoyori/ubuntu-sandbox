@@ -135,18 +135,22 @@ Tous les champs sont désormais modélisés dans `IPSec_SA` (voir `IPSecTypes.ts
 | Tunnel Header IP src/dst | Oui | `localIP`, `peerIP` |
 | SA Selectors (traffic selectors) | Oui | `trafficSelectors: SATrafficSelector` — selectors natifs dans la SA (src/dst address+wildcard, protocol, src/dst port), extraits de l'ACL lors de la négociation via `buildTrafficSelectorsFromACL()`. Affichés dans `show crypto ipsec sa detail`. |
 
-### 3.3 Gestion des fragments IP — Partiellement implémenté
+### 3.3 Gestion des fragments IP — **IMPLÉMENTÉ** ✅
 
-La RFC 4301 Section 7 requiert une gestion spécifique des fragments :
-- Réassemblage avant application IPsec (tunnel mode) — **Non simulé** (pas de simulation de fragmentation IP)
-- Fragmentation après encapsulation ESP — **Non simulé** (vérification Path MTU avec drop si DF set, mais pas de fragmentation réelle)
-- Stateful fragment checking — **Oui** : flag `statefulFragCheck` dans la SA, détection des fragments (MF bit / fragment offset) dans `encapsulate()`. Activé par défaut en mode Tunnel.
+La RFC 4301 Section 7 requiert une gestion spécifique des fragments. **Implémenté** :
+- **Réassemblage avant application IPsec (tunnel mode)** — Oui : buffer de réassemblage pré-IPsec dans `IPSecEngine.bufferFragment()`. Les fragments sont regroupés par clé `(srcIP|dstIP|identification|protocol)`, avec timeout de 30s et limite de 256 groupes simultanés. Le paquet réassemblé est passé à `encapsulate()` une fois tous les fragments reçus.
+- **Fragmentation après encapsulation ESP** — Oui : `fragmentIPv4Packet()` fragmente le paquet externe si `totalLength > pathMTU` et que DF n'est pas positionné. `processOutbound()` retourne un tableau `IPv4Packet[]` contenant tous les fragments. L'offset est calculé en unités de 8 octets conformément à la RFC 791 §2.3.
+- **Stateful fragment checking** — Oui : flag `statefulFragCheck` dans la SA, détection correcte du bit MF (bit 2, `flags & 0b100`) et du fragment offset dans `encapsulate()`. Activé par défaut en mode Tunnel.
+- **Bug MF corrigé** : le test du bit MF utilisait `flags & 0x1` (bit réservé) au lieu de `flags & 0b100` (bit 2 = More Fragments). Corrigé conformément au format des flags IPv4 : bit 0=reserved, bit 1=DF, bit 2=MF.
 
-Note : la simulation ne génère pas de paquets fragmentés, donc le réassemblage et la fragmentation post-encapsulation ne sont pas nécessaires dans le contexte du simulateur. La structure et les flags sont néanmoins conformes à la RFC.
+### 3.4 ICMP Processing — **IMPLÉMENTÉ** ✅
 
-### 3.4 ICMP Processing — **NON IMPLÉMENTÉ**
-
-La RFC 4301 Section 6 exige un traitement spécial des messages ICMP en relation avec IPsec (PMTU, unreachable). Aucun traitement spécial ICMP n'est lié à IPsec dans le simulateur.
+La RFC 4301 Section 6 exige un traitement spécial des messages ICMP en relation avec IPsec. **Implémenté** :
+- **PMTU Discovery (RFC 1191)** — Oui : le routeur traite les ICMP Type 3 Code 4 (Fragmentation Needed) dans `handleLocalDelivery()`. Lorsqu'un tel message référence un paquet ESP/AH sortant, le SPI est extrait du paquet original et `ipsecEngine.updatePathMTU()` est appelé pour mettre à jour le Path MTU de la SA.
+- **Génération ICMP Fragmentation Needed** — Oui : lorsque `encapsulate()` détecte que le paquet encapsulé dépasse le Path MTU avec DF positionné, `lastEncapICMP` est renseigné avec le MTU interne (`ipMTU`) et le paquet original. Le Router génère alors un ICMP Type 3 Code 4 vers la source, incluant le Next-Hop MTU (RFC 1191 §4).
+- **`sendICMPError()` enrichi** — Le champ `mtu` est renseigné dans les messages ICMP Type 3 Code 4, et le champ `originalPacket` transporte une référence au paquet déclencheur pour permettre l'identification de la SA côté récepteur.
+- **ICMPPacket étendu** — Ajout des champs optionnels `mtu` (Next-Hop MTU) et `originalPacket` (paquet déclencheur) à l'interface `ICMPPacket` dans `types.ts`.
+- **Path MTU aging** — `agePathMTU()` (RFC 1191 §6.3) réinitialise le PMTU au défaut (1500) après expiration du timer, permettant au mécanisme de PMTU Discovery de re-tester un chemin plus large.
 
 ### 3.5 Multicast IPsec — **NON IMPLÉMENTÉ**
 
@@ -267,8 +271,8 @@ L'implémentation Cisco est la plus complète mais il manque :
 | `crypto isakmp identity` | Définir l'identité IKE (address/hostname/dn) | Moyenne |
 | `crypto isakmp aggressive-mode` | Activer Aggressive Mode IKEv1 | Moyenne |
 | `crypto isakmp invalid-spi-recovery` | Récupération sur SPI invalide | Basse |
-| `crypto ipsec fragmentation` | Contrôle de la fragmentation pre/post-encaps | Moyenne |
-| `crypto ipsec df-bit` | Gestion du bit DF (copy/set/clear) | Moyenne |
+| ~~`crypto ipsec fragmentation`~~ | ~~Contrôle de la fragmentation pre/post-encaps~~ | ✅ Fait — `fragmentIPv4Packet()`, `bufferFragment()` |
+| ~~`crypto ipsec df-bit`~~ | ~~Gestion du bit DF (copy/set/clear)~~ | ✅ Fait — `dfBitPolicy`, `computeOuterFlags()` |
 | `crypto ikev2 dpd` | DPD spécifique à IKEv2 (séparé de IKEv1) | Haute |
 | `crypto ikev2 redirect` | IKEv2 redirect gateway | Basse |
 | `crypto ikev2 reconnect` | IKEv2 session resumption | Basse |
@@ -565,4 +569,4 @@ Les commandes `netsh ipsec` ont été **implémentées** dans `WinNetsh.ts` : st
 ---
 
 *Document généré par l'analyse automatique du code source du simulateur réseau.*
-*Dernière mise à jour : 2026-03-15*
+*Dernière mise à jour : 2026-03-16*

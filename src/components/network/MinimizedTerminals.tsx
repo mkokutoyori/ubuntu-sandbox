@@ -1,6 +1,6 @@
 /**
  * TerminalTaskbar - Always-visible taskbar at the bottom of the screen
- * Shows all open terminals and tiling layout controls.
+ * Shows all open terminal sessions and tiling layout controls.
  *
  * Layout selector inspired by i3/sway tiling WMs:
  *   - Stack: single focused terminal (Alt+S)
@@ -10,22 +10,24 @@
  *   - Master+Stack: master pane + stack (Alt+M)
  *
  * Focus navigation: Alt+J (next) / Alt+K (prev)
+ *
+ * Now session-based: receives [sessionId, TerminalSession][] from the
+ * TerminalManager instead of Map<string, BaseDevice>.
  */
 
 import {
   X, Terminal, Columns2, Rows2, LayoutGrid,
   Layers, PanelLeft, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { Equipment } from '@/network';
+import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import type { TileLayout } from './NetworkDesigner';
-type BaseDevice = Equipment;
 import { cn } from '@/lib/utils';
 
 interface TerminalTaskbarProps {
-  terminals: Map<string, BaseDevice>;
+  sessions: Array<[string, TerminalSession]>;
   minimizedIds: Set<string>;
-  onToggle: (device: BaseDevice) => void;
-  onClose: (deviceId: string) => void;
+  onToggle: (sessionId: string) => void;
+  onClose: (sessionId: string) => void;
   tileLayout: TileLayout;
   onLayoutChange: (layout: TileLayout) => void;
   focusedIndex: number;
@@ -42,7 +44,7 @@ const LAYOUT_OPTIONS: { id: TileLayout; icon: typeof LayoutGrid; label: string; 
 ];
 
 export function TerminalTaskbar({
-  terminals,
+  sessions,
   minimizedIds,
   onToggle,
   onClose,
@@ -52,9 +54,9 @@ export function TerminalTaskbar({
   visibleCount,
   onFocusChange,
 }: TerminalTaskbarProps) {
-  if (terminals.size === 0) return null;
+  if (sessions.length === 0) return null;
 
-  const visibleCountTotal = terminals.size - minimizedIds.size;
+  const visibleCountTotal = sessions.length - minimizedIds.size;
   const showFocusControls = tileLayout === 'stack' || tileLayout === 'master-stack';
 
   return (
@@ -112,11 +114,12 @@ export function TerminalTaskbar({
 
       {/* ── Terminal tabs ── */}
       <div className="flex items-center gap-1 flex-1 overflow-x-auto">
-        {Array.from(terminals.entries()).map(([deviceId, device]) => {
-          const isMinimized = minimizedIds.has(deviceId);
+        {sessions.map(([sessionId, session]) => {
+          const isMinimized = minimizedIds.has(sessionId);
+          const deviceName = session.device.getName();
           return (
             <div
-              key={deviceId}
+              key={sessionId}
               className={cn(
                 "flex items-center gap-2 px-3 py-1",
                 "rounded border transition-all cursor-pointer group shrink-0",
@@ -126,7 +129,7 @@ export function TerminalTaskbar({
               )}
             >
               <button
-                onClick={() => onToggle(device)}
+                onClick={() => onToggle(sessionId)}
                 className="flex items-center gap-2"
               >
                 <Terminal className={cn(
@@ -139,11 +142,11 @@ export function TerminalTaskbar({
                     ? "text-white/40 group-hover:text-white/60"
                     : "text-white/80 group-hover:text-white"
                 )}>
-                  {device.getName()}
+                  {deviceName}
                 </span>
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); onClose(deviceId); }}
+                onClick={(e) => { e.stopPropagation(); onClose(sessionId); }}
                 className="p-0.5 rounded hover:bg-red-500/20 transition-colors"
                 title="Close terminal"
               >
@@ -156,7 +159,7 @@ export function TerminalTaskbar({
 
       {/* ── Status ── */}
       <div className="flex items-center gap-1 ml-2 text-white/25 shrink-0">
-        <span className="text-[10px] font-mono">{visibleCountTotal}/{terminals.size}</span>
+        <span className="text-[10px] font-mono">{visibleCountTotal}/{sessions.length}</span>
       </div>
     </div>
   );

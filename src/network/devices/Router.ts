@@ -38,10 +38,10 @@
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import {
-  EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
+  EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket, RIPRouteEntry,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMPV6,
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMPV6, IP_PROTO_ESP, IP_PROTO_AH,
   UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
@@ -58,7 +58,6 @@ import { OSPFEngine } from '../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../ospf/OSPFv3Engine';
 import type { OSPFNeighbor, OSPFPacket } from '../ospf/types';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
-import { IP_PROTO_ESP, IP_PROTO_AH } from '../core/types';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -1313,6 +1312,25 @@ export abstract class Router extends Equipment {
             etherType: ETHERTYPE_IPV4, payload: replyIP,
           });
         }
+      } else if (icmp.icmpType === 'destination-unreachable' && icmp.code === 4) {
+        // ── RFC 4301 §6 / RFC 1191: ICMP Fragmentation Needed (Type 3, Code 4) ──
+        // When we receive this ICMP error referencing one of our IPsec-tunneled
+        // packets, update the SA's Path MTU so future packets are sized correctly.
+        if (this.ipsecEngine && icmp.originalPacket) {
+          const origPkt = icmp.originalPacket;
+          // Check if the original packet was an ESP or AH packet (IPsec tunneled)
+          if (origPkt.protocol === IP_PROTO_ESP) {
+            const esp = origPkt.payload as ESPPacket;
+            if (esp && esp.type === 'esp' && icmp.mtu) {
+              this.ipsecEngine.updatePathMTU(esp.spi, icmp.mtu);
+            }
+          } else if (origPkt.protocol === IP_PROTO_AH) {
+            const ah = origPkt.payload as AHPacket;
+            if (ah && ah.type === 'ah' && icmp.mtu) {
+              this.ipsecEngine.updatePathMTU(ah.spi, icmp.mtu);
+            }
+          }
+        }
       } else if (icmp.icmpType === 'echo-reply') {
         // Match against pending pings (router-initiated)
         const key = `ping-${icmp.id}-${icmp.sequence}`;
@@ -1424,9 +1442,17 @@ export abstract class Router extends Equipment {
           // PROTECT — use crypto map / tunnel protection as before
           const entry = this.ipsecEngine.findMatchingCryptoEntry(fwdPkt, route.iface);
           if (entry) {
-            const encPkt = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
-            if (!encPkt) return; // negotiation failed — drop
-            this.processIPv4(route.iface, encPkt);
+            const encPkts = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
+            if (!encPkts) {
+              // Check if ICMP Fragmentation Needed should be sent back to source
+              if (this.ipsecEngine.lastEncapICMP) {
+                const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
+                this.ipsecEngine.lastEncapICMP = null;
+                this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+              }
+              return;
+            }
+            for (const p of encPkts) this.processIPv4(route.iface, p);
             return;
           }
         }
@@ -1434,9 +1460,16 @@ export abstract class Router extends Equipment {
         // No explicit SPD policy — fall back to crypto map matching (legacy behavior)
         const entry = this.ipsecEngine.findMatchingCryptoEntry(fwdPkt, route.iface);
         if (entry) {
-          const encPkt = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
-          if (!encPkt) return;
-          this.processIPv4(route.iface, encPkt);
+          const encPkts = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
+          if (!encPkts) {
+            if (this.ipsecEngine.lastEncapICMP) {
+              const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
+              this.ipsecEngine.lastEncapICMP = null;
+              this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+            }
+            return;
+          }
+          for (const p of encPkts) this.processIPv4(route.iface, p);
           return;
         }
       }
@@ -1467,6 +1500,7 @@ export abstract class Router extends Equipment {
     offendingPkt: IPv4Packet,
     icmpType: 'time-exceeded' | 'destination-unreachable',
     code: number,
+    nextHopMTU?: number,
   ): void {
     const port = this.ports.get(inPort);
     if (!port) return;
@@ -1476,6 +1510,10 @@ export abstract class Router extends Equipment {
     const icmpError: ICMPPacket = {
       type: 'icmp', icmpType, code,
       id: 0, sequence: 0, dataSize: 0,
+      // RFC 1191 §4: include Next-Hop MTU for Fragmentation Needed (Type 3, Code 4)
+      mtu: (icmpType === 'destination-unreachable' && code === 4) ? (nextHopMTU ?? this.interfaceMTU) : undefined,
+      // Include reference to the offending packet so receivers can identify the SA
+      originalPacket: offendingPkt,
     };
 
     const errorIP = createIPv4Packet(

@@ -776,6 +776,17 @@ export interface ICMPPacket {
    * 84 bytes total with IPv4 header).
    */
   dataSize: number;
+  /**
+   * Next-Hop MTU — included in ICMP Type 3, Code 4 (Fragmentation Needed
+   * and Don't Fragment was Set) per RFC 1191 §4.
+   */
+  mtu?: number;
+  /**
+   * Reference to the offending packet that triggered this ICMP error.
+   * Used by the simulator so that receivers (e.g. IPsec PMTU) can inspect
+   * the original packet header (SPI, protocol, etc.).
+   */
+  originalPacket?: IPv4Packet;
 }
 
 // ─── L4: UDP Datagram (RFC 768) ──────────────────────────────────────

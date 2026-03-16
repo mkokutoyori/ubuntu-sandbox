@@ -13,7 +13,7 @@ import {
   IPAddress, SubnetMask,
   IPv4Packet, ESPPacket, AHPacket,
   IP_PROTO_ESP, IP_PROTO_AH,
-  createIPv4Packet, computeIPv4Checksum,
+  createIPv4Packet, computeIPv4Checksum, nextIPv4Id,
 } from '../core/types';
 import {
   ISAKMPPolicy, TransformSet, CryptoMapEntry, CryptoMap, DynamicCryptoMap,
@@ -162,6 +162,81 @@ function defaultDscpEcnConfig(): SADscpEcnConfig {
   };
 }
 
+// ─── Fragment Reassembly Buffer (RFC 4301 §7) ────────────────────────
+
+/** Minimum IPv4 MTU per RFC 791 — never fragment below this. */
+const MIN_IPV4_MTU = 576;
+/** Fragment reassembly timeout in milliseconds (RFC 791 recommends 15-120s). */
+const FRAG_REASSEMBLY_TIMEOUT_MS = 30_000;
+/** Maximum number of fragment groups tracked (memory guard). */
+const MAX_FRAG_GROUPS = 256;
+
+/** A single buffered fragment awaiting reassembly. */
+interface FragmentEntry {
+  /** The fragment packet */
+  packet: IPv4Packet;
+  /** Fragment offset in bytes (fragmentOffset * 8) */
+  offsetBytes: number;
+  /** Data length = totalLength - ihl*4 */
+  dataLength: number;
+  /** True if MF (More Fragments) flag is clear → this is the last fragment. */
+  isLast: boolean;
+}
+
+/** Key for grouping fragments: srcIP|dstIP|identification|protocol */
+function fragGroupKey(pkt: IPv4Packet): string {
+  return `${pkt.sourceIP}|${pkt.destinationIP}|${pkt.identification}|${pkt.protocol}`;
+}
+
+/**
+ * Fragment an IPv4 packet into pieces that fit within the given MTU.
+ * RFC 791 §2.3: fragment offset is in units of 8 bytes.
+ * Returns the array of fragment packets, or the original packet if no
+ * fragmentation is needed.
+ */
+function fragmentIPv4Packet(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
+  if (pkt.totalLength <= mtu) return [pkt];
+
+  const headerLen = pkt.ihl * 4; // typically 20
+  const maxPayloadPerFrag = Math.floor((mtu - headerLen) / 8) * 8; // must be multiple of 8
+  if (maxPayloadPerFrag <= 0) return [pkt]; // MTU too small, cannot fragment
+
+  const totalPayload = pkt.totalLength - headerLen;
+  const fragments: IPv4Packet[] = [];
+  let offset = 0;
+
+  while (offset < totalPayload) {
+    const remaining = totalPayload - offset;
+    const isLast = remaining <= maxPayloadPerFrag;
+    const fragPayloadSize = isLast ? remaining : maxPayloadPerFrag;
+
+    // Build fragment flags: preserve reserved bit, set MF if not last
+    const fragFlags = isLast
+      ? (pkt.flags & ~0b100) // clear MF for last fragment
+      : (pkt.flags | 0b100); // set MF for non-last fragments
+
+    const frag: IPv4Packet = {
+      ...pkt,
+      identification: pkt.identification,
+      flags: fragFlags,
+      fragmentOffset: (pkt.fragmentOffset * 8 + offset) / 8, // in 8-byte units
+      totalLength: headerLen + fragPayloadSize,
+      headerChecksum: 0,
+    };
+    // Only the first fragment carries the real payload; subsequent fragments
+    // carry a simulated "fragment payload" marker.
+    if (offset > 0) {
+      frag.payload = { type: 'fragment', offset, size: fragPayloadSize } as any;
+    }
+    frag.headerChecksum = computeIPv4Checksum(frag);
+    fragments.push(frag);
+
+    offset += fragPayloadSize;
+  }
+
+  return fragments;
+}
+
 /** Create default traffic selectors (any/any). */
 function defaultTrafficSelectors(): SATrafficSelector {
   return {
@@ -215,6 +290,26 @@ export class IPSecEngine {
   private ipsecSADB: Map<string, IPSec_SA[]> = new Map();
   /** inbound SPI → IPSec_SA (for fast lookup during decryption) */
   private spiToSA: Map<number, IPSec_SA> = new Map();
+
+  // ── Fragment Reassembly Buffer (RFC 4301 §7) ─────────────────────
+  /**
+   * Pre-IPsec fragment reassembly buffer for tunnel mode.
+   * Key: fragGroupKey(srcIP|dstIP|identification|protocol)
+   * Value: { fragments, totalLength (if known), timer, created }
+   */
+  private fragBuffer: Map<string, {
+    fragments: FragmentEntry[];
+    totalDataLength: number; // -1 until last fragment received
+    timer: ReturnType<typeof setTimeout>;
+    created: number;
+  }> = new Map();
+
+  /**
+   * After encapsulate() returns null due to MTU exceeded with DF set,
+   * this field holds the info needed to generate ICMP Fragmentation Needed.
+   * The caller (Router) should check this and send the ICMP error.
+   */
+  lastEncapICMP: { mtu: number; originalPkt: IPv4Packet } | null = null;
 
   constructor(router: Router) {
     this.router = router;
@@ -804,9 +899,10 @@ export class IPSecEngine {
 
   /**
    * Process an outbound packet: negotiate SA if needed, then wrap in ESP/AH.
-   * Returns the outer IPv4 packet (ESP-encapsulated) or null if failed.
+   * Returns the outer IPv4 packet(s) (ESP-encapsulated) or null if failed.
+   * May return multiple packets when post-encapsulation fragmentation is needed.
    */
-  processOutbound(pkt: IPv4Packet, egressIface: string, entry: CryptoMapEntry): IPv4Packet | null {
+  processOutbound(pkt: IPv4Packet, egressIface: string, entry: CryptoMapEntry): IPv4Packet[] | null {
     // Determine peer IP
     let peerIP = this.determinePeer(entry, egressIface, pkt);
     if (!peerIP) return null;
@@ -837,7 +933,22 @@ export class IPSecEngine {
     }
 
     // Wrap in ESP (or AH for AH-only)
-    return this.encapsulate(pkt, sa, egressIface);
+    const outerPkt = this.encapsulate(pkt, sa, egressIface);
+    if (!outerPkt) return null;
+
+    // ── RFC 4301 §8.2: Post-encapsulation fragmentation ──
+    // If the outer packet exceeds the path MTU and DF is NOT set in the
+    // outer header, fragment the outer (encapsulated) packet.
+    if (outerPkt.totalLength > sa.pathMTU && (outerPkt.flags & 0b010) === 0) {
+      const fragments = fragmentIPv4Packet(outerPkt, sa.pathMTU);
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC: post-encap fragmentation: ${outerPkt.totalLength} > MTU ${sa.pathMTU}, ${fragments.length} fragments`);
+      }
+      return fragments;
+    }
+
+    return [outerPkt];
   }
 
   /**
@@ -898,35 +1009,54 @@ export class IPSecEngine {
     // ── RFC 4301 §7: Stateful Fragment Checking ──
     // In tunnel mode, fragments should be reassembled before IPsec processing.
     // Check if the inner packet is a fragment (MF set or offset > 0).
+    // MF = bit 2 of flags field (0b100 = 0x4).
     if (sa.statefulFragCheck && sa.mode === 'Tunnel') {
-      const isFragment = (innerPkt.flags & 0x1) !== 0 || innerPkt.fragmentOffset !== 0;
+      const mfSet = (innerPkt.flags & 0b100) !== 0; // MF flag = bit 2
+      const isFragment = mfSet || innerPkt.fragmentOffset !== 0;
       if (isFragment) {
-        // In a real implementation, fragments would be reassembled here.
-        // For the simulator, we log and pass through (reassembly not simulated).
-        if (this.debugIpsec) {
-          Logger.info(this.router.id, 'debug:ipsec',
-            `IPSEC: fragment detected on SA ${spiHex(sa.spiOut)}, stateful frag check active`);
+        // Buffer the fragment for reassembly
+        const reassembled = this.bufferFragment(innerPkt);
+        if (reassembled) {
+          // All fragments received — continue with reassembled packet
+          innerPkt = reassembled;
+          if (this.debugIpsec) {
+            Logger.info(this.router.id, 'debug:ipsec',
+              `IPSEC: fragments reassembled for SA ${spiHex(sa.spiOut)}, total=${reassembled.totalLength}`);
+          }
+        } else {
+          // Still waiting for more fragments — do not encapsulate yet
+          if (this.debugIpsec) {
+            Logger.info(this.router.id, 'debug:ipsec',
+              `IPSEC: fragment buffered for SA ${spiHex(sa.spiOut)}, awaiting reassembly`);
+          }
+          return null;
         }
       }
     }
 
     // ── RFC 4301 §8.2: Path MTU Check ──
     // After encapsulation, the outer packet must not exceed the path MTU.
+    this.lastEncapICMP = null; // reset
     const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
     const estimatedOuterSize = innerPkt.totalLength + overhead;
     if (estimatedOuterSize > sa.pathMTU) {
-      // Check inner packet DF bit
-      const innerDF = (innerPkt.flags & 0x2) !== 0;
+      // Check inner packet DF bit (bit 1 = 0b010)
+      const innerDF = (innerPkt.flags & 0b010) !== 0;
       if (innerDF && sa.dfBitPolicy !== 'clear') {
-        // Cannot fragment — would send ICMP Fragmentation Needed in a real impl
+        // RFC 4301 §8.1: MUST send ICMP Fragmentation Needed (Type 3, Code 4)
+        // with Next-Hop MTU = pathMTU - overhead (the maximum inner size)
         if (this.debugIpsec) {
           Logger.info(this.router.id, 'debug:ipsec',
-            `IPSEC: packet too large (${estimatedOuterSize} > MTU ${sa.pathMTU}), DF set, dropping`);
+            `IPSEC: packet too large (${estimatedOuterSize} > MTU ${sa.pathMTU}), DF set, sending ICMP`);
         }
+        this.lastEncapICMP = {
+          mtu: sa.ipMTU, // inner MTU the sender should use
+          originalPkt: innerPkt,
+        };
         sa.sendErrors++;
         return null;
       }
-      // If DF is clear or dfBitPolicy='clear', fragmentation would happen post-encapsulation
+      // If DF is clear or dfBitPolicy='clear', fragmentation happens post-encapsulation (below)
     }
 
     // ── RFC 4303 §3.3.3 / §2.2.1: Sequence Number Overflow Handling ──
@@ -1135,6 +1265,121 @@ export class IPSecEngine {
         }
       }
     }
+  }
+
+  // ── RFC 4301 §7: Fragment Reassembly ─────────────────────────────
+
+  /**
+   * Buffer an IP fragment for pre-IPsec reassembly (RFC 4301 §7).
+   * In tunnel mode with stateful fragment checking enabled, IP fragments
+   * destined for IPsec processing are reassembled BEFORE encryption.
+   *
+   * Returns the reassembled packet when all fragments are collected,
+   * or null if still waiting for more fragments.
+   */
+  private bufferFragment(pkt: IPv4Packet): IPv4Packet | null {
+    const key = fragGroupKey(pkt);
+    const mfSet = (pkt.flags & 0b100) !== 0;
+    const offsetBytes = pkt.fragmentOffset * 8;
+    const headerLen = pkt.ihl * 4;
+    const dataLength = pkt.totalLength - headerLen;
+
+    const entry: FragmentEntry = {
+      packet: pkt,
+      offsetBytes,
+      dataLength,
+      isLast: !mfSet,
+    };
+
+    let group = this.fragBuffer.get(key);
+    if (!group) {
+      // Enforce maximum tracked fragment groups
+      if (this.fragBuffer.size >= MAX_FRAG_GROUPS) {
+        // Evict oldest group
+        const oldestKey = this.fragBuffer.keys().next().value;
+        if (oldestKey !== undefined) {
+          const oldest = this.fragBuffer.get(oldestKey);
+          if (oldest) clearTimeout(oldest.timer);
+          this.fragBuffer.delete(oldestKey);
+        }
+      }
+
+      // Start reassembly timer
+      const timer = setTimeout(() => {
+        this.fragBuffer.delete(key);
+        if (this.debugIpsec) {
+          Logger.info(this.router.id, 'debug:ipsec',
+            `IPSEC: fragment reassembly timeout for group ${key}`);
+        }
+      }, FRAG_REASSEMBLY_TIMEOUT_MS);
+
+      group = {
+        fragments: [],
+        totalDataLength: -1,
+        timer,
+        created: Date.now(),
+      };
+      this.fragBuffer.set(key, group);
+    }
+
+    // Add fragment (avoid duplicates by offset)
+    const exists = group.fragments.some(f => f.offsetBytes === offsetBytes);
+    if (!exists) {
+      group.fragments.push(entry);
+    }
+
+    // If this is the last fragment, we now know the total data length
+    if (entry.isLast) {
+      group.totalDataLength = offsetBytes + dataLength;
+    }
+
+    // Check if reassembly is complete
+    if (group.totalDataLength < 0) return null; // don't know total yet
+
+    // Sort fragments by offset and check for contiguous coverage
+    const sorted = [...group.fragments].sort((a, b) => a.offsetBytes - b.offsetBytes);
+    let covered = 0;
+    for (const frag of sorted) {
+      if (frag.offsetBytes > covered) return null; // gap
+      covered = Math.max(covered, frag.offsetBytes + frag.dataLength);
+    }
+
+    if (covered < group.totalDataLength) return null; // still incomplete
+
+    // ── Reassembly complete ──
+    clearTimeout(group.timer);
+    this.fragBuffer.delete(key);
+
+    // Use the first fragment's header (offset=0) as the reassembled packet header
+    const firstFrag = sorted.find(f => f.offsetBytes === 0);
+    if (!firstFrag) return null; // missing first fragment header
+
+    // Build the reassembled packet from the first fragment
+    const reassembled: IPv4Packet = {
+      ...firstFrag.packet,
+      flags: firstFrag.packet.flags & ~0b100, // clear MF
+      fragmentOffset: 0,
+      totalLength: headerLen + group.totalDataLength,
+      headerChecksum: 0,
+    };
+    reassembled.headerChecksum = computeIPv4Checksum(reassembled);
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC: reassembled ${sorted.length} fragments, total=${reassembled.totalLength} bytes`);
+    }
+
+    return reassembled;
+  }
+
+  /**
+   * Clear all fragment reassembly state (called on SA teardown or engine reset).
+   */
+  clearFragmentBuffer(): void {
+    for (const [, group] of this.fragBuffer) {
+      clearTimeout(group.timer);
+    }
+    this.fragBuffer.clear();
   }
 
   // ══════════════════════════════════════════════════════════════════
