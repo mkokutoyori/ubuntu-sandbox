@@ -1307,8 +1307,10 @@ export abstract class Router extends Equipment {
       if (icmp.icmpType === 'echo-request') {
         const port = this.ports.get(inPort);
         if (!port) return;
-        const myIP = port.getIPAddress();
-        if (!myIP) return;
+
+        // Use the destination IP of the request as the source of the reply
+        // (correct for loopback/virtual interfaces and transport mode IPSec)
+        const replySourceIP = ipPkt.destinationIP;
 
         const replyICMP: ICMPPacket = {
           type: 'icmp', icmpType: 'echo-reply', code: 0,
@@ -1316,15 +1318,24 @@ export abstract class Router extends Equipment {
         };
 
         const replyIP = createIPv4Packet(
-          myIP, ipPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
+          replySourceIP, ipPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
           replyICMP, 8 + icmp.dataSize,
         );
 
+        this.counters.icmpOutEchoReps++;
+        this.counters.icmpOutMsgs++;
+        this.counters.ifOutOctets += replyIP.totalLength;
+
+        // If IPSec is active, route the reply through the forwarding path
+        // so it goes through outbound IPSec processing (transport mode).
+        // Otherwise send directly for efficiency.
+        if (this.ipsecEngine) {
+          this.processIPv4(inPort, replyIP);
+          return;
+        }
+
         const targetMAC = this.arpTable.get(ipPkt.sourceIP.toString());
         if (targetMAC) {
-          this.counters.icmpOutEchoReps++;
-          this.counters.icmpOutMsgs++;
-          this.counters.ifOutOctets += replyIP.totalLength;
           this.sendFrame(inPort, {
             srcMAC: port.getMAC(), dstMAC: targetMAC.mac,
             etherType: ETHERTYPE_IPV4, payload: replyIP,
@@ -2162,6 +2173,7 @@ export abstract class Router extends Equipment {
     targetIP: IPAddress,
     count: number = 5,
     timeoutMs: number = 2000,
+    sourceIPStr?: string,
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     // Self-ping: check all interface IPs
     for (const [, port] of this.ports) {
@@ -2184,8 +2196,15 @@ export abstract class Router extends Equipment {
     const outPort = this.ports.get(route.iface);
     if (!outPort) return [];
 
-    const myIP = outPort.getIPAddress();
-    if (!myIP) return [];
+    // Determine source IP: use explicit source if provided, otherwise egress interface IP
+    let myIP: IPAddress;
+    if (sourceIPStr) {
+      myIP = new IPAddress(sourceIPStr);
+    } else {
+      const ifIP = outPort.getIPAddress();
+      if (!ifIP) return [];
+      myIP = ifIP;
+    }
 
     // Determine next-hop IP
     const nextHopIP = route.nextHop || targetIP;
@@ -2282,6 +2301,25 @@ export abstract class Router extends Equipment {
 
       const icmpSize = 8 + 92;
       const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
+
+      // IPSec outbound processing for locally-originated packets
+      if (this.ipsecEngine) {
+        const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
+        if (entry) {
+          const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
+          if (encPkts) {
+            for (const p of encPkts) {
+              this.sendFrame(iface, {
+                srcMAC: port.getMAC(), dstMAC: dstMAC,
+                etherType: ETHERTYPE_IPV4, payload: p,
+              });
+            }
+            return;
+          }
+          // IPSec processing failed — packet dropped, will timeout
+          return;
+        }
+      }
 
       this.sendFrame(iface, {
         srcMAC: port.getMAC(), dstMAC: dstMAC,
