@@ -136,6 +136,8 @@ export abstract class EndHost extends Equipment {
   protected arpTable: Map<string, ARPEntry> = new Map();
   /** Pending ARP resolutions: IP string → callbacks[] */
   protected pendingARPs: Map<string, PendingARP[]> = new Map();
+  /** Queued forwarded packets waiting for ARP resolution */
+  protected fwdQueue: Array<{ pkt: IPv4Packet; outPort: string; nextHopIP: string; timer: ReturnType<typeof setTimeout> }> = [];
   /** Pending ICMP echo replies: "srcIP-id-seq" → callback */
   protected pendingPings: Map<string, PendingPing> = new Map();
   /** Monotonically increasing ICMP echo identifier */
@@ -542,6 +544,26 @@ export abstract class EndHost extends Equipment {
         }
         this.pendingARPs.delete(key);
       }
+      // Flush queued forwarded packets waiting for this ARP resolution
+      this.flushFwdQueue(key, arp.senderMAC);
+    }
+  }
+
+  /** Send queued forwarded packets now that ARP has been resolved. */
+  private flushFwdQueue(resolvedIP: string, resolvedMAC: MACAddress): void {
+    const ready = this.fwdQueue.filter(q => q.nextHopIP === resolvedIP);
+    this.fwdQueue = this.fwdQueue.filter(q => q.nextHopIP !== resolvedIP);
+    for (const q of ready) {
+      clearTimeout(q.timer);
+      const outPort = this.ports.get(q.outPort);
+      if (outPort) {
+        this.sendFrame(q.outPort, {
+          srcMAC: outPort.getMAC(),
+          dstMAC: resolvedMAC,
+          etherType: ETHERTYPE_IPV4,
+          payload: q.pkt,
+        });
+      }
     }
   }
 
@@ -572,6 +594,17 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * Evaluate PREROUTING DNAT rules (before routing decision).
+   * Subclasses override to implement iptables nat PREROUTING chain.
+   * Returns null (no DNAT) by default.
+   */
+  protected evaluatePreRouting(
+    _inPort: string, _ipPkt: IPv4Packet,
+  ): { action: string; address?: string } | null {
+    return null;
+  }
+
+  /**
    * Extract port info from an IPv4 packet for firewall evaluation.
    */
   protected extractPorts(ipPkt: IPv4Packet): { srcPort: number; dstPort: number } {
@@ -592,6 +625,22 @@ export abstract class EndHost extends Equipment {
       Logger.warn(this.id, 'ipv4:checksum-fail',
         `${this.name}: invalid IPv4 checksum, dropping packet`);
       return;
+    }
+
+    // ── PREROUTING: evaluate DNAT rules before routing decision ──
+    // This allows NAT devices to redirect packets addressed to themselves
+    // to a different destination (e.g. port forwarding / DNAT).
+    const preNat = this.evaluatePreRouting(portName, ipPkt);
+    if (preNat && preNat.action === 'DNAT' && preNat.address) {
+      try {
+        const newDst = new IPAddress(preNat.address.split(':')[0]);
+        ipPkt = {
+          ...ipPkt,
+          destinationIP: newDst,
+          headerChecksum: 0,
+        };
+        ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+      } catch { /* keep original */ }
     }
 
     // Check if packet is for us
@@ -682,14 +731,42 @@ export abstract class EndHost extends Equipment {
     fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
-    if (!nextHopMAC) return; // no ARP entry — drop (would need async resolution)
+    if (nextHopMAC) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(),
+        dstMAC: nextHopMAC.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: fwdPkt,
+      });
+    } else {
+      // Queue packet and send ARP request (async resolution for forwarded packets)
+      this.fwdQueueAndResolve(fwdPkt, outPortName, route.nextHopIP, route.port);
+    }
+  }
 
-    this.sendFrame(outPortName, {
-      srcMAC: route.port.getMAC(),
-      dstMAC: nextHopMAC.mac,
-      etherType: ETHERTYPE_IPV4,
-      payload: fwdPkt,
-    });
+  /** Queue a forwarded packet and send an ARP request for the next hop. */
+  private fwdQueueAndResolve(pkt: IPv4Packet, outPort: string, nextHopIP: IPAddress, port: Port): void {
+    const key = nextHopIP.toString();
+    const timer = setTimeout(() => {
+      this.fwdQueue = this.fwdQueue.filter(q => !(q.nextHopIP === key && q.outPort === outPort));
+    }, 2000);
+    this.fwdQueue.push({ pkt, outPort, nextHopIP: key, timer });
+
+    // Send ARP request if not already pending
+    if (!this.pendingARPs.has(key)) {
+      this.pendingARPs.set(key, []);
+      const myIP = port.getIPAddress();
+      if (!myIP) return;
+      const arpReq: ARPPacket = {
+        type: 'arp', operation: 'request',
+        senderMAC: port.getMAC(), senderIP: myIP,
+        targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
+      };
+      this.sendFrame(outPort, {
+        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP, payload: arpReq,
+      });
+    }
   }
 
   /**

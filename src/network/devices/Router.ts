@@ -42,7 +42,7 @@ import {
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket, RIPRouteEntry,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMPV6, IP_PROTO_ESP, IP_PROTO_AH,
-  UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
+  UDP_PORT_RIP, UDP_PORT_IKE_NAT_T, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
   // IPv6 types
@@ -1280,6 +1280,24 @@ export abstract class Router extends Equipment {
       const inner = this.ipsecEngine.processInboundAH(ipPkt);
       if (inner) this.processIPv4(inPort, inner);
       return;
+    }
+    // NAT-T: ESP-in-UDP on port 4500 (RFC 3948)
+    if (ipPkt.protocol === IP_PROTO_UDP && this.ipsecEngine) {
+      const udp = ipPkt.payload as UDPPacket;
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_IKE_NAT_T) {
+        const esp = udp.payload as ESPPacket;
+        if (esp && esp.type === 'esp') {
+          // Reconstruct as ESP packet for IPSec processing
+          const espPkt: IPv4Packet = {
+            ...ipPkt,
+            protocol: IP_PROTO_ESP,
+            payload: esp,
+          };
+          const inner = this.ipsecEngine.processInboundESP(espPkt);
+          if (inner) this.processIPv4(inPort, inner);
+          return;
+        }
+      }
     }
 
     if (ipPkt.protocol === IP_PROTO_ICMP) {

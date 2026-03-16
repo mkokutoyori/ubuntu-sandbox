@@ -11,8 +11,9 @@
 
 import {
   IPAddress, SubnetMask,
-  IPv4Packet, ESPPacket, AHPacket,
-  IP_PROTO_ESP, IP_PROTO_AH,
+  IPv4Packet, ESPPacket, AHPacket, UDPPacket,
+  IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_UDP,
+  UDP_PORT_IKE_NAT_T,
   createIPv4Packet, computeIPv4Checksum, nextIPv4Id,
 } from '../core/types';
 import {
@@ -22,6 +23,7 @@ import {
   IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig,
   SecurityPolicy, SPDAction, SPDDirection,
   SACryptoKeys, SATrafficSelector, SADscpEcnConfig,
+  MulticastIPSecSA,
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
@@ -246,6 +248,23 @@ function defaultTrafficSelectors(): SATrafficSelector {
   };
 }
 
+/**
+ * RFC 5771: Check if an IPv4 address is a multicast address (224.0.0.0/4).
+ * Multicast range: 224.0.0.0 – 239.255.255.255 (first octet 224-239).
+ */
+function isMulticastAddress(ip: string): boolean {
+  const firstOctet = parseInt(ip.split('.')[0], 10);
+  return firstOctet >= 224 && firstOctet <= 239;
+}
+
+/**
+ * Build a lookup key for multicast SA: (SPI, group address).
+ * Per RFC 4301 §4.1, multicast SAs are identified by (SPI, dest group, protocol).
+ */
+function multicastSAKey(spi: number, groupAddress: string): string {
+  return `${spi}|${groupAddress}`;
+}
+
 export class IPSecEngine {
   private readonly router: Router;
 
@@ -290,6 +309,16 @@ export class IPSecEngine {
   private ipsecSADB: Map<string, IPSec_SA[]> = new Map();
   /** inbound SPI → IPSec_SA (for fast lookup during decryption) */
   private spiToSA: Map<number, IPSec_SA> = new Map();
+
+  // ── Multicast SA Database (RFC 4301 §4.1) ─────────────────────────
+  /**
+   * Multicast SAs keyed by "SPI|groupAddress".
+   * Per RFC 4301 §4.1, multicast SAs are unidirectional and identified
+   * by (SPI, destination group address, protocol).
+   */
+  private multicastSADB: Map<string, MulticastIPSecSA> = new Map();
+  /** groupAddress → list of multicast SA keys for fast lookup by group */
+  private multicastGroupIndex: Map<string, string[]> = new Map();
 
   // ── Fragment Reassembly Buffer (RFC 4301 §7) ─────────────────────
   /**
@@ -831,6 +860,393 @@ export class IPSecEngine {
     this.ikev2SADB.clear();
     this.ipsecSADB.clear();
     this.spiToSA.clear();
+    this.multicastSADB.clear();
+    this.multicastGroupIndex.clear();
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Multicast IPsec SA Management (RFC 4301 §4.1)
+  // ══════════════════════════════════════════════════════════════════
+
+  /**
+   * Create a multicast Group SA.
+   *
+   * Per RFC 4301 §4.1:
+   * - Multicast SAs are unidirectional: one sender, multiple receivers
+   * - Identified by (SPI, destination group address, protocol)
+   * - Anti-replay is NOT RECOMMENDED for multicast
+   * - All group members share the same keying material
+   *
+   * @param groupAddress - Multicast destination address (224.0.0.0/4)
+   * @param senderAddress - IP of the single authorized sender
+   * @param transforms - Transform set (e.g. ['esp-aes', 'esp-sha-hmac'])
+   * @param mode - Tunnel or Transport
+   * @param lifetime - SA lifetime in seconds
+   * @returns The created MulticastIPSecSA, or null if groupAddress is invalid
+   */
+  createMulticastSA(
+    groupAddress: string,
+    senderAddress: string,
+    transforms: string[],
+    mode: 'Tunnel' | 'Transport' = 'Tunnel',
+    lifetime: number = 3600,
+  ): MulticastIPSecSA | null {
+    if (!isMulticastAddress(groupAddress)) {
+      Logger.warn(this.router.id, 'ipsec:mcast-invalid',
+        `${this.router.name}: ${groupAddress} is not a valid multicast address`);
+      return null;
+    }
+
+    const spi = randomSPI();
+    const hasESP = transforms.some(t => t.startsWith('esp'));
+    const hasAH = transforms.some(t => t.startsWith('ah'));
+    const cryptoKeys = deriveCryptoKeys(transforms);
+
+    const msa: MulticastIPSecSA = {
+      groupAddress,
+      senderAddress,
+      spi,
+      protocol: hasESP ? 'esp' : 'ah',
+      transforms,
+      mode,
+      cryptoKeys,
+      outboundSeqNum: 0,
+      created: Date.now(),
+      lifetime,
+      pktsEncaps: 0,
+      pktsDecaps: 0,
+      sendErrors: 0,
+      recvErrors: 0,
+      bytesEncaps: 0,
+      bytesDecaps: 0,
+      antiReplayEnabled: false, // RFC 4301 §4.1: NOT RECOMMENDED for multicast
+      receivers: [],
+      hasESP,
+      hasAH,
+    };
+
+    const key = multicastSAKey(spi, groupAddress);
+    this.multicastSADB.set(key, msa);
+
+    // Update group index
+    const groupKeys = this.multicastGroupIndex.get(groupAddress) || [];
+    groupKeys.push(key);
+    this.multicastGroupIndex.set(groupAddress, groupKeys);
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC: multicast SA created for group ${groupAddress}, sender=${senderAddress}, spi=${spiHex(spi)}`);
+    }
+
+    Logger.info(this.router.id, 'ipsec:mcast-sa-up',
+      `${this.router.name}: Multicast IPSec SA UP for group ${groupAddress} [${transforms.join(',')}]`);
+
+    return msa;
+  }
+
+  /**
+   * Add a receiver to a multicast Group SA.
+   * The receiver's engine will also get a copy of the SA for decapsulation.
+   */
+  addMulticastReceiver(groupAddress: string, receiverIP: string): boolean {
+    const keys = this.multicastGroupIndex.get(groupAddress);
+    if (!keys || keys.length === 0) {
+      Logger.warn(this.router.id, 'ipsec:mcast-no-sa',
+        `${this.router.name}: No multicast SA for group ${groupAddress}`);
+      return false;
+    }
+
+    for (const key of keys) {
+      const msa = this.multicastSADB.get(key);
+      if (!msa) continue;
+      if (!msa.receivers.includes(receiverIP)) {
+        msa.receivers.push(receiverIP);
+      }
+
+      // Install the SA on the receiver's engine so it can decapsulate
+      const receiverRouter = IPSecEngine.findRouterByIP(receiverIP);
+      if (receiverRouter) {
+        const receiverEngine = (receiverRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+        if (receiverEngine) {
+          receiverEngine.installMulticastReceiverSA(msa);
+        }
+      }
+    }
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC: multicast receiver ${receiverIP} added to group ${groupAddress}`);
+    }
+    return true;
+  }
+
+  /**
+   * Remove a receiver from a multicast Group SA.
+   */
+  removeMulticastReceiver(groupAddress: string, receiverIP: string): boolean {
+    const keys = this.multicastGroupIndex.get(groupAddress);
+    if (!keys) return false;
+
+    for (const key of keys) {
+      const msa = this.multicastSADB.get(key);
+      if (!msa) continue;
+      msa.receivers = msa.receivers.filter(r => r !== receiverIP);
+
+      // Remove from receiver's engine
+      const receiverRouter = IPSecEngine.findRouterByIP(receiverIP);
+      if (receiverRouter) {
+        const receiverEngine = (receiverRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+        if (receiverEngine) {
+          receiverEngine.removeMulticastReceiverSA(msa.spi, groupAddress);
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Install a multicast SA on a receiver (called by the sender's engine).
+   * The receiver stores it in its own multicastSADB for inbound lookup.
+   */
+  private installMulticastReceiverSA(senderMSA: MulticastIPSecSA): void {
+    const key = multicastSAKey(senderMSA.spi, senderMSA.groupAddress);
+    // Clone the SA for the receiver (shared keying material)
+    const receiverMSA: MulticastIPSecSA = {
+      ...senderMSA,
+      // Receiver has its own stats
+      pktsEncaps: 0,
+      pktsDecaps: 0,
+      sendErrors: 0,
+      recvErrors: 0,
+      bytesEncaps: 0,
+      bytesDecaps: 0,
+    };
+    this.multicastSADB.set(key, receiverMSA);
+
+    const groupKeys = this.multicastGroupIndex.get(senderMSA.groupAddress) || [];
+    if (!groupKeys.includes(key)) {
+      groupKeys.push(key);
+      this.multicastGroupIndex.set(senderMSA.groupAddress, groupKeys);
+    }
+  }
+
+  /**
+   * Remove a multicast SA from a receiver.
+   */
+  private removeMulticastReceiverSA(spi: number, groupAddress: string): void {
+    const key = multicastSAKey(spi, groupAddress);
+    this.multicastSADB.delete(key);
+
+    const groupKeys = this.multicastGroupIndex.get(groupAddress);
+    if (groupKeys) {
+      const idx = groupKeys.indexOf(key);
+      if (idx >= 0) groupKeys.splice(idx, 1);
+      if (groupKeys.length === 0) this.multicastGroupIndex.delete(groupAddress);
+    }
+  }
+
+  /**
+   * Delete a multicast SA entirely (sender-side).
+   * Also removes it from all receivers.
+   */
+  deleteMulticastSA(groupAddress: string): void {
+    const keys = this.multicastGroupIndex.get(groupAddress);
+    if (!keys) return;
+
+    for (const key of [...keys]) {
+      const msa = this.multicastSADB.get(key);
+      if (!msa) continue;
+
+      // Remove from all receivers
+      for (const receiverIP of msa.receivers) {
+        const receiverRouter = IPSecEngine.findRouterByIP(receiverIP);
+        if (receiverRouter) {
+          const receiverEngine = (receiverRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
+          if (receiverEngine) {
+            receiverEngine.removeMulticastReceiverSA(msa.spi, groupAddress);
+          }
+        }
+      }
+
+      this.multicastSADB.delete(key);
+    }
+    this.multicastGroupIndex.delete(groupAddress);
+
+    Logger.info(this.router.id, 'ipsec:mcast-sa-down',
+      `${this.router.name}: Multicast IPSec SA deleted for group ${groupAddress}`);
+  }
+
+  /**
+   * Find a multicast SA for outbound encapsulation (sender side).
+   * Looks up by destination group address and verifies we are the authorized sender.
+   */
+  findMulticastSAForOutbound(groupAddress: string): MulticastIPSecSA | null {
+    const keys = this.multicastGroupIndex.get(groupAddress);
+    if (!keys) return null;
+
+    const localIPs = this.getAllLocalIPs();
+
+    for (const key of keys) {
+      const msa = this.multicastSADB.get(key);
+      if (!msa) continue;
+      // Only the authorized sender can encrypt
+      if (localIPs.includes(msa.senderAddress)) {
+        // Check lifetime
+        const elapsedSec = Math.floor((Date.now() - msa.created) / 1000);
+        if (elapsedSec >= msa.lifetime) continue; // expired
+        return msa;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find a multicast SA for inbound decapsulation (receiver side).
+   * Uses (SPI, group address) as the lookup key per RFC 4301 §4.1.
+   */
+  findMulticastSAForInbound(spi: number, groupAddress: string): MulticastIPSecSA | null {
+    const key = multicastSAKey(spi, groupAddress);
+    return this.multicastSADB.get(key) || null;
+  }
+
+  /** Get all local IP addresses on this router. */
+  private getAllLocalIPs(): string[] {
+    const ips: string[] = [];
+    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
+    for (const [, port] of ports) {
+      const ip = port.getIPAddress?.();
+      if (ip) ips.push(ip.toString());
+    }
+    return ips;
+  }
+
+  /** Get all multicast SAs (for show commands). */
+  getMulticastSAs(): ReadonlyMap<string, MulticastIPSecSA> {
+    return this.multicastSADB;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Multicast Data Plane (RFC 4301 §4.1)
+  // ══════════════════════════════════════════════════════════════════
+
+  /**
+   * Process an outbound packet destined for a multicast group.
+   * Only the authorized sender can encapsulate.
+   * Returns the encapsulated packet or null if no matching SA.
+   */
+  processMulticastOutbound(pkt: IPv4Packet, egressIface: string): IPv4Packet | null {
+    const dstIP = pkt.destinationIP.toString();
+    if (!isMulticastAddress(dstIP)) return null;
+
+    const msa = this.findMulticastSAForOutbound(dstIP);
+    if (!msa) return null;
+
+    // Increment sequence number
+    msa.outboundSeqNum++;
+    msa.pktsEncaps++;
+    msa.bytesEncaps += pkt.totalLength;
+
+    // Determine local IP on egress interface
+    const localIP = this.getLocalIP(egressIface);
+    if (!localIP) {
+      msa.sendErrors++;
+      return null;
+    }
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC(o): multicast encaps, group=${dstIP}, spi=${spiHex(msa.spi)}, seqnum=${msa.outboundSeqNum}`);
+    }
+
+    // Build outer packet — destination is the multicast group address
+    const srcAddr = new IPAddress(localIP);
+    const dstAddr = new IPAddress(dstIP);
+
+    if (msa.hasESP) {
+      const espPayload: ESPPacket = {
+        type: 'esp',
+        spi: msa.spi,
+        sequenceNumber: msa.outboundSeqNum,
+        innerPacket: pkt,
+      };
+      const outerSize = 20 + 8 + pkt.totalLength;
+      const outerPkt = createIPv4Packet(srcAddr, dstAddr, IP_PROTO_ESP, 64, espPayload, outerSize);
+      outerPkt.headerChecksum = computeIPv4Checksum(outerPkt);
+      return outerPkt;
+    } else if (msa.hasAH) {
+      const ahPayload: AHPacket = {
+        type: 'ah',
+        spi: msa.spi,
+        sequenceNumber: msa.outboundSeqNum,
+        innerPacket: pkt,
+      };
+      const outerSize = 20 + 12 + pkt.totalLength;
+      const outerPkt = createIPv4Packet(srcAddr, dstAddr, IP_PROTO_AH, 64, ahPayload, outerSize);
+      outerPkt.headerChecksum = computeIPv4Checksum(outerPkt);
+      return outerPkt;
+    }
+
+    msa.sendErrors++;
+    return null;
+  }
+
+  /**
+   * Process an inbound ESP packet that has a multicast destination.
+   * Uses (SPI, group address) to find the correct multicast SA.
+   */
+  processMulticastInboundESP(outerPkt: IPv4Packet): IPv4Packet | null {
+    const esp = outerPkt.payload as ESPPacket;
+    if (!esp || esp.type !== 'esp') return null;
+
+    const groupAddr = outerPkt.destinationIP.toString();
+    const msa = this.findMulticastSAForInbound(esp.spi, groupAddr);
+    if (!msa) {
+      Logger.warn(this.router.id, 'ipsec:mcast-unknown-spi',
+        `${this.router.name}: Unknown multicast ESP SPI ${spiHex(esp.spi)} for group ${groupAddr}`);
+      return null;
+    }
+
+    msa.pktsDecaps++;
+    msa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
+
+    if (this.debugIpsec) {
+      Logger.info(this.router.id, 'debug:ipsec',
+        `IPSEC(i): multicast decaps ok, group=${groupAddr}, spi=${spiHex(esp.spi)}, seqnum=${esp.sequenceNumber}`);
+    }
+
+    return esp.innerPacket;
+  }
+
+  /**
+   * Process an inbound AH packet that has a multicast destination.
+   */
+  processMulticastInboundAH(outerPkt: IPv4Packet): IPv4Packet | null {
+    const ah = outerPkt.payload as AHPacket;
+    if (!ah || ah.type !== 'ah') return null;
+
+    const groupAddr = outerPkt.destinationIP.toString();
+    const msa = this.findMulticastSAForInbound(ah.spi, groupAddr);
+    if (!msa) return null;
+
+    msa.pktsDecaps++;
+    msa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
+
+    return ah.innerPacket;
+  }
+
+  /**
+   * Check if a packet's destination is multicast and we have an SA for it.
+   * Used by the forwarding pipeline to decide if multicast IPsec applies.
+   */
+  hasMulticastSA(groupAddress: string): boolean {
+    return this.multicastGroupIndex.has(groupAddress);
+  }
+
+  /**
+   * Check if a destination IP is a multicast address.
+   */
+  isMulticast(ip: string): boolean {
+    return isMulticastAddress(ip);
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -903,6 +1319,19 @@ export class IPSecEngine {
    * May return multiple packets when post-encapsulation fragmentation is needed.
    */
   processOutbound(pkt: IPv4Packet, egressIface: string, entry: CryptoMapEntry): IPv4Packet[] | null {
+    // Check if egress port is actually up (cable connected)
+    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
+    const outPort = ports.get(egressIface);
+    if (outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+      // Port is down — trigger DPD-like SA clearing for any peer on this interface
+      const peerIP = this.determinePeer(entry, egressIface, pkt);
+      if (peerIP) {
+        // Clear existing SAs for this unreachable peer (DPD on-demand behavior)
+        this.clearSAsForPeer(peerIP);
+      }
+      return null;
+    }
+
     // Determine peer IP
     let peerIP = this.determinePeer(entry, egressIface, pkt);
     if (!peerIP) return null;
@@ -1142,6 +1571,19 @@ export class IPSecEngine {
         sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
+      // NAT-T: wrap ESP in UDP 4500 (RFC 3948)
+      if (sa.natT) {
+        const udpPayload: UDPPacket = {
+          type: 'udp',
+          sourcePort: UDP_PORT_IKE_NAT_T,
+          destinationPort: UDP_PORT_IKE_NAT_T,
+          length: 8 + 8 + innerPkt.totalLength, // UDP header + ESP header + inner
+          checksum: 0,
+          payload: espPayload,
+        };
+        const outerSize = 20 + 8 + 8 + innerPkt.totalLength; // IP + UDP + ESP + inner
+        return makeOuterPkt(IP_PROTO_UDP, udpPayload, outerSize);
+      }
       const outerSize = 20 + 8 + innerPkt.totalLength; // IP + ESP header + inner
       return makeOuterPkt(IP_PROTO_ESP, espPayload, outerSize);
     } else if (sa.hasAH) {
@@ -1610,8 +2052,29 @@ export class IPSecEngine {
    * Synchronous — completes immediately by directly calling the peer's engine.
    */
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
-    // Find peer router
-    const peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    // Check if egress port is actually up (cable connected)
+    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
+    const outPort = ports.get(egressIface);
+    if (outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+      Logger.info(this.router.id, 'ipsec:port-down',
+        `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
+      this.createFailedIKESA(peerIP, egressIface, 'Interface down');
+      return false;
+    }
+
+    // Find peer router (may be directly reachable or behind NAT)
+    let peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    let forceNatT = false;
+
+    // NAT-T: if peerIP is not a Router, check if it's a NAT device with DNAT rules
+    if (!peerRouter) {
+      const natResult = IPSecEngine.findRouterBehindNAT(peerIP);
+      if (natResult) {
+        peerRouter = natResult.router;
+        forceNatT = true; // Peer is behind NAT — force NAT-T
+      }
+    }
+
     if (!peerRouter) {
       Logger.info(this.router.id, 'ipsec:no-peer',
         `${this.router.name}: IKE peer ${peerIP} unreachable`);
@@ -1634,9 +2097,9 @@ export class IPSecEngine {
       : this.ikev2Policies.size > 0 && this.ikev2Keyrings.size > 0 && this.ikev2Profiles.size > 0;
 
     if (useIKEv2) {
-      return this.negotiateIKEv2(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface);
+      return this.negotiateIKEv2(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
     }
-    return this.negotiateIKEv1(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface);
+    return this.negotiateIKEv1(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
   }
 
   // ── IKEv1 ──────────────────────────────────────────────────────
@@ -1644,6 +2107,7 @@ export class IPSecEngine {
   private negotiateIKEv1(
     peerIP: string, peerEngine: IPSecEngine, entry: CryptoMapEntry,
     localIP: string, apparentSrcIP: string, egressIface: string,
+    forceNatT: boolean = false,
   ): boolean {
     // Phase 1: find matching ISAKMP policy
     const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
@@ -1704,8 +2168,8 @@ export class IPSecEngine {
         `ISAKMP: (${spiHex(0)}:0): pre-shared key authentication passed with ${peerIP}`);
     }
 
-    const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP;
+    const natT = forceNatT || ((this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
+      && apparentSrcIP !== localIP);
 
     // Create IKE SA on both sides
     // RFC 2409 §5.5: negotiate IKE lifetime as min(initiator, responder)
@@ -1941,6 +2405,7 @@ export class IPSecEngine {
   private negotiateIKEv2(
     peerIP: string, peerEngine: IPSecEngine, entry: CryptoMapEntry,
     localIP: string, apparentSrcIP: string, egressIface: string,
+    forceNatT: boolean = false,
   ): boolean {
     // Find common IKEv2 proposal
     const myProposals = [...this.ikev2Proposals.values()];
@@ -1965,8 +2430,8 @@ export class IPSecEngine {
     const peerPSK = peerEngine.findIKEv2PSK(apparentSrcIP);
     if (!myPSK || !peerPSK || myPSK !== peerPSK) return false;
 
-    const natT = (this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP;
+    const natT = forceNatT || ((this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
+      && apparentSrcIP !== localIP);
     const spiL = spiHex(randomSPI());
     const spiR = spiHex(randomSPI());
 
@@ -2135,13 +2600,60 @@ export class IPSecEngine {
     return null;
   }
 
+  /**
+   * NAT-T: Find a Router behind a NAT device.
+   * When a peer IP belongs to a non-Router device (e.g. LinuxPC acting as NAT),
+   * check its iptables PREROUTING DNAT rules for UDP 500 to discover the real Router.
+   */
+  static findRouterBehindNAT(natIP: string): { router: Router; realPeerIP: string } | null {
+    const natDevice = IPSecEngine.findEquipmentByIP(natIP);
+    if (!natDevice) return null;
+    // If it IS a Router already, skip
+    if ((natDevice as any)._getIPSecEngineInternal) return null;
+
+    // Check for iptables DNAT rules targeting UDP 500 (IKE)
+    const iptables = (natDevice as any).executor?.iptables || (natDevice as any).iptables;
+    if (iptables && typeof iptables.evaluateNat === 'function') {
+      // Find which interface on the NAT device has this IP
+      let inIface = '';
+      const devPorts = (natDevice as any).ports;
+      if (devPorts instanceof Map) {
+        for (const [name, port] of devPorts) {
+          if ((port as any).getIPAddress?.()?.toString() === natIP) {
+            inIface = name;
+            break;
+          }
+        }
+      }
+      // Simulate an inbound UDP 500 packet to see if DNAT applies
+      const testPkt = {
+        direction: 'in' as const,
+        protocol: 17,  // UDP
+        srcIP: '0.0.0.0',
+        dstIP: natIP,
+        srcPort: 500,
+        dstPort: 500,
+        iface: inIface,
+      };
+      const natResult = iptables.evaluateNat(testPkt, 'PREROUTING');
+      if (natResult && natResult.action === 'DNAT' && natResult.address) {
+        const realIP = natResult.address.split(':')[0];
+        const realRouter = IPSecEngine.findRouterByIP(realIP);
+        if (realRouter) {
+          return { router: realRouter, realPeerIP: realIP };
+        }
+      }
+    }
+    return null;
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // Show commands
   // ══════════════════════════════════════════════════════════════════
 
   showCryptoISAKMPSA(): string {
     if (this.ikeSADB.size === 0) {
-      return 'IPv4 Crypto ISAKMP SA\ndst             src             state          conn-id status\n';
+      return 'IPv4 Crypto ISAKMP SA\ndst             src             state          conn-id status\n\nThere are no IKEv1 SAs (no SA established)';
     }
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {
@@ -2589,6 +3101,9 @@ export class IPSecEngine {
     lines.push(`Number of IPSec SAs: ${totalSAs}`);
     lines.push(`Number of IKEv1 SAs: ${this.ikeSADB.size}`);
     lines.push(`Number of IKEv2 SAs: ${this.ikev2SADB.size}`);
+    if (this.multicastSADB.size > 0) {
+      lines.push(`Number of Multicast SAs: ${this.multicastSADB.size}`);
+    }
     return lines.join('\n');
   }
 
@@ -2667,6 +3182,51 @@ export class IPSecEngine {
     const lines: string[] = ['Keychain  Hostname / Address   Preshared Key'];
     for (const [addr, key] of this.preSharedKeys) {
       lines.push(`default   ${addr.padEnd(21)}${key.replace(/./g, '*')}`);
+    }
+    return lines.join('\n');
+  }
+
+  // ── Multicast SA Show Commands (RFC 4301 §4.1) ──────────────────────
+
+  showCryptoIPSecMulticastSA(): string {
+    if (this.multicastSADB.size === 0) return 'No multicast IPSec SAs established.';
+
+    const lines: string[] = ['Multicast IPSec Security Associations', ''];
+    const localIPs = this.getAllLocalIPs();
+
+    for (const [, msa] of this.multicastSADB) {
+      const isSender = localIPs.includes(msa.senderAddress);
+      const role = isSender ? 'Sender' : 'Receiver';
+
+      lines.push(`  Group: ${msa.groupAddress}`);
+      lines.push(`    Sender: ${msa.senderAddress}`);
+      lines.push(`    SPI: ${spiHex(msa.spi)} (${msa.spi})`);
+      lines.push(`    Protocol: ${msa.protocol.toUpperCase()}`);
+      lines.push(`    Transform: ${msa.transforms.join(' ')}`);
+      lines.push(`    Mode: ${msa.mode}`);
+      lines.push(`    Role: ${role}`);
+      lines.push(`    Anti-replay: ${msa.antiReplayEnabled ? 'Enabled' : 'Disabled (RFC 4301 §4.1 recommendation)'}`);
+      lines.push(`    Receivers: ${msa.receivers.length > 0 ? msa.receivers.join(', ') : '(none)'}`);
+      lines.push(`    #pkts encaps: ${msa.pktsEncaps}, #pkts decaps: ${msa.pktsDecaps}`);
+      lines.push(`    #send errors: ${msa.sendErrors}, #recv errors: ${msa.recvErrors}`);
+
+      const elapsedSec = Math.floor((Date.now() - msa.created) / 1000);
+      const remainingSec = Math.max(0, msa.lifetime - elapsedSec);
+      lines.push(`    SA lifetime: ${msa.lifetime}s, remaining: ${remainingSec}s`);
+      lines.push(`    Outbound sequence number: ${msa.outboundSeqNum}`);
+
+      // Show crypto keys info
+      const ck = msa.cryptoKeys;
+      if (ck.espEncAlgorithm !== 'null') {
+        lines.push(`    ESP encryption: ${ck.espEncAlgorithm} (${ck.espEncKeyLength}-bit key)`);
+      }
+      if (ck.espAuthAlgorithm !== 'none' && ck.espAuthAlgorithm !== 'aes-gcm') {
+        lines.push(`    ESP authentication: ${ck.espAuthAlgorithm} (${ck.espAuthKeyLength}-bit key)`);
+      }
+      if (ck.ahAuthAlgorithm !== 'none') {
+        lines.push(`    AH authentication: ${ck.ahAuthAlgorithm} (${ck.ahAuthKeyLength}-bit key)`);
+      }
+      lines.push('');
     }
     return lines.join('\n');
   }

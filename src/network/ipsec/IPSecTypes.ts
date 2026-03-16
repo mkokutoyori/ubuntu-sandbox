@@ -381,6 +381,67 @@ export interface IPSec_SA {
   hasAH: boolean;
 }
 
+// ─── Multicast IPsec SA (RFC 4301 §4.1) ──────────────────────────────
+
+/**
+ * RFC 4301 §4.1: Multicast SAs are fundamentally different from unicast SAs.
+ *   - They are UNIDIRECTIONAL (one sender → multiple receivers)
+ *   - The SA is identified by (SPI, destination group address, protocol)
+ *     rather than just SPI
+ *   - A Group SA (GSA) shares key material among all group members
+ *   - Anti-replay is typically not used for multicast (RFC 4301 §4.1)
+ *
+ * This type extends the unicast SA concept for multicast scenarios
+ * such as encrypted OSPF, multicast VPN, or GDOI (Group Domain of
+ * Interpretation, RFC 6407).
+ */
+export interface MulticastIPSecSA {
+  /** Multicast group address (e.g. 224.0.0.5 for OSPF) */
+  groupAddress: string;
+  /** Sender IP — the single source that can encrypt on this SA */
+  senderAddress: string;
+  /** SPI for the group SA (combined with groupAddress for lookup) */
+  spi: number;
+  /** IPsec protocol: ESP or AH */
+  protocol: 'esp' | 'ah';
+  /** Transform used (e.g. ['esp-aes', 'esp-sha-hmac']) */
+  transforms: string[];
+  /** Tunnel or Transport mode */
+  mode: 'Tunnel' | 'Transport';
+  /** Cryptographic key material (shared among all group members) */
+  cryptoKeys: SACryptoKeys;
+  /** Sequence number counter (sender only) */
+  outboundSeqNum: number;
+  /** SA creation timestamp */
+  created: number;
+  /** SA lifetime in seconds */
+  lifetime: number;
+  /** Packets encrypted by sender */
+  pktsEncaps: number;
+  /** Packets decrypted by receivers */
+  pktsDecaps: number;
+  /** Send errors */
+  sendErrors: number;
+  /** Receive errors */
+  recvErrors: number;
+  /** Bytes encrypted */
+  bytesEncaps: number;
+  /** Bytes decrypted */
+  bytesDecaps: number;
+  /**
+   * RFC 4301 §4.1: Anti-replay is generally NOT RECOMMENDED for multicast
+   * because receivers may get packets out of order from different paths.
+   * When false (default for multicast), anti-replay checking is disabled.
+   */
+  antiReplayEnabled: boolean;
+  /** List of receiver IPs that have joined this group SA */
+  receivers: string[];
+  /** Whether this SA has ESP */
+  hasESP: boolean;
+  /** Whether this SA has AH */
+  hasAH: boolean;
+}
+
 // ─── DPD / NAT-T Config ──────────────────────────────────────────────
 
 export interface DPDConfig {
