@@ -186,6 +186,7 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Called by the view's hidden password <input> onChange */
   setPasswordBuf(value: string): void {
     this.passwordBuf = value;
+    this.notify();
   }
 
   // ── Interactive text mode keys ──────────────────────────────────
@@ -598,11 +599,12 @@ export class LinuxTerminalSession extends TerminalSession {
         const left = this.interactive.attemptsLeft - 1;
         if (left <= 0) {
           this.addLine('sudo: 3 incorrect password attempts');
-          this.interactive = null; this.inputMode = { type: 'normal' };
+          this.interactive = null; this.passwordBuf = ''; this.inputMode = { type: 'normal' };
           this.notify(); return;
         }
         this.addLine('Sorry, try again.');
         this.addLine(step.prompt);
+        this.passwordBuf = '';
         this.interactive = { ...this.interactive, attemptsLeft: left };
         this.notify(); return;
       }
