@@ -222,6 +222,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const cmd = this.input;
     this.input = '';
     this.tabSuggestions = null;
+    this.recordEvent('input', cmd);
     this.executeCommand(cmd);
     this.notify();
   }
@@ -268,9 +269,9 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // Execute directly
+    // Execute directly (with timeout + device-online guard)
     try {
-      const result = await this.device.executeCommand(trimmed);
+      const result = await this.executeOnDevice(trimmed);
       if (result) {
         if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
           this.clear();
@@ -280,7 +281,14 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       this.syncDeviceState();
     } catch (err) {
-      this.addLine(`Error: ${err}`, 'error');
+      if (err instanceof Error && err.name === 'DeviceOfflineError') {
+        this.addLine(`\x1b[31mConnection lost: device is powered off\x1b[0m`, 'error');
+        this.inputMode = { type: 'normal' };
+      } else if (err instanceof Error && err.name === 'CommandTimeoutError') {
+        this.addLine(`\x1b[31mCommand timed out\x1b[0m`, 'error');
+      } else {
+        this.addLine(`Error: ${err}`, 'error');
+      }
     }
   }
 
@@ -517,12 +525,18 @@ export class LinuxTerminalSession extends TerminalSession {
       if (step.type === 'output') { this.addLine(step.text); idx++; continue; }
       if (step.type === 'execute') {
         try {
-          const result = await this.device.executeCommand(step.command);
+          const result = await this.executeOnDevice(step.command);
           if (result) {
             if (result.includes('\x1b[2J') || result.includes('\x1b[H')) this.clear();
             else this.addLine(result);
           }
-        } catch (err) { this.addLine(`Error: ${err}`, 'error'); }
+        } catch (err) {
+          if (err instanceof Error && err.name === 'DeviceOfflineError') {
+            this.addLine('Connection lost: device is powered off', 'error');
+            this.interactive = null; this.inputMode = { type: 'normal' }; this.notify(); return;
+          }
+          this.addLine(`Error: ${err}`, 'error');
+        }
         this.syncDeviceState();
         idx++; continue;
       }
@@ -532,9 +546,15 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (step.type === 'adduser-info') {
         try {
-          const result = await this.device.executeCommand(step.command);
+          const result = await this.executeOnDevice(step.command);
           if (result) this.addLine(result);
-        } catch (err) { this.addLine(`Error: ${err}`, 'error'); }
+        } catch (err) {
+          if (err instanceof Error && err.name === 'DeviceOfflineError') {
+            this.addLine('Connection lost: device is powered off', 'error');
+            this.interactive = null; this.inputMode = { type: 'normal' }; this.notify(); return;
+          }
+          this.addLine(`Error: ${err}`, 'error');
+        }
         idx++; continue;
       }
       if (step.type === 'input' || step.type === 'confirm') {

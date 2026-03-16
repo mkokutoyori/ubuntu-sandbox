@@ -12,6 +12,11 @@
 
 import type { WindowsFileSystem, WinDirEntry } from './WindowsFileSystem';
 import type { Port } from '../../hardware/Port';
+import {
+  runPipeline, formatDefault, formatTable,
+  buildProcessObjects, buildServiceObjects, buildCommandObjects,
+  type PSObject, type PipelineInput,
+} from './PSPipeline';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -110,50 +115,69 @@ export class PowerShellExecutor {
   // ─── Pipeline handling ──────────────────────────────────────────
 
   private async executePipeline(cmdline: string): Promise<string | null> {
-    const parts = cmdline.split('|').map(s => s.trim());
-    let output = await this.executeSingle(parts[0]) ?? '';
+    const parts = this.splitPipeline(cmdline);
+    if (parts.length < 2) return this.executeSingle(cmdline);
 
-    for (let i = 1; i < parts.length; i++) {
-      output = this.applyPipeFilter(output, parts[i]);
-    }
-    return output;
+    // Execute first command — try to get structured output
+    const firstOutput = await this.executeForPipeline(parts[0]);
+    const filters = parts.slice(1);
+
+    return runPipeline(firstOutput, filters);
   }
 
-  private applyPipeFilter(input: string, filter: string): string {
-    const filterLower = filter.toLowerCase();
+  /**
+   * Split a pipeline string by | while respecting quotes and braces.
+   */
+  private splitPipeline(cmdline: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let inQuote: string | null = null;
+    let braceDepth = 0;
 
-    if (filterLower.startsWith('where-object') || filterLower.startsWith('where') || filterLower.startsWith('?')) {
-      return input; // Simplified: pass through
-    }
-    if (filterLower.startsWith('select-string') || filterLower.startsWith('sls')) {
-      const pattern = filter.split(/\s+/).slice(1).join(' ').replace(/['"]/g, '');
-      if (pattern) {
-        return input.split('\n').filter(l => l.toLowerCase().includes(pattern.toLowerCase())).join('\n');
+    for (const ch of cmdline) {
+      if (inQuote) {
+        current += ch;
+        if (ch === inQuote) inQuote = null;
+        continue;
       }
-      return input;
+      if (ch === '"' || ch === "'") { inQuote = ch; current += ch; continue; }
+      if (ch === '{') { braceDepth++; current += ch; continue; }
+      if (ch === '}') { braceDepth--; current += ch; continue; }
+      if (ch === '|' && braceDepth === 0) {
+        parts.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
     }
-    if (filterLower.startsWith('select-object') || filterLower.startsWith('select')) {
-      return input;
+    if (current.trim()) parts.push(current.trim());
+    return parts;
+  }
+
+  /**
+   * Execute a single command and return structured output (PSObject[])
+   * when possible, for proper pipeline processing.
+   */
+  private async executeForPipeline(cmd: string): Promise<PipelineInput> {
+    const cmdLower = cmd.trim().split(/\s+/)[0].toLowerCase();
+
+    // Return structured data for known cmdlets
+    switch (cmdLower) {
+      case 'get-process':
+      case 'gps':
+        return buildProcessObjects();
+      case 'get-service':
+      case 'gsv':
+        return buildServiceObjects();
+      case 'get-command':
+      case 'gcm':
+        return buildCommandObjects();
+      default: {
+        // Fall back to string output
+        const result = await this.executeSingle(cmd);
+        return result ?? '';
+      }
     }
-    if (filterLower.startsWith('format-table') || filterLower.startsWith('ft')) {
-      return input;
-    }
-    if (filterLower.startsWith('format-list') || filterLower.startsWith('fl')) {
-      return input;
-    }
-    if (filterLower.startsWith('out-string')) {
-      return input;
-    }
-    if (filterLower.startsWith('measure-object') || filterLower.startsWith('measure')) {
-      const lineCount = input.split('\n').length;
-      return `Count    : ${lineCount}\nAverage  : \nSum      : \nMaximum  : \nMinimum  : \nProperty :`;
-    }
-    if (filterLower.startsWith('sort-object') || filterLower.startsWith('sort')) {
-      const outputLines = input.split('\n');
-      outputLines.sort();
-      return outputLines.join('\n');
-    }
-    return input;
   }
 
   // ─── Single command execution ───────────────────────────────────

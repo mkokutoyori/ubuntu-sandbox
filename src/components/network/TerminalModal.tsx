@@ -10,10 +10,11 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Minus, Maximize2, Copy } from 'lucide-react';
+import { X, Minus, Maximize2, Copy, Circle, Download, Settings2 } from 'lucide-react';
 import { Equipment, isFullyImplemented } from '@/network';
 import { TerminalView, useTerminalSession } from '@/components/terminal/TerminalView';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
+import type { SessionRecording } from '@/terminal/sessions/TerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +43,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   const sessionType = session.getSessionType();
 
   const isDatabaseDevice = deviceType.startsWith('db-');
+  const [showScrollbackConfig, setShowScrollbackConfig] = useState(false);
+  const [scrollbackValue, setScrollbackValue] = useState(String(session.getMaxScrollback()));
 
   // Windows shell mode for title bar
   const winShellMode = sessionType === 'windows'
@@ -91,6 +94,24 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
 
   const toggleFullscreen = useCallback(() => setIsFullscreen(prev => !prev), []);
 
+  // Recording controls
+  const toggleRecording = useCallback(() => {
+    if (session.isRecording) {
+      const recording = session.stopRecording();
+      if (recording) downloadRecording(recording);
+    } else {
+      session.startRecording();
+    }
+  }, [session]);
+
+  const applyScrollback = useCallback(() => {
+    const val = parseInt(scrollbackValue, 10);
+    if (!isNaN(val) && val >= 100) {
+      session.setMaxScrollback(val);
+    }
+    setShowScrollbackConfig(false);
+  }, [session, scrollbackValue]);
+
   // ── Power off / not implemented guards ──
 
   if (!isPoweredOn) {
@@ -130,6 +151,26 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
         </span>
       </div>
       <div className="flex items-stretch h-full">
+        <button
+          onClick={() => setShowScrollbackConfig(prev => !prev)}
+          className="w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
+          title="Scrollback settings"
+        >
+          <Settings2 className="w-3 h-3 text-white/40 hover:text-white/70" />
+        </button>
+        <button
+          onClick={toggleRecording}
+          className={cn(
+            "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
+            session.isRecording && "bg-red-500/10"
+          )}
+          title={session.isRecording ? 'Stop recording & download' : 'Start recording session'}
+        >
+          {session.isRecording
+            ? <Download className="w-3 h-3 text-red-400" />
+            : <Circle className="w-3 h-3 text-white/40 hover:text-white/70" />
+          }
+        </button>
         <button onClick={onMinimize} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title="Minimize">
           <Minus className="w-4 h-4 text-white/70" />
         </button>
@@ -146,8 +187,36 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   );
 
   const terminalContent = (
-    <div className="flex-1 overflow-hidden">
+    <div className="flex-1 overflow-hidden relative">
       <TerminalView session={session} />
+      {/* Scrollback config popover */}
+      {showScrollbackConfig && (
+        <div
+          className="absolute top-1 right-1 z-20 p-3 rounded-lg border shadow-xl"
+          style={{ backgroundColor: '#1e1e1e', borderColor: '#3f3f3f' }}
+        >
+          <div className="text-[11px] text-white/60 mb-2">Scrollback limit</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={scrollbackValue}
+              onChange={(e) => setScrollbackValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') applyScrollback(); }}
+              min={100}
+              max={50000}
+              step={500}
+              className="w-24 px-2 py-1 rounded text-xs bg-black/40 border border-white/10 text-white/80 outline-none focus:border-blue-500/50"
+            />
+            <button
+              onClick={applyScrollback}
+              className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+            >
+              Apply
+            </button>
+          </div>
+          <div className="text-[10px] text-white/30 mt-1">100 – 50,000 lines</div>
+        </div>
+      )}
     </div>
   );
 
@@ -186,4 +255,19 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
       </div>
     </div>
   );
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────
+
+/** Download a session recording as a JSON file. */
+function downloadRecording(recording: SessionRecording): void {
+  const json = JSON.stringify(recording, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.download = `terminal-recording-${recording.deviceName}-${ts}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
