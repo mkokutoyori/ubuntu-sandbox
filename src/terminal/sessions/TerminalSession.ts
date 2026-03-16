@@ -59,6 +59,7 @@ export type InputMode =
   | { type: 'interactive-text'; promptText: string }
   | { type: 'pager'; indicator: string }
   | { type: 'booting' }
+  | { type: 'reverse-search' }
   | { type: 'editor'; editorType: 'nano' | 'vi' | 'vim'; filePath: string; absolutePath: string; content: string; isNewFile: boolean };
 
 export type SessionType = 'linux' | 'cisco' | 'huawei' | 'windows';
@@ -171,6 +172,16 @@ export abstract class TerminalSession {
   /** Maximum number of output lines before oldest lines are trimmed. */
   protected maxScrollback: number = MAX_SCROLLBACK_LINES;
 
+  // ── Reverse search state (Ctrl+R) ─────────────────────────────
+  reverseSearchQuery: string = '';
+  reverseSearchMatch: string | null = null;
+  private _reverseSearchIndex: number = -1;
+  /** The input value saved before entering reverse-search mode. */
+  private _savedInput: string = '';
+
+  // ── Session recording ──────────────────────────────────────────
+  private _recorder: SessionRecorder | null = null;
+
   // ── Version-based observer (for useSyncExternalStore) ──
   private _version = 0;
   private _listeners = new Set<() => void>();
@@ -205,12 +216,19 @@ export abstract class TerminalSession {
   addLine(text: string, type: string = 'normal'): void {
     this.lines.push({ id: nextLineId(), text, type });
     this.enforceScrollbackLimit();
+    // Record output events (skip prompts — those are recorded as 'input')
+    if (type !== 'prompt') {
+      this.recordEvent(type === 'error' ? 'error' : 'output', text);
+    }
     this.notify();
   }
 
   addLines(texts: string[], type: string = 'normal'): void {
     for (const text of texts) {
       this.lines.push({ id: nextLineId(), text, type });
+      if (type !== 'prompt') {
+        this.recordEvent(type === 'error' ? 'error' : 'output', text);
+      }
     }
     this.enforceScrollbackLimit();
     this.notify();
@@ -280,6 +298,153 @@ export abstract class TerminalSession {
     return withTimeout(this.device.executeCommand(command), timeoutMs);
   }
 
+  // ── Scrollback configuration ────────────────────────────────────
+
+  /** Get the current scrollback limit. */
+  getMaxScrollback(): number {
+    return this.maxScrollback;
+  }
+
+  /** Set a new scrollback limit. Immediately trims if needed. */
+  setMaxScrollback(limit: number): void {
+    this.maxScrollback = Math.max(100, Math.min(limit, 50_000));
+    this.enforceScrollbackLimit();
+    this.notify();
+  }
+
+  // ── Reverse history search (Ctrl+R) ────────────────────────────
+
+  /**
+   * Enter reverse-search mode.
+   * Saves the current input and switches to the search InputMode.
+   */
+  enterReverseSearch(): void {
+    this._savedInput = this.input;
+    this.reverseSearchQuery = '';
+    this.reverseSearchMatch = null;
+    this._reverseSearchIndex = -1;
+    this.inputMode = { type: 'reverse-search' };
+    this.notify();
+  }
+
+  /**
+   * Update the search query and find the most recent match.
+   */
+  updateReverseSearch(query: string): void {
+    this.reverseSearchQuery = query;
+    this._reverseSearchIndex = -1; // reset to search from end
+    this.findNextReverseMatch();
+  }
+
+  /**
+   * Find the next (older) match in history.
+   * Called when Ctrl+R is pressed again during search.
+   */
+  findNextReverseMatch(): void {
+    const q = this.reverseSearchQuery.toLowerCase();
+    if (!q) {
+      this.reverseSearchMatch = null;
+      this.notify();
+      return;
+    }
+
+    const startIdx = this._reverseSearchIndex === -1
+      ? this.history.length - 1
+      : this._reverseSearchIndex - 1;
+
+    for (let i = startIdx; i >= 0; i--) {
+      if (this.history[i].toLowerCase().includes(q)) {
+        this._reverseSearchIndex = i;
+        this.reverseSearchMatch = this.history[i];
+        this.notify();
+        return;
+      }
+    }
+
+    // No match found — keep current match but don't change state
+    this.notify();
+  }
+
+  /**
+   * Accept the current match and exit search mode.
+   */
+  acceptReverseSearch(): void {
+    if (this.reverseSearchMatch !== null) {
+      this.input = this.reverseSearchMatch;
+    } else {
+      this.input = this._savedInput;
+    }
+    this.exitReverseSearch();
+  }
+
+  /**
+   * Cancel search and restore the original input.
+   */
+  cancelReverseSearch(): void {
+    this.input = this._savedInput;
+    this.exitReverseSearch();
+  }
+
+  private exitReverseSearch(): void {
+    this.reverseSearchQuery = '';
+    this.reverseSearchMatch = null;
+    this._reverseSearchIndex = -1;
+    this._savedInput = '';
+    this.inputMode = { type: 'normal' };
+    this.notify();
+  }
+
+  // ── Session recording ──────────────────────────────────────────
+
+  /** Start recording terminal events. */
+  startRecording(): void {
+    this._recorder = new SessionRecorder(this.id, this.getSessionType(), this.device.getName());
+    this.notify();
+  }
+
+  /** Stop recording and return the recorded data. */
+  stopRecording(): SessionRecording | null {
+    if (!this._recorder) return null;
+    const recording = this._recorder.finalise();
+    this._recorder = null;
+    this.notify();
+    return recording;
+  }
+
+  /** Whether the session is currently being recorded. */
+  get isRecording(): boolean {
+    return this._recorder !== null;
+  }
+
+  /**
+   * Record an event (called internally by addLine/onEnter).
+   * Protected so subclasses can record additional events.
+   */
+  protected recordEvent(type: RecordedEventType, data: string): void {
+    this._recorder?.record(type, data);
+  }
+
+  /**
+   * Replay a recording into this session (append output lines).
+   * Async to allow playback at realistic speed.
+   */
+  async replayRecording(recording: SessionRecording, speedFactor: number = 1): Promise<void> {
+    for (const event of recording.events) {
+      const delay = event.delay / speedFactor;
+      if (delay > 10) {
+        await new Promise(r => setTimeout(r, Math.min(delay, 2000)));
+      }
+
+      if (event.type === 'input') {
+        this.addLine(`${this.getPrompt()}${event.data}`, 'prompt');
+      } else if (event.type === 'output') {
+        this.addLine(event.data);
+      } else if (event.type === 'error') {
+        this.addLine(event.data, 'error');
+      }
+    }
+  }
+
   // ── Keyboard handling ───────────────────────────────────────────
 
   /**
@@ -288,6 +453,11 @@ export abstract class TerminalSession {
    */
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    // Reverse search mode — intercept all keys
+    if (this.inputMode.type === 'reverse-search') {
+      return this.handleReverseSearchKey(e);
+    }
 
     // Delegate to mode-specific handler first
     const handled = this.handleModeKey(e);
@@ -351,7 +521,68 @@ export abstract class TerminalSession {
       return true;
     }
 
+    // Ctrl+R → reverse history search
+    if (e.key === 'r' && e.ctrlKey) {
+      this.enterReverseSearch();
+      return true;
+    }
+
     return false;
+  }
+
+  /**
+   * Handle keys while in reverse-search mode.
+   */
+  private handleReverseSearchKey(e: KeyEvent): boolean {
+    // Ctrl+R again → find next (older) match
+    if (e.key === 'r' && e.ctrlKey) {
+      this.findNextReverseMatch();
+      return true;
+    }
+
+    // Enter → accept match and execute
+    if (e.key === 'Enter') {
+      this.acceptReverseSearch();
+      // Execute the accepted command
+      this.onEnter();
+      return true;
+    }
+
+    // Escape or Ctrl+G → cancel search
+    if (e.key === 'Escape' || (e.key === 'g' && e.ctrlKey)) {
+      this.cancelReverseSearch();
+      return true;
+    }
+
+    // Ctrl+C → cancel search
+    if (e.key === 'c' && e.ctrlKey) {
+      this.cancelReverseSearch();
+      return true;
+    }
+
+    // Right arrow or End → accept match but stay in normal mode (don't execute)
+    if (e.key === 'ArrowRight' || e.key === 'End') {
+      this.acceptReverseSearch();
+      return true;
+    }
+
+    // Backspace → remove last char from query
+    if (e.key === 'Backspace') {
+      if (this.reverseSearchQuery.length > 0) {
+        this.updateReverseSearch(this.reverseSearchQuery.slice(0, -1));
+      } else {
+        this.cancelReverseSearch();
+      }
+      return true;
+    }
+
+    // Printable character → append to query
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      this.updateReverseSearch(this.reverseSearchQuery + e.key);
+      return true;
+    }
+
+    return true; // consume all other keys while in search
   }
 
   // ── History navigation ──────────────────────────────────────────
@@ -419,4 +650,66 @@ export abstract class TerminalSession {
    * animations can use delays.
    */
   abstract init(): Promise<void>;
+}
+
+// ─── Session Recording ───────────────────────────────────────────
+
+export type RecordedEventType = 'input' | 'output' | 'error';
+
+export interface RecordedEvent {
+  /** Time delta since the previous event, in milliseconds. */
+  delay: number;
+  type: RecordedEventType;
+  data: string;
+}
+
+export interface SessionRecording {
+  sessionId: string;
+  sessionType: SessionType;
+  deviceName: string;
+  startedAt: string;   // ISO 8601
+  duration: number;     // total ms
+  events: RecordedEvent[];
+}
+
+/**
+ * Records terminal events with timing information.
+ * Used internally by TerminalSession when recording is active.
+ */
+class SessionRecorder {
+  private sessionId: string;
+  private sessionType: SessionType;
+  private deviceName: string;
+  private events: RecordedEvent[] = [];
+  private startTime: number;
+  private lastEventTime: number;
+
+  constructor(sessionId: string, sessionType: SessionType, deviceName: string) {
+    this.sessionId = sessionId;
+    this.sessionType = sessionType;
+    this.deviceName = deviceName;
+    this.startTime = Date.now();
+    this.lastEventTime = this.startTime;
+  }
+
+  record(type: RecordedEventType, data: string): void {
+    const now = Date.now();
+    this.events.push({
+      delay: now - this.lastEventTime,
+      type,
+      data,
+    });
+    this.lastEventTime = now;
+  }
+
+  finalise(): SessionRecording {
+    return {
+      sessionId: this.sessionId,
+      sessionType: this.sessionType,
+      deviceName: this.deviceName,
+      startedAt: new Date(this.startTime).toISOString(),
+      duration: Date.now() - this.startTime,
+      events: this.events,
+    };
+  }
 }

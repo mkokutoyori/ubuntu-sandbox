@@ -6,6 +6,12 @@
  *
  * This component is intentionally thin: ALL state lives in the session
  * model, making the terminal survive React mount/unmount cycles.
+ *
+ * Features:
+ *   - Reverse history search (Ctrl+R) with inline search bar
+ *   - Copy/Paste (Ctrl+Shift+C / Ctrl+Shift+V)
+ *   - Recording indicator
+ *   - ANSI color parsing
  */
 
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
@@ -13,7 +19,6 @@ import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
 import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/terminal/sessions/TerminalSession';
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
-import type { CLITerminalSession } from '@/terminal/sessions/CLITerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 
 // ─── ANSI Color Parsing (extracted from old Terminal.tsx) ─────────
@@ -64,6 +69,27 @@ export function useTerminalSession(session: TerminalSession): number {
   return useSyncExternalStore(session.subscribe, session.getVersion);
 }
 
+// ─── Clipboard helpers ───────────────────────────────────────────
+
+async function copySelectionToClipboard(): Promise<boolean> {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.toString().trim()) return false;
+  try {
+    await navigator.clipboard.writeText(selection.toString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pasteFromClipboard(): Promise<string | null> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return null;
+  }
+}
+
 // ─── Main Component ───────────────────────────────────────────────
 
 interface TerminalViewProps {
@@ -78,6 +104,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const interactiveInputRef = useRef<HTMLInputElement>(null);
+  const reverseSearchRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom on output changes
@@ -92,6 +119,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     const mode = session.inputMode;
     if (mode.type === 'password') hiddenInputRef.current?.focus();
     else if (mode.type === 'interactive-text') interactiveInputRef.current?.focus();
+    else if (mode.type === 'reverse-search') {
+      setTimeout(() => reverseSearchRef.current?.focus(), 30);
+    }
     else if (mode.type === 'normal') {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
@@ -102,12 +132,36 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     const mode = session.inputMode;
     if (mode.type === 'password') hiddenInputRef.current?.focus();
     else if (mode.type === 'interactive-text') interactiveInputRef.current?.focus();
+    else if (mode.type === 'reverse-search') reverseSearchRef.current?.focus();
     else if (mode.type === 'booting') return;
     else inputRef.current?.focus();
   }, [session.inputMode]);
 
   // Key handler bridge — converts React event to session KeyEvent
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Ctrl+Shift+C → copy selection
+    if (e.key === 'C' && e.ctrlKey && e.shiftKey) {
+      e.preventDefault();
+      copySelectionToClipboard();
+      return;
+    }
+
+    // Ctrl+Shift+V → paste from clipboard
+    if (e.key === 'V' && e.ctrlKey && e.shiftKey) {
+      e.preventDefault();
+      pasteFromClipboard().then(text => {
+        if (text) {
+          // Append pasted text to current input
+          if (session.inputMode.type === 'reverse-search') {
+            session.updateReverseSearch(session.reverseSearchQuery + text);
+          } else {
+            session.setInput(session.input + text);
+          }
+        }
+      });
+      return;
+    }
+
     const consumed = session.handleKey({
       key: e.key,
       ctrlKey: e.ctrlKey,
@@ -116,6 +170,28 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       shiftKey: e.shiftKey,
     });
     if (consumed) e.preventDefault();
+  }, [session]);
+
+  // Global keydown for copy/paste when terminal div is focused but no input has focus
+  useEffect(() => {
+    const el = terminalRef.current;
+    if (!el) return;
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'C' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        copySelectionToClipboard();
+      }
+      if (e.key === 'V' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        pasteFromClipboard().then(text => {
+          if (text) session.setInput(session.input + text);
+        });
+      }
+    };
+
+    el.addEventListener('keydown', handler);
+    return () => el.removeEventListener('keydown', handler);
   }, [session]);
 
   // ── Editor overlay (Linux only) ─────────────────────────────────
@@ -159,6 +235,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const isInteractiveText = inputMode.type === 'interactive-text';
   const isBooting = inputMode.type === 'booting';
   const isPager = inputMode.type === 'pager';
+  const isReverseSearch = session.inputMode.type === 'reverse-search';
 
   return (
     <div
@@ -168,6 +245,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         color: theme.textColor,
         fontFamily: theme.fontFamily,
       }}
+      tabIndex={0}
     >
       {/* ── Info bar (linux, cisco, huawei) ── */}
       {sessionType !== 'windows' && (
@@ -255,7 +333,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         )}
 
         {/* Normal input line */}
-        {!isPasswordMode && !isInteractiveText && !isBooting && !isPager && (
+        {!isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch && (
           <div className="flex items-center" style={{ minHeight: sessionType === 'windows' ? '1.25em' : '1.35em' }}>
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
             <input
@@ -290,6 +368,27 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </span>
         )}
       </div>
+
+      {/* ── Reverse search bar (bash Ctrl+R) ── */}
+      {isReverseSearch && (
+        <ReverseSearchBar
+          session={session}
+          theme={theme}
+          inputRef={reverseSearchRef}
+          onKeyDown={handleKeyDown}
+        />
+      )}
+
+      {/* ── Recording indicator ── */}
+      {session.isRecording && (
+        <div
+          className="flex items-center gap-1.5 px-3 py-0.5 text-xs shrink-0 select-none"
+          style={{ backgroundColor: 'rgba(220, 38, 38, 0.15)', borderTop: '1px solid rgba(220, 38, 38, 0.3)' }}
+        >
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span style={{ color: '#fca5a5' }}>Recording</span>
+        </div>
+      )}
     </div>
   );
 };
@@ -310,6 +409,52 @@ const InfoBar: React.FC<{ theme: TerminalTheme; session: TerminalSession }> = ({
     >
       <span>{info.left}</span>
       {info.right && <span style={{ fontSize: '10px', opacity: 0.6 }}>{info.right}</span>}
+    </div>
+  );
+};
+
+/** Reverse search bar — appears at the bottom of the terminal */
+const ReverseSearchBar: React.FC<{
+  session: TerminalSession;
+  theme: TerminalTheme;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+}> = ({ session, theme, inputRef, onKeyDown }) => {
+  const query = session.reverseSearchQuery;
+  const match = session.reverseSearchMatch;
+
+  return (
+    <div
+      className="flex items-center px-3 py-1 text-sm shrink-0"
+      style={{
+        backgroundColor: theme.infoBarBg,
+        borderTop: `1px solid ${theme.infoBarBorder}`,
+        fontFamily: theme.fontFamily,
+      }}
+    >
+      <span style={{ color: '#facc15', whiteSpace: 'pre' }}>(reverse-i-search)`</span>
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => session.updateReverseSearch(e.target.value)}
+        onKeyDown={onKeyDown}
+        className="bg-transparent outline-none border-none p-0 m-0"
+        style={{
+          color: theme.textColor,
+          caretColor: theme.textColor,
+          fontFamily: 'inherit',
+          fontSize: 'inherit',
+          minWidth: '20px',
+          width: `${Math.max(1, query.length)}ch`,
+        }}
+        spellCheck={false}
+        autoComplete="off"
+        autoFocus
+      />
+      <span style={{ color: '#facc15', whiteSpace: 'pre' }}>': </span>
+      <span style={{ color: match ? theme.textColor : '#ef2929', opacity: match ? 1 : 0.6 }}>
+        {match ?? (query ? 'no match' : '')}
+      </span>
     </div>
   );
 };

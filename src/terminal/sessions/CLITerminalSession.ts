@@ -164,6 +164,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   protected onEnter(): void {
     const cmd = this.input;
     this.input = '';
+    this.recordEvent('input', cmd);
     this.executeCommand(cmd);
     this.notify();
   }

@@ -121,6 +121,7 @@ export class WindowsTerminalSession extends TerminalSession {
     const cmd = this.input;
     this.input = '';
     this.tabSuggestions = null;
+    this.recordEvent('input', cmd);
     this.executeCommand(cmd);
     this.notify();
   }
