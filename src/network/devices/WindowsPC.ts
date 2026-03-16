@@ -25,6 +25,7 @@ import { cmdArp } from './windows/WinArp';
 import { cmdTracert } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
+import { executeNslookup } from './linux/LinuxDnsService';
 import { cmdDir } from './windows/WinDir';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
@@ -160,6 +161,7 @@ export class WindowsPC extends EndHost {
       case 'traceroute': return cmdTracert(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
       case 'wevtutil': return cmdWevtutil(netCtx, args);
+      case 'nslookup': return this.cmdNslookup(args);
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
@@ -502,6 +504,19 @@ export class WindowsPC extends EndHost {
     const cfg = this.dnsConfig.get(ifName);
     return cfg ? [...cfg.servers] : [];
   }
+
+  /** nslookup command implementation for Windows */
+  private cmdNslookup(args: string[]): string {
+    // Get DNS server from any configured interface
+    let resolverIP = '';
+    for (const [ifName] of this.ports) {
+      const servers = this.getDnsServers(ifName);
+      if (servers.length > 0) { resolverIP = servers[0]; break; }
+    }
+    // Allow specifying server as second argument: nslookup domain server
+    return executeNslookup(args, resolverIP);
+  }
+
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'windows'; }

@@ -20,7 +20,7 @@ import {
 } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { Switch } from '@/network/devices/Switch';
+import { GenericSwitch as Switch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
