@@ -66,6 +66,8 @@ export interface DHCPDiscoverParams {
   parameterRequestList: number[];
   /** Option 50: Requested IP (used in INIT-REBOOT) */
   requestedIP?: string;
+  /** Relay agent IP (giaddr) — set by relay agent for remote subnet selection */
+  giaddr?: string;
 }
 
 /** Result returned by server for DHCPOFFER */
@@ -127,6 +129,48 @@ export interface DHCPDeclineParams {
   serverIdentifier?: string;
   /** Option 61: Client Identifier */
   clientIdentifier: string;
+}
+
+/** Parameters sent in DHCPINFORM (client → server) */
+export interface DHCPInformParams {
+  clientMAC: string;
+  /** Client's current IP (ciaddr) */
+  clientIP: string;
+  xid: number;
+  /** Option 61: Client Identifier */
+  clientIdentifier: string;
+}
+
+/** Result returned by server for DHCPINFORM (ACK without lease) */
+export interface DHCPInformResult {
+  serverIdentifier: string;
+  xid: number;
+  mask: string;
+  router: string | null;
+  dnsServers: string[];
+  domainName: string | null;
+}
+
+/** Result of processRequestWithNak: either ACK or NAK */
+export interface DHCPRequestWithNakResult {
+  type: 'ACK' | 'NAK';
+  /** Binding (only for ACK) */
+  binding?: DHCPBinding;
+  /** Server Identifier */
+  serverIdentifier: string;
+  xid: number;
+  /** NAK message (only for NAK) */
+  message?: string;
+  renewalTime?: number;
+  rebindingTime?: number;
+}
+
+/** Static binding (manual reservation) */
+export interface DHCPStaticBinding {
+  clientId: string;
+  ipAddress: string;
+  poolName: string;
+  type: 'manual';
 }
 
 /** Pending offer (reserved IP between DISCOVER and REQUEST) */

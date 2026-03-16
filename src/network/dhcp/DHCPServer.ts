@@ -12,6 +12,11 @@
  *   - DHCPDECLINE processing with conflict recording (RFC 2131 §3.1.5)
  *   - Options 58/59: T1/T2 configurable per pool
  *   - XID echoed back in all responses
+ *   - DHCPINFORM: Return configuration without lease (RFC 2131 §3.4.3)
+ *   - Static bindings: Manual MAC → IP reservations
+ *   - Conflict TTL: Conflicts expire after configurable time
+ *   - Pool selection by giaddr: Relay agent selects correct pool
+ *   - processRequestWithNak: Returns explicit NAK objects
  */
 
 import {
@@ -19,11 +24,16 @@ import {
   DHCPConflict, DHCPDebugFlags, DHCPRelayConfig, DHCPPendingOffer,
   DHCPDiscoverParams, DHCPOfferResult, DHCPRequestParams, DHCPAckResult,
   DHCPReleaseParams, DHCPDeclineParams,
+  DHCPInformParams, DHCPInformResult,
+  DHCPRequestWithNakResult, DHCPStaticBinding,
   createDefaultPoolConfig, createDefaultStats,
 } from './types';
 
 /** Default pending offer timeout: 60 seconds */
 const PENDING_OFFER_TIMEOUT_MS = 60_000;
+
+/** Default conflict TTL: infinite (0 = never expire) */
+const DEFAULT_CONFLICT_TTL = 0;
 
 export class DHCPServer {
   /** Service enabled flag */
@@ -50,6 +60,9 @@ export class DHCPServer {
   /** IP conflict database */
   private conflicts: DHCPConflict[] = [];
 
+  /** Conflict TTL in seconds (0 = never expire) */
+  private conflictTTL: number = DEFAULT_CONFLICT_TTL;
+
   /** Debug flags */
   private debug: DHCPDebugFlags = { serverPacket: false, serverEvents: false };
 
@@ -58,6 +71,9 @@ export class DHCPServer {
     helperAddresses: new Map(),
     forwardProtocols: new Set([67]), // bootps by default
   };
+
+  /** Static bindings (manual reservations): poolName → bindings[] */
+  private staticBindings: Map<string, DHCPStaticBinding[]> = new Map();
 
   // ─── Service Control ─────────────────────────────────────────────
 
@@ -170,6 +186,31 @@ export class DHCPServer {
     return false;
   }
 
+  // ─── Static Bindings (Manual Reservations) ─────────────────────────
+
+  /** Add a static MAC → IP binding to a pool */
+  addStaticBinding(poolName: string, clientMAC: string, ipAddress: string): void {
+    const existing = this.staticBindings.get(poolName) || [];
+    existing.push({
+      clientId: clientMAC,
+      ipAddress,
+      poolName,
+      type: 'manual',
+    });
+    this.staticBindings.set(poolName, existing);
+  }
+
+  /** Get all static bindings for a pool */
+  getStaticBindings(poolName: string): DHCPStaticBinding[] {
+    return this.staticBindings.get(poolName) || [];
+  }
+
+  /** Find static binding for a client MAC in a specific pool */
+  private findStaticBinding(clientMAC: string, poolName: string): DHCPStaticBinding | null {
+    const bindings = this.staticBindings.get(poolName) || [];
+    return bindings.find(b => b.clientId === clientMAC) || null;
+  }
+
   // ─── Address Allocation (DORA Server-Side) ────────────────────────
 
   /**
@@ -201,7 +242,7 @@ export class DHCPServer {
       }
 
       // Try to allocate new address
-      const ip = this.findAvailableIP(pool);
+      const ip = this.findAvailableIP(pool, clientMAC);
       if (!ip) continue;
 
       const binding: DHCPBinding = {
@@ -238,11 +279,35 @@ export class DHCPServer {
     // Clean expired pending offers
     this.cleanExpiredPendingOffers();
 
-    for (const [, pool] of this.pools) {
+    // Determine pool iteration order: if giaddr is set, prioritize matching pool
+    const poolEntries = this.getPoolsForDiscover(params.giaddr);
+
+    for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
+
+      // If giaddr is set, only consider pools whose subnet contains the giaddr
+      if (params.giaddr && !this.isIPInPool(params.giaddr, pool)) continue;
 
       // Check deny patterns
       if (this.isClientDenied(params.clientMAC, pool)) continue;
+
+      // Check static binding first — preferred IP for this client
+      const staticBinding = this.findStaticBinding(params.clientMAC, pool.name);
+      if (staticBinding) {
+        // Check if the static IP is already bound to someone else
+        const existing = this.bindings.get(staticBinding.ipAddress);
+        if (!existing || existing.clientId === params.clientMAC) {
+          this.stats.offers++;
+          return {
+            ip: staticBinding.ipAddress,
+            pool,
+            serverIdentifier: this.serverIdentifier,
+            xid: params.xid,
+            renewalTime: pool.renewalTime,
+            rebindingTime: pool.rebindingTime,
+          };
+        }
+      }
 
       // Check existing binding — prefer re-offering the same IP
       for (const [ip, binding] of this.bindings) {
@@ -275,7 +340,7 @@ export class DHCPServer {
       }
 
       // Allocate a new IP and create a pending offer
-      const ip = this.findAvailableIP(pool);
+      const ip = this.findAvailableIP(pool, params.clientMAC);
       if (ip) {
         // Reserve the IP (RFC 2131 §3.1.2)
         this.pendingOffers.set(ip, {
@@ -307,7 +372,6 @@ export class DHCPServer {
    * Accepts either the new DHCPRequestParams or legacy (clientMAC, requestedIP) for backward compat.
    */
   processRequest(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
-    this.stats.requests++;
     if (!this.enabled) return null;
 
     // Normalize params (backward compat)
@@ -321,11 +385,13 @@ export class DHCPServer {
       : paramsOrMAC;
 
     // If server identifier is specified (SELECTING state), verify it matches us
+    // Do NOT count requests destined for other servers (BUG FIX: no more stats.requests--)
     if (params.serverIdentifier && params.serverIdentifier !== this.serverIdentifier) {
-      // This REQUEST is for a different server — ignore silently
-      this.stats.requests--; // Don't count this as our request
       return null;
     }
+
+    // Count this as our request only after verifying it's for us
+    this.stats.requests++;
 
     // RFC compliance: Check if the requested IP is in an excluded range
     if (this.isExcluded(params.requestedIP)) {
@@ -385,6 +451,112 @@ export class DHCPServer {
   }
 
   /**
+   * Process a DHCPREQUEST and return an explicit ACK or NAK result.
+   * Unlike processRequest(), this returns a typed result indicating
+   * whether the response is ACK or NAK, rather than using null for NAK.
+   */
+  processRequestWithNak(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPRequestWithNakResult | null {
+    if (!this.enabled) return null;
+
+    // Normalize params
+    const params: DHCPRequestParams = typeof paramsOrMAC === 'string'
+      ? {
+          clientMAC: paramsOrMAC,
+          xid: 0,
+          requestedIP: legacyRequestedIP!,
+          clientIdentifier: '01' + paramsOrMAC.replace(/:/g, ''),
+        }
+      : paramsOrMAC;
+
+    // If server identifier is specified, verify it matches us
+    if (params.serverIdentifier && params.serverIdentifier !== this.serverIdentifier) {
+      return null; // Not for us, don't count
+    }
+
+    this.stats.requests++;
+
+    // Check excluded
+    if (this.isExcluded(params.requestedIP)) {
+      this.stats.naks++;
+      return {
+        type: 'NAK',
+        serverIdentifier: this.serverIdentifier,
+        xid: params.xid,
+        message: `Requested address ${params.requestedIP} is in excluded range`,
+      };
+    }
+
+    // Check conflicts
+    if (this.isConflicted(params.requestedIP)) {
+      this.stats.naks++;
+      return {
+        type: 'NAK',
+        serverIdentifier: this.serverIdentifier,
+        xid: params.xid,
+        message: `Requested address ${params.requestedIP} has a conflict`,
+      };
+    }
+
+    // Find pool
+    for (const [, pool] of this.pools) {
+      if (!pool.network || !pool.mask) continue;
+      if (!this.isIPInPool(params.requestedIP, pool)) continue;
+
+      if (this.isClientDenied(params.clientMAC, pool)) {
+        this.stats.naks++;
+        return {
+          type: 'NAK',
+          serverIdentifier: this.serverIdentifier,
+          xid: params.xid,
+          message: `Client ${params.clientMAC} denied by pool policy`,
+        };
+      }
+
+      const existingBinding = this.bindings.get(params.requestedIP);
+      if (existingBinding && existingBinding.clientId !== params.clientMAC) {
+        this.stats.naks++;
+        return {
+          type: 'NAK',
+          serverIdentifier: this.serverIdentifier,
+          xid: params.xid,
+          message: `Requested address ${params.requestedIP} already bound to another client`,
+        };
+      }
+
+      this.pendingOffers.delete(params.requestedIP);
+
+      const binding: DHCPBinding = {
+        ipAddress: params.requestedIP,
+        clientId: params.clientMAC,
+        leaseStart: Date.now(),
+        leaseExpiration: Date.now() + pool.leaseDuration * 1000,
+        poolName: pool.name,
+        type: 'automatic',
+      };
+
+      this.bindings.set(params.requestedIP, binding);
+      this.stats.acks++;
+
+      return {
+        type: 'ACK',
+        binding,
+        serverIdentifier: this.serverIdentifier,
+        xid: params.xid,
+        renewalTime: pool.renewalTime,
+        rebindingTime: pool.rebindingTime,
+      };
+    }
+
+    this.stats.naks++;
+    return {
+      type: 'NAK',
+      serverIdentifier: this.serverIdentifier,
+      xid: params.xid,
+      message: `Requested address ${params.requestedIP} not in any pool`,
+    };
+  }
+
+  /**
    * Process DHCPRELEASE - remove binding.
    * RFC 2131 §3.4.4: Validates both MAC and IP (ciaddr) match the binding.
    *
@@ -439,6 +611,32 @@ export class DHCPServer {
     this.pendingOffers.delete(params.declinedIP);
   }
 
+  /**
+   * Process DHCPINFORM — client requests configuration without lease.
+   * RFC 2131 §3.4.3: Server replies with DHCPACK containing configuration
+   * parameters but no lease binding.
+   */
+  processInform(params: DHCPInformParams): DHCPInformResult | null {
+    this.stats.informs++;
+
+    // Find pool that contains the client's IP
+    for (const [, pool] of this.pools) {
+      if (!pool.network || !pool.mask) continue;
+      if (!this.isIPInPool(params.clientIP, pool)) continue;
+
+      return {
+        serverIdentifier: this.serverIdentifier,
+        xid: params.xid,
+        mask: pool.mask,
+        router: pool.defaultRouter,
+        dnsServers: pool.dnsServers,
+        domainName: pool.domainName,
+      };
+    }
+
+    return null;
+  }
+
   // ─── Lease Bindings ───────────────────────────────────────────────
 
   getBindings(): Map<string, DHCPBinding> {
@@ -451,6 +649,16 @@ export class DHCPServer {
 
   clearBinding(ip: string): boolean {
     return this.bindings.delete(ip);
+  }
+
+  /** Remove bindings whose lease has expired */
+  cleanExpiredBindings(): void {
+    const now = Date.now();
+    for (const [ip, binding] of this.bindings) {
+      if (binding.leaseExpiration <= now) {
+        this.bindings.delete(ip);
+      }
+    }
   }
 
   // ─── Statistics ───────────────────────────────────────────────────
@@ -466,7 +674,7 @@ export class DHCPServer {
   // ─── Conflicts ────────────────────────────────────────────────────
 
   getConflicts(): DHCPConflict[] {
-    return [...this.conflicts];
+    return this.conflicts;
   }
 
   clearConflicts(): void {
@@ -480,6 +688,27 @@ export class DHCPServer {
       detectionMethod: method,
       detectionTime: Date.now(),
     });
+  }
+
+  /** Set the TTL for conflict entries in seconds (0 = never expire) */
+  setConflictTTL(seconds: number): void {
+    this.conflictTTL = seconds;
+  }
+
+  /** Remove conflicts that have exceeded their TTL */
+  cleanExpiredConflicts(): void {
+    if (this.conflictTTL <= 0) return; // No expiration
+    const now = Date.now();
+    const ttlMs = this.conflictTTL * 1000;
+    this.conflicts = this.conflicts.filter(c => (now - c.detectionTime) < ttlMs);
+  }
+
+  /** Test helper: set detection time for a specific conflict */
+  setConflictTimeForTest(ip: string, time: number): void {
+    const conflict = this.conflicts.find(c => c.ipAddress === ip);
+    if (conflict) {
+      conflict.detectionTime = time;
+    }
   }
 
   private isConflicted(ip: string): boolean {
@@ -631,7 +860,27 @@ export class DHCPServer {
 
   // ─── Internal Helpers ─────────────────────────────────────────────
 
-  private findAvailableIP(pool: DHCPPoolConfig): string | null {
+  /**
+   * Get pools for DISCOVER, prioritizing pools matching giaddr if present.
+   */
+  private getPoolsForDiscover(giaddr?: string): DHCPPoolConfig[] {
+    const allPools = Array.from(this.pools.values());
+    if (!giaddr) return allPools;
+
+    // If giaddr is present, put matching pools first
+    const matching: DHCPPoolConfig[] = [];
+    const others: DHCPPoolConfig[] = [];
+    for (const pool of allPools) {
+      if (pool.network && pool.mask && this.isIPInPool(giaddr, pool)) {
+        matching.push(pool);
+      } else {
+        others.push(pool);
+      }
+    }
+    return [...matching, ...others];
+  }
+
+  private findAvailableIP(pool: DHCPPoolConfig, clientMAC?: string): string | null {
     if (!pool.network || !pool.mask) return null;
 
     const networkNum = this.ipToNumber(pool.network);
@@ -654,10 +903,22 @@ export class DHCPServer {
       // Skip conflicted addresses
       if (this.isConflicted(ipStr)) continue;
 
+      // Skip IPs reserved for other clients via static bindings
+      if (clientMAC) {
+        const reservedFor = this.getStaticBindingForIP(ipStr, pool.name);
+        if (reservedFor && reservedFor.clientId !== clientMAC) continue;
+      }
+
       return ipStr;
     }
 
     return null; // Pool exhausted
+  }
+
+  /** Find static binding that reserves a specific IP */
+  private getStaticBindingForIP(ip: string, poolName: string): DHCPStaticBinding | null {
+    const bindings = this.staticBindings.get(poolName) || [];
+    return bindings.find(b => b.ipAddress === ip) || null;
   }
 
   private isIPInPool(ip: string, pool: DHCPPoolConfig): boolean {
