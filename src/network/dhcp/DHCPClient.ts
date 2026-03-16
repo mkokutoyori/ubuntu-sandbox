@@ -534,29 +534,32 @@ export class DHCPClient {
   }
 
   /**
-   * Auto-assign a simulated lease when no DHCP server is available.
-   * This is a simulator convenience for non-verbose mode.
+   * Assign an APIPA (Automatic Private IP Addressing) address when no
+   * DHCP server is available. RFC 3927: Link-local addressing (169.254.x.x).
+   *
+   * The IP is derived deterministically from the MAC address so the same
+   * client always gets the same APIPA address.
    */
   private autoAssignLease(iface: string, state: DHCPClientIfaceState): string {
-    // Generate a deterministic IP from the MAC
     const mac = this.getMACForIface(iface);
     const macParts = mac.split(':');
-    const octet3 = parseInt(macParts[4] || '01', 16) % 254 + 1;
-    const octet4 = parseInt(macParts[5] || '02', 16) % 254 + 1;
-    const ip = `192.168.1.${octet4}`;
-    const mask = '255.255.255.0';
-    const gateway = '192.168.1.1';
+
+    // Derive APIPA octets from MAC (RFC 3927: 169.254.1.0 - 169.254.254.255)
+    const octet3 = (parseInt(macParts[4] || '01', 16) % 254) + 1; // 1-254
+    const octet4 = parseInt(macParts[5] || '02', 16);              // 0-255
+    const ip = `169.254.${octet3}.${octet4}`;
+    const mask = '255.255.0.0';
     const now = Date.now();
-    const leaseDuration = 86400; // 1 day
+    const leaseDuration = 86400; // APIPA doesn't have a real lease, but we set one for consistency
 
     const lease: DHCPClientLease = {
       iface,
       ipAddress: ip,
       subnetMask: mask,
-      defaultGateway: gateway,
-      dnsServers: ['8.8.8.8'],
+      defaultGateway: null, // APIPA: no gateway (link-local only)
+      dnsServers: [],
       domainName: null,
-      serverIdentifier: gateway,
+      serverIdentifier: '0.0.0.0',
       leaseStart: now,
       leaseDuration,
       renewalTime: Math.floor(leaseDuration * 0.5),
@@ -570,12 +573,10 @@ export class DHCPClient {
     state.state = 'BOUND';
     state.processRunning = true;
     state.logs.push(`DHCPDISCOVER on ${iface}`);
-    state.logs.push(`DHCPOFFER of ${ip}`);
-    state.logs.push(`DHCPREQUEST of ${ip}`);
-    state.logs.push(`DHCPACK of ${ip}`);
-    state.logs.push(`bound to ${ip}`);
+    state.logs.push(`No DHCP server available - using APIPA`);
+    state.logs.push(`bound to ${ip} (link-local)`);
 
-    this.configureIP(iface, ip, mask, gateway);
+    this.configureIP(iface, ip, mask, null);
     this.setupLeaseTimers(iface, state);
 
     return ''; // Non-verbose: silent success
@@ -624,9 +625,12 @@ export class DHCPClient {
               state.state = 'BOUND';
               lease.leaseStart = ackResult.binding.leaseStart;
               lease.expiration = ackResult.binding.leaseExpiration;
+              lease.leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
               if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
               if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
               state.logs.push(`DHCPACK - lease renewed`);
+              // BUG FIX: Restart timers after successful renewal
+              this.setupLeaseTimers(iface, state);
               return;
             }
           }
