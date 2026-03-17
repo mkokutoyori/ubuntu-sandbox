@@ -105,6 +105,26 @@ describe('Group 1: sudo command execution', () => {
     const server = new LinuxServer('linux-server', 'SRV1');
     expect(server.canSudo()).toBe(true);
   });
+
+  it('should reject sudo command from user not in sudo group', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+
+    // Create user NOT in sudo group
+    await server.executeCommand('useradd -m nosudouser');
+
+    // Switch to that user
+    await server.executeCommand('su nosudouser');
+
+    // Try sudo su — should be rejected
+    const result = await server.executeCommand('sudo su');
+    expect(result).toContain('not in the sudoers file');
+  });
+
+  it('should show usage when sudo is called with no arguments', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('sudo');
+    expect(result).toContain('usage');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
