@@ -35,7 +35,7 @@ import {
   type OSPFNeighbor,
   type OSPFPacket,
 } from '@/network/ospf/types';
-import { OSPFEngine } from '@/network/ospf/OSPFEngine';
+import { OSPFEngine, computeOSPFLSAChecksum } from '@/network/ospf/OSPFEngine';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -61,19 +61,21 @@ function makeHello(
 }
 
 function makeRouterLSA(routerId: string, seqNum?: number): RouterLSA {
-  return {
+  const lsa: RouterLSA = {
     lsAge: 0,
     options: 0x02,
     lsType: 1,
     linkStateId: routerId,
     advertisingRouter: routerId,
     lsSequenceNumber: seqNum ?? OSPF_INITIAL_SEQUENCE_NUMBER,
-    checksum: 0x1234,
+    checksum: 0,
     length: 24,
     flags: 0,
     numLinks: 0,
     links: [],
   };
+  lsa.checksum = computeOSPFLSAChecksum(lsa);
+  return lsa;
 }
 
 /**

@@ -1153,8 +1153,9 @@ export class OSPFEngine {
       return;
     }
 
+    const ipToNum = (ip: string) => ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
     const sortCandidates = (pool: typeof candidates) =>
-      pool.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId));
+      pool.sort((a, b) => b.priority - a.priority || (ipToNum(b.routerId) - ipToNum(a.routerId)));
 
     // Step 1: Elect BDR (candidates not declaring themselves as DR)
     const bdrCandidates = candidates.filter(c => c.declaredDR !== c.ipAddress);

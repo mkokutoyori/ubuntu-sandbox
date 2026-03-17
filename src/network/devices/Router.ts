@@ -538,6 +538,14 @@ export abstract class Router extends Equipment {
     const destInt = destIP.toUint32();
 
     for (const route of this.routingTable) {
+      // Skip routes through disconnected physical interfaces (like real IOS behavior)
+      // Virtual interfaces (Tunnel, Loopback) don't require cable connectivity
+      const isVirtual = /^(Tunnel|Loopback)/i.test(route.iface);
+      if (!isVirtual) {
+        const port = this.ports.get(route.iface);
+        if (port && !port.isConnected()) continue;
+      }
+
       const netInt = route.network.toUint32();
       const maskInt = route.mask.toUint32();
       const prefix = route.mask.toCIDR();

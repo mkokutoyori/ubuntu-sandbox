@@ -681,5 +681,12 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     });
 
     trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter()));
+
+    trie.registerGreedy('show interface', 'Display interface status', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
+      if (!ifName) return `% Invalid input detected at '^' marker.\nshow interface ${args.join(' ')}\n     ^`;
+      return Show.showInterface(getRouter(), ifName);
+    });
   }
 }

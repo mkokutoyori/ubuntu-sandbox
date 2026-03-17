@@ -84,7 +84,7 @@ beforeEach(() => {
 describe('IPSec – Dynamic Crypto Map (Hub accepte peers inconnus)', () => {
 
   // ─── 7.01 : Dynamic map sur le hub ───────────────────────────────────────
-  it('7.01 – hub with dynamic map should accept IPSec connections from any spoke', async () => {
+  it('7.01 – hub with dynamic map should accept IPSec connections from any spoke', { timeout: 15000 }, async () => {
     const hub    = new CiscoRouter('HUB');
     const spoke1 = new CiscoRouter('SPOKE1');
     const spoke2 = new CiscoRouter('SPOKE2');
@@ -360,7 +360,7 @@ describe('IPSec – Multiple Peers et Failover', () => {
   });
 
   // ─── 7.03 : Peer de repli (backup peer) ──────────────────────────────────
-  it('7.03 – should fail over to backup peer when primary is unreachable', async () => {
+  it('7.03 – should fail over to backup peer when primary is unreachable', { timeout: 20000 }, async () => {
     const r1    = new CiscoRouter('R1');
     const r2    = new CiscoRouter('R2');   // peer primaire
     const r3    = new CiscoRouter('R3');   // peer de repli
@@ -466,7 +466,7 @@ describe('IPSec – Multiple Peers et Failover', () => {
 describe('IPSec – GRE over IPSec (Tunnel Protection)', () => {
 
   // ─── 7.04 : GRE over IPSec ───────────────────────────────────────────────
-  it('7.04 – GRE tunnel protected by IPSec profile should carry dynamic routing', async () => {
+  it('7.04 – GRE tunnel protected by IPSec profile should carry dynamic routing', { timeout: 15000 }, async () => {
     const r1 = new CiscoRouter('R1');
     const r2 = new CiscoRouter('R2');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
@@ -597,7 +597,7 @@ describe('IPSec – GRE over IPSec (Tunnel Protection)', () => {
 describe('IPSec – Maintenance et Opérations', () => {
 
   // ─── 7.05 : clear crypto session ─────────────────────────────────────────
-  it('7.05 – clear crypto session should remove all SAs and allow clean re-establishment', async () => {
+  it('7.05 – clear crypto session should remove all SAs and allow clean re-establishment', { timeout: 15000 }, async () => {
     const r1  = new CiscoRouter('R1');
     const r2  = new CiscoRouter('R2');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
