@@ -107,11 +107,19 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const reverseSearchRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom on output changes
+  // Scroll to bottom on output changes — use requestAnimationFrame to ensure
+  // layout is complete before scrolling (fixes password input bug at bottom of screen)
   useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-    }
+    const el = terminalRef.current;
+    if (!el) return;
+    // Immediate scroll
+    el.scrollTop = el.scrollHeight;
+    // Also schedule a post-layout scroll to handle cases where the browser
+    // hasn't finished painting (e.g. after switching to password mode)
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
   });
 
   // Focus management — use currentInputMode for Linux sessions to stay
@@ -121,23 +129,37 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     : session.inputMode;
 
   useEffect(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
-    else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
+    // Use preventScroll: true to avoid the browser scrolling to the focused
+    // element (especially the hidden password input), which fights with our
+    // own scroll-to-bottom logic and causes visual glitches at the bottom.
+    if (effectiveMode.type === 'password') {
+      hiddenInputRef.current?.focus({ preventScroll: true });
+      // Force scroll to bottom after focus
+      requestAnimationFrame(() => {
+        if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+      });
+    }
+    else if (effectiveMode.type === 'interactive-text') {
+      interactiveInputRef.current?.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+      });
+    }
     else if (effectiveMode.type === 'reverse-search') {
-      setTimeout(() => reverseSearchRef.current?.focus(), 30);
+      setTimeout(() => reverseSearchRef.current?.focus({ preventScroll: true }), 30);
     }
     else if (effectiveMode.type === 'normal') {
-      setTimeout(() => inputRef.current?.focus(), 30);
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 30);
     }
   }, [effectiveMode.type]);
 
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
-    else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
-    else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus();
+    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
+    else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus({ preventScroll: true });
+    else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus({ preventScroll: true });
     else if (effectiveMode.type === 'booting') return;
-    else inputRef.current?.focus();
+    else inputRef.current?.focus({ preventScroll: true });
   }, [effectiveMode]);
 
   // Key handler bridge — converts React event to session KeyEvent
@@ -308,7 +330,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </pre>
         )}
 
-        {/* Password input (linux) */}
+        {/* Password input (linux) — hidden input captures keystrokes while
+            the blinking cursor provides visual feedback. Uses opacity:0 with
+            inline positioning (NOT absolute+clip) to prevent the browser from
+            scrolling the container when focusing the input. */}
         {isPasswordMode && (
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             <input
@@ -317,19 +342,20 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               value={(session as LinuxTerminalSession).getPasswordBuf()}
               onChange={(e) => (session as LinuxTerminalSession).setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="absolute overflow-hidden"
               style={{
-                position: 'absolute',
-                width: '1px',
-                height: '1px',
+                opacity: 0,
+                width: 0,
+                height: 0,
                 padding: 0,
-                margin: '-1px',
-                clip: 'rect(0, 0, 0, 0)',
-                whiteSpace: 'nowrap',
-                borderWidth: 0,
+                margin: 0,
+                border: 'none',
+                outline: 'none',
+                overflow: 'hidden',
+                // Keep in normal flow (not absolute) so focus doesn't cause scroll jumps
+                position: 'relative',
               }}
               autoComplete="off"
-              autoFocus
+              tabIndex={-1}
             />
             <span className="animate-pulse" style={{ color: theme.textColor }}>&#9608;</span>
           </div>

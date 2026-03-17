@@ -309,8 +309,13 @@ export class LinuxUserManager {
     return lines.join('\n');
   }
 
-  /** Verify a user's password. Returns true if correct. */
+  /** Verify a user's password. Returns true if correct.
+   *  Returns false for locked accounts (like real Linux where the
+   *  password hash is prefixed with '!' preventing authentication). */
   checkPassword(username: string, password: string): boolean {
+    const user = this.users.get(username);
+    if (!user) return false;
+    if (user.locked) return false;
     const stored = this.passwords.get(username);
     if (stored === undefined) return false;
     return stored === password;

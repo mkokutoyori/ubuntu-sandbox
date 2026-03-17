@@ -427,6 +427,21 @@ export class LinuxTerminalSession extends TerminalSession {
         return null;
       }
 
+      // sudo passwd (no args) → change root's password after sudo auth
+      if (subCmd === 'passwd' && subParts.length === 1) {
+        return {
+          steps: [
+            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+            { type: 'password', prompt: 'New password:' },
+            { type: 'password', prompt: 'Retype new password:' },
+            { type: 'set-password', username: 'root' },
+            { type: 'output', text: 'passwd: password updated successfully' },
+          ],
+          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+          currentPromptText: `[sudo] password for ${currentUser}:`,
+        };
+      }
+
       // Handle sudo passwd with flags (-l, -u, -S) — no interactive password needed for these
       if (subCmd === 'passwd' && subParts.length >= 2 && subParts[1].startsWith('-')) {
         return {
@@ -441,6 +456,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
       if (subCmd === 'passwd' && subParts.length >= 2 && !subParts[1].startsWith('-')) {
         const targetUser = subParts[subParts.length - 1];
+        // Check if target user exists before entering interactive flow
+        if (!this.device.userExists(targetUser)) {
+          return null; // Let executor handle with proper error message
+        }
         return {
           steps: [
             { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
@@ -573,6 +592,10 @@ export class LinuxTerminalSession extends TerminalSession {
     // passwd <username> as root — change another user's password without current password
     if (parts[0] === 'passwd' && parts.length >= 2 && !parts[1].startsWith('-') && isRoot) {
       const targetUser = parts[parts.length - 1];
+      // Check if target user exists before entering interactive flow
+      if (!this.device.userExists(targetUser)) {
+        return null; // Let executor handle with proper error message
+      }
       return {
         steps: [
           { type: 'password', prompt: 'New password:' },

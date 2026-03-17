@@ -264,15 +264,12 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
 
     // Root-only commands — reject if not root
-    const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw',
+    // Note: user/group management commands (useradd, adduser, etc.) have their own
+    // permission checks inside their case handlers with more descriptive messages.
+    const rootOnlyCmds = ['chown', 'chgrp', 'ufw',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
-    }
-    // passwd: non-root can only change own password (no args)
-    if (cmd === 'passwd' && this.userMgr.currentUid !== 0 && args.length > 0 && !args[0].startsWith('-')) {
-      return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
     }
 
     switch (cmd) {
@@ -379,8 +376,9 @@ export class LinuxCommandExecutor {
       }
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
-      // User commands
+      // User commands — useradd, usermod, userdel, adduser, deluser, groupadd/mod/del, chpasswd, chage require root
       case 'useradd': {
+        if (this.userMgr.currentUid !== 0) return { output: 'useradd: Permission denied.', exitCode: 1 };
         const out = cmdUseradd(c, args);
         if (!out && args.includes('-m')) {
           // Create skeleton files in new home dir
@@ -392,17 +390,47 @@ export class LinuxCommandExecutor {
         }
         return { output: out, exitCode: out ? 1 : 0 };
       }
-      case 'adduser': return this.handleAdduser(args);
-      case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
-      case 'userdel': return this.handleUserdel(args);
-      case 'deluser': return this.handleDeluser(args);
+      case 'adduser': {
+        if (this.userMgr.currentUid !== 0) return { output: 'adduser: Only root may add a user or group to the system.', exitCode: 1 };
+        return this.handleAdduser(args);
+      }
+      case 'usermod': {
+        if (this.userMgr.currentUid !== 0) return { output: 'usermod: Permission denied.', exitCode: 1 };
+        return { output: cmdUsermod(c, args), exitCode: 0 };
+      }
+      case 'userdel': {
+        if (this.userMgr.currentUid !== 0) return { output: 'userdel: Permission denied.', exitCode: 1 };
+        return this.handleUserdel(args);
+      }
+      case 'deluser': {
+        if (this.userMgr.currentUid !== 0) return { output: 'deluser: Only root may remove a user or group from the system.', exitCode: 1 };
+        return this.handleDeluser(args);
+      }
       case 'passwd': return this.handlePasswd(args);
-      case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
-      case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
-      case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
-      case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
-      case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
-      case 'gpasswd': return this.handleGpasswd(args);
+      case 'chpasswd': {
+        if (this.userMgr.currentUid !== 0) return { output: 'chpasswd: Permission denied.', exitCode: 1 };
+        return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
+      }
+      case 'chage': {
+        if (this.userMgr.currentUid !== 0) return { output: 'chage: Permission denied.', exitCode: 1 };
+        return { output: cmdChage(c, args), exitCode: 0 };
+      }
+      case 'groupadd': {
+        if (this.userMgr.currentUid !== 0) return { output: 'groupadd: Permission denied.', exitCode: 1 };
+        return { output: cmdGroupadd(c, args), exitCode: 0 };
+      }
+      case 'groupmod': {
+        if (this.userMgr.currentUid !== 0) return { output: 'groupmod: Permission denied.', exitCode: 1 };
+        return { output: cmdGroupmod(c, args), exitCode: 0 };
+      }
+      case 'groupdel': {
+        if (this.userMgr.currentUid !== 0) return { output: 'groupdel: Permission denied.', exitCode: 1 };
+        return { output: cmdGroupdel(c, args), exitCode: 0 };
+      }
+      case 'gpasswd': {
+        if (this.userMgr.currentUid !== 0) return { output: 'gpasswd: Permission denied.', exitCode: 1 };
+        return this.handleGpasswd(args);
+      }
       case 'chfn': return this.handleChfn(args);
       case 'finger': return this.handleFinger(args);
       case 'id': {
@@ -751,30 +779,43 @@ export class LinuxCommandExecutor {
 
   private handlePasswd(args: string[]): { output: string; exitCode: number } {
     const c = this.ctx();
-    // passwd -l username (lock)
+    // passwd -l username (lock) — requires root
     if (args[0] === '-l' && args[1]) {
+      if (this.userMgr.currentUid !== 0) {
+        return { output: 'passwd: Permission denied.', exitCode: 1 };
+      }
       const user = this.userMgr.getUser(args[1]);
       if (!user) return { output: `passwd: user '${args[1]}' does not exist`, exitCode: 1 };
       user.locked = true;
       this.userMgr.syncToFilesystem();
       return { output: 'passwd: password expiry information changed.', exitCode: 0 };
     }
-    // passwd -u username (unlock)
+    // passwd -u username (unlock) — requires root
     if (args[0] === '-u' && args[1]) {
+      if (this.userMgr.currentUid !== 0) {
+        return { output: 'passwd: Permission denied.', exitCode: 1 };
+      }
       const user = this.userMgr.getUser(args[1]);
       if (!user) return { output: `passwd: user '${args[1]}' does not exist`, exitCode: 1 };
       user.locked = false;
       this.userMgr.syncToFilesystem();
       return { output: '', exitCode: 0 };
     }
-    // passwd -S username (status)
+    // passwd -S username (status) — requires root for other users
     if (args[0] === '-S' && args[1]) {
+      if (this.userMgr.currentUid !== 0 && args[1] !== this.userMgr.currentUser) {
+        return { output: 'passwd: Permission denied.', exitCode: 1 };
+      }
       return { output: cmdPasswd(c, args), exitCode: 0 };
     }
     // passwd username — password change (Terminal handles interactive prompts)
     if (args.length > 0 && !args[0].startsWith('-')) {
       const user = this.userMgr.getUser(args[0]);
       if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
+      // Only root can change another user's password
+      if (this.userMgr.currentUid !== 0 && args[0] !== this.userMgr.currentUser) {
+        return { output: 'passwd: You may not view or modify password information for ' + args[0] + '.', exitCode: 1 };
+      }
       // Password is set by Terminal after interactive prompt
       return { output: 'passwd: password updated successfully', exitCode: 0 };
     }

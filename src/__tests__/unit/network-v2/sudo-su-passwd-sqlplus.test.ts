@@ -976,3 +976,264 @@ describe('Group 9: Edge cases and security', () => {
     expect(finger).toContain('Full Name');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 10: Edge cases — UX realism & access control
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 10: UX realism edge cases', () => {
+  // ── Permission checks for user management commands ──
+
+  it('non-root user cannot run useradd', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('useradd newuser');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot run adduser', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('adduser newuser');
+    expect(result).toContain('Only root may add a user or group');
+  });
+
+  it('non-root user cannot run usermod', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('usermod -aG sudo user');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot run userdel', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('userdel someuser');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot run deluser', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('deluser someuser');
+    expect(result).toContain('Only root may remove a user or group');
+  });
+
+  it('non-root user cannot run groupadd', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('groupadd newgroup');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot run chpasswd', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('chpasswd');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot run passwd -l', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('passwd -l user');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot run passwd -u', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('passwd -u user');
+    expect(result).toContain('Permission denied');
+  });
+
+  it('non-root user cannot change another users password', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    // First create another user via sudo
+    await pc.executeCommand('sudo useradd -m otheruser');
+    // Now try to change their password as non-root
+    const result = await pc.executeCommand('passwd otheruser');
+    expect(result).toContain('You may not view or modify');
+  });
+
+  // ── Locked account behavior ──
+
+  it('locked user cannot authenticate via checkPassword', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m lockeduser');
+    server.setUserPassword('lockeduser', 'pass123');
+    // Verify password works before locking
+    expect(server.checkPassword('lockeduser', 'pass123')).toBe(true);
+    // Lock the account
+    await server.executeCommand('passwd -l lockeduser');
+    // Verify password no longer works
+    expect(server.checkPassword('lockeduser', 'pass123')).toBe(false);
+  });
+
+  it('root can still su to a locked user', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m lockeduser2');
+    await server.executeCommand('passwd -l lockeduser2');
+    // Root can su without password
+    const result = await server.executeCommand('su lockeduser2');
+    // su should succeed (empty output = success for su)
+    expect(result).toBe('');
+    const whoami = await server.executeCommand('whoami');
+    expect(whoami).toBe('lockeduser2');
+  });
+
+  it('unlocking an account restores authentication', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m unlocktest');
+    server.setUserPassword('unlocktest', 'mypass');
+    await server.executeCommand('passwd -l unlocktest');
+    expect(server.checkPassword('unlocktest', 'mypass')).toBe(false);
+    await server.executeCommand('passwd -u unlocktest');
+    expect(server.checkPassword('unlocktest', 'mypass')).toBe(true);
+  });
+
+  // ── su edge cases ──
+
+  it('su - (login shell) changes to target users home directory', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m suuser');
+    await server.executeCommand('su - suuser');
+    const cwd = await server.executeCommand('pwd');
+    expect(cwd).toBe('/home/suuser');
+  });
+
+  it('su (without -) keeps current working directory', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m suuser2');
+    await server.executeCommand('cd /tmp');
+    await server.executeCommand('su suuser2');
+    const cwd = await server.executeCommand('pwd');
+    // Should NOT be /home/suuser2, should stay in current dir
+    expect(cwd).not.toBe('/home/suuser2');
+  });
+
+  it('su to non-existent user fails', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    const result = await server.executeCommand('su nonexistent');
+    expect(result).toContain('does not exist');
+  });
+
+  it('su to user with nologin shell fails', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -s /sbin/nologin nologinuser');
+    const result = await server.executeCommand('su nologinuser');
+    expect(result).toContain('does not have a login shell');
+  });
+
+  it('nested su sessions can be exited back to original user', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m alice');
+    await server.executeCommand('useradd -m bob');
+    // root → alice → bob → exit → alice → exit → root
+    await server.executeCommand('su alice');
+    expect(await server.executeCommand('whoami')).toBe('alice');
+    await server.executeCommand('su bob');
+    expect(await server.executeCommand('whoami')).toBe('bob');
+    server.handleExit(); // exit from bob → back to alice
+    expect(await server.executeCommand('whoami')).toBe('alice');
+    server.handleExit(); // exit from alice → back to root
+    expect(await server.executeCommand('whoami')).toBe('root');
+  });
+
+  // ── sudo edge cases ──
+
+  it('sudo -u user whoami should run as specified user', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await pc.executeCommand('sudo useradd -m testuser');
+    const result = await pc.executeCommand('sudo -u testuser whoami');
+    expect(result).toBe('testuser');
+    // User should be restored after
+    const whoami = await pc.executeCommand('whoami');
+    expect(whoami).toBe('user');
+  });
+
+  it('sudo with no args shows usage', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('sudo');
+    expect(result).toContain('usage:');
+  });
+
+  it('sudo -u nonexistent should error', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('sudo -u ghostuser whoami');
+    expect(result).toContain('unknown user');
+  });
+
+  // ── passwd edge cases ──
+
+  it('passwd for non-existent user returns error', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    const result = await server.executeCommand('passwd nonexistent');
+    expect(result).toContain('does not exist');
+  });
+
+  it('passwd -S shows status for a user', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m statususer');
+    const result = await server.executeCommand('passwd -S statususer');
+    expect(result).toContain('statususer');
+  });
+
+  it('non-root cannot passwd -S for another user', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await pc.executeCommand('sudo useradd -m anotheruser');
+    const result = await pc.executeCommand('passwd -S anotheruser');
+    expect(result).toContain('Permission denied');
+  });
+
+  // ── sudo su + exit restores original user ──
+
+  it('sudo su then exit returns to non-root user', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await pc.executeCommand('sudo su');
+    expect(await pc.executeCommand('whoami')).toBe('root');
+    const exitResult = pc.handleExit();
+    expect(exitResult.inSu).toBe(true);
+    expect(await pc.executeCommand('whoami')).toBe('user');
+  });
+
+  // ── userExists checks ──
+
+  it('userExists returns true for existing users', () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    expect(server.userExists('root')).toBe(true);
+  });
+
+  it('userExists returns false for non-existing users', () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    expect(server.userExists('nonexistent')).toBe(false);
+  });
+
+  // ── canSudo checks ──
+
+  it('newly created user without sudo group cannot use sudo', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m newuser');
+    server.setUserPassword('newuser', 'pass123');
+    await server.executeCommand('su newuser');
+    expect(await server.executeCommand('whoami')).toBe('newuser');
+    const result = await server.executeCommand('sudo whoami');
+    expect(result).toContain('is not in the sudoers file');
+  });
+
+  it('user added to sudo group can use sudo', async () => {
+    const server = new LinuxServer('linux-server', 'SRV1');
+    await server.executeCommand('useradd -m sudouser');
+    await server.executeCommand('usermod -aG sudo sudouser');
+    await server.executeCommand('su sudouser');
+    const result = await server.executeCommand('sudo whoami');
+    expect(result).toBe('root');
+  });
+
+  // ── gpasswd requires root ──
+
+  it('non-root user cannot run gpasswd', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('gpasswd -d user sudo');
+    expect(result).toContain('Permission denied');
+  });
+
+  // ── chage requires root ──
+
+  it('non-root user cannot run chage', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const result = await pc.executeCommand('chage -l user');
+    expect(result).toContain('Permission denied');
+  });
+});
