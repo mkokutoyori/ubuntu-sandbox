@@ -83,6 +83,9 @@ export abstract class Equipment {
   /** Get current UID (0 = root). Override in Linux devices. */
   getCurrentUid(): number { return 0; }
 
+  /** Check if current user can use sudo. Override in Linux devices. */
+  canSudo(): boolean { return true; }
+
   /** Read file content for editor. Override in devices with filesystem. */
   readFileForEditor(_path: string): string | null { return null; }
 

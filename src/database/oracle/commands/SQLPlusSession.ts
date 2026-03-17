@@ -678,8 +678,10 @@ export class SQLPlusSession {
       [username, password] = connStr.split('/', 2);
     } else {
       username = connStr;
-      // In real SQL*Plus, this would prompt for password
-      return { output: ['ERROR:', 'SP2-0306: Invalid option. Missing password.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      // In real SQL*Plus, this would prompt for password interactively.
+      // Since interactive password prompt in CONNECT is not supported in simulator,
+      // provide a helpful error message.
+      return { output: ['ERROR:', `SP2-0306: Invalid option.`, `Usage: CONNECT username/password[@connect_identifier] [AS SYSDBA]`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
     // Strip @tns_alias from password

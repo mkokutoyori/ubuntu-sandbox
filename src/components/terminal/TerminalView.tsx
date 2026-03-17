@@ -154,9 +154,18 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       e.preventDefault();
       pasteFromClipboard().then(text => {
         if (text) {
-          // Append pasted text to current input
+          // Determine input mode and paste into the correct buffer
+          const currentMode = session.getSessionType() === 'linux'
+            ? (session as LinuxTerminalSession).currentInputMode
+            : session.inputMode;
           if (session.inputMode.type === 'reverse-search') {
             session.updateReverseSearch(session.reverseSearchQuery + text);
+          } else if (currentMode.type === 'interactive-text') {
+            const linux = session as LinuxTerminalSession;
+            linux.setInputBuf(linux.getInputBuf() + text);
+          } else if (currentMode.type === 'password') {
+            const linux = session as LinuxTerminalSession;
+            linux.setPasswordBuf(linux.getPasswordBuf() + text);
           } else {
             session.setInput(session.input + text);
           }

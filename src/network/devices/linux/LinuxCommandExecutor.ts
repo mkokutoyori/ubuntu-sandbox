@@ -7,7 +7,6 @@ import { LinuxUserManager } from './LinuxUserManager';
 import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
-import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
@@ -24,7 +23,6 @@ export class LinuxCommandExecutor {
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
-  readonly iptables: LinuxIptablesManager;
   readonly logMgr: LinuxLogManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
@@ -162,14 +160,30 @@ export class LinuxCommandExecutor {
         return this.dispatch('sudo', cmdArgs, stdin, true);
       }
       // Handle sudo -u user cmd
+      let sudoTargetUser: string | null = null;
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
+        sudoTargetUser = cmdArgs[1];
         cmdArgs = cmdArgs.slice(2);
       }
-      // Temporarily become root for the command
+      // Temporarily become the target user (or root) for the command
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
-      this.userMgr.currentUser = 'root';
-      this.userMgr.currentUid = 0;
-      this.userMgr.currentGid = 0;
+      if (sudoTargetUser) {
+        const targetUserEntry = this.userMgr.getUser(sudoTargetUser);
+        if (targetUserEntry) {
+          this.userMgr.currentUser = targetUserEntry.username;
+          this.userMgr.currentUid = targetUserEntry.uid;
+          this.userMgr.currentGid = targetUserEntry.gid;
+        } else {
+          this.userMgr.currentUser = savedUser.user;
+          this.userMgr.currentUid = savedUser.uid;
+          this.userMgr.currentGid = savedUser.gid;
+          return { output: `sudo: unknown user: ${sudoTargetUser}`, exitCode: 1 };
+        }
+      } else {
+        this.userMgr.currentUser = 'root';
+        this.userMgr.currentUid = 0;
+        this.userMgr.currentGid = 0;
+      }
     }
 
     if (cmdArgs.length === 0) {
@@ -891,6 +905,14 @@ export class LinuxCommandExecutor {
       // sudo -l: show what current user can do
       const hostname = 'linux-pc';
       const user = this.userMgr.currentUser;
+      const userGroups = this.userMgr.getUserGroups(user);
+      const isSudoer = user === 'root' || userGroups.some(g => g.name === 'sudo');
+      if (!isSudoer) {
+        return {
+          output: `${user} is not in the sudoers file. This incident will be reported.`,
+          exitCode: 1,
+        };
+      }
       return {
         output: [
           `Matching Defaults entries for ${user} on ${hostname}:`,
@@ -903,6 +925,14 @@ export class LinuxCommandExecutor {
       };
     }
     return { output: cmdSudoCheck(this.ctx(), args), exitCode: 0 };
+  }
+
+  /** Check if the current user is allowed to use sudo */
+  canSudo(): boolean {
+    const user = this.userMgr.currentUser;
+    if (user === 'root' || this.userMgr.currentUid === 0) return true;
+    const userGroups = this.userMgr.getUserGroups(user);
+    return userGroups.some(g => g.name === 'sudo');
   }
 
   // ─── IPSec (strongSwan) ─────────────────────────────────────────
