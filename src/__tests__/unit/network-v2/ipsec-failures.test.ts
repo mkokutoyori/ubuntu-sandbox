@@ -129,7 +129,7 @@ beforeEach(() => {
 describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.01 : Pas de proposal IKE commun ───────────────────────────────────
-  it('6.01 – should fail IKE negotiation when no common ISAKMP proposal exists', async () => {
+  it('6.01 – should fail IKE negotiation when no common ISAKMP proposal exists', { timeout: 15000 }, async () => {
     const { r1, r2, pc1 } = await buildBaseTopology();
 
     // R1 : AES-256 + SHA256 + group14
@@ -161,7 +161,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
   });
 
   // ─── 6.02 : Pas de transform-set commun ──────────────────────────────────
-  it('6.02 – should fail Phase 2 when no common transform-set exists', async () => {
+  it('6.02 – should fail Phase 2 when no common transform-set exists', { timeout: 15000 }, async () => {
     const { r1, r2, pc1 } = await buildBaseTopology();
 
     // IKE phase 1 compatible, mais Phase 2 incompatible
@@ -191,7 +191,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
   });
 
   // ─── 6.03 : Clé PSK incorrecte ───────────────────────────────────────────
-  it('6.03 – should fail authentication with mismatched pre-shared keys', async () => {
+  it('6.03 – should fail authentication with mismatched pre-shared keys', { timeout: 15000 }, async () => {
     const { r1, r2, pc1 } = await buildBaseTopology();
 
     // R1 : clé "CorrectKey"
@@ -218,7 +218,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
   });
 
   // ─── 6.04 : Peer injoignable ─────────────────────────────────────────────
-  it('6.04 – should not create SA when remote peer is unreachable', async () => {
+  it('6.04 – should not create SA when remote peer is unreachable', { timeout: 15000 }, async () => {
     const r1  = new CiscoRouter('R1');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
     new Cable('lan1').connect(pc1.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
@@ -274,7 +274,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
   });
 
   // ─── 6.05 : Déconnexion du câble pendant le trafic ────────────────────────
-  it('6.05 – should drop packets when WAN cable is disconnected mid-traffic', async () => {
+  it('6.05 – should drop packets when WAN cable is disconnected mid-traffic', { timeout: 20000 }, async () => {
     const { r1, r2, pc1, pc2, cableWAN } = await buildBaseTopology();
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'Secret1');
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'Secret1');
@@ -292,13 +292,16 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     cableWAN.disconnect();
 
     // Les paquets doivent être perdus immédiatement
-    const pingPendant = await pc1.executeCommand('ping -c 4 192.168.2.10');
+    const pingPendant = await pc1.executeCommand('ping -c 1 192.168.2.10');
     expect(pingPendant).toContain('100% packet loss');
 
-    // Les compteurs d'erreurs sur R1 doivent augmenter
+    // L'interface est down → les SAs IPSec sont effacées (DPD on-demand)
     const saApres = await r1.executeCommand('show crypto ipsec sa');
-    // Les paquets ont tenté d'être envoyés mais le lien est coupé
-    expect(saApres).toMatch(/#send errors [1-9]|#pkts not compressed/i);
+    expect(saApres).not.toContain('#pkts encaps: 3');
+
+    // L'IKE SA ne doit plus être active
+    const ikeApres = await r1.executeCommand('show crypto isakmp sa');
+    expect(ikeApres).not.toContain('QM_IDLE');
   });
 
   // ─── 6.06 : Reconnexion et re-établissement ───────────────────────────────

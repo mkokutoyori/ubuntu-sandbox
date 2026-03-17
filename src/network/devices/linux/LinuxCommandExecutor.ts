@@ -996,6 +996,12 @@ export class LinuxCommandExecutor {
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
 
+  /** Read a file from the virtual filesystem (returns null if not found) */
+  readFile(path: string): string | null {
+    const absPath = this.vfs.normalizePath(path, this.cwd);
+    return this.vfs.readFile(absPath);
+  }
+
   /** Tab completion: returns matching completions for a partial input */
   getCompletions(partial: string): string[] {
     const trimmed = partial.trimStart();

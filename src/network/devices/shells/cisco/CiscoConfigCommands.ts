@@ -221,8 +221,14 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
 
   trie.register('shutdown', 'Disable interface', () => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) port.setUp(false);
+    const ifName = ctx.getSelectedInterface()!;
+    const port = ctx.r().getPort(ifName);
+    if (port) {
+      port.setUp(false);
+      // Clear IPSec SAs bound to this interface (like a real Cisco router)
+      const ipsecEngine = (ctx.r() as any)._getIPSecEngineInternal?.();
+      if (ipsecEngine) ipsecEngine.clearSAsForInterface(ifName);
+    }
     return '';
   });
 

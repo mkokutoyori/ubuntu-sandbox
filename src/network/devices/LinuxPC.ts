@@ -14,12 +14,17 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
+import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
 
 export class LinuxPC extends EndHost {
   protected readonly defaultTTL = 64;
   private executor: LinuxCommandExecutor;
   /** XFRM (IPsec) state/policy database for ip xfrm commands */
   private xfrmCtx: IpXfrmContext = { states: [], policies: [] };
+  /** DNS service (dnsmasq) — active when this machine acts as DNS server */
+  public dnsService: DnsService = new DnsService();
+  /** Configured DNS resolver IP (from /etc/resolv.conf) */
+  private dnsResolverIP: string = '';
 
   constructor(type: DeviceType = 'linux-pc', name: string = 'LinuxPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -77,7 +82,7 @@ export class LinuxPC extends EndHost {
    * that need EndHost internals to handle.
    */
   private containsNetworkCommand(input: string): boolean {
-    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps', 'sysctl', 'iptables'];
+    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps', 'sysctl', 'iptables', 'dig', 'nslookup', 'host', 'dnsmasq'];
     // Also check for DHCP lease file paths (cat/rm of /var/lib/dhcp/)
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&]+/);
@@ -204,6 +209,21 @@ export class LinuxPC extends EndHost {
       }
       case 'iptables-save': {
         return this.executor.iptables.executeSave();
+      }
+      case 'dig': {
+        const parts = noSudo.split(/\s+/).slice(1);
+        return executeDig(parts, this.getResolverIP());
+      }
+      case 'nslookup': {
+        const parts = noSudo.split(/\s+/).slice(1);
+        return executeNslookup(parts, this.getResolverIP());
+      }
+      case 'host': {
+        const parts = noSudo.split(/\s+/).slice(1);
+        return executeHost(parts, this.getResolverIP());
+      }
+      case 'dnsmasq': {
+        return this.cmdDnsmasq(noSudo.split(/\s+/).slice(1));
       }
       default:
         return null;
@@ -737,4 +757,44 @@ export class LinuxPC extends EndHost {
   setUserPassword(username: string, password: string): void { this.executor.setUserPassword(username, password); }
   userExists(username: string): boolean { return this.executor.userExists(username); }
   setUserGecos(username: string, fullName: string, room: string, workPhone: string, homePhone: string, other: string): void { this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other); }
+
+  // ─── DNS helpers ────────────────────────────────────────────────
+
+  /** Read DNS resolver from /etc/resolv.conf in virtual filesystem */
+  private getResolverIP(): string {
+    if (this.dnsResolverIP) return this.dnsResolverIP;
+    const content = this.executor.readFile('/etc/resolv.conf');
+    if (content) {
+      const match = content.match(/nameserver\s+(\S+)/);
+      if (match) return match[1];
+    }
+    return '';
+  }
+
+  /** Handle dnsmasq startup: parse config file and start DNS service */
+  private cmdDnsmasq(args: string[]): string {
+    let configFile = '/etc/dnsmasq.conf';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-C' && args[i + 1]) {
+        configFile = args[i + 1]; i++;
+      }
+    }
+
+    // Read config from virtual filesystem
+    const config = this.executor.readFile(configFile);
+    if (!config) return `dnsmasq: failed to read ${configFile}`;
+
+    // Check for addn-hosts directive
+    const hostsMatch = config.match(/addn-hosts=(\S+)/);
+    if (hostsMatch) {
+      const hostsContent = this.executor.readFile(hostsMatch[1]);
+      if (hostsContent) {
+        this.dnsService.parseHostsFile(hostsContent);
+      }
+    }
+
+    this.dnsService.parseConfig(config);
+    this.dnsService.start();
+    return '';
+  }
 }

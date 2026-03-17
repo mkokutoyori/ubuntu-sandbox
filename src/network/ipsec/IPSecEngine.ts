@@ -855,6 +855,28 @@ export class IPSecEngine {
     this.ipsecSADB.delete(peerIP);
   }
 
+  /** Clear all SAs associated with a given interface (called when interface goes down) */
+  clearSAsForInterface(ifName: string): void {
+    // Clear IPSec SAs with matching outbound interface
+    for (const [peerIP, sas] of this.ipsecSADB) {
+      const matching = sas.filter(sa => sa.outIface === ifName);
+      if (matching.length > 0) {
+        for (const sa of matching) {
+          this.spiToSA.delete(sa.spiIn);
+        }
+        const remaining = sas.filter(sa => sa.outIface !== ifName);
+        if (remaining.length > 0) {
+          this.ipsecSADB.set(peerIP, remaining);
+        } else {
+          this.ipsecSADB.delete(peerIP);
+          // Also clear the IKE SA for this peer
+          this.ikeSADB.delete(peerIP);
+          this.ikev2SADB.delete(peerIP);
+        }
+      }
+    }
+  }
+
   clearAllSAs(): void {
     this.ikeSADB.clear();
     this.ikev2SADB.clear();
@@ -1258,6 +1280,9 @@ export class IPSecEngine {
    * Returns the matching CryptoMapEntry (or null if no match).
    */
   findMatchingCryptoEntry(pkt: IPv4Packet, egressIface: string): CryptoMapEntry | null {
+    // Already-encapsulated IPSec packets must not be re-encrypted (mirrors real IOS behavior)
+    if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) return null;
+
     const mapName = this.ifaceCryptoMap.get(egressIface);
     if (!mapName) {
       // Check tunnel protection
@@ -1320,9 +1345,11 @@ export class IPSecEngine {
    */
   processOutbound(pkt: IPv4Packet, egressIface: string, entry: CryptoMapEntry): IPv4Packet[] | null {
     // Check if egress port is actually up (cable connected)
+    // Skip this check for virtual interfaces (Tunnel, Loopback, Serial sub-if) which have no cable
+    const isVirtualIface = /^(Tunnel|Loopback)/i.test(egressIface);
     const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
     const outPort = ports.get(egressIface);
-    if (outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+    if (!isVirtualIface && outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
       // Port is down — trigger DPD-like SA clearing for any peer on this interface
       const peerIP = this.determinePeer(entry, egressIface, pkt);
       if (peerIP) {
@@ -1399,22 +1426,42 @@ export class IPSecEngine {
 
   private determinePeer(entry: CryptoMapEntry, egressIface: string, pkt: IPv4Packet): string | null {
     if (entry.peers.length > 0 && entry.peers[0] !== '0.0.0.0') {
-      // Try primary peer first, then backup peers
+      // Try primary peer first, then backup peers — check reachability
       for (const peerIP of entry.peers) {
         const peerRouter = IPSecEngine.findRouterByIP(peerIP);
-        if (peerRouter) return peerIP;
+        if (!peerRouter) continue;
+        // Verify we can actually reach this peer (route via connected interface)
+        try {
+          const peerAddr = new IPAddress(peerIP);
+          const route = (this.router as any).lookupRoute?.(peerAddr);
+          if (route) return peerIP;
+        } catch {
+          // lookupRoute throws or no route — peer unreachable, try next
+          continue;
+        }
       }
       // If none reachable, return first peer (will fail gracefully)
       return entry.peers[0];
     }
-    // Tunnel protection: peer is the tunnel destination
+    // Tunnel protection: peer is the tunnel destination (from config)
+    const extraConfig = (this.router as any).ospfExtraConfig?.pendingIfConfig;
+    if (extraConfig) {
+      const tunCfg = extraConfig.get(egressIface);
+      if (tunCfg?.tunnelDest) return tunCfg.tunnelDest;
+    }
+    // Fallback: check port method
     const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
     const port = ports.get(egressIface);
     if (port) {
       const tunnelDst = port.getTunnelDestination?.();
       if (tunnelDst) return tunnelDst.toString();
     }
-    // Dynamic: peer = packet destination
+    // Dynamic crypto map: use routing table next-hop as peer
+    try {
+      const route = (this.router as any).lookupRoute?.(pkt.destinationIP);
+      if (route && route.nextHop) return route.nextHop.toString();
+    } catch { /* ignore */ }
+    // Last resort: packet destination
     return pkt.destinationIP.toString();
   }
 
@@ -1882,6 +1929,20 @@ export class IPSecEngine {
     sa.pktsDecaps++;
     sa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
 
+    // SA bundle (RFC 4301 §4.5): combined AH+ESP — unwrap both layers here
+    // to avoid double anti-replay check on the inner ESP (same SA, same seq num)
+    if (ah.innerPacket && ah.innerPacket.protocol === IP_PROTO_ESP) {
+      const esp = ah.innerPacket.payload as ESPPacket;
+      if (esp && esp.type === 'esp') {
+        sa.pktsDecaps++;
+        sa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
+        if (esp.innerPacket) {
+          this.propagateEcnOnDecap(outerPkt, esp.innerPacket, sa);
+        }
+        return esp.innerPacket;
+      }
+    }
+
     // RFC 6040: propagate ECN congestion marks from outer to inner
     if (ah.innerPacket) {
       this.propagateEcnOnDecap(outerPkt, ah.innerPacket, sa);
@@ -2053,9 +2114,11 @@ export class IPSecEngine {
    */
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
     // Check if egress port is actually up (cable connected)
+    // Skip this check for virtual interfaces (Tunnel, Loopback) which have no cable
+    const isVirtualIface = /^(Tunnel|Loopback)/i.test(egressIface);
     const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
     const outPort = ports.get(egressIface);
-    if (outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+    if (!isVirtualIface && outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
       Logger.info(this.router.id, 'ipsec:port-down',
         `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
       this.createFailedIKESA(peerIP, egressIface, 'Interface down');
@@ -2085,6 +2148,15 @@ export class IPSecEngine {
 
     const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
     if (!peerEngine) return false;
+
+    // Peer must have a crypto map applied to at least one interface (or tunnel protection)
+    // to act as an IKE responder — just like a real Cisco router
+    if (peerEngine.ifaceCryptoMap.size === 0 && peerEngine.tunnelProtection.size === 0) {
+      Logger.info(this.router.id, 'ipsec:no-peer-crypto',
+        `${this.router.name}: Peer ${peerIP} has no crypto map applied`);
+      this.createFailedIKESA(peerIP, egressIface, 'Peer no crypto map');
+      return false;
+    }
 
     // Determine my local IP (on egress interface)
     const localIP = this.getLocalIP(egressIface) || '';
@@ -2345,9 +2417,10 @@ export class IPSecEngine {
       outIface: egressIface,
       hasESP, hasAH,
     };
+    // Replace any existing SAs for this peer (re-establishment after clear/rekey)
     const existing = this.ipsecSADB.get(peerIP) || [];
-    existing.push(sa);
-    this.ipsecSADB.set(peerIP, existing);
+    for (const oldSa of existing) this.spiToSA.delete(oldSa.spiIn);
+    this.ipsecSADB.set(peerIP, [sa]);
     this.spiToSA.set(spiInitIn, sa);
 
     // Responder SA (on peer engine)
@@ -2391,9 +2464,10 @@ export class IPSecEngine {
       outIface: peerEgressIface,
       hasESP, hasAH,
     };
+    // Replace any existing SAs for this peer on responder (re-establishment)
     const peerExisting = peerEngine.ipsecSADB.get(apparentSrcIP) || [];
-    peerExisting.push(peerSA);
-    peerEngine.ipsecSADB.set(apparentSrcIP, peerExisting);
+    for (const oldSa of peerExisting) peerEngine.spiToSA.delete(oldSa.spiIn);
+    peerEngine.ipsecSADB.set(apparentSrcIP, [peerSA]);
     peerEngine.spiToSA.set(spiRespIn, peerSA);
 
     if (this.debugIpsec) {

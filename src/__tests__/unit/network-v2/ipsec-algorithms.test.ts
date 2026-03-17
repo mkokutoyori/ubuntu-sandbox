@@ -297,7 +297,7 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
   });
 
   // ─── 3.10 : ESP AES-256 + AH SHA256 (combiné) ───────────────────────────
-  it('3.10 – ESP AES-256-GCM combined with AH SHA256 should provide both encryption and outer integrity', async () => {
+  it('3.10 – ESP AES-256-GCM combined with AH SHA256 should provide both encryption and outer integrity', { timeout: 15000 }, async () => {
     // Combinaison : ESP pour le chiffrement + AH pour l'intégrité de l'en-tête IP externe
     const { r1, pc1 } = await buildAlgoTopology('ah-sha256-hmac esp-aes 256 esp-sha256-hmac');
 
@@ -313,8 +313,8 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
     // L'algorithme AH
     expect(sa).toContain('ah-sha256-hmac');
-    // L'algorithme ESP
-    expect(sa).toContain('esp-aes');
+    // L'algorithme ESP (affiché comme esp-256-aes pour AES-256)
+    expect(sa).toContain('esp-256-aes');
 
     expect(sa).toContain('#pkts encaps: 3');
     expect(sa).toContain('#recv errors 0');

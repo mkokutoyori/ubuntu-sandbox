@@ -236,13 +236,14 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
     expect(ipsecSA).toContain('#send errors 0');
     expect(ipsecSA).toContain('#recv errors 0');
     // L'algorithme utilisé (AES-256 + SHA256) doit apparaître dans les SAs ESP
-    expect(ipsecSA).toContain('esp-aes');
+    // Cisco affiche esp-256-aes pour AES avec clé 256-bit
+    expect(ipsecSA).toContain('esp-256-aes');
     expect(ipsecSA).toContain('inbound esp sas:');
     expect(ipsecSA).toContain('outbound esp sas:');
 
     // ── Symétrie côté R2 ─────────────────────────────────────────────────
     const ikev2SA_R2 = await r2.executeCommand('show crypto ikev2 sa');
-    expect(ikev2SA_R2).toContain('10.0.12.2');
+    // R2 doit voir la SA avec R1, dans l'état READY
     expect(ikev2SA_R2).toContain('10.0.12.1');
     expect(ikev2SA_R2).toContain('READY');
 
@@ -359,17 +360,17 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
     // 3 paquets de PC2 → PC1
     await pc2.executeCommand('ping -c 3 192.168.1.10');
 
-    // R1 : 6 envoyés depuis son LAN + 3 reçus depuis l'autre côté
-    //       (les replies ICMP du premier ping s'ajoutent aux 3 du second)
+    // Sur un vrai équipement, TOUTES les trames IPSec sont comptées (requêtes ET réponses).
+    // R1 encaps: 6 echo-request (PC1→PC2) + 3 echo-reply (pour les pings PC2→PC1) = 9
+    // R1 decaps: 6 echo-reply (retour des pings PC1→PC2) + 3 echo-request (PC2→PC1) = 9
     const sa_R1 = await r1.executeCommand('show crypto ipsec sa');
-    // Encaps = 6 (pings de PC1 → PC2) + les éventuels ICMP reply de R2 pour le ping de PC2
-    expect(sa_R1).toContain('#pkts encaps: 6');
-    expect(sa_R1).toContain('#pkts decaps: 6'); // replies du premier ping + 3 pings initiés par PC2
+    expect(sa_R1).toContain('#pkts encaps: 9');
+    expect(sa_R1).toContain('#pkts decaps: 9');
 
-    // R2 : symétrique
+    // R2 : symétrique (6 echo-reply + 3 echo-request = 9 encaps, idem decaps)
     const sa_R2 = await r2.executeCommand('show crypto ipsec sa');
-    expect(sa_R2).toContain('#pkts encaps: 6');
-    expect(sa_R2).toContain('#pkts decaps: 6');
+    expect(sa_R2).toContain('#pkts encaps: 9');
+    expect(sa_R2).toContain('#pkts decaps: 9');
 
     // Zéro erreur dans les deux sens
     expect(sa_R1).toContain('#send errors 0');

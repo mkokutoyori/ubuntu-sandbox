@@ -65,6 +65,73 @@ export function showIpIntBrief(router: Router): string {
   return lines.join('\n');
 }
 
+export function showInterface(router: Router, ifName: string): string {
+  const ports = router._getPortsInternal();
+  const port = ports.get(ifName);
+  if (!port) return `% Invalid input detected at \'^\' marker.\nshow interface ${ifName}\n     ^`;
+
+  const isUp = port.getIsUp();
+  const connected = port.isConnected();
+  const isVirtual = /^(Tunnel|Loopback)/i.test(ifName);
+  const ip = port.getIPAddress()?.toString() || 'unassigned';
+  const maskObj = port.getSubnetMask();
+  const cidr = maskObj ? maskObj.toCIDR() : '';
+  const mac = port.getMAC().toString();
+
+  // Virtual interfaces (Tunnel, Loopback) are up/up when administratively up
+  const status = isUp ? 'up' : 'administratively down';
+  const lineProto = isUp && (connected || isVirtual) ? 'up' : 'down';
+
+  const isTunnel = ifName.startsWith('Tunnel');
+  const isLoopback = ifName.startsWith('Loopback');
+
+  const lines = [
+    `${ifName} is ${status}, line protocol is ${lineProto}`,
+  ];
+
+  if (isTunnel) {
+    lines.push(`  Hardware is Tunnel`);
+  } else if (isLoopback) {
+    lines.push(`  Hardware is Loopback`);
+  } else {
+    const speed = ifName.startsWith('Gig') ? '1000Mbps' : '100Mbps';
+    lines.push(`  Hardware is ${ifName.startsWith('Gig') ? 'iGbE' : 'Fast Ethernet'}, address is ${mac} (bia ${mac})`);
+  }
+
+  if (ip !== 'unassigned') {
+    lines.push(`  Internet address is ${ip}/${cidr}`);
+  }
+
+  if (isTunnel) {
+    // Show tunnel-specific info
+    const extra = (router as any).ospfExtraConfig?.pendingIfConfig;
+    if (extra) {
+      const tunCfg = extra.get(ifName);
+      if (tunCfg?.tunnelSource) lines.push(`  Tunnel source ${tunCfg.tunnelSource}`);
+      if (tunCfg?.tunnelDest) lines.push(`  Tunnel destination ${tunCfg.tunnelDest}`);
+    }
+    // Show tunnel protection info
+    const ipsecEngine = (router as any)._getIPSecEngineInternal?.();
+    if (ipsecEngine) {
+      const tp = ipsecEngine.tunnelProtection?.get(ifName);
+      if (tp) {
+        lines.push(`  tunnel protection ipsec profile ${tp.profileName}${tp.shared ? ' shared' : ''}`);
+      }
+    }
+    lines.push(`  Tunnel protocol/transport GRE/IP`);
+  } else if (!isLoopback) {
+    const speed = ifName.startsWith('Gig') ? '1000Mbps' : '100Mbps';
+    lines.push(`  MTU 1500 bytes, BW ${ifName.startsWith('Gig') ? '1000000' : '100000'} Kbit/sec, DLY 10 usec,`);
+    lines.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
+    lines.push(`  Encapsulation ARPA, loopback not set`);
+    lines.push(`  Full-duplex, ${speed}, media type is RJ45`);
+    lines.push(`  output flow-control is unsupported, input flow-control is unsupported`);
+    lines.push(`  ARP type: ARPA, ARP Timeout 04:00:00`);
+  }
+
+  return lines.join('\n');
+}
+
 export function showArp(router: Router): string {
   const arpTable = router._getArpTableInternal();
   if (arpTable.size === 0) return 'No ARP entries.';

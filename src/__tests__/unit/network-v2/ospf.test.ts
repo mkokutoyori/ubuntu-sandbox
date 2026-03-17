@@ -432,16 +432,15 @@ describe('OSPF DR/BDR Election', () => {
       priority: 1,
     });
 
-    // Neighbor with same priority but higher Router ID
+    // Neighbor with same priority but higher Router ID declares itself as BDR
+    // (triggers BackupSeen → immediate DR election while neighbor is still alive)
     const hello = makeHello('9.9.9.9', {
       priority: 1,
       neighbors: ['1.1.1.1'],
       designatedRouter: '0.0.0.0',
-      backupDesignatedRouter: '0.0.0.0',
+      backupDesignatedRouter: '10.0.0.9',
     });
     engine.processHello('GigabitEthernet0/0', '10.0.0.9', hello);
-
-    vi.advanceTimersByTime(OSPF_DEFAULT_DEAD_INTERVAL * 1000 + 100);
 
     const iface = engine.getInterface('GigabitEthernet0/0')!;
     // 9.9.9.9 > 1.1.1.1 so it should be DR
