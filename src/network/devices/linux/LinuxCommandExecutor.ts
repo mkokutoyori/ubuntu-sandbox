@@ -155,9 +155,20 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
-      // Handle sudo -l (no arguments = current user)
-      if (cmdArgs.length === 0 || cmdArgs[0] === '-l') {
+      // Handle sudo with no sub-command → show usage (like real sudo)
+      if (cmdArgs.length === 0) {
+        return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
+      }
+      // Handle sudo -l
+      if (cmdArgs[0] === '-l') {
         return this.dispatch('sudo', cmdArgs, stdin, true);
+      }
+      // Check if current user is allowed to use sudo (must be root or in sudo group)
+      if (!this.canSudo()) {
+        return {
+          output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
+          exitCode: 1,
+        };
       }
       // Handle sudo -u user cmd
       let sudoTargetUser: string | null = null;

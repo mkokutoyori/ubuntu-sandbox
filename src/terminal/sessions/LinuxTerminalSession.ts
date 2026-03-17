@@ -422,6 +422,11 @@ export class LinuxTerminalSession extends TerminalSession {
       const subParts = parts.slice(1);
       const subCmd = subParts[0];
 
+      // sudo with no sub-command or sudo -l → no interactive steps, let executor handle
+      if (!subCmd || subCmd === '-l') {
+        return null;
+      }
+
       // Handle sudo passwd with flags (-l, -u, -S) — no interactive password needed for these
       if (subCmd === 'passwd' && subParts.length >= 2 && subParts[1].startsWith('-')) {
         return {
@@ -565,12 +570,11 @@ export class LinuxTerminalSession extends TerminalSession {
       };
     }
 
-    // BUG FIX: passwd <username> as root — change another user's password without current password
+    // passwd <username> as root — change another user's password without current password
     if (parts[0] === 'passwd' && parts.length >= 2 && !parts[1].startsWith('-') && isRoot) {
       const targetUser = parts[parts.length - 1];
       return {
         steps: [
-          { type: 'output', text: `Enter new UNIX password for ${targetUser}:` },
           { type: 'password', prompt: 'New password:' },
           { type: 'password', prompt: 'Retype new password:' },
           { type: 'set-password', username: targetUser },
@@ -578,6 +582,48 @@ export class LinuxTerminalSession extends TerminalSession {
         ],
         stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
         currentPromptText: '',
+      };
+    }
+
+    // adduser <username> as root (without sudo) — needs password + GECOS prompts
+    if (parts[0] === 'adduser' && parts.length >= 2 && isRoot) {
+      const targetUser = parts.slice(1).filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
+      const hasDisabledPassword = parts.includes('--disabled-password') || parts.includes('--disabled-login');
+      const hasGecos = parts.indexOf('--gecos') >= 0;
+
+      if (hasDisabledPassword && hasGecos) {
+        // No interactive steps needed — just execute
+        return null;
+      }
+
+      const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
+        { type: 'password', prompt: 'New password:' },
+        { type: 'password', prompt: 'Retype new password:' },
+        { type: 'set-password', username: targetUser },
+        { type: 'output', text: 'passwd: password updated successfully' },
+      ];
+      const chfnSteps: InteractiveStep[] = hasGecos ? [] : [
+        { type: 'output', text: `Changing the user information for ${targetUser}` },
+        { type: 'output', text: 'Enter the new value, or press ENTER for the default' },
+        { type: 'input', prompt: '\tFull Name []: ', field: 'fullName' },
+        { type: 'input', prompt: '\tRoom Number []: ', field: 'room' },
+        { type: 'input', prompt: '\tWork Phone []: ', field: 'workPhone' },
+        { type: 'input', prompt: '\tHome Phone []: ', field: 'homePhone' },
+        { type: 'input', prompt: '\tOther []: ', field: 'other' },
+        { type: 'confirm', prompt: 'Is the information correct? [Y/n] ' },
+        { type: 'set-gecos', username: targetUser },
+      ];
+
+      return {
+        steps: [
+          { type: 'adduser-info', command: trimmed },
+          ...passwordSteps,
+          ...chfnSteps,
+        ],
+        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+        currentPromptText: '',
+        targetUser,
+        gecosFields: { fullName: '', room: '', workPhone: '', homePhone: '', other: '' },
       };
     }
 
