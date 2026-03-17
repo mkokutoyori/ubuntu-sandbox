@@ -1192,6 +1192,24 @@ export abstract class BaseParser {
       return { type: 'Literal', position: pos, dataType: 'boolean', value: false };
     }
 
+    // DATE 'literal' — Oracle date literal (ANSI SQL)
+    if (this.checkKeyword('DATE') && this.peekNext()?.type === TokenType.STRING_LITERAL) {
+      this.advance(); // consume DATE
+      const strToken = this.advance();
+      let val = strToken.value;
+      if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+      return { type: 'Literal', position: pos, dataType: 'date', value: val };
+    }
+
+    // TIMESTAMP 'literal' — ANSI timestamp literal
+    if (this.checkKeyword('TIMESTAMP') && this.peekNext()?.type === TokenType.STRING_LITERAL) {
+      this.advance(); // consume TIMESTAMP
+      const strToken = this.advance();
+      let val = strToken.value;
+      if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+      return { type: 'Literal', position: pos, dataType: 'timestamp', value: val };
+    }
+
     // CASE expression
     if (this.matchKeyword('CASE')) {
       return this.parseCaseExpression(pos);

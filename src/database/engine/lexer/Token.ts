@@ -29,77 +29,50 @@ export interface Token {
  * Dialect-specific keywords (e.g., Oracle's ROWNUM, PG's ILIKE) are
  * tokenised as KEYWORD — the parser distinguishes them by value.
  */
-export enum TokenType {
+export const TokenType = {
   // ── Literals ────────────────────────────────────────
-  /** Numeric literal: 42, 3.14, 1.5e10 */
-  NUMBER_LITERAL = 'NUMBER_LITERAL',
-  /** Single-quoted string: 'hello', q'[it''s]' */
-  STRING_LITERAL = 'STRING_LITERAL',
-  /** Bind variable: :name, :1 */
-  BIND_VARIABLE = 'BIND_VARIABLE',
+  NUMBER_LITERAL: 'NUMBER_LITERAL',
+  STRING_LITERAL: 'STRING_LITERAL',
+  BIND_VARIABLE: 'BIND_VARIABLE',
 
   // ── Identifiers & Keywords ─────────────────────────
-  /** Unquoted identifier: emp, department_id */
-  IDENTIFIER = 'IDENTIFIER',
-  /** Double-quoted identifier: "Column Name" */
-  QUOTED_IDENTIFIER = 'QUOTED_IDENTIFIER',
-  /** Reserved or non-reserved keyword: SELECT, FROM, etc. */
-  KEYWORD = 'KEYWORD',
+  IDENTIFIER: 'IDENTIFIER',
+  QUOTED_IDENTIFIER: 'QUOTED_IDENTIFIER',
+  KEYWORD: 'KEYWORD',
 
   // ── Operators ──────────────────────────────────────
-  /** Comparison: =, <>, !=, <, >, <=, >= */
-  COMPARISON_OP = 'COMPARISON_OP',
-  /** Arithmetic: +, -, *, / */
-  ARITHMETIC_OP = 'ARITHMETIC_OP',
-  /** String concatenation: || */
-  CONCAT_OP = 'CONCAT_OP',
-  /** Assignment: := (PL/SQL) */
-  ASSIGN_OP = 'ASSIGN_OP',
-  /** Association: => (PL/SQL named params) */
-  ASSOC_OP = 'ASSOC_OP',
-  /** Range: .. (PL/SQL) */
-  RANGE_OP = 'RANGE_OP',
-  /** Oracle outer join: (+) — lexed as a single token when possible */
-  OUTER_JOIN_OP = 'OUTER_JOIN_OP',
+  COMPARISON_OP: 'COMPARISON_OP',
+  ARITHMETIC_OP: 'ARITHMETIC_OP',
+  CONCAT_OP: 'CONCAT_OP',
+  ASSIGN_OP: 'ASSIGN_OP',
+  ASSOC_OP: 'ASSOC_OP',
+  RANGE_OP: 'RANGE_OP',
+  OUTER_JOIN_OP: 'OUTER_JOIN_OP',
 
   // ── Punctuation ────────────────────────────────────
-  /** Left parenthesis ( */
-  LPAREN = 'LPAREN',
-  /** Right parenthesis ) */
-  RPAREN = 'RPAREN',
-  /** Comma , */
-  COMMA = 'COMMA',
-  /** Semicolon ; — statement terminator */
-  SEMICOLON = 'SEMICOLON',
-  /** Dot . — schema.table, table.column */
-  DOT = 'DOT',
-  /** Star * — wildcard or multiplication (disambiguated by parser) */
-  STAR = 'STAR',
-  /** At sign @ — DB link, script execution */
-  AT = 'AT',
-  /** Colon : (PL/SQL labels, bind prefix) */
-  COLON = 'COLON',
-  /** Percent % — attribute: %TYPE, %ROWTYPE, %FOUND, etc. */
-  PERCENT = 'PERCENT',
+  LPAREN: 'LPAREN',
+  RPAREN: 'RPAREN',
+  COMMA: 'COMMA',
+  SEMICOLON: 'SEMICOLON',
+  DOT: 'DOT',
+  STAR: 'STAR',
+  AT: 'AT',
+  COLON: 'COLON',
+  PERCENT: 'PERCENT',
 
   // ── Special ────────────────────────────────────────
-  /** Single-line comment: -- ... */
-  LINE_COMMENT = 'LINE_COMMENT',
-  /** Block comment: /* ... */ */
-  BLOCK_COMMENT = 'BLOCK_COMMENT',
-  /** SQL*Plus hint: /*+ ... */ */
-  HINT = 'HINT',
-  /** Forward slash / on its own line — execute PL/SQL block */
-  SLASH = 'SLASH',
-  /** Whitespace (typically skipped) */
-  WHITESPACE = 'WHITESPACE',
-  /** Newline (significant in SQL*Plus context) */
-  NEWLINE = 'NEWLINE',
-  /** End of input */
-  EOF = 'EOF',
-  /** Unknown / invalid character */
-  UNKNOWN = 'UNKNOWN',
-}
+  LINE_COMMENT: 'LINE_COMMENT',
+  BLOCK_COMMENT: 'BLOCK_COMMENT',
+  HINT: 'HINT',
+  SLASH: 'SLASH',
+  WHITESPACE: 'WHITESPACE',
+  NEWLINE: 'NEWLINE',
+  EOF: 'EOF',
+  UNKNOWN: 'UNKNOWN',
+
+} as const;
+
+export type TokenType = (typeof TokenType)[keyof typeof TokenType];
 
 /**
  * Set of SQL keywords shared by all dialects (SQL:2016 core).

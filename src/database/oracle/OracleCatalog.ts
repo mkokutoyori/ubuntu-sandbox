@@ -76,13 +76,21 @@ export class OracleCatalog extends BaseCatalog {
   // ── Authentication ───────────────────────────────────────────────
 
   authenticate(username: string, password: string): boolean {
-    const stored = this.passwords.get(username.toUpperCase());
+    const upper = username.toUpperCase();
+    if (!this.userExists(upper)) return false;
+    const stored = this.passwords.get(upper);
     if (stored === undefined) return false;
     return stored === password;
   }
 
   setPassword(username: string, password: string): void {
     this.passwords.set(username.toUpperCase(), password);
+  }
+
+  override dropUser(username: string): void {
+    const upper = username.toUpperCase();
+    this.passwords.delete(upper);
+    super.dropUser(upper);
   }
 
   // ── Catalog view queries ─────────────────────────────────────────

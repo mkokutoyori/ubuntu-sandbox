@@ -1,37 +1,9 @@
 /**
- * STUB FILE - will be rebuilt with TDD
- * Oracle SQL*Plus implementation
+ * Oracle SQL*Plus integration — re-exports from the real implementation.
+ *
+ * This file exists for backward compatibility with any existing imports.
+ * The real SQL*Plus session is at src/database/oracle/commands/SQLPlusSession.ts.
  */
 
-import { SQLSession } from '../../commands/database';
-
-export interface SQLPlusResult {
-  output: string;
-  isError: boolean;
-  affectedRows?: number;
-}
-
-export function executeSQLPlus(
-  sql: string,
-  session: SQLSession
-): SQLPlusResult {
-  // Stub implementation
-  if (sql.trim().toLowerCase() === 'exit' || sql.trim().toLowerCase() === 'quit') {
-    return {
-      output: 'Disconnected from Oracle Database',
-      isError: false
-    };
-  }
-
-  return {
-    output: `STUB: SQL*Plus execution result for: ${sql}`,
-    isError: false
-  };
-}
-
-export function getSQLPlusPrompt(session: SQLSession): string {
-  if (!session.isConnected) {
-    return 'SQL> ';
-  }
-  return `SQL> `;
-}
+export { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+export type { SQLPlusResult, SQLPlusSettings } from '@/database/oracle/commands/SQLPlusSession';

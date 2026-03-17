@@ -39,7 +39,7 @@ export class OracleDatabase {
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
     this.storage = new OracleStorage();
-    this.catalog = new OracleCatalog(this.instance, this.storage);
+    this.catalog = new OracleCatalog(this.storage, this.instance);
     this.lexer = new OracleLexer();
   }
 

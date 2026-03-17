@@ -639,6 +639,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'Literal':
         if (expr.dataType === 'null') return null;
         if (expr.dataType === 'number') return Number(expr.value);
+        if (expr.dataType === 'date' || expr.dataType === 'timestamp') return new Date(String(expr.value));
         return String(expr.value ?? '');
 
       case 'Identifier': {

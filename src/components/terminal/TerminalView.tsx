@@ -329,6 +329,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         {/* Interactive text input (linux) */}
         {isInteractiveText && (
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
+            {(inputMode as { promptText: string }).promptText && (
+              <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
+                {(inputMode as { promptText: string }).promptText}
+              </span>
+            )}
             <input
               ref={interactiveInputRef}
               type="text"
