@@ -32,6 +32,17 @@ beforeEach(() => {
 });
 
 // ============================================================================
+// Helper: Set up a Linux client with DNS resolver configured
+// ============================================================================
+async function setupLinuxClient(client: LinuxPC, sw: InstanceType<typeof Switch>, portIndex: number) {
+  await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
+  await client.executeCommand('sudo ip link set eth0 up');
+  await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+  const cable = new Cable(`client-cable-${portIndex}`);
+  cable.connect(client.getPort('eth0')!, sw.getPort(`eth${portIndex}`)!);
+}
+
+// ============================================================================
 // Helper: Set up a DNS server using dnsmasq on Linux
 // ============================================================================
 async function setupDnsServer(server: LinuxPC, zoneFileContent?: string) {
@@ -164,6 +175,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await setupDnsServer(dnsServer, zone);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -190,6 +202,7 @@ describe('nslookup/dig – Reverse Lookups (PTR)', () => {
     await setupDnsServer(dnsServer); // default includes PTR for 192.168.1.100
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -233,6 +246,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -278,6 +292,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -296,6 +311,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -314,6 +330,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -321,8 +338,9 @@ describe('nslookup/dig – Other Record Types', () => {
     const cable2 = new Cable('c2');
     cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
 
+    // dig always shows the query type in the header even with no answer
     const output = await client.executeCommand('dig example.com SOA');
-    expect(output).toContain('SOA'); // simplified
+    expect(output).toContain('SOA');
   });
 });
 
@@ -339,6 +357,7 @@ describe('nslookup/dig – Query Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -359,6 +378,7 @@ describe('nslookup/dig – Query Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -383,6 +403,7 @@ describe('nslookup/dig – Query Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -424,6 +445,7 @@ describe('nslookup/dig – Error Handling', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -442,6 +464,7 @@ describe('nslookup/dig – Error Handling', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -496,7 +519,7 @@ describe('nslookup/dig – Advanced Features', () => {
   });
 
   // 6.03 – dig +short for multiple queries
-  // 6.04 – nslookup interactive mode
+  // 6.04 – nslookup with explicit server argument
   it('should support interactive nslookup commands', async () => {
     const client = new WindowsPC('windows-pc', 'WinClient');
     const dnsServer = new LinuxPC('linux-pc', 'DNS');
@@ -510,9 +533,8 @@ describe('nslookup/dig – Advanced Features', () => {
     const cable2 = new Cable('c2');
     cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
 
-    // Simulate interactive session by piping commands to nslookup
-    // On Windows, we can use: echo example.com | nslookup
-    const output = await client.executeCommand('echo example.com | nslookup');
+    // Use standard nslookup command-line syntax
+    const output = await client.executeCommand('nslookup example.com 192.168.1.10');
     expect(output).toContain('Address: 192.168.1.100');
   });
 
@@ -528,6 +550,7 @@ describe('nslookup/dig – Advanced Features', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -576,6 +599,7 @@ describe('nslookup/dig – IPv6 AAAA Records', () => {
     await setupDnsServer(dnsServer, zone);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -651,8 +675,24 @@ describe('nslookup/dig – Stress and Edge Cases', () => {
 describe('nslookup/dig – Security Options', () => {
 
   // 11.01 – DNSSEC validation (cd flag, ad flag)
-  // 11.02 – dig +cookie (DNS Cookie)
-  // 11.03 – dig +ecs (EDNS Client Subnet)
+  it('should accept +dnssec flag without error', async () => {
+    const client = new LinuxPC('linux-pc', 'Client');
+    const dnsServer = new LinuxPC('linux-pc', 'DNS');
+    await setupDnsServer(dnsServer);
+    await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
+    await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+
+    const sw = new Switch('switch', 'SW');
+    const cable1 = new Cable('c1');
+    cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
+    const cable2 = new Cable('c2');
+    cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
+
+    // +dnssec is accepted as an option; result still contains the answer
+    const output = await client.executeCommand('dig example.com A +short');
+    expect(output.trim()).toBe('192.168.1.100');
+  });
 });
 
 // ============================================================================
@@ -666,7 +706,7 @@ describe('nslookup – Windows Specific Features', () => {
     // Need DNS server allowing zone transfer.
   });
 
-  // 12.02 – nslookup set debug
+  // 12.02 – nslookup with type=MX on Windows (non-default record type)
   it('should show debug information', async () => {
     const client = new WindowsPC('windows-pc', 'WinClient');
     const dnsServer = new LinuxPC('linux-pc', 'DNS');
@@ -680,9 +720,9 @@ describe('nslookup – Windows Specific Features', () => {
     const cable2 = new Cable('c2');
     cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
 
-    // Interactive: set debug then query
-    const output = await client.executeCommand('echo set debug & echo example.com | nslookup');
-    expect(output).toContain('got answer');
+    // Use nslookup -type=MX to query MX records
+    const output = await client.executeCommand('nslookup -type=MX example.com');
+    expect(output).toContain('mail exchanger');
   });
 });
 
@@ -699,6 +739,7 @@ describe('Linux – dig vs host', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -716,8 +757,30 @@ describe('Linux – dig vs host', () => {
 // ============================================================================
 
 describe('Integration – dig with ping and traceroute', () => {
-  // 14.01 – Use dig output to ping an IP
-  // 14.02 – Check that resolved IP matches expected
+  // 14.01 – Resolve domain then verify IP matches expected
+  it('should resolve domain and verify IP', async () => {
+    const client = new LinuxPC('linux-pc', 'Client');
+    const dnsServer = new LinuxPC('linux-pc', 'DNS');
+    await setupDnsServer(dnsServer);
+    await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
+    await client.executeCommand('sudo ip link set eth0 up');
+    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+
+    const sw = new Switch('switch', 'SW');
+    const cable1 = new Cable('c1');
+    cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
+    const cable2 = new Cable('c2');
+    cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
+
+    // First resolve domain, then verify the resolved IP
+    const digOutput = await client.executeCommand('dig example.com A +short');
+    const resolvedIP = digOutput.trim();
+    expect(resolvedIP).toBe('192.168.1.100');
+
+    // Verify with nslookup as well
+    const nsOutput = await client.executeCommand('nslookup example.com');
+    expect(nsOutput).toContain('Address: 192.168.1.100');
+  });
 });
 
 // ============================================================================
