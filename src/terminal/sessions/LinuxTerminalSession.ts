@@ -14,6 +14,8 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, nextLineId,
 } from './TerminalSession';
+import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import { createSQLPlusSession } from '@/terminal/commands/database';
 
 // ─── Interactive prompt types ─────────────────────────────────────
 
@@ -62,6 +64,10 @@ export class LinuxTerminalSession extends TerminalSession {
   private inputBuf: string = '';
   /** Tab suggestions currently shown (null = hidden) */
   tabSuggestions: string[] | null = null;
+  /** Active SQL*Plus sub-shell session (null when not in sqlplus mode) */
+  private sqlPlusSession: SQLPlusSession | null = null;
+  /** Prompt text for the active SQL*Plus session */
+  private sqlPlusPrompt: string = 'SQL> ';
 
   constructor(id: string, device: Equipment) {
     super(id, device);
@@ -109,6 +115,9 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   get currentInputMode(): InputMode {
+    if (this.sqlPlusSession) {
+      return { type: 'interactive-text', promptText: this.sqlPlusPrompt };
+    }
     if (this.interactive) {
       const step = this.interactive.steps[this.interactive.stepIndex];
       if (!step) return { type: 'normal' };
@@ -122,6 +131,11 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    // SQL*Plus sub-shell mode — route to interactive text handler
+    if (this.sqlPlusSession) {
+      return this.handleSqlPlusKey(e);
+    }
 
     // Password mode
     if (this.interactive) {
@@ -257,6 +271,16 @@ export class LinuxTerminalSession extends TerminalSession {
       const editorCmd = parts[0];
       if (editorCmd === 'nano' || editorCmd === 'vi' || editorCmd === 'vim') {
         this.openEditor(editorCmd as 'nano' | 'vi' | 'vim', parts.slice(1));
+        return;
+      }
+    }
+
+    // Intercept sqlplus command — enter SQL*Plus sub-shell
+    {
+      const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
+      const parts = noSudo.split(/\s+/);
+      if (parts[0] === 'sqlplus') {
+        this.enterSqlPlus(parts.slice(1));
         return;
       }
     }
@@ -685,5 +709,84 @@ export class LinuxTerminalSession extends TerminalSession {
       this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
       return;
     }
+  }
+
+  // ── SQL*Plus sub-shell ──────────────────────────────────────────
+
+  private enterSqlPlus(args: string[]): void {
+    try {
+      const deviceId = this.device.id || 'default';
+      const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
+
+      this.sqlPlusSession = session;
+      this.sqlPlusPrompt = session.getPrompt();
+
+      // Display banner
+      for (const line of banner) this.addLine(line);
+      // Display login output
+      for (const line of loginOutput) this.addLine(line);
+      this.addLine('');
+
+      this.inputBuf = '';
+      this.notify();
+    } catch (err) {
+      this.addLine(`bash: sqlplus: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      this.notify();
+    }
+  }
+
+  private handleSqlPlusKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const line = this.inputBuf;
+      this.inputBuf = '';
+      // Echo the input with prompt
+      this.addLine(`${this.sqlPlusPrompt}${line}`);
+      this.processSqlPlusLine(line);
+      this.notify();
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      // Ctrl+C — cancel current input, but stay in sqlplus
+      this.inputBuf = '';
+      this.addLine(`${this.sqlPlusPrompt}^C`);
+      this.notify();
+      return true;
+    }
+    if (e.key === 'd' && e.ctrlKey) {
+      // Ctrl+D — exit sqlplus
+      this.exitSqlPlus();
+      return true;
+    }
+    // Let the view handle other keys (typing into the interactive-text input)
+    return false;
+  }
+
+  private processSqlPlusLine(line: string): void {
+    if (!this.sqlPlusSession) return;
+
+    const result = this.sqlPlusSession.processLine(line);
+
+    for (const outputLine of result.output) {
+      this.addLine(outputLine);
+    }
+
+    if (result.exit) {
+      this.exitSqlPlus();
+      return;
+    }
+
+    this.sqlPlusPrompt = result.prompt;
+    this.notify();
+  }
+
+  private exitSqlPlus(): void {
+    if (this.sqlPlusSession) {
+      this.sqlPlusSession.disconnect();
+      this.sqlPlusSession = null;
+    }
+    this.sqlPlusPrompt = 'SQL> ';
+    this.inputBuf = '';
+    this.inputMode = { type: 'normal' };
+    this.notify();
   }
 }

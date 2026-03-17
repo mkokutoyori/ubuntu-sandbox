@@ -1,0 +1,1417 @@
+/**
+ * OracleExecutor — Executes parsed SQL statements against Oracle storage.
+ *
+ * Handles SELECT, INSERT, UPDATE, DELETE, DDL, DCL, and admin commands.
+ */
+
+import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
+import { type ResultSet, emptyResult, queryResult, type ColumnMeta, type Row } from '../engine/executor/ResultSet';
+import type { Statement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
+  CreateTableStatement, DropTableStatement, TruncateTableStatement, AlterTableStatement,
+  CreateIndexStatement, DropIndexStatement, CreateSequenceStatement, DropSequenceStatement,
+  CreateViewStatement, DropViewStatement, GrantStatement, RevokeStatement,
+  CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
+  CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
+  AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
+  Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
+  StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
+} from '../engine/parser/ASTNode';
+import type { OracleStorage } from './OracleStorage';
+import type { OracleCatalog } from './OracleCatalog';
+import type { OracleInstance } from './OracleInstance';
+import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
+import { parseOracleType } from '../engine/catalog/DataType';
+import { OracleError } from '../engine/types/DatabaseError';
+
+export class OracleExecutor extends BaseExecutor {
+  private instance: OracleInstance;
+
+  constructor(
+    storage: OracleStorage,
+    catalog: OracleCatalog,
+    instance: OracleInstance,
+    context: ExecutionContext
+  ) {
+    super(storage, catalog, context);
+    this.instance = instance;
+  }
+
+  execute(statement: Statement): ResultSet {
+    switch (statement.type) {
+      case 'SelectStatement': return this.executeSelect(statement);
+      case 'InsertStatement': return this.executeInsert(statement);
+      case 'UpdateStatement': return this.executeUpdate(statement);
+      case 'DeleteStatement': return this.executeDelete(statement);
+      case 'CreateTableStatement': return this.executeCreateTable(statement);
+      case 'DropTableStatement': return this.executeDropTable(statement);
+      case 'TruncateTableStatement': return this.executeTruncate(statement);
+      case 'AlterTableStatement': return this.executeAlterTable(statement);
+      case 'CreateIndexStatement': return this.executeCreateIndex(statement);
+      case 'DropIndexStatement': return this.executeDropIndex(statement);
+      case 'CreateSequenceStatement': return this.executeCreateSequence(statement);
+      case 'DropSequenceStatement': return this.executeDropSequence(statement);
+      case 'CreateViewStatement': return emptyResult('View created.');
+      case 'DropViewStatement': return emptyResult('View dropped.');
+      case 'GrantStatement': return this.executeGrant(statement);
+      case 'RevokeStatement': return this.executeRevoke(statement);
+      case 'CreateUserStatement': return this.executeCreateUser(statement);
+      case 'AlterUserStatement': return this.executeAlterUser(statement);
+      case 'DropUserStatement': return this.executeDropUser(statement);
+      case 'CreateRoleStatement': return this.executeCreateRole(statement);
+      case 'DropRoleStatement': return this.executeDropRole(statement);
+      case 'CommitStatement': return emptyResult('Commit complete.');
+      case 'RollbackStatement': return emptyResult(statement.savepoint ? `Rollback to savepoint ${statement.savepoint} complete.` : 'Rollback complete.');
+      case 'SavepointStatement': return emptyResult('Savepoint created.');
+      case 'StartupStatement': return this.executeStartup(statement);
+      case 'ShutdownStatement': return this.executeShutdown(statement);
+      case 'AlterSystemStatement': return this.executeAlterSystem(statement);
+      case 'AlterDatabaseStatement': return this.executeAlterDatabase(statement);
+      case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
+      case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
+      default:
+        throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
+    }
+  }
+
+  // ── SELECT ────────────────────────────────────────────────────────
+
+  private executeSelect(stmt: SelectStatement): ResultSet {
+    // Handle set operations (UNION, INTERSECT, MINUS)
+    if (stmt.setOp) {
+      return this.executeSetOperation(stmt);
+    }
+
+    // Check for system catalog view queries
+    if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef') {
+      const tableRef = stmt.from[0];
+      const tableName = tableRef.name.toUpperCase();
+
+      // DUAL
+      if (tableName === 'DUAL') {
+        return this.executeSelectFromDual(stmt);
+      }
+
+      // V$ views, DBA_ views, etc.
+      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(tableName, this.context.currentUser);
+      if (catalogResult) {
+        return this.applySelectClauses(catalogResult, stmt);
+      }
+    }
+
+    // Regular table query
+    return this.executeSelectFromTable(stmt);
+  }
+
+  private executeSelectFromDual(stmt: SelectStatement): ResultSet {
+    const columns: ColumnMeta[] = [];
+    const row: CellValue[] = [];
+
+    for (const item of stmt.columns) {
+      const colName = item.alias || this.exprToString(item.expr);
+      const value = this.evaluateExpression(item.expr, [], []);
+      columns.push({ name: colName, dataType: parseOracleType('VARCHAR2', 4000) });
+      row.push(value);
+    }
+
+    return queryResult(columns, [row]);
+  }
+
+  private executeSelectFromTable(stmt: SelectStatement): ResultSet {
+    if (!stmt.from || stmt.from.length === 0) {
+      return this.executeSelectFromDual(stmt);
+    }
+
+    // ── Step 1: Build combined row set (FROM + JOINs) ──────────────
+    let { rows, columns } = this.resolveFromClause(stmt);
+
+    // ── Step 2: WHERE filter ───────────────────────────────────────
+    if (stmt.where) {
+      rows = rows.filter(row => this.evaluateCondition(stmt.where!, row, columns));
+    }
+
+    // ── Step 3: GROUP BY + aggregation ─────────────────────────────
+    const hasAggregates = this.selectHasAggregates(stmt.columns);
+    if (stmt.groupBy || hasAggregates) {
+      const grouped = this.performGroupBy(rows, columns, stmt);
+      // HAVING filter on groups
+      if (stmt.having) {
+        const filteredGroups: { key: CellValue[]; rows: StorageRow[] }[] = [];
+        for (const group of grouped) {
+          if (this.evaluateConditionAggregate(stmt.having, group.rows, columns)) {
+            filteredGroups.push(group);
+          }
+        }
+        return this.projectGroupedRows(filteredGroups, columns, stmt);
+      }
+      return this.projectGroupedRows(grouped, columns, stmt);
+    }
+
+    // ── Step 4: SELECT columns ─────────────────────────────────────
+    const selectCols = this.expandSelectItems(stmt.columns, columns);
+    const resultColumns: ColumnMeta[] = selectCols.map(col => ({ name: col.alias || col.name, dataType: col.dataType }));
+
+    let resultRows: Row[] = rows.map(row => {
+      return selectCols.map(col => {
+        if (col.colIndex >= 0) return row[col.colIndex];
+        if (col.expr) return this.evaluateExpression(col.expr, row, columns);
+        return null;
+      });
+    });
+
+    // ── Step 5: DISTINCT ───────────────────────────────────────────
+    if (stmt.distinct) {
+      const seen = new Set<string>();
+      resultRows = resultRows.filter(row => {
+        const key = JSON.stringify(row);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    // ── Step 6: ORDER BY ───────────────────────────────────────────
+    if (stmt.orderBy && stmt.orderBy.length > 0) {
+      resultRows.sort((a, b) => {
+        for (const ob of stmt.orderBy!) {
+          // Try to resolve by column alias or position in result set
+          let idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
+          if (idx < 0) continue;
+          let cmp = this.compareValues(a[idx], b[idx]);
+          if (ob.direction === 'DESC') cmp = -cmp;
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      });
+    }
+
+    // ── Step 7: FETCH/OFFSET ───────────────────────────────────────
+    if (stmt.fetch) {
+      let offset = 0;
+      if (stmt.fetch.offset) offset = Number(this.evaluateExpression(stmt.fetch.offset, [], []));
+      let limit = resultRows.length;
+      if (stmt.fetch.count) limit = Number(this.evaluateExpression(stmt.fetch.count, [], []));
+      resultRows = resultRows.slice(offset, offset + limit);
+    }
+
+    return queryResult(resultColumns, resultRows);
+  }
+
+  // ── FROM + JOIN resolution ─────────────────────────────────────
+
+  private resolveFromClause(stmt: SelectStatement): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    const firstRef = stmt.from![0];
+    if (firstRef.type !== 'TableRef') {
+      throw new OracleError(942, 'Subquery in FROM not yet supported');
+    }
+
+    let { rows, columns } = this.loadTable(firstRef);
+
+    // Process JOINs
+    if (stmt.joins) {
+      for (const join of stmt.joins) {
+        const rightRef = join.table;
+        if (rightRef.type !== 'TableRef') {
+          throw new OracleError(942, 'Subquery in JOIN not yet supported');
+        }
+        const right = this.loadTable(rightRef);
+        const result = this.performJoin(rows, columns, right.rows, right.columns, join);
+        rows = result.rows;
+        columns = result.columns;
+      }
+    }
+
+    return { rows, columns };
+  }
+
+  private loadTable(ref: import('../engine/parser/ASTNode').TableRef): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    const schema = (ref.schema || this.context.currentSchema).toUpperCase();
+    const tableName = ref.name.toUpperCase();
+    const alias = ref.alias?.toUpperCase();
+
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, `table or view does not exist`);
+    }
+
+    const meta = this.storage.getTableMeta(schema, tableName)!;
+    const rows = this.storage.getRows(schema, tableName);
+
+    // Prefix column names with alias or table name for disambiguation
+    const prefix = alias || tableName;
+    const columns: StorageColMeta[] = meta.columns.map((c, i) => ({
+      ...c,
+      name: c.name,
+      ordinalPosition: i,
+      _qualifiedNames: [c.name, `${prefix}.${c.name}`],
+    } as StorageColMeta & { _qualifiedNames: string[] }));
+
+    return { rows, columns };
+  }
+
+  private performJoin(
+    leftRows: StorageRow[], leftCols: StorageColMeta[],
+    rightRows: StorageRow[], rightCols: StorageColMeta[],
+    join: import('../engine/parser/ASTNode').JoinClause
+  ): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    const combinedCols: StorageColMeta[] = [
+      ...leftCols.map((c, i) => ({ ...c, ordinalPosition: i })),
+      ...rightCols.map((c, i) => ({ ...c, ordinalPosition: leftCols.length + i })),
+    ];
+    const nullRight = new Array(rightCols.length).fill(null);
+    const nullLeft = new Array(leftCols.length).fill(null);
+
+    if (join.joinType === 'CROSS') {
+      const rows: StorageRow[] = [];
+      for (const l of leftRows) {
+        for (const r of rightRows) {
+          rows.push([...l, ...r]);
+        }
+      }
+      return { rows, columns: combinedCols };
+    }
+
+    const resultRows: StorageRow[] = [];
+    const leftMatched = new Set<number>();
+    const rightMatched = new Set<number>();
+
+    for (let li = 0; li < leftRows.length; li++) {
+      let matched = false;
+      for (let ri = 0; ri < rightRows.length; ri++) {
+        const combined = [...leftRows[li], ...rightRows[ri]];
+        if (!join.on || this.evaluateCondition(join.on, combined, combinedCols)) {
+          resultRows.push(combined);
+          leftMatched.add(li);
+          rightMatched.add(ri);
+          matched = true;
+        }
+      }
+      // LEFT / FULL: unmatched left rows
+      if (!matched && (join.joinType === 'LEFT' || join.joinType === 'FULL')) {
+        resultRows.push([...leftRows[li], ...nullRight]);
+        leftMatched.add(li);
+      }
+    }
+
+    // RIGHT / FULL: unmatched right rows
+    if (join.joinType === 'RIGHT' || join.joinType === 'FULL') {
+      for (let ri = 0; ri < rightRows.length; ri++) {
+        if (!rightMatched.has(ri)) {
+          resultRows.push([...nullLeft, ...rightRows[ri]]);
+        }
+      }
+    }
+
+    // INNER: only matched rows (already in resultRows from the loop)
+    return { rows: resultRows, columns: combinedCols };
+  }
+
+  // ── GROUP BY + Aggregation ─────────────────────────────────────
+
+  private selectHasAggregates(items: SelectItem[]): boolean {
+    return items.some(item => this.exprHasAggregate(item.expr));
+  }
+
+  private exprHasAggregate(expr: Expression): boolean {
+    if (expr.type === 'FunctionCall') {
+      const name = expr.name.toUpperCase();
+      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) return true;
+    }
+    if (expr.type === 'BinaryExpr') {
+      return this.exprHasAggregate(expr.left) || this.exprHasAggregate(expr.right);
+    }
+    return false;
+  }
+
+  private performGroupBy(rows: StorageRow[], columns: StorageColMeta[], stmt: SelectStatement): { key: CellValue[]; rows: StorageRow[] }[] {
+    if (!stmt.groupBy || stmt.groupBy.length === 0) {
+      // No GROUP BY but has aggregates — treat all rows as one group
+      return [{ key: [], rows }];
+    }
+
+    const groupMap = new Map<string, { key: CellValue[]; rows: StorageRow[] }>();
+    for (const row of rows) {
+      const keyValues = stmt.groupBy!.map(expr => this.evaluateExpression(expr, row, columns));
+      const keyStr = JSON.stringify(keyValues);
+      if (!groupMap.has(keyStr)) {
+        groupMap.set(keyStr, { key: keyValues, rows: [] });
+      }
+      groupMap.get(keyStr)!.rows.push(row);
+    }
+
+    return Array.from(groupMap.values());
+  }
+
+  private projectGroupedRows(
+    groups: { key: CellValue[]; rows: StorageRow[] }[],
+    columns: StorageColMeta[],
+    stmt: SelectStatement
+  ): ResultSet {
+    const resultColumns: ColumnMeta[] = [];
+    const resultRows: Row[] = [];
+
+    // Build column metadata from first call
+    for (const item of stmt.columns) {
+      const name = item.alias || this.exprToString(item.expr);
+      resultColumns.push({ name, dataType: parseOracleType('VARCHAR2') });
+    }
+
+    for (const group of groups) {
+      const row: CellValue[] = [];
+      for (const item of stmt.columns) {
+        row.push(this.evaluateExpressionGrouped(item.expr, group.rows, columns));
+      }
+      resultRows.push(row);
+    }
+
+    // ORDER BY on grouped results
+    if (stmt.orderBy && stmt.orderBy.length > 0) {
+      resultRows.sort((a, b) => {
+        for (const ob of stmt.orderBy!) {
+          const idx = this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns);
+          if (idx < 0) continue;
+          let cmp = this.compareValues(a[idx], b[idx]);
+          if (ob.direction === 'DESC') cmp = -cmp;
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      });
+    }
+
+    return queryResult(resultColumns, resultRows);
+  }
+
+  private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
+    if (expr.type === 'FunctionCall') {
+      const name = expr.name.toUpperCase();
+      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) {
+        return this.evaluateAggregate(name, expr, groupRows, columns);
+      }
+      // Non-aggregate function: evaluate using first row
+      return this.evaluateExpression(expr, groupRows[0] || [], columns);
+    }
+    if (expr.type === 'BinaryExpr') {
+      const left = this.evaluateExpressionGrouped(expr.left, groupRows, columns);
+      const right = this.evaluateExpressionGrouped(expr.right, groupRows, columns);
+      return this.applyBinaryOp(expr.operator, left, right);
+    }
+    // Non-aggregate column — use first row in group
+    return this.evaluateExpression(expr, groupRows[0] || [], columns);
+  }
+
+  private evaluateAggregate(name: string, expr: FunctionCallExpr, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
+    if (name === 'COUNT') {
+      if (expr.args.length === 0 || (expr.args[0] && expr.args[0].type === 'Star')) {
+        return groupRows.length;
+      }
+      if (expr.distinct) {
+        const unique = new Set<string>();
+        for (const row of groupRows) {
+          const val = this.evaluateExpression(expr.args[0], row, columns);
+          if (val != null) unique.add(JSON.stringify(val));
+        }
+        return unique.size;
+      }
+      let count = 0;
+      for (const row of groupRows) {
+        if (this.evaluateExpression(expr.args[0], row, columns) != null) count++;
+      }
+      return count;
+    }
+
+    // Collect non-null values
+    const values: number[] = [];
+    for (const row of groupRows) {
+      const val = this.evaluateExpression(expr.args[0], row, columns);
+      if (val != null) values.push(Number(val));
+    }
+
+    if (values.length === 0) return null;
+
+    switch (name) {
+      case 'SUM': return values.reduce((a, b) => a + b, 0);
+      case 'AVG': return values.reduce((a, b) => a + b, 0) / values.length;
+      case 'MIN': {
+        // Support string comparison
+        const allVals = groupRows
+          .map(row => this.evaluateExpression(expr.args[0], row, columns))
+          .filter(v => v != null);
+        return allVals.reduce((a, b) => this.compareValues(a, b) <= 0 ? a : b);
+      }
+      case 'MAX': {
+        const allVals = groupRows
+          .map(row => this.evaluateExpression(expr.args[0], row, columns))
+          .filter(v => v != null);
+        return allVals.reduce((a, b) => this.compareValues(a, b) >= 0 ? a : b);
+      }
+      default: return null;
+    }
+  }
+
+  private evaluateConditionAggregate(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): boolean {
+    if (expr.type === 'BinaryExpr') {
+      if (expr.operator === 'AND') {
+        return this.evaluateConditionAggregate(expr.left, groupRows, columns)
+          && this.evaluateConditionAggregate(expr.right, groupRows, columns);
+      }
+      if (expr.operator === 'OR') {
+        return this.evaluateConditionAggregate(expr.left, groupRows, columns)
+          || this.evaluateConditionAggregate(expr.right, groupRows, columns);
+      }
+      const left = this.evaluateExpressionGrouped(expr.left, groupRows, columns);
+      const right = this.evaluateExpressionGrouped(expr.right, groupRows, columns);
+      return this.applyComparison(expr.operator, left, right);
+    }
+    return !!this.evaluateExpressionGrouped(expr, groupRows, columns);
+  }
+
+  private resolveOrderByIndex(
+    expr: Expression,
+    selectCols: { name: string; alias?: string; colIndex: number; expr?: Expression }[],
+    sourceCols: StorageColMeta[]
+  ): number {
+    // By column position number
+    if (expr.type === 'Literal' && expr.dataType === 'number') {
+      return Number(expr.value) - 1;
+    }
+    // By name/alias
+    if (expr.type === 'Identifier') {
+      const name = expr.name.toUpperCase();
+      const idx = selectCols.findIndex(c => (c.alias || c.name).toUpperCase() === name || c.name.toUpperCase() === name);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  private resolveOrderByIndexGrouped(
+    expr: Expression,
+    selectItems: SelectItem[],
+    sourceCols: StorageColMeta[]
+  ): number {
+    if (expr.type === 'Literal' && expr.dataType === 'number') {
+      return Number(expr.value) - 1;
+    }
+    if (expr.type === 'Identifier') {
+      const name = expr.name.toUpperCase();
+      const idx = selectItems.findIndex(item => {
+        if (item.alias && item.alias.toUpperCase() === name) return true;
+        if (item.expr.type === 'Identifier' && item.expr.name.toUpperCase() === name) return true;
+        return false;
+      });
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  // ── Set Operations ─────────────────────────────────────────────
+
+  private executeSetOperation(stmt: SelectStatement): ResultSet {
+    // Execute left side (without the setOp)
+    const leftStmt: SelectStatement = { ...stmt, setOp: undefined };
+    const leftResult = this.executeSelect(leftStmt);
+
+    // Execute right side
+    const rightResult = this.executeSelect(stmt.setOp!.right);
+
+    const op = stmt.setOp!.op;
+
+    if (op === 'UNION_ALL') {
+      return queryResult(leftResult.columns, [...leftResult.rows, ...rightResult.rows]);
+    }
+
+    if (op === 'UNION') {
+      const combined = [...leftResult.rows, ...rightResult.rows];
+      const seen = new Set<string>();
+      const unique = combined.filter(row => {
+        const key = JSON.stringify(row);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return queryResult(leftResult.columns, unique);
+    }
+
+    if (op === 'INTERSECT') {
+      const rightKeys = new Set(rightResult.rows.map(r => JSON.stringify(r)));
+      const seen = new Set<string>();
+      const intersection = leftResult.rows.filter(row => {
+        const key = JSON.stringify(row);
+        if (seen.has(key)) return false;
+        if (rightKeys.has(key)) { seen.add(key); return true; }
+        return false;
+      });
+      return queryResult(leftResult.columns, intersection);
+    }
+
+    if (op === 'MINUS' || op === 'EXCEPT') {
+      const rightKeys = new Set(rightResult.rows.map(r => JSON.stringify(r)));
+      const seen = new Set<string>();
+      const difference = leftResult.rows.filter(row => {
+        const key = JSON.stringify(row);
+        if (seen.has(key)) return false;
+        if (!rightKeys.has(key)) { seen.add(key); return true; }
+        return false;
+      });
+      return queryResult(leftResult.columns, difference);
+    }
+
+    return leftResult;
+  }
+
+  private applySelectClauses(result: ResultSet, stmt: SelectStatement): ResultSet {
+    let rows = result.rows;
+
+    // WHERE
+    if (stmt.where) {
+      rows = rows.filter(row => {
+        const colMetas: StorageColMeta[] = result.columns.map((c, i) => ({
+          name: c.name, dataType: c.dataType, ordinalPosition: i,
+        }));
+        return this.evaluateCondition(stmt.where!, row as StorageRow, colMetas);
+      });
+    }
+
+    // ORDER BY
+    if (stmt.orderBy && stmt.orderBy.length > 0) {
+      rows = [...rows];
+      rows.sort((a, b) => {
+        for (const ob of stmt.orderBy!) {
+          const colMetas: StorageColMeta[] = result.columns.map((c, i) => ({
+            name: c.name, dataType: c.dataType, ordinalPosition: i,
+          }));
+          const colIdx = this.resolveColumnIndex(ob.expr, colMetas);
+          if (colIdx < 0) continue;
+          let cmp = this.compareValues(a[colIdx], b[colIdx]);
+          if (ob.direction === 'DESC') cmp = -cmp;
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      });
+    }
+
+    return { ...result, rows };
+  }
+
+  // ── INSERT ────────────────────────────────────────────────────────
+
+  private executeInsert(stmt: InsertStatement): ResultSet {
+    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const tableName = stmt.table.name.toUpperCase();
+
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, `table or view does not exist`);
+    }
+
+    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
+    let insertedCount = 0;
+
+    if (stmt.values) {
+      for (const valueList of stmt.values) {
+        const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
+        this.validateConstraints(schema, tableName, tableMeta, row);
+        this.storage.insertRow(schema, tableName, row);
+        insertedCount++;
+      }
+    }
+
+    return emptyResult(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} inserted.`, insertedCount);
+  }
+
+  private buildInsertRow(tableMeta: import('../engine/storage/BaseStorage').TableMeta, columns: string[] | undefined, values: Expression[]): StorageRow {
+    const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+
+    if (columns) {
+      for (let i = 0; i < columns.length && i < values.length; i++) {
+        const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === columns[i].toUpperCase());
+        if (colIdx >= 0) {
+          row[colIdx] = this.evaluateExpression(values[i], [], []);
+        }
+      }
+    } else {
+      for (let i = 0; i < values.length && i < tableMeta.columns.length; i++) {
+        row[i] = this.evaluateExpression(values[i], [], []);
+      }
+    }
+
+    // Apply defaults for missing values
+    for (let i = 0; i < tableMeta.columns.length; i++) {
+      if (row[i] === null && tableMeta.columns[i].defaultValue !== undefined) {
+        row[i] = tableMeta.columns[i].defaultValue!;
+      }
+    }
+
+    return row;
+  }
+
+  // ── UPDATE ────────────────────────────────────────────────────────
+
+  private executeUpdate(stmt: UpdateStatement): ResultSet {
+    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const tableName = stmt.table.name.toUpperCase();
+
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, `table or view does not exist`);
+    }
+
+    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
+
+    const count = this.storage.updateRows(
+      schema, tableName,
+      (row) => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns),
+      (row) => {
+        const newRow = [...row];
+        for (const assign of stmt.assignments) {
+          const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
+          if (colIdx >= 0) {
+            newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
+          }
+        }
+        return newRow;
+      }
+    );
+
+    return emptyResult(`${count} row${count !== 1 ? 's' : ''} updated.`, count);
+  }
+
+  // ── DELETE ────────────────────────────────────────────────────────
+
+  private executeDelete(stmt: DeleteStatement): ResultSet {
+    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const tableName = stmt.table.name.toUpperCase();
+
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, `table or view does not exist`);
+    }
+
+    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
+
+    const count = this.storage.deleteRows(
+      schema, tableName,
+      (row) => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns),
+    );
+
+    return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
+  }
+
+  // ── DDL ───────────────────────────────────────────────────────────
+
+  private executeCreateTable(stmt: CreateTableStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const tableName = stmt.name.toUpperCase();
+
+    if (this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(955, `name is already used by an existing object`);
+    }
+
+    const columns: StorageColMeta[] = stmt.columns.map((col, i) => ({
+      name: col.name.toUpperCase(),
+      dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
+      ordinalPosition: i,
+    }));
+
+    const constraints: ConstraintMeta[] = [];
+    let constraintIdx = 0;
+
+    // Column-level constraints
+    for (const col of stmt.columns) {
+      for (const cc of col.constraints) {
+        const name = cc.constraintName || `SYS_C${String(10000 + constraintIdx++).padStart(6, '0')}`;
+        if (cc.constraintType === 'NOT_NULL') {
+          constraints.push({ name, type: 'NOT_NULL', columns: [col.name.toUpperCase()] });
+          const colMeta = columns.find(c => c.name === col.name.toUpperCase());
+          if (colMeta) colMeta.dataType = { ...colMeta.dataType, nullable: false };
+        } else if (cc.constraintType === 'PRIMARY_KEY') {
+          constraints.push({ name, type: 'PRIMARY_KEY', columns: [col.name.toUpperCase()] });
+          const colMeta = columns.find(c => c.name === col.name.toUpperCase());
+          if (colMeta) colMeta.dataType = { ...colMeta.dataType, nullable: false };
+        } else if (cc.constraintType === 'UNIQUE') {
+          constraints.push({ name, type: 'UNIQUE', columns: [col.name.toUpperCase()] });
+        } else if (cc.constraintType === 'REFERENCES') {
+          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
+        }
+      }
+    }
+
+    // Table-level constraints
+    for (const tc of stmt.constraints) {
+      const name = tc.constraintName || `SYS_C${String(10000 + constraintIdx++).padStart(6, '0')}`;
+      constraints.push({
+        name,
+        type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
+        columns: tc.columns.map(c => c.toUpperCase()),
+        refTable: tc.refTable?.toUpperCase(),
+        refColumns: tc.refColumns?.map(c => c.toUpperCase()),
+        onDelete: tc.onDelete,
+      });
+    }
+
+    this.storage.ensureSchema(schema);
+    this.storage.createTable({
+      schema, name: tableName, columns, constraints,
+      tablespace: stmt.tablespace?.toUpperCase() || 'USERS',
+      temporary: stmt.temporary,
+      rowCount: 0,
+    });
+
+    return emptyResult('Table created.');
+  }
+
+  private executeDropTable(stmt: DropTableStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const tableName = stmt.name.toUpperCase();
+    if (!this.storage.tableExists(schema, tableName)) {
+      if (stmt.ifExists) return emptyResult('');
+      throw new OracleError(942, `table or view does not exist`);
+    }
+    this.storage.dropTable(schema, tableName);
+    return emptyResult('Table dropped.');
+  }
+
+  private executeTruncate(stmt: TruncateTableStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.truncateTable(schema, stmt.name.toUpperCase());
+    return emptyResult('Table truncated.');
+  }
+
+  private executeAlterTable(stmt: AlterTableStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const tableName = stmt.name.toUpperCase();
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, `table or view does not exist`);
+    }
+
+    for (const action of stmt.actions) {
+      if (action.action === 'ADD_COLUMN') {
+        const col = action.column;
+        this.storage.addColumn(schema, tableName, {
+          name: col.name.toUpperCase(),
+          dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
+          ordinalPosition: this.storage.getTableMeta(schema, tableName)!.columns.length,
+        });
+      } else if (action.action === 'MODIFY_COLUMN') {
+        const col = action.column;
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const existing = meta.columns.find(c => c.name === col.name.toUpperCase());
+        if (!existing) throw new OracleError(904, `"${col.name.toUpperCase()}": invalid identifier`);
+        // Update data type
+        existing.dataType = parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale);
+        // Apply NOT NULL from constraints
+        for (const cc of col.constraints) {
+          if (cc.constraintType === 'NOT_NULL') {
+            existing.dataType = { ...existing.dataType, nullable: false };
+          }
+        }
+      } else if (action.action === 'DROP_COLUMN') {
+        this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
+      }
+    }
+
+    return emptyResult('Table altered.');
+  }
+
+  private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.createIndex(schema, {
+      name: stmt.name.toUpperCase(),
+      tableName: stmt.table.toUpperCase(),
+      columns: stmt.columns.map(c => c.name.toUpperCase()),
+      unique: !!stmt.unique,
+      bitmap: stmt.bitmap,
+    });
+    return emptyResult('Index created.');
+  }
+
+  private executeDropIndex(stmt: DropIndexStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropIndex(schema, stmt.name.toUpperCase());
+    return emptyResult('Index dropped.');
+  }
+
+  private executeCreateSequence(stmt: CreateSequenceStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.createSequence(schema, {
+      name: stmt.name.toUpperCase(),
+      currentValue: (stmt.startWith ?? 1) - (stmt.incrementBy ?? 1),
+      incrementBy: stmt.incrementBy ?? 1,
+      minValue: 1,
+      maxValue: stmt.maxValue === 'NOMAXVALUE' ? Number.MAX_SAFE_INTEGER : (typeof stmt.maxValue === 'number' ? stmt.maxValue : 999999999),
+      cache: stmt.cache === 'NOCACHE' ? 0 : (typeof stmt.cache === 'number' ? stmt.cache : 20),
+      cycle: stmt.cycle ?? false,
+    });
+    return emptyResult('Sequence created.');
+  }
+
+  private executeDropSequence(stmt: DropSequenceStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropSequence(schema, stmt.name.toUpperCase());
+    return emptyResult('Sequence dropped.');
+  }
+
+  // ── DCL ───────────────────────────────────────────────────────────
+
+  private executeGrant(stmt: GrantStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    if (stmt.objectName) {
+      const schema = stmt.objectSchema || this.context.currentSchema;
+      for (const priv of stmt.privileges) {
+        catalog.grantTablePrivilege(stmt.grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+      }
+    } else {
+      for (const priv of stmt.privileges) {
+        // Check if it's a role name
+        if (catalog.roleExists(priv)) {
+          catalog.grantRole(stmt.grantee, priv, stmt.withAdminOption);
+        } else {
+          catalog.grantSystemPrivilege(stmt.grantee, priv, stmt.withGrantOption);
+        }
+      }
+    }
+    return emptyResult('Grant succeeded.');
+  }
+
+  private executeRevoke(stmt: RevokeStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    if (stmt.objectName) {
+      const schema = stmt.objectSchema || this.context.currentSchema;
+      for (const priv of stmt.privileges) {
+        catalog.revokeTablePrivilege(stmt.grantee, priv, schema, stmt.objectName);
+      }
+    } else {
+      for (const priv of stmt.privileges) {
+        if (catalog.roleExists(priv)) {
+          catalog.revokeRole(stmt.grantee, priv);
+        } else {
+          catalog.revokeSystemPrivilege(stmt.grantee, priv);
+        }
+      }
+    }
+    return emptyResult('Revoke succeeded.');
+  }
+
+  // ── User/Role management ──────────────────────────────────────────
+
+  private executeCreateUser(stmt: CreateUserStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    if (catalog.userExists(stmt.username)) {
+      throw new OracleError(1920, `user name '${stmt.username.toUpperCase()}' conflicts with another user or role name`);
+    }
+    catalog.createUser({
+      username: stmt.username.toUpperCase(),
+      defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
+      temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
+      accountStatus: stmt.accountLocked ? 'LOCKED' : 'OPEN',
+      created: new Date(),
+      profile: stmt.profile || 'DEFAULT',
+    });
+    if (stmt.password) catalog.setPassword(stmt.username.toUpperCase(), stmt.password);
+    this.storage.ensureSchema(stmt.username.toUpperCase());
+    return emptyResult('User created.');
+  }
+
+  private executeAlterUser(stmt: AlterUserStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    if (!catalog.userExists(stmt.username)) {
+      throw new OracleError(1917, `user or role '${stmt.username.toUpperCase()}' does not exist`);
+    }
+    if (stmt.password) catalog.setPassword(stmt.username.toUpperCase(), stmt.password);
+    if (stmt.accountLock) catalog.lockUser(stmt.username);
+    if (stmt.accountUnlock) catalog.unlockUser(stmt.username);
+    return emptyResult('User altered.');
+  }
+
+  private executeDropUser(stmt: DropUserStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    if (!catalog.userExists(stmt.username)) {
+      throw new OracleError(1918, `user '${stmt.username.toUpperCase()}' does not exist`);
+    }
+    catalog.dropUser(stmt.username);
+    return emptyResult('User dropped.');
+  }
+
+  private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
+    (this.catalog as OracleCatalog).createRole(stmt.name);
+    return emptyResult('Role created.');
+  }
+
+  private executeDropRole(stmt: DropRoleStatement): ResultSet {
+    (this.catalog as OracleCatalog).dropRole(stmt.name);
+    return emptyResult('Role dropped.');
+  }
+
+  // ── Instance commands ─────────────────────────────────────────────
+
+  private executeStartup(stmt: StartupStatement): ResultSet {
+    const output = this.instance.startup(stmt.mode);
+    return emptyResult(output.join('\n'));
+  }
+
+  private executeShutdown(stmt: ShutdownStatement): ResultSet {
+    const output = this.instance.shutdown(stmt.mode);
+    return emptyResult(output.join('\n'));
+  }
+
+  private executeAlterSystem(stmt: AlterSystemStatement): ResultSet {
+    if (stmt.action === 'SET' && stmt.parameter && stmt.value) {
+      this.instance.setParameter(stmt.parameter, stmt.value);
+      return emptyResult('System altered.');
+    }
+    if (stmt.action === 'SWITCH LOGFILE') {
+      return emptyResult(this.instance.switchLogfile());
+    }
+    if (stmt.action === 'CHECKPOINT') {
+      return emptyResult('System altered.');
+    }
+    if (stmt.action === 'FLUSH') {
+      return emptyResult('System altered.');
+    }
+    return emptyResult('System altered.');
+  }
+
+  private executeAlterDatabase(stmt: AlterDatabaseStatement): ResultSet {
+    if (stmt.action === 'ARCHIVELOG') {
+      return emptyResult(this.instance.setArchiveLogMode(true));
+    }
+    if (stmt.action === 'NOARCHIVELOG') {
+      return emptyResult(this.instance.setArchiveLogMode(false));
+    }
+    if (stmt.action === 'OPEN') {
+      return emptyResult('Database altered.');
+    }
+    return emptyResult('Database altered.');
+  }
+
+  private executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {
+    (this.storage as OracleStorage).createTablespace({
+      name: stmt.name.toUpperCase(),
+      type: stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT',
+      status: 'ONLINE',
+      datafiles: [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }],
+      blockSize: 8192,
+    });
+    return emptyResult('Tablespace created.');
+  }
+
+  private executeDropTablespace(stmt: DropTablespaceStatement): ResultSet {
+    (this.storage as OracleStorage).dropTablespace(stmt.name);
+    return emptyResult('Tablespace dropped.');
+  }
+
+  // ── Expression evaluation ─────────────────────────────────────────
+
+  evaluateExpression(expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue {
+    switch (expr.type) {
+      case 'Literal':
+        if (expr.dataType === 'null') return null;
+        if (expr.dataType === 'number') return Number(expr.value);
+        if (expr.dataType === 'date' || expr.dataType === 'timestamp') return new Date(String(expr.value));
+        return String(expr.value ?? '');
+
+      case 'Identifier': {
+        const colIdx = this.resolveColumnIndex(expr, columns);
+        if (colIdx >= 0 && colIdx < row.length) return row[colIdx];
+        // Oracle pseudo-columns
+        const name = expr.name.toUpperCase();
+        if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
+        if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
+        if (name === 'USER') return this.context.currentUser;
+        if (name === 'ROWNUM') return 1; // Simplified
+        return null;
+      }
+
+      case 'Star': return null;
+
+      case 'BinaryExpr': {
+        const left = this.evaluateExpression(expr.left, row, columns);
+        const right = this.evaluateExpression(expr.right, row, columns);
+        return this.applyBinaryOp(expr.operator, left, right);
+      }
+
+      case 'UnaryExpr': {
+        if (expr.operator === 'EXISTS' || expr.operator === 'NOT EXISTS') {
+          // EXISTS handled in evaluateCondition, return boolean-ish value here
+          const subExpr = expr.operand;
+          if (subExpr.type === 'SubqueryExpr') {
+            const subResult = this.executeSubquery(subExpr.query, row, columns);
+            const exists = subResult.rows.length > 0;
+            return expr.operator === 'NOT EXISTS' ? !exists : exists;
+          }
+          return null;
+        }
+        const operand = this.evaluateExpression(expr.operand, row, columns);
+        if (expr.operator === '-') return typeof operand === 'number' ? -operand : null;
+        if (expr.operator === '+') return operand;
+        if (expr.operator === 'NOT') return operand ? false : true;
+        return null;
+      }
+
+      case 'SubqueryExpr': {
+        // Scalar subquery — execute and return single value
+        const subResult = this.executeSubquery(expr.query, row, columns);
+        if (subResult.rows.length === 0) return null;
+        return subResult.rows[0][0];
+      }
+
+      case 'FunctionCall':
+        return this.evaluateFunction(expr, row, columns);
+
+      case 'CaseExpr':
+        return this.evaluateCase(expr, row, columns);
+
+      case 'ParenExpr':
+        return this.evaluateExpression(expr.expr, row, columns);
+
+      case 'SequenceExpr': {
+        const schema = expr.schema || this.context.currentSchema;
+        if (expr.operation === 'NEXTVAL') return this.storage.nextVal(schema, expr.sequenceName);
+        return this.storage.currVal(schema, expr.sequenceName);
+      }
+
+      default:
+        return null;
+    }
+  }
+
+  private evaluateCondition(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean {
+    switch (expr.type) {
+      case 'BinaryExpr': {
+        if (expr.operator === 'AND') {
+          return this.evaluateCondition(expr.left, row, columns) && this.evaluateCondition(expr.right, row, columns);
+        }
+        if (expr.operator === 'OR') {
+          return this.evaluateCondition(expr.left, row, columns) || this.evaluateCondition(expr.right, row, columns);
+        }
+        const left = this.evaluateExpression(expr.left, row, columns);
+        const right = this.evaluateExpression(expr.right, row, columns);
+        return this.applyComparison(expr.operator, left, right);
+      }
+      case 'UnaryExpr':
+        if (expr.operator === 'NOT') return !this.evaluateCondition(expr.operand, row, columns);
+        if (expr.operator === 'EXISTS') {
+          if (expr.operand.type === 'SubqueryExpr') {
+            const subResult = this.executeSubquery((expr.operand as SubqueryExpr).query, row, columns);
+            return subResult.rows.length > 0;
+          }
+          return false;
+        }
+        if (expr.operator === 'NOT EXISTS') {
+          if (expr.operand.type === 'SubqueryExpr') {
+            const subResult = this.executeSubquery((expr.operand as SubqueryExpr).query, row, columns);
+            return subResult.rows.length === 0;
+          }
+          return true;
+        }
+        return !!this.evaluateExpression(expr, row, columns);
+      case 'IsNullExpr': {
+        const val = this.evaluateExpression(expr.expr, row, columns);
+        return expr.negated ? val !== null : val === null;
+      }
+      case 'BetweenExpr': {
+        const val = this.evaluateExpression(expr.expr, row, columns);
+        const low = this.evaluateExpression(expr.low, row, columns);
+        const high = this.evaluateExpression(expr.high, row, columns);
+        const inRange = this.compareValues(val, low) >= 0 && this.compareValues(val, high) <= 0;
+        return expr.negated ? !inRange : inRange;
+      }
+      case 'InExpr': {
+        const val = this.evaluateExpression(expr.expr, row, columns);
+        if (Array.isArray(expr.values)) {
+          const found = expr.values.some(v => {
+            const ev = this.evaluateExpression(v, row, columns);
+            return this.compareValues(val, ev) === 0;
+          });
+          return expr.negated ? !found : found;
+        }
+        // Subquery IN — values is a SelectStatement
+        const subStmt = expr.values as unknown as SelectStatement;
+        const subResult = this.executeSubquery(subStmt, row, columns);
+        const found = subResult.rows.some(r => this.compareValues(val, r[0]) === 0);
+        return expr.negated ? !found : found;
+      }
+      case 'LikeExpr': {
+        const val = String(this.evaluateExpression(expr.expr, row, columns) ?? '');
+        const pattern = String(this.evaluateExpression(expr.pattern, row, columns) ?? '');
+        const regex = new RegExp('^' + pattern.replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i');
+        const match = regex.test(val);
+        return expr.negated ? !match : match;
+      }
+      default:
+        return !!this.evaluateExpression(expr, row, columns);
+    }
+  }
+
+  /**
+   * Execute a subquery in the context of an outer row (for correlated subqueries).
+   * Replaces references to outer table aliases with values from the current row.
+   */
+  private executeSubquery(subStmt: SelectStatement, outerRow: StorageRow, outerColumns: StorageColMeta[]): ResultSet {
+    // Create a patched version that falls back to outer row for unresolved identifiers
+    const origMethod = this.evaluateExpression;
+    this.evaluateExpression = (expr: Expression, row: StorageRow, columns: StorageColMeta[]): CellValue => {
+      if (expr.type === 'Identifier') {
+        // First try resolving in inner columns
+        const innerIdx = this.resolveColumnIndex(expr, columns);
+        if (innerIdx >= 0 && innerIdx < row.length) {
+          return row[innerIdx];
+        }
+        // Then try outer columns (correlated reference)
+        const outerIdx = this.resolveColumnIndex(expr, outerColumns);
+        if (outerIdx >= 0 && outerIdx < outerRow.length) {
+          return outerRow[outerIdx];
+        }
+        // Pseudo-columns
+        const name = (expr as IdentifierExpr).name.toUpperCase();
+        if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
+        if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
+        if (name === 'USER') return this.context.currentUser;
+        if (name === 'ROWNUM') return 1;
+        return null;
+      }
+      return origMethod.call(this, expr, row, columns);
+    };
+
+    try {
+      return this.executeSelect(subStmt);
+    } finally {
+      this.evaluateExpression = origMethod;
+    }
+  }
+
+  private evaluateFunction(expr: FunctionCallExpr, row: StorageRow, columns: StorageColMeta[]): CellValue {
+    const name = expr.name.toUpperCase();
+    const args = expr.args.map(a => this.evaluateExpression(a, row, columns));
+
+    switch (name) {
+      // String functions
+      case 'UPPER': return args[0] != null ? String(args[0]).toUpperCase() : null;
+      case 'LOWER': return args[0] != null ? String(args[0]).toLowerCase() : null;
+      case 'INITCAP': return args[0] != null ? String(args[0]).replace(/\b\w/g, c => c.toUpperCase()) : null;
+      case 'LENGTH': return args[0] != null ? String(args[0]).length : null;
+      case 'SUBSTR': {
+        if (args[0] == null) return null;
+        const str = String(args[0]);
+        const start = Number(args[1]) - 1; // Oracle is 1-based
+        const len = args[2] != null ? Number(args[2]) : undefined;
+        return str.substring(start, len !== undefined ? start + len : undefined);
+      }
+      case 'INSTR': {
+        if (args[0] == null || args[1] == null) return null;
+        const idx = String(args[0]).indexOf(String(args[1]));
+        return idx >= 0 ? idx + 1 : 0;
+      }
+      case 'TRIM': return args[0] != null ? String(args[0]).trim() : null;
+      case 'LTRIM': return args[0] != null ? String(args[0]).replace(/^\s+/, '') : null;
+      case 'RTRIM': return args[0] != null ? String(args[0]).replace(/\s+$/, '') : null;
+      case 'LPAD': {
+        if (args[0] == null) return null;
+        const str = String(args[0]);
+        const len = Number(args[1]);
+        const pad = args[2] != null ? String(args[2]) : ' ';
+        return str.padStart(len, pad);
+      }
+      case 'RPAD': {
+        if (args[0] == null) return null;
+        const str = String(args[0]);
+        const len = Number(args[1]);
+        const pad = args[2] != null ? String(args[2]) : ' ';
+        return str.padEnd(len, pad);
+      }
+      case 'REPLACE': {
+        if (args[0] == null) return null;
+        return String(args[0]).replaceAll(String(args[1] ?? ''), String(args[2] ?? ''));
+      }
+      case 'CONCAT': return (args[0] != null ? String(args[0]) : '') + (args[1] != null ? String(args[1]) : '');
+
+      // Numeric functions
+      case 'ABS': return args[0] != null ? Math.abs(Number(args[0])) : null;
+      case 'CEIL': return args[0] != null ? Math.ceil(Number(args[0])) : null;
+      case 'FLOOR': return args[0] != null ? Math.floor(Number(args[0])) : null;
+      case 'ROUND': return args[0] != null ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0]))) : null;
+      case 'TRUNC': return args[0] != null ? Math.trunc(Number(args[0])) : null;
+      case 'MOD': return args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null;
+      case 'POWER': return args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null;
+      case 'SQRT': return args[0] != null ? Math.sqrt(Number(args[0])) : null;
+      case 'SIGN': return args[0] != null ? Math.sign(Number(args[0])) : null;
+      case 'GREATEST': return args.filter(a => a != null).reduce<CellValue>((a, b) => (this.compareValues(a, b) >= 0 ? a : b), args[0]);
+      case 'LEAST': return args.filter(a => a != null).reduce<CellValue>((a, b) => (this.compareValues(a, b) <= 0 ? a : b), args[0]);
+
+      // Null handling
+      case 'NVL': return args[0] ?? args[1] ?? null;
+      case 'NVL2': return args[0] != null ? (args[1] ?? null) : (args[2] ?? null);
+      case 'COALESCE': return args.find(a => a != null) ?? null;
+      case 'NULLIF': return this.compareValues(args[0], args[1]) === 0 ? null : args[0];
+      case 'DECODE': return this.evaluateDecode(args);
+
+      // Date functions
+      case 'SYSDATE': return new Date().toISOString().slice(0, 19).replace('T', ' ');
+      case 'SYSTIMESTAMP': return new Date().toISOString();
+      case 'TO_CHAR': return args[0] != null ? String(args[0]) : null;
+      case 'TO_NUMBER': return args[0] != null ? Number(args[0]) : null;
+      case 'TO_DATE': return args[0] != null ? String(args[0]) : null;
+
+      // System functions
+      case 'USER': return this.context.currentUser;
+      case 'SYS_GUID': return 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'.replace(/X/g, () => Math.floor(Math.random() * 16).toString(16).toUpperCase());
+      case 'SYS_CONTEXT': return this.context.currentUser; // Simplified
+
+      // COUNT(*) and other aggregates return a single value for a column evaluation context
+      // Real aggregation is handled at the query level — here we just return the scalar value
+      case 'COUNT': return args.length === 0 || (expr.args[0] && expr.args[0].type === 'Star') ? 1 : (args[0] != null ? 1 : 0);
+      case 'SUM': case 'AVG': case 'MIN': case 'MAX': return args[0] ?? null;
+
+      default: return null;
+    }
+  }
+
+  private evaluateDecode(args: CellValue[]): CellValue {
+    if (args.length < 3) return null;
+    const expr = args[0];
+    for (let i = 1; i + 1 < args.length; i += 2) {
+      if (this.compareValues(expr, args[i]) === 0) return args[i + 1];
+    }
+    // Default (odd number of remaining args)
+    return args.length % 2 === 0 ? args[args.length - 1] : null;
+  }
+
+  private evaluateCase(expr: CaseExpr, row: StorageRow, columns: StorageColMeta[]): CellValue {
+    if (expr.operand) {
+      const val = this.evaluateExpression(expr.operand, row, columns);
+      for (const wc of expr.whenClauses) {
+        const whenVal = this.evaluateExpression(wc.when, row, columns);
+        if (this.compareValues(val, whenVal) === 0) return this.evaluateExpression(wc.then, row, columns);
+      }
+    } else {
+      for (const wc of expr.whenClauses) {
+        if (this.evaluateCondition(wc.when, row, columns)) return this.evaluateExpression(wc.then, row, columns);
+      }
+    }
+    return expr.elseClause ? this.evaluateExpression(expr.elseClause, row, columns) : null;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────
+
+  private resolveColumnIndex(expr: Expression, columns: StorageColMeta[]): number {
+    if (expr.type === 'Identifier') {
+      const name = expr.name.toUpperCase();
+      const table = expr.table?.toUpperCase();
+      const qualified = table ? `${table}.${name}` : null;
+
+      // Try qualified match first (e.g., E.DEPT_ID)
+      if (qualified) {
+        const idx = columns.findIndex(c => {
+          const qNames = (c as StorageColMeta & { _qualifiedNames?: string[] })._qualifiedNames;
+          if (qNames) return qNames.some(qn => qn.toUpperCase() === qualified);
+          return false;
+        });
+        // If a table qualifier was given, only return qualified match (don't fall through to plain name)
+        return idx;
+      }
+
+      // Try plain name match (no table qualifier)
+      const idx = columns.findIndex(c => c.name === name);
+      if (idx >= 0) return idx;
+
+      // Try qualified names for unqualified reference
+      return columns.findIndex(c => {
+        const qNames = (c as StorageColMeta & { _qualifiedNames?: string[] })._qualifiedNames;
+        if (qNames) return qNames.some(qn => qn.toUpperCase() === name);
+        return false;
+      });
+    }
+    if (expr.type === 'Literal' && expr.dataType === 'number') {
+      return Number(expr.value) - 1; // 1-based in ORDER BY
+    }
+    return -1;
+  }
+
+  private applyBinaryOp(op: string, left: CellValue, right: CellValue): CellValue {
+    if (op === '||') return (left != null ? String(left) : '') + (right != null ? String(right) : '');
+    if (left == null || right == null) return null;
+    const l = Number(left);
+    const r = Number(right);
+    switch (op) {
+      case '+': return l + r;
+      case '-': return l - r;
+      case '*': return l * r;
+      case '/': if (r === 0) throw new OracleError(1476, 'divisor is equal to zero'); return l / r;
+      default: return this.applyComparison(op, left, right) ? 1 : 0;
+    }
+  }
+
+  private applyComparison(op: string, left: CellValue, right: CellValue): boolean {
+    if (left === null || right === null) return false;
+    const cmp = this.compareValues(left, right);
+    switch (op) {
+      case '=': return cmp === 0;
+      case '<>': case '!=': return cmp !== 0;
+      case '<': return cmp < 0;
+      case '>': return cmp > 0;
+      case '<=': return cmp <= 0;
+      case '>=': return cmp >= 0;
+      default: return false;
+    }
+  }
+
+  private compareValues(a: CellValue, b: CellValue): number {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;  // Oracle: NULLs sort last in ASC
+    if (b === null) return -1;
+    if (typeof a === 'number' && typeof b === 'number') return a - b;
+    return String(a).localeCompare(String(b));
+  }
+
+  private validateConstraints(schema: string, tableName: string, tableMeta: import('../engine/storage/BaseStorage').TableMeta, row: StorageRow): void {
+    for (const constraint of tableMeta.constraints) {
+      if (constraint.type === 'NOT_NULL' || constraint.type === 'PRIMARY_KEY') {
+        for (const colName of constraint.columns) {
+          const colIdx = tableMeta.columns.findIndex(c => c.name === colName);
+          if (colIdx >= 0 && row[colIdx] === null) {
+            throw new OracleError(1400, `cannot insert NULL into ("${schema}"."${tableName}"."${colName}")`);
+          }
+        }
+      }
+      if (constraint.type === 'PRIMARY_KEY' || constraint.type === 'UNIQUE') {
+        const existingRows = this.storage.getRows(schema, tableName);
+        const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
+        const newKey = colIndexes.map(i => row[i]);
+        for (const existing of existingRows) {
+          const existingKey = colIndexes.map(i => existing[i]);
+          if (newKey.every((v, i) => this.compareValues(v, existingKey[i]) === 0)) {
+            throw new OracleError(1, `unique constraint (${constraint.name}) violated`);
+          }
+        }
+      }
+    }
+  }
+
+  private expandSelectItems(items: SelectItem[], columns: StorageColMeta[]): { name: string; alias?: string; colIndex: number; dataType: import('../engine/catalog/DataType').ColumnDataType; expr?: Expression }[] {
+    const result: { name: string; alias?: string; colIndex: number; dataType: import('../engine/catalog/DataType').ColumnDataType; expr?: Expression }[] = [];
+    for (const item of items) {
+      if (item.expr.type === 'Star') {
+        for (const col of columns) {
+          result.push({ name: col.name, colIndex: col.ordinalPosition, dataType: col.dataType });
+        }
+      } else if (item.expr.type === 'Identifier') {
+        const name = item.expr.name.toUpperCase();
+        const colIdx = columns.findIndex(c => c.name === name);
+        if (colIdx >= 0) {
+          result.push({ name: columns[colIdx].name, alias: item.alias, colIndex: colIdx, dataType: columns[colIdx].dataType });
+        } else {
+          result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType('VARCHAR2'), expr: item.expr });
+        }
+      } else {
+        const alias = item.alias || this.exprToString(item.expr);
+        result.push({ name: alias, alias: item.alias, colIndex: -1, dataType: parseOracleType('VARCHAR2'), expr: item.expr });
+      }
+    }
+    return result;
+  }
+
+  private exprToString(expr: Expression): string {
+    switch (expr.type) {
+      case 'Literal': return String(expr.value ?? 'NULL');
+      case 'Identifier': return expr.name;
+      case 'FunctionCall': return `${expr.name}(...)`;
+      case 'BinaryExpr': return `${this.exprToString(expr.left)} ${expr.operator} ${this.exprToString(expr.right)}`;
+      default: return 'EXPR';
+    }
+  }
+}
