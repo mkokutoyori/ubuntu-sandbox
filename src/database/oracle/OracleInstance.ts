@@ -219,6 +219,10 @@ export class OracleInstance {
     p.set('control_files', '/u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control02.ctl');
     p.set('log_archive_dest_1', `LOCATION=/u01/app/oracle/archivelog`);
     p.set('archive_log_mode', this._archiveLogMode ? 'ENABLED' : 'DISABLED');
+    // Environment-like parameters (stored lowercase for case-insensitive lookup)
+    p.set('oracle_home', '/u01/app/oracle/product/19c/dbhome_1');
+    p.set('oracle_sid', this.config.sid);
+    p.set('oracle_base', '/u01/app/oracle');
   }
 
   getParameter(name: string): string | undefined {
@@ -278,5 +282,157 @@ export class OracleInstance {
       'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production',
       'Version 19.3.0.0.0',
     ];
+  }
+
+  // ── Listener ────────────────────────────────────────────────────
+
+  private _listenerState: 'running' | 'stopped' = 'stopped';
+
+  get listenerStatus(): 'running' | 'stopped' { return this._listenerState; }
+
+  startListener(): string {
+    if (this._listenerState === 'running') {
+      return 'TNS-01106: Listener using listener name LISTENER has already been started';
+    }
+    this._listenerState = 'running';
+    this.logAlert('Listener LISTENER started successfully');
+    return [
+      'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+      `Starting /u01/app/oracle/product/19c/dbhome_1/bin/tnslsnr: please wait...`,
+      '',
+      `TNSLSNR for Linux: Version 19.0.0.0.0 - Production`,
+      `System parameter file is /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora`,
+      `Log messages written to /u01/app/oracle/diag/tnslsnr/${this.config.sid.toLowerCase()}/listener/alert/log.xml`,
+      `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))`,
+      '',
+      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+      `STATUS of the LISTENER`,
+      `------------------------`,
+      `Alias                     LISTENER`,
+      `Version                   TNSLSNR for Linux: Version 19.0.0.0.0`,
+      `Start Date                ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`,
+      `Uptime                    0 days 0 hr. 0 min. 0 sec`,
+      `Trace Level               off`,
+      `Security                  ON: Local OS Authentication`,
+      `SNMP                      OFF`,
+      `Listener Parameter File   /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora`,
+      `Listener Log File         /u01/app/oracle/diag/tnslsnr/${this.config.sid.toLowerCase()}/listener/alert/log.xml`,
+      `Listening Endpoints Summary...`,
+      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))`,
+      `Services Summary...`,
+      `Service "${this.config.sid}" has 1 instance(s).`,
+      `  Instance "${this.config.sid}", status READY, has 1 handler(s) for this service...`,
+      `The command completed successfully`,
+      '',
+      'Listener started successfully.',
+    ].join('\n');
+  }
+
+  stopListener(): string {
+    if (this._listenerState === 'stopped') {
+      return 'TNS-12541: TNS:no listener';
+    }
+    this._listenerState = 'stopped';
+    this.logAlert('Listener LISTENER stopped');
+    return [
+      'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+      `The command completed successfully`,
+      '',
+      'Listener stopped.',
+    ].join('\n');
+  }
+
+  getListenerStatus(): string {
+    if (this._listenerState === 'stopped') {
+      return [
+        'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+        `TNS-12541: TNS:no listener`,
+        ` TNS-12560: TNS:protocol adapter error`,
+        `  TNS-00511: No listener`,
+      ].join('\n');
+    }
+    return [
+      'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+      `STATUS of the LISTENER`,
+      `------------------------`,
+      `Alias                     LISTENER`,
+      `Version                   TNSLSNR for Linux: Version 19.0.0.0.0`,
+      `Start Date                ${(this._startupTime || new Date()).toISOString().slice(0, 19).replace('T', ' ')}`,
+      `Uptime                    0 days 0 hr. 5 min. 0 sec`,
+      `Trace Level               off`,
+      `Security                  ON: Local OS Authentication`,
+      `SNMP                      OFF`,
+      `Listener Parameter File   /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora`,
+      `Listening Endpoints Summary...`,
+      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))`,
+      `Services Summary...`,
+      `Service "${this.config.sid}" has 1 instance(s).`,
+      `  Instance "${this.config.sid}", status READY, has 1 handler(s) for this service...`,
+      `The command completed successfully`,
+    ].join('\n');
+  }
+
+  // ── Configuration file content ─────────────────────────────────
+
+  getInitOraContent(): string {
+    const params = [
+      `db_name                  = ${this.config.sid}`,
+      `db_domain                = localdomain`,
+      `db_block_size            = ${this.config.dbBlockSize}`,
+      `sga_target               = ${this.config.sgaTarget}`,
+      `sga_max_size             = ${this.config.sgaTarget}`,
+      `pga_aggregate_target     = 128M`,
+      `processes                = ${this.config.processes}`,
+      `sessions                 = ${this.config.maxSessions}`,
+      `open_cursors             = ${this.config.openCursors}`,
+      `undo_management          = AUTO`,
+      `undo_tablespace          = UNDOTBS1`,
+      `undo_retention           = 900`,
+      `compatible               = 19.0.0`,
+      `remote_login_passwordfile = EXCLUSIVE`,
+      `audit_trail              = DB`,
+      `diagnostic_dest          = /u01/app/oracle`,
+      `control_files            = ('/u01/app/oracle/oradata/${this.config.sid}/control01.ctl',`,
+      `                            '/u01/app/oracle/oradata/${this.config.sid}/control02.ctl')`,
+    ];
+    return params.join('\n');
+  }
+
+  getTnsNamesContent(): string {
+    return [
+      `${this.config.sid} =`,
+      `  (DESCRIPTION =`,
+      `    (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521))`,
+      `    (CONNECT_DATA =`,
+      `      (SERVER = DEDICATED)`,
+      `      (SERVICE_NAME = ${this.config.sid})`,
+      `    )`,
+      `  )`,
+    ].join('\n');
+  }
+
+  getListenerOraContent(): string {
+    return [
+      `LISTENER =`,
+      `  (DESCRIPTION_LIST =`,
+      `    (DESCRIPTION =`,
+      `      (ADDRESS = (PROTOCOL = TCP)(HOST = 0.0.0.0)(PORT = 1521))`,
+      `    )`,
+      `  )`,
+      ``,
+      `SID_LIST_LISTENER =`,
+      `  (SID_LIST =`,
+      `    (SID_DESC =`,
+      `      (GLOBAL_DBNAME = ${this.config.sid})`,
+      `      (ORACLE_HOME = /u01/app/oracle/product/19c/dbhome_1)`,
+      `      (SID_NAME = ${this.config.sid})`,
+      `    )`,
+      `  )`,
+      ``,
+      `ADR_BASE_LISTENER = /u01/app/oracle`,
+    ].join('\n');
   }
 }
