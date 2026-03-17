@@ -1,0 +1,96 @@
+/**
+ * OracleLexer — Tokeniser for Oracle SQL and SQL*Plus commands.
+ *
+ * Extends BaseLexer with Oracle-specific keywords, q-quote strings,
+ * and SQL*Plus command detection.
+ */
+
+import { BaseLexer } from '../engine/lexer/BaseLexer';
+
+/**
+ * Oracle-specific keywords beyond the SQL standard set.
+ */
+const ORACLE_KEYWORDS = new Set([
+  // Oracle SQL extensions
+  'ROWNUM', 'ROWID', 'UROWID', 'LEVEL', 'PRIOR', 'SYSDATE', 'SYSTIMESTAMP',
+  'CURRENT_DATE', 'CURRENT_TIMESTAMP', 'CONNECT', 'START', 'NOCYCLE',
+  'MINUS', 'PIVOT', 'UNPIVOT', 'SAMPLE', 'PARTITION', 'LATERAL',
+  'PURGE', 'FLASHBACK', 'VERSIONS',
+
+  // Oracle types
+  'NUMBER', 'VARCHAR2', 'NVARCHAR2', 'NCHAR', 'NCLOB', 'BFILE',
+  'BINARY_FLOAT', 'BINARY_DOUBLE', 'XMLTYPE', 'RAW', 'LONG',
+
+  // Oracle DDL
+  'TABLESPACE', 'DATAFILE', 'TEMPFILE', 'AUTOEXTEND', 'MAXSIZE',
+  'STORAGE', 'PCTFREE', 'PCTUSED', 'INITRANS', 'MAXTRANS',
+  'EXTENT', 'SEGMENT', 'LOGGING', 'NOLOGGING',
+  'ENABLE', 'DISABLE', 'VALIDATE', 'NOVALIDATE',
+  'DEFERRABLE', 'INITIALLY', 'DEFERRED', 'IMMEDIATE',
+  'ONLINE', 'OFFLINE', 'INCLUDING', 'CONTENTS', 'DATAFILES',
+  'BITMAP',
+
+  // Oracle functions
+  'NVL', 'NVL2', 'DECODE', 'COALESCE', 'NULLIF', 'LNNVL',
+  'SUBSTR', 'INSTR', 'LENGTH', 'UPPER', 'LOWER', 'INITCAP',
+  'TRIM', 'LTRIM', 'RTRIM', 'LPAD', 'RPAD',
+  'REPLACE', 'TRANSLATE', 'CONCAT',
+  'TO_CHAR', 'TO_DATE', 'TO_NUMBER', 'TO_TIMESTAMP',
+  'ADD_MONTHS', 'MONTHS_BETWEEN', 'LAST_DAY', 'NEXT_DAY',
+  'TRUNC', 'ROUND', 'CEIL', 'FLOOR', 'ABS', 'MOD', 'POWER', 'SQRT', 'SIGN',
+  'GREATEST', 'LEAST', 'REGEXP_LIKE', 'REGEXP_SUBSTR', 'REGEXP_REPLACE',
+  'REGEXP_INSTR', 'REGEXP_COUNT',
+  'LISTAGG', 'DENSE_RANK', 'RANK', 'ROW_NUMBER', 'NTILE',
+  'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE', 'NTH_VALUE',
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE',
+  'OVER', 'ROWS', 'RANGE', 'UNBOUNDED', 'PRECEDING', 'FOLLOWING',
+  'CURRENT',
+  'SYS_CONTEXT', 'SYS_GUID', 'USERENV', 'USER', 'UID',
+  'EXTRACT', 'CAST',
+
+  // Oracle PL/SQL
+  'DECLARE', 'BEGIN', 'EXCEPTION', 'RAISE', 'PRAGMA',
+  'PROCEDURE', 'FUNCTION', 'PACKAGE', 'BODY', 'TRIGGER',
+  'RETURN', 'RETURNS', 'OUT', 'IN', 'CURSOR', 'OPEN', 'CLOSE', 'FETCH',
+  'LOOP', 'WHILE', 'FOR', 'EXIT', 'CONTINUE', 'GOTO',
+  'TYPE', 'RECORD', 'VARRAY', 'BULK', 'COLLECT', 'FORALL',
+  'EXECUTE', 'DBMS_OUTPUT',
+
+  // Oracle security
+  'PROFILE', 'QUOTA', 'UNLIMITED', 'ACCOUNT', 'LOCK', 'UNLOCK',
+  'PASSWORD', 'EXPIRE', 'SESSION', 'SESSIONS', 'IDENTIFIED',
+  'SYSDBA', 'SYSOPER', 'ADMIN', 'OPTION',
+  'ROLE', 'SYNONYM',
+
+  // Oracle instance
+  'STARTUP', 'SHUTDOWN', 'NOMOUNT', 'MOUNT', 'OPEN', 'ABORT',
+  'RESTRICT', 'TRANSACTIONAL', 'NORMAL',
+  'SYSTEM', 'DATABASE', 'FLUSH', 'SHARED_POOL', 'BUFFER_CACHE',
+  'SWITCH', 'LOGFILE', 'CHECKPOINT', 'ARCHIVELOG', 'NOARCHIVELOG',
+  'SCOPE', 'SPFILE', 'MEMORY', 'BOTH',
+  'BACKUP', 'CONTROLFILE',
+
+  // Oracle audit
+  'AUDIT', 'NOAUDIT', 'ACCESS',
+
+  // Sequences
+  'NEXTVAL', 'CURRVAL', 'CACHE', 'NOCACHE', 'CYCLE', 'NOCYCLE',
+  'MINVALUE', 'NOMINVALUE', 'MAXVALUE', 'NOMAXVALUE',
+  'INCREMENT',
+
+  // Oracle DUAL
+  'DUAL',
+
+  // MATERIALIZED VIEW
+  'MATERIALIZED', 'BUILD', 'REFRESH', 'FAST', 'COMPLETE',
+  'DEMAND',
+
+  // Others
+  'DIRECTORY', 'LINK', 'GLOBAL', 'TEMPORARY', 'PRESERVE', 'NOWAIT',
+  'SKIP', 'LOCKED', 'WAIT', 'TIES',
+  'READ', 'WRITE', 'ONLY',
+]);
+
+export class OracleLexer extends BaseLexer {
+  protected readonly dialectKeywords = ORACLE_KEYWORDS;
+}
