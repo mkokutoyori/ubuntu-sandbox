@@ -146,17 +146,34 @@ export class OracleExecutor extends BaseExecutor {
       return this.projectGroupedRows(grouped, columns, stmt);
     }
 
-    // ── Step 4: SELECT columns ─────────────────────────────────────
+    // ── Step 4: SELECT columns (with window function support) ─────
     const selectCols = this.expandSelectItems(stmt.columns, columns);
     const resultColumns: ColumnMeta[] = selectCols.map(col => ({ name: col.alias || col.name, dataType: col.dataType }));
+
+    // Check for window functions
+    const windowColIndices: number[] = [];
+    for (let i = 0; i < stmt.columns.length; i++) {
+      if (stmt.columns[i].expr.type === 'FunctionCall' && stmt.columns[i].expr.over) {
+        windowColIndices.push(i);
+      }
+    }
 
     let resultRows: Row[] = rows.map(row => {
       return selectCols.map(col => {
         if (col.colIndex >= 0) return row[col.colIndex];
-        if (col.expr) return this.evaluateExpression(col.expr, row, columns);
+        if (col.expr) {
+          // Skip window function evaluation here — handled below
+          if (col.expr.type === 'FunctionCall' && (col.expr as FunctionCallExpr).over) return null;
+          return this.evaluateExpression(col.expr, row, columns);
+        }
         return null;
       });
     });
+
+    // ── Step 4b: Evaluate window functions ────────────────────────
+    if (windowColIndices.length > 0) {
+      this.evaluateWindowFunctions(resultRows, rows, columns, stmt.columns, windowColIndices);
+    }
 
     // ── Step 5: DISTINCT ───────────────────────────────────────────
     if (stmt.distinct) {
@@ -312,6 +329,8 @@ export class OracleExecutor extends BaseExecutor {
 
   private exprHasAggregate(expr: Expression): boolean {
     if (expr.type === 'FunctionCall') {
+      // Window functions (with OVER) are NOT regular aggregates
+      if ((expr as FunctionCallExpr).over) return false;
       const name = expr.name.toUpperCase();
       if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) return true;
     }
@@ -377,6 +396,196 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     return queryResult(resultColumns, resultRows);
+  }
+
+  // ── Window Function Evaluation ──────────────────────────────────
+
+  private evaluateWindowFunctions(
+    resultRows: Row[],
+    sourceRows: StorageRow[],
+    sourceColumns: StorageColMeta[],
+    selectItems: SelectItem[],
+    windowColIndices: number[]
+  ): void {
+    for (const colIdx of windowColIndices) {
+      const funcExpr = selectItems[colIdx].expr as FunctionCallExpr;
+      const windowSpec = funcExpr.over!;
+      const funcName = funcExpr.name.toUpperCase();
+
+      // Build array of { sourceRowIdx, partitionKey }
+      const rowInfos: { srcIdx: number; partKey: string }[] = sourceRows.map((row, i) => {
+        const partValues = (windowSpec.partitionBy || []).map(e => this.evaluateExpression(e, row, sourceColumns));
+        return { srcIdx: i, partKey: JSON.stringify(partValues) };
+      });
+
+      // Group by partition key
+      const partitions = new Map<string, number[]>();
+      for (let i = 0; i < rowInfos.length; i++) {
+        const key = rowInfos[i].partKey;
+        if (!partitions.has(key)) partitions.set(key, []);
+        partitions.get(key)!.push(i);
+      }
+
+      // For each partition, sort indices by window ORDER BY and compute
+      for (const [, indices] of partitions) {
+        // Sort within partition
+        if (windowSpec.orderBy && windowSpec.orderBy.length > 0) {
+          indices.sort((a, b) => {
+            for (const ob of windowSpec.orderBy!) {
+              const va = this.evaluateExpression(ob.expr, sourceRows[a], sourceColumns);
+              const vb = this.evaluateExpression(ob.expr, sourceRows[b], sourceColumns);
+              let cmp = this.compareValues(va, vb);
+              if (ob.direction === 'DESC') cmp = -cmp;
+              if (cmp !== 0) return cmp;
+            }
+            return 0;
+          });
+        }
+
+        // Evaluate function for each row in partition
+        for (let posInPartition = 0; posInPartition < indices.length; posInPartition++) {
+          const rowIdx = indices[posInPartition];
+          const value = this.computeWindowValue(
+            funcName, funcExpr, windowSpec, sourceRows, sourceColumns,
+            indices, posInPartition, rowIdx
+          );
+          resultRows[rowIdx][colIdx] = value;
+        }
+      }
+    }
+  }
+
+  private computeWindowValue(
+    funcName: string,
+    funcExpr: FunctionCallExpr,
+    windowSpec: import('../engine/parser/ASTNode').WindowSpec,
+    sourceRows: StorageRow[],
+    sourceColumns: StorageColMeta[],
+    partitionIndices: number[],
+    posInPartition: number,
+    rowIdx: number
+  ): CellValue {
+    switch (funcName) {
+      case 'ROW_NUMBER':
+        return posInPartition + 1;
+
+      case 'RANK': {
+        // Rank with gaps: same rank for ties, gap after
+        if (posInPartition === 0) return 1;
+        // Compare with previous row
+        const prev = partitionIndices[posInPartition - 1];
+        const isTie = this.windowRowsEqual(windowSpec, sourceRows[prev], sourceRows[rowIdx], sourceColumns);
+        // Get previous rank
+        let rank = 1;
+        for (let i = 1; i <= posInPartition; i++) {
+          const iPrev = partitionIndices[i - 1];
+          const iCurr = partitionIndices[i];
+          if (!this.windowRowsEqual(windowSpec, sourceRows[iPrev], sourceRows[iCurr], sourceColumns)) {
+            rank = i + 1;
+          }
+        }
+        return rank;
+      }
+
+      case 'DENSE_RANK': {
+        if (posInPartition === 0) return 1;
+        let denseRank = 1;
+        for (let i = 1; i <= posInPartition; i++) {
+          const iPrev = partitionIndices[i - 1];
+          const iCurr = partitionIndices[i];
+          if (!this.windowRowsEqual(windowSpec, sourceRows[iPrev], sourceRows[iCurr], sourceColumns)) {
+            denseRank++;
+          }
+        }
+        return denseRank;
+      }
+
+      case 'NTILE': {
+        const nBuckets = funcExpr.args.length > 0
+          ? Number(this.evaluateExpression(funcExpr.args[0], sourceRows[rowIdx], sourceColumns))
+          : 1;
+        const totalRows = partitionIndices.length;
+        return Math.floor(posInPartition * nBuckets / totalRows) + 1;
+      }
+
+      case 'LAG': {
+        const offset = funcExpr.args.length > 1
+          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
+          : 1;
+        const defaultVal = funcExpr.args.length > 2
+          ? this.evaluateExpression(funcExpr.args[2], sourceRows[rowIdx], sourceColumns)
+          : null;
+        const lagIdx = posInPartition - offset;
+        if (lagIdx < 0) return defaultVal;
+        const lagRowIdx = partitionIndices[lagIdx];
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[lagRowIdx], sourceColumns);
+      }
+
+      case 'LEAD': {
+        const offset = funcExpr.args.length > 1
+          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
+          : 1;
+        const defaultVal = funcExpr.args.length > 2
+          ? this.evaluateExpression(funcExpr.args[2], sourceRows[rowIdx], sourceColumns)
+          : null;
+        const leadIdx = posInPartition + offset;
+        if (leadIdx >= partitionIndices.length) return defaultVal;
+        const leadRowIdx = partitionIndices[leadIdx];
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[leadRowIdx], sourceColumns);
+      }
+
+      // Aggregate window functions: SUM, COUNT, AVG, MIN, MAX with OVER
+      case 'COUNT': case 'SUM': case 'AVG': case 'MIN': case 'MAX': {
+        // If ORDER BY is present, compute running aggregate (frame: UNBOUNDED PRECEDING to CURRENT ROW)
+        const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
+        const frameEnd = hasOrderBy ? posInPartition : partitionIndices.length - 1;
+        const frameIndices = partitionIndices.slice(0, frameEnd + 1);
+
+        if (funcName === 'COUNT') {
+          if (funcExpr.args.length === 0 || (funcExpr.args[0] && funcExpr.args[0].type === 'Star')) {
+            return frameIndices.length;
+          }
+          let count = 0;
+          for (const idx of frameIndices) {
+            if (this.evaluateExpression(funcExpr.args[0], sourceRows[idx], sourceColumns) != null) count++;
+          }
+          return count;
+        }
+
+        const vals: number[] = [];
+        for (const idx of frameIndices) {
+          const v = this.evaluateExpression(funcExpr.args[0], sourceRows[idx], sourceColumns);
+          if (v != null) vals.push(Number(v));
+        }
+        if (vals.length === 0) return null;
+
+        switch (funcName) {
+          case 'SUM': return vals.reduce((a, b) => a + b, 0);
+          case 'AVG': return vals.reduce((a, b) => a + b, 0) / vals.length;
+          case 'MIN': return Math.min(...vals);
+          case 'MAX': return Math.max(...vals);
+        }
+        return null;
+      }
+
+      default:
+        return null;
+    }
+  }
+
+  private windowRowsEqual(
+    windowSpec: import('../engine/parser/ASTNode').WindowSpec,
+    rowA: StorageRow,
+    rowB: StorageRow,
+    columns: StorageColMeta[]
+  ): boolean {
+    if (!windowSpec.orderBy) return true;
+    for (const ob of windowSpec.orderBy) {
+      const va = this.evaluateExpression(ob.expr, rowA, columns);
+      const vb = this.evaluateExpression(ob.expr, rowB, columns);
+      if (this.compareValues(va, vb) !== 0) return false;
+    }
+    return true;
   }
 
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
@@ -1390,11 +1599,11 @@ export class OracleExecutor extends BaseExecutor {
           result.push({ name: col.name, colIndex: col.ordinalPosition, dataType: col.dataType });
         }
       } else if (item.expr.type === 'Identifier') {
-        const name = item.expr.name.toUpperCase();
-        const colIdx = columns.findIndex(c => c.name === name);
+        const colIdx = this.resolveColumnIndex(item.expr, columns);
         if (colIdx >= 0) {
           result.push({ name: columns[colIdx].name, alias: item.alias, colIndex: colIdx, dataType: columns[colIdx].dataType });
         } else {
+          const name = item.expr.name.toUpperCase();
           result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType('VARCHAR2'), expr: item.expr });
         }
       } else {
