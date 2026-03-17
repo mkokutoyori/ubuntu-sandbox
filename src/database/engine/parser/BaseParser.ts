@@ -1054,6 +1054,16 @@ export abstract class BaseParser {
   }
 
   protected parseComparison(): Expression {
+    // EXISTS must be checked before parsing left operand
+    if (this.checkKeyword('EXISTS')) {
+      const pos = this.current().position;
+      this.advance(); // consume EXISTS
+      this.expect(TokenType.LPAREN);
+      const query = this.parseSelect();
+      this.expect(TokenType.RPAREN);
+      return { type: 'UnaryExpr', position: pos, operator: 'EXISTS', operand: { type: 'SubqueryExpr', position: pos, query } };
+    }
+
     let left = this.parseAddition();
     const pos = this.current().position;
 
@@ -1097,14 +1107,6 @@ export abstract class BaseParser {
     if (notBetween) {
       // We consumed NOT but no BETWEEN/IN/LIKE followed — this is an error
       throw this.error('Expected BETWEEN, IN, or LIKE after NOT');
-    }
-
-    // EXISTS
-    if (this.matchKeyword('EXISTS')) {
-      this.expect(TokenType.LPAREN);
-      const query = this.parseSelect();
-      this.expect(TokenType.RPAREN);
-      return { type: 'UnaryExpr', position: pos, operator: 'EXISTS', operand: { type: 'SubqueryExpr', position: pos, query } };
     }
 
     // Comparison operators

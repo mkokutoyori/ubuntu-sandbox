@@ -94,21 +94,34 @@ instance management, and SQL*Plus command-line interface.
 | Terminal View Update | `src/components/terminal/TerminalView.tsx` | Done | - |
 | Database Commands | `src/terminal/commands/database.ts` | Done | - |
 
+### Phase 3b: Advanced SQL Features — COMPLETE
+
+| Component | File | Status | Tests |
+|-----------|------|--------|-------|
+| Advanced Tests (TDD) | `src/__tests__/unit/database/oracle-advanced.test.ts` | Done | 44 tests |
+| JOIN execution | `src/database/oracle/OracleExecutor.ts` | Done | (via advanced) |
+| GROUP BY + Aggregates | `src/database/oracle/OracleExecutor.ts` | Done | (via advanced) |
+| HAVING clause | `src/database/oracle/OracleExecutor.ts` | Done | (via advanced) |
+| Set operations | `src/database/oracle/OracleExecutor.ts` | Done | (via advanced) |
+| Subqueries (IN, EXISTS, scalar) | `src/database/oracle/OracleExecutor.ts` | Done | (via advanced) |
+| ALTER TABLE MODIFY | `src/database/oracle/OracleExecutor.ts` | Done | (via advanced) |
+
 ### Test Summary
 
-- **Total Oracle Tests**: 95 passing
+- **Total Oracle Tests**: 139 passing
   - Lexer: 15 tests (tokenization, keywords, operators, positions)
-  - Parser: 25 tests (SELECT, DML, DDL, DCL, Oracle syntax, expressions)
-  - Database Integration: 55 tests (DUAL, DDL, DML, WHERE, ORDER BY, functions, catalog, users, connections, demo schemas, SQL*Plus)
+  - Parser: 31 tests (SELECT, DML, DDL, DCL, Oracle syntax, expressions)
+  - Database Integration: 49 tests (DUAL, DDL, DML, WHERE, ORDER BY, functions, catalog, users, connections, demo schemas, SQL*Plus)
+  - Advanced: 44 tests (JOINs, GROUP BY, aggregates, HAVING, set operations, subqueries, ALTER TABLE MODIFY, advanced expressions)
 - **TypeScript**: Clean compilation (`tsc --noEmit` passes)
-- **Existing Tests**: No regressions (44 test files pass, 13 pre-existing failures unrelated)
+- **Existing Tests**: No regressions
 
 ---
 
 ## Feature Coverage
 
 ### SQL Statements
-- **SELECT**: columns, aliases, *, DISTINCT, FROM, JOIN (INNER/LEFT/RIGHT/FULL/CROSS), WHERE, GROUP BY, HAVING, ORDER BY, FETCH FIRST, FOR UPDATE, set operations (UNION/INTERSECT/MINUS), subqueries, WITH (CTE)
+- **SELECT**: columns, aliases, *, DISTINCT, FROM, JOIN (INNER/LEFT/RIGHT/FULL/CROSS — fully executed), WHERE, GROUP BY (with aggregates), HAVING, ORDER BY, FETCH FIRST, FOR UPDATE, set operations (UNION/UNION ALL/INTERSECT/MINUS — fully executed), subqueries (IN subquery, EXISTS/NOT EXISTS, correlated, scalar in SELECT and WHERE), WITH (CTE)
 - **INSERT**: VALUES, column list, INSERT...SELECT
 - **UPDATE**: SET assignments, WHERE
 - **DELETE**: WHERE
@@ -236,6 +249,7 @@ src/terminal/
 
 src/__tests__/unit/database/
 ├── oracle-lexer.test.ts          # 15 lexer tests
-├── oracle-parser.test.ts         # 25 parser tests
-└── oracle-database.test.ts       # 55 integration tests
+├── oracle-parser.test.ts         # 31 parser tests
+├── oracle-database.test.ts       # 49 integration tests
+└── oracle-advanced.test.ts       # 44 advanced TDD tests (JOINs, GROUP BY, subqueries, etc.)
 ```
