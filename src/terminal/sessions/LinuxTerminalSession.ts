@@ -275,17 +275,18 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
-    // Intercept sqlplus command — enter SQL*Plus sub-shell
+    // Intercept sqlplus command — enter SQL*Plus sub-shell (only if no sudo prefix)
     {
       const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
       const parts = noSudo.split(/\s+/);
-      if (parts[0] === 'sqlplus') {
+      if (parts[0] === 'sqlplus' && !trimmed.startsWith('sudo ')) {
         this.enterSqlPlus(parts.slice(1));
         return;
       }
     }
 
     // Check if this command needs interactive prompts
+    // (handles sudo password for `sudo sqlplus`, sudo passwd, su, etc.)
     const interactiveState = this.buildInteractiveSteps(trimmed);
     if (interactiveState) {
       this.interactive = interactiveState;
@@ -412,9 +413,26 @@ export class LinuxTerminalSession extends TerminalSession {
     const currentUid = this.device.getCurrentUid();
     const isRoot = currentUid === 0;
 
+    // BUG FIX: Check if user can use sudo before proceeding
     if (parts[0] === 'sudo' && !isRoot) {
+      if (!this.device.canSudo()) {
+        return null; // Will be handled by executeOnDevice which returns the error
+      }
+
       const subParts = parts.slice(1);
       const subCmd = subParts[0];
+
+      // Handle sudo passwd with flags (-l, -u, -S) — no interactive password needed for these
+      if (subCmd === 'passwd' && subParts.length >= 2 && subParts[1].startsWith('-')) {
+        return {
+          steps: [
+            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
+            { type: 'execute', command: trimmed },
+          ],
+          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+          currentPromptText: `[sudo] password for ${currentUser}:`,
+        };
+      }
 
       if (subCmd === 'passwd' && subParts.length >= 2 && !subParts[1].startsWith('-')) {
         const targetUser = subParts[subParts.length - 1];
@@ -432,7 +450,8 @@ export class LinuxTerminalSession extends TerminalSession {
       }
 
       if (subCmd === 'adduser' && subParts.length >= 2) {
-        const targetUser = subParts.filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
+        // BUG FIX: Skip 'adduser' itself and option values when finding the target username
+        const targetUser = subParts.slice(1).filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
         const hasDisabledPassword = subParts.includes('--disabled-password') || subParts.includes('--disabled-login');
         const hasGecos = subParts.indexOf('--gecos') >= 0;
 
@@ -501,6 +520,7 @@ export class LinuxTerminalSession extends TerminalSession {
       };
     }
 
+    // BUG FIX: su should allow 3 password attempts (like real Linux)
     if (parts[0] === 'su' && !isRoot) {
       let targetUser = 'root';
       for (const p of parts.slice(1)) {
@@ -516,7 +536,21 @@ export class LinuxTerminalSession extends TerminalSession {
       };
     }
 
-    if (parts[0] === 'passwd' && parts.length === 1 && !isRoot) {
+    // passwd (no args) — change own password
+    if (parts[0] === 'passwd' && parts.length === 1) {
+      if (isRoot) {
+        // BUG FIX: Root can change own password without entering current password
+        return {
+          steps: [
+            { type: 'password', prompt: 'New password:' },
+            { type: 'password', prompt: 'Retype new password:' },
+            { type: 'set-password', username: currentUser },
+            { type: 'output', text: 'passwd: password updated successfully' },
+          ],
+          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+          currentPromptText: '',
+        };
+      }
       return {
         steps: [
           { type: 'output', text: `Changing password for ${currentUser}.` },
@@ -524,6 +558,22 @@ export class LinuxTerminalSession extends TerminalSession {
           { type: 'password', prompt: 'New password:' },
           { type: 'password', prompt: 'Retype new password:' },
           { type: 'set-password', username: currentUser },
+          { type: 'output', text: 'passwd: password updated successfully' },
+        ],
+        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
+        currentPromptText: '',
+      };
+    }
+
+    // BUG FIX: passwd <username> as root — change another user's password without current password
+    if (parts[0] === 'passwd' && parts.length >= 2 && !parts[1].startsWith('-') && isRoot) {
+      const targetUser = parts[parts.length - 1];
+      return {
+        steps: [
+          { type: 'output', text: `Enter new UNIX password for ${targetUser}:` },
+          { type: 'password', prompt: 'New password:' },
+          { type: 'password', prompt: 'Retype new password:' },
+          { type: 'set-password', username: targetUser },
           { type: 'output', text: 'passwd: password updated successfully' },
         ],
         stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
@@ -549,6 +599,19 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (step.type === 'output') { this.addLine(step.text); idx++; continue; }
       if (step.type === 'execute') {
+        // Check if the command is `sudo sqlplus ...` — enter SQL*Plus sub-shell after sudo auth
+        const cmdForExec = step.command;
+        const noSudo = cmdForExec.startsWith('sudo ') ? cmdForExec.slice(5).trim() : cmdForExec;
+        const execParts = noSudo.split(/\s+/);
+        if (execParts[0] === 'sqlplus') {
+          this.interactive = null;
+          this.passwordBuf = '';
+          this.inputBuf = '';
+          this.inputMode = { type: 'normal' };
+          this.enterSqlPlus(execParts.slice(1));
+          return;
+        }
+
         try {
           const result = await this.executeOnDevice(step.command);
           if (result) {
@@ -585,7 +648,7 @@ export class LinuxTerminalSession extends TerminalSession {
       if (step.type === 'input' || step.type === 'confirm') {
         this.interactive = { ...state, stepIndex: idx, currentPromptText: step.prompt };
         this.inputMode = { type: 'interactive-text', promptText: step.prompt };
-        this.addLine(step.prompt);
+        // Prompt text is displayed by the interactive-text input's prefix in the UI
         return;
       }
       if (step.type === 'set-gecos') {
@@ -639,8 +702,16 @@ export class LinuxTerminalSession extends TerminalSession {
     if (isSuPrompt) {
       const targetUser = this.interactive.targetUser || 'root';
       if (!this.device.checkPassword(targetUser, password)) {
+        const left = this.interactive.attemptsLeft - 1;
+        if (left <= 0) {
+          this.addLine('su: Authentication failure');
+          this.interactive = null; this.passwordBuf = ''; this.inputMode = { type: 'normal' };
+          this.notify(); return;
+        }
         this.addLine('su: Authentication failure');
-        this.interactive = null; this.inputMode = { type: 'normal' };
+        this.addLine('Password:');
+        this.passwordBuf = '';
+        this.interactive = { ...this.interactive, attemptsLeft: left };
         this.notify(); return;
       }
       this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });

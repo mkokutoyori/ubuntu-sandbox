@@ -309,4 +309,5 @@ export class LinuxServer extends EndHost {
   setUserPassword(username: string, password: string): void { this.executor.setUserPassword(username, password); }
   userExists(username: string): boolean { return this.executor.userExists(username); }
   setUserGecos(username: string, fullName: string, room: string, workPhone: string, homePhone: string, other: string): void { this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other); }
+  canSudo(): boolean { return this.executor.canSudo(); }
 }
