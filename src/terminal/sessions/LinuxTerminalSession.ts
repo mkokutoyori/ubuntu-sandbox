@@ -15,7 +15,7 @@ import {
   KeyEvent, InputMode, nextLineId,
 } from './TerminalSession';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
-import { createSQLPlusSession } from '@/terminal/commands/database';
+import { createSQLPlusSession, getOracleDatabase, initOracleFilesystem } from '@/terminal/commands/database';
 
 // ─── Interactive prompt types ─────────────────────────────────────
 
@@ -225,7 +225,7 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Called by the view's interactive text <input> onChange */
   setInputBuf(value: string): void {
     this.inputBuf = value;
-    // No notify needed — the view manages this input's own React state
+    this.notify();
   }
 
   getInputBuf(): string { return this.inputBuf; }
@@ -281,6 +281,16 @@ export class LinuxTerminalSession extends TerminalSession {
       const parts = noSudo.split(/\s+/);
       if (parts[0] === 'sqlplus' && !trimmed.startsWith('sudo ')) {
         this.enterSqlPlus(parts.slice(1));
+        return;
+      }
+      // Intercept lsnrctl — Oracle listener control
+      if (parts[0] === 'lsnrctl' && !trimmed.startsWith('sudo ')) {
+        this.handleLsnrctl(parts.slice(1));
+        return;
+      }
+      // Intercept tnsping — Oracle TNS connectivity test
+      if (parts[0] === 'tnsping' && !trimmed.startsWith('sudo ')) {
+        this.handleTnsping(parts.slice(1));
         return;
       }
     }
@@ -828,9 +838,164 @@ export class LinuxTerminalSession extends TerminalSession {
     }
   }
 
+  // ── lsnrctl (Listener Control) ─────────────────────────────────
+
+  private handleLsnrctl(args: string[]): void {
+    initOracleFilesystem(this.device);
+    const deviceId = this.device.id || 'default';
+    const db = getOracleDatabase(deviceId);
+    const subcommand = (args[0] || '').toUpperCase();
+
+    this.addLine('');
+    this.addLine('LSNRCTL for Linux: Version 19.0.0.0.0 - Production on ' + new Date().toDateString());
+    this.addLine('');
+    this.addLine(`Copyright (c) 1991, 2019, Oracle.  All rights reserved.`);
+    this.addLine('');
+
+    switch (subcommand) {
+      case 'START': {
+        db.instance.startListener();
+        this.addLine('Starting /u01/app/oracle/product/19c/dbhome_1/bin/tnslsnr: please wait...');
+        this.addLine('');
+        this.addLine('TNSLSNR for Linux: Version 19.0.0.0.0 - Production');
+        this.addLine(`Log messages written to /u01/app/oracle/diag/tnslsnr/${this.device.hostname}/listener/alert/log.xml`);
+        this.addLine('Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))');
+        this.addLine('');
+        this.addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`);
+        this.addLine(`STATUS of the LISTENER`);
+        this.addLine('------------------------');
+        this.addLine('Alias                     LISTENER');
+        this.addLine('Version                   TNSLSNR for Linux: Version 19.0.0.0.0 - Production');
+        this.addLine('Start Date                ' + new Date().toLocaleString());
+        this.addLine('Uptime                    0 days 0 hr. 0 min. 0 sec');
+        this.addLine('Trace Level               off');
+        this.addLine('Security                  ON: Local OS Authentication');
+        this.addLine('SNMP                      OFF');
+        this.addLine(`Listener Log File         /u01/app/oracle/diag/tnslsnr/${this.device.hostname}/listener/alert/log.xml`);
+        this.addLine('Listening Endpoints Summary...');
+        this.addLine('  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))');
+        this.addLine('The command completed successfully');
+        break;
+      }
+      case 'STOP': {
+        db.instance.stopListener();
+        this.addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+        this.addLine('The command completed successfully');
+        break;
+      }
+      case 'STATUS': {
+        const status = db.instance.getListenerStatus();
+        this.addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+        if (status.running) {
+          this.addLine('STATUS of the LISTENER');
+          this.addLine('------------------------');
+          this.addLine('Alias                     LISTENER');
+          this.addLine('Version                   TNSLSNR for Linux: Version 19.0.0.0.0 - Production');
+          this.addLine('Start Date                ' + (status.startedAt ? new Date(status.startedAt).toLocaleString() : 'N/A'));
+          this.addLine('Trace Level               off');
+          this.addLine('Security                  ON: Local OS Authentication');
+          this.addLine('SNMP                      OFF');
+          this.addLine('Listening Endpoints Summary...');
+          this.addLine('  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))');
+          this.addLine('Services Summary...');
+          this.addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
+          this.addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
+          this.addLine('The command completed successfully');
+        } else {
+          this.addLine('TNS-12541: TNS:no listener');
+          this.addLine(' TNS-12560: TNS:protocol adapter error');
+          this.addLine('  TNS-00511: No listener');
+        }
+        break;
+      }
+      case 'SERVICES': {
+        const status = db.instance.getListenerStatus();
+        this.addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+        if (status.running) {
+          this.addLine('Services Summary...');
+          this.addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
+          this.addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
+          this.addLine(`      Handler(s):`);
+          this.addLine(`        "DEDICATED" established:0 refused:0 state:ready`);
+          this.addLine(`           LOCAL SERVER`);
+          this.addLine('The command completed successfully');
+        } else {
+          this.addLine('TNS-12541: TNS:no listener');
+        }
+        break;
+      }
+      case 'RELOAD': {
+        this.addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+        this.addLine('The command completed successfully');
+        break;
+      }
+      default: {
+        if (!subcommand) {
+          this.addLine('The following operations are available');
+          this.addLine('An asterisk (*) denotes a modifier or extended command:');
+          this.addLine('');
+          this.addLine('start             stop              status');
+          this.addLine('services          reload            version');
+          this.addLine('');
+        } else {
+          this.addLine(`LSNRCTL-00112: Unknown command "${subcommand}"`);
+        }
+        break;
+      }
+    }
+    this.notify();
+  }
+
+  // ── tnsping ───────────────────────────────────────────────────────
+
+  private handleTnsping(args: string[]): void {
+    initOracleFilesystem(this.device);
+    const deviceId = this.device.id || 'default';
+    const db = getOracleDatabase(deviceId);
+    const serviceName = args[0] || '';
+
+    this.addLine('');
+    this.addLine('TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production on ' + new Date().toDateString());
+    this.addLine('');
+    this.addLine(`Copyright (c) 1997, 2019, Oracle.  All rights reserved.`);
+    this.addLine('');
+    this.addLine('Used parameter files:');
+    this.addLine('/u01/app/oracle/product/19c/dbhome_1/network/admin/sqlnet.ora');
+    this.addLine('');
+
+    if (!serviceName) {
+      this.addLine('TNS-03505: Failed to resolve name');
+      this.notify();
+      return;
+    }
+
+    // Check if service matches known SID/service names
+    const upper = serviceName.toUpperCase();
+    const status = db.instance.getListenerStatus();
+
+    if (upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase() || upper === 'LOCALHOST') {
+      if (status.running) {
+        this.addLine(`Used TNSNAMES adapter to resolve the alias`);
+        this.addLine(`Attempting to contact (DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`);
+        const latency = Math.floor(Math.random() * 5) + 1;
+        this.addLine(`OK (${latency} msec)`);
+      } else {
+        this.addLine(`Used TNSNAMES adapter to resolve the alias`);
+        this.addLine(`Attempting to contact (DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`);
+        this.addLine('TNS-12541: TNS:no listener');
+        this.addLine(' TNS-12560: TNS:protocol adapter error');
+      }
+    } else {
+      this.addLine(`TNS-03505: Failed to resolve name`);
+    }
+
+    this.notify();
+  }
+
   // ── SQL*Plus sub-shell ──────────────────────────────────────────
 
   private enterSqlPlus(args: string[]): void {
+    initOracleFilesystem(this.device);
     try {
       const deviceId = this.device.id || 'default';
       const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
