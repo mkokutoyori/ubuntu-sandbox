@@ -20,48 +20,7 @@ import { VimEditor } from '@/components/editors/VimEditor';
 import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/terminal/sessions/TerminalSession';
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-
-// ─── ANSI Color Parsing (extracted from old Terminal.tsx) ─────────
-
-interface StyledSpan { text: string; fg?: string; bg?: string; bold?: boolean; }
-
-const ANSI_COLORS: Record<number, string> = {
-  30: '#2e3436', 31: '#cc0000', 32: '#4e9a06', 33: '#c4a000',
-  34: '#3465a4', 35: '#75507b', 36: '#06989a', 37: '#d3d7cf',
-  90: '#555753', 91: '#ef2929', 92: '#8ae234', 93: '#fce94f',
-  94: '#729fcf', 95: '#ad7fa8', 96: '#34e2e2', 97: '#eeeeec',
-};
-const ANSI_BG_COLORS: Record<number, string> = {
-  40: '#2e3436', 41: '#cc0000', 42: '#4e9a06', 43: '#c4a000',
-  44: '#3465a4', 45: '#75507b', 46: '#06989a', 47: '#d3d7cf',
-  100: '#555753', 101: '#ef2929', 102: '#8ae234', 103: '#fce94f',
-  104: '#729fcf', 105: '#ad7fa8', 106: '#34e2e2', 107: '#eeeeec',
-};
-
-function parseAnsi(text: string): StyledSpan[] {
-  const spans: StyledSpan[] = [];
-  // eslint-disable-next-line no-control-regex
-  const regex = /\x1b\[([0-9;]*)m/g;
-  let lastIndex = 0; let bold = false; let fg: string | undefined; let bg: string | undefined;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      const chunk = text.slice(lastIndex, match.index);
-      if (chunk) spans.push({ text: chunk, fg, bg, bold });
-    }
-    lastIndex = regex.lastIndex;
-    const codes = match[1] ? match[1].split(';').map(Number) : [0];
-    for (const code of codes) {
-      if (code === 0) { bold = false; fg = undefined; bg = undefined; }
-      else if (code === 1) bold = true;
-      else if (code === 22) bold = false;
-      else if (ANSI_COLORS[code]) fg = ANSI_COLORS[bold ? code + 60 : code] ?? ANSI_COLORS[code];
-      else if (ANSI_BG_COLORS[code]) bg = ANSI_BG_COLORS[code];
-    }
-  }
-  if (lastIndex < text.length) spans.push({ text: text.slice(lastIndex), fg, bg, bold });
-  return spans;
-}
+import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 
 // ─── Hook: subscribe to a session's state changes ─────────────────
 
@@ -564,15 +523,15 @@ const LinuxLineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme }> = 
     );
   }
 
-  const spans = parseAnsi(text);
+  const segments = parseAnsiToSegments(text);
   return (
     <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit' }}>
-      {spans.map((span, i) => (
+      {segments.map((seg, i) => (
         <span key={i} style={{
-          color: span.fg ?? '#d3d7cf',
-          backgroundColor: span.bg ?? undefined,
-          fontWeight: span.bold ? 'bold' : undefined,
-        }}>{span.text}</span>
+          color: seg.style?.color ?? '#d3d7cf',
+          backgroundColor: seg.style?.backgroundColor ?? undefined,
+          fontWeight: seg.style?.bold ? 'bold' : undefined,
+        }}>{seg.text}</span>
       ))}
     </pre>
   );
