@@ -15,10 +15,23 @@ import type {
   Statement, ConnectByClause, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement,
   CreateTablespaceStatement, DropTablespaceStatement,
+  MergeStatement, Expression,
 } from '../engine/parser/ASTNode';
 import type { SourcePosition } from '../engine/lexer/Token';
 
 export class OracleParser extends BaseParser {
+
+  // ── PRIOR as unary operator ──────────────────────────────────────
+
+  protected override parseUnary(): Expression {
+    if (this.checkKeyword('PRIOR')) {
+      const pos = this.current().position;
+      this.advance();
+      const operand = this.parseUnary();
+      return { type: 'UnaryExpr', position: pos, operator: 'PRIOR', operand };
+    }
+    return super.parseUnary();
+  }
 
   // ── CONNECT BY / START WITH ───────────────────────────────────────
 
@@ -59,8 +72,117 @@ export class OracleParser extends BaseParser {
     switch (token.value) {
       case 'STARTUP': return this.parseStartup();
       case 'SHUTDOWN': return this.parseShutdown();
+      case 'MERGE': return this.parseMerge();
     }
     return null;
+  }
+
+  // ── MERGE ────────────────────────────────────────────────────────
+
+  private parseMerge(): MergeStatement {
+    const pos = this.current().position;
+    this.expectKeyword('MERGE');
+    this.expectKeyword('INTO');
+
+    // Target table
+    const targetSchema = this.parseSchemaPrefix();
+    const targetName = this.expectIdentifier();
+    const targetAlias = this.parseOptionalAlias();
+    const target = {
+      type: 'TableRef' as const, position: pos,
+      schema: targetSchema, name: targetName, alias: targetAlias,
+    };
+
+    this.expectKeyword('USING');
+    const sourceSchema = this.parseSchemaPrefix();
+    const sourceName = this.expectIdentifier();
+    const sourceAlias = this.parseOptionalAlias();
+    const source = {
+      type: 'TableRef' as const, position: pos,
+      schema: sourceSchema, name: sourceName, alias: sourceAlias,
+    };
+
+    this.expectKeyword('ON');
+    this.expect(TokenType.LPAREN);
+    const on = this.parseExpression();
+    this.expect(TokenType.RPAREN);
+
+    let whenMatched: MergeStatement['whenMatched'];
+    let whenNotMatched: MergeStatement['whenNotMatched'];
+
+    // WHEN MATCHED / WHEN NOT MATCHED (in any order)
+    for (let i = 0; i < 2; i++) {
+      if (!this.checkKeyword('WHEN')) break;
+      this.advance(); // WHEN
+
+      if (this.matchKeyword('MATCHED')) {
+        this.expectKeyword('THEN');
+        this.expectKeyword('UPDATE');
+        this.expectKeyword('SET');
+
+        const assignments: import('../engine/parser/ASTNode').Assignment[] = [];
+        do {
+          // Parse qualified column: t.col = s.col or col = value
+          let colName: string;
+          const id1 = this.expectIdentifier();
+          if (this.match(TokenType.DOT)) {
+            colName = this.expectIdentifier();
+          } else {
+            colName = id1;
+          }
+          this.expect(TokenType.COMPARISON_OP, '=');
+          const value = this.parseExpression();
+          assignments.push({ type: 'Assignment', position: pos, column: colName, value });
+        } while (this.match(TokenType.COMMA));
+
+        whenMatched = { assignments };
+      } else if (this.matchKeyword('NOT')) {
+        this.expectKeyword('MATCHED');
+        this.expectKeyword('THEN');
+        this.expectKeyword('INSERT');
+
+        this.expect(TokenType.LPAREN);
+        const columns: string[] = [];
+        do { columns.push(this.expectIdentifier()); } while (this.match(TokenType.COMMA));
+        this.expect(TokenType.RPAREN);
+
+        this.expectKeyword('VALUES');
+        this.expect(TokenType.LPAREN);
+        const values: Expression[] = [];
+        do { values.push(this.parseExpression()); } while (this.match(TokenType.COMMA));
+        this.expect(TokenType.RPAREN);
+
+        whenNotMatched = { columns, values };
+      }
+    }
+
+    return { type: 'MergeStatement', position: pos, target, source, on, whenMatched, whenNotMatched };
+  }
+
+  private parseSchemaPrefix(): string | undefined {
+    // Look ahead for schema.name pattern
+    if (this.check(TokenType.IDENTIFIER) && this.peekNext()?.type === TokenType.DOT) {
+      const schema = this.advance().value;
+      this.advance(); // consume .
+      return schema;
+    }
+    return undefined;
+  }
+
+  private parseOptionalAlias(): string | undefined {
+    // Check for alias (optional AS keyword)
+    if (this.checkKeyword('ON') || this.checkKeyword('USING') || this.checkKeyword('WHEN') ||
+        this.check(TokenType.SEMICOLON) || this.check(TokenType.EOF) ||
+        this.check(TokenType.LPAREN)) {
+      return undefined;
+    }
+    if (this.matchKeyword('AS')) {
+      return this.expectIdentifier();
+    }
+    if (this.check(TokenType.IDENTIFIER)) {
+      return this.advance().value;
+    }
+    return undefined;
   }
 
   protected override parseDialectCreate(pos: SourcePosition, _orReplace: boolean): Statement | null {
