@@ -1,10 +1,16 @@
 /**
  * HuaweiTerminalSession — Huawei VRP terminal model.
+ *
+ * Defines which Huawei VRP commands require interactive prompts
+ * (save configuration, reset saved-configuration, reboot, etc.)
+ * via buildInteractiveFlow() → InteractiveFlowEngine.
  */
 
 import { Equipment } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType } from './TerminalSession';
+import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
+import type { InteractiveStep } from '@/terminal/core/types';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -59,5 +65,29 @@ export class HuaweiTerminalSession extends CLITerminalSession {
       `Info: ${hostname} system is ready.`,
       '',
     ];
+  }
+
+  /**
+   * Huawei VRP interactive commands:
+   * - save → asks Are you sure to continue? [Y/N]
+   * - reset saved-configuration → warns and asks [Y/N]
+   * - reboot → confirms reboot [Y/N]
+   */
+  protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
+    const lower = command.toLowerCase().trim();
+
+    if (lower === 'save') {
+      return HuaweiFlowBuilder.saveConfiguration();
+    }
+
+    if (lower === 'reset saved-configuration') {
+      return HuaweiFlowBuilder.resetSavedConfiguration();
+    }
+
+    if (lower === 'reboot') {
+      return HuaweiFlowBuilder.rebootConfirmation();
+    }
+
+    return null;
   }
 }

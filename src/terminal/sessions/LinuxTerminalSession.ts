@@ -16,29 +16,10 @@ import {
 } from './TerminalSession';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { createSQLPlusSession, getOracleDatabase, initOracleFilesystem } from '@/terminal/commands/database';
-
-// ─── Interactive prompt types ─────────────────────────────────────
-
-type InteractiveStep =
-  | { type: 'password'; prompt: string }
-  | { type: 'output'; text: string }
-  | { type: 'execute'; command: string }
-  | { type: 'set-password'; username: string }
-  | { type: 'adduser-info'; command: string }
-  | { type: 'input'; prompt: string; field: string }
-  | { type: 'set-gecos'; username: string }
-  | { type: 'confirm'; prompt: string };
-
-interface InteractiveState {
-  steps: InteractiveStep[];
-  stepIndex: number;
-  originalCommand: string;
-  collectedPassword?: string;
-  targetUser?: string;
-  attemptsLeft: number;
-  currentPromptText: string;
-  gecosFields?: { fullName: string; room: string; workPhone: string; homePhone: string; other: string };
-}
+import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import { AnsiOutputFormatter } from '@/terminal/core/OutputFormatter';
+import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import type { FlowContext, TerminalResponse, InteractiveStep } from '@/terminal/core/types';
 
 // ─── Theme ────────────────────────────────────────────────────────
 
@@ -59,9 +40,9 @@ const LINUX_THEME: TerminalTheme = {
 export class LinuxTerminalSession extends TerminalSession {
   currentPath: string;
   currentUser: string;
-  private interactive: InteractiveState | null = null;
-  private passwordBuf: string = '';
-  private inputBuf: string = '';
+  /** The new interactive flow engine — replaces the old InteractiveState */
+  private flowEngine: InteractiveFlowEngine | null = null;
+  private flowFormatter = new AnsiOutputFormatter();
   /** Tab suggestions currently shown (null = hidden) */
   tabSuggestions: string[] | null = null;
   /** Active SQL*Plus sub-shell session (null when not in sqlplus mode) */
@@ -114,15 +95,13 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Input mode ──────────────────────────────────────────────────
 
-  get currentInputMode(): InputMode {
+  override get currentInputMode(): InputMode {
     if (this.sqlPlusSession) {
       return { type: 'interactive-text', promptText: this.sqlPlusPrompt };
     }
-    if (this.interactive) {
-      const step = this.interactive.steps[this.interactive.stepIndex];
-      if (!step) return { type: 'normal' };
-      if (step.type === 'password') return { type: 'password', promptText: step.prompt };
-      if (step.type === 'input' || step.type === 'confirm') return { type: 'interactive-text', promptText: step.prompt };
+    // Flow engine active — derive InputMode from the last response directive
+    if (this.flowEngine && !this.flowEngine.isComplete) {
+      return this.inputMode; // already set by advanceFlow()
     }
     return this.inputMode;
   }
@@ -137,11 +116,10 @@ export class LinuxTerminalSession extends TerminalSession {
       return this.handleSqlPlusKey(e);
     }
 
-    // Password mode
-    if (this.interactive) {
-      const step = this.interactive.steps[this.interactive.stepIndex];
-      if (step?.type === 'password') return this.handlePasswordKey(e);
-      if (step?.type === 'input' || step?.type === 'confirm') return this.handleInteractiveTextKey(e);
+    // Flow engine active — route based on current input mode
+    if (this.flowEngine && !this.flowEngine.isComplete) {
+      if (this.inputMode.type === 'password') return this.handlePasswordKey(e);
+      if (this.inputMode.type === 'interactive-text') return this.handleInteractiveTextKey(e);
     }
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
@@ -180,14 +158,14 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private handlePasswordKey(e: KeyEvent): boolean {
     if (e.key === 'Enter') {
-      const pw = this.passwordBuf;
-      this.passwordBuf = '';
-      this.handlePasswordSubmit(pw);
+      const pw = this._passwordBuf;
+      this._passwordBuf = '';
+      this.advanceFlow(pw);
       return true;
     }
     if (e.key === 'c' && e.ctrlKey) {
-      this.interactive = null;
-      this.passwordBuf = '';
+      this.flowEngine = null;
+      this._passwordBuf = '';
       this.addLine('^C');
       this.inputMode = { type: 'normal' };
       this.notify();
@@ -197,39 +175,24 @@ export class LinuxTerminalSession extends TerminalSession {
     return false;
   }
 
-  /** Called by the view's hidden password <input> onChange */
-  setPasswordBuf(value: string): void {
-    this.passwordBuf = value;
-    this.notify();
-  }
-
   // ── Interactive text mode keys ──────────────────────────────────
 
   private handleInteractiveTextKey(e: KeyEvent): boolean {
     if (e.key === 'Enter') {
-      const val = this.inputBuf;
-      this.inputBuf = '';
-      this.handleInputSubmit(val);
+      const val = this._inputBuf;
+      this._inputBuf = '';
+      this.advanceFlow(val);
       return true;
     }
     if (e.key === 'c' && e.ctrlKey) {
-      this.interactive = null;
-      this.inputBuf = '';
+      this.flowEngine = null;
+      this._inputBuf = '';
       this.inputMode = { type: 'normal' };
       this.addLine('^C');
       return true;
     }
     return false;
   }
-
-  /** Called by the view's interactive text <input> onChange */
-  setInputBuf(value: string): void {
-    this.inputBuf = value;
-    this.notify();
-  }
-
-  getInputBuf(): string { return this.inputBuf; }
-  getPasswordBuf(): string { return this.passwordBuf; }
 
   // ── Command execution ───────────────────────────────────────────
 
@@ -297,11 +260,7 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Check if this command needs interactive prompts
     // (handles sudo password for `sudo sqlplus`, sudo passwd, su, etc.)
-    const interactiveState = this.buildInteractiveSteps(trimmed);
-    if (interactiveState) {
-      this.interactive = interactiveState;
-      this.passwordBuf = '';
-      this.processInteractiveSteps(interactiveState);
+    if (this.startInteractiveFlow(trimmed)) {
       return;
     }
 
@@ -414,427 +373,134 @@ export class LinuxTerminalSession extends TerminalSession {
   private _onRequestClose?: () => void;
   onRequestClose(cb: () => void): void { this._onRequestClose = cb; }
 
-  // ── Interactive prompt builder ──────────────────────────────────
+  // ── Interactive flow (new engine-based architecture) ──────────────
 
-  private buildInteractiveSteps(command: string): InteractiveState | null {
-    const trimmed = command.trim();
-    const parts = trimmed.split(/\s+/);
+  /**
+   * Check if a command needs interactive prompts and start the flow if so.
+   * Returns true if a flow was started, false otherwise.
+   */
+  private startInteractiveFlow(command: string): boolean {
     const currentUser = this.device.getCurrentUser();
     const currentUid = this.device.getCurrentUid();
-    const isRoot = currentUid === 0;
 
-    // BUG FIX: Check if user can use sudo before proceeding
-    if (parts[0] === 'sudo' && !isRoot) {
-      if (!this.device.canSudo()) {
-        return null; // Will be handled by executeOnDevice which returns the error
+    // Check for sudo sqlplus — special case: enter SQL*Plus sub-shell after sudo auth
+    const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
+    const cmdParts = noSudo.split(/\s+/);
+    if (cmdParts[0] === 'sqlplus' && command.startsWith('sudo ')) {
+      // Need sudo auth first, then enter sqlplus
+      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      if (steps) {
+        // Replace the generic execute step with sqlplus entry
+        const sqlplusArgs = cmdParts.slice(1);
+        const patchedSteps: InteractiveStep[] = steps.map(step => {
+          if (step.type === 'execute' && step.action) {
+            return {
+              ...step,
+              action: async (ctx: FlowContext) => {
+                // After sudo auth, enter sqlplus instead of running the command
+                ctx.metadata.set('enter_sqlplus', JSON.stringify(sqlplusArgs));
+              },
+            };
+          }
+          return step;
+        });
+        this.createAndAdvanceFlow(patchedSteps, command, currentUser, currentUid);
+        return true;
       }
-
-      const subParts = parts.slice(1);
-      const subCmd = subParts[0];
-
-      // sudo with no sub-command or sudo -l → no interactive steps, let executor handle
-      if (!subCmd || subCmd === '-l') {
-        return null;
-      }
-
-      // Handle sudo passwd with flags (-l, -u, -S) — no interactive password needed for these
-      if (subCmd === 'passwd' && subParts.length >= 2 && subParts[1].startsWith('-')) {
-        return {
-          steps: [
-            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
-            { type: 'execute', command: trimmed },
-          ],
-          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-          currentPromptText: `[sudo] password for ${currentUser}:`,
-        };
-      }
-
-      if (subCmd === 'passwd' && subParts.length >= 2 && !subParts[1].startsWith('-')) {
-        const targetUser = subParts[subParts.length - 1];
-        return {
-          steps: [
-            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
-            { type: 'password', prompt: 'New password:' },
-            { type: 'password', prompt: 'Retype new password:' },
-            { type: 'set-password', username: targetUser },
-            { type: 'output', text: 'passwd: password updated successfully' },
-          ],
-          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-          currentPromptText: `[sudo] password for ${currentUser}:`,
-        };
-      }
-
-      if (subCmd === 'adduser' && subParts.length >= 2) {
-        // BUG FIX: Skip 'adduser' itself and option values when finding the target username
-        const targetUser = subParts.slice(1).filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
-        const hasDisabledPassword = subParts.includes('--disabled-password') || subParts.includes('--disabled-login');
-        const hasGecos = subParts.indexOf('--gecos') >= 0;
-
-        if (hasDisabledPassword && hasGecos) {
-          return {
-            steps: [
-              { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
-              { type: 'adduser-info', command: trimmed },
-            ],
-            stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-            currentPromptText: `[sudo] password for ${currentUser}:`,
-            targetUser,
-          };
-        }
-
-        const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
-          { type: 'password', prompt: 'New password:' },
-          { type: 'password', prompt: 'Retype new password:' },
-          { type: 'set-password', username: targetUser },
-          { type: 'output', text: 'passwd: password updated successfully' },
-        ];
-        const chfnSteps: InteractiveStep[] = hasGecos ? [] : [
-          { type: 'output', text: `Changing the user information for ${targetUser}` },
-          { type: 'output', text: 'Enter the new value, or press ENTER for the default' },
-          { type: 'input', prompt: '\tFull Name []: ', field: 'fullName' },
-          { type: 'input', prompt: '\tRoom Number []: ', field: 'room' },
-          { type: 'input', prompt: '\tWork Phone []: ', field: 'workPhone' },
-          { type: 'input', prompt: '\tHome Phone []: ', field: 'homePhone' },
-          { type: 'input', prompt: '\tOther []: ', field: 'other' },
-          { type: 'confirm', prompt: 'Is the information correct? [Y/n] ' },
-          { type: 'set-gecos', username: targetUser },
-        ];
-
-        return {
-          steps: [
-            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
-            { type: 'adduser-info', command: trimmed },
-            ...passwordSteps,
-            ...chfnSteps,
-          ],
-          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-          currentPromptText: `[sudo] password for ${currentUser}:`,
-          targetUser,
-          gecosFields: { fullName: '', room: '', workPhone: '', homePhone: '', other: '' },
-        };
-      }
-
-      if (subCmd === 'su') {
-        return {
-          steps: [
-            { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
-            { type: 'execute', command: trimmed },
-          ],
-          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-          currentPromptText: `[sudo] password for ${currentUser}:`,
-        };
-      }
-
-      return {
-        steps: [
-          { type: 'password', prompt: `[sudo] password for ${currentUser}:` },
-          { type: 'execute', command: trimmed },
-        ],
-        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-        currentPromptText: `[sudo] password for ${currentUser}:`,
-      };
     }
 
-    // BUG FIX: su should allow 3 password attempts (like real Linux)
-    if (parts[0] === 'su' && !isRoot) {
-      let targetUser = 'root';
-      for (const p of parts.slice(1)) {
-        if (p !== '-' && p !== '-l' && p !== '--login' && !p.startsWith('-')) targetUser = p;
-      }
-      return {
-        steps: [
-          { type: 'password', prompt: 'Password:' },
-          { type: 'execute', command: trimmed },
-        ],
-        stepIndex: 0, originalCommand: trimmed, targetUser, attemptsLeft: 3,
-        currentPromptText: 'Password:',
-      };
-    }
+    const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+    if (!steps) return false;
 
-    // passwd (no args) — change own password
-    if (parts[0] === 'passwd' && parts.length === 1) {
-      if (isRoot) {
-        // BUG FIX: Root can change own password without entering current password
-        return {
-          steps: [
-            { type: 'password', prompt: 'New password:' },
-            { type: 'password', prompt: 'Retype new password:' },
-            { type: 'set-password', username: currentUser },
-            { type: 'output', text: 'passwd: password updated successfully' },
-          ],
-          stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-          currentPromptText: '',
-        };
-      }
-      return {
-        steps: [
-          { type: 'output', text: `Changing password for ${currentUser}.` },
-          { type: 'password', prompt: 'Current password:' },
-          { type: 'password', prompt: 'New password:' },
-          { type: 'password', prompt: 'Retype new password:' },
-          { type: 'set-password', username: currentUser },
-          { type: 'output', text: 'passwd: password updated successfully' },
-        ],
-        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-        currentPromptText: '',
-      };
-    }
-
-    // passwd <username> as root — change another user's password without current password
-    if (parts[0] === 'passwd' && parts.length >= 2 && !parts[1].startsWith('-') && isRoot) {
-      const targetUser = parts[parts.length - 1];
-      return {
-        steps: [
-          { type: 'password', prompt: 'New password:' },
-          { type: 'password', prompt: 'Retype new password:' },
-          { type: 'set-password', username: targetUser },
-          { type: 'output', text: 'passwd: password updated successfully' },
-        ],
-        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-        currentPromptText: '',
-      };
-    }
-
-    // adduser <username> as root (without sudo) — needs password + GECOS prompts
-    if (parts[0] === 'adduser' && parts.length >= 2 && isRoot) {
-      const targetUser = parts.slice(1).filter(a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login')[0];
-      const hasDisabledPassword = parts.includes('--disabled-password') || parts.includes('--disabled-login');
-      const hasGecos = parts.indexOf('--gecos') >= 0;
-
-      if (hasDisabledPassword && hasGecos) {
-        // No interactive steps needed — just execute
-        return null;
-      }
-
-      const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
-        { type: 'password', prompt: 'New password:' },
-        { type: 'password', prompt: 'Retype new password:' },
-        { type: 'set-password', username: targetUser },
-        { type: 'output', text: 'passwd: password updated successfully' },
-      ];
-      const chfnSteps: InteractiveStep[] = hasGecos ? [] : [
-        { type: 'output', text: `Changing the user information for ${targetUser}` },
-        { type: 'output', text: 'Enter the new value, or press ENTER for the default' },
-        { type: 'input', prompt: '\tFull Name []: ', field: 'fullName' },
-        { type: 'input', prompt: '\tRoom Number []: ', field: 'room' },
-        { type: 'input', prompt: '\tWork Phone []: ', field: 'workPhone' },
-        { type: 'input', prompt: '\tHome Phone []: ', field: 'homePhone' },
-        { type: 'input', prompt: '\tOther []: ', field: 'other' },
-        { type: 'confirm', prompt: 'Is the information correct? [Y/n] ' },
-        { type: 'set-gecos', username: targetUser },
-      ];
-
-      return {
-        steps: [
-          { type: 'adduser-info', command: trimmed },
-          ...passwordSteps,
-          ...chfnSteps,
-        ],
-        stepIndex: 0, originalCommand: trimmed, attemptsLeft: 3,
-        currentPromptText: '',
-        targetUser,
-        gecosFields: { fullName: '', room: '', workPhone: '', homePhone: '', other: '' },
-      };
-    }
-
-    return null;
+    this.createAndAdvanceFlow(steps, command, currentUser, currentUid);
+    return true;
   }
 
-  // ── Interactive step processing ─────────────────────────────────
+  /** Create a FlowContext, start the InteractiveFlowEngine, and advance. */
+  private createAndAdvanceFlow(
+    steps: InteractiveStep[],
+    command: string,
+    currentUser: string,
+    currentUid: number,
+  ): void {
+    const ctx: FlowContext = {
+      values: new Map(),
+      device: this.device,
+      currentUser,
+      currentUid,
+      metadata: new Map([['original_command', command]]),
+      executeCommand: async (cmd: string) => this.executeOnDevice(cmd),
+      onOutput: (text: string, lineType?: string) => {
+        this.addLine(text, lineType || 'normal');
+      },
+      onClearScreen: () => this.clear(),
+    };
 
-  private async processInteractiveSteps(state: InteractiveState): Promise<void> {
-    let idx = state.stepIndex;
-    while (idx < state.steps.length) {
-      const step = state.steps[idx];
+    this.flowEngine = new InteractiveFlowEngine(
+      steps,
+      ctx,
+      this.flowFormatter,
+      this.getPrompt(),
+    );
+    this._passwordBuf = '';
+    this._inputBuf = '';
 
-      if (step.type === 'password') {
-        this.interactive = { ...state, stepIndex: idx, currentPromptText: step.prompt };
-        this.inputMode = { type: 'password', promptText: step.prompt };
-        this.addLine(step.prompt);
+    this.advanceFlow();
+  }
+
+  /**
+   * Advance the flow engine with optional user input.
+   * Maps the TerminalResponse to the session's existing API.
+   */
+  private async advanceFlow(userInput?: string): Promise<void> {
+    if (!this.flowEngine) return;
+
+    const response = await this.flowEngine.advance(userInput);
+
+    // Map response lines to addLine() calls (for lines produced by the engine itself,
+    // e.g. validation errors, output steps). Note: execute steps use ctx.onOutput()
+    // to display results directly, so they won't appear in response.lines.
+    for (const line of response.lines) {
+      const text = line.segments.map(s => s.text).join('');
+      this.addLine(text, line.lineType || 'normal');
+    }
+
+    if (this.flowEngine.isComplete) {
+      // Check for special post-flow actions
+      const ctx = this.flowEngine.getContext();
+      const sqlplusArgs = ctx.metadata.get('enter_sqlplus') as string | undefined;
+      if (sqlplusArgs) {
+        this.flowEngine = null;
+        this._passwordBuf = '';
+        this._inputBuf = '';
+        this.inputMode = { type: 'normal' };
+        this.enterSqlPlus(JSON.parse(sqlplusArgs));
         return;
       }
-      if (step.type === 'output') { this.addLine(step.text); idx++; continue; }
-      if (step.type === 'execute') {
-        // Check if the command is `sudo sqlplus ...` — enter SQL*Plus sub-shell after sudo auth
-        const cmdForExec = step.command;
-        const noSudo = cmdForExec.startsWith('sudo ') ? cmdForExec.slice(5).trim() : cmdForExec;
-        const execParts = noSudo.split(/\s+/);
-        if (execParts[0] === 'sqlplus') {
-          this.interactive = null;
-          this.passwordBuf = '';
-          this.inputBuf = '';
+
+      this.flowEngine = null;
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.syncDeviceState();
+      this.notify();
+    } else {
+      // Map InputDirective to InputMode for the view
+      const directive = response.inputDirective;
+      switch (directive.type) {
+        case 'password':
+          this.inputMode = { type: 'password', promptText: directive.prompt };
+          break;
+        case 'text-prompt':
+          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
+          break;
+        case 'confirmation':
+          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
+          break;
+        default:
           this.inputMode = { type: 'normal' };
-          this.enterSqlPlus(execParts.slice(1));
-          return;
-        }
-
-        try {
-          const result = await this.executeOnDevice(step.command);
-          if (result) {
-            if (result.includes('\x1b[2J') || result.includes('\x1b[H')) this.clear();
-            else this.addLine(result);
-          }
-        } catch (err) {
-          if (err instanceof Error && err.name === 'DeviceOfflineError') {
-            this.addLine('Connection lost: device is powered off', 'error');
-            this.interactive = null; this.inputMode = { type: 'normal' }; this.notify(); return;
-          }
-          this.addLine(`Error: ${err}`, 'error');
-        }
-        this.syncDeviceState();
-        idx++; continue;
       }
-      if (step.type === 'set-password') {
-        if (state.collectedPassword) this.device.setUserPassword(step.username, state.collectedPassword);
-        idx++; continue;
-      }
-      if (step.type === 'adduser-info') {
-        try {
-          const result = await this.executeOnDevice(step.command);
-          if (result) this.addLine(result);
-        } catch (err) {
-          if (err instanceof Error && err.name === 'DeviceOfflineError') {
-            this.addLine('Connection lost: device is powered off', 'error');
-            this.interactive = null; this.inputMode = { type: 'normal' }; this.notify(); return;
-          }
-          this.addLine(`Error: ${err}`, 'error');
-        }
-        idx++; continue;
-      }
-      if (step.type === 'input' || step.type === 'confirm') {
-        this.interactive = { ...state, stepIndex: idx, currentPromptText: step.prompt };
-        this.inputMode = { type: 'interactive-text', promptText: step.prompt };
-        // Prompt text is displayed by the interactive-text input's prefix in the UI
-        return;
-      }
-      if (step.type === 'set-gecos') {
-        if (state.gecosFields && 'setUserGecos' in this.device) {
-          const g = state.gecosFields;
-          (this.device as any).setUserGecos(step.username, g.fullName, g.room, g.workPhone, g.homePhone, g.other);
-        }
-        idx++; continue;
-      }
-      idx++;
-    }
-
-    // All steps done
-    this.syncDeviceState();
-    this.interactive = null;
-    this.passwordBuf = '';
-    this.inputBuf = '';
-    this.inputMode = { type: 'normal' };
-    this.notify();
-  }
-
-  private handlePasswordSubmit(password: string): void {
-    if (!this.interactive) return;
-    const step = this.interactive.steps[this.interactive.stepIndex] as { type: 'password'; prompt: string };
-
-    const isSudoPrompt = step.prompt.startsWith('[sudo]');
-    const isSuPrompt = step.prompt === 'Password:' && this.interactive.originalCommand.startsWith('su');
-    const isCurrentPassword = step.prompt === 'Current password:';
-    const isNewPassword = step.prompt === 'New password:';
-    const isRetypePassword = step.prompt === 'Retype new password:';
-
-    if (isSudoPrompt) {
-      const currentUser = this.device.getCurrentUser();
-      if (!this.device.checkPassword(currentUser, password)) {
-        const left = this.interactive.attemptsLeft - 1;
-        if (left <= 0) {
-          this.addLine('sudo: 3 incorrect password attempts');
-          this.interactive = null; this.passwordBuf = ''; this.inputMode = { type: 'normal' };
-          this.notify(); return;
-        }
-        this.addLine('Sorry, try again.');
-        this.addLine(step.prompt);
-        this.passwordBuf = '';
-        this.interactive = { ...this.interactive, attemptsLeft: left };
-        this.notify(); return;
-      }
-      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
-      return;
-    }
-
-    if (isSuPrompt) {
-      const targetUser = this.interactive.targetUser || 'root';
-      if (!this.device.checkPassword(targetUser, password)) {
-        const left = this.interactive.attemptsLeft - 1;
-        if (left <= 0) {
-          this.addLine('su: Authentication failure');
-          this.interactive = null; this.passwordBuf = ''; this.inputMode = { type: 'normal' };
-          this.notify(); return;
-        }
-        this.addLine('su: Authentication failure');
-        this.addLine('Password:');
-        this.passwordBuf = '';
-        this.interactive = { ...this.interactive, attemptsLeft: left };
-        this.notify(); return;
-      }
-      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
-      return;
-    }
-
-    if (isCurrentPassword) {
-      const currentUser = this.device.getCurrentUser();
-      if (!this.device.checkPassword(currentUser, password)) {
-        this.addLine('passwd: Authentication token manipulation error');
-        this.addLine('passwd: password unchanged');
-        this.interactive = null; this.inputMode = { type: 'normal' };
-        this.notify(); return;
-      }
-      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
-      return;
-    }
-
-    if (isNewPassword) {
-      this.processInteractiveSteps({
-        ...this.interactive, stepIndex: this.interactive.stepIndex + 1,
-        collectedPassword: password,
-      });
-      return;
-    }
-
-    if (isRetypePassword) {
-      if (password !== this.interactive.collectedPassword) {
-        this.addLine('Sorry, passwords do not match.');
-        this.addLine('passwd: Authentication token manipulation error');
-        this.addLine('passwd: password unchanged');
-        this.interactive = null; this.inputMode = { type: 'normal' };
-        this.notify(); return;
-      }
-      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
-      return;
-    }
-  }
-
-  private handleInputSubmit(value: string): void {
-    if (!this.interactive) return;
-    const step = this.interactive.steps[this.interactive.stepIndex];
-
-    if (step.type === 'input') {
-      const field = (step as { field: string }).field;
-      const gecosFields = {
-        ...(this.interactive.gecosFields || { fullName: '', room: '', workPhone: '', homePhone: '', other: '' }),
-      };
-      if (field === 'fullName') gecosFields.fullName = value;
-      else if (field === 'room') gecosFields.room = value;
-      else if (field === 'workPhone') gecosFields.workPhone = value;
-      else if (field === 'homePhone') gecosFields.homePhone = value;
-      else if (field === 'other') gecosFields.other = value;
-
-      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1, gecosFields });
-      return;
-    }
-
-    if (step.type === 'confirm') {
-      const answer = value.trim().toLowerCase();
-      if (answer === 'n') {
-        this.addLine('Aborted.');
-        this.interactive = null; this.inputMode = { type: 'normal' };
-        this.notify(); return;
-      }
-      this.processInteractiveSteps({ ...this.interactive, stepIndex: this.interactive.stepIndex + 1 });
-      return;
+      this.notify();
     }
   }
 
@@ -1009,7 +675,7 @@ export class LinuxTerminalSession extends TerminalSession {
       for (const line of loginOutput) this.addLine(line);
       this.addLine('');
 
-      this.inputBuf = '';
+      this._inputBuf = '';
       this.notify();
     } catch (err) {
       this.addLine(`bash: sqlplus: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -1019,8 +685,8 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private handleSqlPlusKey(e: KeyEvent): boolean {
     if (e.key === 'Enter') {
-      const line = this.inputBuf;
-      this.inputBuf = '';
+      const line = this._inputBuf;
+      this._inputBuf = '';
       // Echo the input with prompt
       this.addLine(`${this.sqlPlusPrompt}${line}`);
       this.processSqlPlusLine(line);
@@ -1029,7 +695,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     if (e.key === 'c' && e.ctrlKey) {
       // Ctrl+C — cancel current input, but stay in sqlplus
-      this.inputBuf = '';
+      this._inputBuf = '';
       this.addLine(`${this.sqlPlusPrompt}^C`);
       this.notify();
       return true;
@@ -1067,7 +733,7 @@ export class LinuxTerminalSession extends TerminalSession {
       this.sqlPlusSession = null;
     }
     this.sqlPlusPrompt = 'SQL> ';
-    this.inputBuf = '';
+    this._inputBuf = '';
     this.inputMode = { type: 'normal' };
     this.notify();
   }
