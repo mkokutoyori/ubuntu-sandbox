@@ -4,6 +4,7 @@
  * Shared features:
  *   - Boot sequence with line-by-line animation
  *   - --More-- / ---- More ---- pager
+ *   - Interactive flows (enable password, reload confirm, save, etc.)
  *   - Inline ? help (intercepted on keypress)
  *   - Tab completion via device.cliTabComplete()
  *   - Ctrl+Z (exit to top-level mode)
@@ -17,8 +18,14 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
 } from './TerminalSession';
+import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import { PlainOutputFormatter } from '@/terminal/core/OutputFormatter';
+import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 
 const PAGE_SIZE = 24;
+
+/** Sentinel value returned by shells to signal the session should close */
+export const CONNECTION_CLOSED = 'Connection closed.';
 
 export abstract class CLITerminalSession extends TerminalSession {
   isBooting: boolean = true;
@@ -27,6 +34,10 @@ export abstract class CLITerminalSession extends TerminalSession {
   // Pager state
   pagerLines: string[] | null = null;
   pagerOffset: number = 0;
+
+  // Interactive flow engine (shared by Cisco/Huawei subclasses)
+  protected flowEngine: InteractiveFlowEngine | null = null;
+  private flowFormatter = new PlainOutputFormatter();
 
   constructor(id: string, device: Equipment) {
     super(id, device);
@@ -52,6 +63,21 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   /** The pager indicator text */
   protected abstract getPagerIndicator(): string;
+
+  /**
+   * Subclasses override to define which commands trigger interactive flows.
+   * Returns InteractiveStep[] if the command needs interaction, null otherwise.
+   */
+  protected abstract buildInteractiveFlow(command: string): InteractiveStep[] | null;
+
+  // ── Input mode ─────────────────────────────────────────────────
+
+  override get currentInputMode(): InputMode {
+    if (this.flowEngine && !this.flowEngine.isComplete) {
+      return this.inputMode; // set by advanceFlow()
+    }
+    return this.inputMode;
+  }
 
   // ── Boot sequence ───────────────────────────────────────────────
 
@@ -99,7 +125,7 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Close callback ─────────────────────────────────────────────
 
-  private _onRequestClose?: () => void;
+  protected _onRequestClose?: () => void;
   onRequestClose(cb: () => void): void { this._onRequestClose = cb; }
 
   // ── Key handling ────────────────────────────────────────────────
@@ -115,6 +141,51 @@ export abstract class CLITerminalSession extends TerminalSession {
       }
       return true; // consume all keys in pager mode
     }
+
+    // Flow engine active — handle password/text input
+    if (this.flowEngine && !this.flowEngine.isComplete) {
+      if (this.inputMode.type === 'password') return this.handleFlowPasswordKey(e);
+      if (this.inputMode.type === 'interactive-text') return this.handleFlowTextKey(e);
+    }
+
+    return false;
+  }
+
+  private handleFlowPasswordKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const pw = this._passwordBuf;
+      this._passwordBuf = '';
+      this.advanceFlow(pw);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.flowEngine = null;
+      this._passwordBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.addLine('^C');
+      this.notify();
+      return true;
+    }
+    // Let the view's hidden password <input> handle the keystroke
+    return false;
+  }
+
+  private handleFlowTextKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const val = this._inputBuf;
+      this._inputBuf = '';
+      this.advanceFlow(val);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.flowEngine = null;
+      this._inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.addLine('^C');
+      this.notify();
+      return true;
+    }
+    // Let the view's interactive text <input> handle the keystroke
     return false;
   }
 
@@ -177,10 +248,17 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.pushHistory(trimmed);
     }
 
+    // Check if this command needs an interactive flow before executing
+    const steps = this.buildInteractiveFlow(trimmed);
+    if (steps) {
+      this.startFlow(steps, trimmed);
+      return;
+    }
+
     try {
       const result = await this.executeOnDevice(trimmed);
 
-      if (result === 'Connection closed.') {
+      if (result === CONNECTION_CLOSED) {
         this._onRequestClose?.();
         return;
       }
@@ -206,6 +284,72 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
 
     this.updatePrompt();
+  }
+
+  // ── Interactive flow engine ─────────────────────────────────────
+
+  private startFlow(steps: InteractiveStep[], command: string): void {
+    const ctx: FlowContext = {
+      values: new Map(),
+      device: this.device,
+      currentUser: '',
+      currentUid: 0,
+      metadata: new Map([['original_command', command]]),
+      executeCommand: async (cmd: string) => this.executeOnDevice(cmd),
+      onOutput: (text: string, lineType?: string) => {
+        this.addLine(text, lineType || 'normal');
+      },
+      onClearScreen: () => this.clear(),
+    };
+
+    this.flowEngine = new InteractiveFlowEngine(
+      steps,
+      ctx,
+      this.flowFormatter,
+      this.prompt,
+    );
+    this._passwordBuf = '';
+    this._inputBuf = '';
+
+    this.advanceFlow();
+  }
+
+  private async advanceFlow(userInput?: string): Promise<void> {
+    if (!this.flowEngine) return;
+
+    const response = await this.flowEngine.advance(userInput);
+
+    // Map response lines to addLine() calls
+    for (const line of response.lines) {
+      const text = line.segments.map(s => s.text).join('');
+      this.addLine(text, line.lineType || 'normal');
+    }
+
+    if (this.flowEngine.isComplete) {
+      this.flowEngine = null;
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.updatePrompt();
+      this.notify();
+    } else {
+      // Map InputDirective to InputMode for the view
+      const directive = response.inputDirective;
+      switch (directive.type) {
+        case 'password':
+          this.inputMode = { type: 'password', promptText: directive.prompt };
+          break;
+        case 'text-prompt':
+          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
+          break;
+        case 'confirmation':
+          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
+          break;
+        default:
+          this.inputMode = { type: 'normal' };
+      }
+      this.notify();
+    }
   }
 
   // ── Tab completion ──────────────────────────────────────────────

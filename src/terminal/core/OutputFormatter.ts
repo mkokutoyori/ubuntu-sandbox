@@ -136,7 +136,7 @@ export class AnsiOutputFormatter implements IOutputFormatter {
 
 // ─── PlainOutputFormatter (Cisco / Huawei) ──────────────────────────
 
-interface PlainFormatterConfig {
+export interface PlainFormatterConfig {
   textColor: string;
   errorColor: string;
   bootColor: string;
@@ -144,8 +144,20 @@ interface PlainFormatterConfig {
   promptColor: string;
 }
 
+const DEFAULT_PLAIN_CONFIG: PlainFormatterConfig = {
+  textColor: '#ffffff',
+  errorColor: '#f87171',
+  bootColor: '#22c55e',
+  pagerColor: '#facc15',
+  promptColor: '#ffffff',
+};
+
 export class PlainOutputFormatter implements IOutputFormatter {
-  constructor(private config: PlainFormatterConfig) {}
+  private config: PlainFormatterConfig;
+
+  constructor(config?: Partial<PlainFormatterConfig>) {
+    this.config = { ...DEFAULT_PLAIN_CONFIG, ...config };
+  }
 
   formatOutput(raw: string, lineType: LineType = 'output'): RichOutputLine[] {
     const color = this.colorForType(lineType);

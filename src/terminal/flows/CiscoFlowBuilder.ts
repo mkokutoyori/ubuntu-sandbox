@@ -3,10 +3,10 @@
  *
  * Cisco IOS interactive scenarios:
  *   - enable (password prompt to enter privileged mode)
- *   - initial setup dialog (Would you like to enter the initial configuration dialog?)
- *   - copy running-config (Destination filename [startup-config]?)
+ *   - copy running-config startup-config (Destination filename [startup-config]?)
  *   - reload (Proceed with reload? [confirm])
- *   - erase startup-config (Confirm erase? [confirm])
+ *   - erase startup-config (Erasing the nvram filesystem... Continue? [confirm])
+ *   - initial setup dialog (Would you like to enter the initial configuration dialog?)
  */
 
 import type { InteractiveStep, FlowContext } from '../core/types';
@@ -36,7 +36,7 @@ export class CiscoFlowBuilder {
     ];
   }
 
-  /** Copy running-config startup-config confirmation */
+  /** Copy running-config startup-config: ask filename, then execute */
   static copyRunningConfig(): InteractiveStep[] {
     return [
       {
@@ -46,13 +46,20 @@ export class CiscoFlowBuilder {
         storeAs: 'destination_filename',
       },
       {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          const exec = ctx.executeCommand ?? (async (cmd: string) => ctx.device.executeCommand(cmd));
+          await exec('write memory');
+        },
+      },
+      {
         type: 'output',
-        outputLines: ['[OK]'],
+        outputLines: ['Building configuration...', '', '[OK]'],
       },
     ];
   }
 
-  /** Reload confirmation */
+  /** Reload: confirm, then execute reload on device */
   static reloadConfirmation(): InteractiveStep[] {
     return [
       {
@@ -61,17 +68,28 @@ export class CiscoFlowBuilder {
         defaultAnswer: 'yes',
         storeAs: 'reload_confirmed',
       },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          const exec = ctx.executeCommand ?? (async (cmd: string) => ctx.device.executeCommand(cmd));
+          await exec('reload');
+        },
+      },
     ];
   }
 
-  /** Erase startup-config confirmation */
+  /** Erase startup-config: confirm, then show result */
   static eraseStartupConfig(): InteractiveStep[] {
     return [
       {
         type: 'confirmation',
-        prompt: '[OK]\nErase of nvram: complete',
+        prompt: 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]',
         defaultAnswer: 'yes',
         storeAs: 'erase_confirmed',
+      },
+      {
+        type: 'output',
+        outputLines: ['[OK]', 'Erase of nvram: complete'],
       },
     ];
   }
@@ -89,11 +107,9 @@ export class CiscoFlowBuilder {
         type: 'branch',
         predicate: (ctx: FlowContext) => {
           const answer = ctx.values.get('wants_setup')?.toLowerCase();
-          // If no, skip to end (index beyond steps length)
           return (answer === 'yes' || answer === 'y') ? 2 : 999;
         },
       },
-      // Future: setup wizard steps would go here
     ];
   }
 }

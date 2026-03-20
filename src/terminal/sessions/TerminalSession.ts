@@ -169,6 +169,10 @@ export abstract class TerminalSession {
   inputMode: InputMode = { type: 'normal' };
   disposed: boolean = false;
 
+  // ── Interactive input buffers (shared by Linux + CLI sessions) ──
+  protected _passwordBuf: string = '';
+  protected _inputBuf: string = '';
+
   /** Maximum number of output lines before oldest lines are trimmed. */
   protected maxScrollback: number = MAX_SCROLLBACK_LINES;
 
@@ -210,6 +214,23 @@ export abstract class TerminalSession {
 
   setInput(value: string): void {
     this.input = sanitiseInput(value);
+    this.notify();
+  }
+
+  // ── Interactive input API (password prompts, GECOS, SQL*Plus, etc.) ──
+
+  /** Current effective input mode. Override in subclasses for flow-aware modes. */
+  get currentInputMode(): InputMode { return this.inputMode; }
+
+  getPasswordBuf(): string { return this._passwordBuf; }
+  setPasswordBuf(value: string): void {
+    this._passwordBuf = value;
+    this.notify();
+  }
+
+  getInputBuf(): string { return this._inputBuf; }
+  setInputBuf(value: string): void {
+    this._inputBuf = value;
     this.notify();
   }
 

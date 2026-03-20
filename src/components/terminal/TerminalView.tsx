@@ -73,19 +73,18 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     }
   });
 
-  // Focus management — use currentInputMode for Linux sessions to stay
-  // in sync with the rendering logic (which also reads currentInputMode).
-  const effectiveMode = session.getSessionType() === 'linux'
-    ? (session as LinuxTerminalSession).currentInputMode
-    : session.inputMode;
+  // Focus management — use currentInputMode (polymorphic) for all session types.
+  // This stays in sync with the rendering logic which also reads currentInputMode.
+  const effectiveMode = session.currentInputMode;
 
   useEffect(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
-    else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
-    else if (effectiveMode.type === 'reverse-search') {
+    if (effectiveMode.type === 'password') {
+      setTimeout(() => hiddenInputRef.current?.focus(), 10);
+    } else if (effectiveMode.type === 'interactive-text') {
+      setTimeout(() => interactiveInputRef.current?.focus(), 10);
+    } else if (effectiveMode.type === 'reverse-search') {
       setTimeout(() => reverseSearchRef.current?.focus(), 30);
-    }
-    else if (effectiveMode.type === 'normal') {
+    } else if (effectiveMode.type === 'normal') {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [effectiveMode.type]);
@@ -114,17 +113,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       pasteFromClipboard().then(text => {
         if (text) {
           // Determine input mode and paste into the correct buffer
-          const currentMode = session.getSessionType() === 'linux'
-            ? (session as LinuxTerminalSession).currentInputMode
-            : session.inputMode;
+          const currentMode = session.currentInputMode;
           if (session.inputMode.type === 'reverse-search') {
             session.updateReverseSearch(session.reverseSearchQuery + text);
           } else if (currentMode.type === 'interactive-text') {
-            const linux = session as LinuxTerminalSession;
-            linux.setInputBuf(linux.getInputBuf() + text);
+            session.setInputBuf(session.getInputBuf() + text);
           } else if (currentMode.type === 'password') {
-            const linux = session as LinuxTerminalSession;
-            linux.setPasswordBuf(linux.getPasswordBuf() + text);
+            session.setPasswordBuf(session.getPasswordBuf() + text);
           } else {
             session.setInput(session.input + text);
           }
@@ -199,9 +194,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // ── Render ──────────────────────────────────────────────────────
 
   const sessionType = session.getSessionType();
-  const inputMode = sessionType === 'linux'
-    ? (session as LinuxTerminalSession).currentInputMode
-    : session.inputMode;
+  const inputMode = session.currentInputMode;
   const isPasswordMode = inputMode.type === 'password';
   const isInteractiveText = inputMode.type === 'interactive-text';
   const isBooting = inputMode.type === 'booting';
@@ -267,14 +260,14 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </pre>
         )}
 
-        {/* Password input (linux) */}
+        {/* Password input (all session types) */}
         {isPasswordMode && (
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             <input
               ref={hiddenInputRef}
               type="password"
-              value={(session as LinuxTerminalSession).getPasswordBuf()}
-              onChange={(e) => (session as LinuxTerminalSession).setPasswordBuf(e.target.value)}
+              value={session.getPasswordBuf()}
+              onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
               className="absolute overflow-hidden"
               style={{
@@ -294,7 +287,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </div>
         )}
 
-        {/* Interactive text input (linux) */}
+        {/* Interactive text input (GECOS, SQL*Plus, Cisco/Huawei confirmations) */}
         {isInteractiveText && (
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             {(inputMode as { promptText: string }).promptText && (
@@ -305,10 +298,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             <input
               ref={interactiveInputRef}
               type="text"
-              value={(session as LinuxTerminalSession).getInputBuf()}
-              onChange={(e) => (session as LinuxTerminalSession).setInputBuf(e.target.value)}
+              value={session.getInputBuf()}
+              onChange={(e) => session.setInputBuf(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent outline-none"
+              className="flex-1 bg-transparent outline-none border-none p-0 m-0"
               style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
               spellCheck={false}
               autoComplete="off"

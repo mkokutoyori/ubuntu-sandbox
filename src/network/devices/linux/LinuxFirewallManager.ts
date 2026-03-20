@@ -445,8 +445,7 @@ export class LinuxFirewallManager {
     this.loggingLevel = 'low';
     this.rateLimitHits.clear();
     this.syncToVfs();
-    return 'Resetting all rules to installed defaults. Proceed with operation (y|n)? y\n' +
-           'Backing up user rules ... done';
+    return 'Resetting all rules to installed defaults. This may disrupt existing ssh connections. Proceed with operation (y|n)? y\nBacking up \'user.rules\' to \'/etc/ufw/user.rules.20260320_000000\'\nBacking up \'before.rules\' to \'/etc/ufw/before.rules.20260320_000000\'\nBacking up \'after.rules\' to \'/etc/ufw/after.rules.20260320_000000\'\nBacking up \'user6.rules\' to \'/etc/ufw/user6.rules.20260320_000000\'\nBacking up \'before6.rules\' to \'/etc/ufw/before6.rules.20260320_000000\'\nBacking up \'after6.rules\' to \'/etc/ufw/after6.rules.20260320_000000\'';
   }
 
   private cmdReload(): string {

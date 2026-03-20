@@ -43,8 +43,6 @@ export class LinuxTerminalSession extends TerminalSession {
   /** The new interactive flow engine — replaces the old InteractiveState */
   private flowEngine: InteractiveFlowEngine | null = null;
   private flowFormatter = new AnsiOutputFormatter();
-  private passwordBuf: string = '';
-  private inputBuf: string = '';
   /** Tab suggestions currently shown (null = hidden) */
   tabSuggestions: string[] | null = null;
   /** Active SQL*Plus sub-shell session (null when not in sqlplus mode) */
@@ -97,7 +95,7 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Input mode ──────────────────────────────────────────────────
 
-  get currentInputMode(): InputMode {
+  override get currentInputMode(): InputMode {
     if (this.sqlPlusSession) {
       return { type: 'interactive-text', promptText: this.sqlPlusPrompt };
     }
@@ -160,14 +158,14 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private handlePasswordKey(e: KeyEvent): boolean {
     if (e.key === 'Enter') {
-      const pw = this.passwordBuf;
-      this.passwordBuf = '';
+      const pw = this._passwordBuf;
+      this._passwordBuf = '';
       this.advanceFlow(pw);
       return true;
     }
     if (e.key === 'c' && e.ctrlKey) {
       this.flowEngine = null;
-      this.passwordBuf = '';
+      this._passwordBuf = '';
       this.addLine('^C');
       this.inputMode = { type: 'normal' };
       this.notify();
@@ -177,39 +175,24 @@ export class LinuxTerminalSession extends TerminalSession {
     return false;
   }
 
-  /** Called by the view's hidden password <input> onChange */
-  setPasswordBuf(value: string): void {
-    this.passwordBuf = value;
-    this.notify();
-  }
-
   // ── Interactive text mode keys ──────────────────────────────────
 
   private handleInteractiveTextKey(e: KeyEvent): boolean {
     if (e.key === 'Enter') {
-      const val = this.inputBuf;
-      this.inputBuf = '';
+      const val = this._inputBuf;
+      this._inputBuf = '';
       this.advanceFlow(val);
       return true;
     }
     if (e.key === 'c' && e.ctrlKey) {
       this.flowEngine = null;
-      this.inputBuf = '';
+      this._inputBuf = '';
       this.inputMode = { type: 'normal' };
       this.addLine('^C');
       return true;
     }
     return false;
   }
-
-  /** Called by the view's interactive text <input> onChange */
-  setInputBuf(value: string): void {
-    this.inputBuf = value;
-    this.notify();
-  }
-
-  getInputBuf(): string { return this.inputBuf; }
-  getPasswordBuf(): string { return this.passwordBuf; }
 
   // ── Command execution ───────────────────────────────────────────
 
@@ -459,8 +442,8 @@ export class LinuxTerminalSession extends TerminalSession {
       this.flowFormatter,
       this.getPrompt(),
     );
-    this.passwordBuf = '';
-    this.inputBuf = '';
+    this._passwordBuf = '';
+    this._inputBuf = '';
 
     this.advanceFlow();
   }
@@ -488,16 +471,16 @@ export class LinuxTerminalSession extends TerminalSession {
       const sqlplusArgs = ctx.metadata.get('enter_sqlplus') as string | undefined;
       if (sqlplusArgs) {
         this.flowEngine = null;
-        this.passwordBuf = '';
-        this.inputBuf = '';
+        this._passwordBuf = '';
+        this._inputBuf = '';
         this.inputMode = { type: 'normal' };
         this.enterSqlPlus(JSON.parse(sqlplusArgs));
         return;
       }
 
       this.flowEngine = null;
-      this.passwordBuf = '';
-      this.inputBuf = '';
+      this._passwordBuf = '';
+      this._inputBuf = '';
       this.inputMode = { type: 'normal' };
       this.syncDeviceState();
       this.notify();
@@ -692,7 +675,7 @@ export class LinuxTerminalSession extends TerminalSession {
       for (const line of loginOutput) this.addLine(line);
       this.addLine('');
 
-      this.inputBuf = '';
+      this._inputBuf = '';
       this.notify();
     } catch (err) {
       this.addLine(`bash: sqlplus: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -702,8 +685,8 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private handleSqlPlusKey(e: KeyEvent): boolean {
     if (e.key === 'Enter') {
-      const line = this.inputBuf;
-      this.inputBuf = '';
+      const line = this._inputBuf;
+      this._inputBuf = '';
       // Echo the input with prompt
       this.addLine(`${this.sqlPlusPrompt}${line}`);
       this.processSqlPlusLine(line);
@@ -712,7 +695,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     if (e.key === 'c' && e.ctrlKey) {
       // Ctrl+C — cancel current input, but stay in sqlplus
-      this.inputBuf = '';
+      this._inputBuf = '';
       this.addLine(`${this.sqlPlusPrompt}^C`);
       this.notify();
       return true;
@@ -750,7 +733,7 @@ export class LinuxTerminalSession extends TerminalSession {
       this.sqlPlusSession = null;
     }
     this.sqlPlusPrompt = 'SQL> ';
-    this.inputBuf = '';
+    this._inputBuf = '';
     this.inputMode = { type: 'normal' };
     this.notify();
   }
