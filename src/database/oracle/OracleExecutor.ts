@@ -13,6 +13,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
+  MergeStatement, WithClause, ConnectByClause,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
 } from '../engine/parser/ASTNode';
@@ -68,6 +69,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterDatabaseStatement': return this.executeAlterDatabase(statement);
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
+      case 'MergeStatement': return this.executeMerge(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -76,6 +78,11 @@ export class OracleExecutor extends BaseExecutor {
   // ── SELECT ────────────────────────────────────────────────────────
 
   private executeSelect(stmt: SelectStatement): ResultSet {
+    // Handle WITH (CTE) clause — materialize CTEs as temporary tables, execute inner SELECT, then clean up
+    if (stmt.withClause) {
+      return this.executeWithCTE(stmt);
+    }
+
     // Handle set operations (UNION, INTERSECT, MINUS)
     if (stmt.setOp) {
       return this.executeSetOperation(stmt);
@@ -100,6 +107,76 @@ export class OracleExecutor extends BaseExecutor {
 
     // Regular table query
     return this.executeSelectFromTable(stmt);
+  }
+
+  // ── WITH / CTE ──────────────────────────────────────────────────
+
+  private executeWithCTE(stmt: SelectStatement): ResultSet {
+    const cteSchema = '__CTE__';
+    const cteNames: string[] = [];
+
+    try {
+      // Materialize each CTE as a temporary table
+      for (const cte of stmt.withClause!.ctes) {
+        const cteName = cte.name.toUpperCase();
+        cteNames.push(cteName);
+
+        // Execute the CTE query
+        const cteResult = this.executeSelect(cte.query);
+
+        // Create a temporary table in a special CTE schema
+        const columns: StorageColMeta[] = cteResult.columns.map((col, i) => ({
+          name: cte.columns ? cte.columns[i]?.toUpperCase() || col.name : col.name,
+          dataType: col.dataType,
+          ordinalPosition: i,
+        }));
+
+        this.storage.createTable({
+          schema: cteSchema, name: cteName, columns, constraints: [],
+          tablespace: 'SYSTEM', temporary: true, rowCount: 0,
+        });
+        for (const row of cteResult.rows) {
+          this.storage.insertRow(cteSchema, cteName, row as StorageRow);
+        }
+      }
+
+      // Execute the main SELECT with CTEs available. Temporarily make CTE tables
+      // visible by patching FROM references to use the CTE schema.
+      const patchedStmt = this.patchCTERefs(stmt, cteNames, cteSchema);
+
+      return this.executeSelect({ ...patchedStmt, withClause: undefined });
+    } finally {
+      // Clean up CTE tables
+      for (const cteName of cteNames) {
+        try { this.storage.dropTable(cteSchema, cteName); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  private patchCTERefs(stmt: SelectStatement, cteNames: string[], cteSchema: string): SelectStatement {
+    const patched = { ...stmt };
+
+    // Patch FROM references
+    if (patched.from) {
+      patched.from = patched.from.map(ref => {
+        if (ref.type === 'TableRef' && cteNames.includes(ref.name.toUpperCase()) && !ref.schema) {
+          return { ...ref, schema: cteSchema };
+        }
+        return ref;
+      });
+    }
+
+    // Patch JOIN references
+    if (patched.joins) {
+      patched.joins = patched.joins.map(join => {
+        if (join.table.type === 'TableRef' && cteNames.includes(join.table.name.toUpperCase()) && !join.table.schema) {
+          return { ...join, table: { ...join.table, schema: cteSchema } };
+        }
+        return join;
+      });
+    }
+
+    return patched;
   }
 
   private executeSelectFromDual(stmt: SelectStatement): ResultSet {
@@ -127,6 +204,11 @@ export class OracleExecutor extends BaseExecutor {
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
       rows = rows.filter(row => this.evaluateCondition(stmt.where!, row, columns));
+    }
+
+    // ── Step 2b: CONNECT BY (hierarchical query) ─────────────────
+    if (stmt.connectBy) {
+      rows = this.executeConnectBy(rows, columns, stmt.connectBy);
     }
 
     // ── Step 3: GROUP BY + aggregation ─────────────────────────────
@@ -763,6 +845,173 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     return leftResult;
+  }
+
+  // ── CONNECT BY (hierarchical queries) ────────────────────────────
+
+  private executeConnectBy(rows: StorageRow[], columns: StorageColMeta[], connectBy: ConnectByClause): StorageRow[] {
+    // Find root rows (matching START WITH if present)
+    let rootRows: StorageRow[];
+    if (connectBy.startWith) {
+      rootRows = rows.filter(row => this.evaluateCondition(connectBy.startWith!, row, columns));
+    } else {
+      rootRows = [...rows];
+    }
+
+    const result: StorageRow[] = [];
+    const visited = new Set<string>();
+
+    const traverse = (parentRow: StorageRow, level: number) => {
+      // Add LEVEL pseudo-column awareness
+      const rowKey = JSON.stringify(parentRow);
+      if (connectBy.noCycle && visited.has(rowKey)) return;
+      if (level > 100) return; // Safety limit
+
+      visited.add(rowKey);
+      result.push(parentRow);
+
+      // Find children by evaluating CONNECT BY condition with PRIOR
+      for (const childRow of rows) {
+        if (this.evaluateConnectByCondition(connectBy.condition, parentRow, childRow, columns)) {
+          traverse(childRow, level + 1);
+        }
+      }
+
+      visited.delete(rowKey);
+    };
+
+    for (const root of rootRows) {
+      traverse(root, 1);
+    }
+
+    return result;
+  }
+
+  private evaluateConnectByCondition(
+    expr: Expression, parentRow: StorageRow, childRow: StorageRow, columns: StorageColMeta[]
+  ): boolean {
+    // Handle PRIOR keyword: In CONNECT BY PRIOR x = y, PRIOR binds to the parent row
+    if (expr.type === 'BinaryExpr') {
+      if (expr.operator === 'AND') {
+        return this.evaluateConnectByCondition(expr.left, parentRow, childRow, columns)
+            && this.evaluateConnectByCondition(expr.right, parentRow, childRow, columns);
+      }
+      if (expr.operator === 'OR') {
+        return this.evaluateConnectByCondition(expr.left, parentRow, childRow, columns)
+            || this.evaluateConnectByCondition(expr.right, parentRow, childRow, columns);
+      }
+
+      // For comparison operators, resolve PRIOR references to parent row
+      const left = this.evaluateConnectByExpr(expr.left, parentRow, childRow, columns);
+      const right = this.evaluateConnectByExpr(expr.right, parentRow, childRow, columns);
+      return this.applyComparison(expr.operator, left, right);
+    }
+    return this.evaluateCondition(expr, childRow, columns);
+  }
+
+  private evaluateConnectByExpr(
+    expr: Expression, parentRow: StorageRow, childRow: StorageRow, columns: StorageColMeta[]
+  ): CellValue {
+    // PRIOR identifier → evaluate against parent row
+    if (expr.type === 'UnaryExpr' && expr.operator === 'PRIOR') {
+      return this.evaluateExpression(expr.operand, parentRow, columns);
+    }
+    // Regular expression → evaluate against child row
+    return this.evaluateExpression(expr, childRow, columns);
+  }
+
+  // ── MERGE ──────────────────────────────────────────────────────────
+
+  private executeMerge(stmt: MergeStatement): ResultSet {
+    const targetSchema = (stmt.target.schema || this.context.currentSchema).toUpperCase();
+    const targetName = stmt.target.name.toUpperCase();
+
+    if (!this.storage.tableExists(targetSchema, targetName)) {
+      throw new OracleError(942, `table or view does not exist`);
+    }
+
+    const targetMeta = this.storage.getTableMeta(targetSchema, targetName)!;
+
+    // Load source data
+    let sourceRows: StorageRow[];
+    let sourceCols: StorageColMeta[];
+    if (stmt.source.type === 'TableRef') {
+      const loaded = this.loadTable(stmt.source);
+      sourceRows = loaded.rows;
+      sourceCols = loaded.columns;
+    } else {
+      // Subquery source
+      const subResult = this.executeSelect(stmt.source.query);
+      sourceRows = subResult.rows as StorageRow[];
+      sourceCols = subResult.columns.map((c, i) => ({
+        name: c.name, dataType: c.dataType, ordinalPosition: i,
+      }));
+    }
+
+    let updatedCount = 0;
+    let insertedCount = 0;
+    const targetAlias = (stmt.target.alias || stmt.target.name).toUpperCase();
+    const sourceAlias = (stmt.source.type === 'TableRef'
+      ? (stmt.source.alias || stmt.source.name)
+      : (stmt.source as { alias?: string }).alias || 'SOURCE').toUpperCase();
+    const combinedCols = [
+      ...targetMeta.columns.map((c, i) => ({
+        ...c, ordinalPosition: i,
+        _qualifiedNames: [`${targetAlias}.${c.name}`],
+      })),
+      ...sourceCols.map((c, i) => ({
+        ...c, ordinalPosition: targetMeta.columns.length + i,
+        _qualifiedNames: [`${sourceAlias}.${c.name}`],
+      })),
+    ];
+
+    for (const srcRow of sourceRows) {
+      // Find matching target rows
+      const targetRows = this.storage.getRows(targetSchema, targetName);
+      let matched = false;
+
+      for (let tIdx = 0; tIdx < targetRows.length; tIdx++) {
+        const combinedRow = [...targetRows[tIdx], ...srcRow] as StorageRow;
+        if (this.evaluateCondition(stmt.on, combinedRow, combinedCols)) {
+          matched = true;
+          // WHEN MATCHED THEN UPDATE
+          if (stmt.whenMatched) {
+            const newRow = [...targetRows[tIdx]];
+            for (const assign of stmt.whenMatched.assignments) {
+              const colIdx = targetMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
+              if (colIdx >= 0) {
+                newRow[colIdx] = this.evaluateExpression(assign.value, combinedRow, combinedCols);
+              }
+            }
+            this.storage.updateRows(targetSchema, targetName,
+              (row) => JSON.stringify(row) === JSON.stringify(targetRows[tIdx]),
+              () => newRow
+            );
+            updatedCount++;
+          }
+          break;
+        }
+      }
+
+      if (!matched && stmt.whenNotMatched) {
+        // WHEN NOT MATCHED THEN INSERT
+        const newRow: StorageRow = new Array(targetMeta.columns.length).fill(null);
+        const combinedRow = [...new Array(targetMeta.columns.length).fill(null), ...srcRow] as StorageRow;
+        for (let i = 0; i < stmt.whenNotMatched.columns.length && i < stmt.whenNotMatched.values.length; i++) {
+          const colIdx = targetMeta.columns.findIndex(c => c.name.toUpperCase() === stmt.whenNotMatched!.columns[i].toUpperCase());
+          if (colIdx >= 0) {
+            newRow[colIdx] = this.evaluateExpression(stmt.whenNotMatched.values[i], combinedRow, combinedCols);
+          }
+        }
+        this.storage.insertRow(targetSchema, targetName, newRow);
+        insertedCount++;
+      }
+    }
+
+    const parts: string[] = [];
+    if (updatedCount > 0) parts.push(`${updatedCount} row${updatedCount !== 1 ? 's' : ''} merged (updated)`);
+    if (insertedCount > 0) parts.push(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} merged (inserted)`);
+    return emptyResult(parts.join(', ') || 'Merge complete.', updatedCount + insertedCount);
   }
 
   private applySelectClauses(result: ResultSet, stmt: SelectStatement): ResultSet {

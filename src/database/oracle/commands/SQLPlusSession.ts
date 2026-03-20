@@ -56,6 +56,8 @@ export class SQLPlusSession {
   private sqlBuffer: string = '';
   private lineNumber: number = 0;
   private lastStatement: string = '';
+  private plsqlMode: boolean = false;
+  private plsqlDepth: number = 0;
   private connected: boolean = false;
   private asSysdba: boolean = false;
   private currentUser: string = '';
@@ -163,6 +165,11 @@ export class SQLPlusSession {
    */
   processLine(line: string): SQLPlusResult {
     const trimmed = line.trim();
+
+    // If we're accumulating a PL/SQL block
+    if (this.plsqlMode) {
+      return this.handlePLSQLLine(trimmed);
+    }
 
     // If we're accumulating a multi-line SQL buffer
     if (this.sqlBuffer.length > 0) {
@@ -273,8 +280,92 @@ export class SQLPlusSession {
       return this.executeSql(trimmed);
     }
 
+    // PL/SQL blocks: BEGIN or DECLARE start a multi-line block terminated by END; followed by /
+    if (upper === 'BEGIN' || upper.startsWith('BEGIN') || upper === 'DECLARE' || upper.startsWith('DECLARE')) {
+      return this.startPLSQLBlock(trimmed);
+    }
+
     // Unknown command
     return { output: [`SP2-0734: unknown command beginning "${trimmed.substring(0, 20)}..." - rest of line ignored.`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  private startPLSQLBlock(line: string): SQLPlusResult {
+    this.plsqlMode = true;
+    this.plsqlDepth = 0;
+    this.sqlBuffer = line;
+    this.lineNumber = 2;
+
+    // Count initial depth
+    this.updatePLSQLDepth(line);
+
+    // Check if the entire block is on one line (e.g., BEGIN NULL; END;)
+    const upper = line.toUpperCase().trim();
+    if (upper.endsWith('END;') || upper.match(/\bEND\s+\w+\s*;$/i)) {
+      // Check if depth is back to 0
+      if (this.plsqlDepth <= 0) {
+        return this.executePLSQLBuffer();
+      }
+    }
+
+    return { output: [], exit: false, needsMoreInput: true, prompt: `  ${this.lineNumber}  ` };
+  }
+
+  private handlePLSQLLine(trimmed: string): SQLPlusResult {
+    // / on its own executes the PL/SQL buffer
+    if (trimmed === '/') {
+      return this.executePLSQLBuffer();
+    }
+
+    // Blank line in PL/SQL doesn't cancel (unlike regular SQL)
+    this.sqlBuffer += '\n' + trimmed;
+    this.lineNumber++;
+    this.updatePLSQLDepth(trimmed);
+
+    // Check for END; at depth 0 — PL/SQL block complete, but SQL*Plus
+    // traditionally requires / on the next line.  However, if the line
+    // ends with END; and the depth is back to 0, auto-execute (common in simulators).
+    const upper = trimmed.toUpperCase().replace(/\s+/g, ' ').trim();
+    if ((upper === 'END;' || upper.match(/^END\s+\w+\s*;$/i)) && this.plsqlDepth <= 0) {
+      return this.executePLSQLBuffer();
+    }
+
+    return { output: [], exit: false, needsMoreInput: true, prompt: `  ${this.lineNumber}  ` };
+  }
+
+  private updatePLSQLDepth(line: string): void {
+    const upper = line.toUpperCase();
+    // Count block openers
+    const openers = /\b(BEGIN|LOOP|CASE)\b/gi;
+    let m;
+    while ((m = openers.exec(upper)) !== null) this.plsqlDepth++;
+
+    // DECLARE doesn't need its own END but starts a block with BEGIN
+    if (/\bIF\b/.test(upper) && /\bTHEN\b/.test(upper)) this.plsqlDepth++;
+
+    // Count block closers
+    const closers = /\bEND(\s+(IF|LOOP|CASE|\w+))?\s*;/gi;
+    while ((m = closers.exec(upper)) !== null) this.plsqlDepth--;
+
+    // Standalone END;
+    if (/^\s*END\s*;\s*$/i.test(line) && !/\bEND\s+(IF|LOOP|CASE)/i.test(upper)) {
+      // Already counted above
+    }
+  }
+
+  private executePLSQLBuffer(): SQLPlusResult {
+    const sql = this.sqlBuffer.trim();
+    this.sqlBuffer = '';
+    this.lineNumber = 0;
+    this.plsqlMode = false;
+    this.plsqlDepth = 0;
+
+    if (!sql) {
+      return { output: ['SP2-0103: Nothing in SQL buffer to run.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // Remove trailing ; from the whole block if present
+    const cleanSql = sql.replace(/;\s*$/, '');
+    return this.executeSql(cleanSql);
   }
 
   private isSqlStart(upper: string): boolean {
