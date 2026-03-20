@@ -256,4 +256,24 @@ export interface FlowContext {
 
   /** Arbitrary metadata for flow-specific state */
   metadata: Map<string, unknown>;
+
+  /**
+   * Execute a command on the device (with timeout + power-off guard).
+   * Provided by the session — allows flow builders to run commands
+   * without coupling to session internals.
+   */
+  executeCommand?: (command: string) => Promise<string>;
+
+  /**
+   * Display output to the terminal. Called by execute steps
+   * that produce visible results (command output, status messages).
+   * Provided by the session — the flow engine can't addLine() directly.
+   */
+  onOutput?: (text: string, lineType?: string) => void;
+
+  /**
+   * Clear the terminal screen. Called by execute steps when output
+   * contains ANSI clear screen sequences.
+   */
+  onClearScreen?: () => void;
 }

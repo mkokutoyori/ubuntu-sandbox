@@ -22,6 +22,26 @@ import type { InteractiveStep, FlowContext } from '../core/types';
 const MAX_SUDO_ATTEMPTS = 3;
 const MAX_SU_ATTEMPTS = 3;
 
+// ─── Execute-and-display helper ─────────────────────────────────────
+
+/** Build an execute step that runs a command on the device and displays output */
+function executeCommandStep(command: string): InteractiveStep {
+  return {
+    type: 'execute',
+    action: async (ctx: FlowContext) => {
+      const exec = ctx.executeCommand ?? (async (cmd: string) => ctx.device.executeCommand(cmd));
+      const result = await exec(command);
+      if (result) {
+        if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
+          ctx.onClearScreen?.();
+        } else {
+          ctx.onOutput?.(result);
+        }
+      }
+    },
+  };
+}
+
 // ─── Reusable step fragments ────────────────────────────────────────
 
 /** Build a sudo password verification step */
@@ -220,7 +240,7 @@ export class LinuxFlowBuilder {
     if (subCmd === 'passwd' && subParts.length >= 2 && subParts[1].startsWith('-')) {
       return [
         sudoStep,
-        { type: 'execute', action: async (ctx) => { ctx.metadata.set('execute_command', fullCommand); } },
+        executeCommandStep(fullCommand),
       ];
     }
 
@@ -252,7 +272,7 @@ export class LinuxFlowBuilder {
         // Only sudo password + execute, no interactive prompts
         return [
           sudoStep,
-          { type: 'execute', action: async (ctx) => { ctx.metadata.set('execute_command', fullCommand); } },
+          executeCommandStep(fullCommand),
         ];
       }
 
@@ -272,7 +292,7 @@ export class LinuxFlowBuilder {
       return [
         sudoStep,
         // Execute adduser command to create user
-        { type: 'execute', action: async (ctx) => { ctx.metadata.set('execute_command', fullCommand); } },
+        executeCommandStep(fullCommand),
         ...passwordSteps,
         ...chfnSteps,
       ];
@@ -282,14 +302,14 @@ export class LinuxFlowBuilder {
     if (subCmd === 'su') {
       return [
         sudoStep,
-        { type: 'execute', action: async (ctx) => { ctx.metadata.set('execute_command', fullCommand); } },
+        executeCommandStep(fullCommand),
       ];
     }
 
     // Generic sudo <command>
     return [
       sudoStep,
-      { type: 'execute', action: async (ctx) => { ctx.metadata.set('execute_command', fullCommand); } },
+      executeCommandStep(fullCommand),
     ];
   }
 
@@ -304,13 +324,7 @@ export class LinuxFlowBuilder {
 
     return [
       suPasswordStep(targetUser),
-      {
-        type: 'execute',
-        action: async (ctx) => {
-          ctx.metadata.set('execute_command', parts.join(' '));
-          ctx.metadata.set('target_user', targetUser);
-        },
-      },
+      executeCommandStep(parts.join(' ')),
     ];
   }
 
@@ -386,7 +400,7 @@ export class LinuxFlowBuilder {
 
     return [
       // Execute adduser to create user first
-      { type: 'execute', action: async (ctx) => { ctx.metadata.set('execute_command', fullCommand); } },
+      executeCommandStep(fullCommand),
       ...passwordSteps,
       ...chfnSteps,
     ];
