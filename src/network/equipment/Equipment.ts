@@ -95,6 +95,9 @@ export abstract class Equipment {
   /** Resolve absolute path from relative path + cwd. Override in devices with filesystem. */
   resolveAbsolutePath(path: string): string { return path; }
 
+  /** Execute a command on this device. Override in concrete device classes. */
+  executeCommand(_command: string): Promise<string> { return Promise.resolve(''); }
+
   /**
    * Get the OS type for terminal selection.
    * Override in subclasses for specific OS types.

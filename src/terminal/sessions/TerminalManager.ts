@@ -15,6 +15,7 @@
  */
 
 import { Equipment, isFullyImplemented } from '@/network';
+import type { ICLIDevice } from '@/network';
 import { TerminalSession } from './TerminalSession';
 import { LinuxTerminalSession } from './LinuxTerminalSession';
 import { CiscoTerminalSession } from './CiscoTerminalSession';
@@ -72,10 +73,10 @@ export class TerminalManager {
         session = new LinuxTerminalSession(sessionId, device);
         break;
       case 'cisco-ios':
-        session = new CiscoTerminalSession(sessionId, device);
+        session = new CiscoTerminalSession(sessionId, device as ICLIDevice);
         break;
       case 'huawei-vrp':
-        session = new HuaweiTerminalSession(sessionId, device);
+        session = new HuaweiTerminalSession(sessionId, device as ICLIDevice);
         break;
       case 'windows':
         session = new WindowsTerminalSession(sessionId, device);

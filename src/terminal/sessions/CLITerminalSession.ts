@@ -13,14 +13,13 @@
  *   - Dynamic prompt from device.getPrompt()
  */
 
-import { Equipment } from '@/network';
+import type { ICLIDevice } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
 } from './TerminalSession';
-import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
-import { PlainOutputFormatter } from '@/terminal/core/OutputFormatter';
-import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
+import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
+import type { InteractiveStep } from '@/terminal/core/types';
 
 const PAGE_SIZE = 24;
 
@@ -35,22 +34,22 @@ export abstract class CLITerminalSession extends TerminalSession {
   pagerLines: string[] | null = null;
   pagerOffset: number = 0;
 
-  // Interactive flow engine (shared by Cisco/Huawei subclasses)
-  protected flowEngine: InteractiveFlowEngine | null = null;
-  private flowFormatter = new PlainOutputFormatter();
+  private readonly _flowFormatter = new PlainOutputFormatter();
 
-  constructor(id: string, device: Equipment) {
+  /** Strongly-typed reference to the CLI device (avoids `as any` casts). */
+  protected readonly cliDevice: ICLIDevice;
+
+  constructor(id: string, device: ICLIDevice) {
     super(id, device);
+    this.cliDevice = device;
   }
+
+  protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
   // ── Prompt ──────────────────────────────────────────────────────
 
   updatePrompt(): void {
-    if ('getPrompt' in this.device && typeof (this.device as any).getPrompt === 'function') {
-      this.prompt = (this.device as any).getPrompt();
-    } else {
-      this.prompt = this.getDefaultPrompt();
-    }
+    this.prompt = this.cliDevice.getPrompt();
     this.notify();
   }
 
@@ -73,7 +72,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Input mode ─────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
-    if (this.flowEngine && !this.flowEngine.isComplete) {
+    if (this.isFlowActive) {
       return this.inputMode; // set by advanceFlow()
     }
     return this.inputMode;
@@ -86,10 +85,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.inputMode = { type: 'booting' };
     this.notify();
 
-    let bootText = '';
-    if ('getBootSequence' in this.device && typeof (this.device as any).getBootSequence === 'function') {
-      bootText = (this.device as any).getBootSequence();
-    }
+    const bootText = this.cliDevice.getBootSequence();
 
     if (bootText) {
       const lines = bootText.split('\n');
@@ -106,12 +102,10 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
 
     // Show MOTD banner if available
-    if ('getBanner' in this.device && typeof (this.device as any).getBanner === 'function') {
-      const motd = (this.device as any).getBanner('motd');
-      if (motd) {
-        this.addLine('');
-        this.addLine(motd);
-      }
+    const motd = this.cliDevice.getBanner('motd');
+    if (motd) {
+      this.addLine('');
+      this.addLine(motd);
     }
 
     this.addLine('');
@@ -142,50 +136,12 @@ export abstract class CLITerminalSession extends TerminalSession {
       return true; // consume all keys in pager mode
     }
 
-    // Flow engine active — handle password/text input
-    if (this.flowEngine && !this.flowEngine.isComplete) {
+    // Flow engine active — delegate to base class handlers
+    if (this.isFlowActive) {
       if (this.inputMode.type === 'password') return this.handleFlowPasswordKey(e);
       if (this.inputMode.type === 'interactive-text') return this.handleFlowTextKey(e);
     }
 
-    return false;
-  }
-
-  private handleFlowPasswordKey(e: KeyEvent): boolean {
-    if (e.key === 'Enter') {
-      const pw = this._passwordBuf;
-      this._passwordBuf = '';
-      this.advanceFlow(pw);
-      return true;
-    }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.flowEngine = null;
-      this._passwordBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.addLine('^C');
-      this.notify();
-      return true;
-    }
-    // Let the view's hidden password <input> handle the keystroke
-    return false;
-  }
-
-  private handleFlowTextKey(e: KeyEvent): boolean {
-    if (e.key === 'Enter') {
-      const val = this._inputBuf;
-      this._inputBuf = '';
-      this.advanceFlow(val);
-      return true;
-    }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.flowEngine = null;
-      this._inputBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.addLine('^C');
-      this.notify();
-      return true;
-    }
-    // Let the view's interactive text <input> handle the keystroke
     return false;
   }
 
@@ -251,7 +207,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     // Check if this command needs an interactive flow before executing
     const steps = this.buildInteractiveFlow(trimmed);
     if (steps) {
-      this.startFlow(steps, trimmed);
+      this.startFlowFromSteps(steps, trimmed);
       return;
     }
 
@@ -286,81 +242,19 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.updatePrompt();
   }
 
-  // ── Interactive flow engine ─────────────────────────────────────
+  // ── Flow completion hook ────────────────────────────────────────
 
-  private startFlow(steps: InteractiveStep[], command: string): void {
-    const ctx: FlowContext = {
-      values: new Map(),
-      device: this.device,
-      currentUser: '',
-      currentUid: 0,
-      metadata: new Map([['original_command', command]]),
-      executeCommand: async (cmd: string) => this.executeOnDevice(cmd),
-      onOutput: (text: string, lineType?: string) => {
-        this.addLine(text, lineType || 'normal');
-      },
-      onClearScreen: () => this.clear(),
-    };
-
-    this.flowEngine = new InteractiveFlowEngine(
-      steps,
-      ctx,
-      this.flowFormatter,
-      this.prompt,
-    );
-    this._passwordBuf = '';
-    this._inputBuf = '';
-
-    this.advanceFlow();
-  }
-
-  private async advanceFlow(userInput?: string): Promise<void> {
-    if (!this.flowEngine) return;
-
-    const response = await this.flowEngine.advance(userInput);
-
-    // Map response lines to addLine() calls
-    for (const line of response.lines) {
-      const text = line.segments.map(s => s.text).join('');
-      this.addLine(text, line.lineType || 'normal');
-    }
-
-    if (this.flowEngine.isComplete) {
-      this.flowEngine = null;
-      this._passwordBuf = '';
-      this._inputBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.updatePrompt();
-      this.notify();
-    } else {
-      // Map InputDirective to InputMode for the view
-      const directive = response.inputDirective;
-      switch (directive.type) {
-        case 'password':
-          this.inputMode = { type: 'password', promptText: directive.prompt };
-          break;
-        case 'text-prompt':
-          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
-          break;
-        case 'confirmation':
-          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
-          break;
-        default:
-          this.inputMode = { type: 'normal' };
-      }
-      this.notify();
-    }
+  protected override onFlowComplete(): void {
+    this.updatePrompt();
   }
 
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(): void {
-    if ('cliTabComplete' in this.device && typeof (this.device as any).cliTabComplete === 'function') {
-      const completed = (this.device as any).cliTabComplete(this.input);
-      if (completed) {
-        this.input = completed;
-        this.notify();
-      }
+    const completed = this.cliDevice.cliTabComplete(this.input);
+    if (completed) {
+      this.input = completed;
+      this.notify();
     }
   }
 
@@ -369,12 +263,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   private showInlineHelp(currentInput: string): void {
     this.addLine(`${this.prompt}${currentInput}?`);
 
-    let helpText = '';
-    if ('cliHelp' in this.device && typeof (this.device as any).cliHelp === 'function') {
-      helpText = (this.device as any).cliHelp(currentInput);
-    } else {
-      helpText = '% Help not available';
-    }
+    const helpText = this.cliDevice.cliHelp(currentInput);
 
     if (helpText) this.addLine(helpText);
     // Input is NOT cleared — user continues typing

@@ -25,6 +25,9 @@
  */
 
 import { Equipment } from '@/network';
+import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
+import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -636,6 +639,164 @@ export abstract class TerminalSession {
       this.history = [...this.history.slice(-199), cmd];
       this.historyIndex = -1;
     }
+  }
+
+  // ── Interactive flow engine (shared by Linux + CLI sessions) ─────
+
+  /**
+   * Active flow engine, or null when no interactive flow is running.
+   * Subclasses start flows via startFlowFromSteps().
+   */
+  protected flowEngine: InteractiveFlowEngine | null = null;
+
+  /**
+   * Return the output formatter for flow responses.
+   * Subclasses must provide their vendor-appropriate formatter.
+   * (e.g. AnsiOutputFormatter for Linux, PlainOutputFormatter for CLI)
+   */
+  protected abstract getFlowFormatter(): IOutputFormatter;
+
+  /**
+   * Create a FlowContext, instantiate the engine, and advance.
+   * Centralises the duplicated createAndAdvanceFlow / startFlow logic.
+   */
+  protected startFlowFromSteps(
+    steps: InteractiveStep[],
+    command: string,
+    extraMetadata?: Map<string, unknown>,
+  ): void {
+    const ctx: FlowContext = {
+      values: new Map(),
+      device: this.device,
+      currentUser: this.device.getCurrentUser(),
+      currentUid: this.device.getCurrentUid(),
+      metadata: new Map<string, unknown>([
+        ['original_command', command],
+        ...(extraMetadata ?? []),
+      ]),
+      executeCommand: async (cmd: string) => this.executeOnDevice(cmd),
+      onOutput: (text: string, lineType?: string) => {
+        this.addLine(text, lineType || 'normal');
+      },
+      onClearScreen: () => this.clear(),
+    };
+
+    this.flowEngine = new InteractiveFlowEngine(
+      steps,
+      ctx,
+      this.getFlowFormatter(),
+      this.getPrompt(),
+    );
+    this._passwordBuf = '';
+    this._inputBuf = '';
+
+    this.advanceFlow();
+  }
+
+  /**
+   * Advance the flow engine with optional user input.
+   * Maps the TerminalResponse to the session's InputMode.
+   *
+   * Subclasses can override onFlowComplete() to run post-flow logic
+   * (e.g. sync device state, update prompt, enter sub-shells).
+   */
+  protected async advanceFlow(userInput?: string): Promise<void> {
+    if (!this.flowEngine) return;
+
+    const response = await this.flowEngine.advance(userInput);
+
+    // Map response lines to addLine() calls
+    for (const line of response.lines) {
+      const text = line.segments.map(s => s.text).join('');
+      this.addLine(text, line.lineType || 'normal');
+    }
+
+    if (this.flowEngine.isComplete) {
+      const ctx = this.flowEngine.getContext();
+      this.flowEngine = null;
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.onFlowComplete(ctx);
+      this.notify();
+    } else {
+      // Map InputDirective to InputMode for the view
+      const directive = response.inputDirective;
+      switch (directive.type) {
+        case 'password':
+          this.inputMode = { type: 'password', promptText: directive.prompt };
+          break;
+        case 'text-prompt':
+          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
+          break;
+        case 'confirmation':
+          this.inputMode = { type: 'interactive-text', promptText: directive.prompt };
+          break;
+        default:
+          this.inputMode = { type: 'normal' };
+      }
+      this.notify();
+    }
+  }
+
+  /**
+   * Hook called when a flow completes successfully.
+   * Override in subclasses to run post-flow actions
+   * (sync device state, update prompt, etc.).
+   */
+  protected onFlowComplete(_ctx: FlowContext): void {
+    // Default: no-op. Subclasses override as needed.
+  }
+
+  /**
+   * Handle keyboard input while in flow password mode.
+   * Shared by Linux and CLI sessions — eliminates duplication.
+   */
+  protected handleFlowPasswordKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const pw = this._passwordBuf;
+      this._passwordBuf = '';
+      this.advanceFlow(pw);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.flowEngine = null;
+      this._passwordBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.addLine('^C');
+      this.notify();
+      return true;
+    }
+    // Let the view's hidden password <input> handle the keystroke
+    return false;
+  }
+
+  /**
+   * Handle keyboard input while in flow interactive-text mode.
+   * Shared by Linux and CLI sessions — eliminates duplication.
+   */
+  protected handleFlowTextKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const val = this._inputBuf;
+      this._inputBuf = '';
+      this.advanceFlow(val);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.flowEngine = null;
+      this._inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.addLine('^C');
+      this.notify();
+      return true;
+    }
+    // Let the view's interactive text <input> handle the keystroke
+    return false;
+  }
+
+  /** Whether a flow is currently active. */
+  get isFlowActive(): boolean {
+    return this.flowEngine !== null && !this.flowEngine.isComplete;
   }
 
   // ── Template methods (override in subclasses) ───────────────────

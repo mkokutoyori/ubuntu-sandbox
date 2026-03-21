@@ -12,6 +12,8 @@ import { Equipment } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
 } from './TerminalSession';
+import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
+import { completeInput, completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import { PowerShellExecutor, PS_BANNER, PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
 
 interface ShellEntry {
@@ -40,6 +42,7 @@ export class WindowsTerminalSession extends TerminalSession {
   bannerCleared: boolean = false;
   tabSuggestions: string[] | null = null;
 
+  private readonly _flowFormatter = new PlainOutputFormatter();
   private psExecutor: PowerShellExecutor;
   private _onRequestClose?: () => void;
   private _onShellModeChange?: (mode: 'cmd' | 'powershell') => void;
@@ -51,6 +54,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   getSessionType(): SessionType { return 'windows'; }
   getTheme(): TerminalTheme { return WINDOWS_THEME; }
+  protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
   getPrompt(): string {
     return this.shellMode === 'powershell'
@@ -290,59 +294,27 @@ export class WindowsTerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(): void {
+    // PowerShell cmdlet completion (first word only)
     if (this.shellMode === 'powershell') {
       const parts = this.input.trimStart().split(/\s+/);
       if (parts.length <= 1) {
         const prefix = (parts[0] || '').toLowerCase();
         const matches = PS_CMDLETS_LIST.filter(c => c.toLowerCase().startsWith(prefix));
-        if (matches.length === 1) {
-          this.input = matches[0] + ' ';
-          this.tabSuggestions = null;
-        } else if (matches.length > 1) {
-          this.tabSuggestions = matches.slice(0, 20);
-        }
+        const result = completeInputCaseInsensitive(this.input, matches, 20);
+        this.input = result.input;
+        this.tabSuggestions = result.suggestions;
         this.notify();
         return;
       }
     }
 
     // Fall back to device completions for file paths
-    if (!('getCompletions' in this.device)) return;
-    const completions: string[] = (this.device as any).getCompletions(this.input);
+    const completions = this.device.getCompletions(this.input);
     if (completions.length === 0) return;
 
-    if (completions.length === 1) {
-      const parts = this.input.trimStart().split(/\s+/);
-      if (parts.length <= 1) {
-        this.input = completions[0] + ' ';
-      } else {
-        const lastArg = parts[parts.length - 1];
-        const lastSep = lastArg.lastIndexOf('\\');
-        if (lastSep >= 0) {
-          parts[parts.length - 1] = lastArg.substring(0, lastSep + 1) + completions[0];
-        } else {
-          parts[parts.length - 1] = completions[0];
-        }
-        this.input = parts.join(' ');
-      }
-      this.tabSuggestions = null;
-    } else {
-      let common = completions[0];
-      for (let i = 1; i < completions.length; i++) {
-        while (common && !completions[i].toLowerCase().startsWith(common.toLowerCase())) {
-          common = common.slice(0, -1);
-        }
-      }
-      const parts = this.input.trimStart().split(/\s+/);
-      const word = parts[parts.length - 1] || '';
-      if (common.length > word.length) {
-        if (parts.length <= 1) this.input = common;
-        else { parts[parts.length - 1] = common; this.input = parts.join(' '); }
-        this.tabSuggestions = null;
-      } else {
-        this.tabSuggestions = completions;
-      }
-    }
+    const result = completeInputCaseInsensitive(this.input, completions);
+    this.input = result.input;
+    this.tabSuggestions = result.suggestions;
     this.notify();
   }
 }
