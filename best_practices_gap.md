@@ -193,4 +193,250 @@ export const RIP_TIMERS = {
 
 ---
 
-*Sections 2 (Commands), 3 (Protocols), and 4 (Filesystems) to follow.*
+## 2. Commands & Terminal Layer
+
+### 2.1 Shell God Classes (CRITICAL — SRP Violation)
+
+| Class | Lines | State Fields | CommandTries | Responsibilities |
+|-------|-------|-------------|-------------|-----------------|
+| `CiscoIOSShell.ts` | ~530 | 16+ | 15 | Mode management, prompt generation, pipe filtering, command routing, async ops, help, tab completion |
+| `HuaweiVRPShell.ts` | ~260 | 13 | 8+ | Same pattern as Cisco |
+| `LinuxTerminalSession.ts` | ~428 | N/A | N/A | Editor management, SQL*Plus subshell, flow orchestration, tab completion, key handling |
+| `CLITerminalSession.ts` | ~317 | N/A | N/A | Pager state, boot animation, command execution, inline help, tab completion |
+
+**Key example — CiscoIOSShell has 16+ mutable state fields:**
+
+```typescript
+private selectedInterface: string | null = null;
+private selectedDHCPPool: string | null = null;
+private selectedACL: string | null = null;
+private selectedISAKMPPriority: number | null = null;
+private selectedTransformSet: string | null = null;
+// ... 10+ more sub-mode state fields
+```
+
+**Recommended decomposition:**
+
+```typescript
+// Instead of one monolithic shell:
+class CiscoIOSShell implements IRouterShell {
+  private modeController: CiscoModeController;  // mode state machine
+  private promptBuilder: CiscoPromptBuilder;     // prompt generation
+  private pipeFilter: OutputPipeline;            // pipe/include/grep
+  private commandRouter: CommandRouter;          // dispatch to handlers
+}
+```
+
+**Files:** `src/network/devices/shells/CiscoIOSShell.ts`, `src/network/devices/shells/HuaweiVRPShell.ts`
+
+---
+
+### 2.2 Flow Builder Duplication (HIGH — DRY Violation)
+
+Three flow builders independently implement identical patterns:
+
+| Pattern | CiscoFlowBuilder | HuaweiFlowBuilder | LinuxFlowBuilder |
+|---------|------------------|--------------------|-----------------|
+| Password validation step | Lines 24-33 | Lines 23-31 | Lines 54-60 |
+| Confirmation prompts | Inline | Inline | Lines 100-120 |
+| Max retry logic | Hardcoded 3 | Hardcoded 3 | Hardcoded 3 |
+| Error message formatting | Custom | Custom | Custom |
+
+**Recommendation:** Extract shared `PasswordStep`, `ConfirmationStep`, `RetryPolicy` builders:
+
+```typescript
+// Shared flow step factories
+const passwordStep = FlowSteps.password({
+  prompt: 'Password:',
+  validator: (pw) => device.checkPassword(user, pw),
+  maxRetries: 3,
+  errorMessage: 'Wrong password – try again.',
+});
+```
+
+**Files:** `src/terminal/cisco/CiscoFlowBuilder.ts`, `src/terminal/sessions/LinuxFlowBuilder.ts`
+
+---
+
+### 2.3 Missing Command Architecture Abstractions (HIGH)
+
+| Missing Abstraction | Impact | Where needed |
+|---------------------|--------|-------------|
+| `ICommandParser` | Each command manually parses `string[]` args | All 100+ command handlers |
+| `OutputPipeline` | Pipe/include/grep/findstr logic duplicated | CiscoIOSShell, HuaweiVRPShell |
+| `CLIStateMachine` | Mode switching logic scattered across 3 shells | CiscoIOSShell, HuaweiVRPShell |
+| `PromptBuilder` | Prompt generation is copy-pasted switch statements | Both vendor shells |
+| `ErrorResponseBuilder` | Error messages hardcoded as raw strings | 50+ locations |
+| `ISubShellFactory` | Subshell creation hardcoded in LinuxTerminalSession | LinuxTerminalSession |
+
+---
+
+### 2.4 Magic Strings Everywhere (HIGH)
+
+**Mode constants (no enum, no const file):**
+
+```typescript
+// Scattered across CiscoIOSShell, CiscoConfigCommands, etc.
+'user'          // 15+ occurrences
+'privileged'    // 12+ occurrences
+'config'        // 20+ occurrences
+'config-if'     // 10+ occurrences
+'config-dhcp'   // 5+ occurrences
+'config-router' // 5+ occurrences
+```
+
+**Error messages duplicated across files:**
+
+```typescript
+"% Incomplete command."                      // 5+ files
+"Error: Incomplete command."                 // Huawei variant
+"% Invalid input detected at '^' marker."   // Cisco
+"Error: Wrong parameter found at '^' position." // Huawei
+```
+
+**Recommendation:** Extract to typed constants:
+
+```typescript
+export const CISCO_MODES = {
+  USER: 'user',
+  PRIVILEGED: 'privileged',
+  CONFIG: 'config',
+  CONFIG_IF: 'config-if',
+  CONFIG_DHCP: 'config-dhcp',
+  CONFIG_ROUTER: 'config-router',
+  // ...
+} as const;
+
+export const CISCO_ERRORS = {
+  INCOMPLETE: '% Incomplete command.',
+  UNRECOGNIZED: '% Unrecognized command',
+  INVALID_INPUT: "% Invalid input detected at '^' marker.",
+} as const;
+```
+
+---
+
+### 2.5 Tight Coupling: Shell ↔ Router (HIGH)
+
+**CiscoIOSShell stores a mutable router reference:**
+
+```typescript
+// Set temporarily during execute(), then nullified
+private routerRef: Router | null = null;
+
+r(): Router {
+  if (!this.routerRef) throw new Error('Router reference not set (BUG)');
+  return this.routerRef;
+}
+```
+
+**Issues:**
+- Race condition if `execute()` called concurrently
+- Router reference is a mutable global-like variable
+- No `IRouterForShell` interface — shell depends on full Router (250+ methods)
+
+**Recommendation:** Inject a typed context object:
+
+```typescript
+interface IRouterShellContext {
+  hostname: string;
+  getRoutingTable(): RouteEntry[];
+  configureInterface(name: string, ip: IPAddress, mask: SubnetMask): void;
+  // Only expose methods the shell actually needs
+}
+```
+
+---
+
+### 2.6 Async Operations: Race Conditions (MEDIUM)
+
+```typescript
+// CiscoIOSShell.ts line 92
+private _pendingAsync: Promise<string> | null = null;
+```
+
+The shell stores a pending async operation as a mutable instance field. If `execute()` is called again before the promise resolves, the previous operation is lost silently.
+
+**Recommendation:** Return `Promise<string>` directly from `execute()` instead of storing state.
+
+---
+
+### 2.7 CiscoShellContext Interface Too Large (MEDIUM — ISP)
+
+The `CiscoShellContext` interface in `CiscoConfigCommands.ts` has **20+ getter/setter methods** mixing unrelated concerns:
+
+- Mode selection (3 methods)
+- Interface selection (2 methods)
+- DHCP pool selection (2 methods)
+- ACL selection (3 methods)
+- IPSec mode selections (10+ methods)
+
+**Recommendation:** Segregate into focused interfaces:
+
+```typescript
+interface IModeController {
+  getMode(): string;
+  setMode(mode: string): void;
+}
+
+interface IInterfaceSelector {
+  getSelectedInterface(): string | null;
+  setSelectedInterface(name: string | null): void;
+}
+
+interface IACLSelector {
+  getSelectedACL(): string | null;
+  setSelectedACL(name: string | null): void;
+  getSelectedACLType(): 'standard' | 'extended' | null;
+}
+```
+
+---
+
+### 2.8 Interface Resolution Duplication (MEDIUM — DRY)
+
+`resolveInterfaceName()` is implemented separately in:
+- `src/network/devices/shells/cisco/CiscoConfigCommands.ts`
+- `src/network/devices/shells/huawei/HuaweiDisplayCommands.ts`
+
+**Both** convert abbreviated interface names (e.g., `gi0/0` → `GigabitEthernet0/0`). Identical logic, different files.
+
+---
+
+### 2.9 Testability Issues (MEDIUM)
+
+| Issue | Impact |
+|-------|--------|
+| Only 3 test files for entire terminal layer | Low coverage |
+| Shell state (16+ fields) not snapshotable | Can't verify state transitions |
+| Flow builders require full Device instance | Can't unit test independently |
+| No `ITerminalSessionFactory` | Sessions hard to mock |
+| `CommandTrie` action signature: `(args: string[], rawLine: string) => string` | No typed args, no async support |
+| No mock router interface exposed | Tests must mock 250+ methods |
+
+---
+
+### 2.10 Output Formatting Repetition (MEDIUM)
+
+Routing table formatting logic appears in:
+- `CiscoShowCommands.ts` (lines 33-54) — Cisco format
+- `HuaweiDisplayCommands.ts` (lines 72-94) — Huawei format
+
+Both implement column alignment, protocol code mapping, and metric display independently.
+
+**Recommendation:** Shared `RoutingTableFormatter` with vendor-specific templates.
+
+---
+
+### 2.11 Large Method Bodies (MEDIUM)
+
+| Method | File | Lines | Concern |
+|--------|------|-------|---------|
+| `execute()` | CiscoIOSShell.ts | 233-303 (70) | Pipe parsing + help + mode switch + async |
+| `executeCommand()` | LinuxTerminalSession.ts | 166-246 (80) | Exit + editor + oracle + flow + device exec |
+| `buildSudoFlow()` | LinuxFlowBuilder.ts | 222-314 (92) | 4 levels of conditional for sudo variants |
+| `buildConfigCommands()` | CiscoConfigCommands.ts | ~346 | 30+ inline command registrations |
+
+---
+
+*Sections 3 (Protocols) and 4 (Filesystems) to follow.*

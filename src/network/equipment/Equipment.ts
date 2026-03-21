@@ -17,14 +17,19 @@
 import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
+import { EquipmentRegistry } from './EquipmentRegistry';
 
 export abstract class Equipment {
-  /** Global registry of all Equipment instances (for topology traversal) */
-  private static registry: Map<string, Equipment> = new Map();
+  /**
+   * Global registry of all Equipment instances (for topology traversal).
+   * @deprecated Use EquipmentRegistry.getInstance() for new code.
+   * These static methods delegate to the singleton EquipmentRegistry.
+   */
+  private static get registry(): EquipmentRegistry { return EquipmentRegistry.getInstance(); }
 
-  static getById(id: string): Equipment | undefined { return Equipment.registry.get(id); }
-  static getAllEquipment(): Equipment[] { return Array.from(Equipment.registry.values()); }
-  static clearRegistry(): void { Equipment.registry.clear(); }
+  static getById(id: string): Equipment | undefined { return EquipmentRegistry.getInstance().getById(id); }
+  static getAllEquipment(): Equipment[] { return EquipmentRegistry.getInstance().getAll(); }
+  static clearRegistry(): void { EquipmentRegistry.getInstance().clear(); }
 
   protected readonly id: string;
   protected name: string;
@@ -42,7 +47,7 @@ export abstract class Equipment {
     this.hostname = name;
     this.x = x;
     this.y = y;
-    Equipment.registry.set(this.id, this);
+    EquipmentRegistry.getInstance().register(this);
   }
 
   // ─── Identity ───────────────────────────────────────────────────
