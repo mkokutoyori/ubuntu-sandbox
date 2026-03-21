@@ -6,7 +6,7 @@
  * via buildInteractiveFlow() → InteractiveFlowEngine.
  */
 
-import { Equipment } from '@/network';
+import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType } from './TerminalSession';
 import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
@@ -27,7 +27,7 @@ const HUAWEI_THEME: TerminalTheme = {
 };
 
 export class HuaweiTerminalSession extends CLITerminalSession {
-  constructor(id: string, device: Equipment) {
+  constructor(id: string, device: ICLIDevice) {
     super(id, device);
   }
 

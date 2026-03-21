@@ -6,7 +6,7 @@
  * via buildInteractiveFlow() → InteractiveFlowEngine.
  */
 
-import { Equipment } from '@/network';
+import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType } from './TerminalSession';
 import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
@@ -27,7 +27,7 @@ const CISCO_THEME: TerminalTheme = {
 };
 
 export class CiscoTerminalSession extends CLITerminalSession {
-  constructor(id: string, device: Equipment) {
+  constructor(id: string, device: ICLIDevice) {
     super(id, device);
   }
 

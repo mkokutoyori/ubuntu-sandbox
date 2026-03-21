@@ -23,6 +23,7 @@ export { Cable } from './hardware/Cable';
 
 // Equipment
 export { Equipment } from './equipment/Equipment';
+export type { ICLIDevice } from './equipment/ICLIDevice';
 
 // Devices
 export { EndHost } from './devices/EndHost';
