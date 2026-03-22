@@ -14,6 +14,9 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import {
+  CISCO_ERRORS, parsePipeFilter, applyPipeFilter,
+} from './cli-utils';
 
 /** CLI Mode (FSM State) */
 export type CLIMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan';
@@ -65,17 +68,7 @@ export class CiscoSwitchShell implements ISwitchShell {
     if (!trimmed) return '';
 
     // Handle pipe filtering: "show logging | include DHCP"
-    let pipeFilter: { type: string; pattern: string } | null = null;
-    let cmdPart = trimmed;
-    const pipeIdx = trimmed.indexOf(' | ');
-    if (pipeIdx !== -1) {
-      cmdPart = trimmed.substring(0, pipeIdx).trim();
-      const filterPart = trimmed.substring(pipeIdx + 3).trim();
-      const filterMatch = filterPart.match(/^(include|exclude|grep|findstr)\s+(.+)$/i);
-      if (filterMatch) {
-        pipeFilter = { type: filterMatch[1].toLowerCase(), pattern: filterMatch[2] };
-      }
-    }
+    const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
 
     // Handle ? for help (preserve trailing space: "show ?" vs "show?")
     if (cmdPart.endsWith('?')) {
@@ -109,33 +102,25 @@ export class CiscoSwitchShell implements ISwitchShell {
         break;
 
       case 'ambiguous':
-        output = result.error || `% Ambiguous command: "${cmdPart}"`;
+        output = result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
         break;
 
       case 'incomplete':
-        output = result.error || '% Incomplete command.';
+        output = result.error || CISCO_ERRORS.INCOMPLETE;
         break;
 
       case 'invalid':
-        output = result.error || `% Invalid input detected at '^' marker.`;
+        output = result.error || CISCO_ERRORS.INVALID_INPUT;
         break;
 
       default:
-        output = `% Unrecognized command "${cmdPart}"`;
+        output = CISCO_ERRORS.UNRECOGNIZED(cmdPart);
     }
 
     this.swRef = null;
 
     // Apply pipe filter if present
-    if (pipeFilter && output) {
-      const lines = output.split('\n');
-      const pattern = pipeFilter.pattern.toLowerCase();
-      if (pipeFilter.type === 'include' || pipeFilter.type === 'grep' || pipeFilter.type === 'findstr') {
-        output = lines.filter(l => l.toLowerCase().includes(pattern)).join('\n');
-      } else if (pipeFilter.type === 'exclude') {
-        output = lines.filter(l => !l.toLowerCase().includes(pattern)).join('\n');
-      }
-    }
+    output = applyPipeFilter(output, pipeFilter);
 
     return output;
   }
@@ -145,7 +130,7 @@ export class CiscoSwitchShell implements ISwitchShell {
   getHelp(input: string): string {
     const trie = this.getActiveTrie();
     const completions = trie.getCompletions(input);
-    if (completions.length === 0) return '% Unrecognized command';
+    if (completions.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
     const maxKw = Math.max(...completions.map(c => c.keyword.length));
     return completions
       .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)

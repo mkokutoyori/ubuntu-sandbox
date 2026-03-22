@@ -27,6 +27,9 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
 import { IPAddress } from '../../core/types';
+import {
+  CISCO_ERRORS, parsePipeFilter, applyPipeFilter,
+} from './cli-utils';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -235,17 +238,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     if (!trimmed) return '';
 
     // Handle pipe filtering: "show logging | include DHCP"
-    let pipeFilter: { type: string; pattern: string } | null = null;
-    let cmdPart = trimmed;
-    const pipeIdx = trimmed.indexOf(' | ');
-    if (pipeIdx !== -1) {
-      cmdPart = trimmed.substring(0, pipeIdx).trim();
-      const filterPart = trimmed.substring(pipeIdx + 3).trim();
-      const filterMatch = filterPart.match(/^(include|exclude|grep|findstr)\s+(.+)$/i);
-      if (filterMatch) {
-        pipeFilter = { type: filterMatch[1].toLowerCase(), pattern: filterMatch[2] };
-      }
-    }
+    const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
 
     // Handle ? for help (preserve trailing space for "show ?" vs "show?")
     if (cmdPart.endsWith('?')) {
@@ -274,7 +267,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       let output = this.executeOnTrie(subCmd);
       this.mode = savedMode;
       this.routerRef = null;
-      return this.applyPipeFilter(output, pipeFilter);
+      return applyPipeFilter(output, pipeFilter);
     }
 
     // Handle 'show' shortcut in config modes (real Cisco IOS behavior)
@@ -284,7 +277,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       let output = this.executeOnTrie(cmdPart);
       this.mode = savedMode;
       this.routerRef = null;
-      return this.applyPipeFilter(output, pipeFilter);
+      return applyPipeFilter(output, pipeFilter);
     }
 
     let output = this.executeOnTrie(cmdPart);
@@ -294,12 +287,12 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       const asyncOp = this._pendingAsync;
       this._pendingAsync = null;
       this.routerRef = null;
-      return asyncOp.then(result => this.applyPipeFilter(result, pipeFilter));
+      return asyncOp.then(result => applyPipeFilter(result, pipeFilter));
     }
 
     this.routerRef = null;
 
-    return this.applyPipeFilter(output, pipeFilter);
+    return applyPipeFilter(output, pipeFilter);
   }
 
   private executeOnTrie(cmdPart: string): string {
@@ -314,16 +307,16 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
         return '';
 
       case 'ambiguous':
-        return result.error || `% Ambiguous command: "${cmdPart}"`;
+        return result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
 
       case 'incomplete':
-        return result.error || '% Incomplete command.';
+        return result.error || CISCO_ERRORS.INCOMPLETE;
 
       case 'invalid':
-        return result.error || `% Invalid input detected at '^' marker.`;
+        return result.error || CISCO_ERRORS.INVALID_INPUT;
 
       default:
-        return `% Unrecognized command "${cmdPart}"`;
+        return CISCO_ERRORS.UNRECOGNIZED(cmdPart);
     }
   }
 
@@ -456,29 +449,14 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     return lines.join('\n');
   }
 
-  private applyPipeFilter(output: string, pipeFilter: { type: string; pattern: string } | null): string {
-    if (!pipeFilter || !output) return output;
-    const lines = output.split('\n');
-    let pattern = pipeFilter.pattern;
-    if ((pattern.startsWith('"') && pattern.endsWith('"')) ||
-        (pattern.startsWith("'") && pattern.endsWith("'"))) {
-      pattern = pattern.slice(1, -1);
-    }
-    const lowerPattern = pattern.toLowerCase();
-    if (pipeFilter.type === 'include' || pipeFilter.type === 'grep' || pipeFilter.type === 'findstr') {
-      return lines.filter(l => l.toLowerCase().includes(lowerPattern)).join('\n');
-    } else if (pipeFilter.type === 'exclude') {
-      return lines.filter(l => !l.toLowerCase().includes(lowerPattern)).join('\n');
-    }
-    return output;
-  }
+  // Pipe filter delegated to shared cli-utils.applyPipeFilter
 
   // ─── Help / Completion ─────────────────────────────────────────────
 
   getHelp(input: string): string {
     const trie = this.getActiveTrie();
     const completions = trie.getCompletions(input);
-    if (completions.length === 0) return '% Unrecognized command';
+    if (completions.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
     const maxKw = Math.max(...completions.map(c => c.keyword.length));
     return completions
       .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)

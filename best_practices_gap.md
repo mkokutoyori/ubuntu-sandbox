@@ -14,11 +14,11 @@ The codebase is a well-designed, equipment-driven network simulator with strong 
 
 | Category               | Critical | High | Medium | Low |
 |------------------------|----------|------|--------|-----|
-| Equipment              | 2        | 3    | 5      | 3   |
-| Commands / Terminal     | 1        | 2    | 4      | 2   |
-| Protocols              | 1        | 3    | 4      | 3   |
-| Filesystems            | 0        | 2    | 2      | 2   |
-| **Total**              | **4**    | **10** | **15** | **10** |
+| Equipment (§1)         | 2        | 3    | 5      | 3   |
+| Commands / Terminal (§2) | 1      | 2    | 4      | 2   |
+| Protocols (§3)         | 3        | 3    | 4      | 0   |
+| Filesystems / DB (§4)  | 1        | 3    | 4      | 2   |
+| **Total**              | **7**    | **11** | **17** | **7** |
 
 ---
 
@@ -439,4 +439,349 @@ Both implement column alignment, protocol code mapping, and metric display indep
 
 ---
 
-*Sections 3 (Protocols) and 4 (Filesystems) to follow.*
+## 3. Protocol Layer
+
+### 3.1 OSPF God Class (CRITICAL — SRP Violation)
+
+`OSPFEngine.ts` (3,247 lines) is the largest single class in the codebase. It handles 8+ distinct responsibilities:
+
+| Responsibility | Estimated Lines |
+|---------------|----------------|
+| Neighbor FSM (8 states) | ~500 |
+| DD/LSR/LSU packet processing | ~600 |
+| SPF scheduling & execution (Dijkstra) | ~400 |
+| LSA origination & aging | ~350 |
+| DR/BDR election | ~200 |
+| Interface state management | ~300 |
+| Virtual link management | ~100 |
+| Fletcher-16 checksum | ~117 |
+
+**Recommended decomposition:**
+
+```typescript
+class OSPFEngine {
+  private neighborManager: OSPFNeighborManager;  // FSM + adjacency
+  private lsdb: OSPFLinkStateDB;                 // LSA storage + aging
+  private spfScheduler: OSPFSPFScheduler;        // throttled SPF runs
+  private floodingEngine: OSPFFloodingEngine;     // reliable flooding
+  private interfaceManager: OSPFInterfaceManager; // DR election + state
+}
+```
+
+**File:** `src/network/ospf/OSPFEngine.ts`
+
+---
+
+### 3.2 OSPFv2/v3 Duplication (CRITICAL — DRY Violation)
+
+`OSPFv3Engine.ts` (655 lines) duplicates ~70% of `OSPFEngine.ts` logic:
+
+| Shared Logic | OSPFv2 | OSPFv3 | Duplicated Lines |
+|-------------|--------|--------|-----------------|
+| Neighbor FSM | ✓ | ✓ | ~300 |
+| DR/BDR election | ✓ | ✓ | ~150 |
+| Interface state machine | ✓ | ✓ | ~200 |
+| Hello protocol | ✓ | ✓ | ~100 |
+| **Total** | | | **~750** |
+
+**Additional issues:**
+- OSPFv3Engine has **no SPF implementation** — routes never computed (lines 609-611 return `[]`)
+- No shared base class; both engines maintain independent neighbor/interface data structures
+- Both use `OSPFNeighbor`, `OSPFArea`, LSDB structures from same `types.ts`
+
+**Recommendation:** Extract `BaseOSPFEngine<TAddress>` generic class covering shared FSM, DR election, and interface management.
+
+---
+
+### 3.3 IPSec God Class (CRITICAL — SRP Violation)
+
+`IPSecEngine.ts` (3,425 lines) handles 12+ responsibilities:
+
+| Concern | Lines (est.) | Should Be |
+|---------|-------------|-----------|
+| IKEv1 SA negotiation | ~400 | `IKEv1Engine` |
+| IKEv2 SA negotiation | ~350 | `IKEv2Engine` |
+| ESP/AH encapsulation | ~300 | `IPSecEncapsulator` |
+| SPD (Security Policy Database) | ~200 | `SPDEngine` |
+| SA databases (IKE, IPSec, Multicast) | ~250 | `SADatabase` |
+| Fragment reassembly | ~200 | `FragmentReassembler` |
+| Transform set parsing | ~150 | Config module |
+| Crypto map management | ~200 | Config module |
+| DPD (Dead Peer Detection) | ~100 | `DPDMonitor` |
+| Key derivation simulation | ~100 | Utility |
+
+**Bidirectional coupling:** Constructor takes `router: Router` (line 269/343), creating tight circular dependency.
+
+**File:** `src/network/ipsec/IPSecEngine.ts`
+
+---
+
+### 3.4 Protocol Engine Interface Gap (HIGH)
+
+`IProtocolEngine` interface exists in `src/network/core/interfaces.ts` but is only implemented by `RIPEngine`:
+
+| Protocol Engine | Implements `IProtocolEngine`? | Has `start()`/`stop()`? |
+|----------------|------------------------------|------------------------|
+| RIPEngine | ✓ | ✓ |
+| OSPFEngine | ✗ | Partial (uses `setSendCallback()`) |
+| OSPFv3Engine | ✗ | Partial |
+| IPSecEngine | ✗ | ✗ |
+| DHCPServer | ✗ | ✗ |
+| DHCPClient | ✗ | ✗ |
+
+**Router protocol initialization is inconsistent:**
+
+```typescript
+// Router.ts — inconsistent lifecycle patterns
+private dhcpServer: DHCPServer = new DHCPServer();     // eagerly created, always on
+private ospfEngine: OSPFEngine | null = null;          // lazy, nullable
+private ipsecEngine: IPSecEngine | null = null;        // lazy, nullable
+```
+
+**Recommendation:** All engines should implement `IProtocolEngine` for uniform lifecycle management.
+
+---
+
+### 3.5 DHCP Server Responsibilities (HIGH — SRP)
+
+`DHCPServer.ts` (1,017 lines) mixes 6 concerns:
+
+| Concern | Should Be |
+|---------|-----------|
+| Pool configuration | `DHCPPoolManager` |
+| Address allocation (DORA) | `DHCPAddressAllocator` |
+| Lease binding management | `DHCPLeaseDB` |
+| Conflict tracking | `DHCPConflictDB` |
+| Statistics | `DHCPStatistics` |
+| Excluded range checking | Part of `DHCPPoolManager` |
+
+**Additional issues:**
+- No IPv6 / DHCPv6 support (RFC 8415) despite IPv6 in Router
+- `DHCPClient.ts` (685 lines) uses string state machine ('INIT', 'BOUND') — should use enum
+- Both client and server duplicate DHCP option code constants (Option 53, 1, 3, etc.)
+
+---
+
+### 3.6 Protocol Magic Numbers (HIGH)
+
+| Location | Example | Count |
+|----------|---------|-------|
+| OSPF SPF throttle | `200`, `1_000`, `10_000` | 3 |
+| OSPF sequence number | `0x80000001` (initial) | 2 |
+| OSPF metric | `0xFFFF` (infinity) | 3 |
+| OSPF neighbor states | `'Down'`, `'Init'`, `'Full'` (strings) | 20+ |
+| OSPF LSA types | `1`, `2`, `3`, `4`, `5`, `7` (bare ints) | 15+ |
+| IPSec sequence max | `0xFFFFFFFF` | 2 |
+| IPSec ESP overhead | `50` | 1 |
+| IPSec frag timeout | `30_000` | 1 |
+| DHCP lease default | `86400` (1 day) | 2 |
+| DHCP option codes | `53`, `1`, `3`, `6` | 10+ |
+
+**Partially addressed:** `src/network/core/constants.ts` now contains `OSPF_CONSTANTS` and `IPSEC_CONSTANTS` (added in this review), but protocol code has not been updated to use them yet.
+
+---
+
+### 3.7 Fragment Reassembly (MEDIUM — IPv4-Only)
+
+IPSecEngine fragment reassembly (lines 199-240) is hardcoded for IPv4:
+- No IPv6 support despite `IPv6Packet` being imported
+- MTU calculations assume 20-byte IPv4 header (IPv6 is 40 bytes)
+- Multicast checks use only IPv4 range `224.0.0.0/4` — IPv6 `ff00::/8` unchecked
+- 4-level nesting: `Map<string, {fragments[], timer, created}>` — hard to mock/test
+
+---
+
+### 3.8 Protocol Error Handling (MEDIUM)
+
+| Gap | Engine | Impact |
+|-----|--------|--------|
+| Invalid Router ID (0.0.0.0) accepted | OSPF | Silent misconfiguration |
+| No network/mask validation | OSPF | Invalid area configurations |
+| Silent failures on unknown transforms | IPSec | Negotiation failure without diagnostics |
+| No fragment offset ordering validation | IPSec | Corrupted reassembled packets |
+| No pool address validation (e.g. 192.168.1.256) | DHCP | Runtime errors |
+| Missing `processDiscover()` null logging | DHCP | Silent allocation failures |
+
+---
+
+### 3.9 Protocol Testability (MEDIUM)
+
+| Concern | Impact |
+|---------|--------|
+| OSPF FSM embedded in 3,247-line class | Can't test state transitions in isolation |
+| OSPF uses `setTimeout`/`setInterval` directly | No clock injection; flaky timing tests |
+| IPSec SA databases use complex nested Maps | Hard to mock/verify |
+| IPSec key material is simulated random hex | Can't verify enc/dec correctness |
+| DHCP uses `Date.now()` for lease timing | Can't mock time in tests |
+| No constructor injection for OSPF/IPSec callbacks | Tests must use `setSendCallback()` |
+
+---
+
+## 4. Filesystem & Database Layer
+
+### 4.1 Filesystem Stub (CRITICAL — Non-Functional)
+
+`src/terminal/filesystem.ts` (100 lines) is a **non-functional stub**:
+
+```typescript
+// Line 1: "STUB FILE - will be rebuilt with TDD"
+readFile(path: string): string { return `STUB: File content for ${path}`; }
+writeFile(path: string, content: string): void { /* no-op */ }
+exists(path: string): boolean { return true; }  // ALWAYS returns true
+```
+
+**Issues:**
+- All methods return hardcoded lies (`exists()` always `true`)
+- No actual in-memory filesystem implementation
+- No `FileSystemNode` interface for traversal
+- No `FileSystemError` exception type
+- No permission/access control layer
+- Tests cannot be written against a stub
+
+**This is the lowest-quality file in the codebase.** It requires a complete implementation, not incremental fixes.
+
+---
+
+### 4.2 Oracle Hardcoded Configuration (HIGH — DRY)
+
+`src/terminal/commands/database.ts` (215 lines) contains 47+ hardcoded Oracle paths:
+
+```typescript
+// Scattered throughout lines 110-214:
+'/u01/app/oracle'          // 20+ occurrences across files
+'19c'                      // Oracle version: 5+ occurrences
+'ORCL'                     // SID: 10+ occurrences
+'1521'                     // Port: 8+ occurrences
+```
+
+**Also in `OracleCommands.ts` (172 lines):**
+- Duplicate copyright/version banners (lines 28-32 & 140-144)
+- TNS/Oracle paths appear 15+ times
+- Error codes (`TNS-12541`, `TNS-12560`) without constants
+- 6 switch cases with nearly identical `addLine` sequences
+
+**Recommendation:** Extract to `OracleConfig` constant object:
+
+```typescript
+export const ORACLE_CONFIG = {
+  HOME: '/u01/app/oracle/product/19c/dbhome_1',
+  BASE: '/u01/app/oracle',
+  VERSION: '19c',
+  SID: 'ORCL',
+  PORT: 1521,
+} as const;
+```
+
+---
+
+### 4.3 Database Module-Scoped State (HIGH — Testability)
+
+`database.ts` uses a module-scoped `Map` for Oracle instances:
+
+```typescript
+const oracleInstances: Map<string, OracleDatabase> = new Map();
+```
+
+**Issues:**
+- Not injectable or mockable — prevents test isolation
+- Global singleton pattern without reset mechanism
+- SQL*Plus argument parsing (lines 46-85) uses fragile index-based access
+
+---
+
+### 4.4 OracleExecutor Monolith (MEDIUM — SRP)
+
+`OracleExecutor.ts` (1,875 lines) dispatches 25+ statement types via a single `execute()` method:
+
+| Statement Type | Example |
+|---------------|---------|
+| SELECT | `executeSelect()` |
+| INSERT | `executeInsert()` |
+| UPDATE | `executeUpdate()` |
+| DELETE | `executeDelete()` |
+| CREATE TABLE | `executeCreateTable()` |
+| ALTER TABLE | `executeAlterTable()` |
+| ... | 19 more statement types |
+
+**Recommendation:** Strategy pattern — each statement type has its own executor class:
+
+```typescript
+interface IStatementExecutor<T extends ASTNode> {
+  execute(stmt: T, context: ExecutionContext): ExecutionResult;
+}
+```
+
+---
+
+### 4.5 LinuxTerminalSession Command Routing (MEDIUM — SRP)
+
+`LinuxTerminalSession.ts` (428 lines) `executeCommand()` method (lines 157-246) is a 90-line monolith:
+
+```typescript
+// Lines 157-246: single method handles:
+// - 'exit' → session close
+// - 'nano'/'vi'/'vim' → editor overlay
+// - 'sqlplus' → Oracle subshell
+// - 'lsnrctl'/'tnsping' → Oracle CLI tools
+// - 'sudo' → interactive flow
+// - default → device.executeCommand()
+```
+
+**Issues:**
+- Tight coupling to Oracle (hardcoded command names)
+- No command dispatcher/registry pattern
+- Special-case for `sudo sqlplus` duplicates flow setup with metadata patching
+- Sub-shell key handler is specific to this session type
+
+---
+
+### 4.6 DemoSchemas Hardcoding (MEDIUM)
+
+`DemoSchemas.ts` (276 lines) defines HR, SCOTT, DEPT, EMP schemas as inline DDL strings. Schema definitions should be data-driven (arrays of table/column specs) to enable:
+- Validation at build time
+- Schema introspection for tests
+- Easier extension with new demo schemas
+
+---
+
+### 4.7 Error Code Catalog (MEDIUM)
+
+Oracle error codes are scattered as magic strings:
+
+| Code | Location | Count |
+|------|----------|-------|
+| `ORA-01034` | OracleInstance.ts, SQLPlusSession.ts | 3 |
+| `ORA-01017` | OracleCatalog.ts | 2 |
+| `TNS-12541` | OracleCommands.ts | 2 |
+| `TNS-12560` | OracleCommands.ts | 1 |
+| `ORA-00942` | OracleExecutor.ts | 2 |
+
+**Recommendation:** Centralize in `OracleErrorCodes.ts` constant map.
+
+---
+
+### 4.8 Database Parser Quality (LOW — Positive)
+
+The database engine layer (`src/database/engine/`) is **well-designed**:
+
+| Component | Lines | Grade | Notes |
+|-----------|-------|-------|-------|
+| `BaseParser.ts` | 1,509 | A | LL(1) parser with error recovery |
+| `ASTNode.ts` | 616 | A | 30+ comprehensive AST interfaces |
+| `BaseLexer.ts` | 414 | A- | Good token handling |
+| `BaseStorage.ts` | 268 | A | Extensible table/index storage |
+| `BaseCatalog.ts` | 170 | A- | Abstract privilege system |
+
+**Minor TODO:** Window frame support (ROWS/RANGE) not yet implemented (BaseParser line 1359).
+
+---
+
+### 4.9 Session Layer Quality (LOW — Positive)
+
+The terminal session base class (`TerminalSession.ts`, 897 lines) is **well-architected**:
+- Clean observable pattern (version-based subscribers)
+- Template method pattern (abstract `onEnter()`, `onTab()`, `getPrompt()`)
+- Proper error classes (`CommandTimeoutError`, `DeviceOfflineError`)
+- Good constant management (`MAX_SCROLLBACK_LINES`, `DEFAULT_COMMAND_TIMEOUT_MS`)
+
+Only minor issue: `InputMode` discriminated union with 7 variants has switch cases scattered across methods.

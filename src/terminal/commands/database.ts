@@ -8,6 +8,7 @@
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
+import { ORACLE_CONFIG } from './OracleConfig';
 
 /** Per-device Oracle database instances. */
 const oracleInstances: Map<string, OracleDatabase> = new Map();
@@ -107,9 +108,9 @@ export function initOracleFilesystem(device: import('@/network').Equipment): voi
 
   // Create Oracle directory structure via writeFileFromEditor
   // (writes create parent directories automatically in our VFS)
-  const oracleHome = '/u01/app/oracle/product/19c/dbhome_1';
-  const oracleBase = '/u01/app/oracle';
-  const sid = 'ORCL';
+  const oracleHome = ORACLE_CONFIG.HOME;
+  const oracleBase = ORACLE_CONFIG.BASE;
+  const sid = ORACLE_CONFIG.SID;
 
   // Create config files
   const files: Record<string, string> = {

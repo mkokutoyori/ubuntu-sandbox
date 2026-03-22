@@ -9,6 +9,7 @@
 
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -257,28 +258,10 @@ export function registerDisplayCommands(
 
 // ─── Interface Name Resolution (Huawei format) ──────────────────────
 
+/**
+ * Resolve abbreviated Huawei interface name (backward-compatible wrapper).
+ * Delegates to shared resolveHuaweiInterfaceName in cli-utils.
+ */
 export function resolveHuaweiInterfaceName(router: Router, input: string): string | null {
-  // Direct match
-  for (const name of router.getPortNames()) {
-    if (name.toLowerCase() === input.toLowerCase()) return name;
-  }
-
-  // Abbreviation: GE0/0/0 → full port name
-  const lower = input.toLowerCase();
-  const match = lower.match(/^(ge|gigabitethernet|gi)([\d/]+)$/);
-  if (match) {
-    const numbers = match[2];
-    // Try GE format first (router naming)
-    const geResolved = `GE${numbers}`;
-    for (const name of router.getPortNames()) {
-      if (name === geResolved) return name;
-    }
-    // Try GigabitEthernet format
-    const giResolved = `GigabitEthernet${numbers}`;
-    for (const name of router.getPortNames()) {
-      if (name === giResolved) return name;
-    }
-  }
-
-  return null;
+  return resolveHuaweiIfName(router.getPortNames(), input);
 }

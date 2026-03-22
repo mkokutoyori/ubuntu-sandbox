@@ -21,6 +21,7 @@
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
+import { HUAWEI_ERRORS } from './cli-utils';
 
 // Extracted command modules
 import {
@@ -196,16 +197,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         return '';
 
       case 'ambiguous':
-        return result.error || `Error: Ambiguous command "${cmdPart}"`;
+        return result.error || HUAWEI_ERRORS.AMBIGUOUS(cmdPart);
 
       case 'incomplete':
-        return result.error || 'Error: Incomplete command.';
+        return result.error || HUAWEI_ERRORS.INCOMPLETE;
 
       case 'invalid':
-        return result.error || `Error: Unrecognized command "${cmdPart}"`;
+        return result.error || HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
 
       default:
-        return `Error: Unrecognized command "${cmdPart}"`;
+        return HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
     }
   }
 

@@ -11,6 +11,7 @@
 import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import { resolveCiscoInterfaceName } from '../cli-utils';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -292,48 +293,12 @@ export function cmdIpRoute(router: Router, args: string[]): string {
 
 // ─── Interface Name Resolution ───────────────────────────────────────
 
+/**
+ * Resolve abbreviated Cisco interface name (backward-compatible wrapper).
+ * Delegates to shared resolveCiscoInterfaceName in cli-utils.
+ */
 export function resolveInterfaceName(router: Router, input: string): string | null {
-  const combined = input.replace(/\s+/g, '');
-  const lower = combined.toLowerCase();
-
-  // Direct match
-  for (const name of router.getPortNames()) {
-    if (name.toLowerCase() === lower || name === input.trim()) return name;
-  }
-
-  // Abbreviation expansion
-  const prefixMap: Record<string, string> = {
-    'g': 'GigabitEthernet',
-    'gi': 'GigabitEthernet',
-    'gig': 'GigabitEthernet',
-    'giga': 'GigabitEthernet',
-    'gigabit': 'GigabitEthernet',
-    'gigabitethernet': 'GigabitEthernet',
-    'fa': 'FastEthernet',
-    'fast': 'FastEthernet',
-    'fastethernet': 'FastEthernet',
-    'se': 'Serial',
-    'serial': 'Serial',
-    'lo': 'Loopback',
-    'loopback': 'Loopback',
-    'tu': 'Tunnel',
-    'tunnel': 'Tunnel',
-    'ge': 'GE',
-  };
-
-  const match = lower.match(/^([a-z]+)([\d/.-]+)$/);
-  if (!match) return null;
-
-  const [, prefix, numbers] = match;
-  const fullPrefix = prefixMap[prefix];
-  if (!fullPrefix) return null;
-
-  const resolved = `${fullPrefix}${numbers}`;
-  for (const name of router.getPortNames()) {
-    if (name === resolved) return name;
-  }
-
-  return null;
+  return resolveCiscoInterfaceName(router.getPortNames(), input);
 }
 
 // ─── Classful Mask (for RIP) ────────────────────────────────────────

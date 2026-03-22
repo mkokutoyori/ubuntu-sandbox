@@ -180,6 +180,44 @@ export const PORT_SECURITY_DEFAULTS = {
   VIOLATION_MODE: 'shutdown' as const,
 } as const;
 
+// ─── OSPF Constants (RFC 2328) ──────────────────────────────────────
+
+export const OSPF_CONSTANTS = {
+  /** Initial SPF throttle delay in ms */
+  SPF_THROTTLE_INITIAL_MS: 200,
+  /** SPF hold time in ms */
+  SPF_THROTTLE_HOLD_MS: 1_000,
+  /** Max SPF throttle delay in ms */
+  SPF_THROTTLE_MAX_MS: 10_000,
+  /** Initial sequence number (RFC 2328 §12.4.4) */
+  INITIAL_SEQUENCE_NUMBER: 0x80000001,
+  /** Infinity metric (RFC 2328 §3) */
+  INFINITY_METRIC: 0xFFFF,
+  /** Default Hello interval in seconds */
+  HELLO_INTERVAL_S: 10,
+  /** Default Dead interval in seconds */
+  DEAD_INTERVAL_S: 40,
+} as const;
+
+// ─── IPSec Constants ────────────────────────────────────────────────
+
+export const IPSEC_CONSTANTS = {
+  /** Maximum anti-replay window size (RFC 4303) */
+  MAX_REPLAY_WINDOW: 1024,
+  /** Default anti-replay window size */
+  DEFAULT_REPLAY_WINDOW: 64,
+  /** ESP overhead (conservative estimate per RFC 4303 field sizes) */
+  ESP_OVERHEAD_BASE: 50,
+  /** Sequence number max (32-bit overflow) */
+  SEQ_NUM_MAX: 0xFFFFFFFF,
+  /** Fragment reassembly timeout in ms (RFC 791 recommends 15–120s) */
+  FRAG_REASSEMBLY_TIMEOUT_MS: 30_000,
+  /** Max concurrent fragment groups (memory guard) */
+  MAX_FRAG_GROUPS: 256,
+  /** Default path MTU for Ethernet */
+  DEFAULT_PATH_MTU: 1500,
+} as const;
+
 // ─── Multicast Addresses ────────────────────────────────────────────
 
 export const MULTICAST = {
