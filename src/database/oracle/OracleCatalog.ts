@@ -11,11 +11,26 @@ import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/Data
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
 
+/** Stored PL/SQL unit shape (avoids circular import with OracleDatabase) */
+interface StoredUnit {
+  schema: string; name: string; type: string;
+  parameters: Array<{ name: string; mode: string; dataType: string }>;
+  returnType?: string; body: string; sourceLines: string[];
+  created: Date; status: string;
+}
+
 export class OracleCatalog extends BaseCatalog {
   private storage: OracleStorage;
   private instance: OracleInstance;
   /** Schema → password (for authentication) */
   private passwords: Map<string, string> = new Map();
+  /** Injected provider for stored PL/SQL units (avoids circular dependency) */
+  private storedUnitsProvider: (() => StoredUnit[]) | null = null;
+
+  /** Set the provider for stored PL/SQL units */
+  setStoredUnitsProvider(provider: () => StoredUnit[]): void {
+    this.storedUnitsProvider = provider;
+  }
 
   constructor(storage: OracleStorage, instance: OracleInstance) {
     super();
@@ -867,11 +882,16 @@ export class OracleCatalog extends BaseCatalog {
   private dbaObjects(): ResultSet {
     const tables = this.storage.getAllTables();
     const rows: (string | number | null)[][] = tables.map(t => [t.schema, t.name, 'TABLE', 'VALID']);
-    // Add sequences
+    // Add indexes
     for (const schema of this.storage.getSchemas()) {
       for (const idx of this.storage.getIndexes(schema)) {
         rows.push([schema, idx.name, 'INDEX', 'VALID']);
       }
+    }
+    // Add stored PL/SQL units
+    const units = this.storedUnitsProvider?.() ?? [];
+    for (const u of units) {
+      rows.push([u.schema, u.name, u.type, u.status]);
     }
     return queryResult(
       [
@@ -1050,6 +1070,13 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private dbaSource(): ResultSet {
+    const units = this.storedUnitsProvider?.() ?? [];
+    const rows: (string | number)[][] = [];
+    for (const u of units) {
+      for (let i = 0; i < u.sourceLines.length; i++) {
+        rows.push([u.schema, u.name, u.type, i + 1, u.sourceLines[i]]);
+      }
+    }
     return queryResult(
       [
         { name: 'OWNER', dataType: oracleVarchar2(30) },
@@ -1058,11 +1085,12 @@ export class OracleCatalog extends BaseCatalog {
         { name: 'LINE', dataType: oracleNumber(10) },
         { name: 'TEXT', dataType: oracleVarchar2(4000) },
       ],
-      [] // No stored PL/SQL yet
+      rows
     );
   }
 
   private dbaProcedures(): ResultSet {
+    const units = this.storedUnitsProvider?.() ?? [];
     return queryResult(
       [
         { name: 'OWNER', dataType: oracleVarchar2(30) },
@@ -1072,7 +1100,8 @@ export class OracleCatalog extends BaseCatalog {
         { name: 'PIPELINED', dataType: oracleVarchar2(3) },
         { name: 'DETERMINISTIC', dataType: oracleVarchar2(3) },
       ],
-      []
+      units.filter(u => u.type === 'PROCEDURE' || u.type === 'FUNCTION')
+           .map(u => [u.schema, u.name, u.type, 'NO', 'NO', 'NO'])
     );
   }
 

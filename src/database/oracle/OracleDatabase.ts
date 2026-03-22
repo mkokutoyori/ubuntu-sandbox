@@ -29,6 +29,19 @@ export interface ConnectionInfo {
   serial: number;
 }
 
+/** Stored PL/SQL unit (procedure, function, or package) */
+export interface StoredPLSQLUnit {
+  schema: string;
+  name: string;
+  type: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE' | 'PACKAGE BODY' | 'TRIGGER';
+  parameters: Array<{ name: string; mode: 'IN' | 'OUT' | 'IN OUT'; dataType: string; defaultValue?: string }>;
+  returnType?: string; // For functions only
+  body: string; // Full PL/SQL source
+  sourceLines: string[]; // Source split by lines (for DBA_SOURCE)
+  created: Date;
+  status: 'VALID' | 'INVALID';
+}
+
 export class OracleDatabase {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
@@ -36,11 +49,14 @@ export class OracleDatabase {
   private lexer: OracleLexer;
   private connections: Map<number, ConnectionInfo> = new Map();
   private sidCounter: number = 1;
+  /** Stored PL/SQL units (procedures, functions, packages) */
+  private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
     this.storage = new OracleStorage();
     this.catalog = new OracleCatalog(this.storage, this.instance);
+    this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
     this.lexer = new OracleLexer();
   }
 
@@ -134,9 +150,36 @@ export class OracleDatabase {
       return this.executePLSQL(executor, trimmed);
     }
 
+    // Check for CREATE OR REPLACE PROCEDURE/FUNCTION
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
+      return this.createStoredProcedure(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
+      return this.createStoredFunction(executor, trimmed);
+    }
+
+    // Check for EXEC[UTE] procedure_name
+    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
+      return this.executeProcedureCall(executor, trimmed);
+    }
+
+    // Check for standalone procedure call: proc_name(args)
+    if (/^[A-Za-z_]\w*\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
+      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
+      if (callResult) return callResult;
+    }
+
     // Check for ALTER SESSION (handled specially)
     if (upper.startsWith('ALTER SESSION')) {
       return this.executeAlterSession(executor, trimmed);
+    }
+
+    // Check for DROP PROCEDURE/FUNCTION
+    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
+    }
+    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
     }
 
     const tokens = this.lexer.tokenize(trimmed);
@@ -732,5 +775,175 @@ export class OracleDatabase {
 
   getServiceName(): string {
     return this.instance.config.serviceName;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Stored PL/SQL Units (Procedures, Functions)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Parse and store a CREATE [OR REPLACE] PROCEDURE */
+  private createStoredProcedure(executor: OracleExecutor, sql: string): ResultSet {
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
+    if (!match) return emptyResult('ORA-24344: success with compilation error');
+
+    const name = match[2].toUpperCase();
+    const paramStr = match[3] || '';
+    const body = match[4].trim();
+    const schema = (executor as any).context?.currentSchema || 'SYS';
+
+    const parameters = this.parseParameters(paramStr);
+    const key = `${schema}.${name}`;
+
+    this.storedUnits.set(key, {
+      schema,
+      name,
+      type: 'PROCEDURE',
+      parameters,
+      body,
+      sourceLines: sql.split('\n'),
+      created: new Date(),
+      status: 'VALID',
+    });
+
+    return emptyResult('Procedure created.');
+  }
+
+  /** Parse and store a CREATE [OR REPLACE] FUNCTION */
+  private createStoredFunction(executor: OracleExecutor, sql: string): ResultSet {
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
+    if (!match) return emptyResult('ORA-24344: success with compilation error');
+
+    const name = match[2].toUpperCase();
+    const paramStr = match[3] || '';
+    const returnType = match[4].toUpperCase();
+    const body = match[5].trim();
+    const schema = (executor as any).context?.currentSchema || 'SYS';
+
+    const parameters = this.parseParameters(paramStr);
+    const key = `${schema}.${name}`;
+
+    this.storedUnits.set(key, {
+      schema,
+      name,
+      type: 'FUNCTION',
+      parameters,
+      returnType,
+      body,
+      sourceLines: sql.split('\n'),
+      created: new Date(),
+      status: 'VALID',
+    });
+
+    return emptyResult('Function created.');
+  }
+
+  /** Parse parameter list like "p_id IN NUMBER, p_name IN VARCHAR2 DEFAULT 'X'" */
+  private parseParameters(paramStr: string): StoredPLSQLUnit['parameters'] {
+    if (!paramStr.trim()) return [];
+    const params: StoredPLSQLUnit['parameters'] = [];
+    // Split by comma but respect parentheses
+    const parts = paramStr.split(',');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const m = trimmed.match(/^(\w+)\s+(IN\s+OUT|OUT|IN)?\s*(\w+(?:\([^)]*\))?)\s*(?:DEFAULT\s+(.+))?$/i);
+      if (m) {
+        params.push({
+          name: m[1].toUpperCase(),
+          mode: (m[2]?.toUpperCase().replace(/\s+/g, ' ') || 'IN') as 'IN' | 'OUT' | 'IN OUT',
+          dataType: m[3].toUpperCase(),
+          defaultValue: m[4]?.trim(),
+        });
+      }
+    }
+    return params;
+  }
+
+  /** Execute EXEC[UTE] procedure_name(args) */
+  private executeProcedureCall(executor: OracleExecutor, sql: string): ResultSet {
+    const cleaned = sql.replace(/^EXEC(?:UTE)?\s+/i, '').trim();
+    return this.callStoredUnit(executor, cleaned);
+  }
+
+  /** Try to execute a standalone procedure call */
+  private tryExecuteProcedureCall(executor: OracleExecutor, sql: string): ResultSet | null {
+    const match = sql.match(/^(\w+)\s*\(([\s\S]*)\)\s*$/);
+    if (!match) return null;
+    const name = match[1].toUpperCase();
+    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const key = `${schema}.${name}`;
+    if (!this.storedUnits.has(key) && !this.storedUnits.has(`SYS.${name}`)) return null;
+    return this.callStoredUnit(executor, sql);
+  }
+
+  /** Call a stored procedure or function by name with arguments */
+  private callStoredUnit(executor: OracleExecutor, callExpr: string): ResultSet {
+    const match = callExpr.match(/^(\w+)(?:\s*\(([\s\S]*)\))?\s*$/);
+    if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
+
+    const name = match[1].toUpperCase();
+    const argsStr = match[2] || '';
+    const schema = (executor as any).context?.currentSchema || 'SYS';
+
+    const unit = this.storedUnits.get(`${schema}.${name}`) || this.storedUnits.get(`SYS.${name}`);
+    if (!unit) return emptyResult(`${ORACLE_ERRORS.ORA_00900}\nPLS-00201: identifier '${name}' must be declared`);
+
+    // Parse arguments
+    const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
+
+    // Build variable map from parameters + arguments
+    const body = unit.body;
+
+    // Construct a PL/SQL block that declares params as variables and runs the body
+    let block = 'DECLARE\n';
+    for (let i = 0; i < unit.parameters.length; i++) {
+      const p = unit.parameters[i];
+      const argValue = args[i] ?? p.defaultValue ?? 'NULL';
+      block += `  ${p.name} ${p.dataType} := ${argValue};\n`;
+    }
+    // If the body already has DECLARE/BEGIN, unwrap it
+    const upperBody = body.toUpperCase().trim();
+    if (upperBody.startsWith('BEGIN')) {
+      block += body;
+    } else if (upperBody.startsWith('DECLARE')) {
+      // Merge declarations
+      const declareMatch = body.match(/^DECLARE\s+([\s\S]*?)\s*BEGIN\s+([\s\S]*)$/i);
+      if (declareMatch) {
+        block += declareMatch[1] + '\n';
+        block += 'BEGIN\n' + declareMatch[2];
+      } else {
+        block += 'BEGIN\n' + body + '\nEND;';
+      }
+    } else {
+      block += 'BEGIN\n' + body + '\nEND;';
+    }
+
+    return this.executePLSQL(executor, block);
+  }
+
+  /** DROP PROCEDURE/FUNCTION */
+  private dropStoredUnit(_executor: OracleExecutor, sql: string, type: 'PROCEDURE' | 'FUNCTION'): ResultSet {
+    const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION)\s+(\w+)/i);
+    if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
+
+    const name = match[1].toUpperCase();
+    const schema = (_executor as any).context?.currentSchema || 'SYS';
+    const key = `${schema}.${name}`;
+
+    if (!this.storedUnits.has(key)) {
+      return emptyResult(`ORA-04043: object ${name} does not exist`);
+    }
+    this.storedUnits.delete(key);
+    return emptyResult(`${type === 'PROCEDURE' ? 'Procedure' : 'Function'} dropped.`);
+  }
+
+  /** Get all stored PL/SQL units (for DBA_SOURCE, DBA_PROCEDURES, DBA_OBJECTS) */
+  getStoredUnits(): StoredPLSQLUnit[] {
+    return Array.from(this.storedUnits.values());
+  }
+
+  /** Get a specific stored unit by name */
+  getStoredUnit(schema: string, name: string): StoredPLSQLUnit | undefined {
+    return this.storedUnits.get(`${schema}.${name}`);
   }
 }
