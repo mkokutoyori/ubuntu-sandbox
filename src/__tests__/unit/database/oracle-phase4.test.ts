@@ -195,6 +195,73 @@ describe('Window / Analytic Functions', () => {
       expect(result.rows[7][1]).toBe(4); // bucket 4
     });
   });
+
+  describe('FIRST_VALUE, LAST_VALUE, NTH_VALUE', () => {
+    test('FIRST_VALUE returns first value in partition', () => {
+      const result = exec(db, `
+        SELECT rep, amount,
+          FIRST_VALUE(amount) OVER (PARTITION BY region ORDER BY amount DESC) AS highest
+        FROM sales
+        ORDER BY region, amount DESC
+      `);
+      expect(result.rows.length).toBe(8);
+      // First row in each partition should have FIRST_VALUE = its own amount (highest in partition)
+      expect(result.rows[0][2]).toBe(result.rows[0][1]);
+    });
+
+    test('LAST_VALUE with frame ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          LAST_VALUE(amount) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_amt
+        FROM sales
+        ORDER BY id
+      `);
+      // LAST_VALUE with full frame should return the last row's amount for all rows
+      const lastAmount = result.rows[result.rows.length - 1][1];
+      expect(result.rows[0][2]).toBe(lastAmount);
+      expect(result.rows[3][2]).toBe(lastAmount);
+    });
+
+    test('NTH_VALUE returns nth value in frame', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          NTH_VALUE(amount, 2) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS second_amt
+        FROM sales
+        ORDER BY id
+      `);
+      const secondAmount = result.rows[1][1];
+      expect(result.rows[0][2]).toBe(secondAmount);
+      expect(result.rows[4][2]).toBe(secondAmount);
+    });
+  });
+
+  describe('Window frame specifications', () => {
+    test('SUM with ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          SUM(amount) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS moving_sum
+        FROM sales
+        ORDER BY id
+      `);
+      expect(result.rows.length).toBe(8);
+      const amounts = result.rows.map((r: any[]) => Number(r[1]));
+      expect(result.rows[0][2]).toBe(amounts[0] + amounts[1]);
+      expect(result.rows[1][2]).toBe(amounts[0] + amounts[1] + amounts[2]);
+      expect(result.rows[7][2]).toBe(amounts[6] + amounts[7]);
+    });
+
+    test('AVG with ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW (running average)', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          AVG(amount) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_avg
+        FROM sales
+        ORDER BY id
+      `);
+      const amounts = result.rows.map((r: any[]) => Number(r[1]));
+      expect(result.rows[0][2]).toBe(amounts[0]);
+      expect(result.rows[1][2]).toBe((amounts[0] + amounts[1]) / 2);
+    });
+  });
 });
 
 describe('PL/SQL Anonymous Blocks', () => {

@@ -616,12 +616,30 @@ export class OracleExecutor extends BaseExecutor {
         return this.evaluateExpression(funcExpr.args[0], sourceRows[leadRowIdx], sourceColumns);
       }
 
+      case 'FIRST_VALUE': {
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
+        if (frameIndices.length === 0) return null;
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[0]], sourceColumns);
+      }
+
+      case 'LAST_VALUE': {
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
+        if (frameIndices.length === 0) return null;
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[frameIndices.length - 1]], sourceColumns);
+      }
+
+      case 'NTH_VALUE': {
+        const n = funcExpr.args.length > 1
+          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
+          : 1;
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
+        if (n < 1 || n > frameIndices.length) return null;
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[n - 1]], sourceColumns);
+      }
+
       // Aggregate window functions: SUM, COUNT, AVG, MIN, MAX with OVER
       case 'COUNT': case 'SUM': case 'AVG': case 'MIN': case 'MAX': {
-        // If ORDER BY is present, compute running aggregate (frame: UNBOUNDED PRECEDING to CURRENT ROW)
-        const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
-        const frameEnd = hasOrderBy ? posInPartition : partitionIndices.length - 1;
-        const frameIndices = partitionIndices.slice(0, frameEnd + 1);
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
 
         if (funcName === 'COUNT') {
           if (funcExpr.args.length === 0 || (funcExpr.args[0] && funcExpr.args[0].type === 'Star')) {
@@ -668,6 +686,39 @@ export class OracleExecutor extends BaseExecutor {
       if (this.compareValues(va, vb) !== 0) return false;
     }
     return true;
+  }
+
+  private resolveFrameIndices(
+    windowSpec: import('../engine/parser/ASTNode').WindowSpec,
+    partitionIndices: number[],
+    posInPartition: number
+  ): number[] {
+    const frame = windowSpec.frame;
+    if (!frame) {
+      // Default frame: if ORDER BY present, UNBOUNDED PRECEDING to CURRENT ROW; else whole partition
+      const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
+      const end = hasOrderBy ? posInPartition : partitionIndices.length - 1;
+      return partitionIndices.slice(0, end + 1);
+    }
+    const resolveBound = (bound: import('../engine/parser/ASTNode').FrameBound): number => {
+      switch (bound.type) {
+        case 'UNBOUNDED_PRECEDING': return 0;
+        case 'UNBOUNDED_FOLLOWING': return partitionIndices.length - 1;
+        case 'CURRENT_ROW': return posInPartition;
+        case 'PRECEDING': {
+          const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
+          return Math.max(0, posInPartition - n);
+        }
+        case 'FOLLOWING': {
+          const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
+          return Math.min(partitionIndices.length - 1, posInPartition + n);
+        }
+      }
+    };
+    const start = resolveBound(frame.start);
+    const end = frame.end ? resolveBound(frame.end) : posInPartition; // single bound defaults end to CURRENT ROW
+    if (start > end) return [];
+    return partitionIndices.slice(start, end + 1);
   }
 
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
