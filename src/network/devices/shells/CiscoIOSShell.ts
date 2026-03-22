@@ -27,6 +27,12 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
 import { IPAddress } from '../../core/types';
+import {
+  CISCO_ERRORS, parsePipeFilter, applyPipeFilter,
+} from './cli-utils';
+import { buildPrompt, CISCO_IOS_PROMPTS } from './PromptBuilder';
+import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
+import { registerSharedUserCommands, registerSharedPrivilegedCommands } from './cisco/CiscoSharedCommands';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -85,6 +91,9 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private selectedIKEv2Keyring: string | null = null;
   private selectedIKEv2KeyringPeer: string | null = null;
   private selectedIKEv2Profile: string | null = null;
+
+  /** FSM for mode transitions (exit/end) */
+  private readonly fsm = new CLIStateMachine<CiscoShellMode>('user', CISCO_IOS_MODES, 'user', 'privileged');
 
   /** Temporary reference set during execute() for closures */
   private routerRef: Router | null = null;
@@ -202,30 +211,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   // ─── Prompt Generation ─────────────────────────────────────────────
 
   getPrompt(router: Router): string {
-    const host = router._getHostnameInternal();
-    switch (this.mode) {
-      case 'user':          return `${host}>`;
-      case 'privileged':    return `${host}#`;
-      case 'config':        return `${host}(config)#`;
-      case 'config-if':     return `${host}(config-if)#`;
-      case 'config-dhcp':   return `${host}(dhcp-config)#`;
-      case 'config-router': return `${host}(config-router)#`;
-      case 'config-router-ospf': return `${host}(config-router)#`;
-      case 'config-router-ospfv3': return `${host}(config-rtr)#`;
-      case 'config-std-nacl': return `${host}(config-std-nacl)#`;
-      case 'config-ext-nacl': return `${host}(config-ext-nacl)#`;
-      case 'config-ipv6-nacl': return `${host}(config-ipv6-nacl)#`;
-      case 'config-isakmp':   return `${host}(config-isakmp)#`;
-      case 'config-tfset':    return `${host}(cfg-crypto-trans)#`;
-      case 'config-crypto-map': return `${host}(config-crypto-map)#`;
-      case 'config-ipsec-profile': return `${host}(ipsec-profile)#`;
-      case 'config-ikev2-proposal': return `${host}(config-ikev2-proposal)#`;
-      case 'config-ikev2-policy': return `${host}(config-ikev2-policy)#`;
-      case 'config-ikev2-keyring': return `${host}(config-ikev2-keyring)#`;
-      case 'config-ikev2-keyring-peer': return `${host}(config-ikev2-keyring-peer)#`;
-      case 'config-ikev2-profile': return `${host}(config-ikev2-profile)#`;
-      default:              return `${host}>`;
-    }
+    return buildPrompt(this.mode, router._getHostnameInternal(), CISCO_IOS_PROMPTS);
   }
 
   // ─── Main Execute ──────────────────────────────────────────────────
@@ -235,17 +221,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     if (!trimmed) return '';
 
     // Handle pipe filtering: "show logging | include DHCP"
-    let pipeFilter: { type: string; pattern: string } | null = null;
-    let cmdPart = trimmed;
-    const pipeIdx = trimmed.indexOf(' | ');
-    if (pipeIdx !== -1) {
-      cmdPart = trimmed.substring(0, pipeIdx).trim();
-      const filterPart = trimmed.substring(pipeIdx + 3).trim();
-      const filterMatch = filterPart.match(/^(include|exclude|grep|findstr)\s+(.+)$/i);
-      if (filterMatch) {
-        pipeFilter = { type: filterMatch[1].toLowerCase(), pattern: filterMatch[2] };
-      }
-    }
+    const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
 
     // Handle ? for help (preserve trailing space for "show ?" vs "show?")
     if (cmdPart.endsWith('?')) {
@@ -274,7 +250,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       let output = this.executeOnTrie(subCmd);
       this.mode = savedMode;
       this.routerRef = null;
-      return this.applyPipeFilter(output, pipeFilter);
+      return applyPipeFilter(output, pipeFilter);
     }
 
     // Handle 'show' shortcut in config modes (real Cisco IOS behavior)
@@ -284,7 +260,7 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       let output = this.executeOnTrie(cmdPart);
       this.mode = savedMode;
       this.routerRef = null;
-      return this.applyPipeFilter(output, pipeFilter);
+      return applyPipeFilter(output, pipeFilter);
     }
 
     let output = this.executeOnTrie(cmdPart);
@@ -294,12 +270,12 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
       const asyncOp = this._pendingAsync;
       this._pendingAsync = null;
       this.routerRef = null;
-      return asyncOp.then(result => this.applyPipeFilter(result, pipeFilter));
+      return asyncOp.then(result => applyPipeFilter(result, pipeFilter));
     }
 
     this.routerRef = null;
 
-    return this.applyPipeFilter(output, pipeFilter);
+    return applyPipeFilter(output, pipeFilter);
   }
 
   private executeOnTrie(cmdPart: string): string {
@@ -314,16 +290,16 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
         return '';
 
       case 'ambiguous':
-        return result.error || `% Ambiguous command: "${cmdPart}"`;
+        return result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
 
       case 'incomplete':
-        return result.error || '% Incomplete command.';
+        return result.error || CISCO_ERRORS.INCOMPLETE;
 
       case 'invalid':
-        return result.error || `% Invalid input detected at '^' marker.`;
+        return result.error || CISCO_ERRORS.INVALID_INPUT;
 
       default:
-        return `% Unrecognized command "${cmdPart}"`;
+        return CISCO_ERRORS.UNRECOGNIZED(cmdPart);
     }
   }
 
@@ -456,29 +432,14 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     return lines.join('\n');
   }
 
-  private applyPipeFilter(output: string, pipeFilter: { type: string; pattern: string } | null): string {
-    if (!pipeFilter || !output) return output;
-    const lines = output.split('\n');
-    let pattern = pipeFilter.pattern;
-    if ((pattern.startsWith('"') && pattern.endsWith('"')) ||
-        (pattern.startsWith("'") && pattern.endsWith("'"))) {
-      pattern = pattern.slice(1, -1);
-    }
-    const lowerPattern = pattern.toLowerCase();
-    if (pipeFilter.type === 'include' || pipeFilter.type === 'grep' || pipeFilter.type === 'findstr') {
-      return lines.filter(l => l.toLowerCase().includes(lowerPattern)).join('\n');
-    } else if (pipeFilter.type === 'exclude') {
-      return lines.filter(l => !l.toLowerCase().includes(lowerPattern)).join('\n');
-    }
-    return output;
-  }
+  // Pipe filter delegated to shared cli-utils.applyPipeFilter
 
   // ─── Help / Completion ─────────────────────────────────────────────
 
   getHelp(input: string): string {
     const trie = this.getActiveTrie();
     const completions = trie.getCompletions(input);
-    if (completions.length === 0) return '% Unrecognized command';
+    if (completions.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
     const maxKw = Math.max(...completions.map(c => c.keyword.length));
     return completions
       .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
@@ -521,66 +482,38 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   // ─── FSM Transitions ──────────────────────────────────────────────
 
   private cmdExit(): string {
-    switch (this.mode) {
-      case 'config-ikev2-keyring-peer':
-        this.mode = 'config-ikev2-keyring';
-        this.selectedIKEv2KeyringPeer = null;
-        return '';
-      case 'config-if':
-      case 'config-dhcp':
-      case 'config-router':
-      case 'config-router-ospf':
-      case 'config-router-ospfv3':
-      case 'config-std-nacl':
-      case 'config-ext-nacl':
-      case 'config-ipv6-nacl':
-      case 'config-isakmp':
-      case 'config-tfset':
-      case 'config-crypto-map':
-      case 'config-ipsec-profile':
-      case 'config-ikev2-proposal':
-      case 'config-ikev2-policy':
-      case 'config-ikev2-keyring':
-      case 'config-ikev2-profile':
-        this.mode = 'config';
-        this.selectedInterface = null;
-        this.selectedDHCPPool = null;
-        this.selectedACL = null;
-        this.selectedACLType = null;
-        return '';
-      case 'config':
-        this.mode = 'privileged';
-        return '';
-      case 'privileged':
-        this.mode = 'user';
-        return '';
-      case 'user':
-        return '';
-      default:
-        return '';
-    }
+    this.fsm.mode = this.mode;
+    const { newMode, fieldsToCllear } = this.fsm.exit();
+    this.mode = newMode;
+    this.clearFields(fieldsToCllear);
+    return '';
   }
 
   private cmdEnd(): string {
-    if (this.mode !== 'user' && this.mode !== 'privileged') {
-      this.mode = 'privileged';
-      this.selectedInterface = null;
-      this.selectedDHCPPool = null;
-      this.selectedACL = null;
-      this.selectedACLType = null;
-      this.selectedISAKMPPriority = null;
-      this.selectedTransformSet = null;
-      this.selectedCryptoMap = null;
-      this.selectedCryptoMapSeq = null;
-      this.selectedCryptoMapIsDynamic = false;
-      this.selectedIPSecProfile = null;
-      this.selectedIKEv2Proposal = null;
-      this.selectedIKEv2Policy = null;
-      this.selectedIKEv2Keyring = null;
-      this.selectedIKEv2KeyringPeer = null;
-      this.selectedIKEv2Profile = null;
-    }
+    this.fsm.mode = this.mode;
+    const { newMode, fieldsToCllear } = this.fsm.end();
+    this.mode = newMode;
+    this.clearFields(fieldsToCllear);
     return '';
+  }
+
+  private clearFields(fields: string[]): void {
+    for (const f of fields) {
+      if (f === 'selectedInterface') this.selectedInterface = null;
+      if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
+      if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
+      if (f === 'selectedACLType') this.selectedACLType = null;
+      if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
+      if (f === 'selectedTransformSet') this.selectedTransformSet = null;
+      if (f === 'selectedCryptoMap') { this.selectedCryptoMap = null; this.selectedCryptoMapSeq = null; this.selectedCryptoMapIsDynamic = false; }
+      if (f === 'selectedCryptoMapSeq') this.selectedCryptoMapSeq = null;
+      if (f === 'selectedIPSecProfile') this.selectedIPSecProfile = null;
+      if (f === 'selectedIKEv2Proposal') this.selectedIKEv2Proposal = null;
+      if (f === 'selectedIKEv2Policy') this.selectedIKEv2Policy = null;
+      if (f === 'selectedIKEv2Keyring') this.selectedIKEv2Keyring = null;
+      if (f === 'selectedIKEv2KeyringPeer') this.selectedIKEv2KeyringPeer = null;
+      if (f === 'selectedIKEv2Profile') this.selectedIKEv2Profile = null;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -592,10 +525,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private buildUserCommands(): void {
     const t = this.userTrie;
 
-    t.register('enable', 'Enter privileged EXEC mode', () => {
-      this.mode = 'privileged';
-      return '';
-    });
+    // Shared Cisco commands (enable)
+    registerSharedUserCommands(t, (m) => { this.mode = m as CiscoShellMode; });
 
     // show commands (limited in user mode)
     this.registerShowCommands(t);
@@ -611,24 +542,9 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
   private buildPrivilegedCommands(): void {
     const t = this.privilegedTrie;
 
-    t.register('enable', 'Enter privileged EXEC mode (already in)', () => '');
-
-    t.register('configure terminal', 'Enter configuration mode', () => {
-      this.mode = 'config';
-      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
-    });
-
-    t.register('disable', 'Return to user EXEC mode', () => {
-      this.mode = 'user';
-      return '';
-    });
-
-    t.register('copy running-config startup-config', 'Save configuration', () => {
-      return '[OK]';
-    });
-
-    t.register('write memory', 'Save configuration', () => {
-      return 'Building configuration...\n[OK]';
+    // Shared Cisco commands (enable, configure terminal, disable, write memory, copy running-config)
+    registerSharedPrivilegedCommands(t, {
+      setMode: (m) => { this.mode = m as CiscoShellMode; },
     });
 
     // show commands

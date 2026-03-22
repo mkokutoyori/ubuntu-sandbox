@@ -27,6 +27,8 @@ import {
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
+import type { IProtocolEngine } from '../core/interfaces';
+import { IPSEC_CONSTANTS } from '../core/constants';
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
@@ -53,13 +55,13 @@ function createReplayBitmap(windowSize: number): Uint32Array {
 }
 
 /** Maximum sequence number before overflow (2^32 - 1). */
-const SEQ_NUM_MAX = 0xFFFFFFFF;
+const SEQ_NUM_MAX = IPSEC_CONSTANTS.SEQ_NUM_MAX;
 
 /** Default Path MTU (Ethernet). */
-const DEFAULT_PATH_MTU = 1500;
+const DEFAULT_PATH_MTU = IPSEC_CONSTANTS.DEFAULT_PATH_MTU;
 
 /** ESP overhead: SPI(4) + SeqNum(4) + padding(max 255) + padLen(1) + nextHdr(1) + ICV(typical 12-32) */
-const ESP_OVERHEAD_BASE = 50; // conservative estimate for typical ESP
+const ESP_OVERHEAD_BASE = IPSEC_CONSTANTS.ESP_OVERHEAD_BASE;
 /** AH overhead: NextHdr(1) + PayloadLen(1) + Reserved(2) + SPI(4) + SeqNum(4) + ICV(12-32) */
 const AH_OVERHEAD_BASE = 24;
 
@@ -265,8 +267,9 @@ function multicastSAKey(spi: number, groupAddress: string): string {
   return `${spi}|${groupAddress}`;
 }
 
-export class IPSecEngine {
+export class IPSecEngine implements IProtocolEngine {
   private readonly router: Router;
+  private running = false;
 
   // ── IKEv1 Configuration ──────────────────────────────────────────
   private isakmpPolicies: Map<number, ISAKMPPolicy> = new Map();
@@ -342,6 +345,26 @@ export class IPSecEngine {
 
   constructor(router: Router) {
     this.router = router;
+  }
+
+  // ─── IProtocolEngine ──────────────────────────────────────────────
+
+  start(): void {
+    this.running = true;
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    // Clear fragment reassembly timers
+    for (const [, frag] of this.fragBuffer) {
+      clearTimeout(frag.timer);
+    }
+    this.fragBuffer.clear();
+  }
+
+  isRunning(): boolean {
+    return this.running;
   }
 
   // ══════════════════════════════════════════════════════════════════

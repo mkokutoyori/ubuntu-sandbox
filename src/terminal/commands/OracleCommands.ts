@@ -7,6 +7,7 @@
 
 import type { Equipment } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
+import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from './OracleConfig';
 
 /** Callback to append a line to the terminal. */
 type OutputFn = (text: string, type?: string) => void;
@@ -26,70 +27,70 @@ export function handleLsnrctl(
   const hostname = device.getHostname();
 
   addLine('');
-  addLine('LSNRCTL for Linux: Version 19.0.0.0.0 - Production on ' + new Date().toDateString());
+  addLine(`${ORACLE_BANNER.LSNRCTL_HEADER} on ${new Date().toDateString()}`);
   addLine('');
-  addLine('Copyright (c) 1991, 2019, Oracle.  All rights reserved.');
+  addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
 
   switch (subcommand) {
     case 'START': {
       db.instance.startListener();
-      addLine('Starting /u01/app/oracle/product/19c/dbhome_1/bin/tnslsnr: please wait...');
+      addLine(`Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`);
       addLine('');
-      addLine('TNSLSNR for Linux: Version 19.0.0.0.0 - Production');
-      addLine(`Log messages written to /u01/app/oracle/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
-      addLine('Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
+      addLine(`Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
+      addLine(`Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       addLine('');
-      addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       addLine('STATUS of the LISTENER');
       addLine('------------------------');
       addLine('Alias                     LISTENER');
-      addLine('Version                   TNSLSNR for Linux: Version 19.0.0.0.0 - Production');
+      addLine(`Version                   TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
       addLine('Start Date                ' + new Date().toLocaleString());
       addLine('Uptime                    0 days 0 hr. 0 min. 0 sec');
       addLine('Trace Level               off');
       addLine('Security                  ON: Local OS Authentication');
       addLine('SNMP                      OFF');
-      addLine(`Listener Log File         /u01/app/oracle/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
+      addLine(`Listener Log File         ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
       addLine('Listening Endpoints Summary...');
-      addLine('  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       addLine('The command completed successfully');
       break;
     }
     case 'STOP': {
       db.instance.stopListener();
-      addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       addLine('The command completed successfully');
       break;
     }
     case 'STATUS': {
       const status = db.instance.getListenerStatus();
-      addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       if (status.running) {
         addLine('STATUS of the LISTENER');
         addLine('------------------------');
         addLine('Alias                     LISTENER');
-        addLine('Version                   TNSLSNR for Linux: Version 19.0.0.0.0 - Production');
+        addLine(`Version                   TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
         addLine('Start Date                ' + (status.startedAt ? new Date(status.startedAt).toLocaleString() : 'N/A'));
         addLine('Trace Level               off');
         addLine('Security                  ON: Local OS Authentication');
         addLine('SNMP                      OFF');
         addLine('Listening Endpoints Summary...');
-        addLine('  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))');
+        addLine(`  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
         addLine('Services Summary...');
         addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
         addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
         addLine('The command completed successfully');
       } else {
-        addLine('TNS-12541: TNS:no listener');
-        addLine(' TNS-12560: TNS:protocol adapter error');
+        addLine(TNS_ERRORS.TNS_12541);
+        addLine(` ${TNS_ERRORS.TNS_12560}`);
         addLine('  TNS-00511: No listener');
       }
       break;
     }
     case 'SERVICES': {
       const status = db.instance.getListenerStatus();
-      addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       if (status.running) {
         addLine('Services Summary...');
         addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
@@ -99,12 +100,12 @@ export function handleLsnrctl(
         addLine('           LOCAL SERVER');
         addLine('The command completed successfully');
       } else {
-        addLine('TNS-12541: TNS:no listener');
+        addLine(TNS_ERRORS.TNS_12541);
       }
       break;
     }
     case 'RELOAD': {
-      addLine('Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))');
+      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
       addLine('The command completed successfully');
       break;
     }
@@ -138,12 +139,12 @@ export function handleTnsping(
   const serviceName = args[0] || '';
 
   addLine('');
-  addLine('TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production on ' + new Date().toDateString());
+  addLine(`${ORACLE_BANNER.TNSPING_HEADER} on ${new Date().toDateString()}`);
   addLine('');
-  addLine('Copyright (c) 1997, 2019, Oracle.  All rights reserved.');
+  addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
   addLine('Used parameter files:');
-  addLine('/u01/app/oracle/product/19c/dbhome_1/network/admin/sqlnet.ora');
+  addLine(`${ORACLE_CONFIG.HOME}/network/admin/sqlnet.ora`);
   addLine('');
 
   if (!serviceName) {
@@ -155,16 +156,17 @@ export function handleTnsping(
   const status = db.instance.getListenerStatus();
 
   if (upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase() || upper === 'LOCALHOST') {
+    const connectDesc = `(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = ${ORACLE_CONFIG.PORT})) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`;
     if (status.running) {
       addLine('Used TNSNAMES adapter to resolve the alias');
-      addLine(`Attempting to contact (DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`);
+      addLine(`Attempting to contact ${connectDesc}`);
       const latency = Math.floor(Math.random() * 5) + 1;
       addLine(`OK (${latency} msec)`);
     } else {
       addLine('Used TNSNAMES adapter to resolve the alias');
-      addLine(`Attempting to contact (DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`);
-      addLine('TNS-12541: TNS:no listener');
-      addLine(' TNS-12560: TNS:protocol adapter error');
+      addLine(`Attempting to contact ${connectDesc}`);
+      addLine(TNS_ERRORS.TNS_12541);
+      addLine(` ${TNS_ERRORS.TNS_12560}`);
     }
   } else {
     addLine('TNS-03505: Failed to resolve name');

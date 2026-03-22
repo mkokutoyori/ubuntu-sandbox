@@ -28,14 +28,16 @@ import {
   DHCPRequestWithNakResult, DHCPStaticBinding,
   createDefaultPoolConfig, createDefaultStats,
 } from './types';
+import type { IProtocolEngine } from '../core/interfaces';
+import { DHCP_CONSTANTS } from '../core/constants';
 
-/** Default pending offer timeout: 60 seconds */
-const PENDING_OFFER_TIMEOUT_MS = 60_000;
+/** Default pending offer timeout from centralized constants */
+const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
 
 /** Default conflict TTL: infinite (0 = never expire) */
 const DEFAULT_CONFLICT_TTL = 0;
 
-export class DHCPServer {
+export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
 
@@ -75,7 +77,13 @@ export class DHCPServer {
   /** Static bindings (manual reservations): poolName → bindings[] */
   private staticBindings: Map<string, DHCPStaticBinding[]> = new Map();
 
-  // ─── Service Control ─────────────────────────────────────────────
+  // ─── IProtocolEngine ─────────────────────────────────────────────
+
+  start(): void { this.enabled = true; }
+  stop(): void { this.enabled = false; }
+  isRunning(): boolean { return this.enabled; }
+
+  // ─── Service Control (legacy aliases) ──────────────────────────
 
   enable(): void { this.enabled = true; }
   disable(): void { this.enabled = false; }
@@ -104,6 +112,7 @@ export class DHCPServer {
   configurePoolNetwork(name: string, network: string, mask: string): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
+    if (!this.isValidIPv4(network) || !this.isValidIPv4(mask)) return false;
     pool.network = network;
     pool.mask = mask;
     return true;
@@ -977,6 +986,16 @@ export class DHCPServer {
       if (binding.type === 'automatic') count++;
     }
     return count;
+  }
+
+  /** Validate that a string is a valid dotted-decimal IPv4 address (0-255 per octet) */
+  private isValidIPv4(ip: string): boolean {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return false;
+    return parts.every(p => {
+      const n = Number(p);
+      return Number.isInteger(n) && n >= 0 && n <= 255 && p === String(n);
+    });
   }
 
   private ipToNumber(ip: string): number {

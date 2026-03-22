@@ -22,6 +22,7 @@ import {
   PortDuplex, PortSpeed, PortCounters, VALID_PORT_SPEEDS, PortViolationMode,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { PortSecurity } from './PortSecurity';
 import type { Cable } from './Cable';
 
 export type FrameHandler = (portName: string, frame: EthernetFrame) => void;
@@ -60,12 +61,14 @@ export class Port {
   // ─── MTU ───────────────────────────────────────────────────────────
   private mtu: number = 1500;
 
-  // ─── Port Security (Cisco-style) ──────────────────────────────────
-  private portSecurityEnabled: boolean = false;
-  private maxMACAddresses: number = 1;
-  private secureMACAddresses: MACAddress[] = [];
-  private violationMode: PortViolationMode = 'shutdown';
-  private securityViolationCount: number = 0;
+  // ─── Port Security (delegated to PortSecurity class) ──────────────
+  private _security: PortSecurity | null = null;
+  private get security(): PortSecurity {
+    if (!this._security) {
+      this._security = new PortSecurity(this.name, this.equipmentId);
+    }
+    return this._security;
+  }
 
   // ─── Error counters (RFC 2863 ifTable) ──────────────────────────
   private counters: PortCounters = {
@@ -88,7 +91,7 @@ export class Port {
 
   getName(): string { return this.name; }
   getMAC(): MACAddress { return this.mac; }
-  setMAC(mac: MACAddress): void { (this as { mac: MACAddress }).mac = mac; }
+  setMAC(mac: MACAddress): void { (this as unknown as { mac: MACAddress }).mac = mac; }
   getType(): ConnectionType { return this.type; }
   getEquipmentId(): string { return this.equipmentId; }
 
@@ -286,95 +289,51 @@ export class Port {
 
   setMTU(mtu: number): void {
     if (mtu < 68) {
-      throw new Error(`Invalid MTU: ${mtu}. Minimum is 68 (IPv4 minimum).`);
+      throw new Error(`Invalid MTU: ${mtu}. Minimum is 68 (IPv4 minimum).`);  // MTU.MIN
     }
     if (mtu > 9216) {
-      throw new Error(`Invalid MTU: ${mtu}. Maximum is 9216 (jumbo frame).`);
+      throw new Error(`Invalid MTU: ${mtu}. Maximum is 9216 (jumbo frame).`);  // MTU.MAX
     }
     this.mtu = mtu;
     Logger.info(this.equipmentId, 'port:mtu', `${this.name}: MTU set to ${mtu}`);
   }
 
-  // ─── Port Security (Cisco-style) ──────────────────────────────────
+  // ─── Port Security (delegated to PortSecurity) ─────────────────────
 
-  isPortSecurityEnabled(): boolean { return this.portSecurityEnabled; }
+  /** Get the PortSecurity manager for direct access */
+  getPortSecurity(): PortSecurity { return this.security; }
 
-  enablePortSecurity(): void {
-    this.portSecurityEnabled = true;
-    Logger.info(this.equipmentId, 'port:security', `${this.name}: port security enabled`);
-  }
+  isPortSecurityEnabled(): boolean { return this.security.isEnabled(); }
 
-  disablePortSecurity(): void {
-    this.portSecurityEnabled = false;
-    this.secureMACAddresses = [];
-    this.securityViolationCount = 0;
-    Logger.info(this.equipmentId, 'port:security', `${this.name}: port security disabled`);
-  }
+  enablePortSecurity(): void { this.security.enable(); }
 
-  getMaxMACAddresses(): number { return this.maxMACAddresses; }
+  disablePortSecurity(): void { this.security.disable(); }
 
-  setMaxMACAddresses(max: number): void {
-    if (max < 1) throw new Error('Max MAC addresses must be at least 1');
-    this.maxMACAddresses = max;
-  }
+  getMaxMACAddresses(): number { return this.security.getMaxMACAddresses(); }
 
-  getSecureMACAddresses(): MACAddress[] { return [...this.secureMACAddresses]; }
+  setMaxMACAddresses(max: number): void { this.security.setMaxMACAddresses(max); }
 
-  addStaticMACAddress(mac: MACAddress): void {
-    if (!this.secureMACAddresses.some(m => m.equals(mac))) {
-      this.secureMACAddresses.push(mac);
-    }
-  }
+  getSecureMACAddresses(): MACAddress[] { return this.security.getLearnedMACs(); }
 
-  getViolationMode(): PortViolationMode { return this.violationMode; }
+  addStaticMACAddress(mac: MACAddress): void { this.security.addStaticMAC(mac); }
 
-  setViolationMode(mode: PortViolationMode): void {
-    this.violationMode = mode;
-  }
+  getViolationMode(): PortViolationMode { return this.security.getViolationMode(); }
 
-  getSecurityViolationCount(): number { return this.securityViolationCount; }
+  setViolationMode(mode: PortViolationMode): void { this.security.setViolationMode(mode); }
+
+  getSecurityViolationCount(): number { return this.security.getViolationCount(); }
 
   /**
    * Check if a source MAC passes port security.
-   * Returns true if frame should be accepted, false if it should be dropped.
+   * Delegates to PortSecurity.evaluate() which returns explicit verdicts.
    */
   private checkPortSecurity(srcMAC: MACAddress): boolean {
-    if (!this.portSecurityEnabled) return true;
-
-    // Check if MAC is already learned
-    if (this.secureMACAddresses.some(m => m.equals(srcMAC))) {
-      return true;
+    const verdict = this.security.evaluate(srcMAC);
+    if (verdict.shouldShutdown) {
+      this.isUp = false;
+      this.notifyLinkChange('down');
     }
-
-    // Room to learn a new MAC?
-    if (this.secureMACAddresses.length < this.maxMACAddresses) {
-      this.secureMACAddresses.push(srcMAC);
-      Logger.debug(this.equipmentId, 'port:security-learn',
-        `${this.name}: learned MAC ${srcMAC}`);
-      return true;
-    }
-
-    // Violation!
-    this.securityViolationCount++;
-    Logger.warn(this.equipmentId, 'port:security-violation',
-      `${this.name}: security violation from ${srcMAC} (mode: ${this.violationMode})`);
-
-    switch (this.violationMode) {
-      case 'shutdown':
-        this.isUp = false;
-        this.notifyLinkChange('down');
-        Logger.warn(this.equipmentId, 'port:security-shutdown',
-          `${this.name}: port shut down due to security violation`);
-        break;
-      case 'restrict':
-        // Drop + increment counter (counter already incremented above)
-        break;
-      case 'protect':
-        // Just silently drop
-        break;
-    }
-
-    return false;
+    return verdict.allowed;
   }
 
   // ─── Error Counters (RFC 2863) ───────────────────────────────────
