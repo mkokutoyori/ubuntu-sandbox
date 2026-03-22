@@ -143,7 +143,7 @@ export const ADMINISTRATIVE_DISTANCE = {
   DEFAULT: 254,
 } as const;
 
-// ─── DHCP (RFC 2131) ─────────────────────────────────────────────────
+// ─── DHCP (RFC 2131, RFC 2132) ───────────────────────────────────────
 
 export const DHCP_CONSTANTS = {
   /** Pending offer timeout in ms */
@@ -154,6 +154,39 @@ export const DHCP_CONSTANTS = {
   T1_RATIO: 0.5,
   /** T2 rebinding ratio (87.5% of lease) */
   T2_RATIO: 0.875,
+} as const;
+
+/** DHCP Option codes (RFC 2132) — centralized for reuse across Server/Client/Packet */
+export const DHCP_OPTIONS = {
+  PAD: 0,
+  SUBNET_MASK: 1,
+  ROUTER: 3,
+  DNS: 6,
+  DOMAIN_NAME: 15,
+  INTERFACE_MTU: 26,
+  BROADCAST_ADDRESS: 28,
+  REQUESTED_IP: 50,
+  LEASE_TIME: 51,
+  MESSAGE_TYPE: 53,
+  SERVER_IDENTIFIER: 54,
+  PARAMETER_REQUEST_LIST: 55,
+  MESSAGE: 56,
+  RENEWAL_TIME: 58,
+  REBINDING_TIME: 59,
+  CLIENT_IDENTIFIER: 61,
+  END: 255,
+} as const;
+
+/** DHCP Message Type numeric values (Option 53, RFC 2132 §9.6) */
+export const DHCP_MESSAGE_TYPES = {
+  DISCOVER: 1,
+  OFFER: 2,
+  REQUEST: 3,
+  DECLINE: 4,
+  ACK: 5,
+  NAK: 6,
+  RELEASE: 7,
+  INFORM: 8,
 } as const;
 
 // ─── Switch (STP, MAC) ──────────────────────────────────────────────
@@ -191,12 +224,37 @@ export const OSPF_CONSTANTS = {
   SPF_THROTTLE_MAX_MS: 10_000,
   /** Initial sequence number (RFC 2328 §12.4.4) */
   INITIAL_SEQUENCE_NUMBER: 0x80000001,
+  /** Max sequence number (signed 32-bit max) */
+  MAX_SEQUENCE_NUMBER: 0x7FFFFFFF,
   /** Infinity metric (RFC 2328 §3) */
   INFINITY_METRIC: 0xFFFF,
   /** Default Hello interval in seconds */
   HELLO_INTERVAL_S: 10,
   /** Default Dead interval in seconds */
   DEAD_INTERVAL_S: 40,
+  /** Max LSA age in seconds (RFC 2328 §12.4.1) */
+  MAX_AGE_S: 3600,
+  /** LS refresh time in seconds */
+  LS_REFRESH_TIME_S: 1800,
+} as const;
+
+/** OSPF LSA type constants (RFC 2328 §12) */
+export const OSPF_LSA_TYPES = {
+  ROUTER: 1,
+  NETWORK: 2,
+  SUMMARY_NETWORK: 3,
+  SUMMARY_ASBR: 4,
+  AS_EXTERNAL: 5,
+  NSSA_EXTERNAL: 7,
+} as const;
+
+/** OSPF packet type constants (RFC 2328 §A.3) */
+export const OSPF_PACKET_TYPES = {
+  HELLO: 1,
+  DD: 2,
+  LS_REQUEST: 3,
+  LS_UPDATE: 4,
+  LS_ACK: 5,
 } as const;
 
 // ─── IPSec Constants ────────────────────────────────────────────────
@@ -216,6 +274,12 @@ export const IPSEC_CONSTANTS = {
   MAX_FRAG_GROUPS: 256,
   /** Default path MTU for Ethernet */
   DEFAULT_PATH_MTU: 1500,
+  /** Default IKE SA lifetime in seconds (24 hours, RFC 2408) */
+  DEFAULT_IKE_SA_LIFETIME_S: 86_400,
+  /** Default IPSec SA traffic limit in KB (4608000 KB ≈ 4.4 GB) */
+  DEFAULT_SA_LIFETIME_KB: 4_608_000,
+  /** Default IKE SA lifetime for IKEv2 in seconds (8 hours) */
+  DEFAULT_IKEV2_SA_LIFETIME_S: 28_800,
 } as const;
 
 // ─── Multicast Addresses ────────────────────────────────────────────

@@ -30,6 +30,7 @@ import {
   OSPF_VERSION_3,
   createDefaultOSPFConfig,
 } from './types';
+import type { IProtocolEngine } from '../core/interfaces';
 
 // ─── OSPFv3 LSA Types ───────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ export type OSPFv3SendCallback = (
 
 // ─── OSPFv3 Engine ──────────────────────────────────────────────────
 
-export class OSPFv3Engine {
+export class OSPFv3Engine implements IProtocolEngine {
   private config: OSPFConfig;
   private lsdb: LSDB;
   private interfaces: Map<string, OSPFv3Interface> = new Map();
@@ -60,6 +61,7 @@ export class OSPFv3Engine {
   private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
   private nextInterfaceId: number = 1;
   private eventLog: string[] = [];
+  private running = false;
 
   /**
    * Storage for OSPFv3-specific LSAs that don't fit in the standard LSDB:
@@ -78,6 +80,23 @@ export class OSPFv3Engine {
     this.lsdb = createEmptyLSDB();
   }
 
+  // ─── IProtocolEngine ─────────────────────────────────────────
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    this.shutdown();
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
   // ─── Configuration ─────────────────────────────────────────────
 
   getConfig(): OSPFConfig {
@@ -88,7 +107,14 @@ export class OSPFv3Engine {
     return this.config.processId;
   }
 
+  /**
+   * Set the OSPFv3 Router ID.
+   * @throws Error if routerId is '0.0.0.0' (invalid per RFC 2328 §C.1)
+   */
   setRouterId(routerId: string): void {
+    if (routerId === '0.0.0.0') {
+      throw new Error('OSPFv3: Router ID 0.0.0.0 is invalid (RFC 2328 §C.1)');
+    }
     this.config.routerId = routerId;
   }
 
@@ -627,6 +653,7 @@ export class OSPFv3Engine {
   // ─── Cleanup ──────────────────────────────────────────────────
 
   shutdown(): void {
+    this.running = false;
     for (const [, iface] of this.interfaces) {
       if (iface.helloTimer) {
         clearInterval(iface.helloTimer);

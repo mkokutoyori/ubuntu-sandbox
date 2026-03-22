@@ -35,6 +35,8 @@ import {
   OSPF_VERSION_2,
   createDefaultOSPFConfig,
 } from './types';
+import type { IProtocolEngine } from '../core/interfaces';
+import { OSPF_CONSTANTS } from '../core/constants';
 
 // ─── LSA Checksum: Fletcher-16 (RFC 2328 Appendix C.1) ─────────────
 
@@ -144,12 +146,13 @@ export type OSPFSendCallback = (
 
 // ─── OSPF Engine ────────────────────────────────────────────────────
 
-export class OSPFEngine {
+export class OSPFEngine implements IProtocolEngine {
   private config: OSPFConfig;
   private lsdb: LSDB;
   private interfaces: Map<string, OSPFInterface> = new Map();
   private ospfRoutes: OSPFRouteEntry[] = [];
   private sendCallback: OSPFSendCallback | null = null;
+  private running = false;
 
   /** Current LSA sequence number */
   private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
@@ -167,10 +170,10 @@ export class OSPFEngine {
   private insideProcessLSUpdate = false;
 
   /** SPF throttle — configurable via setThrottleSPF() */
-  private spfThrottleInitial = 200;    // ms: initial delay before first SPF
-  private spfThrottleHold = 1_000;     // ms: base hold interval
-  private spfThrottleMax = 10_000;     // ms: maximum hold interval
-  private spfCurrentHold = 1_000;      // ms: current hold (doubles on each rapid re-schedule)
+  private spfThrottleInitial = OSPF_CONSTANTS.SPF_THROTTLE_INITIAL_MS;
+  private spfThrottleHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
+  private spfThrottleMax = OSPF_CONSTANTS.SPF_THROTTLE_MAX_MS;
+  private spfCurrentHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
   private spfLastRunAt = 0;            // timestamp (ms) when SPF last ran
 
   /** SPF scheduling */
@@ -210,6 +213,24 @@ export class OSPFEngine {
     this.lsdb = createEmptyLSDB();
   }
 
+  // ─── IProtocolEngine ─────────────────────────────────────────
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.startLSAgeTimer();
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    this.shutdown();
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
   // ─── Configuration API ─────────────────────────────────────────
 
   getConfig(): OSPFConfig {
@@ -220,7 +241,14 @@ export class OSPFEngine {
     return this.config.processId;
   }
 
+  /**
+   * Set the OSPF Router ID.
+   * @throws Error if routerId is '0.0.0.0' (invalid per RFC 2328 §C.1)
+   */
   setRouterId(routerId: string): void {
+    if (routerId === '0.0.0.0') {
+      throw new Error('OSPF: Router ID 0.0.0.0 is invalid (RFC 2328 §C.1)');
+    }
     this.config.routerId = routerId;
   }
 
@@ -3113,6 +3141,8 @@ export class OSPFEngine {
   // ─── Cleanup ──────────────────────────────────────────────────
 
   shutdown(): void {
+    this.running = false;
+
     // Stop LSA aging timer
     this.stopLSAgeTimer();
 

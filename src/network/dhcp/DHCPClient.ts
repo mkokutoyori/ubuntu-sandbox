@@ -27,6 +27,7 @@ import {
   DHCPOfferResult, DHCPAckResult,
   createDefaultClientState,
 } from './types';
+import type { IProtocolEngine } from '../core/interfaces';
 
 /** Reference to a connected DHCP server (for simulated DORA) */
 interface ServerRef {
@@ -47,7 +48,7 @@ const DEFAULT_PARAMETER_REQUEST_LIST = [
   59,  // Rebinding (T2) Time Value
 ];
 
-export class DHCPClient {
+export class DHCPClient implements IProtocolEngine {
   /** Per-interface DHCP state */
   private ifaceStates: Map<string, DHCPClientIfaceState> = new Map();
 
@@ -66,6 +67,8 @@ export class DHCPClient {
   /** ARP probe callback: returns true if the IP is already in use (conflict detected) */
   private checkAddressConflict: ((iface: string, ip: string) => boolean) | null = null;
 
+  private running = false;
+
   constructor(
     getMACForIface: (iface: string) => string,
     configureIP: (iface: string, ip: string, mask: string, gateway: string | null) => void,
@@ -75,6 +78,18 @@ export class DHCPClient {
     this.configureIP = configureIP;
     this.clearIP = clearIP;
   }
+
+  // ─── IProtocolEngine ────────────────────────────────────────────────
+
+  start(): void { this.running = true; }
+
+  stop(): void {
+    this.running = false;
+    this.ifaceStates.clear();
+    this.connectedServers = [];
+  }
+
+  isRunning(): boolean { return this.running; }
 
   // ─── ARP Probe Registration ────────────────────────────────────────
 
