@@ -17,6 +17,7 @@ import { OracleParser } from './OracleParser';
 import { OracleExecutor } from './OracleExecutor';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
+import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
 import { emptyResult } from '../engine/executor/ResultSet';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 
@@ -49,12 +50,12 @@ export class OracleDatabase {
    */
   connect(username: string, password: string): { sid: number; executor: OracleExecutor } {
     if (!this.instance.isOpen) {
-      throw new Error('ORA-01034: ORACLE not available');
+      throw new Error(ORACLE_ERRORS.ORA_01034);
     }
 
     const authResult = this.catalog.authenticate(username, password);
     if (!authResult) {
-      throw new Error('ORA-01017: invalid username/password; logon denied');
+      throw new Error(ORACLE_ERRORS.ORA_01017);
     }
 
     const upperUser = username.toUpperCase();
@@ -208,8 +209,8 @@ export class OracleDatabase {
         // Match specific exceptions
         if (handlerName === 'OTHERS' ||
             (handlerName === 'ZERO_DIVIDE' && errMsg.includes('divisor is equal to zero')) ||
-            (handlerName === 'NO_DATA_FOUND' && errMsg.includes('ORA-01403')) ||
-            (handlerName === 'TOO_MANY_ROWS' && errMsg.includes('ORA-01422'))) {
+            (handlerName === 'NO_DATA_FOUND' && errMsg.includes(ORACLE_ERRORS.ORA_01403)) ||
+            (handlerName === 'TOO_MANY_ROWS' && errMsg.includes(ORACLE_ERRORS.ORA_01422))) {
           // Set SQLERRM in context for WHEN OTHERS
           const savedSqlerrm = errMsg;
           const origEval = this.evaluatePLSQLExpressionWithVars.bind(this);
@@ -657,7 +658,7 @@ export class OracleDatabase {
         case '-': return left - right;
         case '*': return left * right;
         case '/': {
-          if (right === 0) throw new Error('ORA-01476: divisor is equal to zero');
+          if (right === 0) throw new Error(ORACLE_ERRORS.ORA_01476);
           return left / right;
         }
       }

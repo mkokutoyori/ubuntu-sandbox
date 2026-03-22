@@ -84,7 +84,7 @@ export function handleLsnrctl(
       } else {
         addLine(TNS_ERRORS.TNS_12541);
         addLine(` ${TNS_ERRORS.TNS_12560}`);
-        addLine('  TNS-00511: No listener');
+        addLine(`  ${TNS_ERRORS.TNS_00511}`);
       }
       break;
     }
@@ -148,7 +148,7 @@ export function handleTnsping(
   addLine('');
 
   if (!serviceName) {
-    addLine('TNS-03505: Failed to resolve name');
+    addLine(TNS_ERRORS.TNS_03505);
     return;
   }
 
@@ -169,6 +169,6 @@ export function handleTnsping(
       addLine(` ${TNS_ERRORS.TNS_12560}`);
     }
   } else {
-    addLine('TNS-03505: Failed to resolve name');
+    addLine(TNS_ERRORS.TNS_03505);
   }
 }

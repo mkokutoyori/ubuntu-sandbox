@@ -7,6 +7,7 @@
 
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -68,7 +69,7 @@ export class OracleInstance {
     }
 
     if (this._state !== 'SHUTDOWN') {
-      return [`ORA-01081: cannot start already-running ORACLE - shut it down first`];
+      return [ORACLE_ERRORS.ORA_01081];
     }
 
     this._startupTime = now;
@@ -115,7 +116,7 @@ export class OracleInstance {
     const output: string[] = [];
 
     if (this._state === 'SHUTDOWN') {
-      return ['ORA-01034: ORACLE not available'];
+      return [ORACLE_ERRORS.ORA_01034];
     }
 
     const effectiveMode = mode ?? 'NORMAL';
@@ -169,15 +170,16 @@ export class OracleInstance {
   // ── Redo logs ────────────────────────────────────────────────────
 
   private initRedoLogs(): void {
+    const oradata = `${ORACLE_CONFIG.BASE}/oradata/${this.config.sid}`;
     this._redoLogGroups = [
-      { group: 1, status: 'UNUSED', members: ['/u01/app/oracle/oradata/ORCL/redo01.log'], sizeBytes: 52428800, sequence: 0 },
-      { group: 2, status: 'UNUSED', members: ['/u01/app/oracle/oradata/ORCL/redo02.log'], sizeBytes: 52428800, sequence: 0 },
-      { group: 3, status: 'UNUSED', members: ['/u01/app/oracle/oradata/ORCL/redo03.log'], sizeBytes: 52428800, sequence: 0 },
+      { group: 1, status: 'UNUSED', members: [`${oradata}/redo01.log`], sizeBytes: 52428800, sequence: 0 },
+      { group: 2, status: 'UNUSED', members: [`${oradata}/redo02.log`], sizeBytes: 52428800, sequence: 0 },
+      { group: 3, status: 'UNUSED', members: [`${oradata}/redo03.log`], sizeBytes: 52428800, sequence: 0 },
     ];
   }
 
   switchLogfile(): string {
-    if (this._state !== 'OPEN') return 'ORA-01034: ORACLE not available';
+    if (this._state !== 'OPEN') return ORACLE_ERRORS.ORA_01034;
     const currentGroup = this._redoLogGroups.find(g => g.status === 'CURRENT');
     if (currentGroup) {
       currentGroup.status = 'ACTIVE';
@@ -215,14 +217,15 @@ export class OracleInstance {
     p.set('instance_name', this.config.sid);
     p.set('service_names', this.config.serviceName);
     p.set('remote_login_passwordfile', 'EXCLUSIVE');
-    p.set('diagnostic_dest', '/u01/app/oracle');
-    p.set('control_files', '/u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control02.ctl');
-    p.set('log_archive_dest_1', `LOCATION=/u01/app/oracle/archivelog`);
+    const oradata = `${ORACLE_CONFIG.BASE}/oradata/${this.config.sid}`;
+    p.set('diagnostic_dest', ORACLE_CONFIG.BASE);
+    p.set('control_files', `${oradata}/control01.ctl, ${oradata}/control02.ctl`);
+    p.set('log_archive_dest_1', `LOCATION=${ORACLE_CONFIG.BASE}/archivelog`);
     p.set('archive_log_mode', this._archiveLogMode ? 'ENABLED' : 'DISABLED');
     // Environment-like parameters (stored lowercase for case-insensitive lookup)
-    p.set('oracle_home', '/u01/app/oracle/product/19c/dbhome_1');
+    p.set('oracle_home', ORACLE_CONFIG.HOME);
     p.set('oracle_sid', this.config.sid);
-    p.set('oracle_base', '/u01/app/oracle');
+    p.set('oracle_base', ORACLE_CONFIG.BASE);
   }
 
   getParameter(name: string): string | undefined {
@@ -267,7 +270,7 @@ export class OracleInstance {
 
   setArchiveLogMode(enabled: boolean): string {
     if (this._state !== 'MOUNT') {
-      return 'ORA-01126: database must be mounted and not open for this operation';
+      return ORACLE_ERRORS.ORA_01126;
     }
     this._archiveLogMode = enabled;
     this._parameters.set('archive_log_mode', enabled ? 'ENABLED' : 'DISABLED');
@@ -292,36 +295,39 @@ export class OracleInstance {
 
   startListener(): string {
     if (this._listenerState === 'running') {
-      return 'TNS-01106: Listener using listener name LISTENER has already been started';
+      return TNS_ERRORS.TNS_01106;
     }
     this._listenerState = 'running';
     this.logAlert('Listener LISTENER started successfully');
+    const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
+    const port = ORACLE_CONFIG.PORT;
+    const sid = this.config.sid;
     return [
-      'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-      `Starting /u01/app/oracle/product/19c/dbhome_1/bin/tnslsnr: please wait...`,
+      `LSNRCTL for Linux: Version ${ver} - Production`,
+      `Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`,
       '',
-      `TNSLSNR for Linux: Version 19.0.0.0.0 - Production`,
-      `System parameter file is /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora`,
-      `Log messages written to /u01/app/oracle/diag/tnslsnr/${this.config.sid.toLowerCase()}/listener/alert/log.xml`,
-      `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))`,
+      `TNSLSNR for Linux: Version ${ver} - Production`,
+      `System parameter file is ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
+      `Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/alert/log.xml`,
+      `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
       '',
-      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
       `STATUS of the LISTENER`,
       `------------------------`,
       `Alias                     LISTENER`,
-      `Version                   TNSLSNR for Linux: Version 19.0.0.0.0`,
+      `Version                   TNSLSNR for Linux: Version ${ver}`,
       `Start Date                ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`,
       `Uptime                    0 days 0 hr. 0 min. 0 sec`,
       `Trace Level               off`,
       `Security                  ON: Local OS Authentication`,
       `SNMP                      OFF`,
-      `Listener Parameter File   /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora`,
-      `Listener Log File         /u01/app/oracle/diag/tnslsnr/${this.config.sid.toLowerCase()}/listener/alert/log.xml`,
+      `Listener Parameter File   ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
+      `Listener Log File         ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/alert/log.xml`,
       `Listening Endpoints Summary...`,
-      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))`,
+      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
       `Services Summary...`,
-      `Service "${this.config.sid}" has 1 instance(s).`,
-      `  Instance "${this.config.sid}", status READY, has 1 handler(s) for this service...`,
+      `Service "${sid}" has 1 instance(s).`,
+      `  Instance "${sid}", status READY, has 1 handler(s) for this service...`,
       `The command completed successfully`,
       '',
       'Listener started successfully.',
@@ -330,13 +336,15 @@ export class OracleInstance {
 
   stopListener(): string {
     if (this._listenerState === 'stopped') {
-      return 'TNS-12541: TNS:no listener';
+      return TNS_ERRORS.TNS_12541;
     }
     this._listenerState = 'stopped';
     this.logAlert('Listener LISTENER stopped');
+    const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
+    const port = ORACLE_CONFIG.PORT;
     return [
-      'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+      `LSNRCTL for Linux: Version ${ver} - Production`,
+      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
       `The command completed successfully`,
       '',
       'Listener stopped.',
@@ -344,33 +352,37 @@ export class OracleInstance {
   }
 
   getListenerStatus(): string {
+    const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
+    const port = ORACLE_CONFIG.PORT;
+    const sid = this.config.sid;
+
     if (this._listenerState === 'stopped') {
       return [
-        'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
-        `TNS-12541: TNS:no listener`,
-        ` TNS-12560: TNS:protocol adapter error`,
-        `  TNS-00511: No listener`,
+        `LSNRCTL for Linux: Version ${ver} - Production`,
+        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
+        TNS_ERRORS.TNS_12541,
+        ` ${TNS_ERRORS.TNS_12560}`,
+        `  ${TNS_ERRORS.TNS_00511}`,
       ].join('\n');
     }
     return [
-      'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=1521)))`,
+      `LSNRCTL for Linux: Version ${ver} - Production`,
+      `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
       `STATUS of the LISTENER`,
       `------------------------`,
       `Alias                     LISTENER`,
-      `Version                   TNSLSNR for Linux: Version 19.0.0.0.0`,
+      `Version                   TNSLSNR for Linux: Version ${ver}`,
       `Start Date                ${(this._startupTime || new Date()).toISOString().slice(0, 19).replace('T', ' ')}`,
       `Uptime                    0 days 0 hr. 5 min. 0 sec`,
       `Trace Level               off`,
       `Security                  ON: Local OS Authentication`,
       `SNMP                      OFF`,
-      `Listener Parameter File   /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora`,
+      `Listener Parameter File   ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
       `Listening Endpoints Summary...`,
-      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))`,
+      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
       `Services Summary...`,
-      `Service "${this.config.sid}" has 1 instance(s).`,
-      `  Instance "${this.config.sid}", status READY, has 1 handler(s) for this service...`,
+      `Service "${sid}" has 1 instance(s).`,
+      `  Instance "${sid}", status READY, has 1 handler(s) for this service...`,
       `The command completed successfully`,
     ].join('\n');
   }
@@ -394,9 +406,9 @@ export class OracleInstance {
       `compatible               = 19.0.0`,
       `remote_login_passwordfile = EXCLUSIVE`,
       `audit_trail              = DB`,
-      `diagnostic_dest          = /u01/app/oracle`,
-      `control_files            = ('/u01/app/oracle/oradata/${this.config.sid}/control01.ctl',`,
-      `                            '/u01/app/oracle/oradata/${this.config.sid}/control02.ctl')`,
+      `diagnostic_dest          = ${ORACLE_CONFIG.BASE}`,
+      `control_files            = ('${ORACLE_CONFIG.BASE}/oradata/${this.config.sid}/control01.ctl',`,
+      `                            '${ORACLE_CONFIG.BASE}/oradata/${this.config.sid}/control02.ctl')`,
     ];
     return params.join('\n');
   }
@@ -405,7 +417,7 @@ export class OracleInstance {
     return [
       `${this.config.sid} =`,
       `  (DESCRIPTION =`,
-      `    (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = 1521))`,
+      `    (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = ${ORACLE_CONFIG.PORT}))`,
       `    (CONNECT_DATA =`,
       `      (SERVER = DEDICATED)`,
       `      (SERVICE_NAME = ${this.config.sid})`,
