@@ -41,7 +41,7 @@ import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket, RIPRouteEntry,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMPV6, IP_PROTO_ESP, IP_PROTO_AH,
+  IP_PROTO_ICMP, IP_PROTO_UDP, IP_PROTO_ICMPV6, IP_PROTO_ESP, IP_PROTO_AH,
   UDP_PORT_RIP, UDP_PORT_IKE_NAT_T, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
@@ -58,6 +58,8 @@ import { OSPFEngine } from '../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../ospf/OSPFv3Engine';
 import type { OSPFNeighbor, OSPFPacket } from '../ospf/types';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
+import { ACLEngine } from './router/ACLEngine';
+export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -227,40 +229,6 @@ export interface RAConfig {
   }>;
 }
 
-// ─── ACL (Access Control Lists) ──────────────────────────────────────
-
-export interface ACLEntry {
-  action: 'permit' | 'deny';
-  /** Protocol filter: 'ip' matches all, 'icmp', 'tcp', 'udp' */
-  protocol?: string;
-  srcIP: IPAddress;
-  srcWildcard: SubnetMask;
-  dstIP?: IPAddress;
-  dstWildcard?: SubnetMask;
-  srcPort?: number;
-  dstPort?: number;
-  /** Match counter */
-  matchCount: number;
-}
-
-export interface AccessList {
-  /** Numeric ID (1-99 standard, 100-199 extended) or undefined for named ACLs */
-  id?: number;
-  /** Name for named ACLs */
-  name?: string;
-  /** ACL type */
-  type: 'standard' | 'extended';
-  /** Ordered list of entries (first match wins) */
-  entries: ACLEntry[];
-}
-
-/** Interface ACL binding: which ACL is applied in which direction */
-interface InterfaceACLBinding {
-  /** ACL ID (number) or name (string) */
-  inbound: number | string | null;
-  outbound: number | string | null;
-}
-
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
@@ -309,9 +277,8 @@ export abstract class Router extends Equipment {
   /** RA timer handles per interface */
   private raTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
 
-  // ── ACL (Access Control Lists) ──────────────────────────────
-  private accessLists: AccessList[] = [];
-  private interfaceACLBindings: Map<string, InterfaceACLBinding> = new Map();
+  // ── ACL (Access Control Lists) — delegated to ACLEngine ────
+  private aclEngine = new ACLEngine();
 
   // ── Interface Descriptions ──────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
@@ -1259,9 +1226,9 @@ export abstract class Router extends Equipment {
     }
 
     // C.1c: Inbound ACL check (only for transit/forwarded traffic)
-    const inboundBinding = this.interfaceACLBindings.get(inPort);
-    if (inboundBinding?.inbound !== null && inboundBinding?.inbound !== undefined) {
-      const verdict = this.evaluateACL(inboundBinding.inbound, ipPkt);
+    const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
+    if (inboundACL !== null) {
+      const verdict = this.aclEngine.evaluateACL(inboundACL, ipPkt);
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-in',
           `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
@@ -1453,9 +1420,9 @@ export abstract class Router extends Equipment {
     if (!outPort) return;
 
     // Phase E.2b: Outbound ACL check
-    const outboundBinding = this.interfaceACLBindings.get(route.iface);
-    if (outboundBinding?.outbound !== null && outboundBinding?.outbound !== undefined) {
-      const verdict = this.evaluateACL(outboundBinding.outbound, fwdPkt);
+    const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');
+    if (outboundACL !== null) {
+      const verdict = this.aclEngine.evaluateACL(outboundACL, fwdPkt);
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-out',
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
@@ -2347,210 +2314,22 @@ export abstract class Router extends Equipment {
   /** @internal Return IPSec engine (null if not yet configured) */
   _getIPSecEngineInternal(): IPSecEngine | null { return this.ipsecEngine; }
 
-  // ─── ACL Public API ────────────────────────────────────────────
+  // ─── ACL Public API — delegated to ACLEngine ──────────────────
 
-  getAccessLists(): AccessList[] {
-    return this.accessLists.map(acl => ({
-      ...acl,
-      entries: acl.entries.map(e => ({ ...e })),
-    }));
-  }
-
-  addAccessListEntry(
-    id: number,
-    action: 'permit' | 'deny',
-    opts: {
-      protocol?: string;
-      srcIP: IPAddress;
-      srcWildcard: SubnetMask;
-      dstIP?: IPAddress;
-      dstWildcard?: SubnetMask;
-      srcPort?: number;
-      dstPort?: number;
-    },
-  ): void {
-    const type: 'standard' | 'extended' = id < 100 ? 'standard' : 'extended';
-    let acl = this.accessLists.find(a => a.id === id);
-    if (!acl) {
-      acl = { id, type, entries: [] };
-      this.accessLists.push(acl);
-    }
-    acl.entries.push({
-      action,
-      protocol: opts.protocol,
-      srcIP: opts.srcIP,
-      srcWildcard: opts.srcWildcard,
-      dstIP: opts.dstIP,
-      dstWildcard: opts.dstWildcard,
-      srcPort: opts.srcPort,
-      dstPort: opts.dstPort,
-      matchCount: 0,
-    });
-  }
-
-  addNamedAccessListEntry(
-    name: string,
-    type: 'standard' | 'extended',
-    action: 'permit' | 'deny',
-    opts: {
-      protocol?: string;
-      srcIP: IPAddress;
-      srcWildcard: SubnetMask;
-      dstIP?: IPAddress;
-      dstWildcard?: SubnetMask;
-      srcPort?: number;
-      dstPort?: number;
-    },
-  ): void {
-    let acl = this.accessLists.find(a => a.name === name);
-    if (!acl) {
-      acl = { name, type, entries: [] };
-      this.accessLists.push(acl);
-    }
-    acl.entries.push({
-      action,
-      protocol: opts.protocol,
-      srcIP: opts.srcIP,
-      srcWildcard: opts.srcWildcard,
-      dstIP: opts.dstIP,
-      dstWildcard: opts.dstWildcard,
-      srcPort: opts.srcPort,
-      dstPort: opts.dstPort,
-      matchCount: 0,
-    });
-  }
-
-  removeAccessList(id: number): void {
-    this.accessLists = this.accessLists.filter(a => a.id !== id);
-    // Remove any interface bindings referencing this ACL
-    for (const [, binding] of this.interfaceACLBindings) {
-      if (binding.inbound === id) binding.inbound = null;
-      if (binding.outbound === id) binding.outbound = null;
-    }
-  }
-
-  removeNamedAccessList(name: string): void {
-    this.accessLists = this.accessLists.filter(a => a.name !== name);
-    for (const [, binding] of this.interfaceACLBindings) {
-      if (binding.inbound === name) binding.inbound = null;
-      if (binding.outbound === name) binding.outbound = null;
-    }
-  }
-
-  setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string): void {
-    let binding = this.interfaceACLBindings.get(ifName);
-    if (!binding) {
-      binding = { inbound: null, outbound: null };
-      this.interfaceACLBindings.set(ifName, binding);
-    }
-    if (direction === 'in') binding.inbound = aclRef;
-    else binding.outbound = aclRef;
-  }
-
-  removeInterfaceACL(ifName: string, direction: 'in' | 'out'): void {
-    const binding = this.interfaceACLBindings.get(ifName);
-    if (!binding) return;
-    if (direction === 'in') binding.inbound = null;
-    else binding.outbound = null;
-  }
-
-  getInterfaceACL(ifName: string, direction: 'in' | 'out'): number | string | null {
-    const binding = this.interfaceACLBindings.get(ifName);
-    if (!binding) return null;
-    return direction === 'in' ? binding.inbound : binding.outbound;
-  }
-
-  /** Evaluate a named/numbered ACL by name — used by IPSecEngine for crypto ACL matching. */
-  evaluateACLByName(name: string, ipPkt: IPv4Packet): 'permit' | 'deny' | null {
-    const ref: number | string = /^\d+$/.test(name) ? parseInt(name, 10) : name;
-    return this.evaluateACL(ref, ipPkt);
-  }
-
-  /** Evaluate an ACL against a packet. Returns 'permit', 'deny', or null (no ACL). */
-  private evaluateACL(aclRef: number | string | null, ipPkt: IPv4Packet): 'permit' | 'deny' | null {
-    if (aclRef === null) return null;
-
-    const acl = typeof aclRef === 'number'
-      ? this.accessLists.find(a => a.id === aclRef)
-      : this.accessLists.find(a => a.name === aclRef);
-
-    if (!acl || acl.entries.length === 0) {
-      // No ACL defined or empty — implicit deny
-      return 'deny';
-    }
-
-    for (const entry of acl.entries) {
-      if (this.aclEntryMatches(acl.type, entry, ipPkt)) {
-        entry.matchCount++;
-        return entry.action;
-      }
-    }
-
-    // Implicit deny at end of ACL
-    return 'deny';
-  }
-
-  /** Check if an ACL entry matches a packet */
-  private aclEntryMatches(aclType: 'standard' | 'extended', entry: ACLEntry, ipPkt: IPv4Packet): boolean {
-    // Source IP check (both standard and extended)
-    if (!this.wildcardMatch(ipPkt.sourceIP, entry.srcIP, entry.srcWildcard)) {
-      return false;
-    }
-
-    if (aclType === 'standard') {
-      return true; // Standard ACLs only check source
-    }
-
-    // Extended ACL checks
-    // Destination IP
-    if (entry.dstIP && entry.dstWildcard) {
-      if (!this.wildcardMatch(ipPkt.destinationIP, entry.dstIP, entry.dstWildcard)) {
-        return false;
-      }
-    }
-
-    // Protocol matching
-    if (entry.protocol && entry.protocol !== 'ip') {
-      const pktProto = this.getProtocolName(ipPkt.protocol);
-      if (pktProto !== entry.protocol) return false;
-
-      // Port matching for TCP/UDP
-      if ((entry.protocol === 'tcp' || entry.protocol === 'udp') && ipPkt.payload) {
-        const udp = ipPkt.payload as UDPPacket;
-        if (entry.srcPort !== undefined && udp.sourcePort !== entry.srcPort) return false;
-        if (entry.dstPort !== undefined && udp.destinationPort !== entry.dstPort) return false;
-      }
-    }
-
-    return true;
-  }
-
-  private wildcardMatch(packetIP: IPAddress, aclIP: IPAddress, wildcard: SubnetMask): boolean {
-    const pktOctets = packetIP.getOctets();
-    const aclOctets = aclIP.getOctets();
-    const wcOctets = wildcard.getOctets();
-    for (let i = 0; i < 4; i++) {
-      // Wildcard 0 = must match, 1 = don't care
-      if ((pktOctets[i] & ~wcOctets[i]) !== (aclOctets[i] & ~wcOctets[i])) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private getProtocolName(proto: number): string {
-    switch (proto) {
-      case IP_PROTO_ICMP: return 'icmp';
-      case IP_PROTO_TCP: return 'tcp';
-      case IP_PROTO_UDP: return 'udp';
-      default: return 'ip';
-    }
-  }
+  getAccessLists() { return this.aclEngine.getAccessLists(); }
+  addAccessListEntry(...args: Parameters<ACLEngine['addAccessListEntry']>) { this.aclEngine.addAccessListEntry(...args); }
+  addNamedAccessListEntry(...args: Parameters<ACLEngine['addNamedAccessListEntry']>) { this.aclEngine.addNamedAccessListEntry(...args); }
+  removeAccessList(id: number) { this.aclEngine.removeAccessList(id); }
+  removeNamedAccessList(name: string) { this.aclEngine.removeNamedAccessList(name); }
+  setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string) { this.aclEngine.setInterfaceACL(ifName, direction, aclRef); }
+  removeInterfaceACL(ifName: string, direction: 'in' | 'out') { this.aclEngine.removeInterfaceACL(ifName, direction); }
+  getInterfaceACL(ifName: string, direction: 'in' | 'out') { return this.aclEngine.getInterfaceACL(ifName, direction); }
+  evaluateACLByName(name: string, ipPkt: IPv4Packet) { return this.aclEngine.evaluateACLByName(name, ipPkt); }
 
   /** @internal Used by CLI shells */
-  _getAccessListsInternal(): AccessList[] { return this.accessLists; }
+  _getAccessListsInternal() { return this.aclEngine.getAccessListsInternal(); }
   /** @internal Used by CLI shells */
-  _getInterfaceACLBindingsInternal(): Map<string, InterfaceACLBinding> { return this.interfaceACLBindings; }
+  _getInterfaceACLBindingsInternal() { return this.aclEngine.getInterfaceACLBindingsInternal(); }
 
   // ─── DHCP Server Public API ────────────────────────────────────
 
@@ -4296,7 +4075,7 @@ export abstract class Router extends Equipment {
 
       // Apply distribute-list inbound filtering
       if (distList && distList.direction === 'in') {
-        const acl = this.accessLists.find(a => a.id === parseInt(distList.aclId) || a.name === distList.aclId);
+        const acl = this.aclEngine.getAccessListsInternal().find(a => a.id === parseInt(distList.aclId) || a.name === distList.aclId);
         if (acl) {
           let matched = false;
           let action: 'permit' | 'deny' = 'deny'; // implicit deny
