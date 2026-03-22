@@ -592,6 +592,15 @@ export interface PLSQLExceptionHandler extends ASTNode {
   body: PLSQLStatement[];
 }
 
+// ── EXPLAIN PLAN ────────────────────────────────────────────────────
+
+export interface ExplainPlanStatement extends ASTNode {
+  type: 'ExplainPlanStatement';
+  statementId?: string;
+  targetTable?: string;
+  statement: Statement;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -612,5 +621,7 @@ export type Statement =
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement
+  // Explain
+  | ExplainPlanStatement
   // PL/SQL
   | PLSQLBlock;

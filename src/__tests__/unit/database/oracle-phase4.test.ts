@@ -568,3 +568,81 @@ describe('Oracle Filesystem and Config', () => {
     });
   });
 });
+
+describe('CREATE VIEW and EXPLAIN PLAN', () => {
+  let db: OracleDatabase;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup('OPEN');
+    const conn = db.connectAsSysdba();
+    executor = conn.executor;
+
+    exec(db, `CREATE TABLE employees (
+      id NUMBER PRIMARY KEY,
+      name VARCHAR2(50),
+      dept VARCHAR2(30),
+      salary NUMBER
+    )`);
+    exec(db, `INSERT INTO employees VALUES (1, 'Alice', 'Engineering', 90000)`);
+    exec(db, `INSERT INTO employees VALUES (2, 'Bob', 'Sales', 70000)`);
+    exec(db, `INSERT INTO employees VALUES (3, 'Carol', 'Engineering', 95000)`);
+    exec(db, `INSERT INTO employees VALUES (4, 'Dave', 'Sales', 65000)`);
+  });
+
+  describe('CREATE VIEW', () => {
+    test('creates and queries a simple view', () => {
+      const createResult = exec(db, `CREATE VIEW eng_employees AS SELECT id, name, salary FROM employees WHERE dept = 'Engineering'`);
+      expect(createResult.message).toContain('View created');
+
+      const result = exec(db, `SELECT * FROM eng_employees ORDER BY id`);
+      expect(result.rows.length).toBe(2);
+      expect(result.rows[0][1]).toBe('Alice');
+      expect(result.rows[1][1]).toBe('Carol');
+    });
+
+    test('CREATE OR REPLACE VIEW', () => {
+      exec(db, `CREATE VIEW dept_view AS SELECT name, dept FROM employees`);
+      exec(db, `CREATE OR REPLACE VIEW dept_view AS SELECT name, salary FROM employees WHERE dept = 'Sales'`);
+
+      const result = exec(db, `SELECT * FROM dept_view ORDER BY name`);
+      expect(result.rows.length).toBe(2);
+      expect(result.rows[0][0]).toBe('Bob');
+    });
+
+    test('DROP VIEW', () => {
+      exec(db, `CREATE VIEW temp_view AS SELECT * FROM employees`);
+      const dropResult = exec(db, `DROP VIEW temp_view`);
+      expect(dropResult.message).toContain('View dropped');
+
+      expect(() => exec(db, `SELECT * FROM temp_view`)).toThrow();
+    });
+  });
+
+  describe('EXPLAIN PLAN', () => {
+    test('generates execution plan for SELECT', () => {
+      const result = exec(db, `EXPLAIN PLAN FOR SELECT * FROM employees WHERE salary > 80000`);
+      expect(result.message).toBe('Explained.');
+      expect(result.rows.length).toBeGreaterThan(0);
+      // Should have columns: ID, OPERATION, NAME, ROWS, BYTES, COST
+      expect(result.columns.length).toBe(6);
+      expect(result.columns[0].name).toBe('ID');
+      expect(result.columns[1].name).toBe('OPERATION');
+      // Should contain TABLE ACCESS FULL
+      const operations = result.rows.map((r: any[]) => r[1]);
+      expect(operations).toContain('TABLE ACCESS FULL');
+    });
+
+    test('generates plan for INSERT', () => {
+      const result = exec(db, `EXPLAIN PLAN FOR INSERT INTO employees VALUES (5, 'Eve', 'HR', 80000)`);
+      expect(result.message).toBe('Explained.');
+      expect(result.rows.length).toBeGreaterThan(0);
+    });
+
+    test('generates plan with statement_id', () => {
+      const result = exec(db, `EXPLAIN PLAN SET STATEMENT_ID = 'test1' FOR SELECT name FROM employees`);
+      expect(result.message).toBe('Explained.');
+      expect(result.rows.length).toBeGreaterThan(0);
+    });
+  });
+});

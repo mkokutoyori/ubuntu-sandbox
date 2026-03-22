@@ -62,6 +62,16 @@ export interface TableMeta {
   rowCount: number;
 }
 
+export interface ViewMeta {
+  schema: string;
+  name: string;
+  columns?: string[];
+  queryText: string;
+  queryAST?: any;
+  withCheckOption?: boolean;
+  withReadOnly?: boolean;
+}
+
 // ── Abstract Storage ────────────────────────────────────────────────
 
 export abstract class BaseStorage {
@@ -71,6 +81,8 @@ export abstract class BaseStorage {
   protected sequences: Map<string, Map<string, SequenceMeta>> = new Map();
   /** Schema → Index name → Index meta */
   protected indexes: Map<string, Map<string, IndexMeta>> = new Map();
+  /** Schema → View name → View meta */
+  protected views: Map<string, Map<string, ViewMeta>> = new Map();
 
   // ── Schema management ────────────────────────────────────────────
 
@@ -79,6 +91,7 @@ export abstract class BaseStorage {
     if (!this.tables.has(s)) this.tables.set(s, new Map());
     if (!this.sequences.has(s)) this.sequences.set(s, new Map());
     if (!this.indexes.has(s)) this.indexes.set(s, new Map());
+    if (!this.views.has(s)) this.views.set(s, new Map());
   }
 
   getSchemas(): string[] {
@@ -254,6 +267,39 @@ export abstract class BaseStorage {
     for (const row of table.rows) row.splice(colIdx, 1);
     // Re-index ordinal positions
     table.meta.columns.forEach((c, i) => c.ordinalPosition = i);
+  }
+
+  // ── View operations ─────────────────────────────────────────────
+
+  createView(meta: ViewMeta): void {
+    const schema = meta.schema.toUpperCase();
+    const name = meta.name.toUpperCase();
+    this.ensureSchema(schema);
+    this.views.get(schema)!.set(name, { ...meta, schema, name });
+  }
+
+  dropView(schema: string, name: string): void {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    const schemaViews = this.views.get(s);
+    if (!schemaViews?.has(n)) throw new Error(`View ${s}.${n} does not exist`);
+    schemaViews.delete(n);
+  }
+
+  viewExists(schema: string, name: string): boolean {
+    return this.views.get(schema.toUpperCase())?.has(name.toUpperCase()) ?? false;
+  }
+
+  getViewMeta(schema: string, name: string): ViewMeta | undefined {
+    return this.views.get(schema.toUpperCase())?.get(name.toUpperCase());
+  }
+
+  getAllViews(): ViewMeta[] {
+    const result: ViewMeta[] = [];
+    for (const schemaViews of this.views.values()) {
+      for (const view of schemaViews.values()) result.push(view);
+    }
+    return result;
   }
 
   // ── Internals ────────────────────────────────────────────────────

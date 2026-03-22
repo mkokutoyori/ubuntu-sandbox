@@ -73,6 +73,7 @@ export class OracleParser extends BaseParser {
       case 'STARTUP': return this.parseStartup();
       case 'SHUTDOWN': return this.parseShutdown();
       case 'MERGE': return this.parseMerge();
+      case 'EXPLAIN': return this.parseExplainPlan();
     }
     return null;
   }
@@ -373,6 +374,43 @@ export class OracleParser extends BaseParser {
       type: 'DropTablespaceStatement', position: pos, name,
       includeContents: includeContents || undefined,
       includeDatafiles: includeDatafiles || undefined,
+    };
+  }
+
+  // ── EXPLAIN PLAN ──────────────────────────────────────────────────
+
+  private parseExplainPlan(): import('../engine/parser/ASTNode').ExplainPlanStatement {
+    const pos = this.current().position;
+    this.expectKeyword('EXPLAIN');
+    this.expectKeyword('PLAN');
+
+    let statementId: string | undefined;
+    if (this.matchKeyword('SET')) {
+      this.expectKeyword('STATEMENT_ID');
+      // Consume '=' (tokenized as COMPARISON_OP)
+      if (this.current().type === TokenType.COMPARISON_OP && this.current().value === '=') {
+        this.advance();
+      }
+      const tok = this.current();
+      if (tok.type === TokenType.STRING_LITERAL) {
+        statementId = tok.value;
+        this.advance();
+      }
+    }
+
+    let targetTable: string | undefined;
+    if (this.matchKeyword('INTO')) {
+      targetTable = this.expectIdentifier();
+    }
+
+    this.expectKeyword('FOR');
+
+    // Parse the inner statement (SELECT, INSERT, UPDATE, DELETE)
+    const statement = this.parseStatement();
+
+    return {
+      type: 'ExplainPlanStatement', position: pos,
+      statementId, targetTable, statement,
     };
   }
 }

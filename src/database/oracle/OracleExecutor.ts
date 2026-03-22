@@ -13,7 +13,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
-  MergeStatement, WithClause, ConnectByClause,
+  MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
 } from '../engine/parser/ASTNode';
@@ -51,8 +51,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropIndexStatement': return this.executeDropIndex(statement);
       case 'CreateSequenceStatement': return this.executeCreateSequence(statement);
       case 'DropSequenceStatement': return this.executeDropSequence(statement);
-      case 'CreateViewStatement': return emptyResult('View created.');
-      case 'DropViewStatement': return emptyResult('View dropped.');
+      case 'CreateViewStatement': return this.executeCreateView(statement);
+      case 'DropViewStatement': return this.executeDropView(statement);
       case 'GrantStatement': return this.executeGrant(statement);
       case 'RevokeStatement': return this.executeRevoke(statement);
       case 'CreateUserStatement': return this.executeCreateUser(statement);
@@ -70,6 +70,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
       case 'MergeStatement': return this.executeMerge(statement);
+      case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -327,6 +328,12 @@ export class OracleExecutor extends BaseExecutor {
     const tableName = ref.name.toUpperCase();
     const alias = ref.alias?.toUpperCase();
 
+    // Check if it's a view first
+    const viewMeta = this.storage.getViewMeta(schema, tableName);
+    if (viewMeta) {
+      return this.loadView(viewMeta, alias || tableName);
+    }
+
     if (!this.storage.tableExists(schema, tableName)) {
       throw new OracleError(942, `table or view does not exist`);
     }
@@ -342,6 +349,28 @@ export class OracleExecutor extends BaseExecutor {
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${prefix}.${c.name}`],
     } as StorageColMeta & { _qualifiedNames: string[] }));
+
+    return { rows, columns };
+  }
+
+  private loadView(viewMeta: import('../engine/storage/BaseStorage').ViewMeta, prefix: string): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    // Execute the stored query AST
+    if (!viewMeta.queryAST) {
+      throw new OracleError(942, `view ${viewMeta.name} has no query`);
+    }
+    const result = this.executeSelect(viewMeta.queryAST as SelectStatement);
+
+    // Convert ResultSet rows back to StorageRow format
+    const columns: StorageColMeta[] = result.columns.map((c: ColumnMeta, i: number) => {
+      const colName = viewMeta.columns?.[i] || c.name;
+      return {
+        name: colName,
+        dataType: c.dataType || 'VARCHAR2',
+        ordinalPosition: i,
+        _qualifiedNames: [colName, `${prefix}.${colName}`],
+      } as StorageColMeta & { _qualifiedNames: string[] };
+    });
+    const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
 
     return { rows, columns };
   }
@@ -1353,6 +1382,158 @@ export class OracleExecutor extends BaseExecutor {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     this.storage.dropSequence(schema, stmt.name.toUpperCase());
     return emptyResult('Sequence dropped.');
+  }
+
+  // ── View DDL ─────────────────────────────────────────────────────
+
+  private executeCreateView(stmt: CreateViewStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    // For OR REPLACE, drop existing view first
+    if (stmt.orReplace && this.storage.viewExists(schema, name)) {
+      this.storage.dropView(schema, name);
+    }
+    // Reconstruct the query text from the AST by re-serializing the SELECT
+    // We store the original query text for DBA_VIEWS
+    const queryText = this.serializeSelect(stmt.query);
+    this.storage.createView({
+      schema, name,
+      columns: stmt.columns,
+      queryText,
+      queryAST: stmt.query,
+      withCheckOption: stmt.withCheckOption,
+      withReadOnly: stmt.withReadOnly,
+    });
+    return emptyResult('View created.');
+  }
+
+  private executeDropView(stmt: DropViewStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropView(schema, stmt.name.toUpperCase());
+    return emptyResult('View dropped.');
+  }
+
+  private serializeSelect(stmt: SelectStatement): string {
+    // Minimal serialization for view storage — enough to re-parse later
+    const parts: string[] = ['SELECT'];
+    if (stmt.distinct) parts.push('DISTINCT');
+    parts.push(stmt.columns.map(c => {
+      const exprStr = this.serializeExpr(c.expr);
+      return c.alias ? `${exprStr} AS ${c.alias}` : exprStr;
+    }).join(', '));
+    if (stmt.from && stmt.from.length > 0) {
+      parts.push('FROM');
+      parts.push(stmt.from.map(f => {
+        if (f.type === 'TableRef') {
+          const ref = f.schema ? `${f.schema}.${f.name}` : f.name;
+          return f.alias ? `${ref} ${f.alias}` : ref;
+        }
+        return '(subquery)';
+      }).join(', '));
+    }
+    if (stmt.where) parts.push('WHERE', this.serializeExpr(stmt.where));
+    return parts.join(' ');
+  }
+
+  private serializeExpr(expr: Expression): string {
+    switch (expr.type) {
+      case 'Identifier': return (expr as IdentifierExpr).qualifier
+        ? `${(expr as IdentifierExpr).qualifier}.${(expr as IdentifierExpr).name}`
+        : (expr as IdentifierExpr).name;
+      case 'Literal': {
+        const lit = expr as LiteralExpr;
+        return typeof lit.value === 'string' ? `'${lit.value}'` : String(lit.value ?? 'NULL');
+      }
+      case 'Star': return '*';
+      case 'BinaryExpr': {
+        const bin = expr as BinaryExpr;
+        return `${this.serializeExpr(bin.left)} ${bin.operator} ${this.serializeExpr(bin.right)}`;
+      }
+      case 'FunctionCall': {
+        const fn = expr as FunctionCallExpr;
+        return `${fn.name}(${fn.args.map(a => this.serializeExpr(a)).join(', ')})`;
+      }
+      default: return '?';
+    }
+  }
+
+  // ── EXPLAIN PLAN ─────────────────────────────────────────────────
+
+  private executeExplainPlan(stmt: ExplainPlanStatement): ResultSet {
+    const innerStmt = stmt.statement;
+    const plan: Array<{ id: number; operation: string; name: string; rows: number; bytes: number; cost: number }> = [];
+    let nextId = 0;
+
+    const addStep = (operation: string, name: string, rows: number, cost: number) => {
+      plan.push({ id: nextId++, operation, name, rows, bytes: rows * 100, cost });
+    };
+
+    if (innerStmt.type === 'SelectStatement') {
+      const select = innerStmt as SelectStatement;
+      // Build a simulated execution plan
+      if (select.from && select.from.length > 0) {
+        const tableName = select.from[0].type === 'TableRef' ? select.from[0].name : 'SUBQUERY';
+        const schema = (select.from[0].type === 'TableRef' ? select.from[0].schema : null) || this.context.currentSchema;
+
+        // Estimate row count
+        let estimatedRows = 1000;
+        const meta = this.storage.getTableMeta(schema.toUpperCase(), tableName.toUpperCase());
+        if (meta) estimatedRows = meta.rowCount || 1;
+
+        addStep('SELECT STATEMENT', '', estimatedRows, estimatedRows);
+
+        if (select.orderBy && select.orderBy.length > 0) {
+          addStep('SORT ORDER BY', '', estimatedRows, estimatedRows + 1);
+        }
+        if (select.groupBy && select.groupBy.length > 0) {
+          addStep('HASH GROUP BY', '', Math.ceil(estimatedRows / 10), Math.ceil(estimatedRows / 10));
+        }
+        if (select.where) {
+          addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
+        } else {
+          addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
+        }
+
+        // Add JOIN steps
+        if (select.joins) {
+          for (const join of select.joins) {
+            const rightTable = join.table.type === 'TableRef' ? join.table.name.toUpperCase() : 'SUBQUERY';
+            addStep('HASH JOIN', '', estimatedRows * 2, estimatedRows * 2);
+            addStep('TABLE ACCESS FULL', rightTable, estimatedRows, estimatedRows);
+          }
+        }
+      }
+    } else if (innerStmt.type === 'InsertStatement') {
+      const ins = innerStmt as InsertStatement;
+      const tName = ins.table.name.toUpperCase();
+      addStep('INSERT STATEMENT', '', 1, 1);
+      addStep('LOAD TABLE CONVENTIONAL', tName, 1, 1);
+    } else if (innerStmt.type === 'UpdateStatement') {
+      const upd = innerStmt as UpdateStatement;
+      const tName = upd.table.name.toUpperCase();
+      addStep('UPDATE STATEMENT', '', 1, 1);
+      addStep('UPDATE', tName, 1, 1);
+      addStep('TABLE ACCESS FULL', tName, 1, 1);
+    } else if (innerStmt.type === 'DeleteStatement') {
+      const del = innerStmt as DeleteStatement;
+      const tName = del.table.name.toUpperCase();
+      addStep('DELETE STATEMENT', '', 1, 1);
+      addStep('DELETE', tName, 1, 1);
+      addStep('TABLE ACCESS FULL', tName, 1, 1);
+    }
+
+    // Return as a result set mimicking DBMS_XPLAN.DISPLAY_CURSOR output
+    const columns: ColumnMeta[] = [
+      { name: 'ID', dataType: 'NUMBER' },
+      { name: 'OPERATION', dataType: 'VARCHAR2' },
+      { name: 'NAME', dataType: 'VARCHAR2' },
+      { name: 'ROWS', dataType: 'NUMBER' },
+      { name: 'BYTES', dataType: 'NUMBER' },
+      { name: 'COST', dataType: 'NUMBER' },
+    ];
+    const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
+
+    return { columns, rows, rowCount: rows.length, message: 'Explained.' };
   }
 
   // ── DCL ───────────────────────────────────────────────────────────
