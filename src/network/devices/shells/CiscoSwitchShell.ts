@@ -17,6 +17,9 @@ import type { Switch } from '../Switch';
 import {
   CISCO_ERRORS, parsePipeFilter, applyPipeFilter,
 } from './cli-utils';
+import { buildPrompt, CISCO_SWITCH_PROMPTS } from './PromptBuilder';
+import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
+import { registerSharedUserCommands, registerSharedPrivilegedCommands } from './cisco/CiscoSharedCommands';
 
 /** CLI Mode (FSM State) */
 export type CLIMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan';
@@ -26,6 +29,9 @@ export class CiscoSwitchShell implements ISwitchShell {
   private selectedInterface: string | null = null;
   private selectedInterfaceRange: string[] = [];
   private selectedVlan: number | null = null;
+
+  /** FSM for mode transitions (exit/end) — delegates to CLIStateMachine */
+  private readonly fsm = new CLIStateMachine<CLIMode>('user', CISCO_SWITCH_MODES, 'user', 'privileged');
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -47,15 +53,7 @@ export class CiscoSwitchShell implements ISwitchShell {
   getMode(): CLIMode { return this.mode; }
 
   getPrompt(sw: Switch): string {
-    const host = sw.getHostname();
-    switch (this.mode) {
-      case 'user':        return `${host}>`;
-      case 'privileged':  return `${host}#`;
-      case 'config':      return `${host}(config)#`;
-      case 'config-if':   return `${host}(config-if)#`;
-      case 'config-vlan': return `${host}(config-vlan)#`;
-      default:            return `${host}>`;
-    }
+    return buildPrompt(this.mode, sw.getHostname(), CISCO_SWITCH_PROMPTS);
   }
 
   getSelectedInterface(): string | null { return this.selectedInterface; }
@@ -197,38 +195,28 @@ export class CiscoSwitchShell implements ISwitchShell {
   // ─── FSM Transitions ─────────────────────────────────────────────
 
   private cmdExit(): string {
-    switch (this.mode) {
-      case 'config-if':
-        this.mode = 'config';
-        this.selectedInterface = null;
-        this.selectedInterfaceRange = [];
-        return '';
-      case 'config-vlan':
-        this.mode = 'config';
-        this.selectedVlan = null;
-        return '';
-      case 'config':
-        this.mode = 'privileged';
-        return '';
-      case 'privileged':
-        this.mode = 'user';
-        return '';
-      case 'user':
-        return 'Connection closed.';
-      default:
-        return '';
-    }
+    if (this.mode === 'user') return 'Connection closed.';
+    this.fsm.mode = this.mode;
+    const { newMode, fieldsToCllear } = this.fsm.exit();
+    this.mode = newMode;
+    this.clearFields(fieldsToCllear);
+    return '';
   }
 
   private cmdEnd(): string {
-    if (this.mode === 'config' || this.mode === 'config-if' || this.mode === 'config-vlan') {
-      this.mode = 'privileged';
-      this.selectedInterface = null;
-      this.selectedInterfaceRange = [];
-      this.selectedVlan = null;
-      return '';
-    }
+    this.fsm.mode = this.mode;
+    const { newMode, fieldsToCllear } = this.fsm.end();
+    this.mode = newMode;
+    this.clearFields(fieldsToCllear);
     return '';
+  }
+
+  private clearFields(fields: string[]): void {
+    for (const f of fields) {
+      if (f === 'selectedInterface') this.selectedInterface = null;
+      if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
+      if (f === 'selectedVlan') this.selectedVlan = null;
+    }
   }
 
   private getActiveTrie(): CommandTrie {
@@ -247,10 +235,8 @@ export class CiscoSwitchShell implements ISwitchShell {
   private swRef: Switch | null = null;
 
   private buildUserCommands(): void {
-    this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
-      this.mode = 'privileged';
-      return '';
-    });
+    // Shared Cisco commands (enable)
+    registerSharedUserCommands(this.userTrie, (m) => { this.mode = m as CLIMode; });
 
     this.userTrie.register('show version', 'Display system hardware and software status', () => {
       if (!this.swRef) return '';
@@ -280,11 +266,13 @@ export class CiscoSwitchShell implements ISwitchShell {
   // ─── Command Tree: Privileged EXEC Mode (#) ──────────────────────
 
   private buildPrivilegedCommands(): void {
-    this.privilegedTrie.register('enable', 'Already in privileged mode', () => '');
-
-    this.privilegedTrie.register('configure terminal', 'Enter configuration mode', () => {
-      this.mode = 'config';
-      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
+    // Shared Cisco commands (enable, configure terminal, disable, write memory, copy running-config)
+    registerSharedPrivilegedCommands(this.privilegedTrie, {
+      setMode: (m) => { this.mode = m as CLIMode; },
+      onSave: () => {
+        if (!this.swRef) return '[OK]';
+        return this.swRef.writeMemory();
+      },
     });
 
     this.privilegedTrie.register('show mac address-table', 'Display MAC address table', () => {
@@ -328,17 +316,9 @@ export class CiscoSwitchShell implements ISwitchShell {
       return this.showSpanningTree(this.swRef);
     });
 
-    this.privilegedTrie.register('write memory', 'Save running-config to startup-config', () => {
-      if (!this.swRef) return '';
-      return this.swRef.writeMemory();
-    });
+    // write memory & copy running-config startup-config now handled by registerSharedPrivilegedCommands
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
-      if (!this.swRef) return '';
-      return this.swRef.writeMemory();
-    });
-
-    this.privilegedTrie.register('copy running-config startup-config', 'Save running-config to startup-config', () => {
       if (!this.swRef) return '';
       return this.swRef.writeMemory();
     });
