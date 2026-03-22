@@ -645,4 +645,28 @@ describe('CREATE VIEW and EXPLAIN PLAN', () => {
       expect(result.rows.length).toBeGreaterThan(0);
     });
   });
+
+  describe('CREATE TRIGGER', () => {
+    test('creates a BEFORE INSERT trigger', () => {
+      const result = exec(db, `CREATE TRIGGER trg_emp_bi BEFORE INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      expect(result.message).toContain('Trigger created');
+    });
+
+    test('creates an AFTER UPDATE OR DELETE trigger', () => {
+      const result = exec(db, `CREATE TRIGGER trg_emp_aud AFTER UPDATE OR DELETE ON employees FOR EACH ROW BEGIN NULL; END`);
+      expect(result.message).toContain('Trigger created');
+    });
+
+    test('CREATE OR REPLACE TRIGGER', () => {
+      exec(db, `CREATE TRIGGER trg_test BEFORE INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      const result = exec(db, `CREATE OR REPLACE TRIGGER trg_test AFTER INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      expect(result.message).toContain('Trigger created');
+    });
+
+    test('DROP TRIGGER', () => {
+      exec(db, `CREATE TRIGGER trg_drop BEFORE INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      const result = exec(db, `DROP TRIGGER trg_drop`);
+      expect(result.message).toContain('Trigger dropped');
+    });
+  });
 });

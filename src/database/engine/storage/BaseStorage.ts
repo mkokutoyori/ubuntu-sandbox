@@ -62,6 +62,19 @@ export interface TableMeta {
   rowCount: number;
 }
 
+export interface TriggerMeta {
+  schema: string;
+  name: string;
+  timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+  events: Array<'INSERT' | 'UPDATE' | 'DELETE'>;
+  tableName: string;
+  tableSchema: string;
+  forEachRow: boolean;
+  whenCondition?: string;
+  body: string;
+  enabled: boolean;
+}
+
 export interface ViewMeta {
   schema: string;
   name: string;
@@ -83,6 +96,8 @@ export abstract class BaseStorage {
   protected indexes: Map<string, Map<string, IndexMeta>> = new Map();
   /** Schema → View name → View meta */
   protected views: Map<string, Map<string, ViewMeta>> = new Map();
+  /** Schema → Trigger name → Trigger meta */
+  protected triggers: Map<string, Map<string, TriggerMeta>> = new Map();
 
   // ── Schema management ────────────────────────────────────────────
 
@@ -92,6 +107,7 @@ export abstract class BaseStorage {
     if (!this.sequences.has(s)) this.sequences.set(s, new Map());
     if (!this.indexes.has(s)) this.indexes.set(s, new Map());
     if (!this.views.has(s)) this.views.set(s, new Map());
+    if (!this.triggers.has(s)) this.triggers.set(s, new Map());
   }
 
   getSchemas(): string[] {
@@ -298,6 +314,46 @@ export abstract class BaseStorage {
     const result: ViewMeta[] = [];
     for (const schemaViews of this.views.values()) {
       for (const view of schemaViews.values()) result.push(view);
+    }
+    return result;
+  }
+
+  // ── Trigger operations ──────────────────────────────────────────
+
+  createTrigger(meta: TriggerMeta): void {
+    const schema = meta.schema.toUpperCase();
+    const name = meta.name.toUpperCase();
+    this.ensureSchema(schema);
+    this.triggers.get(schema)!.set(name, { ...meta, schema, name });
+  }
+
+  dropTrigger(schema: string, name: string): void {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    const schemaTriggers = this.triggers.get(s);
+    if (!schemaTriggers?.has(n)) throw new Error(`Trigger ${s}.${n} does not exist`);
+    schemaTriggers.delete(n);
+  }
+
+  getTriggersForTable(schema: string, tableName: string): TriggerMeta[] {
+    const s = schema.toUpperCase();
+    const t = tableName.toUpperCase();
+    const result: TriggerMeta[] = [];
+    const schemaTriggers = this.triggers.get(s);
+    if (schemaTriggers) {
+      for (const trigger of schemaTriggers.values()) {
+        if (trigger.tableSchema.toUpperCase() === s && trigger.tableName.toUpperCase() === t && trigger.enabled) {
+          result.push(trigger);
+        }
+      }
+    }
+    return result;
+  }
+
+  getAllTriggers(): TriggerMeta[] {
+    const result: TriggerMeta[] = [];
+    for (const schemaTriggers of this.triggers.values()) {
+      for (const trigger of schemaTriggers.values()) result.push(trigger);
     }
     return result;
   }

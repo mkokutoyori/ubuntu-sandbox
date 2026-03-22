@@ -169,6 +169,11 @@ export class OracleDatabase {
       if (callResult) return callResult;
     }
 
+    // Check for CREATE [OR REPLACE] TRIGGER (body may contain semicolons)
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
+      return this.executeCreateTrigger(executor, trimmed);
+    }
+
     // Check for ALTER SESSION (handled specially)
     if (upper.startsWith('ALTER SESSION')) {
       return this.executeAlterSession(executor, trimmed);
@@ -945,5 +950,38 @@ export class OracleDatabase {
   /** Get a specific stored unit by name */
   getStoredUnit(schema: string, name: string): StoredPLSQLUnit | undefined {
     return this.storedUnits.get(`${schema}.${name}`);
+  }
+
+  /** Parse and execute CREATE [OR REPLACE] TRIGGER using regex (body may contain semicolons) */
+  private executeCreateTrigger(executor: OracleExecutor, sql: string): ResultSet {
+    const match = sql.match(
+      /^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:(\w+)\.)?(\w+)(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
+    );
+    if (!match) return emptyResult('ORA-24344: success with compilation error');
+
+    const orReplace = !!match[1];
+    const schema = (match[2] || (executor as any).context?.currentSchema || 'SYS').toUpperCase();
+    const name = match[3].toUpperCase();
+    const timing = match[4].toUpperCase().replace(/\s+/g, ' ') as 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+    const events: Array<'INSERT' | 'UPDATE' | 'DELETE'> = [];
+    if (match[5]) events.push(match[5].toUpperCase() as any);
+    if (match[6]) events.push(match[6].toUpperCase() as any);
+    if (match[7]) events.push(match[7].toUpperCase() as any);
+    const tableSchema = (match[8] || schema).toUpperCase();
+    const tableName = match[9].toUpperCase();
+    const forEachRow = /FOR\s+EACH\s+ROW/i.test(sql);
+    const body = (match[10] || '').trim();
+
+    if (orReplace) {
+      try { this.storage.dropTrigger(schema, name); } catch { /* ignore */ }
+    }
+
+    this.storage.createTrigger({
+      schema, name, timing, events,
+      tableName, tableSchema,
+      forEachRow, body, enabled: true,
+    });
+
+    return emptyResult('Trigger created.');
   }
 }

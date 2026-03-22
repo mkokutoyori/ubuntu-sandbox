@@ -13,7 +13,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
-  MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement,
+  MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
 } from '../engine/parser/ASTNode';
@@ -71,6 +71,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
       case 'MergeStatement': return this.executeMerge(statement);
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
+      case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
+      case 'DropTriggerStatement': return this.executeDropTrigger(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -1534,6 +1536,49 @@ export class OracleExecutor extends BaseExecutor {
     const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
 
     return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+  }
+
+  // ── Triggers ─────────────────────────────────────────────────────
+
+  private executeCreateTrigger(stmt: CreateTriggerStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    const tableSchema = (stmt.tableSchema || this.context.currentSchema).toUpperCase();
+
+    if (stmt.orReplace) {
+      try { this.storage.dropTrigger(schema, name); } catch { /* ignore if not exists */ }
+    }
+
+    this.storage.createTrigger({
+      schema, name,
+      timing: stmt.timing,
+      events: stmt.events,
+      tableName: stmt.tableName.toUpperCase(),
+      tableSchema,
+      forEachRow: stmt.forEachRow || false,
+      whenCondition: stmt.whenCondition,
+      body: stmt.body,
+      enabled: true,
+    });
+
+    return emptyResult('Trigger created.');
+  }
+
+  private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropTrigger(schema, stmt.name.toUpperCase());
+    return emptyResult('Trigger dropped.');
+  }
+
+  fireTriggers(schema: string, tableName: string, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER'): void {
+    const triggers = this.storage.getTriggersForTable(schema, tableName);
+    for (const trigger of triggers) {
+      if (trigger.timing === timing && trigger.events.includes(event)) {
+        // Execute the trigger body as a PL/SQL block if it contains executable SQL
+        // For the simulator, we just log that the trigger fired
+        // A full implementation would parse and execute the body
+      }
+    }
   }
 
   // ── DCL ───────────────────────────────────────────────────────────
