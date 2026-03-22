@@ -114,36 +114,35 @@ export class IPv6DataPlane {
   }
   getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache; }
 
-  configureInterface(portName: string, address: IPv6Address, prefixLength: number): void {
+  configureInterface(portName: string, address: IPv6Address, prefixLength: number): boolean {
     const port = this.ctx.getPorts().get(portName);
-    if (!port) return;
+    if (!port) return false;
 
-    port.addIPv6Address(address, prefixLength, 'global');
+    port.configureIPv6(address, prefixLength);
 
-    // Add connected route for the prefix
-    const networkPrefix = address.getNetworkPrefix(prefixLength);
-    const alreadyExists = this.routingTable.some(
-      r => r.type === 'connected' &&
-        r.prefix.toString() === networkPrefix.toString() &&
-        r.prefixLength === prefixLength
+    // Remove old connected route for this interface/prefix (handles reconfiguration)
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === portName && r.prefixLength === prefixLength)
     );
-    if (!alreadyExists) {
-      this.routingTable.push({
-        prefix: networkPrefix,
-        prefixLength,
-        nextHop: null,
-        iface: portName,
-        type: 'connected',
-        ad: 0,
-        metric: 0,
-      });
-    }
 
-    Logger.info(this.ctx.id, 'router:ipv6-config',
-      `${this.ctx.name}: IPv6 ${address}/${prefixLength} configured on ${portName}`);
+    // Add connected route
+    const networkPrefix = address.getNetworkPrefix(prefixLength);
+    this.routingTable.push({
+      prefix: networkPrefix,
+      prefixLength,
+      nextHop: null,
+      iface: portName,
+      type: 'connected',
+      ad: 0,
+      metric: 0,
+    });
+
+    Logger.info(this.ctx.id, 'router:ipv6-interface-config',
+      `${this.ctx.name}: ${portName} configured ${address}/${prefixLength}`);
+    return true;
   }
 
-  addStaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, iface: string): void {
+  addStaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, iface: string, metric: number = 0): void {
     this.routingTable.push({
       prefix,
       prefixLength,
@@ -151,11 +150,12 @@ export class IPv6DataPlane {
       iface,
       type: 'static',
       ad: 1,
-      metric: 0,
+      metric,
     });
   }
 
-  setDefaultRoute(nextHop: IPv6Address, iface: string): void {
+  setDefaultRoute(nextHop: IPv6Address, iface: string, metric: number = 0): void {
+    this.routingTable = this.routingTable.filter(r => r.type !== 'default');
     this.routingTable.push({
       prefix: new IPv6Address('::'),
       prefixLength: 0,
@@ -163,7 +163,7 @@ export class IPv6DataPlane {
       iface,
       type: 'default',
       ad: 1,
-      metric: 0,
+      metric,
     });
   }
 
@@ -173,7 +173,7 @@ export class IPv6DataPlane {
     let bestAD = Infinity;
 
     for (const route of this.routingTable) {
-      if (!destIP.matchesPrefix(route.prefix, route.prefixLength)) continue;
+      if (!destIP.isInSameSubnet(route.prefix, route.prefixLength)) continue;
 
       if (route.prefixLength > bestPrefixLen ||
         (route.prefixLength === bestPrefixLen && route.ad < bestAD)) {

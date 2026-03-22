@@ -1647,7 +1647,7 @@ function showIpv6OspfDatabase(router: Router): string {
 
 function showIpv6Route(router: Router): string {
   router._ospfAutoConverge();
-  const rt = (router as any).ipv6RoutingTable as any[] || [];
+  const rt = router._getIPv6RoutingTableInternal() as any[] || [];
   const lines: string[] = ['IPv6 Routing Table'];
   for (const r of rt) {
     let code = r.type === 'connected' ? 'C' : r.type === 'static' ? 'S' : 'O';
@@ -1668,7 +1668,7 @@ function showIpv6Route(router: Router): string {
 
 function showIpv6RouteSpecific(router: Router, dest: string): string {
   router._ospfAutoConverge();
-  const rt = (router as any).ipv6RoutingTable as any[] || [];
+  const rt = router._getIPv6RoutingTableInternal() as any[] || [];
 
   // Parse destination: either "prefix/length" or just "prefix"
   let searchPrefix = dest;
