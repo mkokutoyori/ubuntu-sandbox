@@ -95,6 +95,16 @@ export function removeOracleDatabase(deviceId: string): void {
 }
 
 /**
+ * Reset all Oracle instances and filesystem state.
+ * Intended for test isolation — clears both the instance map
+ * and the filesystem-initialized tracking set.
+ */
+export function resetAllOracleInstances(): void {
+  oracleInstances.clear();
+  oracleFilesystemInitialized.clear();
+}
+
+/**
  * Initialize Oracle filesystem tree and environment on a Linux device.
  * Creates /u01/app/oracle/... directory structure and config files.
  * Safe to call multiple times — skips if already initialized.

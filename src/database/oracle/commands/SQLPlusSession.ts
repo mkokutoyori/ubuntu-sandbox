@@ -19,6 +19,7 @@
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
+import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
 
 export interface SQLPlusSettings {
   linesize: number;
@@ -389,7 +390,7 @@ export class SQLPlusSession {
 
   private executeSql(sql: string): SQLPlusResult {
     if (!this.connected || !this.executor) {
-      return { output: ['ERROR:', 'ORA-01012: not logged on'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
     this.lastStatement = sql;
@@ -428,7 +429,7 @@ export class SQLPlusSession {
       if (msg.startsWith('ORA-')) {
         output.push(msg);
       } else {
-        output.push(`ORA-00900: ${msg}`);
+        output.push(`${ORACLE_ERRORS.ORA_00900}: ${msg}`);
       }
     }
 
@@ -621,7 +622,7 @@ export class SQLPlusSession {
         break;
       case 'SGA': {
         if (!this.connected || !this.executor) {
-          output.push('ERROR:', 'ORA-01012: not logged on');
+          output.push('ERROR:', ORACLE_ERRORS.ORA_01012);
           break;
         }
         const sga = this.db.instance.getSGAInfo();
@@ -636,7 +637,7 @@ export class SQLPlusSession {
       case 'PARAMETER':
       case 'PARAMETERS': {
         if (!this.connected) {
-          output.push('ERROR:', 'ORA-01012: not logged on');
+          output.push('ERROR:', ORACLE_ERRORS.ORA_01012);
           break;
         }
         const params = this.db.instance.getAllParameters();
@@ -686,7 +687,7 @@ export class SQLPlusSession {
               }
             }
           } else {
-            output.push('ERROR:', 'ORA-01012: not logged on');
+            output.push('ERROR:', ORACLE_ERRORS.ORA_01012);
           }
         } else {
           output.push(`SP2-0158: unknown SHOW option "${option}"`);
@@ -702,7 +703,7 @@ export class SQLPlusSession {
 
   private handleDescribe(objectName: string): SQLPlusResult {
     if (!this.connected || !this.executor) {
-      return { output: ['ERROR:', 'ORA-01012: not logged on'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
     const output: string[] = [];
@@ -720,7 +721,7 @@ export class SQLPlusSession {
     const tableMeta = this.db.storage.getTableMeta(schema, name);
     if (!tableMeta) {
       output.push(`ERROR:`);
-      output.push(`ORA-04043: object ${upper} does not exist`);
+      output.push(`${ORACLE_ERRORS.ORA_04043}: ${upper}`);
       return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 

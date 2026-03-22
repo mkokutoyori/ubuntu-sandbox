@@ -31,26 +31,50 @@ export const ORACLE_CONFIG = {
   get DIAG_TRACE(): string { return `${this.BASE}/diag/rdbms/orcl/${this.SID}/trace`; },
 } as const;
 
-// ─── Oracle Error Codes ────────────────────────────────────────────
+// ─── Oracle Error Codes (ORA-XXXXX) ─────────────────────────────────
 
 export const ORACLE_ERRORS = {
-  /** Instance not available */
-  ORA_01034: 'ORA-01034: ORACLE not available',
-  /** Invalid username/password */
-  ORA_01017: 'ORA-01017: invalid username/password; logon denied',
+  /** SQL syntax error */
+  ORA_00900: 'ORA-00900: invalid SQL statement',
   /** Table or view does not exist */
   ORA_00942: 'ORA-00942: table or view does not exist',
+  /** Not logged on */
+  ORA_01012: 'ORA-01012: not logged on',
+  /** Invalid username/password */
+  ORA_01017: 'ORA-01017: invalid username/password; logon denied',
   /** Insufficient privileges */
   ORA_01031: 'ORA-01031: insufficient privileges',
+  /** Instance not available */
+  ORA_01034: 'ORA-01034: ORACLE not available',
+  /** Cannot start already-running instance */
+  ORA_01081: 'ORA-01081: cannot start already-running ORACLE - shut it down first',
+  /** Database must be mounted */
+  ORA_01126: 'ORA-01126: database must be mounted and not open for this operation',
+  /** NO_DATA_FOUND */
+  ORA_01403: 'ORA-01403: no data found',
+  /** TOO_MANY_ROWS */
+  ORA_01422: 'ORA-01422: exact fetch returns more than requested number of rows',
+  /** Divisor is equal to zero */
+  ORA_01476: 'ORA-01476: divisor is equal to zero',
+  /** Object does not exist */
+  ORA_04043: 'ORA-04043: object does not exist',
 } as const;
 
+// ─── TNS Error Codes ────────────────────────────────────────────────
+
 export const TNS_ERRORS = {
+  /** No listener (secondary) */
+  TNS_00511: 'TNS-00511: No listener',
+  /** Listener already started */
+  TNS_01106: 'TNS-01106: Listener using listener name LISTENER has already been started',
+  /** Failed to resolve name */
+  TNS_03505: 'TNS-03505: Failed to resolve name',
   /** No listener */
   TNS_12541: 'TNS-12541: TNS:no listener',
+  /** Connection refused — service unknown */
+  TNS_12514: 'TNS-12514: TNS:listener does not currently know of service requested in connect descriptor',
   /** Protocol adapter error */
   TNS_12560: 'TNS-12560: TNS:protocol adapter error',
-  /** Connection refused */
-  TNS_12514: 'TNS-12514: TNS:listener does not currently know of service requested in connect descriptor',
 } as const;
 
 // ─── Oracle Output Templates ──────────────────────────────────────
