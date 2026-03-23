@@ -670,3 +670,109 @@ describe('CREATE VIEW and EXPLAIN PLAN', () => {
     });
   });
 });
+
+describe('Additional Oracle Functions', () => {
+  let db: OracleDatabase;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup('OPEN');
+    const conn = db.connectAsSysdba();
+    executor = conn.executor;
+
+    exec(db, `CREATE TABLE scores (
+      id NUMBER PRIMARY KEY,
+      student VARCHAR2(50),
+      subject VARCHAR2(30),
+      score NUMBER
+    )`);
+    exec(db, `INSERT INTO scores VALUES (1, 'Alice', 'Math', 90)`);
+    exec(db, `INSERT INTO scores VALUES (2, 'Bob', 'Math', 80)`);
+    exec(db, `INSERT INTO scores VALUES (3, 'Carol', 'Math', 85)`);
+    exec(db, `INSERT INTO scores VALUES (4, 'Alice', 'Science', 95)`);
+    exec(db, `INSERT INTO scores VALUES (5, 'Bob', 'Science', 70)`);
+    exec(db, `INSERT INTO scores VALUES (6, 'Carol', 'Science', 88)`);
+  });
+
+  describe('MEDIAN, STDDEV, VARIANCE', () => {
+    test('MEDIAN returns middle value', () => {
+      const result = exec(db, `SELECT MEDIAN(score) FROM scores WHERE subject = 'Math'`);
+      expect(result.rows[0][0]).toBe(85); // sorted: 80, 85, 90 → median is 85
+    });
+
+    test('MEDIAN with even count returns average of middle two', () => {
+      exec(db, `INSERT INTO scores VALUES (7, 'Dave', 'Math', 75)`);
+      const result = exec(db, `SELECT MEDIAN(score) FROM scores WHERE subject = 'Math'`);
+      // sorted: 75, 80, 85, 90 → median = (80+85)/2 = 82.5
+      expect(result.rows[0][0]).toBe(82.5);
+    });
+
+    test('STDDEV returns sample standard deviation', () => {
+      const result = exec(db, `SELECT STDDEV(score) FROM scores WHERE subject = 'Math'`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeCloseTo(5.0, 0); // stddev of 80,85,90
+    });
+
+    test('VARIANCE returns sample variance', () => {
+      const result = exec(db, `SELECT VARIANCE(score) FROM scores WHERE subject = 'Math'`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeCloseTo(25.0, 0); // variance of 80,85,90
+    });
+  });
+
+  describe('LISTAGG', () => {
+    test('LISTAGG concatenates values', () => {
+      const result = exec(db, `SELECT subject, LISTAGG(student, ', ') FROM scores GROUP BY subject ORDER BY subject`);
+      expect(result.rows.length).toBe(2);
+      const mathRow = result.rows.find((r: any[]) => r[0] === 'Math');
+      expect(mathRow).toBeTruthy();
+      const names = String(mathRow![1]);
+      expect(names).toContain('Alice');
+      expect(names).toContain('Bob');
+      expect(names).toContain('Carol');
+    });
+  });
+
+  describe('DBMS_RANDOM', () => {
+    test('DBMS_RANDOM.VALUE returns a random number', () => {
+      const result = exec(db, `SELECT DBMS_RANDOM.VALUE FROM DUAL`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeGreaterThanOrEqual(0);
+      expect(val).toBeLessThan(1);
+    });
+
+    test('DBMS_RANDOM.VALUE(low, high) returns within range', () => {
+      const result = exec(db, `SELECT DBMS_RANDOM.VALUE(1, 100) FROM DUAL`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeGreaterThanOrEqual(1);
+      expect(val).toBeLessThan(100);
+    });
+
+    test('DBMS_RANDOM.STRING returns a string', () => {
+      const result = exec(db, `SELECT DBMS_RANDOM.STRING('U', 10) FROM DUAL`);
+      const val = String(result.rows[0][0]);
+      expect(val.length).toBe(10);
+      expect(val).toMatch(/^[A-Z]+$/);
+    });
+  });
+
+  describe('Subqueries in FROM (inline views)', () => {
+    test('simple subquery in FROM', () => {
+      const result = exec(db, `SELECT sub.student, sub.total_score FROM (SELECT student, SUM(score) AS total_score FROM scores GROUP BY student) sub ORDER BY sub.total_score DESC`);
+      expect(result.rows.length).toBe(3);
+      expect(result.rows[0][0]).toBe('Alice'); // 90+95=185
+    });
+  });
+
+  describe('ROWNUM', () => {
+    test('ROWNUM limits rows with WHERE ROWNUM <= N', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM <= 3`);
+      expect(result.rows.length).toBe(3);
+    });
+
+    test('ROWNUM limits with different values', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM <= 1`);
+      expect(result.rows.length).toBe(1);
+    });
+  });
+});

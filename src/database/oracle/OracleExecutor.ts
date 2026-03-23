@@ -26,6 +26,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
+  private _currentRowNum: number = 0;
 
   constructor(
     storage: OracleStorage,
@@ -206,7 +207,15 @@ export class OracleExecutor extends BaseExecutor {
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
-      rows = rows.filter(row => this.evaluateCondition(stmt.where!, row, columns));
+      this._currentRowNum = 0;
+      const filtered: StorageRow[] = [];
+      for (const row of rows) {
+        this._currentRowNum++;
+        if (this.evaluateCondition(stmt.where!, row, columns)) {
+          filtered.push(row);
+        }
+      }
+      rows = filtered;
     }
 
     // ── Step 2b: CONNECT BY (hierarchical query) ─────────────────
@@ -302,26 +311,35 @@ export class OracleExecutor extends BaseExecutor {
 
   private resolveFromClause(stmt: SelectStatement): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const firstRef = stmt.from![0];
-    if (firstRef.type !== 'TableRef') {
-      throw new OracleError(942, 'Subquery in FROM not yet supported');
-    }
-
-    let { rows, columns } = this.loadTable(firstRef);
+    let { rows, columns } = this.loadTableReference(firstRef);
 
     // Process JOINs
     if (stmt.joins) {
       for (const join of stmt.joins) {
-        const rightRef = join.table;
-        if (rightRef.type !== 'TableRef') {
-          throw new OracleError(942, 'Subquery in JOIN not yet supported');
-        }
-        const right = this.loadTable(rightRef);
+        const right = this.loadTableReference(join.table);
         const result = this.performJoin(rows, columns, right.rows, right.columns, join);
         rows = result.rows;
         columns = result.columns;
       }
     }
 
+    return { rows, columns };
+  }
+
+  private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    if (ref.type === 'TableRef') {
+      return this.loadTable(ref);
+    }
+    // SubqueryTableRef — inline view
+    const result = this.executeSelect(ref.query);
+    const alias = ref.alias?.toUpperCase() || 'SUBQUERY';
+    const columns: StorageColMeta[] = result.columns.map((c: ColumnMeta, i: number) => ({
+      name: c.name,
+      dataType: c.dataType || 'VARCHAR2',
+      ordinalPosition: i,
+      _qualifiedNames: [c.name, `${alias}.${c.name}`],
+    } as StorageColMeta & { _qualifiedNames: string[] }));
+    const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
     return { rows, columns };
   }
 
@@ -445,7 +463,7 @@ export class OracleExecutor extends BaseExecutor {
       // Window functions (with OVER) are NOT regular aggregates
       if ((expr as FunctionCallExpr).over) return false;
       const name = expr.name.toUpperCase();
-      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) return true;
+      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE', 'LISTAGG'].includes(name)) return true;
     }
     if (expr.type === 'BinaryExpr') {
       return this.exprHasAggregate(expr.left) || this.exprHasAggregate(expr.right);
@@ -755,7 +773,7 @@ export class OracleExecutor extends BaseExecutor {
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
     if (expr.type === 'FunctionCall') {
       const name = expr.name.toUpperCase();
-      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) {
+      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE', 'LISTAGG'].includes(name)) {
         return this.evaluateAggregate(name, expr, groupRows, columns);
       }
       // Non-aggregate function: evaluate using first row
@@ -814,6 +832,32 @@ export class OracleExecutor extends BaseExecutor {
           .map(row => this.evaluateExpression(expr.args[0], row, columns))
           .filter(v => v != null);
         return allVals.reduce((a, b) => this.compareValues(a, b) >= 0 ? a : b);
+      }
+      case 'MEDIAN': {
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+      }
+      case 'STDDEV': {
+        const avg = values.reduce((a, b) => a + b, 0) / values.length;
+        const variance = values.reduce((s, v) => s + (v - avg) ** 2, 0) / (values.length - 1);
+        return values.length === 1 ? 0 : Math.sqrt(variance);
+      }
+      case 'VARIANCE': {
+        const avg = values.reduce((a, b) => a + b, 0) / values.length;
+        return values.length === 1 ? 0 : values.reduce((s, v) => s + (v - avg) ** 2, 0) / (values.length - 1);
+      }
+      case 'LISTAGG': {
+        // LISTAGG(expr, delimiter) — collect string values
+        const strVals: string[] = [];
+        for (const row of groupRows) {
+          const val = this.evaluateExpression(expr.args[0], row, columns);
+          if (val != null) strVals.push(String(val));
+        }
+        const delimiter = expr.args.length > 1
+          ? String(this.evaluateExpression(expr.args[1], groupRows[0], columns) ?? ',')
+          : '';
+        return strVals.join(delimiter);
       }
       default: return null;
     }
@@ -1743,12 +1787,21 @@ export class OracleExecutor extends BaseExecutor {
       case 'Identifier': {
         const colIdx = this.resolveColumnIndex(expr, columns);
         if (colIdx >= 0 && colIdx < row.length) return row[colIdx];
+        // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
+        if ((expr as IdentifierExpr).table?.toUpperCase() === 'DBMS_RANDOM') {
+          const fn = expr.name.toUpperCase();
+          if (fn === 'VALUE') return Math.random();
+          if (fn === 'NORMAL') {
+            const u1 = Math.random(), u2 = Math.random();
+            return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+          }
+        }
         // Oracle pseudo-columns
         const name = expr.name.toUpperCase();
         if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
         if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
         if (name === 'USER') return this.context.currentUser;
-        if (name === 'ROWNUM') return 1; // Simplified
+        if (name === 'ROWNUM') return this._currentRowNum || 1;
         return null;
       }
 
@@ -1892,12 +1945,21 @@ export class OracleExecutor extends BaseExecutor {
         if (outerIdx >= 0 && outerIdx < outerRow.length) {
           return outerRow[outerIdx];
         }
+        // DBMS_RANDOM without parens
+        if ((expr as IdentifierExpr).table?.toUpperCase() === 'DBMS_RANDOM') {
+          const fn = (expr as IdentifierExpr).name.toUpperCase();
+          if (fn === 'VALUE') return Math.random();
+          if (fn === 'NORMAL') {
+            const u1 = Math.random(), u2 = Math.random();
+            return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+          }
+        }
         // Pseudo-columns
         const name = (expr as IdentifierExpr).name.toUpperCase();
         if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
         if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
         if (name === 'USER') return this.context.currentUser;
-        if (name === 'ROWNUM') return 1;
+        if (name === 'ROWNUM') return this._currentRowNum || 1;
         return null;
       }
       return origMethod.call(this, expr, row, columns);
@@ -1986,6 +2048,43 @@ export class OracleExecutor extends BaseExecutor {
       case 'USER': return this.context.currentUser;
       case 'SYS_GUID': return 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'.replace(/X/g, () => Math.floor(Math.random() * 16).toString(16).toUpperCase());
       case 'SYS_CONTEXT': return this.context.currentUser; // Simplified
+
+      // DBMS_RANDOM package
+      case 'VALUE': {
+        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
+          if (args.length === 0) return Math.random();
+          if (args.length >= 2) {
+            const low = Number(args[0]);
+            const high = Number(args[1]);
+            return low + Math.random() * (high - low);
+          }
+          return Math.random();
+        }
+        return null;
+      }
+      case 'STRING': {
+        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
+          const opt = args.length > 0 ? String(args[0]).toUpperCase() : 'U';
+          const len = args.length > 1 ? Number(args[1]) : 20;
+          let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+          if (opt === 'L') chars = 'abcdefghijklmnopqrstuvwxyz';
+          if (opt === 'A' || opt === 'X') chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+          if (opt === 'P') chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+          let result = '';
+          for (let i = 0; i < len; i++) result += chars[Math.floor(Math.random() * chars.length)];
+          return result;
+        }
+        return null;
+      }
+      case 'NORMAL': {
+        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
+          // Box-Muller transform for normal distribution
+          const u1 = Math.random();
+          const u2 = Math.random();
+          return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        }
+        return null;
+      }
 
       // COUNT(*) and other aggregates return a single value for a column evaluation context
       // Real aggregation is handled at the query level — here we just return the scalar value
