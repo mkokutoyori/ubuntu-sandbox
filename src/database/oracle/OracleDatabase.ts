@@ -482,6 +482,78 @@ export class OracleDatabase {
       return;
     }
 
+    // DBMS_OUTPUT.PUT / DBMS_OUTPUT.NEW_LINE / DBMS_OUTPUT.ENABLE / DBMS_OUTPUT.DISABLE
+    if (upper.startsWith('DBMS_OUTPUT.PUT(')) {
+      const match = trimmed.match(/DBMS_OUTPUT\.PUT\s*\(\s*(.*)\s*\)/is);
+      if (match) {
+        const value = this.evaluatePLSQLExpressionWithVars(match[1], variables, executor);
+        output.push(String(value ?? ''));
+      }
+      return;
+    }
+    if (upper.startsWith('DBMS_OUTPUT.ENABLE') || upper.startsWith('DBMS_OUTPUT.DISABLE') || upper.startsWith('DBMS_OUTPUT.NEW_LINE')) {
+      return; // No-op in simulator
+    }
+
+    // DBMS_LOCK.SLEEP
+    if (upper.startsWith('DBMS_LOCK.SLEEP')) {
+      // Simulated sleep — no actual delay in browser environment
+      return;
+    }
+
+    // DBMS_UTILITY functions
+    if (upper.startsWith('DBMS_UTILITY.')) {
+      // GET_TIME — returns a relative time value
+      if (upper.includes('GET_TIME')) {
+        const assignTarget = trimmed.match(/^(\w+)\s*:=\s*DBMS_UTILITY\.GET_TIME/i);
+        if (assignTarget && variables.has(assignTarget[1].toUpperCase())) {
+          variables.get(assignTarget[1].toUpperCase())!.value = Date.now() % 2147483647;
+        }
+      }
+      return;
+    }
+
+    // DBMS_STATS.GATHER_TABLE_STATS / GATHER_SCHEMA_STATS
+    if (upper.startsWith('DBMS_STATS.')) {
+      // Simulated — no actual stats gathering
+      return;
+    }
+
+    // DBMS_SESSION.SET_ROLE / SET_NLS
+    if (upper.startsWith('DBMS_SESSION.')) {
+      return; // No-op in simulator
+    }
+
+    // DBMS_SCHEDULER calls
+    if (upper.startsWith('DBMS_SCHEDULER.')) {
+      return; // No-op in simulator
+    }
+
+    // DBMS_METADATA.GET_DDL
+    if (upper.startsWith('DBMS_METADATA.')) {
+      return; // Handled as function in evaluateFunction
+    }
+
+    // UTL_FILE operations
+    if (upper.startsWith('UTL_FILE.')) {
+      return; // No-op in simulator
+    }
+
+    // DBMS_LOB operations
+    if (upper.startsWith('DBMS_LOB.')) {
+      return; // No-op in simulator
+    }
+
+    // DBMS_FLASHBACK
+    if (upper.startsWith('DBMS_FLASHBACK.')) {
+      return; // No-op in simulator
+    }
+
+    // DBMS_SPACE
+    if (upper.startsWith('DBMS_SPACE.')) {
+      return; // No-op in simulator
+    }
+
     // RAISE_APPLICATION_ERROR
     if (upper.startsWith('RAISE_APPLICATION_ERROR')) {
       const match = trimmed.match(/RAISE_APPLICATION_ERROR\s*\(\s*(-?\d+)\s*,\s*'([^']*)'\s*\)/i);

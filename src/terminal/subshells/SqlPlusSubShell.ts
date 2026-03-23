@@ -9,15 +9,17 @@ import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
-import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
+import { createSQLPlusSession, initOracleFilesystem, syncAlertLogToDevice, updateSpfileOnDevice } from '@/terminal/commands/database';
 
 export class SqlPlusSubShell implements ISubShell {
   private session: SQLPlusSession;
   private prompt: string;
+  private device: Equipment;
 
-  private constructor(session: SQLPlusSession, prompt: string) {
+  private constructor(session: SQLPlusSession, prompt: string, device: Equipment) {
     this.session = session;
     this.prompt = prompt;
+    this.device = device;
   }
 
   /**
@@ -36,7 +38,7 @@ export class SqlPlusSubShell implements ISubShell {
     const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
 
     return {
-      subShell: new SqlPlusSubShell(session, session.getPrompt()),
+      subShell: new SqlPlusSubShell(session, session.getPrompt(), device),
       banner,
       loginOutput,
     };
@@ -58,11 +60,32 @@ export class SqlPlusSubShell implements ISubShell {
   processLine(line: string): SubShellResult {
     const result = this.session.processLine(line);
     this.prompt = result.prompt;
+
+    // Sync alert log and spfile to VFS after commands that may modify them
+    const upper = line.trim().toUpperCase();
+    if (upper.startsWith('STARTUP') || upper.startsWith('SHUTDOWN') ||
+        upper.startsWith('ALTER SYSTEM') || upper.startsWith('ALTER DATABASE')) {
+      this.syncToVFS();
+    }
+
     return {
       output: result.output,
       exit: result.exit,
       prompt: result.prompt,
     };
+  }
+
+  /** Sync dynamic Oracle state (alert log, spfile) back to the virtual filesystem. */
+  private syncToVFS(): void {
+    try {
+      const db = this.session.getDatabase();
+      if (db) {
+        syncAlertLogToDevice(this.device, db.instance.getAlertLog());
+        updateSpfileOnDevice(this.device, db.instance.getSpfileParameters());
+      }
+    } catch {
+      // Silently ignore sync errors — VFS may not be initialized
+    }
   }
 
   dispose(): void {

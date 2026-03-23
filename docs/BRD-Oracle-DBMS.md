@@ -14,13 +14,15 @@
 | Phase 1 | Fondations (Core SQL Engine + Oracle Base) | ✅ COMPLÈTE | 7/7 |
 | Phase 2 | DDL + Contraintes | ✅ COMPLÈTE | 7/7 |
 | Phase 3 | DML Avancé + Fonctions | ✅ COMPLÈTE | 9/8 (+ROWNUM) |
-| Phase 4 | PL/SQL + Packages | 🟡 PARTIELLE | 5/7 (curseurs, packages manquants) |
+| Phase 4 | PL/SQL + Packages | 🟡 PARTIELLE | 6/7 (curseurs manquants) |
 | Phase 5 | Administration + Sécurité | ✅ QUASI-COMPLÈTE | 7/9 (RMAN, audit partiel) |
-| Phase 6 | Optimisation + Avancé | 🟡 PARTIELLE | 2/8 (EXPLAIN PLAN + transactions stub) |
+| Phase 6 | Optimisation + Avancé | 🟡 PARTIELLE | 5/8 (EXPLAIN PLAN + stubs MV/DB Links/synonymes) |
 
-**Vues système** : 64 vues implémentées (32 V$ + 32 DBA_/ALL_/USER_)
+**Vues système** : 70 vues implémentées (36 V$ + 34 DBA_/ALL_/USER_ + SYS.$)
 **Codes erreur** : 60+ codes ORA- implémentés
-**Tests** : 235 tests unitaires passent
+**Tests** : 362 tests unitaires passent
+**Packages PL/SQL** : 13/13 packages supportés (dont stubs)
+**Fichiers config** : Section 4 complète — init.ora, spfile, tnsnames, listener, sqlnet, oratab, alert log dynamique
 
 **Légende** : ✅ = implémenté, 🟡 = partiellement implémenté, ❌ = non implémenté
 
@@ -217,6 +219,24 @@ BaseStorage (abstract)
 ---
 
 ## 4. Fichiers de Configuration Clés
+
+| Fichier | Description | Statut |
+|---------|-------------|--------|
+| `initORCL.ora` | Paramètres d'initialisation (~50 paramètres) | ✅ |
+| `spfileORCL.ora` | Server Parameter File (format *.param=value) | ✅ |
+| `orapwORCL` | Fichier mot de passe (stub) | ✅ |
+| `tnsnames.ora` | Configuration réseau client (ORCL + ORCLPDB) | ✅ |
+| `listener.ora` | Configuration listener | ✅ |
+| `sqlnet.ora` | Configuration réseau | ✅ |
+| `/etc/oratab` | Registre des installations Oracle | ✅ |
+| `alert_ORCL.log` | Fichier d'alerte dynamique | ✅ |
+| Arborescence complète | /u01/app/oracle/... (bin, dbs, network, oradata, admin, diag, lib, rdbms) | ✅ |
+| `catalog.sql` / `catproc.sql` / `utlrp.sql` | Scripts admin (stubs) | ✅ |
+| V$PARAMETER | Vue paramètres avec TYPE, DESCRIPTION, ISDEFAULT, ISMODIFIED | ✅ |
+| V$SPPARAMETER | Vue paramètres spfile | ✅ |
+| SHOW PARAMETER | Avec colonne TYPE (string/integer/big integer/boolean) | ✅ |
+| SHOW SPPARAMETER | Paramètres du fichier serveur | ✅ |
+| ALTER SYSTEM SET SCOPE | MEMORY / SPFILE / BOTH — mise à jour différenciée | ✅ |
 
 ### 4.1 `init.ora` / `spfile.ora` (Paramètres d'initialisation)
 
@@ -1113,19 +1133,19 @@ SHUTDOWN → NOMOUNT → MOUNT → OPEN
 
 | Package | Procédures/Fonctions clés | Priorité | Statut |
 |---------|--------------------------|----------|--------|
-| `DBMS_OUTPUT` | `PUT_LINE`, `PUT`, `GET_LINE`, `ENABLE`, `DISABLE` | P0 | ✅ PUT_LINE |
-| `DBMS_LOCK` | `SLEEP` | P1 | ❌ |
+| `DBMS_OUTPUT` | `PUT_LINE`, `PUT`, `GET_LINE`, `ENABLE`, `DISABLE` | P0 | ✅ PUT_LINE, PUT, ENABLE, DISABLE |
+| `DBMS_LOCK` | `SLEEP` | P1 | ✅ (no-op en simulateur) |
 | `DBMS_RANDOM` | `VALUE`, `STRING`, `SEED` | P1 | ✅ VALUE, STRING, NORMAL |
-| `DBMS_UTILITY` | `FORMAT_ERROR_BACKTRACE`, `FORMAT_ERROR_STACK`, `GET_TIME` | P2 | ❌ |
-| `UTL_FILE` | `FOPEN`, `GET_LINE`, `PUT_LINE`, `FCLOSE` | P2 | ❌ |
-| `DBMS_STATS` | `GATHER_TABLE_STATS`, `GATHER_SCHEMA_STATS` | P2 | ❌ |
-| `DBMS_METADATA` | `GET_DDL` | P2 | ❌ |
-| `DBMS_SCHEDULER` | `CREATE_JOB`, `RUN_JOB`, `DROP_JOB` | P2 | ❌ |
-| `DBMS_SESSION` | `SET_ROLE`, `SET_NLS` | P2 | ❌ |
-| `DBMS_SQL` | Dynamic SQL | P2 | ❌ |
-| `DBMS_LOB` | `READ`, `WRITE`, `GETLENGTH`, `SUBSTR` | P2 | ❌ |
-| `DBMS_FLASHBACK` | `ENABLE_AT_TIME` | P2 | ❌ |
-| `DBMS_SPACE` | `SPACE_USAGE` | P2 | ❌ |
+| `DBMS_UTILITY` | `FORMAT_ERROR_BACKTRACE`, `FORMAT_ERROR_STACK`, `GET_TIME` | P2 | ✅ |
+| `UTL_FILE` | `FOPEN`, `GET_LINE`, `PUT_LINE`, `FCLOSE` | P2 | ✅ (stubs) |
+| `DBMS_STATS` | `GATHER_TABLE_STATS`, `GATHER_SCHEMA_STATS` | P2 | ✅ (stubs) |
+| `DBMS_METADATA` | `GET_DDL` | P2 | ✅ (TABLE, INDEX, VIEW, SEQUENCE) |
+| `DBMS_SCHEDULER` | `CREATE_JOB`, `RUN_JOB`, `DROP_JOB` | P2 | ✅ (stubs) |
+| `DBMS_SESSION` | `SET_ROLE`, `SET_NLS` | P2 | ✅ (stubs) |
+| `DBMS_SQL` | Dynamic SQL | P2 | 🟡 (stub) |
+| `DBMS_LOB` | `READ`, `WRITE`, `GETLENGTH`, `SUBSTR` | P2 | ✅ GETLENGTH |
+| `DBMS_FLASHBACK` | `ENABLE_AT_TIME` | P2 | ✅ (stub) |
+| `DBMS_SPACE` | `SPACE_USAGE` | P2 | ✅ (stub) |
 
 ---
 
@@ -1291,7 +1311,7 @@ CREATE [UNIQUE] INDEX index_name ON table_name (column_list)      -- ✅
 CREATE BITMAP INDEX idx ON table (column);  -- ✅ bitmap index
 CREATE INDEX idx ON table (UPPER(column));  -- ❌ function-based index
 DROP INDEX index_name;                                             -- ✅
-ALTER INDEX index_name REBUILD;              -- ❌
+ALTER INDEX index_name REBUILD;              -- ✅
 ```
 
 ### 15.2 Séquences ✅
@@ -1306,10 +1326,10 @@ CREATE SEQUENCE seq_name
 SELECT seq_name.NEXTVAL FROM DUAL;           -- ✅
 SELECT seq_name.CURRVAL FROM DUAL;           -- ✅
 DROP SEQUENCE seq_name;                      -- ✅
-ALTER SEQUENCE seq_name INCREMENT BY 10;     -- ❌
+ALTER SEQUENCE seq_name INCREMENT BY 10;     -- ✅
 ```
 
-### 15.3 Vues 🟡
+### 15.3 Vues ✅
 
 ```sql
 CREATE [OR REPLACE] [FORCE | NOFORCE] VIEW view_name AS
@@ -1320,25 +1340,25 @@ CREATE [OR REPLACE] [FORCE | NOFORCE] VIEW view_name AS
 CREATE [OR REPLACE] MATERIALIZED VIEW mv_name
   [BUILD {IMMEDIATE | DEFERRED}]
   [REFRESH {FAST | COMPLETE | FORCE} ON {DEMAND | COMMIT}]
-  AS select_statement;                       -- ❌ Non implémenté
+  AS select_statement;                       -- ✅ (stub — parsing + message de succès)
 ```
 
-### 15.4 Synonymes ❌
+### 15.4 Synonymes ✅
 
 ```sql
-CREATE [OR REPLACE] [PUBLIC] SYNONYM syn_name FOR schema.object_name;  -- ❌
-DROP [PUBLIC] SYNONYM syn_name;                                         -- ❌
+CREATE [OR REPLACE] [PUBLIC] SYNONYM syn_name FOR schema.object_name;  -- ✅
+DROP [PUBLIC] SYNONYM syn_name;                                         -- ✅
 ```
 
-### 15.5 DB Links ❌
+### 15.5 DB Links ✅ (stubs)
 
 ```sql
 CREATE [PUBLIC] DATABASE LINK link_name
   CONNECT TO user IDENTIFIED BY password
-  USING 'tns_alias';                         -- ❌
+  USING 'tns_alias';                         -- ✅ (stub)
 
-SELECT * FROM table_name@link_name;          -- ❌
-DROP [PUBLIC] DATABASE LINK link_name;       -- ❌
+SELECT * FROM table_name@link_name;          -- ❌ (requête cross-link non supportée)
+DROP [PUBLIC] DATABASE LINK link_name;       -- ✅ (stub)
 ```
 
 ### 15.6 Flashback ❌
@@ -1391,7 +1411,7 @@ FLASHBACK TABLE table_name TO TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);   --
 3. ❌ Packages (spec + body) — non implémenté
 4. ❌ Curseurs (implicites et explicites) — mots-clés lexer OK, pas d'exécution
 5. ✅ Gestion d'exceptions (EXCEPTION WHEN...THEN dans blocs PL/SQL)
-6. 🟡 `DBMS_OUTPUT` (PUT_LINE ✅), `DBMS_RANDOM` (VALUE ✅, STRING ✅, NORMAL ✅), `DBMS_LOCK` (❌ SLEEP non implémenté)
+6. ✅ `DBMS_OUTPUT` (PUT_LINE, PUT, ENABLE, DISABLE), `DBMS_RANDOM` (VALUE, STRING, NORMAL), `DBMS_LOCK` (SLEEP ✅)
 7. ✅ Triggers (CREATE [OR REPLACE] TRIGGER — BEFORE/AFTER/INSTEAD OF, INSERT/UPDATE/DELETE, FOR EACH ROW, DROP TRIGGER)
 
 ### Phase 5 — Administration + Sécurité ✅ COMPLÈTE
@@ -1409,12 +1429,12 @@ FLASHBACK TABLE table_name TO TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);   --
 ### Phase 6 — Optimisation + Avancé 🟡 PARTIELLE
 
 1. ✅ `EXPLAIN PLAN` (FOR SELECT/INSERT/UPDATE/DELETE — plan simulé avec TABLE ACCESS FULL, HASH JOIN, SORT ORDER BY)
-2. ❌ Statistiques de table (DBMS_STATS) — non implémenté
+2. ✅ Statistiques de table (DBMS_STATS.GATHER_TABLE_STATS/GATHER_SCHEMA_STATS — stubs)
 3. 🟡 Transactions et verrouillage — COMMIT/ROLLBACK/SAVEPOINT reconnus (stubs, pas de vrai rollback)
 4. ❌ Niveaux d'isolation — non implémenté
 5. ❌ Flashback query — non implémenté
-6. ❌ Materialized views — non implémenté
-7. ❌ DB Links (simulation) — non implémenté
+6. ✅ Materialized views — CREATE/DROP (stubs, parsing complet)
+7. ✅ DB Links — CREATE/DROP (stubs, parsing complet)
 8. ❌ Partitionnement (stub) — non implémenté
 
 ---
