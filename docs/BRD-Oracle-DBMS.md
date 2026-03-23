@@ -18,10 +18,11 @@
 | Phase 5 | Administration + Sécurité | ✅ QUASI-COMPLÈTE | 7/9 (RMAN, audit partiel) |
 | Phase 6 | Optimisation + Avancé | 🟡 PARTIELLE | 5/8 (EXPLAIN PLAN + stubs MV/DB Links/synonymes) |
 
-**Vues système** : 68 vues implémentées (34 V$ + 34 DBA_/ALL_/USER_ + SYS.$)
+**Vues système** : 70 vues implémentées (36 V$ + 34 DBA_/ALL_/USER_ + SYS.$)
 **Codes erreur** : 60+ codes ORA- implémentés
-**Tests** : 296 tests unitaires passent
+**Tests** : 362 tests unitaires passent
 **Packages PL/SQL** : 13/13 packages supportés (dont stubs)
+**Fichiers config** : Section 4 complète — init.ora, spfile, tnsnames, listener, sqlnet, oratab, alert log dynamique
 
 **Légende** : ✅ = implémenté, 🟡 = partiellement implémenté, ❌ = non implémenté
 
@@ -218,6 +219,24 @@ BaseStorage (abstract)
 ---
 
 ## 4. Fichiers de Configuration Clés
+
+| Fichier | Description | Statut |
+|---------|-------------|--------|
+| `initORCL.ora` | Paramètres d'initialisation (~50 paramètres) | ✅ |
+| `spfileORCL.ora` | Server Parameter File (format *.param=value) | ✅ |
+| `orapwORCL` | Fichier mot de passe (stub) | ✅ |
+| `tnsnames.ora` | Configuration réseau client (ORCL + ORCLPDB) | ✅ |
+| `listener.ora` | Configuration listener | ✅ |
+| `sqlnet.ora` | Configuration réseau | ✅ |
+| `/etc/oratab` | Registre des installations Oracle | ✅ |
+| `alert_ORCL.log` | Fichier d'alerte dynamique | ✅ |
+| Arborescence complète | /u01/app/oracle/... (bin, dbs, network, oradata, admin, diag, lib, rdbms) | ✅ |
+| `catalog.sql` / `catproc.sql` / `utlrp.sql` | Scripts admin (stubs) | ✅ |
+| V$PARAMETER | Vue paramètres avec TYPE, DESCRIPTION, ISDEFAULT, ISMODIFIED | ✅ |
+| V$SPPARAMETER | Vue paramètres spfile | ✅ |
+| SHOW PARAMETER | Avec colonne TYPE (string/integer/big integer/boolean) | ✅ |
+| SHOW SPPARAMETER | Paramètres du fichier serveur | ✅ |
+| ALTER SYSTEM SET SCOPE | MEMORY / SPFILE / BOTH — mise à jour différenciée | ✅ |
 
 ### 4.1 `init.ora` / `spfile.ora` (Paramètres d'initialisation)
 

@@ -105,6 +105,11 @@ export class SQLPlusSession {
     };
   }
 
+  /** Access the underlying OracleDatabase for VFS sync. */
+  getDatabase(): OracleDatabase | null {
+    return this.connected ? this.db : null;
+  }
+
   /**
    * Get the banner displayed when SQL*Plus starts.
    */
@@ -690,10 +695,11 @@ export class SQLPlusSession {
         }
         const params = this.db.instance.getAllParameters();
         output.push('');
-        output.push('NAME'.padEnd(40) + 'VALUE');
-        output.push('-'.repeat(40) + ' ' + '-'.repeat(30));
+        output.push('NAME'.padEnd(44) + 'TYPE'.padEnd(12) + 'VALUE');
+        output.push('-'.repeat(44) + ' ' + '-'.repeat(11) + ' ' + '-'.repeat(30));
         for (const [name, value] of params) {
-          output.push(name.padEnd(40) + value);
+          const type = this.getParamTypeStr(value);
+          output.push(name.padEnd(44) + type.padEnd(12) + value);
         }
         break;
       }
@@ -721,17 +727,35 @@ export class SQLPlusSession {
         output.push(`sqlprompt "${this.settings.sqlprompt}"`);
         break;
       default: {
-        // SHOW PARAMETER <name> — show matching parameters
-        if (option.startsWith('PARAMETER ') || option.startsWith('PARAMETERS ')) {
-          const search = option.replace(/^PARAMETERS?\s+/, '').toLowerCase();
+        // SHOW PARAMETER <name> — show matching parameters with TYPE column
+        if (option.startsWith('PARAMETER ') || option.startsWith('PARAMETERS ') || option === 'PARAMETER' || option === 'PARAMETERS') {
+          const search = option.replace(/^PARAMETERS?\s*/, '').toLowerCase();
           if (this.connected) {
             const params = this.db.instance.getAllParameters();
             output.push('');
-            output.push('NAME'.padEnd(40) + 'VALUE');
-            output.push('-'.repeat(40) + ' ' + '-'.repeat(30));
+            output.push('NAME'.padEnd(44) + 'TYPE'.padEnd(12) + 'VALUE');
+            output.push('-'.repeat(44) + ' ' + '-'.repeat(11) + ' ' + '-'.repeat(30));
             for (const [name, value] of params) {
-              if (name.includes(search)) {
-                output.push(name.padEnd(40) + value);
+              if (!search || name.includes(search)) {
+                const type = this.getParamTypeStr(value);
+                output.push(name.padEnd(44) + type.padEnd(12) + value);
+              }
+            }
+          } else {
+            output.push('ERROR:', ORACLE_ERRORS.ORA_01012);
+          }
+        // SHOW SPPARAMETER <name> — show server parameter file parameters
+        } else if (option.startsWith('SPPARAMETER ') || option.startsWith('SPPARAMETERS ') || option === 'SPPARAMETER' || option === 'SPPARAMETERS') {
+          const search = option.replace(/^SPPARAMETERS?\s*/, '').toLowerCase();
+          if (this.connected) {
+            const params = this.db.instance.getSpfileParameters();
+            output.push('');
+            output.push('SID'.padEnd(10) + 'NAME'.padEnd(44) + 'TYPE'.padEnd(12) + 'VALUE');
+            output.push('-'.repeat(9) + ' ' + '-'.repeat(44) + ' ' + '-'.repeat(11) + ' ' + '-'.repeat(30));
+            for (const [name, value] of params) {
+              if (!search || name.includes(search)) {
+                const type = this.getParamTypeStr(value);
+                output.push('*'.padEnd(10) + name.padEnd(44) + type.padEnd(12) + value);
               }
             }
           } else {
@@ -745,6 +769,13 @@ export class SQLPlusSession {
     }
 
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  private getParamTypeStr(value: string): string {
+    if (value === 'TRUE' || value === 'FALSE') return 'boolean';
+    if (/^\d+$/.test(value)) return 'integer';
+    if (/^\d+[MmGgKk]$/i.test(value)) return 'big integer';
+    return 'string';
   }
 
   // ── DESCRIBE ─────────────────────────────────────────────────────

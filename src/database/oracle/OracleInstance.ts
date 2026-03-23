@@ -200,44 +200,136 @@ export class OracleInstance {
 
   // ── Parameters ───────────────────────────────────────────────────
 
+  /** Tracks which parameters were explicitly changed via ALTER SYSTEM */
+  private _modifiedParams: Set<string> = new Set();
+  /** Tracks spfile-specific parameter overrides */
+  private _spfileParams: Map<string, string> = new Map();
+
   private initParameters(): void {
     const p = this._parameters;
+    const oradata = `${ORACLE_CONFIG.BASE}/oradata/${this.config.sid}`;
+
+    // Core database identity
     p.set('db_name', this.config.sid);
+    p.set('db_domain', 'localdomain');
+    p.set('db_unique_name', this.config.sid);
+    p.set('instance_name', this.config.sid);
+    p.set('service_names', this.config.serviceName);
+
+    // Memory
     p.set('db_block_size', String(this.config.dbBlockSize));
+    p.set('db_cache_size', '128M');
+    p.set('shared_pool_size', '256M');
     p.set('sga_target', this.config.sgaTarget);
+    p.set('sga_max_size', '1G');
     p.set('pga_aggregate_target', this.config.pgaAggregateTarget);
+    p.set('java_pool_size', '64M');
+    p.set('large_pool_size', '32M');
+    p.set('streams_pool_size', '0');
+    p.set('memory_target', '0');
+    p.set('memory_max_target', '0');
+
+    // Processes & sessions
     p.set('processes', String(this.config.processes));
     p.set('sessions', String(this.config.maxSessions));
     p.set('open_cursors', String(this.config.openCursors));
+
+    // Undo
     p.set('undo_management', this.config.undoManagement);
     p.set('undo_tablespace', this.config.undoTablespace);
-    p.set('compatible', this.config.compatibleVersion);
-    p.set('audit_trail', this.config.auditTrail);
-    p.set('db_domain', 'localdomain');
-    p.set('instance_name', this.config.sid);
-    p.set('service_names', this.config.serviceName);
-    p.set('remote_login_passwordfile', 'EXCLUSIVE');
-    const oradata = `${ORACLE_CONFIG.BASE}/oradata/${this.config.sid}`;
-    p.set('diagnostic_dest', ORACLE_CONFIG.BASE);
-    p.set('control_files', `${oradata}/control01.ctl, ${oradata}/control02.ctl`);
+    p.set('undo_retention', '900');
+
+    // Redo & archiving
     p.set('log_archive_dest_1', `LOCATION=${ORACLE_CONFIG.BASE}/archivelog`);
+    p.set('log_archive_format', 'arch_%t_%s_%r.arc');
     p.set('archive_log_mode', this._archiveLogMode ? 'ENABLED' : 'DISABLED');
-    // Environment-like parameters (stored lowercase for case-insensitive lookup)
+
+    // Recovery
+    p.set('db_recovery_file_dest', `${ORACLE_CONFIG.BASE}/fast_recovery_area`);
+    p.set('db_recovery_file_dest_size', '4G');
+
+    // Control files
+    p.set('control_files', `${oradata}/control01.ctl, ${oradata}/control02.ctl`);
+
+    // Audit
+    p.set('audit_file_dest', `${ORACLE_CONFIG.BASE}/admin/${this.config.sid}/adump`);
+    p.set('audit_trail', this.config.auditTrail);
+
+    // Diagnostics
+    p.set('diagnostic_dest', ORACLE_CONFIG.BASE);
+
+    // Compatibility
+    p.set('compatible', this.config.compatibleVersion);
+    p.set('remote_login_passwordfile', 'EXCLUSIVE');
+
+    // NLS
+    p.set('nls_language', 'AMERICAN');
+    p.set('nls_territory', 'AMERICA');
+    p.set('nls_date_format', 'DD-MON-RR');
+    p.set('nls_characterset', 'AL32UTF8');
+    p.set('nls_nchar_characterset', 'AL16UTF16');
+
+    // Optimizer
+    p.set('optimizer_mode', 'ALL_ROWS');
+    p.set('optimizer_index_cost_adj', '100');
+    p.set('optimizer_index_caching', '0');
+    p.set('cursor_sharing', 'EXACT');
+    p.set('result_cache_max_size', '0');
+
+    // Security
+    p.set('sec_case_sensitive_logon', 'TRUE');
+    p.set('os_authent_prefix', 'ops$');
+
+    // Networking & dispatchers
+    p.set('local_listener', `(ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=${ORACLE_CONFIG.PORT}))`);
+    p.set('dispatchers', '(PROTOCOL=TCP) (SERVICE=ORCLXDB)');
+
+    // Misc
+    p.set('db_files', '200');
+    p.set('recyclebin', 'ON');
+    p.set('deferred_segment_creation', 'TRUE');
+    p.set('filesystemio_options', 'setall');
+    p.set('resource_limit', 'TRUE');
+    p.set('parallel_max_servers', '40');
+    p.set('parallel_min_servers', '0');
+
+    // Environment (stored for SHOW PARAMETER lookups)
     p.set('oracle_home', ORACLE_CONFIG.HOME);
     p.set('oracle_sid', this.config.sid);
     p.set('oracle_base', ORACLE_CONFIG.BASE);
+
+    // Copy initial params as spfile baseline
+    for (const [k, v] of p) {
+      this._spfileParams.set(k, v);
+    }
   }
 
   getParameter(name: string): string | undefined {
     return this._parameters.get(name.toLowerCase());
   }
 
-  setParameter(name: string, value: string): void {
-    this._parameters.set(name.toLowerCase(), value);
+  setParameter(name: string, value: string, scope?: 'MEMORY' | 'SPFILE' | 'BOTH'): void {
+    const key = name.toLowerCase();
+    const effectiveScope = scope ?? 'BOTH';
+    if (effectiveScope === 'MEMORY' || effectiveScope === 'BOTH') {
+      this._parameters.set(key, value);
+    }
+    if (effectiveScope === 'SPFILE' || effectiveScope === 'BOTH') {
+      this._spfileParams.set(key, value);
+    }
+    this._modifiedParams.add(key);
   }
 
   getAllParameters(): Map<string, string> {
     return new Map(this._parameters);
+  }
+
+  getSpfileParameters(): Map<string, string> {
+    return new Map(this._spfileParams);
+  }
+
+  isParameterModified(name: string): boolean {
+    return this._modifiedParams.has(name.toLowerCase());
   }
 
   // ── SGA Info ─────────────────────────────────────────────────────

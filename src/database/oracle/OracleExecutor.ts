@@ -1793,7 +1793,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeAlterSystem(stmt: AlterSystemStatement): ResultSet {
     if (stmt.action === 'SET' && stmt.parameter && stmt.value) {
-      this.instance.setParameter(stmt.parameter, stmt.value);
+      this.instance.setParameter(stmt.parameter, stmt.value, stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined);
       return emptyResult('System altered.');
     }
     if (stmt.action === 'SWITCH LOGFILE') {
