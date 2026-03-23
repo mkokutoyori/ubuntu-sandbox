@@ -126,6 +126,117 @@ export function handleLsnrctl(
 }
 
 /**
+ * Handle `dbca` — Database Configuration Assistant (simplified stub).
+ */
+export function handleDbca(
+  _device: Equipment,
+  args: string[],
+  addLine: OutputFn,
+): void {
+  addLine('');
+  addLine('Oracle Database Configuration Assistant (DBCA)');
+  addLine(`Release ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
+  addLine('');
+  addLine(ORACLE_BANNER.COPYRIGHT);
+  addLine('');
+
+  if (args.length === 0) {
+    addLine('Usage: dbca [-silent] [-createDatabase] [-deleteDatabase] [-configureDatabase]');
+    addLine('');
+    addLine('Options:');
+    addLine('  -silent                    Run in silent (non-interactive) mode');
+    addLine('  -createDatabase            Create a new database');
+    addLine('  -deleteDatabase            Delete an existing database');
+    addLine('  -configureDatabase         Configure an existing database');
+    addLine('  -responseFile <file>       Use response file');
+    addLine('');
+    addLine('Note: This is a simulated environment. DBCA operations are not supported.');
+    return;
+  }
+
+  const subcmd = args[0]?.toLowerCase();
+  if (subcmd === '-silent' || subcmd === '-createdatabase' || subcmd === '-deletedatabase') {
+    addLine(`[WARNING] DBCA operations are simulated. No actual database changes will be made.`);
+    addLine('');
+    addLine('100% complete');
+    addLine('Database operation completed successfully.');
+  } else {
+    addLine(`DBCA-00100: Unknown option: ${args[0]}`);
+  }
+}
+
+/**
+ * Handle `orapwd` — Oracle Password File Utility (stub).
+ */
+export function handleOrapwd(
+  _device: Equipment,
+  args: string[],
+  addLine: OutputFn,
+): void {
+  addLine('');
+  if (args.length === 0) {
+    addLine('Usage: orapwd file=<fname> password=<password> [entries=<users>] [force=<y/n>]');
+    addLine('');
+    addLine('  file     - name of password file (required)');
+    addLine('  password - password for SYS (required)');
+    addLine('  entries  - maximum number of distinct DBA users');
+    addLine('  force    - whether to overwrite existing file (y/n)');
+    return;
+  }
+
+  // Parse file= and password= from args
+  const joined = args.join(' ');
+  const fileMatch = joined.match(/file=(\S+)/i);
+  const passMatch = joined.match(/password=(\S+)/i);
+
+  if (!fileMatch || !passMatch) {
+    addLine('OPW-00001: Unable to open password file');
+    addLine('Usage: orapwd file=<fname> password=<password>');
+    return;
+  }
+
+  addLine(`Password file "${fileMatch[1]}" created successfully.`);
+}
+
+/**
+ * Handle `adrci` — Automatic Diagnostic Repository Command Interpreter (stub).
+ */
+export function handleAdrci(
+  _device: Equipment,
+  args: string[],
+  addLine: OutputFn,
+): void {
+  addLine('');
+  addLine('ADRCI: Release 19.0.0.0.0 - Production');
+  addLine('');
+  addLine(ORACLE_BANNER.COPYRIGHT);
+  addLine('');
+
+  if (args.length === 0) {
+    addLine('adrci> This is a simulated ADRCI environment.');
+    addLine('adrci> Available commands: SHOW HOMES, SHOW ALERT, SHOW INCIDENT, EXIT');
+    addLine('');
+    return;
+  }
+
+  const subcmd = args.join(' ').toUpperCase();
+  if (subcmd.includes('SHOW HOMES') || subcmd.includes('SHOW HOME')) {
+    addLine('ADR Homes:');
+    addLine(`  diag/rdbms/orcl/ORCL`);
+  } else if (subcmd.includes('SHOW ALERT')) {
+    addLine('ADR Home = /u01/app/oracle/diag/rdbms/orcl/ORCL:');
+    addLine('');
+    addLine('No alert log entries found in simulated environment.');
+  } else if (subcmd.includes('SHOW INCIDENT')) {
+    addLine('ADR Home = /u01/app/oracle/diag/rdbms/orcl/ORCL:');
+    addLine('');
+    addLine('0 incidents found.');
+  } else {
+    addLine(`DIA-48415: Syntax error found in string [${args.join(' ')}]`);
+  }
+}
+
+/**
  * Handle `tnsping <service>` — Oracle TNS connectivity test.
  */
 export function handleTnsping(

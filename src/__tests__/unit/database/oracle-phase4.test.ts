@@ -195,6 +195,73 @@ describe('Window / Analytic Functions', () => {
       expect(result.rows[7][1]).toBe(4); // bucket 4
     });
   });
+
+  describe('FIRST_VALUE, LAST_VALUE, NTH_VALUE', () => {
+    test('FIRST_VALUE returns first value in partition', () => {
+      const result = exec(db, `
+        SELECT rep, amount,
+          FIRST_VALUE(amount) OVER (PARTITION BY region ORDER BY amount DESC) AS highest
+        FROM sales
+        ORDER BY region, amount DESC
+      `);
+      expect(result.rows.length).toBe(8);
+      // First row in each partition should have FIRST_VALUE = its own amount (highest in partition)
+      expect(result.rows[0][2]).toBe(result.rows[0][1]);
+    });
+
+    test('LAST_VALUE with frame ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          LAST_VALUE(amount) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_amt
+        FROM sales
+        ORDER BY id
+      `);
+      // LAST_VALUE with full frame should return the last row's amount for all rows
+      const lastAmount = result.rows[result.rows.length - 1][1];
+      expect(result.rows[0][2]).toBe(lastAmount);
+      expect(result.rows[3][2]).toBe(lastAmount);
+    });
+
+    test('NTH_VALUE returns nth value in frame', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          NTH_VALUE(amount, 2) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS second_amt
+        FROM sales
+        ORDER BY id
+      `);
+      const secondAmount = result.rows[1][1];
+      expect(result.rows[0][2]).toBe(secondAmount);
+      expect(result.rows[4][2]).toBe(secondAmount);
+    });
+  });
+
+  describe('Window frame specifications', () => {
+    test('SUM with ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          SUM(amount) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS moving_sum
+        FROM sales
+        ORDER BY id
+      `);
+      expect(result.rows.length).toBe(8);
+      const amounts = result.rows.map((r: any[]) => Number(r[1]));
+      expect(result.rows[0][2]).toBe(amounts[0] + amounts[1]);
+      expect(result.rows[1][2]).toBe(amounts[0] + amounts[1] + amounts[2]);
+      expect(result.rows[7][2]).toBe(amounts[6] + amounts[7]);
+    });
+
+    test('AVG with ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW (running average)', () => {
+      const result = exec(db, `
+        SELECT id, amount,
+          AVG(amount) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_avg
+        FROM sales
+        ORDER BY id
+      `);
+      const amounts = result.rows.map((r: any[]) => Number(r[1]));
+      expect(result.rows[0][2]).toBe(amounts[0]);
+      expect(result.rows[1][2]).toBe((amounts[0] + amounts[1]) / 2);
+    });
+  });
 });
 
 describe('PL/SQL Anonymous Blocks', () => {
@@ -498,6 +565,214 @@ describe('Oracle Filesystem and Config', () => {
       db.instance.shutdown('IMMEDIATE');
       const log = db.instance.getAlertLog();
       expect(log.some(entry => entry.includes('Shutting down'))).toBe(true);
+    });
+  });
+});
+
+describe('CREATE VIEW and EXPLAIN PLAN', () => {
+  let db: OracleDatabase;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup('OPEN');
+    const conn = db.connectAsSysdba();
+    executor = conn.executor;
+
+    exec(db, `CREATE TABLE employees (
+      id NUMBER PRIMARY KEY,
+      name VARCHAR2(50),
+      dept VARCHAR2(30),
+      salary NUMBER
+    )`);
+    exec(db, `INSERT INTO employees VALUES (1, 'Alice', 'Engineering', 90000)`);
+    exec(db, `INSERT INTO employees VALUES (2, 'Bob', 'Sales', 70000)`);
+    exec(db, `INSERT INTO employees VALUES (3, 'Carol', 'Engineering', 95000)`);
+    exec(db, `INSERT INTO employees VALUES (4, 'Dave', 'Sales', 65000)`);
+  });
+
+  describe('CREATE VIEW', () => {
+    test('creates and queries a simple view', () => {
+      const createResult = exec(db, `CREATE VIEW eng_employees AS SELECT id, name, salary FROM employees WHERE dept = 'Engineering'`);
+      expect(createResult.message).toContain('View created');
+
+      const result = exec(db, `SELECT * FROM eng_employees ORDER BY id`);
+      expect(result.rows.length).toBe(2);
+      expect(result.rows[0][1]).toBe('Alice');
+      expect(result.rows[1][1]).toBe('Carol');
+    });
+
+    test('CREATE OR REPLACE VIEW', () => {
+      exec(db, `CREATE VIEW dept_view AS SELECT name, dept FROM employees`);
+      exec(db, `CREATE OR REPLACE VIEW dept_view AS SELECT name, salary FROM employees WHERE dept = 'Sales'`);
+
+      const result = exec(db, `SELECT * FROM dept_view ORDER BY name`);
+      expect(result.rows.length).toBe(2);
+      expect(result.rows[0][0]).toBe('Bob');
+    });
+
+    test('DROP VIEW', () => {
+      exec(db, `CREATE VIEW temp_view AS SELECT * FROM employees`);
+      const dropResult = exec(db, `DROP VIEW temp_view`);
+      expect(dropResult.message).toContain('View dropped');
+
+      expect(() => exec(db, `SELECT * FROM temp_view`)).toThrow();
+    });
+  });
+
+  describe('EXPLAIN PLAN', () => {
+    test('generates execution plan for SELECT', () => {
+      const result = exec(db, `EXPLAIN PLAN FOR SELECT * FROM employees WHERE salary > 80000`);
+      expect(result.message).toBe('Explained.');
+      expect(result.rows.length).toBeGreaterThan(0);
+      // Should have columns: ID, OPERATION, NAME, ROWS, BYTES, COST
+      expect(result.columns.length).toBe(6);
+      expect(result.columns[0].name).toBe('ID');
+      expect(result.columns[1].name).toBe('OPERATION');
+      // Should contain TABLE ACCESS FULL
+      const operations = result.rows.map((r: any[]) => r[1]);
+      expect(operations).toContain('TABLE ACCESS FULL');
+    });
+
+    test('generates plan for INSERT', () => {
+      const result = exec(db, `EXPLAIN PLAN FOR INSERT INTO employees VALUES (5, 'Eve', 'HR', 80000)`);
+      expect(result.message).toBe('Explained.');
+      expect(result.rows.length).toBeGreaterThan(0);
+    });
+
+    test('generates plan with statement_id', () => {
+      const result = exec(db, `EXPLAIN PLAN SET STATEMENT_ID = 'test1' FOR SELECT name FROM employees`);
+      expect(result.message).toBe('Explained.');
+      expect(result.rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('CREATE TRIGGER', () => {
+    test('creates a BEFORE INSERT trigger', () => {
+      const result = exec(db, `CREATE TRIGGER trg_emp_bi BEFORE INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      expect(result.message).toContain('Trigger created');
+    });
+
+    test('creates an AFTER UPDATE OR DELETE trigger', () => {
+      const result = exec(db, `CREATE TRIGGER trg_emp_aud AFTER UPDATE OR DELETE ON employees FOR EACH ROW BEGIN NULL; END`);
+      expect(result.message).toContain('Trigger created');
+    });
+
+    test('CREATE OR REPLACE TRIGGER', () => {
+      exec(db, `CREATE TRIGGER trg_test BEFORE INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      const result = exec(db, `CREATE OR REPLACE TRIGGER trg_test AFTER INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      expect(result.message).toContain('Trigger created');
+    });
+
+    test('DROP TRIGGER', () => {
+      exec(db, `CREATE TRIGGER trg_drop BEFORE INSERT ON employees FOR EACH ROW BEGIN NULL; END`);
+      const result = exec(db, `DROP TRIGGER trg_drop`);
+      expect(result.message).toContain('Trigger dropped');
+    });
+  });
+});
+
+describe('Additional Oracle Functions', () => {
+  let db: OracleDatabase;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup('OPEN');
+    const conn = db.connectAsSysdba();
+    executor = conn.executor;
+
+    exec(db, `CREATE TABLE scores (
+      id NUMBER PRIMARY KEY,
+      student VARCHAR2(50),
+      subject VARCHAR2(30),
+      score NUMBER
+    )`);
+    exec(db, `INSERT INTO scores VALUES (1, 'Alice', 'Math', 90)`);
+    exec(db, `INSERT INTO scores VALUES (2, 'Bob', 'Math', 80)`);
+    exec(db, `INSERT INTO scores VALUES (3, 'Carol', 'Math', 85)`);
+    exec(db, `INSERT INTO scores VALUES (4, 'Alice', 'Science', 95)`);
+    exec(db, `INSERT INTO scores VALUES (5, 'Bob', 'Science', 70)`);
+    exec(db, `INSERT INTO scores VALUES (6, 'Carol', 'Science', 88)`);
+  });
+
+  describe('MEDIAN, STDDEV, VARIANCE', () => {
+    test('MEDIAN returns middle value', () => {
+      const result = exec(db, `SELECT MEDIAN(score) FROM scores WHERE subject = 'Math'`);
+      expect(result.rows[0][0]).toBe(85); // sorted: 80, 85, 90 → median is 85
+    });
+
+    test('MEDIAN with even count returns average of middle two', () => {
+      exec(db, `INSERT INTO scores VALUES (7, 'Dave', 'Math', 75)`);
+      const result = exec(db, `SELECT MEDIAN(score) FROM scores WHERE subject = 'Math'`);
+      // sorted: 75, 80, 85, 90 → median = (80+85)/2 = 82.5
+      expect(result.rows[0][0]).toBe(82.5);
+    });
+
+    test('STDDEV returns sample standard deviation', () => {
+      const result = exec(db, `SELECT STDDEV(score) FROM scores WHERE subject = 'Math'`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeCloseTo(5.0, 0); // stddev of 80,85,90
+    });
+
+    test('VARIANCE returns sample variance', () => {
+      const result = exec(db, `SELECT VARIANCE(score) FROM scores WHERE subject = 'Math'`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeCloseTo(25.0, 0); // variance of 80,85,90
+    });
+  });
+
+  describe('LISTAGG', () => {
+    test('LISTAGG concatenates values', () => {
+      const result = exec(db, `SELECT subject, LISTAGG(student, ', ') FROM scores GROUP BY subject ORDER BY subject`);
+      expect(result.rows.length).toBe(2);
+      const mathRow = result.rows.find((r: any[]) => r[0] === 'Math');
+      expect(mathRow).toBeTruthy();
+      const names = String(mathRow![1]);
+      expect(names).toContain('Alice');
+      expect(names).toContain('Bob');
+      expect(names).toContain('Carol');
+    });
+  });
+
+  describe('DBMS_RANDOM', () => {
+    test('DBMS_RANDOM.VALUE returns a random number', () => {
+      const result = exec(db, `SELECT DBMS_RANDOM.VALUE FROM DUAL`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeGreaterThanOrEqual(0);
+      expect(val).toBeLessThan(1);
+    });
+
+    test('DBMS_RANDOM.VALUE(low, high) returns within range', () => {
+      const result = exec(db, `SELECT DBMS_RANDOM.VALUE(1, 100) FROM DUAL`);
+      const val = result.rows[0][0] as number;
+      expect(val).toBeGreaterThanOrEqual(1);
+      expect(val).toBeLessThan(100);
+    });
+
+    test('DBMS_RANDOM.STRING returns a string', () => {
+      const result = exec(db, `SELECT DBMS_RANDOM.STRING('U', 10) FROM DUAL`);
+      const val = String(result.rows[0][0]);
+      expect(val.length).toBe(10);
+      expect(val).toMatch(/^[A-Z]+$/);
+    });
+  });
+
+  describe('Subqueries in FROM (inline views)', () => {
+    test('simple subquery in FROM', () => {
+      const result = exec(db, `SELECT sub.student, sub.total_score FROM (SELECT student, SUM(score) AS total_score FROM scores GROUP BY student) sub ORDER BY sub.total_score DESC`);
+      expect(result.rows.length).toBe(3);
+      expect(result.rows[0][0]).toBe('Alice'); // 90+95=185
+    });
+  });
+
+  describe('ROWNUM', () => {
+    test('ROWNUM limits rows with WHERE ROWNUM <= N', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM <= 3`);
+      expect(result.rows.length).toBe(3);
+    });
+
+    test('ROWNUM limits with different values', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM <= 1`);
+      expect(result.rows.length).toBe(1);
     });
   });
 });

@@ -62,6 +62,38 @@ export interface TableMeta {
   rowCount: number;
 }
 
+export interface TriggerMeta {
+  schema: string;
+  name: string;
+  timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+  events: Array<'INSERT' | 'UPDATE' | 'DELETE'>;
+  tableName: string;
+  tableSchema: string;
+  forEachRow: boolean;
+  whenCondition?: string;
+  body: string;
+  enabled: boolean;
+}
+
+export interface ViewMeta {
+  schema: string;
+  name: string;
+  columns?: string[];
+  queryText: string;
+  queryAST?: any;
+  withCheckOption?: boolean;
+  withReadOnly?: boolean;
+}
+
+export interface SynonymMeta {
+  owner: string;
+  name: string;
+  tableOwner: string;
+  tableName: string;
+  dbLink?: string;
+  isPublic: boolean;
+}
+
 // ── Abstract Storage ────────────────────────────────────────────────
 
 export abstract class BaseStorage {
@@ -71,6 +103,12 @@ export abstract class BaseStorage {
   protected sequences: Map<string, Map<string, SequenceMeta>> = new Map();
   /** Schema → Index name → Index meta */
   protected indexes: Map<string, Map<string, IndexMeta>> = new Map();
+  /** Schema → View name → View meta */
+  protected views: Map<string, Map<string, ViewMeta>> = new Map();
+  /** Schema → Trigger name → Trigger meta */
+  protected triggers: Map<string, Map<string, TriggerMeta>> = new Map();
+  /** Synonyms (public + private) */
+  protected synonyms: Map<string, SynonymMeta> = new Map();
 
   // ── Schema management ────────────────────────────────────────────
 
@@ -79,6 +117,8 @@ export abstract class BaseStorage {
     if (!this.tables.has(s)) this.tables.set(s, new Map());
     if (!this.sequences.has(s)) this.sequences.set(s, new Map());
     if (!this.indexes.has(s)) this.indexes.set(s, new Map());
+    if (!this.views.has(s)) this.views.set(s, new Map());
+    if (!this.triggers.has(s)) this.triggers.set(s, new Map());
   }
 
   getSchemas(): string[] {
@@ -254,6 +294,100 @@ export abstract class BaseStorage {
     for (const row of table.rows) row.splice(colIdx, 1);
     // Re-index ordinal positions
     table.meta.columns.forEach((c, i) => c.ordinalPosition = i);
+  }
+
+  // ── View operations ─────────────────────────────────────────────
+
+  createView(meta: ViewMeta): void {
+    const schema = meta.schema.toUpperCase();
+    const name = meta.name.toUpperCase();
+    this.ensureSchema(schema);
+    this.views.get(schema)!.set(name, { ...meta, schema, name });
+  }
+
+  dropView(schema: string, name: string): void {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    const schemaViews = this.views.get(s);
+    if (!schemaViews?.has(n)) throw new Error(`View ${s}.${n} does not exist`);
+    schemaViews.delete(n);
+  }
+
+  viewExists(schema: string, name: string): boolean {
+    return this.views.get(schema.toUpperCase())?.has(name.toUpperCase()) ?? false;
+  }
+
+  getViewMeta(schema: string, name: string): ViewMeta | undefined {
+    return this.views.get(schema.toUpperCase())?.get(name.toUpperCase());
+  }
+
+  getAllViews(): ViewMeta[] {
+    const result: ViewMeta[] = [];
+    for (const schemaViews of this.views.values()) {
+      for (const view of schemaViews.values()) result.push(view);
+    }
+    return result;
+  }
+
+  // ── Trigger operations ──────────────────────────────────────────
+
+  createTrigger(meta: TriggerMeta): void {
+    const schema = meta.schema.toUpperCase();
+    const name = meta.name.toUpperCase();
+    this.ensureSchema(schema);
+    this.triggers.get(schema)!.set(name, { ...meta, schema, name });
+  }
+
+  dropTrigger(schema: string, name: string): void {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    const schemaTriggers = this.triggers.get(s);
+    if (!schemaTriggers?.has(n)) throw new Error(`Trigger ${s}.${n} does not exist`);
+    schemaTriggers.delete(n);
+  }
+
+  getTriggersForTable(schema: string, tableName: string): TriggerMeta[] {
+    const s = schema.toUpperCase();
+    const t = tableName.toUpperCase();
+    const result: TriggerMeta[] = [];
+    const schemaTriggers = this.triggers.get(s);
+    if (schemaTriggers) {
+      for (const trigger of schemaTriggers.values()) {
+        if (trigger.tableSchema.toUpperCase() === s && trigger.tableName.toUpperCase() === t && trigger.enabled) {
+          result.push(trigger);
+        }
+      }
+    }
+    return result;
+  }
+
+  getAllTriggers(): TriggerMeta[] {
+    const result: TriggerMeta[] = [];
+    for (const schemaTriggers of this.triggers.values()) {
+      for (const trigger of schemaTriggers.values()) result.push(trigger);
+    }
+    return result;
+  }
+
+  // ── Synonym operations ──────────────────────────────────────────
+
+  createSynonym(meta: SynonymMeta): void {
+    const key = `${meta.owner.toUpperCase()}.${meta.name.toUpperCase()}`;
+    this.synonyms.set(key, { ...meta, owner: meta.owner.toUpperCase(), name: meta.name.toUpperCase(), tableOwner: meta.tableOwner.toUpperCase(), tableName: meta.tableName.toUpperCase() });
+  }
+
+  dropSynonym(owner: string, name: string): void {
+    const key = `${owner.toUpperCase()}.${name.toUpperCase()}`;
+    if (!this.synonyms.has(key)) throw new Error(`Synonym ${owner}.${name} does not exist`);
+    this.synonyms.delete(key);
+  }
+
+  getSynonym(owner: string, name: string): SynonymMeta | undefined {
+    return this.synonyms.get(`${owner.toUpperCase()}.${name.toUpperCase()}`);
+  }
+
+  getAllSynonyms(): SynonymMeta[] {
+    return Array.from(this.synonyms.values());
   }
 
   // ── Internals ────────────────────────────────────────────────────

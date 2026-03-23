@@ -13,7 +13,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
-  MergeStatement, WithClause, ConnectByClause,
+  MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
 } from '../engine/parser/ASTNode';
@@ -26,6 +26,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
+  private _currentRowNum: number = 0;
 
   constructor(
     storage: OracleStorage,
@@ -51,8 +52,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropIndexStatement': return this.executeDropIndex(statement);
       case 'CreateSequenceStatement': return this.executeCreateSequence(statement);
       case 'DropSequenceStatement': return this.executeDropSequence(statement);
-      case 'CreateViewStatement': return emptyResult('View created.');
-      case 'DropViewStatement': return emptyResult('View dropped.');
+      case 'CreateViewStatement': return this.executeCreateView(statement);
+      case 'DropViewStatement': return this.executeDropView(statement);
       case 'GrantStatement': return this.executeGrant(statement);
       case 'RevokeStatement': return this.executeRevoke(statement);
       case 'CreateUserStatement': return this.executeCreateUser(statement);
@@ -70,6 +71,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
       case 'MergeStatement': return this.executeMerge(statement);
+      case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
+      case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
+      case 'DropTriggerStatement': return this.executeDropTrigger(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -99,7 +103,9 @@ export class OracleExecutor extends BaseExecutor {
       }
 
       // V$ views, DBA_ views, etc.
-      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(tableName, this.context.currentUser);
+      // Handle SYS-prefixed internal tables (SYS.OBJ$, SYS.TAB$, etc.)
+      const catalogViewName = (tableRef.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName);
+      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogViewName, this.context.currentUser);
       if (catalogResult) {
         return this.applySelectClauses(catalogResult, stmt);
       }
@@ -203,7 +209,15 @@ export class OracleExecutor extends BaseExecutor {
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
-      rows = rows.filter(row => this.evaluateCondition(stmt.where!, row, columns));
+      this._currentRowNum = 0;
+      const filtered: StorageRow[] = [];
+      for (const row of rows) {
+        this._currentRowNum++;
+        if (this.evaluateCondition(stmt.where!, row, columns)) {
+          filtered.push(row);
+        }
+      }
+      rows = filtered;
     }
 
     // ── Step 2b: CONNECT BY (hierarchical query) ─────────────────
@@ -299,20 +313,12 @@ export class OracleExecutor extends BaseExecutor {
 
   private resolveFromClause(stmt: SelectStatement): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const firstRef = stmt.from![0];
-    if (firstRef.type !== 'TableRef') {
-      throw new OracleError(942, 'Subquery in FROM not yet supported');
-    }
-
-    let { rows, columns } = this.loadTable(firstRef);
+    let { rows, columns } = this.loadTableReference(firstRef);
 
     // Process JOINs
     if (stmt.joins) {
       for (const join of stmt.joins) {
-        const rightRef = join.table;
-        if (rightRef.type !== 'TableRef') {
-          throw new OracleError(942, 'Subquery in JOIN not yet supported');
-        }
-        const right = this.loadTable(rightRef);
+        const right = this.loadTableReference(join.table);
         const result = this.performJoin(rows, columns, right.rows, right.columns, join);
         rows = result.rows;
         columns = result.columns;
@@ -322,10 +328,33 @@ export class OracleExecutor extends BaseExecutor {
     return { rows, columns };
   }
 
+  private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    if (ref.type === 'TableRef') {
+      return this.loadTable(ref);
+    }
+    // SubqueryTableRef — inline view
+    const result = this.executeSelect(ref.query);
+    const alias = ref.alias?.toUpperCase() || 'SUBQUERY';
+    const columns: StorageColMeta[] = result.columns.map((c: ColumnMeta, i: number) => ({
+      name: c.name,
+      dataType: c.dataType || 'VARCHAR2',
+      ordinalPosition: i,
+      _qualifiedNames: [c.name, `${alias}.${c.name}`],
+    } as StorageColMeta & { _qualifiedNames: string[] }));
+    const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
+    return { rows, columns };
+  }
+
   private loadTable(ref: import('../engine/parser/ASTNode').TableRef): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const schema = (ref.schema || this.context.currentSchema).toUpperCase();
     const tableName = ref.name.toUpperCase();
     const alias = ref.alias?.toUpperCase();
+
+    // Check if it's a view first
+    const viewMeta = this.storage.getViewMeta(schema, tableName);
+    if (viewMeta) {
+      return this.loadView(viewMeta, alias || tableName);
+    }
 
     if (!this.storage.tableExists(schema, tableName)) {
       throw new OracleError(942, `table or view does not exist`);
@@ -342,6 +371,28 @@ export class OracleExecutor extends BaseExecutor {
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${prefix}.${c.name}`],
     } as StorageColMeta & { _qualifiedNames: string[] }));
+
+    return { rows, columns };
+  }
+
+  private loadView(viewMeta: import('../engine/storage/BaseStorage').ViewMeta, prefix: string): { rows: StorageRow[]; columns: StorageColMeta[] } {
+    // Execute the stored query AST
+    if (!viewMeta.queryAST) {
+      throw new OracleError(942, `view ${viewMeta.name} has no query`);
+    }
+    const result = this.executeSelect(viewMeta.queryAST as SelectStatement);
+
+    // Convert ResultSet rows back to StorageRow format
+    const columns: StorageColMeta[] = result.columns.map((c: ColumnMeta, i: number) => {
+      const colName = viewMeta.columns?.[i] || c.name;
+      return {
+        name: colName,
+        dataType: c.dataType || 'VARCHAR2',
+        ordinalPosition: i,
+        _qualifiedNames: [colName, `${prefix}.${colName}`],
+      } as StorageColMeta & { _qualifiedNames: string[] };
+    });
+    const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
 
     return { rows, columns };
   }
@@ -414,7 +465,7 @@ export class OracleExecutor extends BaseExecutor {
       // Window functions (with OVER) are NOT regular aggregates
       if ((expr as FunctionCallExpr).over) return false;
       const name = expr.name.toUpperCase();
-      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) return true;
+      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE', 'LISTAGG'].includes(name)) return true;
     }
     if (expr.type === 'BinaryExpr') {
       return this.exprHasAggregate(expr.left) || this.exprHasAggregate(expr.right);
@@ -616,12 +667,30 @@ export class OracleExecutor extends BaseExecutor {
         return this.evaluateExpression(funcExpr.args[0], sourceRows[leadRowIdx], sourceColumns);
       }
 
+      case 'FIRST_VALUE': {
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
+        if (frameIndices.length === 0) return null;
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[0]], sourceColumns);
+      }
+
+      case 'LAST_VALUE': {
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
+        if (frameIndices.length === 0) return null;
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[frameIndices.length - 1]], sourceColumns);
+      }
+
+      case 'NTH_VALUE': {
+        const n = funcExpr.args.length > 1
+          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
+          : 1;
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
+        if (n < 1 || n > frameIndices.length) return null;
+        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[n - 1]], sourceColumns);
+      }
+
       // Aggregate window functions: SUM, COUNT, AVG, MIN, MAX with OVER
       case 'COUNT': case 'SUM': case 'AVG': case 'MIN': case 'MAX': {
-        // If ORDER BY is present, compute running aggregate (frame: UNBOUNDED PRECEDING to CURRENT ROW)
-        const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
-        const frameEnd = hasOrderBy ? posInPartition : partitionIndices.length - 1;
-        const frameIndices = partitionIndices.slice(0, frameEnd + 1);
+        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
 
         if (funcName === 'COUNT') {
           if (funcExpr.args.length === 0 || (funcExpr.args[0] && funcExpr.args[0].type === 'Star')) {
@@ -670,10 +739,43 @@ export class OracleExecutor extends BaseExecutor {
     return true;
   }
 
+  private resolveFrameIndices(
+    windowSpec: import('../engine/parser/ASTNode').WindowSpec,
+    partitionIndices: number[],
+    posInPartition: number
+  ): number[] {
+    const frame = windowSpec.frame;
+    if (!frame) {
+      // Default frame: if ORDER BY present, UNBOUNDED PRECEDING to CURRENT ROW; else whole partition
+      const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
+      const end = hasOrderBy ? posInPartition : partitionIndices.length - 1;
+      return partitionIndices.slice(0, end + 1);
+    }
+    const resolveBound = (bound: import('../engine/parser/ASTNode').FrameBound): number => {
+      switch (bound.type) {
+        case 'UNBOUNDED_PRECEDING': return 0;
+        case 'UNBOUNDED_FOLLOWING': return partitionIndices.length - 1;
+        case 'CURRENT_ROW': return posInPartition;
+        case 'PRECEDING': {
+          const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
+          return Math.max(0, posInPartition - n);
+        }
+        case 'FOLLOWING': {
+          const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
+          return Math.min(partitionIndices.length - 1, posInPartition + n);
+        }
+      }
+    };
+    const start = resolveBound(frame.start);
+    const end = frame.end ? resolveBound(frame.end) : posInPartition; // single bound defaults end to CURRENT ROW
+    if (start > end) return [];
+    return partitionIndices.slice(start, end + 1);
+  }
+
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {
     if (expr.type === 'FunctionCall') {
       const name = expr.name.toUpperCase();
-      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(name)) {
+      if (['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE', 'LISTAGG'].includes(name)) {
         return this.evaluateAggregate(name, expr, groupRows, columns);
       }
       // Non-aggregate function: evaluate using first row
@@ -732,6 +834,32 @@ export class OracleExecutor extends BaseExecutor {
           .map(row => this.evaluateExpression(expr.args[0], row, columns))
           .filter(v => v != null);
         return allVals.reduce((a, b) => this.compareValues(a, b) >= 0 ? a : b);
+      }
+      case 'MEDIAN': {
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+      }
+      case 'STDDEV': {
+        const avg = values.reduce((a, b) => a + b, 0) / values.length;
+        const variance = values.reduce((s, v) => s + (v - avg) ** 2, 0) / (values.length - 1);
+        return values.length === 1 ? 0 : Math.sqrt(variance);
+      }
+      case 'VARIANCE': {
+        const avg = values.reduce((a, b) => a + b, 0) / values.length;
+        return values.length === 1 ? 0 : values.reduce((s, v) => s + (v - avg) ** 2, 0) / (values.length - 1);
+      }
+      case 'LISTAGG': {
+        // LISTAGG(expr, delimiter) — collect string values
+        const strVals: string[] = [];
+        for (const row of groupRows) {
+          const val = this.evaluateExpression(expr.args[0], row, columns);
+          if (val != null) strVals.push(String(val));
+        }
+        const delimiter = expr.args.length > 1
+          ? String(this.evaluateExpression(expr.args[1], groupRows[0], columns) ?? ',')
+          : '';
+        return strVals.join(delimiter);
       }
       default: return null;
     }
@@ -1304,6 +1432,201 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Sequence dropped.');
   }
 
+  // ── View DDL ─────────────────────────────────────────────────────
+
+  private executeCreateView(stmt: CreateViewStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    // For OR REPLACE, drop existing view first
+    if (stmt.orReplace && this.storage.viewExists(schema, name)) {
+      this.storage.dropView(schema, name);
+    }
+    // Reconstruct the query text from the AST by re-serializing the SELECT
+    // We store the original query text for DBA_VIEWS
+    const queryText = this.serializeSelect(stmt.query);
+    this.storage.createView({
+      schema, name,
+      columns: stmt.columns,
+      queryText,
+      queryAST: stmt.query,
+      withCheckOption: stmt.withCheckOption,
+      withReadOnly: stmt.withReadOnly,
+    });
+    return emptyResult('View created.');
+  }
+
+  private executeDropView(stmt: DropViewStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropView(schema, stmt.name.toUpperCase());
+    return emptyResult('View dropped.');
+  }
+
+  private serializeSelect(stmt: SelectStatement): string {
+    // Minimal serialization for view storage — enough to re-parse later
+    const parts: string[] = ['SELECT'];
+    if (stmt.distinct) parts.push('DISTINCT');
+    parts.push(stmt.columns.map(c => {
+      const exprStr = this.serializeExpr(c.expr);
+      return c.alias ? `${exprStr} AS ${c.alias}` : exprStr;
+    }).join(', '));
+    if (stmt.from && stmt.from.length > 0) {
+      parts.push('FROM');
+      parts.push(stmt.from.map(f => {
+        if (f.type === 'TableRef') {
+          const ref = f.schema ? `${f.schema}.${f.name}` : f.name;
+          return f.alias ? `${ref} ${f.alias}` : ref;
+        }
+        return '(subquery)';
+      }).join(', '));
+    }
+    if (stmt.where) parts.push('WHERE', this.serializeExpr(stmt.where));
+    return parts.join(' ');
+  }
+
+  private serializeExpr(expr: Expression): string {
+    switch (expr.type) {
+      case 'Identifier': return (expr as IdentifierExpr).qualifier
+        ? `${(expr as IdentifierExpr).qualifier}.${(expr as IdentifierExpr).name}`
+        : (expr as IdentifierExpr).name;
+      case 'Literal': {
+        const lit = expr as LiteralExpr;
+        return typeof lit.value === 'string' ? `'${lit.value}'` : String(lit.value ?? 'NULL');
+      }
+      case 'Star': return '*';
+      case 'BinaryExpr': {
+        const bin = expr as BinaryExpr;
+        return `${this.serializeExpr(bin.left)} ${bin.operator} ${this.serializeExpr(bin.right)}`;
+      }
+      case 'FunctionCall': {
+        const fn = expr as FunctionCallExpr;
+        return `${fn.name}(${fn.args.map(a => this.serializeExpr(a)).join(', ')})`;
+      }
+      default: return '?';
+    }
+  }
+
+  // ── EXPLAIN PLAN ─────────────────────────────────────────────────
+
+  private executeExplainPlan(stmt: ExplainPlanStatement): ResultSet {
+    const innerStmt = stmt.statement;
+    const plan: Array<{ id: number; operation: string; name: string; rows: number; bytes: number; cost: number }> = [];
+    let nextId = 0;
+
+    const addStep = (operation: string, name: string, rows: number, cost: number) => {
+      plan.push({ id: nextId++, operation, name, rows, bytes: rows * 100, cost });
+    };
+
+    if (innerStmt.type === 'SelectStatement') {
+      const select = innerStmt as SelectStatement;
+      // Build a simulated execution plan
+      if (select.from && select.from.length > 0) {
+        const tableName = select.from[0].type === 'TableRef' ? select.from[0].name : 'SUBQUERY';
+        const schema = (select.from[0].type === 'TableRef' ? select.from[0].schema : null) || this.context.currentSchema;
+
+        // Estimate row count
+        let estimatedRows = 1000;
+        const meta = this.storage.getTableMeta(schema.toUpperCase(), tableName.toUpperCase());
+        if (meta) estimatedRows = meta.rowCount || 1;
+
+        addStep('SELECT STATEMENT', '', estimatedRows, estimatedRows);
+
+        if (select.orderBy && select.orderBy.length > 0) {
+          addStep('SORT ORDER BY', '', estimatedRows, estimatedRows + 1);
+        }
+        if (select.groupBy && select.groupBy.length > 0) {
+          addStep('HASH GROUP BY', '', Math.ceil(estimatedRows / 10), Math.ceil(estimatedRows / 10));
+        }
+        if (select.where) {
+          addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
+        } else {
+          addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
+        }
+
+        // Add JOIN steps
+        if (select.joins) {
+          for (const join of select.joins) {
+            const rightTable = join.table.type === 'TableRef' ? join.table.name.toUpperCase() : 'SUBQUERY';
+            addStep('HASH JOIN', '', estimatedRows * 2, estimatedRows * 2);
+            addStep('TABLE ACCESS FULL', rightTable, estimatedRows, estimatedRows);
+          }
+        }
+      }
+    } else if (innerStmt.type === 'InsertStatement') {
+      const ins = innerStmt as InsertStatement;
+      const tName = ins.table.name.toUpperCase();
+      addStep('INSERT STATEMENT', '', 1, 1);
+      addStep('LOAD TABLE CONVENTIONAL', tName, 1, 1);
+    } else if (innerStmt.type === 'UpdateStatement') {
+      const upd = innerStmt as UpdateStatement;
+      const tName = upd.table.name.toUpperCase();
+      addStep('UPDATE STATEMENT', '', 1, 1);
+      addStep('UPDATE', tName, 1, 1);
+      addStep('TABLE ACCESS FULL', tName, 1, 1);
+    } else if (innerStmt.type === 'DeleteStatement') {
+      const del = innerStmt as DeleteStatement;
+      const tName = del.table.name.toUpperCase();
+      addStep('DELETE STATEMENT', '', 1, 1);
+      addStep('DELETE', tName, 1, 1);
+      addStep('TABLE ACCESS FULL', tName, 1, 1);
+    }
+
+    // Return as a result set mimicking DBMS_XPLAN.DISPLAY_CURSOR output
+    const columns: ColumnMeta[] = [
+      { name: 'ID', dataType: 'NUMBER' },
+      { name: 'OPERATION', dataType: 'VARCHAR2' },
+      { name: 'NAME', dataType: 'VARCHAR2' },
+      { name: 'ROWS', dataType: 'NUMBER' },
+      { name: 'BYTES', dataType: 'NUMBER' },
+      { name: 'COST', dataType: 'NUMBER' },
+    ];
+    const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
+
+    return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+  }
+
+  // ── Triggers ─────────────────────────────────────────────────────
+
+  private executeCreateTrigger(stmt: CreateTriggerStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    const tableSchema = (stmt.tableSchema || this.context.currentSchema).toUpperCase();
+
+    if (stmt.orReplace) {
+      try { this.storage.dropTrigger(schema, name); } catch { /* ignore if not exists */ }
+    }
+
+    this.storage.createTrigger({
+      schema, name,
+      timing: stmt.timing,
+      events: stmt.events,
+      tableName: stmt.tableName.toUpperCase(),
+      tableSchema,
+      forEachRow: stmt.forEachRow || false,
+      whenCondition: stmt.whenCondition,
+      body: stmt.body,
+      enabled: true,
+    });
+
+    return emptyResult('Trigger created.');
+  }
+
+  private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropTrigger(schema, stmt.name.toUpperCase());
+    return emptyResult('Trigger dropped.');
+  }
+
+  fireTriggers(schema: string, tableName: string, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER'): void {
+    const triggers = this.storage.getTriggersForTable(schema, tableName);
+    for (const trigger of triggers) {
+      if (trigger.timing === timing && trigger.events.includes(event)) {
+        // Execute the trigger body as a PL/SQL block if it contains executable SQL
+        // For the simulator, we just log that the trigger fired
+        // A full implementation would parse and execute the body
+      }
+    }
+  }
+
   // ── DCL ───────────────────────────────────────────────────────────
 
   private executeGrant(stmt: GrantStatement): ResultSet {
@@ -1466,12 +1789,21 @@ export class OracleExecutor extends BaseExecutor {
       case 'Identifier': {
         const colIdx = this.resolveColumnIndex(expr, columns);
         if (colIdx >= 0 && colIdx < row.length) return row[colIdx];
+        // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
+        if ((expr as IdentifierExpr).table?.toUpperCase() === 'DBMS_RANDOM') {
+          const fn = expr.name.toUpperCase();
+          if (fn === 'VALUE') return Math.random();
+          if (fn === 'NORMAL') {
+            const u1 = Math.random(), u2 = Math.random();
+            return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+          }
+        }
         // Oracle pseudo-columns
         const name = expr.name.toUpperCase();
         if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
         if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
         if (name === 'USER') return this.context.currentUser;
-        if (name === 'ROWNUM') return 1; // Simplified
+        if (name === 'ROWNUM') return this._currentRowNum || 1;
         return null;
       }
 
@@ -1615,12 +1947,21 @@ export class OracleExecutor extends BaseExecutor {
         if (outerIdx >= 0 && outerIdx < outerRow.length) {
           return outerRow[outerIdx];
         }
+        // DBMS_RANDOM without parens
+        if ((expr as IdentifierExpr).table?.toUpperCase() === 'DBMS_RANDOM') {
+          const fn = (expr as IdentifierExpr).name.toUpperCase();
+          if (fn === 'VALUE') return Math.random();
+          if (fn === 'NORMAL') {
+            const u1 = Math.random(), u2 = Math.random();
+            return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+          }
+        }
         // Pseudo-columns
         const name = (expr as IdentifierExpr).name.toUpperCase();
         if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
         if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
         if (name === 'USER') return this.context.currentUser;
-        if (name === 'ROWNUM') return 1;
+        if (name === 'ROWNUM') return this._currentRowNum || 1;
         return null;
       }
       return origMethod.call(this, expr, row, columns);
@@ -1709,6 +2050,43 @@ export class OracleExecutor extends BaseExecutor {
       case 'USER': return this.context.currentUser;
       case 'SYS_GUID': return 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'.replace(/X/g, () => Math.floor(Math.random() * 16).toString(16).toUpperCase());
       case 'SYS_CONTEXT': return this.context.currentUser; // Simplified
+
+      // DBMS_RANDOM package
+      case 'VALUE': {
+        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
+          if (args.length === 0) return Math.random();
+          if (args.length >= 2) {
+            const low = Number(args[0]);
+            const high = Number(args[1]);
+            return low + Math.random() * (high - low);
+          }
+          return Math.random();
+        }
+        return null;
+      }
+      case 'STRING': {
+        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
+          const opt = args.length > 0 ? String(args[0]).toUpperCase() : 'U';
+          const len = args.length > 1 ? Number(args[1]) : 20;
+          let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+          if (opt === 'L') chars = 'abcdefghijklmnopqrstuvwxyz';
+          if (opt === 'A' || opt === 'X') chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+          if (opt === 'P') chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+          let result = '';
+          for (let i = 0; i < len; i++) result += chars[Math.floor(Math.random() * chars.length)];
+          return result;
+        }
+        return null;
+      }
+      case 'NORMAL': {
+        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
+          // Box-Muller transform for normal distribution
+          const u1 = Math.random();
+          const u2 = Math.random();
+          return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        }
+        return null;
+      }
 
       // COUNT(*) and other aggregates return a single value for a column evaluation context
       // Real aggregation is handled at the query level — here we just return the scalar value

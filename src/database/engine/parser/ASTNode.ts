@@ -592,6 +592,37 @@ export interface PLSQLExceptionHandler extends ASTNode {
   body: PLSQLStatement[];
 }
 
+// ── CREATE TRIGGER ──────────────────────────────────────────────────
+
+export interface CreateTriggerStatement extends ASTNode {
+  type: 'CreateTriggerStatement';
+  orReplace?: boolean;
+  schema?: string;
+  name: string;
+  timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+  events: Array<'INSERT' | 'UPDATE' | 'DELETE'>;
+  tableName: string;
+  tableSchema?: string;
+  forEachRow?: boolean;
+  whenCondition?: string;
+  body: string;
+}
+
+export interface DropTriggerStatement extends ASTNode {
+  type: 'DropTriggerStatement';
+  schema?: string;
+  name: string;
+}
+
+// ── EXPLAIN PLAN ────────────────────────────────────────────────────
+
+export interface ExplainPlanStatement extends ASTNode {
+  type: 'ExplainPlanStatement';
+  statementId?: string;
+  targetTable?: string;
+  statement: Statement;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -612,5 +643,9 @@ export type Statement =
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement
+  // Explain
+  | ExplainPlanStatement
+  // Triggers
+  | CreateTriggerStatement | DropTriggerStatement
   // PL/SQL
   | PLSQLBlock;

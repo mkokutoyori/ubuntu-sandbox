@@ -1356,9 +1356,41 @@ export abstract class BaseParser {
       this.expectKeyword('BY');
       orderBy = this.parseOrderByList();
     }
-    // TODO: window frame (ROWS/RANGE BETWEEN)
+    // Window frame (ROWS/RANGE BETWEEN ... AND ...)
+    let frame: import('./ASTNode').WindowFrame | undefined;
+    if (this.checkKeyword('ROWS') || this.checkKeyword('RANGE')) {
+      const frameType = this.current().value!.toUpperCase() as 'ROWS' | 'RANGE';
+      this.advance();
+      if (this.matchKeyword('BETWEEN')) {
+        const start = this.parseFrameBound();
+        this.expectKeyword('AND');
+        const end = this.parseFrameBound();
+        frame = { type: frameType, start, end };
+      } else {
+        // Single bound: e.g. ROWS UNBOUNDED PRECEDING or ROWS 3 PRECEDING
+        const start = this.parseFrameBound();
+        frame = { type: frameType, start };
+      }
+    }
     this.expect(TokenType.RPAREN);
-    return { partitionBy, orderBy };
+    return { partitionBy, orderBy, frame };
+  }
+
+  private parseFrameBound(): import('./ASTNode').FrameBound {
+    if (this.matchKeyword('UNBOUNDED')) {
+      if (this.matchKeyword('PRECEDING')) return { type: 'UNBOUNDED_PRECEDING' };
+      this.expectKeyword('FOLLOWING');
+      return { type: 'UNBOUNDED_FOLLOWING' };
+    }
+    if (this.matchKeyword('CURRENT')) {
+      this.expectKeyword('ROW');
+      return { type: 'CURRENT_ROW' };
+    }
+    // Numeric offset: e.g. 3 PRECEDING or 3 FOLLOWING
+    const value = this.parseExpression();
+    if (this.matchKeyword('PRECEDING')) return { type: 'PRECEDING', value };
+    this.expectKeyword('FOLLOWING');
+    return { type: 'FOLLOWING', value };
   }
 
   // ── Helpers ───────────────────────────────────────────────────────

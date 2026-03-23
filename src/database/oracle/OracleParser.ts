@@ -73,6 +73,7 @@ export class OracleParser extends BaseParser {
       case 'STARTUP': return this.parseStartup();
       case 'SHUTDOWN': return this.parseShutdown();
       case 'MERGE': return this.parseMerge();
+      case 'EXPLAIN': return this.parseExplainPlan();
     }
     return null;
   }
@@ -185,7 +186,7 @@ export class OracleParser extends BaseParser {
     return undefined;
   }
 
-  protected override parseDialectCreate(pos: SourcePosition, _orReplace: boolean): Statement | null {
+  protected override parseDialectCreate(pos: SourcePosition, orReplace: boolean): Statement | null {
     if (this.matchKeyword('TABLESPACE')) return this.parseCreateTablespace(pos);
     if (this.matchKeyword('TEMPORARY')) {
       this.expectKeyword('TABLESPACE');
@@ -195,6 +196,7 @@ export class OracleParser extends BaseParser {
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos, false, true);
     }
+    if (this.matchKeyword('TRIGGER')) return this.parseCreateTrigger(pos, orReplace);
     return null;
   }
 
@@ -206,6 +208,11 @@ export class OracleParser extends BaseParser {
 
   protected override parseDialectDrop(pos: SourcePosition): Statement | null {
     if (this.matchKeyword('TABLESPACE')) return this.parseDropTablespace(pos);
+    if (this.matchKeyword('TRIGGER')) {
+      const schema = this.parseSchemaPrefix();
+      const name = this.expectIdentifier();
+      return { type: 'DropTriggerStatement', position: pos, schema, name } as import('../engine/parser/ASTNode').DropTriggerStatement;
+    }
     return null;
   }
 
@@ -373,6 +380,116 @@ export class OracleParser extends BaseParser {
       type: 'DropTablespaceStatement', position: pos, name,
       includeContents: includeContents || undefined,
       includeDatafiles: includeDatafiles || undefined,
+    };
+  }
+
+  // ── CREATE TRIGGER ─────────────────────────────────────────────────
+
+  private parseCreateTrigger(pos: import('../engine/lexer/Token').SourcePosition, orReplace?: boolean): import('../engine/parser/ASTNode').CreateTriggerStatement {
+    const schema = this.parseSchemaPrefix();
+    const name = this.expectIdentifier();
+
+    // Timing: BEFORE | AFTER | INSTEAD OF
+    let timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF';
+    if (this.matchKeyword('BEFORE')) {
+      timing = 'BEFORE';
+    } else if (this.matchKeyword('AFTER')) {
+      timing = 'AFTER';
+    } else if (this.matchKeyword('INSTEAD')) {
+      this.expectKeyword('OF');
+      timing = 'INSTEAD OF';
+    } else {
+      throw this.error('Expected BEFORE, AFTER, or INSTEAD OF');
+    }
+
+    // Events: INSERT | UPDATE | DELETE (separated by OR)
+    const events: Array<'INSERT' | 'UPDATE' | 'DELETE'> = [];
+    do {
+      if (this.matchKeyword('INSERT')) events.push('INSERT');
+      else if (this.matchKeyword('UPDATE')) events.push('UPDATE');
+      else if (this.matchKeyword('DELETE')) events.push('DELETE');
+      else throw this.error('Expected INSERT, UPDATE, or DELETE');
+    } while (this.matchKeyword('OR'));
+
+    // ON table
+    this.expectKeyword('ON');
+    const tableSchema = this.parseSchemaPrefix();
+    const tableName = this.expectIdentifier();
+
+    // Optional: FOR EACH ROW
+    let forEachRow = false;
+    if (this.matchKeyword('FOR')) {
+      this.expectKeyword('EACH');
+      this.expectKeyword('ROW');
+      forEachRow = true;
+    }
+
+    // Optional: WHEN (condition) - skip for now, consume as string
+    let whenCondition: string | undefined;
+    if (this.matchKeyword('WHEN')) {
+      // Consume everything in parens
+      this.expect(TokenType.LPAREN);
+      let depth = 1;
+      const parts: string[] = [];
+      while (depth > 0 && !this.check(TokenType.EOF) && !this.check(TokenType.SEMICOLON)) {
+        if (this.check(TokenType.LPAREN)) depth++;
+        if (this.check(TokenType.RPAREN)) depth--;
+        if (depth > 0) parts.push(this.advance().value);
+        else this.advance(); // consume closing paren
+      }
+      whenCondition = parts.join(' ');
+    }
+
+    // Body: everything from BEGIN/DECLARE to END; (or just a single PL/SQL statement)
+    // Consume all remaining tokens as body text
+    const bodyParts: string[] = [];
+    while (!this.check(TokenType.EOF) && !this.check(TokenType.SEMICOLON)) {
+      bodyParts.push(this.advance().value);
+    }
+    const body = bodyParts.join(' ');
+
+    return {
+      type: 'CreateTriggerStatement', position: pos,
+      orReplace, schema, name, timing, events,
+      tableName, tableSchema,
+      forEachRow, whenCondition, body,
+    };
+  }
+
+  // ── EXPLAIN PLAN ──────────────────────────────────────────────────
+
+  private parseExplainPlan(): import('../engine/parser/ASTNode').ExplainPlanStatement {
+    const pos = this.current().position;
+    this.expectKeyword('EXPLAIN');
+    this.expectKeyword('PLAN');
+
+    let statementId: string | undefined;
+    if (this.matchKeyword('SET')) {
+      this.expectKeyword('STATEMENT_ID');
+      // Consume '=' (tokenized as COMPARISON_OP)
+      if (this.current().type === TokenType.COMPARISON_OP && this.current().value === '=') {
+        this.advance();
+      }
+      const tok = this.current();
+      if (tok.type === TokenType.STRING_LITERAL) {
+        statementId = tok.value;
+        this.advance();
+      }
+    }
+
+    let targetTable: string | undefined;
+    if (this.matchKeyword('INTO')) {
+      targetTable = this.expectIdentifier();
+    }
+
+    this.expectKeyword('FOR');
+
+    // Parse the inner statement (SELECT, INSERT, UPDATE, DELETE)
+    const statement = this.parseStatement();
+
+    return {
+      type: 'ExplainPlanStatement', position: pos,
+      statementId, targetTable, statement,
     };
   }
 }
