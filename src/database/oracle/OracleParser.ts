@@ -197,12 +197,21 @@ export class OracleParser extends BaseParser {
       return this.parseCreateTablespace(pos, false, true);
     }
     if (this.matchKeyword('TRIGGER')) return this.parseCreateTrigger(pos, orReplace);
+    if (this.matchKeyword('SYNONYM')) return this.parseCreateSynonym(pos, orReplace, false);
+    if (this.matchKeyword('PUBLIC')) {
+      if (this.matchKeyword('SYNONYM')) return this.parseCreateSynonym(pos, orReplace, true);
+      if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, true); }
+    }
+    if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, false); }
+    if (this.matchKeyword('MATERIALIZED')) { this.expectKeyword('VIEW'); return this.parseCreateMaterializedView(pos, orReplace); }
     return null;
   }
 
   protected override parseDialectAlter(pos: SourcePosition): Statement | null {
     if (this.matchKeyword('SYSTEM')) return this.parseAlterSystem(pos);
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
+    if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
+    if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
     return null;
   }
 
@@ -212,6 +221,33 @@ export class OracleParser extends BaseParser {
       const schema = this.parseSchemaPrefix();
       const name = this.expectIdentifier();
       return { type: 'DropTriggerStatement', position: pos, schema, name } as import('../engine/parser/ASTNode').DropTriggerStatement;
+    }
+    if (this.matchKeyword('SYNONYM')) {
+      const schema = this.parseSchemaPrefix();
+      const name = this.expectIdentifier();
+      return { type: 'DropSynonymStatement', position: pos, isPublic: false, schema, name } as import('../engine/parser/ASTNode').DropSynonymStatement;
+    }
+    if (this.matchKeyword('PUBLIC')) {
+      if (this.matchKeyword('SYNONYM')) {
+        const name = this.expectIdentifier();
+        return { type: 'DropSynonymStatement', position: pos, isPublic: true, name } as import('../engine/parser/ASTNode').DropSynonymStatement;
+      }
+      if (this.matchKeyword('DATABASE')) {
+        this.expectKeyword('LINK');
+        const name = this.expectIdentifier();
+        return { type: 'DropDbLinkStatement', position: pos, isPublic: true, name } as any;
+      }
+    }
+    if (this.matchKeyword('DATABASE')) {
+      this.expectKeyword('LINK');
+      const name = this.expectIdentifier();
+      return { type: 'DropDbLinkStatement', position: pos, isPublic: false, name } as any;
+    }
+    if (this.matchKeyword('MATERIALIZED')) {
+      this.expectKeyword('VIEW');
+      const schema = this.parseSchemaPrefix();
+      const name = this.expectIdentifier();
+      return { type: 'DropMaterializedViewStatement', position: pos, schema, name } as any;
     }
     return null;
   }
@@ -491,5 +527,86 @@ export class OracleParser extends BaseParser {
       type: 'ExplainPlanStatement', position: pos,
       statementId, targetTable, statement,
     };
+  }
+
+  // ── CREATE SYNONYM ─────────────────────────────────────────────────
+
+  private parseCreateSynonym(pos: SourcePosition, orReplace: boolean, isPublic: boolean): import('../engine/parser/ASTNode').CreateSynonymStatement {
+    const schema = this.parseSchemaPrefix();
+    const name = this.expectIdentifier();
+    this.expectKeyword('FOR');
+    const targetSchema = this.parseSchemaPrefix();
+    const targetName = this.expectIdentifier();
+    return { type: 'CreateSynonymStatement', position: pos, orReplace: orReplace || undefined, isPublic: isPublic || undefined, schema, name, targetSchema, targetName };
+  }
+
+  // ── ALTER SEQUENCE ─────────────────────────────────────────────────
+
+  private parseAlterSequence(pos: SourcePosition): import('../engine/parser/ASTNode').AlterSequenceStatement {
+    const schema = this.parseSchemaPrefix();
+    const name = this.expectIdentifier();
+    const result: import('../engine/parser/ASTNode').AlterSequenceStatement = { type: 'AlterSequenceStatement', position: pos, schema, name };
+
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('INCREMENT')) { this.expectKeyword('BY'); result.incrementBy = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
+      else if (this.matchKeyword('MINVALUE')) { result.minValue = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
+      else if (this.matchKeyword('MAXVALUE')) { result.maxValue = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
+      else if (this.matchKeyword('CACHE')) { result.cache = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
+      else if (this.matchKeyword('NOCACHE')) { result.cache = 0; }
+      else if (this.matchKeyword('CYCLE')) { result.cycle = true; }
+      else if (this.matchKeyword('NOCYCLE')) { result.cycle = false; }
+      else break;
+    }
+    return result;
+  }
+
+  // ── ALTER INDEX ────────────────────────────────────────────────────
+
+  private parseAlterIndex(pos: SourcePosition): import('../engine/parser/ASTNode').AlterIndexStatement {
+    const schema = this.parseSchemaPrefix();
+    const name = this.expectIdentifier();
+    if (this.matchKeyword('REBUILD')) {
+      return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'REBUILD' };
+    }
+    if (this.matchKeyword('RENAME')) {
+      this.expectKeyword('TO');
+      const newName = this.expectIdentifier();
+      return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'RENAME', newName };
+    }
+    throw this.error('Expected REBUILD or RENAME after ALTER INDEX');
+  }
+
+  // ── CREATE DATABASE LINK (stub) ────────────────────────────────────
+
+  private parseCreateDbLink(pos: SourcePosition, isPublic: boolean): any {
+    const name = this.expectIdentifier();
+    // Consume CONNECT TO user IDENTIFIED BY password USING 'tns_alias'
+    let connectUser: string | undefined;
+    let usingAlias: string | undefined;
+    if (this.matchKeyword('CONNECT')) {
+      this.expectKeyword('TO');
+      connectUser = this.expectIdentifier();
+      this.expectKeyword('IDENTIFIED');
+      this.expectKeyword('BY');
+      this.advance(); // skip password
+    }
+    if (this.matchKeyword('USING')) {
+      usingAlias = this.expect(TokenType.STRING_LITERAL).value;
+    }
+    return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, usingAlias };
+  }
+
+  // ── CREATE MATERIALIZED VIEW (stub) ────────────────────────────────
+
+  private parseCreateMaterializedView(pos: SourcePosition, _orReplace: boolean): any {
+    const schema = this.parseSchemaPrefix();
+    const name = this.expectIdentifier();
+    // Skip optional BUILD, REFRESH clauses
+    while (!this.check(TokenType.EOF) && !this.checkKeyword('AS')) {
+      this.advance();
+    }
+    this.expectKeyword('AS');
+    const query = this.parseSelect();
+    return { type: 'CreateMaterializedViewStatement', position: pos, schema, name, query };
   }
 }

@@ -623,6 +623,48 @@ export interface ExplainPlanStatement extends ASTNode {
   statement: Statement;
 }
 
+// ── Synonym ─────────────────────────────────────────────────────────
+
+export interface CreateSynonymStatement extends ASTNode {
+  type: 'CreateSynonymStatement';
+  orReplace?: boolean;
+  isPublic?: boolean;
+  schema?: string;
+  name: string;
+  targetSchema?: string;
+  targetName: string;
+}
+
+export interface DropSynonymStatement extends ASTNode {
+  type: 'DropSynonymStatement';
+  isPublic?: boolean;
+  schema?: string;
+  name: string;
+}
+
+// ── ALTER SEQUENCE ──────────────────────────────────────────────────
+
+export interface AlterSequenceStatement extends ASTNode {
+  type: 'AlterSequenceStatement';
+  schema?: string;
+  name: string;
+  incrementBy?: number;
+  minValue?: number;
+  maxValue?: number;
+  cache?: number;
+  cycle?: boolean;
+}
+
+// ── ALTER INDEX ─────────────────────────────────────────────────────
+
+export interface AlterIndexStatement extends ASTNode {
+  type: 'AlterIndexStatement';
+  schema?: string;
+  name: string;
+  action: 'REBUILD' | 'RENAME';
+  newName?: string;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -647,5 +689,9 @@ export type Statement =
   | ExplainPlanStatement
   // Triggers
   | CreateTriggerStatement | DropTriggerStatement
+  // Synonyms
+  | CreateSynonymStatement | DropSynonymStatement
+  // Alter
+  | AlterSequenceStatement | AlterIndexStatement
   // PL/SQL
   | PLSQLBlock;

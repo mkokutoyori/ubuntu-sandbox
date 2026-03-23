@@ -74,6 +74,14 @@ export class OracleExecutor extends BaseExecutor {
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
       case 'DropTriggerStatement': return this.executeDropTrigger(statement);
+      case 'CreateSynonymStatement': return this.executeCreateSynonym(statement);
+      case 'DropSynonymStatement': return this.executeDropSynonym(statement);
+      case 'AlterSequenceStatement': return this.executeAlterSequence(statement);
+      case 'AlterIndexStatement': return this.executeAlterIndex(statement);
+      case 'CreateDbLinkStatement': return emptyResult('Database link created.');
+      case 'DropDbLinkStatement': return emptyResult('Database link dropped.');
+      case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');
+      case 'DropMaterializedViewStatement': return emptyResult('Materialized view dropped.');
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -1627,6 +1635,59 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  // ── SYNONYM ────────────────────────────────────────────────────────
+
+  private executeCreateSynonym(stmt: any): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
+    const targetSchema = (stmt.targetSchema || this.context.currentSchema).toUpperCase();
+    this.storage.createSynonym({
+      owner,
+      name: stmt.name.toUpperCase(),
+      tableOwner: targetSchema,
+      tableName: stmt.targetName.toUpperCase(),
+      isPublic: !!stmt.isPublic,
+    });
+    return emptyResult('Synonym created.');
+  }
+
+  private executeDropSynonym(stmt: any): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
+    this.storage.dropSynonym(owner, stmt.name.toUpperCase());
+    return emptyResult('Synonym dropped.');
+  }
+
+  // ── ALTER SEQUENCE ────────────────────────────────────────────────
+
+  private executeAlterSequence(stmt: any): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const seq = this.storage.getSequence(schema, stmt.name.toUpperCase());
+    if (!seq) throw new OracleError(2289, `sequence ${stmt.name} does not exist`);
+    if (stmt.incrementBy !== undefined) seq.incrementBy = stmt.incrementBy;
+    if (stmt.minValue !== undefined) seq.minValue = stmt.minValue;
+    if (stmt.maxValue !== undefined) seq.maxValue = stmt.maxValue;
+    if (stmt.cache !== undefined) seq.cache = stmt.cache;
+    if (stmt.cycle !== undefined) seq.cycle = stmt.cycle;
+    return emptyResult('Sequence altered.');
+  }
+
+  // ── ALTER INDEX ───────────────────────────────────────────────────
+
+  private executeAlterIndex(stmt: any): ResultSet {
+    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    if (stmt.action === 'REBUILD') {
+      // In a simulator, REBUILD is a no-op (the index is already in memory)
+      const indexes = this.storage.getIndexes(schema);
+      const idx = indexes.find(i => i.name === stmt.name.toUpperCase());
+      if (!idx) throw new OracleError(1418, `specified index does not exist`);
+      return emptyResult('Index altered.');
+    }
+    if (stmt.action === 'RENAME' && stmt.newName) {
+      // Rename index — for simplicity, return success
+      return emptyResult('Index altered.');
+    }
+    throw new OracleError(900, `Unsupported ALTER INDEX action: ${stmt.action}`);
+  }
+
   // ── DCL ───────────────────────────────────────────────────────────
 
   private executeGrant(stmt: GrantStatement): ResultSet {
@@ -1790,13 +1851,25 @@ export class OracleExecutor extends BaseExecutor {
         const colIdx = this.resolveColumnIndex(expr, columns);
         if (colIdx >= 0 && colIdx < row.length) return row[colIdx];
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
-        if ((expr as IdentifierExpr).table?.toUpperCase() === 'DBMS_RANDOM') {
+        const pkgName = (expr as IdentifierExpr).table?.toUpperCase();
+        if (pkgName === 'DBMS_RANDOM') {
           const fn = expr.name.toUpperCase();
           if (fn === 'VALUE') return Math.random();
           if (fn === 'NORMAL') {
             const u1 = Math.random(), u2 = Math.random();
             return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
           }
+        }
+        // DBMS_UTILITY (no-parens access)
+        if (pkgName === 'DBMS_UTILITY') {
+          const fn = expr.name.toUpperCase();
+          if (fn === 'GET_TIME') return Date.now() % 2147483647;
+          if (fn === 'FORMAT_ERROR_BACKTRACE' || fn === 'FORMAT_ERROR_STACK') return '';
+        }
+        // DBMS_LOB (no-parens access)
+        if (pkgName === 'DBMS_LOB') {
+          const fn = expr.name.toUpperCase();
+          if (fn === 'GETLENGTH') return null;
         }
         // Oracle pseudo-columns
         const name = expr.name.toUpperCase();
@@ -2088,11 +2161,104 @@ export class OracleExecutor extends BaseExecutor {
         return null;
       }
 
+      // DBMS_LOCK.SLEEP (as function call — returns immediately in simulator)
+      case 'SLEEP': {
+        if (expr.schema?.toUpperCase() === 'DBMS_LOCK') return null;
+        return null;
+      }
+
+      // DBMS_UTILITY functions
+      case 'GET_TIME': {
+        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return Date.now() % 2147483647;
+        return null;
+      }
+      case 'FORMAT_ERROR_BACKTRACE': {
+        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return '';
+        return null;
+      }
+      case 'FORMAT_ERROR_STACK': {
+        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return '';
+        return null;
+      }
+
+      // DBMS_METADATA.GET_DDL
+      case 'GET_DDL': {
+        if (expr.schema?.toUpperCase() === 'DBMS_METADATA') {
+          return this.getMetadataDDL(args);
+        }
+        return null;
+      }
+
+      // DBMS_STATS procedures (as stubs)
+      case 'GATHER_TABLE_STATS':
+      case 'GATHER_SCHEMA_STATS': {
+        if (expr.schema?.toUpperCase() === 'DBMS_STATS') return null;
+        return null;
+      }
+
+      // DBMS_LOB functions
+      case 'GETLENGTH': {
+        if (expr.schema?.toUpperCase() === 'DBMS_LOB') {
+          return args[0] != null ? String(args[0]).length : null;
+        }
+        return null;
+      }
+
+      // UTL_FILE stubs
+      case 'FOPEN':
+      case 'FCLOSE':
+      case 'GET_LINE': {
+        if (expr.schema?.toUpperCase() === 'UTL_FILE') return null;
+        return null;
+      }
+
       // COUNT(*) and other aggregates return a single value for a column evaluation context
       // Real aggregation is handled at the query level — here we just return the scalar value
       case 'COUNT': return args.length === 0 || (expr.args[0] && expr.args[0].type === 'Star') ? 1 : (args[0] != null ? 1 : 0);
       case 'SUM': case 'AVG': case 'MIN': case 'MAX': return args[0] ?? null;
 
+      default: return null;
+    }
+  }
+
+  private getMetadataDDL(args: CellValue[]): CellValue {
+    if (args.length < 2) return null;
+    const objectType = String(args[0]).toUpperCase();
+    const objectName = String(args[1]).toUpperCase();
+    const schema = args.length >= 3 && args[2] ? String(args[2]).toUpperCase() : this.context.currentSchema;
+
+    switch (objectType) {
+      case 'TABLE': {
+        const meta = this.storage.getTableMeta(schema, objectName);
+        if (!meta) return null;
+        const cols = meta.columns.map(c => {
+          let def = `  ${c.name} ${c.dataType.name}`;
+          if (c.dataType.precision != null) {
+            def += c.dataType.scale != null && c.dataType.scale > 0
+              ? `(${c.dataType.precision},${c.dataType.scale})`
+              : `(${c.dataType.precision})`;
+          }
+          if (!c.dataType.nullable) def += ' NOT NULL';
+          return def;
+        }).join(',\n');
+        return `CREATE TABLE ${schema}.${objectName} (\n${cols}\n)`;
+      }
+      case 'INDEX': {
+        const indexes = this.storage.getIndexes(schema);
+        const idx = indexes.find(i => i.name === objectName);
+        if (!idx) return null;
+        return `CREATE ${idx.unique ? 'UNIQUE ' : ''}INDEX ${schema}.${objectName} ON ${schema}.${idx.tableName} (${idx.columns.join(', ')})`;
+      }
+      case 'VIEW': {
+        const viewMeta = this.storage.getViewMeta(schema, objectName);
+        if (!viewMeta) return null;
+        return `CREATE OR REPLACE VIEW ${schema}.${objectName} AS ${viewMeta.queryText}`;
+      }
+      case 'SEQUENCE': {
+        const seq = this.storage.getSequence(schema, objectName);
+        if (!seq) return null;
+        return `CREATE SEQUENCE ${schema}.${objectName} START WITH ${seq.currentValue} INCREMENT BY ${seq.incrementBy} MINVALUE ${seq.minValue} MAXVALUE ${seq.maxValue}${seq.cache > 0 ? ` CACHE ${seq.cache}` : ' NOCACHE'}${seq.cycle ? ' CYCLE' : ' NOCYCLE'}`;
+      }
       default: return null;
     }
   }
