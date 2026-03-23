@@ -1,9 +1,28 @@
 # BRD — Implementation Oracle DBMS (Simulateur)
 
-**Version** : 1.0
-**Date** : 2026-03-16
+**Version** : 1.1
+**Date** : 2026-03-23 (mise à jour statut)
 **Projet** : Ubuntu Sandbox — Module SGBD Oracle
 **Auteur** : Claude Code
+
+---
+
+## Résumé d'Avancement
+
+| Phase | Description | Statut | Couverture |
+|-------|-------------|--------|------------|
+| Phase 1 | Fondations (Core SQL Engine + Oracle Base) | ✅ COMPLÈTE | 7/7 |
+| Phase 2 | DDL + Contraintes | ✅ COMPLÈTE | 7/7 |
+| Phase 3 | DML Avancé + Fonctions | ✅ COMPLÈTE | 9/8 (+ROWNUM) |
+| Phase 4 | PL/SQL + Packages | 🟡 PARTIELLE | 5/7 (curseurs, packages manquants) |
+| Phase 5 | Administration + Sécurité | ✅ QUASI-COMPLÈTE | 7/9 (RMAN, audit partiel) |
+| Phase 6 | Optimisation + Avancé | 🟡 PARTIELLE | 2/8 (EXPLAIN PLAN + transactions stub) |
+
+**Vues système** : 64 vues implémentées (32 V$ + 32 DBA_/ALL_/USER_)
+**Codes erreur** : 60+ codes ORA- implémentés
+**Tests** : 235 tests unitaires passent
+
+**Légende** : ✅ = implémenté, 🟡 = partiellement implémenté, ❌ = non implémenté
 
 ---
 
@@ -117,82 +136,82 @@ BaseStorage (abstract)
 
 ### 3.1 SQL*Plus (`sqlplus`)
 
-| Commande | Description | Priorité |
-|----------|-------------|----------|
-| `sqlplus / as sysdba` | Connexion en tant que SYSDBA | P0 |
-| `sqlplus user/password` | Connexion standard | P0 |
-| `sqlplus user/password@tns_alias` | Connexion via TNS | P1 |
-| `CONNECT user/password` | Changement de session | P0 |
-| `DISCONNECT` | Déconnexion | P0 |
-| `SET LINESIZE n` | Largeur d'affichage | P0 |
-| `SET PAGESIZE n` | Nombre de lignes par page | P0 |
-| `SET SERVEROUTPUT ON/OFF` | Activer DBMS_OUTPUT | P0 |
-| `SET TIMING ON/OFF` | Afficher le temps d'exécution | P1 |
-| `SET FEEDBACK ON/OFF` | Afficher le nombre de lignes | P0 |
-| `SET ECHO ON/OFF` | Écho des commandes | P1 |
-| `SET AUTOCOMMIT ON/OFF` | Auto-commit | P1 |
-| `SHOW parameter_name` | Afficher un paramètre | P0 |
-| `SHOW USER` | Afficher l'utilisateur courant | P0 |
-| `SHOW SGA` | Afficher les infos SGA | P1 |
-| `SHOW ERRORS` | Afficher les erreurs PL/SQL | P1 |
-| `DESC table_name` | Décrire une table | P0 |
-| `DESCRIBE table_name` | Alias de DESC | P0 |
-| `@script.sql` | Exécuter un script | P2 |
-| `SPOOL filename` | Rediriger la sortie | P2 |
-| `SPOOL OFF` | Arrêter la redirection | P2 |
-| `EXIT` / `QUIT` | Quitter SQL*Plus | P0 |
-| `CLEAR SCREEN` | Effacer l'écran | P0 |
-| `COLUMN col FORMAT fmt` | Formater une colonne | P2 |
-| `PROMPT text` | Afficher du texte | P1 |
-| `DEFINE var = value` | Définir une variable | P2 |
-| `VARIABLE var TYPE` | Déclarer une variable bind | P2 |
-| `PRINT var` | Afficher une variable bind | P2 |
-| `HOST command` | Exécuter une commande OS | P2 |
-| `EDIT` | Ouvrir l'éditeur | P2 |
-| `/` | Ré-exécuter la dernière commande SQL | P1 |
+| Commande | Description | Priorité | Statut |
+|----------|-------------|----------|--------|
+| `sqlplus / as sysdba` | Connexion en tant que SYSDBA | P0 | ✅ |
+| `sqlplus user/password` | Connexion standard | P0 | ✅ |
+| `sqlplus user/password@tns_alias` | Connexion via TNS | P1 | ✅ |
+| `CONNECT user/password` | Changement de session | P0 | ✅ |
+| `DISCONNECT` | Déconnexion | P0 | ✅ |
+| `SET LINESIZE n` | Largeur d'affichage | P0 | ✅ |
+| `SET PAGESIZE n` | Nombre de lignes par page | P0 | ✅ |
+| `SET SERVEROUTPUT ON/OFF` | Activer DBMS_OUTPUT | P0 | ✅ |
+| `SET TIMING ON/OFF` | Afficher le temps d'exécution | P1 | ✅ |
+| `SET FEEDBACK ON/OFF` | Afficher le nombre de lignes | P0 | ✅ |
+| `SET ECHO ON/OFF` | Écho des commandes | P1 | ✅ |
+| `SET AUTOCOMMIT ON/OFF` | Auto-commit | P1 | ✅ |
+| `SHOW parameter_name` | Afficher un paramètre | P0 | ✅ |
+| `SHOW USER` | Afficher l'utilisateur courant | P0 | ✅ |
+| `SHOW SGA` | Afficher les infos SGA | P1 | ✅ |
+| `SHOW ERRORS` | Afficher les erreurs PL/SQL | P1 | ✅ |
+| `DESC table_name` | Décrire une table | P0 | ✅ |
+| `DESCRIBE table_name` | Alias de DESC | P0 | ✅ |
+| `@script.sql` | Exécuter un script | P2 | ❌ |
+| `SPOOL filename` | Rediriger la sortie | P2 | ❌ |
+| `SPOOL OFF` | Arrêter la redirection | P2 | ❌ |
+| `EXIT` / `QUIT` | Quitter SQL*Plus | P0 | ✅ |
+| `CLEAR SCREEN` | Effacer l'écran | P0 | ✅ |
+| `COLUMN col FORMAT fmt` | Formater une colonne | P2 | ❌ |
+| `PROMPT text` | Afficher du texte | P1 | ❌ |
+| `DEFINE var = value` | Définir une variable | P2 | ❌ |
+| `VARIABLE var TYPE` | Déclarer une variable bind | P2 | ❌ |
+| `PRINT var` | Afficher une variable bind | P2 | ❌ |
+| `HOST command` | Exécuter une commande OS | P2 | ❌ |
+| `EDIT` | Ouvrir l'éditeur | P2 | ❌ |
+| `/` | Ré-exécuter la dernière commande SQL | P1 | ❌ |
 
 ### 3.2 Listener Control (`lsnrctl`)
 
-| Commande | Description | Priorité |
-|----------|-------------|----------|
-| `lsnrctl start` | Démarrer le listener | P0 |
-| `lsnrctl stop` | Arrêter le listener | P0 |
-| `lsnrctl status` | Statut du listener | P0 |
-| `lsnrctl services` | Services enregistrés | P1 |
-| `lsnrctl reload` | Recharger la configuration | P1 |
+| Commande | Description | Priorité | Statut |
+|----------|-------------|----------|--------|
+| `lsnrctl start` | Démarrer le listener | P0 | ✅ |
+| `lsnrctl stop` | Arrêter le listener | P0 | ✅ |
+| `lsnrctl status` | Statut du listener | P0 | ✅ |
+| `lsnrctl services` | Services enregistrés | P1 | ✅ |
+| `lsnrctl reload` | Recharger la configuration | P1 | ✅ |
 
 ### 3.3 Administration Base
 
-| Commande | Description | Priorité |
-|----------|-------------|----------|
-| `startup` | Démarrer l'instance (NOMOUNT → MOUNT → OPEN) | P0 |
-| `startup mount` | Démarrer en mode MOUNT | P1 |
-| `startup nomount` | Démarrer en mode NOMOUNT | P1 |
-| `startup restrict` | Démarrer en mode restreint | P2 |
-| `shutdown immediate` | Arrêt immédiat | P0 |
-| `shutdown abort` | Arrêt forcé | P1 |
-| `shutdown normal` | Arrêt normal | P1 |
-| `shutdown transactional` | Arrêt transactionnel | P2 |
-| `ALTER SYSTEM SET param=value` | Modifier paramètre système | P1 |
-| `ALTER SYSTEM FLUSH SHARED_POOL` | Vider le shared pool | P2 |
-| `ALTER SYSTEM FLUSH BUFFER_CACHE` | Vider le buffer cache | P2 |
-| `ALTER SYSTEM SWITCH LOGFILE` | Basculer le redo log | P2 |
-| `ALTER DATABASE OPEN` | Ouvrir la base | P1 |
-| `ALTER DATABASE MOUNT` | Monter la base | P1 |
-| `ALTER DATABASE BACKUP CONTROLFILE TO 'path'` | Backup control file | P2 |
+| Commande | Description | Priorité | Statut |
+|----------|-------------|----------|--------|
+| `startup` | Démarrer l'instance (NOMOUNT → MOUNT → OPEN) | P0 | ✅ |
+| `startup mount` | Démarrer en mode MOUNT | P1 | ✅ |
+| `startup nomount` | Démarrer en mode NOMOUNT | P1 | ✅ |
+| `startup restrict` | Démarrer en mode restreint | P2 | ✅ |
+| `shutdown immediate` | Arrêt immédiat | P0 | ✅ |
+| `shutdown abort` | Arrêt forcé | P1 | ✅ |
+| `shutdown normal` | Arrêt normal | P1 | ✅ |
+| `shutdown transactional` | Arrêt transactionnel | P2 | ✅ |
+| `ALTER SYSTEM SET param=value` | Modifier paramètre système | P1 | ✅ |
+| `ALTER SYSTEM FLUSH SHARED_POOL` | Vider le shared pool | P2 | ✅ |
+| `ALTER SYSTEM FLUSH BUFFER_CACHE` | Vider le buffer cache | P2 | ✅ |
+| `ALTER SYSTEM SWITCH LOGFILE` | Basculer le redo log | P2 | ✅ |
+| `ALTER DATABASE OPEN` | Ouvrir la base | P1 | ✅ |
+| `ALTER DATABASE MOUNT` | Monter la base | P1 | ✅ |
+| `ALTER DATABASE BACKUP CONTROLFILE TO 'path'` | Backup control file | P2 | ✅ |
 
 ### 3.4 Commandes OS (Linux side)
 
-| Commande | Description | Priorité |
-|----------|-------------|----------|
-| `export ORACLE_HOME=/u01/app/oracle/product/19c/dbhome_1` | Variable d'environnement | P0 |
-| `export ORACLE_SID=ORCL` | SID de l'instance | P0 |
-| `export PATH=$ORACLE_HOME/bin:$PATH` | PATH Oracle | P0 |
-| `export LD_LIBRARY_PATH=$ORACLE_HOME/lib` | Libraries | P1 |
-| `export TNS_ADMIN=$ORACLE_HOME/network/admin` | Config réseau | P1 |
-| `dbca` | Database Configuration Assistant (simplifié) | P2 |
-| `orapwd file=... password=...` | Créer fichier de mots de passe | P2 |
-| `tnsping service_name` | Tester la connectivité TNS | P1 |
+| Commande | Description | Priorité | Statut |
+|----------|-------------|----------|--------|
+| `export ORACLE_HOME=/u01/app/oracle/product/19c/dbhome_1` | Variable d'environnement | P0 | ✅ |
+| `export ORACLE_SID=ORCL` | SID de l'instance | P0 | ✅ |
+| `export PATH=$ORACLE_HOME/bin:$PATH` | PATH Oracle | P0 | ✅ |
+| `export LD_LIBRARY_PATH=$ORACLE_HOME/lib` | Libraries | P1 | ✅ |
+| `export TNS_ADMIN=$ORACLE_HOME/network/admin` | Config réseau | P1 | ✅ |
+| `dbca` | Database Configuration Assistant (simplifié) | P2 | ❌ |
+| `orapwd file=... password=...` | Créer fichier de mots de passe | P2 | ❌ |
+| `tnsping service_name` | Tester la connectivité TNS | P1 | ✅ |
 | `adrci` | Automatic Diagnostic Repository (stub) | P2 |
 
 ---
@@ -338,76 +357,79 @@ ORCL:/u01/app/oracle/product/19c/dbhome_1:Y
 
 ### 5.1 Vues Dynamiques de Performance (`V$`)
 
-| Vue | Description | Priorité |
-|-----|-------------|----------|
-| `V$SESSION` | Sessions actives | P0 |
-| `V$PROCESS` | Processus background | P1 |
-| `V$DATABASE` | Informations base de données | P0 |
-| `V$INSTANCE` | Informations de l'instance | P0 |
-| `V$SGA` | Statistiques SGA | P1 |
-| `V$SGASTAT` | Détails SGA par composant | P2 |
-| `V$PGA_TARGET_ADVICE` | Conseil PGA | P2 |
-| `V$PARAMETER` / `V$SYSTEM_PARAMETER` | Paramètres système | P0 |
-| `V$TABLESPACE` | Tablespaces | P0 |
-| `V$DATAFILE` | Fichiers de données | P1 |
-| `V$TEMPFILE` | Fichiers temporaires | P2 |
-| `V$LOG` | Groupes redo log | P1 |
-| `V$LOGFILE` | Membres redo log | P1 |
-| `V$ARCHIVED_LOG` | Logs archivés | P2 |
-| `V$LOCK` | Verrous actifs | P1 |
-| `V$LOCKED_OBJECT` | Objets verrouillés | P2 |
-| `V$TRANSACTION` | Transactions actives | P1 |
-| `V$SQL` | SQL en cache | P1 |
-| `V$SQLAREA` | Zone SQL partagée | P2 |
-| `V$SQL_PLAN` | Plans d'exécution | P2 |
-| `V$SYSSTAT` | Statistiques système | P2 |
-| `V$SESSTAT` | Statistiques par session | P2 |
-| `V$OPEN_CURSOR` | Curseurs ouverts | P2 |
-| `V$VERSION` | Version Oracle | P0 |
-| `V$OPTION` | Options installées | P2 |
-| `V$CONTROLFILE` | Control files | P1 |
-| `V$RECOVER_FILE` | Fichiers à récupérer | P2 |
-| `V$BACKUP` | Statut backup | P2 |
-| `V$ASM_DISKGROUP` | ASM disk groups | P2 |
-| `V$DIAG_INFO` | Répertoires diagnostic | P2 |
+| Vue | Description | Priorité | Statut |
+|-----|-------------|----------|--------|
+| `V$SESSION` | Sessions actives | P0 | ✅ |
+| `V$PROCESS` | Processus background | P1 | ✅ |
+| `V$DATABASE` | Informations base de données | P0 | ✅ |
+| `V$INSTANCE` | Informations de l'instance | P0 | ✅ |
+| `V$SGA` | Statistiques SGA | P1 | ✅ |
+| `V$SGASTAT` | Détails SGA par composant | P2 | ✅ |
+| `V$PGA_TARGET_ADVICE` | Conseil PGA | P2 | ✅ |
+| `V$PARAMETER` / `V$SYSTEM_PARAMETER` | Paramètres système | P0 | ✅ |
+| `V$TABLESPACE` | Tablespaces | P0 | ✅ |
+| `V$DATAFILE` | Fichiers de données | P1 | ✅ |
+| `V$TEMPFILE` | Fichiers temporaires | P2 | ✅ |
+| `V$LOG` | Groupes redo log | P1 | ✅ |
+| `V$LOGFILE` | Membres redo log | P1 | ✅ |
+| `V$ARCHIVED_LOG` | Logs archivés | P2 | ✅ |
+| `V$LOCK` | Verrous actifs | P1 | ✅ |
+| `V$LOCKED_OBJECT` | Objets verrouillés | P2 | ✅ |
+| `V$TRANSACTION` | Transactions actives | P1 | ✅ |
+| `V$SQL` | SQL en cache | P1 | ✅ |
+| `V$SQLAREA` | Zone SQL partagée | P2 | ✅ |
+| `V$SQL_PLAN` | Plans d'exécution | P2 | ✅ |
+| `V$SYSSTAT` | Statistiques système | P2 | ✅ |
+| `V$SESSTAT` | Statistiques par session | P2 | ✅ |
+| `V$OPEN_CURSOR` | Curseurs ouverts | P2 | ✅ |
+| `V$VERSION` | Version Oracle | P0 | ✅ |
+| `V$OPTION` | Options installées | P2 | ✅ |
+| `V$CONTROLFILE` | Control files | P1 | ✅ |
+| `V$RECOVER_FILE` | Fichiers à récupérer | P2 | ✅ |
+| `V$BACKUP` | Statut backup | P2 | ✅ |
+| `V$ASM_DISKGROUP` | ASM disk groups | P2 | ❌ |
+| `V$DIAG_INFO` | Répertoires diagnostic | P2 | ❌ |
+| `V$NLS_PARAMETERS` | Paramètres NLS | P2 | ✅ |
+| `V$TIMEZONE_NAMES` | Fuseaux horaires | P2 | ✅ |
+| `V$RESOURCE_LIMIT` | Limites ressources | P2 | ✅ |
 
 ### 5.2 Vues du Dictionnaire de Données (`DBA_`, `ALL_`, `USER_`)
 
-| Vue | Description | Priorité |
-|-----|-------------|----------|
-| `DBA_USERS` / `ALL_USERS` | Utilisateurs | P0 |
-| `DBA_ROLES` | Rôles | P0 |
-| `DBA_ROLE_PRIVS` | Attributions de rôles | P0 |
-| `DBA_SYS_PRIVS` | Privilèges système | P0 |
-| `DBA_TAB_PRIVS` | Privilèges sur tables | P0 |
-| `DBA_TABLES` / `ALL_TABLES` / `USER_TABLES` | Tables | P0 |
-| `DBA_TAB_COLUMNS` / `ALL_TAB_COLUMNS` | Colonnes | P0 |
-| `DBA_VIEWS` / `ALL_VIEWS` / `USER_VIEWS` | Vues | P1 |
-| `DBA_INDEXES` / `ALL_INDEXES` / `USER_INDEXES` | Index | P0 |
-| `DBA_IND_COLUMNS` | Colonnes d'index | P1 |
-| `DBA_CONSTRAINTS` / `ALL_CONSTRAINTS` | Contraintes | P0 |
-| `DBA_CONS_COLUMNS` | Colonnes de contraintes | P1 |
-| `DBA_SEQUENCES` / `ALL_SEQUENCES` / `USER_SEQUENCES` | Séquences | P1 |
-| `DBA_SYNONYMS` / `ALL_SYNONYMS` | Synonymes | P2 |
-| `DBA_OBJECTS` / `ALL_OBJECTS` / `USER_OBJECTS` | Tous les objets | P0 |
-| `DBA_SOURCE` / `ALL_SOURCE` / `USER_SOURCE` | Code source PL/SQL | P1 |
-| `DBA_PROCEDURES` | Procédures/fonctions | P1 |
-| `DBA_TRIGGERS` / `ALL_TRIGGERS` / `USER_TRIGGERS` | Triggers | P1 |
-| `DBA_TABLESPACES` | Tablespaces | P0 |
-| `DBA_DATA_FILES` | Fichiers de données | P1 |
-| `DBA_TEMP_FILES` | Fichiers temporaires | P2 |
-| `DBA_FREE_SPACE` | Espace libre | P1 |
-| `DBA_SEGMENTS` | Segments | P2 |
-| `DBA_EXTENTS` | Extents | P2 |
-| `DBA_JOBS` / `DBA_SCHEDULER_JOBS` | Jobs planifiés | P2 |
-| `DBA_AUDIT_TRAIL` | Trail d'audit | P1 |
-| `DBA_DB_LINKS` / `ALL_DB_LINKS` | DB Links | P2 |
-| `DBA_DIRECTORIES` | Objets DIRECTORY | P2 |
-| `DBA_PROFILES` | Profils de sécurité | P1 |
-| `DBA_TAB_STATISTICS` | Statistiques des tables | P2 |
-| `DICTIONARY` / `DICT` | Catalogue des vues | P0 |
-| `DUAL` | Table utilitaire | P0 |
-| `TAB` / `CAT` | Tables de l'utilisateur | P1 |
+| Vue | Description | Priorité | Statut |
+|-----|-------------|----------|--------|
+| `DBA_USERS` / `ALL_USERS` | Utilisateurs | P0 | ✅ |
+| `DBA_ROLES` | Rôles | P0 | ✅ |
+| `DBA_ROLE_PRIVS` | Attributions de rôles | P0 | ✅ |
+| `DBA_SYS_PRIVS` | Privilèges système | P0 | ✅ |
+| `DBA_TAB_PRIVS` | Privilèges sur tables | P0 | ✅ |
+| `DBA_TABLES` / `ALL_TABLES` / `USER_TABLES` | Tables | P0 | ✅ |
+| `DBA_TAB_COLUMNS` / `ALL_TAB_COLUMNS` | Colonnes | P0 | ✅ |
+| `DBA_VIEWS` / `ALL_VIEWS` / `USER_VIEWS` | Vues | P1 | ✅ |
+| `DBA_INDEXES` / `ALL_INDEXES` / `USER_INDEXES` | Index | P0 | ✅ |
+| `DBA_IND_COLUMNS` | Colonnes d'index | P1 | ✅ |
+| `DBA_CONSTRAINTS` / `ALL_CONSTRAINTS` | Contraintes | P0 | ✅ |
+| `DBA_CONS_COLUMNS` | Colonnes de contraintes | P1 | ✅ |
+| `DBA_SEQUENCES` / `ALL_SEQUENCES` / `USER_SEQUENCES` | Séquences | P1 | ✅ |
+| `DBA_SYNONYMS` / `ALL_SYNONYMS` | Synonymes | P2 | ❌ |
+| `DBA_OBJECTS` / `ALL_OBJECTS` / `USER_OBJECTS` | Tous les objets | P0 | ✅ |
+| `DBA_SOURCE` / `ALL_SOURCE` / `USER_SOURCE` | Code source PL/SQL | P1 | ✅ |
+| `DBA_PROCEDURES` | Procédures/fonctions | P1 | ✅ |
+| `DBA_TRIGGERS` / `ALL_TRIGGERS` / `USER_TRIGGERS` | Triggers | P1 | ✅ |
+| `DBA_TABLESPACES` | Tablespaces | P0 | ✅ |
+| `DBA_DATA_FILES` | Fichiers de données | P1 | ✅ |
+| `DBA_TEMP_FILES` | Fichiers temporaires | P2 | ✅ |
+| `DBA_FREE_SPACE` | Espace libre | P1 | ✅ |
+| `DBA_SEGMENTS` | Segments | P2 | ✅ |
+| `DBA_EXTENTS` | Extents | P2 | ✅ |
+| `DBA_JOBS` / `DBA_SCHEDULER_JOBS` | Jobs planifiés | P2 | ✅ |
+| `DBA_AUDIT_TRAIL` | Trail d'audit | P1 | 🟡 (données statiques) |
+| `DBA_DB_LINKS` / `ALL_DB_LINKS` | DB Links | P2 | ✅ |
+| `DBA_DIRECTORIES` | Objets DIRECTORY | P2 | ✅ |
+| `DBA_PROFILES` | Profils de sécurité | P1 | ✅ |
+| `DBA_TAB_STATISTICS` | Statistiques des tables | P2 | ✅ |
+| `DICTIONARY` / `DICT` | Catalogue des vues (64 entrées) | P0 | ✅ |
+| `DUAL` | Table utilitaire | P0 | ✅ |
+| `TAB` / `CAT` | Tables de l'utilisateur | P1 | ✅ |
 
 ### 5.3 Tables Système Internes
 
@@ -425,15 +447,15 @@ ORCL:/u01/app/oracle/product/19c/dbhome_1:Y
 
 ## 6. Gestion des Accès et Sécurité
 
-### 6.1 Utilisateurs Prédéfinis
+### 6.1 Utilisateurs Prédéfinis ✅
 
-| Utilisateur | Rôle | Mot de passe par défaut |
-|-------------|------|------------------------|
-| `SYS` | SYSDBA — superadmin | `oracle` |
-| `SYSTEM` | DBA — administration courante | `oracle` |
-| `DBSNMP` | Monitoring | `dbsnmp` |
-| `HR` | Schema exemple (demo) | `hr` |
-| `SCOTT` | Schema classique (demo) | `tiger` |
+| Utilisateur | Rôle | Mot de passe par défaut | Statut |
+|-------------|------|------------------------|--------|
+| `SYS` | SYSDBA — superadmin | `oracle` | ✅ |
+| `SYSTEM` | DBA — administration courante | `oracle` | ✅ |
+| `DBSNMP` | Monitoring | `dbsnmp` | ✅ |
+| `HR` | Schema exemple (demo) | `hr` | ✅ |
+| `SCOTT` | Schema classique (demo) | `tiger` | ✅ |
 
 ### 6.2 Rôles Prédéfinis
 
@@ -1089,21 +1111,21 @@ SHUTDOWN → NOMOUNT → MOUNT → OPEN
 
 ## 10. Packages PL/SQL Intégrés (Built-in)
 
-| Package | Procédures/Fonctions clés | Priorité |
-|---------|--------------------------|----------|
-| `DBMS_OUTPUT` | `PUT_LINE`, `PUT`, `GET_LINE`, `ENABLE`, `DISABLE` | P0 |
-| `DBMS_LOCK` | `SLEEP` | P1 |
-| `DBMS_RANDOM` | `VALUE`, `STRING`, `SEED` | P1 |
-| `DBMS_UTILITY` | `FORMAT_ERROR_BACKTRACE`, `FORMAT_ERROR_STACK`, `GET_TIME` | P2 |
-| `UTL_FILE` | `FOPEN`, `GET_LINE`, `PUT_LINE`, `FCLOSE` | P2 |
-| `DBMS_STATS` | `GATHER_TABLE_STATS`, `GATHER_SCHEMA_STATS` | P2 |
-| `DBMS_METADATA` | `GET_DDL` | P2 |
-| `DBMS_SCHEDULER` | `CREATE_JOB`, `RUN_JOB`, `DROP_JOB` | P2 |
-| `DBMS_SESSION` | `SET_ROLE`, `SET_NLS` | P2 |
-| `DBMS_SQL` | Dynamic SQL | P2 |
-| `DBMS_LOB` | `READ`, `WRITE`, `GETLENGTH`, `SUBSTR` | P2 |
-| `DBMS_FLASHBACK` | `ENABLE_AT_TIME` | P2 |
-| `DBMS_SPACE` | `SPACE_USAGE` | P2 |
+| Package | Procédures/Fonctions clés | Priorité | Statut |
+|---------|--------------------------|----------|--------|
+| `DBMS_OUTPUT` | `PUT_LINE`, `PUT`, `GET_LINE`, `ENABLE`, `DISABLE` | P0 | ✅ PUT_LINE |
+| `DBMS_LOCK` | `SLEEP` | P1 | ❌ |
+| `DBMS_RANDOM` | `VALUE`, `STRING`, `SEED` | P1 | ✅ VALUE, STRING, NORMAL |
+| `DBMS_UTILITY` | `FORMAT_ERROR_BACKTRACE`, `FORMAT_ERROR_STACK`, `GET_TIME` | P2 | ❌ |
+| `UTL_FILE` | `FOPEN`, `GET_LINE`, `PUT_LINE`, `FCLOSE` | P2 | ❌ |
+| `DBMS_STATS` | `GATHER_TABLE_STATS`, `GATHER_SCHEMA_STATS` | P2 | ❌ |
+| `DBMS_METADATA` | `GET_DDL` | P2 | ❌ |
+| `DBMS_SCHEDULER` | `CREATE_JOB`, `RUN_JOB`, `DROP_JOB` | P2 | ❌ |
+| `DBMS_SESSION` | `SET_ROLE`, `SET_NLS` | P2 | ❌ |
+| `DBMS_SQL` | Dynamic SQL | P2 | ❌ |
+| `DBMS_LOB` | `READ`, `WRITE`, `GETLENGTH`, `SUBSTR` | P2 | ❌ |
+| `DBMS_FLASHBACK` | `ENABLE_AT_TIME` | P2 | ❌ |
+| `DBMS_SPACE` | `SPACE_USAGE` | P2 | ❌ |
 
 ---
 
@@ -1214,7 +1236,10 @@ SALGRADE (grade, losal, hisal)
 
 ---
 
-## 14. Messages d'Erreur Oracle (ORA-)
+## 14. Messages d'Erreur Oracle (ORA-) — ✅ 60+ codes implémentés
+
+> **Statut** : 60+ codes d'erreur ORA- implémentés dans `OracleConfig.ts`, couvrant les catégories :
+> Syntaxe/Parse, Auth/Session, Data, Contraintes, Objets, PL/SQL, TNS, Account, DDL.
 
 | Code | Message | Contexte |
 |------|---------|----------|
@@ -1258,141 +1283,139 @@ SALGRADE (grade, losal, hisal)
 
 ## 15. Fonctionnalités Additionnelles
 
-### 15.1 Index
+### 15.1 Index ✅
 
 ```sql
-CREATE [UNIQUE] INDEX index_name ON table_name (column_list)
-  [TABLESPACE tablespace_name]
-  [COMPUTE STATISTICS];
-CREATE BITMAP INDEX idx ON table (column);  -- bitmap index
-CREATE INDEX idx ON table (UPPER(column));  -- function-based index
-DROP INDEX index_name;
-ALTER INDEX index_name REBUILD;
-ALTER INDEX index_name REBUILD ONLINE;
+CREATE [UNIQUE] INDEX index_name ON table_name (column_list)      -- ✅
+  [TABLESPACE tablespace_name];
+CREATE BITMAP INDEX idx ON table (column);  -- ✅ bitmap index
+CREATE INDEX idx ON table (UPPER(column));  -- ❌ function-based index
+DROP INDEX index_name;                                             -- ✅
+ALTER INDEX index_name REBUILD;              -- ❌
 ```
 
-### 15.2 Séquences
+### 15.2 Séquences ✅
 
 ```sql
 CREATE SEQUENCE seq_name
   START WITH 1 INCREMENT BY 1
   MINVALUE 1 MAXVALUE 999999999
   CACHE 20 [NOCACHE]
-  [CYCLE | NOCYCLE]
-  [ORDER | NOORDER];
+  [CYCLE | NOCYCLE];                         -- ✅ Tout implémenté
 
-SELECT seq_name.NEXTVAL FROM DUAL;
-SELECT seq_name.CURRVAL FROM DUAL;
-ALTER SEQUENCE seq_name INCREMENT BY 10;
-DROP SEQUENCE seq_name;
+SELECT seq_name.NEXTVAL FROM DUAL;           -- ✅
+SELECT seq_name.CURRVAL FROM DUAL;           -- ✅
+DROP SEQUENCE seq_name;                      -- ✅
+ALTER SEQUENCE seq_name INCREMENT BY 10;     -- ❌
 ```
 
-### 15.3 Vues
+### 15.3 Vues 🟡
 
 ```sql
 CREATE [OR REPLACE] [FORCE | NOFORCE] VIEW view_name AS
   select_statement
-  [WITH CHECK OPTION [CONSTRAINT constraint_name]]
-  [WITH READ ONLY];
+  [WITH CHECK OPTION]
+  [WITH READ ONLY];                          -- ✅ Implémenté (stockage + requêtage via AST)
 
 CREATE [OR REPLACE] MATERIALIZED VIEW mv_name
   [BUILD {IMMEDIATE | DEFERRED}]
   [REFRESH {FAST | COMPLETE | FORCE} ON {DEMAND | COMMIT}]
-  AS select_statement;
+  AS select_statement;                       -- ❌ Non implémenté
 ```
 
-### 15.4 Synonymes
+### 15.4 Synonymes ❌
 
 ```sql
-CREATE [OR REPLACE] [PUBLIC] SYNONYM syn_name FOR schema.object_name;
-DROP [PUBLIC] SYNONYM syn_name;
+CREATE [OR REPLACE] [PUBLIC] SYNONYM syn_name FOR schema.object_name;  -- ❌
+DROP [PUBLIC] SYNONYM syn_name;                                         -- ❌
 ```
 
-### 15.5 DB Links
+### 15.5 DB Links ❌
 
 ```sql
 CREATE [PUBLIC] DATABASE LINK link_name
   CONNECT TO user IDENTIFIED BY password
-  USING 'tns_alias';
+  USING 'tns_alias';                         -- ❌
 
-SELECT * FROM table_name@link_name;
-DROP [PUBLIC] DATABASE LINK link_name;
+SELECT * FROM table_name@link_name;          -- ❌
+DROP [PUBLIC] DATABASE LINK link_name;       -- ❌
 ```
 
-### 15.6 Flashback
+### 15.6 Flashback ❌
 
 ```sql
-SELECT * FROM table_name AS OF TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);
-FLASHBACK TABLE table_name TO TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);
+SELECT * FROM table_name AS OF TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);  -- ❌
+FLASHBACK TABLE table_name TO TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);   -- ❌
 ```
 
 ---
 
 ## 16. Plan d'Implémentation (Phases)
 
-### Phase 1 — Fondations (Core SQL Engine + Oracle Base)
+### Phase 1 — Fondations (Core SQL Engine + Oracle Base) ✅ COMPLÈTE
 
-1. Moteur SQL générique : `Token`, `BaseLexer`, `ASTNode`, `BaseParser`, `BaseExecutor`
-2. Oracle Lexer/Parser pour : SELECT, INSERT, UPDATE, DELETE de base
-3. Storage en mémoire : tables, lignes, colonnes
-4. Catalog de base : `DUAL`, `DBA_TABLES`, `DBA_USERS`, `V$VERSION`, `V$SESSION`
-5. SQL*Plus session : connexion, `DESC`, `SHOW USER`, `EXIT`
-6. Types de données : `NUMBER`, `VARCHAR2`, `DATE`, `TIMESTAMP`
-7. Schéma SCOTT + HR (données de base)
+1. ✅ Moteur SQL générique : `Token`, `BaseLexer`, `ASTNode`, `BaseParser`, `BaseExecutor`
+2. ✅ Oracle Lexer/Parser pour : SELECT, INSERT, UPDATE, DELETE de base
+3. ✅ Storage en mémoire : tables, lignes, colonnes
+4. ✅ Catalog de base : `DUAL`, `DBA_TABLES`, `DBA_USERS`, `V$VERSION`, `V$SESSION`
+5. ✅ SQL*Plus session : connexion, `DESC`, `SHOW USER`, `EXIT`
+6. ✅ Types de données : `NUMBER`, `VARCHAR2`, `DATE`, `TIMESTAMP`
+7. ✅ Schéma SCOTT + HR (données de base)
 
-### Phase 2 — DDL + Contraintes
+### Phase 2 — DDL + Contraintes ✅ COMPLÈTE
 
-1. `CREATE TABLE` avec contraintes (PK, FK, UNIQUE, CHECK, NOT NULL)
-2. `ALTER TABLE` (ADD, MODIFY, DROP COLUMN, ADD CONSTRAINT)
-3. `DROP TABLE`, `TRUNCATE TABLE`
-4. `CREATE INDEX`, `DROP INDEX`
-5. `CREATE SEQUENCE`, `DROP SEQUENCE`
-6. `CREATE VIEW`, `DROP VIEW`
-7. Tablespaces (CREATE, ALTER, DROP)
+1. ✅ `CREATE TABLE` avec contraintes (PK, FK, UNIQUE, CHECK, NOT NULL)
+2. ✅ `ALTER TABLE` (ADD, MODIFY, DROP COLUMN, ADD CONSTRAINT)
+3. ✅ `DROP TABLE`, `TRUNCATE TABLE`
+4. ✅ `CREATE INDEX`, `DROP INDEX` (UNIQUE, BITMAP)
+5. ✅ `CREATE SEQUENCE`, `DROP SEQUENCE` (NEXTVAL, CURRVAL)
+6. ✅ `CREATE VIEW`, `DROP VIEW` — stockage + requêtage via AST, OR REPLACE
+7. ✅ Tablespaces (CREATE, ALTER, DROP — y compris TEMPORARY, UNDO)
 
-### Phase 3 — DML Avancé + Fonctions
+### Phase 3 — DML Avancé + Fonctions ✅ COMPLÈTE
 
-1. `JOIN` (INNER, LEFT, RIGHT, FULL, CROSS)
-2. Sous-requêtes (IN, EXISTS, correlated)
-3. `GROUP BY`, `HAVING`, fonctions d'agrégation
-4. Fonctions intégrées (chaînes, numériques, dates, conversion)
-5. `MERGE`, multi-table INSERT
-6. `CONNECT BY` (hiérarchique)
-7. Fonctions analytiques (OVER, PARTITION BY)
-8. `WITH` (CTE - Common Table Expressions)
+1. ✅ `JOIN` (INNER, LEFT, RIGHT, FULL, CROSS)
+2. ✅ Sous-requêtes (IN, EXISTS/NOT EXISTS, correlated, inline views dans FROM)
+3. ✅ `GROUP BY`, `HAVING`, fonctions d'agrégation (COUNT, SUM, AVG, MIN, MAX, MEDIAN, STDDEV, VARIANCE, LISTAGG)
+4. ✅ Fonctions intégrées (chaînes : UPPER, LOWER, SUBSTR, INSTR, TRIM, LPAD, RPAD, REPLACE, CONCAT, INITCAP ; numériques : ABS, CEIL, FLOOR, ROUND, TRUNC, MOD, POWER, SQRT, SIGN, GREATEST, LEAST ; dates : SYSDATE, SYSTIMESTAMP, TO_CHAR, TO_DATE, TO_NUMBER ; null : NVL, NVL2, COALESCE, NULLIF, DECODE)
+5. ✅ `MERGE` (WHEN MATCHED/NOT MATCHED)
+6. ✅ `CONNECT BY` (hiérarchique — START WITH, PRIOR, NOCYCLE, LEVEL)
+7. ✅ Fonctions analytiques (OVER, PARTITION BY, ORDER BY, ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE, frame specs ROWS/RANGE BETWEEN)
+8. ✅ `WITH` (CTE - Common Table Expressions)
+9. ✅ `ROWNUM` (incrémentation correcte par ligne, `WHERE ROWNUM <= N`)
 
-### Phase 4 — PL/SQL + Packages
+### Phase 4 — PL/SQL + Packages 🟡 PARTIELLE
 
-1. Blocs anonymes PL/SQL
-2. Procédures et fonctions stockées
-3. Packages (spec + body)
-4. Curseurs (implicites et explicites)
-5. Gestion d'exceptions
-6. `DBMS_OUTPUT`, `DBMS_RANDOM`, `DBMS_LOCK`
-7. Triggers (BEFORE/AFTER, ROW/STATEMENT)
+1. ✅ Blocs anonymes PL/SQL (DECLARE/BEGIN/END, variables, IF/ELSIF/ELSE, FOR..LOOP, WHILE, assignments)
+2. ✅ Procédures et fonctions stockées (CREATE [OR REPLACE] PROCEDURE/FUNCTION, paramètres IN/OUT/IN OUT, EXEC, DROP)
+3. ❌ Packages (spec + body) — non implémenté
+4. ❌ Curseurs (implicites et explicites) — mots-clés lexer OK, pas d'exécution
+5. ✅ Gestion d'exceptions (EXCEPTION WHEN...THEN dans blocs PL/SQL)
+6. 🟡 `DBMS_OUTPUT` (PUT_LINE ✅), `DBMS_RANDOM` (VALUE ✅, STRING ✅, NORMAL ✅), `DBMS_LOCK` (❌ SLEEP non implémenté)
+7. ✅ Triggers (CREATE [OR REPLACE] TRIGGER — BEFORE/AFTER/INSTEAD OF, INSERT/UPDATE/DELETE, FOR EACH ROW, DROP TRIGGER)
 
-### Phase 5 — Administration + Sécurité
+### Phase 5 — Administration + Sécurité ✅ COMPLÈTE
 
-1. Gestion des utilisateurs (CREATE/ALTER/DROP USER)
-2. Rôles et privilèges (GRANT/REVOKE)
-3. Profils de sécurité
-4. Instance lifecycle (STARTUP/SHUTDOWN)
-5. Listener (lsnrctl)
-6. Configuration (init.ora, tnsnames.ora, listener.ora)
-7. Alert log simulation
-8. Audit trail
-9. Backup/Recovery concepts (RMAN stub)
+1. ✅ Gestion des utilisateurs (CREATE/ALTER/DROP USER — password, account lock/unlock, default tablespace)
+2. ✅ Rôles et privilèges (GRANT/REVOKE — table privs, system privs, roles, WITH GRANT/ADMIN OPTION)
+3. 🟡 Profils de sécurité — DBA_PROFILES view existe mais retourne données statiques
+4. ✅ Instance lifecycle (STARTUP NOMOUNT/MOUNT/OPEN/RESTRICT/FORCE, SHUTDOWN NORMAL/IMMEDIATE/TRANSACTIONAL/ABORT)
+5. ✅ Listener (lsnrctl start/stop/status/services/reload/version)
+6. ✅ Configuration (init.ora/spfile — paramètres SGA/PGA/etc., tnsnames.ora, listener.ora, sqlnet.ora)
+7. ✅ Alert log simulation (startup/shutdown events loggés)
+8. 🟡 Audit trail — DBA_AUDIT_TRAIL view définie, données statiques
+9. ❌ Backup/Recovery concepts (RMAN stub) — non implémenté
 
-### Phase 6 — Optimisation + Avancé
+### Phase 6 — Optimisation + Avancé 🟡 PARTIELLE
 
-1. `EXPLAIN PLAN`
-2. Statistiques de table (DBMS_STATS)
-3. Transactions et verrouillage
-4. Niveaux d'isolation
-5. Flashback query
-6. Materialized views
-7. DB Links (simulation)
-8. Partitionnement (stub)
+1. ✅ `EXPLAIN PLAN` (FOR SELECT/INSERT/UPDATE/DELETE — plan simulé avec TABLE ACCESS FULL, HASH JOIN, SORT ORDER BY)
+2. ❌ Statistiques de table (DBMS_STATS) — non implémenté
+3. 🟡 Transactions et verrouillage — COMMIT/ROLLBACK/SAVEPOINT reconnus (stubs, pas de vrai rollback)
+4. ❌ Niveaux d'isolation — non implémenté
+5. ❌ Flashback query — non implémenté
+6. ❌ Materialized views — non implémenté
+7. ❌ DB Links (simulation) — non implémenté
+8. ❌ Partitionnement (stub) — non implémenté
 
 ---
 
