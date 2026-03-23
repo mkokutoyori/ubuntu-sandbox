@@ -406,6 +406,14 @@ export class VirtualFileSystem {
     }
 
     if (!inode) {
+      // Ensure parent directories exist (auto-create like mkdir -p)
+      const lastSlash = path.lastIndexOf('/');
+      if (lastSlash > 0) {
+        const parentDir = path.substring(0, lastSlash);
+        if (!this.exists(parentDir)) {
+          this.mkdirp(parentDir, 0o755, uid, gid);
+        }
+      }
       // Create new file
       const perms = 0o666 & ~umask;
       const newInode = this.createFileAt(path, content, perms, uid, gid);
