@@ -103,7 +103,9 @@ export class OracleExecutor extends BaseExecutor {
       }
 
       // V$ views, DBA_ views, etc.
-      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(tableName, this.context.currentUser);
+      // Handle SYS-prefixed internal tables (SYS.OBJ$, SYS.TAB$, etc.)
+      const catalogViewName = (tableRef.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName);
+      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogViewName, this.context.currentUser);
       if (catalogResult) {
         return this.applySelectClauses(catalogResult, stmt);
       }

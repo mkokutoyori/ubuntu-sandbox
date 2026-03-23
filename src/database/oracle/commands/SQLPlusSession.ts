@@ -21,6 +21,13 @@ import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
 
+export interface ColumnFormat {
+  name: string;
+  format?: string;
+  heading?: string;
+  width?: number;
+}
+
 export interface SQLPlusSettings {
   linesize: number;
   pagesize: number;
@@ -63,6 +70,12 @@ export class SQLPlusSession {
   private asSysdba: boolean = false;
   private currentUser: string = '';
   private spoolFile: string | null = null;
+  /** User-defined substitution variables (DEFINE) */
+  private defines: Map<string, string> = new Map();
+  /** Bind variables (VARIABLE / PRINT) */
+  private bindVariables: Map<string, { type: string; value: unknown }> = new Map();
+  /** Column formatting rules (COLUMN ... FORMAT) */
+  private columnFormats: Map<string, ColumnFormat> = new Map();
 
   constructor(db: OracleDatabase) {
     this.db = db;
@@ -261,8 +274,43 @@ export class SQLPlusSession {
     }
 
     // HOST / ! — shell command (not supported in simulator)
-    if (upper.startsWith('HOST ') || upper.startsWith('!')) {
+    if (upper.startsWith('HOST ') || upper === 'HOST' || upper.startsWith('!')) {
       return { output: ['SP2-0734: HOST command is not available in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // @ / START — execute script (simulated)
+    if (trimmed.startsWith('@') || upper.startsWith('START ')) {
+      const scriptName = trimmed.startsWith('@') ? trimmed.substring(1).trim() : trimmed.substring(6).trim();
+      return { output: [`SP2-0310: unable to open file "${scriptName}"`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // COLUMN — column formatting
+    if (upper.startsWith('COLUMN ') || upper === 'COLUMN') {
+      return this.handleColumn(trimmed.substring(6).trim());
+    }
+    if (upper.startsWith('COL ')) {
+      return this.handleColumn(trimmed.substring(4).trim());
+    }
+
+    // DEFINE — substitution variables
+    if (upper.startsWith('DEFINE ') || upper === 'DEFINE') {
+      return this.handleDefine(trimmed.substring(6).trim());
+    }
+
+    // VARIABLE — bind variable declaration
+    if (upper.startsWith('VARIABLE ') || upper === 'VARIABLE' || upper.startsWith('VAR ')) {
+      const offset = upper.startsWith('VAR ') ? 4 : upper.startsWith('VARIABLE') ? (upper === 'VARIABLE' ? 8 : 9) : 9;
+      return this.handleVariable(trimmed.substring(offset).trim());
+    }
+
+    // PRINT — display bind variable
+    if (upper.startsWith('PRINT ') || upper === 'PRINT') {
+      return this.handlePrint(trimmed.substring(5).trim());
+    }
+
+    // EDIT — open editor (not supported in simulator)
+    if (upper === 'EDIT' || upper.startsWith('EDIT ')) {
+      return { output: ['SP2-0107: Nothing to save.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
     // SQL statements — check if ends with ;
@@ -792,15 +840,22 @@ export class SQLPlusSession {
         'HELP',
         '----',
         ' @             Execute a script file',
+        ' COLUMN        Define a column format',
         ' CONNECT       Connect to a database',
+        ' DEFINE        Define a substitution variable',
         ' DESCRIBE      Describe an object',
+        ' EDIT          Edit the SQL buffer',
         ' EXIT          Exit SQL*Plus',
+        ' HOST          Execute a host operating system command',
+        ' PRINT         Display the value of a bind variable',
+        ' PROMPT        Display text to the screen',
         ' QUIT          Exit SQL*Plus',
         ' SET           Set a SQL*Plus system variable',
         ' SHOW          Show a SQL*Plus system variable',
         ' SPOOL         Store query results in a file',
         ' STARTUP       Start an Oracle instance',
         ' SHUTDOWN      Shut down an Oracle instance',
+        ' VARIABLE      Declare a bind variable',
         '',
       ],
       exit: false,
@@ -819,6 +874,144 @@ export class SQLPlusSession {
     }
     this.spoolFile = args;
     return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── COLUMN ──────────────────────────────────────────────────────
+
+  private handleColumn(args: string): SQLPlusResult {
+    if (!args) {
+      // Show all column formats
+      const output: string[] = [];
+      if (this.columnFormats.size === 0) {
+        // No columns defined — silent like real SQL*Plus
+      } else {
+        for (const [, fmt] of this.columnFormats) {
+          const parts: string[] = [`COLUMN   ${fmt.name}`];
+          if (fmt.format) parts.push(`FORMAT   ${fmt.format}`);
+          if (fmt.heading) parts.push(`HEADING  '${fmt.heading}'`);
+          output.push(parts.join(' '));
+        }
+      }
+      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    const parts = args.split(/\s+/);
+    const colName = parts[0].toUpperCase();
+    const upper = args.toUpperCase();
+
+    // COLUMN col CLEAR
+    if (upper.includes(' CLEAR')) {
+      this.columnFormats.delete(colName);
+      return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // Parse FORMAT and HEADING options
+    const fmt: ColumnFormat = this.columnFormats.get(colName) || { name: colName };
+
+    const fmtMatch = args.match(/FORMAT\s+(\S+)/i);
+    if (fmtMatch) fmt.format = fmtMatch[1];
+
+    const headMatch = args.match(/HEADING\s+'([^']+)'/i) || args.match(/HEADING\s+"([^"]+)"/i) || args.match(/HEADING\s+(\S+)/i);
+    if (headMatch) fmt.heading = headMatch[1];
+
+    // Parse width from format (e.g., A30 = 30 chars, 9999 = 4 digits)
+    if (fmt.format) {
+      const aMatch = fmt.format.match(/^A(\d+)$/i);
+      if (aMatch) fmt.width = parseInt(aMatch[1]);
+    }
+
+    this.columnFormats.set(colName, fmt);
+    return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── DEFINE ─────────────────────────────────────────────────────
+
+  private handleDefine(args: string): SQLPlusResult {
+    if (!args) {
+      // Show all defines
+      const output: string[] = [];
+      for (const [name, value] of this.defines) {
+        output.push(`DEFINE ${name}           = "${value}"`);
+      }
+      if (output.length === 0) {
+        // Show built-in defines
+        output.push(`DEFINE _SQLPLUS_RELEASE = "1903000000"`);
+        output.push(`DEFINE _EDITOR         = "vi"`);
+      }
+      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // Check if it's a query: DEFINE varname (no =)
+    if (!args.includes('=')) {
+      const varName = args.trim().toUpperCase();
+      const value = this.defines.get(varName);
+      if (value !== undefined) {
+        return { output: [`DEFINE ${varName}           = "${value}"`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      }
+      return { output: [`SP2-0135: symbol ${varName.toLowerCase()} is UNDEFINED`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    // DEFINE var = value
+    const eqIdx = args.indexOf('=');
+    const varName = args.substring(0, eqIdx).trim().toUpperCase();
+    let value = args.substring(eqIdx + 1).trim();
+    // Strip surrounding quotes
+    value = value.replace(/^['"]|['"]$/g, '');
+    this.defines.set(varName, value);
+    return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── VARIABLE ───────────────────────────────────────────────────
+
+  private handleVariable(args: string): SQLPlusResult {
+    if (!args) {
+      // List all bind variables
+      const output: string[] = [];
+      if (this.bindVariables.size === 0) {
+        // Silent like real SQL*Plus
+      } else {
+        for (const [name, info] of this.bindVariables) {
+          output.push(`variable   ${name}`);
+          output.push(`datatype   ${info.type}`);
+        }
+      }
+      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    const parts = args.split(/\s+/);
+    const varName = parts[0].toUpperCase();
+    const varType = (parts[1] || 'VARCHAR2(100)').toUpperCase();
+
+    this.bindVariables.set(varName, { type: varType, value: null });
+    return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── PRINT ──────────────────────────────────────────────────────
+
+  private handlePrint(args: string): SQLPlusResult {
+    if (!args) {
+      // Print all bind variables
+      const output: string[] = [];
+      for (const [name, info] of this.bindVariables) {
+        output.push('');
+        output.push(name);
+        output.push('-'.repeat(name.length > 10 ? name.length : 10));
+        output.push(info.value !== null && info.value !== undefined ? String(info.value) : '');
+      }
+      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    const varName = args.toUpperCase();
+    const info = this.bindVariables.get(varName);
+    if (!info) {
+      return { output: [`SP2-0552: Bind variable "${varName}" not declared.`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    const output: string[] = [''];
+    output.push(varName);
+    output.push('-'.repeat(varName.length > 10 ? varName.length : 10));
+    output.push(info.value !== null && info.value !== undefined ? String(info.value) : '');
+    return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   // ── Prompt ───────────────────────────────────────────────────────

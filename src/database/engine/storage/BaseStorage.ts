@@ -85,6 +85,15 @@ export interface ViewMeta {
   withReadOnly?: boolean;
 }
 
+export interface SynonymMeta {
+  owner: string;
+  name: string;
+  tableOwner: string;
+  tableName: string;
+  dbLink?: string;
+  isPublic: boolean;
+}
+
 // ── Abstract Storage ────────────────────────────────────────────────
 
 export abstract class BaseStorage {
@@ -98,6 +107,8 @@ export abstract class BaseStorage {
   protected views: Map<string, Map<string, ViewMeta>> = new Map();
   /** Schema → Trigger name → Trigger meta */
   protected triggers: Map<string, Map<string, TriggerMeta>> = new Map();
+  /** Synonyms (public + private) */
+  protected synonyms: Map<string, SynonymMeta> = new Map();
 
   // ── Schema management ────────────────────────────────────────────
 
@@ -356,6 +367,27 @@ export abstract class BaseStorage {
       for (const trigger of schemaTriggers.values()) result.push(trigger);
     }
     return result;
+  }
+
+  // ── Synonym operations ──────────────────────────────────────────
+
+  createSynonym(meta: SynonymMeta): void {
+    const key = `${meta.owner.toUpperCase()}.${meta.name.toUpperCase()}`;
+    this.synonyms.set(key, { ...meta, owner: meta.owner.toUpperCase(), name: meta.name.toUpperCase(), tableOwner: meta.tableOwner.toUpperCase(), tableName: meta.tableName.toUpperCase() });
+  }
+
+  dropSynonym(owner: string, name: string): void {
+    const key = `${owner.toUpperCase()}.${name.toUpperCase()}`;
+    if (!this.synonyms.has(key)) throw new Error(`Synonym ${owner}.${name} does not exist`);
+    this.synonyms.delete(key);
+  }
+
+  getSynonym(owner: string, name: string): SynonymMeta | undefined {
+    return this.synonyms.get(`${owner.toUpperCase()}.${name.toUpperCase()}`);
+  }
+
+  getAllSynonyms(): SynonymMeta[] {
+    return Array.from(this.synonyms.values());
   }
 
   // ── Internals ────────────────────────────────────────────────────

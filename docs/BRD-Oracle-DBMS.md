@@ -156,19 +156,19 @@ BaseStorage (abstract)
 | `SHOW ERRORS` | Afficher les erreurs PL/SQL | P1 | ✅ |
 | `DESC table_name` | Décrire une table | P0 | ✅ |
 | `DESCRIBE table_name` | Alias de DESC | P0 | ✅ |
-| `@script.sql` | Exécuter un script | P2 | ❌ |
-| `SPOOL filename` | Rediriger la sortie | P2 | ❌ |
-| `SPOOL OFF` | Arrêter la redirection | P2 | ❌ |
+| `@script.sql` | Exécuter un script | P2 | ✅ (stub — SP2-0310) |
+| `SPOOL filename` | Rediriger la sortie | P2 | ✅ |
+| `SPOOL OFF` | Arrêter la redirection | P2 | ✅ |
 | `EXIT` / `QUIT` | Quitter SQL*Plus | P0 | ✅ |
 | `CLEAR SCREEN` | Effacer l'écran | P0 | ✅ |
-| `COLUMN col FORMAT fmt` | Formater une colonne | P2 | ❌ |
-| `PROMPT text` | Afficher du texte | P1 | ❌ |
-| `DEFINE var = value` | Définir une variable | P2 | ❌ |
-| `VARIABLE var TYPE` | Déclarer une variable bind | P2 | ❌ |
-| `PRINT var` | Afficher une variable bind | P2 | ❌ |
-| `HOST command` | Exécuter une commande OS | P2 | ❌ |
-| `EDIT` | Ouvrir l'éditeur | P2 | ❌ |
-| `/` | Ré-exécuter la dernière commande SQL | P1 | ❌ |
+| `COLUMN col FORMAT fmt` | Formater une colonne | P2 | ✅ |
+| `PROMPT text` | Afficher du texte | P1 | ✅ |
+| `DEFINE var = value` | Définir une variable | P2 | ✅ |
+| `VARIABLE var TYPE` | Déclarer une variable bind | P2 | ✅ |
+| `PRINT var` | Afficher une variable bind | P2 | ✅ |
+| `HOST command` | Exécuter une commande OS | P2 | ✅ (stub) |
+| `EDIT` | Ouvrir l'éditeur | P2 | ✅ (stub) |
+| `/` | Ré-exécuter la dernière commande SQL | P1 | ✅ |
 
 ### 3.2 Listener Control (`lsnrctl`)
 
@@ -209,10 +209,10 @@ BaseStorage (abstract)
 | `export PATH=$ORACLE_HOME/bin:$PATH` | PATH Oracle | P0 | ✅ |
 | `export LD_LIBRARY_PATH=$ORACLE_HOME/lib` | Libraries | P1 | ✅ |
 | `export TNS_ADMIN=$ORACLE_HOME/network/admin` | Config réseau | P1 | ✅ |
-| `dbca` | Database Configuration Assistant (simplifié) | P2 | ❌ |
-| `orapwd file=... password=...` | Créer fichier de mots de passe | P2 | ❌ |
+| `dbca` | Database Configuration Assistant (simplifié) | P2 | ✅ (stub) |
+| `orapwd file=... password=...` | Créer fichier de mots de passe | P2 | ✅ (stub) |
 | `tnsping service_name` | Tester la connectivité TNS | P1 | ✅ |
-| `adrci` | Automatic Diagnostic Repository (stub) | P2 |
+| `adrci` | Automatic Diagnostic Repository (stub) | P2 | ✅ (stub) |
 
 ---
 
@@ -387,8 +387,8 @@ ORCL:/u01/app/oracle/product/19c/dbhome_1:Y
 | `V$CONTROLFILE` | Control files | P1 | ✅ |
 | `V$RECOVER_FILE` | Fichiers à récupérer | P2 | ✅ |
 | `V$BACKUP` | Statut backup | P2 | ✅ |
-| `V$ASM_DISKGROUP` | ASM disk groups | P2 | ❌ |
-| `V$DIAG_INFO` | Répertoires diagnostic | P2 | ❌ |
+| `V$ASM_DISKGROUP` | ASM disk groups | P2 | ✅ |
+| `V$DIAG_INFO` | Répertoires diagnostic | P2 | ✅ |
 | `V$NLS_PARAMETERS` | Paramètres NLS | P2 | ✅ |
 | `V$TIMEZONE_NAMES` | Fuseaux horaires | P2 | ✅ |
 | `V$RESOURCE_LIMIT` | Limites ressources | P2 | ✅ |
@@ -410,7 +410,7 @@ ORCL:/u01/app/oracle/product/19c/dbhome_1:Y
 | `DBA_CONSTRAINTS` / `ALL_CONSTRAINTS` | Contraintes | P0 | ✅ |
 | `DBA_CONS_COLUMNS` | Colonnes de contraintes | P1 | ✅ |
 | `DBA_SEQUENCES` / `ALL_SEQUENCES` / `USER_SEQUENCES` | Séquences | P1 | ✅ |
-| `DBA_SYNONYMS` / `ALL_SYNONYMS` | Synonymes | P2 | ❌ |
+| `DBA_SYNONYMS` / `ALL_SYNONYMS` | Synonymes | P2 | ✅ |
 | `DBA_OBJECTS` / `ALL_OBJECTS` / `USER_OBJECTS` | Tous les objets | P0 | ✅ |
 | `DBA_SOURCE` / `ALL_SOURCE` / `USER_SOURCE` | Code source PL/SQL | P1 | ✅ |
 | `DBA_PROCEDURES` | Procédures/fonctions | P1 | ✅ |
@@ -433,15 +433,15 @@ ORCL:/u01/app/oracle/product/19c/dbhome_1:Y
 
 ### 5.3 Tables Système Internes
 
-| Table | Description | Priorité |
-|-------|-------------|----------|
-| `SYS.OBJ$` | Catalogue des objets | P2 |
-| `SYS.TAB$` | Métadonnées tables | P2 |
-| `SYS.COL$` | Métadonnées colonnes | P2 |
-| `SYS.IND$` | Métadonnées index | P2 |
-| `SYS.USER$` | Utilisateurs internes | P2 |
-| `SYS.TS$` | Tablespaces internes | P2 |
-| `SYS.AUD$` | Données d'audit brutes | P2 |
+| Table | Description | Priorité | Statut |
+|-------|-------------|----------|--------|
+| `SYS.OBJ$` | Catalogue des objets | P2 | ✅ |
+| `SYS.TAB$` | Métadonnées tables | P2 | ✅ |
+| `SYS.COL$` | Métadonnées colonnes | P2 | ✅ |
+| `SYS.IND$` | Métadonnées index | P2 | ✅ |
+| `SYS.USER$` | Utilisateurs internes | P2 | ✅ |
+| `SYS.TS$` | Tablespaces internes | P2 | ✅ |
+| `SYS.AUD$` | Données d'audit brutes | P2 | ✅ |
 
 ---
 

@@ -128,6 +128,10 @@ export class OracleCatalog extends BaseCatalog {
     // Special tables
     if (upper === 'DICTIONARY' || upper === 'DICT') return this.queryDictionary();
     if (upper === 'DUAL') return this.queryDual();
+    if (upper === 'TAB' || upper === 'CAT') return this.queryTabCat(currentUser);
+
+    // SYS internal tables (SYS.OBJ$, SYS.TAB$, etc.)
+    if (upper.startsWith('SYS.')) return this.querySysInternal(upper.substring(4));
 
     return null;
   }
@@ -176,6 +180,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'V$PGA_TARGET_ADVICE': return this.vPgaTargetAdvice();
       case 'V$SQL_PLAN': return this.vSqlPlan();
       case 'V$RESOURCE_LIMIT': return this.vResourceLimit();
+      case 'V$ASM_DISKGROUP': return this.vAsmDiskgroup();
       default: return emptyResult(`View ${name} not implemented`);
     }
   }
@@ -756,6 +761,26 @@ export class OracleCatalog extends BaseCatalog {
     );
   }
 
+  private vAsmDiskgroup(): ResultSet {
+    return queryResult(
+      [
+        { name: 'GROUP_NUMBER', dataType: oracleNumber(10) },
+        { name: 'NAME', dataType: oracleVarchar2(30) },
+        { name: 'SECTOR_SIZE', dataType: oracleNumber(10) },
+        { name: 'BLOCK_SIZE', dataType: oracleNumber(10) },
+        { name: 'ALLOCATION_UNIT_SIZE', dataType: oracleNumber(20) },
+        { name: 'STATE', dataType: oracleVarchar2(11) },
+        { name: 'TYPE', dataType: oracleVarchar2(6) },
+        { name: 'TOTAL_MB', dataType: oracleNumber(20) },
+        { name: 'FREE_MB', dataType: oracleNumber(20) },
+      ],
+      [
+        [1, 'DATA', 512, 4096, 1048576, 'MOUNTED', 'EXTERN', 102400, 81920],
+        [2, 'FRA', 512, 4096, 1048576, 'MOUNTED', 'EXTERN', 51200, 40960],
+      ]
+    );
+  }
+
   // ── DBA_ views ───────────────────────────────────────────────────
 
   private queryDBA(viewName: string, _currentUser: string): ResultSet | null {
@@ -790,6 +815,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_DB_LINKS': return this.dbaDbLinks();
       case 'DBA_JOBS': return this.dbaJobs();
       case 'DBA_SCHEDULER_JOBS': return this.dbaSchedulerJobs();
+      case 'DBA_SYNONYMS': return this.dbaSynonyms();
       default: return emptyResult(`View ${viewName} not implemented`);
     }
   }
@@ -1308,6 +1334,20 @@ export class OracleCatalog extends BaseCatalog {
     );
   }
 
+  private dbaSynonyms(): ResultSet {
+    const synonyms = this.storage.getAllSynonyms();
+    return queryResult(
+      [
+        { name: 'OWNER', dataType: oracleVarchar2(30) },
+        { name: 'SYNONYM_NAME', dataType: oracleVarchar2(30) },
+        { name: 'TABLE_OWNER', dataType: oracleVarchar2(30) },
+        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
+        { name: 'DB_LINK', dataType: oracleVarchar2(128) },
+      ],
+      synonyms.map(s => [s.owner, s.name, s.tableOwner, s.tableName, s.dbLink ?? null])
+    );
+  }
+
   // ── ALL_ views (user-accessible objects) ─────────────────────────
 
   private queryALL(viewName: string, currentUser: string): ResultSet | null {
@@ -1330,6 +1370,164 @@ export class OracleCatalog extends BaseCatalog {
       result.rows = result.rows.filter(r => String(r[ownerIdx]).toUpperCase() === currentUser.toUpperCase());
     }
     return result;
+  }
+
+  // ── TAB / CAT ──────────────────────────────────────────────────
+
+  private queryTabCat(currentUser: string): ResultSet {
+    const tables = this.storage.getAllTables();
+    const userTables = tables.filter(t => t.schema === currentUser.toUpperCase());
+    return queryResult(
+      [
+        { name: 'TNAME', dataType: oracleVarchar2(30) },
+        { name: 'TABTYPE', dataType: oracleVarchar2(7) },
+      ],
+      userTables.map(t => [t.name, 'TABLE'])
+    );
+  }
+
+  // ── SYS internal tables ───────────────────────────────────────
+
+  private querySysInternal(tableName: string): ResultSet | null {
+    switch (tableName) {
+      case 'OBJ$': return this.sysObj();
+      case 'TAB$': return this.sysTab();
+      case 'COL$': return this.sysCol();
+      case 'IND$': return this.sysInd();
+      case 'USER$': return this.sysUser();
+      case 'TS$': return this.sysTs();
+      case 'AUD$': return this.sysAud();
+      default: return null;
+    }
+  }
+
+  private sysObj(): ResultSet {
+    const tables = this.storage.getAllTables();
+    const views = this.storage.getAllViews();
+    const rows: (string | number | null)[][] = [];
+    let objId = 1000;
+    for (const t of tables) {
+      rows.push([objId++, t.schema, t.name, 2, 'TABLE', 'VALID', new Date().toISOString()]);
+    }
+    for (const schema of this.storage.getSchemas()) {
+      for (const idx of this.storage.getIndexes(schema)) {
+        rows.push([objId++, schema, idx.name, 1, 'INDEX', 'VALID', new Date().toISOString()]);
+      }
+    }
+    for (const v of views) {
+      rows.push([objId++, v.schema, v.name, 4, 'VIEW', 'VALID', new Date().toISOString()]);
+    }
+    return queryResult(
+      [
+        { name: 'OBJ#', dataType: oracleNumber(10) },
+        { name: 'OWNER#', dataType: oracleVarchar2(30) },
+        { name: 'NAME', dataType: oracleVarchar2(128) },
+        { name: 'NAMESPACE', dataType: oracleNumber(10) },
+        { name: 'TYPE#', dataType: oracleVarchar2(13) },
+        { name: 'STATUS', dataType: oracleVarchar2(7) },
+        { name: 'CTIME', dataType: oracleDate() },
+      ],
+      rows
+    );
+  }
+
+  private sysTab(): ResultSet {
+    const tables = this.storage.getAllTables();
+    return queryResult(
+      [
+        { name: 'OBJ#', dataType: oracleNumber(10) },
+        { name: 'TS#', dataType: oracleNumber(10) },
+        { name: 'COLS', dataType: oracleNumber(10) },
+        { name: 'ROWCNT', dataType: oracleNumber(20) },
+        { name: 'BLKCNT', dataType: oracleNumber(10) },
+      ],
+      tables.map((t, i) => [1000 + i, 0, t.columns.length, t.rowCount, Math.ceil(t.rowCount / 100)])
+    );
+  }
+
+  private sysCol(): ResultSet {
+    const tables = this.storage.getAllTables();
+    const rows: (string | number | null)[][] = [];
+    let objId = 1000;
+    for (const t of tables) {
+      for (const c of t.columns) {
+        rows.push([objId, c.name, c.ordinalPosition + 1, c.dataType.name, c.dataType.precision ?? null, c.dataType.scale ?? null, c.dataType.nullable ? 'Y' : 'N']);
+      }
+      objId++;
+    }
+    return queryResult(
+      [
+        { name: 'OBJ#', dataType: oracleNumber(10) },
+        { name: 'NAME', dataType: oracleVarchar2(128) },
+        { name: 'COL#', dataType: oracleNumber(10) },
+        { name: 'TYPE#', dataType: oracleVarchar2(30) },
+        { name: 'LENGTH', dataType: oracleNumber(10) },
+        { name: 'SCALE', dataType: oracleNumber(10) },
+        { name: 'NULL$', dataType: oracleVarchar2(1) },
+      ],
+      rows
+    );
+  }
+
+  private sysInd(): ResultSet {
+    const rows: (string | number)[][] = [];
+    let i = 0;
+    for (const schema of this.storage.getSchemas()) {
+      for (const idx of this.storage.getIndexes(schema)) {
+        rows.push([2000 + i, 1000, idx.unique ? 1 : 0, idx.columns.length, idx.unique ? 'UNIQUE' : 'NONUNIQUE']);
+        i++;
+      }
+    }
+    return queryResult(
+      [
+        { name: 'OBJ#', dataType: oracleNumber(10) },
+        { name: 'BO#', dataType: oracleNumber(10) },
+        { name: 'TYPE#', dataType: oracleNumber(10) },
+        { name: 'COLS', dataType: oracleNumber(10) },
+        { name: 'UNIQUENESS', dataType: oracleVarchar2(9) },
+      ],
+      rows
+    );
+  }
+
+  private sysUser(): ResultSet {
+    const users = this.getAllUsers();
+    return queryResult(
+      [
+        { name: 'USER#', dataType: oracleNumber(10) },
+        { name: 'NAME', dataType: oracleVarchar2(30) },
+        { name: 'TYPE#', dataType: oracleNumber(10) },
+        { name: 'CTIME', dataType: oracleDate() },
+      ],
+      users.map((u, i) => [i + 1, u.username, 1, u.created.toISOString()])
+    );
+  }
+
+  private sysTs(): ResultSet {
+    const tablespaces = this.storage.getAllTablespaces();
+    return queryResult(
+      [
+        { name: 'TS#', dataType: oracleNumber(10) },
+        { name: 'NAME', dataType: oracleVarchar2(30) },
+        { name: 'BLOCKSIZE', dataType: oracleNumber(10) },
+        { name: 'STATUS$', dataType: oracleVarchar2(9) },
+      ],
+      tablespaces.map((ts, i) => [i, ts.name, ts.blockSize, 'ONLINE'])
+    );
+  }
+
+  private sysAud(): ResultSet {
+    return queryResult(
+      [
+        { name: 'SESSIONID', dataType: oracleNumber(10) },
+        { name: 'USERID', dataType: oracleVarchar2(30) },
+        { name: 'ACTION#', dataType: oracleNumber(10) },
+        { name: 'RETURNCODE', dataType: oracleNumber(10) },
+        { name: 'TIMESTAMP#', dataType: oracleDate() },
+        { name: 'OBJ$NAME', dataType: oracleVarchar2(128) },
+      ],
+      []
+    );
   }
 
   // ── DICTIONARY view ──────────────────────────────────────────────
@@ -1400,6 +1598,8 @@ export class OracleCatalog extends BaseCatalog {
       ['DBA_DB_LINKS', 'Database links'],
       ['DBA_JOBS', 'DBMS_JOB scheduled jobs'],
       ['DBA_SCHEDULER_JOBS', 'DBMS_SCHEDULER jobs'],
+      ['DBA_SYNONYMS', 'Synonyms'],
+      ['V$ASM_DISKGROUP', 'ASM disk groups'],
     ];
     return queryResult(
       [

@@ -19,7 +19,7 @@ import { completeInput } from '@/terminal/core/TabCompletionHelper';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
-import { handleLsnrctl, handleTnsping } from '@/terminal/commands/OracleCommands';
+import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 
 // ─── Theme ────────────────────────────────────────────────────────
@@ -211,6 +211,21 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (parts[0] === 'tnsping') {
         handleTnsping(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
+        this.notify();
+        return;
+      }
+      if (parts[0] === 'dbca') {
+        handleDbca(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
+        this.notify();
+        return;
+      }
+      if (parts[0] === 'orapwd') {
+        handleOrapwd(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
+        this.notify();
+        return;
+      }
+      if (parts[0] === 'adrci') {
+        handleAdrci(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
         this.notify();
         return;
       }
