@@ -825,4 +825,440 @@ C'est le cœur battant d'Oracle Database. 💓
 
 ---
 
-*La suite arrive avec la Section 6 : Présentation de notre laboratoire...*
+## 6. Présentation de notre laboratoire
+
+Passons maintenant à la pratique ! Voici l'environnement que nous allons utiliser pour ce tutoriel. Ne t'inquiète pas si certains éléments te semblent flous — on va tout découvrir ensemble, étape par étape. 🔧
+
+### 6.1 Notre topologie
+
+Dans ce lab, on simule un environnement d'entreprise typique avec un serveur de base de données Oracle accessible depuis des postes clients via le réseau.
+
+```
+                     ┌─────────────────────────────────┐
+                     │     Serveur Linux (DB-SRV)      │
+                     │                                  │
+                     │  Oracle Database 19c             │
+                     │  Instance : ORCL                 │
+                     │  Listener : port 1521            │
+                     │  IP : 192.168.1.100              │
+                     └──────────────┬───────────────────┘
+                                    │
+                              [Switch SW1]
+                            ┌───────┼───────┐
+                            │       │       │
+                    ┌───────┴──┐ ┌──┴────┐ ┌┴────────────┐
+                    │ PC Linux │ │ PC Win│ │ App Server  │
+                    │ (DBA)    │ │ (Dev) │ │ (optionnel) │
+                    │ .10      │ │ .20   │ │ .30         │
+                    └──────────┘ └───────┘ └─────────────┘
+```
+
+| Machine | Rôle | IP | Logiciels |
+|---------|------|----|-----------|
+| **DB-SRV** | Serveur Oracle | 192.168.1.100 | Oracle 19c, Listener |
+| **PC Linux** | Poste DBA | 192.168.1.10 | SQL*Plus, tnsping, lsnrctl |
+| **PC Windows** | Poste développeur | 192.168.1.20 | SQL*Plus ou SQL Developer |
+| **App Server** | Serveur applicatif (optionnel) | 192.168.1.30 | Application Java/Python |
+
+> 💡 **Dans notre simulateur**, tu as directement accès au serveur Linux avec Oracle pré-installé. Ouvre le terminal du serveur et tu peux tout de suite lancer SQL*Plus ! Pas besoin de configurer le réseau pour commencer.
+
+### 6.2 Les schémas d'exemple
+
+Notre lab vient avec deux schémas pré-installés, remplis de données d'exemple — parfaits pour apprendre et expérimenter sans risque.
+
+**Le schéma HR (Human Resources)**
+
+C'est le schéma d'exemple officiel d'Oracle. Il modélise le département des ressources humaines d'une entreprise fictive avec 7 tables interconnectées :
+
+```
+  ┌───────────┐     ┌────────────┐     ┌─────────────┐
+  │  REGIONS  │◄────│ COUNTRIES  │◄────│  LOCATIONS  │
+  │  (4 rows) │     │ (25 rows)  │     │  (23 rows)  │
+  └───────────┘     └────────────┘     └──────┬──────┘
+                                              │
+                                     ┌────────▼────────┐
+                                     │  DEPARTMENTS    │
+                                     │  (27 rows)      │
+                                     └───┬─────────┬───┘
+                                         │         │
+                              ┌──────────▼──┐  ┌───▼──────────┐
+                              │  EMPLOYEES  │  │    JOBS       │
+                              │  (107 rows) │  │  (19 rows)    │
+                              └──────┬──────┘  └───────────────┘
+                                     │
+                              ┌──────▼──────┐
+                              │ JOB_HISTORY │
+                              │  (10 rows)  │
+                              └─────────────┘
+```
+
+Ce schéma est idéal pour apprendre les `SELECT`, les `JOIN`, les sous-requêtes, les agrégations... Voici quelques requêtes intéressantes qu'on fera :
+
+```sql
+-- Les employés et leur département
+SELECT e.first_name, e.last_name, d.department_name
+FROM HR.EMPLOYEES e
+JOIN HR.DEPARTMENTS d ON e.department_id = d.department_id;
+
+-- Le salaire moyen par département
+SELECT d.department_name, AVG(e.salary) AS salaire_moyen
+FROM HR.EMPLOYEES e
+JOIN HR.DEPARTMENTS d ON e.department_id = d.department_id
+GROUP BY d.department_name
+ORDER BY salaire_moyen DESC;
+
+-- Les employés qui gagnent plus que la moyenne
+SELECT first_name, last_name, salary
+FROM HR.EMPLOYEES
+WHERE salary > (SELECT AVG(salary) FROM HR.EMPLOYEES);
+```
+
+**Le schéma SCOTT (le classique historique)**
+
+Ce schéma existe depuis **1977** — il a été créé par Bruce Scott, l'un des premiers employés d'Oracle. C'est le schéma le plus simple et le plus connu du monde Oracle :
+
+```
+  ┌──────────┐     ┌──────────┐
+  │   DEPT   │◄────│   EMP    │
+  │ (4 rows) │     │ (14 rows)│
+  └──────────┘     └──────────┘
+
+  ┌──────────┐     ┌──────────┐
+  │  BONUS   │     │ SALGRADE │
+  │ (0 rows) │     │ (5 rows) │
+  └──────────┘     └──────────┘
+```
+
+```sql
+-- La table EMP classique
+SELECT empno, ename, job, sal, dname
+FROM SCOTT.EMP e
+JOIN SCOTT.DEPT d ON e.deptno = d.deptno;
+
+-- Résultat typique :
+-- EMPNO  ENAME   JOB        SAL   DNAME
+-- 7839   KING    PRESIDENT  5000  ACCOUNTING
+-- 7698   BLAKE   MANAGER    2850  SALES
+-- 7782   CLARK   MANAGER    2450  ACCOUNTING
+-- ...
+```
+
+> 🔑 **Fun fact** : Le mot de passe original du compte SCOTT est `tiger` — c'était le nom du chat de Bruce Scott ! 🐱 Depuis 1977, des générations de DBA ont appris Oracle avec `sqlplus scott/tiger`.
+
+### 6.3 Arborescence Oracle sur le serveur
+
+Sur un serveur Oracle en production, les fichiers sont organisés selon une convention standard appelée **OFA** (Optimal Flexible Architecture). Voici l'arborescence type :
+
+```
+/u01/app/oracle/                          ← ORACLE_BASE
+├── product/
+│   └── 19.0.0/                           ← ORACLE_HOME
+│       └── dbhome_1/
+│           ├── bin/                       ← Exécutables
+│           │   ├── sqlplus               ← Client SQL*Plus
+│           │   ├── lsnrctl               ← Contrôle du Listener
+│           │   ├── dbca                  ← Database Configuration Assistant
+│           │   ├── rman                  ← Recovery Manager
+│           │   ├── tnsping              ← Test de connectivité TNS
+│           │   ├── orapwd               ← Gestion du password file
+│           │   └── adrci                ← Diagnostic (ADR Command Interpreter)
+│           ├── network/
+│           │   └── admin/
+│           │       ├── tnsnames.ora      ← Alias de connexion (côté client)
+│           │       ├── listener.ora      ← Configuration du Listener
+│           │       └── sqlnet.ora        ← Paramètres réseau SQL*Net
+│           ├── dbs/
+│           │   ├── initORCL.ora          ← Fichier d'initialisation (pfile)
+│           │   ├── spfileORCL.ora        ← Server Parameter File (spfile)
+│           │   └── orapwORCL             ← Password file
+│           └── lib/, include/, rdbms/... ← Bibliothèques et headers
+│
+├── diag/                                 ← Diagnostic et traces
+│   └── rdbms/orcl/ORCL/
+│       ├── alert/
+│       │   └── log.xml                   ← Alert log (XML)
+│       └── trace/
+│           └── alert_ORCL.log            ← Alert log (texte)
+│
+└── oradata/                              ← Fichiers de la base
+    └── ORCL/
+        ├── system01.dbf                  ← Tablespace SYSTEM (800 Mo)
+        ├── sysaux01.dbf                  ← Tablespace SYSAUX (550 Mo)
+        ├── undotbs01.dbf                 ← Tablespace UNDO (100 Mo)
+        ├── users01.dbf                   ← Tablespace USERS (100 Mo)
+        ├── temp01.dbf                    ← Tablespace TEMP (100 Mo)
+        ├── redo01.log                    ← Redo Log Groupe 1
+        ├── redo02.log                    ← Redo Log Groupe 2
+        ├── redo03.log                    ← Redo Log Groupe 3
+        └── control01.ctl                ← Control File
+```
+
+Les variables d'environnement essentielles :
+
+```bash
+# Ces variables doivent être définies pour que les outils Oracle fonctionnent
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_HOME=$ORACLE_BASE/product/19.0.0/dbhome_1
+export ORACLE_SID=ORCL
+export PATH=$ORACLE_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:$LD_LIBRARY_PATH
+export NLS_LANG=FRENCH_FRANCE.AL32UTF8
+```
+
+> 💡 **Astuce** : Ces variables sont généralement définies dans le fichier `~/.bash_profile` ou `~/.bashrc` de l'utilisateur `oracle`. Comme ça, elles sont automatiquement chargées à chaque connexion.
+
+### 6.4 Se connecter à Oracle avec SQL*Plus
+
+**SQL*Plus** est le client en ligne de commande officiel d'Oracle. C'est l'outil de base que tout DBA doit maîtriser — un peu comme le `terminal` pour un admin Linux. On l'utilisera tout au long de ce tutoriel.
+
+**Connexion locale (depuis le serveur lui-même) :**
+
+```bash
+# Connexion en tant que SYS (super-admin) — nécessite le rôle SYSDBA
+sqlplus / as sysdba
+
+# Connexion avec un utilisateur normal
+sqlplus hr/hr
+
+# Connexion avec le compte SCOTT
+sqlplus scott/tiger
+```
+
+**Connexion distante (depuis un poste client via le réseau) :**
+
+```bash
+# Avec un alias TNS configuré dans tnsnames.ora
+sqlplus hr/hr@ORCL
+
+# Avec la syntaxe EZConnect (sans tnsnames.ora)
+sqlplus hr/hr@192.168.1.100:1521/orcl
+```
+
+**Ce que tu vois à la connexion :**
+
+```
+SQL*Plus: Release 19.0.0.0.0 - Production on Mon Mar 24 10:30:00 2026
+Version 19.3.0.0.0
+
+Copyright (c) 1982, 2019, Oracle.  All rights reserved.
+
+Connected to:
+Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+Version 19.3.0.0.0
+
+SQL>
+```
+
+Le prompt `SQL>` attend tes commandes. Bienvenue dans SQL*Plus ! 🎉
+
+### 6.5 Les commandes SQL*Plus essentielles
+
+Avant de plonger dans le SQL, voici les commandes spécifiques à **SQL*Plus** (ce ne sont pas du SQL, ce sont des commandes de l'outil) :
+
+**Commandes d'information :**
+
+```sql
+-- Qui suis-je ?
+SHOW USER;
+-- USER is "HR"
+
+-- Quelle version d'Oracle ?
+SELECT * FROM V$VERSION;
+
+-- Voir les paramètres de l'instance
+SHOW PARAMETER db_name;
+SHOW PARAMETER memory_target;
+SHOW SGA;
+```
+
+**Commandes de formatage (pour que les résultats soient lisibles) :**
+
+```sql
+-- Largeur de ligne (par défaut 80, souvent trop court)
+SET LINESIZE 200;
+
+-- Nombre de lignes par page
+SET PAGESIZE 50;
+
+-- Formater une colonne spécifique
+COLUMN first_name FORMAT A15;
+COLUMN salary FORMAT 999,999.99;
+COLUMN department_name FORMAT A20;
+
+-- Afficher la sortie de DBMS_OUTPUT (indispensable pour PL/SQL)
+SET SERVEROUTPUT ON;
+```
+
+**Commandes de navigation :**
+
+```sql
+-- Afficher la structure d'une table
+DESC HR.EMPLOYEES;
+-- ou
+DESCRIBE HR.EMPLOYEES;
+
+/*
+ Name                 Null?    Type
+ -------------------- -------- -------------------
+ EMPLOYEE_ID          NOT NULL NUMBER(6)
+ FIRST_NAME                    VARCHAR2(20)
+ LAST_NAME            NOT NULL VARCHAR2(25)
+ EMAIL                NOT NULL VARCHAR2(25)
+ PHONE_NUMBER                  VARCHAR2(20)
+ HIRE_DATE            NOT NULL DATE
+ JOB_ID               NOT NULL VARCHAR2(10)
+ SALARY                        NUMBER(8,2)
+ COMMISSION_PCT                NUMBER(2,2)
+ MANAGER_ID                    NUMBER(6)
+ DEPARTMENT_ID                 NUMBER(4)
+*/
+
+-- Lister toutes mes tables
+SELECT table_name FROM USER_TABLES;
+
+-- Quitter SQL*Plus
+EXIT;
+-- ou
+QUIT;
+```
+
+**Commandes de gestion :**
+
+```sql
+-- Se connecter sous un autre utilisateur sans quitter
+CONNECT scott/tiger;
+
+-- Re-exécuter la dernière commande
+/
+
+-- Effacer l'écran (selon le terminal)
+CLEAR SCREEN;
+
+-- Définir une variable de substitution
+DEFINE mon_dept = 50;
+SELECT * FROM HR.EMPLOYEES WHERE department_id = &mon_dept;
+```
+
+### 6.6 Les utilisateurs pré-configurés de notre lab
+
+Voici les comptes disponibles dans notre laboratoire, avec leurs mots de passe et leurs rôles :
+
+| Utilisateur | Mot de passe | Rôle | Usage |
+|-------------|-------------|------|-------|
+| **SYS** | (connexion `AS SYSDBA`) | Super-administrateur | Administration critique, startup/shutdown |
+| **SYSTEM** | `manager` | Administrateur | Administration quotidienne |
+| **HR** | `hr` | Propriétaire du schéma HR | Requêtes sur les données RH |
+| **SCOTT** | `tiger` | Propriétaire du schéma SCOTT | Requêtes sur les données classiques |
+| **DBSNMP** | `dbsnmp` | Monitoring | Supervision (Oracle Enterprise Manager) |
+
+> ⚠️ **En production, ne jamais garder les mots de passe par défaut !** Les premiers hackers à cibler une base Oracle essaieront `scott/tiger` et `system/manager`. Change-les immédiatement après l'installation :
+> ```sql
+> ALTER USER scott IDENTIFIED BY Un_Vrai_Mot_De_Passe_2024!;
+> ```
+
+### 6.7 Vérifier que tout fonctionne
+
+Avant de commencer les exercices, vérifions que notre environnement est opérationnel. Voici une check-list rapide à dérouler :
+
+**1. Vérifier que l'instance est démarrée :**
+
+```sql
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             OPEN
+```
+
+Si le statut n'est pas `OPEN`, démarre l'instance :
+```sql
+SQL> STARTUP;
+ORACLE instance started.
+...
+Database opened.
+```
+
+**2. Vérifier le Listener :**
+
+```bash
+$ lsnrctl status
+
+LSNRCTL for Linux: Version 19.0.0.0.0 - Production
+...
+Listening Endpoints Summary...
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=192.168.1.100)(PORT=1521)))
+Services Summary...
+  Service "orcl" has 1 instance(s).
+    Instance "ORCL", status READY, has 1 handler(s) for this service...
+```
+
+Si le Listener n'est pas démarré :
+```bash
+$ lsnrctl start
+```
+
+**3. Vérifier les schémas d'exemple :**
+
+```sql
+SQL> CONNECT hr/hr;
+Connected.
+
+SQL> SELECT COUNT(*) FROM EMPLOYEES;
+
+  COUNT(*)
+----------
+       107
+
+SQL> CONNECT scott/tiger;
+Connected.
+
+SQL> SELECT COUNT(*) FROM EMP;
+
+  COUNT(*)
+----------
+        14
+```
+
+**4. Vérifier les tablespaces :**
+
+```sql
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+SQL> SELECT tablespace_name, status FROM DBA_TABLESPACES;
+
+TABLESPACE_NAME                STATUS
+------------------------------ ---------
+SYSTEM                         ONLINE
+SYSAUX                         ONLINE
+UNDOTBS1                       ONLINE
+TEMP                           ONLINE
+USERS                          ONLINE
+```
+
+Si tout est `ONLINE` et que les schémas HR et SCOTT retournent des données, tu es prêt ! 🚀
+
+### 6.8 Notre plan d'attaque pour la suite
+
+Maintenant que le labo est en place, voici ce qu'on va faire dans les prochaines sections :
+
+| Section | Ce qu'on va apprendre | Avec quel utilisateur |
+|---------|----------------------|-----------------------|
+| **7. Installation et arborescence** | Comprendre l'arborescence OFA, les fichiers de config | `oracle` (OS user) |
+| **8. Démarrage et arrêt** | STARTUP, SHUTDOWN, les différents modes | SYS AS SYSDBA |
+| **9. SQL*Plus avancé** | Formatage, variables, scripts | HR, SCOTT |
+| **10. SQL — Créer et manipuler** | CREATE TABLE, INSERT, SELECT, JOIN... | HR, SCOTT |
+| **11. Administration** | Tablespaces, utilisateurs, sauvegardes | SYS, SYSTEM |
+| **12. PL/SQL** | Blocs anonymes, procédures, fonctions | HR |
+| **13. Vues système** | V$SESSION, diagnostics, performance | SYS, SYSTEM |
+| **14. Réseau Oracle** | Listener, TNS, connexions distantes | oracle (OS), SYS |
+| **15. Cas pratiques** | Scénarios réels de bout en bout | Tous |
+
+> 💡 **Conseil** : N'hésite pas à expérimenter ! Le lab est fait pour ça. Tu ne peux rien casser de grave, et si jamais tu fais une bêtise, un `ROLLBACK;` ou un redémarrage de l'instance remet tout en ordre. Amuse-toi ! 😄
+
+---
+
+*La suite arrive avec la Section 7 : Installation et arborescence Oracle...*
