@@ -1769,4 +1769,526 @@ Thread 1 advanced to log sequence 142
 
 ---
 
-*La suite arrive avec la Section 8 : Démarrage et arrêt d'une instance Oracle...*
+## 8. Démarrage et arrêt d'une instance Oracle
+
+C'est l'une des tâches les plus fondamentales du DBA : savoir démarrer et arrêter proprement une instance Oracle. Ça semble simple en apparence, mais il y a beaucoup de subtilités à connaître — et c'est souvent en situation de crise (panne, maintenance d'urgence) qu'on a besoin de maîtriser ces commandes sur le bout des doigts. ⚡
+
+### 8.1 Rappel : les états d'une instance
+
+On l'a vu dans la section 4, mais ça vaut la peine de le revoir en détail maintenant qu'on va pratiquer. L'instance Oracle passe par 4 états successifs :
+
+```
+  ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
+  │ SHUTDOWN │─────►│ NOMOUNT  │─────►│  MOUNT   │─────►│   OPEN   │
+  │          │      │          │      │          │      │          │
+  │ Rien ne  │      │ SGA      │      │ Control  │      │ Datafiles│
+  │ tourne   │      │ allouée  │      │ file lu  │      │ ouverts  │
+  │          │      │ Process. │      │ Base     │      │ Base     │
+  │          │      │ lancés   │      │ associée │      │ prête !  │
+  └──────────┘      └──────────┘      └──────────┘      └──────────┘
+```
+
+### 8.2 STARTUP : démarrer l'instance
+
+#### 8.2.1 Démarrage complet (le plus courant)
+
+```sql
+SQL> CONNECT / AS SYSDBA;
+Connected to an idle instance.
+
+SQL> STARTUP;
+ORACLE instance started.
+
+Total System Global Area  2147483648 bytes
+Fixed Size                   8901624 bytes
+Variable Size              603979768 bytes
+Database Buffers          1526726656 bytes
+Redo Buffers                 7876096 bytes
+Database mounted.
+Database opened.
+```
+
+La commande `STARTUP` sans option effectue les trois étapes d'un coup : NOMOUNT → MOUNT → OPEN. C'est le mode utilisé dans 90% des cas.
+
+#### 8.2.2 Démarrage étape par étape
+
+Parfois, tu as besoin de t'arrêter à un état intermédiaire. Voici comment :
+
+**STARTUP NOMOUNT — S'arrêter après le lancement de l'instance :**
+
+```sql
+SQL> STARTUP NOMOUNT;
+ORACLE instance started.
+
+Total System Global Area  2147483648 bytes
+...
+```
+
+À ce stade, la SGA est allouée et les processus d'arrière-plan (PMON, SMON, DBW0, LGWR...) tournent, mais **aucune base de données n'est associée**.
+
+> 🔑 **Quand utiliser NOMOUNT ?**
+> - Recréer un control file perdu (`CREATE CONTROLFILE`)
+> - Créer une nouvelle base de données (`CREATE DATABASE`)
+> - Certaines opérations de récupération avec RMAN
+
+**STARTUP MOUNT — S'arrêter après la lecture du control file :**
+
+```sql
+-- Si tu es déjà en NOMOUNT :
+SQL> ALTER DATABASE MOUNT;
+Database mounted.
+
+-- Ou directement depuis SHUTDOWN :
+SQL> STARTUP MOUNT;
+ORACLE instance started.
+...
+Database mounted.
+```
+
+À ce stade, Oracle a lu le control file et connaît l'emplacement de tous les fichiers. Mais les datafiles ne sont pas encore ouverts — les utilisateurs ne peuvent pas se connecter.
+
+> 🔑 **Quand utiliser MOUNT ?**
+> - Activer/désactiver le mode ARCHIVELOG
+> - Effectuer un recovery complet de la base
+> - Renommer ou déplacer des datafiles
+> - Effectuer des opérations de maintenance sur les redo logs
+
+**Ouvrir la base depuis l'état MOUNT :**
+
+```sql
+SQL> ALTER DATABASE OPEN;
+Database opened.
+```
+
+#### 8.2.3 Les options spéciales de STARTUP
+
+**STARTUP RESTRICT — Ouvrir la base en mode restreint :**
+
+```sql
+SQL> STARTUP RESTRICT;
+ORACLE instance started.
+...
+Database opened.
+```
+
+En mode restreint, seuls les utilisateurs ayant le privilège `RESTRICTED SESSION` peuvent se connecter. C'est parfait pour effectuer des opérations de maintenance sans être dérangé par les utilisateurs.
+
+```sql
+-- Vérifier si la base est en mode restreint
+SQL> SELECT logins FROM V$INSTANCE;
+
+LOGINS
+----------
+RESTRICTED
+
+-- Passer en mode restreint à chaud (sans redémarrer)
+SQL> ALTER SYSTEM ENABLE RESTRICTED SESSION;
+
+-- Quitter le mode restreint
+SQL> ALTER SYSTEM DISABLE RESTRICTED SESSION;
+
+SQL> SELECT logins FROM V$INSTANCE;
+
+LOGINS
+----------
+ALLOWED
+```
+
+> 💡 **Cas d'usage typique** : Tu dois faire un import massif de données (avec `impdp`) et tu ne veux pas que les utilisateurs se connectent pendant l'opération. Tu passes en mode restreint, tu fais ton import, puis tu rouvres.
+
+**STARTUP FORCE — Le redémarrage brutal :**
+
+```sql
+SQL> STARTUP FORCE;
+ORACLE instance started.
+...
+Database opened.
+```
+
+`STARTUP FORCE` est l'équivalent d'un `SHUTDOWN ABORT` suivi d'un `STARTUP`. Il arrête brutalement l'instance (si elle tourne) puis la relance. Oracle effectuera automatiquement un **Instance Recovery** au démarrage.
+
+> ⚠️ **À n'utiliser qu'en dernier recours !** Par exemple quand un `SHUTDOWN IMMEDIATE` est bloqué depuis trop longtemps et que tu n'arrives pas à arrêter l'instance proprement.
+
+**STARTUP UPGRADE — Pour les mises à jour :**
+
+```sql
+SQL> STARTUP UPGRADE;
+```
+
+Ce mode est utilisé exclusivement lors des **migrations de version** (par exemple de 12c vers 19c). Il démarre la base dans un mode spécial qui permet d'exécuter les scripts de mise à jour du dictionnaire de données.
+
+### 8.3 SHUTDOWN : arrêter l'instance
+
+Il existe quatre modes d'arrêt, du plus doux au plus brutal. Le choix du bon mode est crucial — utiliser le mauvais mode au mauvais moment peut soit te faire perdre du temps, soit corrompre des données.
+
+#### 8.3.1 SHUTDOWN NORMAL — Le gentleman 🎩
+
+```sql
+SQL> SHUTDOWN NORMAL;
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Sessions existantes | ⏳ Oracle **attend** qu'elles se déconnectent d'elles-mêmes |
+| Transactions en cours | ⏳ Oracle attend la fin (COMMIT ou ROLLBACK par l'utilisateur) |
+| Checkpoint | ✅ Effectué avant l'arrêt |
+| Recovery au redémarrage | ❌ Non nécessaire |
+
+> ⚠️ **Le piège** : Si un développeur a laissé une session ouverte et est parti déjeuner (ou en vacances... 🏖️), le `SHUTDOWN NORMAL` attendra **indéfiniment**. C'est pour ça qu'en pratique, on ne l'utilise quasiment jamais.
+
+#### 8.3.2 SHUTDOWN IMMEDIATE — Le choix du DBA 🏆
+
+```sql
+SQL> SHUTDOWN IMMEDIATE;
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Sessions existantes | 🔌 **Coupées immédiatement** |
+| Transactions en cours | ↩️ **Rollback automatique** |
+| Checkpoint | ✅ Effectué avant l'arrêt |
+| Recovery au redémarrage | ❌ Non nécessaire |
+
+C'est **le mode le plus utilisé** en production. Il coupe toutes les sessions, annule proprement les transactions non validées, écrit les blocs dirty sur disque (checkpoint), puis arrête l'instance. L'arrêt est propre, pas de recovery nécessaire au redémarrage.
+
+> 💡 **Temps d'exécution** : Le temps d'un `SHUTDOWN IMMEDIATE` dépend du volume de transactions à annuler (rollback). Si une grosse transaction de 2 millions de lignes est en cours, le rollback peut prendre plusieurs minutes. Sois patient — c'est normal !
+
+#### 8.3.3 SHUTDOWN TRANSACTIONAL — Le compromis 🤝
+
+```sql
+SQL> SHUTDOWN TRANSACTIONAL;
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Nouvelles transactions | ❌ Refusées (après COMMIT de la transaction en cours) |
+| Transactions en cours | ⏳ Oracle **attend** qu'elles se terminent |
+| Checkpoint | ✅ Effectué avant l'arrêt |
+| Recovery au redémarrage | ❌ Non nécessaire |
+
+Ce mode est un compromis : il attend que les transactions en cours se terminent (pour ne pas perdre de travail), mais dès qu'une session a terminé sa transaction, elle est déconnectée.
+
+> 💡 **Quand l'utiliser ?** Quand tu veux être poli avec les utilisateurs mais que tu ne veux pas attendre éternellement. Par exemple avant une maintenance planifiée.
+
+#### 8.3.4 SHUTDOWN ABORT — Le bouton d'urgence 🚨
+
+```sql
+SQL> SHUTDOWN ABORT;
+ORACLE instance shut down.
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Sessions existantes | 💀 **Tuées instantanément** |
+| Transactions en cours | ❌ **Pas de rollback** |
+| Checkpoint | ❌ **Pas de checkpoint** |
+| Recovery au redémarrage | ✅ **Obligatoire** (automatique) |
+
+`SHUTDOWN ABORT` est l'équivalent de débrancher la prise du serveur. Tout s'arrête instantanément : pas de rollback, pas de checkpoint, rien. Au prochain démarrage, SMON devra effectuer un **Instance Recovery** (roll forward + roll back) pour remettre la base en état cohérent.
+
+> ⚠️ **À n'utiliser que si** :
+> - `SHUTDOWN IMMEDIATE` est bloqué depuis trop longtemps
+> - L'instance est dans un état instable (processus zombie, corruption mémoire...)
+> - Tu as un `STARTUP FORCE` en plan B et que tu sais ce que tu fais
+
+### 8.4 Tableau récapitulatif des modes d'arrêt
+
+| | NORMAL | IMMEDIATE | TRANSACTIONAL | ABORT |
+|---|:---:|:---:|:---:|:---:|
+| Attend les déconnexions | ✅ | ❌ | ❌ | ❌ |
+| Attend la fin des transactions | ✅ | ❌ | ✅ | ❌ |
+| Rollback des transactions non validées | ✅ | ✅ | ✅ | ❌ |
+| Checkpoint (écriture des dirty blocks) | ✅ | ✅ | ✅ | ❌ |
+| Recovery au prochain démarrage | ❌ | ❌ | ❌ | ✅ |
+| **Usage typique** | Jamais 😅 | **Production** | Maintenance planifiée | Urgence |
+
+### 8.5 Exercice pratique : le cycle complet
+
+Mettons tout ça en pratique. Voici un exercice complet de démarrage/arrêt avec les vérifications à chaque étape :
+
+```sql
+-- ═══════════════════════════════════════════════
+-- EXERCICE : Cycle complet démarrage / arrêt
+-- ═══════════════════════════════════════════════
+
+-- Étape 1 : Se connecter en tant que SYSDBA
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+-- Étape 2 : Vérifier l'état actuel
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             OPEN
+
+-- Étape 3 : Arrêter proprement
+SQL> SHUTDOWN IMMEDIATE;
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+
+-- Étape 4 : Vérifier qu'on est bien arrêté
+SQL> SELECT status FROM V$INSTANCE;
+ERROR:
+ORA-01034: ORACLE not available
+-- C'est normal ! L'instance est arrêtée.
+
+-- Étape 5 : Démarrer en mode NOMOUNT
+SQL> STARTUP NOMOUNT;
+ORACLE instance started.
+
+Total System Global Area  2147483648 bytes
+Fixed Size                   8901624 bytes
+Variable Size              603979768 bytes
+Database Buffers          1526726656 bytes
+Redo Buffers                 7876096 bytes
+
+-- Étape 6 : Vérifier — on est en NOMOUNT
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             STARTED
+
+-- Note : "STARTED" = NOMOUNT dans V$INSTANCE
+
+-- Étape 7 : Passer en MOUNT
+SQL> ALTER DATABASE MOUNT;
+Database mounted.
+
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             MOUNTED
+
+-- Étape 8 : Ouvrir la base
+SQL> ALTER DATABASE OPEN;
+Database opened.
+
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             OPEN
+
+-- Étape 9 : Vérifier que tout fonctionne
+SQL> SELECT COUNT(*) FROM HR.EMPLOYEES;
+
+  COUNT(*)
+----------
+       107
+
+-- ✅ Tout est opérationnel !
+```
+
+### 8.6 Démarrage et arrêt automatique au boot du serveur
+
+En production, on veut que la base Oracle démarre automatiquement quand le serveur Linux redémarre. Voici comment configurer ça :
+
+**Méthode 1 — Le fichier /etc/oratab :**
+
+Oracle utilise le fichier `/etc/oratab` pour savoir quelles bases démarrer automatiquement :
+
+```bash
+# Format : SID:ORACLE_HOME:AUTO_START (Y=oui, N=non)
+cat /etc/oratab
+
+ORCL:/u01/app/oracle/product/19.0.0/dbhome_1:Y
+```
+
+Le `Y` à la fin indique que cette base doit être démarrée automatiquement. Les scripts `dbstart` et `dbshut` fournis par Oracle lisent ce fichier :
+
+```bash
+# Démarrer toutes les bases marquées "Y"
+$ORACLE_HOME/bin/dbstart $ORACLE_HOME
+
+# Arrêter toutes les bases marquées "Y"
+$ORACLE_HOME/bin/dbshut $ORACLE_HOME
+```
+
+**Méthode 2 — Service systemd (recommandé sur les systèmes modernes) :**
+
+```bash
+# Créer un fichier service
+sudo cat > /etc/systemd/system/oracle-db.service << 'EOF'
+[Unit]
+Description=Oracle Database Service
+After=network.target
+
+[Service]
+Type=forking
+User=oracle
+Group=oinstall
+Environment="ORACLE_BASE=/u01/app/oracle"
+Environment="ORACLE_HOME=/u01/app/oracle/product/19.0.0/dbhome_1"
+Environment="ORACLE_SID=ORCL"
+ExecStart=/u01/app/oracle/product/19.0.0/dbhome_1/bin/dbstart /u01/app/oracle/product/19.0.0/dbhome_1
+ExecStop=/u01/app/oracle/product/19.0.0/dbhome_1/bin/dbshut /u01/app/oracle/product/19.0.0/dbhome_1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Activer le service
+sudo systemctl daemon-reload
+sudo systemctl enable oracle-db
+sudo systemctl start oracle-db
+
+# Vérifier le statut
+sudo systemctl status oracle-db
+```
+
+> 💡 **N'oublie pas le Listener !** La base de données peut tourner, mais sans le Listener les clients distants ne peuvent pas se connecter. Crée un service similaire pour le Listener, ou ajoute `lsnrctl start` dans le script de démarrage.
+
+### 8.7 Diagnostiquer un démarrage qui échoue
+
+Le démarrage ne se passe pas toujours bien. Voici les erreurs les plus fréquentes et comment les résoudre :
+
+**ORA-01078: failure in processing system parameters**
+```
+SQL> STARTUP;
+ORA-01078: failure in processing system parameters
+```
+→ Oracle ne trouve pas le fichier d'initialisation (spfile ou pfile). Vérifie que `spfileORCL.ora` ou `initORCL.ora` existe dans `$ORACLE_HOME/dbs/`.
+
+```bash
+ls $ORACLE_HOME/dbs/spfile*.ora $ORACLE_HOME/dbs/init*.ora
+```
+
+**ORA-00205: error in identifying control file**
+```
+SQL> STARTUP;
+ORA-00205: error in identifying control file
+```
+→ Le control file est introuvable ou corrompu. Vérifie son emplacement dans le spfile et l'existence du fichier sur disque.
+
+```sql
+-- Depuis un pfile temporaire, vérifier le paramètre
+SHOW PARAMETER control_files;
+```
+
+```bash
+ls -l /u02/oradata/ORCL/control*.ctl
+```
+
+**ORA-01157: cannot identify/lock data file N — see DBWR trace file**
+```
+SQL> ALTER DATABASE OPEN;
+ORA-01157: cannot identify/lock data file 4
+ORA-01110: data file 4: '/u02/oradata/ORCL/users01.dbf'
+```
+→ Un datafile est manquant ou inaccessible. Si le tablespace n'est pas critique, tu peux l'ouvrir sans :
+
+```sql
+-- Mettre le datafile hors ligne et ouvrir sans lui
+SQL> ALTER DATABASE DATAFILE '/u02/oradata/ORCL/users01.dbf' OFFLINE;
+SQL> ALTER DATABASE OPEN;
+-- Puis restaurer le datafile depuis un backup
+```
+
+**ORA-01113: file N needs media recovery**
+```
+SQL> ALTER DATABASE OPEN;
+ORA-01113: file 1 needs media recovery
+```
+→ Un datafile n'est pas synchronisé avec les redo logs. Il faut effectuer un recovery :
+
+```sql
+SQL> RECOVER DATABASE;
+-- Oracle rejoue les redo logs pour resynchroniser
+Media recovery complete.
+SQL> ALTER DATABASE OPEN;
+```
+
+**Instance qui ne s'arrête pas (SHUTDOWN IMMEDIATE bloqué) :**
+
+```sql
+-- Si SHUTDOWN IMMEDIATE est bloqué depuis plus de 10 minutes :
+-- 1. Vérifier ce qui bloque
+SQL> SELECT sid, serial#, username, status, sql_id
+     FROM V$SESSION
+     WHERE status = 'ACTIVE' AND type != 'BACKGROUND';
+
+-- 2. Si une grosse transaction est en cours de rollback, attendre.
+--    Vérifier la progression :
+SQL> SELECT usn, state, undoblockstotal, undoblocksdone,
+            ROUND(undoblocksdone/undoblockstotal*100, 2) AS pct_done
+     FROM V$TRANSACTION
+     WHERE state = 'ROLLING BACK';
+
+-- 3. En dernier recours :
+SQL> SHUTDOWN ABORT;
+-- Puis :
+SQL> STARTUP;
+-- SMON effectuera le recovery automatiquement
+```
+
+> 🔑 **Conseil pro** : Quand un `SHUTDOWN IMMEDIATE` semble bloqué, **ne te précipite pas** sur le `SHUTDOWN ABORT`. Vérifie d'abord si un rollback est en cours — l'interrompre avec un ABORT ne fera que reporter le travail au prochain démarrage (SMON devra le refaire). Ça ne sera pas plus rapide au final.
+
+### 8.8 Le mode QUIESCE : geler l'activité de la base
+
+Il existe un mode plus subtil que le mode restreint : le mode **quiesce** (mise en veille). Au lieu de couper les sessions, il les met en pause :
+
+```sql
+-- Geler toute l'activité non-DBA
+SQL> ALTER SYSTEM QUIESCE RESTRICTED;
+System altered.
+
+-- Seules les sessions DBA peuvent travailler
+-- Les sessions utilisateur sont "gelées" — elles reprendront quand on dégèlera
+
+-- Dégeler
+SQL> ALTER SYSTEM UNQUIESCE;
+System altered.
+-- Les sessions utilisateur reprennent exactement là où elles étaient
+```
+
+> 💡 **Différence avec RESTRICTED SESSION** :
+> - `RESTRICTED SESSION` empêche les **nouvelles** connexions mais ne touche pas aux sessions existantes.
+> - `QUIESCE` suspend les sessions existantes **sans les couper**. C'est plus propre pour des opérations de maintenance rapides.
+
+### 8.9 Résumé des commandes de démarrage et d'arrêt
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    DÉMARRAGE                             │
+├─────────────────────────────────────────────────────────┤
+│ STARTUP                    → NOMOUNT + MOUNT + OPEN     │
+│ STARTUP NOMOUNT            → Instance seulement         │
+│ STARTUP MOUNT              → Instance + control file    │
+│ STARTUP RESTRICT           → Complet, accès restreint   │
+│ STARTUP FORCE              → ABORT + STARTUP            │
+│ STARTUP UPGRADE            → Mode migration de version  │
+│                                                         │
+│ ALTER DATABASE MOUNT;      → NOMOUNT → MOUNT            │
+│ ALTER DATABASE OPEN;       → MOUNT → OPEN               │
+├─────────────────────────────────────────────────────────┤
+│                      ARRÊT                              │
+├─────────────────────────────────────────────────────────┤
+│ SHUTDOWN NORMAL            → Attend les déconnexions    │
+│ SHUTDOWN IMMEDIATE         → Coupe + rollback + ckpt ⭐ │
+│ SHUTDOWN TRANSACTIONAL     → Attend les transactions    │
+│ SHUTDOWN ABORT             → Arrêt brutal, recovery ⚠️  │
+├─────────────────────────────────────────────────────────┤
+│                   MODES SPÉCIAUX                        │
+├─────────────────────────────────────────────────────────┤
+│ ALTER SYSTEM ENABLE RESTRICTED SESSION;                 │
+│ ALTER SYSTEM DISABLE RESTRICTED SESSION;                │
+│ ALTER SYSTEM QUIESCE RESTRICTED;                        │
+│ ALTER SYSTEM UNQUIESCE;                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+*La suite arrive avec la Section 9 : SQL*Plus — ton couteau suisse Oracle...*
