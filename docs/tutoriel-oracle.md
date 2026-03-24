@@ -443,4 +443,386 @@ SHUTDOWN IMMEDIATE;
 
 ---
 
-*La suite arrive avec la Section 5 : L'architecture Oracle en coulisses...*
+## 5. L'architecture Oracle en coulisses
+
+Maintenant qu'on a les concepts de base, regardons comment Oracle fonctionne réellement sous le capot. C'est un peu comme regarder un film en coulisses. 🎬
+
+### 5.1 Le parcours d'une requête SELECT
+
+Quand tu tapes `SELECT * FROM HR.EMPLOYEES WHERE salary > 10000;`, voici tout ce qui se passe en coulisses, en quelques millisecondes :
+
+**Étape 1 — Analyse syntaxique (Parse)**
+
+Oracle vérifie d'abord que ta requête est du SQL valide. C'est le **parsing**. Il vérifie la syntaxe, l'existence des tables et des colonnes, et tes droits d'accès.
+
+Mais avant de tout réanalyser, Oracle regarde d'abord dans le **Shared Pool** (dans la SGA) si cette même requête a déjà été exécutée. Si oui, on réutilise le plan d'exécution existant — c'est un **soft parse**, beaucoup plus rapide qu'un **hard parse** complet.
+
+```
+                         Requête SQL
+                              │
+                     ┌────────▼────────┐
+                     │  Shared Pool :  │
+                     │  déjà analysée ?│
+                     └────────┬────────┘
+                        Oui / │ \ Non
+                       ┌──────┘  └──────┐
+                  Soft Parse      Hard Parse
+                  (rapide ⚡)    (complet 🔍)
+                       │              │
+                       └──────┬───────┘
+                              │
+                     Plan d'exécution
+```
+
+> 💡 **Pourquoi c'est important ?** Sur un système de production avec des milliers de requêtes par seconde, le soft parse est crucial. C'est pour ça qu'on utilise des **bind variables** (`:param` au lieu de valeurs en dur) — ça permet à Oracle de réutiliser le même plan d'exécution pour des requêtes similaires.
+
+**Étape 2 — Optimisation**
+
+L'**optimiseur** (Query Optimizer) est le cerveau d'Oracle. Il analyse ta requête et décide de la meilleure stratégie pour la traiter. Doit-il :
+- Lire la table entière (**Full Table Scan**) ?
+- Utiliser un index (**Index Scan**) ?
+- Dans quel ordre joindre les tables ?
+- Quel algorithme de jointure utiliser (Nested Loops, Hash Join, Sort Merge) ?
+
+L'optimiseur Oracle est **basé sur les coûts** (Cost-Based Optimizer — CBO). Il estime le coût de chaque stratégie possible et choisit la moins coûteuse. Pour cela, il s'appuie sur les **statistiques** des tables (nombre de lignes, distribution des valeurs, etc.).
+
+```sql
+-- Voir le plan d'exécution choisi par l'optimiseur
+EXPLAIN PLAN FOR
+SELECT * FROM HR.EMPLOYEES WHERE salary > 10000;
+
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
+```
+
+**Étape 3 — Exécution**
+
+Le moteur d'exécution suit le plan établi par l'optimiseur :
+1. Il cherche d'abord les blocs de données dans le **Buffer Cache** (SGA)
+2. Si les blocs n'y sont pas → **cache miss** → il va les lire sur disque et les charge en mémoire
+3. Il applique les filtres (`WHERE salary > 10000`)
+4. Il trie, groupe, agrège selon les besoins
+5. Il renvoie les résultats au client
+
+```
+  Buffer Cache (SGA)           Disque
+  ┌──────────────────┐    ┌──────────────┐
+  │ Bloc 42 ✅ trouvé│    │ users01.dbf  │
+  │ Bloc 58 ✅ trouvé│    │              │
+  │ Bloc 71 ❌ absent├───►│ Lecture bloc  │
+  │     ...          │◄───┤ 71 → cache   │
+  └──────────────────┘    └──────────────┘
+```
+
+> 🔑 **Le ratio de succès du Buffer Cache** (Buffer Cache Hit Ratio) est un indicateur clé de performance. Idéalement, on veut que plus de 95% des lectures soient servies depuis la mémoire.
+
+### 5.2 Le parcours d'une requête DML (INSERT, UPDATE, DELETE)
+
+Quand tu modifies des données, le processus est plus complexe car Oracle doit garantir la **recoverabilité** et la **cohérence**. Suivons un `UPDATE` étape par étape :
+
+```sql
+UPDATE HR.EMPLOYEES SET salary = 60000 WHERE employee_id = 100;
+```
+
+**Étape 1 — Génération des données d'annulation (Undo)**
+
+Avant de modifier quoi que ce soit, Oracle sauvegarde l'**ancienne valeur** dans le **tablespace UNDO** (aussi appelé segment de rollback). C'est ce qui permet de faire un `ROLLBACK` si besoin, et aussi de fournir une lecture cohérente aux autres sessions.
+
+```
+Avant modification :
+  salary = 52000  ──────►  Copié dans UNDO
+                           (pour rollback éventuel)
+```
+
+**Étape 2 — Écriture dans le Redo Log Buffer**
+
+Oracle écrit dans le **Redo Log Buffer** (en mémoire) une description de la modification : *"Sur le bloc X, à l'offset Y, remplacer 52000 par 60000"*. C'est le **redo** — il permet de *rejouer* la modification en cas de crash.
+
+**Étape 3 — Modification du bloc en mémoire**
+
+Le bloc de données contenant la ligne `employee_id = 100` est modifié **en mémoire** dans le Buffer Cache. Le bloc est marqué comme **dirty** (sale) — il diffère de sa version sur disque.
+
+**Étape 4 — En attente du COMMIT**
+
+À ce stade, la modification est faite en mémoire mais **pas encore permanente**. L'utilisateur peut encore faire un `ROLLBACK`. Les autres sessions qui lisent cette ligne voient toujours l'ancienne valeur (grâce à l'UNDO) — c'est la **lecture cohérente** (consistent read).
+
+```
+           Session A                    Session B
+              │                            │
+  UPDATE salary = 60000          SELECT salary FROM ...
+              │                            │
+         (pas de COMMIT)            Lit l'UNDO → voit 52000
+              │                    (lecture cohérente ✅)
+```
+
+### 5.3 Que se passe-t-il au COMMIT ?
+
+Quand tu tapes `COMMIT;`, voici la séquence critique :
+
+1. **LGWR** (Log Writer) écrit le contenu du Redo Log Buffer vers les **fichiers redo log sur disque**. C'est une écriture **synchrone** — Oracle attend qu'elle soit terminée avant de confirmer le COMMIT.
+2. Oracle renvoie "Commit complete." à l'utilisateur.
+3. C'est tout ! Les blocs modifiés restent en mémoire pour l'instant.
+
+> ⚠️ **Point crucial** : Au moment du COMMIT, les données modifiées ne sont **PAS** encore écrites dans les datafiles ! Elles sont toujours dans le Buffer Cache en mémoire. Seul le **redo** est écrit sur disque. C'est ce qu'on appelle le mécanisme de **write-ahead logging** — le journal passe toujours en premier.
+
+**Mais alors, quand est-ce que les datafiles sont mis à jour ?**
+
+C'est **DBW0** (Database Writer) qui s'en charge, mais **de manière asynchrone**, quand il le juge opportun :
+- Quand le Buffer Cache est trop plein
+- Lors d'un **checkpoint** (déclenché par CKPT)
+- Quand il n'a rien d'autre à faire (idle writes)
+
+```
+  COMMIT
+    │
+    ├─► LGWR écrit le redo ──► Redo Log File (disque)  ← IMMÉDIAT ⚡
+    │
+    └─► DBW0 écrira les blocs ──► Datafile (disque)    ← PLUS TARD 🕐
+```
+
+> 💡 **Pourquoi cette architecture ?** Parce qu'écrire séquentiellement dans un fichier redo (comme LGWR) est **beaucoup plus rapide** qu'écrire des blocs dispersés dans les datafiles (comme DBW0). En cas de crash, Oracle n'a qu'à rejouer le redo pour retrouver toutes les modifications committées.
+
+### 5.4 Le mécanisme de recovery (récupération après crash)
+
+Imaginons le pire : le serveur perd l'alimentation électrique en plein fonctionnement. La mémoire est vidée, les blocs dirty du Buffer Cache sont perdus. Que se passe-t-il au redémarrage ?
+
+**SMON** (System Monitor) entre en action et effectue un **Instance Recovery** en deux phases :
+
+**Phase 1 — Roll Forward (rejeu)**
+
+SMON lit les redo logs et **rejoue toutes les modifications** qui y sont enregistrées, y compris celles des transactions committées ET non committées. Ça remet la base dans l'état exact où elle était juste avant le crash.
+
+**Phase 2 — Roll Back (annulation)**
+
+SMON identifie les transactions qui n'avaient pas été committées au moment du crash et les **annule** en utilisant les données d'UNDO. Seules les transactions validées par un `COMMIT` survivent.
+
+```
+  CRASH ! 💥
+    │
+    ▼
+  Redémarrage
+    │
+    ├─► Phase 1 : Roll Forward
+    │   Rejoue TOUS les redo logs
+    │   (transactions committées + non committées)
+    │
+    └─► Phase 2 : Roll Back
+        Annule les transactions non committées
+        (grâce aux données UNDO)
+    │
+    ▼
+  Base cohérente ✅
+  Aucune donnée committée perdue !
+```
+
+> 🔑 **C'est ça, la garantie de Durabilité du modèle ACID.** Tant que le COMMIT a été confirmé par Oracle, les données survivront à n'importe quel crash. C'est ce mécanisme qui fait la réputation de fiabilité d'Oracle en entreprise.
+
+### 5.5 Le mécanisme de lecture cohérente (Consistent Read)
+
+C'est l'un des mécanismes les plus élégants d'Oracle. Quand une session exécute un `SELECT`, elle voit les données **telles qu'elles étaient au moment où le SELECT a commencé**, même si d'autres sessions sont en train de les modifier en parallèle.
+
+Comment Oracle fait-il ça ? Grâce au **tablespace UNDO** :
+
+1. La session B lance un `SELECT * FROM employees;` à 14h00:00
+2. À 14h00:01, la session A modifie une ligne et fait un COMMIT
+3. La session B, toujours en train de lire, tombe sur le bloc modifié
+4. Oracle détecte que ce bloc a été modifié **après** le début du SELECT
+5. Oracle va chercher l'ancienne version dans l'**UNDO** et la présente à la session B
+
+Résultat : la session B obtient une photo cohérente des données à 14h00:00, sans être bloquée par les modifications de la session A. **Les lecteurs ne bloquent jamais les écrivains, et les écrivains ne bloquent jamais les lecteurs.** 🎯
+
+> 💡 **Comparaison** : Dans SQL Server ou MySQL (InnoDB en mode par défaut), les lectures peuvent être bloquées par des écritures en cours. Oracle, grâce au mécanisme d'UNDO, évite ce problème. C'est un avantage majeur pour les applications à forte concurrence.
+
+### 5.6 Les verrous (Locks)
+
+Même si les lecteurs ne bloquent pas les écrivains, il faut bien gérer le cas où **deux sessions veulent modifier la même ligne en même temps**. C'est le rôle des **verrous** (locks).
+
+Oracle utilise un verrouillage **au niveau de la ligne** (row-level locking), pas au niveau de la table. Ça signifie que deux sessions peuvent modifier des lignes différentes de la même table simultanément, sans se gêner.
+
+```
+  Session A                         Session B
+     │                                 │
+  UPDATE ... WHERE id = 1;          UPDATE ... WHERE id = 2;
+  (verrou sur ligne 1)              (verrou sur ligne 2)
+     │                                 │
+  Pas de conflit ! ✅               Pas de conflit ! ✅
+```
+
+Mais si la session B essaie de modifier la **même ligne** que la session A :
+
+```
+  Session A                         Session B
+     │                                 │
+  UPDATE ... WHERE id = 1;          UPDATE ... WHERE id = 1;
+  (verrou acquis ✅)                (attend... ⏳)
+     │                                 │
+  COMMIT;                           (verrou libéré → modification appliquée)
+```
+
+La session B est **bloquée** jusqu'à ce que la session A fasse un `COMMIT` ou un `ROLLBACK`.
+
+> ⚠️ **Le deadlock** : Si la session A attend un verrou détenu par B, et que B attend un verrou détenu par A, c'est un **deadlock** (interblocage). Oracle le détecte automatiquement et annule l'une des deux transactions avec l'erreur `ORA-00060: deadlock detected`.
+
+### 5.7 L'architecture réseau : Listener et TNS
+
+Oracle utilise une architecture client-serveur. Les clients (SQL*Plus, applications Java, etc.) ne se connectent pas directement à l'instance — ils passent par un intermédiaire : le **Listener**.
+
+**Le Listener** est un processus qui écoute sur un port réseau (par défaut **1521**) les demandes de connexion entrantes. Quand un client se connecte, le Listener le redirige vers un **Server Process** dédié (ou partagé) qui traitera ses requêtes.
+
+```
+  ┌──────────┐         ┌───────────┐         ┌──────────────┐
+  │ SQL*Plus │────────►│ Listener  │────────►│ Instance     │
+  │ (client) │  TNS    │ (port 1521│  crée   │ Oracle       │
+  └──────────┘         │  )        │  un     │              │
+                       └───────────┘  server │ ┌──────────┐ │
+  ┌──────────┐              │         process│ │ Server   │ │
+  │ App Java │──────────────┘                │ │ Process  │ │
+  │ (client) │                               │ └──────────┘ │
+  └──────────┘                               └──────────────┘
+```
+
+**TNS (Transparent Network Substrate)** est le protocole réseau d'Oracle. La configuration côté client se fait dans le fichier `tnsnames.ora` :
+
+```
+ORCL =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.100)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )
+```
+
+```bash
+# Connexion via SQL*Plus avec un TNS alias
+sqlplus hr/hr@ORCL
+
+# Tester la connectivité réseau
+tnsping ORCL
+
+# Gérer le Listener
+lsnrctl start      # Démarrer le Listener
+lsnrctl stop       # Arrêter le Listener
+lsnrctl status     # Vérifier le statut
+```
+
+> 💡 **Les deux modes de connexion** :
+> - **Dedicated Server** : un processus serveur par session client. Simple et isolé, c'est le mode par défaut.
+> - **Shared Server** : un pool de processus serveur partagé entre plusieurs sessions. Économise la mémoire quand il y a beaucoup de connexions, mais plus complexe à configurer.
+
+### 5.8 L'architecture mémoire complète : SGA + PGA
+
+On a déjà parlé de la SGA, mais il y a une autre zone mémoire tout aussi importante : la **PGA** (Program Global Area).
+
+La **PGA** est une zone mémoire **privée** à chaque processus serveur. Chaque session a sa propre PGA, qui contient :
+- Les variables de session
+- La zone de tri (pour les `ORDER BY`, `GROUP BY`, `DISTINCT`)
+- La zone de hachage (pour les jointures Hash Join)
+- Le contexte de la requête en cours
+
+```
+                    ┌─────────────────────────────────┐
+                    │        MÉMOIRE DU SERVEUR        │
+                    │                                   │
+                    │  ┌────────────────────────────┐  │
+                    │  │     SGA (partagée)          │  │
+                    │  │  ┌────────┐ ┌───────────┐  │  │
+                    │  │  │ Buffer │ │  Shared   │  │  │
+                    │  │  │ Cache  │ │  Pool     │  │  │
+                    │  │  └────────┘ └───────────┘  │  │
+                    │  │  ┌────────┐ ┌───────────┐  │  │
+                    │  │  │ Redo   │ │  Java     │  │  │
+                    │  │  │ Log Buf│ │  Pool     │  │  │
+                    │  │  └────────┘ └───────────┘  │  │
+                    │  └────────────────────────────┘  │
+                    │                                   │
+                    │  ┌──────┐ ┌──────┐ ┌──────┐      │
+                    │  │ PGA  │ │ PGA  │ │ PGA  │      │
+                    │  │ (S1) │ │ (S2) │ │ (S3) │ ...  │
+                    │  └──────┘ └──────┘ └──────┘      │
+                    │  (une PGA par session)            │
+                    └─────────────────────────────────┘
+```
+
+| Zone mémoire | Portée | Contenu principal |
+|---|---|---|
+| **SGA** | Partagée entre toutes les sessions | Buffer Cache, Shared Pool, Redo Log Buffer |
+| **PGA** | Privée à chaque session | Zone de tri, zone de hachage, contexte de session |
+
+> 🔑 **Dimensionnement** : Dans Oracle 11g et plus, tu peux utiliser la gestion automatique de la mémoire (**AMM** — Automatic Memory Management) qui laisse Oracle répartir la mémoire entre SGA et PGA selon les besoins :
+> ```sql
+> ALTER SYSTEM SET MEMORY_TARGET = 2G SCOPE=SPFILE;
+> ALTER SYSTEM SET MEMORY_MAX_TARGET = 2G SCOPE=SPFILE;
+> ```
+
+### 5.9 Les checkpoints et les redo log switches
+
+On a vu que DBW0 n'écrit pas immédiatement les blocs modifiés sur disque. Mais à un moment donné, il faut bien synchroniser la mémoire et le disque. C'est le rôle des **checkpoints**.
+
+Un **checkpoint** ordonne à DBW0 d'écrire tous les blocs dirty du Buffer Cache vers les datafiles. Le processus **CKPT** met ensuite à jour les en-têtes des datafiles et le control file avec la position du checkpoint.
+
+Les checkpoints se produisent lors des événements suivants :
+- Un **redo log switch** (passage d'un groupe de redo log au suivant)
+- Un `ALTER SYSTEM CHECKPOINT;` explicite
+- Un `SHUTDOWN` (sauf ABORT)
+- Selon l'intervalle configuré
+
+**Le cycle des redo logs** fonctionne de manière circulaire :
+
+```
+     ┌─────────┐     ┌─────────┐     ┌─────────┐
+     │ Groupe 1│────►│ Groupe 2│────►│ Groupe 3│
+     │ CURRENT │     │ INACTIVE│     │ INACTIVE│
+     └─────────┘     └─────────┘     └─────────┘
+          ▲                                │
+          │                                │
+          └────────────────────────────────┘
+                    (circulaire)
+```
+
+Quand le groupe courant est plein :
+1. LGWR passe au groupe suivant → c'est un **log switch**
+2. Le log switch déclenche un **checkpoint**
+3. DBW0 écrit les blocs dirty
+4. Si l'**archivage** est activé (ARCHIVELOG mode), **ARC0** copie le redo log plein vers l'espace d'archivage
+
+> ⚠️ **ARCHIVELOG vs NOARCHIVELOG** :
+> - En mode **NOARCHIVELOG** : les redo logs sont écrasés après chaque cycle. En cas de perte d'un datafile, tu ne peux restaurer que jusqu'au dernier backup. Suffisant pour le développement.
+> - En mode **ARCHIVELOG** : chaque redo log est archivé avant d'être réutilisé. Tu peux restaurer à n'importe quel point dans le temps (**Point-in-Time Recovery**). **Obligatoire en production !**
+
+```sql
+-- Vérifier le mode d'archivage
+ARCHIVE LOG LIST;
+
+-- Passer en mode ARCHIVELOG (nécessite un redémarrage)
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+ALTER DATABASE ARCHIVELOG;
+ALTER DATABASE OPEN;
+```
+
+### 5.10 Résumé : le cycle de vie complet d'une modification
+
+Pour récapituler, voici le cycle de vie complet d'un `UPDATE` suivi d'un `COMMIT` :
+
+```
+1. Parse & Optimize    →  Analyse SQL, plan d'exécution
+2. Undo generation     →  Ancienne valeur sauvée dans UNDO
+3. Redo generation     →  Modification écrite dans Redo Log Buffer
+4. Block modification  →  Bloc modifié dans Buffer Cache (dirty)
+5. COMMIT              →  LGWR écrit le redo sur disque ← DURABILITÉ
+6. Confirmation        →  "Commit complete." renvoyé au client
+7. Checkpoint (+ tard) →  DBW0 écrit les dirty blocks dans les datafiles
+```
+
+Ce mécanisme a l'air complexe, mais c'est ce qui permet à Oracle de garantir :
+- ✅ **Zéro perte de données** pour les transactions committées
+- ✅ **Performance optimale** (les écritures disque coûteuses sont différées)
+- ✅ **Lectures cohérentes** sans bloquer les écrivains
+- ✅ **Recovery rapide** après un crash
+
+C'est le cœur battant d'Oracle Database. 💓
+
+---
+
+*La suite arrive avec la Section 6 : Présentation de notre laboratoire...*
