@@ -1404,12 +1404,15 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
+    const hasExpressions = expressions.some(e => e !== null);
     this.storage.createIndex(schema, {
       name: stmt.name.toUpperCase(),
       tableName: stmt.table.toUpperCase(),
       columns: stmt.columns.map(c => c.name.toUpperCase()),
       unique: !!stmt.unique,
       bitmap: stmt.bitmap,
+      ...(hasExpressions ? { expressions } : {}),
     });
     return emptyResult('Index created.');
   }

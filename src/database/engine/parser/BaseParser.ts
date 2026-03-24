@@ -730,10 +730,40 @@ export abstract class BaseParser {
     const columns: import('./ASTNode').CreateIndexStatement['columns'] = [];
     do {
       const colName = this.expectIdentifier();
-      let direction: 'ASC' | 'DESC' | undefined;
-      if (this.matchKeyword('ASC')) direction = 'ASC';
-      else if (this.matchKeyword('DESC')) direction = 'DESC';
-      columns.push({ name: colName, direction });
+      if (this.match(TokenType.LPAREN)) {
+        // Function-based index: e.g. UPPER(col), NVL(col, 'X')
+        const funcName = colName.toUpperCase();
+        const args: string[] = [];
+        let depth = 1;
+        let currentArg = '';
+        while (depth > 0 && !this.check(TokenType.EOF)) {
+          if (this.check(TokenType.LPAREN)) { depth++; currentArg += '('; this.advance(); }
+          else if (this.check(TokenType.RPAREN)) {
+            depth--;
+            if (depth === 0) { this.advance(); break; }
+            currentArg += ')'; this.advance();
+          } else if (this.check(TokenType.COMMA) && depth === 1) {
+            args.push(currentArg.trim());
+            currentArg = '';
+            this.advance();
+          } else {
+            const tok = this.current();
+            currentArg += tok.type === TokenType.STRING_LITERAL ? `'${tok.value}'` : String(tok.value);
+            this.advance();
+          }
+        }
+        if (currentArg.trim()) args.push(currentArg.trim());
+        const expressionText = `${funcName}(${args.join(', ')})`;
+        let direction: 'ASC' | 'DESC' | undefined;
+        if (this.matchKeyword('ASC')) direction = 'ASC';
+        else if (this.matchKeyword('DESC')) direction = 'DESC';
+        columns.push({ name: expressionText, direction, expression: expressionText });
+      } else {
+        let direction: 'ASC' | 'DESC' | undefined;
+        if (this.matchKeyword('ASC')) direction = 'ASC';
+        else if (this.matchKeyword('DESC')) direction = 'DESC';
+        columns.push({ name: colName, direction });
+      }
     } while (this.match(TokenType.COMMA));
     this.expect(TokenType.RPAREN);
     let tablespace: string | undefined;

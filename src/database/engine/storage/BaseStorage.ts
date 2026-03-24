@@ -40,6 +40,7 @@ export interface IndexMeta {
   columns: string[];
   unique: boolean;
   bitmap?: boolean;
+  expressions?: (string | null)[];
 }
 
 export interface SequenceMeta {

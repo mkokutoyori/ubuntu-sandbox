@@ -639,6 +639,39 @@ export class OracleDatabase {
       this.executeSql(executor, trimmed);
       return;
     }
+
+    // Package-qualified procedure call: PKG_NAME.PROC_NAME(args)
+    if (/^\w+\.\w+\s*\(/.test(trimmed)) {
+      const callResult = this.callStoredUnit(executor, trimmed);
+      if (callResult) {
+        // Collect any output from the called unit
+        if (callResult.message) {
+          const lines = callResult.message.split('\n');
+          for (const line of lines) {
+            if (line && !line.includes('PL/SQL procedure')) {
+              output.push(line);
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // Simple procedure call: PROC_NAME(args)
+    if (/^\w+\s*\(/.test(trimmed)) {
+      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
+      if (callResult) {
+        if (callResult.message) {
+          const lines = callResult.message.split('\n');
+          for (const line of lines) {
+            if (line && !line.includes('PL/SQL procedure')) {
+              output.push(line);
+            }
+          }
+        }
+        return;
+      }
+    }
   }
 
   private executePLSQLIf(

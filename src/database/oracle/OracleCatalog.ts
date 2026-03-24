@@ -1127,11 +1127,12 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private dbaIndColumns(): ResultSet {
-    const rows: (string | number)[][] = [];
+    const rows: (string | number | null)[][] = [];
     for (const schema of this.storage.getSchemas()) {
       for (const idx of this.storage.getIndexes(schema)) {
         for (let i = 0; i < idx.columns.length; i++) {
-          rows.push([schema, idx.name, idx.tableName, idx.columns[i], i + 1]);
+          const expr = idx.expressions?.[i] ?? null;
+          rows.push([schema, idx.name, idx.tableName, idx.columns[i], i + 1, expr]);
         }
       }
     }
@@ -1142,6 +1143,7 @@ export class OracleCatalog extends BaseCatalog {
         { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
         { name: 'COLUMN_NAME', dataType: oracleVarchar2(30) },
         { name: 'COLUMN_POSITION', dataType: oracleNumber(10) },
+        { name: 'COLUMN_EXPRESSION', dataType: oracleVarchar2(4000) },
       ],
       rows
     );

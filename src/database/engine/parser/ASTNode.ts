@@ -386,7 +386,7 @@ export interface CreateIndexStatement extends ASTNode {
   name: string;
   table: string;
   tableSchema?: string;
-  columns: { name: string; expr?: Expression; direction?: 'ASC' | 'DESC' }[];
+  columns: { name: string; expr?: Expression; direction?: 'ASC' | 'DESC'; expression?: string }[];
   tablespace?: string;
 }
 
