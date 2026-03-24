@@ -1261,4 +1261,512 @@ Maintenant que le labo est en place, voici ce qu'on va faire dans les prochaines
 
 ---
 
-*La suite arrive avec la Section 7 : Installation et arborescence Oracle...*
+## 7. Installation et arborescence Oracle
+
+Maintenant qu'on a tout le contexte, on passe aux choses sérieuses ! 😈 Voici comment Oracle est installé sur un serveur Linux, et comment naviguer dans son arborescence. Même si dans notre simulateur l'installation est déjà faite, comprendre comment ça fonctionne est essentiel pour tout DBA.
+
+### 7.1 Prérequis d'installation
+
+Avant d'installer Oracle, il faut préparer le système d'exploitation. Oracle est exigeant sur son environnement — et c'est normal, on parle d'un SGBD de classe entreprise ! Voici les prérequis typiques pour Oracle 19c sur Linux :
+
+**Prérequis matériels :**
+
+| Ressource | Minimum | Recommandé en production |
+|-----------|---------|--------------------------|
+| RAM | 2 Go | 16 Go ou plus |
+| Espace disque | 10 Go (logiciel) + données | 100 Go+ selon les données |
+| Swap | 2× la RAM (si RAM < 16 Go) | = RAM (si RAM ≥ 16 Go) |
+| /tmp | 1 Go minimum | 5 Go |
+
+**Prérequis logiciels :**
+
+```bash
+# Vérifier la version du noyau Linux (minimum 3.10 pour Oracle 19c)
+uname -r
+
+# Vérifier la distribution (Oracle Linux, RHEL, CentOS sont les plus supportés)
+cat /etc/os-release
+
+# Paquets essentiels à installer
+sudo yum install -y oracle-database-preinstall-19c
+# Ce méta-paquet installe automatiquement toutes les dépendances,
+# configure les paramètres du noyau, et crée l'utilisateur oracle
+```
+
+> 💡 **Oracle Linux** : c'est la distribution Linux d'Oracle, basée sur Red Hat. Elle est gratuite et offre une compatibilité parfaite avec Oracle Database. Si tu pars de zéro, c'est le choix le plus simple.
+
+### 7.2 L'utilisateur oracle et les groupes
+
+Oracle ne doit **jamais** être installé ou exécuté en tant que `root`. On utilise un utilisateur dédié : **oracle**, qui appartient à des groupes spécifiques :
+
+```bash
+# Créer les groupes (si le méta-paquet ne l'a pas fait)
+groupadd -g 54321 oinstall    # Groupe principal d'installation
+groupadd -g 54322 dba         # Groupe des administrateurs de base de données
+groupadd -g 54323 oper        # Groupe des opérateurs (startup/shutdown)
+groupadd -g 54324 backupdba   # Groupe pour les sauvegardes
+
+# Créer l'utilisateur oracle
+useradd -u 54321 -g oinstall -G dba,oper,backupdba oracle
+passwd oracle
+```
+
+| Groupe | Rôle | Privilège principal |
+|--------|------|---------------------|
+| **oinstall** | Installation | Propriétaire des fichiers Oracle |
+| **dba** | Administration | Connexion AS SYSDBA |
+| **oper** | Opérations | Startup/Shutdown uniquement |
+| **backupdba** | Sauvegarde | RMAN et sauvegardes |
+
+> ⚠️ **Règle d'or** : On installe Oracle en tant qu'utilisateur `oracle`, jamais en `root`. On utilise `root` uniquement pour les prérequis système et l'exécution du script `root.sh` en fin d'installation.
+
+### 7.3 La norme OFA (Optimal Flexible Architecture)
+
+Oracle recommande une organisation des fichiers standardisée appelée **OFA**. C'est une convention, pas une obligation technique — mais la respecter te simplifiera énormément la vie au quotidien.
+
+**Principe général :**
+
+```
+/u01/                              ← Point de montage pour le logiciel Oracle
+├── app/
+│   └── oracle/                    ← ORACLE_BASE : racine de l'installation
+│       ├── product/               ← Versions du logiciel
+│       │   ├── 19.0.0/dbhome_1/  ← ORACLE_HOME pour Oracle 19c
+│       │   └── 12.2.0/dbhome_1/  ← ORACLE_HOME pour Oracle 12c (si multi-version)
+│       ├── diag/                  ← Fichiers de diagnostic (ADR)
+│       ├── audit/                 ← Fichiers d'audit
+│       └── cfgtoollogs/           ← Logs des assistants (DBCA, NETCA...)
+
+/u02/                              ← Point de montage pour les données
+└── oradata/
+    └── ORCL/                      ← Fichiers de la base ORCL
+        ├── system01.dbf
+        ├── sysaux01.dbf
+        ├── users01.dbf
+        ├── undotbs01.dbf
+        └── temp01.dbf
+
+/u03/                              ← Point de montage pour la recovery
+└── fast_recovery_area/
+    └── ORCL/
+        ├── archivelog/            ← Redo logs archivés
+        ├── backupset/            ← Sauvegardes RMAN
+        └── autobackup/           ← Sauvegardes auto du control file
+```
+
+**Pourquoi séparer sur plusieurs points de montage ?**
+
+| Point de montage | Contenu | Raison de la séparation |
+|------------------|---------|------------------------|
+| `/u01` | Logiciel Oracle | Si `/u02` (données) est plein, le logiciel continue de fonctionner |
+| `/u02` | Données (datafiles) | Disques rapides, RAID 10 idéalement |
+| `/u03` | Recovery et archives | Si le disque de données meurt, les sauvegardes sont sur un autre disque |
+
+> 🔑 **En production** : on utilise souvent **ASM** (Automatic Storage Management), le gestionnaire de disques intégré d'Oracle, au lieu de fichiers sur un système de fichiers classique. ASM gère lui-même le striping et le mirroring, offrant de meilleures performances et une meilleure protection.
+
+### 7.4 Les variables d'environnement
+
+Pour que les outils Oracle fonctionnent correctement, plusieurs variables d'environnement doivent être configurées. C'est la **première chose** à vérifier quand quelque chose ne marche pas !
+
+```bash
+# Le fichier ~/.bash_profile de l'utilisateur oracle doit contenir :
+
+# ORACLE_BASE : racine de l'installation Oracle
+export ORACLE_BASE=/u01/app/oracle
+
+# ORACLE_HOME : répertoire du logiciel Oracle (binaires, libs, config)
+export ORACLE_HOME=$ORACLE_BASE/product/19.0.0/dbhome_1
+
+# ORACLE_SID : identifiant de l'instance sur cette machine
+# C'est ce qui dit à Oracle QUELLE base de données utiliser
+export ORACLE_SID=ORCL
+
+# PATH : pour pouvoir lancer sqlplus, lsnrctl, rman... sans chemin complet
+export PATH=$ORACLE_HOME/bin:$PATH
+
+# LD_LIBRARY_PATH : bibliothèques partagées Oracle
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:$LD_LIBRARY_PATH
+
+# NLS_LANG : paramètres de langue et d'encodage
+# Format : LANGUAGE_TERRITORY.CHARSET
+export NLS_LANG=FRENCH_FRANCE.AL32UTF8
+```
+
+> ⚠️ **L'erreur la plus fréquente du débutant** : oublier de positionner `ORACLE_SID` avant de lancer `sqlplus`. Tu te retrouves alors avec l'erreur `ORA-12162: TNS:net service name is incorrectly specified` ou `ORA-12560: TNS:protocol adapter error`. Vérifie tes variables !
+
+```bash
+# Vérifier les variables (commande indispensable !)
+echo $ORACLE_HOME
+echo $ORACLE_SID
+echo $PATH | tr ':' '\n' | grep oracle
+
+# Vérifier que sqlplus est trouvé
+which sqlplus
+# /u01/app/oracle/product/19.0.0/dbhome_1/bin/sqlplus
+```
+
+### 7.5 Les fichiers de configuration essentiels
+
+Oracle utilise plusieurs fichiers de configuration. Savoir où ils sont et ce qu'ils contiennent est crucial pour l'administration.
+
+#### 7.5.1 Le fichier d'initialisation (pfile / spfile)
+
+C'est **le** fichier le plus important : il contient tous les paramètres de l'instance (taille de la SGA, nombre de processus maximum, mode d'archivage...).
+
+Il existe en deux versions :
+
+| Type | Fichier | Format | Modifiable à chaud ? |
+|------|---------|--------|---------------------|
+| **pfile** | `initORCL.ora` | Texte clair (éditable) | Non — il faut redémarrer |
+| **spfile** | `spfileORCL.ora` | Binaire | Oui — avec `ALTER SYSTEM` |
+
+L'**spfile** est le format recommandé en production. Il permet de modifier des paramètres à chaud sans éteindre la base.
+
+```bash
+# Emplacement par défaut
+ls $ORACLE_HOME/dbs/
+# initORCL.ora  spfileORCL.ora  orapwORCL
+```
+
+```sql
+-- Voir tous les paramètres de l'instance (il y en a plus de 300 !)
+SHOW PARAMETER;
+
+-- Chercher un paramètre spécifique
+SHOW PARAMETER memory;
+-- NAME                          TYPE    VALUE
+-- ----------------------------- ------- --------
+-- memory_max_target             big int 2G
+-- memory_target                 big int 2G
+
+-- Modifier un paramètre dans le spfile (prend effet au redémarrage)
+ALTER SYSTEM SET open_cursors = 500 SCOPE=SPFILE;
+
+-- Modifier un paramètre en mémoire (prend effet immédiatement, perdu au redémarrage)
+ALTER SYSTEM SET open_cursors = 500 SCOPE=MEMORY;
+
+-- Modifier dans les deux (immédiat ET persistant)
+ALTER SYSTEM SET open_cursors = 500 SCOPE=BOTH;
+```
+
+> 💡 **Les trois SCOPE expliqués** :
+> - `SCOPE=MEMORY` : Modification immédiate mais temporaire. Comme changer la température du bureau avec la clim — dès qu'on coupe le courant, ça revient à la normale.
+> - `SCOPE=SPFILE` : Modification persistante mais pas immédiate. Comme programmer le thermostat — ça ne change rien maintenant, mais au prochain démarrage c'est appliqué.
+> - `SCOPE=BOTH` : Les deux ! C'est le mode le plus utilisé quand le paramètre le permet.
+
+#### 7.5.2 Le fichier listener.ora
+
+Ce fichier configure le **Listener** — le processus qui écoute les connexions réseau entrantes.
+
+```bash
+# Emplacement
+cat $ORACLE_HOME/network/admin/listener.ora
+```
+
+```
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = db-srv)(PORT = 1521))
+    )
+  )
+
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (GLOBAL_DBNAME = orcl)
+      (ORACLE_HOME = /u01/app/oracle/product/19.0.0/dbhome_1)
+      (SID_NAME = ORCL)
+    )
+  )
+
+ADR_BASE_LISTENER = /u01/app/oracle
+```
+
+| Paramètre | Valeur | Signification |
+|-----------|--------|---------------|
+| `PROTOCOL` | TCP | Protocole réseau (TCP/IP) |
+| `HOST` | db-srv | Nom d'hôte ou IP du serveur |
+| `PORT` | 1521 | Port d'écoute (1521 = standard Oracle) |
+| `SID_NAME` | ORCL | L'instance servie par ce Listener |
+
+```bash
+# Commandes de gestion du Listener
+lsnrctl start       # Démarrer
+lsnrctl stop        # Arrêter
+lsnrctl status      # Vérifier l'état
+lsnrctl reload      # Recharger la configuration sans arrêter
+lsnrctl services    # Lister les services enregistrés
+```
+
+#### 7.5.3 Le fichier tnsnames.ora
+
+Ce fichier est utilisé **côté client** pour définir des alias de connexion. Au lieu de taper l'adresse IP, le port et le service à chaque fois, tu définis un alias court.
+
+```bash
+# Emplacement (sur le poste client ou le serveur)
+cat $ORACLE_HOME/network/admin/tnsnames.ora
+```
+
+```
+# Connexion locale
+ORCL =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.100)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )
+
+# Connexion vers une autre base (ex: base de test)
+ORCL_TEST =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.200)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl_test)
+    )
+  )
+```
+
+```bash
+# Tester la connectivité avec tnsping
+tnsping ORCL
+
+# Résultat attendu :
+# Attempting to contact (DESCRIPTION = ...)
+# OK (10 msec)
+
+# Se connecter en utilisant l'alias
+sqlplus hr/hr@ORCL
+```
+
+#### 7.5.4 Le fichier sqlnet.ora
+
+Ce fichier configure les paramètres réseau globaux de SQL*Net (la couche réseau d'Oracle).
+
+```
+# Méthode de résolution des noms (chercher dans tnsnames.ora en premier)
+NAMES.DIRECTORY_PATH = (TNSNAMES, EZCONNECT)
+
+# Timeout de connexion (en secondes)
+SQLNET.INBOUND_CONNECT_TIMEOUT = 60
+
+# Bannière de sécurité (optionnel)
+SEC_USER_AUDIT_ACTION_BANNER = /u01/app/oracle/banner.txt
+
+# Chiffrement de la connexion (optionnel, recommandé en production)
+SQLNET.ENCRYPTION_SERVER = REQUIRED
+SQLNET.ENCRYPTION_TYPES_SERVER = (AES256)
+```
+
+#### 7.5.5 Le password file
+
+Le **password file** permet l'authentification **à distance** des utilisateurs avec le privilège SYSDBA ou SYSOPER. Sans ce fichier, la connexion `AS SYSDBA` n'est possible qu'en local (depuis le serveur).
+
+```bash
+# Créer un password file
+orapwd file=$ORACLE_HOME/dbs/orapwORCL password=MonSuperMotDePasse entries=10
+
+# file   : chemin du fichier (convention : orapw + SID)
+# password : mot de passe de SYS
+# entries  : nombre maximum d'utilisateurs SYSDBA/SYSOPER
+```
+
+### 7.6 Le processus d'installation pas à pas
+
+Voici les grandes étapes d'une installation Oracle 19c sur Linux, pour ta culture générale :
+
+**Étape 1 — Préparation du système (en tant que root) :**
+
+```bash
+# Installer les prérequis
+yum install -y oracle-database-preinstall-19c
+
+# Créer les répertoires
+mkdir -p /u01/app/oracle/product/19.0.0/dbhome_1
+mkdir -p /u02/oradata
+mkdir -p /u03/fast_recovery_area
+chown -R oracle:oinstall /u01 /u02 /u03
+chmod -R 775 /u01 /u02 /u03
+```
+
+**Étape 2 — Installation du logiciel (en tant qu'oracle) :**
+
+```bash
+# Se connecter en tant qu'oracle
+su - oracle
+
+# Décompresser l'archive dans ORACLE_HOME
+cd $ORACLE_HOME
+unzip /tmp/LINUX.X64_193000_db_home.zip
+
+# Lancer l'installeur (mode graphique)
+./runInstaller
+
+# Ou en mode silencieux (sans interface graphique)
+./runInstaller -silent -responseFile $ORACLE_HOME/install/response/db_install.rsp \
+  oracle.install.option=INSTALL_DB_SWONLY \
+  ORACLE_BASE=/u01/app/oracle \
+  ORACLE_HOME=/u01/app/oracle/product/19.0.0/dbhome_1 \
+  oracle.install.db.InstallEdition=EE
+```
+
+**Étape 3 — Exécution des scripts root (en tant que root) :**
+
+```bash
+# L'installeur demande d'exécuter ces scripts en tant que root
+/u01/app/oraInventory/orainstRoot.sh
+/u01/app/oracle/product/19.0.0/dbhome_1/root.sh
+```
+
+**Étape 4 — Création de la base de données (en tant qu'oracle) :**
+
+```bash
+# Avec l'assistant graphique
+dbca
+
+# Ou en mode silencieux
+dbca -silent -createDatabase \
+  -templateName General_Purpose.dbc \
+  -gdbName orcl \
+  -sid ORCL \
+  -sysPassword Oracle_2024! \
+  -systemPassword Oracle_2024! \
+  -datafileDestination /u02/oradata \
+  -recoveryAreaDestination /u03/fast_recovery_area \
+  -characterSet AL32UTF8 \
+  -totalMemory 4096 \
+  -emConfiguration NONE
+```
+
+> 💡 **Dans notre simulateur**, tout ça est déjà fait ! L'instance ORCL est créée et prête à l'emploi. Mais comprendre le processus d'installation te sera très utile le jour où tu devras installer Oracle en conditions réelles.
+
+### 7.7 Vérification post-installation
+
+Après une installation, le DBA consciencieux vérifie que tout est en place :
+
+```bash
+# 1. Vérifier les variables d'environnement
+echo "ORACLE_HOME = $ORACLE_HOME"
+echo "ORACLE_SID  = $ORACLE_SID"
+
+# 2. Vérifier que les binaires sont accessibles
+sqlplus -V
+# SQL*Plus: Release 19.0.0.0.0 - Production
+# Version 19.3.0.0.0
+
+# 3. Vérifier les fichiers de la base
+ls -lh /u02/oradata/ORCL/
+```
+
+```sql
+-- 4. Se connecter et vérifier l'instance
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+SQL> SELECT instance_name, status, version FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS       VERSION
+---------------- ------------ -----------------
+ORCL             OPEN         19.0.0.0.0
+
+-- 5. Vérifier les fichiers de données
+SQL> SELECT file_name, tablespace_name, bytes/1024/1024 AS "Taille (Mo)"
+     FROM DBA_DATA_FILES
+     ORDER BY tablespace_name;
+
+FILE_NAME                                    TABLESPACE  Taille (Mo)
+-------------------------------------------- ----------- -----------
+/u02/oradata/ORCL/system01.dbf               SYSTEM            800
+/u02/oradata/ORCL/sysaux01.dbf               SYSAUX            550
+/u02/oradata/ORCL/undotbs01.dbf              UNDOTBS1          100
+/u02/oradata/ORCL/users01.dbf                USERS             100
+
+-- 6. Vérifier les redo logs
+SQL> SELECT group#, status, bytes/1024/1024 AS "Taille (Mo)"
+     FROM V$LOG;
+
+    GROUP# STATUS           Taille (Mo)
+---------- ---------------- -----------
+         1 CURRENT                   50
+         2 INACTIVE                  50
+         3 INACTIVE                  50
+
+-- 7. Vérifier le control file
+SQL> SHOW PARAMETER control_files;
+
+NAME            TYPE   VALUE
+--------------- ------ ----------------------------------------
+control_files   string /u02/oradata/ORCL/control01.ctl
+
+-- 8. Vérifier le mode d'archivage
+SQL> ARCHIVE LOG LIST;
+Database log mode              No Archive Mode
+Automatic archival             Disabled
+```
+
+### 7.8 L'alert log : le journal de bord d'Oracle
+
+L'**alert log** est le fichier le plus important pour le diagnostic. Oracle y écrit tous les événements significatifs : démarrages, arrêts, erreurs critiques, changements de redo log, etc. C'est **le premier endroit** où regarder quand quelque chose ne va pas.
+
+```bash
+# Trouver l'alert log
+adrci
+ADRCI> SHOW HOMES;
+# diag/rdbms/orcl/ORCL
+
+ADRCI> SHOW ALERT;
+# Affiche les dernières entrées
+
+ADRCI> EXIT;
+
+# Ou directement avec un éditeur de texte
+tail -100 $ORACLE_BASE/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log
+```
+
+Exemple de contenu typique de l'alert log :
+
+```
+2026-03-24T10:30:00.000+01:00
+Starting ORACLE instance (normal) (OS id: 12345)
+...
+System Global Area  2147483648 bytes
+  Fixed Size            8901624 bytes
+  Variable Size       603979768 bytes
+  Database Buffers   1526726656 bytes
+  Redo Buffers          7876096 bytes
+...
+Database mounted.
+Database opened.
+2026-03-24T10:30:05.000+01:00
+Thread 1 advanced to log sequence 142
+  Current log# 2 seq# 142 mem# 0: /u02/oradata/ORCL/redo02.log
+```
+
+> 🔑 **Réflexe de DBA** : Avant de chercher sur Google une erreur Oracle, consulte l'alert log. 90% du temps, la réponse est là, avec un horodatage précis et le contexte complet de l'erreur.
+
+### 7.9 Résumé : les fichiers à connaître absolument
+
+| Fichier | Emplacement | Rôle |
+|---------|------------|------|
+| `spfileORCL.ora` | `$ORACLE_HOME/dbs/` | Paramètres de l'instance (binaire) |
+| `initORCL.ora` | `$ORACLE_HOME/dbs/` | Paramètres de l'instance (texte, backup) |
+| `orapwORCL` | `$ORACLE_HOME/dbs/` | Authentification SYSDBA à distance |
+| `listener.ora` | `$ORACLE_HOME/network/admin/` | Configuration du Listener |
+| `tnsnames.ora` | `$ORACLE_HOME/network/admin/` | Alias de connexion (client) |
+| `sqlnet.ora` | `$ORACLE_HOME/network/admin/` | Paramètres réseau SQL*Net |
+| `system01.dbf` | `/u02/oradata/ORCL/` | Tablespace SYSTEM (dictionnaire) |
+| `redo01-03.log` | `/u02/oradata/ORCL/` | Journaux de transactions |
+| `control01.ctl` | `/u02/oradata/ORCL/` | Fichier de contrôle (carte d'identité) |
+| `alert_ORCL.log` | `$ORACLE_BASE/diag/.../trace/` | Journal de bord de l'instance |
+
+> 💡 **Astuce mnémotechnique** : Retiens les trois répertoires clés :
+> - `$ORACLE_HOME/dbs/` → les fichiers de **démarrage** (init, spfile, password)
+> - `$ORACLE_HOME/network/admin/` → les fichiers **réseau** (listener, tns, sqlnet)
+> - Les **datafiles** → là où tu as mis ta base (en général `/u02/oradata/`)
+
+---
+
+*La suite arrive avec la Section 8 : Démarrage et arrêt d'une instance Oracle...*
