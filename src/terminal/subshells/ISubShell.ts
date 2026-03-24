@@ -15,6 +15,8 @@ export interface SubShellResult {
   exit: boolean;
   /** The prompt to show for the next line of input. */
   prompt: string;
+  /** Whether the terminal screen should be cleared before showing output. */
+  clearScreen?: boolean;
 }
 
 export interface ISubShell {

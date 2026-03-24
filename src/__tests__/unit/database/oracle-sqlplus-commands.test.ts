@@ -152,6 +152,11 @@ describe('SET PAGESIZE n', () => {
     cmd('SET PAGES 25');
     expect(output('SHOW PAGES')).toContain('25');
   });
+
+  test('SET PAGESIZE 0 disables page breaks (no repeated headers)', () => {
+    cmd('SET PAGESIZE 0');
+    expect(output('SHOW PAGESIZE')).toContain('pagesize 0');
+  });
 });
 
 describe('SET SERVEROUTPUT ON/OFF', () => {

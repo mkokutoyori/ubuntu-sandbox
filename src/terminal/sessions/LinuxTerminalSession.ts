@@ -46,6 +46,12 @@ export class LinuxTerminalSession extends TerminalSession {
   tabSuggestions: string[] | null = null;
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
+  /** Command history for the active sub-shell. */
+  private subShellHistory: string[] = [];
+  /** History navigation index for the active sub-shell (-1 = not navigating). */
+  private subShellHistoryIndex: number = -1;
+  /** Saved input before history navigation started. */
+  private subShellSavedInput: string = '';
 
   constructor(id: string, device: Equipment) {
     super(id, device);
@@ -402,9 +408,22 @@ export class LinuxTerminalSession extends TerminalSession {
     if (e.key === 'Enter') {
       const line = this._inputBuf;
       this._inputBuf = '';
+      this.subShellHistoryIndex = -1;
+      this.subShellSavedInput = '';
       this.addLine(`${this.activeSubShell.getPrompt()}${line}`);
 
+      // Push non-empty lines to sub-shell history
+      if (line.trim()) {
+        this.subShellHistory = [...this.subShellHistory.slice(-199), line];
+      }
+
       const result = this.activeSubShell.processLine(line);
+
+      // Handle clear screen signal from sub-shell
+      if (result.clearScreen) {
+        this.clear();
+      }
+
       for (const outputLine of result.output) this.addLine(outputLine);
 
       if (result.exit) {
@@ -415,8 +434,46 @@ export class LinuxTerminalSession extends TerminalSession {
       return true;
     }
 
+    // Arrow Up → sub-shell history previous
+    if (e.key === 'ArrowUp') {
+      if (this.subShellHistory.length === 0) return true;
+      if (this.subShellHistoryIndex === -1) {
+        this.subShellSavedInput = this._inputBuf;
+        this.subShellHistoryIndex = this.subShellHistory.length - 1;
+      } else if (this.subShellHistoryIndex > 0) {
+        this.subShellHistoryIndex--;
+      }
+      this._inputBuf = this.subShellHistory[this.subShellHistoryIndex] || '';
+      this.notify();
+      return true;
+    }
+
+    // Arrow Down → sub-shell history next
+    if (e.key === 'ArrowDown') {
+      if (this.subShellHistoryIndex === -1) return true;
+      const idx = this.subShellHistoryIndex + 1;
+      if (idx >= this.subShellHistory.length) {
+        this.subShellHistoryIndex = -1;
+        this._inputBuf = this.subShellSavedInput;
+        this.subShellSavedInput = '';
+      } else {
+        this.subShellHistoryIndex = idx;
+        this._inputBuf = this.subShellHistory[idx] || '';
+      }
+      this.notify();
+      return true;
+    }
+
+    // Ctrl+L → clear screen
+    if (e.key === 'l' && e.ctrlKey) {
+      this.clear();
+      this.notify();
+      return true;
+    }
+
     if (e.key === 'c' && e.ctrlKey) {
       this._inputBuf = '';
+      this.subShellHistoryIndex = -1;
       this.addLine(`${this.activeSubShell.getPrompt()}^C`);
       this.notify();
       return true;
@@ -437,6 +494,9 @@ export class LinuxTerminalSession extends TerminalSession {
       this.activeSubShell = null;
     }
     this._inputBuf = '';
+    this.subShellHistory = [];
+    this.subShellHistoryIndex = -1;
+    this.subShellSavedInput = '';
     this.inputMode = { type: 'normal' };
     this.notify();
   }

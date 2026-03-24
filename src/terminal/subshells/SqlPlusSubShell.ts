@@ -68,10 +68,14 @@ export class SqlPlusSubShell implements ISubShell {
       this.syncToVFS();
     }
 
+    // Detect CLEAR SCREEN command
+    const isClear = /^CLEAR\s+SCR/i.test(line.trim());
+
     return {
       output: result.output,
       exit: result.exit,
       prompt: result.prompt,
+      clearScreen: isClear,
     };
   }
 

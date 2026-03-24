@@ -585,12 +585,16 @@ export class SQLPlusSession {
     const value = parts.slice(1).join(' ');
 
     switch (option) {
-      case 'LINESIZE': case 'LIN':
-        this.settings.linesize = parseInt(value) || 80;
+      case 'LINESIZE': case 'LIN': {
+        const parsed = parseInt(value);
+        this.settings.linesize = isNaN(parsed) ? 80 : parsed;
         break;
-      case 'PAGESIZE': case 'PAGES':
-        this.settings.pagesize = parseInt(value) || 14;
+      }
+      case 'PAGESIZE': case 'PAGES': {
+        const parsed = parseInt(value);
+        this.settings.pagesize = isNaN(parsed) ? 14 : parsed;
         break;
+      }
       case 'SERVEROUTPUT': case 'SERVEROUT':
         this.settings.serveroutput = value.toUpperCase() === 'ON';
         if (this.executor) this.executor.updateContext({ serverOutput: this.settings.serveroutput });
