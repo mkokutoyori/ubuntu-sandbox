@@ -443,4 +443,1852 @@ SHUTDOWN IMMEDIATE;
 
 ---
 
-*La suite arrive avec la Section 5 : L'architecture Oracle en coulisses...*
+## 5. L'architecture Oracle en coulisses
+
+Maintenant qu'on a les concepts de base, regardons comment Oracle fonctionne réellement sous le capot. C'est un peu comme regarder un film en coulisses. 🎬
+
+### 5.1 Le parcours d'une requête SELECT
+
+Quand tu tapes `SELECT * FROM HR.EMPLOYEES WHERE salary > 10000;`, voici tout ce qui se passe en coulisses, en quelques millisecondes :
+
+**Étape 1 — Analyse syntaxique (Parse)**
+
+Oracle vérifie d'abord que ta requête est du SQL valide. C'est le **parsing**. Il vérifie la syntaxe, l'existence des tables et des colonnes, et tes droits d'accès.
+
+Mais avant de tout réanalyser, Oracle regarde d'abord dans le **Shared Pool** (dans la SGA) si cette même requête a déjà été exécutée. Si oui, on réutilise le plan d'exécution existant — c'est un **soft parse**, beaucoup plus rapide qu'un **hard parse** complet.
+
+```
+                         Requête SQL
+                              │
+                     ┌────────▼────────┐
+                     │  Shared Pool :  │
+                     │  déjà analysée ?│
+                     └────────┬────────┘
+                        Oui / │ \ Non
+                       ┌──────┘  └──────┐
+                  Soft Parse      Hard Parse
+                  (rapide ⚡)    (complet 🔍)
+                       │              │
+                       └──────┬───────┘
+                              │
+                     Plan d'exécution
+```
+
+> 💡 **Pourquoi c'est important ?** Sur un système de production avec des milliers de requêtes par seconde, le soft parse est crucial. C'est pour ça qu'on utilise des **bind variables** (`:param` au lieu de valeurs en dur) — ça permet à Oracle de réutiliser le même plan d'exécution pour des requêtes similaires.
+
+**Étape 2 — Optimisation**
+
+L'**optimiseur** (Query Optimizer) est le cerveau d'Oracle. Il analyse ta requête et décide de la meilleure stratégie pour la traiter. Doit-il :
+- Lire la table entière (**Full Table Scan**) ?
+- Utiliser un index (**Index Scan**) ?
+- Dans quel ordre joindre les tables ?
+- Quel algorithme de jointure utiliser (Nested Loops, Hash Join, Sort Merge) ?
+
+L'optimiseur Oracle est **basé sur les coûts** (Cost-Based Optimizer — CBO). Il estime le coût de chaque stratégie possible et choisit la moins coûteuse. Pour cela, il s'appuie sur les **statistiques** des tables (nombre de lignes, distribution des valeurs, etc.).
+
+```sql
+-- Voir le plan d'exécution choisi par l'optimiseur
+EXPLAIN PLAN FOR
+SELECT * FROM HR.EMPLOYEES WHERE salary > 10000;
+
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
+```
+
+**Étape 3 — Exécution**
+
+Le moteur d'exécution suit le plan établi par l'optimiseur :
+1. Il cherche d'abord les blocs de données dans le **Buffer Cache** (SGA)
+2. Si les blocs n'y sont pas → **cache miss** → il va les lire sur disque et les charge en mémoire
+3. Il applique les filtres (`WHERE salary > 10000`)
+4. Il trie, groupe, agrège selon les besoins
+5. Il renvoie les résultats au client
+
+```
+  Buffer Cache (SGA)           Disque
+  ┌──────────────────┐    ┌──────────────┐
+  │ Bloc 42 ✅ trouvé│    │ users01.dbf  │
+  │ Bloc 58 ✅ trouvé│    │              │
+  │ Bloc 71 ❌ absent├───►│ Lecture bloc  │
+  │     ...          │◄───┤ 71 → cache   │
+  └──────────────────┘    └──────────────┘
+```
+
+> 🔑 **Le ratio de succès du Buffer Cache** (Buffer Cache Hit Ratio) est un indicateur clé de performance. Idéalement, on veut que plus de 95% des lectures soient servies depuis la mémoire.
+
+### 5.2 Le parcours d'une requête DML (INSERT, UPDATE, DELETE)
+
+Quand tu modifies des données, le processus est plus complexe car Oracle doit garantir la **recoverabilité** et la **cohérence**. Suivons un `UPDATE` étape par étape :
+
+```sql
+UPDATE HR.EMPLOYEES SET salary = 60000 WHERE employee_id = 100;
+```
+
+**Étape 1 — Génération des données d'annulation (Undo)**
+
+Avant de modifier quoi que ce soit, Oracle sauvegarde l'**ancienne valeur** dans le **tablespace UNDO** (aussi appelé segment de rollback). C'est ce qui permet de faire un `ROLLBACK` si besoin, et aussi de fournir une lecture cohérente aux autres sessions.
+
+```
+Avant modification :
+  salary = 52000  ──────►  Copié dans UNDO
+                           (pour rollback éventuel)
+```
+
+**Étape 2 — Écriture dans le Redo Log Buffer**
+
+Oracle écrit dans le **Redo Log Buffer** (en mémoire) une description de la modification : *"Sur le bloc X, à l'offset Y, remplacer 52000 par 60000"*. C'est le **redo** — il permet de *rejouer* la modification en cas de crash.
+
+**Étape 3 — Modification du bloc en mémoire**
+
+Le bloc de données contenant la ligne `employee_id = 100` est modifié **en mémoire** dans le Buffer Cache. Le bloc est marqué comme **dirty** (sale) — il diffère de sa version sur disque.
+
+**Étape 4 — En attente du COMMIT**
+
+À ce stade, la modification est faite en mémoire mais **pas encore permanente**. L'utilisateur peut encore faire un `ROLLBACK`. Les autres sessions qui lisent cette ligne voient toujours l'ancienne valeur (grâce à l'UNDO) — c'est la **lecture cohérente** (consistent read).
+
+```
+           Session A                    Session B
+              │                            │
+  UPDATE salary = 60000          SELECT salary FROM ...
+              │                            │
+         (pas de COMMIT)            Lit l'UNDO → voit 52000
+              │                    (lecture cohérente ✅)
+```
+
+### 5.3 Que se passe-t-il au COMMIT ?
+
+Quand tu tapes `COMMIT;`, voici la séquence critique :
+
+1. **LGWR** (Log Writer) écrit le contenu du Redo Log Buffer vers les **fichiers redo log sur disque**. C'est une écriture **synchrone** — Oracle attend qu'elle soit terminée avant de confirmer le COMMIT.
+2. Oracle renvoie "Commit complete." à l'utilisateur.
+3. C'est tout ! Les blocs modifiés restent en mémoire pour l'instant.
+
+> ⚠️ **Point crucial** : Au moment du COMMIT, les données modifiées ne sont **PAS** encore écrites dans les datafiles ! Elles sont toujours dans le Buffer Cache en mémoire. Seul le **redo** est écrit sur disque. C'est ce qu'on appelle le mécanisme de **write-ahead logging** — le journal passe toujours en premier.
+
+**Mais alors, quand est-ce que les datafiles sont mis à jour ?**
+
+C'est **DBW0** (Database Writer) qui s'en charge, mais **de manière asynchrone**, quand il le juge opportun :
+- Quand le Buffer Cache est trop plein
+- Lors d'un **checkpoint** (déclenché par CKPT)
+- Quand il n'a rien d'autre à faire (idle writes)
+
+```
+  COMMIT
+    │
+    ├─► LGWR écrit le redo ──► Redo Log File (disque)  ← IMMÉDIAT ⚡
+    │
+    └─► DBW0 écrira les blocs ──► Datafile (disque)    ← PLUS TARD 🕐
+```
+
+> 💡 **Pourquoi cette architecture ?** Parce qu'écrire séquentiellement dans un fichier redo (comme LGWR) est **beaucoup plus rapide** qu'écrire des blocs dispersés dans les datafiles (comme DBW0). En cas de crash, Oracle n'a qu'à rejouer le redo pour retrouver toutes les modifications committées.
+
+### 5.4 Le mécanisme de recovery (récupération après crash)
+
+Imaginons le pire : le serveur perd l'alimentation électrique en plein fonctionnement. La mémoire est vidée, les blocs dirty du Buffer Cache sont perdus. Que se passe-t-il au redémarrage ?
+
+**SMON** (System Monitor) entre en action et effectue un **Instance Recovery** en deux phases :
+
+**Phase 1 — Roll Forward (rejeu)**
+
+SMON lit les redo logs et **rejoue toutes les modifications** qui y sont enregistrées, y compris celles des transactions committées ET non committées. Ça remet la base dans l'état exact où elle était juste avant le crash.
+
+**Phase 2 — Roll Back (annulation)**
+
+SMON identifie les transactions qui n'avaient pas été committées au moment du crash et les **annule** en utilisant les données d'UNDO. Seules les transactions validées par un `COMMIT` survivent.
+
+```
+  CRASH ! 💥
+    │
+    ▼
+  Redémarrage
+    │
+    ├─► Phase 1 : Roll Forward
+    │   Rejoue TOUS les redo logs
+    │   (transactions committées + non committées)
+    │
+    └─► Phase 2 : Roll Back
+        Annule les transactions non committées
+        (grâce aux données UNDO)
+    │
+    ▼
+  Base cohérente ✅
+  Aucune donnée committée perdue !
+```
+
+> 🔑 **C'est ça, la garantie de Durabilité du modèle ACID.** Tant que le COMMIT a été confirmé par Oracle, les données survivront à n'importe quel crash. C'est ce mécanisme qui fait la réputation de fiabilité d'Oracle en entreprise.
+
+### 5.5 Le mécanisme de lecture cohérente (Consistent Read)
+
+C'est l'un des mécanismes les plus élégants d'Oracle. Quand une session exécute un `SELECT`, elle voit les données **telles qu'elles étaient au moment où le SELECT a commencé**, même si d'autres sessions sont en train de les modifier en parallèle.
+
+Comment Oracle fait-il ça ? Grâce au **tablespace UNDO** :
+
+1. La session B lance un `SELECT * FROM employees;` à 14h00:00
+2. À 14h00:01, la session A modifie une ligne et fait un COMMIT
+3. La session B, toujours en train de lire, tombe sur le bloc modifié
+4. Oracle détecte que ce bloc a été modifié **après** le début du SELECT
+5. Oracle va chercher l'ancienne version dans l'**UNDO** et la présente à la session B
+
+Résultat : la session B obtient une photo cohérente des données à 14h00:00, sans être bloquée par les modifications de la session A. **Les lecteurs ne bloquent jamais les écrivains, et les écrivains ne bloquent jamais les lecteurs.** 🎯
+
+> 💡 **Comparaison** : Dans SQL Server ou MySQL (InnoDB en mode par défaut), les lectures peuvent être bloquées par des écritures en cours. Oracle, grâce au mécanisme d'UNDO, évite ce problème. C'est un avantage majeur pour les applications à forte concurrence.
+
+### 5.6 Les verrous (Locks)
+
+Même si les lecteurs ne bloquent pas les écrivains, il faut bien gérer le cas où **deux sessions veulent modifier la même ligne en même temps**. C'est le rôle des **verrous** (locks).
+
+Oracle utilise un verrouillage **au niveau de la ligne** (row-level locking), pas au niveau de la table. Ça signifie que deux sessions peuvent modifier des lignes différentes de la même table simultanément, sans se gêner.
+
+```
+  Session A                         Session B
+     │                                 │
+  UPDATE ... WHERE id = 1;          UPDATE ... WHERE id = 2;
+  (verrou sur ligne 1)              (verrou sur ligne 2)
+     │                                 │
+  Pas de conflit ! ✅               Pas de conflit ! ✅
+```
+
+Mais si la session B essaie de modifier la **même ligne** que la session A :
+
+```
+  Session A                         Session B
+     │                                 │
+  UPDATE ... WHERE id = 1;          UPDATE ... WHERE id = 1;
+  (verrou acquis ✅)                (attend... ⏳)
+     │                                 │
+  COMMIT;                           (verrou libéré → modification appliquée)
+```
+
+La session B est **bloquée** jusqu'à ce que la session A fasse un `COMMIT` ou un `ROLLBACK`.
+
+> ⚠️ **Le deadlock** : Si la session A attend un verrou détenu par B, et que B attend un verrou détenu par A, c'est un **deadlock** (interblocage). Oracle le détecte automatiquement et annule l'une des deux transactions avec l'erreur `ORA-00060: deadlock detected`.
+
+### 5.7 L'architecture réseau : Listener et TNS
+
+Oracle utilise une architecture client-serveur. Les clients (SQL*Plus, applications Java, etc.) ne se connectent pas directement à l'instance — ils passent par un intermédiaire : le **Listener**.
+
+**Le Listener** est un processus qui écoute sur un port réseau (par défaut **1521**) les demandes de connexion entrantes. Quand un client se connecte, le Listener le redirige vers un **Server Process** dédié (ou partagé) qui traitera ses requêtes.
+
+```
+  ┌──────────┐         ┌───────────┐         ┌──────────────┐
+  │ SQL*Plus │────────►│ Listener  │────────►│ Instance     │
+  │ (client) │  TNS    │ (port 1521│  crée   │ Oracle       │
+  └──────────┘         │  )        │  un     │              │
+                       └───────────┘  server │ ┌──────────┐ │
+  ┌──────────┐              │         process│ │ Server   │ │
+  │ App Java │──────────────┘                │ │ Process  │ │
+  │ (client) │                               │ └──────────┘ │
+  └──────────┘                               └──────────────┘
+```
+
+**TNS (Transparent Network Substrate)** est le protocole réseau d'Oracle. La configuration côté client se fait dans le fichier `tnsnames.ora` :
+
+```
+ORCL =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.100)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )
+```
+
+```bash
+# Connexion via SQL*Plus avec un TNS alias
+sqlplus hr/hr@ORCL
+
+# Tester la connectivité réseau
+tnsping ORCL
+
+# Gérer le Listener
+lsnrctl start      # Démarrer le Listener
+lsnrctl stop       # Arrêter le Listener
+lsnrctl status     # Vérifier le statut
+```
+
+> 💡 **Les deux modes de connexion** :
+> - **Dedicated Server** : un processus serveur par session client. Simple et isolé, c'est le mode par défaut.
+> - **Shared Server** : un pool de processus serveur partagé entre plusieurs sessions. Économise la mémoire quand il y a beaucoup de connexions, mais plus complexe à configurer.
+
+### 5.8 L'architecture mémoire complète : SGA + PGA
+
+On a déjà parlé de la SGA, mais il y a une autre zone mémoire tout aussi importante : la **PGA** (Program Global Area).
+
+La **PGA** est une zone mémoire **privée** à chaque processus serveur. Chaque session a sa propre PGA, qui contient :
+- Les variables de session
+- La zone de tri (pour les `ORDER BY`, `GROUP BY`, `DISTINCT`)
+- La zone de hachage (pour les jointures Hash Join)
+- Le contexte de la requête en cours
+
+```
+                    ┌─────────────────────────────────┐
+                    │        MÉMOIRE DU SERVEUR        │
+                    │                                   │
+                    │  ┌────────────────────────────┐  │
+                    │  │     SGA (partagée)          │  │
+                    │  │  ┌────────┐ ┌───────────┐  │  │
+                    │  │  │ Buffer │ │  Shared   │  │  │
+                    │  │  │ Cache  │ │  Pool     │  │  │
+                    │  │  └────────┘ └───────────┘  │  │
+                    │  │  ┌────────┐ ┌───────────┐  │  │
+                    │  │  │ Redo   │ │  Java     │  │  │
+                    │  │  │ Log Buf│ │  Pool     │  │  │
+                    │  │  └────────┘ └───────────┘  │  │
+                    │  └────────────────────────────┘  │
+                    │                                   │
+                    │  ┌──────┐ ┌──────┐ ┌──────┐      │
+                    │  │ PGA  │ │ PGA  │ │ PGA  │      │
+                    │  │ (S1) │ │ (S2) │ │ (S3) │ ...  │
+                    │  └──────┘ └──────┘ └──────┘      │
+                    │  (une PGA par session)            │
+                    └─────────────────────────────────┘
+```
+
+| Zone mémoire | Portée | Contenu principal |
+|---|---|---|
+| **SGA** | Partagée entre toutes les sessions | Buffer Cache, Shared Pool, Redo Log Buffer |
+| **PGA** | Privée à chaque session | Zone de tri, zone de hachage, contexte de session |
+
+> 🔑 **Dimensionnement** : Dans Oracle 11g et plus, tu peux utiliser la gestion automatique de la mémoire (**AMM** — Automatic Memory Management) qui laisse Oracle répartir la mémoire entre SGA et PGA selon les besoins :
+> ```sql
+> ALTER SYSTEM SET MEMORY_TARGET = 2G SCOPE=SPFILE;
+> ALTER SYSTEM SET MEMORY_MAX_TARGET = 2G SCOPE=SPFILE;
+> ```
+
+### 5.9 Les checkpoints et les redo log switches
+
+On a vu que DBW0 n'écrit pas immédiatement les blocs modifiés sur disque. Mais à un moment donné, il faut bien synchroniser la mémoire et le disque. C'est le rôle des **checkpoints**.
+
+Un **checkpoint** ordonne à DBW0 d'écrire tous les blocs dirty du Buffer Cache vers les datafiles. Le processus **CKPT** met ensuite à jour les en-têtes des datafiles et le control file avec la position du checkpoint.
+
+Les checkpoints se produisent lors des événements suivants :
+- Un **redo log switch** (passage d'un groupe de redo log au suivant)
+- Un `ALTER SYSTEM CHECKPOINT;` explicite
+- Un `SHUTDOWN` (sauf ABORT)
+- Selon l'intervalle configuré
+
+**Le cycle des redo logs** fonctionne de manière circulaire :
+
+```
+     ┌─────────┐     ┌─────────┐     ┌─────────┐
+     │ Groupe 1│────►│ Groupe 2│────►│ Groupe 3│
+     │ CURRENT │     │ INACTIVE│     │ INACTIVE│
+     └─────────┘     └─────────┘     └─────────┘
+          ▲                                │
+          │                                │
+          └────────────────────────────────┘
+                    (circulaire)
+```
+
+Quand le groupe courant est plein :
+1. LGWR passe au groupe suivant → c'est un **log switch**
+2. Le log switch déclenche un **checkpoint**
+3. DBW0 écrit les blocs dirty
+4. Si l'**archivage** est activé (ARCHIVELOG mode), **ARC0** copie le redo log plein vers l'espace d'archivage
+
+> ⚠️ **ARCHIVELOG vs NOARCHIVELOG** :
+> - En mode **NOARCHIVELOG** : les redo logs sont écrasés après chaque cycle. En cas de perte d'un datafile, tu ne peux restaurer que jusqu'au dernier backup. Suffisant pour le développement.
+> - En mode **ARCHIVELOG** : chaque redo log est archivé avant d'être réutilisé. Tu peux restaurer à n'importe quel point dans le temps (**Point-in-Time Recovery**). **Obligatoire en production !**
+
+```sql
+-- Vérifier le mode d'archivage
+ARCHIVE LOG LIST;
+
+-- Passer en mode ARCHIVELOG (nécessite un redémarrage)
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+ALTER DATABASE ARCHIVELOG;
+ALTER DATABASE OPEN;
+```
+
+### 5.10 Résumé : le cycle de vie complet d'une modification
+
+Pour récapituler, voici le cycle de vie complet d'un `UPDATE` suivi d'un `COMMIT` :
+
+```
+1. Parse & Optimize    →  Analyse SQL, plan d'exécution
+2. Undo generation     →  Ancienne valeur sauvée dans UNDO
+3. Redo generation     →  Modification écrite dans Redo Log Buffer
+4. Block modification  →  Bloc modifié dans Buffer Cache (dirty)
+5. COMMIT              →  LGWR écrit le redo sur disque ← DURABILITÉ
+6. Confirmation        →  "Commit complete." renvoyé au client
+7. Checkpoint (+ tard) →  DBW0 écrit les dirty blocks dans les datafiles
+```
+
+Ce mécanisme a l'air complexe, mais c'est ce qui permet à Oracle de garantir :
+- ✅ **Zéro perte de données** pour les transactions committées
+- ✅ **Performance optimale** (les écritures disque coûteuses sont différées)
+- ✅ **Lectures cohérentes** sans bloquer les écrivains
+- ✅ **Recovery rapide** après un crash
+
+C'est le cœur battant d'Oracle Database. 💓
+
+---
+
+## 6. Présentation de notre laboratoire
+
+Passons maintenant à la pratique ! Voici l'environnement que nous allons utiliser pour ce tutoriel. Ne t'inquiète pas si certains éléments te semblent flous — on va tout découvrir ensemble, étape par étape. 🔧
+
+### 6.1 Notre topologie
+
+Dans ce lab, on simule un environnement d'entreprise typique avec un serveur de base de données Oracle accessible depuis des postes clients via le réseau.
+
+```
+                     ┌─────────────────────────────────┐
+                     │     Serveur Linux (DB-SRV)      │
+                     │                                  │
+                     │  Oracle Database 19c             │
+                     │  Instance : ORCL                 │
+                     │  Listener : port 1521            │
+                     │  IP : 192.168.1.100              │
+                     └──────────────┬───────────────────┘
+                                    │
+                              [Switch SW1]
+                            ┌───────┼───────┐
+                            │       │       │
+                    ┌───────┴──┐ ┌──┴────┐ ┌┴────────────┐
+                    │ PC Linux │ │ PC Win│ │ App Server  │
+                    │ (DBA)    │ │ (Dev) │ │ (optionnel) │
+                    │ .10      │ │ .20   │ │ .30         │
+                    └──────────┘ └───────┘ └─────────────┘
+```
+
+| Machine | Rôle | IP | Logiciels |
+|---------|------|----|-----------|
+| **DB-SRV** | Serveur Oracle | 192.168.1.100 | Oracle 19c, Listener |
+| **PC Linux** | Poste DBA | 192.168.1.10 | SQL*Plus, tnsping, lsnrctl |
+| **PC Windows** | Poste développeur | 192.168.1.20 | SQL*Plus ou SQL Developer |
+| **App Server** | Serveur applicatif (optionnel) | 192.168.1.30 | Application Java/Python |
+
+> 💡 **Dans notre simulateur**, tu as directement accès au serveur Linux avec Oracle pré-installé. Ouvre le terminal du serveur et tu peux tout de suite lancer SQL*Plus ! Pas besoin de configurer le réseau pour commencer.
+
+### 6.2 Les schémas d'exemple
+
+Notre lab vient avec deux schémas pré-installés, remplis de données d'exemple — parfaits pour apprendre et expérimenter sans risque.
+
+**Le schéma HR (Human Resources)**
+
+C'est le schéma d'exemple officiel d'Oracle. Il modélise le département des ressources humaines d'une entreprise fictive avec 7 tables interconnectées :
+
+```
+  ┌───────────┐     ┌────────────┐     ┌─────────────┐
+  │  REGIONS  │◄────│ COUNTRIES  │◄────│  LOCATIONS  │
+  │  (4 rows) │     │ (25 rows)  │     │  (23 rows)  │
+  └───────────┘     └────────────┘     └──────┬──────┘
+                                              │
+                                     ┌────────▼────────┐
+                                     │  DEPARTMENTS    │
+                                     │  (27 rows)      │
+                                     └───┬─────────┬───┘
+                                         │         │
+                              ┌──────────▼──┐  ┌───▼──────────┐
+                              │  EMPLOYEES  │  │    JOBS       │
+                              │  (107 rows) │  │  (19 rows)    │
+                              └──────┬──────┘  └───────────────┘
+                                     │
+                              ┌──────▼──────┐
+                              │ JOB_HISTORY │
+                              │  (10 rows)  │
+                              └─────────────┘
+```
+
+Ce schéma est idéal pour apprendre les `SELECT`, les `JOIN`, les sous-requêtes, les agrégations... Voici quelques requêtes intéressantes qu'on fera :
+
+```sql
+-- Les employés et leur département
+SELECT e.first_name, e.last_name, d.department_name
+FROM HR.EMPLOYEES e
+JOIN HR.DEPARTMENTS d ON e.department_id = d.department_id;
+
+-- Le salaire moyen par département
+SELECT d.department_name, AVG(e.salary) AS salaire_moyen
+FROM HR.EMPLOYEES e
+JOIN HR.DEPARTMENTS d ON e.department_id = d.department_id
+GROUP BY d.department_name
+ORDER BY salaire_moyen DESC;
+
+-- Les employés qui gagnent plus que la moyenne
+SELECT first_name, last_name, salary
+FROM HR.EMPLOYEES
+WHERE salary > (SELECT AVG(salary) FROM HR.EMPLOYEES);
+```
+
+**Le schéma SCOTT (le classique historique)**
+
+Ce schéma existe depuis **1977** — il a été créé par Bruce Scott, l'un des premiers employés d'Oracle. C'est le schéma le plus simple et le plus connu du monde Oracle :
+
+```
+  ┌──────────┐     ┌──────────┐
+  │   DEPT   │◄────│   EMP    │
+  │ (4 rows) │     │ (14 rows)│
+  └──────────┘     └──────────┘
+
+  ┌──────────┐     ┌──────────┐
+  │  BONUS   │     │ SALGRADE │
+  │ (0 rows) │     │ (5 rows) │
+  └──────────┘     └──────────┘
+```
+
+```sql
+-- La table EMP classique
+SELECT empno, ename, job, sal, dname
+FROM SCOTT.EMP e
+JOIN SCOTT.DEPT d ON e.deptno = d.deptno;
+
+-- Résultat typique :
+-- EMPNO  ENAME   JOB        SAL   DNAME
+-- 7839   KING    PRESIDENT  5000  ACCOUNTING
+-- 7698   BLAKE   MANAGER    2850  SALES
+-- 7782   CLARK   MANAGER    2450  ACCOUNTING
+-- ...
+```
+
+> 🔑 **Fun fact** : Le mot de passe original du compte SCOTT est `tiger` — c'était le nom du chat de Bruce Scott ! 🐱 Depuis 1977, des générations de DBA ont appris Oracle avec `sqlplus scott/tiger`.
+
+### 6.3 Arborescence Oracle sur le serveur
+
+Sur un serveur Oracle en production, les fichiers sont organisés selon une convention standard appelée **OFA** (Optimal Flexible Architecture). Voici l'arborescence type :
+
+```
+/u01/app/oracle/                          ← ORACLE_BASE
+├── product/
+│   └── 19.0.0/                           ← ORACLE_HOME
+│       └── dbhome_1/
+│           ├── bin/                       ← Exécutables
+│           │   ├── sqlplus               ← Client SQL*Plus
+│           │   ├── lsnrctl               ← Contrôle du Listener
+│           │   ├── dbca                  ← Database Configuration Assistant
+│           │   ├── rman                  ← Recovery Manager
+│           │   ├── tnsping              ← Test de connectivité TNS
+│           │   ├── orapwd               ← Gestion du password file
+│           │   └── adrci                ← Diagnostic (ADR Command Interpreter)
+│           ├── network/
+│           │   └── admin/
+│           │       ├── tnsnames.ora      ← Alias de connexion (côté client)
+│           │       ├── listener.ora      ← Configuration du Listener
+│           │       └── sqlnet.ora        ← Paramètres réseau SQL*Net
+│           ├── dbs/
+│           │   ├── initORCL.ora          ← Fichier d'initialisation (pfile)
+│           │   ├── spfileORCL.ora        ← Server Parameter File (spfile)
+│           │   └── orapwORCL             ← Password file
+│           └── lib/, include/, rdbms/... ← Bibliothèques et headers
+│
+├── diag/                                 ← Diagnostic et traces
+│   └── rdbms/orcl/ORCL/
+│       ├── alert/
+│       │   └── log.xml                   ← Alert log (XML)
+│       └── trace/
+│           └── alert_ORCL.log            ← Alert log (texte)
+│
+└── oradata/                              ← Fichiers de la base
+    └── ORCL/
+        ├── system01.dbf                  ← Tablespace SYSTEM (800 Mo)
+        ├── sysaux01.dbf                  ← Tablespace SYSAUX (550 Mo)
+        ├── undotbs01.dbf                 ← Tablespace UNDO (100 Mo)
+        ├── users01.dbf                   ← Tablespace USERS (100 Mo)
+        ├── temp01.dbf                    ← Tablespace TEMP (100 Mo)
+        ├── redo01.log                    ← Redo Log Groupe 1
+        ├── redo02.log                    ← Redo Log Groupe 2
+        ├── redo03.log                    ← Redo Log Groupe 3
+        └── control01.ctl                ← Control File
+```
+
+Les variables d'environnement essentielles :
+
+```bash
+# Ces variables doivent être définies pour que les outils Oracle fonctionnent
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_HOME=$ORACLE_BASE/product/19.0.0/dbhome_1
+export ORACLE_SID=ORCL
+export PATH=$ORACLE_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:$LD_LIBRARY_PATH
+export NLS_LANG=FRENCH_FRANCE.AL32UTF8
+```
+
+> 💡 **Astuce** : Ces variables sont généralement définies dans le fichier `~/.bash_profile` ou `~/.bashrc` de l'utilisateur `oracle`. Comme ça, elles sont automatiquement chargées à chaque connexion.
+
+### 6.4 Se connecter à Oracle avec SQL*Plus
+
+**SQL*Plus** est le client en ligne de commande officiel d'Oracle. C'est l'outil de base que tout DBA doit maîtriser — un peu comme le `terminal` pour un admin Linux. On l'utilisera tout au long de ce tutoriel.
+
+**Connexion locale (depuis le serveur lui-même) :**
+
+```bash
+# Connexion en tant que SYS (super-admin) — nécessite le rôle SYSDBA
+sqlplus / as sysdba
+
+# Connexion avec un utilisateur normal
+sqlplus hr/hr
+
+# Connexion avec le compte SCOTT
+sqlplus scott/tiger
+```
+
+**Connexion distante (depuis un poste client via le réseau) :**
+
+```bash
+# Avec un alias TNS configuré dans tnsnames.ora
+sqlplus hr/hr@ORCL
+
+# Avec la syntaxe EZConnect (sans tnsnames.ora)
+sqlplus hr/hr@192.168.1.100:1521/orcl
+```
+
+**Ce que tu vois à la connexion :**
+
+```
+SQL*Plus: Release 19.0.0.0.0 - Production on Mon Mar 24 10:30:00 2026
+Version 19.3.0.0.0
+
+Copyright (c) 1982, 2019, Oracle.  All rights reserved.
+
+Connected to:
+Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+Version 19.3.0.0.0
+
+SQL>
+```
+
+Le prompt `SQL>` attend tes commandes. Bienvenue dans SQL*Plus ! 🎉
+
+### 6.5 Les commandes SQL*Plus essentielles
+
+Avant de plonger dans le SQL, voici les commandes spécifiques à **SQL*Plus** (ce ne sont pas du SQL, ce sont des commandes de l'outil) :
+
+**Commandes d'information :**
+
+```sql
+-- Qui suis-je ?
+SHOW USER;
+-- USER is "HR"
+
+-- Quelle version d'Oracle ?
+SELECT * FROM V$VERSION;
+
+-- Voir les paramètres de l'instance
+SHOW PARAMETER db_name;
+SHOW PARAMETER memory_target;
+SHOW SGA;
+```
+
+**Commandes de formatage (pour que les résultats soient lisibles) :**
+
+```sql
+-- Largeur de ligne (par défaut 80, souvent trop court)
+SET LINESIZE 200;
+
+-- Nombre de lignes par page
+SET PAGESIZE 50;
+
+-- Formater une colonne spécifique
+COLUMN first_name FORMAT A15;
+COLUMN salary FORMAT 999,999.99;
+COLUMN department_name FORMAT A20;
+
+-- Afficher la sortie de DBMS_OUTPUT (indispensable pour PL/SQL)
+SET SERVEROUTPUT ON;
+```
+
+**Commandes de navigation :**
+
+```sql
+-- Afficher la structure d'une table
+DESC HR.EMPLOYEES;
+-- ou
+DESCRIBE HR.EMPLOYEES;
+
+/*
+ Name                 Null?    Type
+ -------------------- -------- -------------------
+ EMPLOYEE_ID          NOT NULL NUMBER(6)
+ FIRST_NAME                    VARCHAR2(20)
+ LAST_NAME            NOT NULL VARCHAR2(25)
+ EMAIL                NOT NULL VARCHAR2(25)
+ PHONE_NUMBER                  VARCHAR2(20)
+ HIRE_DATE            NOT NULL DATE
+ JOB_ID               NOT NULL VARCHAR2(10)
+ SALARY                        NUMBER(8,2)
+ COMMISSION_PCT                NUMBER(2,2)
+ MANAGER_ID                    NUMBER(6)
+ DEPARTMENT_ID                 NUMBER(4)
+*/
+
+-- Lister toutes mes tables
+SELECT table_name FROM USER_TABLES;
+
+-- Quitter SQL*Plus
+EXIT;
+-- ou
+QUIT;
+```
+
+**Commandes de gestion :**
+
+```sql
+-- Se connecter sous un autre utilisateur sans quitter
+CONNECT scott/tiger;
+
+-- Re-exécuter la dernière commande
+/
+
+-- Effacer l'écran (selon le terminal)
+CLEAR SCREEN;
+
+-- Définir une variable de substitution
+DEFINE mon_dept = 50;
+SELECT * FROM HR.EMPLOYEES WHERE department_id = &mon_dept;
+```
+
+### 6.6 Les utilisateurs pré-configurés de notre lab
+
+Voici les comptes disponibles dans notre laboratoire, avec leurs mots de passe et leurs rôles :
+
+| Utilisateur | Mot de passe | Rôle | Usage |
+|-------------|-------------|------|-------|
+| **SYS** | (connexion `AS SYSDBA`) | Super-administrateur | Administration critique, startup/shutdown |
+| **SYSTEM** | `manager` | Administrateur | Administration quotidienne |
+| **HR** | `hr` | Propriétaire du schéma HR | Requêtes sur les données RH |
+| **SCOTT** | `tiger` | Propriétaire du schéma SCOTT | Requêtes sur les données classiques |
+| **DBSNMP** | `dbsnmp` | Monitoring | Supervision (Oracle Enterprise Manager) |
+
+> ⚠️ **En production, ne jamais garder les mots de passe par défaut !** Les premiers hackers à cibler une base Oracle essaieront `scott/tiger` et `system/manager`. Change-les immédiatement après l'installation :
+> ```sql
+> ALTER USER scott IDENTIFIED BY Un_Vrai_Mot_De_Passe_2024!;
+> ```
+
+### 6.7 Vérifier que tout fonctionne
+
+Avant de commencer les exercices, vérifions que notre environnement est opérationnel. Voici une check-list rapide à dérouler :
+
+**1. Vérifier que l'instance est démarrée :**
+
+```sql
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             OPEN
+```
+
+Si le statut n'est pas `OPEN`, démarre l'instance :
+```sql
+SQL> STARTUP;
+ORACLE instance started.
+...
+Database opened.
+```
+
+**2. Vérifier le Listener :**
+
+```bash
+$ lsnrctl status
+
+LSNRCTL for Linux: Version 19.0.0.0.0 - Production
+...
+Listening Endpoints Summary...
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=192.168.1.100)(PORT=1521)))
+Services Summary...
+  Service "orcl" has 1 instance(s).
+    Instance "ORCL", status READY, has 1 handler(s) for this service...
+```
+
+Si le Listener n'est pas démarré :
+```bash
+$ lsnrctl start
+```
+
+**3. Vérifier les schémas d'exemple :**
+
+```sql
+SQL> CONNECT hr/hr;
+Connected.
+
+SQL> SELECT COUNT(*) FROM EMPLOYEES;
+
+  COUNT(*)
+----------
+       107
+
+SQL> CONNECT scott/tiger;
+Connected.
+
+SQL> SELECT COUNT(*) FROM EMP;
+
+  COUNT(*)
+----------
+        14
+```
+
+**4. Vérifier les tablespaces :**
+
+```sql
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+SQL> SELECT tablespace_name, status FROM DBA_TABLESPACES;
+
+TABLESPACE_NAME                STATUS
+------------------------------ ---------
+SYSTEM                         ONLINE
+SYSAUX                         ONLINE
+UNDOTBS1                       ONLINE
+TEMP                           ONLINE
+USERS                          ONLINE
+```
+
+Si tout est `ONLINE` et que les schémas HR et SCOTT retournent des données, tu es prêt ! 🚀
+
+### 6.8 Notre plan d'attaque pour la suite
+
+Maintenant que le labo est en place, voici ce qu'on va faire dans les prochaines sections :
+
+| Section | Ce qu'on va apprendre | Avec quel utilisateur |
+|---------|----------------------|-----------------------|
+| **7. Installation et arborescence** | Comprendre l'arborescence OFA, les fichiers de config | `oracle` (OS user) |
+| **8. Démarrage et arrêt** | STARTUP, SHUTDOWN, les différents modes | SYS AS SYSDBA |
+| **9. SQL*Plus avancé** | Formatage, variables, scripts | HR, SCOTT |
+| **10. SQL — Créer et manipuler** | CREATE TABLE, INSERT, SELECT, JOIN... | HR, SCOTT |
+| **11. Administration** | Tablespaces, utilisateurs, sauvegardes | SYS, SYSTEM |
+| **12. PL/SQL** | Blocs anonymes, procédures, fonctions | HR |
+| **13. Vues système** | V$SESSION, diagnostics, performance | SYS, SYSTEM |
+| **14. Réseau Oracle** | Listener, TNS, connexions distantes | oracle (OS), SYS |
+| **15. Cas pratiques** | Scénarios réels de bout en bout | Tous |
+
+> 💡 **Conseil** : N'hésite pas à expérimenter ! Le lab est fait pour ça. Tu ne peux rien casser de grave, et si jamais tu fais une bêtise, un `ROLLBACK;` ou un redémarrage de l'instance remet tout en ordre. Amuse-toi ! 😄
+
+---
+
+## 7. Installation et arborescence Oracle
+
+Maintenant qu'on a tout le contexte, on passe aux choses sérieuses ! 😈 Voici comment Oracle est installé sur un serveur Linux, et comment naviguer dans son arborescence. Même si dans notre simulateur l'installation est déjà faite, comprendre comment ça fonctionne est essentiel pour tout DBA.
+
+### 7.1 Prérequis d'installation
+
+Avant d'installer Oracle, il faut préparer le système d'exploitation. Oracle est exigeant sur son environnement — et c'est normal, on parle d'un SGBD de classe entreprise ! Voici les prérequis typiques pour Oracle 19c sur Linux :
+
+**Prérequis matériels :**
+
+| Ressource | Minimum | Recommandé en production |
+|-----------|---------|--------------------------|
+| RAM | 2 Go | 16 Go ou plus |
+| Espace disque | 10 Go (logiciel) + données | 100 Go+ selon les données |
+| Swap | 2× la RAM (si RAM < 16 Go) | = RAM (si RAM ≥ 16 Go) |
+| /tmp | 1 Go minimum | 5 Go |
+
+**Prérequis logiciels :**
+
+```bash
+# Vérifier la version du noyau Linux (minimum 3.10 pour Oracle 19c)
+uname -r
+
+# Vérifier la distribution (Oracle Linux, RHEL, CentOS sont les plus supportés)
+cat /etc/os-release
+
+# Paquets essentiels à installer
+sudo yum install -y oracle-database-preinstall-19c
+# Ce méta-paquet installe automatiquement toutes les dépendances,
+# configure les paramètres du noyau, et crée l'utilisateur oracle
+```
+
+> 💡 **Oracle Linux** : c'est la distribution Linux d'Oracle, basée sur Red Hat. Elle est gratuite et offre une compatibilité parfaite avec Oracle Database. Si tu pars de zéro, c'est le choix le plus simple.
+
+### 7.2 L'utilisateur oracle et les groupes
+
+Oracle ne doit **jamais** être installé ou exécuté en tant que `root`. On utilise un utilisateur dédié : **oracle**, qui appartient à des groupes spécifiques :
+
+```bash
+# Créer les groupes (si le méta-paquet ne l'a pas fait)
+groupadd -g 54321 oinstall    # Groupe principal d'installation
+groupadd -g 54322 dba         # Groupe des administrateurs de base de données
+groupadd -g 54323 oper        # Groupe des opérateurs (startup/shutdown)
+groupadd -g 54324 backupdba   # Groupe pour les sauvegardes
+
+# Créer l'utilisateur oracle
+useradd -u 54321 -g oinstall -G dba,oper,backupdba oracle
+passwd oracle
+```
+
+| Groupe | Rôle | Privilège principal |
+|--------|------|---------------------|
+| **oinstall** | Installation | Propriétaire des fichiers Oracle |
+| **dba** | Administration | Connexion AS SYSDBA |
+| **oper** | Opérations | Startup/Shutdown uniquement |
+| **backupdba** | Sauvegarde | RMAN et sauvegardes |
+
+> ⚠️ **Règle d'or** : On installe Oracle en tant qu'utilisateur `oracle`, jamais en `root`. On utilise `root` uniquement pour les prérequis système et l'exécution du script `root.sh` en fin d'installation.
+
+### 7.3 La norme OFA (Optimal Flexible Architecture)
+
+Oracle recommande une organisation des fichiers standardisée appelée **OFA**. C'est une convention, pas une obligation technique — mais la respecter te simplifiera énormément la vie au quotidien.
+
+**Principe général :**
+
+```
+/u01/                              ← Point de montage pour le logiciel Oracle
+├── app/
+│   └── oracle/                    ← ORACLE_BASE : racine de l'installation
+│       ├── product/               ← Versions du logiciel
+│       │   ├── 19.0.0/dbhome_1/  ← ORACLE_HOME pour Oracle 19c
+│       │   └── 12.2.0/dbhome_1/  ← ORACLE_HOME pour Oracle 12c (si multi-version)
+│       ├── diag/                  ← Fichiers de diagnostic (ADR)
+│       ├── audit/                 ← Fichiers d'audit
+│       └── cfgtoollogs/           ← Logs des assistants (DBCA, NETCA...)
+
+/u02/                              ← Point de montage pour les données
+└── oradata/
+    └── ORCL/                      ← Fichiers de la base ORCL
+        ├── system01.dbf
+        ├── sysaux01.dbf
+        ├── users01.dbf
+        ├── undotbs01.dbf
+        └── temp01.dbf
+
+/u03/                              ← Point de montage pour la recovery
+└── fast_recovery_area/
+    └── ORCL/
+        ├── archivelog/            ← Redo logs archivés
+        ├── backupset/            ← Sauvegardes RMAN
+        └── autobackup/           ← Sauvegardes auto du control file
+```
+
+**Pourquoi séparer sur plusieurs points de montage ?**
+
+| Point de montage | Contenu | Raison de la séparation |
+|------------------|---------|------------------------|
+| `/u01` | Logiciel Oracle | Si `/u02` (données) est plein, le logiciel continue de fonctionner |
+| `/u02` | Données (datafiles) | Disques rapides, RAID 10 idéalement |
+| `/u03` | Recovery et archives | Si le disque de données meurt, les sauvegardes sont sur un autre disque |
+
+> 🔑 **En production** : on utilise souvent **ASM** (Automatic Storage Management), le gestionnaire de disques intégré d'Oracle, au lieu de fichiers sur un système de fichiers classique. ASM gère lui-même le striping et le mirroring, offrant de meilleures performances et une meilleure protection.
+
+### 7.4 Les variables d'environnement
+
+Pour que les outils Oracle fonctionnent correctement, plusieurs variables d'environnement doivent être configurées. C'est la **première chose** à vérifier quand quelque chose ne marche pas !
+
+```bash
+# Le fichier ~/.bash_profile de l'utilisateur oracle doit contenir :
+
+# ORACLE_BASE : racine de l'installation Oracle
+export ORACLE_BASE=/u01/app/oracle
+
+# ORACLE_HOME : répertoire du logiciel Oracle (binaires, libs, config)
+export ORACLE_HOME=$ORACLE_BASE/product/19.0.0/dbhome_1
+
+# ORACLE_SID : identifiant de l'instance sur cette machine
+# C'est ce qui dit à Oracle QUELLE base de données utiliser
+export ORACLE_SID=ORCL
+
+# PATH : pour pouvoir lancer sqlplus, lsnrctl, rman... sans chemin complet
+export PATH=$ORACLE_HOME/bin:$PATH
+
+# LD_LIBRARY_PATH : bibliothèques partagées Oracle
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:$LD_LIBRARY_PATH
+
+# NLS_LANG : paramètres de langue et d'encodage
+# Format : LANGUAGE_TERRITORY.CHARSET
+export NLS_LANG=FRENCH_FRANCE.AL32UTF8
+```
+
+> ⚠️ **L'erreur la plus fréquente du débutant** : oublier de positionner `ORACLE_SID` avant de lancer `sqlplus`. Tu te retrouves alors avec l'erreur `ORA-12162: TNS:net service name is incorrectly specified` ou `ORA-12560: TNS:protocol adapter error`. Vérifie tes variables !
+
+```bash
+# Vérifier les variables (commande indispensable !)
+echo $ORACLE_HOME
+echo $ORACLE_SID
+echo $PATH | tr ':' '\n' | grep oracle
+
+# Vérifier que sqlplus est trouvé
+which sqlplus
+# /u01/app/oracle/product/19.0.0/dbhome_1/bin/sqlplus
+```
+
+### 7.5 Les fichiers de configuration essentiels
+
+Oracle utilise plusieurs fichiers de configuration. Savoir où ils sont et ce qu'ils contiennent est crucial pour l'administration.
+
+#### 7.5.1 Le fichier d'initialisation (pfile / spfile)
+
+C'est **le** fichier le plus important : il contient tous les paramètres de l'instance (taille de la SGA, nombre de processus maximum, mode d'archivage...).
+
+Il existe en deux versions :
+
+| Type | Fichier | Format | Modifiable à chaud ? |
+|------|---------|--------|---------------------|
+| **pfile** | `initORCL.ora` | Texte clair (éditable) | Non — il faut redémarrer |
+| **spfile** | `spfileORCL.ora` | Binaire | Oui — avec `ALTER SYSTEM` |
+
+L'**spfile** est le format recommandé en production. Il permet de modifier des paramètres à chaud sans éteindre la base.
+
+```bash
+# Emplacement par défaut
+ls $ORACLE_HOME/dbs/
+# initORCL.ora  spfileORCL.ora  orapwORCL
+```
+
+```sql
+-- Voir tous les paramètres de l'instance (il y en a plus de 300 !)
+SHOW PARAMETER;
+
+-- Chercher un paramètre spécifique
+SHOW PARAMETER memory;
+-- NAME                          TYPE    VALUE
+-- ----------------------------- ------- --------
+-- memory_max_target             big int 2G
+-- memory_target                 big int 2G
+
+-- Modifier un paramètre dans le spfile (prend effet au redémarrage)
+ALTER SYSTEM SET open_cursors = 500 SCOPE=SPFILE;
+
+-- Modifier un paramètre en mémoire (prend effet immédiatement, perdu au redémarrage)
+ALTER SYSTEM SET open_cursors = 500 SCOPE=MEMORY;
+
+-- Modifier dans les deux (immédiat ET persistant)
+ALTER SYSTEM SET open_cursors = 500 SCOPE=BOTH;
+```
+
+> 💡 **Les trois SCOPE expliqués** :
+> - `SCOPE=MEMORY` : Modification immédiate mais temporaire. Comme changer la température du bureau avec la clim — dès qu'on coupe le courant, ça revient à la normale.
+> - `SCOPE=SPFILE` : Modification persistante mais pas immédiate. Comme programmer le thermostat — ça ne change rien maintenant, mais au prochain démarrage c'est appliqué.
+> - `SCOPE=BOTH` : Les deux ! C'est le mode le plus utilisé quand le paramètre le permet.
+
+#### 7.5.2 Le fichier listener.ora
+
+Ce fichier configure le **Listener** — le processus qui écoute les connexions réseau entrantes.
+
+```bash
+# Emplacement
+cat $ORACLE_HOME/network/admin/listener.ora
+```
+
+```
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = db-srv)(PORT = 1521))
+    )
+  )
+
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (GLOBAL_DBNAME = orcl)
+      (ORACLE_HOME = /u01/app/oracle/product/19.0.0/dbhome_1)
+      (SID_NAME = ORCL)
+    )
+  )
+
+ADR_BASE_LISTENER = /u01/app/oracle
+```
+
+| Paramètre | Valeur | Signification |
+|-----------|--------|---------------|
+| `PROTOCOL` | TCP | Protocole réseau (TCP/IP) |
+| `HOST` | db-srv | Nom d'hôte ou IP du serveur |
+| `PORT` | 1521 | Port d'écoute (1521 = standard Oracle) |
+| `SID_NAME` | ORCL | L'instance servie par ce Listener |
+
+```bash
+# Commandes de gestion du Listener
+lsnrctl start       # Démarrer
+lsnrctl stop        # Arrêter
+lsnrctl status      # Vérifier l'état
+lsnrctl reload      # Recharger la configuration sans arrêter
+lsnrctl services    # Lister les services enregistrés
+```
+
+#### 7.5.3 Le fichier tnsnames.ora
+
+Ce fichier est utilisé **côté client** pour définir des alias de connexion. Au lieu de taper l'adresse IP, le port et le service à chaque fois, tu définis un alias court.
+
+```bash
+# Emplacement (sur le poste client ou le serveur)
+cat $ORACLE_HOME/network/admin/tnsnames.ora
+```
+
+```
+# Connexion locale
+ORCL =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.100)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )
+
+# Connexion vers une autre base (ex: base de test)
+ORCL_TEST =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.200)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl_test)
+    )
+  )
+```
+
+```bash
+# Tester la connectivité avec tnsping
+tnsping ORCL
+
+# Résultat attendu :
+# Attempting to contact (DESCRIPTION = ...)
+# OK (10 msec)
+
+# Se connecter en utilisant l'alias
+sqlplus hr/hr@ORCL
+```
+
+#### 7.5.4 Le fichier sqlnet.ora
+
+Ce fichier configure les paramètres réseau globaux de SQL*Net (la couche réseau d'Oracle).
+
+```
+# Méthode de résolution des noms (chercher dans tnsnames.ora en premier)
+NAMES.DIRECTORY_PATH = (TNSNAMES, EZCONNECT)
+
+# Timeout de connexion (en secondes)
+SQLNET.INBOUND_CONNECT_TIMEOUT = 60
+
+# Bannière de sécurité (optionnel)
+SEC_USER_AUDIT_ACTION_BANNER = /u01/app/oracle/banner.txt
+
+# Chiffrement de la connexion (optionnel, recommandé en production)
+SQLNET.ENCRYPTION_SERVER = REQUIRED
+SQLNET.ENCRYPTION_TYPES_SERVER = (AES256)
+```
+
+#### 7.5.5 Le password file
+
+Le **password file** permet l'authentification **à distance** des utilisateurs avec le privilège SYSDBA ou SYSOPER. Sans ce fichier, la connexion `AS SYSDBA` n'est possible qu'en local (depuis le serveur).
+
+```bash
+# Créer un password file
+orapwd file=$ORACLE_HOME/dbs/orapwORCL password=MonSuperMotDePasse entries=10
+
+# file   : chemin du fichier (convention : orapw + SID)
+# password : mot de passe de SYS
+# entries  : nombre maximum d'utilisateurs SYSDBA/SYSOPER
+```
+
+### 7.6 Le processus d'installation pas à pas
+
+Voici les grandes étapes d'une installation Oracle 19c sur Linux, pour ta culture générale :
+
+**Étape 1 — Préparation du système (en tant que root) :**
+
+```bash
+# Installer les prérequis
+yum install -y oracle-database-preinstall-19c
+
+# Créer les répertoires
+mkdir -p /u01/app/oracle/product/19.0.0/dbhome_1
+mkdir -p /u02/oradata
+mkdir -p /u03/fast_recovery_area
+chown -R oracle:oinstall /u01 /u02 /u03
+chmod -R 775 /u01 /u02 /u03
+```
+
+**Étape 2 — Installation du logiciel (en tant qu'oracle) :**
+
+```bash
+# Se connecter en tant qu'oracle
+su - oracle
+
+# Décompresser l'archive dans ORACLE_HOME
+cd $ORACLE_HOME
+unzip /tmp/LINUX.X64_193000_db_home.zip
+
+# Lancer l'installeur (mode graphique)
+./runInstaller
+
+# Ou en mode silencieux (sans interface graphique)
+./runInstaller -silent -responseFile $ORACLE_HOME/install/response/db_install.rsp \
+  oracle.install.option=INSTALL_DB_SWONLY \
+  ORACLE_BASE=/u01/app/oracle \
+  ORACLE_HOME=/u01/app/oracle/product/19.0.0/dbhome_1 \
+  oracle.install.db.InstallEdition=EE
+```
+
+**Étape 3 — Exécution des scripts root (en tant que root) :**
+
+```bash
+# L'installeur demande d'exécuter ces scripts en tant que root
+/u01/app/oraInventory/orainstRoot.sh
+/u01/app/oracle/product/19.0.0/dbhome_1/root.sh
+```
+
+**Étape 4 — Création de la base de données (en tant qu'oracle) :**
+
+```bash
+# Avec l'assistant graphique
+dbca
+
+# Ou en mode silencieux
+dbca -silent -createDatabase \
+  -templateName General_Purpose.dbc \
+  -gdbName orcl \
+  -sid ORCL \
+  -sysPassword Oracle_2024! \
+  -systemPassword Oracle_2024! \
+  -datafileDestination /u02/oradata \
+  -recoveryAreaDestination /u03/fast_recovery_area \
+  -characterSet AL32UTF8 \
+  -totalMemory 4096 \
+  -emConfiguration NONE
+```
+
+> 💡 **Dans notre simulateur**, tout ça est déjà fait ! L'instance ORCL est créée et prête à l'emploi. Mais comprendre le processus d'installation te sera très utile le jour où tu devras installer Oracle en conditions réelles.
+
+### 7.7 Vérification post-installation
+
+Après une installation, le DBA consciencieux vérifie que tout est en place :
+
+```bash
+# 1. Vérifier les variables d'environnement
+echo "ORACLE_HOME = $ORACLE_HOME"
+echo "ORACLE_SID  = $ORACLE_SID"
+
+# 2. Vérifier que les binaires sont accessibles
+sqlplus -V
+# SQL*Plus: Release 19.0.0.0.0 - Production
+# Version 19.3.0.0.0
+
+# 3. Vérifier les fichiers de la base
+ls -lh /u02/oradata/ORCL/
+```
+
+```sql
+-- 4. Se connecter et vérifier l'instance
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+SQL> SELECT instance_name, status, version FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS       VERSION
+---------------- ------------ -----------------
+ORCL             OPEN         19.0.0.0.0
+
+-- 5. Vérifier les fichiers de données
+SQL> SELECT file_name, tablespace_name, bytes/1024/1024 AS "Taille (Mo)"
+     FROM DBA_DATA_FILES
+     ORDER BY tablespace_name;
+
+FILE_NAME                                    TABLESPACE  Taille (Mo)
+-------------------------------------------- ----------- -----------
+/u02/oradata/ORCL/system01.dbf               SYSTEM            800
+/u02/oradata/ORCL/sysaux01.dbf               SYSAUX            550
+/u02/oradata/ORCL/undotbs01.dbf              UNDOTBS1          100
+/u02/oradata/ORCL/users01.dbf                USERS             100
+
+-- 6. Vérifier les redo logs
+SQL> SELECT group#, status, bytes/1024/1024 AS "Taille (Mo)"
+     FROM V$LOG;
+
+    GROUP# STATUS           Taille (Mo)
+---------- ---------------- -----------
+         1 CURRENT                   50
+         2 INACTIVE                  50
+         3 INACTIVE                  50
+
+-- 7. Vérifier le control file
+SQL> SHOW PARAMETER control_files;
+
+NAME            TYPE   VALUE
+--------------- ------ ----------------------------------------
+control_files   string /u02/oradata/ORCL/control01.ctl
+
+-- 8. Vérifier le mode d'archivage
+SQL> ARCHIVE LOG LIST;
+Database log mode              No Archive Mode
+Automatic archival             Disabled
+```
+
+### 7.8 L'alert log : le journal de bord d'Oracle
+
+L'**alert log** est le fichier le plus important pour le diagnostic. Oracle y écrit tous les événements significatifs : démarrages, arrêts, erreurs critiques, changements de redo log, etc. C'est **le premier endroit** où regarder quand quelque chose ne va pas.
+
+```bash
+# Trouver l'alert log
+adrci
+ADRCI> SHOW HOMES;
+# diag/rdbms/orcl/ORCL
+
+ADRCI> SHOW ALERT;
+# Affiche les dernières entrées
+
+ADRCI> EXIT;
+
+# Ou directement avec un éditeur de texte
+tail -100 $ORACLE_BASE/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log
+```
+
+Exemple de contenu typique de l'alert log :
+
+```
+2026-03-24T10:30:00.000+01:00
+Starting ORACLE instance (normal) (OS id: 12345)
+...
+System Global Area  2147483648 bytes
+  Fixed Size            8901624 bytes
+  Variable Size       603979768 bytes
+  Database Buffers   1526726656 bytes
+  Redo Buffers          7876096 bytes
+...
+Database mounted.
+Database opened.
+2026-03-24T10:30:05.000+01:00
+Thread 1 advanced to log sequence 142
+  Current log# 2 seq# 142 mem# 0: /u02/oradata/ORCL/redo02.log
+```
+
+> 🔑 **Réflexe de DBA** : Avant de chercher sur Google une erreur Oracle, consulte l'alert log. 90% du temps, la réponse est là, avec un horodatage précis et le contexte complet de l'erreur.
+
+### 7.9 Résumé : les fichiers à connaître absolument
+
+| Fichier | Emplacement | Rôle |
+|---------|------------|------|
+| `spfileORCL.ora` | `$ORACLE_HOME/dbs/` | Paramètres de l'instance (binaire) |
+| `initORCL.ora` | `$ORACLE_HOME/dbs/` | Paramètres de l'instance (texte, backup) |
+| `orapwORCL` | `$ORACLE_HOME/dbs/` | Authentification SYSDBA à distance |
+| `listener.ora` | `$ORACLE_HOME/network/admin/` | Configuration du Listener |
+| `tnsnames.ora` | `$ORACLE_HOME/network/admin/` | Alias de connexion (client) |
+| `sqlnet.ora` | `$ORACLE_HOME/network/admin/` | Paramètres réseau SQL*Net |
+| `system01.dbf` | `/u02/oradata/ORCL/` | Tablespace SYSTEM (dictionnaire) |
+| `redo01-03.log` | `/u02/oradata/ORCL/` | Journaux de transactions |
+| `control01.ctl` | `/u02/oradata/ORCL/` | Fichier de contrôle (carte d'identité) |
+| `alert_ORCL.log` | `$ORACLE_BASE/diag/.../trace/` | Journal de bord de l'instance |
+
+> 💡 **Astuce mnémotechnique** : Retiens les trois répertoires clés :
+> - `$ORACLE_HOME/dbs/` → les fichiers de **démarrage** (init, spfile, password)
+> - `$ORACLE_HOME/network/admin/` → les fichiers **réseau** (listener, tns, sqlnet)
+> - Les **datafiles** → là où tu as mis ta base (en général `/u02/oradata/`)
+
+---
+
+## 8. Démarrage et arrêt d'une instance Oracle
+
+C'est l'une des tâches les plus fondamentales du DBA : savoir démarrer et arrêter proprement une instance Oracle. Ça semble simple en apparence, mais il y a beaucoup de subtilités à connaître — et c'est souvent en situation de crise (panne, maintenance d'urgence) qu'on a besoin de maîtriser ces commandes sur le bout des doigts. ⚡
+
+### 8.1 Rappel : les états d'une instance
+
+On l'a vu dans la section 4, mais ça vaut la peine de le revoir en détail maintenant qu'on va pratiquer. L'instance Oracle passe par 4 états successifs :
+
+```
+  ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
+  │ SHUTDOWN │─────►│ NOMOUNT  │─────►│  MOUNT   │─────►│   OPEN   │
+  │          │      │          │      │          │      │          │
+  │ Rien ne  │      │ SGA      │      │ Control  │      │ Datafiles│
+  │ tourne   │      │ allouée  │      │ file lu  │      │ ouverts  │
+  │          │      │ Process. │      │ Base     │      │ Base     │
+  │          │      │ lancés   │      │ associée │      │ prête !  │
+  └──────────┘      └──────────┘      └──────────┘      └──────────┘
+```
+
+### 8.2 STARTUP : démarrer l'instance
+
+#### 8.2.1 Démarrage complet (le plus courant)
+
+```sql
+SQL> CONNECT / AS SYSDBA;
+Connected to an idle instance.
+
+SQL> STARTUP;
+ORACLE instance started.
+
+Total System Global Area  2147483648 bytes
+Fixed Size                   8901624 bytes
+Variable Size              603979768 bytes
+Database Buffers          1526726656 bytes
+Redo Buffers                 7876096 bytes
+Database mounted.
+Database opened.
+```
+
+La commande `STARTUP` sans option effectue les trois étapes d'un coup : NOMOUNT → MOUNT → OPEN. C'est le mode utilisé dans 90% des cas.
+
+#### 8.2.2 Démarrage étape par étape
+
+Parfois, tu as besoin de t'arrêter à un état intermédiaire. Voici comment :
+
+**STARTUP NOMOUNT — S'arrêter après le lancement de l'instance :**
+
+```sql
+SQL> STARTUP NOMOUNT;
+ORACLE instance started.
+
+Total System Global Area  2147483648 bytes
+...
+```
+
+À ce stade, la SGA est allouée et les processus d'arrière-plan (PMON, SMON, DBW0, LGWR...) tournent, mais **aucune base de données n'est associée**.
+
+> 🔑 **Quand utiliser NOMOUNT ?**
+> - Recréer un control file perdu (`CREATE CONTROLFILE`)
+> - Créer une nouvelle base de données (`CREATE DATABASE`)
+> - Certaines opérations de récupération avec RMAN
+
+**STARTUP MOUNT — S'arrêter après la lecture du control file :**
+
+```sql
+-- Si tu es déjà en NOMOUNT :
+SQL> ALTER DATABASE MOUNT;
+Database mounted.
+
+-- Ou directement depuis SHUTDOWN :
+SQL> STARTUP MOUNT;
+ORACLE instance started.
+...
+Database mounted.
+```
+
+À ce stade, Oracle a lu le control file et connaît l'emplacement de tous les fichiers. Mais les datafiles ne sont pas encore ouverts — les utilisateurs ne peuvent pas se connecter.
+
+> 🔑 **Quand utiliser MOUNT ?**
+> - Activer/désactiver le mode ARCHIVELOG
+> - Effectuer un recovery complet de la base
+> - Renommer ou déplacer des datafiles
+> - Effectuer des opérations de maintenance sur les redo logs
+
+**Ouvrir la base depuis l'état MOUNT :**
+
+```sql
+SQL> ALTER DATABASE OPEN;
+Database opened.
+```
+
+#### 8.2.3 Les options spéciales de STARTUP
+
+**STARTUP RESTRICT — Ouvrir la base en mode restreint :**
+
+```sql
+SQL> STARTUP RESTRICT;
+ORACLE instance started.
+...
+Database opened.
+```
+
+En mode restreint, seuls les utilisateurs ayant le privilège `RESTRICTED SESSION` peuvent se connecter. C'est parfait pour effectuer des opérations de maintenance sans être dérangé par les utilisateurs.
+
+```sql
+-- Vérifier si la base est en mode restreint
+SQL> SELECT logins FROM V$INSTANCE;
+
+LOGINS
+----------
+RESTRICTED
+
+-- Passer en mode restreint à chaud (sans redémarrer)
+SQL> ALTER SYSTEM ENABLE RESTRICTED SESSION;
+
+-- Quitter le mode restreint
+SQL> ALTER SYSTEM DISABLE RESTRICTED SESSION;
+
+SQL> SELECT logins FROM V$INSTANCE;
+
+LOGINS
+----------
+ALLOWED
+```
+
+> 💡 **Cas d'usage typique** : Tu dois faire un import massif de données (avec `impdp`) et tu ne veux pas que les utilisateurs se connectent pendant l'opération. Tu passes en mode restreint, tu fais ton import, puis tu rouvres.
+
+**STARTUP FORCE — Le redémarrage brutal :**
+
+```sql
+SQL> STARTUP FORCE;
+ORACLE instance started.
+...
+Database opened.
+```
+
+`STARTUP FORCE` est l'équivalent d'un `SHUTDOWN ABORT` suivi d'un `STARTUP`. Il arrête brutalement l'instance (si elle tourne) puis la relance. Oracle effectuera automatiquement un **Instance Recovery** au démarrage.
+
+> ⚠️ **À n'utiliser qu'en dernier recours !** Par exemple quand un `SHUTDOWN IMMEDIATE` est bloqué depuis trop longtemps et que tu n'arrives pas à arrêter l'instance proprement.
+
+**STARTUP UPGRADE — Pour les mises à jour :**
+
+```sql
+SQL> STARTUP UPGRADE;
+```
+
+Ce mode est utilisé exclusivement lors des **migrations de version** (par exemple de 12c vers 19c). Il démarre la base dans un mode spécial qui permet d'exécuter les scripts de mise à jour du dictionnaire de données.
+
+### 8.3 SHUTDOWN : arrêter l'instance
+
+Il existe quatre modes d'arrêt, du plus doux au plus brutal. Le choix du bon mode est crucial — utiliser le mauvais mode au mauvais moment peut soit te faire perdre du temps, soit corrompre des données.
+
+#### 8.3.1 SHUTDOWN NORMAL — Le gentleman 🎩
+
+```sql
+SQL> SHUTDOWN NORMAL;
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Sessions existantes | ⏳ Oracle **attend** qu'elles se déconnectent d'elles-mêmes |
+| Transactions en cours | ⏳ Oracle attend la fin (COMMIT ou ROLLBACK par l'utilisateur) |
+| Checkpoint | ✅ Effectué avant l'arrêt |
+| Recovery au redémarrage | ❌ Non nécessaire |
+
+> ⚠️ **Le piège** : Si un développeur a laissé une session ouverte et est parti déjeuner (ou en vacances... 🏖️), le `SHUTDOWN NORMAL` attendra **indéfiniment**. C'est pour ça qu'en pratique, on ne l'utilise quasiment jamais.
+
+#### 8.3.2 SHUTDOWN IMMEDIATE — Le choix du DBA 🏆
+
+```sql
+SQL> SHUTDOWN IMMEDIATE;
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Sessions existantes | 🔌 **Coupées immédiatement** |
+| Transactions en cours | ↩️ **Rollback automatique** |
+| Checkpoint | ✅ Effectué avant l'arrêt |
+| Recovery au redémarrage | ❌ Non nécessaire |
+
+C'est **le mode le plus utilisé** en production. Il coupe toutes les sessions, annule proprement les transactions non validées, écrit les blocs dirty sur disque (checkpoint), puis arrête l'instance. L'arrêt est propre, pas de recovery nécessaire au redémarrage.
+
+> 💡 **Temps d'exécution** : Le temps d'un `SHUTDOWN IMMEDIATE` dépend du volume de transactions à annuler (rollback). Si une grosse transaction de 2 millions de lignes est en cours, le rollback peut prendre plusieurs minutes. Sois patient — c'est normal !
+
+#### 8.3.3 SHUTDOWN TRANSACTIONAL — Le compromis 🤝
+
+```sql
+SQL> SHUTDOWN TRANSACTIONAL;
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Nouvelles transactions | ❌ Refusées (après COMMIT de la transaction en cours) |
+| Transactions en cours | ⏳ Oracle **attend** qu'elles se terminent |
+| Checkpoint | ✅ Effectué avant l'arrêt |
+| Recovery au redémarrage | ❌ Non nécessaire |
+
+Ce mode est un compromis : il attend que les transactions en cours se terminent (pour ne pas perdre de travail), mais dès qu'une session a terminé sa transaction, elle est déconnectée.
+
+> 💡 **Quand l'utiliser ?** Quand tu veux être poli avec les utilisateurs mais que tu ne veux pas attendre éternellement. Par exemple avant une maintenance planifiée.
+
+#### 8.3.4 SHUTDOWN ABORT — Le bouton d'urgence 🚨
+
+```sql
+SQL> SHUTDOWN ABORT;
+ORACLE instance shut down.
+```
+
+| Comportement | Détail |
+|---|---|
+| Nouvelles connexions | ❌ Refusées |
+| Sessions existantes | 💀 **Tuées instantanément** |
+| Transactions en cours | ❌ **Pas de rollback** |
+| Checkpoint | ❌ **Pas de checkpoint** |
+| Recovery au redémarrage | ✅ **Obligatoire** (automatique) |
+
+`SHUTDOWN ABORT` est l'équivalent de débrancher la prise du serveur. Tout s'arrête instantanément : pas de rollback, pas de checkpoint, rien. Au prochain démarrage, SMON devra effectuer un **Instance Recovery** (roll forward + roll back) pour remettre la base en état cohérent.
+
+> ⚠️ **À n'utiliser que si** :
+> - `SHUTDOWN IMMEDIATE` est bloqué depuis trop longtemps
+> - L'instance est dans un état instable (processus zombie, corruption mémoire...)
+> - Tu as un `STARTUP FORCE` en plan B et que tu sais ce que tu fais
+
+### 8.4 Tableau récapitulatif des modes d'arrêt
+
+| | NORMAL | IMMEDIATE | TRANSACTIONAL | ABORT |
+|---|:---:|:---:|:---:|:---:|
+| Attend les déconnexions | ✅ | ❌ | ❌ | ❌ |
+| Attend la fin des transactions | ✅ | ❌ | ✅ | ❌ |
+| Rollback des transactions non validées | ✅ | ✅ | ✅ | ❌ |
+| Checkpoint (écriture des dirty blocks) | ✅ | ✅ | ✅ | ❌ |
+| Recovery au prochain démarrage | ❌ | ❌ | ❌ | ✅ |
+| **Usage typique** | Jamais 😅 | **Production** | Maintenance planifiée | Urgence |
+
+### 8.5 Exercice pratique : le cycle complet
+
+Mettons tout ça en pratique. Voici un exercice complet de démarrage/arrêt avec les vérifications à chaque étape :
+
+```sql
+-- ═══════════════════════════════════════════════
+-- EXERCICE : Cycle complet démarrage / arrêt
+-- ═══════════════════════════════════════════════
+
+-- Étape 1 : Se connecter en tant que SYSDBA
+SQL> CONNECT / AS SYSDBA;
+Connected.
+
+-- Étape 2 : Vérifier l'état actuel
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             OPEN
+
+-- Étape 3 : Arrêter proprement
+SQL> SHUTDOWN IMMEDIATE;
+Database closed.
+Database dismounted.
+ORACLE instance shut down.
+
+-- Étape 4 : Vérifier qu'on est bien arrêté
+SQL> SELECT status FROM V$INSTANCE;
+ERROR:
+ORA-01034: ORACLE not available
+-- C'est normal ! L'instance est arrêtée.
+
+-- Étape 5 : Démarrer en mode NOMOUNT
+SQL> STARTUP NOMOUNT;
+ORACLE instance started.
+
+Total System Global Area  2147483648 bytes
+Fixed Size                   8901624 bytes
+Variable Size              603979768 bytes
+Database Buffers          1526726656 bytes
+Redo Buffers                 7876096 bytes
+
+-- Étape 6 : Vérifier — on est en NOMOUNT
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             STARTED
+
+-- Note : "STARTED" = NOMOUNT dans V$INSTANCE
+
+-- Étape 7 : Passer en MOUNT
+SQL> ALTER DATABASE MOUNT;
+Database mounted.
+
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             MOUNTED
+
+-- Étape 8 : Ouvrir la base
+SQL> ALTER DATABASE OPEN;
+Database opened.
+
+SQL> SELECT instance_name, status FROM V$INSTANCE;
+
+INSTANCE_NAME    STATUS
+---------------- --------
+ORCL             OPEN
+
+-- Étape 9 : Vérifier que tout fonctionne
+SQL> SELECT COUNT(*) FROM HR.EMPLOYEES;
+
+  COUNT(*)
+----------
+       107
+
+-- ✅ Tout est opérationnel !
+```
+
+### 8.6 Démarrage et arrêt automatique au boot du serveur
+
+En production, on veut que la base Oracle démarre automatiquement quand le serveur Linux redémarre. Voici comment configurer ça :
+
+**Méthode 1 — Le fichier /etc/oratab :**
+
+Oracle utilise le fichier `/etc/oratab` pour savoir quelles bases démarrer automatiquement :
+
+```bash
+# Format : SID:ORACLE_HOME:AUTO_START (Y=oui, N=non)
+cat /etc/oratab
+
+ORCL:/u01/app/oracle/product/19.0.0/dbhome_1:Y
+```
+
+Le `Y` à la fin indique que cette base doit être démarrée automatiquement. Les scripts `dbstart` et `dbshut` fournis par Oracle lisent ce fichier :
+
+```bash
+# Démarrer toutes les bases marquées "Y"
+$ORACLE_HOME/bin/dbstart $ORACLE_HOME
+
+# Arrêter toutes les bases marquées "Y"
+$ORACLE_HOME/bin/dbshut $ORACLE_HOME
+```
+
+**Méthode 2 — Service systemd (recommandé sur les systèmes modernes) :**
+
+```bash
+# Créer un fichier service
+sudo cat > /etc/systemd/system/oracle-db.service << 'EOF'
+[Unit]
+Description=Oracle Database Service
+After=network.target
+
+[Service]
+Type=forking
+User=oracle
+Group=oinstall
+Environment="ORACLE_BASE=/u01/app/oracle"
+Environment="ORACLE_HOME=/u01/app/oracle/product/19.0.0/dbhome_1"
+Environment="ORACLE_SID=ORCL"
+ExecStart=/u01/app/oracle/product/19.0.0/dbhome_1/bin/dbstart /u01/app/oracle/product/19.0.0/dbhome_1
+ExecStop=/u01/app/oracle/product/19.0.0/dbhome_1/bin/dbshut /u01/app/oracle/product/19.0.0/dbhome_1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Activer le service
+sudo systemctl daemon-reload
+sudo systemctl enable oracle-db
+sudo systemctl start oracle-db
+
+# Vérifier le statut
+sudo systemctl status oracle-db
+```
+
+> 💡 **N'oublie pas le Listener !** La base de données peut tourner, mais sans le Listener les clients distants ne peuvent pas se connecter. Crée un service similaire pour le Listener, ou ajoute `lsnrctl start` dans le script de démarrage.
+
+### 8.7 Diagnostiquer un démarrage qui échoue
+
+Le démarrage ne se passe pas toujours bien. Voici les erreurs les plus fréquentes et comment les résoudre :
+
+**ORA-01078: failure in processing system parameters**
+```
+SQL> STARTUP;
+ORA-01078: failure in processing system parameters
+```
+→ Oracle ne trouve pas le fichier d'initialisation (spfile ou pfile). Vérifie que `spfileORCL.ora` ou `initORCL.ora` existe dans `$ORACLE_HOME/dbs/`.
+
+```bash
+ls $ORACLE_HOME/dbs/spfile*.ora $ORACLE_HOME/dbs/init*.ora
+```
+
+**ORA-00205: error in identifying control file**
+```
+SQL> STARTUP;
+ORA-00205: error in identifying control file
+```
+→ Le control file est introuvable ou corrompu. Vérifie son emplacement dans le spfile et l'existence du fichier sur disque.
+
+```sql
+-- Depuis un pfile temporaire, vérifier le paramètre
+SHOW PARAMETER control_files;
+```
+
+```bash
+ls -l /u02/oradata/ORCL/control*.ctl
+```
+
+**ORA-01157: cannot identify/lock data file N — see DBWR trace file**
+```
+SQL> ALTER DATABASE OPEN;
+ORA-01157: cannot identify/lock data file 4
+ORA-01110: data file 4: '/u02/oradata/ORCL/users01.dbf'
+```
+→ Un datafile est manquant ou inaccessible. Si le tablespace n'est pas critique, tu peux l'ouvrir sans :
+
+```sql
+-- Mettre le datafile hors ligne et ouvrir sans lui
+SQL> ALTER DATABASE DATAFILE '/u02/oradata/ORCL/users01.dbf' OFFLINE;
+SQL> ALTER DATABASE OPEN;
+-- Puis restaurer le datafile depuis un backup
+```
+
+**ORA-01113: file N needs media recovery**
+```
+SQL> ALTER DATABASE OPEN;
+ORA-01113: file 1 needs media recovery
+```
+→ Un datafile n'est pas synchronisé avec les redo logs. Il faut effectuer un recovery :
+
+```sql
+SQL> RECOVER DATABASE;
+-- Oracle rejoue les redo logs pour resynchroniser
+Media recovery complete.
+SQL> ALTER DATABASE OPEN;
+```
+
+**Instance qui ne s'arrête pas (SHUTDOWN IMMEDIATE bloqué) :**
+
+```sql
+-- Si SHUTDOWN IMMEDIATE est bloqué depuis plus de 10 minutes :
+-- 1. Vérifier ce qui bloque
+SQL> SELECT sid, serial#, username, status, sql_id
+     FROM V$SESSION
+     WHERE status = 'ACTIVE' AND type != 'BACKGROUND';
+
+-- 2. Si une grosse transaction est en cours de rollback, attendre.
+--    Vérifier la progression :
+SQL> SELECT usn, state, undoblockstotal, undoblocksdone,
+            ROUND(undoblocksdone/undoblockstotal*100, 2) AS pct_done
+     FROM V$TRANSACTION
+     WHERE state = 'ROLLING BACK';
+
+-- 3. En dernier recours :
+SQL> SHUTDOWN ABORT;
+-- Puis :
+SQL> STARTUP;
+-- SMON effectuera le recovery automatiquement
+```
+
+> 🔑 **Conseil pro** : Quand un `SHUTDOWN IMMEDIATE` semble bloqué, **ne te précipite pas** sur le `SHUTDOWN ABORT`. Vérifie d'abord si un rollback est en cours — l'interrompre avec un ABORT ne fera que reporter le travail au prochain démarrage (SMON devra le refaire). Ça ne sera pas plus rapide au final.
+
+### 8.8 Le mode QUIESCE : geler l'activité de la base
+
+Il existe un mode plus subtil que le mode restreint : le mode **quiesce** (mise en veille). Au lieu de couper les sessions, il les met en pause :
+
+```sql
+-- Geler toute l'activité non-DBA
+SQL> ALTER SYSTEM QUIESCE RESTRICTED;
+System altered.
+
+-- Seules les sessions DBA peuvent travailler
+-- Les sessions utilisateur sont "gelées" — elles reprendront quand on dégèlera
+
+-- Dégeler
+SQL> ALTER SYSTEM UNQUIESCE;
+System altered.
+-- Les sessions utilisateur reprennent exactement là où elles étaient
+```
+
+> 💡 **Différence avec RESTRICTED SESSION** :
+> - `RESTRICTED SESSION` empêche les **nouvelles** connexions mais ne touche pas aux sessions existantes.
+> - `QUIESCE` suspend les sessions existantes **sans les couper**. C'est plus propre pour des opérations de maintenance rapides.
+
+### 8.9 Résumé des commandes de démarrage et d'arrêt
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    DÉMARRAGE                             │
+├─────────────────────────────────────────────────────────┤
+│ STARTUP                    → NOMOUNT + MOUNT + OPEN     │
+│ STARTUP NOMOUNT            → Instance seulement         │
+│ STARTUP MOUNT              → Instance + control file    │
+│ STARTUP RESTRICT           → Complet, accès restreint   │
+│ STARTUP FORCE              → ABORT + STARTUP            │
+│ STARTUP UPGRADE            → Mode migration de version  │
+│                                                         │
+│ ALTER DATABASE MOUNT;      → NOMOUNT → MOUNT            │
+│ ALTER DATABASE OPEN;       → MOUNT → OPEN               │
+├─────────────────────────────────────────────────────────┤
+│                      ARRÊT                              │
+├─────────────────────────────────────────────────────────┤
+│ SHUTDOWN NORMAL            → Attend les déconnexions    │
+│ SHUTDOWN IMMEDIATE         → Coupe + rollback + ckpt ⭐ │
+│ SHUTDOWN TRANSACTIONAL     → Attend les transactions    │
+│ SHUTDOWN ABORT             → Arrêt brutal, recovery ⚠️  │
+├─────────────────────────────────────────────────────────┤
+│                   MODES SPÉCIAUX                        │
+├─────────────────────────────────────────────────────────┤
+│ ALTER SYSTEM ENABLE RESTRICTED SESSION;                 │
+│ ALTER SYSTEM DISABLE RESTRICTED SESSION;                │
+│ ALTER SYSTEM QUIESCE RESTRICTED;                        │
+│ ALTER SYSTEM UNQUIESCE;                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+*La suite arrive avec la Section 9 : SQL*Plus — ton couteau suisse Oracle...*

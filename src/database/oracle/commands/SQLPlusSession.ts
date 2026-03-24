@@ -251,6 +251,15 @@ export class SQLPlusSession {
       return this.handleDescribe(obj);
     }
 
+    // DISCONNECT / DISC
+    if (upper === 'DISCONNECT' || upper === 'DISC') {
+      if (!this.connected) {
+        return { output: ['Not connected.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      }
+      this.disconnect();
+      return { output: ['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
     // CONNECT
     if (upper.startsWith('CONN ') || upper.startsWith('CONNECT ')) {
       const args = upper.startsWith('CONN ') ? trimmed.substring(5).trim() : trimmed.substring(8).trim();
