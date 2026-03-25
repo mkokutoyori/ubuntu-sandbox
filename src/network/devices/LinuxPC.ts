@@ -15,6 +15,8 @@ import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
+import { linuxArp } from './linux/LinuxArp';
+import type { LinuxArpContext } from './linux/LinuxArp';
 
 export class LinuxPC extends EndHost {
   protected readonly defaultTTL = 64;
@@ -631,15 +633,13 @@ export class LinuxPC extends EndHost {
   // ─── arp ───────────────────────────────────────────────────────
 
   private cmdArp(args: string[]): string {
-    if (args.length === 0 || args[0] === '-a') {
-      if (this.arpTable.size === 0) return '';
-      const lines: string[] = [];
-      for (const [ip, entry] of this.arpTable) {
-        lines.push(`? (${ip}) at ${entry.mac} [ether] on ${entry.iface}`);
-      }
-      return lines.join('\n');
-    }
-    return 'Usage: arp [-a]';
+    const ctx: LinuxArpContext = {
+      arpTable: this.arpTable,
+      addStaticARP: (ip, mac, iface) => this.addStaticARP(ip, mac, iface),
+      deleteARP: (ip) => this.deleteARP(ip),
+      defaultIface: this.ports.keys().next().value || 'eth0',
+    };
+    return linuxArp(ctx, args);
   }
 
   // ─── traceroute ────────────────────────────────────────────────

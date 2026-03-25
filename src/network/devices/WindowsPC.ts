@@ -397,6 +397,11 @@ export class WindowsPC extends EndHost {
       getDnsSuffix: () => this.dnsSuffix,
       setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
 
+      // ARP table mutation
+      addStaticARP: (ip: string, mac: any, iface: string) => this.addStaticARP(ip, mac, iface),
+      deleteARP: (ip: string) => this.deleteARP(ip),
+      clearARPTable: () => this.clearARPTable(),
+
       // Interface renaming
       renameInterface: (oldName: string, newName: string): boolean => {
         const port = this.ports.get(oldName);
