@@ -108,6 +108,7 @@ interface ARPEntry {
   mac: MACAddress;
   iface: string;
   timestamp: number;
+  type: 'dynamic' | 'static';
 }
 
 interface PendingARP {
@@ -503,10 +504,13 @@ export abstract class Router extends Equipment {
     const myIP = port.getIPAddress();
     if (!myIP) return;
 
-    // Learn sender
-    this.arpTable.set(arp.senderIP.toString(), {
-      mac: arp.senderMAC, iface: portName, timestamp: Date.now(),
-    });
+    // Learn sender (don't overwrite static entries)
+    const existing = this.arpTable.get(arp.senderIP.toString());
+    if (!existing || existing.type !== 'static') {
+      this.arpTable.set(arp.senderIP.toString(), {
+        mac: arp.senderMAC, iface: portName, timestamp: Date.now(), type: 'dynamic',
+      });
+    }
 
     if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
       const reply: ARPPacket = {
@@ -1006,6 +1010,25 @@ export abstract class Router extends Equipment {
   _getRoutingTableInternal(): RouteEntry[] { return this.routingTable; }
   /** @internal Used by CLI shells */
   _getArpTableInternal(): Map<string, ARPEntry> { return this.arpTable; }
+
+  /** Add a static ARP entry */
+  _addStaticARP(ip: string, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'static' });
+  }
+
+  /** Delete an ARP entry by IP */
+  _deleteARP(ip: string): boolean {
+    return this.arpTable.delete(ip);
+  }
+
+  /** Clear all dynamic ARP entries (preserves static) */
+  _clearARPCache(): void {
+    for (const [ip, entry] of this.arpTable) {
+      if (entry.type !== 'static') {
+        this.arpTable.delete(ip);
+      }
+    }
+  }
   /** @internal Used by CLI shells */
   _getPortsInternal(): Map<string, Port> { return this.ports; }
   /** @internal Used by CLI shells */

@@ -550,6 +550,12 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     // show commands
     this.registerShowCommands(t);
 
+    // Clear ARP cache
+    t.register('clear arp-cache', 'Clear ARP cache', () => {
+      this.r()._clearARPCache();
+      return '';
+    });
+
     // DHCP privileged commands (debug, clear)
     registerDhcpPrivilegedCommands(t, () => this.r());
 
@@ -569,7 +575,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
-    trie.register('show arp', 'Display ARP table', () => Show.showArp(getRouter()));
+    trie.registerGreedy('show arp', 'Display ARP table', (args) => Show.showArp(getRouter(), args.length > 0 ? args : undefined));
+    trie.registerGreedy('show ip arp', 'Display ARP table', (args) => Show.showArp(getRouter(), args.length > 0 ? args : undefined));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));

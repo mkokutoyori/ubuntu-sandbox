@@ -7,11 +7,13 @@
  *  - Windows: arp -a, arp -g, arp -a <ip>, arp -d <ip>, arp -d *, arp -s <ip> <mac>,
  *             arp -a -N <iface_ip>, arp -v, arp /?
  *  - EndHost: addStaticARP(), deleteARP(), static vs dynamic entries
+ *  - Cisco IOS: show arp, show ip arp, clear arp-cache, arp <ip> <mac> arpa, no arp
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -658,5 +660,274 @@ describe('EndHost ARP table management', () => {
     expect(dynamicEntry!.type).toBe('dynamic');
     expect(staticEntry).toBeDefined();
     expect(staticEntry!.type).toBe('static');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// CISCO IOS ARP COMMANDS
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Cisco IOS arp commands', () => {
+  beforeEach(() => {
+    resetCounters();
+    MACAddress.resetCounter();
+    Logger.reset();
+  });
+
+  function setupCiscoTopology() {
+    const r1 = new CiscoRouter('R1', 0, 0);
+    const pc1 = new LinuxPC('PC1', 100, 0);
+    const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+
+    const cable1 = new Cable('c1');
+    cable1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    const cable2 = new Cable('c2');
+    cable2.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+
+    return { r1, pc1, sw };
+  }
+
+  async function configureAndPopulate() {
+    const { r1, pc1, sw } = setupCiscoTopology();
+
+    // Configure IPs
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('interface GigabitEthernet0/0');
+    await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    await r1.executeCommand('no shutdown');
+    await r1.executeCommand('end');
+
+    await pc1.executeCommand('ifconfig eth0 10.0.0.10 netmask 255.255.255.0');
+
+    // Populate ARP via ping
+    await pc1.executeCommand('ping -c 1 10.0.0.1');
+
+    return { r1, pc1, sw };
+  }
+
+  // ─── show arp / show ip arp ────────────────────────────────────
+
+  it('show arp should display the ARP table with Cisco format', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    const output = await r1.executeCommand('show arp');
+
+    expect(output).toContain('Protocol');
+    expect(output).toContain('Address');
+    expect(output).toContain('Hardware Addr');
+    expect(output).toContain('Type');
+    expect(output).toContain('Interface');
+    expect(output).toContain('Internet');
+    expect(output).toContain('10.0.0.10');
+    expect(output).toContain('ARPA');
+    expect(output).toContain('GigabitEthernet0/0');
+  });
+
+  it('show ip arp should be an alias for show arp', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    const showArp = await r1.executeCommand('show arp');
+    const showIpArp = await r1.executeCommand('show ip arp');
+
+    expect(showIpArp).toBe(showArp);
+  });
+
+  it('show arp should display "No ARP entries." when table is empty', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    const output = await r1.executeCommand('show arp');
+
+    expect(output).toContain('No ARP entries');
+  });
+
+  // ─── show ip arp <ip> ──────────────────────────────────────────
+
+  it('show ip arp <ip> should filter by specific IP', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    const output = await r1.executeCommand('show ip arp 10.0.0.10');
+
+    expect(output).toContain('10.0.0.10');
+    expect(output).toContain('Internet');
+  });
+
+  it('show ip arp <ip> should show "No ARP entries." when IP not found', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    const output = await r1.executeCommand('show ip arp 10.0.0.99');
+
+    expect(output).toContain('No ARP entries');
+  });
+
+  // ─── show ip arp <interface> ───────────────────────────────────
+
+  it('show ip arp <interface> should filter by interface', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    const output = await r1.executeCommand('show ip arp GigabitEthernet0/0');
+
+    expect(output).toContain('10.0.0.10');
+    expect(output).toContain('GigabitEthernet0/0');
+  });
+
+  it('show ip arp <interface> should show "No ARP entries." for interface with no entries', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    const output = await r1.executeCommand('show ip arp GigabitEthernet0/1');
+
+    expect(output).toContain('No ARP entries');
+  });
+
+  // ─── clear arp-cache ──────────────────────────────────────────
+
+  it('clear arp-cache should remove all dynamic entries', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+
+    // Verify table is populated
+    let output = await r1.executeCommand('show arp');
+    expect(output).toContain('10.0.0.10');
+
+    // Clear
+    await r1.executeCommand('clear arp-cache');
+
+    // Verify table is empty
+    output = await r1.executeCommand('show arp');
+    expect(output).toContain('No ARP entries');
+  });
+
+  it('clear arp-cache should not remove static entries', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+
+    // Add static entry
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await r1.executeCommand('end');
+
+    // Clear
+    await r1.executeCommand('clear arp-cache');
+
+    // Static should remain
+    const output = await r1.executeCommand('show arp');
+    expect(output).toContain('10.0.0.50');
+    expect(output).toContain('static');
+  });
+
+  // ─── arp <ip> <mac> arpa (config mode) ─────────────────────────
+
+  it('arp <ip> <mac> arpa should add static ARP entry', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('interface GigabitEthernet0/0');
+    await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    await r1.executeCommand('no shutdown');
+    await r1.executeCommand('end');
+
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    const result = await r1.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await r1.executeCommand('end');
+
+    expect(result).toBe('');
+
+    const output = await r1.executeCommand('show arp');
+    expect(output).toContain('10.0.0.50');
+    expect(output).toContain('static');
+  });
+
+  it('arp command should accept Cisco MAC format (xxxx.xxxx.xxxx)', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    const result = await r1.executeCommand('arp 10.0.0.60 0011.2233.4455 arpa');
+    await r1.executeCommand('end');
+
+    expect(result).toBe('');
+
+    const output = await r1.executeCommand('show arp');
+    expect(output).toContain('10.0.0.60');
+  });
+
+  it('arp command with invalid MAC should return error', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    const result = await r1.executeCommand('arp 10.0.0.60 invalid-mac arpa');
+
+    expect(result).toContain('%');
+  });
+
+  it('arp command without arpa should still work', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    const result = await r1.executeCommand('arp 10.0.0.70 aabb.ccdd.ee00 arpa');
+
+    expect(result).toBe('');
+  });
+
+  // ─── no arp <ip> <mac> arpa (config mode) ──────────────────────
+
+  it('no arp should remove a static ARP entry', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+
+    // Verify it's there
+    await r1.executeCommand('end');
+    let output = await r1.executeCommand('show arp');
+    expect(output).toContain('10.0.0.50');
+
+    // Remove it
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('no arp 10.0.0.50');
+    await r1.executeCommand('end');
+
+    output = await r1.executeCommand('show arp');
+    expect(output).not.toContain('10.0.0.50');
+  });
+
+  it('no arp for non-existent entry should not error', async () => {
+    const { r1 } = setupCiscoTopology();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    const result = await r1.executeCommand('no arp 10.0.0.99');
+
+    expect(result).toBe('');
+  });
+
+  // ─── show arp should distinguish static vs dynamic ─────────────
+
+  it('show arp should show type as static for static entries and age as - ', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await r1.executeCommand('end');
+
+    const output = await r1.executeCommand('show arp');
+    // Dynamic entries have numeric age
+    expect(output).toContain('10.0.0.10');
+    // Static entry should have '-' for age
+    const lines = output.split('\n');
+    const staticLine = lines.find(l => l.includes('10.0.0.50'));
+    expect(staticLine).toBeDefined();
+    expect(staticLine).toContain('-');
+  });
+
+  // ─── Abbreviations should work ─────────────────────────────────
+
+  it('show abbreviations should work (sh arp, sh ip arp)', async () => {
+    const { r1 } = await configureAndPopulate();
+    await r1.executeCommand('enable');
+
+    const full = await r1.executeCommand('show arp');
+    const abbrev = await r1.executeCommand('sh arp');
+
+    expect(abbrev).toBe(full);
   });
 });
