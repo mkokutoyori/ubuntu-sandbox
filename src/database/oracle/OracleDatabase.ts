@@ -1071,13 +1071,24 @@ export class OracleDatabase {
 
     const name = match[1].toUpperCase();
     const schema = (_executor as any).context?.currentSchema || 'SYS';
-    const key = `${schema}.${name}`;
 
+    if (type === 'PACKAGE BODY') {
+      const bodyKey = `${schema}.${name}.__BODY__`;
+      if (!this.storedUnits.has(bodyKey)) {
+        return emptyResult(`ORA-04043: object ${name} does not exist`);
+      }
+      this.storedUnits.delete(bodyKey);
+      // Also remove member units
+      this.removePackageMembers(schema, name);
+      return emptyResult('Package body dropped.');
+    }
+
+    const key = `${schema}.${name}`;
     if (!this.storedUnits.has(key)) {
       return emptyResult(`ORA-04043: object ${name} does not exist`);
     }
     this.storedUnits.delete(key);
-    const typeLabel = type === 'PROCEDURE' ? 'Procedure' : type === 'FUNCTION' ? 'Function' : 'Package body';
+    const typeLabel = type === 'PROCEDURE' ? 'Procedure' : 'Function';
     return emptyResult(`${typeLabel} dropped.`);
   }
 
@@ -1089,6 +1100,169 @@ export class OracleDatabase {
   /** Get a specific stored unit by name */
   getStoredUnit(schema: string, name: string): StoredPLSQLUnit | undefined {
     return this.storedUnits.get(`${schema}.${name}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PL/SQL Packages
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Parse and store a CREATE [OR REPLACE] PACKAGE (specification) */
+  private createPackageSpec(executor: OracleExecutor, sql: string): ResultSet {
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
+    if (!match) return emptyResult('ORA-24344: success with compilation error');
+
+    const name = match[2].toUpperCase();
+    const body = match[3].trim();
+    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const key = `${schema}.${name}`;
+
+    // If OR REPLACE, remove existing spec (but keep body and members)
+    if (match[1]) {
+      this.storedUnits.delete(key);
+    }
+
+    this.storedUnits.set(key, {
+      schema,
+      name,
+      type: 'PACKAGE',
+      parameters: [],
+      body,
+      sourceLines: sql.split('\n'),
+      created: new Date(),
+      status: 'VALID',
+    });
+
+    return emptyResult('Package created.');
+  }
+
+  /** Parse and store a CREATE [OR REPLACE] PACKAGE BODY */
+  private createPackageBody(executor: OracleExecutor, sql: string): ResultSet {
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
+    if (!match) return emptyResult('ORA-24344: success with compilation error');
+
+    const pkgName = match[2].toUpperCase();
+    const bodyContent = match[3].trim();
+    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const bodyKey = `${schema}.${pkgName}`;
+
+    // If OR REPLACE, remove existing body and its member units
+    if (match[1]) {
+      this.removePackageMembers(schema, pkgName);
+      // Remove the PACKAGE BODY entry
+      const bodyKey = `${schema}.${pkgName}.__BODY__`;
+      this.storedUnits.delete(bodyKey);
+    }
+
+    // Store the package body unit
+    // Use a separate key pattern for PACKAGE BODY to avoid colliding with the spec
+    const bodyUnitKey = `${schema}.${pkgName}.__BODY__`;
+    this.storedUnits.set(bodyUnitKey, {
+      schema,
+      name: pkgName,
+      type: 'PACKAGE BODY',
+      parameters: [],
+      body: bodyContent,
+      sourceLines: sql.split('\n'),
+      created: new Date(),
+      status: 'VALID',
+    });
+
+    // Parse and extract individual procedures and functions from the body
+    this.extractPackageMembers(schema, pkgName, bodyContent);
+
+    return emptyResult('Package body created.');
+  }
+
+  /** Extract individual procedures/functions from a package body and store them */
+  private extractPackageMembers(schema: string, pkgName: string, bodyContent: string): void {
+    // Remove the final END [package_name]; from the body
+    let content = bodyContent.replace(/\bEND\s+\w*\s*;?\s*$/i, '').trim();
+
+    // Find PROCEDURE and FUNCTION definitions
+    // We'll scan for PROCEDURE name(...) IS|AS and FUNCTION name(...) RETURN type IS|AS
+    const memberPattern = /\b(PROCEDURE|FUNCTION)\s+(\w+)\s*(\([^)]*\))?\s*(?:RETURN\s+(\w+(?:\([^)]*\))?)\s*)?(?:IS|AS)\b/gi;
+    let memberMatch: RegExpExecArray | null;
+    const members: { type: string; name: string; paramStr: string; returnType: string; startIdx: number }[] = [];
+
+    while ((memberMatch = memberPattern.exec(content)) !== null) {
+      members.push({
+        type: memberMatch[1].toUpperCase(),
+        name: memberMatch[2].toUpperCase(),
+        paramStr: memberMatch[3] ? memberMatch[3].slice(1, -1) : '', // remove parens
+        returnType: memberMatch[4]?.toUpperCase() || '',
+        startIdx: memberMatch.index,
+      });
+    }
+
+    // Extract each member's body
+    for (let i = 0; i < members.length; i++) {
+      const member = members[i];
+      // Body starts after the IS|AS keyword
+      const headerEnd = content.indexOf(content.substring(member.startIdx).match(/\b(?:IS|AS)\b/i)![0], member.startIdx) +
+        content.substring(member.startIdx).match(/\b(?:IS|AS)\b/i)![0].length;
+
+      // Body ends at the start of the next member, or at the end of content
+      let bodyEnd: number;
+      if (i + 1 < members.length) {
+        bodyEnd = members[i + 1].startIdx;
+      } else {
+        bodyEnd = content.length;
+      }
+
+      const memberBody = content.substring(headerEnd, bodyEnd).trim();
+      const parameters = this.parseParameters(member.paramStr);
+
+      const qualifiedKey = `${schema}.${pkgName}.${member.name}`;
+
+      const unit: StoredPLSQLUnit = {
+        schema,
+        name: `${pkgName}.${member.name}`,
+        type: member.type === 'FUNCTION' ? 'FUNCTION' : 'PROCEDURE',
+        parameters,
+        body: memberBody,
+        sourceLines: memberBody.split('\n'),
+        created: new Date(),
+        status: 'VALID',
+      };
+
+      if (member.type === 'FUNCTION') {
+        unit.returnType = member.returnType;
+      }
+
+      this.storedUnits.set(qualifiedKey, unit);
+    }
+  }
+
+  /** Remove all stored members of a package */
+  private removePackageMembers(schema: string, pkgName: string): void {
+    const prefix = `${schema}.${pkgName}.`;
+    const keysToDelete = Array.from(this.storedUnits.keys()).filter(k => k.startsWith(prefix));
+    keysToDelete.forEach(key => this.storedUnits.delete(key));
+  }
+
+  /** DROP PACKAGE — drops spec, body, and all member procedures/functions */
+  private dropPackage(_executor: OracleExecutor, sql: string): ResultSet {
+    const match = sql.match(/^DROP\s+PACKAGE\s+(\w+)/i);
+    if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
+
+    const name = match[1].toUpperCase();
+    const schema = (_executor as any).context?.currentSchema || 'SYS';
+
+    const specKey = `${schema}.${name}`;
+    const bodyKey = `${schema}.${name}.__BODY__`;
+
+    if (!this.storedUnits.has(specKey) && !this.storedUnits.has(bodyKey)) {
+      return emptyResult(`ORA-04043: object ${name} does not exist`);
+    }
+
+    // Remove spec
+    this.storedUnits.delete(specKey);
+    // Remove body
+    this.storedUnits.delete(bodyKey);
+    // Remove all member units
+    this.removePackageMembers(schema, name);
+
+    return emptyResult('Package dropped.');
   }
 
   /** Parse and execute CREATE [OR REPLACE] TRIGGER using regex (body may contain semicolons) */

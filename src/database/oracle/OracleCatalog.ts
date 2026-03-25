@@ -1057,7 +1057,9 @@ export class OracleCatalog extends BaseCatalog {
     const rows: (string | number)[][] = [];
     for (const schema of this.storage.getSchemas()) {
       for (const idx of this.storage.getIndexes(schema)) {
-        rows.push([schema, idx.name, idx.tableName, idx.unique ? 'UNIQUE' : 'NONUNIQUE', 'VALID']);
+        const isFunctionBased = idx.expressions?.some(e => e !== null) ?? false;
+        const indexType = isFunctionBased ? 'FUNCTION-BASED NORMAL' : 'NORMAL';
+        rows.push([schema, idx.name, idx.tableName, idx.unique ? 'UNIQUE' : 'NONUNIQUE', 'VALID', indexType]);
       }
     }
     return queryResult(
@@ -1067,6 +1069,7 @@ export class OracleCatalog extends BaseCatalog {
         { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
         { name: 'UNIQUENESS', dataType: oracleVarchar2(9) },
         { name: 'STATUS', dataType: oracleVarchar2(8) },
+        { name: 'INDEX_TYPE', dataType: oracleVarchar2(27) },
       ],
       rows
     );

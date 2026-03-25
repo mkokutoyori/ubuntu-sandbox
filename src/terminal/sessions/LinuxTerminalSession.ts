@@ -18,6 +18,7 @@ import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/Outp
 import { completeInput } from '@/terminal/core/TabCompletionHelper';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
@@ -210,6 +211,10 @@ export class LinuxTerminalSession extends TerminalSession {
         this.enterSqlPlus(parts.slice(1));
         return;
       }
+      if (parts[0] === 'rman') {
+        this.enterRman(parts.slice(1));
+        return;
+      }
       if (parts[0] === 'lsnrctl') {
         handleLsnrctl(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
         this.notify();
@@ -337,9 +342,28 @@ export class LinuxTerminalSession extends TerminalSession {
     const currentUser = this.device.getCurrentUser();
     const currentUid = this.device.getCurrentUid();
 
-    // Check for sudo sqlplus — special case: enter SQL*Plus sub-shell after sudo auth
+    // Check for sudo sqlplus / sudo rman — special case: enter sub-shell after sudo auth
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
+    if (cmdParts[0] === 'rman' && command.startsWith('sudo ')) {
+      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      if (steps) {
+        const rmanArgs = cmdParts.slice(1);
+        const patchedSteps: InteractiveStep[] = steps.map(step => {
+          if (step.type === 'execute' && step.action) {
+            return {
+              ...step,
+              action: async (ctx: FlowContext) => {
+                ctx.metadata.set('enter_rman', JSON.stringify(rmanArgs));
+              },
+            };
+          }
+          return step;
+        });
+        this.startFlowFromSteps(patchedSteps, command);
+        return true;
+      }
+    }
     if (cmdParts[0] === 'sqlplus' && command.startsWith('sudo ')) {
       const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
       if (steps) {
@@ -371,6 +395,11 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Post-flow hook: sync device state and handle special actions (e.g. enter sqlplus). */
   protected override onFlowComplete(ctx: FlowContext): void {
     // Check for special post-flow actions
+    const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;
+    if (rmanArgs) {
+      this.enterRman(JSON.parse(rmanArgs));
+      return;
+    }
     const sqlplusArgs = ctx.metadata.get('enter_sqlplus') as string | undefined;
     if (sqlplusArgs) {
       this.enterSqlPlus(JSON.parse(sqlplusArgs));
@@ -394,6 +423,21 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
     } catch (err) {
       this.addLine(`bash: sqlplus: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      this.notify();
+    }
+  }
+
+  private enterRman(args: string[]): void {
+    try {
+      const { subShell, banner } = RmanSubShell.create(args);
+      this.activeSubShell = subShell;
+
+      for (const line of banner) this.addLine(line);
+
+      this._inputBuf = '';
+      this.notify();
+    } catch (err) {
+      this.addLine(`bash: rman: ${err instanceof Error ? err.message : String(err)}`, 'error');
       this.notify();
     }
   }

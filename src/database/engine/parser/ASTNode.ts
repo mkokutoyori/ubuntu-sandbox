@@ -515,6 +515,12 @@ export interface SavepointStatement extends ASTNode {
   name: string;
 }
 
+export interface SetTransactionStatement extends ASTNode {
+  type: 'SetTransactionStatement';
+  isolationLevel?: 'READ_COMMITTED' | 'SERIALIZABLE';
+  readOnly?: boolean;
+}
+
 // ── Oracle Instance Commands ────────────────────────────────────────
 
 export interface StartupStatement extends ASTNode {
@@ -681,7 +687,7 @@ export type Statement =
   | CreateUserStatement | AlterUserStatement | DropUserStatement
   | CreateRoleStatement | DropRoleStatement
   // Transaction
-  | CommitStatement | RollbackStatement | SavepointStatement
+  | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement
