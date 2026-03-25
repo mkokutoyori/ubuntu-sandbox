@@ -365,7 +365,7 @@ describe('Windows arp command', () => {
   describe('arp -a / arp -g — display table', () => {
     it('should show "No ARP Entries Found." when table is empty', async () => {
       const { pc1 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
 
       const result = await pc1.executeCommand('arp -a');
       expect(result).toContain('No ARP Entries Found');
@@ -373,8 +373,8 @@ describe('Windows arp command', () => {
 
     it('should display entries grouped by interface after ping', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       const result = await pc1.executeCommand('arp -a');
@@ -388,8 +388,8 @@ describe('Windows arp command', () => {
 
     it('arp -g should produce the same output as arp -a', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       const r1 = await pc1.executeCommand('arp -a');
@@ -403,8 +403,8 @@ describe('Windows arp command', () => {
   describe('arp -a <ip> — filter by IP', () => {
     it('should show only the matching entry', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       const result = await pc1.executeCommand('arp -a 10.0.0.2');
@@ -414,7 +414,7 @@ describe('Windows arp command', () => {
 
     it('should show "No ARP Entries Found." for unknown IP', async () => {
       const { pc1 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
 
       const result = await pc1.executeCommand('arp -a 10.0.0.99');
       expect(result).toContain('No ARP Entries Found');
@@ -426,8 +426,8 @@ describe('Windows arp command', () => {
   describe('arp -a -N <iface_ip> — filter by interface', () => {
     it('should filter entries by interface IP', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       const result = await pc1.executeCommand('arp -a -N 10.0.0.1');
@@ -437,7 +437,7 @@ describe('Windows arp command', () => {
 
     it('should show nothing for an interface with no entries', async () => {
       const { pc1 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
 
       const result = await pc1.executeCommand('arp -a -N 10.0.0.1');
       expect(result).toContain('No ARP Entries Found');
@@ -449,7 +449,7 @@ describe('Windows arp command', () => {
   describe('arp -s — add static entry', () => {
     it('should add a static ARP entry', async () => {
       const { pc1 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
 
       const result = await pc1.executeCommand('arp -s 10.0.0.50 aa-bb-cc-dd-ee-ff');
       expect(result.trim()).toBe('');
@@ -462,7 +462,7 @@ describe('Windows arp command', () => {
 
     it('should accept MAC with colons and convert to hyphens', async () => {
       const { pc1 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
 
       await pc1.executeCommand('arp -s 10.0.0.50 aa:bb:cc:dd:ee:ff');
 
@@ -490,8 +490,8 @@ describe('Windows arp command', () => {
   describe('arp -d — delete entry', () => {
     it('should delete a specific entry', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       let table = await pc1.executeCommand('arp -a');
@@ -505,8 +505,8 @@ describe('Windows arp command', () => {
 
     it('should delete all entries with arp -d *', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       // Add a static entry too
@@ -524,7 +524,7 @@ describe('Windows arp command', () => {
 
     it('should silently accept deleting a non-existent entry', async () => {
       const { pc1 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
 
       // Windows accepts this silently
       const result = await pc1.executeCommand('arp -d 10.0.0.99');
@@ -552,8 +552,8 @@ describe('Windows arp command', () => {
   describe('arp -v — verbose mode', () => {
     it('should display entries in verbose mode', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
 
       const result = await pc1.executeCommand('arp -a -v');
@@ -567,8 +567,8 @@ describe('Windows arp command', () => {
   describe('static vs dynamic display', () => {
     it('should show "dynamic" for learned entries and "static" for manual entries', async () => {
       const { pc1, pc2 } = setupWindowsLAN();
-      await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
-      await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+      await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
+      await pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.2 255.255.255.0');
       await populateArp(pc1, '10.0.0.2');
       await pc1.executeCommand('arp -s 10.0.0.50 aa-bb-cc-dd-ee-ff');
 

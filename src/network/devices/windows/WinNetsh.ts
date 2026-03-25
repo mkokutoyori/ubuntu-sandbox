@@ -1330,7 +1330,16 @@ function handleIPSecDynamicShow(args: string[]): string {
 
 function resolveAdapterName(name: string, ports: Map<string, any>): string {
   if (ports.has(name)) return name;
+  // "Ethernet 2" → "eth2", "Ethernet0" → "eth0"
   const ethMatch = name.match(/^Ethernet\s*(\d+)$/i);
   if (ethMatch) return `eth${ethMatch[1]}`;
-  return name.replace(/^Ethernet\s*/i, 'eth');
+  // "Ethernet" (no number) → "eth0" (first interface)
+  if (/^Ethernet$/i.test(name.trim())) return 'eth0';
+  // "Local Area Connection" or other Ethernet-prefixed names
+  if (/^Ethernet/i.test(name)) {
+    const replaced = name.replace(/^Ethernet\s*/i, 'eth');
+    if (ports.has(replaced)) return replaced;
+  }
+  // Unknown name: return as-is so the caller can detect "not found"
+  return name;
 }
