@@ -15,7 +15,7 @@ import type {
   Statement, ConnectByClause, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement,
   CreateTablespaceStatement, DropTablespaceStatement,
-  MergeStatement, Expression,
+  MergeStatement, Expression, SetTransactionStatement,
 } from '../engine/parser/ASTNode';
 import type { SourcePosition } from '../engine/lexer/Token';
 

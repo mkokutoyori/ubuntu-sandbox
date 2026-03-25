@@ -1163,14 +1163,14 @@ export class OracleExecutor extends BaseExecutor {
       });
     }
 
-    // ORDER BY
+    // ORDER BY (before projection so we can reference original column positions)
+    const colMetas: StorageColMeta[] = result.columns.map((c, i) => ({
+      name: c.name, dataType: c.dataType, ordinalPosition: i,
+    }));
     if (stmt.orderBy && stmt.orderBy.length > 0) {
       rows = [...rows];
       rows.sort((a, b) => {
         for (const ob of stmt.orderBy!) {
-          const colMetas: StorageColMeta[] = result.columns.map((c, i) => ({
-            name: c.name, dataType: c.dataType, ordinalPosition: i,
-          }));
           const colIdx = this.resolveColumnIndex(ob.expr, colMetas);
           if (colIdx < 0) continue;
           let cmp = this.compareValues(a[colIdx], b[colIdx]);
@@ -1179,6 +1179,40 @@ export class OracleExecutor extends BaseExecutor {
         }
         return 0;
       });
+    }
+
+    // Column projection (SELECT col1, col2, ... or SELECT *)
+    const isSelectAll = stmt.columns.length === 1 && stmt.columns[0].expr.type === 'Star';
+    if (!isSelectAll) {
+      const projectedCols: ColumnMeta[] = [];
+      const colIndices: number[] = [];
+      for (const selCol of stmt.columns) {
+        if (selCol.expr.type === 'Identifier') {
+          const colName = (selCol.expr as import('../engine/parser/ASTNode').IdentifierExpr).name.toUpperCase();
+          const idx = colMetas.findIndex(c => c.name === colName);
+          if (idx >= 0) {
+            colIndices.push(idx);
+            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: result.columns[idx].dataType });
+          } else {
+            // Column not found — add as null
+            colIndices.push(-1);
+            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } });
+          }
+        } else {
+          // Expression (function call, etc.) — evaluate at runtime
+          colIndices.push(-2);
+          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as any).name.toUpperCase() : 'EXPR');
+          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } });
+        }
+      }
+      rows = rows.map(row => colIndices.map((idx, i) => {
+        if (idx >= 0) return row[idx];
+        if (idx === -2) {
+          return this.evaluateExpression(stmt.columns[i].expr, row as StorageRow, colMetas);
+        }
+        return null;
+      }));
+      return { ...result, columns: projectedCols, rows };
     }
 
     return { ...result, rows };
@@ -1404,12 +1438,15 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
+    const hasExpressions = expressions.some(e => e !== null);
     this.storage.createIndex(schema, {
       name: stmt.name.toUpperCase(),
       tableName: stmt.table.toUpperCase(),
       columns: stmt.columns.map(c => c.name.toUpperCase()),
       unique: !!stmt.unique,
       bitmap: stmt.bitmap,
+      ...(hasExpressions ? { expressions } : {}),
     });
     return emptyResult('Index created.');
   }

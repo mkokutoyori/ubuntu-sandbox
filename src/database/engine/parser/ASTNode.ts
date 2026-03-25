@@ -386,7 +386,7 @@ export interface CreateIndexStatement extends ASTNode {
   name: string;
   table: string;
   tableSchema?: string;
-  columns: { name: string; expr?: Expression; direction?: 'ASC' | 'DESC' }[];
+  columns: { name: string; expr?: Expression; direction?: 'ASC' | 'DESC'; expression?: string }[];
   tablespace?: string;
 }
 
@@ -513,6 +513,12 @@ export interface RollbackStatement extends ASTNode {
 export interface SavepointStatement extends ASTNode {
   type: 'SavepointStatement';
   name: string;
+}
+
+export interface SetTransactionStatement extends ASTNode {
+  type: 'SetTransactionStatement';
+  isolationLevel?: 'READ_COMMITTED' | 'SERIALIZABLE';
+  readOnly?: boolean;
 }
 
 // ── Oracle Instance Commands ────────────────────────────────────────
@@ -681,7 +687,7 @@ export type Statement =
   | CreateUserStatement | AlterUserStatement | DropUserStatement
   | CreateRoleStatement | DropRoleStatement
   // Transaction
-  | CommitStatement | RollbackStatement | SavepointStatement
+  | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement
