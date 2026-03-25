@@ -48,7 +48,12 @@ export interface WinCommandContext {
   /** Default gateway IP string or null */
   defaultGateway: string | null;
   /** ARP table */
-  arpTable: Map<string, { mac: any; iface: string }>;
+  arpTable: Map<string, { mac: any; iface: string; type?: 'dynamic' | 'static' }>;
+
+  // ARP table mutation
+  addStaticARP(ip: string, mac: any, iface: string): void;
+  deleteARP(ip: string): boolean;
+  clearARPTable(): void;
 
   // Network config
   configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask): void;

@@ -13,6 +13,8 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
+import { linuxArp } from './linux/LinuxArp';
+import type { LinuxArpContext } from './linux/LinuxArp';
 
 export class LinuxServer extends EndHost {
   protected readonly defaultTTL = 64;
@@ -109,12 +111,13 @@ export class LinuxServer extends EndHost {
   }
 
   private cmdArp(args: string[]): string {
-    if (this.arpTable.size === 0) return '';
-    const lines: string[] = [];
-    for (const [ip, entry] of this.arpTable) {
-      lines.push(`? (${ip}) at ${entry.mac} [ether] on ${entry.iface}`);
-    }
-    return lines.join('\n');
+    const ctx: LinuxArpContext = {
+      arpTable: this.arpTable,
+      addStaticARP: (ip, mac, iface) => this.addStaticARP(ip, mac, iface),
+      deleteARP: (ip) => this.deleteARP(ip),
+      defaultIface: this.ports.keys().next().value || 'eth0',
+    };
+    return linuxArp(ctx, args);
   }
 
   // ─── IpNetworkContext adapter ──────────────────────────────────

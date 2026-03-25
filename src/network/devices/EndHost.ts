@@ -40,11 +40,13 @@ import type { DHCPServer } from '../dhcp/DHCPServer';
 
 // ─── Internal Types ────────────────────────────────────────────────
 
-interface ARPEntry {
+export interface ARPEntry {
   mac: MACAddress;
   /** Interface on which this entry was learned */
   iface: string;
   timestamp: number;
+  /** Whether this entry was learned dynamically or added manually */
+  type: 'dynamic' | 'static';
 }
 
 interface PendingARP {
@@ -438,6 +440,31 @@ export abstract class EndHost extends Equipment {
     return new Map(this.arpTable);
   }
 
+  /** Return ARP table with full entry details (type, iface, mac, timestamp). */
+  getARPTableFull(): Map<string, ARPEntry> {
+    return new Map(this.arpTable);
+  }
+
+  /** Add a static ARP entry. Overwrites any existing entry for the same IP. */
+  addStaticARP(ip: string, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip, {
+      mac,
+      iface,
+      timestamp: Date.now(),
+      type: 'static',
+    });
+  }
+
+  /** Delete a single ARP entry by IP. Returns true if an entry was removed. */
+  deleteARP(ip: string): boolean {
+    return this.arpTable.delete(ip);
+  }
+
+  /** Clear all ARP entries (both static and dynamic). */
+  clearARPTable(): void {
+    this.arpTable.clear();
+  }
+
   // ─── Frame Handling (L2 → L3 dispatch) ────────────────────────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
@@ -508,11 +535,16 @@ export abstract class EndHost extends Equipment {
     if (!myIP) return;
 
     // Learn sender's MAC→IP mapping (on the receiving interface)
-    this.arpTable.set(arp.senderIP.toString(), {
-      mac: arp.senderMAC,
-      iface: portName,
-      timestamp: Date.now(),
-    });
+    // Only overwrite if there's no static entry already
+    const existing = this.arpTable.get(arp.senderIP.toString());
+    if (!existing || existing.type !== 'static') {
+      this.arpTable.set(arp.senderIP.toString(), {
+        mac: arp.senderMAC,
+        iface: portName,
+        timestamp: Date.now(),
+        type: 'dynamic',
+      });
+    }
 
     if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
       // ARP request for our IP → reply with our MAC

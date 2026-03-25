@@ -154,7 +154,6 @@ export class WindowsPC extends EndHost {
       case 'help':     return cmdHelp(args);
       case 'ipconfig': return cmdIpconfig(netCtx, args);
       case 'netsh':    return cmdNetsh(netCtx, args);
-      case 'ifconfig': return this.cmdIfconfig(args);
       case 'ping':     return cmdPing(netCtx, args);
       case 'arp':      return cmdArp(netCtx, args);
       case 'tracert':
@@ -397,6 +396,11 @@ export class WindowsPC extends EndHost {
       getDnsSuffix: () => this.dnsSuffix,
       setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
 
+      // ARP table mutation
+      addStaticARP: (ip: string, mac: any, iface: string) => this.addStaticARP(ip, mac, iface),
+      deleteARP: (ip: string) => this.deleteARP(ip),
+      clearARPTable: () => this.clearARPTable(),
+
       // Interface renaming
       renameInterface: (oldName: string, newName: string): boolean => {
         const port = this.ports.get(oldName);
@@ -443,24 +447,6 @@ export class WindowsPC extends EndHost {
   private addDHCPEvent(type: string, message: string): void {
     const timestamp = new Date().toISOString();
     this.dhcpEventLog.push(`[${timestamp}] DHCP ${type}: ${message}`);
-  }
-
-  // ─── ifconfig (compatibility) ──────────────────────────────────
-
-  private cmdIfconfig(args: string[]): string {
-    if (args.length < 2) return 'Usage: ifconfig <interface> <ip> [netmask <mask>]';
-    if (!this.ports.has(args[0])) return `ifconfig: interface ${args[0]} not found`;
-
-    let maskStr = '255.255.255.0';
-    const nmIdx = args.indexOf('netmask');
-    if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
-
-    try {
-      this.configureInterface(args[0], new IPAddress(args[1]), new SubnetMask(maskStr));
-      return '';
-    } catch (e: any) {
-      return `ifconfig: ${e.message}`;
-    }
   }
 
   // ─── systeminfo ────────────────────────────────────────────────
