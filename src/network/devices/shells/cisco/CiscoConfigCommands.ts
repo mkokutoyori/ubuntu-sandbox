@@ -8,10 +8,11 @@
  * Uses CiscoShellContext to interact with shell state (mode, selected interface, etc.)
  */
 
-import { IPAddress, SubnetMask, IPv6Address, MACAddress } from '../../../core/types';
+import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
+import { registerArpConfigCommands } from './CiscoArpCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -141,39 +142,8 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.register('no shutdown', 'Enable (no-op in global config)', () => '');
 
-  // Static ARP entries: arp <ip> <mac> arpa
-  trie.registerGreedy('arp', 'Add static ARP entry', (args) => {
-    // arp <ip> <mac> [arpa]
-    if (args.length < 2) return '% Incomplete command.';
-    const ip = args[0];
-    const macStr = args[1];
-    let mac: MACAddress;
-    try {
-      mac = new MACAddress(macStr);
-    } catch {
-      return `% Invalid MAC address "${macStr}"`;
-    }
-    // Determine interface: first port with an IP
-    let iface = '';
-    for (const [name, port] of ctx.r()._getPortsInternal()) {
-      if (port.getIPAddress()) {
-        iface = name;
-        break;
-      }
-    }
-    if (!iface && ctx.r()._getPortsInternal().size > 0) {
-      iface = ctx.r()._getPortsInternal().keys().next().value!;
-    }
-    ctx.r()._addStaticARP(ip, mac, iface);
-    return '';
-  });
-
-  // no arp <ip> — remove static ARP entry
-  trie.registerGreedy('no arp', 'Remove ARP entry', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._deleteARP(args[0]);
-    return '';
-  });
+  // ARP config commands (shared with switch via CiscoArpCommands)
+  registerArpConfigCommands(trie, () => ctx.r());
 
   // IPv6 static routes
   trie.registerGreedy('ipv6 route', 'Configure IPv6 static route', (args) => {

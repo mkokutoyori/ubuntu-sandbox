@@ -71,6 +71,9 @@ import {
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import { registerIPSecShowCommands } from './cisco/CiscoIPSecShowCommands';
+import {
+  registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
+} from './cisco/CiscoArpCommands';
 
 export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   private mode: CiscoShellMode = 'user';
@@ -550,11 +553,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
     // show commands
     this.registerShowCommands(t);
 
-    // Clear ARP cache
-    t.register('clear arp-cache', 'Clear ARP cache', () => {
-      this.r()._clearARPCache();
-      return '';
-    });
+    // ARP privileged commands (shared with switch)
+    registerArpPrivilegedCommands(t, () => this.r());
 
     // DHCP privileged commands (debug, clear)
     registerDhcpPrivilegedCommands(t, () => this.r());
@@ -575,8 +575,8 @@ export class CiscoIOSShell implements IRouterShell, CiscoShellContext, CiscoACLS
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
-    trie.registerGreedy('show arp', 'Display ARP table', (args) => Show.showArp(getRouter(), args.length > 0 ? args : undefined));
-    trie.registerGreedy('show ip arp', 'Display ARP table', (args) => Show.showArp(getRouter(), args.length > 0 ? args : undefined));
+    // ARP show commands (shared with switch via CiscoArpCommands)
+    registerArpShowCommands(trie, getRouter);
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));

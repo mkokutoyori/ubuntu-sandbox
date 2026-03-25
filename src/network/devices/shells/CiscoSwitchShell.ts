@@ -15,6 +15,9 @@ import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import {
+  registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
+} from './cisco/CiscoArpCommands';
+import {
   CISCO_ERRORS, parsePipeFilter, applyPipeFilter,
 } from './cli-utils';
 import { buildPrompt, CISCO_SWITCH_PROMPTS } from './PromptBuilder';
@@ -88,6 +91,28 @@ export class CiscoSwitchShell implements ISwitchShell {
 
     // Bind switch reference for command closures
     this.swRef = sw;
+
+    // Handle 'do' prefix in config modes (execute privileged command)
+    const lower = cmdPart.toLowerCase();
+    if (this.mode !== 'user' && this.mode !== 'privileged' && lower.startsWith('do ')) {
+      const subCmd = cmdPart.slice(3).trim();
+      const subResult = this.privilegedTrie.match(subCmd);
+      const doOutput = subResult.status === 'ok' && subResult.node?.action
+        ? subResult.node.action(subResult.args, subCmd)
+        : CISCO_ERRORS.UNRECOGNIZED(subCmd);
+      this.swRef = null;
+      return applyPipeFilter(doOutput, pipeFilter);
+    }
+
+    // Handle 'show' shortcut in config modes (same as 'do show')
+    if (this.mode !== 'user' && this.mode !== 'privileged' && lower.startsWith('show ')) {
+      const subResult = this.privilegedTrie.match(cmdPart);
+      if (subResult.status === 'ok' && subResult.node?.action) {
+        const showOutput = subResult.node.action(subResult.args, cmdPart);
+        this.swRef = null;
+        return applyPipeFilter(showOutput, pipeFilter);
+      }
+    }
 
     // Get the trie for current mode
     const trie = this.getActiveTrie();
@@ -238,6 +263,9 @@ export class CiscoSwitchShell implements ISwitchShell {
     // Shared Cisco commands (enable)
     registerSharedUserCommands(this.userTrie, (m) => { this.mode = m as CLIMode; });
 
+    // ARP show commands (shared with router via CiscoArpCommands)
+    registerArpShowCommands(this.userTrie, () => this.swRef!);
+
     this.userTrie.register('show version', 'Display system hardware and software status', () => {
       if (!this.swRef) return '';
       return `Cisco IOS Software, C2960 Software\n${this.swRef.getHostname()} uptime is 0 days, 0 hours`;
@@ -274,6 +302,10 @@ export class CiscoSwitchShell implements ISwitchShell {
         return this.swRef.writeMemory();
       },
     });
+
+    // ARP commands (shared with router via CiscoArpCommands)
+    registerArpShowCommands(this.privilegedTrie, () => this.swRef!);
+    registerArpPrivilegedCommands(this.privilegedTrie, () => this.swRef!);
 
     this.privilegedTrie.register('show mac address-table', 'Display MAC address table', () => {
       if (!this.swRef) return '';
@@ -361,6 +393,9 @@ export class CiscoSwitchShell implements ISwitchShell {
       return '';
     });
 
+    // ARP config commands (shared with router via CiscoArpCommands)
+    registerArpConfigCommands(this.configTrie, () => this.swRef!);
+
     this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
       if (!this.swRef || args.length < 1) return '% Incomplete command.';
       const id = parseInt(args[0], 10);
@@ -408,30 +443,8 @@ export class CiscoSwitchShell implements ISwitchShell {
 
     this.configTrie.register('no shutdown', 'Enable interface', () => '');
 
-    this.configTrie.register('show running-config', 'Display current configuration', () => {
-      if (!this.swRef) return '';
-      return this.buildRunningConfig(this.swRef);
-    });
-
-    this.configTrie.register('do show running-config', 'Display current configuration', () => {
-      if (!this.swRef) return '';
-      return this.buildRunningConfig(this.swRef);
-    });
-
-    this.configTrie.register('do show vlan brief', 'Display VLAN summary', () => {
-      if (!this.swRef) return '';
-      return this.showVlanBrief(this.swRef);
-    });
-
-    this.configTrie.register('do show mac address-table', 'Display MAC address table', () => {
-      if (!this.swRef) return '';
-      return this.showMACAddressTable(this.swRef);
-    });
-
-    this.configTrie.register('do write memory', 'Save configuration', () => {
-      if (!this.swRef) return '';
-      return this.swRef.writeMemory();
-    });
+    // 'do' prefix and 'show' shortcut are handled generically in execute()
+    // No need for explicit 'do show ...' commands here
 
     this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
       if (!this.swRef) return '';
@@ -568,10 +581,7 @@ export class CiscoSwitchShell implements ISwitchShell {
       });
     });
 
-    this.configIfTrie.register('do show running-config', 'Display current configuration', () => {
-      if (!this.swRef) return '';
-      return this.buildRunningConfig(this.swRef);
-    });
+    // 'do' prefix handled generically in execute()
   }
 
   // ─── Command Tree: VLAN Config Mode ((config-vlan)#) ─────────────
