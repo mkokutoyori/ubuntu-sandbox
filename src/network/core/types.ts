@@ -28,6 +28,17 @@ export class MACAddress {
   }
 
   private static parse(mac: string): number[] {
+    // Support Cisco dotted format: xxxx.xxxx.xxxx
+    const dotParts = mac.split('.');
+    if (dotParts.length === 3 && dotParts.every(p => /^[0-9a-fA-F]{4}$/.test(p))) {
+      const hex = dotParts.join('');
+      const octets: number[] = [];
+      for (let i = 0; i < 12; i += 2) {
+        octets.push(parseInt(hex.substring(i, i + 2), 16));
+      }
+      return octets;
+    }
+
     const parts = mac.split(/[:\-]/);
     if (parts.length !== 6) throw new Error(`Invalid MAC address: ${mac}`);
     return parts.map(p => {
