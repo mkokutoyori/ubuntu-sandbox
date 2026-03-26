@@ -232,6 +232,11 @@ export class OracleDatabase {
       const value = match[2].replace(/['"]/g, '').toUpperCase();
       if (param === 'SERVEROUTPUT') {
         (executor as { context: ExecutionContext }).context.serverOutput = value === 'ON';
+      } else if (param === 'CURRENT_SCHEMA') {
+        if (!this.catalog.userExists(value)) {
+          return emptyResult('ORA-02248: invalid option for ALTER SESSION');
+        }
+        executor.updateContext({ currentSchema: value });
       }
     }
     return emptyResult('Session altered.');
