@@ -2159,7 +2159,19 @@ export class OracleExecutor extends BaseExecutor {
       // System functions
       case 'USER': return this.context.currentUser;
       case 'SYS_GUID': return 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'.replace(/X/g, () => Math.floor(Math.random() * 16).toString(16).toUpperCase());
-      case 'SYS_CONTEXT': return this.context.currentUser; // Simplified
+      case 'SYS_CONTEXT': {
+        const namespace = args[0] != null ? String(args[0]).toUpperCase() : '';
+        const param = args[1] != null ? String(args[1]).toUpperCase() : '';
+        if (namespace === 'USERENV') {
+          switch (param) {
+            case 'CURRENT_SCHEMA': return this.context.currentSchema;
+            case 'CURRENT_USER': return this.context.currentUser;
+            case 'SESSION_USER': return this.context.currentUser;
+            default: return this.context.currentUser;
+          }
+        }
+        return this.context.currentUser;
+      }
 
       // DBMS_RANDOM package
       case 'VALUE': {
