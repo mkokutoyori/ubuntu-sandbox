@@ -132,32 +132,8 @@ export function showInterface(router: Router, ifName: string): string {
   return lines.join('\n');
 }
 
-export function showArp(router: Router, filterArgs?: string[]): string {
-  const arpTable = router._getArpTableInternal();
-  let entries = Array.from(arpTable.entries());
-
-  // Parse filter: could be an IP address or interface name
-  if (filterArgs && filterArgs.length > 0) {
-    const filter = filterArgs.join(' ');
-    const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(filter);
-    if (isIP) {
-      entries = entries.filter(([ip]) => ip === filter);
-    } else {
-      // Interface filter
-      entries = entries.filter(([, entry]) => entry.iface === filter);
-    }
-  }
-
-  if (entries.length === 0) return 'No ARP entries.';
-  const lines = ['Protocol  Address          Age (min)   Hardware Addr   Type   Interface'];
-  for (const [ip, entry] of entries) {
-    const isStatic = entry.type === 'static';
-    const age = isStatic ? '-' : String(Math.floor((Date.now() - entry.timestamp) / 60000));
-    const suffix = isStatic ? `ARPA   ${entry.iface}\n                                                       static` : `ARPA   ${entry.iface}`;
-    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toString().padEnd(16)}${suffix}`);
-  }
-  return lines.join('\n');
-}
+// showArp() moved to CiscoArpCommands.ts (shared between router and switch)
+export { showArp } from './CiscoArpCommands';
 
 export function showRunningConfig(router: Router): string {
   const ports = router._getPortsInternal();

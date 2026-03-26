@@ -931,3 +931,120 @@ describe('Cisco IOS arp commands', () => {
     expect(abbrev).toBe(full);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// CISCO SWITCH ARP COMMANDS (shared with router)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Cisco Switch arp commands', () => {
+  beforeEach(() => {
+    resetCounters();
+    MACAddress.resetCounter();
+    Logger.reset();
+  });
+
+  function setupSwitch() {
+    return new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  }
+
+  // ─── show arp should work on switch ────────────────────────────
+
+  it('show arp should return "No ARP entries." on empty switch', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    const output = await sw.executeCommand('show arp');
+
+    expect(output).toContain('No ARP entries');
+  });
+
+  it('show ip arp should also work on switch', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    const output = await sw.executeCommand('show ip arp');
+
+    expect(output).toContain('No ARP entries');
+  });
+
+  // ─── arp static in config mode ─────────────────────────────────
+
+  it('arp <ip> <mac> arpa should add static ARP entry on switch', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    const result = await sw.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await sw.executeCommand('end');
+
+    expect(result).toBe('');
+
+    const output = await sw.executeCommand('show arp');
+    expect(output).toContain('10.0.0.50');
+    expect(output).toContain('static');
+  });
+
+  it('no arp should remove a static ARP entry on switch', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await sw.executeCommand('end');
+
+    let output = await sw.executeCommand('show arp');
+    expect(output).toContain('10.0.0.50');
+
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand('no arp 10.0.0.50');
+    await sw.executeCommand('end');
+
+    output = await sw.executeCommand('show arp');
+    expect(output).not.toContain('10.0.0.50');
+  });
+
+  // ─── clear arp-cache ──────────────────────────────────────────
+
+  it('clear arp-cache should work on switch', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await sw.executeCommand('end');
+
+    await sw.executeCommand('clear arp-cache');
+
+    // Static entries survive clear arp-cache
+    const output = await sw.executeCommand('show arp');
+    expect(output).toContain('10.0.0.50');
+  });
+
+  // ─── show ip arp with filter ───────────────────────────────────
+
+  it('show ip arp <ip> should filter by IP on switch', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await sw.executeCommand('arp 10.0.0.60 1122.3344.5566 arpa');
+    await sw.executeCommand('end');
+
+    const output = await sw.executeCommand('show ip arp 10.0.0.50');
+    expect(output).toContain('10.0.0.50');
+    expect(output).not.toContain('10.0.0.60');
+  });
+
+  // ─── Same commands, same output format ─────────────────────────
+
+  it('show arp output format should match router format', async () => {
+    const sw = setupSwitch();
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand('arp 10.0.0.50 aabb.ccdd.eeff arpa');
+    await sw.executeCommand('end');
+
+    const output = await sw.executeCommand('show arp');
+    expect(output).toContain('Protocol');
+    expect(output).toContain('Address');
+    expect(output).toContain('Hardware Addr');
+    expect(output).toContain('Type');
+    expect(output).toContain('Interface');
+    expect(output).toContain('ARPA');
+  });
+});

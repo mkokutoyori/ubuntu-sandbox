@@ -128,6 +128,9 @@ export abstract class Switch extends Equipment {
   // ─── Interface Descriptions ──────────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
 
+  // ─── Management ARP Table ──────────────────────────────────────
+  private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
+
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
 
@@ -717,6 +720,26 @@ export abstract class Switch extends Equipment {
   _setSyslogServer(ip: string): void { this.syslogServer = ip; }
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
   _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
+
+  // ─── ARP Accessors (ARPProvider interface) ──────────────────────
+
+  _getArpTableInternal() { return this.arpTable; }
+
+  _addStaticARP(ip: string, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'static' });
+  }
+
+  _deleteARP(ip: string): boolean {
+    return this.arpTable.delete(ip);
+  }
+
+  _clearARPCache(): void {
+    for (const [ip, entry] of this.arpTable) {
+      if (entry.type !== 'static') {
+        this.arpTable.delete(ip);
+      }
+    }
+  }
 
   // ─── CLI ──────────────────────────────────────────────────────────
 
