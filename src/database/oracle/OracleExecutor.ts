@@ -16,6 +16,8 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
+  CreateProfileStatement, AlterProfileStatement, DropProfileStatement,
+  AuditStatement, NoauditStatement,
 } from '../engine/parser/ASTNode';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
@@ -39,6 +41,85 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   execute(statement: Statement): ResultSet {
+    const result = this.executeStatement(statement);
+    this.recordAuditForStatement(statement, 0);
+    return result;
+  }
+
+  /** Try to execute, recording errors in audit trail */
+  executeWithAudit(statement: Statement): ResultSet {
+    try {
+      const result = this.executeStatement(statement);
+      this.recordAuditForStatement(statement, 0);
+      return result;
+    } catch (e: unknown) {
+      const code = e instanceof OracleError ? e.code : 600;
+      this.recordAuditForStatement(statement, code);
+      throw e;
+    }
+  }
+
+  private recordAuditForStatement(statement: Statement, returncode: number): void {
+    const catalog = this.catalog as OracleCatalog;
+    const actionName = this.getActionName(statement);
+    if (!actionName) return; // DML/select not audited by default
+    const objInfo = this.getObjInfo(statement);
+    catalog.recordAudit({
+      username: this.context.currentSchema,
+      actionName,
+      objName: objInfo.name,
+      objOwner: objInfo.owner,
+      returncode,
+      privUsed: null,
+      sqlText: null,
+      statementType: actionName,
+    });
+  }
+
+  private getActionName(stmt: Statement): string | null {
+    const map: Record<string, string> = {
+      CreateTableStatement: 'CREATE TABLE',
+      DropTableStatement: 'DROP TABLE',
+      AlterTableStatement: 'ALTER TABLE',
+      TruncateTableStatement: 'TRUNCATE TABLE',
+      CreateIndexStatement: 'CREATE INDEX',
+      DropIndexStatement: 'DROP INDEX',
+      CreateSequenceStatement: 'CREATE SEQUENCE',
+      DropSequenceStatement: 'DROP SEQUENCE',
+      CreateViewStatement: 'CREATE VIEW',
+      DropViewStatement: 'DROP VIEW',
+      GrantStatement: 'GRANT',
+      RevokeStatement: 'REVOKE',
+      CreateUserStatement: 'CREATE USER',
+      AlterUserStatement: 'ALTER USER',
+      DropUserStatement: 'DROP USER',
+      CreateRoleStatement: 'CREATE ROLE',
+      DropRoleStatement: 'DROP ROLE',
+      CreateTriggerStatement: 'CREATE TRIGGER',
+      DropTriggerStatement: 'DROP TRIGGER',
+      CreateSynonymStatement: 'CREATE SYNONYM',
+      DropSynonymStatement: 'DROP SYNONYM',
+      CreateTablespaceStatement: 'CREATE TABLESPACE',
+      DropTablespaceStatement: 'DROP TABLESPACE',
+      AlterSystemStatement: 'ALTER SYSTEM',
+      AlterDatabaseStatement: 'ALTER DATABASE',
+      CreateProfileStatement: 'CREATE PROFILE',
+      AlterProfileStatement: 'ALTER PROFILE',
+      DropProfileStatement: 'DROP PROFILE',
+    };
+    return map[stmt.type] ?? null;
+  }
+
+  private getObjInfo(stmt: Statement): { name: string | null; owner: string | null } {
+    const s = stmt as Record<string, unknown>;
+    const name = (s['tableName'] ?? s['indexName'] ?? s['viewName'] ?? s['sequenceName']
+      ?? s['username'] ?? s['roleName'] ?? s['triggerName'] ?? s['synonymName']
+      ?? s['objectName'] ?? s['profileName'] ?? s['name'] ?? null) as string | null;
+    const owner = (s['objectSchema'] ?? s['schema'] ?? this.context.currentSchema) as string | null;
+    return { name: name?.toUpperCase() ?? null, owner: owner?.toUpperCase() ?? null };
+  }
+
+  private executeStatement(statement: Statement): ResultSet {
     switch (statement.type) {
       case 'SelectStatement': return this.executeSelect(statement);
       case 'InsertStatement': return this.executeInsert(statement);
@@ -82,6 +163,11 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropDbLinkStatement': return emptyResult('Database link dropped.');
       case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');
       case 'DropMaterializedViewStatement': return emptyResult('Materialized view dropped.');
+      case 'CreateProfileStatement': return this.executeCreateProfile(statement);
+      case 'AlterProfileStatement': return this.executeAlterProfile(statement);
+      case 'DropProfileStatement': return this.executeDropProfile(statement);
+      case 'AuditStatement': return this.executeAudit(statement);
+      case 'NoauditStatement': return this.executeNoaudit(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -1779,7 +1865,7 @@ export class OracleExecutor extends BaseExecutor {
         if (catalog.roleExists(priv)) {
           catalog.grantRole(stmt.grantee, priv, stmt.withAdminOption);
         } else {
-          catalog.grantSystemPrivilege(stmt.grantee, priv, stmt.withGrantOption);
+          catalog.grantSystemPrivilege(stmt.grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
         }
       }
     }
@@ -1814,11 +1900,15 @@ export class OracleExecutor extends BaseExecutor {
     }
     catalog.createUser({
       username: stmt.username.toUpperCase(),
+      userId: catalog.allocateUserId(),
       defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
       temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
       accountStatus: stmt.accountLocked ? 'LOCKED' : 'OPEN',
+      lockDate: stmt.accountLocked ? new Date() : null,
+      expiryDate: null,
       created: new Date(),
-      profile: stmt.profile || 'DEFAULT',
+      profile: (stmt.profile || 'DEFAULT').toUpperCase(),
+      authenticationType: 'PASSWORD',
     });
     if (stmt.password) catalog.setPassword(stmt.username.toUpperCase(), stmt.password);
     this.storage.ensureSchema(stmt.username.toUpperCase());
@@ -2503,5 +2593,44 @@ export class OracleExecutor extends BaseExecutor {
       case 'BinaryExpr': return `${this.exprToString(expr.left)} ${expr.operator} ${this.exprToString(expr.right)}`;
       default: return 'EXPR';
     }
+  }
+
+  // ── Profile management ──────────────────────────────────────────
+
+  private executeCreateProfile(stmt: CreateProfileStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    catalog.createProfile(stmt.profileName, stmt.limits);
+    return emptyResult('Profile created.');
+  }
+
+  private executeAlterProfile(stmt: AlterProfileStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    catalog.alterProfile(stmt.profileName, stmt.limits);
+    return emptyResult('Profile altered.');
+  }
+
+  private executeDropProfile(stmt: DropProfileStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    catalog.dropProfile(stmt.profileName);
+    return emptyResult('Profile dropped.');
+  }
+
+  // ── Audit / Noaudit ──────────────────────────────────────────────
+
+  private executeAudit(stmt: AuditStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    catalog.addStmtAuditOption({
+      auditOption: stmt.auditOption,
+      userName: stmt.byUser ?? null,
+      success: stmt.byMode ?? 'BY ACCESS',
+      failure: stmt.byMode ?? 'BY ACCESS',
+    });
+    return emptyResult('Audit succeeded.');
+  }
+
+  private executeNoaudit(stmt: NoauditStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    catalog.removeStmtAuditOption(stmt.auditOption, stmt.byUser ?? null);
+    return emptyResult('Noaudit succeeded.');
   }
 }

@@ -16,6 +16,7 @@ import type {
   AlterSystemStatement, AlterDatabaseStatement,
   CreateTablespaceStatement, DropTablespaceStatement,
   MergeStatement, Expression, SetTransactionStatement,
+  AuditStatement, NoauditStatement,
 } from '../engine/parser/ASTNode';
 import type { SourcePosition } from '../engine/lexer/Token';
 
@@ -74,6 +75,8 @@ export class OracleParser extends BaseParser {
       case 'SHUTDOWN': return this.parseShutdown();
       case 'MERGE': return this.parseMerge();
       case 'EXPLAIN': return this.parseExplainPlan();
+      case 'AUDIT': return this.parseAudit();
+      case 'NOAUDIT': return this.parseNoaudit();
     }
     return null;
   }
@@ -608,5 +611,55 @@ export class OracleParser extends BaseParser {
     this.expectKeyword('AS');
     const query = this.parseSelect();
     return { type: 'CreateMaterializedViewStatement', position: pos, schema, name, query };
+  }
+
+  // ── AUDIT / NOAUDIT ────────────────────────────────────────────
+
+  private parseAudit(): AuditStatement {
+    const pos = this.current().position;
+    this.expectKeyword('AUDIT');
+    // Parse audit option (multi-word: e.g., CREATE TABLE, SELECT TABLE)
+    let auditOption = this.expectIdentifierOrKeyword();
+    while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+      const next = this.current().value.toUpperCase();
+      if (['BY', 'WHENEVER'].includes(next)) break;
+      auditOption += ' ' + this.advance().value;
+    }
+    let byUser: string | undefined;
+    let byMode: 'ACCESS' | 'SESSION' | undefined;
+    if (this.matchKeyword('BY')) {
+      const next = this.current().value.toUpperCase();
+      if (next === 'ACCESS') {
+        this.advance();
+        byMode = 'ACCESS';
+      } else if (next === 'SESSION') {
+        this.advance();
+        byMode = 'SESSION';
+      } else {
+        byUser = this.expectIdentifier();
+      }
+    }
+    if (this.matchKeyword('BY')) {
+      const next = this.current().value.toUpperCase();
+      if (next === 'ACCESS') { this.advance(); byMode = 'ACCESS'; }
+      else if (next === 'SESSION') { this.advance(); byMode = 'SESSION'; }
+    }
+    return { type: 'AuditStatement', position: pos, auditOption: auditOption.toUpperCase(), byUser: byUser?.toUpperCase(), byMode };
+  }
+
+  private parseNoaudit(): NoauditStatement {
+    const pos = this.current().position;
+    this.expectKeyword('NOAUDIT');
+    let auditOption = this.expectIdentifierOrKeyword();
+    while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+      const next = this.current().value.toUpperCase();
+      if (['BY', 'WHENEVER'].includes(next)) break;
+      auditOption += ' ' + this.advance().value;
+    }
+    let byUser: string | undefined;
+    if (this.matchKeyword('BY')) {
+      byUser = this.expectIdentifier();
+    }
+    return { type: 'NoauditStatement', position: pos, auditOption: auditOption.toUpperCase(), byUser: byUser?.toUpperCase() };
   }
 }
