@@ -1,168 +1,378 @@
 /**
- * CiscoSwitchShell - Cisco IOS CLI Engine with FSM for Switches
+ * CiscoSwitchShell - Cisco IOS CLI Engine for Switches
+ *
+ * Extends CiscoShellBase<Switch> to inherit shared execute loop, FSM,
+ * help/tab-complete, and common commands (enable, configure, ARP, hostname).
+ *
+ * Switch-specific additions:
+ *   - VLANs, switchport modes, trunk/access configuration
+ *   - MAC address table, spanning tree
+ *   - DHCP snooping
+ *   - Interface ranges
  *
  * Modes (FSM States):
- *   - user: User EXEC (>)
- *   - privileged: Privileged EXEC (#)
- *   - config: Global Config ((config)#)
- *   - config-if: Interface Config ((config-if)#)
- *   - config-vlan: VLAN Config ((config-vlan)#)
- *
- * Uses CommandTrie for abbreviation matching, tab completion, and ? help.
+ *   user, privileged, config, config-if, config-vlan
  */
 
+import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
-import {
-  registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
-} from './cisco/CiscoArpCommands';
-import {
-  CISCO_ERRORS, parsePipeFilter, applyPipeFilter,
-} from './cli-utils';
-import { buildPrompt, CISCO_SWITCH_PROMPTS } from './PromptBuilder';
+import type { PromptMap } from './PromptBuilder';
+import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
-import { registerSharedUserCommands, registerSharedPrivilegedCommands } from './cisco/CiscoSharedCommands';
 
 /** CLI Mode (FSM State) */
 export type CLIMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan';
 
-export class CiscoSwitchShell implements ISwitchShell {
-  private mode: CLIMode = 'user';
+export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
+  // ─── Switch-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   private selectedInterfaceRange: string[] = [];
   private selectedVlan: number | null = null;
 
-  /** FSM for mode transitions (exit/end) — delegates to CLIStateMachine */
-  private readonly fsm = new CLIStateMachine<CLIMode>('user', CISCO_SWITCH_MODES, 'user', 'privileged');
+  // ─── FSM (switch-specific mode hierarchy) ────────────────────────
+  protected readonly fsm = new CLIStateMachine<CLIMode>('user', CISCO_SWITCH_MODES, 'user', 'privileged');
 
-  // Per-mode command tries
-  private userTrie = new CommandTrie();
-  private privilegedTrie = new CommandTrie();
-  private configTrie = new CommandTrie();
-  private configIfTrie = new CommandTrie();
+  // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
 
   constructor() {
-    this.buildUserCommands();
-    this.buildPrivilegedCommands();
-    this.buildConfigCommands();
-    this.buildConfigIfCommands();
-    this.buildConfigVlanCommands();
+    super();
+    this.initializeCommands();
   }
 
-  // ─── Mode Management ──────────────────────────────────────────────
+  // ─── ISwitchShell ────────────────────────────────────────────────
 
-  getMode(): CLIMode { return this.mode; }
+  execute(sw: Switch, input: string): string {
+    return this.executeOnDevice(sw, input) as string;
+  }
 
   getPrompt(sw: Switch): string {
-    return buildPrompt(this.mode, sw.getHostname(), CISCO_SWITCH_PROMPTS);
+    return this.buildDevicePrompt(sw);
   }
+
+  override getMode(): CLIMode { return this.mode as CLIMode; }
 
   getSelectedInterface(): string | null { return this.selectedInterface; }
   getSelectedInterfaceRange(): string[] { return [...this.selectedInterfaceRange]; }
 
-  // ─── Main Execute ─────────────────────────────────────────────────
+  // ─── Abstract Method Implementations ─────────────────────────────
 
-  execute(sw: Switch, input: string): string {
-    const trimmed = input.trim();
-    if (!trimmed) return '';
+  protected getPromptMap(): PromptMap { return CISCO_SWITCH_PROMPTS; }
 
-    // Handle pipe filtering: "show logging | include DHCP"
-    const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
+  protected onSave(): string {
+    return this.d().writeMemory();
+  }
 
-    // Handle ? for help (preserve trailing space: "show ?" vs "show?")
-    if (cmdPart.endsWith('?')) {
-      this.swRef = sw;
-      const helpInput = cmdPart.slice(0, -1);
-      const result = this.getHelp(helpInput);
-      this.swRef = null;
-      return result;
+  protected getActiveTrie(): CommandTrie {
+    switch (this.mode) {
+      case 'user':        return this.userTrie;
+      case 'privileged':  return this.privilegedTrie;
+      case 'config':      return this.configTrie;
+      case 'config-if':   return this.configIfTrie;
+      case 'config-vlan': return this.configVlanTrie;
+      default:            return this.userTrie;
     }
+  }
 
-    // Global shortcuts
-    if (cmdPart.toLowerCase() === 'exit') return this.cmdExit();
-    if (cmdPart.toLowerCase() === 'end' || cmdPart === '\x03') return this.cmdEnd();
-    if (cmdPart.toLowerCase() === 'logout' && this.mode === 'user') return 'Connection closed.';
-    if (cmdPart.toLowerCase() === 'disable' && this.mode === 'privileged') {
+  protected clearFields(fields: string[]): void {
+    for (const f of fields) {
+      if (f === 'selectedInterface') this.selectedInterface = null;
+      if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
+      if (f === 'selectedVlan') this.selectedVlan = null;
+    }
+  }
+
+  // ─── Switch-Specific Command Registration ─────────────────────────
+
+  protected registerDeviceCommands(): void {
+    // ── User mode ──
+    this.registerUserCommands();
+
+    // ── Privileged mode ──
+    this.registerPrivilegedCommands();
+
+    // ── Config mode ──
+    this.registerConfigCommands();
+
+    // ── Config-if mode ──
+    this.registerConfigIfCommands();
+
+    // ── Config-vlan mode ──
+    this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
+      if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
+      return this.d().renameVLAN(this.selectedVlan, args[0]) ? '' : '% VLAN not found';
+    });
+  }
+
+  // ─── User Commands ────────────────────────────────────────────────
+
+  private registerUserCommands(): void {
+    this.userTrie.register('show version', 'Display system hardware and software status', () => {
+      return `Cisco IOS Software, C2960 Software\n${this.d().getHostname()} uptime is 0 days, 0 hours`;
+    });
+
+    this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
+      return this.showDHCPSnooping(this.d());
+    });
+
+    this.userTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
+      return this.showDHCPSnoopingBinding(this.d());
+    });
+
+    this.userTrie.register('show logging', 'Display syslog messages', () => {
+      return this.showLogging(this.d());
+    });
+
+    this.userTrie.registerGreedy('ping', 'Send echo messages', () => {
+      return `Type escape sequence to abort.\n% Ping not yet implemented on switch.`;
+    });
+  }
+
+  // ─── Privileged Commands ──────────────────────────────────────────
+
+  private registerPrivilegedCommands(): void {
+    this.privilegedTrie.register('show mac address-table', 'Display MAC address table', () => {
+      return this.showMACAddressTable(this.d());
+    });
+
+    this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
+      return this.showVlanBrief(this.d());
+    });
+
+    this.privilegedTrie.register('show vlan', 'Display VLAN information', () => {
+      return this.showVlanBrief(this.d());
+    });
+
+    this.privilegedTrie.register('show interfaces status', 'Display interface status', () => {
+      return this.showInterfacesStatus(this.d());
+    });
+
+    this.privilegedTrie.register('show interfaces', 'Display interface information', () => {
+      return this.showInterfacesStatus(this.d());
+    });
+
+    this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
+      return this.buildRunningConfig(this.d());
+    });
+
+    this.privilegedTrie.register('show startup-config', 'Display startup configuration', () => {
+      const startup = this.d().getStartupConfig();
+      return startup ? `Startup config (serialized):\n${startup}` : 'startup-config is not present';
+    });
+
+    this.privilegedTrie.register('show spanning-tree', 'Display spanning tree state', () => {
+      return this.showSpanningTree(this.d());
+    });
+
+    this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
+      return this.d().writeMemory();
+    });
+
+    this.privilegedTrie.register('show version', 'Display system information', () => {
+      return `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2\n${this.d().getHostname()} uptime is 0 days, 0 hours`;
+    });
+
+    this.privilegedTrie.register('reload', 'Restart the switch', () => {
+      this.d().powerOff();
+      this.d().powerOn();
       this.mode = 'user';
-      return '';
-    }
+      return 'System restarting...';
+    });
 
-    // Bind switch reference for command closures
-    this.swRef = sw;
+    this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
+      return this.showDHCPSnooping(this.d());
+    });
 
-    // Handle 'do' prefix in config modes (execute privileged command)
-    const lower = cmdPart.toLowerCase();
-    if (this.mode !== 'user' && this.mode !== 'privileged' && lower.startsWith('do ')) {
-      const subCmd = cmdPart.slice(3).trim();
-      const subResult = this.privilegedTrie.match(subCmd);
-      const doOutput = subResult.status === 'ok' && subResult.node?.action
-        ? subResult.node.action(subResult.args, subCmd)
-        : CISCO_ERRORS.UNRECOGNIZED(subCmd);
-      this.swRef = null;
-      return applyPipeFilter(doOutput, pipeFilter);
-    }
+    this.privilegedTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
+      return this.showDHCPSnoopingBinding(this.d());
+    });
 
-    // Handle 'show' shortcut in config modes (same as 'do show')
-    if (this.mode !== 'user' && this.mode !== 'privileged' && lower.startsWith('show ')) {
-      const subResult = this.privilegedTrie.match(cmdPart);
-      if (subResult.status === 'ok' && subResult.node?.action) {
-        const showOutput = subResult.node.action(subResult.args, cmdPart);
-        this.swRef = null;
-        return applyPipeFilter(showOutput, pipeFilter);
+    this.privilegedTrie.register('show logging', 'Display syslog messages', () => {
+      return this.showLogging(this.d());
+    });
+  }
+
+  // ─── Config Commands ──────────────────────────────────────────────
+
+  private registerConfigCommands(): void {
+    // hostname is handled by base class (registerCommonConfigCommands)
+
+    this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id) || id < 1 || id > 4094) return '% Invalid VLAN ID';
+      if (!this.d().getVLAN(id)) {
+        this.d().createVLAN(id);
       }
-    }
+      this.selectedVlan = id;
+      this.mode = 'config-vlan';
+      return '';
+    });
 
-    // Get the trie for current mode
-    const trie = this.getActiveTrie();
-    const result = trie.match(cmdPart);
+    this.configTrie.registerGreedy('no vlan', 'Delete a VLAN', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return '% Invalid VLAN ID';
+      if (id === 1) return '% Default VLAN 1 may not be deleted.';
+      return this.d().deleteVLAN(id) ? '' : `% VLAN ${id} not found.`;
+    });
 
-    let output: string;
-    switch (result.status) {
-      case 'ok':
-        output = result.node?.action ? result.node.action(result.args, cmdPart) : '';
-        break;
+    this.configTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
 
-      case 'ambiguous':
-        output = result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
-        break;
+      if (args[0].toLowerCase() === 'range') {
+        return this.handleInterfaceRange(args.slice(1));
+      }
 
-      case 'incomplete':
-        output = result.error || CISCO_ERRORS.INCOMPLETE;
-        break;
+      const portName = this.resolveInterfaceName(args[0]);
+      if (!portName || !this.d().getPort(portName)) {
+        return `% Invalid interface name "${args[0]}"`;
+      }
+      this.selectedInterface = portName;
+      this.selectedInterfaceRange = [portName];
+      this.mode = 'config-if';
+      return '';
+    });
 
-      case 'invalid':
-        output = result.error || CISCO_ERRORS.INVALID_INPUT;
-        break;
+    this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const seconds = parseInt(args[0], 10);
+      if (isNaN(seconds) || seconds < 0) return '% Invalid aging time';
+      this.d().setMACAgingTime(seconds);
+      return '';
+    });
 
-      default:
-        output = CISCO_ERRORS.UNRECOGNIZED(cmdPart);
-    }
+    this.configTrie.register('no shutdown', 'Enable interface', () => '');
 
-    this.swRef = null;
+    this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
+      this.d()._getDHCPSnoopingConfig().enabled = true;
+      return '';
+    });
 
-    // Apply pipe filter if present
-    output = applyPipeFilter(output, pipeFilter);
+    this.configTrie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping on VLANs', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const cfg = this.d()._getDHCPSnoopingConfig();
+      const parts = args[0].split(',');
+      for (const part of parts) {
+        if (part.includes('-')) {
+          const [s, e] = part.split('-').map(Number);
+          if (!isNaN(s) && !isNaN(e)) {
+            for (let i = s; i <= e; i++) cfg.vlans.add(i);
+          }
+        } else {
+          const v = parseInt(part, 10);
+          if (!isNaN(v)) cfg.vlans.add(v);
+        }
+      }
+      return '';
+    });
 
-    return output;
+    this.configTrie.register('ip dhcp snooping verify mac-address', 'Enable MAC address verification', () => {
+      this.d()._getDHCPSnoopingConfig().verifyMac = true;
+      return '';
+    });
+
+    this.configTrie.registerGreedy('logging', 'Configure syslog server', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d()._setSyslogServer(args[0]);
+      return '';
+    });
   }
 
-  // ─── Help / Completion ────────────────────────────────────────────
+  // ─── Config-if Commands ───────────────────────────────────────────
 
-  getHelp(input: string): string {
-    const trie = this.getActiveTrie();
-    const completions = trie.getCompletions(input);
-    if (completions.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
-    const maxKw = Math.max(...completions.map(c => c.keyword.length));
-    return completions
-      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
-      .join('\n');
-  }
+  private registerConfigIfCommands(): void {
+    this.configIfTrie.register('switchport mode access', 'Set interface to access mode', () => {
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
+      );
+    });
 
-  tabComplete(input: string): string | null {
-    const trie = this.getActiveTrie();
-    return trie.tabComplete(input);
+    this.configIfTrie.register('switchport mode trunk', 'Set interface to trunk mode', () => {
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportMode(portName, 'trunk') ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const vlanId = parseInt(args[0], 10);
+      if (isNaN(vlanId) || vlanId < 1 || vlanId > 4094) return '% Invalid VLAN ID';
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportAccessVlan(portName, vlanId) ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.registerGreedy('switchport trunk native vlan', 'Set trunk native VLAN', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const vlanId = parseInt(args[0], 10);
+      if (isNaN(vlanId)) return '% Invalid VLAN ID';
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setTrunkNativeVlan(portName, vlanId) ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.registerGreedy('switchport trunk allowed vlan', 'Set trunk allowed VLANs', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const vlans = this.parseVlanList(args[0]);
+      if (!vlans) return '% Invalid VLAN list';
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setTrunkAllowedVlans(portName, vlans) ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.register('shutdown', 'Disable interface', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        const port = this.d().getPort(portName);
+        if (port) { port.setUp(false); return ''; }
+        return '% Error';
+      });
+    });
+
+    this.configIfTrie.register('no shutdown', 'Enable interface', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        const port = this.d().getPort(portName);
+        if (port) { port.setUp(true); return ''; }
+        return '% Error';
+      });
+    });
+
+    this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
+      if (!this.selectedInterface || args.length < 1) return '% Incomplete command.';
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().setInterfaceDescription(portName, args.join(' '));
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('no description', 'Remove interface description', () => {
+      if (!this.selectedInterface) return '';
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().setInterfaceDescription(portName, '');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
+      const cfg = this.d()._getDHCPSnoopingConfig();
+      return this.applyToSelectedInterfaces(portName => {
+        cfg.trustedPorts.add(portName);
+        return '';
+      });
+    });
+
+    this.configIfTrie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const rate = parseInt(args[0], 10);
+      if (isNaN(rate) || rate < 1) return '% Invalid rate value';
+      const cfg = this.d()._getDHCPSnoopingConfig();
+      return this.applyToSelectedInterfaces(portName => {
+        cfg.rateLimits.set(portName, rate);
+        return '';
+      });
+    });
   }
 
   // ─── Running Config Builder ───────────────────────────────────────
@@ -177,7 +387,6 @@ export class CiscoSwitchShell implements ISwitchShell {
       '!',
     ];
 
-    // VLANs
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);
@@ -185,7 +394,6 @@ export class CiscoSwitchShell implements ISwitchShell {
       lines.push('!');
     }
 
-    // Interfaces
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
     const descs = sw._getInterfaceDescriptions();
@@ -215,382 +423,6 @@ export class CiscoSwitchShell implements ISwitchShell {
 
     lines.push('end');
     return lines.join('\n');
-  }
-
-  // ─── FSM Transitions ─────────────────────────────────────────────
-
-  private cmdExit(): string {
-    if (this.mode === 'user') return 'Connection closed.';
-    this.fsm.mode = this.mode;
-    const { newMode, fieldsToCllear } = this.fsm.exit();
-    this.mode = newMode;
-    this.clearFields(fieldsToCllear);
-    return '';
-  }
-
-  private cmdEnd(): string {
-    this.fsm.mode = this.mode;
-    const { newMode, fieldsToCllear } = this.fsm.end();
-    this.mode = newMode;
-    this.clearFields(fieldsToCllear);
-    return '';
-  }
-
-  private clearFields(fields: string[]): void {
-    for (const f of fields) {
-      if (f === 'selectedInterface') this.selectedInterface = null;
-      if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
-      if (f === 'selectedVlan') this.selectedVlan = null;
-    }
-  }
-
-  private getActiveTrie(): CommandTrie {
-    switch (this.mode) {
-      case 'user':        return this.userTrie;
-      case 'privileged':  return this.privilegedTrie;
-      case 'config':      return this.configTrie;
-      case 'config-if':   return this.configIfTrie;
-      case 'config-vlan': return this.configVlanTrie;
-      default:            return this.userTrie;
-    }
-  }
-
-  // ─── Command Tree: User EXEC Mode (>) ────────────────────────────
-
-  private swRef: Switch | null = null;
-
-  private buildUserCommands(): void {
-    // Shared Cisco commands (enable)
-    registerSharedUserCommands(this.userTrie, (m) => { this.mode = m as CLIMode; });
-
-    // ARP show commands (shared with router via CiscoArpCommands)
-    registerArpShowCommands(this.userTrie, () => this.swRef!);
-
-    this.userTrie.register('show version', 'Display system hardware and software status', () => {
-      if (!this.swRef) return '';
-      return `Cisco IOS Software, C2960 Software\n${this.swRef.getHostname()} uptime is 0 days, 0 hours`;
-    });
-
-    this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
-      if (!this.swRef) return '';
-      return this.showDHCPSnooping(this.swRef);
-    });
-
-    this.userTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
-      if (!this.swRef) return '';
-      return this.showDHCPSnoopingBinding(this.swRef);
-    });
-
-    this.userTrie.register('show logging', 'Display syslog messages', () => {
-      if (!this.swRef) return '';
-      return this.showLogging(this.swRef);
-    });
-
-    this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
-      return `Type escape sequence to abort.\n% Ping not yet implemented on switch.`;
-    });
-  }
-
-  // ─── Command Tree: Privileged EXEC Mode (#) ──────────────────────
-
-  private buildPrivilegedCommands(): void {
-    // Shared Cisco commands (enable, configure terminal, disable, write memory, copy running-config)
-    registerSharedPrivilegedCommands(this.privilegedTrie, {
-      setMode: (m) => { this.mode = m as CLIMode; },
-      onSave: () => {
-        if (!this.swRef) return '[OK]';
-        return this.swRef.writeMemory();
-      },
-    });
-
-    // ARP commands (shared with router via CiscoArpCommands)
-    registerArpShowCommands(this.privilegedTrie, () => this.swRef!);
-    registerArpPrivilegedCommands(this.privilegedTrie, () => this.swRef!);
-
-    this.privilegedTrie.register('show mac address-table', 'Display MAC address table', () => {
-      if (!this.swRef) return '';
-      return this.showMACAddressTable(this.swRef);
-    });
-
-    this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
-      if (!this.swRef) return '';
-      return this.showVlanBrief(this.swRef);
-    });
-
-    this.privilegedTrie.register('show vlan', 'Display VLAN information', () => {
-      if (!this.swRef) return '';
-      return this.showVlanBrief(this.swRef);
-    });
-
-    this.privilegedTrie.register('show interfaces status', 'Display interface status', () => {
-      if (!this.swRef) return '';
-      return this.showInterfacesStatus(this.swRef);
-    });
-
-    this.privilegedTrie.register('show interfaces', 'Display interface information', () => {
-      if (!this.swRef) return '';
-      return this.showInterfacesStatus(this.swRef);
-    });
-
-    this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
-      if (!this.swRef) return '';
-      return this.buildRunningConfig(this.swRef);
-    });
-
-    this.privilegedTrie.register('show startup-config', 'Display startup configuration', () => {
-      if (!this.swRef) return '';
-      const startup = this.swRef.getStartupConfig();
-      return startup ? `Startup config (serialized):\n${startup}` : 'startup-config is not present';
-    });
-
-    this.privilegedTrie.register('show spanning-tree', 'Display spanning tree state', () => {
-      if (!this.swRef) return '';
-      return this.showSpanningTree(this.swRef);
-    });
-
-    // write memory & copy running-config startup-config now handled by registerSharedPrivilegedCommands
-
-    this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
-      if (!this.swRef) return '';
-      return this.swRef.writeMemory();
-    });
-
-    this.privilegedTrie.register('show version', 'Display system information', () => {
-      if (!this.swRef) return '';
-      return `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2\n${this.swRef.getHostname()} uptime is 0 days, 0 hours`;
-    });
-
-    this.privilegedTrie.register('reload', 'Restart the switch', () => {
-      if (!this.swRef) return '';
-      this.swRef.powerOff();
-      this.swRef.powerOn();
-      this.mode = 'user';
-      return 'System restarting...';
-    });
-
-    this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
-      if (!this.swRef) return '';
-      return this.showDHCPSnooping(this.swRef);
-    });
-
-    this.privilegedTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
-      if (!this.swRef) return '';
-      return this.showDHCPSnoopingBinding(this.swRef);
-    });
-
-    this.privilegedTrie.register('show logging', 'Display syslog messages', () => {
-      if (!this.swRef) return '';
-      return this.showLogging(this.swRef);
-    });
-  }
-
-  // ─── Command Tree: Global Config Mode ((config)#) ────────────────
-
-  private buildConfigCommands(): void {
-    this.configTrie.registerGreedy('hostname', 'Set system hostname', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      this.swRef._setHostnameInternal(args[0]);
-      return '';
-    });
-
-    // ARP config commands (shared with router via CiscoArpCommands)
-    registerArpConfigCommands(this.configTrie, () => this.swRef!);
-
-    this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const id = parseInt(args[0], 10);
-      if (isNaN(id) || id < 1 || id > 4094) return '% Invalid VLAN ID';
-      if (!this.swRef.getVLAN(id)) {
-        this.swRef.createVLAN(id);
-      }
-      this.selectedVlan = id;
-      this.mode = 'config-vlan';
-      return '';
-    });
-
-    this.configTrie.registerGreedy('no vlan', 'Delete a VLAN', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const id = parseInt(args[0], 10);
-      if (isNaN(id)) return '% Invalid VLAN ID';
-      if (id === 1) return '% Default VLAN 1 may not be deleted.';
-      return this.swRef.deleteVLAN(id) ? '' : `% VLAN ${id} not found.`;
-    });
-
-    this.configTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-
-      if (args[0].toLowerCase() === 'range') {
-        return this.handleInterfaceRange(args.slice(1));
-      }
-
-      const portName = this.resolveInterfaceName(args[0]);
-      if (!portName || !this.swRef.getPort(portName)) {
-        return `% Invalid interface name "${args[0]}"`;
-      }
-      this.selectedInterface = portName;
-      this.selectedInterfaceRange = [portName];
-      this.mode = 'config-if';
-      return '';
-    });
-
-    this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const seconds = parseInt(args[0], 10);
-      if (isNaN(seconds) || seconds < 0) return '% Invalid aging time';
-      this.swRef.setMACAgingTime(seconds);
-      return '';
-    });
-
-    this.configTrie.register('no shutdown', 'Enable interface', () => '');
-
-    // 'do' prefix and 'show' shortcut are handled generically in execute()
-    // No need for explicit 'do show ...' commands here
-
-    this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-      if (!this.swRef) return '';
-      this.swRef._getDHCPSnoopingConfig().enabled = true;
-      return '';
-    });
-
-    this.configTrie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping on VLANs', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const cfg = this.swRef._getDHCPSnoopingConfig();
-      const parts = args[0].split(',');
-      for (const part of parts) {
-        if (part.includes('-')) {
-          const [s, e] = part.split('-').map(Number);
-          if (!isNaN(s) && !isNaN(e)) {
-            for (let i = s; i <= e; i++) cfg.vlans.add(i);
-          }
-        } else {
-          const v = parseInt(part, 10);
-          if (!isNaN(v)) cfg.vlans.add(v);
-        }
-      }
-      return '';
-    });
-
-    this.configTrie.register('ip dhcp snooping verify mac-address', 'Enable MAC address verification', () => {
-      if (!this.swRef) return '';
-      this.swRef._getDHCPSnoopingConfig().verifyMac = true;
-      return '';
-    });
-
-    this.configTrie.registerGreedy('logging', 'Configure syslog server', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      this.swRef._setSyslogServer(args[0]);
-      return '';
-    });
-  }
-
-  // ─── Command Tree: Interface Config Mode ((config-if)#) ──────────
-
-  private buildConfigIfCommands(): void {
-    this.configIfTrie.register('switchport mode access', 'Set interface to access mode', () => {
-      if (!this.swRef) return '';
-      return this.applyToSelectedInterfaces(portName =>
-        this.swRef!.setSwitchportMode(portName, 'access') ? '' : '% Error'
-      );
-    });
-
-    this.configIfTrie.register('switchport mode trunk', 'Set interface to trunk mode', () => {
-      if (!this.swRef) return '';
-      return this.applyToSelectedInterfaces(portName =>
-        this.swRef!.setSwitchportMode(portName, 'trunk') ? '' : '% Error'
-      );
-    });
-
-    this.configIfTrie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const vlanId = parseInt(args[0], 10);
-      if (isNaN(vlanId) || vlanId < 1 || vlanId > 4094) return '% Invalid VLAN ID';
-      return this.applyToSelectedInterfaces(portName =>
-        this.swRef!.setSwitchportAccessVlan(portName, vlanId) ? '' : '% Error'
-      );
-    });
-
-    this.configIfTrie.registerGreedy('switchport trunk native vlan', 'Set trunk native VLAN', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const vlanId = parseInt(args[0], 10);
-      if (isNaN(vlanId)) return '% Invalid VLAN ID';
-      return this.applyToSelectedInterfaces(portName =>
-        this.swRef!.setTrunkNativeVlan(portName, vlanId) ? '' : '% Error'
-      );
-    });
-
-    this.configIfTrie.registerGreedy('switchport trunk allowed vlan', 'Set trunk allowed VLANs', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const vlans = this.parseVlanList(args[0]);
-      if (!vlans) return '% Invalid VLAN list';
-      return this.applyToSelectedInterfaces(portName =>
-        this.swRef!.setTrunkAllowedVlans(portName, vlans) ? '' : '% Error'
-      );
-    });
-
-    this.configIfTrie.register('shutdown', 'Disable interface', () => {
-      if (!this.swRef) return '';
-      return this.applyToSelectedInterfaces(portName => {
-        const port = this.swRef!.getPort(portName);
-        if (port) { port.setUp(false); return ''; }
-        return '% Error';
-      });
-    });
-
-    this.configIfTrie.register('no shutdown', 'Enable interface', () => {
-      if (!this.swRef) return '';
-      return this.applyToSelectedInterfaces(portName => {
-        const port = this.swRef!.getPort(portName);
-        if (port) { port.setUp(true); return ''; }
-        return '% Error';
-      });
-    });
-
-    this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
-      if (!this.swRef || !this.selectedInterface || args.length < 1) return '% Incomplete command.';
-      return this.applyToSelectedInterfaces(portName => {
-        this.swRef!.setInterfaceDescription(portName, args.join(' '));
-        return '';
-      });
-    });
-
-    this.configIfTrie.register('no description', 'Remove interface description', () => {
-      if (!this.swRef || !this.selectedInterface) return '';
-      return this.applyToSelectedInterfaces(portName => {
-        this.swRef!.setInterfaceDescription(portName, '');
-        return '';
-      });
-    });
-
-    this.configIfTrie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
-      if (!this.swRef) return '';
-      const cfg = this.swRef._getDHCPSnoopingConfig();
-      return this.applyToSelectedInterfaces(portName => {
-        cfg.trustedPorts.add(portName);
-        return '';
-      });
-    });
-
-    this.configIfTrie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
-      if (!this.swRef || args.length < 1) return '% Incomplete command.';
-      const rate = parseInt(args[0], 10);
-      if (isNaN(rate) || rate < 1) return '% Invalid rate value';
-      const cfg = this.swRef._getDHCPSnoopingConfig();
-      return this.applyToSelectedInterfaces(portName => {
-        cfg.rateLimits.set(portName, rate);
-        return '';
-      });
-    });
-
-    // 'do' prefix handled generically in execute()
-  }
-
-  // ─── Command Tree: VLAN Config Mode ((config-vlan)#) ─────────────
-
-  private buildConfigVlanCommands(): void {
-    this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
-      if (!this.swRef || !this.selectedVlan || args.length < 1) return '% Incomplete command.';
-      return this.swRef.renameVLAN(this.selectedVlan, args[0]) ? '' : '% VLAN not found';
-    });
   }
 
   // ─── Show Command Implementations ────────────────────────────────
@@ -786,10 +618,8 @@ export class CiscoSwitchShell implements ISwitchShell {
   private resolveInterfaceName(input: string): string | null {
     const lower = input.toLowerCase();
 
-    if (this.swRef) {
-      for (const name of this.swRef.getPortNames()) {
-        if (name.toLowerCase() === lower) return name;
-      }
+    for (const name of this.d().getPortNames()) {
+      if (name.toLowerCase() === lower) return name;
     }
 
     const prefixMap: Record<string, string> = {
@@ -823,10 +653,8 @@ export class CiscoSwitchShell implements ISwitchShell {
 
     const resolved = `${fullPrefix}${numbers}`;
 
-    if (this.swRef) {
-      for (const name of this.swRef.getPortNames()) {
-        if (name === resolved) return name;
-      }
+    for (const name of this.d().getPortNames()) {
+      if (name === resolved) return name;
     }
 
     return null;
@@ -889,7 +717,7 @@ export class CiscoSwitchShell implements ISwitchShell {
     return results.join('\n');
   }
 
-  // ─── VLAN List Parser ────────────────────────────────────────────
+  // ─── Utility ──────────────────────────────────────────────────────
 
   private parseVlanList(input: string): Set<number> | null {
     const vlans = new Set<number>();
@@ -907,8 +735,6 @@ export class CiscoSwitchShell implements ISwitchShell {
     }
     return vlans;
   }
-
-  // ─── Abbreviation Helper ──────────────────────────────────────────
 
   private abbreviateInterface(name: string): string {
     return name

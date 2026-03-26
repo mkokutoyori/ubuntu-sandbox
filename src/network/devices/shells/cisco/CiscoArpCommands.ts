@@ -12,30 +12,11 @@
  */
 
 import { MACAddress } from '../../../core/types';
-import type { Port } from '../../../hardware/Port';
+import type { ARPProvider, CiscoARPEntry } from '../CiscoDevice';
 import type { CommandTrie } from '../CommandTrie';
 
-// ─── ARPProvider Interface ──────────────────────────────────────────
-
-/** Entry in the ARP table (dynamic or static) */
-export interface CiscoARPEntry {
-  mac: MACAddress;
-  iface: string;
-  timestamp: number;
-  type: 'dynamic' | 'static';
-}
-
-/**
- * Interface that a device must satisfy to support Cisco ARP commands.
- * Both Router and Switch implement this.
- */
-export interface ARPProvider {
-  _getArpTableInternal(): Map<string, CiscoARPEntry>;
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void;
-  _deleteARP(ip: string): boolean;
-  _clearARPCache(): void;
-  _getPortsInternal(): Map<string, Port>;
-}
+// Re-export for backward compatibility
+export type { CiscoARPEntry, ARPProvider } from '../CiscoDevice';
 
 // ─── Show ARP ───────────────────────────────────────────────────────
 
