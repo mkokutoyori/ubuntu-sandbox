@@ -904,7 +904,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_JOBS': return this.dbaJobs();
       case 'DBA_SCHEDULER_JOBS': return this.dbaSchedulerJobs();
       case 'DBA_SYNONYMS': return this.dbaSynonyms();
-      default: return emptyResult(`View ${viewName} not implemented`);
+      default: return null;  // Unknown view — fall through to table lookup
     }
   }
 
