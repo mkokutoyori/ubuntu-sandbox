@@ -133,10 +133,16 @@ export class OracleExecutor extends BaseExecutor {
       // Materialize each CTE as a temporary table
       for (const cte of stmt.withClause!.ctes) {
         const cteName = cte.name.toUpperCase();
-        cteNames.push(cteName);
+
+        // Patch CTE inner query to reference already-materialized CTEs
+        const patchedQuery = cteNames.length > 0
+          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as SelectStatement, cteNames, cteSchema)
+          : cte.query;
 
         // Execute the CTE query
-        const cteResult = this.executeSelect(cte.query);
+        const cteResult = this.executeSelect(patchedQuery);
+
+        cteNames.push(cteName);
 
         // Create a temporary table in a special CTE schema
         const columns: StorageColMeta[] = cteResult.columns.map((col, i) => ({
@@ -322,6 +328,18 @@ export class OracleExecutor extends BaseExecutor {
   private resolveFromClause(stmt: SelectStatement): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const firstRef = stmt.from![0];
     let { rows, columns } = this.loadTableReference(firstRef);
+
+    // Handle additional FROM references (comma-separated → implicit CROSS JOIN)
+    for (let i = 1; i < stmt.from!.length; i++) {
+      const right = this.loadTableReference(stmt.from![i]);
+      const crossJoin: import('../engine/parser/ASTNode').JoinClause = {
+        joinType: 'CROSS',
+        table: stmt.from![i],
+      };
+      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin);
+      rows = result.rows;
+      columns = result.columns;
+    }
 
     // Process JOINs
     if (stmt.joins) {
