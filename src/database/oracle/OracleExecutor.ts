@@ -1347,6 +1347,27 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(955, `name is already used by an existing object`);
     }
 
+    // CREATE TABLE AS SELECT (CTAS)
+    if (stmt.asSelect) {
+      const selectResult = this.executeSelect(stmt.asSelect);
+      const columns: StorageColMeta[] = selectResult.columns.map((col, i) => ({
+        name: col.name,
+        dataType: col.dataType,
+        ordinalPosition: i,
+      }));
+      this.storage.ensureSchema(schema);
+      this.storage.createTable({
+        schema, name: tableName, columns, constraints: [],
+        tablespace: stmt.tablespace?.toUpperCase() || 'USERS',
+        temporary: stmt.temporary,
+        rowCount: 0,
+      });
+      for (const row of selectResult.rows) {
+        this.storage.insertRow(schema, tableName, row as StorageRow);
+      }
+      return emptyResult('Table created.');
+    }
+
     const columns: StorageColMeta[] = stmt.columns.map((col, i) => ({
       name: col.name.toUpperCase(),
       dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
