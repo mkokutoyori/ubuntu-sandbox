@@ -9,11 +9,15 @@ import type { ResultSet } from '../executor/ResultSet';
 
 export interface CatalogUser {
   username: string;
+  userId: number;
   defaultTablespace: string;
   temporaryTablespace: string;
   accountStatus: 'OPEN' | 'LOCKED' | 'EXPIRED' | 'EXPIRED & LOCKED';
+  lockDate: Date | null;
+  expiryDate: Date | null;
   created: Date;
   profile: string;
+  authenticationType: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
 }
 
 export interface CatalogRole {
@@ -60,12 +64,18 @@ export abstract class BaseCatalog {
 
   lockUser(username: string): void {
     const user = this.getUser(username);
-    if (user) user.accountStatus = 'LOCKED';
+    if (user) {
+      user.accountStatus = 'LOCKED';
+      user.lockDate = new Date();
+    }
   }
 
   unlockUser(username: string): void {
     const user = this.getUser(username);
-    if (user) user.accountStatus = 'OPEN';
+    if (user) {
+      user.accountStatus = 'OPEN';
+      user.lockDate = null;
+    }
   }
 
   // ── Role management ──────────────────────────────────────────────

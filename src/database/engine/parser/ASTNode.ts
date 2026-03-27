@@ -671,6 +671,41 @@ export interface AlterIndexStatement extends ASTNode {
   newName?: string;
 }
 
+// ── Profile management ──────────────────────────────────────────────
+
+export interface CreateProfileStatement extends ASTNode {
+  type: 'CreateProfileStatement';
+  profileName: string;
+  limits: Map<string, string>;
+}
+
+export interface AlterProfileStatement extends ASTNode {
+  type: 'AlterProfileStatement';
+  profileName: string;
+  limits: Map<string, string>;
+}
+
+export interface DropProfileStatement extends ASTNode {
+  type: 'DropProfileStatement';
+  profileName: string;
+  cascade?: boolean;
+}
+
+// ── AUDIT / NOAUDIT ──────────────────────────────────────────────────
+
+export interface AuditStatement extends ASTNode {
+  type: 'AuditStatement';
+  auditOption: string;
+  byUser?: string;
+  byMode?: 'ACCESS' | 'SESSION';
+}
+
+export interface NoauditStatement extends ASTNode {
+  type: 'NoauditStatement';
+  auditOption: string;
+  byUser?: string;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -699,5 +734,9 @@ export type Statement =
   | CreateSynonymStatement | DropSynonymStatement
   // Alter
   | AlterSequenceStatement | AlterIndexStatement
+  // Profile
+  | CreateProfileStatement | AlterProfileStatement | DropProfileStatement
+  // Audit
+  | AuditStatement | NoauditStatement
   // PL/SQL
   | PLSQLBlock;

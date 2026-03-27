@@ -287,11 +287,12 @@ describe('SYS Internal Tables', () => {
     expect(result.rows.some(r => r[1] === 'SYSTEM')).toBe(true);
   });
 
-  test('SYS.AUD$ returns audit data (empty by default)', () => {
+  test('SYS.AUD$ returns audit data with expected columns', () => {
     const result = exec('SELECT * FROM SYS.AUD$');
     expect(result.isQuery).toBe(true);
     expect(result.columns.some(c => c.name === 'USERID')).toBe(true);
-    expect(result.rows.length).toBe(0);
+    expect(result.columns.some(c => c.name === 'SESSIONID')).toBe(true);
+    expect(result.columns.some(c => c.name === 'ACTION#')).toBe(true);
   });
 });
 

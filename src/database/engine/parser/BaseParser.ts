@@ -494,6 +494,7 @@ export abstract class BaseParser {
     if (this.matchKeyword('SEQUENCE')) return this.parseCreateSequence(pos);
     if (this.matchKeyword('USER')) return this.parseCreateUser(pos);
     if (this.matchKeyword('ROLE')) return this.parseCreateRole(pos);
+    if (this.matchKeyword('PROFILE')) return this.parseCreateProfile(pos);
 
     // Delegate to dialect for TABLESPACE, PROCEDURE, FUNCTION, PACKAGE, TRIGGER, etc.
     const dialectResult = this.parseDialectCreate(pos, orReplace);
@@ -799,12 +800,16 @@ export abstract class BaseParser {
     }
     let defaultTablespace: string | undefined;
     let temporaryTablespace: string | undefined;
+    let profile: string | undefined;
+    let accountLocked: boolean | undefined;
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       if (this.matchKeyword('DEFAULT')) { this.expectKeyword('TABLESPACE'); defaultTablespace = this.expectIdentifier(); }
       else if (this.matchKeyword('TEMPORARY')) { this.expectKeyword('TABLESPACE'); temporaryTablespace = this.expectIdentifier(); }
+      else if (this.matchKeyword('PROFILE')) { profile = this.expectIdentifier(); }
+      else if (this.matchKeyword('ACCOUNT')) { this.expectKeyword('LOCK'); accountLocked = true; }
       else break;
     }
-    return { type: 'CreateUserStatement', position: pos, username, password, defaultTablespace, temporaryTablespace };
+    return { type: 'CreateUserStatement', position: pos, username, password, defaultTablespace, temporaryTablespace, profile, accountLocked };
   }
 
   protected parseCreateRole(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').CreateRoleStatement {
@@ -819,6 +824,7 @@ export abstract class BaseParser {
     this.expectKeyword('ALTER');
     if (this.checkKeyword('TABLE')) return this.parseAlterTable(pos);
     if (this.checkKeyword('USER')) return this.parseAlterUser(pos);
+    if (this.matchKeyword('PROFILE')) return this.parseAlterProfile(pos);
     // Delegate to dialect
     const dialectResult = this.parseDialectAlter(pos);
     if (dialectResult) return dialectResult;
@@ -902,6 +908,7 @@ export abstract class BaseParser {
     if (this.matchKeyword('SEQUENCE')) return this.parseDropSequence(pos);
     if (this.matchKeyword('USER')) return this.parseDropUser(pos);
     if (this.matchKeyword('ROLE')) return this.parseDropRole(pos);
+    if (this.matchKeyword('PROFILE')) return this.parseDropProfile(pos);
     const dialect = this.parseDialectDrop(pos);
     if (dialect) return dialect;
     throw this.error(`Unsupported DROP target: ${this.current().value}`);
@@ -951,6 +958,54 @@ export abstract class BaseParser {
     return { type: 'DropRoleStatement', position: pos, name };
   }
 
+  // ── PROFILE management ──────────────────────────────────────────
+
+  protected parseCreateProfile(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').CreateProfileStatement {
+    const profileName = this.expectIdentifier();
+    // LIMIT may be a keyword or identifier depending on lexer
+    if (!this.matchKeyword('LIMIT')) {
+      if (this.check(TokenType.IDENTIFIER) && this.current().value.toUpperCase() === 'LIMIT') {
+        this.advance();
+      }
+    }
+    const limits = this.parseProfileLimits();
+    return { type: 'CreateProfileStatement', position: pos, profileName, limits };
+  }
+
+  protected parseAlterProfile(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').AlterProfileStatement {
+    const profileName = this.expectIdentifier();
+    if (!this.matchKeyword('LIMIT')) {
+      if (this.check(TokenType.IDENTIFIER) && this.current().value.toUpperCase() === 'LIMIT') {
+        this.advance();
+      }
+    }
+    const limits = this.parseProfileLimits();
+    return { type: 'AlterProfileStatement', position: pos, profileName, limits };
+  }
+
+  protected parseDropProfile(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').DropProfileStatement {
+    const profileName = this.expectIdentifier();
+    const cascade = this.matchKeyword('CASCADE');
+    return { type: 'DropProfileStatement', position: pos, profileName, cascade: cascade || undefined };
+  }
+
+  private parseProfileLimits(): Map<string, string> {
+    const limits = new Map<string, string>();
+    while (!this.check(TokenType.EOF) && !this.check(TokenType.SEMICOLON)) {
+      if (!this.check(TokenType.IDENTIFIER) && !this.check(TokenType.KEYWORD)) break;
+      const resName = this.expectIdentifierOrKeyword();
+      // Value can be a number, keyword (UNLIMITED, DEFAULT, NULL), or identifier (function name)
+      let value: string;
+      if (this.check(TokenType.NUMBER_LITERAL)) {
+        value = this.advance().value;
+      } else {
+        value = this.expectIdentifierOrKeyword();
+      }
+      limits.set(resName.toUpperCase(), value.toUpperCase());
+    }
+    return limits;
+  }
+
   // ── TRUNCATE ──────────────────────────────────────────────────────
 
   protected parseTruncate(): import('./ASTNode').TruncateTableStatement {
@@ -977,8 +1032,18 @@ export abstract class BaseParser {
     }
     this.expectKeyword('TO');
     const grantee = this.expectIdentifier();
-    const withGrantOption = this.matchKeyword('WITH') ? (this.expectKeyword('GRANT'), this.expectKeyword('OPTION'), true) : false;
-    return { type: 'GrantStatement', position: pos, privileges, objectSchema, objectName, grantee, withGrantOption: withGrantOption || undefined };
+    let withGrantOption = false;
+    let withAdminOption = false;
+    if (this.matchKeyword('WITH')) {
+      if (this.matchKeyword('GRANT')) {
+        this.expectKeyword('OPTION');
+        withGrantOption = true;
+      } else if (this.matchKeyword('ADMIN')) {
+        this.expectKeyword('OPTION');
+        withAdminOption = true;
+      }
+    }
+    return { type: 'GrantStatement', position: pos, privileges, objectSchema, objectName, grantee, withGrantOption: withGrantOption || undefined, withAdminOption: withAdminOption || undefined };
   }
 
   protected parseRevoke(): import('./ASTNode').RevokeStatement {

@@ -19,6 +19,30 @@ interface StoredUnit {
   created: Date; status: string;
 }
 
+/** Audit trail entry shape */
+interface AuditEntry {
+  sessionId: number;
+  osUsername: string;
+  username: string;
+  userhost: string;
+  timestamp: Date;
+  actionName: string;
+  objName: string | null;
+  objOwner: string | null;
+  returncode: number;
+  privUsed: string | null;
+  sqlText: string | null;
+  statementType: string | null;
+}
+
+/** Statement-level audit option shape */
+interface StmtAuditOption {
+  auditOption: string;
+  userName: string | null; // null = all users
+  success: string; // BY ACCESS or BY SESSION
+  failure: string; // BY ACCESS or BY SESSION
+}
+
 /** Parameter descriptions for V$PARAMETER.DESCRIPTION column */
 const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   db_name: 'Database name specified in CREATE DATABASE',
@@ -74,6 +98,22 @@ export class OracleCatalog extends BaseCatalog {
   private instance: OracleInstance;
   /** Schema → password (for authentication) */
   private passwords: Map<string, string> = new Map();
+  /** Auto-incrementing user ID counter */
+  private nextUserId = 0;
+  /** Auto-incrementing session ID */
+  private sessionId = 1;
+
+  // ── Audit trail infrastructure ───────────────────────────────────
+
+  /** Audit trail entries (DBA_AUDIT_TRAIL / SYS.AUD$) */
+  private auditTrail: AuditEntry[] = [];
+
+  /** Statement-level audit options (DBA_STMT_AUDIT_OPTS) */
+  private stmtAuditOpts: StmtAuditOption[] = [];
+
+  /** Custom profiles (name → resource overrides) */
+  private profiles: Map<string, Map<string, string>> = new Map();
+
   /** Injected provider for stored PL/SQL units (avoids circular dependency) */
   private storedUnitsProvider: (() => StoredUnit[]) | null = null;
 
@@ -92,11 +132,11 @@ export class OracleCatalog extends BaseCatalog {
   private initDefaultUsersAndRoles(): void {
     const now = new Date();
     const defaultUsers: (CatalogUser & { password: string })[] = [
-      { username: 'SYS', defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', created: now, profile: 'DEFAULT', password: 'oracle' },
-      { username: 'SYSTEM', defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', created: now, profile: 'DEFAULT', password: 'oracle' },
-      { username: 'DBSNMP', defaultTablespace: 'SYSAUX', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', created: now, profile: 'DEFAULT', password: 'dbsnmp' },
-      { username: 'HR', defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', created: now, profile: 'DEFAULT', password: 'hr' },
-      { username: 'SCOTT', defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', created: now, profile: 'DEFAULT', password: 'tiger' },
+      { username: 'SYS', userId: this.nextUserId++, defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'oracle' },
+      { username: 'SYSTEM', userId: this.nextUserId++, defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'oracle' },
+      { username: 'DBSNMP', userId: this.nextUserId++, defaultTablespace: 'SYSAUX', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'dbsnmp' },
+      { username: 'HR', userId: this.nextUserId++, defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'hr' },
+      { username: 'SCOTT', userId: this.nextUserId++, defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'tiger' },
     ];
     for (const u of defaultUsers) {
       const { password, ...user } = u;
@@ -150,6 +190,65 @@ export class OracleCatalog extends BaseCatalog {
 
   setPassword(username: string, password: string): void {
     this.passwords.set(username.toUpperCase(), password);
+  }
+
+  /** Allocate a unique user ID for new users */
+  allocateUserId(): number {
+    return this.nextUserId++;
+  }
+
+  // ── Audit trail recording ──────────────────────────────────────
+
+  /** Record an audit trail entry */
+  recordAudit(entry: Omit<AuditEntry, 'sessionId' | 'osUsername' | 'userhost' | 'timestamp'>): void {
+    this.auditTrail.push({
+      sessionId: this.sessionId,
+      osUsername: 'oracle',
+      userhost: 'localhost',
+      timestamp: new Date(),
+      ...entry,
+    });
+  }
+
+  /** Add a statement-level audit option */
+  addStmtAuditOption(option: StmtAuditOption): void {
+    // Remove any existing matching option first
+    this.stmtAuditOpts = this.stmtAuditOpts.filter(o =>
+      !(o.auditOption === option.auditOption && o.userName === option.userName)
+    );
+    this.stmtAuditOpts.push(option);
+  }
+
+  /** Remove a statement-level audit option */
+  removeStmtAuditOption(auditOption: string, userName: string | null): void {
+    this.stmtAuditOpts = this.stmtAuditOpts.filter(o =>
+      !(o.auditOption === auditOption && o.userName === userName)
+    );
+  }
+
+  // ── Profile management ──────────────────────────────────────────
+
+  /** Create a custom profile with resource limit overrides */
+  createProfile(name: string, limits: Map<string, string>): void {
+    this.profiles.set(name.toUpperCase(), limits);
+  }
+
+  /** Alter an existing profile's limits */
+  alterProfile(name: string, limits: Map<string, string>): void {
+    const upper = name.toUpperCase();
+    const existing = this.profiles.get(upper);
+    if (!existing) throw new Error(`Profile ${upper} does not exist`);
+    for (const [k, v] of limits) existing.set(k, v);
+  }
+
+  /** Drop a custom profile */
+  dropProfile(name: string): void {
+    this.profiles.delete(name.toUpperCase());
+  }
+
+  /** Check if a profile exists */
+  profileExists(name: string): boolean {
+    return name.toUpperCase() === 'DEFAULT' || this.profiles.has(name.toUpperCase());
   }
 
   override dropUser(username: string): void {
@@ -287,20 +386,28 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private vSession(currentUser: string): ResultSet {
+    const now = new Date().toISOString();
     return queryResult(
       [
         { name: 'SID', dataType: oracleNumber(10) },
         { name: 'SERIAL#', dataType: oracleNumber(10) },
-        { name: 'USERNAME', dataType: oracleVarchar2(30) },
+        { name: 'USERNAME', dataType: oracleVarchar2(128) },
         { name: 'STATUS', dataType: oracleVarchar2(8) },
+        { name: 'OSUSER', dataType: oracleVarchar2(128) },
+        { name: 'MACHINE', dataType: oracleVarchar2(64) },
         { name: 'PROGRAM', dataType: oracleVarchar2(64) },
         { name: 'TYPE', dataType: oracleVarchar2(10) },
         { name: 'LOGON_TIME', dataType: oracleDate() },
+        { name: 'SCHEMANAME', dataType: oracleVarchar2(128) },
+        { name: 'COMMAND', dataType: oracleNumber(10) },
+        { name: 'SQL_ID', dataType: oracleVarchar2(13) },
       ],
       [
-        [1, 1, 'SYS', 'ACTIVE', 'oracle@localhost (PMON)', 'BACKGROUND', new Date().toISOString()],
-        [2, 1, 'SYS', 'ACTIVE', 'oracle@localhost (SMON)', 'BACKGROUND', new Date().toISOString()],
-        [10, 100, currentUser.toUpperCase(), 'ACTIVE', 'sqlplus@localhost', 'USER', new Date().toISOString()],
+        [1, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (PMON)', 'BACKGROUND', now, 'SYS', 0, null],
+        [2, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (SMON)', 'BACKGROUND', now, 'SYS', 0, null],
+        [3, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (DBW0)', 'BACKGROUND', now, 'SYS', 0, null],
+        [4, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (LGWR)', 'BACKGROUND', now, 'SYS', 0, null],
+        [10, 100, currentUser.toUpperCase(), 'ACTIVE', 'oracle', 'localhost', 'sqlplus@localhost', 'USER', now, currentUser.toUpperCase(), 3, null],
       ]
     );
   }
@@ -897,6 +1004,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_SEGMENTS': return this.dbaSegments();
       case 'DBA_EXTENTS': return this.dbaExtents();
       case 'DBA_AUDIT_TRAIL': return this.dbaAuditTrail();
+      case 'DBA_STMT_AUDIT_OPTS': return this.dbaStmtAuditOpts();
       case 'DBA_PROFILES': return this.dbaProfiles();
       case 'DBA_TAB_STATISTICS': return this.dbaTabStatistics();
       case 'DBA_DIRECTORIES': return this.dbaDirectories();
@@ -912,14 +1020,29 @@ export class OracleCatalog extends BaseCatalog {
     const users = this.getAllUsers();
     return queryResult(
       [
-        { name: 'USERNAME', dataType: oracleVarchar2(30) },
+        { name: 'USERNAME', dataType: oracleVarchar2(128) },
+        { name: 'USER_ID', dataType: oracleNumber(10) },
         { name: 'ACCOUNT_STATUS', dataType: oracleVarchar2(32) },
+        { name: 'LOCK_DATE', dataType: oracleDate() },
+        { name: 'EXPIRY_DATE', dataType: oracleDate() },
         { name: 'DEFAULT_TABLESPACE', dataType: oracleVarchar2(30) },
         { name: 'TEMPORARY_TABLESPACE', dataType: oracleVarchar2(30) },
         { name: 'CREATED', dataType: oracleDate() },
-        { name: 'PROFILE', dataType: oracleVarchar2(30) },
+        { name: 'PROFILE', dataType: oracleVarchar2(128) },
+        { name: 'AUTHENTICATION_TYPE', dataType: oracleVarchar2(8) },
       ],
-      users.map(u => [u.username, u.accountStatus, u.defaultTablespace, u.temporaryTablespace, u.created.toISOString(), u.profile])
+      users.map(u => [
+        u.username,
+        u.userId,
+        u.accountStatus,
+        u.lockDate ? u.lockDate.toISOString() : null,
+        u.expiryDate ? u.expiryDate.toISOString() : null,
+        u.defaultTablespace,
+        u.temporaryTablespace,
+        u.created.toISOString(),
+        u.profile,
+        u.authenticationType,
+      ])
     );
   }
 
@@ -1176,15 +1299,26 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private dbaTabPrivs(): ResultSet {
+    const rows: (string | number | null)[][] = this.tabPrivileges.map(p => [
+      p.grantee,
+      p.objectSchema ?? 'SYS',
+      p.objectName ?? '',
+      p.privilege,
+      p.grantable ? 'YES' : 'NO',
+      'SYS', // GRANTOR — defaults to SYS in our simulation
+      'OBJECT', // TYPE
+    ]);
     return queryResult(
       [
-        { name: 'GRANTEE', dataType: oracleVarchar2(30) },
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
+        { name: 'GRANTEE', dataType: oracleVarchar2(128) },
+        { name: 'OWNER', dataType: oracleVarchar2(128) },
+        { name: 'TABLE_NAME', dataType: oracleVarchar2(128) },
         { name: 'PRIVILEGE', dataType: oracleVarchar2(40) },
         { name: 'GRANTABLE', dataType: oracleVarchar2(3) },
+        { name: 'GRANTOR', dataType: oracleVarchar2(128) },
+        { name: 'TYPE', dataType: oracleVarchar2(24) },
       ],
-      [] // No object grants tracked yet
+      rows
     );
   }
 
@@ -1318,42 +1452,91 @@ export class OracleCatalog extends BaseCatalog {
     return queryResult(
       [
         { name: 'OS_USERNAME', dataType: oracleVarchar2(255) },
-        { name: 'USERNAME', dataType: oracleVarchar2(30) },
+        { name: 'USERNAME', dataType: oracleVarchar2(128) },
         { name: 'USERHOST', dataType: oracleVarchar2(128) },
         { name: 'TIMESTAMP', dataType: oracleDate() },
         { name: 'ACTION_NAME', dataType: oracleVarchar2(28) },
         { name: 'OBJ_NAME', dataType: oracleVarchar2(128) },
         { name: 'RETURNCODE', dataType: oracleNumber(10) },
+        { name: 'OBJ_OWNER', dataType: oracleVarchar2(128) },
+        { name: 'SESSIONID', dataType: oracleNumber(10) },
+        { name: 'PRIV_USED', dataType: oracleVarchar2(40) },
+        { name: 'SQL_TEXT', dataType: oracleVarchar2(2000) },
+        { name: 'STATEMENT_TYPE', dataType: oracleVarchar2(28) },
       ],
-      [] // No audit entries
+      this.auditTrail.map(e => [
+        e.osUsername,
+        e.username,
+        e.userhost,
+        e.timestamp.toISOString(),
+        e.actionName,
+        e.objName,
+        e.returncode,
+        e.objOwner,
+        e.sessionId,
+        e.privUsed,
+        e.sqlText,
+        e.statementType,
+      ])
     );
   }
 
-  private dbaProfiles(): ResultSet {
+  private dbaStmtAuditOpts(): ResultSet {
     return queryResult(
       [
-        { name: 'PROFILE', dataType: oracleVarchar2(30) },
+        { name: 'USER_NAME', dataType: oracleVarchar2(128) },
+        { name: 'AUDIT_OPTION', dataType: oracleVarchar2(40) },
+        { name: 'SUCCESS', dataType: oracleVarchar2(10) },
+        { name: 'FAILURE', dataType: oracleVarchar2(10) },
+      ],
+      this.stmtAuditOpts.map(o => [o.userName, o.auditOption, o.success, o.failure])
+    );
+  }
+
+  /** All resource limits with their types for profile generation */
+  private static readonly PROFILE_RESOURCES: [string, string, string][] = [
+    ['COMPOSITE_LIMIT', 'KERNEL', 'UNLIMITED'],
+    ['SESSIONS_PER_USER', 'KERNEL', 'UNLIMITED'],
+    ['CPU_PER_SESSION', 'KERNEL', 'UNLIMITED'],
+    ['CPU_PER_CALL', 'KERNEL', 'UNLIMITED'],
+    ['LOGICAL_READS_PER_SESSION', 'KERNEL', 'UNLIMITED'],
+    ['LOGICAL_READS_PER_CALL', 'KERNEL', 'UNLIMITED'],
+    ['IDLE_TIME', 'KERNEL', 'UNLIMITED'],
+    ['CONNECT_TIME', 'KERNEL', 'UNLIMITED'],
+    ['PRIVATE_SGA', 'KERNEL', 'UNLIMITED'],
+    ['FAILED_LOGIN_ATTEMPTS', 'PASSWORD', '10'],
+    ['PASSWORD_LIFE_TIME', 'PASSWORD', '180'],
+    ['PASSWORD_REUSE_TIME', 'PASSWORD', 'UNLIMITED'],
+    ['PASSWORD_REUSE_MAX', 'PASSWORD', 'UNLIMITED'],
+    ['PASSWORD_LOCK_TIME', 'PASSWORD', '1'],
+    ['PASSWORD_GRACE_TIME', 'PASSWORD', '7'],
+    ['PASSWORD_VERIFY_FUNCTION', 'PASSWORD', 'NULL'],
+  ];
+
+  private dbaProfiles(): ResultSet {
+    const rows: (string | number | null)[][] = [];
+
+    // DEFAULT profile
+    for (const [resName, resType, defaultLimit] of OracleCatalog.PROFILE_RESOURCES) {
+      rows.push(['DEFAULT', resName, resType, defaultLimit]);
+    }
+
+    // Custom profiles — override specified limits, inherit DEFAULT for the rest
+    for (const [profileName, overrides] of this.profiles) {
+      for (const [resName, resType] of OracleCatalog.PROFILE_RESOURCES) {
+        const limit = overrides.get(resName) ?? 'DEFAULT';
+        rows.push([profileName, resName, resType, limit]);
+      }
+    }
+
+    return queryResult(
+      [
+        { name: 'PROFILE', dataType: oracleVarchar2(128) },
         { name: 'RESOURCE_NAME', dataType: oracleVarchar2(32) },
         { name: 'RESOURCE_TYPE', dataType: oracleVarchar2(8) },
         { name: 'LIMIT', dataType: oracleVarchar2(128) },
       ],
-      [
-        ['DEFAULT', 'COMPOSITE_LIMIT', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'SESSIONS_PER_USER', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'CPU_PER_SESSION', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'CPU_PER_CALL', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'LOGICAL_READS_PER_SESSION', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'LOGICAL_READS_PER_CALL', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'IDLE_TIME', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'CONNECT_TIME', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'PRIVATE_SGA', 'KERNEL', 'UNLIMITED'],
-        ['DEFAULT', 'FAILED_LOGIN_ATTEMPTS', 'PASSWORD', '10'],
-        ['DEFAULT', 'PASSWORD_LIFE_TIME', 'PASSWORD', '180'],
-        ['DEFAULT', 'PASSWORD_REUSE_TIME', 'PASSWORD', 'UNLIMITED'],
-        ['DEFAULT', 'PASSWORD_REUSE_MAX', 'PASSWORD', 'UNLIMITED'],
-        ['DEFAULT', 'PASSWORD_LOCK_TIME', 'PASSWORD', '1'],
-        ['DEFAULT', 'PASSWORD_GRACE_TIME', 'PASSWORD', '7'],
-      ]
+      rows
     );
   }
 
@@ -1610,16 +1793,37 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private sysAud(): ResultSet {
+    // Map action names to Oracle action numbers
+    const actionNumbers: Record<string, number> = {
+      'CREATE TABLE': 1, 'INSERT': 2, 'SELECT': 3, 'CREATE ROLE': 52,
+      'ALTER ROLE': 79, 'DROP ROLE': 54, 'CREATE USER': 51, 'ALTER USER': 43,
+      'DROP USER': 53, 'GRANT': 17, 'REVOKE': 18, 'CREATE VIEW': 21,
+      'DROP VIEW': 22, 'CREATE INDEX': 9, 'DROP INDEX': 10, 'DROP TABLE': 12,
+      'ALTER TABLE': 15, 'CREATE SEQUENCE': 13, 'DROP SEQUENCE': 14,
+      'CREATE TRIGGER': 59, 'CREATE PROCEDURE': 24, 'CREATE PROFILE': 65,
+      'ALTER PROFILE': 67, 'DROP PROFILE': 66,
+    };
     return queryResult(
       [
         { name: 'SESSIONID', dataType: oracleNumber(10) },
-        { name: 'USERID', dataType: oracleVarchar2(30) },
+        { name: 'USERID', dataType: oracleVarchar2(128) },
         { name: 'ACTION#', dataType: oracleNumber(10) },
         { name: 'RETURNCODE', dataType: oracleNumber(10) },
         { name: 'TIMESTAMP#', dataType: oracleDate() },
         { name: 'OBJ$NAME', dataType: oracleVarchar2(128) },
+        { name: 'OBJ$CREATOR', dataType: oracleVarchar2(128) },
+        { name: 'SQLTEXT', dataType: oracleVarchar2(2000) },
       ],
-      []
+      this.auditTrail.map(e => [
+        e.sessionId,
+        e.username,
+        actionNumbers[e.actionName] ?? 0,
+        e.returncode,
+        e.timestamp.toISOString(),
+        e.objName,
+        e.objOwner,
+        e.sqlText,
+      ])
     );
   }
 
@@ -1687,6 +1891,7 @@ export class OracleCatalog extends BaseCatalog {
       ['DBA_SEGMENTS', 'Storage segments'],
       ['DBA_EXTENTS', 'Data extents'],
       ['DBA_AUDIT_TRAIL', 'Audit trail entries'],
+      ['DBA_STMT_AUDIT_OPTS', 'Auditing options for statements'],
       ['DBA_PROFILES', 'Resource limit profiles'],
       ['DBA_TAB_STATISTICS', 'Table statistics'],
       ['DBA_DIRECTORIES', 'Directory objects'],
