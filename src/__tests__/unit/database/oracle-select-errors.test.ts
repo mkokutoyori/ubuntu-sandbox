@@ -201,15 +201,25 @@ describe('Oracle SELECT — Semantic errors (table/view resolution)', () => {
 
 describe('Oracle SELECT — Semantic errors (column resolution)', () => {
 
-  // 31. Non-existent column in SELECT list — the simulator returns null for unknown columns
-  // but this is still worth testing as the column is silently ignored
-  it('returns null for non-existent column in SELECT list', () => {
-    const result = exec('SELECT GHOST_COLUMN FROM HR.EMPLOYEES');
-    // The simulator evaluates unknown identifiers as null
-    expect(result.isQuery).toBe(true);
-    for (const row of result.rows) {
-      expect(row[0]).toBeNull();
-    }
+  // 31. Non-existent column in SELECT list — ORA-00904
+  it('fails on non-existent column in SELECT list (ORA-00904)', () => {
+    expectError('SELECT GHOST_COLUMN FROM HR.EMPLOYEES', /invalid identifier/i);
+  });
+
+  // 31b. Non-existent qualified column (table.column)
+  it('fails on non-existent qualified column (ORA-00904)', () => {
+    expectError('SELECT E.GHOST_COLUMN FROM HR.EMPLOYEES E', /invalid identifier/i);
+  });
+
+  // 31c. Non-existent column in WHERE clause
+  it('fails on non-existent column in WHERE clause (ORA-00904)', () => {
+    expectError('SELECT * FROM HR.EMPLOYEES WHERE GHOST_COLUMN = 1', /invalid identifier/i);
+  });
+
+  // 31d. Non-existent column on empty table
+  it('fails on non-existent column even on empty table (ORA-00904)', () => {
+    exec('CREATE TABLE HR.EMPTY_CHECK (ID NUMBER)');
+    expectError('SELECT GHOST_COL FROM HR.EMPTY_CHECK', /invalid identifier/i);
   });
 
   // 32. Ambiguous column reference in multi-table query without qualifier

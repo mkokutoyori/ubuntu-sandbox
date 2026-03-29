@@ -2043,6 +2043,11 @@ export class OracleExecutor extends BaseExecutor {
         if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
         if (name === 'USER') return this.context.currentUser;
         if (name === 'ROWNUM') return this._currentRowNum || 1;
+        // ORA-00904: invalid identifier — mirrors real Oracle behavior
+        if (columns.length > 0) {
+          const displayName = pkgName ? `${pkgName}.${name}` : name;
+          throw new OracleError(904, `"${displayName}": invalid identifier`);
+        }
         return null;
       }
 
@@ -2201,6 +2206,12 @@ export class OracleExecutor extends BaseExecutor {
         if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
         if (name === 'USER') return this.context.currentUser;
         if (name === 'ROWNUM') return this._currentRowNum || 1;
+        // ORA-00904: invalid identifier — mirrors real Oracle behavior
+        if (columns.length > 0 || outerColumns.length > 0) {
+          const tbl = (expr as IdentifierExpr).table?.toUpperCase();
+          const displayName = tbl ? `${tbl}.${name}` : name;
+          throw new OracleError(904, `"${displayName}": invalid identifier`);
+        }
         return null;
       }
       return origMethod.call(this, expr, row, columns);
@@ -2575,6 +2586,14 @@ export class OracleExecutor extends BaseExecutor {
           result.push({ name: columns[colIdx].name, alias: item.alias, colIndex: colIdx, dataType: columns[colIdx].dataType });
         } else {
           const name = item.expr.name.toUpperCase();
+          const table = (item.expr as IdentifierExpr).table?.toUpperCase();
+          // Check if it's a known pseudo-column or package reference
+          const knownPseudo = !table && ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'USER', 'ROWNUM'].includes(name);
+          const knownPackage = !!table && ['DBMS_RANDOM', 'DBMS_UTILITY', 'DBMS_LOB'].includes(table);
+          if (!knownPseudo && !knownPackage && columns.length > 0) {
+            const displayName = table ? `${table}.${name}` : name;
+            throw new OracleError(904, `"${displayName}": invalid identifier`);
+          }
           result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType('VARCHAR2'), expr: item.expr });
         }
       } else {
