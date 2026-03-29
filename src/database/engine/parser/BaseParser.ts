@@ -1323,6 +1323,58 @@ export abstract class BaseParser {
       return { type: 'CastExpr', position: pos, expr, targetType };
     }
 
+    // EXTRACT(field FROM expr) — special SQL syntax
+    if (this.checkKeyword('EXTRACT') && this.peekNext()?.type === TokenType.LPAREN) {
+      this.advance(); // EXTRACT
+      this.expect(TokenType.LPAREN);
+      // field is one of: YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, TIMEZONE_HOUR, TIMEZONE_MINUTE, TIMEZONE_REGION, TIMEZONE_ABBR
+      const fieldToken = this.advance();
+      const field = fieldToken.value.toUpperCase();
+      this.expectKeyword('FROM');
+      const sourceExpr = this.parseExpression();
+      this.expect(TokenType.RPAREN);
+      // Represent as FunctionCall with two args: field literal + source expression
+      const fieldLiteral: LiteralExpr = { type: 'Literal', position: fieldToken.position, value: field, dataType: 'string' };
+      return { type: 'FunctionCall', position: pos, name: 'EXTRACT', args: [fieldLiteral, sourceExpr] };
+    }
+
+    // TRIM([LEADING|TRAILING|BOTH] [chars FROM] expr) — special SQL syntax
+    if (this.checkKeyword('TRIM') && this.peekNext()?.type === TokenType.LPAREN) {
+      this.advance(); // TRIM
+      this.expect(TokenType.LPAREN);
+      let trimSpec: string = 'BOTH';
+      let trimChars: Expression | undefined;
+
+      // Check for LEADING/TRAILING/BOTH (may be identifiers or keywords depending on lexer)
+      const trimToken = this.current();
+      const trimTokenVal = trimToken.value.toUpperCase();
+      if ((trimToken.type === TokenType.KEYWORD || trimToken.type === TokenType.IDENTIFIER) && (trimTokenVal === 'LEADING' || trimTokenVal === 'TRAILING' || trimTokenVal === 'BOTH')) {
+        this.advance();
+        trimSpec = trimTokenVal;
+        // Optional trim character(s) followed by FROM
+        if (!this.checkKeyword('FROM')) {
+          trimChars = this.parseExpression();
+        }
+        this.expectKeyword('FROM');
+        const sourceExpr = this.parseExpression();
+        this.expect(TokenType.RPAREN);
+        const specLiteral: LiteralExpr = { type: 'Literal', position: pos, value: trimSpec, dataType: 'string' };
+        const args: Expression[] = trimChars ? [sourceExpr, trimChars, specLiteral] : [sourceExpr, { type: 'Literal', position: pos, value: ' ', dataType: 'string' } as LiteralExpr, specLiteral];
+        return { type: 'FunctionCall', position: pos, name: 'TRIM', args };
+      }
+
+      // Regular TRIM(expr) or TRIM(chars FROM expr)
+      const firstExpr = this.parseExpression();
+      if (this.matchKeyword('FROM')) {
+        const sourceExpr = this.parseExpression();
+        this.expect(TokenType.RPAREN);
+        const specLiteral: LiteralExpr = { type: 'Literal', position: pos, value: 'BOTH', dataType: 'string' };
+        return { type: 'FunctionCall', position: pos, name: 'TRIM', args: [sourceExpr, firstExpr, specLiteral] };
+      }
+      this.expect(TokenType.RPAREN);
+      return { type: 'FunctionCall', position: pos, name: 'TRIM', args: [firstExpr] };
+    }
+
     // Parenthesized expression or subquery
     if (this.check(TokenType.LPAREN)) {
       this.advance();
