@@ -25,10 +25,22 @@ import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
+import { OracleLexer } from './OracleLexer';
+import { OracleParser } from './OracleParser';
+
+/** Snapshot of table rows for transaction undo */
+interface TransactionSnapshot {
+  tables: Map<string, Map<string, StorageRow[]>>; // schema -> table -> rows copy
+}
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
   private _currentRowNum: number = 0;
+  /** Undo log: snapshot taken at transaction start (first DML) */
+  private _txnSnapshot: TransactionSnapshot | null = null;
+  /** Savepoints: name -> snapshot at savepoint creation time */
+  private _savepoints: Map<string, TransactionSnapshot> = new Map();
+  private _inTransaction: boolean = false;
 
   constructor(
     storage: OracleStorage,
@@ -38,6 +50,42 @@ export class OracleExecutor extends BaseExecutor {
   ) {
     super(storage, catalog, context);
     this.instance = instance;
+  }
+
+  /** Capture current row state of all tables for rollback */
+  private captureSnapshot(): TransactionSnapshot {
+    const snap: TransactionSnapshot = { tables: new Map() };
+    for (const schema of this.storage.getSchemas()) {
+      const tableMap = new Map<string, StorageRow[]>();
+      for (const tableName of this.storage.getTableNames(schema)) {
+        const rows = this.storage.getRows(schema, tableName);
+        tableMap.set(tableName, rows.map(r => [...r]));
+      }
+      snap.tables.set(schema, tableMap);
+    }
+    return snap;
+  }
+
+  /** Restore row state from snapshot */
+  private restoreSnapshot(snap: TransactionSnapshot): void {
+    for (const [schema, tableMap] of snap.tables) {
+      for (const [tableName, rows] of tableMap) {
+        if (this.storage.tableExists(schema, tableName)) {
+          this.storage.truncateTable(schema, tableName);
+          for (const row of rows) {
+            this.storage.insertRow(schema, tableName, [...row]);
+          }
+        }
+      }
+    }
+  }
+
+  /** Begin implicit transaction on first DML */
+  private ensureTransaction(): void {
+    if (!this._inTransaction) {
+      this._txnSnapshot = this.captureSnapshot();
+      this._inTransaction = true;
+    }
   }
 
   execute(statement: Statement): ResultSet {
@@ -142,9 +190,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropUserStatement': return this.executeDropUser(statement);
       case 'CreateRoleStatement': return this.executeCreateRole(statement);
       case 'DropRoleStatement': return this.executeDropRole(statement);
-      case 'CommitStatement': return emptyResult('Commit complete.');
-      case 'RollbackStatement': return emptyResult(statement.savepoint ? `Rollback to savepoint ${statement.savepoint} complete.` : 'Rollback complete.');
-      case 'SavepointStatement': return emptyResult('Savepoint created.');
+      case 'CommitStatement': return this.executeCommit();
+      case 'RollbackStatement': return this.executeRollback(statement.savepoint);
+      case 'SavepointStatement': return this.executeSavepoint(statement.name);
       case 'StartupStatement': return this.executeStartup(statement);
       case 'ShutdownStatement': return this.executeShutdown(statement);
       case 'AlterSystemStatement': return this.executeAlterSystem(statement);
@@ -171,6 +219,46 @@ export class OracleExecutor extends BaseExecutor {
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
+  }
+
+  // ── Transaction control ──────────────────────────────────────────
+
+  private executeCommit(): ResultSet {
+    this._txnSnapshot = null;
+    this._savepoints.clear();
+    this._inTransaction = false;
+    return emptyResult('Commit complete.');
+  }
+
+  private executeRollback(savepoint?: string): ResultSet {
+    if (savepoint) {
+      const sp = savepoint.toUpperCase();
+      const snap = this._savepoints.get(sp);
+      if (snap) {
+        this.restoreSnapshot(snap);
+        // Remove savepoints created after this one
+        const names = Array.from(this._savepoints.keys());
+        const idx = names.indexOf(sp);
+        for (let i = idx + 1; i < names.length; i++) {
+          this._savepoints.delete(names[i]);
+        }
+        return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
+      }
+      return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
+    }
+    if (this._txnSnapshot) {
+      this.restoreSnapshot(this._txnSnapshot);
+    }
+    this._txnSnapshot = null;
+    this._savepoints.clear();
+    this._inTransaction = false;
+    return emptyResult('Rollback complete.');
+  }
+
+  private executeSavepoint(name: string): ResultSet {
+    this.ensureTransaction();
+    this._savepoints.set(name.toUpperCase(), this.captureSnapshot());
+    return emptyResult('Savepoint created.');
   }
 
   // ── SELECT ────────────────────────────────────────────────────────
@@ -328,6 +416,8 @@ export class OracleExecutor extends BaseExecutor {
     // ── Step 3: GROUP BY + aggregation ─────────────────────────────
     const hasAggregates = this.selectHasAggregates(stmt.columns);
     if (stmt.groupBy || hasAggregates) {
+      // ORA-00979: validate that non-aggregate SELECT items are in GROUP BY
+      this.validateGroupByExpressions(stmt, columns);
       const grouped = this.performGroupBy(rows, columns, stmt);
       // HAVING filter on groups
       if (stmt.having) {
@@ -384,6 +474,15 @@ export class OracleExecutor extends BaseExecutor {
 
     // ── Step 6: ORDER BY ───────────────────────────────────────────
     if (stmt.orderBy && stmt.orderBy.length > 0) {
+      // ORA-01791: DISTINCT requires ORDER BY expressions to be in SELECT list
+      if (stmt.distinct) {
+        for (const ob of stmt.orderBy) {
+          const idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
+          if (idx < 0) {
+            throw new OracleError(1791, 'not a SELECTed expression');
+          }
+        }
+      }
       resultRows.sort((a, b) => {
         for (const ob of stmt.orderBy!) {
           // Try to resolve by column alias or position in result set
@@ -582,7 +681,64 @@ export class OracleExecutor extends BaseExecutor {
     if (expr.type === 'BinaryExpr') {
       return this.exprHasAggregate(expr.left) || this.exprHasAggregate(expr.right);
     }
+    if (expr.type === 'UnaryExpr') return this.exprHasAggregate(expr.operand);
     return false;
+  }
+
+  private validateGroupByExpressions(stmt: SelectStatement, columns: StorageColMeta[]): void {
+    if (!stmt.groupBy || stmt.groupBy.length === 0) return; // Pure aggregate (no GROUP BY) is always valid
+    // Collect normalized GROUP BY expression keys
+    const groupByKeys = new Set<string>();
+    for (const gExpr of stmt.groupBy) {
+      groupByKeys.add(this.normalizeExprKey(gExpr));
+    }
+    // Validate each SELECT item
+    for (const item of stmt.columns) {
+      if (item.expr.type === 'Star') continue; // SELECT * with GROUP BY is unusual but skip validation
+      this.validateExprInGroupBy(item.expr, groupByKeys);
+    }
+  }
+
+  private validateExprInGroupBy(expr: Expression, groupByKeys: Set<string>): void {
+    // If this expression is an aggregate, it's fine
+    if (this.exprHasAggregate(expr)) return;
+    // If it's a literal, it's fine
+    if (expr.type === 'Literal') return;
+    // If the whole expression matches a GROUP BY key, it's fine
+    if (groupByKeys.has(this.normalizeExprKey(expr))) return;
+    // Binary expression: check both sides
+    if (expr.type === 'BinaryExpr') {
+      this.validateExprInGroupBy(expr.left, groupByKeys);
+      this.validateExprInGroupBy(expr.right, groupByKeys);
+      return;
+    }
+    // Function call (non-aggregate): check args
+    if (expr.type === 'FunctionCall') {
+      for (const arg of expr.args) this.validateExprInGroupBy(arg, groupByKeys);
+      return;
+    }
+    // Paren expression
+    if (expr.type === 'ParenExpr') {
+      this.validateExprInGroupBy(expr.expr, groupByKeys);
+      return;
+    }
+    // Case expression
+    if (expr.type === 'CaseExpr') return; // CASE is complex; skip deep validation
+    // Identifier that's not in GROUP BY
+    if (expr.type === 'Identifier') {
+      throw new OracleError(979, `not a GROUP BY expression`);
+    }
+  }
+
+  private normalizeExprKey(expr: Expression): string {
+    if (expr.type === 'Identifier') {
+      const tbl = (expr as IdentifierExpr).table?.toUpperCase() || '';
+      return tbl ? `${tbl}.${expr.name.toUpperCase()}` : expr.name.toUpperCase();
+    }
+    if (expr.type === 'Literal') return `LIT:${expr.value}`;
+    if (expr.type === 'FunctionCall') return `FN:${expr.name.toUpperCase()}(${expr.args.map(a => this.normalizeExprKey(a)).join(',')})`;
+    if (expr.type === 'BinaryExpr') return `${this.normalizeExprKey(expr.left)}${expr.operator}${this.normalizeExprKey(expr.right)}`;
+    return `?:${expr.type}`;
   }
 
   private performGroupBy(rows: StorageRow[], columns: StorageColMeta[], stmt: SelectStatement): { key: CellValue[]; rows: StorageRow[] }[] {
@@ -1042,6 +1198,11 @@ export class OracleExecutor extends BaseExecutor {
     // Execute right side
     const rightResult = this.executeSelect(stmt.setOp!.right);
 
+    // ORA-01789: validate column count match
+    if (leftResult.columns.length !== rightResult.columns.length) {
+      throw new OracleError(1789, 'query block has incorrect number of result columns');
+    }
+
     const op = stmt.setOp!.op;
 
     if (op === 'UNION_ALL') {
@@ -1098,17 +1259,33 @@ export class OracleExecutor extends BaseExecutor {
       rootRows = [...rows];
     }
 
+    // Add a LEVEL pseudo-column to column metadata if not present
+    const levelColName = '__CONNECT_BY_LEVEL__';
+    const hasLevelCol = columns.some(c => c.name === levelColName);
+    if (!hasLevelCol) {
+      columns.push({
+        name: levelColName,
+        dataType: parseOracleType('NUMBER'),
+        ordinalPosition: columns.length,
+        _qualifiedNames: ['LEVEL', levelColName],
+      } as StorageColMeta & { _qualifiedNames: string[] });
+      // Extend existing rows with null for the new column
+      for (const row of rows) row.push(null);
+    }
+    const levelIdx = columns.findIndex(c => c.name === levelColName);
+
     const result: StorageRow[] = [];
     const visited = new Set<string>();
 
     const traverse = (parentRow: StorageRow, level: number) => {
-      // Add LEVEL pseudo-column awareness
       const rowKey = JSON.stringify(parentRow);
       if (connectBy.noCycle && visited.has(rowKey)) return;
       if (level > 100) return; // Safety limit
 
       visited.add(rowKey);
-      result.push(parentRow);
+      const rowWithLevel = [...parentRow];
+      rowWithLevel[levelIdx] = level;
+      result.push(rowWithLevel);
 
       // Find children by evaluating CONNECT BY condition with PRIOR
       for (const childRow of rows) {
@@ -1298,7 +1475,11 @@ export class OracleExecutor extends BaseExecutor {
             colIndices.push(idx);
             projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: result.columns[idx].dataType });
           } else {
-            // Column not found — add as null
+            // ORA-00904: column not found in catalog view
+            const knownPseudo = ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'USER', 'ROWNUM'].includes(colName);
+            if (!knownPseudo) {
+              throw new OracleError(904, `"${colName}": invalid identifier`);
+            }
             colIndices.push(-1);
             projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } });
           }
@@ -1325,6 +1506,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
+    this.ensureTransaction();
     const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.table.name.toUpperCase();
 
@@ -1351,6 +1533,13 @@ export class OracleExecutor extends BaseExecutor {
     const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
 
     if (columns) {
+      // Validate column names exist
+      for (const colName of columns) {
+        const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === colName.toUpperCase());
+        if (colIdx < 0) throw new OracleError(904, `"${colName.toUpperCase()}": invalid identifier`);
+      }
+      if (values.length > columns.length) throw new OracleError(913, 'too many values');
+      if (values.length < columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < columns.length && i < values.length; i++) {
         const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === columns[i].toUpperCase());
         if (colIdx >= 0) {
@@ -1358,6 +1547,8 @@ export class OracleExecutor extends BaseExecutor {
         }
       }
     } else {
+      if (values.length > tableMeta.columns.length) throw new OracleError(913, 'too many values');
+      if (values.length < tableMeta.columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < values.length && i < tableMeta.columns.length; i++) {
         row[i] = this.evaluateExpression(values[i], [], []);
       }
@@ -1376,6 +1567,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── UPDATE ────────────────────────────────────────────────────────
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
+    this.ensureTransaction();
     const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.table.name.toUpperCase();
 
@@ -1384,6 +1576,12 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     const tableMeta = this.storage.getTableMeta(schema, tableName)!;
+
+    // Validate assignment column names exist
+    for (const assign of stmt.assignments) {
+      const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
+      if (colIdx < 0) throw new OracleError(904, `"${assign.column.toUpperCase()}": invalid identifier`);
+    }
 
     const count = this.storage.updateRows(
       schema, tableName,
@@ -1396,6 +1594,8 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
         }
+        // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK)
+        this.validateConstraints(schema, tableName, tableMeta, newRow);
         return newRow;
       }
     );
@@ -1406,6 +1606,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── DELETE ────────────────────────────────────────────────────────
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
+    this.ensureTransaction();
     const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.table.name.toUpperCase();
 
@@ -1414,6 +1615,13 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     const tableMeta = this.storage.getTableMeta(schema, tableName)!;
+
+    // Validate FK constraints on rows to be deleted
+    const rowsToDelete = this.storage.getRows(schema, tableName)
+      .filter(row => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
+    for (const row of rowsToDelete) {
+      this.validateDeleteForeignKeys(schema, tableName, row);
+    }
 
     const count = this.storage.deleteRows(
       schema, tableName,
@@ -2163,7 +2371,24 @@ export class OracleExecutor extends BaseExecutor {
       case 'LikeExpr': {
         const val = String(this.evaluateExpression(expr.expr, row, columns) ?? '');
         const pattern = String(this.evaluateExpression(expr.pattern, row, columns) ?? '');
-        const regex = new RegExp('^' + pattern.replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i');
+        const escapeChar = expr.escape ? String(this.evaluateExpression(expr.escape, row, columns) ?? '') : null;
+        // Build regex: escape regex-special chars first, then replace SQL wildcards
+        let regexStr = '';
+        for (let pi = 0; pi < pattern.length; pi++) {
+          const ch = pattern[pi];
+          if (escapeChar && ch === escapeChar && pi + 1 < pattern.length) {
+            // Next char is a literal
+            regexStr += pattern[pi + 1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            pi++;
+          } else if (ch === '%') {
+            regexStr += '.*';
+          } else if (ch === '_') {
+            regexStr += '.';
+          } else {
+            regexStr += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          }
+        }
+        const regex = new RegExp('^' + regexStr + '$', 'i');
         const match = regex.test(val);
         return expr.negated ? !match : match;
       }
@@ -2237,18 +2462,64 @@ export class OracleExecutor extends BaseExecutor {
       case 'SUBSTR': {
         if (args[0] == null) return null;
         const str = String(args[0]);
-        const start = Number(args[1]) - 1; // Oracle is 1-based
+        let start = Number(args[1]);
         const len = args[2] != null ? Number(args[2]) : undefined;
-        return str.substring(start, len !== undefined ? start + len : undefined);
+        // Oracle: negative start means count from end
+        if (start < 0) {
+          start = str.length + start + 1;
+        }
+        // Oracle: 0 is treated as 1
+        if (start === 0) start = 1;
+        const jsStart = start - 1; // convert to 0-based
+        if (jsStart < 0) return len !== undefined ? str.substring(0, len + jsStart) : '';
+        return str.substring(jsStart, len !== undefined ? jsStart + len : undefined);
       }
       case 'INSTR': {
         if (args[0] == null || args[1] == null) return null;
-        const idx = String(args[0]).indexOf(String(args[1]));
-        return idx >= 0 ? idx + 1 : 0;
+        const str = String(args[0]);
+        const search = String(args[1]);
+        const startPos = args[2] != null ? Number(args[2]) : 1;
+        const occurrence = args[3] != null ? Number(args[3]) : 1;
+        if (startPos > 0) {
+          let found = 0;
+          let pos = startPos - 1;
+          while (pos < str.length) {
+            const idx = str.indexOf(search, pos);
+            if (idx < 0) return 0;
+            found++;
+            if (found === occurrence) return idx + 1;
+            pos = idx + 1;
+          }
+          return 0;
+        } else {
+          // Negative startPos: search backwards from the end
+          let found = 0;
+          let pos = str.length + startPos;
+          while (pos >= 0) {
+            const idx = str.lastIndexOf(search, pos);
+            if (idx < 0) return 0;
+            found++;
+            if (found === occurrence) return idx + 1;
+            pos = idx - 1;
+          }
+          return 0;
+        }
       }
       case 'TRIM': return args[0] != null ? String(args[0]).trim() : null;
-      case 'LTRIM': return args[0] != null ? String(args[0]).replace(/^\s+/, '') : null;
-      case 'RTRIM': return args[0] != null ? String(args[0]).replace(/\s+$/, '') : null;
+      case 'LTRIM': {
+        if (args[0] == null) return null;
+        const str = String(args[0]);
+        const chars = args[1] != null ? String(args[1]) : ' ';
+        const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return str.replace(new RegExp(`^[${escaped}]+`), '');
+      }
+      case 'RTRIM': {
+        if (args[0] == null) return null;
+        const str = String(args[0]);
+        const chars = args[1] != null ? String(args[1]) : ' ';
+        const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return str.replace(new RegExp(`[${escaped}]+$`), '');
+      }
       case 'LPAD': {
         if (args[0] == null) return null;
         const str = String(args[0]);
@@ -2292,9 +2563,29 @@ export class OracleExecutor extends BaseExecutor {
       // Date functions
       case 'SYSDATE': return new Date().toISOString().slice(0, 19).replace('T', ' ');
       case 'SYSTIMESTAMP': return new Date().toISOString();
-      case 'TO_CHAR': return args[0] != null ? String(args[0]) : null;
-      case 'TO_NUMBER': return args[0] != null ? Number(args[0]) : null;
-      case 'TO_DATE': return args[0] != null ? String(args[0]) : null;
+      case 'TO_CHAR': {
+        if (args[0] == null) return null;
+        const fmt = args[1] != null ? String(args[1]).toUpperCase() : null;
+        if (fmt && (typeof args[0] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(args[0]))) {
+          const d = new Date(args[0]);
+          if (!isNaN(d.getTime())) {
+            return this.formatOracleDate(d, fmt);
+          }
+        }
+        return String(args[0]);
+      }
+      case 'TO_NUMBER': {
+        if (args[0] == null) return null;
+        const n = Number(args[0]);
+        if (isNaN(n)) throw new OracleError(1722, 'invalid number');
+        return n;
+      }
+      case 'TO_DATE': {
+        if (args[0] == null) return null;
+        const dateStr = String(args[0]);
+        const dateFmt = args[1] != null ? String(args[1]).toUpperCase() : 'YYYY-MM-DD';
+        return this.parseOracleDate(dateStr, dateFmt);
+      }
 
       // System functions
       case 'USER': return this.context.currentUser;
@@ -2406,8 +2697,71 @@ export class OracleExecutor extends BaseExecutor {
       case 'COUNT': return args.length === 0 || (expr.args[0] && expr.args[0].type === 'Star') ? 1 : (args[0] != null ? 1 : 0);
       case 'SUM': case 'AVG': case 'MIN': case 'MAX': return args[0] ?? null;
 
-      default: return null;
+      default: {
+        // ORA-00904: unknown function name
+        const schema = expr.schema?.toUpperCase();
+        const fullName = schema ? `${schema}.${name}` : name;
+        throw new OracleError(904, `"${fullName}": invalid identifier`);
+      }
     }
+  }
+
+  private formatOracleDate(d: Date, fmt: string): string {
+    const pad = (n: number, w: number = 2) => String(n).padStart(w, '0');
+    const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+    const monthsShort = months.map(m => m.slice(0, 3));
+    const days = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+    const daysShort = days.map(d => d.slice(0, 3));
+
+    let result = fmt;
+    // Order matters: longest tokens first to avoid partial replacement
+    result = result.replace(/YYYY/g, String(d.getFullYear()));
+    result = result.replace(/YY/g, String(d.getFullYear()).slice(-2));
+    result = result.replace(/MONTH/g, months[d.getMonth()]);
+    result = result.replace(/MON/g, monthsShort[d.getMonth()]);
+    result = result.replace(/MM/g, pad(d.getMonth() + 1));
+    result = result.replace(/DD/g, pad(d.getDate()));
+    result = result.replace(/DAY/g, days[d.getDay()]);
+    result = result.replace(/DY/g, daysShort[d.getDay()]);
+    result = result.replace(/HH24/g, pad(d.getHours()));
+    result = result.replace(/HH/g, pad(d.getHours() % 12 || 12));
+    result = result.replace(/MI/g, pad(d.getMinutes()));
+    result = result.replace(/SS/g, pad(d.getSeconds()));
+    return result;
+  }
+
+  private parseOracleDate(dateStr: string, fmt: string): string {
+    // Try ISO format first
+    const isoDate = new Date(dateStr);
+    if (!isNaN(isoDate.getTime())) {
+      return isoDate.toISOString().slice(0, 19).replace('T', ' ');
+    }
+    // Simple format-aware parsing for common Oracle formats
+    let year = 2000, month = 1, day = 1, hour = 0, min = 0, sec = 0;
+    const fmtUpper = fmt.toUpperCase();
+    const parts = dateStr.split(/[\s/\-:.,]+/);
+    const fmtParts = fmtUpper.split(/[\s/\-:.,]+/);
+    for (let i = 0; i < fmtParts.length && i < parts.length; i++) {
+      const v = parseInt(parts[i], 10);
+      if (isNaN(v) && fmtParts[i] === 'MON') {
+        const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        const idx = months.indexOf(parts[i].toUpperCase().slice(0, 3));
+        if (idx >= 0) month = idx + 1;
+        continue;
+      }
+      if (isNaN(v)) continue;
+      switch (fmtParts[i]) {
+        case 'YYYY': year = v; break;
+        case 'YY': year = 2000 + v; break;
+        case 'MM': month = v; break;
+        case 'DD': day = v; break;
+        case 'HH24': case 'HH': hour = v; break;
+        case 'MI': min = v; break;
+        case 'SS': sec = v; break;
+      }
+    }
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(min)}:${pad(sec)}`;
   }
 
   private getMetadataDDL(args: CellValue[]): CellValue {
@@ -2513,11 +2867,18 @@ export class OracleExecutor extends BaseExecutor {
     return -1;
   }
 
+  private toNumber(value: CellValue): number {
+    if (typeof value === 'number') return value;
+    const n = Number(value);
+    if (isNaN(n)) throw new OracleError(1722, 'invalid number');
+    return n;
+  }
+
   private applyBinaryOp(op: string, left: CellValue, right: CellValue): CellValue {
     if (op === '||') return (left != null ? String(left) : '') + (right != null ? String(right) : '');
     if (left == null || right == null) return null;
-    const l = Number(left);
-    const r = Number(right);
+    const l = this.toNumber(left);
+    const r = this.toNumber(right);
     switch (op) {
       case '+': return l + r;
       case '-': return l - r;
@@ -2570,6 +2931,82 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       }
+      // FOREIGN KEY: check parent key exists
+      if (constraint.type === 'FOREIGN_KEY' && constraint.refTable && constraint.refColumns) {
+        const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
+        const fkValues = colIndexes.map(i => row[i]);
+        // Skip if any FK column is NULL (NULL FK is allowed)
+        if (fkValues.some(v => v === null)) continue;
+        const refSchema = schema; // FK references are within the same schema by default
+        const refTable = constraint.refTable;
+        if (this.storage.tableExists(refSchema, refTable)) {
+          const refMeta = this.storage.getTableMeta(refSchema, refTable)!;
+          const refColIndexes = constraint.refColumns.map(cn => refMeta.columns.findIndex(c => c.name === cn));
+          const parentRows = this.storage.getRows(refSchema, refTable);
+          const found = parentRows.some(pRow => {
+            return refColIndexes.every((ri, i) => ri >= 0 && this.compareValues(pRow[ri], fkValues[i]) === 0);
+          });
+          if (!found) {
+            throw new OracleError(2291, `integrity constraint (${constraint.name}) violated - parent key not found`);
+          }
+        }
+      }
+      // CHECK constraint
+      if (constraint.type === 'CHECK' && constraint.checkExpression) {
+        try {
+          const checkLexer = new OracleLexer();
+          const tokens = checkLexer.tokenize(`SELECT 1 FROM DUAL WHERE ${constraint.checkExpression}`);
+          const checkParser = new OracleParser();
+          const checkStmt = checkParser.parse(tokens) as SelectStatement;
+          if (checkStmt.where) {
+            if (!this.evaluateCondition(checkStmt.where, row, tableMeta.columns)) {
+              throw new OracleError(2290, `check constraint (${constraint.name}) violated`);
+            }
+          }
+        } catch (e) {
+          if (e instanceof OracleError && e.code === 'ORA-02290') throw e;
+          // If we can't parse the check expression, skip validation
+        }
+      }
+    }
+  }
+
+  /** Validate that no child row references the given parent key before DELETE/UPDATE */
+  private validateDeleteForeignKeys(schema: string, tableName: string, row: StorageRow): void {
+    const tableMeta = this.storage.getTableMeta(schema, tableName);
+    if (!tableMeta) return;
+    // Find all tables in the same schema that have FK referencing this table
+    const allTables = this.storage.getTableNames(schema);
+    for (const childTableName of allTables) {
+      if (childTableName === tableName) continue;
+      const childMeta = this.storage.getTableMeta(schema, childTableName);
+      if (!childMeta) continue;
+      for (const constraint of childMeta.constraints) {
+        if (constraint.type === 'FOREIGN_KEY' && constraint.refTable === tableName && constraint.refColumns) {
+          const refColIndexes = constraint.refColumns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
+          const parentKey = refColIndexes.map(i => i >= 0 ? row[i] : null);
+          if (parentKey.some(v => v === null)) continue;
+          const childColIndexes = constraint.columns.map(cn => childMeta.columns.findIndex(c => c.name === cn));
+          const childRows = this.storage.getRows(schema, childTableName);
+          const hasChild = childRows.some(cRow => {
+            return childColIndexes.every((ci, i) => ci >= 0 && this.compareValues(cRow[ci], parentKey[i]) === 0);
+          });
+          if (hasChild) {
+            if (constraint.onDelete === 'CASCADE') {
+              this.storage.deleteRows(schema, childTableName, cRow => {
+                return childColIndexes.every((ci, i) => ci >= 0 && this.compareValues(cRow[ci], parentKey[i]) === 0);
+              });
+            } else if (constraint.onDelete === 'SET_NULL') {
+              this.storage.updateRows(schema, childTableName,
+                cRow => childColIndexes.every((ci, i) => ci >= 0 && this.compareValues(cRow[ci], parentKey[i]) === 0),
+                cRow => { const newRow = [...cRow]; childColIndexes.forEach(ci => { if (ci >= 0) newRow[ci] = null; }); return newRow; }
+              );
+            } else {
+              throw new OracleError(2292, `integrity constraint (${constraint.name}) violated - child record found`);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -2577,8 +3014,27 @@ export class OracleExecutor extends BaseExecutor {
     const result: { name: string; alias?: string; colIndex: number; dataType: import('../engine/catalog/DataType').ColumnDataType; expr?: Expression }[] = [];
     for (const item of items) {
       if (item.expr.type === 'Star') {
-        for (const col of columns) {
-          result.push({ name: col.name, colIndex: col.ordinalPosition, dataType: col.dataType });
+        const starTable = (item.expr as StarExpr).table?.toUpperCase();
+        if (starTable && columns.length > 0) {
+          // table.* — validate the table alias exists in columns
+          const hasTable = columns.some(c => {
+            const qNames = (c as StorageColMeta & { _qualifiedNames?: string[] })._qualifiedNames;
+            return qNames?.some(qn => qn.toUpperCase().startsWith(starTable + '.'));
+          });
+          if (!hasTable) {
+            throw new OracleError(904, `"${starTable}".*: invalid identifier`);
+          }
+          // Only include columns from this table
+          for (const col of columns) {
+            const qNames = (col as StorageColMeta & { _qualifiedNames?: string[] })._qualifiedNames;
+            if (qNames?.some(qn => qn.toUpperCase().startsWith(starTable + '.'))) {
+              result.push({ name: col.name, colIndex: col.ordinalPosition, dataType: col.dataType });
+            }
+          }
+        } else {
+          for (const col of columns) {
+            result.push({ name: col.name, colIndex: col.ordinalPosition, dataType: col.dataType });
+          }
         }
       } else if (item.expr.type === 'Identifier') {
         const colIdx = this.resolveColumnIndex(item.expr, columns);

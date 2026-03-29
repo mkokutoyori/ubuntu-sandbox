@@ -428,3 +428,186 @@ describe('Oracle SELECT — Additional syntax edge cases', () => {
     expectError('SELECT 1 FROM WHERE 1=1');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 3 — TYPE CHECKING, GROUP BY, UNION, FUNCTIONS (new corrections)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle SELECT — Type checking (ORA-01722)', () => {
+
+  // 56. TO_NUMBER with non-numeric string
+  it('fails on TO_NUMBER with non-numeric string (ORA-01722)', () => {
+    expectError("SELECT TO_NUMBER('abc') FROM DUAL", /invalid number/i);
+  });
+
+  // 57. Arithmetic with non-numeric string
+  it('fails on arithmetic with string (ORA-01722)', () => {
+    expectError("SELECT 'hello' + 1 FROM DUAL", /invalid number/i);
+  });
+
+  // 58. Division with non-numeric string
+  it('fails on division with string (ORA-01722)', () => {
+    expectError("SELECT 'abc' / 2 FROM DUAL", /invalid number/i);
+  });
+});
+
+describe('Oracle SELECT — GROUP BY validation (ORA-00979)', () => {
+
+  // 59. Non-aggregated column not in GROUP BY
+  it('fails when SELECT column not in GROUP BY (ORA-00979)', () => {
+    expectError(
+      'SELECT EMPLOYEE_ID, DEPARTMENT_ID, SUM(SALARY) FROM HR.EMPLOYEES GROUP BY DEPARTMENT_ID',
+      /not a GROUP BY expression/i,
+    );
+  });
+
+  // 60. Valid GROUP BY should pass
+  it('allows aggregate query with all columns in GROUP BY', () => {
+    const result = exec('SELECT DEPARTMENT_ID, COUNT(*) FROM HR.EMPLOYEES GROUP BY DEPARTMENT_ID');
+    expect(result.isQuery).toBe(true);
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+
+  // 61. Expression in SELECT using GROUP BY column is valid
+  it('allows function on GROUP BY column', () => {
+    const result = exec('SELECT UPPER(JOB_ID), COUNT(*) FROM HR.EMPLOYEES GROUP BY JOB_ID');
+    expect(result.isQuery).toBe(true);
+  });
+
+  // 62. Pure aggregate without GROUP BY is valid
+  it('allows pure aggregate without GROUP BY', () => {
+    const result = exec('SELECT COUNT(*), SUM(SALARY) FROM HR.EMPLOYEES');
+    expect(result.isQuery).toBe(true);
+    expect(result.rows.length).toBe(1);
+  });
+});
+
+describe('Oracle SELECT — UNION column count (ORA-01789)', () => {
+
+  // 63. UNION with different column counts
+  it('fails on UNION with mismatched column count (ORA-01789)', () => {
+    expectError(
+      'SELECT EMPLOYEE_ID, LAST_NAME FROM HR.EMPLOYEES UNION SELECT DEPARTMENT_ID FROM HR.DEPARTMENTS',
+      /incorrect number of result columns/i,
+    );
+  });
+
+  // 64. Valid UNION with matching columns
+  it('allows UNION with matching column count', () => {
+    const result = exec(
+      'SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE EMPLOYEE_ID < 102 UNION SELECT DEPARTMENT_ID FROM HR.DEPARTMENTS WHERE DEPARTMENT_ID < 20'
+    );
+    expect(result.isQuery).toBe(true);
+  });
+});
+
+describe('Oracle SELECT — DISTINCT + ORDER BY (ORA-01791)', () => {
+
+  // 65. DISTINCT with ORDER BY on non-selected column
+  it('fails on DISTINCT with ORDER BY non-selected column (ORA-01791)', () => {
+    expectError(
+      'SELECT DISTINCT DEPARTMENT_ID FROM HR.EMPLOYEES ORDER BY SALARY',
+      /not a SELECTed expression/i,
+    );
+  });
+
+  // 66. DISTINCT with ORDER BY on selected column is valid
+  it('allows DISTINCT with ORDER BY on selected column', () => {
+    const result = exec('SELECT DISTINCT DEPARTMENT_ID FROM HR.EMPLOYEES ORDER BY DEPARTMENT_ID');
+    expect(result.isQuery).toBe(true);
+  });
+});
+
+describe('Oracle SELECT — Function improvements', () => {
+
+  // 67. TO_CHAR with date format
+  it('TO_CHAR formats date with YYYY-MM-DD', () => {
+    const result = exec("SELECT TO_CHAR(TO_DATE('2025-03-15', 'YYYY-MM-DD'), 'DD/MM/YYYY') FROM DUAL");
+    expect(result.rows[0][0]).toBe('15/03/2025');
+  });
+
+  // 68. LTRIM with custom character
+  it('LTRIM removes specified characters', () => {
+    const result = exec("SELECT LTRIM('xxxHello', 'x') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello');
+  });
+
+  // 69. RTRIM with custom character
+  it('RTRIM removes specified characters', () => {
+    const result = exec("SELECT RTRIM('Helloyyy', 'y') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello');
+  });
+
+  // 70. SUBSTR with negative position
+  it('SUBSTR with negative position counts from end', () => {
+    const result = exec("SELECT SUBSTR('Hello', -3) FROM DUAL");
+    expect(result.rows[0][0]).toBe('llo');
+  });
+
+  // 71. INSTR with occurrence parameter
+  it('INSTR finds nth occurrence', () => {
+    const result = exec("SELECT INSTR('ABCABC', 'B', 1, 2) FROM DUAL");
+    expect(result.rows[0][0]).toBe(5);
+  });
+
+  // 72. Unknown function raises error
+  it('fails on unknown function name (ORA-00904)', () => {
+    expectError("SELECT FAKE_FUNCTION(1) FROM DUAL", /invalid identifier/i);
+  });
+});
+
+describe('Oracle SELECT — Transaction support', () => {
+
+  // 73. ROLLBACK undoes INSERT
+  it('ROLLBACK undoes INSERT', () => {
+    exec('CREATE TABLE HR.TXN_TEST (ID NUMBER, VAL VARCHAR2(20))');
+    exec("INSERT INTO HR.TXN_TEST VALUES (1, 'first')");
+    const before = exec('SELECT COUNT(*) FROM HR.TXN_TEST');
+    expect(before.rows[0][0]).toBe(1);
+    exec('ROLLBACK');
+    const after = exec('SELECT COUNT(*) FROM HR.TXN_TEST');
+    expect(after.rows[0][0]).toBe(0);
+  });
+
+  // 74. COMMIT makes changes permanent
+  it('COMMIT makes changes permanent (ROLLBACK after COMMIT does nothing)', () => {
+    exec('CREATE TABLE HR.TXN_TEST2 (ID NUMBER)');
+    exec('INSERT INTO HR.TXN_TEST2 VALUES (1)');
+    exec('COMMIT');
+    exec('INSERT INTO HR.TXN_TEST2 VALUES (2)');
+    exec('ROLLBACK');
+    const result = exec('SELECT COUNT(*) FROM HR.TXN_TEST2');
+    // After rollback, only the committed row (1) should remain
+    expect(result.rows[0][0]).toBe(1);
+  });
+
+  // 75. SAVEPOINT + ROLLBACK TO
+  it('ROLLBACK TO SAVEPOINT undoes partial work', () => {
+    exec('CREATE TABLE HR.TXN_TEST3 (ID NUMBER)');
+    exec('INSERT INTO HR.TXN_TEST3 VALUES (1)');
+    exec('SAVEPOINT sp1');
+    exec('INSERT INTO HR.TXN_TEST3 VALUES (2)');
+    exec('INSERT INTO HR.TXN_TEST3 VALUES (3)');
+    exec('ROLLBACK TO sp1');
+    const result = exec('SELECT COUNT(*) FROM HR.TXN_TEST3');
+    expect(result.rows[0][0]).toBe(1);
+  });
+});
+
+describe('Oracle SELECT — table.* validation', () => {
+
+  // 76. Invalid table alias with .*
+  it('fails on table.* with non-existent alias (ORA-00904)', () => {
+    expectError(
+      'SELECT GHOST.* FROM HR.EMPLOYEES E',
+      /invalid identifier/i,
+    );
+  });
+
+  // 77. Valid table alias with .*
+  it('allows table.* with valid alias', () => {
+    const result = exec('SELECT E.* FROM HR.EMPLOYEES E WHERE EMPLOYEE_ID = 100');
+    expect(result.isQuery).toBe(true);
+    expect(result.rows.length).toBe(1);
+  });
+});
