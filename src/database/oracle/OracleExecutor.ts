@@ -2569,7 +2569,21 @@ export class OracleExecutor extends BaseExecutor {
           return 0;
         }
       }
-      case 'TRIM': return args[0] != null ? String(args[0]).trim() : null;
+      case 'TRIM': {
+        if (args[0] == null) return null;
+        const trimStr = String(args[0]);
+        // Enhanced TRIM: args = [source, chars, spec] where spec is LEADING/TRAILING/BOTH
+        if (args.length >= 3 && args[2] != null) {
+          const trimChars = String(args[1] ?? ' ');
+          const spec = String(args[2]).toUpperCase();
+          const escaped = trimChars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const charClass = `[${escaped}]`;
+          if (spec === 'LEADING') return trimStr.replace(new RegExp(`^${charClass}+`), '');
+          if (spec === 'TRAILING') return trimStr.replace(new RegExp(`${charClass}+$`), '');
+          return trimStr.replace(new RegExp(`^${charClass}+`), '').replace(new RegExp(`${charClass}+$`), '');
+        }
+        return trimStr.trim();
+      }
       case 'LTRIM': {
         if (args[0] == null) return null;
         const str = String(args[0]);
@@ -2623,6 +2637,29 @@ export class OracleExecutor extends BaseExecutor {
       case 'COALESCE': return args.find(a => a != null) ?? null;
       case 'NULLIF': return this.compareValues(args[0], args[1]) === 0 ? null : args[0];
       case 'DECODE': return this.evaluateDecode(args);
+
+      // EXTRACT(field FROM date) — parsed as EXTRACT(fieldLiteral, sourceExpr)
+      case 'EXTRACT': {
+        if (args.length < 2 || args[1] == null) return null;
+        const field = String(args[0]).toUpperCase();
+        const dateVal = args[1];
+        let d: Date;
+        if (dateVal instanceof Date) {
+          d = dateVal;
+        } else {
+          d = new Date(String(dateVal));
+          if (isNaN(d.getTime())) return null;
+        }
+        switch (field) {
+          case 'YEAR': return d.getFullYear();
+          case 'MONTH': return d.getMonth() + 1;
+          case 'DAY': return d.getDate();
+          case 'HOUR': return d.getHours();
+          case 'MINUTE': return d.getMinutes();
+          case 'SECOND': return d.getSeconds();
+          default: return null;
+        }
+      }
 
       // Date functions
       case 'SYSDATE': return new Date().toISOString().slice(0, 19).replace('T', ' ');

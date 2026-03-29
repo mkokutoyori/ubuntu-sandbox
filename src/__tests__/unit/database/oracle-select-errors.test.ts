@@ -756,3 +756,74 @@ describe('Oracle — DDL implicit COMMIT', () => {
     expect(result.rows[0][0]).toBe(1); // INSERT was committed by DDL
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 5 — EXTRACT, TRIM special syntax
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — EXTRACT function', () => {
+
+  // 91. EXTRACT(YEAR FROM date)
+  it('EXTRACT(YEAR FROM date) returns year', () => {
+    const result = exec("SELECT EXTRACT(YEAR FROM TO_DATE('2025-03-15', 'YYYY-MM-DD')) FROM DUAL");
+    expect(result.rows[0][0]).toBe(2025);
+  });
+
+  // 92. EXTRACT(MONTH FROM date)
+  it('EXTRACT(MONTH FROM date) returns month', () => {
+    const result = exec("SELECT EXTRACT(MONTH FROM TO_DATE('2025-03-15', 'YYYY-MM-DD')) FROM DUAL");
+    expect(result.rows[0][0]).toBe(3);
+  });
+
+  // 93. EXTRACT(DAY FROM date)
+  it('EXTRACT(DAY FROM date) returns day', () => {
+    const result = exec("SELECT EXTRACT(DAY FROM TO_DATE('2025-03-15', 'YYYY-MM-DD')) FROM DUAL");
+    expect(result.rows[0][0]).toBe(15);
+  });
+
+  // 94. EXTRACT(MONTH FROM column) on table data
+  it('EXTRACT(MONTH FROM column) works on table data', () => {
+    const result = exec('SELECT EXTRACT(MONTH FROM HIRE_DATE) FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100');
+    expect(result.rows.length).toBe(1);
+    expect(typeof result.rows[0][0]).toBe('number');
+  });
+
+  // 95. EXTRACT(HOUR FROM timestamp)
+  it('EXTRACT(HOUR FROM timestamp) returns hour', () => {
+    const result = exec("SELECT EXTRACT(HOUR FROM TO_DATE('2025-03-15 14:30:00', 'YYYY-MM-DD HH24:MI:SS')) FROM DUAL");
+    expect(result.rows[0][0]).toBe(14);
+  });
+
+  // 96. EXTRACT with SYSDATE
+  it('EXTRACT(YEAR FROM SYSDATE) returns current year', () => {
+    const result = exec('SELECT EXTRACT(YEAR FROM SYSDATE) FROM DUAL');
+    expect(result.rows[0][0]).toBe(new Date().getFullYear());
+  });
+});
+
+describe('Oracle — TRIM special syntax', () => {
+
+  // 97. TRIM(LEADING 'x' FROM str)
+  it('TRIM(LEADING chars FROM str) removes leading chars', () => {
+    const result = exec("SELECT TRIM(LEADING 'x' FROM 'xxxHello') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello');
+  });
+
+  // 98. TRIM(TRAILING 'y' FROM str)
+  it('TRIM(TRAILING chars FROM str) removes trailing chars', () => {
+    const result = exec("SELECT TRIM(TRAILING 'y' FROM 'Helloyyy') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello');
+  });
+
+  // 99. TRIM(BOTH 'x' FROM str)
+  it('TRIM(BOTH chars FROM str) removes both sides', () => {
+    const result = exec("SELECT TRIM(BOTH 'x' FROM 'xxHelloxx') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello');
+  });
+
+  // 100. Regular TRIM(str)
+  it('TRIM(str) removes whitespace', () => {
+    const result = exec("SELECT TRIM('  Hello  ') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello');
+  });
+});
