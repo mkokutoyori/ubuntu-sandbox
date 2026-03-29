@@ -611,3 +611,148 @@ describe('Oracle SELECT — table.* validation', () => {
     expect(result.rows.length).toBe(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 4 — DATA TYPE ENFORCEMENT, SEQUENCES, DDL COMMIT (new)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — VARCHAR2 length enforcement (ORA-12899)', () => {
+
+  // 78. Insert value exceeding VARCHAR2 length
+  it('fails when inserting string too long for VARCHAR2 column (ORA-12899)', () => {
+    exec('CREATE TABLE HR.LEN_TEST (NAME VARCHAR2(5))');
+    expectError(
+      "INSERT INTO HR.LEN_TEST VALUES ('TOOLONG')",
+      /value too large/i,
+    );
+  });
+
+  // 79. Insert value exactly at max length succeeds
+  it('allows inserting string at max VARCHAR2 length', () => {
+    exec('CREATE TABLE HR.LEN_TEST2 (NAME VARCHAR2(5))');
+    exec("INSERT INTO HR.LEN_TEST2 VALUES ('HELLO')");
+    const result = exec('SELECT NAME FROM HR.LEN_TEST2');
+    expect(result.rows[0][0]).toBe('HELLO');
+  });
+
+  // 80. Update value exceeding VARCHAR2 length
+  it('fails when updating to string too long for VARCHAR2 (ORA-12899)', () => {
+    exec('CREATE TABLE HR.LEN_TEST3 (NAME VARCHAR2(5))');
+    exec("INSERT INTO HR.LEN_TEST3 VALUES ('HI')");
+    expectError(
+      "UPDATE HR.LEN_TEST3 SET NAME = 'WAYTOOLONG'",
+      /value too large/i,
+    );
+  });
+});
+
+describe('Oracle — NUMBER precision/scale enforcement (ORA-01438)', () => {
+
+  // 81. Insert value exceeding NUMBER precision
+  it('fails when inserting number exceeding precision (ORA-01438)', () => {
+    exec('CREATE TABLE HR.NUM_TEST (VAL NUMBER(5,2))');
+    expectError(
+      'INSERT INTO HR.NUM_TEST VALUES (99999.99)',
+      /precision allowed/i,
+    );
+  });
+
+  // 82. Insert value within NUMBER precision succeeds
+  it('allows inserting number within precision', () => {
+    exec('CREATE TABLE HR.NUM_TEST2 (VAL NUMBER(5,2))');
+    exec('INSERT INTO HR.NUM_TEST2 VALUES (123.45)');
+    const result = exec('SELECT VAL FROM HR.NUM_TEST2');
+    expect(result.rows[0][0]).toBe(123.45);
+  });
+
+  // 83. NUMBER(3) rejects 4-digit numbers
+  it('fails when inserting 4-digit number into NUMBER(3) (ORA-01438)', () => {
+    exec('CREATE TABLE HR.NUM_TEST3 (VAL NUMBER(3))');
+    expectError(
+      'INSERT INTO HR.NUM_TEST3 VALUES (1000)',
+      /precision allowed/i,
+    );
+  });
+});
+
+describe('Oracle — INSERT INTO ... SELECT validation', () => {
+
+  // 84. Column count mismatch with subquery
+  it('fails on INSERT INTO ... SELECT with too many columns (ORA-00913)', () => {
+    exec('CREATE TABLE HR.INS_SEL1 (ID NUMBER)');
+    exec('CREATE TABLE HR.INS_SEL_SRC (A NUMBER, B NUMBER)');
+    exec('INSERT INTO HR.INS_SEL_SRC VALUES (1, 2)');
+    expectError(
+      'INSERT INTO HR.INS_SEL1 SELECT A, B FROM HR.INS_SEL_SRC',
+      /too many values/i,
+    );
+  });
+
+  // 85. Valid INSERT INTO ... SELECT
+  it('allows INSERT INTO ... SELECT with matching column count', () => {
+    exec('CREATE TABLE HR.INS_SEL2 (ID NUMBER, VAL NUMBER)');
+    exec('CREATE TABLE HR.INS_SEL_SRC2 (A NUMBER, B NUMBER)');
+    exec('INSERT INTO HR.INS_SEL_SRC2 VALUES (1, 2)');
+    exec('INSERT INTO HR.INS_SEL2 SELECT A, B FROM HR.INS_SEL_SRC2');
+    const result = exec('SELECT * FROM HR.INS_SEL2');
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0][0]).toBe(1);
+    expect(result.rows[0][1]).toBe(2);
+  });
+});
+
+describe('Oracle — SEQUENCE CURRVAL without NEXTVAL (ORA-08002)', () => {
+
+  // 86. CURRVAL before NEXTVAL
+  it('fails on CURRVAL before NEXTVAL in session (ORA-08002)', () => {
+    exec('CREATE SEQUENCE HR.TEST_SEQ START WITH 1');
+    expectError(
+      'SELECT HR.TEST_SEQ.CURRVAL FROM DUAL',
+      /not yet defined in this session/i,
+    );
+  });
+
+  // 87. CURRVAL after NEXTVAL succeeds
+  it('allows CURRVAL after NEXTVAL has been called', () => {
+    exec('CREATE SEQUENCE HR.TEST_SEQ2 START WITH 10');
+    exec('SELECT HR.TEST_SEQ2.NEXTVAL FROM DUAL');
+    const result = exec('SELECT HR.TEST_SEQ2.CURRVAL FROM DUAL');
+    expect(result.rows[0][0]).toBe(10);
+  });
+});
+
+describe('Oracle — DDL implicit COMMIT', () => {
+
+  // 88. TRUNCATE commits pending transaction
+  it('TRUNCATE commits pending DML (implicit COMMIT)', () => {
+    exec('CREATE TABLE HR.DDL_COMMIT1 (ID NUMBER)');
+    exec('CREATE TABLE HR.DDL_COMMIT2 (ID NUMBER)');
+    exec('INSERT INTO HR.DDL_COMMIT1 VALUES (1)');
+    // TRUNCATE on another table should commit the INSERT
+    exec('TRUNCATE TABLE HR.DDL_COMMIT2');
+    exec('ROLLBACK');
+    const result = exec('SELECT COUNT(*) FROM HR.DDL_COMMIT1');
+    expect(result.rows[0][0]).toBe(1); // INSERT was committed
+  });
+
+  // 89. CREATE TABLE commits pending transaction
+  it('CREATE TABLE commits pending DML (implicit COMMIT)', () => {
+    exec('CREATE TABLE HR.DDL_COMMIT3 (ID NUMBER)');
+    exec('INSERT INTO HR.DDL_COMMIT3 VALUES (1)');
+    exec('CREATE TABLE HR.DDL_COMMIT4 (ID NUMBER)');
+    exec('ROLLBACK');
+    const result = exec('SELECT COUNT(*) FROM HR.DDL_COMMIT3');
+    expect(result.rows[0][0]).toBe(1); // INSERT was committed by DDL
+  });
+
+  // 90. DROP TABLE commits pending transaction
+  it('DROP TABLE commits pending DML (implicit COMMIT)', () => {
+    exec('CREATE TABLE HR.DDL_COMMIT5 (ID NUMBER)');
+    exec('CREATE TABLE HR.DDL_COMMIT6 (ID NUMBER)');
+    exec('INSERT INTO HR.DDL_COMMIT5 VALUES (1)');
+    exec('DROP TABLE HR.DDL_COMMIT6');
+    exec('ROLLBACK');
+    const result = exec('SELECT COUNT(*) FROM HR.DDL_COMMIT5');
+    expect(result.rows[0][0]).toBe(1); // INSERT was committed by DDL
+  });
+});

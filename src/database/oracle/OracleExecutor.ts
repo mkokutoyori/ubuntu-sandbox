@@ -41,6 +41,8 @@ export class OracleExecutor extends BaseExecutor {
   /** Savepoints: name -> snapshot at savepoint creation time */
   private _savepoints: Map<string, TransactionSnapshot> = new Map();
   private _inTransaction: boolean = false;
+  /** Track sequences that have had NEXTVAL called in this session */
+  private _nextvalCalled: Set<string> = new Set();
 
   constructor(
     storage: OracleStorage,
@@ -1521,6 +1523,34 @@ export class OracleExecutor extends BaseExecutor {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
         this.validateConstraints(schema, tableName, tableMeta, row);
+        this.validateDataTypes(schema, tableName, tableMeta, row);
+        this.storage.insertRow(schema, tableName, row);
+        insertedCount++;
+      }
+    } else if (stmt.query) {
+      // INSERT INTO ... SELECT — execute subquery and validate column count
+      const subResult = this.executeSelect(stmt.query);
+      const expectedCols = stmt.columns ? stmt.columns.length : tableMeta.columns.length;
+      if (subResult.columns.length > expectedCols) {
+        throw new OracleError(913, 'too many values');
+      }
+      if (subResult.columns.length < expectedCols) {
+        throw new OracleError(947, 'not enough values');
+      }
+      for (const subRow of subResult.rows) {
+        const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+        if (stmt.columns) {
+          for (let i = 0; i < stmt.columns.length; i++) {
+            const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === stmt.columns![i].toUpperCase());
+            if (colIdx >= 0) row[colIdx] = subRow[i] as CellValue;
+          }
+        } else {
+          for (let i = 0; i < subResult.columns.length && i < tableMeta.columns.length; i++) {
+            row[i] = subRow[i] as CellValue;
+          }
+        }
+        this.validateConstraints(schema, tableName, tableMeta, row);
+        this.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
         insertedCount++;
       }
@@ -1596,6 +1626,7 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK)
         this.validateConstraints(schema, tableName, tableMeta, newRow);
+        this.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
     );
@@ -1634,6 +1665,9 @@ export class OracleExecutor extends BaseExecutor {
   // ── DDL ───────────────────────────────────────────────────────────
 
   private executeCreateTable(stmt: CreateTableStatement): ResultSet {
+    // DDL auto-commits any open transaction (Oracle behavior)
+    if (this._inTransaction) this.executeCommit();
+
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.name.toUpperCase();
 
@@ -1716,6 +1750,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
+    if (this._inTransaction) this.executeCommit();
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.name.toUpperCase();
     if (!this.storage.tableExists(schema, tableName)) {
@@ -1728,6 +1763,10 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
+    if (this._inTransaction) {
+      this.executeCommit();
+    }
     this.storage.truncateTable(schema, stmt.name.toUpperCase());
     return emptyResult('Table truncated.');
   }
@@ -2224,8 +2263,25 @@ export class OracleExecutor extends BaseExecutor {
       case 'Identifier': {
         const colIdx = this.resolveColumnIndex(expr, columns);
         if (colIdx >= 0 && colIdx < row.length) return row[colIdx];
+        // Handle schema.sequence.NEXTVAL / CURRVAL (three-part identifier)
+        const idName = expr.name.toUpperCase();
+        const idTable = (expr as IdentifierExpr).table?.toUpperCase();
+        const idSchema = (expr as IdentifierExpr).schema?.toUpperCase();
+        if ((idName === 'NEXTVAL' || idName === 'CURRVAL') && idTable) {
+          const seqSchema = idSchema || this.context.currentSchema;
+          const seqKey = `${seqSchema.toUpperCase()}.${idTable}`;
+          if (idName === 'NEXTVAL') {
+            const val = this.storage.nextVal(seqSchema, idTable);
+            this._nextvalCalled.add(seqKey);
+            return val;
+          }
+          if (!this._nextvalCalled.has(seqKey)) {
+            throw new OracleError(8002, `sequence ${idTable}.CURRVAL is not yet defined in this session`);
+          }
+          return this.storage.currVal(seqSchema, idTable);
+        }
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
-        const pkgName = (expr as IdentifierExpr).table?.toUpperCase();
+        const pkgName = idTable;
         if (pkgName === 'DBMS_RANDOM') {
           const fn = expr.name.toUpperCase();
           if (fn === 'VALUE') return Math.random();
@@ -2246,14 +2302,13 @@ export class OracleExecutor extends BaseExecutor {
           if (fn === 'GETLENGTH') return null;
         }
         // Oracle pseudo-columns
-        const name = expr.name.toUpperCase();
-        if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
-        if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
-        if (name === 'USER') return this.context.currentUser;
-        if (name === 'ROWNUM') return this._currentRowNum || 1;
+        if (idName === 'SYSDATE' || idName === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
+        if (idName === 'SYSTIMESTAMP' || idName === 'CURRENT_TIMESTAMP') return new Date().toISOString();
+        if (idName === 'USER') return this.context.currentUser;
+        if (idName === 'ROWNUM') return this._currentRowNum || 1;
         // ORA-00904: invalid identifier — mirrors real Oracle behavior
         if (columns.length > 0) {
-          const displayName = pkgName ? `${pkgName}.${name}` : name;
+          const displayName = pkgName ? `${pkgName}.${idName}` : idName;
           throw new OracleError(904, `"${displayName}": invalid identifier`);
         }
         return null;
@@ -2302,9 +2357,18 @@ export class OracleExecutor extends BaseExecutor {
         return this.evaluateExpression(expr.expr, row, columns);
 
       case 'SequenceExpr': {
-        const schema = expr.schema || this.context.currentSchema;
-        if (expr.operation === 'NEXTVAL') return this.storage.nextVal(schema, expr.sequenceName);
-        return this.storage.currVal(schema, expr.sequenceName);
+        const seqSchema = expr.schema || this.context.currentSchema;
+        const seqKey = `${seqSchema.toUpperCase()}.${expr.sequenceName.toUpperCase()}`;
+        if (expr.operation === 'NEXTVAL') {
+          const val = this.storage.nextVal(seqSchema, expr.sequenceName);
+          this._nextvalCalled.add(seqKey);
+          return val;
+        }
+        // CURRVAL requires NEXTVAL to have been called first in this session
+        if (!this._nextvalCalled.has(seqKey)) {
+          throw new OracleError(8002, `sequence ${expr.sequenceName.toUpperCase()}.CURRVAL is not yet defined in this session`);
+        }
+        return this.storage.currVal(seqSchema, expr.sequenceName);
       }
 
       default:
@@ -2966,6 +3030,46 @@ export class OracleExecutor extends BaseExecutor {
         } catch (e) {
           if (e instanceof OracleError && e.code === 'ORA-02290') throw e;
           // If we can't parse the check expression, skip validation
+        }
+      }
+    }
+  }
+
+  /** Validate data type constraints (VARCHAR2 length, NUMBER precision/scale) */
+  private validateDataTypes(schema: string, tableName: string, tableMeta: import('../engine/storage/BaseStorage').TableMeta, row: StorageRow): void {
+    for (let i = 0; i < tableMeta.columns.length; i++) {
+      const col = tableMeta.columns[i];
+      const val = row[i];
+      if (val === null) continue;
+
+      const dt = col.dataType;
+      const typeName = (typeof dt === 'string' ? dt : dt.name)?.toUpperCase();
+
+      // VARCHAR2/CHAR length enforcement (ORA-12899)
+      if ((typeName === 'VARCHAR2' || typeName === 'NVARCHAR2' || typeName === 'CHAR' || typeName === 'NCHAR') && typeof dt !== 'string') {
+        const maxLen = dt.precision;
+        if (maxLen != null && maxLen > 0) {
+          const strVal = String(val);
+          if (strVal.length > maxLen) {
+            throw new OracleError(12899, `value too large for column "${schema}"."${tableName}"."${col.name}" (actual: ${strVal.length}, maximum: ${maxLen})`);
+          }
+        }
+      }
+
+      // NUMBER precision/scale enforcement (ORA-01438)
+      if (typeName === 'NUMBER' && typeof dt !== 'string' && typeof val === 'number') {
+        const precision = dt.precision;
+        const scale = dt.scale ?? 0;
+        if (precision != null && precision > 0) {
+          // Oracle NUMBER(p,s): max integer digits = p - s, max decimal digits = s
+          const maxIntDigits = precision - scale;
+          // Get integer part digit count
+          const absVal = Math.abs(val);
+          const intPart = Math.floor(absVal);
+          const intDigits = intPart === 0 ? 0 : String(intPart).length;
+          if (intDigits > maxIntDigits) {
+            throw new OracleError(1438, `value larger than specified precision allowed for this column`);
+          }
         }
       }
     }
