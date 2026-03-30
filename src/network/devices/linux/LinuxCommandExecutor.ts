@@ -29,6 +29,8 @@ export class LinuxCommandExecutor {
   private umask = 0o022;
   private isServer: boolean;
   private env: Map<string, string> = new Map();
+  /** Registered system processes (pid → {user, command}) for ps command */
+  private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
   // Stack for su sessions: stores previous user context
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
@@ -67,6 +69,16 @@ export class LinuxCommandExecutor {
   /** Set the network context for ip command support */
   setIpNetworkContext(ctx: IpNetworkContext): void {
     this.ipNetworkCtx = ctx;
+  }
+
+  /** Register a system process (e.g. Oracle background processes) visible via `ps` */
+  registerProcess(pid: number, user: string, command: string): void {
+    this._systemProcesses.set(pid, { user, command, startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
+  }
+
+  /** Clear all registered system processes */
+  clearSystemProcesses(): void {
+    this._systemProcesses.clear();
   }
 
   private ctx(): ShellContext {
@@ -514,6 +526,40 @@ export class LinuxCommandExecutor {
       // Sleep, kill - no-ops in simulator
       case 'sleep': return { output: '', exitCode: 0 };
       case 'kill': return { output: '', exitCode: 0 };
+
+      // ps — process listing
+      case 'ps': {
+        const isAux = args.some(a => a.includes('aux') || a.includes('ef') || a === '-e' || a === '-A');
+        const lines: string[] = [];
+        // Header
+        if (isAux) {
+          lines.push('USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND');
+        } else {
+          lines.push('  PID TTY          TIME CMD');
+        }
+        // Base system processes (always present)
+        const basePids: Array<{ pid: number; user: string; cmd: string }> = [
+          { pid: 1, user: 'root', cmd: '/sbin/init' },
+        ];
+        // Registered system processes (Oracle, etc.)
+        for (const [pid, proc] of this._systemProcesses) {
+          basePids.push({ pid, user: proc.user, cmd: proc.command });
+        }
+        // Current shell
+        basePids.push({ pid: 9999, user: this.userMgr.currentUser, cmd: '-bash' });
+
+        const grepArg = args.find((_, i) => i > 0 && args[i - 1] === '|');
+        for (const p of basePids) {
+          if (isAux) {
+            lines.push(`${p.user.padEnd(8)} ${String(p.pid).padStart(5)}  0.0  0.0      0     0 ?        Ss   00:00   0:00 ${p.cmd}`);
+          } else {
+            if (p.user === this.userMgr.currentUser || this.userMgr.currentUid === 0) {
+              lines.push(`${String(p.pid).padStart(5)} pts/0    00:00:00 ${p.cmd}`);
+            }
+          }
+        }
+        return { output: lines.join('\n'), exitCode: 0 };
+      }
 
       // date, uptime, uname - basic system info
       case 'date': return { output: new Date().toString(), exitCode: 0 };

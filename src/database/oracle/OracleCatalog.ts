@@ -10,6 +10,7 @@ import { type ResultSet, queryResult, emptyResult } from '../engine/executor/Res
 import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/DataType';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
+import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 
 /** Stored PL/SQL unit shape (avoids circular import with OracleDatabase) */
 interface StoredUnit {
@@ -569,17 +570,20 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private vDiagInfo(): ResultSet {
+    const sid = ORACLE_CONFIG.SID;
+    const base = ORACLE_CONFIG.BASE;
+    const diagBase = `${base}/diag/rdbms/${sid.toLowerCase()}/${sid}`;
     return queryResult(
       [
         { name: 'NAME', dataType: oracleVarchar2(64) },
         { name: 'VALUE', dataType: oracleVarchar2(512) },
       ],
       [
-        ['Diag Trace', '/u01/app/oracle/diag/rdbms/orcl/ORCL/trace'],
-        ['Diag Alert', '/u01/app/oracle/diag/rdbms/orcl/ORCL/trace'],
-        ['Diag Incident', '/u01/app/oracle/diag/rdbms/orcl/ORCL/incident'],
-        ['ADR Base', '/u01/app/oracle'],
-        ['ADR Home', '/u01/app/oracle/diag/rdbms/orcl/ORCL'],
+        ['Diag Trace', `${diagBase}/trace`],
+        ['Diag Alert', `${diagBase}/trace`],
+        ['Diag Incident', `${diagBase}/incident`],
+        ['ADR Base', base],
+        ['ADR Home', diagBase],
       ]
     );
   }

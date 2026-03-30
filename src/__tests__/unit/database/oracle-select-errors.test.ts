@@ -827,3 +827,68 @@ describe('Oracle — TRIM special syntax', () => {
     expect(result.rows[0][0]).toBe('Hello');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 7 — IMPLICIT DATE CONVERSION (Oracle NLS_DATE_FORMAT behavior)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — Implicit string-to-date conversion in comparisons', () => {
+
+  // 101. BETWEEN with DD-MON-YYYY string literals on DATE column
+  it('hire_date BETWEEN string dates returns matching rows', () => {
+    const result = exec("SELECT * FROM HR.EMPLOYEES WHERE HIRE_DATE BETWEEN '01-JAN-2000' AND '01-JAN-2004'");
+    expect(result.rows.length).toBeGreaterThan(0);
+    // Employee 102 (Lex De Haan) has hire_date 2001-01-13, and 100 (Steven King) 2003-06-17
+  });
+
+  // 102. Comparison operator with DD-MON-YYYY string literal
+  it('hire_date > string date works correctly', () => {
+    const result = exec("SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE HIRE_DATE > '01-JAN-2007'");
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+
+  // 103. Equality comparison with date string
+  it('hire_date = string date with exact match', () => {
+    // Employee 100 was hired on 2003-06-17
+    const result = exec("SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE HIRE_DATE = '17-JUN-2003'");
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0][0]).toBe(100);
+  });
+
+  // 104. Less than comparison with date string
+  it('hire_date < string date works correctly', () => {
+    const result = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE HIRE_DATE < '01-JAN-2002'");
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 105. BETWEEN with ISO-style date strings
+  it('hire_date BETWEEN ISO dates works', () => {
+    const result = exec("SELECT * FROM HR.EMPLOYEES WHERE HIRE_DATE BETWEEN '2000-01-01' AND '2004-01-01'");
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+
+  // 106. ORDER BY on date column with WHERE using string comparison
+  it('ORDER BY hire_date with string date filter', () => {
+    const result = exec("SELECT EMPLOYEE_ID, HIRE_DATE FROM HR.EMPLOYEES WHERE HIRE_DATE >= '01-JAN-2005' ORDER BY HIRE_DATE");
+    expect(result.rows.length).toBeGreaterThan(1);
+    // Verify order is ascending
+    for (let i = 1; i < result.rows.length; i++) {
+      const prev = new Date(String(result.rows[i - 1][1])).getTime();
+      const curr = new Date(String(result.rows[i][1])).getTime();
+      expect(curr).toBeGreaterThanOrEqual(prev);
+    }
+  });
+
+  // 107. NOT BETWEEN with date strings
+  it('hire_date NOT BETWEEN string dates excludes range', () => {
+    const all = exec("SELECT COUNT(*) FROM HR.EMPLOYEES");
+    const excluded = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE HIRE_DATE NOT BETWEEN '01-JAN-2000' AND '31-DEC-2010'");
+    expect(Number(excluded.rows[0][0])).toBeLessThan(Number(all.rows[0][0]));
+  });
+
+  // 108. Implicit number-string comparison
+  it('numeric column compared with string number works', () => {
+    const result = exec("SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE SALARY > '10000'");
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+});

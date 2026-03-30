@@ -6,6 +6,7 @@
 
 import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/BaseStorage';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
+import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 
 export interface TablespaceMeta {
   name: string;
@@ -25,12 +26,13 @@ export class OracleStorage extends BaseStorage {
   }
 
   private initDefaultTablespaces(): void {
+    const oradata = ORACLE_CONFIG.ORADATA;
     const defaults: TablespaceMeta[] = [
-      { name: 'SYSTEM', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: '/u01/app/oracle/oradata/ORCL/system01.dbf', size: '800M', autoextend: true }], blockSize: 8192 },
-      { name: 'SYSAUX', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: '/u01/app/oracle/oradata/ORCL/sysaux01.dbf', size: '550M', autoextend: true }], blockSize: 8192 },
-      { name: 'UNDOTBS1', type: 'UNDO', status: 'ONLINE', datafiles: [{ path: '/u01/app/oracle/oradata/ORCL/undotbs01.dbf', size: '200M', autoextend: true }], blockSize: 8192 },
-      { name: 'USERS', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: '/u01/app/oracle/oradata/ORCL/users01.dbf', size: '100M', autoextend: true }], blockSize: 8192 },
-      { name: 'TEMP', type: 'TEMPORARY', status: 'ONLINE', datafiles: [{ path: '/u01/app/oracle/oradata/ORCL/temp01.dbf', size: '100M', autoextend: true }], blockSize: 8192 },
+      { name: 'SYSTEM', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: `${oradata}/system01.dbf`, size: '800M', autoextend: true }], blockSize: 8192 },
+      { name: 'SYSAUX', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: `${oradata}/sysaux01.dbf`, size: '550M', autoextend: true }], blockSize: 8192 },
+      { name: 'UNDOTBS1', type: 'UNDO', status: 'ONLINE', datafiles: [{ path: `${oradata}/undotbs01.dbf`, size: '200M', autoextend: true }], blockSize: 8192 },
+      { name: 'USERS', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: `${oradata}/users01.dbf`, size: '100M', autoextend: true }], blockSize: 8192 },
+      { name: 'TEMP', type: 'TEMPORARY', status: 'ONLINE', datafiles: [{ path: `${oradata}/temp01.dbf`, size: '100M', autoextend: true }], blockSize: 8192 },
     ];
     for (const ts of defaults) this.tablespaces.set(ts.name, ts);
   }
