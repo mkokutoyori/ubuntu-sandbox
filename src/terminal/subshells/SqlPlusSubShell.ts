@@ -9,7 +9,7 @@ import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
-import { createSQLPlusSession, initOracleFilesystem, syncAlertLogToDevice, updateSpfileOnDevice } from '@/terminal/commands/database';
+import { createSQLPlusSession, initOracleFilesystem, syncAlertLogToDevice, updateSpfileOnDevice, syncDatafilesToDevice, syncOracleProcessesToDevice } from '@/terminal/commands/database';
 
 export class SqlPlusSubShell implements ISubShell {
   private session: SQLPlusSession;
@@ -61,10 +61,14 @@ export class SqlPlusSubShell implements ISubShell {
     const result = this.session.processLine(line);
     this.prompt = result.prompt;
 
-    // Sync alert log and spfile to VFS after commands that may modify them
+    // Sync Oracle state to VFS after commands that may modify it
     const upper = line.trim().toUpperCase();
     if (upper.startsWith('STARTUP') || upper.startsWith('SHUTDOWN') ||
-        upper.startsWith('ALTER SYSTEM') || upper.startsWith('ALTER DATABASE')) {
+        upper.startsWith('ALTER SYSTEM') || upper.startsWith('ALTER DATABASE') ||
+        upper.startsWith('CREATE TABLESPACE') || upper.startsWith('DROP TABLESPACE') ||
+        upper.startsWith('ALTER TABLESPACE') ||
+        upper.startsWith('CREATE TABLE') || upper.startsWith('DROP TABLE') ||
+        upper.startsWith('TRUNCATE')) {
       this.syncToVFS();
     }
 
@@ -79,13 +83,15 @@ export class SqlPlusSubShell implements ISubShell {
     };
   }
 
-  /** Sync dynamic Oracle state (alert log, spfile) back to the virtual filesystem. */
+  /** Sync dynamic Oracle state (alert log, spfile, datafiles) back to the virtual filesystem. */
   private syncToVFS(): void {
     try {
       const db = this.session.getDatabase();
       if (db) {
         syncAlertLogToDevice(this.device, db.instance.getAlertLog());
         updateSpfileOnDevice(this.device, db.instance.getSpfileParameters());
+        syncDatafilesToDevice(this.device, db);
+        syncOracleProcessesToDevice(this.device, db);
       }
     } catch {
       // Silently ignore sync errors — VFS may not be initialized

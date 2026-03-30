@@ -374,6 +374,11 @@ Completed: ALTER DATABASE OPEN
   for (const [path, content] of Object.entries(files)) {
     device.writeFileFromEditor(path, content);
   }
+
+  // Register Oracle background processes so they appear in `ps aux`
+  if (oracleInstances.has(deviceId)) {
+    syncOracleProcessesToDevice(device, oracleInstances.get(deviceId)!);
+  }
 }
 
 /**
@@ -396,6 +401,64 @@ export function updateSpfileOnDevice(device: import('@/network').Equipment, para
 export function syncAlertLogToDevice(device: import('@/network').Equipment, alertLogEntries: string[]): void {
   const oracleBase = ORACLE_CONFIG.BASE;
   const sid = ORACLE_CONFIG.SID;
-  const path = `${oracleBase}/diag/rdbms/orcl/${sid}/trace/alert_${sid}.log`;
+  const path = `${oracleBase}/diag/rdbms/${sid.toLowerCase()}/${sid}/trace/alert_${sid}.log`;
   device.writeFileFromEditor(path, alertLogEntries.join('\n') + '\n');
+}
+
+/**
+ * Sync tablespace datafiles from the Oracle storage layer to the VFS.
+ * Creates stub files for new datafiles, removes files for dropped tablespaces.
+ */
+export function syncDatafilesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+  const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+  const tablespaces = storage.getAllTablespaces();
+
+  // Create stub files for all datafiles in all tablespaces
+  for (const ts of tablespaces) {
+    for (const df of ts.datafiles) {
+      const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+      const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
+      device.writeFileFromEditor(df.path, content);
+    }
+  }
+
+  // Sync redo log files from instance
+  const redoGroups = db.instance.getRedoLogGroups();
+  for (const group of redoGroups) {
+    for (const member of group.members) {
+      const sizeMB = Math.round(group.sizeBytes / 1048576);
+      device.writeFileFromEditor(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
+    }
+  }
+
+  // Sync control files from instance parameters
+  const ctlFiles = (db.instance.getParameter('control_files') ?? '').split(',').map(f => f.trim()).filter(f => f);
+  ctlFiles.forEach((f, i) => {
+    device.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+  });
+}
+
+/**
+ * Register Oracle background processes (PMON, SMON, etc.) in the device's process table
+ * so they appear in `ps aux` output, like on a real Oracle server.
+ */
+export function syncOracleProcessesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+  // Only register if the device supports it (LinuxServer)
+  const dev = device as { registerProcess?: (pid: number, user: string, cmd: string) => void; clearSystemProcesses?: () => void };
+  if (typeof dev.registerProcess !== 'function') return;
+
+  dev.clearSystemProcesses!();
+
+  if (db.instance.state === 'OPEN' || db.instance.state === 'MOUNT') {
+    const sid = ORACLE_CONFIG.SID;
+    const procs = db.instance.getBackgroundProcesses();
+    for (const proc of procs) {
+      // Oracle background processes appear as ora_<name>_<SID> in ps output
+      dev.registerProcess(proc.pid, 'oracle', `ora_${proc.name.toLowerCase()}_${sid.toLowerCase()}`);
+    }
+    // Also register the listener if running
+    if (db.instance.listenerStatus === 'running') {
+      dev.registerProcess(procs.length > 0 ? procs[procs.length - 1].pid + 1 : 2000, 'oracle', `tnslsnr LISTENER -inherit`);
+    }
+  }
 }
