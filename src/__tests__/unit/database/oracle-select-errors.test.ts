@@ -952,3 +952,236 @@ describe('Oracle — DISTINCT on catalog views', () => {
     expect(new Set(owners).size).toBe(owners.length);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 9 — PARENTHESES handling in WHERE, HAVING, expressions, set ops
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — Parentheses in WHERE conditions', () => {
+
+  // 115. Simple parenthesized condition
+  it('WHERE (SALARY > 10000) works', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE SALARY > 10000');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (SALARY > 10000)');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+  });
+
+  // 116. OR inside parentheses
+  it('WHERE (dept = 90 OR dept = 60) returns correct rows', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 90 OR DEPARTMENT_ID = 60');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (DEPARTMENT_ID = 90 OR DEPARTMENT_ID = 60)');
+    expect(Number(withP.rows[0][0])).toBe(Number(without.rows[0][0]));
+    expect(Number(withP.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 117. Nested parentheses
+  it('WHERE ((dept = 90) AND (salary > 10000)) works', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 90 AND SALARY > 10000');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE ((DEPARTMENT_ID = 90) AND (SALARY > 10000))');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+  });
+
+  // 118. Complex mixed AND/OR with parentheses for precedence
+  it('WHERE (A OR B) AND (C OR D) uses correct precedence', () => {
+    const result = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (DEPARTMENT_ID = 90 OR DEPARTMENT_ID = 60) AND (SALARY > 5000)");
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 119. Mixed AND/OR grouping
+  it('(A AND B) OR (C AND D) groups correctly', () => {
+    const result = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (DEPARTMENT_ID = 90 AND SALARY > 15000) OR (DEPARTMENT_ID = 60 AND SALARY > 8000)");
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 120. Triple nested parentheses
+  it('WHERE (((expr))) works with deeply nested parens', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE SALARY > 5000');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (((SALARY > 5000)))');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+  });
+
+  // 121. NOT with parenthesized condition
+  it('WHERE NOT (condition) works', () => {
+    const total = Number(exec('SELECT COUNT(*) FROM HR.EMPLOYEES').rows[0][0]);
+    const dept90 = Number(exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 90').rows[0][0]);
+    const notDept90 = Number(exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE NOT (DEPARTMENT_ID = 90)').rows[0][0]);
+    expect(notDept90).toBe(total - dept90);
+  });
+
+  // 122. BETWEEN inside parentheses
+  it('WHERE (SALARY BETWEEN x AND y) works', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE SALARY BETWEEN 5000 AND 10000');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (SALARY BETWEEN 5000 AND 10000)');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+    expect(Number(withP.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 123. LIKE inside parentheses
+  it('WHERE (name LIKE pattern) works', () => {
+    const without = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE FIRST_NAME LIKE 'S%'");
+    const withP = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (FIRST_NAME LIKE 'S%')");
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+    expect(Number(withP.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 124. IS NULL inside parentheses
+  it('WHERE (col IS NULL) works', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE COMMISSION_PCT IS NULL');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (COMMISSION_PCT IS NULL)');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+    expect(Number(withP.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 125. IS NOT NULL inside parentheses
+  it('WHERE (col IS NOT NULL) works', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE COMMISSION_PCT IS NOT NULL');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (COMMISSION_PCT IS NOT NULL)');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+  });
+
+  // 126. IN list inside parentheses
+  it('WHERE (col IN (values)) works', () => {
+    const without = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE DEPARTMENT_ID IN (90, 60, 100)');
+    const withP = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (DEPARTMENT_ID IN (90, 60, 100))');
+    expect(withP.rows[0][0]).toBe(without.rows[0][0]);
+    expect(Number(withP.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 127. Deeply nested with mixed operators
+  it('((A OR B) AND (C OR D)) deeply nested works', () => {
+    const result = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE ((DEPARTMENT_ID = 90 OR DEPARTMENT_ID = 60) AND (SALARY > 5000 OR COMMISSION_PCT IS NOT NULL))");
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+});
+
+describe('Oracle — Parentheses in HAVING', () => {
+
+  // 128. HAVING with parenthesized condition
+  it('HAVING (COUNT(*) > n) works', () => {
+    const without = exec('SELECT DEPARTMENT_ID, COUNT(*) FROM HR.EMPLOYEES GROUP BY DEPARTMENT_ID HAVING COUNT(*) > 2');
+    const withP = exec('SELECT DEPARTMENT_ID, COUNT(*) FROM HR.EMPLOYEES GROUP BY DEPARTMENT_ID HAVING (COUNT(*) > 2)');
+    expect(withP.rows.length).toBe(without.rows.length);
+    expect(withP.rows.length).toBeGreaterThan(0);
+  });
+
+  // 129. HAVING with nested parens and OR
+  it('HAVING (cond1 OR cond2) works', () => {
+    const result = exec('SELECT DEPARTMENT_ID, COUNT(*) FROM HR.EMPLOYEES GROUP BY DEPARTMENT_ID HAVING (COUNT(*) > 3 OR COUNT(*) = 1)');
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Oracle — Parentheses in arithmetic expressions', () => {
+
+  // 130. Arithmetic with parentheses changes result
+  it('(SALARY + 1000) * 12 differs from SALARY + 1000 * 12', () => {
+    const withP = exec('SELECT (SALARY + 1000) * 12 FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100');
+    const without = exec('SELECT SALARY + 1000 * 12 FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100');
+    expect(withP.rows[0][0]).not.toBe(without.rows[0][0]);
+    // 100 has salary 24000: (24000+1000)*12 = 300000, 24000+12000 = 36000
+    expect(withP.rows[0][0]).toBe(300000);
+    expect(without.rows[0][0]).toBe(36000);
+  });
+
+  // 131. Nested arithmetic parentheses
+  it('((SALARY + 1000) * 12) / 2 works', () => {
+    const result = exec('SELECT ((SALARY + 1000) * 12) / 2 FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(150000);
+  });
+
+  // 132. Parenthesized expression in WHERE
+  it('WHERE (SALARY * 12) > n works', () => {
+    const result = exec('SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (SALARY * 12) > 100000');
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 133. Aliased parenthesized expression
+  it('(expr) AS alias works', () => {
+    const result = exec('SELECT (SALARY * 12) AS ANNUAL_SAL FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100');
+    expect(result.columns[0].name).toBe('ANNUAL_SAL');
+    expect(result.rows[0][0]).toBe(288000);
+  });
+});
+
+describe('Oracle — Parenthesized set operations', () => {
+
+  // 134. (SELECT ...) UNION (SELECT ...)
+  it('parenthesized UNION works', () => {
+    const result = exec('(SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 90) UNION (SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 60)');
+    expect(result.rows.length).toBe(7); // 3 in dept 90 + 4 in dept 60
+  });
+
+  // 135. (SELECT ...) UNION ALL (SELECT ...)
+  it('parenthesized UNION ALL works', () => {
+    const result = exec('(SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 90) UNION ALL (SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 60)');
+    expect(result.rows.length).toBe(7);
+  });
+
+  // 136. Non-parenthesized UNION still works
+  it('plain UNION ALL still works', () => {
+    const result = exec('SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 90 UNION ALL SELECT EMPLOYEE_ID FROM HR.EMPLOYEES WHERE DEPARTMENT_ID = 60');
+    expect(result.rows.length).toBe(7);
+  });
+
+  // 137. UNION with overlapping sets deduplicates
+  it('UNION deduplicates overlapping results', () => {
+    const result = exec('(SELECT DEPARTMENT_ID FROM HR.EMPLOYEES WHERE SALARY > 10000) UNION (SELECT DEPARTMENT_ID FROM HR.EMPLOYEES WHERE SALARY > 15000)');
+    const ids = result.rows.map(r => r[0]);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicates
+  });
+});
+
+describe('Oracle — Parentheses with subqueries and inline views', () => {
+
+  // 138. Subquery IN with parenthesized WHERE
+  it('WHERE (col IN (subquery)) works', () => {
+    const result = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE (DEPARTMENT_ID IN (SELECT DEPARTMENT_ID FROM HR.DEPARTMENTS WHERE LOCATION_ID = 1700))");
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 139. Inline view (subquery in FROM)
+  it('SELECT * FROM (subquery) works', () => {
+    const result = exec('SELECT * FROM (SELECT EMPLOYEE_ID, SALARY FROM HR.EMPLOYEES WHERE SALARY > 10000)');
+    expect(result.rows.length).toBeGreaterThan(0);
+    result.rows.forEach(r => expect(Number(r[1])).toBeGreaterThan(10000));
+  });
+
+  // 140. Inline view with alias
+  it('SELECT T.col FROM (subquery) T works', () => {
+    const result = exec('SELECT T.EMPLOYEE_ID FROM (SELECT EMPLOYEE_ID, SALARY FROM HR.EMPLOYEES WHERE SALARY > 10000) T');
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+
+  // 141. EXISTS with parenthesized condition
+  it('WHERE EXISTS (subquery) with parens works', () => {
+    const result = exec('SELECT COUNT(*) FROM HR.EMPLOYEES E WHERE EXISTS (SELECT 1 FROM HR.DEPARTMENTS D WHERE D.DEPARTMENT_ID = E.DEPARTMENT_ID)');
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 142. NOT EXISTS
+  it('WHERE NOT EXISTS (subquery) works', () => {
+    const result = exec('SELECT COUNT(*) FROM HR.DEPARTMENTS D WHERE NOT EXISTS (SELECT 1 FROM HR.EMPLOYEES E WHERE E.DEPARTMENT_ID = D.DEPARTMENT_ID)');
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+});
+
+describe('Oracle — Parentheses in function calls and CASE', () => {
+
+  // 143. Nested function calls
+  it('UPPER(SUBSTR(col, 1, 3)) works', () => {
+    const result = exec("SELECT UPPER(SUBSTR(FIRST_NAME, 1, 3)) FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100");
+    expect(result.rows[0][0]).toBe('STE');
+  });
+
+  // 144. CASE in parentheses
+  it('(CASE WHEN ... END) works', () => {
+    const result = exec("SELECT (CASE WHEN SALARY > 10000 THEN 'HIGH' ELSE 'LOW' END) FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100");
+    expect(result.rows[0][0]).toBe('HIGH');
+  });
+
+  // 145. Function with arithmetic in parens
+  it('ROUND(expr * factor, n) works', () => {
+    const result = exec('SELECT ROUND(SALARY * 1.1, 2) FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(26400);
+  });
+});

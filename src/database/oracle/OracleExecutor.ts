@@ -1136,6 +1136,9 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private evaluateConditionAggregate(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): boolean {
+    if (expr.type === 'ParenExpr') {
+      return this.evaluateConditionAggregate(expr.expr, groupRows, columns);
+    }
     if (expr.type === 'BinaryExpr') {
       if (expr.operator === 'AND') {
         return this.evaluateConditionAggregate(expr.left, groupRows, columns)
@@ -2477,6 +2480,8 @@ export class OracleExecutor extends BaseExecutor {
         const match = regex.test(val);
         return expr.negated ? !match : match;
       }
+      case 'ParenExpr':
+        return this.evaluateCondition(expr.expr, row, columns);
       default:
         return !!this.evaluateExpression(expr, row, columns);
     }
