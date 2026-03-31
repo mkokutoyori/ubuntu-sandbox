@@ -892,3 +892,63 @@ describe('Oracle — Implicit string-to-date conversion in comparisons', () => {
     expect(result.rows.length).toBeGreaterThan(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 8 — DISTINCT on catalog views (ALL_TABLES, DBA_*, V$, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — DISTINCT on catalog views', () => {
+
+  // 109. SELECT DISTINCT OWNER FROM ALL_TABLES
+  it('DISTINCT OWNER FROM ALL_TABLES deduplicates owners', () => {
+    const withDistinct = exec('SELECT DISTINCT OWNER FROM ALL_TABLES');
+    const without = exec('SELECT OWNER FROM ALL_TABLES');
+    // Must have fewer rows with DISTINCT (HR has 7 tables, SCOTT has 4)
+    expect(withDistinct.rows.length).toBeLessThan(without.rows.length);
+    // Each owner should appear exactly once
+    const owners = withDistinct.rows.map(r => r[0]);
+    expect(new Set(owners).size).toBe(owners.length);
+  });
+
+  // 110. DISTINCT on catalog view with WHERE
+  it('DISTINCT TABLE_NAME FROM ALL_TABLES WHERE OWNER filters correctly', () => {
+    const result = exec("SELECT DISTINCT TABLE_NAME FROM ALL_TABLES WHERE OWNER = 'HR'");
+    expect(result.rows.length).toBeGreaterThan(0);
+    const names = result.rows.map(r => r[0]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  // 111. DISTINCT * FROM catalog view
+  it('DISTINCT * FROM ALL_TABLES works', () => {
+    const result = exec('SELECT DISTINCT * FROM ALL_TABLES');
+    const without = exec('SELECT * FROM ALL_TABLES');
+    // Each row is unique so DISTINCT * should return same count
+    expect(result.rows.length).toBe(without.rows.length);
+  });
+
+  // 112. DISTINCT on V$ view
+  it('DISTINCT on V$PARAMETER deduplicates', () => {
+    const result = exec('SELECT DISTINCT TYPE FROM V$PARAMETER');
+    const without = exec('SELECT TYPE FROM V$PARAMETER');
+    expect(result.rows.length).toBeLessThanOrEqual(without.rows.length);
+    const types = result.rows.map(r => r[0]);
+    expect(new Set(types).size).toBe(types.length);
+  });
+
+  // 113. DISTINCT with FETCH on catalog view
+  it('DISTINCT with FETCH FIRST on catalog view', () => {
+    const result = exec('SELECT DISTINCT OWNER FROM ALL_TABLES FETCH FIRST 2 ROWS ONLY');
+    expect(result.rows.length).toBeLessThanOrEqual(2);
+    const owners = result.rows.map(r => r[0]);
+    expect(new Set(owners).size).toBe(owners.length);
+  });
+
+  // 114. DISTINCT with ORDER BY on catalog view
+  it('DISTINCT with ORDER BY on catalog view', () => {
+    const result = exec('SELECT DISTINCT OWNER FROM ALL_TABLES ORDER BY OWNER');
+    const owners = result.rows.map(r => String(r[0]));
+    const sorted = [...owners].sort();
+    expect(owners).toEqual(sorted);
+    expect(new Set(owners).size).toBe(owners.length);
+  });
+});

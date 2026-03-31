@@ -1465,6 +1465,7 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     // Column projection (SELECT col1, col2, ... or SELECT *)
+    let resultCols = result.columns;
     const isSelectAll = stmt.columns.length === 1 && stmt.columns[0].expr.type === 'Star';
     if (!isSelectAll) {
       const projectedCols: ColumnMeta[] = [];
@@ -1499,10 +1500,30 @@ export class OracleExecutor extends BaseExecutor {
         }
         return null;
       }));
-      return { ...result, columns: projectedCols, rows };
+      resultCols = projectedCols;
     }
 
-    return { ...result, rows };
+    // DISTINCT
+    if (stmt.distinct) {
+      const seen = new Set<string>();
+      rows = rows.filter(row => {
+        const key = JSON.stringify(row);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    // FETCH / OFFSET
+    if (stmt.fetch) {
+      let offset = 0;
+      if (stmt.fetch.offset) offset = Number(this.evaluateExpression(stmt.fetch.offset, [], []));
+      let limit = rows.length;
+      if (stmt.fetch.count) limit = Number(this.evaluateExpression(stmt.fetch.count, [], []));
+      rows = rows.slice(offset, offset + limit);
+    }
+
+    return { ...result, columns: resultCols, rows };
   }
 
   // ── INSERT ────────────────────────────────────────────────────────
