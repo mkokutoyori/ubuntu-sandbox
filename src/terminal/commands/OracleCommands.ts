@@ -288,3 +288,177 @@ export function handleTnsping(
     addLine(TNS_ERRORS.TNS_03505);
   }
 }
+
+/**
+ * Handle `expdp` — Oracle Data Pump Export.
+ *
+ * Produces realistic output for common export modes:
+ *   expdp user/pass SCHEMAS=HR DIRECTORY=DATA_PUMP_DIR DUMPFILE=hr.dmp LOGFILE=hr_exp.log
+ *   expdp user/pass FULL=Y ...
+ *   expdp user/pass TABLES=HR.EMPLOYEES ...
+ */
+export function handleExpdp(
+  device: Equipment,
+  args: string[],
+  addLine: OutputFn,
+): void {
+  initOracleFilesystem(device);
+  const db = getOracleDatabase(device.getId());
+
+  addLine('');
+  addLine(`Export: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${new Date().toDateString()}`);
+  addLine(ORACLE_BANNER.COPYRIGHT);
+  addLine('');
+
+  if (args.length === 0) {
+    addLine('Usage: expdp user/password[@connect_string] [keyword=value ...]');
+    addLine('');
+    addLine('Common keywords:');
+    addLine('  SCHEMAS      - list of schemas to export');
+    addLine('  TABLES       - list of tables to export');
+    addLine('  FULL         - export entire database (Y/N)');
+    addLine('  DIRECTORY    - directory object for dump/log files');
+    addLine('  DUMPFILE     - name of dump file');
+    addLine('  LOGFILE      - name of log file');
+    addLine('  CONTENT      - ALL, DATA_ONLY, or METADATA_ONLY');
+    addLine('  PARALLEL     - degree of parallelism');
+    return;
+  }
+
+  // Parse keyword=value pairs
+  const params = parseDataPumpParams(args);
+  const schemas = (params.get('SCHEMAS') || 'HR').toUpperCase().split(',');
+  const dumpfile = params.get('DUMPFILE') || 'expdat.dmp';
+  const logfile = params.get('LOGFILE') || 'export.log';
+  const tables = params.get('TABLES')?.toUpperCase().split(',');
+  const full = params.get('FULL')?.toUpperCase() === 'Y';
+  const directory = params.get('DIRECTORY') || 'DATA_PUMP_DIR';
+
+  addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
+  addLine(`Starting "${schemas[0]}"."SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01":`);
+  addLine('');
+
+  // Gather objects to "export"
+  const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+  let totalTables = 0;
+  let totalRows = 0;
+
+  for (const schema of schemas) {
+    const tableNames = storage.getTableNames(schema);
+    const exportTables = tables
+      ? tableNames.filter(t => tables.some(tt => tt === t || tt === `${schema}.${t}`))
+      : tableNames;
+
+    for (const tname of exportTables) {
+      const rows = storage.getRows(schema, tname);
+      totalTables++;
+      totalRows += rows.length;
+      addLine(`. . exported "${schema}"."${tname}"                     ${rows.length} rows`);
+    }
+  }
+
+  addLine('');
+  addLine(`Master table "${schemas[0]}"."SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully loaded/unloaded`);
+  addLine('******************************************************************************');
+  addLine(`Dump file set for ${schemas[0]}.SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01 is:`);
+  addLine(`  /u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`);
+  addLine(`Job "${schemas[0]}"."SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully completed at ${new Date().toLocaleTimeString()}`);
+
+  // Create the dump file on VFS
+  const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
+  const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
+  device.writeFileFromEditor(dumpPath, `[ORACLE DATA PUMP DUMP - ${totalTables} tables, ${totalRows} rows - ${new Date().toISOString()}]`);
+  device.writeFileFromEditor(logPath, `Export: Release ${ORACLE_CONFIG.VERSION}.0\nSchemas: ${schemas.join(',')}\nTables: ${totalTables}\nRows: ${totalRows}\nCompleted at ${new Date().toISOString()}`);
+}
+
+/**
+ * Handle `impdp` — Oracle Data Pump Import.
+ *
+ * Produces realistic output for common import modes:
+ *   impdp user/pass SCHEMAS=HR DIRECTORY=DATA_PUMP_DIR DUMPFILE=hr.dmp LOGFILE=hr_imp.log
+ *   impdp user/pass TABLES=HR.EMPLOYEES ...
+ *   impdp user/pass FULL=Y ...
+ */
+export function handleImpdp(
+  device: Equipment,
+  args: string[],
+  addLine: OutputFn,
+): void {
+  initOracleFilesystem(device);
+
+  addLine('');
+  addLine(`Import: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${new Date().toDateString()}`);
+  addLine(ORACLE_BANNER.COPYRIGHT);
+  addLine('');
+
+  if (args.length === 0) {
+    addLine('Usage: impdp user/password[@connect_string] [keyword=value ...]');
+    addLine('');
+    addLine('Common keywords:');
+    addLine('  SCHEMAS      - list of schemas to import');
+    addLine('  TABLES       - list of tables to import');
+    addLine('  FULL         - import entire dump file (Y/N)');
+    addLine('  DIRECTORY    - directory object for dump/log files');
+    addLine('  DUMPFILE     - name of dump file to read');
+    addLine('  LOGFILE      - name of log file');
+    addLine('  REMAP_SCHEMA - remap source schema to target (old:new)');
+    addLine('  TABLE_EXISTS_ACTION - SKIP, APPEND, TRUNCATE, REPLACE');
+    addLine('  CONTENT      - ALL, DATA_ONLY, or METADATA_ONLY');
+    return;
+  }
+
+  const params = parseDataPumpParams(args);
+  const schemas = (params.get('SCHEMAS') || 'HR').toUpperCase().split(',');
+  const dumpfile = params.get('DUMPFILE') || 'expdat.dmp';
+  const logfile = params.get('LOGFILE') || 'import.log';
+  const tables = params.get('TABLES')?.toUpperCase().split(',');
+  const full = params.get('FULL')?.toUpperCase() === 'Y';
+  const remap = params.get('REMAP_SCHEMA');
+  const directory = params.get('DIRECTORY') || 'DATA_PUMP_DIR';
+
+  // Check if dump file exists on VFS
+  const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
+  const fileContent = device.readFileForEditor(dumpPath);
+  if (!fileContent) {
+    addLine(`ORA-39001: invalid argument value`);
+    addLine(`ORA-39000: bad dump file specification`);
+    addLine(`ORA-39143: dump file "${dumpPath}" not found`);
+    return;
+  }
+
+  addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
+  addLine(`Master table "${schemas[0]}"."SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully loaded/unloaded`);
+  addLine(`Starting "${schemas[0]}"."SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01":`);
+  addLine('');
+
+  if (remap) {
+    const [src, dst] = remap.split(':');
+    addLine(`Remapping schema "${src}" to "${dst}"`);
+  }
+
+  // Parse the dump file to know what was in it
+  const dumpMeta = fileContent.match(/(\d+) tables, (\d+) rows/);
+  const nTables = dumpMeta ? parseInt(dumpMeta[1]) : 5;
+  const nRows = dumpMeta ? parseInt(dumpMeta[2]) : 100;
+
+  addLine(`. . imported "${schemas[0]}"  ${nTables} tables, ${nRows} rows`);
+  addLine('');
+  addLine(`Job "${schemas[0]}"."SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully completed at ${new Date().toLocaleTimeString()}`);
+
+  // Write log file
+  const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
+  device.writeFileFromEditor(logPath, `Import: Release ${ORACLE_CONFIG.VERSION}.0\nSchemas: ${schemas.join(',')}\nTables: ${nTables}\nRows: ${nRows}\nCompleted at ${new Date().toISOString()}`);
+}
+
+/** Parse Data Pump keyword=value pairs from args. */
+function parseDataPumpParams(args: string[]): Map<string, string> {
+  const params = new Map<string, string>();
+  for (const arg of args) {
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx > 0) {
+      params.set(arg.substring(0, eqIdx).toUpperCase(), arg.substring(eqIdx + 1));
+    }
+  }
+  return params;
+}
+

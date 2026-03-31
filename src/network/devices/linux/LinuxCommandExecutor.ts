@@ -16,6 +16,8 @@ import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } f
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { executeScript, executeScriptContent } from './LinuxScriptExecutor';
 import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
+import { cmdSystemctl, cmdService, cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk, cmdTop } from './LinuxSystemCommands';
+import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -584,6 +586,115 @@ export class LinuxCommandExecutor {
       // ipsec (strongSwan) — IPsec management
       case 'ipsec':
         return this.handleIPSec(args);
+
+      // ── System administration commands ──────────────────────────────
+      case 'systemctl': return { output: cmdSystemctl(args, this.isServer), exitCode: 0 };
+      case 'service': return { output: cmdService(args, this.isServer), exitCode: 0 };
+      case 'df': return { output: cmdDf(c, args), exitCode: 0 };
+      case 'du': return { output: cmdDu(c, args), exitCode: 0 };
+      case 'free': return { output: cmdFree(args), exitCode: 0 };
+      case 'mount': return { output: cmdMount(c, args), exitCode: 0 };
+      case 'umount': return { output: '', exitCode: 0 };
+      case 'lsblk': return { output: cmdLsblk(args), exitCode: 0 };
+      case 'top': return { output: cmdTop(args, this.userMgr.currentUser, this._systemProcesses), exitCode: 0 };
+      case 'htop': return { output: cmdTop(args, this.userMgr.currentUser, this._systemProcesses), exitCode: 0 };
+
+      // ── Network commands ────────────────────────────────────────────
+      case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer), exitCode: 0 };
+      case 'ss': return { output: cmdSs(args, this.isServer), exitCode: 0 };
+      case 'curl': return { output: cmdCurl(args), exitCode: 0 };
+      case 'wget': return { output: cmdWget(args), exitCode: 0 };
+      case 'ping': {
+        const host = args.filter(a => !a.startsWith('-'))[0];
+        if (!host) return { output: 'ping: usage error: Destination address required', exitCode: 1 };
+        return { output: `PING ${host} (${host}) 56(84) bytes of data.\n64 bytes from ${host}: icmp_seq=1 ttl=64 time=0.5 ms\n64 bytes from ${host}: icmp_seq=2 ttl=64 time=0.4 ms\n\n--- ${host} ping statistics ---\n2 packets transmitted, 2 received, 0% packet loss, time 1001ms\nrtt min/avg/max/mdev = 0.4/0.45/0.5/0.05 ms`, exitCode: 0 };
+      }
+      case 'traceroute': {
+        const host = args.filter(a => !a.startsWith('-'))[0];
+        if (!host) return { output: 'Usage: traceroute host', exitCode: 1 };
+        return { output: `traceroute to ${host}, 30 hops max, 60 byte packets\n 1  gateway (10.0.0.1)  0.5 ms  0.4 ms  0.3 ms\n 2  ${host}  1.2 ms  1.1 ms  1.0 ms`, exitCode: 0 };
+      }
+      case 'nslookup':
+      case 'dig':
+      case 'host': {
+        const host = args.filter(a => !a.startsWith('-'))[0];
+        if (!host) return { output: `Usage: ${cmd} hostname`, exitCode: 1 };
+        return { output: `Server:\t\t127.0.0.53\nAddress:\t127.0.0.53#53\n\nNon-authoritative answer:\nName:\t${host}\nAddress: 93.184.216.34`, exitCode: 0 };
+      }
+
+      // ── Miscellaneous common commands ────────────────────────────────
+      case 'apt':
+      case 'apt-get': {
+        const sub = args[0] || '';
+        if (sub === 'update') return { output: 'Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nReading package lists... Done', exitCode: 0 };
+        if (sub === 'install') return { output: `Reading package lists... Done\nBuilding dependency tree... Done\n${args.slice(1).join(', ')} is already the newest version.\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.`, exitCode: 0 };
+        if (sub === 'upgrade') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\nCalculating upgrade... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
+        if (sub === 'remove' || sub === 'purge') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
+        if (sub === 'list' && args.includes('--installed')) return { output: 'Listing... Done\nbash/jammy,now 5.1-6ubuntu1 amd64 [installed]\ncoreutils/jammy,now 8.32-4.1ubuntu1 amd64 [installed]\nopenssl/jammy,now 3.0.2-0ubuntu1 amd64 [installed]', exitCode: 0 };
+        return { output: `Usage: ${cmd} [update|install|upgrade|remove|list]`, exitCode: 0 };
+      }
+      case 'dpkg': {
+        if (args[0] === '-l' || args[0] === '--list') return { output: 'Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend\n||/ Name                Version          Architecture Description\n+++-===================-================-============-================================\nii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell\nii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities\nii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit', exitCode: 0 };
+        return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
+      }
+      case 'lscpu': return { output: 'Architecture:                    x86_64\nCPU op-mode(s):                  32-bit, 64-bit\nByte Order:                      Little Endian\nAddress sizes:                   46 bits physical, 48 bits virtual\nCPU(s):                          2\nOn-line CPU(s) list:             0,1\nThread(s) per core:              1\nCore(s) per socket:              2\nSocket(s):                       1\nModel name:                      Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz\nCPU MHz:                         2300.000\nBogoMIPS:                        4600.00\nL1d cache:                       64 KiB\nL1i cache:                       64 KiB\nL2 cache:                        512 KiB\nL3 cache:                        46080 KiB', exitCode: 0 };
+      case 'lsof': return { output: 'COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\nsystemd     1   root  cwd    DIR    8,1     4096    2 /\nsshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)', exitCode: 0 };
+      case 'file': {
+        const target = args.filter(a => !a.startsWith('-'))[0];
+        if (!target) return { output: 'Usage: file [-options] file...', exitCode: 1 };
+        return { output: `${target}: ASCII text`, exitCode: 0 };
+      }
+      case 'md5sum':
+      case 'sha256sum':
+      case 'sha1sum': {
+        const target = args.filter(a => !a.startsWith('-'))[0];
+        if (!target) return { output: `${cmd}: missing file operand`, exitCode: 1 };
+        const hash = Array.from({length: cmd === 'sha256sum' ? 64 : 32}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        return { output: `${hash}  ${target}`, exitCode: 0 };
+      }
+      case 'tar': return { output: '', exitCode: 0 };
+      case 'gzip':
+      case 'gunzip':
+      case 'zip':
+      case 'unzip':
+        return { output: '', exitCode: 0 };
+      case 'scp':
+      case 'rsync':
+        return { output: '', exitCode: 0 };
+      case 'ssh': {
+        const host = args.filter(a => !a.startsWith('-'))[0];
+        if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
+        return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
+      }
+      case 'xargs': {
+        if (!stdin) return { output: '', exitCode: 0 };
+        const xCmd = args[0] || 'echo';
+        return { output: stdin.split('\n').filter(l => l.trim()).map(l => `${xCmd} ${l.trim()}`).join('\n'), exitCode: 0 };
+      }
+      case 'tput':
+      case 'stty':
+      case 'alias':
+      case 'unalias':
+      case 'type':
+      case 'set':
+      case 'unset':
+      case 'declare':
+      case 'local':
+      case 'readonly':
+        return { output: '', exitCode: 0 };
+      case 'seq': {
+        const nums = args.filter(a => !a.startsWith('-')).map(Number);
+        if (nums.length === 1) return { output: Array.from({length: nums[0]}, (_, i) => i + 1).join('\n'), exitCode: 0 };
+        if (nums.length === 2) return { output: Array.from({length: nums[1] - nums[0] + 1}, (_, i) => nums[0] + i).join('\n'), exitCode: 0 };
+        if (nums.length === 3) { const r: number[] = []; for (let i = nums[0]; i <= nums[2]; i += nums[1]) r.push(i); return { output: r.join('\n'), exitCode: 0 }; }
+        return { output: 'seq: missing operand', exitCode: 1 };
+      }
+      case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
+      case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+      case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
+      case 'readlink': return { output: args.filter(a => !a.startsWith('-'))[0] || '', exitCode: 0 };
+      case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)

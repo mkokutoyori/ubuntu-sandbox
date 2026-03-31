@@ -20,7 +20,7 @@ import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
-import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci } from '@/terminal/commands/OracleCommands';
+import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 
 // ─── Theme ────────────────────────────────────────────────────────
@@ -237,6 +237,16 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (parts[0] === 'adrci') {
         handleAdrci(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
+        this.notify();
+        return;
+      }
+      if (parts[0] === 'expdp') {
+        handleExpdp(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
+        this.notify();
+        return;
+      }
+      if (parts[0] === 'impdp') {
+        handleImpdp(this.device, parts.slice(1), (text, type) => this.addLine(text, type));
         this.notify();
         return;
       }
