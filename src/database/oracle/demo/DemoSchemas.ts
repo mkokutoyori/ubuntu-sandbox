@@ -7,6 +7,7 @@
 
 import type { OracleDatabase } from '../OracleDatabase';
 import type { OracleExecutor } from '../OracleExecutor';
+import { installFcubsliveSchema } from './fcubslive';
 
 /**
  * Install the HR (Human Resources) demo schema.
@@ -273,4 +274,8 @@ export function installSCOTTSchema(db: OracleDatabase): void {
 export function installAllDemoSchemas(db: OracleDatabase): void {
   installHRSchema(db);
   installSCOTTSchema(db);
+  installFcubsliveSchema(db);
 }
+
+// Re-export for direct access
+export { installFcubsliveSchema } from './fcubslive';
