@@ -138,6 +138,7 @@ export class OracleCatalog extends BaseCatalog {
       { username: 'DBSNMP', userId: this.nextUserId++, defaultTablespace: 'SYSAUX', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'dbsnmp' },
       { username: 'HR', userId: this.nextUserId++, defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'hr' },
       { username: 'SCOTT', userId: this.nextUserId++, defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'tiger' },
+      { username: 'FCUBSLIVE', userId: this.nextUserId++, defaultTablespace: 'USERS', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'fcubs' },
     ];
     for (const u of defaultUsers) {
       const { password, ...user } = u;
@@ -167,8 +168,8 @@ export class OracleCatalog extends BaseCatalog {
     this.grantRole('SYS', 'DBA', true);
     this.grantRole('SYSTEM', 'DBA', true);
 
-    // HR and SCOTT get basic privileges
-    for (const u of ['HR', 'SCOTT']) {
+    // HR, SCOTT, and FCUBSLIVE get basic privileges
+    for (const u of ['HR', 'SCOTT', 'FCUBSLIVE']) {
       this.grantRole(u, 'CONNECT');
       this.grantRole(u, 'RESOURCE');
       this.grantSystemPrivilege(u, 'CREATE SESSION');
