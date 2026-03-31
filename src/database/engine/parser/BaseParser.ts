@@ -83,6 +83,18 @@ export abstract class BaseParser {
       }
     }
 
+    // Parenthesized SELECT: (SELECT ...) UNION (SELECT ...) etc.
+    if (token.type === TokenType.LPAREN) {
+      const next = this.peekNext();
+      if (next && next.type === TokenType.KEYWORD && (next.value === 'SELECT' || next.value === 'WITH')) {
+        this.advance(); // consume (
+        const inner = this.parseSelect();
+        this.expect(TokenType.RPAREN);
+        // Check for set operations (UNION, INTERSECT, MINUS, EXCEPT)
+        return this.parseSetOperation(inner);
+      }
+    }
+
     // Let dialect handle
     const dialectStmt = this.parseDialectStatement();
     if (dialectStmt) return dialectStmt;
@@ -400,10 +412,17 @@ export abstract class BaseParser {
       }
       if (!op) break;
 
-      // Parse the right side as a fresh SELECT (without CTE/ORDER BY of parent)
-      this.expectKeyword('SELECT');
-      this.pos--; // back up so parseSelect can consume SELECT
-      const right = this.parseSelect();
+      // Parse the right side — may be parenthesized: (SELECT ...) or plain SELECT ...
+      let right: SelectStatement;
+      if (this.check(TokenType.LPAREN)) {
+        this.advance(); // consume (
+        right = this.parseSelect();
+        this.expect(TokenType.RPAREN);
+      } else {
+        this.expectKeyword('SELECT');
+        this.pos--; // back up so parseSelect can consume SELECT
+        right = this.parseSelect();
+      }
       left = { ...left, setOp: { op, right } };
     }
     return left;
