@@ -2643,6 +2643,33 @@ export class OracleExecutor extends BaseExecutor {
         return String(args[0]).replaceAll(String(args[1] ?? ''), String(args[2] ?? ''));
       }
       case 'CONCAT': return (args[0] != null ? String(args[0]) : '') + (args[1] != null ? String(args[1]) : '');
+      case 'CHR': return args[0] != null ? String.fromCharCode(Number(args[0])) : null;
+      case 'ASCII': return args[0] != null ? String(args[0]).charCodeAt(0) : null;
+      case 'REGEXP_REPLACE': {
+        if (args[0] == null) return null;
+        const src = String(args[0]);
+        const pat = String(args[1] ?? '');
+        const rep = args[2] != null ? String(args[2]) : '';
+        try { return src.replace(new RegExp(pat, 'g'), rep); } catch { return src; }
+      }
+      case 'REGEXP_SUBSTR': {
+        if (args[0] == null) return null;
+        const src = String(args[0]);
+        const pat = String(args[1] ?? '');
+        try { const m = src.match(new RegExp(pat)); return m ? m[0] : null; } catch { return null; }
+      }
+      case 'REGEXP_INSTR': {
+        if (args[0] == null) return null;
+        const src = String(args[0]);
+        const pat = String(args[1] ?? '');
+        try { const m = src.match(new RegExp(pat)); return m && m.index !== undefined ? m.index + 1 : 0; } catch { return 0; }
+      }
+      case 'REGEXP_COUNT': {
+        if (args[0] == null) return null;
+        const src = String(args[0]);
+        const pat = String(args[1] ?? '');
+        try { const matches = src.match(new RegExp(pat, 'g')); return matches ? matches.length : 0; } catch { return 0; }
+      }
 
       // Numeric functions
       case 'ABS': return args[0] != null ? Math.abs(Number(args[0])) : null;

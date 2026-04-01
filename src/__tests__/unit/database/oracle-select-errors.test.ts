@@ -1185,3 +1185,572 @@ describe('Oracle — Parentheses in function calls and CASE', () => {
     expect(result.rows[0][0]).toBe(26400);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 6 — QUOTE HANDLING (string literals, q-quote, identifiers)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — Basic string literals', () => {
+
+  // 146. Simple string literal
+  it('SELECT simple string from DUAL', () => {
+    const result = exec("SELECT 'hello' FROM DUAL");
+    expect(result.rows[0][0]).toBe('hello');
+  });
+
+  // 147. Escaped single quote ('')
+  it("escaped quote '' produces single quote", () => {
+    const result = exec("SELECT 'it''s a test' FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's a test");
+  });
+
+  // 148. Multiple escaped quotes
+  it("multiple escaped quotes in string", () => {
+    const result = exec("SELECT 'he said ''hi'' to me' FROM DUAL");
+    expect(result.rows[0][0]).toBe("he said 'hi' to me");
+  });
+
+  // 149. String that is only an escaped quote: ''''
+  it("'''' produces a single quote character", () => {
+    const result = exec("SELECT '''' FROM DUAL");
+    expect(result.rows[0][0]).toBe("'");
+  });
+
+  // 150. Triple-quoted: '''hello'''
+  it("'''hello''' produces 'hello'", () => {
+    const result = exec("SELECT '''hello''' FROM DUAL");
+    expect(result.rows[0][0]).toBe("'hello'");
+  });
+
+  // 151. N-string (national character)
+  it("N'text' returns text", () => {
+    const result = exec("SELECT N'bonjour' FROM DUAL");
+    expect(result.rows[0][0]).toBe('bonjour');
+  });
+
+  // 152. String with backslash (Oracle does NOT treat \ as escape)
+  it("backslash in string is literal", () => {
+    const result = exec("SELECT 'C:\\Users\\admin' FROM DUAL");
+    expect(result.rows[0][0]).toBe('C:\\Users\\admin');
+  });
+
+  // 153. String with special characters (SQL has no \t escape, it's literal backslash-t)
+  it("backslash-t in string is literal, not a tab", () => {
+    const result = exec("SELECT 'line1\\tline2' FROM DUAL");
+    expect(result.rows[0][0]).toBe('line1\\tline2');
+  });
+});
+
+describe('Oracle — Empty string = NULL', () => {
+
+  // 154. Empty string is NULL
+  it("'' IS NULL returns TRUE", () => {
+    const result = exec("SELECT CASE WHEN '' IS NULL THEN 'YES' ELSE 'NO' END FROM DUAL");
+    expect(result.rows[0][0]).toBe('YES');
+  });
+
+  // 155. NVL with empty string
+  it("NVL('', 'default') returns 'default'", () => {
+    const result = exec("SELECT NVL('', 'default') FROM DUAL");
+    expect(result.rows[0][0]).toBe('default');
+  });
+
+  // 156. COALESCE with empty string
+  it("COALESCE('', '', 'found') returns 'found'", () => {
+    const result = exec("SELECT COALESCE('', '', 'found') FROM DUAL");
+    expect(result.rows[0][0]).toBe('found');
+  });
+
+  // 157. Empty string in comparison
+  it("'' = '' is NULL (unknown), not TRUE", () => {
+    const result = exec("SELECT CASE WHEN '' = '' THEN 'EQ' ELSE 'NOT_EQ' END FROM DUAL");
+    // In Oracle, NULL = NULL is unknown → ELSE branch
+    expect(result.rows[0][0]).toBe('NOT_EQ');
+  });
+
+  // 158. Concatenation with empty string
+  it("'hello' || '' returns 'hello' (NULL concat)", () => {
+    const result = exec("SELECT 'hello' || '' FROM DUAL");
+    expect(result.rows[0][0]).toBe('hello');
+  });
+
+  // 159. LENGTH of empty string is NULL
+  it("LENGTH('') returns NULL", () => {
+    const result = exec("SELECT LENGTH('') FROM DUAL");
+    expect(result.rows[0][0]).toBeNull();
+  });
+});
+
+describe('Oracle — q-quote (alternative quoting)', () => {
+
+  // 160. q'[text]' bracket delimiter
+  it("q'[it's a test]' with brackets", () => {
+    const result = exec("SELECT q'[it's a test]' FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's a test");
+  });
+
+  // 161. q'{text}' brace delimiter
+  it("q'{it's here}' with braces", () => {
+    const result = exec("SELECT q'{it's here}' FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's here");
+  });
+
+  // 162. q'<text>' angle bracket delimiter
+  it("q'<don't stop>' with angle brackets", () => {
+    const result = exec("SELECT q'<don't stop>' FROM DUAL");
+    expect(result.rows[0][0]).toBe("don't stop");
+  });
+
+  // 163. q'(text)' parenthesis delimiter
+  it("q'(it's ok)' with parentheses", () => {
+    const result = exec("SELECT q'(it's ok)' FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's ok");
+  });
+
+  // 164. Q-quote with uppercase Q
+  it("Q'[test's]' with uppercase Q", () => {
+    const result = exec("SELECT Q'[test's]' FROM DUAL");
+    expect(result.rows[0][0]).toBe("test's");
+  });
+
+  // 165. q-quote with custom single-char delimiter
+  it("q'!it's ok!' with custom delimiter", () => {
+    const result = exec("SELECT q'!it's ok!' FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's ok");
+  });
+
+  // 166. q-quote in WHERE clause
+  it("q-quote works in WHERE clause", () => {
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (997, 'O''Brien''s')");
+    const result = exec("SELECT DEPARTMENT_NAME FROM HR.DEPARTMENTS WHERE DEPARTMENT_NAME = q'[O'Brien's]'");
+    expect(result.rows[0][0]).toBe("O'Brien's");
+  });
+
+  // 167. q-quote in INSERT
+  it("q-quote in INSERT VALUES", () => {
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (996, q'[It's new]')");
+    const result = exec("SELECT DEPARTMENT_NAME FROM HR.DEPARTMENTS WHERE DEPARTMENT_ID = 996");
+    expect(result.rows[0][0]).toBe("It's new");
+  });
+
+  // 168. q-quote with multiple quotes inside
+  it("q-quote preserves multiple quotes", () => {
+    const result = exec("SELECT q'[he said 'hello' and she said 'hi']' FROM DUAL");
+    expect(result.rows[0][0]).toBe("he said 'hello' and she said 'hi'");
+  });
+});
+
+describe('Oracle — Double-quoted identifiers', () => {
+
+  // 169. Double-quoted column name
+  it('"EMPLOYEE_ID" as quoted identifier', () => {
+    const result = exec('SELECT "EMPLOYEE_ID" FROM HR.EMPLOYEES WHERE ROWNUM <= 1');
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0][0]).toBe(100);
+  });
+
+  // 170. Double-quoted table name
+  it('"EMPLOYEES" as quoted table', () => {
+    const result = exec('SELECT COUNT(*) FROM HR."EMPLOYEES"');
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 171. Double-quoted alias
+  it('column alias with double quotes preserves case', () => {
+    const result = exec('SELECT 1 AS "My Column" FROM DUAL');
+    const colName = typeof result.columns[0] === 'string' ? result.columns[0] : (result.columns[0] as any).name;
+    expect(colName).toBe('My Column');
+  });
+
+  // 172. Reserved word as quoted alias
+  it('reserved word as quoted alias', () => {
+    const result = exec('SELECT 1 AS "SELECT" FROM DUAL');
+    const colName = typeof result.columns[0] === 'string' ? result.columns[0] : (result.columns[0] as any).name;
+    expect(colName).toBe('SELECT');
+  });
+
+  // 173. Double-quoted identifier with spaces
+  it('quoted identifier with spaces in alias', () => {
+    const result = exec('SELECT EMPLOYEE_ID AS "Employee ID" FROM HR.EMPLOYEES WHERE ROWNUM <= 1');
+    const colName = typeof result.columns[0] === 'string' ? result.columns[0] : (result.columns[0] as any).name;
+    expect(colName).toBe('Employee ID');
+  });
+});
+
+describe('Oracle — String in WHERE / DML operations', () => {
+
+  // 174. Equality with escaped quotes
+  it('WHERE col = string with escaped quote', () => {
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (995, 'O''Malley')");
+    const result = exec("SELECT DEPARTMENT_NAME FROM HR.DEPARTMENTS WHERE DEPARTMENT_NAME = 'O''Malley'");
+    expect(result.rows[0][0]).toBe("O'Malley");
+  });
+
+  // 175. LIKE with escaped quote
+  it("LIKE pattern with escaped quote", () => {
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (994, 'D''Artagnan')");
+    const result = exec("SELECT DEPARTMENT_NAME FROM HR.DEPARTMENTS WHERE DEPARTMENT_NAME LIKE 'D''Art%'");
+    expect(result.rows[0][0]).toBe("D'Artagnan");
+  });
+
+  // 176. IN list with escaped quotes
+  it("IN with escaped quotes", () => {
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (993, 'Team''s A')");
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (992, 'Team''s B')");
+    const result = exec("SELECT COUNT(*) FROM HR.DEPARTMENTS WHERE DEPARTMENT_NAME IN ('Team''s A', 'Team''s B')");
+    expect(Number(result.rows[0][0])).toBe(2);
+  });
+
+  // 177. UPDATE with escaped quotes
+  it("UPDATE SET col = string with quotes", () => {
+    exec("INSERT INTO HR.DEPARTMENTS(DEPARTMENT_ID, DEPARTMENT_NAME) VALUES (991, 'Old')");
+    exec("UPDATE HR.DEPARTMENTS SET DEPARTMENT_NAME = 'IT''s New' WHERE DEPARTMENT_ID = 991");
+    const result = exec("SELECT DEPARTMENT_NAME FROM HR.DEPARTMENTS WHERE DEPARTMENT_ID = 991");
+    expect(result.rows[0][0]).toBe("IT's New");
+  });
+
+  // 178. BETWEEN with strings
+  it("BETWEEN with string literals", () => {
+    const result = exec("SELECT COUNT(*) FROM HR.EMPLOYEES WHERE LAST_NAME BETWEEN 'A' AND 'D'");
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
+
+  // 179. String comparison operators
+  it("string comparison > works", () => {
+    const result = exec("SELECT CASE WHEN 'banana' > 'apple' THEN 'YES' ELSE 'NO' END FROM DUAL");
+    expect(result.rows[0][0]).toBe('YES');
+  });
+});
+
+describe('Oracle — String functions with quotes', () => {
+
+  // 180. UPPER with quotes in string
+  it("UPPER preserves escaped quotes", () => {
+    const result = exec("SELECT UPPER('it''s working') FROM DUAL");
+    expect(result.rows[0][0]).toBe("IT'S WORKING");
+  });
+
+  // 181. LOWER with quotes in string
+  it("LOWER preserves escaped quotes", () => {
+    const result = exec("SELECT LOWER('IT''S A TEST') FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's a test");
+  });
+
+  // 182. REPLACE with quote character
+  it("REPLACE quote with another char", () => {
+    const result = exec("SELECT REPLACE('abc''def', '''', '-') FROM DUAL");
+    expect(result.rows[0][0]).toBe('abc-def');
+  });
+
+  // 183. INSTR finding quote character
+  it("INSTR finds quote char in string", () => {
+    const result = exec("SELECT INSTR('it''s here', '''') FROM DUAL");
+    expect(result.rows[0][0]).toBe(3);
+  });
+
+  // 184. LENGTH with escaped quotes
+  it("LENGTH counts correctly with quotes", () => {
+    const result = exec("SELECT LENGTH('it''s') FROM DUAL");
+    expect(result.rows[0][0]).toBe(4);
+  });
+
+  // 185. SUBSTR with quoted content
+  it("SUBSTR on string with quotes", () => {
+    const result = exec("SELECT SUBSTR('it''s ok', 1, 4) FROM DUAL");
+    expect(result.rows[0][0]).toBe("it's");
+  });
+
+  // 186. TRIM
+  it("TRIM string literal", () => {
+    const result = exec("SELECT TRIM('  hello  ') FROM DUAL");
+    expect(result.rows[0][0]).toBe('hello');
+  });
+
+  // 187. INITCAP
+  it("INITCAP with multi-word string", () => {
+    const result = exec("SELECT INITCAP('hello world') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Hello World');
+  });
+
+  // 188. LPAD with string fill
+  it("LPAD with custom fill character", () => {
+    const result = exec("SELECT LPAD('hi', 10, '*') FROM DUAL");
+    expect(result.rows[0][0]).toBe('********hi');
+  });
+
+  // 189. RPAD with string fill
+  it("RPAD with custom fill character", () => {
+    const result = exec("SELECT RPAD('hi', 10, '-') FROM DUAL");
+    expect(result.rows[0][0]).toBe('hi--------');
+  });
+
+  // 190. CHR function (ASCII code to character)
+  it("CHR(65) returns 'A'", () => {
+    const result = exec("SELECT CHR(65) FROM DUAL");
+    expect(result.rows[0][0]).toBe('A');
+  });
+
+  // 191. ASCII function (character to code)
+  it("ASCII('A') returns 65", () => {
+    const result = exec("SELECT ASCII('A') FROM DUAL");
+    expect(result.rows[0][0]).toBe(65);
+  });
+
+  // 192. CHR for single quote (CHR(39))
+  it("CHR(39) returns single quote", () => {
+    const result = exec("SELECT CHR(39) FROM DUAL");
+    expect(result.rows[0][0]).toBe("'");
+  });
+
+  // 193. Building string with CHR to avoid quotes
+  it("'Hello' || CHR(39) || 's' produces Hello's", () => {
+    const result = exec("SELECT 'Hello' || CHR(39) || 's' FROM DUAL");
+    expect(result.rows[0][0]).toBe("Hello's");
+  });
+});
+
+describe('Oracle — String concatenation edge cases', () => {
+
+  // 194. Multiple concatenations
+  it("multi-part concatenation", () => {
+    const result = exec("SELECT 'a' || 'b' || 'c' || 'd' || 'e' FROM DUAL");
+    expect(result.rows[0][0]).toBe('abcde');
+  });
+
+  // 195. Concatenation with NULL
+  it("string || NULL || string preserves non-null parts", () => {
+    const result = exec("SELECT 'hello' || NULL || 'world' FROM DUAL");
+    expect(result.rows[0][0]).toBe('helloworld');
+  });
+
+  // 196. String + number concatenation
+  it("string || number auto-converts", () => {
+    const result = exec("SELECT 'Employee #' || 100 FROM DUAL");
+    expect(result.rows[0][0]).toBe('Employee #100');
+  });
+
+  // 197. Number + string concatenation
+  it("number || string auto-converts", () => {
+    const result = exec("SELECT 100 || ' employees' FROM DUAL");
+    expect(result.rows[0][0]).toBe('100 employees');
+  });
+
+  // 198. Concat column with literal
+  it("column || literal", () => {
+    const result = exec("SELECT 'Name: ' || FIRST_NAME || ', ID: ' || EMPLOYEE_ID FROM HR.EMPLOYEES WHERE EMPLOYEE_ID = 100");
+    expect(result.rows[0][0]).toBe('Name: Steven, ID: 100');
+  });
+
+  // 199. Concatenation with empty string (= NULL)
+  it("'' || 'text' returns 'text'", () => {
+    const result = exec("SELECT '' || 'text' FROM DUAL");
+    expect(result.rows[0][0]).toBe('text');
+  });
+});
+
+describe('Oracle — REGEXP functions with string patterns', () => {
+
+  // 200. REGEXP_REPLACE
+  it("REGEXP_REPLACE replaces pattern", () => {
+    const result = exec("SELECT REGEXP_REPLACE('hello 123 world', '[0-9]+', '#') FROM DUAL");
+    expect(result.rows[0][0]).toBe('hello # world');
+  });
+
+  // 201. REGEXP_SUBSTR
+  it("REGEXP_SUBSTR extracts match", () => {
+    const result = exec("SELECT REGEXP_SUBSTR('hello 123 world', '[0-9]+') FROM DUAL");
+    expect(result.rows[0][0]).toBe('123');
+  });
+
+  // 202. REGEXP_INSTR
+  it("REGEXP_INSTR returns position", () => {
+    const result = exec("SELECT REGEXP_INSTR('hello 123 world', '[0-9]+') FROM DUAL");
+    expect(result.rows[0][0]).toBe(7);
+  });
+
+  // 203. REGEXP_COUNT
+  it("REGEXP_COUNT counts occurrences", () => {
+    const result = exec("SELECT REGEXP_COUNT('hello 123 world 456', '[0-9]+') FROM DUAL");
+    expect(result.rows[0][0]).toBe(2);
+  });
+
+  // 204. REGEXP_REPLACE with quote in pattern
+  it("REGEXP_REPLACE can remove quotes", () => {
+    const result = exec("SELECT REGEXP_REPLACE('it''s a ''test''', '''', '') FROM DUAL");
+    expect(result.rows[0][0]).toBe('its a test');
+  });
+
+  // 205. REGEXP_SUBSTR no match returns NULL
+  it("REGEXP_SUBSTR returns NULL when no match", () => {
+    const result = exec("SELECT REGEXP_SUBSTR('hello world', '[0-9]+') FROM DUAL");
+    expect(result.rows[0][0]).toBeNull();
+  });
+});
+
+describe('Oracle — DECODE / CASE with string values', () => {
+
+  // 206. DECODE with string values
+  it("DECODE with string comparisons", () => {
+    const result = exec("SELECT DECODE('A', 'A', 'Alpha', 'B', 'Beta', 'Other') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Alpha');
+  });
+
+  // 207. DECODE default branch
+  it("DECODE falls to default on no match", () => {
+    const result = exec("SELECT DECODE('C', 'A', 'Alpha', 'B', 'Beta', 'Other') FROM DUAL");
+    expect(result.rows[0][0]).toBe('Other');
+  });
+
+  // 208. CASE with string results
+  it("CASE WHEN returns string values", () => {
+    const result = exec("SELECT CASE WHEN 1=1 THEN 'yes' ELSE 'no' END FROM DUAL");
+    expect(result.rows[0][0]).toBe('yes');
+  });
+
+  // 209. Simple CASE with string operand
+  it("simple CASE with string operand", () => {
+    const result = exec("SELECT CASE 'X' WHEN 'A' THEN 'first' WHEN 'X' THEN 'found' ELSE 'other' END FROM DUAL");
+    expect(result.rows[0][0]).toBe('found');
+  });
+
+  // 210. DECODE with escaped quotes
+  it("DECODE with quoted values", () => {
+    const result = exec("SELECT DECODE('it''s', 'it''s', 'matched', 'no') FROM DUAL");
+    expect(result.rows[0][0]).toBe('matched');
+  });
+});
+
+describe('Oracle — NVL / COALESCE / NULLIF with strings', () => {
+
+  // 211. NVL with string
+  it("NVL(NULL, 'default')", () => {
+    const result = exec("SELECT NVL(NULL, 'default') FROM DUAL");
+    expect(result.rows[0][0]).toBe('default');
+  });
+
+  // 212. NVL with non-null string
+  it("NVL('value', 'default') returns 'value'", () => {
+    const result = exec("SELECT NVL('value', 'default') FROM DUAL");
+    expect(result.rows[0][0]).toBe('value');
+  });
+
+  // 213. COALESCE chain
+  it("COALESCE(NULL, NULL, 'found')", () => {
+    const result = exec("SELECT COALESCE(NULL, NULL, 'found') FROM DUAL");
+    expect(result.rows[0][0]).toBe('found');
+  });
+
+  // 214. NULLIF with equal strings
+  it("NULLIF('abc', 'abc') returns NULL", () => {
+    const result = exec("SELECT NULLIF('abc', 'abc') FROM DUAL");
+    expect(result.rows[0][0]).toBeNull();
+  });
+
+  // 215. NULLIF with different strings
+  it("NULLIF('abc', 'def') returns 'abc'", () => {
+    const result = exec("SELECT NULLIF('abc', 'def') FROM DUAL");
+    expect(result.rows[0][0]).toBe('abc');
+  });
+
+  // 216. NVL2 with strings
+  it("NVL2('val', 'not null', 'is null') returns 'not null'", () => {
+    const result = exec("SELECT NVL2('val', 'not null', 'is null') FROM DUAL");
+    expect(result.rows[0][0]).toBe('not null');
+  });
+
+  // 217. NVL2 with null
+  it("NVL2(NULL, 'not null', 'is null') returns 'is null'", () => {
+    const result = exec("SELECT NVL2(NULL, 'not null', 'is null') FROM DUAL");
+    expect(result.rows[0][0]).toBe('is null');
+  });
+});
+
+describe('Oracle — GREATEST / LEAST with strings', () => {
+
+  // 218. GREATEST with strings
+  it("GREATEST('apple', 'banana', 'cherry') = 'cherry'", () => {
+    const result = exec("SELECT GREATEST('apple', 'banana', 'cherry') FROM DUAL");
+    expect(result.rows[0][0]).toBe('cherry');
+  });
+
+  // 219. LEAST with strings
+  it("LEAST('apple', 'banana', 'cherry') = 'apple'", () => {
+    const result = exec("SELECT LEAST('apple', 'banana', 'cherry') FROM DUAL");
+    expect(result.rows[0][0]).toBe('apple');
+  });
+});
+
+describe('Oracle — Nested string function calls', () => {
+
+  // 220. Nested UPPER + SUBSTR
+  it("UPPER(SUBSTR(col, 1, 3))", () => {
+    const result = exec("SELECT UPPER(SUBSTR('hello world', 1, 5)) FROM DUAL");
+    expect(result.rows[0][0]).toBe('HELLO');
+  });
+
+  // 221. Nested LOWER + SUBSTR
+  it("LOWER(SUBSTR('HELLO', 1, 3))", () => {
+    const result = exec("SELECT LOWER(SUBSTR('HELLO WORLD', 1, 5)) FROM DUAL");
+    expect(result.rows[0][0]).toBe('hello');
+  });
+
+  // 222. REPLACE inside UPPER
+  it("UPPER(REPLACE(str, old, new))", () => {
+    const result = exec("SELECT UPPER(REPLACE('hello world', 'world', 'oracle')) FROM DUAL");
+    expect(result.rows[0][0]).toBe('HELLO ORACLE');
+  });
+
+  // 223. Triple nesting
+  it("TRIM(LOWER(SUBSTR(str, start, len)))", () => {
+    const result = exec("SELECT TRIM(LOWER(SUBSTR('  HELLO  ', 3, 5))) FROM DUAL");
+    expect(result.rows[0][0]).toBe('hello');
+  });
+
+  // 224. LPAD + UPPER
+  it("LPAD(UPPER('hi'), 10, '-')", () => {
+    const result = exec("SELECT LPAD(UPPER('hi'), 10, '-') FROM DUAL");
+    expect(result.rows[0][0]).toBe('--------HI');
+  });
+});
+
+describe('Oracle — TO_CHAR / TO_DATE with string formats', () => {
+
+  // 225. TO_CHAR number formatting
+  it("TO_CHAR(number, format)", () => {
+    const result = exec("SELECT TO_CHAR(12345.67, '99999.99') FROM DUAL");
+    expect(result.rows[0][0]).toContain('12345.67');
+  });
+
+  // 226. TO_DATE with format string
+  it("TO_DATE('2024-01-15', 'YYYY-MM-DD')", () => {
+    const result = exec("SELECT TO_DATE('2024-01-15', 'YYYY-MM-DD') FROM DUAL");
+    expect(result.rows[0][0]).toBeTruthy();
+  });
+
+  // 227. DATE literal (ANSI)
+  it("DATE 'YYYY-MM-DD' literal", () => {
+    const result = exec("SELECT DATE '2024-01-15' FROM DUAL");
+    expect(result.rows[0][0]).toBeTruthy();
+  });
+
+  // 228. TIMESTAMP literal (ANSI)
+  it("TIMESTAMP literal", () => {
+    const result = exec("SELECT TIMESTAMP '2024-01-15 10:30:00' FROM DUAL");
+    expect(result.rows[0][0]).toBeTruthy();
+  });
+});
+
+describe('Oracle — LISTAGG with separator strings', () => {
+
+  // 229. LISTAGG with comma separator
+  it("LISTAGG with ', ' separator", () => {
+    const result = exec("SELECT LISTAGG(DEPARTMENT_NAME, ', ') FROM HR.DEPARTMENTS WHERE ROWNUM <= 3");
+    expect(result.rows[0][0]).toContain(',');
+  });
+
+  // 230. LISTAGG with custom separator
+  it("LISTAGG with ' | ' separator", () => {
+    const result = exec("SELECT LISTAGG(DEPARTMENT_NAME, ' | ') FROM HR.DEPARTMENTS WHERE ROWNUM <= 2");
+    expect(result.rows[0][0]).toContain('|');
+  });
+});
