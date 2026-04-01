@@ -615,55 +615,121 @@ export class OracleExecutor extends BaseExecutor {
     rightRows: StorageRow[], rightCols: StorageColMeta[],
     join: import('../engine/parser/ASTNode').JoinClause
   ): { rows: StorageRow[]; columns: StorageColMeta[] } {
-    const combinedCols: StorageColMeta[] = [
-      ...leftCols.map((c, i) => ({ ...c, ordinalPosition: i })),
-      ...rightCols.map((c, i) => ({ ...c, ordinalPosition: leftCols.length + i })),
-    ];
-    const nullRight = new Array(rightCols.length).fill(null);
+    // Determine common columns for USING or NATURAL join
+    let usingCols: string[] | undefined = join.using;
+    if (join.joinType === 'NATURAL') {
+      // NATURAL: find all columns with the same name in both sides
+      const leftNames = new Set(leftCols.map(c => c.name.toUpperCase()));
+      usingCols = rightCols.map(c => c.name.toUpperCase()).filter(n => leftNames.has(n));
+    }
+
+    // For USING / NATURAL: build combined columns with shared columns appearing once
+    let combinedCols: StorageColMeta[];
+    let rightColIndices: number[]; // indices into rightCols that appear in output
+    if (usingCols && usingCols.length > 0) {
+      const usingSet = new Set(usingCols.map(c => c.toUpperCase()));
+      // Shared columns come from left side only (deduplicated)
+      combinedCols = leftCols.map((c, i) => ({ ...c, ordinalPosition: i }));
+      // Add right-side columns that are NOT in the USING set
+      rightColIndices = [];
+      for (let i = 0; i < rightCols.length; i++) {
+        if (!usingSet.has(rightCols[i].name.toUpperCase())) {
+          rightColIndices.push(i);
+          combinedCols.push({ ...rightCols[i], ordinalPosition: combinedCols.length });
+        }
+      }
+    } else {
+      combinedCols = [
+        ...leftCols.map((c, i) => ({ ...c, ordinalPosition: i })),
+        ...rightCols.map((c, i) => ({ ...c, ordinalPosition: leftCols.length + i })),
+      ];
+      rightColIndices = rightCols.map((_, i) => i);
+    }
+
+    const nullRight = new Array(rightColIndices.length).fill(null);
     const nullLeft = new Array(leftCols.length).fill(null);
+
+    // Build effective ON condition for USING/NATURAL
+    let onCondition = join.on;
+    if (usingCols && usingCols.length > 0 && !onCondition) {
+      // Build ON condition: left.col = right.col AND ...
+      // We match by column name in the combined row
+      const conditions: Array<{ leftIdx: number; rightIdx: number }> = [];
+      for (const col of usingCols) {
+        const li = leftCols.findIndex(c => c.name.toUpperCase() === col.toUpperCase());
+        const ri = rightCols.findIndex(c => c.name.toUpperCase() === col.toUpperCase());
+        if (li >= 0 && ri >= 0) conditions.push({ leftIdx: li, rightIdx: ri });
+      }
+      // Use a custom evaluator for USING/NATURAL instead of AST condition
+      const evalUsing = (leftRow: StorageRow, rightRow: StorageRow): boolean => {
+        return conditions.every(({ leftIdx, rightIdx }) => {
+          const lv = leftRow[leftIdx];
+          const rv = rightRow[rightIdx];
+          if (lv == null || rv == null) return false;
+          return this.compareValues(lv, rv) === 0;
+        });
+      };
+
+      // Execute join with custom condition
+      return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalUsing);
+    }
 
     if (join.joinType === 'CROSS') {
       const rows: StorageRow[] = [];
       for (const l of leftRows) {
         for (const r of rightRows) {
-          rows.push([...l, ...r]);
+          const rightVals = rightColIndices.map(i => r[i]);
+          rows.push([...l, ...rightVals]);
         }
       }
       return { rows, columns: combinedCols };
     }
 
+    // Standard ON-based join
+    const allRightCols = [...leftCols.map((c, i) => ({ ...c, ordinalPosition: i })), ...rightCols.map((c, i) => ({ ...c, ordinalPosition: leftCols.length + i }))];
+    const evalOn = (leftRow: StorageRow, rightRow: StorageRow): boolean => {
+      const fullCombined = [...leftRow, ...rightRow];
+      return !onCondition || this.evaluateCondition(onCondition, fullCombined, allRightCols);
+    };
+
+    return this.executeJoinLoop(leftRows, leftCols, rightRows, rightColIndices, combinedCols, nullRight, nullLeft, join.joinType, evalOn);
+  }
+
+  private executeJoinLoop(
+    leftRows: StorageRow[], leftCols: StorageColMeta[],
+    rightRows: StorageRow[], rightColIndices: number[],
+    combinedCols: StorageColMeta[],
+    nullRight: null[], nullLeft: null[],
+    joinType: string,
+    evalCondition: (leftRow: StorageRow, rightRow: StorageRow) => boolean
+  ): { rows: StorageRow[]; columns: StorageColMeta[] } {
     const resultRows: StorageRow[] = [];
-    const leftMatched = new Set<number>();
     const rightMatched = new Set<number>();
 
     for (let li = 0; li < leftRows.length; li++) {
       let matched = false;
       for (let ri = 0; ri < rightRows.length; ri++) {
-        const combined = [...leftRows[li], ...rightRows[ri]];
-        if (!join.on || this.evaluateCondition(join.on, combined, combinedCols)) {
-          resultRows.push(combined);
-          leftMatched.add(li);
+        if (evalCondition(leftRows[li], rightRows[ri])) {
+          const rightVals = rightColIndices.map(i => rightRows[ri][i]);
+          resultRows.push([...leftRows[li], ...rightVals]);
           rightMatched.add(ri);
           matched = true;
         }
       }
-      // LEFT / FULL: unmatched left rows
-      if (!matched && (join.joinType === 'LEFT' || join.joinType === 'FULL')) {
+      if (!matched && (joinType === 'LEFT' || joinType === 'FULL' || joinType === 'NATURAL')) {
         resultRows.push([...leftRows[li], ...nullRight]);
-        leftMatched.add(li);
       }
     }
 
-    // RIGHT / FULL: unmatched right rows
-    if (join.joinType === 'RIGHT' || join.joinType === 'FULL') {
+    if (joinType === 'RIGHT' || joinType === 'FULL') {
       for (let ri = 0; ri < rightRows.length; ri++) {
         if (!rightMatched.has(ri)) {
-          resultRows.push([...nullLeft, ...rightRows[ri]]);
+          const rightVals = rightColIndices.map(i => rightRows[ri][i]);
+          resultRows.push([...nullLeft, ...rightVals]);
         }
       }
     }
 
-    // INNER: only matched rows (already in resultRows from the loop)
     return { rows: resultRows, columns: combinedCols };
   }
 
@@ -1164,11 +1230,25 @@ export class OracleExecutor extends BaseExecutor {
     if (expr.type === 'Literal' && expr.dataType === 'number') {
       return Number(expr.value) - 1;
     }
-    // By name/alias
+    // By name/alias in SELECT list first
     if (expr.type === 'Identifier') {
       const name = expr.name.toUpperCase();
-      const idx = selectCols.findIndex(c => (c.alias || c.name).toUpperCase() === name || c.name.toUpperCase() === name);
-      if (idx >= 0) return idx;
+      const table = expr.table?.toUpperCase();
+
+      // If qualified (e.g. E.DEPARTMENT_ID), try to match in select cols directly
+      if (!table) {
+        const idx = selectCols.findIndex(c => (c.alias || c.name).toUpperCase() === name || c.name.toUpperCase() === name);
+        if (idx >= 0) return idx;
+      }
+
+      // Fall through to source columns — use resolveColumnIndex for ambiguity detection
+      // This will throw ORA-00918 if the column is ambiguous in source
+      const srcIdx = this.resolveColumnIndex(expr, sourceCols);
+      if (srcIdx >= 0) {
+        // Map source column index to select column index if possible
+        const selIdx = selectCols.findIndex(c => c.colIndex === srcIdx);
+        if (selIdx >= 0) return selIdx;
+      }
     }
     return -1;
   }
@@ -3004,16 +3084,26 @@ export class OracleExecutor extends BaseExecutor {
         return idx;
       }
 
-      // Try plain name match (no table qualifier)
-      const idx = columns.findIndex(c => c.name === name);
-      if (idx >= 0) return idx;
+      // Try plain name match (no table qualifier) — check for ambiguity
+      const matchingIndices: number[] = [];
+      for (let i = 0; i < columns.length; i++) {
+        if (columns[i].name === name) matchingIndices.push(i);
+      }
+      if (matchingIndices.length > 1) {
+        throw new OracleError(918, `column ambiguously defined`);
+      }
+      if (matchingIndices.length === 1) return matchingIndices[0];
 
-      // Try qualified names for unqualified reference
-      return columns.findIndex(c => {
-        const qNames = (c as StorageColMeta & { _qualifiedNames?: string[] })._qualifiedNames;
-        if (qNames) return qNames.some(qn => qn.toUpperCase() === name);
-        return false;
-      });
+      // Try qualified names for unqualified reference — also check ambiguity
+      const qMatchIndices: number[] = [];
+      for (let i = 0; i < columns.length; i++) {
+        const qNames = (columns[i] as StorageColMeta & { _qualifiedNames?: string[] })._qualifiedNames;
+        if (qNames && qNames.some(qn => qn.toUpperCase() === name)) qMatchIndices.push(i);
+      }
+      if (qMatchIndices.length > 1) {
+        throw new OracleError(918, `column ambiguously defined`);
+      }
+      return qMatchIndices.length === 1 ? qMatchIndices[0] : -1;
     }
     if (expr.type === 'Literal' && expr.dataType === 'number') {
       return Number(expr.value) - 1; // 1-based in ORDER BY

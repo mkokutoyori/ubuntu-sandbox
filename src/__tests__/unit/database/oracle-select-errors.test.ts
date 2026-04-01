@@ -222,15 +222,13 @@ describe('Oracle SELECT — Semantic errors (column resolution)', () => {
     expectError('SELECT GHOST_COL FROM HR.EMPTY_CHECK', /invalid identifier/i);
   });
 
-  // 32. Ambiguous column reference in multi-table query without qualifier
-  it('handles ambiguous column in multi-table query', () => {
+  // 32. Ambiguous column reference in multi-table query without qualifier (ORA-00918)
+  it('raises ORA-00918 for ambiguous column in multi-table query', () => {
     // DEPARTMENT_ID exists in both EMPLOYEES and DEPARTMENTS
-    // This should either resolve or fail — the test validates behavior is consistent
-    const fn = () => exec(
-      'SELECT DEPARTMENT_ID FROM HR.EMPLOYEES E, HR.DEPARTMENTS D'
+    expectError(
+      'SELECT DEPARTMENT_ID FROM HR.EMPLOYEES E, HR.DEPARTMENTS D',
+      /ambiguously defined/i
     );
-    // Should not crash; the simulator resolves to the first table's column
-    expect(fn).not.toThrow();
   });
 });
 
@@ -1752,5 +1750,175 @@ describe('Oracle — LISTAGG with separator strings', () => {
   it("LISTAGG with ' | ' separator", () => {
     const result = exec("SELECT LISTAGG(DEPARTMENT_NAME, ' | ') FROM HR.DEPARTMENTS WHERE ROWNUM <= 2");
     expect(result.rows[0][0]).toContain('|');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 7 — AMBIGUOUS COLUMN HANDLING (ORA-00918)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Oracle — ORA-00918: column ambiguously defined', () => {
+
+  // 231. Ambiguous column in SELECT with JOIN ON
+  it('SELECT unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT DEPARTMENT_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID',
+      /ambiguously defined/i
+    );
+  });
+
+  // 232. Ambiguous column in WHERE with JOIN ON
+  it('WHERE unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT E.EMPLOYEE_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE DEPARTMENT_ID = 90',
+      /ambiguously defined/i
+    );
+  });
+
+  // 233. Ambiguous column in ORDER BY with JOIN ON
+  it('ORDER BY unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT E.EMPLOYEE_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID ORDER BY DEPARTMENT_ID',
+      /ambiguously defined/i
+    );
+  });
+
+  // 234. Ambiguous column in GROUP BY
+  it('GROUP BY unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT DEPARTMENT_ID, COUNT(*) FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID GROUP BY DEPARTMENT_ID',
+      /ambiguously defined/i
+    );
+  });
+
+  // 235. Ambiguous column in HAVING
+  it('HAVING unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT E.DEPARTMENT_ID, COUNT(*) FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID GROUP BY E.DEPARTMENT_ID HAVING DEPARTMENT_ID > 50',
+      /ambiguously defined/i
+    );
+  });
+
+  // 236. Self-join: all columns are ambiguous without qualifier
+  it('self-join unqualified col raises ORA-00918', () => {
+    expectError(
+      'SELECT EMPLOYEE_ID FROM HR.EMPLOYEES E1 JOIN HR.EMPLOYEES E2 ON E1.MANAGER_ID = E2.EMPLOYEE_ID',
+      /ambiguously defined/i
+    );
+  });
+
+  // 237. Three-table join: column in two tables is ambiguous
+  it('three-table join unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT DEPARTMENT_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID JOIN HR.LOCATIONS L ON D.LOCATION_ID = L.LOCATION_ID',
+      /ambiguously defined/i
+    );
+  });
+
+  // 238. Comma-join (implicit cross join): ambiguous col
+  it('comma-join unqualified ambiguous col raises ORA-00918', () => {
+    expectError(
+      'SELECT DEPARTMENT_ID FROM HR.EMPLOYEES E, HR.DEPARTMENTS D',
+      /ambiguously defined/i
+    );
+  });
+});
+
+describe('Oracle — Qualified columns resolve correctly (no ambiguity)', () => {
+
+  // 239. Qualified column in SELECT
+  it('SELECT E.DEPARTMENT_ID resolves without ambiguity', () => {
+    const result = exec('SELECT E.DEPARTMENT_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE E.EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(90);
+  });
+
+  // 240. Qualified column in WHERE
+  it('WHERE E.DEPARTMENT_ID resolves without ambiguity', () => {
+    const result = exec('SELECT E.EMPLOYEE_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE E.DEPARTMENT_ID = 90');
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+
+  // 241. Both sides qualified
+  it('SELECT E.col, D.col both resolve', () => {
+    const result = exec('SELECT E.DEPARTMENT_ID, D.DEPARTMENT_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE E.EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(90);
+    expect(result.rows[0][1]).toBe(90);
+  });
+
+  // 242. Non-ambiguous column (unique to one table) works unqualified
+  it('unqualified unique column resolves fine', () => {
+    const result = exec('SELECT EMPLOYEE_ID FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(100);
+  });
+
+  // 243. DEPARTMENT_NAME is unique to DEPARTMENTS — no ambiguity
+  it('DEPARTMENT_NAME resolves without qualifier', () => {
+    const result = exec('SELECT DEPARTMENT_NAME FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE E.EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe('Executive');
+  });
+});
+
+describe('Oracle — USING and NATURAL join column deduplication', () => {
+
+  // 244. USING deduplicates the join column
+  it('JOIN USING(col) allows unqualified reference to join col', () => {
+    const result = exec('SELECT DEPARTMENT_ID FROM HR.EMPLOYEES JOIN HR.DEPARTMENTS USING (DEPARTMENT_ID) WHERE EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(90);
+  });
+
+  // 245. SELECT * with USING: join column appears once
+  it('SELECT * with USING shows join col once', () => {
+    const result = exec('SELECT * FROM HR.EMPLOYEES JOIN HR.DEPARTMENTS USING (DEPARTMENT_ID) WHERE EMPLOYEE_ID = 100');
+    const colNames = result.columns.map((c: any) => c.name || c);
+    const deptCount = colNames.filter((n: string) => n === 'DEPARTMENT_ID').length;
+    expect(deptCount).toBe(1);
+  });
+
+  // 246. NATURAL JOIN deduplicates all common columns
+  it('NATURAL JOIN allows unqualified reference to common col', () => {
+    const result = exec('SELECT DEPARTMENT_ID FROM HR.EMPLOYEES NATURAL JOIN HR.DEPARTMENTS WHERE EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(90);
+  });
+
+  // 247. SELECT * with NATURAL: common columns appear once
+  it('SELECT * with NATURAL shows common cols once', () => {
+    const result = exec('SELECT * FROM HR.EMPLOYEES NATURAL JOIN HR.DEPARTMENTS WHERE EMPLOYEE_ID = 100');
+    const colNames = result.columns.map((c: any) => c.name || c);
+    const deptCount = colNames.filter((n: string) => n === 'DEPARTMENT_ID').length;
+    expect(deptCount).toBe(1);
+    // MANAGER_ID is also common to both tables
+    const mgrCount = colNames.filter((n: string) => n === 'MANAGER_ID').length;
+    expect(mgrCount).toBe(1);
+  });
+
+  // 248. USING with multiple columns (if applicable)
+  it('USING preserves non-join columns from both sides', () => {
+    const result = exec('SELECT EMPLOYEE_ID, DEPARTMENT_NAME FROM HR.EMPLOYEES JOIN HR.DEPARTMENTS USING (DEPARTMENT_ID) WHERE EMPLOYEE_ID = 100');
+    expect(result.rows[0][0]).toBe(100);
+    expect(result.rows[0][1]).toBe('Executive');
+  });
+});
+
+describe('Oracle — SELECT * with JOIN ON shows all columns', () => {
+
+  // 249. SELECT * with ON join shows duplicate columns
+  it('SELECT * with JOIN ON includes both tables columns', () => {
+    const result = exec('SELECT * FROM HR.EMPLOYEES E JOIN HR.DEPARTMENTS D ON E.DEPARTMENT_ID = D.DEPARTMENT_ID WHERE E.EMPLOYEE_ID = 100');
+    const colNames = result.columns.map((c: any) => c.name || c);
+    // DEPARTMENT_ID appears twice (from both tables)
+    const deptCount = colNames.filter((n: string) => n === 'DEPARTMENT_ID').length;
+    expect(deptCount).toBe(2);
+    // Should have columns from both tables
+    expect(colNames).toContain('EMPLOYEE_ID');
+    expect(colNames).toContain('DEPARTMENT_NAME');
+  });
+
+  // 250. SELECT * with LEFT JOIN
+  it('SELECT * with LEFT JOIN includes all columns', () => {
+    const result = exec('SELECT * FROM HR.DEPARTMENTS D LEFT JOIN HR.EMPLOYEES E ON D.DEPARTMENT_ID = E.DEPARTMENT_ID WHERE D.DEPARTMENT_ID = 90');
+    expect(result.rows.length).toBeGreaterThan(0);
+    const colNames = result.columns.map((c: any) => c.name || c);
+    expect(colNames).toContain('DEPARTMENT_NAME');
+    expect(colNames).toContain('EMPLOYEE_ID');
   });
 });
