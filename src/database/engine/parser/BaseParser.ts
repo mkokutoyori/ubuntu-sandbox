@@ -1285,12 +1285,22 @@ export abstract class BaseParser {
     // String literal
     if (token.type === TokenType.STRING_LITERAL) {
       this.advance();
-      // Strip surrounding quotes
       let val = token.value;
-      if (val.startsWith("'") && val.endsWith("'")) {
-        val = val.slice(1, -1).replace(/''/g, "'");
+      // Oracle q-quote syntax: q'[text]', q'{text}', q'<text>', q'(text)', q'!text!'
+      const qMatch = val.match(/^[qQ]'([\[\{<(])([\s\S]*?)([\]\}>)])'$/);
+      if (qMatch) {
+        val = qMatch[2];
+      } else if (/^[qQ]'(.)[\s\S]*\1'$/.test(val)) {
+        // q-quote with custom single-char delimiter: q'!text!'
+        val = val.slice(3, -2);
       } else if (val.startsWith("N'") && val.endsWith("'")) {
         val = val.slice(2, -1).replace(/''/g, "'");
+      } else if (val.startsWith("'") && val.endsWith("'")) {
+        val = val.slice(1, -1).replace(/''/g, "'");
+      }
+      // Oracle treats empty string as NULL
+      if (val === '') {
+        return { type: 'Literal', position: pos, dataType: 'null', value: null };
       }
       return { type: 'Literal', position: pos, dataType: 'string', value: val };
     }
