@@ -57,8 +57,12 @@ export const PS_CMDLETS_LIST = [
 // ─── Interface for device abstraction ─────────────────────────────
 
 export interface PSDeviceContext {
-  /** Execute a CMD-level command on the device */
-  executeCommand(cmd: string): Promise<string>;
+  /**
+   * Execute a CMD-level command on the device.
+   * PowerShell uses this to delegate native commands (ipconfig, ping, cd, etc.)
+   * directly to the CMD interpreter, bypassing the shell-mode router.
+   */
+  executeCmdCommand(cmd: string): Promise<string>;
   /** Get device hostname */
   getHostname(): string;
   /** Get the virtual file system (for PS-style direct formatting) */
@@ -218,7 +222,7 @@ export class PowerShellExecutor {
     // Set-Location / cd / sl / chdir
     if (cmdLower === 'set-location' || cmdLower === 'sl' || cmdLower === 'cd' || cmdLower === 'chdir') {
       const target = args.join(' ') || 'C:\\Users\\User';
-      const result = await this.device.executeCommand('cd ' + target);
+      const result = await this.device.executeCmdCommand('cd ' + target);
       await this.refreshCwd();
       return result || '';
     }
@@ -230,7 +234,7 @@ export class PowerShellExecutor {
 
     // Get-Content / cat / type / gc
     if (cmdLower === 'get-content' || cmdLower === 'gc' || cmdLower === 'cat' || cmdLower === 'type') {
-      return await this.device.executeCommand('type ' + args.join(' '));
+      return await this.device.executeCmdCommand('type ' + args.join(' '));
     }
 
     // Set-Content / sc
@@ -246,25 +250,25 @@ export class PowerShellExecutor {
     // Remove-Item / ri / rm / rmdir / del
     if (cmdLower === 'remove-item' || cmdLower === 'ri' || cmdLower === 'rm' || cmdLower === 'del' || cmdLower === 'erase') {
       const target = args.filter(a => !a.startsWith('-')).join(' ');
-      return await this.device.executeCommand('del ' + target);
+      return await this.device.executeCmdCommand('del ' + target);
     }
 
     // Copy-Item / cpi / copy / cp
     if (cmdLower === 'copy-item' || cmdLower === 'cpi' || cmdLower === 'copy' || cmdLower === 'cp') {
       const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await this.device.executeCommand('copy ' + nonFlags.join(' '));
+      return await this.device.executeCmdCommand('copy ' + nonFlags.join(' '));
     }
 
     // Move-Item / mi / move / mv
     if (cmdLower === 'move-item' || cmdLower === 'mi' || cmdLower === 'move' || cmdLower === 'mv') {
       const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await this.device.executeCommand('move ' + nonFlags.join(' '));
+      return await this.device.executeCmdCommand('move ' + nonFlags.join(' '));
     }
 
     // Rename-Item / rni / ren
     if (cmdLower === 'rename-item' || cmdLower === 'rni' || cmdLower === 'ren') {
       const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await this.device.executeCommand('ren ' + nonFlags.join(' '));
+      return await this.device.executeCmdCommand('ren ' + nonFlags.join(' '));
     }
 
     // Write-Host / Write-Output / echo
@@ -335,7 +339,7 @@ export class PowerShellExecutor {
 
     // Native commands that work in both CMD and PS
     if (['ipconfig', 'ping', 'netsh', 'tracert', 'route', 'arp', 'systeminfo', 'ver'].includes(cmdLower)) {
-      return await this.device.executeCommand(cmdLower + ' ' + args.join(' '));
+      return await this.device.executeCmdCommand(cmdLower + ' ' + args.join(' '));
     }
 
     // Get-ExecutionPolicy / Set-ExecutionPolicy
@@ -399,7 +403,7 @@ export class PowerShellExecutor {
   // ─── Helper methods ─────────────────────────────────────────────
 
   async refreshCwd(): Promise<void> {
-    const cdResult = await this.device.executeCommand('cd');
+    const cdResult = await this.device.executeCmdCommand('cd');
     if (cdResult && !cdResult.includes('not recognized')) {
       this.cwd = cdResult.trim();
     }
@@ -427,7 +431,7 @@ export class PowerShellExecutor {
       else if (!path) { path = args[i]; }
     }
     if (path && value) {
-      return await this.device.executeCommand(`echo ${value} > ${path}`);
+      return await this.device.executeCmdCommand(`echo ${value} > ${path}`);
     }
     return '';
   }
@@ -441,9 +445,9 @@ export class PowerShellExecutor {
       else if (!args[i].startsWith('-') && !path) { path = args[i]; }
     }
     if (itemType.toLowerCase() === 'directory') {
-      return await this.device.executeCommand('mkdir ' + path);
+      return await this.device.executeCmdCommand('mkdir ' + path);
     }
-    return await this.device.executeCommand('echo. > ' + path);
+    return await this.device.executeCmdCommand('echo. > ' + path);
   }
 
   private async handleTestConnection(args: string[]): Promise<string> {
@@ -456,7 +460,7 @@ export class PowerShellExecutor {
     if (!target) return "Test-Connection : Parameter 'ComputerName' is required.";
 
     // Execute the underlying ping to get results
-    const pingOutput = await this.device.executeCommand(`ping -n ${count} ${target}`);
+    const pingOutput = await this.device.executeCmdCommand(`ping -n ${count} ${target}`);
 
     // Transform CMD ping output to PS Test-Connection table format
     return this.formatTestConnection(pingOutput, target);
@@ -734,7 +738,7 @@ export class PowerShellExecutor {
     }
     if (!filePath) return "Out-File : Cannot bind argument to parameter 'FilePath' because it is an empty string.";
     // Out-File with no pipeline input creates empty file
-    return await this.device.executeCommand(`echo. > ${filePath}`);
+    return await this.device.executeCmdCommand(`echo. > ${filePath}`);
   }
 
   private async handleAddContent(args: string[]): Promise<string> {
@@ -746,7 +750,7 @@ export class PowerShellExecutor {
     }
     if (!filePath) return "Add-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
     if (value) {
-      return await this.device.executeCommand(`echo ${value} >> ${filePath}`);
+      return await this.device.executeCmdCommand(`echo ${value} >> ${filePath}`);
     }
     return '';
   }
@@ -834,7 +838,7 @@ export class PowerShellExecutor {
   private async executeFallback(cmdline: string): Promise<string> {
     const cmd = cmdline.split(/\s+/)[0];
     try {
-      const result = await this.device.executeCommand(cmdline);
+      const result = await this.device.executeCmdCommand(cmdline);
       if (result.includes('not recognized')) {
         return `${cmd} : The term '${cmd}' is not recognized as the name of a cmdlet, function, script file, or operable\nprogram. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.\nAt line:1 char:1\n+ ${cmdline}\n+ ${'~'.repeat(cmdline.length)}\n    + CategoryInfo          : ObjectNotFound: (${cmd}:String) [], CommandNotFoundException\n    + FullyQualifiedErrorId : CommandNotFoundException`;
       }

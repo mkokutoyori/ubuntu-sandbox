@@ -1,10 +1,12 @@
 /**
  * WindowsTerminalSession — Windows CMD + PowerShell terminal model.
  *
+ * PowerShell is managed as a subshell of cmd.exe at the device level
+ * (WindowsPC). This session delegates shell mode management, prompt
+ * generation, and command routing entirely to the device.
+ *
  * Features:
- *   - Dual-mode: CMD and PowerShell
- *   - Shell nesting (PowerShell from CMD, CMD from PowerShell, exit to return)
- *   - PowerShell cmdlet execution via PowerShellExecutor
+ *   - Shell nesting handled by device (PowerShell from CMD, CMD from PowerShell, exit to return)
  *   - Tab completion (PS cmdlets + device file paths)
  */
 
@@ -14,12 +16,8 @@ import {
 } from './TerminalSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInput, completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
-import { PowerShellExecutor, PS_BANNER, PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
-
-interface ShellEntry {
-  type: 'cmd' | 'powershell';
-  cwd: string;
-}
+import { PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
+import type { WindowsPC } from '@/network/devices/WindowsPC';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -35,31 +33,31 @@ const WINDOWS_THEME: TerminalTheme = {
 };
 
 export class WindowsTerminalSession extends TerminalSession {
-  shellMode: 'cmd' | 'powershell' = 'cmd';
-  shellStack: ShellEntry[] = [];
-  currentPrompt: string = 'C:\\Users\\User>';
-  psCwd: string = 'C:\\Users\\User';
   bannerCleared: boolean = false;
   tabSuggestions: string[] | null = null;
 
   private readonly _flowFormatter = new PlainOutputFormatter();
-  private psExecutor: PowerShellExecutor;
   private _onRequestClose?: () => void;
   private _onShellModeChange?: (mode: 'cmd' | 'powershell') => void;
 
+  /** Typed accessor for the underlying WindowsPC device. */
+  private get winDevice(): WindowsPC { return this.device as WindowsPC; }
+
   constructor(id: string, device: Equipment) {
     super(id, device);
-    this.psExecutor = new PowerShellExecutor(device as any);
   }
 
   getSessionType(): SessionType { return 'windows'; }
   getTheme(): TerminalTheme { return WINDOWS_THEME; }
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  /** Shell mode is read from the device. */
+  get shellMode(): 'cmd' | 'powershell' { return this.winDevice.getShellMode(); }
+  /** Shell stack is read from the device. */
+  get shellStack() { return this.winDevice.getShellStack(); }
+
   getPrompt(): string {
-    return this.shellMode === 'powershell'
-      ? `PS ${this.psCwd}> `
-      : this.currentPrompt;
+    return this.winDevice.getPromptString();
   }
 
   getInfoBarContent() {
@@ -138,49 +136,59 @@ export class WindowsTerminalSession extends TerminalSession {
 
     if (!trimmed) return;
 
-    // Handle exit
+    // Handle exit — delegates to device shell stack
     if (trimmed.toLowerCase() === 'exit') {
-      if (!this.exitCurrentShell()) {
+      if (!this.winDevice.exitCurrentShell()) {
+        // No parent shell — close the terminal
         this._onRequestClose?.();
+      } else {
+        this._onShellModeChange?.(this.winDevice.getShellMode());
       }
-      return;
-    }
-
-    this.pushHistory(trimmed);
-
-    if (this.shellMode === 'cmd') {
-      await this.executeCmdCommand(trimmed);
-    } else {
-      await this.executePsCommand(trimmed);
-    }
-  }
-
-  private async executeCmdCommand(trimmed: string): Promise<void> {
-    const lower = trimmed.toLowerCase();
-
-    // Detect PowerShell launch
-    if (lower === 'powershell' || lower === 'powershell.exe' || lower === 'pwsh' || lower === 'pwsh.exe') {
-      this.enterPowerShell();
-      return;
-    }
-
-    // cls
-    if (lower === 'cls') {
-      this.lines = [];
-      this.bannerCleared = true;
-      await this.refreshPrompt();
       this.notify();
       return;
     }
 
-    // Execute on device (with timeout + device-online guard)
+    this.pushHistory(trimmed);
+    // Share history with the device so PS Get-History works
+    this.winDevice.setCommandHistory(this.history);
+
+    const currentMode = this.winDevice.getShellMode();
+
+    // Detect shell transitions (handled at session level for banner display)
+    const lower = trimmed.toLowerCase();
+
+    if (currentMode === 'cmd' && (lower === 'powershell' || lower === 'powershell.exe' || lower === 'pwsh' || lower === 'pwsh.exe')) {
+      const banner = this.winDevice.enterPowerShell();
+      const bannerLines = banner.split('\n');
+      for (const line of bannerLines) {
+        this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
+      }
+      this._onShellModeChange?.('powershell');
+      this.notify();
+      return;
+    }
+
+    if (currentMode === 'powershell' && (lower === 'cmd' || lower === 'cmd.exe')) {
+      const banner = this.winDevice.enterCmd();
+      this.addMultiLine(banner);
+      this._onShellModeChange?.('cmd');
+      this.notify();
+      return;
+    }
+
+    // cls / clear-host — handled at session level (screen clear)
+    if (lower === 'cls' || (currentMode === 'powershell' && (lower === 'clear-host' || lower === 'clear'))) {
+      this.lines = [];
+      this.bannerCleared = true;
+      this.notify();
+      return;
+    }
+
+    // All other commands — delegate to device
     try {
       const result = await this.executeOnDevice(trimmed);
       if (result !== undefined && result !== null && result !== '') {
         this.addMultiLine(result);
-      }
-      if (lower.startsWith('cd ') || lower.startsWith('cd\\') || lower === 'cd' || lower.startsWith('chdir')) {
-        await this.refreshPrompt();
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
@@ -192,53 +200,6 @@ export class WindowsTerminalSession extends TerminalSession {
       } else {
         this.addLine(`Error: ${err}`, 'error');
       }
-    }
-  }
-
-  private async executePsCommand(trimmed: string): Promise<void> {
-    const lower = trimmed.toLowerCase();
-
-    // Detect CMD launch from PS
-    if (lower === 'cmd' || lower === 'cmd.exe') {
-      this.shellStack.push({ type: 'powershell', cwd: this.currentPrompt });
-      this.shellMode = 'cmd';
-      this._onShellModeChange?.('cmd');
-      this.addMultiLine('Microsoft Windows [Version 10.0.22631.6649]\n(c) Microsoft Corporation. All rights reserved.');
-      this.notify();
-      return;
-    }
-
-    // Clear-Host / cls / clear
-    if (lower === 'clear-host' || lower === 'cls' || lower === 'clear') {
-      this.lines = [];
-      this.bannerCleared = true;
-      this.notify();
-      return;
-    }
-
-    // Execute PowerShell cmdlet
-    this.psExecutor.setCwd(this.psCwd);
-    this.psExecutor.setHistory(this.history);
-    const result = await this.psExecutor.execute(trimmed);
-    const newCwd = this.psExecutor.getCwd();
-    if (newCwd !== this.psCwd) {
-      this.psCwd = newCwd;
-      this.currentPrompt = newCwd + '>';
-    }
-
-    if (result !== null && result !== undefined && result !== '') {
-      this.addMultiLine(result);
-    }
-
-    // Update PS cwd after location changes
-    if (lower.startsWith('set-location') || lower.startsWith('sl ') || lower.startsWith('cd ') || lower === 'cd') {
-      try {
-        const cdResult = await this.executeOnDevice('cd');
-        if (cdResult && !cdResult.includes('not recognized')) {
-          this.psCwd = cdResult.trim();
-          this.currentPrompt = cdResult.trim() + '>';
-        }
-      } catch { /* ignore — cwd refresh is best-effort */ }
     }
 
     this.notify();
@@ -252,50 +213,11 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  // ── Shell nesting ───────────────────────────────────────────────
-
-  private enterPowerShell(): void {
-    this.shellStack.push({ type: this.shellMode, cwd: this.currentPrompt });
-    this.shellMode = 'powershell';
-    this._onShellModeChange?.('powershell');
-    const bannerLines = PS_BANNER.split('\n');
-    for (const line of bannerLines) {
-      this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
-    }
-    this.notify();
-  }
-
-  private exitCurrentShell(): boolean {
-    if (this.shellStack.length > 0) {
-      const prev = this.shellStack.pop()!;
-      this.shellMode = prev.type;
-      this.currentPrompt = prev.cwd;
-      this._onShellModeChange?.(prev.type);
-      this.notify();
-      return true;
-    }
-    return false;
-  }
-
-  // ── Prompt refresh ──────────────────────────────────────────────
-
-  private async refreshPrompt(): Promise<void> {
-    try {
-      const cdResult = await this.executeOnDevice('cd');
-      if (cdResult && !cdResult.includes('not recognized')) {
-        const cwd = cdResult.trim();
-        this.currentPrompt = cwd + '>';
-        this.psCwd = cwd;
-      }
-    } catch { /* ignore — prompt refresh is best-effort */ }
-    this.notify();
-  }
-
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(): void {
     // PowerShell cmdlet completion (first word only)
-    if (this.shellMode === 'powershell') {
+    if (this.winDevice.getShellMode() === 'powershell') {
       const parts = this.input.trimStart().split(/\s+/);
       if (parts.length <= 1) {
         const prefix = (parts[0] || '').toLowerCase();
