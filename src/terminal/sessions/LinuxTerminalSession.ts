@@ -461,20 +461,28 @@ export class LinuxTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
-      const result = this.activeSubShell.processLine(line);
+      const maybePromise = this.activeSubShell.processLine(line);
 
-      // Handle clear screen signal from sub-shell
-      if (result.clearScreen) {
-        this.clear();
+      const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult) => {
+        // Handle clear screen signal from sub-shell
+        if (result.clearScreen) {
+          this.clear();
+        }
+
+        for (const outputLine of result.output) this.addLine(outputLine);
+
+        if (result.exit) {
+          this.exitSubShell();
+          return;
+        }
+        this.notify();
+      };
+
+      if (maybePromise instanceof Promise) {
+        maybePromise.then(applyResult);
+      } else {
+        applyResult(maybePromise);
       }
-
-      for (const outputLine of result.output) this.addLine(outputLine);
-
-      if (result.exit) {
-        this.exitSubShell();
-        return true;
-      }
-      this.notify();
       return true;
     }
 

@@ -10,10 +10,8 @@
  *   - File commands in WinFileCommands.ts + WinDir.ts
  *   - WindowsPC orchestrates both via context objects
  *
- * PowerShell is managed as a subshell of cmd.exe:
- *   - Typing "powershell" enters PowerShell mode (pushes cmd onto shell stack)
- *   - Typing "exit" in PowerShell returns to the parent cmd shell
- *   - Shell nesting is supported (cmd → PS → cmd → PS → …)
+ * PowerShell is implemented as a sub-shell (ISubShell) at the terminal
+ * session level, not at the device level. This device only handles cmd.exe.
  */
 
 import { EndHost, PingResult } from './EndHost';
@@ -38,11 +36,6 @@ import {
   cmdAttrib, cmdFind, cmdFindstr, cmdWhere, cmdMore, cmdFc,
   cmdXcopy, cmdSort,
 } from './windows/WinFileCommands';
-import { PowerShellExecutor, PS_BANNER } from './windows/PowerShellExecutor';
-
-export interface ShellStackEntry {
-  type: 'cmd' | 'powershell';
-}
 
 export class WindowsPC extends EndHost {
   protected readonly defaultTTL = 128;
@@ -63,21 +56,11 @@ export class WindowsPC extends EndHost {
   /** Primary DNS suffix (set via netsh dnsclient set global) */
   private dnsSuffix: string = '';
 
-  /** Current shell mode (cmd or powershell) */
-  private shellMode: 'cmd' | 'powershell' = 'cmd';
-  /** Shell nesting stack — tracks parent shells when entering a subshell */
-  private shellStack: ShellStackEntry[] = [];
-  /** PowerShell executor — handles PS cmdlet dispatch */
-  private psExecutor: PowerShellExecutor;
-  /** Command history (shared, set by terminal session) */
-  private commandHistory: string[] = [];
-
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     this.initEnv();
-    this.psExecutor = new PowerShellExecutor(this as any);
   }
 
   private createPorts(): void {
@@ -105,77 +88,22 @@ export class WindowsPC extends EndHost {
     this.env.set('NUMBER_OF_PROCESSORS', '4');
   }
 
-  // ─── Shell mode management ─────────────────────────────────────
-
-  getShellMode(): 'cmd' | 'powershell' { return this.shellMode; }
-  getShellStack(): ShellStackEntry[] { return this.shellStack; }
-
-  setCommandHistory(history: string[]): void { this.commandHistory = history; }
-
-  /**
-   * Get the prompt string reflecting the current shell mode and cwd.
-   */
-  getPromptString(): string {
-    if (this.shellMode === 'powershell') {
-      return `PS ${this.cwd}> `;
-    }
-    return `${this.cwd}>`;
-  }
-
-  /**
-   * Enter PowerShell subshell — pushes current cmd shell onto the stack.
-   * Returns the PowerShell banner text for display.
-   */
-  enterPowerShell(): string {
-    this.shellStack.push({ type: this.shellMode });
-    this.shellMode = 'powershell';
-    this.psExecutor.setCwd(this.cwd);
-    return PS_BANNER;
-  }
-
-  /**
-   * Enter CMD subshell from PowerShell — pushes PS onto the stack.
-   * Returns the CMD banner text for display.
-   */
-  enterCmd(): string {
-    this.shellStack.push({ type: this.shellMode });
-    this.shellMode = 'cmd';
-    return 'Microsoft Windows [Version 10.0.22631.6649]\n(c) Microsoft Corporation. All rights reserved.';
-  }
-
-  /**
-   * Exit the current subshell, returning to the parent shell.
-   * Returns true if a parent shell was restored, false if already at root.
-   */
-  exitCurrentShell(): boolean {
-    if (this.shellStack.length > 0) {
-      const prev = this.shellStack.pop()!;
-      this.shellMode = prev.type;
-      return true;
-    }
-    return false;
-  }
-
   // ─── Terminal ──────────────────────────────────────────────────
 
   async executeCommand(command: string): Promise<string> {
-    if (!this.isPoweredOn) return 'Device is powered off';
-
-    const trimmed = command.trim();
-    if (!trimmed) return '';
-
-    if (this.shellMode === 'powershell') {
-      return this.executePowerShellCommand(trimmed);
-    }
-    return this.executeCmdCommand(trimmed);
+    return this.executeCmdCommand(command);
   }
 
   /**
    * Execute a command in CMD mode.
-   * Public so PowerShellExecutor can delegate native commands (ipconfig, ping, etc.)
-   * directly to cmd without going through the shell-mode router.
+   * Also used by PowerShellExecutor (via PSDeviceContext) to delegate
+   * native commands (ipconfig, ping, cd, etc.) directly to cmd.
    */
   async executeCmdCommand(trimmed: string): Promise<string> {
+    if (!this.isPoweredOn) return 'Device is powered off';
+
+    trimmed = trimmed.trim();
+    if (!trimmed) return '';
     // Handle piped commands (but not inside redirects)
     if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
@@ -247,21 +175,6 @@ export class WindowsPC extends EndHost {
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
-  }
-
-  /** Execute a command in PowerShell mode. */
-  private async executePowerShellCommand(trimmed: string): Promise<string> {
-    this.psExecutor.setCwd(this.cwd);
-    this.psExecutor.setHistory(this.commandHistory);
-    const result = await this.psExecutor.execute(trimmed);
-
-    // Sync cwd back from PS executor (Set-Location, cd, etc.)
-    const newCwd = this.psExecutor.getCwd();
-    if (newCwd !== this.cwd) {
-      this.cwd = newCwd;
-    }
-
-    return result ?? '';
   }
 
   // ─── Command Parsing ──────────────────────────────────────────────
