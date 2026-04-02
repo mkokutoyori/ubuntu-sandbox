@@ -9,6 +9,9 @@
  *   - Network commands in Win*.ts modules (WinIpconfig, WinNetsh, etc.)
  *   - File commands in WinFileCommands.ts + WinDir.ts
  *   - WindowsPC orchestrates both via context objects
+ *
+ * PowerShell is implemented as a sub-shell (ISubShell) at the terminal
+ * session level, not at the device level. This device only handles cmd.exe.
  */
 
 import { EndHost, PingResult } from './EndHost';
@@ -88,11 +91,19 @@ export class WindowsPC extends EndHost {
   // ─── Terminal ──────────────────────────────────────────────────
 
   async executeCommand(command: string): Promise<string> {
+    return this.executeCmdCommand(command);
+  }
+
+  /**
+   * Execute a command in CMD mode.
+   * Also used by PowerShellExecutor (via PSDeviceContext) to delegate
+   * native commands (ipconfig, ping, cd, etc.) directly to cmd.
+   */
+  async executeCmdCommand(trimmed: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
 
-    const trimmed = command.trim();
+    trimmed = trimmed.trim();
     if (!trimmed) return '';
-
     // Handle piped commands (but not inside redirects)
     if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
