@@ -13,11 +13,19 @@
 import type { WindowsFileSystem, WinDirEntry } from './WindowsFileSystem';
 import type { Port } from '../../hardware/Port';
 import type { WindowsUserManager } from './WindowsUserManager';
+import type { WindowsServiceManager } from './WindowsServiceManager';
+import type { WindowsProcessManager } from './WindowsProcessManager';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
   type PSObject, type PipelineInput,
 } from './PSPipeline';
+import { psGetProcess, psStopProcess, buildDynamicProcessObjects } from './PSProcessCmdlets';
+import {
+  psGetService, psStartService, psStopService, psRestartService,
+  psSetService, psSuspendService, psResumeService,
+  psNewService, psRemoveService, buildDynamicServiceObjects,
+} from './PSServiceCmdlets';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -54,6 +62,10 @@ export const PS_CMDLETS_LIST = [
   'Get-LocalGroup', 'New-LocalGroup', 'Remove-LocalGroup',
   'Add-LocalGroupMember', 'Remove-LocalGroupMember', 'Get-LocalGroupMember',
   'Get-Acl',
+  // Service/Process management
+  'Start-Service', 'Stop-Service', 'Restart-Service', 'Set-Service',
+  'Suspend-Service', 'Resume-Service', 'New-Service', 'Remove-Service',
+  'Stop-Process',
   // Aliases
   'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'echo', 'cls', 'clear',
   'cp', 'mv', 'rm', 'del', 'ren', 'mkdir', 'rmdir',
@@ -86,6 +98,10 @@ export interface PSDeviceContext {
   isDHCPConfigured(ifName: string): boolean;
   /** Get the user manager for access control cmdlets */
   getUserManager(): WindowsUserManager;
+  /** Get the service manager for service lifecycle cmdlets */
+  getServiceManager(): WindowsServiceManager;
+  /** Get the process manager for process management cmdlets */
+  getProcessManager(): WindowsProcessManager;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -178,10 +194,10 @@ export class PowerShellExecutor {
     switch (cmdLower) {
       case 'get-process':
       case 'gps':
-        return buildProcessObjects();
+        return buildDynamicProcessObjects(this.buildPSProcessCtx()) as PSObject[];
       case 'get-service':
       case 'gsv':
-        return buildServiceObjects();
+        return buildDynamicServiceObjects(this.buildPSServiceCtx()) as PSObject[];
       case 'get-command':
       case 'gcm':
         return buildCommandObjects();
@@ -292,7 +308,12 @@ export class PowerShellExecutor {
 
     // Get-Process / gps / ps
     if (cmdLower === 'get-process' || cmdLower === 'gps') {
-      return this.formatGetProcess();
+      return psGetProcess(this.buildPSProcessCtx(), args);
+    }
+
+    // Stop-Process / spps / kill
+    if (cmdLower === 'stop-process' || cmdLower === 'spps' || cmdLower === 'kill') {
+      return psStopProcess(this.buildPSProcessCtx(), args);
     }
 
     // Get-Help
@@ -347,8 +368,14 @@ export class PowerShellExecutor {
     }
 
     // Native commands that work in both CMD and PS
-    if (['ipconfig', 'ping', 'netsh', 'tracert', 'route', 'arp', 'systeminfo', 'ver'].includes(cmdLower)) {
+    if (['ipconfig', 'ping', 'netsh', 'tracert', 'route', 'arp', 'systeminfo', 'ver',
+         'tasklist', 'taskkill', 'sc', 'sc.exe'].includes(cmdLower)) {
       return await this.device.executeCmdCommand(cmdLower + ' ' + args.join(' '));
+    }
+
+    // net start/stop also works in PS
+    if (cmdLower === 'net' && args.length > 0) {
+      return await this.device.executeCmdCommand('net ' + args.join(' '));
     }
 
     // Get-ExecutionPolicy / Set-ExecutionPolicy
@@ -357,7 +384,47 @@ export class PowerShellExecutor {
 
     // Get-Service / gsv
     if (cmdLower === 'get-service' || cmdLower === 'gsv') {
-      return this.formatGetService();
+      return psGetService(this.buildPSServiceCtx(), args);
+    }
+
+    // Start-Service / sasv
+    if (cmdLower === 'start-service' || cmdLower === 'sasv') {
+      return psStartService(this.buildPSServiceCtx(), args);
+    }
+
+    // Stop-Service / spsv
+    if (cmdLower === 'stop-service' || cmdLower === 'spsv') {
+      return psStopService(this.buildPSServiceCtx(), args);
+    }
+
+    // Restart-Service
+    if (cmdLower === 'restart-service') {
+      return psRestartService(this.buildPSServiceCtx(), args);
+    }
+
+    // Set-Service
+    if (cmdLower === 'set-service') {
+      return psSetService(this.buildPSServiceCtx(), args);
+    }
+
+    // Suspend-Service
+    if (cmdLower === 'suspend-service') {
+      return psSuspendService(this.buildPSServiceCtx(), args);
+    }
+
+    // Resume-Service
+    if (cmdLower === 'resume-service') {
+      return psResumeService(this.buildPSServiceCtx(), args);
+    }
+
+    // New-Service
+    if (cmdLower === 'new-service') {
+      return psNewService(this.buildPSServiceCtx(), args);
+    }
+
+    // Remove-Service
+    if (cmdLower === 'remove-service') {
+      return psRemoveService(this.buildPSServiceCtx(), args);
     }
 
     // Get-WmiObject / gwmi / Get-CimInstance
@@ -488,6 +555,24 @@ export class PowerShellExecutor {
     if (cdResult && !cdResult.includes('not recognized')) {
       this.cwd = cdResult.trim();
     }
+  }
+
+  private buildPSProcessCtx() {
+    const mgr = this.device.getUserManager();
+    return {
+      processManager: this.device.getProcessManager(),
+      currentUser: mgr.currentUser,
+      isAdmin: mgr.isCurrentUserAdmin(),
+    };
+  }
+
+  private buildPSServiceCtx() {
+    const mgr = this.device.getUserManager();
+    return {
+      serviceManager: this.device.getServiceManager(),
+      processManager: this.device.getProcessManager(),
+      isAdmin: mgr.isCurrentUserAdmin(),
+    };
   }
 
   private resolveEnvVar(varName: string): string {

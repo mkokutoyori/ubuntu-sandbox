@@ -21,6 +21,8 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { WindowsUserManager } from './windows/WindowsUserManager';
+import { WindowsServiceManager } from './windows/WindowsServiceManager';
+import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
@@ -32,6 +34,10 @@ import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
 import { cmdNetUser, cmdNetLocalgroup } from './windows/WinNetUser';
 import { cmdIcacls } from './windows/WinIcacls';
+import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
+import { cmdTaskkill } from './windows/WinTaskkill';
+import { cmdSc } from './windows/WinSc';
+import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { cmdDir } from './windows/WinDir';
 import {
@@ -61,12 +67,18 @@ export class WindowsPC extends EndHost {
   private dnsSuffix: string = '';
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
+  /** Service manager (service lifecycle, dependencies) */
+  private svcMgr: WindowsServiceManager;
+  /** Process manager (process table, PIDs, kill, tree) */
+  private procMgr: WindowsProcessManager;
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     this.userMgr = new WindowsUserManager();
+    this.svcMgr = new WindowsServiceManager();
+    this.procMgr = new WindowsProcessManager();
     this.initEnv();
   }
 
@@ -149,7 +161,13 @@ export class WindowsPC extends EndHost {
       case 'erase':   return cmdDel(fileCtx, args);
       case 'tree':    return cmdTree(fileCtx, args);
       case 'set':     return cmdSet(fileCtx, args);
-      case 'tasklist': return cmdTasklist(fileCtx);
+      case 'tasklist': return cmdTasklistDynamic(
+        { processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
+      case 'taskkill': return cmdTaskkill(
+        { processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
+      case 'sc':
+      case 'sc.exe': return cmdSc(
+        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
       case 'netstat': return cmdNetstat(fileCtx);
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args);
@@ -169,13 +187,16 @@ export class WindowsPC extends EndHost {
       case 'runas':   return this.cmdRunas(args);
     }
 
-    // net user / net localgroup
+    // net user / net localgroup / net start / net stop
     if (cmd === 'net' && args.length > 0) {
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
       const netCtx2 = { hostname: this.hostname, userManager: this.userMgr };
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
+      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
+      if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
     }
 
     // Network commands (use network context)
@@ -546,6 +567,12 @@ export class WindowsPC extends EndHost {
 
   /** Get the user manager (for PowerShellExecutor and other integrations) */
   getUserManager(): WindowsUserManager { return this.userMgr; }
+
+  /** Get the service manager (for PowerShellExecutor and other integrations) */
+  getServiceManager(): WindowsServiceManager { return this.svcMgr; }
+
+  /** Get the process manager (for PowerShellExecutor and other integrations) */
+  getProcessManager(): WindowsProcessManager { return this.procMgr; }
 
   /** runas command — simplified non-interactive version */
   private cmdRunas(args: string[]): string {
