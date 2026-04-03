@@ -6,9 +6,17 @@
  *   - Case-insensitive paths
  *   - Backslash path separators
  *   - Windows file attributes (archive, hidden, system, read-only)
+ *   - NTFS-style ACLs (owner + access control entries)
  */
 
 export type WinFileType = 'file' | 'directory';
+
+/** Access Control Entry — one permission rule in a DACL */
+export interface WinACE {
+  principal: string;    // e.g. "BUILTIN\\Administrators", "User", "Guest"
+  type: 'allow' | 'deny';
+  permissions: string[];  // e.g. ['FullControl'], ['Read', 'Write']
+}
 
 export interface WinFSEntry {
   name: string;                         // original-case name
@@ -19,6 +27,8 @@ export interface WinFSEntry {
   mtime: Date;
   ctime: Date;
   attributes: Set<string>;             // 'archive' | 'hidden' | 'system' | 'readonly'
+  owner: string;                        // owner principal (e.g. "BUILTIN\\Administrators")
+  acl: WinACE[];                        // discretionary ACL
 }
 
 export interface WinDirEntry {
@@ -199,6 +209,8 @@ export class WindowsFileSystem {
       mtime: now,
       ctime: now,
       attributes: new Set(),
+      owner: 'BUILTIN\\Administrators',
+      acl: [],
     };
   }
 
@@ -633,5 +645,44 @@ export class WindowsFileSystem {
 
   getVolumeSerialNumber(): string {
     return 'A4E2-1B3F';
+  }
+
+  // ─── ACL Operations ─────────────────────────────────────────────
+
+  getACL(absPath: string): WinACE[] {
+    const entry = this.resolve(absPath);
+    if (!entry) return [];
+    return [...entry.acl];
+  }
+
+  getOwner(absPath: string): string {
+    const entry = this.resolve(absPath);
+    return entry?.owner ?? 'BUILTIN\\Administrators';
+  }
+
+  setOwner(absPath: string, owner: string): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    entry.owner = owner;
+    return true;
+  }
+
+  addACE(absPath: string, ace: WinACE): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    // Remove existing ACE for same principal+type before adding
+    entry.acl = entry.acl.filter(
+      a => !(a.principal.toLowerCase() === ace.principal.toLowerCase() && a.type === ace.type)
+    );
+    entry.acl.push(ace);
+    return true;
+  }
+
+  removeACEs(absPath: string, principal: string): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    const before = entry.acl.length;
+    entry.acl = entry.acl.filter(a => a.principal.toLowerCase() !== principal.toLowerCase());
+    return entry.acl.length !== before;
   }
 }

@@ -12,6 +12,7 @@
 
 import type { WindowsFileSystem, WinDirEntry } from './WindowsFileSystem';
 import type { Port } from '../../hardware/Port';
+import type { WindowsUserManager } from './WindowsUserManager';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
@@ -47,6 +48,12 @@ export const PS_CMDLETS_LIST = [
   'Set-ExecutionPolicy', 'Get-Service', 'Get-CimInstance', 'Resolve-DnsName',
   'Select-String', 'Measure-Object', 'Sort-Object', 'Select-Object',
   'Format-Table', 'Format-List', 'Where-Object', 'ForEach-Object',
+  // User/Group/ACL management
+  'Get-LocalUser', 'New-LocalUser', 'Set-LocalUser', 'Remove-LocalUser',
+  'Enable-LocalUser', 'Disable-LocalUser',
+  'Get-LocalGroup', 'New-LocalGroup', 'Remove-LocalGroup',
+  'Add-LocalGroupMember', 'Remove-LocalGroupMember', 'Get-LocalGroupMember',
+  'Get-Acl',
   // Aliases
   'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'echo', 'cls', 'clear',
   'cp', 'mv', 'rm', 'del', 'ren', 'mkdir', 'rmdir',
@@ -77,6 +84,8 @@ export interface PSDeviceContext {
   getDnsServers(ifName: string): string[];
   /** Check if interface uses DHCP */
   isDHCPConfigured(ifName: string): boolean;
+  /** Get the user manager for access control cmdlets */
+  getUserManager(): WindowsUserManager;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -396,6 +405,78 @@ export class PowerShellExecutor {
       return this.handleJoinPath(args);
     }
 
+    // ─── User/Group/ACL Management Cmdlets ──────────────────────
+
+    // whoami (also works in PS)
+    if (cmdLower === 'whoami') {
+      return await this.device.executeCmdCommand('whoami ' + args.join(' '));
+    }
+
+    // Get-LocalUser
+    if (cmdLower === 'get-localuser') {
+      return this.handleGetLocalUser(args);
+    }
+
+    // New-LocalUser
+    if (cmdLower === 'new-localuser') {
+      return this.handleNewLocalUser(args);
+    }
+
+    // Set-LocalUser
+    if (cmdLower === 'set-localuser') {
+      return this.handleSetLocalUser(args);
+    }
+
+    // Remove-LocalUser
+    if (cmdLower === 'remove-localuser') {
+      return this.handleRemoveLocalUser(args);
+    }
+
+    // Enable-LocalUser
+    if (cmdLower === 'enable-localuser') {
+      return this.handleEnableLocalUser(args);
+    }
+
+    // Disable-LocalUser
+    if (cmdLower === 'disable-localuser') {
+      return this.handleDisableLocalUser(args);
+    }
+
+    // Get-LocalGroup
+    if (cmdLower === 'get-localgroup') {
+      return this.handleGetLocalGroup(args);
+    }
+
+    // New-LocalGroup
+    if (cmdLower === 'new-localgroup') {
+      return this.handleNewLocalGroup(args);
+    }
+
+    // Remove-LocalGroup
+    if (cmdLower === 'remove-localgroup') {
+      return this.handleRemoveLocalGroup(args);
+    }
+
+    // Add-LocalGroupMember
+    if (cmdLower === 'add-localgroupmember') {
+      return this.handleAddLocalGroupMember(args);
+    }
+
+    // Remove-LocalGroupMember
+    if (cmdLower === 'remove-localgroupmember') {
+      return this.handleRemoveLocalGroupMember(args);
+    }
+
+    // Get-LocalGroupMember
+    if (cmdLower === 'get-localgroupmember') {
+      return this.handleGetLocalGroupMember(args);
+    }
+
+    // Get-Acl
+    if (cmdLower === 'get-acl') {
+      return this.handleGetAcl(args);
+    }
+
     // Fallback: try device command
     return this.executeFallback(cmdline);
   }
@@ -410,9 +491,10 @@ export class PowerShellExecutor {
   }
 
   private resolveEnvVar(varName: string): string {
+    const currentUser = this.device.getUserManager().currentUser;
     const envMap: Record<string, string> = {
-      'USERNAME': 'User', 'COMPUTERNAME': this.device.getHostname(),
-      'USERPROFILE': 'C:\\Users\\User', 'SYSTEMROOT': 'C:\\Windows',
+      'USERNAME': currentUser, 'COMPUTERNAME': this.device.getHostname(),
+      'USERPROFILE': `C:\\Users\\${currentUser}`, 'SYSTEMROOT': 'C:\\Windows',
       'WINDIR': 'C:\\Windows', 'TEMP': 'C:\\Users\\User\\AppData\\Local\\Temp',
       'PATH': 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
       'HOMEDRIVE': 'C:', 'HOMEPATH': '\\Users\\User',
@@ -833,6 +915,300 @@ export class PowerShellExecutor {
     if (!childPath) return parentPath;
     const sep = parentPath.endsWith('\\') ? '' : '\\';
     return `${parentPath}${sep}${childPath}`;
+  }
+
+  // ─── User/Group/ACL Management Cmdlet Handlers ─────────────────
+
+  /**
+   * Reassemble tokens that were split mid-quote, then parse PS-style args.
+   * e.g. ['-Description', '"Updated', 'desc"'] → {description: 'Updated desc'}
+   */
+  private parsePSArgs(args: string[]): Map<string, string> {
+    // First: reassemble quoted tokens
+    const merged: string[] = [];
+    let buf = '';
+    let inQuote = false;
+    for (const tok of args) {
+      if (inQuote) {
+        buf += ' ' + tok;
+        if (tok.endsWith('"') || tok.endsWith("'")) {
+          inQuote = false;
+          merged.push(buf);
+          buf = '';
+        }
+      } else if ((tok.startsWith('"') && !tok.endsWith('"')) || (tok.startsWith("'") && !tok.endsWith("'"))) {
+        inQuote = true;
+        buf = tok;
+      } else {
+        merged.push(tok);
+      }
+    }
+    if (buf) merged.push(buf);
+
+    const result = new Map<string, string>();
+    const positional: string[] = [];
+    for (let i = 0; i < merged.length; i++) {
+      if (merged[i].startsWith('-') && i + 1 < merged.length && !merged[i + 1].startsWith('-')) {
+        result.set(merged[i].substring(1).toLowerCase(), merged[i + 1].replace(/^["']|["']$/g, ''));
+        i++;
+      } else if (merged[i].startsWith('-')) {
+        result.set(merged[i].substring(1).toLowerCase(), 'true');
+      } else {
+        positional.push(merged[i].replace(/^["']|["']$/g, ''));
+      }
+    }
+    if (positional.length > 0) result.set('_positional', positional[0]);
+    return result;
+  }
+
+  private handleGetLocalUser(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional');
+
+    if (name) {
+      const user = mgr.getUser(name);
+      if (!user) return `Get-LocalUser : User '${name}' was not found.`;
+      const lines: string[] = [''];
+      lines.push('Name'.padEnd(24) + 'Enabled'.padEnd(10) + 'Description');
+      lines.push('----'.padEnd(24) + '-------'.padEnd(10) + '-----------');
+      lines.push(
+        user.name.padEnd(24) +
+        (user.enabled ? 'True' : 'False').padEnd(10) +
+        user.description
+      );
+      if (user.fullName) lines.push(`\nFullName: ${user.fullName}`);
+      return lines.join('\n');
+    }
+
+    const users = mgr.getAllUsers();
+    const lines: string[] = [''];
+    lines.push('Name'.padEnd(24) + 'Enabled'.padEnd(10) + 'Description');
+    lines.push('----'.padEnd(24) + '-------'.padEnd(10) + '-----------');
+    for (const u of users) {
+      lines.push(
+        u.name.padEnd(24) +
+        (u.enabled ? 'True' : 'False').padEnd(10) +
+        u.description
+      );
+    }
+    return lines.join('\n');
+  }
+
+  private handleNewLocalUser(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'New-LocalUser : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    const password = params.get('password') || '';
+    const description = params.get('description') || '';
+    const noPassword = params.has('nopassword');
+
+    if (!name) return "New-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
+
+    const err = mgr.createUser(name, password, { description, noPassword });
+    if (err) {
+      if (err.includes('already exists')) return `New-LocalUser : User '${name}' already exists.`;
+      return `New-LocalUser : ${err}`;
+    }
+    mgr.addGroupMember('Users', name);
+    // Return user summary
+    return this.handleGetLocalUser(['-Name', name]);
+  }
+
+  private handleSetLocalUser(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Set-LocalUser : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    if (!name) return "Set-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
+
+    if (params.has('description')) {
+      const err = mgr.setUserProperty(name, 'description', params.get('description')!);
+      if (err) return `Set-LocalUser : ${err}`;
+    }
+    if (params.has('password')) {
+      const err = mgr.setUserProperty(name, 'password', params.get('password')!);
+      if (err) return `Set-LocalUser : ${err}`;
+    }
+    if (params.has('fullname')) {
+      const err = mgr.setUserProperty(name, 'fullname', params.get('fullname')!);
+      if (err) return `Set-LocalUser : ${err}`;
+    }
+    return '';
+  }
+
+  private handleRemoveLocalUser(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Remove-LocalUser : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    if (!name) return "Remove-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
+
+    const err = mgr.deleteUser(name);
+    if (err) {
+      if (err.includes('could not be found')) return `Remove-LocalUser : User '${name}' was not found.`;
+      if (err.includes('Cannot delete')) return `Remove-LocalUser : ${err}`;
+      return `Remove-LocalUser : ${err}`;
+    }
+    return '';
+  }
+
+  private handleEnableLocalUser(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Enable-LocalUser : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    if (!name) return "Enable-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
+    const err = mgr.enableUser(name);
+    if (err) return `Enable-LocalUser : ${err}`;
+    return '';
+  }
+
+  private handleDisableLocalUser(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Disable-LocalUser : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    if (!name) return "Disable-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
+    const err = mgr.disableUser(name);
+    if (err) return `Disable-LocalUser : ${err}`;
+    return '';
+  }
+
+  private handleGetLocalGroup(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional');
+
+    if (name) {
+      const group = mgr.getGroup(name);
+      if (!group) return `Get-LocalGroup : Group '${name}' was not found.`;
+      const lines: string[] = [''];
+      lines.push('Name'.padEnd(36) + 'Description');
+      lines.push('----'.padEnd(36) + '-----------');
+      lines.push(group.name.padEnd(36) + group.description);
+      return lines.join('\n');
+    }
+
+    const groups = mgr.getAllGroups();
+    const lines: string[] = [''];
+    lines.push('Name'.padEnd(36) + 'Description');
+    lines.push('----'.padEnd(36) + '-----------');
+    for (const g of groups) {
+      lines.push(g.name.padEnd(36) + g.description);
+    }
+    return lines.join('\n');
+  }
+
+  private handleNewLocalGroup(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'New-LocalGroup : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    const description = params.get('description') || '';
+    if (!name) return "New-LocalGroup : Cannot bind argument to parameter 'Name' because it is an empty string.";
+
+    const err = mgr.createGroup(name, description);
+    if (err) return `New-LocalGroup : ${err}`;
+    return this.handleGetLocalGroup(['-Name', name]);
+  }
+
+  private handleRemoveLocalGroup(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Remove-LocalGroup : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    if (!name) return "Remove-LocalGroup : Cannot bind argument to parameter 'Name' because it is an empty string.";
+
+    const err = mgr.deleteGroup(name);
+    if (err) {
+      if (err.includes('Cannot delete')) return `Remove-LocalGroup : ${err}`;
+      return `Remove-LocalGroup : ${err}`;
+    }
+    return '';
+  }
+
+  private handleAddLocalGroupMember(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Add-LocalGroupMember : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const group = params.get('group') || '';
+    const member = params.get('member') || '';
+    if (!group || !member) return "Add-LocalGroupMember : Cannot bind required parameter.";
+
+    const err = mgr.addGroupMember(group, member);
+    if (err) {
+      if (err.includes('was not found')) return `Add-LocalGroupMember : Principal '${member}' was not found.`;
+      if (err.includes('already a member')) return `Add-LocalGroupMember : The specified account name is already a member of the group.`;
+      return `Add-LocalGroupMember : ${err}`;
+    }
+    return '';
+  }
+
+  private handleRemoveLocalGroupMember(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    if (!mgr.isCurrentUserAdmin()) return 'Remove-LocalGroupMember : Access is denied.';
+    const params = this.parsePSArgs(args);
+    const group = params.get('group') || '';
+    const member = params.get('member') || '';
+    if (!group || !member) return "Remove-LocalGroupMember : Cannot bind required parameter.";
+
+    const err = mgr.removeGroupMember(group, member);
+    if (err) return `Remove-LocalGroupMember : ${err}`;
+    return '';
+  }
+
+  private handleGetLocalGroupMember(args: string[]): string {
+    const mgr = this.device.getUserManager();
+    const params = this.parsePSArgs(args);
+    const groupName = params.get('group') || '';
+    if (!groupName) return "Get-LocalGroupMember : Cannot bind required parameter 'Group'.";
+
+    const { members, error } = mgr.getGroupMembers(groupName);
+    if (error) return `Get-LocalGroupMember : ${error}`;
+
+    const lines: string[] = [''];
+    lines.push('ObjectClass'.padEnd(16) + 'Name'.padEnd(30) + 'PrincipalSource');
+    lines.push('-----------'.padEnd(16) + '----'.padEnd(30) + '---------------');
+    for (const m of members) {
+      lines.push('User'.padEnd(16) + m.padEnd(30) + 'Local');
+    }
+    return lines.join('\n');
+  }
+
+  private handleGetAcl(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    const params = this.parsePSArgs(args);
+    const target = params.get('path') || params.get('_positional') || '';
+    if (!target) return "Get-Acl : Cannot bind argument to parameter 'Path' because it is an empty string.";
+
+    const absPath = fs.normalizePath(target, this.cwd);
+    if (!fs.exists(absPath)) return `Get-Acl : Cannot find path '${target}' because it does not exist.`;
+
+    const owner = fs.getOwner(absPath);
+    const acl = fs.getACL(absPath);
+
+    const lines: string[] = [''];
+    lines.push('');
+    lines.push(`    Path: ${absPath}`);
+    lines.push('');
+    lines.push(`Owner  : ${owner}`);
+    lines.push(`Group  : BUILTIN\\Administrators`);
+    lines.push(`Access :`);
+
+    if (acl.length === 0) {
+      lines.push(`         BUILTIN\\Administrators Allow  FullControl`);
+      lines.push(`         BUILTIN\\Users          Allow  ReadAndExecute`);
+      lines.push(`         NT AUTHORITY\\SYSTEM    Allow  FullControl`);
+    } else {
+      for (const ace of acl) {
+        const typeStr = ace.type === 'allow' ? 'Allow' : 'Deny';
+        lines.push(`         ${ace.principal.padEnd(25)} ${typeStr.padEnd(6)} ${ace.permissions.join(', ')}`);
+      }
+    }
+
+    return lines.join('\n');
   }
 
   private async executeFallback(cmdline: string): Promise<string> {
