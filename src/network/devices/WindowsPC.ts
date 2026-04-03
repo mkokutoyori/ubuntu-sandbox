@@ -20,6 +20,7 @@ import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
+import { WindowsUserManager } from './windows/WindowsUserManager';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
@@ -28,6 +29,9 @@ import { cmdArp } from './windows/WinArp';
 import { cmdTracert } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
+import { cmdWhoami } from './windows/WinWhoami';
+import { cmdNetUser, cmdNetLocalgroup } from './windows/WinNetUser';
+import { cmdIcacls } from './windows/WinIcacls';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { cmdDir } from './windows/WinDir';
 import {
@@ -55,11 +59,14 @@ export class WindowsPC extends EndHost {
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
   private dnsSuffix: string = '';
+  /** User and group manager (access control / privileges) */
+  private userMgr: WindowsUserManager;
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    this.userMgr = new WindowsUserManager();
     this.initEnv();
   }
 
@@ -157,6 +164,18 @@ export class WindowsPC extends EndHost {
       case 'ver':     return '\nMicrosoft Windows [Version 10.0.22631.6649]';
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
+      case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
+      case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
+      case 'runas':   return this.cmdRunas(args);
+    }
+
+    // net user / net localgroup
+    if (cmd === 'net' && args.length > 0) {
+      const subCmd = args[0].toLowerCase();
+      const subArgs = args.slice(1);
+      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr };
+      if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
+      if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
     }
 
     // Network commands (use network context)
@@ -512,6 +531,63 @@ export class WindowsPC extends EndHost {
     }
     // Allow specifying server as second argument: nslookup domain server
     return executeNslookup(args, resolverIP);
+  }
+
+  // ─── User / Access Control ──────────────────────────────────────
+
+  /** Switch current user context (for testing & runas) */
+  setCurrentUser(name: string): void {
+    if (this.userMgr.setCurrentUser(name)) {
+      this.env.set('USERNAME', this.userMgr.currentUser);
+      this.env.set('USERPROFILE', `C:\\Users\\${this.userMgr.currentUser}`);
+      this.env.set('HOMEPATH', `\\Users\\${this.userMgr.currentUser}`);
+    }
+  }
+
+  /** Get the user manager (for PowerShellExecutor and other integrations) */
+  getUserManager(): WindowsUserManager { return this.userMgr; }
+
+  /** runas command — simplified non-interactive version */
+  private cmdRunas(args: string[]): string {
+    if (args.length === 0) {
+      return 'RUNAS USAGE:\n\nRUNAS /user:<UserName> program';
+    }
+
+    let userName = '';
+    const cmdParts: string[] = [];
+
+    for (const arg of args) {
+      const lower = arg.toLowerCase();
+      if (lower.startsWith('/user:')) {
+        userName = arg.substring(6);
+      } else {
+        cmdParts.push(arg);
+      }
+    }
+
+    if (!userName) {
+      return 'RUNAS USAGE:\n\nRUNAS /user:<UserName> program';
+    }
+
+    const user = this.userMgr.getUser(userName);
+    if (!user) {
+      return `RUNAS ERROR: The user name "${userName}" is not recognized.`;
+    }
+
+    if (!user.enabled) {
+      return `RUNAS ERROR: The account "${userName}" is disabled.`;
+    }
+
+    if (cmdParts.length === 0) {
+      return 'RUNAS ERROR: No command specified.';
+    }
+
+    // Switch context, run command, (in simulation, stay switched)
+    const prevUser = this.userMgr.currentUser;
+    this.setCurrentUser(user.name);
+    // For simulation, just execute the command as the new user
+    // and return the result (user stays switched for simplicity)
+    return this.executeCmdCommand(cmdParts.join(' ')) as unknown as string;
   }
 
   // ─── OS Info ───────────────────────────────────────────────────
