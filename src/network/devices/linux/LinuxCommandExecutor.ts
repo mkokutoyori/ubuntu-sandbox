@@ -468,6 +468,10 @@ export class LinuxCommandExecutor {
       // Script execution
       case 'bash':
       case 'sh': {
+        if (args[0] === '-c' && args.length > 1) {
+          const result = runScriptContent(args[1], cmd, args.slice(2), (argv) => this.execute(argv.join(' ')));
+          return { output: result.output, exitCode: result.exitCode };
+        }
         if (args.length > 0) {
           const result = runScript(c, args[0], args.slice(1), (argv) => this.execute(argv.join(' ')));
           return { output: result.output, exitCode: result.exitCode };

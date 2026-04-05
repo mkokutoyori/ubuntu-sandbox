@@ -3,6 +3,8 @@
  * Supports files, directories, symlinks, hard links, FIFOs, and special devices.
  */
 
+import { SAMPLE_SCRIPTS } from './SampleScripts';
+
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
 export interface INode {
@@ -50,7 +52,7 @@ export class VirtualFileSystem {
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
-      '/home', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
+      '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
     ];
@@ -165,6 +167,11 @@ export class VirtualFileSystem {
       'chpasswd', 'chage', 'iptables', 'iptables-save', 'iptables-restore'];
     for (const bin of sbinBins) {
       this.createFileAt(`/usr/sbin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
+    }
+
+    // Sample bash scripts for practice
+    for (const script of SAMPLE_SCRIPTS) {
+      this.createFileAt(`/home/scripts/${script.name}`, script.content, script.perms, 0, 0);
     }
   }
 

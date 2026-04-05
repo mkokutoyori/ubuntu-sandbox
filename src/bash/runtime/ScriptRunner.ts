@@ -14,7 +14,7 @@ import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
 import type { INode } from '@/network/devices/linux/VirtualFileSystem';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
-import { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
+import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
 
 export interface ScriptResult {
   output: string;
@@ -54,7 +54,8 @@ export function runScript(
   }
 
   // 4. Execute
-  return runScriptContent(content, scriptPath, scriptArgs, executeCommand, buildEnvVars(ctx));
+  const io = buildIOContext(ctx);
+  return runScriptContent(content, scriptPath, scriptArgs, executeCommand, buildEnvVars(ctx), io);
 }
 
 /**
@@ -67,6 +68,7 @@ export function runScriptContent(
   scriptArgs: string[],
   executeCommand: (args: string[]) => string,
   variables?: Record<string, string>,
+  io?: IOContext,
 ): ScriptResult {
   // Strip shebang
   const source = stripShebang(content);
@@ -83,6 +85,7 @@ export function runScriptContent(
       variables: variables ?? {},
       scriptName,
       positionalArgs: scriptArgs,
+      io,
     });
 
     return interp.execute(ast);
@@ -135,6 +138,21 @@ function stripShebang(content: string): string {
     return newline >= 0 ? content.substring(newline + 1) : '';
   }
   return content;
+}
+
+/** Build an IO context for redirections from a ShellContext. */
+function buildIOContext(ctx: ShellContext): IOContext {
+  return {
+    writeFile(path: string, content: string, append: boolean) {
+      ctx.vfs.writeFile(path, content, ctx.uid, ctx.gid, ctx.umask, append);
+    },
+    readFile(path: string) {
+      return ctx.vfs.readFile(path);
+    },
+    resolvePath(path: string) {
+      return ctx.vfs.normalizePath(path, ctx.cwd);
+    },
+  };
 }
 
 /** Build initial environment variables from ShellContext. */

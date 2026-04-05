@@ -17,9 +17,19 @@ import {
   ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
+import { BashLexer } from '@/bash/lexer/BashLexer';
+import { BashParser } from '@/bash/parser/BashParser';
 
 /** Callback type for executing external (non-builtin) commands. */
 export type ExternalCommandFn = (argv: string[]) => string;
+
+/** IO context for file redirections. */
+export interface IOContext {
+  writeFile(path: string, content: string, append: boolean): void;
+  readFile(path: string): string | null;
+  /** Resolve a path relative to cwd. */
+  resolvePath(path: string): string;
+}
 
 export interface InterpreterOptions {
   /** Execute an external command (e.g., ls, cat). Returns stdout. */
@@ -30,16 +40,20 @@ export interface InterpreterOptions {
   scriptName?: string;
   /** Positional args ($1, $2, ...). */
   positionalArgs?: string[];
+  /** IO context for file redirections. Optional — if missing, redirections are ignored. */
+  io?: IOContext;
 }
 
 export class BashInterpreter {
   env: Environment;
   private executeCommand: ExternalCommandFn;
+  private io: IOContext | null;
   private output: string[] = [];
   private functions: Map<string, Command> = new Map();
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
+    this.io = options.io ?? null;
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -132,6 +146,18 @@ export class BashInterpreter {
   private visitSimpleCommandWithInput(node: SimpleCommand, pipeInput: string): void {
     const cmdExec = (cmd: string) => this.executeCommand(cmd.split(/\s+/));
 
+    // Check for input redirection (< file)
+    if (this.io && !pipeInput) {
+      for (const redir of node.redirections) {
+        if (redir.op === '<') {
+          const target = expandWord(redir.target, this.env, cmdExec);
+          const path = this.io.resolvePath(target);
+          const content = this.io.readFile(path);
+          if (content !== null) pipeInput = content;
+        }
+      }
+    }
+
     // Process assignments
     for (const assign of node.assignments) {
       const value = assign.value ? expandWord(assign.value, this.env, cmdExec) : '';
@@ -147,29 +173,82 @@ export class BashInterpreter {
     const args = expandWords(node.words, this.env, cmdExec);
     const cmdName = args[0];
 
+    // Handle eval: re-parse and execute the joined args
+    if (cmdName === 'eval') {
+      this.executeEval(args.slice(1).join(' '));
+      return;
+    }
+
+    // Handle source/.: read file and execute in current environment
+    if ((cmdName === 'source' || cmdName === '.') && args.length > 1) {
+      this.executeSource(args[1]);
+      return;
+    }
+
+    // Capture output for possible redirection
+    const hasOutputRedirect = node.redirections.some(r => r.op === '>' || r.op === '>>');
+    const savedOutput = hasOutputRedirect ? this.output : null;
+    if (hasOutputRedirect) this.output = [];
+
     // Check for function
     const fn = this.functions.get(cmdName);
     if (fn) {
       this.callFunction(fn, args.slice(1));
-      return;
-    }
-
-    // Check for builtin
-    if (isBuiltin(cmdName)) {
+    } else if (isBuiltin(cmdName)) {
       const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions);
       if (result.output) this.output.push(result.output);
       this.env.lastExitCode = result.exitCode;
+    } else {
+      // External command
+      try {
+        const fullArgs = pipeInput ? [...args, pipeInput] : args;
+        const result = this.executeCommand(fullArgs);
+        if (result) this.output.push(result);
+        this.env.lastExitCode = 0;
+      } catch {
+        this.env.lastExitCode = 1;
+      }
+    }
+
+    // Apply output redirections
+    if (hasOutputRedirect && savedOutput !== null) {
+      const capturedOutput = this.output.join('');
+      this.output = savedOutput;
+      this.applyRedirections(node.redirections, capturedOutput, cmdExec);
+    }
+  }
+
+  /** Apply output redirections to captured output. */
+  private applyRedirections(
+    redirections: import('@/bash/parser/ASTNode').Redirection[],
+    capturedOutput: string,
+    cmdExec: (cmd: string) => string,
+  ): void {
+    if (!this.io) {
+      // No IO context — output goes to stdout as fallback
+      if (capturedOutput) this.output.push(capturedOutput);
       return;
     }
 
-    // External command
-    try {
-      const fullArgs = pipeInput ? [...args, pipeInput] : args;
-      const result = this.executeCommand(fullArgs);
-      if (result) this.output.push(result);
-      this.env.lastExitCode = 0;
-    } catch {
-      this.env.lastExitCode = 1;
+    let outputHandled = false;
+    for (const redir of redirections) {
+      if (redir.op === '>' || redir.op === '>>') {
+        const fd = redir.fd ?? 1;
+        if (fd === 1) {
+          const target = expandWord(redir.target, this.env, cmdExec);
+          const path = this.io.resolvePath(target);
+          this.io.writeFile(path, capturedOutput, redir.op === '>>');
+          outputHandled = true;
+        } else if (fd === 2) {
+          // stderr redirection — just suppress for now
+          outputHandled = true;
+        }
+      }
+    }
+
+    // If no stdout redirect was applied, output goes to stdout
+    if (!outputHandled && capturedOutput) {
+      this.output.push(capturedOutput);
     }
   }
 
@@ -307,6 +386,41 @@ export class BashInterpreter {
     } finally {
       this.env.setPositionalArgs(savedArgs);
     }
+  }
+
+  // ─── Eval ─────────────────────────────────────────────────────
+
+  private executeEval(code: string): void {
+    try {
+      const lexer = new BashLexer();
+      const parser = new BashParser();
+      const tokens = lexer.tokenize(code);
+      const ast = parser.parse(tokens);
+      this.visitCommandList(ast.body);
+    } catch (e) {
+      if (e instanceof ExitSignal || e instanceof ReturnSignal ||
+          e instanceof BreakSignal || e instanceof ContinueSignal) {
+        throw e;
+      }
+      this.env.lastExitCode = 1;
+    }
+  }
+
+  // ─── Source ───────────────────────────────────────────────────
+
+  private executeSource(filePath: string): void {
+    if (!this.io) {
+      this.env.lastExitCode = 1;
+      return;
+    }
+    const path = this.io.resolvePath(filePath);
+    const content = this.io.readFile(path);
+    if (content === null) {
+      this.output.push(`bash: source: ${filePath}: No such file or directory\n`);
+      this.env.lastExitCode = 1;
+      return;
+    }
+    this.executeEval(content);
   }
 
   // ─── Brace Group & Subshell ───────────────────────────────────
