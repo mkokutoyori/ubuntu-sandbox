@@ -14,7 +14,7 @@ import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdA
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
-import { executeScript, executeScriptContent } from './LinuxScriptExecutor';
+import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
 
 export class LinuxCommandExecutor {
@@ -455,7 +455,7 @@ export class LinuxCommandExecutor {
       case 'bash':
       case 'sh': {
         if (args.length > 0) {
-          const result = executeScript(c, args[0], args.slice(1), (cmd) => this.execute(cmd));
+          const result = runScript(c, args[0], args.slice(1), (argv) => this.execute(argv.join(' ')));
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -544,7 +544,7 @@ export class LinuxCommandExecutor {
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
           if (this.vfs.exists(absPath)) {
-            const result = executeScript(c, cmd, args, (c) => this.execute(c));
+            const result = runScript(c, cmd, args, (argv) => this.execute(argv.join(' ')));
             return { output: result.output, exitCode: result.exitCode };
           }
         }
