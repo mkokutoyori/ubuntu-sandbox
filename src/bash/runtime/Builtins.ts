@@ -2,8 +2,11 @@
  * Builtins — Built-in shell commands for the bash interpreter.
  *
  * Implements: echo, printf, cd, pwd, export, unset, set, local, read,
- * test/[, true, false, exit, return, break, continue, shift, type, source/.,
+ * true, false, exit, return, break, continue, shift, type, source/.,
  * declare, readonly, let.
+ *
+ * NOTE: test/[ are NOT builtins here — they are delegated to the external
+ * command executor (LinuxCommandExecutor) which has VFS access for -f, -d, etc.
  */
 
 import type { Command } from '@/bash/parser/ASTNode';
@@ -45,7 +48,6 @@ export function executeBuiltin(
     case 'unset': return builtinUnset(args, env);
     case 'true': return { output: '', exitCode: 0 };
     case 'false': return { output: '', exitCode: 1 };
-    case 'test': case '[': return builtinTest(args);
     case 'exit': return builtinExit(args);
     case 'return': return builtinReturn(args);
     case 'break': return builtinBreak(args);
@@ -154,51 +156,6 @@ function builtinUnset(args: string[], env: Environment): BuiltinResult {
     if (!arg.startsWith('-')) env.unset(arg);
   }
   return { output: '', exitCode: 0 };
-}
-
-// ─── test / [ ───────────────────────────────────────────────────
-
-function builtinTest(args: string[]): BuiltinResult {
-  // Remove trailing ] if [ was used
-  if (args.length > 0 && args[args.length - 1] === ']') {
-    args = args.slice(0, -1);
-  }
-
-  if (args.length === 0) return { output: '', exitCode: 1 };
-
-  // Unary tests
-  if (args.length === 1) {
-    // -n STRING (non-empty) or just STRING
-    return { output: '', exitCode: args[0] !== '' ? 0 : 1 };
-  }
-
-  if (args.length === 2) {
-    const op = args[0];
-    const val = args[1];
-    switch (op) {
-      case '-n': return { output: '', exitCode: val !== '' ? 0 : 1 };
-      case '-z': return { output: '', exitCode: val === '' ? 0 : 1 };
-      case '!': return { output: '', exitCode: val === '' ? 0 : 1 };
-      default: return { output: '', exitCode: 1 };
-    }
-  }
-
-  if (args.length >= 3) {
-    const [left, op, right] = args;
-    switch (op) {
-      case '=': case '==': return { output: '', exitCode: left === right ? 0 : 1 };
-      case '!=': return { output: '', exitCode: left !== right ? 0 : 1 };
-      case '-eq': return { output: '', exitCode: parseInt(left) === parseInt(right) ? 0 : 1 };
-      case '-ne': return { output: '', exitCode: parseInt(left) !== parseInt(right) ? 0 : 1 };
-      case '-lt': return { output: '', exitCode: parseInt(left) < parseInt(right) ? 0 : 1 };
-      case '-le': return { output: '', exitCode: parseInt(left) <= parseInt(right) ? 0 : 1 };
-      case '-gt': return { output: '', exitCode: parseInt(left) > parseInt(right) ? 0 : 1 };
-      case '-ge': return { output: '', exitCode: parseInt(left) >= parseInt(right) ? 0 : 1 };
-      default: return { output: '', exitCode: 1 };
-    }
-  }
-
-  return { output: '', exitCode: 1 };
 }
 
 // ─── Flow Control ───────────────────────────────────────────────

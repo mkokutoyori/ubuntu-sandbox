@@ -126,13 +126,22 @@ function expandDoubleQuotedParts(
   }).join('');
 }
 
-/** Expand $VAR, ${VAR}, and $? etc. inline within a text string. */
+/** Expand $VAR, ${VAR}, and $? etc. inline within a text string. Handles \$ escapes. */
 function expandInlineVars(text: string, env: Environment): string {
-  return text.replace(/\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z_0-9]*|\?|#|@|\*|\$|!|\d+)/g,
+  // First pass: replace \$ with a placeholder, then expand, then restore
+  const PLACEHOLDER = '%%ESC_DOLLAR%%';
+  const escaped = text.replace(/\\\$/g, PLACEHOLDER);
+  const expanded = escaped.replace(/\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z_0-9]*|\?|#|@|\*|\$|!|\d+)/g,
     (_match, braced, simple) => {
       const name = braced ?? simple;
       return env.get(name) ?? '';
     });
+  // Also handle other common escapes: \\, \n, \t within double-quote context
+  return expanded
+    .replaceAll(PLACEHOLDER, '$')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\\\/g, '\\');
 }
 
 // ─── Arithmetic Expansion ───────────────────────────────────────
@@ -153,12 +162,12 @@ export function evaluateArithmetic(expr: string, env: Environment): string {
 /** Tokenize and evaluate an arithmetic expression. */
 function evalArithExpr(expr: string, env: Environment): number {
   const tokens = tokenizeArith(expr, env);
-  const result = parseArithExpr(tokens, 0);
-  return result.value;
+  const parser = new ArithParser(tokens, env);
+  return parser.parse();
 }
 
 interface ArithToken {
-  type: 'number' | 'op' | 'lparen' | 'rparen';
+  type: 'number' | 'op' | 'lparen' | 'rparen' | 'question' | 'colon' | 'name';
   value: string;
 }
 
@@ -175,18 +184,40 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
     } else if (/[a-zA-Z_]/.test(ch)) {
       let name = '';
       while (i < expr.length && /[a-zA-Z_0-9]/.test(expr[i])) { name += expr[i]; i++; }
-      const val = env.get(name) ?? '0';
-      tokens.push({ type: 'number', value: /^-?\d+$/.test(val) ? val : '0' });
+      tokens.push({ type: 'name', value: name });
     } else if (ch === '$') {
       i++;
       let name = '';
       while (i < expr.length && /[a-zA-Z_0-9]/.test(expr[i])) { name += expr[i]; i++; }
-      const val = env.get(name) ?? '0';
-      tokens.push({ type: 'number', value: /^-?\d+$/.test(val) ? val : '0' });
+      tokens.push({ type: 'name', value: name });
     } else if (ch === '(') {
       tokens.push({ type: 'lparen', value: '(' }); i++;
     } else if (ch === ')') {
       tokens.push({ type: 'rparen', value: ')' }); i++;
+    } else if (ch === '?') {
+      tokens.push({ type: 'question', value: '?' }); i++;
+    } else if (ch === ':') {
+      tokens.push({ type: 'colon', value: ':' }); i++;
+    } else if (ch === '!' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '!=' }); i += 2;
+    } else if (ch === '!' ) {
+      tokens.push({ type: 'op', value: '!' }); i++;
+    } else if (ch === '=' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '==' }); i += 2;
+    } else if (ch === '=') {
+      tokens.push({ type: 'op', value: '=' }); i++;
+    } else if (ch === '<' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '<=' }); i += 2;
+    } else if (ch === '<') {
+      tokens.push({ type: 'op', value: '<' }); i++;
+    } else if (ch === '>' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '>=' }); i += 2;
+    } else if (ch === '>') {
+      tokens.push({ type: 'op', value: '>' }); i++;
+    } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '&') {
+      tokens.push({ type: 'op', value: '&&' }); i += 2;
+    } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '|') {
+      tokens.push({ type: 'op', value: '||' }); i += 2;
     } else if ('+-*/%'.includes(ch)) {
       // Handle unary minus
       if (ch === '-' && (tokens.length === 0 || tokens[tokens.length - 1].type === 'op' || tokens[tokens.length - 1].type === 'lparen')) {
@@ -195,6 +226,12 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
         if (i < expr.length && /[0-9]/.test(expr[i])) {
           while (i < expr.length && /[0-9]/.test(expr[i])) { num += expr[i]; i++; }
           tokens.push({ type: 'number', value: '-' + num });
+        } else if (i < expr.length && /[a-zA-Z_]/.test(expr[i])) {
+          // Unary minus on variable: -x
+          let name = '';
+          while (i < expr.length && /[a-zA-Z_0-9]/.test(expr[i])) { name += expr[i]; i++; }
+          const val = env.get(name) ?? '0';
+          tokens.push({ type: 'number', value: String(-(parseInt(val) || 0)) });
         } else {
           tokens.push({ type: 'number', value: '0' });
         }
@@ -208,46 +245,174 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
   return tokens;
 }
 
-interface ArithResult { value: number; pos: number; }
+/** Recursive descent arithmetic parser with full operator precedence. */
+class ArithParser {
+  private tokens: ArithToken[];
+  private pos: number;
+  private env: Environment;
 
-function parseArithExpr(tokens: ArithToken[], pos: number): ArithResult {
-  let left = parseArithTerm(tokens, pos);
-  while (left.pos < tokens.length && tokens[left.pos]?.type === 'op' &&
-         (tokens[left.pos].value === '+' || tokens[left.pos].value === '-')) {
-    const op = tokens[left.pos].value;
-    const right = parseArithTerm(tokens, left.pos + 1);
-    left = { value: op === '+' ? left.value + right.value : left.value - right.value, pos: right.pos };
+  constructor(tokens: ArithToken[], env: Environment) {
+    this.tokens = tokens;
+    this.pos = 0;
+    this.env = env;
   }
-  return left;
-}
 
-function parseArithTerm(tokens: ArithToken[], pos: number): ArithResult {
-  let left = parseArithFactor(tokens, pos);
-  while (left.pos < tokens.length && tokens[left.pos]?.type === 'op' &&
-         ('*/%'.includes(tokens[left.pos].value))) {
-    const op = tokens[left.pos].value;
-    const right = parseArithFactor(tokens, left.pos + 1);
-    if ((op === '/' || op === '%') && right.value === 0) {
-      throw new ArithmeticError('division by zero');
+  parse(): number {
+    if (this.tokens.length === 0) return 0;
+    const val = this.parseAssignment();
+    return val;
+  }
+
+  // assignment: name = expr | ternary
+  private parseAssignment(): number {
+    // Check for name = expr pattern
+    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'name') {
+      const nameIdx = this.pos;
+      const name = this.tokens[nameIdx].value;
+      if (nameIdx + 1 < this.tokens.length && this.tokens[nameIdx + 1].type === 'op' && this.tokens[nameIdx + 1].value === '=') {
+        this.pos = nameIdx + 2;
+        const val = this.parseAssignment();
+        this.env.set(name, String(val));
+        return val;
+      }
     }
-    const val = op === '*' ? left.value * right.value :
-                op === '/' ? Math.trunc(left.value / right.value) :
-                left.value % right.value;
-    left = { value: val, pos: right.pos };
+    return this.parseTernary();
   }
-  return left;
-}
 
-function parseArithFactor(tokens: ArithToken[], pos: number): ArithResult {
-  if (pos >= tokens.length) return { value: 0, pos };
-  const tok = tokens[pos];
-  if (tok.type === 'lparen') {
-    const inner = parseArithExpr(tokens, pos + 1);
-    // skip rparen
-    return { value: inner.value, pos: inner.pos + 1 };
+  // ternary: logicalOr ? expr : expr
+  private parseTernary(): number {
+    let val = this.parseLogicalOr();
+    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'question') {
+      this.pos++; // skip ?
+      const trueVal = this.parseAssignment();
+      if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'colon') {
+        this.pos++; // skip :
+      }
+      const falseVal = this.parseAssignment();
+      val = val !== 0 ? trueVal : falseVal;
+    }
+    return val;
   }
-  if (tok.type === 'number') {
-    return { value: parseInt(tok.value, 10), pos: pos + 1 };
+
+  // logicalOr: logicalAnd (|| logicalAnd)*
+  private parseLogicalOr(): number {
+    let val = this.parseLogicalAnd();
+    while (this.matchOp('||')) {
+      const right = this.parseLogicalAnd();
+      val = (val !== 0 || right !== 0) ? 1 : 0;
+    }
+    return val;
   }
-  return { value: 0, pos: pos + 1 };
+
+  // logicalAnd: equality (&& equality)*
+  private parseLogicalAnd(): number {
+    let val = this.parseEquality();
+    while (this.matchOp('&&')) {
+      const right = this.parseEquality();
+      val = (val !== 0 && right !== 0) ? 1 : 0;
+    }
+    return val;
+  }
+
+  // equality: relational ((== | !=) relational)*
+  private parseEquality(): number {
+    let val = this.parseRelational();
+    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
+           (this.tokens[this.pos].value === '==' || this.tokens[this.pos].value === '!=')) {
+      const op = this.tokens[this.pos].value;
+      this.pos++;
+      const right = this.parseRelational();
+      val = op === '==' ? (val === right ? 1 : 0) : (val !== right ? 1 : 0);
+    }
+    return val;
+  }
+
+  // relational: additive ((< | > | <= | >=) additive)*
+  private parseRelational(): number {
+    let val = this.parseAdditive();
+    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
+           ['<', '>', '<=', '>='].includes(this.tokens[this.pos].value)) {
+      const op = this.tokens[this.pos].value;
+      this.pos++;
+      const right = this.parseAdditive();
+      switch (op) {
+        case '<': val = val < right ? 1 : 0; break;
+        case '>': val = val > right ? 1 : 0; break;
+        case '<=': val = val <= right ? 1 : 0; break;
+        case '>=': val = val >= right ? 1 : 0; break;
+      }
+    }
+    return val;
+  }
+
+  // additive: multiplicative ((+ | -) multiplicative)*
+  private parseAdditive(): number {
+    let val = this.parseMultiplicative();
+    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
+           (this.tokens[this.pos].value === '+' || this.tokens[this.pos].value === '-')) {
+      const op = this.tokens[this.pos].value;
+      this.pos++;
+      const right = this.parseMultiplicative();
+      val = op === '+' ? val + right : val - right;
+    }
+    return val;
+  }
+
+  // multiplicative: unary ((* | / | %) unary)*
+  private parseMultiplicative(): number {
+    let val = this.parseUnary();
+    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
+           '*/%'.includes(this.tokens[this.pos].value)) {
+      const op = this.tokens[this.pos].value;
+      this.pos++;
+      const right = this.parseUnary();
+      if ((op === '/' || op === '%') && right === 0) throw new ArithmeticError('division by zero');
+      val = op === '*' ? val * right : op === '/' ? Math.trunc(val / right) : val % right;
+    }
+    return val;
+  }
+
+  // unary: ! unary | - unary | primary
+  private parseUnary(): number {
+    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' && this.tokens[this.pos].value === '!') {
+      this.pos++;
+      const val = this.parseUnary();
+      return val === 0 ? 1 : 0;
+    }
+    return this.parsePrimary();
+  }
+
+  // primary: number | name | ( expr )
+  private parsePrimary(): number {
+    if (this.pos >= this.tokens.length) return 0;
+    const tok = this.tokens[this.pos];
+
+    if (tok.type === 'lparen') {
+      this.pos++;
+      const val = this.parseAssignment();
+      if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'rparen') {
+        this.pos++;
+      }
+      return val;
+    }
+    if (tok.type === 'number') {
+      this.pos++;
+      return parseInt(tok.value, 10) || 0;
+    }
+    if (tok.type === 'name') {
+      this.pos++;
+      const val = this.env.get(tok.value) ?? '0';
+      return parseInt(val) || 0;
+    }
+    this.pos++;
+    return 0;
+  }
+
+  private matchOp(op: string): boolean {
+    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' && this.tokens[this.pos].value === op) {
+      this.pos++;
+      return true;
+    }
+    return false;
+  }
 }
