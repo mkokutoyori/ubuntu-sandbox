@@ -112,14 +112,40 @@ export class LinuxCommandExecutor {
 
     // Route through the bash interpreter for full bash syntax support
     const io = this.buildIOContext();
+    const initialPwd = this.cwd;
+    const initialVars = this.buildEnvVars();
     const result = runScriptContent(
       trimmed,
       'bash',
       [],
       (argv) => this.dispatchFromInterpreter(argv),
-      this.buildEnvVars(),
+      initialVars,
       io,
     );
+
+    // Sync interpreter state back to executor
+    if (result.env) {
+      // Sync PWD → this.cwd only if the interpreter's cd builtin changed it
+      // (not if an external command like su changed this.cwd through dispatch)
+      const interpPwd = result.env['PWD'];
+      if (interpPwd && interpPwd !== initialPwd && this.cwd === initialPwd) {
+        // The interpreter changed PWD but dispatch didn't change this.cwd
+        // → the cd builtin was used; validate and apply
+        const inode = this.vfs.resolveInode(interpPwd);
+        if (inode && inode.type === 'directory') {
+          this.cwd = interpPwd;
+        }
+      }
+      // Sync variables back to executor's env
+      for (const [key, value] of Object.entries(result.env)) {
+        // Skip internal/special vars and positional params
+        if (/^\d+$/.test(key) || ['?', '$', '!', '@', '#', '*', '0', 'PWD', 'OLDPWD'].includes(key)) continue;
+        if (value !== initialVars[key]) {
+          this.env.set(key, value);
+        }
+      }
+    }
+
     return result.output;
   }
 
