@@ -228,6 +228,12 @@ function buildIOContext(ctx: ShellContext): IOContext {
     resolvePath(path: string) {
       return ctx.vfs.normalizePath(path, ctx.cwd);
     },
+    stat(path: string) {
+      const absPath = ctx.vfs.normalizePath(path, ctx.cwd);
+      const inode = ctx.vfs.resolveInode(absPath);
+      if (!inode) return null;
+      return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
+    },
   };
 }
 

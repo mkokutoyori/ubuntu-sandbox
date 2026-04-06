@@ -16,6 +16,12 @@ import {
 } from '@/bash/errors/BashError';
 import { evaluateArithmetic } from './Expansion';
 
+/** Minimal IO interface for builtins that need filesystem access. */
+export interface BuiltinIO {
+  resolvePath(path: string): string;
+  stat?(path: string): { type: 'file' | 'directory' } | null;
+}
+
 export interface BuiltinResult {
   output: string;
   exitCode: number;
@@ -38,12 +44,13 @@ export function executeBuiltin(
   args: string[],
   env: Environment,
   functions: Map<string, Command>,
+  io?: BuiltinIO,
 ): BuiltinResult {
   switch (name) {
     case 'echo': return builtinEcho(args);
     case 'printf': return builtinPrintf(args, env);
     case 'pwd': return { output: (env.get('PWD') ?? '/') + '\n', exitCode: 0 };
-    case 'cd': return builtinCd(args, env);
+    case 'cd': return builtinCd(args, env, io);
     case 'export': return builtinExport(args, env);
     case 'unset': return builtinUnset(args, env);
     case 'true': return { output: '', exitCode: 0 };
@@ -127,11 +134,32 @@ function builtinPrintf(args: string[], env: Environment): BuiltinResult {
 
 // ─── cd ─────────────────────────────────────────────────────────
 
-function builtinCd(args: string[], env: Environment): BuiltinResult {
-  let target = args[0] ?? env.get('HOME') ?? '/';
+function builtinCd(args: string[], env: Environment, io?: BuiltinIO): BuiltinResult {
+  // cd accepts at most one argument
+  if (args.length > 1) {
+    return { output: 'bash: cd: too many arguments\n', exitCode: 1 };
+  }
+
+  let target: string;
+  if (args.length === 0) {
+    const home = env.get('HOME');
+    if (!home) {
+      return { output: 'bash: cd: HOME not set\n', exitCode: 1 };
+    }
+    target = home;
+  } else if (args[0] === '-') {
+    const oldpwd = env.get('OLDPWD');
+    if (!oldpwd) {
+      return { output: 'bash: cd: OLDPWD not set\n', exitCode: 1 };
+    }
+    target = oldpwd;
+  } else {
+    target = args[0];
+  }
+
+  // Tilde expansion
   if (target === '~') target = env.get('HOME') ?? '/';
   else if (target.startsWith('~/')) target = (env.get('HOME') ?? '/') + target.slice(1);
-  else if (target === '-') target = env.get('OLDPWD') ?? env.get('HOME') ?? '/';
 
   // Resolve relative path against current PWD
   const cwd = env.get('PWD') ?? '/';
@@ -141,6 +169,7 @@ function builtinCd(args: string[], env: Environment): BuiltinResult {
   } else {
     resolved = cwd === '/' ? '/' + target : cwd + '/' + target;
   }
+
   // Normalize: resolve . and ..
   const parts = resolved.split('/').filter(Boolean);
   const normalized: string[] = [];
@@ -151,9 +180,23 @@ function builtinCd(args: string[], env: Environment): BuiltinResult {
   }
   resolved = '/' + normalized.join('/');
 
+  // Validate target directory via IO context if available
+  if (io?.stat) {
+    const absPath = io.resolvePath(resolved);
+    const info = io.stat(absPath);
+    if (!info) {
+      return { output: `bash: cd: ${args[0] ?? resolved}: No such file or directory\n`, exitCode: 1 };
+    }
+    if (info.type !== 'directory') {
+      return { output: `bash: cd: ${args[0] ?? resolved}: Not a directory\n`, exitCode: 1 };
+    }
+  }
+
+  // Print old directory when using cd -
+  const printDir = args[0] === '-';
   env.set('OLDPWD', cwd);
   env.set('PWD', resolved);
-  return { output: '', exitCode: 0 };
+  return { output: printDir ? resolved + '\n' : '', exitCode: 0 };
 }
 
 // ─── export ─────────────────────────────────────────────────────

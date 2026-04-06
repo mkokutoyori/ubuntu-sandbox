@@ -265,6 +265,12 @@ export class LinuxCommandExecutor {
       resolvePath: (path: string) => {
         return this.vfs.normalizePath(path, this.cwd);
       },
+      stat: (path: string) => {
+        const absPath = this.vfs.normalizePath(path, this.cwd);
+        const inode = this.vfs.resolveInode(absPath);
+        if (!inode) return null;
+        return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
+      },
     };
   }
 

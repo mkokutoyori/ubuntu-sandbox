@@ -41,6 +41,8 @@ export interface IOContext {
   readFile(path: string): string | null;
   /** Resolve a path relative to cwd. */
   resolvePath(path: string): string;
+  /** Check if a path exists and its type. Returns null if not found. */
+  stat?(path: string): { type: 'file' | 'directory' } | null;
 }
 
 export interface InterpreterOptions {
@@ -242,7 +244,7 @@ export class BashInterpreter {
     if (fn) {
       this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {
-      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions);
+      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined);
       if (result.output) this.output.push(result.output);
       this.env.lastExitCode = result.exitCode;
     } else {
