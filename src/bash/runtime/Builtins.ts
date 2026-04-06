@@ -45,6 +45,7 @@ export function executeBuiltin(
   env: Environment,
   functions: Map<string, Command>,
   io?: BuiltinIO,
+  pipeInput?: string,
 ): BuiltinResult {
   switch (name) {
     case 'echo': return builtinEcho(args);
@@ -61,7 +62,7 @@ export function executeBuiltin(
     case 'continue': return builtinContinue(args);
     case 'shift': return builtinShift(args, env);
     case 'local': return builtinLocal(args, env);
-    case 'read': return builtinRead(args, env);
+    case 'read': return builtinRead(args, env, pipeInput);
     case 'type': return builtinType(args, functions);
     case 'set': return builtinSet(args, env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
@@ -157,35 +158,183 @@ function processEchoEscapes(text: string): { text: string; stopOutput: boolean }
 // ─── printf ─────────────────────────────────────────────────────
 
 function builtinPrintf(args: string[], env: Environment): BuiltinResult {
-  if (args.length === 0) return { output: '', exitCode: 1 };
-  const format = args[0];
-  const fmtArgs = args.slice(1);
+  if (args.length === 0) {
+    return { output: 'bash: printf: usage: printf [-v var] format [arguments]\n', exitCode: 1 };
+  }
+
+  // Handle -v var flag
+  let targetVar: string | null = null;
+  let fmtStart = 0;
+  if (args[0] === '-v' && args.length >= 3) {
+    targetVar = args[1];
+    fmtStart = 2;
+  }
+
+  const format = args[fmtStart];
+  const fmtArgs = args.slice(fmtStart + 1);
   let output = '';
   let argIdx = 0;
+
+  // Re-use format string when there are remaining arguments
+  do {
+    const startArgIdx = argIdx;
+    output += printfFormat(format, fmtArgs, argIdx);
+    // Count how many args were consumed by scanning format
+    argIdx = startArgIdx + countFormatSpecs(format);
+  } while (argIdx < fmtArgs.length && argIdx > 0);
+
+  if (targetVar) {
+    try { env.set(targetVar, output); } catch { /* readonly */ }
+    return { output: '', exitCode: 0 };
+  }
+  return { output, exitCode: 0 };
+}
+
+/** Count the number of format specifiers (excluding %%) in a format string. */
+function countFormatSpecs(format: string): number {
+  let count = 0;
+  for (let i = 0; i < format.length; i++) {
+    if (format[i] === '%' && i + 1 < format.length) {
+      i++;
+      // Skip flags, width, precision
+      while (i < format.length && /[-+ 0#]/.test(format[i])) i++;
+      while (i < format.length && /[0-9]/.test(format[i])) i++;
+      if (i < format.length && format[i] === '.') {
+        i++;
+        while (i < format.length && /[0-9]/.test(format[i])) i++;
+      }
+      if (i < format.length && format[i] !== '%') count++;
+    } else if (format[i] === '\\' && i + 1 < format.length) {
+      i++;
+    }
+  }
+  return count;
+}
+
+/** Format a single pass through the format string with given args starting at argIdx. */
+function printfFormat(format: string, fmtArgs: string[], argIdx: number): string {
+  let output = '';
+  let ai = argIdx;
 
   for (let i = 0; i < format.length; i++) {
     if (format[i] === '%' && i + 1 < format.length) {
       i++;
-      const arg = fmtArgs[argIdx++] ?? '';
-      switch (format[i]) {
-        case 's': output += arg; break;
-        case 'd': output += String(parseInt(arg) || 0); break;
-        case '%': output += '%'; argIdx--; break;
-        default: output += '%' + format[i];
+      if (format[i] === '%') { output += '%'; continue; }
+
+      // Parse flags
+      let flags = '';
+      while (i < format.length && /[-+ 0#]/.test(format[i])) { flags += format[i]; i++; }
+
+      // Parse width
+      let width = '';
+      while (i < format.length && /[0-9]/.test(format[i])) { width += format[i]; i++; }
+
+      // Parse precision
+      let precision = '';
+      if (i < format.length && format[i] === '.') {
+        i++;
+        while (i < format.length && /[0-9]/.test(format[i])) { precision += format[i]; i++; }
+        if (!precision) precision = '0';
       }
+
+      const specifier = format[i] ?? 's';
+      const arg = fmtArgs[ai++] ?? '';
+
+      output += applyPrintfSpec(specifier, arg, flags, width, precision);
     } else if (format[i] === '\\' && i + 1 < format.length) {
       i++;
       switch (format[i]) {
         case 'n': output += '\n'; break;
         case 't': output += '\t'; break;
         case '\\': output += '\\'; break;
+        case 'a': output += '\x07'; break;
+        case 'b': output += '\b'; break;
+        case 'r': output += '\r'; break;
+        case '0': {
+          let octal = '';
+          let j = i + 1;
+          while (j < format.length && j < i + 4 && /[0-7]/.test(format[j])) { octal += format[j]; j++; }
+          output += String.fromCharCode(parseInt(octal || '0', 8));
+          i = j - 1;
+          break;
+        }
+        case 'x': {
+          let hex = '';
+          let j = i + 1;
+          while (j < format.length && j < i + 3 && /[0-9a-fA-F]/.test(format[j])) { hex += format[j]; j++; }
+          if (hex) { output += String.fromCharCode(parseInt(hex, 16)); i = j - 1; }
+          else { output += '\\x'; }
+          break;
+        }
         default: output += '\\' + format[i];
       }
     } else {
       output += format[i];
     }
   }
-  return { output, exitCode: 0 };
+  return output;
+}
+
+/** Apply a single printf format specifier. */
+function applyPrintfSpec(spec: string, arg: string, flags: string, widthStr: string, precisionStr: string): string {
+  const width = widthStr ? parseInt(widthStr) : 0;
+  const leftAlign = flags.includes('-');
+  const zeroPad = flags.includes('0') && !leftAlign;
+
+  let result: string;
+  switch (spec) {
+    case 's': {
+      result = arg;
+      if (precisionStr) result = result.substring(0, parseInt(precisionStr));
+      break;
+    }
+    case 'd': case 'i': {
+      const num = parseInt(arg) || 0;
+      result = String(num);
+      break;
+    }
+    case 'f': {
+      const num = parseFloat(arg) || 0;
+      const prec = precisionStr ? parseInt(precisionStr) : 6;
+      result = num.toFixed(prec);
+      break;
+    }
+    case 'x': {
+      const num = parseInt(arg) || 0;
+      result = (num >>> 0).toString(16);
+      break;
+    }
+    case 'X': {
+      const num = parseInt(arg) || 0;
+      result = (num >>> 0).toString(16).toUpperCase();
+      break;
+    }
+    case 'o': {
+      const num = parseInt(arg) || 0;
+      result = (num >>> 0).toString(8);
+      break;
+    }
+    case 'c': {
+      result = arg ? arg[0] : '';
+      break;
+    }
+    case 'b': {
+      // %b: interpret backslash escapes in arg (like echo -e)
+      result = processEchoEscapes(arg).text;
+      break;
+    }
+    default:
+      result = '%' + spec;
+  }
+
+  // Apply width padding
+  if (width > result.length) {
+    const padChar = zeroPad ? '0' : ' ';
+    const padding = padChar.repeat(width - result.length);
+    result = leftAlign ? result + padding : padding + result;
+  }
+
+  return result;
 }
 
 // ─── cd ─────────────────────────────────────────────────────────
@@ -258,54 +407,126 @@ function builtinCd(args: string[], env: Environment, io?: BuiltinIO): BuiltinRes
 // ─── export ─────────────────────────────────────────────────────
 
 function builtinExport(args: string[], env: Environment): BuiltinResult {
+  // export with no args or -p → list all exports
+  if (args.length === 0 || (args.length === 1 && args[0] === '-p')) {
+    const exported = env.getExported();
+    const lines = Object.entries(exported)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `declare -x ${k}="${v}"`);
+    return { output: lines.length ? lines.join('\n') + '\n' : '', exitCode: 0 };
+  }
+
+  // Handle -n flag (remove export attribute)
+  if (args[0] === '-n') {
+    for (const name of args.slice(1)) {
+      env.unexport(name);
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  let exitCode = 0;
+  let output = '';
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const eqIdx = arg.indexOf('=');
-    if (eqIdx >= 0) {
-      env.export(arg.substring(0, eqIdx), arg.substring(eqIdx + 1));
-    } else {
-      env.export(arg);
+    const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
+
+    // Validate identifier
+    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
+      output += `bash: export: \`${arg}': not a valid identifier\n`;
+      exitCode = 1;
+      continue;
+    }
+
+    try {
+      if (eqIdx >= 0) {
+        env.export(name, arg.substring(eqIdx + 1));
+      } else {
+        env.export(name);
+      }
+    } catch (e) {
+      output += e instanceof Error ? e.message + '\n' : '';
+      exitCode = 1;
     }
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
 }
 
 // ─── unset ──────────────────────────────────────────────────────
 
 function builtinUnset(args: string[], env: Environment): BuiltinResult {
+  let exitCode = 0;
+  let output = '';
   for (const arg of args) {
-    if (!arg.startsWith('-')) env.unset(arg);
+    if (arg === '-v' || arg === '-f') continue; // flags: -v (var), -f (func)
+    if (arg.startsWith('-')) continue;
+    if (env.isReadonly(arg)) {
+      output += `bash: unset: ${arg}: cannot unset: readonly variable\n`;
+      exitCode = 1;
+      continue;
+    }
+    env.unset(arg);
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
 }
 
 // ─── Flow Control ───────────────────────────────────────────────
 
 function builtinExit(args: string[]): BuiltinResult {
-  const code = args.length > 0 ? parseInt(args[0]) || 0 : 0;
-  throw new ExitSignal(code);
+  if (args.length === 0) throw new ExitSignal(0);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    // Non-numeric: exit with code 2 (bash behavior)
+    throw new ExitSignal(2);
+  }
+  throw new ExitSignal(parsed);
 }
 
 function builtinReturn(args: string[]): BuiltinResult {
-  const code = args.length > 0 ? parseInt(args[0]) || 0 : 0;
-  throw new ReturnSignal(code);
+  if (args.length === 0) throw new ReturnSignal(0);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    throw new ReturnSignal(2);
+  }
+  throw new ReturnSignal(parsed);
 }
 
 function builtinBreak(args: string[]): BuiltinResult {
-  const levels = args.length > 0 ? parseInt(args[0]) || 1 : 1;
-  throw new BreakSignal(levels);
+  if (args.length === 0) throw new BreakSignal(1);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    return { output: `bash: break: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+  }
+  if (parsed <= 0) {
+    return { output: `bash: break: ${args[0]}: loop count out of range\n`, exitCode: 1 };
+  }
+  throw new BreakSignal(parsed);
 }
 
 function builtinContinue(args: string[]): BuiltinResult {
-  const levels = args.length > 0 ? parseInt(args[0]) || 1 : 1;
-  throw new ContinueSignal(levels);
+  if (args.length === 0) throw new ContinueSignal(1);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    return { output: `bash: continue: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+  }
+  if (parsed <= 0) {
+    return { output: `bash: continue: ${args[0]}: loop count out of range\n`, exitCode: 1 };
+  }
+  throw new ContinueSignal(parsed);
 }
 
 // ─── shift ──────────────────────────────────────────────────────
 
 function builtinShift(args: string[], env: Environment): BuiltinResult {
-  const n = args.length > 0 ? parseInt(args[0]) || 1 : 1;
+  const n = args.length > 0 ? (parseInt(args[0]) ?? 1) : 1;
+  if (isNaN(n) || n < 0) {
+    return { output: `bash: shift: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+  }
   const current = env.getPositionalArgs();
+  if (n > current.length) {
+    return { output: `bash: shift: shift count out of range\n`, exitCode: 1 };
+  }
+  if (n === 0) return { output: '', exitCode: 0 };
   env.setPositionalArgs(current.slice(n));
   return { output: '', exitCode: 0 };
 }
@@ -313,9 +534,12 @@ function builtinShift(args: string[], env: Environment): BuiltinResult {
 // ─── local ──────────────────────────────────────────────────────
 
 function builtinLocal(args: string[], env: Environment): BuiltinResult {
+  let exitCode = 0;
+  let output = '';
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
+    if (arg.startsWith('-')) { i++; continue; } // skip flags like -r, -i
     const eqIdx = arg.indexOf('=');
     if (eqIdx >= 0) {
       const name = arg.substring(0, eqIdx);
@@ -327,25 +551,92 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
       }
       try {
         env.set(name, value);
-      } catch {
-        // readonly variable
+      } catch (e) {
+        output += `bash: local: ${name}: readonly variable\n`;
+        exitCode = 1;
       }
     } else {
-      if (!env.isSet(arg)) env.set(arg, '');
+      if (!env.isSet(arg)) {
+        try { env.set(arg, ''); } catch { /* readonly */ }
+      }
     }
     i++;
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
 }
 
 // ─── read ───────────────────────────────────────────────────────
 
-function builtinRead(args: string[], env: Environment): BuiltinResult {
-  // Simplified: in simulator context, read just sets empty values
-  for (const arg of args) {
-    if (!arg.startsWith('-')) env.set(arg, '');
+function builtinRead(args: string[], env: Environment, pipeInput?: string): BuiltinResult {
+  let prompt = '';
+  let raw = false;
+  const varNames: string[] = [];
+  let output = '';
+
+  // Parse flags
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-r') {
+      raw = true;
+    } else if (arg === '-p' && i + 1 < args.length) {
+      prompt = args[++i];
+    } else if (arg === '-s' || arg === '-n' || arg === '-t' || arg === '-d') {
+      // -s (silent), -n N, -t timeout, -d delim: skip value arg
+      if ((arg === '-n' || arg === '-t' || arg === '-d') && i + 1 < args.length) i++;
+    } else if (arg.startsWith('-') && arg.length > 1) {
+      // Unknown flag — skip
+    } else {
+      varNames.push(arg);
+    }
   }
-  return { output: '', exitCode: 0 };
+
+  // Display prompt
+  if (prompt) output = prompt;
+
+  // In simulator context: read from pipe input or set empty
+  if (!pipeInput) {
+    // No stdin available: set variables to empty, return 1 (EOF)
+    if (varNames.length === 0) {
+      env.set('REPLY', '');
+    } else {
+      for (const name of varNames) {
+        try { env.set(name, ''); } catch { /* readonly */ }
+      }
+    }
+    return { output, exitCode: 1 };
+  }
+
+  // Read first line from pipe input
+  const lineEnd = pipeInput.indexOf('\n');
+  let line = lineEnd >= 0 ? pipeInput.substring(0, lineEnd) : pipeInput;
+
+  // Process backslash escapes unless -r
+  if (!raw) {
+    line = line.replace(/\\(.)/g, '$1');
+  }
+
+  if (varNames.length === 0) {
+    // No variable names → use REPLY
+    env.set('REPLY', line);
+  } else if (varNames.length === 1) {
+    try { env.set(varNames[0], line); } catch { /* readonly */ }
+  } else {
+    // Split input by IFS (default: space/tab/newline)
+    const ifs = env.get('IFS') ?? ' \t\n';
+    const parts = line.split(new RegExp(`[${ifs.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&')}]+`));
+    for (let i = 0; i < varNames.length; i++) {
+      let value: string;
+      if (i === varNames.length - 1) {
+        // Last variable gets remainder
+        value = parts.slice(i).join(' ');
+      } else {
+        value = parts[i] ?? '';
+      }
+      try { env.set(varNames[i], value); } catch { /* readonly */ }
+    }
+  }
+
+  return { output, exitCode: 0 };
 }
 
 // ─── type ───────────────────────────────────────────────────────
@@ -368,6 +659,12 @@ function builtinType(args: string[], functions: Map<string, Command>): BuiltinRe
 
 // ─── set ────────────────────────────────────────────────────────
 
+/** Map short flags to SHELLOPTS option names. */
+const SET_FLAG_MAP: Record<string, string> = {
+  e: 'errexit', u: 'nounset', x: 'xtrace', f: 'noglob',
+  n: 'noexec', v: 'verbose', C: 'noclobber', B: 'braceexpand',
+};
+
 function builtinSet(args: string[], env: Environment): BuiltinResult {
   if (args.length === 0) {
     // Display all variables
@@ -376,51 +673,167 @@ function builtinSet(args: string[], env: Environment): BuiltinResult {
     for (const [k, v] of all) lines.push(`${k}='${v}'`);
     return { output: lines.sort().join('\n') + '\n', exitCode: 0 };
   }
+
   // set -- args: reset positional
   if (args[0] === '--') {
     env.setPositionalArgs(args.slice(1));
     return { output: '', exitCode: 0 };
   }
+
+  // Parse shell options: -e, +e, -o name, +o name, etc.
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-o' && i + 1 < args.length) {
+      setShellOpt(env, args[++i], true);
+    } else if (arg === '+o' && i + 1 < args.length) {
+      setShellOpt(env, args[++i], false);
+    } else if (arg.startsWith('-') && arg.length > 1 && arg !== '--') {
+      for (let j = 1; j < arg.length; j++) {
+        const optName = SET_FLAG_MAP[arg[j]];
+        if (optName) setShellOpt(env, optName, true);
+      }
+    } else if (arg.startsWith('+') && arg.length > 1) {
+      for (let j = 1; j < arg.length; j++) {
+        const optName = SET_FLAG_MAP[arg[j]];
+        if (optName) setShellOpt(env, optName, false);
+      }
+    }
+  }
+
   return { output: '', exitCode: 0 };
+}
+
+/** Enable or disable a shell option in SHELLOPTS. */
+function setShellOpt(env: Environment, optName: string, enable: boolean): void {
+  const current = env.get('SHELLOPTS') ?? '';
+  const opts = new Set(current.split(':').filter(Boolean));
+  if (enable) {
+    opts.add(optName);
+  } else {
+    opts.delete(optName);
+  }
+  const value = [...opts].sort().join(':');
+  try { env.set('SHELLOPTS', value); } catch { /* readonly */ }
 }
 
 // ─── declare / readonly ─────────────────────────────────────────
 
 function builtinDeclare(args: string[], env: Environment, forceReadonly = false): BuiltinResult {
-  const isReadonly = forceReadonly || args.includes('-r');
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue;
+  const cmdName = forceReadonly ? 'readonly' : 'declare';
+  let isReadonly = forceReadonly;
+  let isExport = false;
+  let printMode = false;
+  const varArgs: string[] = [];
+
+  // Parse flags
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-r') { isReadonly = true; }
+    else if (arg === '-x') { isExport = true; }
+    else if (arg === '-i' || arg === '-a' || arg === '-A') { /* integer/array: accept but ignore */ }
+    else if (arg === '-p') { printMode = true; }
+    else if (arg.startsWith('-') && arg.length > 1) {
+      // Combined flags like -rx
+      for (let j = 1; j < arg.length; j++) {
+        if (arg[j] === 'r') isReadonly = true;
+        else if (arg[j] === 'x') isExport = true;
+        else if (arg[j] === 'p') printMode = true;
+      }
+    } else {
+      varArgs.push(arg);
+    }
+  }
+
+  // Print mode: declare -p [name] or readonly -p
+  if (printMode || (forceReadonly && varArgs.length === 0 && args.includes('-p'))) {
+    return declarePrint(varArgs, env, cmdName, forceReadonly);
+  }
+
+  // List readonly variables when readonly with no args
+  if (forceReadonly && varArgs.length === 0 && args.length === 0) {
+    return declarePrint([], env, cmdName, true);
+  }
+
+  let exitCode = 0;
+  let output = '';
+  for (const arg of varArgs) {
     const eqIdx = arg.indexOf('=');
+    const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
+
+    // Validate identifier
+    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
+      output += `bash: ${cmdName}: \`${arg}': not a valid identifier\n`;
+      exitCode = 1;
+      continue;
+    }
+
     if (eqIdx >= 0) {
-      const name = arg.substring(0, eqIdx);
       const value = arg.substring(eqIdx + 1);
       try {
         env.set(name, value);
       } catch {
-        return { output: `bash: declare: ${name}: readonly variable\n`, exitCode: 1 };
+        output += `bash: ${cmdName}: ${name}: readonly variable\n`;
+        exitCode = 1;
+        continue;
       }
-      if (isReadonly) env.setReadonly(name);
-    } else {
-      if (isReadonly) env.setReadonly(arg);
     }
+    if (isReadonly) env.setReadonly(name);
+    if (isExport) env.export(name);
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
+}
+
+/** Print variable declarations for declare -p / readonly -p. */
+function declarePrint(names: string[], env: Environment, cmdName: string, readonlyOnly: boolean): BuiltinResult {
+  if (names.length > 0) {
+    let output = '';
+    let exitCode = 0;
+    for (const name of names) {
+      const val = env.get(name);
+      if (val === undefined) {
+        output += `bash: ${cmdName}: ${name}: not found\n`;
+        exitCode = 1;
+      } else {
+        const flags = env.isReadonly(name) ? '-r' : '--';
+        output += `declare ${flags} ${name}="${val}"\n`;
+      }
+    }
+    return { output, exitCode };
+  }
+  // List all (or readonly only)
+  const all = env.getAll();
+  const lines: string[] = [];
+  for (const [k, v] of all) {
+    if (readonlyOnly && !env.isReadonly(k)) continue;
+    const flags = env.isReadonly(k) ? '-r' : '--';
+    lines.push(`declare ${flags} ${k}="${v}"`);
+  }
+  return { output: lines.sort().join('\n') + (lines.length ? '\n' : ''), exitCode: 0 };
 }
 
 // ─── let ────────────────────────────────────────────────────────
 
 function builtinLet(args: string[], env: Environment): BuiltinResult {
+  if (args.length === 0) {
+    return { output: 'bash: let: expression expected\n', exitCode: 1 };
+  }
+
   let result = 0;
   for (const expr of args) {
-    // Handle assignment: var=expr
-    const eqIdx = expr.indexOf('=');
-    if (eqIdx >= 0 && /^[a-zA-Z_]/.test(expr)) {
-      const name = expr.substring(0, eqIdx);
-      const value = evaluateArithmetic(expr.substring(eqIdx + 1), env);
-      env.set(name, value);
-      result = parseInt(value);
-    } else {
-      result = parseInt(evaluateArithmetic(expr, env));
+    try {
+      // Handle assignment: var=expr
+      const eqIdx = expr.indexOf('=');
+      if (eqIdx >= 0 && /^[a-zA-Z_]/.test(expr)) {
+        const name = expr.substring(0, eqIdx);
+        const value = evaluateArithmetic(expr.substring(eqIdx + 1), env);
+        env.set(name, value);
+        result = parseInt(value);
+      } else {
+        result = parseInt(evaluateArithmetic(expr, env));
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { output: `bash: let: ${msg}\n`, exitCode: 1 };
     }
   }
   // let returns 1 if last expression is 0, else 0

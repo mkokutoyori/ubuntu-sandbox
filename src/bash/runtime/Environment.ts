@@ -95,6 +95,11 @@ export class Environment {
     this.exported.add(name);
   }
 
+  /** Remove export attribute from a variable (export -n). */
+  unexport(name: string): void {
+    this.exported.delete(name);
+  }
+
   /** Get all exported variables as a record. */
   getExported(): Record<string, string> {
     const result: Record<string, string> = {};
