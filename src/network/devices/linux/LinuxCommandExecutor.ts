@@ -8,7 +8,6 @@ import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
-import { splitChains, type CommandChain, type ParsedCommand } from './LinuxShellParser';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
@@ -18,6 +17,12 @@ import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
 import { cmdSystemctl, cmdService, cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk, cmdTop } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
+
+/** Commands that commonly read from stdin when piped. */
+const STDIN_COMMANDS = new Set([
+  'sort', 'wc', 'grep', 'head', 'tail', 'tr', 'cut', 'uniq', 'tee',
+  'awk', 'sed', 'cat', 'xargs', 'less', 'more',
+]);
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -95,7 +100,8 @@ export class LinuxCommandExecutor {
   }
 
   /**
-   * Execute a command string, handling chains (&&, ||, ;), pipes, and redirections.
+   * Execute a command string through the bash interpreter.
+   * Handles variables, control structures, pipes, redirections, functions, etc.
    */
   execute(input: string): string {
     const trimmed = input.trim();
@@ -104,93 +110,51 @@ export class LinuxCommandExecutor {
     // Track command in history (store the raw input, like bash)
     this.commandHistory.push(trimmed);
 
-    const chains = splitChains(trimmed);
-    const allOutputs: string[] = [];
-    let lastExitCode = 0;
-
-    for (let ci = 0; ci < chains.length; ci++) {
-      const chain = chains[ci];
-
-      // Check chain operator from previous chain
-      if (ci > 0) {
-        const prevOp = chains[ci - 1].operator;
-        if (prevOp === '&&' && lastExitCode !== 0) continue;
-        if (prevOp === '||' && lastExitCode === 0) continue;
-      }
-
-      const result = this.executePipeline(chain);
-      lastExitCode = result.exitCode;
-      if (result.output) allOutputs.push(result.output);
-    }
-
-    return allOutputs.join('\n');
+    // Route through the bash interpreter for full bash syntax support
+    const io = this.buildIOContext();
+    const result = runScriptContent(
+      trimmed,
+      'bash',
+      [],
+      (argv) => this.dispatchFromInterpreter(argv),
+      this.buildEnvVars(),
+      io,
+    );
+    return result.output;
   }
 
-  private executePipeline(chain: CommandChain): { output: string; exitCode: number } {
-    let pipeInput: string | undefined;
-    let lastOutput = '';
-    let exitCode = 0;
-    const isPipe = chain.pipeline.length > 1;
+  /**
+   * Bridge between the bash interpreter and the command dispatcher.
+   * Called by the interpreter for external (non-builtin) commands.
+   */
+  private dispatchFromInterpreter(argv: string[]): { output: string; exitCode: number } {
+    if (argv.length === 0) return { output: '', exitCode: 0 };
 
-    for (let i = 0; i < chain.pipeline.length; i++) {
-      const segment = chain.pipeline[i];
-      const cmd = segment.commands[0];
-      const result = this.executeSingleCommand(cmd, pipeInput);
-      lastOutput = result.output;
-      exitCode = result.exitCode;
-      // Strip ANSI codes when piping to next command (like real terminal isatty check)
-      if (isPipe && i < chain.pipeline.length - 1) {
-        // eslint-disable-next-line no-control-regex
-        pipeInput = lastOutput.replace(/\x1b\[[0-9;]*m/g, '');
-      } else {
-        pipeInput = lastOutput;
-      }
-    }
+    // The last argument may be pipe input (passed by the interpreter)
+    // Detect: if there are more args than expected and the last contains newlines, treat as stdin
+    const cmd = argv[0];
+    const args = argv.slice(1);
 
-    return { output: lastOutput, exitCode };
-  }
-
-  private executeSingleCommand(parsed: ParsedCommand, pipeInput?: string): { output: string; exitCode: number } {
-    const { args, redirections, stdinRedirect, mergeStderr } = parsed;
-    if (args.length === 0) return { output: '', exitCode: 0 };
-
-    // Read stdin from file if redirected
-    let stdin = pipeInput;
-    if (stdinRedirect) {
-      const absPath = this.vfs.normalizePath(stdinRedirect, this.cwd);
-      const content = this.vfs.readFile(absPath);
-      stdin = content ?? '';
-    }
-
-    // Strip sudo prefix
-    let cmdArgs = [...args];
+    // Handle sudo prefix
+    let cmdArgs = [...argv];
     let isSudo = false;
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
-      // Handle sudo with no sub-command → show usage (like real sudo)
-      if (cmdArgs.length === 0) {
-        return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
-      }
-      // Handle sudo -l
-      if (cmdArgs[0] === '-l') {
-        return this.dispatch('sudo', cmdArgs, stdin, true);
-      }
-      // Check if current user is allowed to use sudo (must be root or in sudo group)
+      if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
+      if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
         return {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
       }
-      // Handle sudo -u user cmd
       let sudoTargetUser: string | null = null;
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
         sudoTargetUser = cmdArgs[1];
         cmdArgs = cmdArgs.slice(2);
       }
-      // Temporarily become the target user (or root) for the command
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
       if (sudoTargetUser) {
         const targetUserEntry = this.userMgr.getUser(sudoTargetUser);
@@ -199,9 +163,6 @@ export class LinuxCommandExecutor {
           this.userMgr.currentUid = targetUserEntry.uid;
           this.userMgr.currentGid = targetUserEntry.gid;
         } else {
-          this.userMgr.currentUser = savedUser.user;
-          this.userMgr.currentUid = savedUser.uid;
-          this.userMgr.currentGid = savedUser.gid;
           return { output: `sudo: unknown user: ${sudoTargetUser}`, exitCode: 1 };
         }
       } else {
@@ -216,29 +177,39 @@ export class LinuxCommandExecutor {
       return { output: '', exitCode: 0 };
     }
 
-    const cmd = cmdArgs[0];
-    const cmdArgsList = cmdArgs.slice(1);
+    const actualCmd = isSudo ? cmdArgs[0] : cmd;
+    const actualArgs = isSudo ? cmdArgs.slice(1) : args;
 
-    let output = '';
-    let exitCode = 0;
+    // Detect pipe input: the interpreter appends stdin content as last arg
+    let stdin: string | undefined;
+    if (actualArgs.length > 0) {
+      const lastArg = actualArgs[actualArgs.length - 1];
+      // Heuristic: if last arg contains newlines, it's likely pipe input
+      if (lastArg?.includes('\n')) {
+        stdin = lastArg;
+        actualArgs.pop();
+      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ')) {
+        // For text processing commands, multi-word content without newlines is also stdin
+        stdin = lastArg;
+        actualArgs.pop();
+      }
+    }
 
+    let result: { output: string; exitCode: number };
     try {
-      const result = this.dispatch(cmd, cmdArgsList, stdin, isSudo);
-      output = result.output;
-      exitCode = result.exitCode;
-    } catch (e) {
-      output = `${cmd}: error`;
-      exitCode = 1;
+      result = this.dispatch(actualCmd, actualArgs, stdin, isSudo);
+    } catch {
+      result = { output: `${actualCmd}: error`, exitCode: 1 };
     }
 
     // Restore user after sudo — BUT NOT if the command was `su` (su manages its own context)
-    if (savedUser && cmd !== 'su') {
+    if (savedUser && actualCmd !== 'su') {
       this.userMgr.currentUser = savedUser.user;
       this.userMgr.currentUid = savedUser.uid;
       this.userMgr.currentGid = savedUser.gid;
     }
     // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
-    if (savedUser && cmd === 'su' && this.suStack.length > 0) {
+    if (savedUser && actualCmd === 'su' && this.suStack.length > 0) {
       const top = this.suStack[this.suStack.length - 1];
       top.user = savedUser.user;
       top.uid = savedUser.uid;
@@ -246,32 +217,47 @@ export class LinuxCommandExecutor {
       top.cwd = savedUser.cwd;
     }
 
-    // Handle stderr redirection
-    if (exitCode !== 0 && redirections.some(r => r.type === '2>') && !mergeStderr) {
-      const stderrRedir = redirections.find(r => r.type === '2>');
-      if (stderrRedir && stderrRedir.target !== '/dev/null') {
-        const absPath = this.vfs.normalizePath(stderrRedir.target, this.cwd);
-        this.vfs.writeFile(absPath, output + '\n', this.ctx().uid, this.ctx().gid, this.umask);
-      }
-      // If stderr is redirected away and there's no stdout redir, output is suppressed for errors
-      if (!mergeStderr) output = '';
-    }
+    return result;
+  }
 
-    // Handle stdout redirection
-    for (const redir of redirections) {
-      if (redir.type === '>' || redir.type === '>>') {
-        const absPath = this.vfs.normalizePath(redir.target, this.cwd);
-        const append = redir.type === '>>';
-        // Don't add newline for binary content or empty output
-        const isBinary = /[\x00-\x08\x0e-\x1f\x80-\xff]/.test(output);
-        const needsNewline = output.length > 0 && !isBinary;
-        const content = needsNewline ? output + '\n' : output;
+  /** Build an IOContext for the bash interpreter. */
+  private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
+    return {
+      writeFile: (path: string, content: string, append: boolean) => {
+        const absPath = this.vfs.normalizePath(path, this.cwd);
+        // Check if target is a directory
+        const existing = this.vfs.resolveInode(absPath);
+        if (existing && existing.type === 'directory') {
+          throw new Error(`bash: ${path}: Is a directory`);
+        }
         this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
-        output = ''; // stdout was redirected, don't display
-      }
-    }
+      },
+      readFile: (path: string) => {
+        const absPath = this.vfs.normalizePath(path, this.cwd);
+        return this.vfs.readFile(absPath);
+      },
+      resolvePath: (path: string) => {
+        return this.vfs.normalizePath(path, this.cwd);
+      },
+    };
+  }
 
-    return { output, exitCode };
+  /** Build initial environment variables for the bash interpreter. */
+  private buildEnvVars(): Record<string, string> {
+    const vars: Record<string, string> = {
+      HOME: this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`,
+      PWD: this.cwd,
+      USER: this.userMgr.currentUser,
+      LOGNAME: this.userMgr.currentUser,
+      UID: String(this.userMgr.currentUid),
+      SHELL: '/bin/bash',
+      PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    };
+    // Include exported env vars
+    for (const [k, v] of this.env) {
+      vars[k] = v;
+    }
+    return vars;
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
@@ -298,9 +284,14 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: isErr ? 2 : 0 };
       }
       case 'cat': {
+        // If no file args and stdin is provided, output stdin (cat from stdin)
+        const fileArgs = args.filter(a => !a.startsWith('-'));
+        if (fileArgs.length === 0 && stdin) {
+          const content = stdin.endsWith('\n') ? stdin.slice(0, -1) : stdin;
+          return { output: content, exitCode: 0 };
+        }
         // Permission check: can user read this file?
-        for (const arg of args) {
-          if (arg.startsWith('-')) continue;
+        for (const arg of fileArgs) {
           const path = this.vfs.normalizePath(arg, this.cwd);
           const inode = this.vfs.resolveInode(path);
           if (inode && !this.checkPermission(inode, 'r')) {
@@ -468,12 +459,13 @@ export class LinuxCommandExecutor {
       // Script execution
       case 'bash':
       case 'sh': {
+        const execCmd = (argv: string[]) => this.dispatchFromInterpreter(argv);
         if (args[0] === '-c' && args.length > 1) {
-          const result = runScriptContent(args[1], cmd, args.slice(2), (argv) => this.execute(argv.join(' ')));
+          const result = runScriptContent(args[1], cmd, args.slice(2), execCmd, this.buildEnvVars(), this.buildIOContext());
           return { output: result.output, exitCode: result.exitCode };
         }
         if (args.length > 0) {
-          const result = runScript(c, args[0], args.slice(1), (argv) => this.execute(argv.join(' ')));
+          const result = runScript(c, args[0], args.slice(1), execCmd);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -705,7 +697,7 @@ export class LinuxCommandExecutor {
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
           if (this.vfs.exists(absPath)) {
-            const result = runScript(c, cmd, args, (argv) => this.execute(argv.join(' ')));
+            const result = runScript(c, cmd, args, (argv) => this.dispatchFromInterpreter(argv));
             return { output: result.output, exitCode: result.exitCode };
           }
         }

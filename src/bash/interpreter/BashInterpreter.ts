@@ -20,8 +20,20 @@ import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
 
+/** Result from executing an external command. */
+export interface ExternalCommandResult {
+  output: string;
+  exitCode: number;
+}
+
 /** Callback type for executing external (non-builtin) commands. */
-export type ExternalCommandFn = (argv: string[]) => string;
+export type ExternalCommandFn = (argv: string[]) => ExternalCommandResult | string;
+
+/** Normalize an external command result to the standard format. */
+function normalizeResult(result: ExternalCommandResult | string): ExternalCommandResult {
+  if (typeof result === 'string') return { output: result, exitCode: 0 };
+  return result;
+}
 
 /** IO context for file redirections. */
 export interface IOContext {
@@ -62,6 +74,28 @@ export class BashInterpreter {
   }
 
   // ─── Public API ───────────────────────────────────────────────
+
+  /**
+   * Execute a command string for command substitution ($(...)).
+   * Parses and runs through the full interpreter pipeline in the current env.
+   */
+  executeSubcommand(cmd: string): string {
+    try {
+      const lexer = new BashLexer();
+      const parser = new BashParser();
+      const tokens = lexer.tokenize(cmd);
+      const ast = parser.parse(tokens);
+      const savedOutput = this.output;
+      this.output = [];
+      this.visitCommandList(ast.body);
+      const result = this.output.join('');
+      this.output = savedOutput;
+      return result;
+    } catch {
+      // Fallback to simple external command execution
+      return normalizeResult(this.executeCommand(cmd.split(/\s+/))).output;
+    }
+  }
 
   /** Execute a Program AST. Returns combined output and exit code. */
   execute(program: Program): { output: string; exitCode: number } {
@@ -144,7 +178,7 @@ export class BashInterpreter {
   }
 
   private visitSimpleCommandWithInput(node: SimpleCommand, pipeInput: string): void {
-    const cmdExec = (cmd: string) => this.executeCommand(cmd.split(/\s+/));
+    const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
 
     // Check for input redirection (< file)
     if (this.io && !pipeInput) {
@@ -161,7 +195,13 @@ export class BashInterpreter {
     // Process assignments
     for (const assign of node.assignments) {
       const value = assign.value ? expandWord(assign.value, this.env, cmdExec) : '';
-      this.env.set(assign.name, value);
+      try {
+        this.env.set(assign.name, value);
+      } catch (e) {
+        if (e instanceof Error) this.output.push(e.message + '\n');
+        this.env.lastExitCode = 1;
+        return;
+      }
     }
 
     // If only assignments, no command to run
@@ -185,10 +225,11 @@ export class BashInterpreter {
       return;
     }
 
-    // Capture output for possible redirection
-    const hasOutputRedirect = node.redirections.some(r => r.op === '>' || r.op === '>>');
-    const savedOutput = hasOutputRedirect ? this.output : null;
-    if (hasOutputRedirect) this.output = [];
+    // Capture output for possible redirection (stdout, stderr, or both)
+    const hasAnyRedirect = node.redirections.some(r =>
+      r.op === '>' || r.op === '>>' || r.op === '>&' || r.fd === 2);
+    const savedOutput = hasAnyRedirect ? this.output : null;
+    if (hasAnyRedirect) this.output = [];
 
     // Check for function
     const fn = this.functions.get(cmdName);
@@ -202,16 +243,16 @@ export class BashInterpreter {
       // External command
       try {
         const fullArgs = pipeInput ? [...args, pipeInput] : args;
-        const result = this.executeCommand(fullArgs);
-        if (result) this.output.push(result);
-        this.env.lastExitCode = 0;
+        const result = normalizeResult(this.executeCommand(fullArgs));
+        if (result.output) this.output.push(result.output);
+        this.env.lastExitCode = result.exitCode;
       } catch {
-        this.env.lastExitCode = 1;
+        this.env.lastExitCode = 127;
       }
     }
 
     // Apply output redirections
-    if (hasOutputRedirect && savedOutput !== null) {
+    if (hasAnyRedirect && savedOutput !== null) {
       const capturedOutput = this.output.join('');
       this.output = savedOutput;
       this.applyRedirections(node.redirections, capturedOutput, cmdExec);
@@ -225,29 +266,56 @@ export class BashInterpreter {
     cmdExec: (cmd: string) => string,
   ): void {
     if (!this.io) {
-      // No IO context — output goes to stdout as fallback
       if (capturedOutput) this.output.push(capturedOutput);
       return;
     }
 
-    let outputHandled = false;
+    let stdoutHandled = false;
+    let stderrHandled = false;
+    const isError = this.env.lastExitCode !== 0;
+
     for (const redir of redirections) {
-      if (redir.op === '>' || redir.op === '>>') {
-        const fd = redir.fd ?? 1;
-        if (fd === 1) {
-          const target = expandWord(redir.target, this.env, cmdExec);
-          const path = this.io.resolvePath(target);
-          this.io.writeFile(path, capturedOutput, redir.op === '>>');
-          outputHandled = true;
-        } else if (fd === 2) {
-          // stderr redirection — just suppress for now
-          outputHandled = true;
+      const target = expandWord(redir.target, this.env, cmdExec);
+      const path = this.io.resolvePath(target);
+      const append = redir.op === '>>' || redir.op === '&>>';
+
+      try {
+        if (redir.op === '>&') {
+          this.io.writeFile(path, capturedOutput, false);
+          stdoutHandled = true;
+          stderrHandled = true;
+        } else if (redir.op === '>' || redir.op === '>>') {
+          const fd = redir.fd ?? 1;
+          if (fd === 1) {
+            if (isError) {
+              this.io.writeFile(path, '', append);
+            } else {
+              this.io.writeFile(path, capturedOutput, append);
+            }
+            stdoutHandled = true;
+          } else if (fd === 2) {
+            if (isError) {
+              this.io.writeFile(path, capturedOutput, append);
+            }
+            stderrHandled = true;
+          }
         }
+      } catch (e) {
+        // Permission denied, Is a directory, etc.
+        if (e instanceof Error) this.output.push(e.message + '\n');
+        this.env.lastExitCode = 1;
+        return;
       }
     }
 
-    // If no stdout redirect was applied, output goes to stdout
-    if (!outputHandled && capturedOutput) {
+    // Output not captured by any redirect goes to stdout
+    if (!stdoutHandled && !stderrHandled && capturedOutput) {
+      this.output.push(capturedOutput);
+    } else if (!stdoutHandled && stderrHandled && !isError && capturedOutput) {
+      // stdout wasn't redirected but stderr was — show stdout
+      this.output.push(capturedOutput);
+    } else if (stdoutHandled && !stderrHandled && isError && capturedOutput) {
+      // stderr wasn't redirected but stdout was — show stderr
       this.output.push(capturedOutput);
     }
   }
@@ -277,7 +345,7 @@ export class BashInterpreter {
   // ─── For ──────────────────────────────────────────────────────
 
   private visitFor(node: ForClause): void {
-    const cmdExec = (cmd: string) => this.executeCommand(cmd.split(/\s+/));
+    const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
     const items = node.words
       ? expandWords(node.words, this.env, cmdExec)
       : this.env.getPositionalArgs();
@@ -351,7 +419,7 @@ export class BashInterpreter {
   // ─── Case ─────────────────────────────────────────────────────
 
   private visitCase(node: CaseClause): void {
-    const cmdExec = (cmd: string) => this.executeCommand(cmd.split(/\s+/));
+    const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
     const value = expandWord(node.word, this.env, cmdExec);
 
     for (const item of node.items) {
@@ -373,7 +441,10 @@ export class BashInterpreter {
   }
 
   private callFunction(body: Command, args: string[]): void {
-    const savedArgs = this.env.getPositionalArgs();
+    // Create a child environment for function scope (supports `local`)
+    const savedEnv = this.env;
+    const childEnv = this.env.createChild();
+    this.env = childEnv;
     this.env.setPositionalArgs(args);
     try {
       this.visitCommand(body);
@@ -384,7 +455,8 @@ export class BashInterpreter {
         throw e;
       }
     } finally {
-      this.env.setPositionalArgs(savedArgs);
+      savedEnv.lastExitCode = this.env.lastExitCode;
+      this.env = savedEnv;
     }
   }
 
@@ -426,7 +498,19 @@ export class BashInterpreter {
   // ─── Brace Group & Subshell ───────────────────────────────────
 
   private visitBraceGroup(node: BraceGroup): void {
-    this.visitCommandList(node.body);
+    const hasRedirect = node.redirections && node.redirections.some(r =>
+      r.op === '>' || r.op === '>>' || r.op === '>&');
+    if (hasRedirect && this.io) {
+      const savedOutput = this.output;
+      this.output = [];
+      this.visitCommandList(node.body);
+      const captured = this.output.join('');
+      this.output = savedOutput;
+      const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
+      this.applyRedirections(node.redirections, captured, cmdExec);
+    } else {
+      this.visitCommandList(node.body);
+    }
   }
 
   private visitSubshell(node: Subshell): void {

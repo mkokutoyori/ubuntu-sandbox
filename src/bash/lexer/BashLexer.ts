@@ -81,7 +81,16 @@ export class BashLexer {
     if (ch === ';') return this.scanSemicolon();
     if (ch === '(') return this.advance1(TokenType.LPAREN);
     if (ch === ')') return this.advance1(TokenType.RPAREN);
-    if (ch === '{') return this.advance1(TokenType.LBRACE);
+    // { is only a brace group delimiter when followed by whitespace/newline/EOF
+    // Otherwise it's part of a word (e.g., {1..3}, {echo)
+    if (ch === '{') {
+      const next = this.peekAt(1);
+      if (next === undefined || next === ' ' || next === '\t' || next === '\n') {
+        return this.advance1(TokenType.LBRACE);
+      }
+      // Fall through to word scanner
+      return this.scanWord();
+    }
     if (ch === '}') return this.advance1(TokenType.RBRACE);
 
     // Brackets [ ] [[ ]]
@@ -385,10 +394,15 @@ export class BashLexer {
       const ch = this.peek();
 
       // Stop at whitespace, operators, and special chars
-      if (this.isWhitespace(ch) || this.isOperatorStart(ch)) break;
+      if (this.isWhitespace(ch)) break;
       // Stop at ( ) but allow it inside word if preceded by alphanumeric (for func())
       if (ch === '(' || ch === ')') break;
-      if (ch === '{' || ch === '}') break;
+      // } at start of word is a brace group ender
+      if (ch === '}' && !value) break;
+      // [ and ] at start of word are test brackets; mid-word they're glob chars
+      if ((ch === '[' || ch === ']') && !value) break;
+      // Other operator starts
+      if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}') break;
 
       // Escape
       if (ch === '\\' && !this.isAtEnd()) {

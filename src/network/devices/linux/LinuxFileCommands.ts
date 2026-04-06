@@ -528,7 +528,7 @@ export function cmdTee(ctx: ShellContext, args: string[], stdin: string): string
 // ─── Glob expansion helper ─────────────────────────────────────────
 
 export function expandGlob(ctx: ShellContext, pattern: string): string[] {
-  if (!pattern.includes('*') && !pattern.includes('?')) return [pattern];
+  if (!pattern.includes('*') && !pattern.includes('?') && !pattern.includes('[')) return [pattern];
 
   const absPattern = ctx.vfs.normalizePath(pattern, ctx.cwd);
   const expanded = ctx.vfs.globExpand(pattern, ctx.cwd);
