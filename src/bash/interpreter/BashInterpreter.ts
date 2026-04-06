@@ -180,14 +180,20 @@ export class BashInterpreter {
   private visitSimpleCommandWithInput(node: SimpleCommand, pipeInput: string): void {
     const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
 
-    // Check for input redirection (< file)
-    if (this.io && !pipeInput) {
+    // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
+    if (!pipeInput) {
       for (const redir of node.redirections) {
-        if (redir.op === '<') {
+        if (redir.op === '<' && this.io) {
           const target = expandWord(redir.target, this.env, cmdExec);
           const path = this.io.resolvePath(target);
           const content = this.io.readFile(path);
           if (content !== null) pipeInput = content;
+        } else if (redir.op === '<<<') {
+          // Herestring: target word is the stdin content
+          pipeInput = expandWord(redir.target, this.env, cmdExec) + '\n';
+        } else if (redir.op === '<<') {
+          // Heredoc: target word is the body content (from preprocessing)
+          pipeInput = expandWord(redir.target, this.env, cmdExec) + '\n';
         }
       }
     }

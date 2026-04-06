@@ -72,8 +72,8 @@ export function runScriptContent(
   variables?: Record<string, string>,
   io?: IOContext,
 ): ScriptResult {
-  // Strip shebang
-  const source = stripShebang(content);
+  // Strip shebang, then preprocess heredocs
+  const source = preprocessHeredocs(stripShebang(content));
 
   try {
     const lexer = new BashLexer();
@@ -140,6 +140,72 @@ function checkExecutePermission(
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
+
+/**
+ * Preprocess heredocs in bash source.
+ *
+ * Transforms:
+ *   cmd << 'DELIM'        →  cmd <<< 'body line 1\nbody line 2'
+ *   cmd << DELIM           →  cmd <<< "body line 1\nbody line 2"
+ *   cmd <<- DELIM          →  cmd <<< "body (tabs stripped)"
+ *
+ * Quoted delimiter  → single-quoted herestring (no expansion).
+ * Unquoted delimiter → double-quoted herestring (expansion happens).
+ */
+function preprocessHeredocs(source: string): string {
+  const lines = source.split('\n');
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    // Match << or <<- followed by optional space and a delimiter word
+    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring)
+    const heredocMatch = line.match(
+      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))\s*$/,
+    );
+
+    if (!heredocMatch) {
+      result.push(line);
+      i++;
+      continue;
+    }
+
+    const stripTabs = heredocMatch[1] === '-';
+    // Delimiter: group 2 = single-quoted, group 3 = double-quoted, group 4 = unquoted
+    const delimiter = heredocMatch[2] ?? heredocMatch[3] ?? heredocMatch[4];
+    const isQuoted = !!(heredocMatch[2] || heredocMatch[3]);
+
+    // Collect body lines until we hit the delimiter
+    const bodyLines: string[] = [];
+    i++;
+    while (i < lines.length) {
+      const bodyLine = stripTabs ? lines[i].replace(/^\t+/, '') : lines[i];
+      if (bodyLine.trim() === delimiter) {
+        i++;
+        break;
+      }
+      bodyLines.push(bodyLine);
+      i++;
+    }
+
+    const body = bodyLines.join('\n');
+
+    // Replace << ... with <<< 'body' or <<< "body"
+    const prefix = line.substring(0, heredocMatch.index!);
+    if (isQuoted) {
+      // Single-quoted herestring: no expansion
+      const escaped = body.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+      result.push(prefix + "<<< '" + escaped + "'");
+    } else {
+      // Double-quoted herestring: expansion will happen
+      const escaped = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      result.push(prefix + '<<< "' + escaped + '"');
+    }
+  }
+
+  return result.join('\n');
+}
 
 /** Remove shebang line if present. */
 function stripShebang(content: string): string {
