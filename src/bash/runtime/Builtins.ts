@@ -495,8 +495,15 @@ function builtinContinue(args: string[]): BuiltinResult {
 // ─── shift ──────────────────────────────────────────────────────
 
 function builtinShift(args: string[], env: Environment): BuiltinResult {
-  const n = args.length > 0 ? parseInt(args[0]) || 1 : 1;
+  const n = args.length > 0 ? (parseInt(args[0]) ?? 1) : 1;
+  if (isNaN(n) || n < 0) {
+    return { output: `bash: shift: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+  }
   const current = env.getPositionalArgs();
+  if (n > current.length) {
+    return { output: `bash: shift: shift count out of range\n`, exitCode: 1 };
+  }
+  if (n === 0) return { output: '', exitCode: 0 };
   env.setPositionalArgs(current.slice(n));
   return { output: '', exitCode: 0 };
 }
@@ -623,6 +630,12 @@ function builtinType(args: string[], functions: Map<string, Command>): BuiltinRe
 
 // ─── set ────────────────────────────────────────────────────────
 
+/** Map short flags to SHELLOPTS option names. */
+const SET_FLAG_MAP: Record<string, string> = {
+  e: 'errexit', u: 'nounset', x: 'xtrace', f: 'noglob',
+  n: 'noexec', v: 'verbose', C: 'noclobber', B: 'braceexpand',
+};
+
 function builtinSet(args: string[], env: Environment): BuiltinResult {
   if (args.length === 0) {
     // Display all variables
@@ -631,12 +644,47 @@ function builtinSet(args: string[], env: Environment): BuiltinResult {
     for (const [k, v] of all) lines.push(`${k}='${v}'`);
     return { output: lines.sort().join('\n') + '\n', exitCode: 0 };
   }
+
   // set -- args: reset positional
   if (args[0] === '--') {
     env.setPositionalArgs(args.slice(1));
     return { output: '', exitCode: 0 };
   }
+
+  // Parse shell options: -e, +e, -o name, +o name, etc.
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-o' && i + 1 < args.length) {
+      setShellOpt(env, args[++i], true);
+    } else if (arg === '+o' && i + 1 < args.length) {
+      setShellOpt(env, args[++i], false);
+    } else if (arg.startsWith('-') && arg.length > 1 && arg !== '--') {
+      for (let j = 1; j < arg.length; j++) {
+        const optName = SET_FLAG_MAP[arg[j]];
+        if (optName) setShellOpt(env, optName, true);
+      }
+    } else if (arg.startsWith('+') && arg.length > 1) {
+      for (let j = 1; j < arg.length; j++) {
+        const optName = SET_FLAG_MAP[arg[j]];
+        if (optName) setShellOpt(env, optName, false);
+      }
+    }
+  }
+
   return { output: '', exitCode: 0 };
+}
+
+/** Enable or disable a shell option in SHELLOPTS. */
+function setShellOpt(env: Environment, optName: string, enable: boolean): void {
+  const current = env.get('SHELLOPTS') ?? '';
+  const opts = new Set(current.split(':').filter(Boolean));
+  if (enable) {
+    opts.add(optName);
+  } else {
+    opts.delete(optName);
+  }
+  const value = [...opts].sort().join(':');
+  try { env.set('SHELLOPTS', value); } catch { /* readonly */ }
 }
 
 // ─── declare / readonly ─────────────────────────────────────────
