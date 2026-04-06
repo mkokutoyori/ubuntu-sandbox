@@ -55,7 +55,36 @@ export function expandWords(
   env: Environment,
   execCmd?: CommandSubstitutionFn,
 ): string[] {
-  return words.map(w => expandWord(w, env, execCmd));
+  const result: string[] = [];
+  for (const w of words) {
+    const expanded = expandWord(w, env, execCmd);
+    // Check for brace expansion: {start..end}
+    const braceMatch = expanded.match(/^\{(-?\d+)\.\.(-?\d+)\}$/);
+    if (braceMatch) {
+      const start = parseInt(braceMatch[1]);
+      const end = parseInt(braceMatch[2]);
+      const step = start <= end ? 1 : -1;
+      for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
+        result.push(String(i));
+      }
+    } else if (shouldWordSplit(w) && expanded.includes(' ')) {
+      // Word splitting: unquoted variable/command expansions are split on IFS (whitespace)
+      const parts = expanded.split(/\s+/).filter(Boolean);
+      result.push(...parts);
+    } else {
+      result.push(expanded);
+    }
+  }
+  return result;
+}
+
+/** Determine if a word should undergo IFS word splitting (unquoted expansions). */
+function shouldWordSplit(w: Word): boolean {
+  if (w.type === 'VariableRef' || w.type === 'CommandSubstitution') return true;
+  if (w.type === 'CompoundWord') {
+    return w.parts.some(p => p.type === 'VariableRef' || p.type === 'CommandSubstitution');
+  }
+  return false;
 }
 
 // ─── Variable Expansion ─────────────────────────────────────────
@@ -136,9 +165,10 @@ function expandInlineVars(text: string, env: Environment): string {
       const name = braced ?? simple;
       return env.get(name) ?? '';
     });
-  // Also handle other common escapes: \\, \n, \t within double-quote context
+  // Also handle other common escapes: \\, \", \n, \t within double-quote context
   return expanded
     .replaceAll(PLACEHOLDER, '$')
+    .replace(/\\"/g, '"')
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '\t')
     .replace(/\\\\/g, '\\');

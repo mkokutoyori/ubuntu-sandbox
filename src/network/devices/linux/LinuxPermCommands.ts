@@ -285,13 +285,45 @@ export function cmdUmask(ctx: ShellContext, args: string[]): { output: string; n
 export function cmdTest(ctx: ShellContext, args: string[]): { success: boolean } {
   if (args.length === 0) return { success: false };
 
-  const flag = args[0];
-  const target = args[1];
+  // Handle negation: ! expr
+  if (args[0] === '!' && args.length > 1) {
+    const inner = cmdTest(ctx, args.slice(1));
+    return { success: !inner.success };
+  }
 
-  if (!target) return { success: false };
+  // Single-arg: test string (true if non-empty)
+  if (args.length === 1) {
+    return { success: args[0] !== '' };
+  }
 
+  // Two-arg: unary operators
+  if (args.length === 2) {
+    return evalUnaryTest(ctx, args[0], args[1]);
+  }
+
+  // Three-arg: binary operators or compound
+  if (args.length === 3) {
+    const [left, op, right] = args;
+    return evalBinaryTest(ctx, left, op, right);
+  }
+
+  // Four-arg: handle ! <3-arg-expr>
+  if (args.length === 4 && args[0] === '!') {
+    const inner = cmdTest(ctx, args.slice(1));
+    return { success: !inner.success };
+  }
+
+  // Fallback
+  return { success: false };
+}
+
+function evalUnaryTest(ctx: ShellContext, flag: string, target: string): { success: boolean } {
+  // String tests
+  if (flag === '-n') return { success: target.length > 0 };
+  if (flag === '-z') return { success: target.length === 0 };
+
+  // File tests
   const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
-
   switch (flag) {
     case '-f': return { success: ctx.vfs.getType(absPath) === 'file' };
     case '-d': return { success: ctx.vfs.getType(absPath) === 'directory' };
@@ -316,6 +348,25 @@ export function cmdTest(ctx: ShellContext, args: string[]): { success: boolean }
       const inode = ctx.vfs.resolveInode(absPath);
       return { success: !!inode && inode.size > 0 };
     }
+    default: return { success: false };
+  }
+}
+
+function evalBinaryTest(_ctx: ShellContext, left: string, op: string, right: string): { success: boolean } {
+  // String comparisons
+  if (op === '=' || op === '==') return { success: left === right };
+  if (op === '!=') return { success: left !== right };
+
+  // Numeric comparisons
+  const lNum = parseInt(left, 10);
+  const rNum = parseInt(right, 10);
+  switch (op) {
+    case '-eq': return { success: lNum === rNum };
+    case '-ne': return { success: lNum !== rNum };
+    case '-lt': return { success: lNum < rNum };
+    case '-le': return { success: lNum <= rNum };
+    case '-gt': return { success: lNum > rNum };
+    case '-ge': return { success: lNum >= rNum };
     default: return { success: false };
   }
 }

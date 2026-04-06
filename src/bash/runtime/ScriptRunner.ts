@@ -28,7 +28,7 @@ export function runScript(
   ctx: ShellContext,
   scriptPath: string,
   scriptArgs: string[],
-  executeCommand: (args: string[]) => string,
+  executeCommand: (args: string[]) => { output: string; exitCode: number },
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -66,7 +66,7 @@ export function runScriptContent(
   content: string,
   scriptName: string,
   scriptArgs: string[],
-  executeCommand: (args: string[]) => string,
+  executeCommand: (args: string[]) => { output: string; exitCode: number },
   variables?: Record<string, string>,
   io?: IOContext,
 ): ScriptResult {
@@ -91,7 +91,9 @@ export function runScriptContent(
     return interp.execute(ast);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { output: `bash: ${scriptName}: ${msg}\n`, exitCode: 2 };
+    // Normalize lexer/parser errors to "syntax error" format for compatibility
+    const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
+    return { output: `bash: ${scriptName}: ${normalized}\n`, exitCode: 2 };
   }
 }
 

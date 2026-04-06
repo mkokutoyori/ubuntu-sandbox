@@ -461,7 +461,18 @@ export class BashParser {
       case TokenType.HEREDOC: op = '<<'; break;
       case TokenType.HERESTRING: op = '<<<'; break;
       case TokenType.LESSAND: op = '<&'; break;
-      case TokenType.GREATAND: op = '>&'; break;
+      case TokenType.GREATAND: {
+        // GREATAND can be: >&, 2>&1, 1>&2, etc.
+        const gaMatch = tok.value.match(/^(\d+)>&(\d+)$/);
+        if (gaMatch) {
+          fd = parseInt(gaMatch[1]);
+          op = '>&';
+          const target = makeLiteralWord(gaMatch[2], pos);
+          return makeRedirection(op, target, fd, pos);
+        }
+        op = '>&';
+        break;
+      }
       case TokenType.FD_GREAT: {
         const match = tok.value.match(/^(\d+)>$/);
         fd = match ? parseInt(match[1]) : undefined;

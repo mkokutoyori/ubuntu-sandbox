@@ -22,6 +22,8 @@ export class Environment {
   private vars: Map<string, string> = new Map();
   /** Exported variable names. */
   private exported: Set<string> = new Set();
+  /** Readonly variable names. */
+  private readonlyVars: Set<string> = new Set();
   /** Parent scope (for local variable lookups). */
   private parent: Environment | null = null;
   /** Last exit code ($?). */
@@ -55,9 +57,23 @@ export class Environment {
     return this.parent?.get(name);
   }
 
-  /** Set a variable in the current scope. */
+  /** Set a variable in the current scope. Throws if readonly. */
   set(name: string, value: string): void {
+    if (this.readonlyVars.has(name)) {
+      throw new Error(`bash: ${name}: readonly variable`);
+    }
     this.vars.set(name, value);
+  }
+
+  /** Mark a variable as readonly (optionally set its value). */
+  setReadonly(name: string, value?: string): void {
+    if (value !== undefined) this.vars.set(name, value);
+    this.readonlyVars.add(name);
+  }
+
+  /** Check if a variable is readonly. */
+  isReadonly(name: string): boolean {
+    return this.readonlyVars.has(name);
   }
 
   /** Unset a variable. */

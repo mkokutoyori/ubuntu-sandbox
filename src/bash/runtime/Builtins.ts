@@ -58,7 +58,8 @@ export function executeBuiltin(
     case 'type': return builtinType(args, functions);
     case 'set': return builtinSet(args, env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
-    case 'declare': case 'readonly': return builtinDeclare(args, env);
+    case 'declare': return builtinDeclare(args, env, false);
+    case 'readonly': return builtinDeclare(args, env, true);
     case 'let': return builtinLet(args, env);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
     default: return { output: '', exitCode: 127 };
@@ -192,13 +193,27 @@ function builtinShift(args: string[], env: Environment): BuiltinResult {
 // ─── local ──────────────────────────────────────────────────────
 
 function builtinLocal(args: string[], env: Environment): BuiltinResult {
-  for (const arg of args) {
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
     const eqIdx = arg.indexOf('=');
     if (eqIdx >= 0) {
-      env.set(arg.substring(0, eqIdx), arg.substring(eqIdx + 1));
+      const name = arg.substring(0, eqIdx);
+      let value = arg.substring(eqIdx + 1);
+      // If value is empty and next arg exists (split assignment: VAR= value), use next arg
+      if (!value && i + 1 < args.length && !args[i + 1].includes('=')) {
+        value = args[i + 1];
+        i++;
+      }
+      try {
+        env.set(name, value);
+      } catch {
+        // readonly variable
+      }
     } else {
       if (!env.isSet(arg)) env.set(arg, '');
     }
+    i++;
   }
   return { output: '', exitCode: 0 };
 }
@@ -251,12 +266,22 @@ function builtinSet(args: string[], env: Environment): BuiltinResult {
 
 // ─── declare / readonly ─────────────────────────────────────────
 
-function builtinDeclare(args: string[], env: Environment): BuiltinResult {
+function builtinDeclare(args: string[], env: Environment, forceReadonly = false): BuiltinResult {
+  const isReadonly = forceReadonly || args.includes('-r');
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const eqIdx = arg.indexOf('=');
     if (eqIdx >= 0) {
-      env.set(arg.substring(0, eqIdx), arg.substring(eqIdx + 1));
+      const name = arg.substring(0, eqIdx);
+      const value = arg.substring(eqIdx + 1);
+      try {
+        env.set(name, value);
+      } catch {
+        return { output: `bash: declare: ${name}: readonly variable\n`, exitCode: 1 };
+      }
+      if (isReadonly) env.setReadonly(name);
+    } else {
+      if (isReadonly) env.setReadonly(arg);
     }
   }
   return { output: '', exitCode: 0 };

@@ -766,7 +766,17 @@ export class VirtualFileSystem {
       const c = pattern[i];
       if (c === '*') regex += '.*';
       else if (c === '?') regex += '.';
-      else if (c === '.') regex += '\\.';
+      else if (c === '[') {
+        // Character class — pass through to regex until closing ]
+        let cls = '[';
+        i++;
+        while (i < pattern.length && pattern[i] !== ']') {
+          cls += pattern[i];
+          i++;
+        }
+        cls += ']';
+        regex += cls;
+      } else if (c === '.') regex += '\\.';
       else regex += c;
     }
     regex += '$';
@@ -790,7 +800,7 @@ export class VirtualFileSystem {
     if (!inode || inode.type !== 'directory') return [];
 
     const results: string[] = [];
-    if (part.includes('*') || part.includes('?')) {
+    if (part.includes('*') || part.includes('?') || part.includes('[')) {
       for (const [name] of inode.children) {
         if (name === '.' || name === '..') continue;
         if (this.globMatch(name, part)) {
