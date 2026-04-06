@@ -41,6 +41,8 @@ export interface IOContext {
   readFile(path: string): string | null;
   /** Resolve a path relative to cwd. */
   resolvePath(path: string): string;
+  /** Check if a path exists and its type. Returns null if not found. */
+  stat?(path: string): { type: 'file' | 'directory' } | null;
 }
 
 export interface InterpreterOptions {
@@ -180,14 +182,20 @@ export class BashInterpreter {
   private visitSimpleCommandWithInput(node: SimpleCommand, pipeInput: string): void {
     const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
 
-    // Check for input redirection (< file)
-    if (this.io && !pipeInput) {
+    // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
+    if (!pipeInput) {
       for (const redir of node.redirections) {
-        if (redir.op === '<') {
+        if (redir.op === '<' && this.io) {
           const target = expandWord(redir.target, this.env, cmdExec);
           const path = this.io.resolvePath(target);
           const content = this.io.readFile(path);
           if (content !== null) pipeInput = content;
+        } else if (redir.op === '<<<') {
+          // Herestring: target word is the stdin content
+          pipeInput = expandWord(redir.target, this.env, cmdExec) + '\n';
+        } else if (redir.op === '<<') {
+          // Heredoc: target word is the body content (from preprocessing)
+          pipeInput = expandWord(redir.target, this.env, cmdExec) + '\n';
         }
       }
     }
@@ -236,7 +244,7 @@ export class BashInterpreter {
     if (fn) {
       this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {
-      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions);
+      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined);
       if (result.output) this.output.push(result.output);
       this.env.lastExitCode = result.exitCode;
     } else {
