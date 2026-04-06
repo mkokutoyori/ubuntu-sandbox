@@ -19,6 +19,8 @@ import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpre
 export interface ScriptResult {
   output: string;
   exitCode: number;
+  /** Final environment variables after execution (for state sync). */
+  env?: Record<string, string>;
 }
 
 /**
@@ -88,7 +90,13 @@ export function runScriptContent(
       io,
     });
 
-    return interp.execute(ast);
+    const result = interp.execute(ast);
+    // Export final environment for state synchronization
+    const finalEnv: Record<string, string> = {};
+    for (const [k, v] of interp.env.getAll()) {
+      finalEnv[k] = v;
+    }
+    return { ...result, env: finalEnv };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     // Normalize lexer/parser errors to "syntax error" format for compatibility

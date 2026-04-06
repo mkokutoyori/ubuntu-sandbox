@@ -128,10 +128,31 @@ function builtinPrintf(args: string[], env: Environment): BuiltinResult {
 // ─── cd ─────────────────────────────────────────────────────────
 
 function builtinCd(args: string[], env: Environment): BuiltinResult {
-  const target = args[0] ?? env.get('HOME') ?? '/';
-  // Actual path resolution delegated to the LinuxPC/ShellContext
-  env.set('OLDPWD', env.get('PWD') ?? '/');
-  env.set('PWD', target);
+  let target = args[0] ?? env.get('HOME') ?? '/';
+  if (target === '~') target = env.get('HOME') ?? '/';
+  else if (target.startsWith('~/')) target = (env.get('HOME') ?? '/') + target.slice(1);
+  else if (target === '-') target = env.get('OLDPWD') ?? env.get('HOME') ?? '/';
+
+  // Resolve relative path against current PWD
+  const cwd = env.get('PWD') ?? '/';
+  let resolved: string;
+  if (target.startsWith('/')) {
+    resolved = target;
+  } else {
+    resolved = cwd === '/' ? '/' + target : cwd + '/' + target;
+  }
+  // Normalize: resolve . and ..
+  const parts = resolved.split('/').filter(Boolean);
+  const normalized: string[] = [];
+  for (const p of parts) {
+    if (p === '.') continue;
+    if (p === '..') { normalized.pop(); continue; }
+    normalized.push(p);
+  }
+  resolved = '/' + normalized.join('/');
+
+  env.set('OLDPWD', cwd);
+  env.set('PWD', resolved);
   return { output: '', exitCode: 0 };
 }
 
