@@ -145,7 +145,7 @@ function expandDoubleQuotedParts(
 ): string {
   return parts.map(part => {
     switch (part.type) {
-      case 'text': return expandInlineVars(part.value, env);
+      case 'text': return expandInlineVars(part.value, env, execCmd);
       case 'variable': return expandVariable(part.name, part.braced, part.modifier, env);
       case 'special': return env.get(part.name) ?? '';
       case 'command': return execCmd ? execCmd(part.command).trimEnd() : '';
@@ -155,23 +155,117 @@ function expandDoubleQuotedParts(
   }).join('');
 }
 
-/** Expand $VAR, ${VAR}, and $? etc. inline within a text string. Handles \$ escapes. */
-function expandInlineVars(text: string, env: Environment): string {
-  // First pass: replace \$ with a placeholder, then expand, then restore
-  const PLACEHOLDER = '%%ESC_DOLLAR%%';
-  const escaped = text.replace(/\\\$/g, PLACEHOLDER);
-  const expanded = escaped.replace(/\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z_0-9]*|\?|#|@|\*|\$|!|\d+)/g,
-    (_match, braced, simple) => {
-      const name = braced ?? simple;
-      return env.get(name) ?? '';
-    });
-  // Also handle other common escapes: \\, \", \n, \t within double-quote context
-  return expanded
-    .replaceAll(PLACEHOLDER, '$')
-    .replace(/\\"/g, '"')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\\\/g, '\\');
+/** Expand $VAR, ${VAR}, $(cmd), $((expr)), and `cmd` inline within a text string. */
+function expandInlineVars(
+  text: string,
+  env: Environment,
+  execCmd?: CommandSubstitutionFn,
+): string {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    // Escaped characters
+    if (text[i] === '\\' && i + 1 < text.length) {
+      const next = text[i + 1];
+      if (next === '$') { result += '$'; i += 2; continue; }
+      if (next === '"') { result += '"'; i += 2; continue; }
+      if (next === 'n') { result += '\n'; i += 2; continue; }
+      if (next === 't') { result += '\t'; i += 2; continue; }
+      if (next === '\\') { result += '\\'; i += 2; continue; }
+      result += text[i]; i++; continue;
+    }
+
+    // Backtick command substitution
+    if (text[i] === '`') {
+      i++;
+      let cmd = '';
+      while (i < text.length && text[i] !== '`') { cmd += text[i]; i++; }
+      if (i < text.length) i++; // skip closing `
+      result += execCmd ? execCmd(cmd).trimEnd() : '';
+      continue;
+    }
+
+    // Dollar expansions
+    if (text[i] === '$' && i + 1 < text.length) {
+      const next = text[i + 1];
+
+      // $((expr)) — arithmetic
+      if (next === '(' && i + 2 < text.length && text[i + 2] === '(') {
+        i += 3;
+        let depth = 1;
+        let expr = '';
+        while (i < text.length && depth > 0) {
+          if (text[i] === '(' && text[i + 1] === '(') { depth++; expr += '(('; i += 2; }
+          else if (text[i] === ')' && i + 1 < text.length && text[i + 1] === ')') {
+            depth--;
+            if (depth > 0) { expr += '))'; i += 2; }
+          }
+          else { expr += text[i]; i++; }
+        }
+        if (depth === 0) i += 2; // skip ))
+        result += evaluateArithmetic(expr, env);
+        continue;
+      }
+
+      // $(cmd) — command substitution
+      if (next === '(') {
+        i += 2;
+        let depth = 1;
+        let cmd = '';
+        while (i < text.length && depth > 0) {
+          if (text[i] === '(') depth++;
+          else if (text[i] === ')') { depth--; if (depth === 0) break; }
+          cmd += text[i]; i++;
+        }
+        if (i < text.length) i++; // skip closing )
+        result += execCmd ? execCmd(cmd).trimEnd() : '';
+        continue;
+      }
+
+      // ${VAR...} — braced variable
+      if (next === '{') {
+        i += 2;
+        let content = '';
+        while (i < text.length && text[i] !== '}') { content += text[i]; i++; }
+        if (i < text.length) i++; // skip }
+        // Parse modifier if present
+        const modMatch = content.match(/^([A-Za-z_][A-Za-z_0-9]*|[0-9]+)(#|:-|:=|:\+|:|-|=|\+)(.*)$/);
+        if (modMatch) {
+          result += expandVariable(modMatch[1], true, modMatch[2] + stripQuotes(modMatch[3]), env);
+        } else if (content.startsWith('#')) {
+          result += expandVariable(content.slice(1), true, '#', env);
+        } else {
+          result += env.get(content) ?? '';
+        }
+        continue;
+      }
+
+      // $VAR or $? $# etc — simple variable
+      if (/[A-Za-z_]/.test(next)) {
+        i++;
+        let name = '';
+        while (i < text.length && /[A-Za-z_0-9]/.test(text[i])) { name += text[i]; i++; }
+        result += env.get(name) ?? '';
+        continue;
+      }
+      if (/[?#@*$!\d]/.test(next)) {
+        result += env.get(next) ?? '';
+        i += 2;
+        continue;
+      }
+    }
+
+    result += text[i]; i++;
+  }
+  return result;
+}
+
+/** Strip surrounding quotes from a string (for ${VAR:-"default"} patterns). */
+function stripQuotes(s: string): string {
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
 }
 
 // ─── Arithmetic Expansion ───────────────────────────────────────
