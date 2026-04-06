@@ -80,22 +80,78 @@ function builtinEcho(args: string[]): BuiltinResult {
   let escapes = false;
   let start = 0;
 
+  // Parse flags: -n, -e, -E, and combined forms like -ne, -en, -neE
   while (start < args.length) {
-    if (args[start] === '-n') { newline = false; start++; }
-    else if (args[start] === '-e') { escapes = true; start++; }
-    else if (args[start] === '-E') { escapes = false; start++; }
-    else break;
+    const arg = args[start];
+    if (arg.startsWith('-') && arg.length > 1 && /^-[neE]+$/.test(arg)) {
+      for (let i = 1; i < arg.length; i++) {
+        if (arg[i] === 'n') newline = false;
+        else if (arg[i] === 'e') escapes = true;
+        else if (arg[i] === 'E') escapes = false;
+      }
+      start++;
+    } else {
+      break;
+    }
   }
 
   let text = args.slice(start).join(' ');
   if (escapes) {
-    text = text
-      .replace(/\\n/g, '\n')
-      .replace(/\\t/g, '\t')
-      .replace(/\\\\/g, '\\');
+    const processed = processEchoEscapes(text);
+    text = processed.text;
+    if (processed.stopOutput) newline = false;
   }
 
   return { output: text + (newline ? '\n' : ''), exitCode: 0 };
+}
+
+/** Process escape sequences for echo -e. Returns text and whether \c was encountered. */
+function processEchoEscapes(text: string): { text: string; stopOutput: boolean } {
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\' && i + 1 < text.length) {
+      const next = text[i + 1];
+      switch (next) {
+        case '\\': result += '\\'; i++; break;
+        case 'n': result += '\n'; i++; break;
+        case 't': result += '\t'; i++; break;
+        case 'a': result += '\x07'; i++; break;
+        case 'b': result += '\b'; i++; break;
+        case 'r': result += '\r'; i++; break;
+        case 'c': return { text: result, stopOutput: true };
+        case '0': {
+          // Octal: \0NNN (up to 3 octal digits)
+          let octal = '';
+          let j = i + 2;
+          while (j < text.length && j < i + 5 && /[0-7]/.test(text[j])) {
+            octal += text[j]; j++;
+          }
+          result += String.fromCharCode(parseInt(octal || '0', 8));
+          i = j - 1;
+          break;
+        }
+        case 'x': {
+          // Hex: \xHH (up to 2 hex digits)
+          let hex = '';
+          let j = i + 2;
+          while (j < text.length && j < i + 4 && /[0-9a-fA-F]/.test(text[j])) {
+            hex += text[j]; j++;
+          }
+          if (hex) {
+            result += String.fromCharCode(parseInt(hex, 16));
+            i = j - 1;
+          } else {
+            result += '\\x'; i++;
+          }
+          break;
+        }
+        default: result += '\\' + next; i++; break;
+      }
+    } else {
+      result += text[i];
+    }
+  }
+  return { text: result, stopOutput: false };
 }
 
 // ─── printf ─────────────────────────────────────────────────────
