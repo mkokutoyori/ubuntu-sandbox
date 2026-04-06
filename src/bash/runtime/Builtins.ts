@@ -45,6 +45,7 @@ export function executeBuiltin(
   env: Environment,
   functions: Map<string, Command>,
   io?: BuiltinIO,
+  pipeInput?: string,
 ): BuiltinResult {
   switch (name) {
     case 'echo': return builtinEcho(args);
@@ -61,7 +62,7 @@ export function executeBuiltin(
     case 'continue': return builtinContinue(args);
     case 'shift': return builtinShift(args, env);
     case 'local': return builtinLocal(args, env);
-    case 'read': return builtinRead(args, env);
+    case 'read': return builtinRead(args, env, pipeInput);
     case 'type': return builtinType(args, functions);
     case 'set': return builtinSet(args, env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
@@ -530,12 +531,76 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
 
 // ─── read ───────────────────────────────────────────────────────
 
-function builtinRead(args: string[], env: Environment): BuiltinResult {
-  // Simplified: in simulator context, read just sets empty values
-  for (const arg of args) {
-    if (!arg.startsWith('-')) env.set(arg, '');
+function builtinRead(args: string[], env: Environment, pipeInput?: string): BuiltinResult {
+  let prompt = '';
+  let raw = false;
+  const varNames: string[] = [];
+  let output = '';
+
+  // Parse flags
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-r') {
+      raw = true;
+    } else if (arg === '-p' && i + 1 < args.length) {
+      prompt = args[++i];
+    } else if (arg === '-s' || arg === '-n' || arg === '-t' || arg === '-d') {
+      // -s (silent), -n N, -t timeout, -d delim: skip value arg
+      if ((arg === '-n' || arg === '-t' || arg === '-d') && i + 1 < args.length) i++;
+    } else if (arg.startsWith('-') && arg.length > 1) {
+      // Unknown flag — skip
+    } else {
+      varNames.push(arg);
+    }
   }
-  return { output: '', exitCode: 0 };
+
+  // Display prompt
+  if (prompt) output = prompt;
+
+  // In simulator context: read from pipe input or set empty
+  if (!pipeInput) {
+    // No stdin available: set variables to empty, return 1 (EOF)
+    if (varNames.length === 0) {
+      env.set('REPLY', '');
+    } else {
+      for (const name of varNames) {
+        try { env.set(name, ''); } catch { /* readonly */ }
+      }
+    }
+    return { output, exitCode: 1 };
+  }
+
+  // Read first line from pipe input
+  const lineEnd = pipeInput.indexOf('\n');
+  let line = lineEnd >= 0 ? pipeInput.substring(0, lineEnd) : pipeInput;
+
+  // Process backslash escapes unless -r
+  if (!raw) {
+    line = line.replace(/\\(.)/g, '$1');
+  }
+
+  if (varNames.length === 0) {
+    // No variable names → use REPLY
+    env.set('REPLY', line);
+  } else if (varNames.length === 1) {
+    try { env.set(varNames[0], line); } catch { /* readonly */ }
+  } else {
+    // Split input by IFS (default: space/tab/newline)
+    const ifs = env.get('IFS') ?? ' \t\n';
+    const parts = line.split(new RegExp(`[${ifs.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&')}]+`));
+    for (let i = 0; i < varNames.length; i++) {
+      let value: string;
+      if (i === varNames.length - 1) {
+        // Last variable gets remainder
+        value = parts.slice(i).join(' ');
+      } else {
+        value = parts[i] ?? '';
+      }
+      try { env.set(varNames[i], value); } catch { /* readonly */ }
+    }
+  }
+
+  return { output, exitCode: 0 };
 }
 
 // ─── type ───────────────────────────────────────────────────────
