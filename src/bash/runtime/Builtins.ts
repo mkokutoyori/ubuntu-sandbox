@@ -473,23 +473,46 @@ function builtinUnset(args: string[], env: Environment): BuiltinResult {
 // ─── Flow Control ───────────────────────────────────────────────
 
 function builtinExit(args: string[]): BuiltinResult {
-  const code = args.length > 0 ? parseInt(args[0]) || 0 : 0;
-  throw new ExitSignal(code);
+  if (args.length === 0) throw new ExitSignal(0);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    // Non-numeric: exit with code 2 (bash behavior)
+    throw new ExitSignal(2);
+  }
+  throw new ExitSignal(parsed);
 }
 
 function builtinReturn(args: string[]): BuiltinResult {
-  const code = args.length > 0 ? parseInt(args[0]) || 0 : 0;
-  throw new ReturnSignal(code);
+  if (args.length === 0) throw new ReturnSignal(0);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    throw new ReturnSignal(2);
+  }
+  throw new ReturnSignal(parsed);
 }
 
 function builtinBreak(args: string[]): BuiltinResult {
-  const levels = args.length > 0 ? parseInt(args[0]) || 1 : 1;
-  throw new BreakSignal(levels);
+  if (args.length === 0) throw new BreakSignal(1);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    return { output: `bash: break: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+  }
+  if (parsed <= 0) {
+    return { output: `bash: break: ${args[0]}: loop count out of range\n`, exitCode: 1 };
+  }
+  throw new BreakSignal(parsed);
 }
 
 function builtinContinue(args: string[]): BuiltinResult {
-  const levels = args.length > 0 ? parseInt(args[0]) || 1 : 1;
-  throw new ContinueSignal(levels);
+  if (args.length === 0) throw new ContinueSignal(1);
+  const parsed = parseInt(args[0]);
+  if (isNaN(parsed)) {
+    return { output: `bash: continue: ${args[0]}: numeric argument required\n`, exitCode: 1 };
+  }
+  if (parsed <= 0) {
+    return { output: `bash: continue: ${args[0]}: loop count out of range\n`, exitCode: 1 };
+  }
+  throw new ContinueSignal(parsed);
 }
 
 // ─── shift ──────────────────────────────────────────────────────
