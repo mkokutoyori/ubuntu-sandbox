@@ -157,35 +157,183 @@ function processEchoEscapes(text: string): { text: string; stopOutput: boolean }
 // ─── printf ─────────────────────────────────────────────────────
 
 function builtinPrintf(args: string[], env: Environment): BuiltinResult {
-  if (args.length === 0) return { output: '', exitCode: 1 };
-  const format = args[0];
-  const fmtArgs = args.slice(1);
+  if (args.length === 0) {
+    return { output: 'bash: printf: usage: printf [-v var] format [arguments]\n', exitCode: 1 };
+  }
+
+  // Handle -v var flag
+  let targetVar: string | null = null;
+  let fmtStart = 0;
+  if (args[0] === '-v' && args.length >= 3) {
+    targetVar = args[1];
+    fmtStart = 2;
+  }
+
+  const format = args[fmtStart];
+  const fmtArgs = args.slice(fmtStart + 1);
   let output = '';
   let argIdx = 0;
+
+  // Re-use format string when there are remaining arguments
+  do {
+    const startArgIdx = argIdx;
+    output += printfFormat(format, fmtArgs, argIdx);
+    // Count how many args were consumed by scanning format
+    argIdx = startArgIdx + countFormatSpecs(format);
+  } while (argIdx < fmtArgs.length && argIdx > 0);
+
+  if (targetVar) {
+    try { env.set(targetVar, output); } catch { /* readonly */ }
+    return { output: '', exitCode: 0 };
+  }
+  return { output, exitCode: 0 };
+}
+
+/** Count the number of format specifiers (excluding %%) in a format string. */
+function countFormatSpecs(format: string): number {
+  let count = 0;
+  for (let i = 0; i < format.length; i++) {
+    if (format[i] === '%' && i + 1 < format.length) {
+      i++;
+      // Skip flags, width, precision
+      while (i < format.length && /[-+ 0#]/.test(format[i])) i++;
+      while (i < format.length && /[0-9]/.test(format[i])) i++;
+      if (i < format.length && format[i] === '.') {
+        i++;
+        while (i < format.length && /[0-9]/.test(format[i])) i++;
+      }
+      if (i < format.length && format[i] !== '%') count++;
+    } else if (format[i] === '\\' && i + 1 < format.length) {
+      i++;
+    }
+  }
+  return count;
+}
+
+/** Format a single pass through the format string with given args starting at argIdx. */
+function printfFormat(format: string, fmtArgs: string[], argIdx: number): string {
+  let output = '';
+  let ai = argIdx;
 
   for (let i = 0; i < format.length; i++) {
     if (format[i] === '%' && i + 1 < format.length) {
       i++;
-      const arg = fmtArgs[argIdx++] ?? '';
-      switch (format[i]) {
-        case 's': output += arg; break;
-        case 'd': output += String(parseInt(arg) || 0); break;
-        case '%': output += '%'; argIdx--; break;
-        default: output += '%' + format[i];
+      if (format[i] === '%') { output += '%'; continue; }
+
+      // Parse flags
+      let flags = '';
+      while (i < format.length && /[-+ 0#]/.test(format[i])) { flags += format[i]; i++; }
+
+      // Parse width
+      let width = '';
+      while (i < format.length && /[0-9]/.test(format[i])) { width += format[i]; i++; }
+
+      // Parse precision
+      let precision = '';
+      if (i < format.length && format[i] === '.') {
+        i++;
+        while (i < format.length && /[0-9]/.test(format[i])) { precision += format[i]; i++; }
+        if (!precision) precision = '0';
       }
+
+      const specifier = format[i] ?? 's';
+      const arg = fmtArgs[ai++] ?? '';
+
+      output += applyPrintfSpec(specifier, arg, flags, width, precision);
     } else if (format[i] === '\\' && i + 1 < format.length) {
       i++;
       switch (format[i]) {
         case 'n': output += '\n'; break;
         case 't': output += '\t'; break;
         case '\\': output += '\\'; break;
+        case 'a': output += '\x07'; break;
+        case 'b': output += '\b'; break;
+        case 'r': output += '\r'; break;
+        case '0': {
+          let octal = '';
+          let j = i + 1;
+          while (j < format.length && j < i + 4 && /[0-7]/.test(format[j])) { octal += format[j]; j++; }
+          output += String.fromCharCode(parseInt(octal || '0', 8));
+          i = j - 1;
+          break;
+        }
+        case 'x': {
+          let hex = '';
+          let j = i + 1;
+          while (j < format.length && j < i + 3 && /[0-9a-fA-F]/.test(format[j])) { hex += format[j]; j++; }
+          if (hex) { output += String.fromCharCode(parseInt(hex, 16)); i = j - 1; }
+          else { output += '\\x'; }
+          break;
+        }
         default: output += '\\' + format[i];
       }
     } else {
       output += format[i];
     }
   }
-  return { output, exitCode: 0 };
+  return output;
+}
+
+/** Apply a single printf format specifier. */
+function applyPrintfSpec(spec: string, arg: string, flags: string, widthStr: string, precisionStr: string): string {
+  const width = widthStr ? parseInt(widthStr) : 0;
+  const leftAlign = flags.includes('-');
+  const zeroPad = flags.includes('0') && !leftAlign;
+
+  let result: string;
+  switch (spec) {
+    case 's': {
+      result = arg;
+      if (precisionStr) result = result.substring(0, parseInt(precisionStr));
+      break;
+    }
+    case 'd': case 'i': {
+      const num = parseInt(arg) || 0;
+      result = String(num);
+      break;
+    }
+    case 'f': {
+      const num = parseFloat(arg) || 0;
+      const prec = precisionStr ? parseInt(precisionStr) : 6;
+      result = num.toFixed(prec);
+      break;
+    }
+    case 'x': {
+      const num = parseInt(arg) || 0;
+      result = (num >>> 0).toString(16);
+      break;
+    }
+    case 'X': {
+      const num = parseInt(arg) || 0;
+      result = (num >>> 0).toString(16).toUpperCase();
+      break;
+    }
+    case 'o': {
+      const num = parseInt(arg) || 0;
+      result = (num >>> 0).toString(8);
+      break;
+    }
+    case 'c': {
+      result = arg ? arg[0] : '';
+      break;
+    }
+    case 'b': {
+      // %b: interpret backslash escapes in arg (like echo -e)
+      result = processEchoEscapes(arg).text;
+      break;
+    }
+    default:
+      result = '%' + spec;
+  }
+
+  // Apply width padding
+  if (width > result.length) {
+    const padChar = zeroPad ? '0' : ' ';
+    const padding = padChar.repeat(width - result.length);
+    result = leftAlign ? result + padding : padding + result;
+  }
+
+  return result;
 }
 
 // ─── cd ─────────────────────────────────────────────────────────
