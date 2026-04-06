@@ -406,25 +406,67 @@ function builtinCd(args: string[], env: Environment, io?: BuiltinIO): BuiltinRes
 // ─── export ─────────────────────────────────────────────────────
 
 function builtinExport(args: string[], env: Environment): BuiltinResult {
+  // export with no args or -p → list all exports
+  if (args.length === 0 || (args.length === 1 && args[0] === '-p')) {
+    const exported = env.getExported();
+    const lines = Object.entries(exported)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `declare -x ${k}="${v}"`);
+    return { output: lines.length ? lines.join('\n') + '\n' : '', exitCode: 0 };
+  }
+
+  // Handle -n flag (remove export attribute)
+  if (args[0] === '-n') {
+    for (const name of args.slice(1)) {
+      env.unexport(name);
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  let exitCode = 0;
+  let output = '';
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const eqIdx = arg.indexOf('=');
-    if (eqIdx >= 0) {
-      env.export(arg.substring(0, eqIdx), arg.substring(eqIdx + 1));
-    } else {
-      env.export(arg);
+    const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
+
+    // Validate identifier
+    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
+      output += `bash: export: \`${arg}': not a valid identifier\n`;
+      exitCode = 1;
+      continue;
+    }
+
+    try {
+      if (eqIdx >= 0) {
+        env.export(name, arg.substring(eqIdx + 1));
+      } else {
+        env.export(name);
+      }
+    } catch (e) {
+      output += e instanceof Error ? e.message + '\n' : '';
+      exitCode = 1;
     }
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
 }
 
 // ─── unset ──────────────────────────────────────────────────────
 
 function builtinUnset(args: string[], env: Environment): BuiltinResult {
+  let exitCode = 0;
+  let output = '';
   for (const arg of args) {
-    if (!arg.startsWith('-')) env.unset(arg);
+    if (arg === '-v' || arg === '-f') continue; // flags: -v (var), -f (func)
+    if (arg.startsWith('-')) continue;
+    if (env.isReadonly(arg)) {
+      output += `bash: unset: ${arg}: cannot unset: readonly variable\n`;
+      exitCode = 1;
+      continue;
+    }
+    env.unset(arg);
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
 }
 
 // ─── Flow Control ───────────────────────────────────────────────
