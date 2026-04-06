@@ -534,9 +534,12 @@ function builtinShift(args: string[], env: Environment): BuiltinResult {
 // ─── local ──────────────────────────────────────────────────────
 
 function builtinLocal(args: string[], env: Environment): BuiltinResult {
+  let exitCode = 0;
+  let output = '';
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
+    if (arg.startsWith('-')) { i++; continue; } // skip flags like -r, -i
     const eqIdx = arg.indexOf('=');
     if (eqIdx >= 0) {
       const name = arg.substring(0, eqIdx);
@@ -548,15 +551,18 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
       }
       try {
         env.set(name, value);
-      } catch {
-        // readonly variable
+      } catch (e) {
+        output += `bash: local: ${name}: readonly variable\n`;
+        exitCode = 1;
       }
     } else {
-      if (!env.isSet(arg)) env.set(arg, '');
+      if (!env.isSet(arg)) {
+        try { env.set(arg, ''); } catch { /* readonly */ }
+      }
     }
     i++;
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
 }
 
 // ─── read ───────────────────────────────────────────────────────
@@ -713,40 +719,121 @@ function setShellOpt(env: Environment, optName: string, enable: boolean): void {
 // ─── declare / readonly ─────────────────────────────────────────
 
 function builtinDeclare(args: string[], env: Environment, forceReadonly = false): BuiltinResult {
-  const isReadonly = forceReadonly || args.includes('-r');
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue;
+  const cmdName = forceReadonly ? 'readonly' : 'declare';
+  let isReadonly = forceReadonly;
+  let isExport = false;
+  let printMode = false;
+  const varArgs: string[] = [];
+
+  // Parse flags
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '-r') { isReadonly = true; }
+    else if (arg === '-x') { isExport = true; }
+    else if (arg === '-i' || arg === '-a' || arg === '-A') { /* integer/array: accept but ignore */ }
+    else if (arg === '-p') { printMode = true; }
+    else if (arg.startsWith('-') && arg.length > 1) {
+      // Combined flags like -rx
+      for (let j = 1; j < arg.length; j++) {
+        if (arg[j] === 'r') isReadonly = true;
+        else if (arg[j] === 'x') isExport = true;
+        else if (arg[j] === 'p') printMode = true;
+      }
+    } else {
+      varArgs.push(arg);
+    }
+  }
+
+  // Print mode: declare -p [name] or readonly -p
+  if (printMode || (forceReadonly && varArgs.length === 0 && args.includes('-p'))) {
+    return declarePrint(varArgs, env, cmdName, forceReadonly);
+  }
+
+  // List readonly variables when readonly with no args
+  if (forceReadonly && varArgs.length === 0 && args.length === 0) {
+    return declarePrint([], env, cmdName, true);
+  }
+
+  let exitCode = 0;
+  let output = '';
+  for (const arg of varArgs) {
     const eqIdx = arg.indexOf('=');
+    const name = eqIdx >= 0 ? arg.substring(0, eqIdx) : arg;
+
+    // Validate identifier
+    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(name)) {
+      output += `bash: ${cmdName}: \`${arg}': not a valid identifier\n`;
+      exitCode = 1;
+      continue;
+    }
+
     if (eqIdx >= 0) {
-      const name = arg.substring(0, eqIdx);
       const value = arg.substring(eqIdx + 1);
       try {
         env.set(name, value);
       } catch {
-        return { output: `bash: declare: ${name}: readonly variable\n`, exitCode: 1 };
+        output += `bash: ${cmdName}: ${name}: readonly variable\n`;
+        exitCode = 1;
+        continue;
       }
-      if (isReadonly) env.setReadonly(name);
-    } else {
-      if (isReadonly) env.setReadonly(arg);
     }
+    if (isReadonly) env.setReadonly(name);
+    if (isExport) env.export(name);
   }
-  return { output: '', exitCode: 0 };
+  return { output, exitCode };
+}
+
+/** Print variable declarations for declare -p / readonly -p. */
+function declarePrint(names: string[], env: Environment, cmdName: string, readonlyOnly: boolean): BuiltinResult {
+  if (names.length > 0) {
+    let output = '';
+    let exitCode = 0;
+    for (const name of names) {
+      const val = env.get(name);
+      if (val === undefined) {
+        output += `bash: ${cmdName}: ${name}: not found\n`;
+        exitCode = 1;
+      } else {
+        const flags = env.isReadonly(name) ? '-r' : '--';
+        output += `declare ${flags} ${name}="${val}"\n`;
+      }
+    }
+    return { output, exitCode };
+  }
+  // List all (or readonly only)
+  const all = env.getAll();
+  const lines: string[] = [];
+  for (const [k, v] of all) {
+    if (readonlyOnly && !env.isReadonly(k)) continue;
+    const flags = env.isReadonly(k) ? '-r' : '--';
+    lines.push(`declare ${flags} ${k}="${v}"`);
+  }
+  return { output: lines.sort().join('\n') + (lines.length ? '\n' : ''), exitCode: 0 };
 }
 
 // ─── let ────────────────────────────────────────────────────────
 
 function builtinLet(args: string[], env: Environment): BuiltinResult {
+  if (args.length === 0) {
+    return { output: 'bash: let: expression expected\n', exitCode: 1 };
+  }
+
   let result = 0;
   for (const expr of args) {
-    // Handle assignment: var=expr
-    const eqIdx = expr.indexOf('=');
-    if (eqIdx >= 0 && /^[a-zA-Z_]/.test(expr)) {
-      const name = expr.substring(0, eqIdx);
-      const value = evaluateArithmetic(expr.substring(eqIdx + 1), env);
-      env.set(name, value);
-      result = parseInt(value);
-    } else {
-      result = parseInt(evaluateArithmetic(expr, env));
+    try {
+      // Handle assignment: var=expr
+      const eqIdx = expr.indexOf('=');
+      if (eqIdx >= 0 && /^[a-zA-Z_]/.test(expr)) {
+        const name = expr.substring(0, eqIdx);
+        const value = evaluateArithmetic(expr.substring(eqIdx + 1), env);
+        env.set(name, value);
+        result = parseInt(value);
+      } else {
+        result = parseInt(evaluateArithmetic(expr, env));
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { output: `bash: let: ${msg}\n`, exitCode: 1 };
     }
   }
   // let returns 1 if last expression is 0, else 0
