@@ -565,3 +565,156 @@ Ethernet0             Intel(R) 82574L Gigabit Network...       3 Up           00
 ```
 
 ---
+
+## 7. Gestion des Services
+
+### 7.1 Cmdlets PowerShell Service
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-Service` | `-Name`, `-DisplayName`, `-Status`, `-Include`, `-Exclude` | Lister/filtrer les services | ✅ |
+| `Start-Service` | `-Name`, `-PassThru` | Démarrer un service | ✅ |
+| `Stop-Service` | `-Name`, `-Force`, `-PassThru` | Arrêter un service (-Force stop les dépendants) | ✅ |
+| `Restart-Service` | `-Name`, `-Force`, `-PassThru` | Redémarrer un service | ✅ |
+| `Set-Service` | `-Name`, `-StartupType`, `-DisplayName`, `-Description`, `-Status` | Configurer un service | ✅ |
+| `Suspend-Service` | `-Name`, `-PassThru` | Mettre en pause | ✅ |
+| `Resume-Service` | `-Name`, `-PassThru` | Reprendre un service en pause | ✅ |
+| `New-Service` | `-Name`, `-BinaryPathName`, `-DisplayName`, `-StartupType`, `-Description` | Créer un service | ✅ |
+| `Remove-Service` | `-Name` | Supprimer un service | ✅ |
+
+### 7.2 Commandes CMD Service (sc.exe, net)
+
+| Commande | Description | Statut |
+|----------|-------------|--------|
+| `sc query [name]` | État d'un service (ou tous) | ✅ |
+| `sc queryex [name]` | État étendu (PID, FLAGS) | ✅ |
+| `sc qc <name>` | Configuration (type, start type, binary, account, dependencies) | ✅ |
+| `sc start <name>` | Démarrer (affiche START_PENDING) | ✅ |
+| `sc stop <name>` | Arrêter (affiche STOP_PENDING) | ✅ |
+| `sc pause <name>` | Mettre en pause (affiche PAUSE_PENDING) | ✅ |
+| `sc continue <name>` | Reprendre (affiche CONTINUE_PENDING) | ✅ |
+| `sc config <name> start= <type>` | Changer le type de démarrage | ✅ |
+| `sc config <name> displayname= <name>` | Changer le nom d'affichage | ✅ |
+| `sc create <name> binPath= <path>` | Créer un service | ✅ |
+| `sc delete <name>` | Supprimer un service | ✅ |
+| `sc description <name>` | Description du service | ✅ |
+| `sc qfailure <name>` | Actions de récupération | ✅ |
+| `sc sdshow <name>` | SDDL (permissions) | ✅ |
+| `sc failure <name> ...` | Configurer les actions de récupération | ❌ |
+| `sc privs <name>` | Privilèges requis | ❌ |
+| `net start` | Lister les services démarrés | ✅ |
+| `net start <name>` | Démarrer un service | ✅ |
+| `net stop <name>` | Arrêter un service | ✅ |
+
+### 7.3 Services Windows Prédéfinis
+
+| Nom | DisplayName | Type | StartType | Account | canPause | Statut |
+|-----|-------------|------|-----------|---------|----------|--------|
+| `Tcpip` | TCP/IP Protocol Driver | KERNEL_DRIVER | Boot | (kernel) | Non | ✅ |
+| `Afd` | Ancillary Function Driver for Winsock | KERNEL_DRIVER | System | (kernel) | Non | ✅ |
+| `NetBT` | NetBT | KERNEL_DRIVER | System | (kernel) | Non | ✅ |
+| `Dhcp` | DHCP Client | WIN32_SHARE_PROCESS | Automatic | LocalService | Non | ✅ |
+| `Dnscache` | DNS Client | WIN32_SHARE_PROCESS | Automatic | NetworkService | Non | ✅ |
+| `RpcSs` | Remote Procedure Call (RPC) | WIN32_SHARE_PROCESS | Automatic | NetworkService | Non | ✅ |
+| `RpcEptMapper` | RPC Endpoint Mapper | WIN32_SHARE_PROCESS | Automatic | NetworkService | Non | ✅ |
+| `SamSs` | Security Accounts Manager | WIN32_SHARE_PROCESS | Automatic | SYSTEM | Non | ✅ |
+| `LanmanServer` | Server | WIN32_SHARE_PROCESS | Automatic | SYSTEM | **Oui** | ✅ |
+| `LanmanWorkstation` | Workstation | WIN32_SHARE_PROCESS | Automatic | NetworkService | Non | ✅ |
+| `mpssvc` | Windows Defender Firewall | WIN32_SHARE_PROCESS | Automatic | LocalService | Non | ✅ |
+| `EventLog` | Windows Event Log | WIN32_SHARE_PROCESS | Automatic | LocalService | Non | ✅ |
+| `W32Time` | Windows Time | WIN32_SHARE_PROCESS | Automatic | LocalService | Non | ✅ |
+| `CryptSvc` | Cryptographic Services | WIN32_SHARE_PROCESS | Automatic | NetworkService | Non | ✅ |
+| `Winmgmt` | Windows Management Instrumentation | WIN32_SHARE_PROCESS | Automatic | SYSTEM | Non | ✅ |
+| `WinRM` | Windows Remote Management | WIN32_SHARE_PROCESS | **Manual** | NetworkService | Non | ✅ |
+| `Spooler` | Print Spooler | WIN32_OWN_PROCESS | Automatic | SYSTEM | **Oui** | ✅ |
+| `Schedule` | Task Scheduler | WIN32_SHARE_PROCESS | Automatic | SYSTEM | Non | ✅ |
+| `AudioSrv` | Windows Audio | WIN32_SHARE_PROCESS | Automatic | LocalService | Non | ✅ |
+| `Themes` | Themes | WIN32_SHARE_PROCESS | Automatic | SYSTEM | Non | ✅ |
+
+### 7.4 Sortie Exacte sc query (Réel)
+
+```
+SERVICE_NAME: Dhcp
+        TYPE               : 20  WIN32_SHARE_PROCESS
+        STATE              : 4  RUNNING
+                                (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+        WIN32_EXIT_CODE    : 0  (0x0)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x0
+        WAIT_HINT          : 0x0
+```
+
+### 7.5 Sortie Exacte sc qc (Réel)
+
+```
+[SC] QueryServiceConfig SUCCESS
+
+SERVICE_NAME: Dhcp
+        TYPE               : 20  WIN32_SHARE_PROCESS
+        START_TYPE         : 2   AUTO_START
+        ERROR_CONTROL      : 1   NORMAL
+        BINARY_PATH_NAME   : C:\Windows\System32\svchost.exe -k dhcp
+        LOAD_ORDER_GROUP   :
+        TAG                : 0
+        DISPLAY_NAME       : DHCP Client
+        DEPENDENCIES       : Afd
+                           : Tcpip
+        SERVICE_START_NAME : NT Authority\LocalService
+```
+
+### 7.6 Sortie Exacte Get-Service (PS 5.1)
+
+```
+Status     Name                     DisplayName
+------     ----                     -----------
+Running    Dhcp                     DHCP Client
+Running    Dnscache                 DNS Client
+Stopped    WinRM                    Windows Remote Management (WS-...
+```
+
+### 7.7 Messages d'Erreur PowerShell — Services
+
+```powershell
+# Service introuvable
+Get-Service : Cannot find any service with service name 'xxx'.
+    + CategoryInfo          : ObjectNotFound: (xxx:String) [Get-Service], ServiceCommandException
+    + FullyQualifiedErrorId : NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.GetServiceCommand
+
+# Pas administrateur (Start/Stop/Restart)
+Stop-Service : Service 'Print Spooler (Spooler)' cannot be stopped due to the following error: Cannot open Spooler service on computer '.'.
+    + CategoryInfo          : OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Stop-Service], ServiceCommandException
+    + FullyQualifiedErrorId : CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand
+
+# Déjà démarré
+Start-Service : Service 'DHCP Client (Dhcp)' cannot be started due to the following error: An instance of the service is already running.
+    + CategoryInfo          : OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Start-Service], ServiceCommandException
+    + FullyQualifiedErrorId : CouldNotStartService,Microsoft.PowerShell.Commands.StartServiceCommand
+
+# Service non-pausable
+Suspend-Service : Service 'DHCP Client (Dhcp)' cannot be suspended because the service does not support being paused and continued.
+    + CategoryInfo          : CloseError: (System.ServiceProcess.ServiceController:ServiceController) [Suspend-Service], ServiceCommandException
+    + FullyQualifiedErrorId : CouldNotSuspendService,Microsoft.PowerShell.Commands.SuspendServiceCommand
+```
+
+### 7.8 Messages d'Erreur CMD — Services
+
+```
+# sc start — service déjà démarré
+[SC] StartService FAILED 1056:
+An instance of the service is already running.
+
+# sc stop — service non démarré
+[SC] ControlService FAILED 1062:
+The service has not been started.
+
+# net stop — pas admin
+System error 5 has occurred.
+Access is denied.
+
+# net start — service désactivé
+The <Service> service could not be started.
+A service specific error occurred: 1058.
+More help is available by typing NET HELPMSG 3521.
+```
+
+---
