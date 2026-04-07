@@ -172,3 +172,146 @@ Get-Service : Cannot find any service with service name 'xxx'.
 ```
 
 ---
+
+## 3. Shell Engine — Cmdlets de Base
+
+### 3.1 Entrée/Sortie et Session
+
+| Cmdlet / Variable | Alias | Description | Priorité | Statut |
+|-------------------|-------|-------------|----------|--------|
+| `Write-Host "text"` | | Écrire sur la console (pas dans le pipeline) | P0 | ✅ |
+| `Write-Output "text"` | `echo` | Écrire un objet dans le pipeline | P0 | ✅ |
+| `Clear-Host` | `cls`, `clear` | Effacer l'écran | P0 | ✅ |
+| `Get-Help <cmdlet>` | `help`, `man` | Aide sur un cmdlet | P0 | ✅ |
+| `Get-Command` | `gcm` | Lister les cmdlets disponibles | P0 | ✅ |
+| `Get-History` | `h`, `history` | Historique des commandes | P1 | ✅ |
+| `Get-Date` | | Date/heure actuelle | P1 | ✅ |
+| `Get-ExecutionPolicy` | | Politique d'exécution | P1 | ✅ |
+| `Set-ExecutionPolicy` | | Changer la politique | P1 | ✅ (no-op) |
+| `hostname` | | Nom de la machine | P0 | ✅ |
+| `exit` | | Quitter PowerShell | P0 | ✅ |
+| `Read-Host` | | Lire l'entrée utilisateur | P2 | ❌ |
+| `Write-Error` | | Écrire une erreur dans $Error | P2 | ❌ |
+| `Write-Warning` | | Écrire un avertissement | P2 | ❌ |
+| `Write-Verbose` | | Écrire si $VerbosePreference | P2 | ❌ |
+| `Write-Debug` | | Écrire si $DebugPreference | P2 | ❌ |
+| `Write-Progress` | | Barre de progression | P3 | ❌ |
+| `Invoke-Expression` | `iex` | Exécuter une chaîne comme commande | P2 | ❌ |
+| `Invoke-Command` | `icm` | Exécuter sur machine distante (stub) | P3 | ❌ |
+
+### 3.2 Variables Automatiques
+
+| Variable | Description | Statut |
+|----------|-------------|--------|
+| `$PSVersionTable` | Table de version PowerShell 5.1 | ✅ |
+| `$Host` | Informations sur l'hôte de la console | ✅ |
+| `$pwd` | Répertoire courant (PathInfo) | ✅ |
+| `$true` / `$false` | Booléens | ✅ |
+| `$null` | Valeur nulle | ✅ |
+| `$pid` | PID du processus PowerShell | ✅ |
+| `$env:VARIABLE` | Variables d'environnement | ✅ |
+| `$PSScriptRoot` | Répertoire du script en cours | ❌ |
+| `$PSCommandPath` | Chemin du script en cours | ❌ |
+| `$Error` | Collection des erreurs récentes | ❌ |
+| `$ErrorActionPreference` | Comportement par défaut sur erreur | ❌ |
+| `$VerbosePreference` | Contrôle Write-Verbose | ❌ |
+| `$DebugPreference` | Contrôle Write-Debug | ❌ |
+| `$WarningPreference` | Contrôle Write-Warning | ❌ |
+| `$ConfirmPreference` | Seuil de confirmation | ❌ |
+| `$WhatIfPreference` | Simulation par défaut | ❌ |
+| `$LASTEXITCODE` | Code retour dernière commande native | ❌ |
+| `$?` | Statut de la dernière commande | ❌ |
+| `$_` / `$PSItem` | Objet courant dans le pipeline | ✅ (dans Where-Object) |
+| `$args` | Arguments passés à une fonction/script | ❌ |
+| `$input` | Entrée du pipeline dans une fonction | ❌ |
+| `$PROFILE` | Chemin du profil PS | ❌ |
+| `$HOME` | Répertoire home de l'utilisateur | ❌ |
+| `$PSHOME` | Répertoire d'installation PowerShell | ❌ |
+
+### 3.3 Variables d'Environnement ($env:)
+
+| Variable | Valeur simulée | Statut |
+|----------|---------------|--------|
+| `$env:USERNAME` | Utilisateur courant | ✅ |
+| `$env:COMPUTERNAME` | Hostname du PC | ✅ |
+| `$env:USERPROFILE` | `C:\Users\<user>` | ✅ |
+| `$env:SYSTEMROOT` | `C:\Windows` | ✅ |
+| `$env:WINDIR` | `C:\Windows` | ✅ |
+| `$env:TEMP` | `C:\Users\User\AppData\Local\Temp` | ✅ |
+| `$env:PATH` | `C:\Windows\System32;...` | ✅ |
+| `$env:HOMEDRIVE` | `C:` | ✅ |
+| `$env:HOMEPATH` | `\Users\User` | ✅ |
+| `$env:PROCESSOR_ARCHITECTURE` | `AMD64` | ✅ |
+| `$env:OS` | `Windows_NT` | ✅ |
+| `$env:COMSPEC` | `C:\Windows\System32\cmd.exe` | ✅ |
+| `$env:PSModulePath` | Chemins des modules PS | ✅ |
+| `$env:APPDATA` | `C:\Users\User\AppData\Roaming` | ❌ |
+| `$env:LOCALAPPDATA` | `C:\Users\User\AppData\Local` | ❌ |
+| `$env:ProgramFiles` | `C:\Program Files` | ❌ |
+| `$env:ProgramFiles(x86)` | `C:\Program Files (x86)` | ❌ |
+| `$env:ProgramData` | `C:\ProgramData` | ❌ |
+| `$env:PATHEXT` | `.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1` | ❌ |
+| `$env:NUMBER_OF_PROCESSORS` | `4` | ❌ |
+
+### 3.4 Prompt et Bannière
+
+```
+# Bannière au démarrage de PowerShell
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
+
+# Prompt standard
+PS C:\Users\User>
+
+# Prompt en mode élevé (Administrator)
+PS C:\Windows\System32>
+```
+
+### 3.5 Aliases Intégrés
+
+| Alias | Cmdlet | Statut |
+|-------|--------|--------|
+| `ls`, `dir`, `gci` | `Get-ChildItem` | ✅ |
+| `cd`, `chdir`, `sl` | `Set-Location` | ✅ |
+| `pwd`, `gl` | `Get-Location` | ✅ |
+| `cat`, `type`, `gc` | `Get-Content` | ✅ |
+| `echo` | `Write-Output` | ✅ |
+| `cls`, `clear` | `Clear-Host` | ✅ |
+| `cp`, `copy`, `cpi` | `Copy-Item` | ✅ |
+| `mv`, `move`, `mi` | `Move-Item` | ✅ |
+| `rm`, `del`, `erase`, `ri` | `Remove-Item` | ✅ |
+| `ren`, `rni` | `Rename-Item` | ✅ |
+| `mkdir`, `md` | `New-Item -ItemType Directory` | ✅ |
+| `ni` | `New-Item` | ✅ |
+| `gps` | `Get-Process` | ✅ |
+| `spps`, `kill` | `Stop-Process` | ✅ |
+| `gsv` | `Get-Service` | ✅ |
+| `sasv` | `Start-Service` | ✅ |
+| `spsv` | `Stop-Service` | ✅ |
+| `gcm` | `Get-Command` | ✅ |
+| `h`, `history` | `Get-History` | ✅ |
+| `gi` | `Get-Item` | ✅ |
+| `sc` | `Set-Content` | ✅ |
+| `ac` | `Add-Content` | ✅ |
+| `clc` | `Clear-Content` | ✅ |
+| `rvpa` | `Resolve-Path` | ✅ |
+| `help`, `man` | `Get-Help` | ✅ |
+| `gwmi` | `Get-WmiObject` | ✅ |
+| `iex` | `Invoke-Expression` | ❌ |
+| `icm` | `Invoke-Command` | ❌ |
+| `iwr` | `Invoke-WebRequest` | ❌ |
+| `irm` | `Invoke-RestMethod` | ❌ |
+| `fl` | `Format-List` | ✅ (pipeline) |
+| `ft` | `Format-Table` | ✅ (pipeline) |
+| `select` | `Select-Object` | ✅ (pipeline) |
+| `where`, `?` | `Where-Object` | ✅ (pipeline) |
+| `sort` | `Sort-Object` | ✅ (pipeline) |
+| `measure` | `Measure-Object` | ✅ (pipeline) |
+| `sls` | `Select-String` | ✅ (pipeline) |
+| `%`, `foreach` | `ForEach-Object` | ❌ |
+| `tee` | `Tee-Object` | ❌ |
+| `ogv` | `Out-GridView` | ❌ |
+
+---
