@@ -1,15 +1,21 @@
 /**
- * Windows sc (Service Control) command.
+ * Windows sc (Service Control) command — matches real sc.exe output exactly.
  *
  * Supports:
  *   - sc query [name]         — query service status
  *   - sc query type= all      — list all services
+ *   - sc queryex [name]       — extended query with PID and FLAGS
  *   - sc qc <name>            — query service configuration
  *   - sc start <name>         — start a service
  *   - sc stop <name>          — stop a service
+ *   - sc pause <name>         — pause a service
+ *   - sc continue <name>      — resume a paused service
  *   - sc config <name> start= auto|demand|disabled
  *   - sc create <name> binPath= "..." [DisplayName= "..."] [start= ...]
  *   - sc delete <name>        — delete a service
+ *   - sc description <name>   — show service description
+ *   - sc qfailure <name>      — show failure recovery actions
+ *   - sc sdshow <name>        — show security descriptor
  */
 
 import type { WindowsServiceManager } from './WindowsServiceManager';
@@ -30,13 +36,19 @@ export function cmdSc(ctx: ScContext, args: string[]): string {
   const subArgs = args.slice(1);
 
   switch (subCmd) {
-    case 'query': return scQuery(ctx, subArgs);
-    case 'qc':    return scQc(ctx, subArgs);
-    case 'start': return scStart(ctx, subArgs);
-    case 'stop':  return scStop(ctx, subArgs);
-    case 'config': return scConfig(ctx, subArgs);
-    case 'create': return scCreate(ctx, subArgs);
-    case 'delete': return scDelete(ctx, subArgs);
+    case 'query':       return scQuery(ctx, subArgs);
+    case 'queryex':     return scQueryEx(ctx, subArgs);
+    case 'qc':          return scQc(ctx, subArgs);
+    case 'start':       return scStart(ctx, subArgs);
+    case 'stop':        return scStop(ctx, subArgs);
+    case 'pause':       return scPause(ctx, subArgs);
+    case 'continue':    return scContinue(ctx, subArgs);
+    case 'config':      return scConfig(ctx, subArgs);
+    case 'create':      return scCreate(ctx, subArgs);
+    case 'delete':      return scDelete(ctx, subArgs);
+    case 'description': return scDescription(ctx, subArgs);
+    case 'qfailure':    return scQfailure(ctx, subArgs);
+    case 'sdshow':      return scSdshow(ctx, subArgs);
     default:
       return `[SC] Unrecognized command "${subCmd}"`;
   }
@@ -95,8 +107,17 @@ function scStart(ctx: ScContext, args: string[]): string {
   const svc = ctx.serviceManager.getService(name);
   if (svc) ctx.processManager.onServiceStarted(svc.name, svc.processName);
 
-  // Return START_PENDING then RUNNING
-  return `SERVICE_NAME: ${svc?.name ?? name}\n        STATE              : 2  START_PENDING`;
+  // Real sc.exe returns full status block with START_PENDING state
+  // Temporarily show START_PENDING, then state is already Running
+  if (svc) {
+    const saved = svc.state;
+    svc.state = 'StartPending';
+    const output = ctx.serviceManager.formatServiceStatus(svc, { waitHint: 0x7d0 });
+    svc.state = saved;
+    return output;
+  }
+  return ctx.serviceManager.formatServiceStatus(
+    ctx.serviceManager.getService(name)!, { waitHint: 0x7d0 });
 }
 
 function scStop(ctx: ScContext, args: string[]): string {
@@ -114,7 +135,50 @@ function scStop(ctx: ScContext, args: string[]): string {
   // Remove associated process
   if (svc) ctx.processManager.onServiceStopped(svc.name);
 
-  return `SERVICE_NAME: ${svc?.name ?? name}\n        STATE              : 3  STOP_PENDING`;
+  // Real sc.exe returns full status block with STOP_PENDING state
+  if (svc) {
+    const saved = svc.state;
+    svc.state = 'StopPending';
+    const output = ctx.serviceManager.formatServiceStatus(svc);
+    svc.state = saved;
+    return output;
+  }
+  return '';
+}
+
+function scPause(ctx: ScContext, args: string[]): string {
+  if (args.length === 0) return '[SC] ControlService: service name required.';
+  const name = args[0];
+  const err = ctx.serviceManager.pauseService(name, ctx.isAdmin);
+  if (err) {
+    if (err.includes('cannot be paused')) return `[SC] ControlService FAILED 1052:\n\n${err}`;
+    if (err.includes('not running')) return `[SC] ControlService FAILED 1062:\n\n${err}`;
+    return `[SC] ControlService FAILED:\n\n${err}`;
+  }
+  // Show PAUSE_PENDING in output (real sc.exe shows pending state), then finalize to Paused
+  const svc = ctx.serviceManager.getService(name)!;
+  const saved = svc.state;
+  svc.state = 'PausePending';
+  const output = ctx.serviceManager.formatServiceStatus(svc);
+  svc.state = saved;
+  return output;
+}
+
+function scContinue(ctx: ScContext, args: string[]): string {
+  if (args.length === 0) return '[SC] ControlService: service name required.';
+  const name = args[0];
+  const err = ctx.serviceManager.resumeService(name, ctx.isAdmin);
+  if (err) {
+    if (err.includes('not paused')) return `[SC] ControlService FAILED 1053:\n\n${err}`;
+    return `[SC] ControlService FAILED:\n\n${err}`;
+  }
+  // Show CONTINUE_PENDING in output (real sc.exe shows pending state), then finalize to Running
+  const svc = ctx.serviceManager.getService(name)!;
+  const saved = svc.state;
+  svc.state = 'ContinuePending';
+  const output = ctx.serviceManager.formatServiceStatus(svc);
+  svc.state = saved;
+  return output;
 }
 
 function scConfig(ctx: ScContext, args: string[]): string {
@@ -173,6 +237,76 @@ function scDelete(ctx: ScContext, args: string[]): string {
     return `[SC] DeleteService FAILED:\n\n${err}`;
   }
   return '[SC] DeleteService SUCCESS';
+}
+
+// ─── queryex — extended query with PID ───────────────────────────
+
+function scQueryEx(ctx: ScContext, args: string[]): string {
+  if (args.length >= 2 && args[0].toLowerCase() === 'type=' && args[1].toLowerCase() === 'all') {
+    return ctx.serviceManager.getAllServices()
+      .map(s => ctx.serviceManager.formatScQueryEx(s, findServicePid(ctx, s.name)))
+      .join('\n\n');
+  }
+  if (args.length >= 1 && args[0].toLowerCase().startsWith('type=')) {
+    return ctx.serviceManager.getAllServices()
+      .map(s => ctx.serviceManager.formatScQueryEx(s, findServicePid(ctx, s.name)))
+      .join('\n\n');
+  }
+  if (args.length === 0) {
+    return ctx.serviceManager.getRunningServices()
+      .map(s => ctx.serviceManager.formatScQueryEx(s, findServicePid(ctx, s.name)))
+      .join('\n\n');
+  }
+  const svc = ctx.serviceManager.getService(args[0]);
+  if (!svc) return `[SC] EnumQueryServicesStatus:OpenService FAILED 1060:\n\nThe specified service does not exist as an installed service.`;
+  return ctx.serviceManager.formatScQueryEx(svc, findServicePid(ctx, svc.name));
+}
+
+function findServicePid(ctx: ScContext, serviceName: string): number {
+  const procs = ctx.processManager.getAllProcesses();
+  for (const p of procs) {
+    if (p.hostedServices.some(s => s.toLowerCase() === serviceName.toLowerCase())) {
+      return p.pid;
+    }
+  }
+  return 0;
+}
+
+// ─── description — show service description ──────────────────────
+
+function scDescription(ctx: ScContext, args: string[]): string {
+  if (args.length === 0) return '[SC] QueryServiceConfig2: service name required.';
+  const svc = ctx.serviceManager.getService(args[0]);
+  if (!svc) return `[SC] OpenService FAILED 1060:\n\nThe specified service does not exist as an installed service.`;
+
+  // sc description <name> "new desc" — set description
+  if (args.length >= 2) {
+    const desc = args.slice(1).join(' ').replace(/^["']|["']$/g, '');
+    const err = ctx.serviceManager.setDescription(svc.name, desc, ctx.isAdmin);
+    if (err) return `[SC] ChangeServiceConfig2 FAILED:\n\n${err}`;
+    return '[SC] ChangeServiceConfig2 SUCCESS';
+  }
+
+  return ctx.serviceManager.formatScDescription(svc);
+}
+
+// ─── qfailure — show failure recovery actions ────────────────────
+
+function scQfailure(ctx: ScContext, args: string[]): string {
+  if (args.length === 0) return '[SC] QueryServiceConfig2: service name required.';
+  const svc = ctx.serviceManager.getService(args[0]);
+  if (!svc) return `[SC] OpenService FAILED 1060:\n\nThe specified service does not exist as an installed service.`;
+  return ctx.serviceManager.formatScQfailure(svc);
+}
+
+// ─── sdshow — show security descriptor ───────────────────────────
+
+function scSdshow(ctx: ScContext, args: string[]): string {
+  if (args.length === 0) return '[SC] OpenService: service name required.';
+  const svc = ctx.serviceManager.getService(args[0]);
+  if (!svc) return `[SC] OpenService FAILED 1060:\n\nThe specified service does not exist as an installed service.`;
+  // Realistic SDDL string matching Windows defaults
+  return `\nD:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)`;
 }
 
 /** Parse "key= value" pairs as used by sc.exe */

@@ -18,7 +18,8 @@ export type ServiceState =
   | 'PausePending' | 'ContinuePending';
 
 export type ServiceStartType =
-  | 'Automatic' | 'AutomaticDelayedStart' | 'Manual' | 'Disabled';
+  | 'Automatic' | 'AutomaticDelayedStart' | 'Manual' | 'Disabled'
+  | 'Boot' | 'System';
 
 export type ServiceType = 'WIN32_OWN_PROCESS' | 'WIN32_SHARE_PROCESS' | 'KERNEL_DRIVER';
 
@@ -33,6 +34,7 @@ export interface WindowsService {
   account: string;
   dependencies: string[];
   canPauseAndContinue: boolean;
+  acceptsShutdown: boolean;
   /** Process name spawned when service runs (for process manager link) */
   processName: string;
   builtIn: boolean;
@@ -44,8 +46,29 @@ const STATE_CODES: Record<ServiceState, number> = {
   Running: 4, ContinuePending: 5, PausePending: 6, Paused: 7,
 };
 
+/** State names matching real sc.exe output */
+const STATE_NAMES: Record<ServiceState, string> = {
+  Stopped: 'STOPPED', StartPending: 'START_PENDING', StopPending: 'STOP_PENDING',
+  Running: 'RUNNING', ContinuePending: 'CONTINUE_PENDING',
+  PausePending: 'PAUSE_PENDING', Paused: 'PAUSED',
+};
+
+/** Type codes matching real sc.exe output */
+const TYPE_CODES: Record<ServiceType, number> = {
+  KERNEL_DRIVER: 1,
+  WIN32_OWN_PROCESS: 10,
+  WIN32_SHARE_PROCESS: 20,
+};
+
+/** Start type codes matching real sc.exe output */
+const START_TYPE_CODES: Record<ServiceStartType, number> = {
+  Boot: 0, System: 1, Automatic: 2, AutomaticDelayedStart: 2,
+  Manual: 3, Disabled: 4,
+};
+
 /** Start type names for sc qc output */
 const START_TYPE_NAMES: Record<ServiceStartType, string> = {
+  Boot: 'BOOT_START', System: 'SYSTEM_START',
   Automatic: 'AUTO_START', AutomaticDelayedStart: 'AUTO_START (DELAYED)',
   Manual: 'DEMAND_START', Disabled: 'DISABLED',
 };
@@ -61,7 +84,7 @@ export class WindowsServiceManager {
     const svc = (
       name: string, displayName: string, desc: string,
       opts: Partial<Pick<WindowsService, 'startType' | 'dependencies' | 'canPauseAndContinue'
-        | 'processName' | 'account' | 'serviceType' | 'state'>> = {}
+        | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state'>> = {}
     ) => {
       this.services.set(name.toLowerCase(), {
         name, displayName, description: desc,
@@ -72,6 +95,7 @@ export class WindowsServiceManager {
         account: opts.account ?? 'NT AUTHORITY\\LocalService',
         dependencies: opts.dependencies ?? [],
         canPauseAndContinue: opts.canPauseAndContinue ?? false,
+        acceptsShutdown: opts.acceptsShutdown ?? true,
         processName: opts.processName ?? 'svchost.exe',
         builtIn: true,
       });
@@ -79,15 +103,15 @@ export class WindowsServiceManager {
 
     // Core networking
     svc('Tcpip', 'TCP/IP Protocol Driver', 'TCP/IP Protocol Driver',
-      { serviceType: 'KERNEL_DRIVER', account: '', processName: 'System' });
+      { serviceType: 'KERNEL_DRIVER', startType: 'Boot', account: '', processName: 'System', acceptsShutdown: false });
     svc('Afd', 'Ancillary Function Driver for Winsock', 'Winsock helper',
-      { serviceType: 'KERNEL_DRIVER', account: '', processName: 'System' });
+      { serviceType: 'KERNEL_DRIVER', startType: 'System', account: '', processName: 'System', acceptsShutdown: false });
     svc('Dhcp', 'DHCP Client', 'Registers and updates IP addresses and DNS records',
-      { dependencies: ['Afd', 'Tcpip'], account: 'NT AUTHORITY\\LocalService' });
+      { dependencies: ['Afd', 'Tcpip'], account: 'NT Authority\\LocalService' });
     svc('Dnscache', 'DNS Client', 'Caches DNS names and registers the full computer name',
       { dependencies: ['Tcpip'], account: 'NT AUTHORITY\\NetworkService' });
     svc('NetBT', 'NetBT', 'NetBIOS over TCP/IP',
-      { serviceType: 'KERNEL_DRIVER', dependencies: ['Tcpip'], account: '', processName: 'System' });
+      { serviceType: 'KERNEL_DRIVER', startType: 'System', dependencies: ['Tcpip'], account: '', processName: 'System', acceptsShutdown: false });
 
     // RPC (many services depend on this)
     svc('RpcSs', 'Remote Procedure Call (RPC)', 'The RPCSS service is the Service Control Manager for COM and DCOM servers',
@@ -132,7 +156,7 @@ export class WindowsServiceManager {
     svc('Spooler', 'Print Spooler', 'Loads files to memory for later printing',
       { dependencies: ['RpcSs'], canPauseAndContinue: true,
         processName: 'spoolsv.exe', binaryPath: 'C:\\Windows\\System32\\spoolsv.exe',
-        account: 'NT AUTHORITY\\SYSTEM' } as any);
+        account: 'NT AUTHORITY\\SYSTEM', serviceType: 'WIN32_OWN_PROCESS' } as any);
 
     // Task scheduler
     svc('Schedule', 'Task Scheduler', 'Enables a user to configure and schedule automated tasks',
@@ -279,6 +303,7 @@ export class WindowsServiceManager {
       account: opts.account ?? 'NT AUTHORITY\\SYSTEM',
       dependencies: [],
       canPauseAndContinue: false,
+      acceptsShutdown: false,
       processName: name.toLowerCase() + '.exe',
       builtIn: false,
     });
@@ -297,37 +322,103 @@ export class WindowsServiceManager {
 
   // ─── Formatting helpers for sc command ──────────────────────────
 
-  formatScQuery(svc: WindowsService): string {
+  /** Build the flags line like (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN) */
+  private formatStateFlags(svc: WindowsService): string {
+    const isActive = svc.state === 'Running' || svc.state === 'Paused'
+      || svc.state === 'StopPending';
+
+    const stoppable = isActive ? 'STOPPABLE' : 'NOT_STOPPABLE';
+    const pausable = (isActive && svc.canPauseAndContinue) ? 'PAUSABLE' : 'NOT_PAUSABLE';
+    const shutdown = (isActive && svc.acceptsShutdown) ? 'ACCEPTS_SHUTDOWN' : 'IGNORES_SHUTDOWN';
+
+    return `(${stoppable}, ${pausable}, ${shutdown})`;
+  }
+
+  /** Format the service status block shared by query, queryex, start, stop */
+  formatServiceStatus(svc: WindowsService, opts?: { waitHint?: number }): string {
+    const typeCode = TYPE_CODES[svc.serviceType] ?? 20;
     const stateCode = STATE_CODES[svc.state] ?? 1;
-    const acceptsStop = svc.state === 'Running' ? 'ACCEPT_STOP' : '';
-    const acceptsPause = (svc.state === 'Running' && svc.canPauseAndContinue) ? ', ACCEPT_PAUSE_CONTINUE' : '';
+    const stateName = STATE_NAMES[svc.state] ?? svc.state.toUpperCase();
+    const flags = this.formatStateFlags(svc);
+    const waitHint = opts?.waitHint ?? 0;
+
     return [
+      '',
       `SERVICE_NAME: ${svc.name}`,
-      `        TYPE               : 20  ${svc.serviceType}`,
-      `        STATE              : ${stateCode}  ${svc.state.toUpperCase()}`,
-      `                                (${[acceptsStop, acceptsPause].filter(Boolean).join('') || 'NOT_STOPPABLE, NOT_PAUSABLE'})`,
+      `        TYPE               : ${typeCode}  ${svc.serviceType}`,
+      `        STATE              : ${stateCode}  ${stateName}`,
+      `                                ${flags}`,
       `        WIN32_EXIT_CODE    : 0  (0x0)`,
       `        SERVICE_EXIT_CODE  : 0  (0x0)`,
       `        CHECKPOINT         : 0x0`,
-      `        WAIT_HINT          : 0x0`,
+      `        WAIT_HINT          : 0x${waitHint.toString(16)}`,
     ].join('\n');
   }
 
+  formatScQuery(svc: WindowsService): string {
+    return this.formatServiceStatus(svc);
+  }
+
+  formatScQueryEx(svc: WindowsService, pid: number): string {
+    const base = this.formatServiceStatus(svc);
+    return base + '\n' +
+      `        PID                : ${pid}\n` +
+      `        FLAGS              :`;
+  }
+
   formatScQc(svc: WindowsService): string {
+    const startTypeCode = START_TYPE_CODES[svc.startType] ?? 3;
     const startTypeName = START_TYPE_NAMES[svc.startType] ?? svc.startType;
-    const deps = svc.dependencies.length > 0 ? svc.dependencies.join(', ') : '(none)';
-    return [
+
+    const lines = [
       `[SC] QueryServiceConfig SUCCESS`,
+      '',
       `SERVICE_NAME: ${svc.name}`,
-      `        TYPE               : 20  ${svc.serviceType}`,
-      `        START_TYPE         : 2   ${startTypeName}`,
+      `        TYPE               : ${TYPE_CODES[svc.serviceType] ?? 20}  ${svc.serviceType}`,
+      `        START_TYPE         : ${startTypeCode}   ${startTypeName}`,
       `        ERROR_CONTROL      : 1   NORMAL`,
       `        BINARY_PATH_NAME   : ${svc.binaryPath}`,
       `        LOAD_ORDER_GROUP   :`,
       `        TAG                : 0`,
       `        DISPLAY_NAME       : ${svc.displayName}`,
-      `        DEPENDENCIES       : ${deps}`,
-      `        SERVICE_START_NAME : ${svc.account || 'LocalSystem'}`,
+    ];
+
+    // Dependencies: one per line with aligned colons
+    if (svc.dependencies.length === 0) {
+      lines.push(`        DEPENDENCIES       :`);
+    } else {
+      lines.push(`        DEPENDENCIES       : ${svc.dependencies[0]}`);
+      for (let i = 1; i < svc.dependencies.length; i++) {
+        lines.push(`                           : ${svc.dependencies[i]}`);
+      }
+    }
+
+    lines.push(`        SERVICE_START_NAME : ${svc.account || 'LocalSystem'}`);
+
+    return lines.join('\n');
+  }
+
+  formatScDescription(svc: WindowsService): string {
+    return [
+      `[SC] QueryServiceConfig2 SUCCESS`,
+      '',
+      `SERVICE_NAME: ${svc.name}`,
+      `DESCRIPTION:  ${svc.description}`,
+    ].join('\n');
+  }
+
+  formatScQfailure(svc: WindowsService): string {
+    return [
+      `[SC] QueryServiceConfig2 SUCCESS`,
+      '',
+      `SERVICE_NAME: ${svc.name}`,
+      '',
+      `        RESET_PERIOD (in seconds)    : 86400`,
+      `        REBOOT_MESSAGE               :`,
+      `        COMMAND_LINE                  :`,
+      `        FAILURE_ACTIONS              : RESTART -- Delay = 120000 milliseconds.`,
+      `                                       RESTART -- Delay = 300000 milliseconds.`,
+      `                                       NONE    -- Delay = 0 milliseconds.`,
     ].join('\n');
   }
 }

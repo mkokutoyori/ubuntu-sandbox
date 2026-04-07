@@ -1,5 +1,5 @@
 /**
- * PowerShell process management cmdlets.
+ * PowerShell process management cmdlets — matches real PowerShell output exactly.
  *
  * Implements:
  *   - Get-Process [-Name <name>] [-Id <pid>]
@@ -16,6 +16,8 @@ export interface PSProcessContext {
   isAdmin: boolean;
 }
 
+// ─── Get-Process ─────────────────────────────────────────────────
+
 export function psGetProcess(ctx: PSProcessContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name');
@@ -26,12 +28,12 @@ export function psGetProcess(ctx: PSProcessContext, args: string[]): string {
   if (name) {
     procs = ctx.processManager.getProcessesByName(name);
     if (procs.length === 0) {
-      return `Get-Process : Cannot find a process with the name "${name}".`;
+      return `Get-Process : Cannot find a process with the name "${name}". Verify the process name and call the cmdlet\nagain.\n    + CategoryInfo          : ObjectNotFound: (${name}:String) [Get-Process], ProcessCommandException\n    + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand`;
     }
   } else if (id) {
     const pid = parseInt(id, 10);
     const p = ctx.processManager.getProcess(pid);
-    if (!p) return `Get-Process : Cannot find a process with the process identifier ${pid}.`;
+    if (!p) return `Get-Process : Cannot find a process with the process identifier ${pid}.\n    + CategoryInfo          : ObjectNotFound: (${pid}:Int32) [Get-Process], ProcessCommandException\n    + FullyQualifiedErrorId : NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand`;
     procs = [p];
   } else {
     procs = ctx.processManager.getAllProcesses();
@@ -39,6 +41,8 @@ export function psGetProcess(ctx: PSProcessContext, args: string[]): string {
 
   return formatProcessTable(procs);
 }
+
+// ─── Stop-Process ────────────────────────────────────────────────
 
 export function psStopProcess(ctx: PSProcessContext, args: string[]): string {
   const params = parsePSArgs(args);
@@ -49,7 +53,7 @@ export function psStopProcess(ctx: PSProcessContext, args: string[]): string {
   if (name) {
     const procs = ctx.processManager.getProcessesByName(name);
     if (procs.length === 0) {
-      return `Stop-Process : Cannot find a process with the name "${name}".`;
+      return `Stop-Process : Cannot find a process with the name "${name}". Verify the process name and call the\ncmdlet again.\n    + CategoryInfo          : ObjectNotFound: (${name}:String) [Stop-Process], ProcessCommandException\n    + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.StopProcessCommand`;
     }
     const results: string[] = [];
     for (const proc of procs) {
@@ -69,7 +73,7 @@ export function psStopProcess(ctx: PSProcessContext, args: string[]): string {
   if (id) {
     const pid = parseInt(id, 10);
     const proc = ctx.processManager.getProcess(pid);
-    if (!proc) return `Stop-Process : Cannot find a process with the process identifier ${pid}.`;
+    if (!proc) return `Stop-Process : Cannot find a process with the process identifier ${pid}.\n    + CategoryInfo          : ObjectNotFound: (${pid}:Int32) [Stop-Process], ProcessCommandException\n    + FullyQualifiedErrorId : NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.StopProcessCommand`;
     if (proc.systemOwned && !ctx.isAdmin) return `Stop-Process : Access is denied for process "${proc.name}" (${pid}).`;
     if (proc.critical) return `Stop-Process : The process "${proc.name}" (${pid}) is critical and cannot be stopped.`;
     const err = ctx.processManager.killProcess(pid, force, ctx.isAdmin);
@@ -80,7 +84,8 @@ export function psStopProcess(ctx: PSProcessContext, args: string[]): string {
   return "Stop-Process : Cannot bind parameter. Specify -Name or -Id.";
 }
 
-/** Build PSObject[] for pipeline support */
+// ─── Build PSObject[] for pipeline support ───────────────────────
+
 export function buildDynamicProcessObjects(ctx: PSProcessContext): Array<Record<string, unknown>> {
   const procs = ctx.processManager.getAllProcesses();
   return procs.map(p => ({
@@ -95,26 +100,30 @@ export function buildDynamicProcessObjects(ctx: PSProcessContext): Array<Record<
   }));
 }
 
+// ─── Formatting (matches real PowerShell 5.1 output) ─────────────
+// Real PS5.1 Get-Process columns:
+//   Handles(7) NPM(K)(6) PM(K)(8) WS(K)(8) CPU(s)(8) Id(6) SI(2) ProcessName
+
 function formatProcessTable(procs: WindowsProcess[]): string {
   const lines: string[] = [''];
   lines.push(
     'Handles'.padStart(7) + '  ' +
-    'NPM(K)'.padStart(6) + '  ' +
-    'PM(K)'.padStart(8) + '  ' +
-    'WS(K)'.padStart(8) + '  ' +
-    'CPU(s)'.padStart(8) + '  ' +
-    'Id'.padStart(6) + '  ' +
-    'SI'.padStart(2) + '  ' +
+    'NPM(K)'.padStart(6) + '    ' +
+    'PM(K)'.padStart(5) + '      ' +
+    'WS(K)'.padStart(5) + '     ' +
+    'CPU(s)'.padStart(6) + '     ' +
+    'Id'.padEnd(2) + '  ' +
+    'SI'.padEnd(2) + ' ' +
     'ProcessName'
   );
   lines.push(
     '-------'.padStart(7) + '  ' +
-    '------'.padStart(6) + '  ' +
-    '-----'.padStart(8) + '  ' +
-    '-----'.padStart(8) + '  ' +
-    '------'.padStart(8) + '  ' +
-    '--'.padStart(6) + '  ' +
-    '--'.padStart(2) + '  ' +
+    '------'.padStart(6) + '    ' +
+    '-----'.padStart(5) + '      ' +
+    '-----'.padStart(5) + '     ' +
+    '------'.padStart(6) + '     ' +
+    '--'.padEnd(2) + '  ' +
+    '--'.padEnd(2) + ' ' +
     '-----------'
   );
 
@@ -122,17 +131,19 @@ function formatProcessTable(procs: WindowsProcess[]): string {
     const pName = p.name.replace(/\.exe$/i, '');
     lines.push(
       String(p.handles).padStart(7) + '  ' +
-      String(p.npmK).padStart(6) + '  ' +
-      String(Math.floor(p.pmK / 1024)).padStart(8) + '  ' +
-      String(Math.floor(p.wsK)).padStart(8) + '  ' +
-      p.cpuSec.toFixed(2).padStart(8) + '  ' +
-      String(p.pid).padStart(6) + '  ' +
-      String(p.sessionId).padStart(2) + '  ' +
+      String(p.npmK).padStart(6) + '    ' +
+      String(Math.floor(p.pmK / 1024)).padStart(5) + '      ' +
+      String(Math.floor(p.wsK)).padStart(5) + '     ' +
+      p.cpuSec.toFixed(2).padStart(6) + '   ' +
+      String(p.pid).padStart(4) + '   ' +
+      String(p.sessionId) + ' ' +
       pName
     );
   }
   return lines.join('\n');
 }
+
+// ─── Arg parser ──────────────────────────────────────────────────
 
 function parsePSArgs(args: string[]): Map<string, string> {
   const merged: string[] = [];

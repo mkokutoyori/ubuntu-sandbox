@@ -227,7 +227,8 @@ describe('PowerShell: Start-Service / Stop-Service', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const output = await ps.execute('Stop-Service -Name Spooler');
-    expect(output).toContain('Access is denied');
+    expect(output).toContain('cannot be stopped');
+    expect(output).toContain('Cannot open');
   });
 
   it('should fail to stop a service with running dependents', async () => {
@@ -267,7 +268,8 @@ describe('PowerShell: Restart-Service', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const output = await ps.execute('Restart-Service -Name Spooler');
-    expect(output).toContain('Access is denied');
+    expect(output).toContain('cannot be restarted');
+    expect(output).toContain('Cannot open');
   });
 });
 
@@ -350,7 +352,7 @@ describe('PowerShell: Suspend-Service / Resume-Service', () => {
     pc.setCurrentUser('Administrator');
     const ps = createPS(pc);
     const output = await ps.execute('Suspend-Service -Name Dhcp');
-    expect(output).toContain('cannot be paused');
+    expect(output).toContain('cannot be suspended');
   });
 });
 
