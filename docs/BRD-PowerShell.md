@@ -490,3 +490,78 @@ Get-Service | Format-List *
 ```
 
 ---
+
+## 6. Cmdlets Réseau
+
+### 6.1 PowerShell Net* Cmdlets
+
+| Cmdlet | Description | Sortie | Statut |
+|--------|-------------|--------|--------|
+| `Get-NetIPConfiguration` | Configuration IP complète (comme ipconfig mais objet) | InterfaceAlias, IPv4Address, IPv4DefaultGateway, DNSServer | ✅ |
+| `Get-NetIPAddress` | Toutes les adresses IP (IPv4 + IPv6) | IPAddress, InterfaceIndex, InterfaceAlias, PrefixLength, AddressFamily | ✅ |
+| `Get-NetAdapter` | Adaptateurs réseau | Name, InterfaceDescription, ifIndex, Status, MacAddress, LinkSpeed | ✅ |
+| `Test-Connection` | Ping PowerShell (objet) | Source, Destination, IPV4Address, ResponseTime, StatusCode | ✅ |
+| `Resolve-DnsName` | Résolution DNS | Name, Type, TTL, IPAddress | ✅ (stub) |
+| `Get-NetRoute` | Table de routage | DestinationPrefix, NextHop, InterfaceIndex, RouteMetric | ❌ |
+| `New-NetIPAddress` | Configurer une adresse IP | | ❌ |
+| `Remove-NetIPAddress` | Supprimer une adresse IP | | ❌ |
+| `Set-NetIPInterface` | Configurer une interface | | ❌ |
+| `Get-NetTCPConnection` | Connexions TCP actives (comme netstat) | LocalAddress, LocalPort, RemoteAddress, RemotePort, State | ❌ |
+| `Get-NetUDPEndpoint` | Points de terminaison UDP | | ❌ |
+| `Get-NetFirewallRule` | Règles de pare-feu | | ❌ |
+| `New-NetFirewallRule` | Créer une règle de pare-feu | | ❌ |
+| `Remove-NetFirewallRule` | Supprimer une règle de pare-feu | | ❌ |
+| `Get-DnsClientServerAddress` | Serveurs DNS configurés | | ❌ |
+| `Set-DnsClientServerAddress` | Configurer les serveurs DNS | | ❌ |
+| `Test-NetConnection` | Test de connexion avancé (port, traceroute) | | ❌ |
+
+### 6.2 Commandes Réseau Natives (Passthrough CMD)
+
+Ces commandes fonctionnent identiquement en PowerShell et CMD. Le PowerShellExecutor les délègue
+directement au WinCommandExecutor :
+
+| Commande | Description | Statut |
+|----------|-------------|--------|
+| `ipconfig` | Configuration IP (format CMD) | ✅ |
+| `ipconfig /all` | Détails complets | ✅ |
+| `ipconfig /release` | Libérer bail DHCP | ✅ |
+| `ipconfig /renew` | Renouveler bail DHCP | ✅ |
+| `ipconfig /flushdns` | Vider le cache DNS | ✅ |
+| `ping <host>` | Ping ICMP | ✅ |
+| `tracert <host>` | Traceroute | ✅ |
+| `route print` | Table de routage | ✅ |
+| `route add` | Ajouter une route | ✅ |
+| `route delete` | Supprimer une route | ✅ |
+| `arp -a` | Table ARP | ✅ |
+| `netsh interface ip show config` | Configuration interfaces | ✅ |
+| `netsh interface ip set address` | Configurer IP | ✅ |
+| `netsh advfirewall` | Pare-feu avancé | ✅ |
+| `nslookup` | Requête DNS | ✅ |
+| `netstat` | Connexions réseau | ❌ |
+
+### 6.3 Sortie Exacte Get-NetIPConfiguration (PS 5.1)
+
+```powershell
+PS C:\> Get-NetIPConfiguration
+
+InterfaceAlias       : Ethernet0
+InterfaceIndex       : 3
+InterfaceDescription : Intel(R) 82574L Gigabit Network Connection
+NetProfile.Name      : Network
+IPv4Address          : 192.168.1.10
+IPv4DefaultGateway   : 192.168.1.1
+DNSServer            : 8.8.8.8
+                       8.8.4.4
+```
+
+### 6.4 Sortie Exacte Get-NetAdapter (PS 5.1)
+
+```powershell
+PS C:\> Get-NetAdapter
+
+Name                  InterfaceDescription               ifIndex Status       MacAddress         LinkSpeed
+----                  --------------------               ------- ------       ----------         ---------
+Ethernet0             Intel(R) 82574L Gigabit Network...       3 Up           00-50-56-C0-00-01  1 Gbps
+```
+
+---
