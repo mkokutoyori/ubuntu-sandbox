@@ -9,68 +9,95 @@ export function cmdGrep(ctx: ShellContext, args: string[], stdin?: string): stri
   let caseInsensitive = false;
   let countOnly = false;
   let recursive = false;
-  let extendedRegex = false;
   let invertMatch = false;
+  let lineNumbers = false;
+  let filesOnly = false;       // -l
+  let filesWithout = false;    // -L
+  let wholeWord = false;       // -w
+  let onlyMatching = false;    // -o
+  let quiet = false;           // -q
+  let forceFilename: boolean | null = null; // -H (true) / -h (false) / null (auto)
+  let afterContext = 0;        // -A N
+  let beforeContext = 0;       // -B N
   const patterns: string[] = [];
   const files: string[] = [];
 
   let i = 0;
   while (i < args.length) {
     const a = args[i];
-    if (a === '-i') { caseInsensitive = true; i++; continue; }
-    if (a === '-c') { countOnly = true; i++; continue; }
-    if (a === '-r') { recursive = true; i++; continue; }
-    if (a === '-E') { extendedRegex = true; i++; continue; }
-    if (a === '-v') { invertMatch = true; i++; continue; }
+    if (a === '-e' && i + 1 < args.length) { patterns.push(args[++i]); i++; continue; }
+    if (a === '-A' && i + 1 < args.length) { afterContext = parseInt(args[++i]) || 0; i++; continue; }
+    if (a === '-B' && i + 1 < args.length) { beforeContext = parseInt(args[++i]) || 0; i++; continue; }
+    if (a === '-C' && i + 1 < args.length) { const n = parseInt(args[++i]) || 0; afterContext = n; beforeContext = n; i++; continue; }
     if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
-      // Combined flags like -ic
       for (const f of a.slice(1)) {
-        if (f === 'i') caseInsensitive = true;
-        if (f === 'c') countOnly = true;
-        if (f === 'r') recursive = true;
-        if (f === 'E') extendedRegex = true;
-        if (f === 'v') invertMatch = true;
+        switch (f) {
+          case 'i': caseInsensitive = true; break;
+          case 'c': countOnly = true; break;
+          case 'r': case 'R': recursive = true; break;
+          case 'E': case 'P': break; // extended/perl regex: JS regex is already extended
+          case 'v': invertMatch = true; break;
+          case 'n': lineNumbers = true; break;
+          case 'l': filesOnly = true; break;
+          case 'L': filesWithout = true; break;
+          case 'w': wholeWord = true; break;
+          case 'o': onlyMatching = true; break;
+          case 'q': quiet = true; break;
+          case 'H': forceFilename = true; break;
+          case 'h': forceFilename = false; break;
+        }
       }
       i++;
       continue;
     }
+    if (a === '--color' || a === '--color=auto' || a === '--color=always') { i++; continue; }
+    if (a === '--') { i++; break; } // end of options
+    if (a.startsWith('-') && a.length > 1) { i++; continue; } // skip unknown long options
     if (patterns.length === 0) {
       patterns.push(a);
     } else {
-      // Expand globs for files
       const expanded = expandGlob(ctx, a);
       files.push(...expanded);
     }
     i++;
   }
+  // Remaining args after -- are files
+  while (i < args.length) {
+    const expanded = expandGlob(ctx, args[i]);
+    files.push(...expanded);
+    i++;
+  }
 
-  if (patterns.length === 0) return '';
+  if (patterns.length === 0) {
+    return 'Usage: grep [OPTION]... PATTERN [FILE]...\n';
+  }
 
-  const pattern = patterns[0];
-  const flags = caseInsensitive ? 'i' : '';
+  // Build regex
+  let patternStr = patterns.join('|');
+  if (wholeWord) patternStr = `\\b(?:${patternStr})\\b`;
+  const flags = caseInsensitive ? 'gi' : 'g';
   let regex: RegExp;
   try {
-    regex = new RegExp(pattern, flags);
+    regex = new RegExp(patternStr, flags);
   } catch {
-    regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+    regex = new RegExp(patternStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
   }
 
   const results: string[] = [];
-  const multiFile = files.length > 1 || recursive;
+  const errors: string[] = [];
 
+  // Process stdin
   if (files.length === 0 && stdin !== undefined) {
-    // Filter stdin
+    if (quiet) return '';
     const lines = stdin.split('\n');
-    for (const line of lines) {
-      const match = regex.test(line);
-      if (match !== invertMatch) {
-        results.push(line);
-      }
-    }
-    if (countOnly) return results.length.toString();
+    // Remove trailing empty line if input ends with \n
+    if (lines.length > 0 && lines[lines.length - 1] === '' && stdin.endsWith('\n')) lines.pop();
+    grepLines(lines, regex, invertMatch, lineNumbers, countOnly, onlyMatching, false, '',
+      afterContext, beforeContext, results);
     return results.join('\n');
   }
 
+  // Collect files
   const fileList: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
@@ -81,31 +108,91 @@ export function cmdGrep(ctx: ShellContext, args: string[], stdin?: string): stri
     }
   }
 
-  const multiOut = fileList.length > 1;
+  const showFilename = forceFilename !== null ? forceFilename : (fileList.length > 1 || recursive);
 
   for (const f of fileList) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
     const content = ctx.vfs.readFile(absPath);
-    if (content === null) continue;
+    if (content === null) {
+      errors.push(`grep: ${f}: No such file or directory`);
+      continue;
+    }
+
+    if (quiet) {
+      // Just check if there's a match
+      regex.lastIndex = 0;
+      const hasMatch = content.split('\n').some(line => { regex.lastIndex = 0; return regex.test(line) !== invertMatch; });
+      if (hasMatch) return '';
+      continue;
+    }
 
     const lines = content.split('\n');
-    let count = 0;
-    for (const line of lines) {
-      if (!line && lines.indexOf(line) === lines.length - 1 && content.endsWith('\n')) continue;
-      const match = regex.test(line);
-      if (match !== invertMatch) {
-        count++;
-        if (!countOnly) {
-          results.push(multiOut ? `${f}:${line}` : line);
-        }
-      }
+    if (lines.length > 0 && lines[lines.length - 1] === '' && content.endsWith('\n')) lines.pop();
+
+    if (filesOnly || filesWithout) {
+      const hasMatch = lines.some(line => { regex.lastIndex = 0; return regex.test(line) !== invertMatch; });
+      if (filesOnly && hasMatch) results.push(f);
+      if (filesWithout && !hasMatch) results.push(f);
+      continue;
     }
-    if (countOnly) {
-      results.push(multiOut ? `${f}:${count}` : count.toString());
+
+    grepLines(lines, regex, invertMatch, lineNumbers, countOnly, onlyMatching, showFilename, f,
+      afterContext, beforeContext, results);
+  }
+
+  const output = [...errors, ...results].join('\n');
+  return output;
+}
+
+/** Process lines for grep, pushing results. */
+function grepLines(
+  lines: string[], regex: RegExp, invertMatch: boolean, lineNumbers: boolean,
+  countOnly: boolean, onlyMatching: boolean, showFilename: boolean, filename: string,
+  afterContext: number, beforeContext: number, results: string[],
+): void {
+  const matchIndices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    regex.lastIndex = 0;
+    const isMatch = regex.test(lines[i]);
+    if (isMatch !== invertMatch) matchIndices.push(i);
+  }
+
+  if (countOnly) {
+    const count = matchIndices.length.toString();
+    results.push(showFilename ? `${filename}:${count}` : count);
+    return;
+  }
+
+  // Determine which lines to show (including context)
+  const showSet = new Set<number>();
+  for (const idx of matchIndices) {
+    for (let j = Math.max(0, idx - beforeContext); j <= Math.min(lines.length - 1, idx + afterContext); j++) {
+      showSet.add(j);
     }
   }
 
-  return results.join('\n');
+  const sortedShow = [...showSet].sort((a, b) => a - b);
+  const matchSet = new Set(matchIndices);
+
+  for (const idx of sortedShow) {
+    const line = lines[idx];
+    const isMatch = matchSet.has(idx);
+    const prefix = showFilename ? `${filename}:` : '';
+    const lineNum = lineNumbers ? `${idx + 1}:` : '';
+    const separator = isMatch ? '' : '';
+
+    if (onlyMatching && isMatch) {
+      // Output only matching parts
+      regex.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(line)) !== null) {
+        results.push(`${prefix}${lineNum}${m[0]}`);
+        if (!regex.global) break;
+      }
+    } else {
+      results.push(`${prefix}${lineNum}${line}`);
+    }
+  }
 }
 
 function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out: string[]): void {
