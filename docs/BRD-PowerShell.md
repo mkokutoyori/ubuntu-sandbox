@@ -393,3 +393,100 @@ Get-PSDrive                                       # Lister tous les drives
 ```
 
 ---
+
+## 5. Pipeline Engine
+
+### 5.1 Concept
+
+Le pipeline PowerShell passe des **objets** entre les commandes, pas du texte.
+Chaque stage reçoit un `PSObject[]`, le transforme, et passe le résultat au stage suivant.
+
+```powershell
+Get-Process | Where-Object { $_.CPU -gt 10 } | Sort-Object WorkingSet -Descending | Select-Object -First 5
+#            ┃ filtre objets ┃                ┃ trie par mémoire ┃                  ┃ prend les 5 premiers ┃
+```
+
+### 5.2 Stages de Pipeline Implémentés
+
+| Stage | Alias | Paramètres | Description | Statut |
+|-------|-------|------------|-------------|--------|
+| `Where-Object` | `where`, `?` | `{ $_.Property -op Value }` | Filtrer les objets par condition | ✅ |
+| `Select-Object` | `select` | `-Property`, `-First`, `-Last`, `-Skip`, `-Unique`, `-ExpandProperty` | Sélectionner des propriétés ou limiter | ✅ |
+| `Sort-Object` | `sort` | `-Property`, `-Descending` | Trier les objets | ✅ |
+| `Measure-Object` | `measure` | `-Sum`, `-Average`, `-Minimum`, `-Maximum`, `-Property` | Statistiques sur une collection | ✅ |
+| `Select-String` | `sls` | `-Pattern`, `-CaseSensitive` | Chercher du texte (grep-like) | ✅ |
+| `Format-Table` | `ft` | `-Property`, `-AutoSize` | Formatage en tableau | ✅ |
+| `Format-List` | `fl` | `-Property` | Formatage en liste clé-valeur | ✅ |
+| `ForEach-Object` | `%`, `foreach` | `{ script block }` | Exécuter un bloc pour chaque objet | ❌ |
+| `Group-Object` | `group` | `-Property` | Grouper les objets par propriété | ❌ |
+| `Tee-Object` | `tee` | `-FilePath`, `-Variable` | Bifurquer le pipeline | ❌ |
+| `Out-String` | | `-Width` | Convertir en chaîne | ❌ |
+| `Out-Null` | | | Supprimer la sortie | ❌ |
+| `Out-File` | | `-FilePath`, `-Append` | Écrire dans un fichier | ✅ (standalone) |
+| `ConvertTo-Json` | | `-Depth` | Convertir en JSON | ❌ |
+| `ConvertFrom-Json` | | | Parser du JSON | ❌ |
+| `ConvertTo-Csv` | | | Convertir en CSV | ❌ |
+| `ConvertFrom-Csv` | | | Parser du CSV | ❌ |
+| `Export-Csv` | | `-Path`, `-NoTypeInformation` | Exporter en CSV | ❌ |
+| `Import-Csv` | | `-Path` | Importer un CSV | ❌ |
+| `ConvertTo-Html` | | | Convertir en HTML | ❌ |
+
+### 5.3 Opérateurs de Comparaison (dans Where-Object)
+
+| Opérateur | Description | Statut |
+|-----------|-------------|--------|
+| `-eq` | Égal | ✅ |
+| `-ne` | Différent | ✅ |
+| `-gt` | Supérieur | ✅ |
+| `-ge` | Supérieur ou égal | ✅ |
+| `-lt` | Inférieur | ✅ |
+| `-le` | Inférieur ou égal | ✅ |
+| `-like` | Wildcard match | ✅ |
+| `-notlike` | Wildcard non-match | ✅ |
+| `-match` | Regex match | ✅ |
+| `-notmatch` | Regex non-match | ✅ |
+| `-contains` | Collection contient | ❌ |
+| `-notcontains` | Collection ne contient pas | ❌ |
+| `-in` | Valeur dans collection | ❌ |
+| `-notin` | Valeur pas dans collection | ❌ |
+| `-is` | Test de type | ❌ |
+| `-isnot` | Test de type négatif | ❌ |
+| `-band` | Bitwise AND | ❌ |
+| `-bor` | Bitwise OR | ❌ |
+
+### 5.4 Opérateurs Logiques
+
+| Opérateur | Description | Statut |
+|-----------|-------------|--------|
+| `-and` | ET logique | ✅ |
+| `-or` | OU logique | ✅ |
+| `-not`, `!` | NON logique | ✅ |
+| `-xor` | OU exclusif | ❌ |
+
+### 5.5 Exemples de Pipeline Supportés
+
+```powershell
+# Filtrer les services en cours d'exécution
+Get-Service | Where-Object { $_.Status -eq "Running" }
+
+# Trier les processus par mémoire décroissante
+Get-Process | Sort-Object WorkingSet64 -Descending
+
+# Les 5 processus les plus gourmands
+Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
+
+# Compter les services par statut
+Get-Service | Where-Object { $_.Status -eq "Running" } | Measure-Object
+
+# Afficher seulement certaines colonnes
+Get-Process | Select-Object ProcessName, Id, WorkingSet64
+
+# Rechercher du texte dans la sortie
+Get-Process | Select-String "svchost"
+
+# Formatage personnalisé
+Get-Service | Format-Table Name, Status, StartType -AutoSize
+Get-Service | Format-List *
+```
+
+---
