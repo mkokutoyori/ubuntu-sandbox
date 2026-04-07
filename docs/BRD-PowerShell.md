@@ -1256,3 +1256,153 @@ enum ServerRole {
 | `enum` | ❌ |
 
 ---
+
+## 13. Modules et Remoting
+
+### 13.1 Cmdlets Module
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-Module` | `-ListAvailable`, `-Name` | Lister les modules chargés/disponibles | ❌ |
+| `Import-Module` | `-Name`, `-Force` | Charger un module | ❌ |
+| `Remove-Module` | `-Name` | Décharger un module | ❌ |
+| `New-Module` | `-Name`, `-ScriptBlock` | Créer un module dynamique | ❌ |
+| `Export-ModuleMember` | `-Function`, `-Cmdlet`, `-Variable`, `-Alias` | Exporter des membres | ❌ |
+| `Find-Module` | `-Name` | Chercher dans PSGallery (stub) | ❌ |
+| `Install-Module` | `-Name`, `-Scope` | Installer depuis PSGallery (stub) | ❌ |
+
+### 13.2 Modules Prédéfinis (Simulation)
+
+| Module | Description | Cmdlets fournis |
+|--------|-------------|----------------|
+| `Microsoft.PowerShell.Management` | Gestion système | Get-Process, Get-Service, Get-ChildItem, etc. |
+| `Microsoft.PowerShell.Utility` | Utilitaires | Write-Host, Get-Date, Measure-Object, etc. |
+| `Microsoft.PowerShell.Security` | Sécurité | Get-Acl, Get-ExecutionPolicy, etc. |
+| `Microsoft.PowerShell.LocalAccounts` | Comptes locaux | Get-LocalUser, Get-LocalGroup, etc. |
+| `NetAdapter` | Réseau | Get-NetAdapter, Get-NetIPAddress, etc. |
+| `NetTCPIP` | TCP/IP | Get-NetIPConfiguration, Test-Connection, etc. |
+| `CimCmdlets` | WMI/CIM | Get-CimInstance, etc. |
+| `ScheduledTasks` | Tâches planifiées | Get-ScheduledTask, etc. |
+
+### 13.3 Remoting (PowerShell Remoting — WinRM)
+
+| Cmdlet | Description | Statut |
+|--------|-------------|--------|
+| `Enter-PSSession` | Session interactive distante | ❌ (stub — "WinRM is not configured") |
+| `Exit-PSSession` | Quitter une session distante | ❌ |
+| `New-PSSession` | Créer une session persistante | ❌ |
+| `Remove-PSSession` | Supprimer une session | ❌ |
+| `Invoke-Command` | Exécuter sur machine distante | ❌ (stub) |
+| `Enable-PSRemoting` | Activer WinRM | ❌ |
+| `Disable-PSRemoting` | Désactiver WinRM | ❌ |
+| `Test-WSMan` | Tester la connectivité WinRM | ❌ |
+
+### 13.4 Profiles PowerShell
+
+| Profile | Chemin | Description |
+|---------|--------|-------------|
+| All Users, All Hosts | `$PSHOME\Profile.ps1` | Tous les utilisateurs |
+| All Users, Current Host | `$PSHOME\Microsoft.PowerShell_profile.ps1` | Tous les utilisateurs, ConsoleHost |
+| Current User, All Hosts | `$HOME\Documents\WindowsPowerShell\Profile.ps1` | Utilisateur courant |
+| Current User, Current Host | `$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1` | Utilisateur courant, ConsoleHost |
+
+---
+
+## 14. Event Log et Diagnostics
+
+### 14.1 Cmdlets Event Log
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-EventLog` | `-LogName`, `-Newest`, `-EntryType`, `-Source`, `-After`, `-Before` | Lire les logs classiques (Application, System, Security) | ❌ |
+| `Write-EventLog` | `-LogName`, `-Source`, `-EventId`, `-EntryType`, `-Message` | Écrire un événement | ❌ |
+| `Clear-EventLog` | `-LogName` | Vider un log | ❌ |
+| `New-EventLog` | `-LogName`, `-Source` | Créer un nouveau log/source | ❌ |
+| `Remove-EventLog` | `-LogName` | Supprimer un log | ❌ |
+| `Get-WinEvent` | `-LogName`, `-FilterHashtable`, `-MaxEvents` | Logs modernes (ETW) | ❌ |
+| `wevtutil el` | | Lister les logs (CMD) | 🟡 (stub) |
+| `wevtutil qe <log>` | `/c:<count>`, `/f:text` | Requêter un log (CMD) | ❌ |
+
+### 14.2 Logs Prédéfinis (Simulation)
+
+| Log | Événements simulés |
+|-----|--------------------|
+| `Application` | Démarrage application, erreurs applicatives |
+| `System` | Démarrage/arrêt services, configuration réseau, erreurs pilotes |
+| `Security` | Connexions (succès/échec), changements de politique, accès fichiers audités |
+| `Windows PowerShell` | Démarrage/arrêt moteur PS, exécution de scripts |
+| `Microsoft-Windows-PowerShell/Operational` | Logging détaillé de commandes PS |
+
+### 14.3 Structure d'un Événement
+
+```powershell
+PS C:\> Get-EventLog -LogName System -Newest 1 | Format-List
+
+Index              : 15432
+EntryType          : Information
+InstanceId         : 7036
+Message            : The Print Spooler service entered the running state.
+Category           : (0)
+CategoryNumber     : 0
+ReplacementStrings : {Print Spooler, running}
+Source             : Service Control Manager
+TimeGenerated      : 04/07/2026 10:30:15 AM
+TimeWritten        : 04/07/2026 10:30:15 AM
+UserName           : N/A
+```
+
+### 14.4 Cmdlets de Diagnostic
+
+| Cmdlet | Description | Statut |
+|--------|-------------|--------|
+| `Get-ComputerInfo` | Informations complètes du système | ❌ |
+| `Get-HotFix` | Mises à jour installées | ❌ |
+| `systeminfo` | Info système (CMD, passthrough) | ✅ |
+| `Get-PSDrive` | Lecteurs montés et espace | ❌ |
+| `Get-Volume` | Volumes de stockage | ❌ |
+| `Get-Disk` | Disques physiques | ❌ |
+| `Get-Partition` | Partitions | ❌ |
+| `Test-ComputerSecureChannel` | Tester le canal sécurisé AD | ❌ |
+
+---
+
+## 15. Scheduled Tasks et Jobs
+
+### 15.1 Scheduled Tasks
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-ScheduledTask` | `-TaskName`, `-TaskPath` | Lister les tâches planifiées | ❌ |
+| `New-ScheduledTask` | `-Action`, `-Trigger`, `-Settings` | Créer une tâche | ❌ |
+| `Register-ScheduledTask` | `-TaskName`, `-InputObject` | Enregistrer une tâche | ❌ |
+| `Set-ScheduledTask` | `-TaskName` | Modifier une tâche | ❌ |
+| `Start-ScheduledTask` | `-TaskName` | Exécuter immédiatement | ❌ |
+| `Stop-ScheduledTask` | `-TaskName` | Arrêter une tâche en cours | ❌ |
+| `Disable-ScheduledTask` | `-TaskName` | Désactiver | ❌ |
+| `Enable-ScheduledTask` | `-TaskName` | Activer | ❌ |
+| `Unregister-ScheduledTask` | `-TaskName` | Supprimer une tâche | ❌ |
+| `Get-ScheduledTaskInfo` | `-TaskName` | Infos d'exécution (dernier résultat, prochaine exécution) | ❌ |
+
+### 15.2 Commandes CMD — schtasks
+
+| Commande | Description | Statut |
+|----------|-------------|--------|
+| `schtasks /query` | Lister les tâches planifiées | ❌ |
+| `schtasks /create /tn "Name" /tr "cmd" /sc daily` | Créer une tâche | ❌ |
+| `schtasks /run /tn "Name"` | Exécuter immédiatement | ❌ |
+| `schtasks /end /tn "Name"` | Arrêter | ❌ |
+| `schtasks /delete /tn "Name"` | Supprimer | ❌ |
+| `schtasks /change /tn "Name" /enable` | Modifier | ❌ |
+
+### 15.3 Background Jobs
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Start-Job` | `-ScriptBlock`, `-Name`, `-FilePath` | Lancer un job en arrière-plan | ❌ |
+| `Get-Job` | `-Name`, `-Id`, `-State` | Lister les jobs | ❌ |
+| `Receive-Job` | `-Id`, `-Name`, `-Keep` | Récupérer les résultats d'un job | ❌ |
+| `Wait-Job` | `-Id`, `-Timeout` | Attendre la fin d'un job | ❌ |
+| `Stop-Job` | `-Id` | Arrêter un job | ❌ |
+| `Remove-Job` | `-Id` | Supprimer un job de la liste | ❌ |
+
+---
