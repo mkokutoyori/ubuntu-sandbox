@@ -1235,37 +1235,94 @@ export class LinuxCommandExecutor {
 
     // Split into words — complete the last word
     const parts = trimmed.split(/\s+/);
-    const isFirstWord = parts.length <= 1;
     const word = parts[parts.length - 1] || '';
 
-    if (isFirstWord) {
-      // Complete command names
-      return this.getCommandCompletions(word);
+    // Environment variable completion: $VAR or ${VAR
+    const dollarMatch = word.match(/^(\$\{?)([A-Za-z_][A-Za-z0-9_]*)?$/);
+    if (dollarMatch) {
+      const sigil = dollarMatch[1];
+      const varPrefix = dollarMatch[2] || '';
+      const closeBrace = sigil === '${' ? '}' : '';
+      const names = this.getEnvVarNames(varPrefix);
+      return names.map(n => sigil + n + closeBrace).sort();
+    }
+
+    const isFirstWord = parts.length <= 1;
+    // After `sudo`, complete commands for the next word
+    const afterSudo = parts.length === 2 && parts[0] === 'sudo';
+
+    if (isFirstWord || afterSudo) {
+      const prefix = isFirstWord ? word : parts[1];
+      // For script execution ./foo, or absolute/home paths, complete as path
+      if (prefix.startsWith('./') || prefix.startsWith('/') || prefix.startsWith('~')) {
+        return this.getPathCompletions(prefix);
+      }
+      return this.getCommandCompletions(prefix);
     }
 
     // Complete file/directory paths
     return this.getPathCompletions(word);
   }
 
+  private getEnvVarNames(prefix: string): string[] {
+    const all = new Set<string>(Object.keys(this.buildEnvVars()));
+    const names: string[] = [];
+    for (const key of all) {
+      if (!prefix || key.startsWith(prefix)) names.push(key);
+    }
+    return names;
+  }
+
   private getCommandCompletions(prefix: string): string[] {
     const commands = [
+      // File/dir basics
       'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
-      'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
-      'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'tee', 'bash', 'sh',
+      'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
+      'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
+      'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+      'less', 'more', 'diff', 'cmp', 'patch',
+      // Shell builtins and basics
+      'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
+      'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
+      'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
+      'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
+      // Users and groups
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'hostname', 'uname', 'sleep', 'kill',
       'useradd', 'usermod', 'userdel', 'passwd', 'chpasswd', 'chage',
-      'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo',
-      'which', 'whereis', 'command', 'locate', 'updatedb',
+      'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
+      'login', 'logout',
+      // Lookup
+      'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
+      // System / processes / time
       'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
-      'exit', 'logout', 'help',
-      'ifconfig', 'ip', 'ping', 'traceroute', 'netstat', 'ss', 'route', 'arp',
-      'dhclient', 'nslookup', 'dig', 'curl', 'wget',
-      'iptables', 'iptables-save', 'iptables-restore',
-      'nano', 'vi', 'vim',
-      'iptables', 'iptables-save', 'iptables-restore',
+      'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
+      'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
+      'renice', 'timeout', 'watch', 'env', 'printenv',
+      // Networking
+      'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
+      'ss', 'route', 'arp', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
+      'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat',
+      'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
+      // Editors
+      'nano', 'vi', 'vim', 'emacs', 'ed',
+      // Archives / packages
+      'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
+      'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
     ];
-    if (!prefix) return commands.sort();
-    return commands.filter(c => c.startsWith(prefix)).sort();
+    // Dedup
+    const unique = Array.from(new Set(commands));
+    if (!prefix) return unique.sort();
+    return unique.filter(c => c.startsWith(prefix)).sort();
+  }
+
+  private getHomeDir(): string {
+    return this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`;
+  }
+
+  private expandTilde(word: string): string {
+    if (word === '~') return this.getHomeDir();
+    if (word.startsWith('~/')) return this.getHomeDir() + word.slice(1);
+    return word;
   }
 
   private getPathCompletions(word: string): string[] {
@@ -1274,11 +1331,18 @@ export class LinuxCommandExecutor {
     let prefix: string;
     let displayPrefix: string;
 
+    // Expand ~ for directory resolution but preserve display as typed
+    const expanded = this.expandTilde(word);
+
     if (word.includes('/')) {
       const lastSlash = word.lastIndexOf('/');
       displayPrefix = word.slice(0, lastSlash + 1);
       prefix = word.slice(lastSlash + 1);
-      dir = this.vfs.normalizePath(displayPrefix, this.cwd);
+      const expandedDisplay = this.expandTilde(displayPrefix);
+      dir = this.vfs.normalizePath(expandedDisplay, this.cwd);
+    } else if (word === '~') {
+      // Complete "~" itself to the home directory
+      return [this.getHomeDir() + '/'];
     } else {
       displayPrefix = '';
       prefix = word;
@@ -1291,6 +1355,8 @@ export class LinuxCommandExecutor {
     const matches: string[] = [];
     for (const entry of entries) {
       if (entry.name === '.' || entry.name === '..') continue;
+      // Hide dotfiles unless prefix starts with a dot
+      if (!prefix.startsWith('.') && entry.name.startsWith('.')) continue;
       if (!prefix || entry.name.startsWith(prefix)) {
         const suffix = entry.inode.type === 'directory' ? '/' : '';
         matches.push(displayPrefix + entry.name + suffix);
