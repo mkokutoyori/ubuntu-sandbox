@@ -1,14 +1,14 @@
 /**
- * PowerShell service management cmdlets.
+ * PowerShell service management cmdlets — matches real PowerShell 5.1 output exactly.
  *
  * Implements:
- *   - Get-Service [-Name <name>] [-Status <status>]
- *   - Start-Service -Name <name>
- *   - Stop-Service -Name <name>
- *   - Restart-Service -Name <name>
+ *   - Get-Service [-Name <name>] [-DisplayName <pattern>] [-Status <status>]
+ *   - Start-Service -Name <name> [-PassThru]
+ *   - Stop-Service -Name <name> [-Force] [-PassThru]
+ *   - Restart-Service -Name <name> [-Force] [-PassThru]
  *   - Set-Service -Name <name> [-StartupType ...] [-DisplayName ...] [-Description ...]
- *   - Suspend-Service -Name <name>
- *   - Resume-Service -Name <name>
+ *   - Suspend-Service -Name <name> [-PassThru]
+ *   - Resume-Service -Name <name> [-PassThru]
  *   - New-Service -Name <name> -BinaryPathName <path> [-DisplayName ...] [-StartupType ...]
  *   - Remove-Service -Name <name>
  *
@@ -29,18 +29,65 @@ export interface PSServiceContext {
 export function psGetService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name');
+  const displayName = params.get('displayname');
   const statusFilter = params.get('status');
+  const include = params.get('include');
+  const exclude = params.get('exclude');
 
   if (name) {
+    // Support wildcard matching
+    if (name.includes('*') || name.includes('?')) {
+      const pattern = wildcardToRegex(name);
+      let services = ctx.serviceManager.getAllServices().filter(s => pattern.test(s.name));
+      if (statusFilter) {
+        services = services.filter(s => s.state.toLowerCase() === statusFilter.toLowerCase());
+      }
+      if (services.length === 0) {
+        return psError('Get-Service',
+          `Cannot find any service with service name '${name}'.`,
+          `ObjectNotFound: (${name}:String) [Get-Service], ServiceCommandException`,
+          'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.GetServiceCommand');
+      }
+      return formatServiceTable(services);
+    }
+
     const svc = ctx.serviceManager.getService(name);
-    if (!svc) return `Get-Service : Cannot find any service with service name '${name}'.`;
+    if (!svc) {
+      return psError('Get-Service',
+        `Cannot find any service with service name '${name}'.`,
+        `ObjectNotFound: (${name}:String) [Get-Service], ServiceCommandException`,
+        'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.GetServiceCommand');
+    }
     return formatServiceTable([svc]);
+  }
+
+  if (displayName) {
+    const pattern = wildcardToRegex(displayName);
+    let services = ctx.serviceManager.getAllServices().filter(s => pattern.test(s.displayName));
+    if (statusFilter) {
+      services = services.filter(s => s.state.toLowerCase() === statusFilter.toLowerCase());
+    }
+    if (services.length === 0) {
+      return psError('Get-Service',
+        `Cannot find any service with service name '${displayName}'.`,
+        `ObjectNotFound: (${displayName}:String) [Get-Service], ServiceCommandException`,
+        'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.GetServiceCommand');
+    }
+    return formatServiceTable(services);
   }
 
   let services = ctx.serviceManager.getAllServices();
   if (statusFilter) {
     const lower = statusFilter.toLowerCase();
     services = services.filter(s => s.state.toLowerCase() === lower);
+  }
+  if (include) {
+    const pattern = wildcardToRegex(include);
+    services = services.filter(s => pattern.test(s.name));
+  }
+  if (exclude) {
+    const pattern = wildcardToRegex(exclude);
+    services = services.filter(s => !pattern.test(s.name));
   }
 
   return formatServiceTable(services);
@@ -51,14 +98,48 @@ export function psGetService(ctx: PSServiceContext, args: string[]): string {
 export function psStartService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Start-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Start-Service : Access is denied.`;
-
-  const err = ctx.serviceManager.startService(name, true);
-  if (err) return `Start-Service : ${err}`;
+  const passThru = params.has('passthru');
+  if (!name) {
+    return psError('Start-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Start-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.StartServiceCommand');
+  }
 
   const svc = ctx.serviceManager.getService(name);
-  if (svc) ctx.processManager.onServiceStarted(svc.name, svc.processName);
+  if (!svc) {
+    return psError('Start-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Start-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.StartServiceCommand');
+  }
+
+  if (!ctx.isAdmin) {
+    return psError('Start-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be started due to the following error: Cannot open ${svc.name} service on computer '.'.`,
+      `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Start-Service], ServiceCommandException`,
+      'CouldNotStartService,Microsoft.PowerShell.Commands.StartServiceCommand');
+  }
+
+  const err = ctx.serviceManager.startService(name, true);
+  if (err) {
+    if (err.includes('already running')) {
+      return psError('Start-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be started due to the following error: An instance of the service is already running.`,
+        `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Start-Service], ServiceCommandException`,
+        'CouldNotStartService,Microsoft.PowerShell.Commands.StartServiceCommand');
+    }
+    if (err.includes('disabled')) {
+      return psError('Start-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be started due to the following error: Cannot start service ${svc.name} on computer '.'.`,
+        `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Start-Service], ServiceCommandException`,
+        'CouldNotStartService,Microsoft.PowerShell.Commands.StartServiceCommand');
+    }
+    return `Start-Service : ${err}`;
+  }
+
+  ctx.processManager.onServiceStarted(svc.name, svc.processName);
+  if (passThru) return formatServiceTable([svc]);
   return '';
 }
 
@@ -67,14 +148,54 @@ export function psStartService(ctx: PSServiceContext, args: string[]): string {
 export function psStopService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Stop-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Stop-Service : Access is denied.`;
+  const passThru = params.has('passthru');
+  const force = params.has('force');
+  if (!name) {
+    return psError('Stop-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Stop-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.StopServiceCommand');
+  }
 
   const svc = ctx.serviceManager.getService(name);
-  const err = ctx.serviceManager.stopService(name, true);
-  if (err) return `Stop-Service : ${err}`;
+  if (!svc) {
+    return psError('Stop-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Stop-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.StopServiceCommand');
+  }
 
-  if (svc) ctx.processManager.onServiceStopped(svc.name);
+  if (!ctx.isAdmin) {
+    return psError('Stop-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be stopped due to the following error: Cannot open ${svc.name} service on computer '.'.`,
+      `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Stop-Service], ServiceCommandException`,
+      'CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand');
+  }
+
+  // With -Force, recursively stop all dependent services first
+  if (force) {
+    stopDependentsRecursively(ctx, svc.name);
+  }
+
+  const err = ctx.serviceManager.stopService(name, true);
+  if (err) {
+    if (err.includes('not been started')) {
+      return psError('Stop-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be stopped due to the following error: The service has not been started.`,
+        `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Stop-Service], ServiceCommandException`,
+        'CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand');
+    }
+    if (err.includes('dependent')) {
+      return psError('Stop-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be stopped due to the following error: ${err}`,
+        `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Stop-Service], ServiceCommandException`,
+        'CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand');
+    }
+    return `Stop-Service : ${err}`;
+  }
+
+  ctx.processManager.onServiceStopped(svc.name);
+  if (passThru) return formatServiceTable([svc]);
   return '';
 }
 
@@ -83,23 +204,55 @@ export function psStopService(ctx: PSServiceContext, args: string[]): string {
 export function psRestartService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Restart-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Restart-Service : Access is denied.`;
+  const passThru = params.has('passthru');
+  const force = params.has('force');
+  if (!name) {
+    return psError('Restart-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Restart-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.RestartServiceCommand');
+  }
 
   const svc = ctx.serviceManager.getService(name);
-  if (!svc) return `Restart-Service : Cannot find any service with service name '${name}'.`;
+  if (!svc) {
+    return psError('Restart-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Restart-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.RestartServiceCommand');
+  }
 
-  // Stop if running (ignore errors for "not started")
+  if (!ctx.isAdmin) {
+    return psError('Restart-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be restarted due to the following error: Cannot open ${svc.name} service on computer '.'.`,
+      `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Restart-Service], ServiceCommandException`,
+      'CouldNotRestartService,Microsoft.PowerShell.Commands.RestartServiceCommand');
+  }
+
+  // Stop if running (with -Force, stop dependents too)
   if (svc.state !== 'Stopped') {
+    if (force) {
+      stopDependentsRecursively(ctx, svc.name);
+    }
     const stopErr = ctx.serviceManager.stopService(name, true);
-    if (stopErr && !stopErr.includes('not been started')) return `Restart-Service : ${stopErr}`;
+    if (stopErr && !stopErr.includes('not been started')) {
+      return psError('Restart-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be restarted due to the following error: ${stopErr}`,
+        `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Restart-Service], ServiceCommandException`,
+        'CouldNotRestartService,Microsoft.PowerShell.Commands.RestartServiceCommand');
+    }
     ctx.processManager.onServiceStopped(svc.name);
   }
 
   // Start
   const startErr = ctx.serviceManager.startService(name, true);
-  if (startErr) return `Restart-Service : ${startErr}`;
+  if (startErr) {
+    return psError('Restart-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be restarted due to the following error: ${startErr}`,
+      `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Restart-Service], ServiceCommandException`,
+      'CouldNotRestartService,Microsoft.PowerShell.Commands.RestartServiceCommand');
+  }
   ctx.processManager.onServiceStarted(svc.name, svc.processName);
+  if (passThru) return formatServiceTable([svc]);
   return '';
 }
 
@@ -108,16 +261,41 @@ export function psRestartService(ctx: PSServiceContext, args: string[]): string 
 export function psSetService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Set-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Set-Service : Access is denied.`;
+  if (!name) {
+    return psError('Set-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Set-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.SetServiceCommand');
+  }
+
+  const svc = ctx.serviceManager.getService(name);
+  if (!svc) {
+    return psError('Set-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Set-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.SetServiceCommand');
+  }
+
+  if (!ctx.isAdmin) {
+    return psError('Set-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be configured due to the following error: Access is denied`,
+      `PermissionDenied: (System.ServiceProcess.ServiceController:ServiceController) [Set-Service], ServiceCommandException`,
+      'CouldNotSetService,Microsoft.PowerShell.Commands.SetServiceCommand');
+  }
 
   if (params.has('startuptype')) {
     const typeMap: Record<string, ServiceStartType> = {
       automatic: 'Automatic', manual: 'Manual', disabled: 'Disabled',
       automaticdelayedstart: 'AutomaticDelayedStart',
+      boot: 'Boot', system: 'System',
     };
     const st = typeMap[params.get('startuptype')!.toLowerCase()];
-    if (!st) return `Set-Service : Invalid startup type.`;
+    if (!st) {
+      return psError('Set-Service',
+        `Cannot validate argument on parameter 'StartupType'. The argument "${params.get('startuptype')}" does not belong to the set "Automatic,AutomaticDelayedStart,Disabled,InvalidValue,Manual" specified by the ValidateSet attribute.`,
+        `InvalidArgument: (:) [Set-Service], ParameterBindingValidationException`,
+        'CannotValidateArgument,Microsoft.PowerShell.Commands.SetServiceCommand');
+    }
     const err = ctx.serviceManager.setStartType(name, st, true);
     if (err) return `Set-Service : ${err}`;
   }
@@ -132,6 +310,22 @@ export function psSetService(ctx: PSServiceContext, args: string[]): string {
     if (err) return `Set-Service : ${err}`;
   }
 
+  if (params.has('status')) {
+    const status = params.get('status')!.toLowerCase();
+    if (status === 'running') {
+      const err = ctx.serviceManager.startService(name, true);
+      if (err && !err.includes('already running')) return `Set-Service : ${err}`;
+      ctx.processManager.onServiceStarted(svc.name, svc.processName);
+    } else if (status === 'stopped') {
+      const err = ctx.serviceManager.stopService(name, true);
+      if (err && !err.includes('not been started')) return `Set-Service : ${err}`;
+      ctx.processManager.onServiceStopped(svc.name);
+    } else if (status === 'paused') {
+      const err = ctx.serviceManager.pauseService(name, true);
+      if (err) return `Set-Service : ${err}`;
+    }
+  }
+
   return '';
 }
 
@@ -140,22 +334,80 @@ export function psSetService(ctx: PSServiceContext, args: string[]): string {
 export function psSuspendService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Suspend-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Suspend-Service : Access is denied.`;
+  const passThru = params.has('passthru');
+  if (!name) {
+    return psError('Suspend-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Suspend-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.SuspendServiceCommand');
+  }
+
+  const svc = ctx.serviceManager.getService(name);
+  if (!svc) {
+    return psError('Suspend-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Suspend-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.SuspendServiceCommand');
+  }
+
+  if (!ctx.isAdmin) {
+    return psError('Suspend-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be suspended due to the following error: Cannot open ${svc.name} service on computer '.'.`,
+      `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Suspend-Service], ServiceCommandException`,
+      'CouldNotSuspendService,Microsoft.PowerShell.Commands.SuspendServiceCommand');
+  }
 
   const err = ctx.serviceManager.pauseService(name, true);
-  if (err) return `Suspend-Service : ${err}`;
+  if (err) {
+    if (err.includes('cannot be paused')) {
+      return psError('Suspend-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be suspended because the service does not support being paused and continued.`,
+        `CloseError: (System.ServiceProcess.ServiceController:ServiceController) [Suspend-Service], ServiceCommandException`,
+        'CouldNotSuspendService,Microsoft.PowerShell.Commands.SuspendServiceCommand');
+    }
+    return `Suspend-Service : ${err}`;
+  }
+  if (passThru) return formatServiceTable([svc]);
   return '';
 }
 
 export function psResumeService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Resume-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Resume-Service : Access is denied.`;
+  const passThru = params.has('passthru');
+  if (!name) {
+    return psError('Resume-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Resume-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.ResumeServiceCommand');
+  }
+
+  const svc = ctx.serviceManager.getService(name);
+  if (!svc) {
+    return psError('Resume-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Resume-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.ResumeServiceCommand');
+  }
+
+  if (!ctx.isAdmin) {
+    return psError('Resume-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be resumed due to the following error: Cannot open ${svc.name} service on computer '.'.`,
+      `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Resume-Service], ServiceCommandException`,
+      'CouldNotResumeService,Microsoft.PowerShell.Commands.ResumeServiceCommand');
+  }
 
   const err = ctx.serviceManager.resumeService(name, true);
-  if (err) return `Resume-Service : ${err}`;
+  if (err) {
+    if (err.includes('not paused')) {
+      return psError('Resume-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be resumed because the service is not paused.`,
+        `CloseError: (System.ServiceProcess.ServiceController:ServiceController) [Resume-Service], ServiceCommandException`,
+        'CouldNotResumeService,Microsoft.PowerShell.Commands.ResumeServiceCommand');
+    }
+    return `Resume-Service : ${err}`;
+  }
+  if (passThru) return formatServiceTable([svc]);
   return '';
 }
 
@@ -165,9 +417,25 @@ export function psNewService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
   const binPath = params.get('binarypathname') || '';
-  if (!name) return "New-Service : Cannot bind parameter 'Name'.";
-  if (!binPath) return "New-Service : Cannot bind parameter 'BinaryPathName'.";
-  if (!ctx.isAdmin) return `New-Service : Access is denied.`;
+  if (!name) {
+    return psError('New-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [New-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.NewServiceCommand');
+  }
+  if (!binPath) {
+    return psError('New-Service',
+      `Cannot validate argument on parameter 'BinaryPathName'. The argument is null or empty.`,
+      `InvalidArgument: (:) [New-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.NewServiceCommand');
+  }
+
+  if (!ctx.isAdmin) {
+    return psError('New-Service',
+      `Service '${name}' cannot be created due to the following error: Access is denied`,
+      `PermissionDenied: (System.ServiceProcess.ServiceController:ServiceController) [New-Service], ServiceCommandException`,
+      'CouldNotNewService,Microsoft.PowerShell.Commands.NewServiceCommand');
+  }
 
   const displayName = params.get('displayname');
   const description = params.get('description');
@@ -184,9 +452,17 @@ export function psNewService(ctx: PSServiceContext, args: string[]): string {
     startType: startupType ? typeMap[startupType.toLowerCase()] : undefined,
   }, true);
 
-  if (err) return `New-Service : ${err}`;
+  if (err) {
+    if (err.includes('already exists')) {
+      return psError('New-Service',
+        `Service '${name}' cannot be created because a service with that name already exists.`,
+        `PermissionDenied: (System.ServiceProcess.ServiceController:ServiceController) [New-Service], ServiceCommandException`,
+        'CouldNotNewService,Microsoft.PowerShell.Commands.NewServiceCommand');
+    }
+    return `New-Service : ${err}`;
+  }
 
-  // Return table of the newly created service
+  // Return table of the newly created service (matches real PS behavior)
   const svc = ctx.serviceManager.getService(name);
   if (svc) return formatServiceTable([svc]);
   return '';
@@ -197,11 +473,38 @@ export function psNewService(ctx: PSServiceContext, args: string[]): string {
 export function psRemoveService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
-  if (!name) return "Remove-Service : Cannot bind parameter 'Name'.";
-  if (!ctx.isAdmin) return `Remove-Service : Access is denied.`;
+  if (!name) {
+    return psError('Remove-Service',
+      `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
+      `InvalidArgument: (:) [Remove-Service], ParameterBindingValidationException`,
+      'CannotValidateArgumentIsNullOrEmpty,Microsoft.PowerShell.Commands.RemoveServiceCommand');
+  }
+
+  const svc = ctx.serviceManager.getService(name);
+  if (!svc) {
+    return psError('Remove-Service',
+      `Cannot find any service with service name '${name}'.`,
+      `ObjectNotFound: (${name}:String) [Remove-Service], ServiceCommandException`,
+      'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.RemoveServiceCommand');
+  }
+
+  if (!ctx.isAdmin) {
+    return psError('Remove-Service',
+      `Service '${svc.displayName} (${svc.name})' cannot be removed due to the following error: Access is denied`,
+      `PermissionDenied: (System.ServiceProcess.ServiceController:ServiceController) [Remove-Service], ServiceCommandException`,
+      'CouldNotRemoveService,Microsoft.PowerShell.Commands.RemoveServiceCommand');
+  }
 
   const err = ctx.serviceManager.deleteService(name, true);
-  if (err) return `Remove-Service : ${err}`;
+  if (err) {
+    if (err.includes('must be stopped')) {
+      return psError('Remove-Service',
+        `Service '${svc.displayName} (${svc.name})' cannot be removed because it is not stopped. Stop the service before removing it.`,
+        `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Remove-Service], ServiceCommandException`,
+        'CouldNotRemoveService,Microsoft.PowerShell.Commands.RemoveServiceCommand');
+    }
+    return `Remove-Service : ${err}`;
+  }
   return '';
 }
 
@@ -212,21 +515,68 @@ export function buildDynamicServiceObjects(ctx: PSServiceContext): Array<Record<
     Status: s.state,
     Name: s.name,
     DisplayName: s.displayName,
+    ServiceType: s.serviceType,
+    StartType: s.startType,
+    CanPauseAndContinue: s.canPauseAndContinue,
+    CanShutdown: s.acceptsShutdown,
+    DependentServices: ctx.serviceManager.getDependents(s.name).map(d => d.name),
+    ServicesDependedOn: s.dependencies,
   }));
 }
 
-// ─── Formatting ───────────────────────────────────────────────────
+// ─── Helper: recursively stop dependents ─────────────────────────
+
+function stopDependentsRecursively(ctx: PSServiceContext, serviceName: string): void {
+  const deps = ctx.serviceManager.getRunningDependents(serviceName);
+  for (const dep of deps) {
+    // Recurse to stop this dependent's dependents first
+    stopDependentsRecursively(ctx, dep.name);
+    ctx.serviceManager.stopService(dep.name, true);
+    ctx.processManager.onServiceStopped(dep.name);
+  }
+}
+
+// ─── Formatting (matches real PowerShell 5.1 Get-Service output) ──
+// Real PS5.1 columns: Status(7) + padding, Name(~25), DisplayName(remaining)
+// Display names longer than ~38 chars get truncated with "..."
 
 function formatServiceTable(services: WindowsService[]): string {
   const lines: string[] = [''];
-  lines.push('Status'.padEnd(10) + 'Name'.padEnd(24) + 'DisplayName');
-  lines.push('------'.padEnd(10) + '----'.padEnd(24) + '-----------');
+  lines.push(
+    'Status'.padEnd(10) +
+    'Name'.padEnd(25) +
+    'DisplayName'
+  );
+  lines.push(
+    '------'.padEnd(10) +
+    '----'.padEnd(25) +
+    '-----------'
+  );
   for (const s of services) {
+    const displayName = s.displayName.length > 38
+      ? s.displayName.substring(0, 35) + '...'
+      : s.displayName;
     lines.push(
-      s.state.padEnd(10) + s.name.padEnd(24) + s.displayName
+      s.state.padEnd(10) +
+      s.name.padEnd(25) +
+      displayName
     );
   }
   return lines.join('\n');
+}
+
+// ─── Error formatting (matches real PS5.1 error output) ──────────
+
+function psError(cmdlet: string, message: string, categoryInfo: string, errorId: string): string {
+  return `${cmdlet} : ${message}\n    + CategoryInfo          : ${categoryInfo}\n    + FullyQualifiedErrorId : ${errorId}`;
+}
+
+// ─── Wildcard to regex ───────────────────────────────────────────
+
+function wildcardToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regex = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${regex}$`, 'i');
 }
 
 // ─── Arg parser (same as other PS cmdlet files) ───────────────────

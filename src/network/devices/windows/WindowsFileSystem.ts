@@ -185,6 +185,48 @@ export class WindowsFileSystem {
       }
     }
 
+    // Service and process binaries (matching WindowsServiceManager + WindowsProcessManager)
+    const serviceBinaries: Array<[string, number]> = [
+      // Core service host
+      ['C:\\Windows\\System32\\svchost.exe', 51768],
+      // Service-specific binaries
+      ['C:\\Windows\\System32\\spoolsv.exe', 69632],
+      ['C:\\Windows\\System32\\lsass.exe', 58880],
+      ['C:\\Windows\\System32\\services.exe', 72192],
+      ['C:\\Windows\\System32\\csrss.exe', 6144],
+      ['C:\\Windows\\System32\\wininit.exe', 39936],
+      ['C:\\Windows\\System32\\smss.exe', 107008],
+      ['C:\\Windows\\System32\\winlogon.exe', 620544],
+      ['C:\\Windows\\System32\\dwm.exe', 92672],
+      ['C:\\Windows\\System32\\sihost.exe', 81920],
+      ['C:\\Windows\\System32\\taskhostw.exe', 82944],
+      ['C:\\Windows\\System32\\conhost.exe', 862208],
+      ['C:\\Windows\\System32\\RuntimeBroker.exe', 126464],
+      ['C:\\Windows\\System32\\fontdrvhost.exe', 45056],
+      ['C:\\Windows\\System32\\ctfmon.exe', 20480],
+      // System drivers (in drivers directory)
+      ['C:\\Windows\\System32\\drivers\\tcpip.sys', 2437120],
+      ['C:\\Windows\\System32\\drivers\\afd.sys', 562176],
+      ['C:\\Windows\\System32\\drivers\\netbt.sys', 299008],
+      // Networking tools already present but add sc.exe, tasklist, taskkill
+      ['C:\\Windows\\System32\\sc.exe', 73728],
+      ['C:\\Windows\\System32\\tasklist.exe', 79872],
+      ['C:\\Windows\\System32\\taskkill.exe', 80384],
+      ['C:\\Windows\\System32\\net1.exe', 196608],
+    ];
+    for (const [binPath, binSize] of serviceBinaries) {
+      const lastSep = binPath.lastIndexOf('\\');
+      if (lastSep > 2) this.mkdirp(binPath.substring(0, lastSep));
+      if (!this.resolve(binPath)) {
+        this.createFile(binPath, '');
+        const entry = this.resolve(binPath);
+        if (entry) {
+          entry.size = binSize;
+          entry.attributes.add('system');
+        }
+      }
+    }
+
     // Mark system directories as hidden/system
     const systemDirs = ['C:\\PerfLogs', 'C:\\Windows'];
     for (const sd of systemDirs) {
