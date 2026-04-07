@@ -15,8 +15,11 @@ import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } f
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
-import { cmdSystemctl, cmdService, cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk, cmdTop } from './LinuxSystemCommands';
+import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
+import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
+import { LinuxServiceManager } from './LinuxServiceManager';
+import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -31,6 +34,8 @@ export class LinuxCommandExecutor {
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
+  readonly processMgr: LinuxProcessManager;
+  readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private cwd = '/root';
   private umask = 0o022;
@@ -50,6 +55,8 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs);
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
+    this.processMgr = new LinuxProcessManager();
+    this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.isServer = isServer;
 
     // Default environment
@@ -71,6 +78,20 @@ export class LinuxCommandExecutor {
       this.userMgr.currentGid = gid;
       this.cwd = '/home/user';
     }
+
+    // Every interactive shell shows up in the process table as -bash, like a
+    // real login shell. Server profiles run as root.
+    const shellUser = !isServer ? 'user' : 'root';
+    const shellUid = !isServer ? 1000 : 0;
+    this.processMgr.spawn({
+      command: '-bash',
+      comm: '-bash',
+      user: shellUser,
+      uid: shellUid,
+      gid: shellUid,
+      tty: 'pts/0',
+      cwd: this.cwd,
+    });
   }
 
   /** Set the network context for ip command support */
@@ -81,11 +102,29 @@ export class LinuxCommandExecutor {
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
   registerProcess(pid: number, user: string, command: string): void {
     this._systemProcesses.set(pid, { user, command, startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
+    // Also surface this in the real process table so ps/top see it.
+    if (!this.processMgr.get(pid)) {
+      const uid = user === 'root' ? 0 : 1;
+      this.processMgr.spawn({ command, user, uid, gid: uid });
+    }
   }
 
   /** Clear all registered system processes */
   clearSystemProcesses(): void {
+    for (const pid of this._systemProcesses.keys()) {
+      this.processMgr.kill(pid, 'SIGKILL');
+    }
     this._systemProcesses.clear();
+  }
+
+  /** Build the context object passed to ps/top/kill/pgrep/pkill commands. */
+  private processCmdContext() {
+    return {
+      pm: this.processMgr,
+      currentUser: this.userMgr.currentUser,
+      currentUid: this.userMgr.currentUid,
+      tty: 'pts/0',
+    };
   }
 
   private ctx(): ShellContext {
@@ -553,43 +592,29 @@ export class LinuxCommandExecutor {
       case 'clear': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
       case 'reset': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
 
-      // Sleep, kill - no-ops in simulator
+      // Sleep — non-blocking simulator no-op
       case 'sleep': return { output: '', exitCode: 0 };
-      case 'kill': return { output: '', exitCode: 0 };
 
-      // ps — process listing
-      case 'ps': {
-        const isAux = args.some(a => a.includes('aux') || a.includes('ef') || a === '-e' || a === '-A');
-        const lines: string[] = [];
-        // Header
-        if (isAux) {
-          lines.push('USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND');
-        } else {
-          lines.push('  PID TTY          TIME CMD');
-        }
-        // Base system processes (always present)
-        const basePids: Array<{ pid: number; user: string; cmd: string }> = [
-          { pid: 1, user: 'root', cmd: '/sbin/init' },
-        ];
-        // Registered system processes (Oracle, etc.)
-        for (const [pid, proc] of this._systemProcesses) {
-          basePids.push({ pid, user: proc.user, cmd: proc.command });
-        }
-        // Current shell
-        basePids.push({ pid: 9999, user: this.userMgr.currentUser, cmd: '-bash' });
-
-        const grepArg = args.find((_, i) => i > 0 && args[i - 1] === '|');
-        for (const p of basePids) {
-          if (isAux) {
-            lines.push(`${p.user.padEnd(8)} ${String(p.pid).padStart(5)}  0.0  0.0      0     0 ?        Ss   00:00   0:00 ${p.cmd}`);
-          } else {
-            if (p.user === this.userMgr.currentUser || this.userMgr.currentUid === 0) {
-              lines.push(`${String(p.pid).padStart(5)} pts/0    00:00:00 ${p.cmd}`);
-            }
-          }
-        }
-        return { output: lines.join('\n'), exitCode: 0 };
+      // kill — send signal via process manager
+      case 'kill': {
+        const r = cmdKill(args, this.processCmdContext());
+        return r;
       }
+      case 'pkill': {
+        const r = cmdPkill(args, this.processCmdContext());
+        return r;
+      }
+      case 'pgrep': {
+        const r = cmdPgrep(args, this.processCmdContext());
+        return r;
+      }
+      case 'pidof': {
+        const r = cmdPidof(args, this.processCmdContext());
+        return r;
+      }
+
+      // ps — process listing backed by ProcessManager
+      case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
       // date, uptime, uname - basic system info
       case 'date': return { output: new Date().toString(), exitCode: 0 };
@@ -616,16 +641,16 @@ export class LinuxCommandExecutor {
         return this.handleIPSec(args);
 
       // ── System administration commands ──────────────────────────────
-      case 'systemctl': return { output: cmdSystemctl(args, this.isServer), exitCode: 0 };
-      case 'service': return { output: cmdService(args, this.isServer), exitCode: 0 };
+      case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
+      case 'service': return cmdService(args, this.serviceMgr);
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args), exitCode: 0 };
       case 'mount': return { output: cmdMount(c, args), exitCode: 0 };
       case 'umount': return { output: '', exitCode: 0 };
       case 'lsblk': return { output: cmdLsblk(args), exitCode: 0 };
-      case 'top': return { output: cmdTop(args, this.userMgr.currentUser, this._systemProcesses), exitCode: 0 };
-      case 'htop': return { output: cmdTop(args, this.userMgr.currentUser, this._systemProcesses), exitCode: 0 };
+      case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
+      case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
