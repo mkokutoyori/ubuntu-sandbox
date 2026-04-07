@@ -921,3 +921,131 @@ Stop-Process : Cannot stop process "csrss (504)" because it is a critical system
 | `PasswordHistoryCount` | 0 | Mots de passe mémorisés |
 
 ---
+
+## 10. WMI / CIM
+
+### 10.1 Cmdlets CIM (recommandés depuis PS 3.0)
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-CimInstance` | `-ClassName`, `-Filter`, `-Property` | Requêter une classe CIM/WMI | 🟡 (quelques classes) |
+| `Get-WmiObject` | `-Class`, `-Filter` | Ancien cmdlet (alias) | 🟡 |
+| `Invoke-CimMethod` | `-ClassName`, `-MethodName` | Invoquer une méthode CIM | ❌ |
+| `New-CimInstance` | | Créer une instance CIM | ❌ |
+| `Set-CimInstance` | | Modifier une instance CIM | ❌ |
+| `Remove-CimInstance` | | Supprimer une instance CIM | ❌ |
+| `Get-CimClass` | `-ClassName` | Obtenir la définition d'une classe | ❌ |
+| `Register-CimIndicationEvent` | | S'abonner à un événement CIM | ❌ |
+
+### 10.2 Classes WMI/CIM Simulées
+
+| Classe | Propriétés | Description | Statut |
+|--------|-----------|-------------|--------|
+| `Win32_OperatingSystem` | Caption, Version, BuildNumber, OSArchitecture, TotalVisibleMemorySize, FreePhysicalMemory, LastBootUpTime, CSName, SystemDrive, WindowsDirectory | Informations OS | ✅ |
+| `Win32_ComputerSystem` | Name, Domain, Manufacturer, Model, NumberOfProcessors, TotalPhysicalMemory, UserName | Informations machine | ✅ |
+| `Win32_Processor` | Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, Architecture | CPU | ❌ |
+| `Win32_PhysicalMemory` | Capacity, Speed, Manufacturer, MemoryType | RAM physique | ❌ |
+| `Win32_DiskDrive` | Model, Size, MediaType, InterfaceType | Disques | ❌ |
+| `Win32_LogicalDisk` | DeviceID, Size, FreeSpace, DriveType, FileSystem, VolumeName | Volumes logiques | ❌ |
+| `Win32_NetworkAdapter` | Name, MACAddress, Speed, NetEnabled, InterfaceIndex | Adaptateurs réseau | ❌ |
+| `Win32_NetworkAdapterConfiguration` | IPAddress, IPSubnet, DefaultIPGateway, DNSServerSearchOrder, DHCPEnabled | Config réseau | ❌ |
+| `Win32_Service` | Name, DisplayName, State, StartMode, PathName, StartName | Services | ❌ |
+| `Win32_Process` | Name, ProcessId, WorkingSetSize, CommandLine, CreationDate | Processus | ❌ |
+| `Win32_UserAccount` | Name, FullName, SID, Disabled, PasswordRequired | Comptes utilisateurs | ❌ |
+| `Win32_Group` | Name, SID, Description | Groupes locaux | ❌ |
+| `Win32_Share` | Name, Path, Description, AllowMaximum | Partages réseau | ❌ |
+| `Win32_Printer` | Name, DriverName, PortName, Default | Imprimantes | ❌ |
+| `Win32_BIOS` | SMBIOSBIOSVersion, Manufacturer, ReleaseDate, SerialNumber | BIOS | ❌ |
+| `Win32_BaseBoard` | Manufacturer, Product, SerialNumber | Carte mère | ❌ |
+| `Win32_TimeZone` | Caption, Bias, StandardName | Fuseau horaire | ❌ |
+
+### 10.3 Sortie Exacte Get-CimInstance Win32_OperatingSystem
+
+```powershell
+PS C:\> Get-CimInstance Win32_OperatingSystem | Format-List Caption, Version, BuildNumber, OSArchitecture
+
+Caption        : Microsoft Windows 10 Pro
+Version        : 10.0.22621
+BuildNumber    : 22621
+OSArchitecture : 64-bit
+```
+
+---
+
+## 11. Registre Windows (Registry Provider)
+
+### 11.1 Cmdlets Registre (via PSDrive)
+
+| Cmdlet | Usage | Description | Statut |
+|--------|-------|-------------|--------|
+| `Get-Item` | `Get-Item HKLM:\SOFTWARE\Microsoft` | Lire une clé | ❌ |
+| `Get-ChildItem` | `Get-ChildItem HKLM:\SOFTWARE` | Lister les sous-clés | ❌ |
+| `Get-ItemProperty` | `Get-ItemProperty HKLM:\...\Windows NT\CurrentVersion` | Lire les valeurs d'une clé | ❌ |
+| `Get-ItemPropertyValue` | `Get-ItemPropertyValue HKLM:\... -Name "ProductName"` | Lire une valeur spécifique | ❌ |
+| `Set-ItemProperty` | `Set-ItemProperty HKLM:\... -Name "key" -Value "val"` | Écrire une valeur | ❌ |
+| `New-Item` | `New-Item HKLM:\SOFTWARE\MyApp` | Créer une clé | ❌ |
+| `New-ItemProperty` | `New-ItemProperty -Path ... -Name ... -Value ... -PropertyType ...` | Créer une valeur | ❌ |
+| `Remove-Item` | `Remove-Item HKLM:\SOFTWARE\MyApp -Recurse` | Supprimer une clé | ❌ |
+| `Remove-ItemProperty` | `Remove-ItemProperty -Path ... -Name ...` | Supprimer une valeur | ❌ |
+| `Test-Path` | `Test-Path HKLM:\SOFTWARE\MyApp` | Tester l'existence d'une clé | ❌ |
+
+### 11.2 Ruches (Hives) Simulées
+
+| PSDrive | Ruche réelle | Description | Statut |
+|---------|-------------|-------------|--------|
+| `HKLM:` | `HKEY_LOCAL_MACHINE` | Configuration machine | ❌ |
+| `HKCU:` | `HKEY_CURRENT_USER` | Configuration utilisateur courant | ❌ |
+| `HKCR:` | `HKEY_CLASSES_ROOT` | Classes (fusion HKLM + HKCU) | ❌ |
+| `HKU:` | `HKEY_USERS` | Tous les profils utilisateurs | ❌ |
+| `HKCC:` | `HKEY_CURRENT_CONFIG` | Config matériel courant | ❌ |
+
+### 11.3 Clés Registre Pré-remplies (Simulation)
+
+```
+HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion
+    ProductName            : Windows 10 Pro
+    CurrentBuildNumber     : 22621
+    EditionID              : Professional
+    InstallationType       : Client
+    RegisteredOrganization :
+    RegisteredOwner        : User
+    SystemRoot             : C:\Windows
+    CurrentVersion         : 6.3
+    CurrentMajorVersionNumber : 10
+    CurrentMinorVersionNumber : 0
+
+HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion
+    ProgramFilesDir        : C:\Program Files
+    ProgramFilesDir (x86)  : C:\Program Files (x86)
+    CommonFilesDir         : C:\Program Files\Common Files
+    DevicePath             : C:\Windows\inf
+    MediaPathUnexpanded    : C:\Windows\Media
+
+HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName
+    ComputerName           : WIN-PC1
+
+HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters
+    Hostname               : WIN-PC1
+    Domain                 :
+    SearchList             :
+
+HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer
+    ShellState             : (binary)
+
+HKCU:\Environment
+    TEMP                   : C:\Users\User\AppData\Local\Temp
+    TMP                    : C:\Users\User\AppData\Local\Temp
+```
+
+### 11.4 Types de Valeurs Registre
+
+| PropertyType | Description | Exemple |
+|-------------|-------------|---------|
+| `String` (REG_SZ) | Chaîne de caractères | `"Windows 10 Pro"` |
+| `ExpandString` (REG_EXPAND_SZ) | Chaîne avec %variables% | `"%SystemRoot%\System32"` |
+| `DWord` (REG_DWORD) | Entier 32 bits | `1` |
+| `QWord` (REG_QWORD) | Entier 64 bits | `4294967296` |
+| `Binary` (REG_BINARY) | Données binaires | `[byte[]](0x01, 0x02)` |
+| `MultiString` (REG_MULTI_SZ) | Tableau de chaînes | `@("val1", "val2")` |
+
+---
