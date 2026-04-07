@@ -718,3 +718,206 @@ More help is available by typing NET HELPMSG 3521.
 ```
 
 ---
+
+## 8. Gestion des Processus
+
+### 8.1 Cmdlets PowerShell Process
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-Process` | `-Name`, `-Id`, `-ComputerName` | Lister les processus | ✅ |
+| `Stop-Process` | `-Name`, `-Id`, `-Force`, `-PassThru` | Arrêter un processus | ✅ |
+| `Start-Process` | `-FilePath`, `-ArgumentList`, `-Verb RunAs`, `-Wait`, `-NoNewWindow` | Démarrer un processus | ❌ |
+| `Wait-Process` | `-Name`, `-Id`, `-Timeout` | Attendre la fin d'un processus | ❌ |
+| `Debug-Process` | `-Name`, `-Id` | Attacher un débogueur | ❌ (stub) |
+
+### 8.2 Commandes CMD Process
+
+| Commande | Paramètres clés | Description | Statut |
+|----------|-----------------|-------------|--------|
+| `tasklist` | (aucun) | Liste des processus (format table) | ✅ |
+| `tasklist /SVC` | | Processus avec services hébergés | ✅ |
+| `tasklist /V` | | Verbose (User, Status, CPU Time, Window Title) | ✅ |
+| `tasklist /FI "filter"` | `imagename`, `pid`, `status`, `username`, `memusage` | Filtrer les processus | ✅ |
+| `tasklist /FO CSV` | | Sortie format CSV | ✅ |
+| `tasklist /FO LIST` | | Sortie format liste | ✅ |
+| `tasklist /NH` | | Sans en-têtes | ✅ |
+| `taskkill /PID <pid>` | | Tuer par PID | ✅ |
+| `taskkill /IM <name>` | | Tuer par nom d'image | ✅ |
+| `taskkill /F` | | Forcer (SIGKILL) | ✅ |
+| `taskkill /T` | | Tuer l'arbre de processus (enfants) | ✅ |
+| `taskkill /FI "filter"` | | Tuer les processus filtrés | ✅ |
+
+### 8.3 Processus Windows Prédéfinis
+
+| Processus | PID | Session | Owner | Mémoire | Critique | Notes |
+|-----------|-----|---------|-------|---------|----------|-------|
+| `System` | 4 | Services / 0 | SYSTEM | ~144 KB | ✅ | Noyau |
+| `smss.exe` | 392 | Services / 0 | SYSTEM | ~1,024 KB | ✅ | Session Manager |
+| `csrss.exe` | 504 | Services / 0 | SYSTEM | ~5,120 KB | ✅ | Client/Server Runtime |
+| `wininit.exe` | 580 | Services / 0 | SYSTEM | ~1,536 KB | ✅ | Init Windows |
+| `services.exe` | 648 | Services / 0 | SYSTEM | ~7,168 KB | ✅ | Gestionnaire services |
+| `lsass.exe` | 660 | Services / 0 | SYSTEM | ~10,240 KB | ✅ | Auth locale |
+| `svchost.exe` (×N) | 800+ | Services / 0 | SYSTEM / LOCAL/NETWORK SERVICE | Variable | Non | Hôte services |
+| `dwm.exe` | 1080 | Console / 1 | DWM-1 | ~45,000 KB | Non | Desktop Window Manager |
+| `winlogon.exe` | 596 | Console / 1 | SYSTEM | ~3,072 KB | ✅ | Logon |
+| `fontdrvhost.exe` | 820 | Console / 1 | UMFD-1 | ~2,048 KB | Non | Pilote polices |
+| `sihost.exe` | 3408 | Console / 1 | User | ~15,360 KB | Non | Shell Infrastructure |
+| `taskhostw.exe` | 3468 | Console / 1 | User | ~8,192 KB | Non | Task Host |
+| `explorer.exe` | 3576 | Console / 1 | User | ~65,536 KB | Non | Explorateur |
+| `RuntimeBroker.exe` | 4120 | Console / 1 | User | ~12,288 KB | Non | Runtime Broker |
+| `ctfmon.exe` | 4300 | Console / 1 | User | ~6,144 KB | Non | CTF Loader |
+| `cmd.exe` | 4880 | Console / 1 | User | ~3,072 KB | Non | Invite de commandes |
+| `conhost.exe` | 5132 | Console / 1 | User | ~8,192 KB | Non | Console Host |
+| `spoolsv.exe` | 1640 | Services / 0 | SYSTEM | ~7,680 KB | Non | Print Spooler |
+
+### 8.4 Sortie Exacte Get-Process (PS 5.1)
+
+```
+Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+-------  ------    -----      -----     ------     --  -- -----------
+    180      12     2340       5120       0.03    504   0 csrss
+    840      33    18432      65536       2.47   3576   1 explorer
+    345      22     7168       7680       0.11   1640   0 spoolsv
+    650      45    12288      34816       0.95    800   0 svchost
+```
+
+### 8.5 Sortie Exacte tasklist (CMD)
+
+```
+Image Name                     PID Session Name        Session#    Mem Usage
+========================= ======== ================ =========== ============
+System Idle Process              0 Services                   0          8 K
+System                           4 Services                   0        144 K
+csrss.exe                      504 Services                   0      5,120 K
+services.exe                   648 Services                   0      7,168 K
+lsass.exe                      660 Services                   0     10,240 K
+svchost.exe                    800 Services                   0     12,288 K
+explorer.exe                  3576 Console                    1     65,536 K
+```
+
+### 8.6 Privilèges de Kill
+
+| Action | Standard User | Administrator |
+|--------|--------------|---------------|
+| Tuer processus utilisateur | ✅ | ✅ |
+| Tuer processus SYSTEM (non-critique) | ❌ Access denied | ✅ |
+| Tuer processus critique (csrss, lsass, System...) | ❌ Access denied | ❌ Critical process |
+
+### 8.7 Messages d'Erreur PowerShell — Process
+
+```powershell
+# Processus introuvable
+Get-Process : Cannot find a process with the name "FakeApp". Verify the process name and call the cmdlet again.
+    + CategoryInfo          : ObjectNotFound: (FakeApp:String) [Get-Process], ProcessCommandException
+    + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+
+# Accès refusé
+Stop-Process : Cannot stop process "lsass (660)" because of the following error: Access is denied
+    + CategoryInfo          : CloseError: (System.Diagnostics.Process (lsass):Process) [Stop-Process], ProcessCommandException
+    + FullyQualifiedErrorId : CouldNotStopProcess,Microsoft.PowerShell.Commands.StopProcessCommand
+
+# Processus critique
+Stop-Process : Cannot stop process "csrss (504)" because it is a critical system process.
+    + CategoryInfo          : CloseError: (System.Diagnostics.Process (csrss):Process) [Stop-Process], ProcessCommandException
+    + FullyQualifiedErrorId : CouldNotStopProcess,Microsoft.PowerShell.Commands.StopProcessCommand
+```
+
+---
+
+## 9. Gestion des Utilisateurs, Groupes et ACL
+
+### 9.1 Cmdlets PowerShell — Utilisateurs Locaux
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-LocalUser` | `-Name`, `-SID` | Lister les utilisateurs locaux | ✅ |
+| `New-LocalUser` | `-Name`, `-Password`, `-FullName`, `-Description`, `-AccountNeverExpires`, `-PasswordNeverExpires` | Créer un utilisateur | ✅ |
+| `Set-LocalUser` | `-Name`, `-Password`, `-FullName`, `-Description`, `-PasswordNeverExpires` | Modifier un utilisateur | ✅ |
+| `Remove-LocalUser` | `-Name` | Supprimer un utilisateur | ✅ |
+| `Enable-LocalUser` | `-Name` | Activer un compte | ✅ |
+| `Disable-LocalUser` | `-Name` | Désactiver un compte | ✅ |
+| `Rename-LocalUser` | `-Name`, `-NewName` | Renommer | ❌ |
+
+### 9.2 Cmdlets PowerShell — Groupes Locaux
+
+| Cmdlet | Paramètres clés | Description | Statut |
+|--------|-----------------|-------------|--------|
+| `Get-LocalGroup` | `-Name`, `-SID` | Lister les groupes | ✅ |
+| `New-LocalGroup` | `-Name`, `-Description` | Créer un groupe | ✅ |
+| `Remove-LocalGroup` | `-Name` | Supprimer un groupe | ✅ |
+| `Add-LocalGroupMember` | `-Group`, `-Member` | Ajouter un membre | ✅ |
+| `Remove-LocalGroupMember` | `-Group`, `-Member` | Retirer un membre | ✅ |
+| `Get-LocalGroupMember` | `-Group` | Lister les membres | ✅ |
+| `Rename-LocalGroup` | `-Name`, `-NewName` | Renommer | ❌ |
+
+### 9.3 Cmdlet PowerShell — ACL
+
+| Cmdlet | Paramètres | Description | Statut |
+|--------|------------|-------------|--------|
+| `Get-Acl` | `-Path` | Lire les ACL d'un objet (fichier, registre) | ✅ |
+| `Set-Acl` | `-Path`, `-AclObject` | Modifier les ACL | ❌ |
+| `New-Object System.Security.AccessControl.FileSystemAccessRule` | | Créer une règle ACL | ❌ |
+
+### 9.4 Commandes CMD — Utilisateurs/Groupes
+
+| Commande | Description | Statut |
+|----------|-------------|--------|
+| `net user` | Lister les utilisateurs | ✅ |
+| `net user <name>` | Détails d'un utilisateur | ✅ |
+| `net user <name> <password> /add` | Créer un utilisateur | ✅ |
+| `net user <name> /delete` | Supprimer un utilisateur | ✅ |
+| `net user <name> /active:yes\|no` | Activer/désactiver | ✅ |
+| `net localgroup` | Lister les groupes | ✅ |
+| `net localgroup <group>` | Membres d'un groupe | ✅ |
+| `net localgroup <group> <user> /add` | Ajouter au groupe | ✅ |
+| `net localgroup <group> <user> /delete` | Retirer du groupe | ✅ |
+| `whoami` | Utilisateur courant | ✅ |
+| `whoami /all` | Tous les détails (SID, groupes, privilèges) | ✅ |
+| `whoami /priv` | Privilèges de l'utilisateur | ✅ |
+| `whoami /groups` | Groupes de l'utilisateur | ✅ |
+| `whoami /user` | SID de l'utilisateur | ✅ |
+| `icacls <path>` | Afficher les ACL NTFS | ✅ |
+| `icacls <path> /grant <user>:<perm>` | Accorder des permissions | ✅ |
+| `icacls <path> /deny <user>:<perm>` | Refuser des permissions | ✅ |
+| `icacls <path> /remove <user>` | Supprimer des permissions | ✅ |
+| `icacls <path> /setowner <user>` | Changer le propriétaire | ✅ |
+
+### 9.5 Utilisateurs Prédéfinis
+
+| Utilisateur | Groupes | SID | Enabled | Statut |
+|-------------|---------|-----|---------|--------|
+| `Administrator` | Administrators | S-1-5-21-...-500 | Non (par défaut) | ✅ |
+| `User` | Administrators, Users | S-1-5-21-...-1001 | Oui | ✅ |
+| `Guest` | Guests | S-1-5-21-...-501 | Non | ✅ |
+| `DefaultAccount` | System Managed Accounts Group | S-1-5-21-...-503 | Non | ✅ |
+| `WDAGUtilityAccount` | (aucun) | S-1-5-21-...-504 | Non | ✅ |
+
+### 9.6 Groupes Prédéfinis
+
+| Groupe | Description | Membres initiaux |
+|--------|-------------|-----------------|
+| `Administrators` | Full control | Administrator, User |
+| `Users` | Standard users | User |
+| `Guests` | Limited access | Guest |
+| `Remote Desktop Users` | Remote access | (vide) |
+| `Network Configuration Operators` | Manage network | (vide) |
+| `Power Users` | Legacy compatibility | (vide) |
+| `Backup Operators` | Backup/restore | (vide) |
+| `Cryptographic Operators` | Crypto operations | (vide) |
+| `Event Log Readers` | Read event logs | (vide) |
+| `Hyper-V Administrators` | Manage Hyper-V | (vide) |
+| `Performance Monitor Users` | Monitor performance | (vide) |
+| `System Managed Accounts Group` | Managed accounts | DefaultAccount |
+
+### 9.7 Politiques de Sécurité
+
+| Politique | Valeur par défaut | Description |
+|-----------|-------------------|-------------|
+| `MinPasswordLength` | 0 | Longueur minimum mot de passe |
+| `MaxPasswordAge` | 42 jours | Expiration mot de passe |
+| `LockoutThreshold` | 0 (désactivé) | Tentatives avant verrouillage |
+| `LockoutDuration` | 30 minutes | Durée du verrouillage |
+| `PasswordHistoryCount` | 0 | Mots de passe mémorisés |
+
+---
