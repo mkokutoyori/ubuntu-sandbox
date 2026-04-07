@@ -1406,3 +1406,182 @@ UserName           : N/A
 | `Remove-Job` | `-Id` | Supprimer un job de la liste | ❌ |
 
 ---
+
+## 16. Formatage et Output
+
+### 16.1 Cmdlets de Formatage
+
+| Cmdlet | Alias | Paramètres | Description | Statut |
+|--------|-------|------------|-------------|--------|
+| `Format-Table` | `ft` | `-Property`, `-AutoSize`, `-Wrap`, `-GroupBy`, `-HideTableHeaders` | Formatage tabulaire | ✅ (pipeline) |
+| `Format-List` | `fl` | `-Property` (wildcard `*`) | Formatage clé-valeur | ✅ (pipeline) |
+| `Format-Wide` | `fw` | `-Property`, `-Column` | Formatage en colonnes larges | ❌ |
+| `Format-Custom` | `fc` | `-Depth` | Formatage personnalisé | ❌ |
+| `Format-Hex` | `fhx` | `-Path`, `-InputObject` | Affichage hexadécimal | ❌ |
+
+### 16.2 Cmdlets de Sortie
+
+| Cmdlet | Description | Statut |
+|--------|-------------|--------|
+| `Out-Default` | Sortie par défaut (implicite) | ✅ (implicite) |
+| `Out-Host` | Écrire sur la console | ❌ |
+| `Out-File` | Écrire dans un fichier | ✅ |
+| `Out-String` | Convertir en chaîne | ❌ |
+| `Out-Null` | Supprimer la sortie | ❌ |
+| `Out-GridView` | Grille graphique (GUI) | ❌ (impossible en terminal) |
+
+### 16.3 Règles de Formatage par Défaut
+
+PowerShell choisit automatiquement le format en fonction du nombre de propriétés :
+
+| Nombre de propriétés | Format par défaut |
+|---------------------|-------------------|
+| ≤ 4 propriétés | `Format-Table` (tableau) |
+| ≥ 5 propriétés | `Format-List` (liste clé-valeur) |
+
+Certains types ont un formatage prédéfini :
+- `System.Diagnostics.Process` → Table (Handles, NPM, PM, WS, CPU, Id, SI, ProcessName)
+- `System.ServiceProcess.ServiceController` → Table (Status, Name, DisplayName)
+- `System.IO.FileInfo` → Table (Mode, LastWriteTime, Length, Name)
+- `System.IO.DirectoryInfo` → Table (Mode, LastWriteTime, Length, Name)
+
+### 16.4 Coloration de la Sortie
+
+PowerShell 5.1 utilise des couleurs pour différents types de sortie :
+
+| Type | Couleur | Exemple |
+|------|---------|---------|
+| Erreur | Rouge | `Write-Error`, exceptions |
+| Avertissement | Jaune | `Write-Warning` |
+| Verbose | Jaune | `Write-Verbose` |
+| Debug | Jaune | `Write-Debug` |
+| Texte normal | Blanc/Gris | `Write-Host`, `Write-Output` |
+| Prompt | Blanc | `PS C:\>` |
+
+---
+
+## 17. Système de Fichiers Windows (VFS)
+
+### 17.1 Arborescence VFS Simulée
+
+```
+C:\
+├── PerfLogs\
+├── Program Files\
+│   ├── Common Files\
+│   ├── Internet Explorer\
+│   ├── Windows Defender\
+│   └── Windows NT\
+├── Program Files (x86)\
+│   ├── Common Files\
+│   └── Internet Explorer\
+├── Users\
+│   ├── User\
+│   │   ├── Desktop\
+│   │   ├── Documents\
+│   │   ├── Downloads\
+│   │   ├── Pictures\
+│   │   ├── Videos\
+│   │   ├── Music\
+│   │   ├── AppData\
+│   │   │   ├── Local\
+│   │   │   │   └── Temp\
+│   │   │   └── Roaming\
+│   │   ├── Favorites\
+│   │   ├── OneDrive\
+│   │   ├── NTUSER.DAT                    [hidden, system]
+│   │   └── ntuser.ini                    [hidden, system]
+│   ├── Public\
+│   └── Default\
+├── Windows\
+│   ├── System32\
+│   │   ├── cmd.exe                       [system]
+│   │   ├── notepad.exe                   [system]
+│   │   ├── powershell.exe                [system] (via WindowsPowerShell\v1.0\)
+│   │   ├── svchost.exe                   [system]
+│   │   ├── spoolsv.exe                   [system]
+│   │   ├── lsass.exe                     [system]
+│   │   ├── services.exe                  [system]
+│   │   ├── csrss.exe                     [system]
+│   │   ├── dwm.exe                       [system]
+│   │   ├── conhost.exe                   [system]
+│   │   ├── sc.exe                        [system]
+│   │   ├── tasklist.exe                  [system]
+│   │   ├── taskkill.exe                  [system]
+│   │   ├── net.exe, net1.exe             [system]
+│   │   ├── ipconfig.exe, ping.exe        [system]
+│   │   ├── netsh.exe, tracert.exe        [system]
+│   │   ├── regedit.exe, taskmgr.exe      [system]
+│   │   ├── explorer.exe, mmc.exe         [system]
+│   │   ├── config\
+│   │   │   ├── SYSTEM, SOFTWARE          [system, hidden]
+│   │   │   ├── SAM, SECURITY             [system, hidden]
+│   │   ├── drivers\
+│   │   │   ├── etc\
+│   │   │   │   ├── hosts
+│   │   │   │   ├── networks
+│   │   │   │   ├── protocol
+│   │   │   │   └── services
+│   │   │   ├── tcpip.sys                 [system]
+│   │   │   ├── afd.sys                   [system]
+│   │   │   └── netbt.sys                 [system]
+│   │   ├── WindowsPowerShell\v1.0\
+│   │   │   └── powershell.exe            [system]
+│   │   ├── wbem\
+│   │   │   └── wmic.exe                  [system]
+│   │   └── oobe\, Tasks\
+│   ├── SysWOW64\
+│   ├── Temp\
+│   ├── Fonts\, INF\, Prefetch\
+│   ├── Boot\, Panther\, Help\
+│   ├── win.ini                           [hidden]
+│   ├── explorer.exe, regedit.exe         [system]
+│   └── write.exe                         [system]
+```
+
+### 17.2 Attributs de Fichier NTFS
+
+| Attribut | Lettre DIR | Signification |
+|----------|-----------|---------------|
+| Archive | `A` | Fichier modifié depuis dernière sauvegarde |
+| Hidden | `H` | Fichier caché (non affiché par défaut) |
+| System | `S` | Fichier système |
+| ReadOnly | `R` | Lecture seule |
+| Directory | `D` | Répertoire |
+| ReparsePoint | `L` | Lien symbolique / junction |
+
+### 17.3 ACL NTFS
+
+Chaque fichier/dossier possède une DACL (Discretionary Access Control List) :
+
+```typescript
+interface WinACE {
+  principal: string;    // "BUILTIN\Administrators", "User", "NT AUTHORITY\SYSTEM"
+  type: 'allow' | 'deny';
+  permissions: string[];  // ['FullControl'], ['Read', 'Write'], ['ReadAndExecute']
+}
+```
+
+Permissions NTFS simulées :
+- `FullControl` (F) — Tous les droits
+- `Modify` (M) — Lire, écrire, supprimer
+- `ReadAndExecute` (RX) — Lire et exécuter
+- `Read` (R) — Lecture seule
+- `Write` (W) — Écriture seule
+- `ListDirectory` (RD) — Lister le contenu (dossiers)
+- `Delete` (D) — Supprimer
+- `ChangePermissions` (P) — Modifier les ACL
+- `TakeOwnership` (O) — Prendre possession
+
+### 17.4 Sortie Exacte icacls
+
+```
+C:\Users\User\Documents Successfully processed 1 files; Failed processing 0 files
+
+C:\Users\User\Documents
+    BUILTIN\Administrators:(OI)(CI)(F)
+    NT AUTHORITY\SYSTEM:(OI)(CI)(F)
+    WIN-PC1\User:(OI)(CI)(F)
+```
+
+---
