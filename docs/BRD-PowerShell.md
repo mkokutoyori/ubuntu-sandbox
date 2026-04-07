@@ -1049,3 +1049,210 @@ HKCU:\Environment
 | `MultiString` (REG_MULTI_SZ) | Tableau de chaînes | `@("val1", "val2")` |
 
 ---
+
+## 12. Scripting Avancé
+
+### 12.1 Variables et Types
+
+| Fonctionnalité | Syntaxe | Description | Statut |
+|----------------|---------|-------------|--------|
+| Variable simple | `$x = 42` | Assignation | ❌ |
+| Variable string | `$name = "World"` | Chaîne | ❌ |
+| Interpolation de chaîne | `"Hello $name"` | Expansion de variables | ❌ |
+| Here-string | `@"...\n..."@` | Multi-ligne avec interpolation | ❌ |
+| Here-string littéral | `@'...\n...'@` | Multi-ligne sans interpolation | ❌ |
+| Array | `$arr = @(1, 2, 3)` | Tableau | ❌ |
+| Hashtable | `$h = @{ Key = "Value" }` | Table de hachage | ❌ |
+| Cast de type | `[int]$x = "42"` | Conversion de type | ❌ |
+| Type accélérateurs | `[string]`, `[int]`, `[bool]`, `[datetime]`, `[array]`, `[hashtable]`, `[pscustomobject]` | Types raccourcis | ❌ |
+| Splatting | `$params = @{ Name = "svc" }; Get-Service @params` | Passage de paramètres via hashtable | ❌ |
+| Scope de variable | `$global:x`, `$script:x`, `$local:x`, `$private:x` | Portée des variables | ❌ |
+
+### 12.2 Opérateurs
+
+| Catégorie | Opérateurs | Statut |
+|-----------|-----------|--------|
+| Arithmétiques | `+`, `-`, `*`, `/`, `%`, `++`, `--` | ❌ |
+| Assignation | `=`, `+=`, `-=`, `*=`, `/=`, `%=` | ❌ |
+| Chaîne | `-f` (format), `-replace`, `-split`, `-join`, `*` (repeat) | ❌ |
+| Type | `-is`, `-isnot`, `-as` | ❌ |
+| Unaire | `[type]`, `-not`, `!`, `-bnot`, `++`, `--` | ❌ |
+| Redirection | `>`, `>>`, `2>`, `2>>`, `2>&1`, `*>` | ❌ |
+| Plage | `1..10` (range operator) | ❌ |
+| Membre | `.Property`, `::StaticMethod`, `.Method()` | ❌ |
+| Index | `$arr[0]`, `$hash["key"]`, `$arr[-1]` | ❌ |
+| Sous-expression | `$(expression)` | ❌ |
+| Appel | `& "command"`, `. .\script.ps1` (dot-sourcing) | ❌ |
+
+### 12.3 Structures de Contrôle
+
+```powershell
+# if / elseif / else
+if ($x -gt 10) {
+    "Greater"
+} elseif ($x -eq 10) {
+    "Equal"
+} else {
+    "Less"
+}
+
+# switch
+switch ($color) {
+    "Red"   { "Stop" }
+    "Green" { "Go" }
+    "Yellow" { "Caution" }
+    Default { "Unknown" }
+}
+
+# for
+for ($i = 0; $i -lt 10; $i++) {
+    Write-Host $i
+}
+
+# foreach
+foreach ($item in $collection) {
+    Process-Item $item
+}
+
+# while
+while ($condition) {
+    Do-Something
+}
+
+# do-while / do-until
+do {
+    $result = Get-Something
+} while ($result -ne $expected)
+
+do {
+    $result = Get-Something
+} until ($result -eq $expected)
+
+# try / catch / finally
+try {
+    $result = Risky-Operation
+} catch [System.IO.FileNotFoundException] {
+    "File not found: $_"
+} catch {
+    "Error: $_"
+} finally {
+    Cleanup
+}
+
+# throw
+throw "Custom error message"
+throw [System.ArgumentException]::new("Invalid argument")
+```
+
+| Structure | Statut |
+|-----------|--------|
+| `if / elseif / else` | ❌ |
+| `switch` | ❌ |
+| `for` | ❌ |
+| `foreach` | ❌ |
+| `while` | ❌ |
+| `do-while` / `do-until` | ❌ |
+| `try / catch / finally` | ❌ |
+| `throw` | ❌ |
+| `break` / `continue` | ❌ |
+| `return` | ❌ |
+| `exit` | ✅ |
+| `trap` | ❌ |
+
+### 12.4 Fonctions
+
+```powershell
+# Fonction simple
+function Get-Greeting {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+
+        [ValidateSet("Mr", "Mrs", "Ms")]
+        [string]$Title = "Mr"
+    )
+
+    return "$Title $Name, welcome!"
+}
+
+# Fonction avancée (cmdlet-like)
+function Get-SystemInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)]
+        [string[]]$ComputerName = $env:COMPUTERNAME
+    )
+
+    begin { $results = @() }
+
+    process {
+        foreach ($computer in $ComputerName) {
+            $results += [PSCustomObject]@{
+                Name = $computer
+                OS   = (Get-CimInstance Win32_OperatingSystem -ComputerName $computer).Caption
+            }
+        }
+    }
+
+    end { return $results }
+}
+
+# Filter (raccourci pour Process block)
+filter Where-Even { if ($_ % 2 -eq 0) { $_ } }
+```
+
+| Fonctionnalité | Statut |
+|----------------|--------|
+| `function Name { }` | ❌ |
+| `param()` block | ❌ |
+| `[Parameter()]` attributes | ❌ |
+| `[ValidateSet()]`, `[ValidateRange()]`, `[ValidateScript()]` | ❌ |
+| `begin / process / end` blocks | ❌ |
+| `[CmdletBinding()]` | ❌ |
+| `filter` | ❌ |
+| Scope (global/script/local) | ❌ |
+
+### 12.5 Classes PowerShell (PS 5.0+)
+
+```powershell
+class ServerInfo {
+    [string]$Name
+    [string]$IPAddress
+    [ValidateSet("Windows", "Linux")]
+    [string]$OS
+
+    ServerInfo([string]$name, [string]$ip) {
+        $this.Name = $name
+        $this.IPAddress = $ip
+    }
+
+    [string] ToString() {
+        return "$($this.Name) ($($this.IPAddress))"
+    }
+
+    static [ServerInfo] FromDns([string]$hostname) {
+        $ip = (Resolve-DnsName $hostname).IPAddress
+        return [ServerInfo]::new($hostname, $ip)
+    }
+}
+
+# Enum
+enum ServerRole {
+    WebServer
+    DatabaseServer
+    FileServer
+    DomainController
+}
+```
+
+| Fonctionnalité | Statut |
+|----------------|--------|
+| `class` déclaration | ❌ |
+| Propriétés typées | ❌ |
+| Constructeurs | ❌ |
+| Méthodes | ❌ |
+| Méthodes statiques | ❌ |
+| Héritage (`: BaseClass`) | ❌ |
+| `enum` | ❌ |
+
+---
