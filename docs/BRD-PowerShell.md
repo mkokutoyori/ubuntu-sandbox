@@ -315,3 +315,81 @@ PS C:\Windows\System32>
 | `ogv` | `Out-GridView` | ❌ |
 
 ---
+
+## 4. Filesystem Cmdlets
+
+### 4.1 Navigation et Lecture
+
+| Cmdlet | Alias | Paramètres clés | Description | Statut |
+|--------|-------|-----------------|-------------|--------|
+| `Get-ChildItem` | `ls`, `dir`, `gci` | `-Path`, `-Filter`, `-Recurse`, `-Force`, `-File`, `-Directory`, `-Name` | Lister fichiers/dossiers (formatage PS : Mode, LastWriteTime, Length, Name) | ✅ |
+| `Set-Location` | `cd`, `sl`, `chdir` | `-Path` | Changer de répertoire | ✅ |
+| `Get-Location` | `pwd`, `gl` | | Répertoire courant (objet PathInfo) | ✅ |
+| `Get-Content` | `cat`, `type`, `gc` | `-Path`, `-TotalCount`, `-Tail`, `-Encoding`, `-Raw` | Lire le contenu d'un fichier | ✅ |
+| `Get-Item` | `gi` | `-Path`, `-Force` | Obtenir un objet fichier/dossier (propriétés FileInfo) | ✅ |
+| `Test-Path` | | `-Path`, `-PathType (Leaf/Container/Any)` | Tester si un chemin existe | ✅ |
+| `Resolve-Path` | `rvpa` | `-Path` | Résoudre un chemin relatif en absolu | ✅ |
+| `Split-Path` | | `-Path`, `-Parent`, `-Leaf`, `-Qualifier`, `-NoQualifier` | Extraire parties d'un chemin | ✅ |
+| `Join-Path` | | `-Path`, `-ChildPath` | Joindre des chemins | ✅ |
+
+### 4.2 Écriture et Modification
+
+| Cmdlet | Alias | Paramètres clés | Description | Statut |
+|--------|-------|-----------------|-------------|--------|
+| `Set-Content` | `sc` | `-Path`, `-Value`, `-Encoding` | Écrire (écraser) le contenu d'un fichier | ✅ |
+| `Add-Content` | `ac` | `-Path`, `-Value` | Ajouter du contenu à un fichier | ✅ |
+| `Clear-Content` | `clc` | `-Path` | Vider le contenu d'un fichier | ✅ |
+| `Out-File` | | `-FilePath`, `-Append`, `-Encoding`, `-Width` | Écrire la sortie dans un fichier | ✅ |
+| `New-Item` | `ni` | `-Path`, `-Name`, `-ItemType (File/Directory)`, `-Value`, `-Force` | Créer fichier ou dossier | ✅ |
+| `Remove-Item` | `rm`, `del`, `ri` | `-Path`, `-Recurse`, `-Force` | Supprimer fichier/dossier | ✅ |
+| `Copy-Item` | `cp`, `copy`, `cpi` | `-Path`, `-Destination`, `-Recurse`, `-Force` | Copier fichier/dossier | ✅ |
+| `Move-Item` | `mv`, `move`, `mi` | `-Path`, `-Destination`, `-Force` | Déplacer/renommer | ✅ |
+| `Rename-Item` | `ren`, `rni` | `-Path`, `-NewName` | Renommer | ✅ |
+
+### 4.3 Formatage Get-ChildItem (Sortie Exacte PS 5.1)
+
+```powershell
+PS C:\Users\User> Get-ChildItem
+
+    Directory: C:\Users\User
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        04/07/2026  10:30 AM                Desktop
+d-----        04/07/2026  10:30 AM                Documents
+d-----        04/07/2026  10:30 AM                Downloads
+d-----        04/07/2026  10:30 AM                Pictures
+-a----        04/07/2026  10:30 AM           3072 NTUSER.DAT
+```
+
+Mode flags :
+- `d` = Directory
+- `a` = Archive
+- `r` = ReadOnly
+- `h` = Hidden
+- `s` = System
+- `l` = ReparsePoint (symlink)
+
+### 4.4 Providers de Chemins (PSDrive)
+
+PowerShell accède aux données via des **providers** uniformes. Chaque provider expose un "drive" :
+
+| Provider | Drive | Description | Statut |
+|----------|-------|-------------|--------|
+| FileSystem | `C:`, `D:` | Système de fichiers Windows | ✅ |
+| Registry | `HKLM:`, `HKCU:` | Registre Windows | ❌ |
+| Environment | `Env:` | Variables d'environnement | 🟡 ($env: OK, provider non) |
+| Alias | `Alias:` | Aliases PowerShell | ❌ |
+| Function | `Function:` | Fonctions définies | ❌ |
+| Variable | `Variable:` | Variables PowerShell | ❌ |
+| Certificate | `Cert:` | Certificats X.509 | ❌ |
+
+```powershell
+# Exemples d'accès via providers
+Get-ChildItem HKLM:\SOFTWARE\Microsoft          # Registre
+Get-ChildItem Env:                                # Variables d'environnement
+Get-ChildItem Alias:                              # Aliases
+Get-PSDrive                                       # Lister tous les drives
+```
+
+---
