@@ -1168,10 +1168,10 @@ La migration peut (et doit) être faite **sans jamais casser les tests
 existants**. Voici une séquence de PRs courts qui peuvent chacun être
 mergé indépendamment.
 
-### Phase 1 — Socle, sans casser l'existant
+### Phase 1 — Socle, sans casser l'existant ✅ **TERMINÉE**
 
 **PR 1. `LinuxCommand` + `LinuxCommandContext` + `LinuxCommandRegistry`
-+ `LinuxNetKernel`.**
++ `LinuxNetKernel`.** ✅
 
 - Créer les interfaces et le registre sous `linux/commands/`.
 - Implémenter `LinuxNetKernel` concret qui enveloppe une `EndHost`.
@@ -1179,7 +1179,7 @@ mergé indépendamment.
 - Pas de modification de `LinuxPC` / `LinuxServer`.
 - ✅ Aucune régression possible : code mort pour l'instant.
 
-**PR 2. `LinuxMachine` (vide).**
+**PR 2. `LinuxMachine` (vide).** ✅
 
 - Créer `LinuxMachine extends EndHost` *identique à `LinuxPC`* pour le
   moment : créer les ports, instancier l'executor, construire
@@ -1187,6 +1187,65 @@ mergé indépendamment.
   éditeur. C'est un gros copier-coller délibéré.
 - `LinuxPC` et `LinuxServer` continuent d'exister sans changement.
 - ✅ Aucune régression possible : `LinuxMachine` n'est instanciée nulle part.
+
+#### État livré à la fin de la Phase 1
+
+Fichiers créés (aucun fichier existant n'a été modifié) :
+
+| Fichier | Rôle |
+| ------- | ---- |
+| `src/network/devices/linux/LinuxProfile.ts` | Interface `LinuxProfile` + constantes `LINUX_PC_PROFILE` / `LINUX_SERVER_PROFILE` |
+| `src/network/devices/linux/commands/LinuxCommand.ts` | Interface `LinuxCommand` (name, aliases, needsNetworkContext, run) |
+| `src/network/devices/linux/commands/LinuxCommandContext.ts` | Interface `LinuxCommandContext` (executor, net, dnsService, xfrm, profile, fmt) |
+| `src/network/devices/linux/commands/LinuxCommandRegistry.ts` | Classe `LinuxCommandRegistry` (register, get, `hasNetworkCommandIn`, list) |
+| `src/network/devices/linux/commands/index.ts` | Barrel + `CORE_LINUX_COMMANDS = []` (sera rempli en Phase 2) |
+| `src/network/devices/linux/LinuxNetKernel.ts` | Interface `LinuxNetKernel` — façade étroite sur `EndHost` |
+| `src/network/devices/linux/LinuxFormatHelpers.ts` | Interface + implémentation par défaut des formatteurs ping/traceroute/ifconfig |
+| `src/network/devices/LinuxMachine.ts` | Classe abstraite `LinuxMachine extends EndHost` |
+
+Caractéristiques clés de `LinuxMachine` telle que livrée en Phase 1 :
+
+- prend un `LinuxProfile` au constructeur ;
+- crée les ports d'après le profil (`portCount`, `portPrefix`) ;
+- instancie `LinuxCommandExecutor(profile.isServer)` ;
+- construit un `IpNetworkContext` complet (avec `xfrmCtx`) — port littéral
+  de `LinuxPC.buildIpNetworkContext` ;
+- construit un `LinuxNetKernel` concret qui capture par closure les
+  membres protégés de `EndHost` (`arpTable`, `dhcpClient`,
+  `ipForwardEnabled`, `masqueradeOnInterfaces`, `executePingSequence`,
+  `executeTraceroute`, `extractPorts`) ;
+- instancie un `LinuxCommandRegistry` et y charge `CORE_LINUX_COMMANDS`
+  (vide pour l'instant) ;
+- `executeCommand()` implémente déjà le pipeline décrit en §7.5 —
+  fast-path bash si aucune commande du registre n'est présente,
+  sinon split `;`, gestion du pipe par `executePipedCommand` (qui délègue
+  le filtre à l'interpréteur bash via `printf '%s' ... | <tail>`),
+  strip de `sudo`, lookup dans le registre ;
+- surcharge `firewallFilter`, `evaluateNat` et `evaluatePreRouting`
+  (les trois, y compris celle qui manque à `LinuxServer`) ;
+- expose les 14 helpers éditeur/session (`readFileForEditor`, …,
+  `canSudo`) ;
+- possède les champs `dnsService: DnsService`, `xfrmCtx: IpXfrmContext`,
+  `dnsResolverIP: string`.
+
+Validation :
+
+- `npx tsc --noEmit` : **0 erreur** sur l'ensemble du projet.
+- Aucun fichier existant n'a été modifié, donc aucun chemin d'exécution
+  atteignable depuis l'UI, les tests ou le store Zustand n'est altéré.
+- `LinuxMachine` est **abstraite** et n'est importée par aucun autre
+  module : elle est volontairement dead-code jusqu'à la Phase 3 (PR 11/12).
+
+#### Prochaine étape
+
+Passer à la **Phase 2 — Extraction des commandes de `LinuxPC`**, en
+commençant par les commandes les plus isolées :
+
+1. `commands/net/Sysctl.ts` (PR 3)
+2. `commands/net/Arp.ts` (PR 4)
+3. `commands/net/Ifconfig.ts` + unification du formatInterface (PR 5)
+4. `commands/net/Ping.ts` (PR 6 — passage sensible)
+5. …
 
 ### Phase 2 — Extraction des commandes de `LinuxPC`
 
