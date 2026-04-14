@@ -880,6 +880,10 @@ export abstract class Router extends Equipment {
   /**
    * Send an ICMP error message back to the source of the offending packet.
    * Supports: Time Exceeded (Type 11), Destination Unreachable (Type 3).
+   *
+   * RFC 1812 §4.3.2.7: The ICMP error is routed like any other packet —
+   * use the routing table to find the egress interface and next-hop,
+   * rather than blindly sending on the ingress port.
    */
   private sendICMPError(
     inPort: string,
@@ -888,9 +892,9 @@ export abstract class Router extends Equipment {
     code: number,
     nextHopMTU?: number,
   ): void {
-    const port = this.ports.get(inPort);
-    if (!port) return;
-    const myIP = port.getIPAddress();
+    const inPortObj = this.ports.get(inPort);
+    if (!inPortObj) return;
+    const myIP = inPortObj.getIPAddress();
     if (!myIP) return;
 
     const icmpError: ICMPPacket = {
@@ -912,15 +916,26 @@ export abstract class Router extends Equipment {
     if (icmpType === 'time-exceeded') this.counters.icmpOutTimeExcds++;
     if (icmpType === 'destination-unreachable') this.counters.icmpOutDestUnreachs++;
 
-    const targetMAC = this.arpTable.get(offendingPkt.sourceIP.toString());
-    if (targetMAC) {
+    // Route the ICMP error through the routing table (RFC 1812 §4.3.2.7)
+    const route = this.lookupRoute(offendingPkt.sourceIP);
+    if (!route) {
+      // No route back to source — silently drop
+      return;
+    }
+
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return;
+
+    const nextHopIP = route.nextHop || offendingPkt.sourceIP;
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) {
       this.counters.ifOutOctets += errorIP.totalLength;
-      this.sendFrame(inPort, {
-        srcMAC: port.getMAC(), dstMAC: targetMAC.mac,
+      this.sendFrame(route.iface, {
+        srcMAC: outPort.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_IPV4, payload: errorIP,
       });
     } else {
-      this.queueAndResolve(errorIP, inPort, offendingPkt.sourceIP, port);
+      this.queueAndResolve(errorIP, route.iface, nextHopIP, outPort);
     }
   }
 

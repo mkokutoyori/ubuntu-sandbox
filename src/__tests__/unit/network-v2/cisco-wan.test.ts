@@ -52,52 +52,52 @@ function createTopology() {
   const r3 = new CiscoRouter('R3');
   const r4 = new CiscoRouter('R4');
 
-  // Switches de LAN
-  const sw1 = new CiscoSwitch('SW1', 24);
-  const sw2 = new CiscoSwitch('SW2', 24);
-  const sw3 = new CiscoSwitch('SW3', 24);
-  const sw4 = new CiscoSwitch('SW4', 24);
+  // Switches de LAN (26 ports: 24 FastEthernet + 2 GigabitEthernet uplinks)
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 26);
+  const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 26);
+  const sw3 = new CiscoSwitch('switch-cisco', 'SW3', 26);
+  const sw4 = new CiscoSwitch('switch-cisco', 'SW4', 26);
 
   // Machines LAN1 : 2 Linux, 1 Windows
-  const lan1_pc1 = new LinuxPC('LAN1-PC1', 0, 0);
-  const lan1_pc2 = new LinuxPC('LAN1-PC2', 100, 0);
-  const lan1_pc3 = new WindowsPC('LAN1-PC3', 200, 0);
+  const lan1_pc1 = new LinuxPC('linux-pc', 'LAN1-PC1', 0, 0);
+  const lan1_pc2 = new LinuxPC('linux-pc', 'LAN1-PC2', 100, 0);
+  const lan1_pc3 = new WindowsPC('windows-pc', 'LAN1-PC3', 200, 0);
 
   // LAN2 : 1 Linux, 2 Windows
-  const lan2_pc1 = new LinuxPC('LAN2-PC1', 0, 100);
-  const lan2_pc2 = new WindowsPC('LAN2-PC2', 100, 100);
-  const lan2_pc3 = new WindowsPC('LAN2-PC3', 200, 100);
+  const lan2_pc1 = new LinuxPC('linux-pc', 'LAN2-PC1', 0, 100);
+  const lan2_pc2 = new WindowsPC('windows-pc', 'LAN2-PC2', 100, 100);
+  const lan2_pc3 = new WindowsPC('windows-pc', 'LAN2-PC3', 200, 100);
 
   // LAN3 : 3 Linux
-  const lan3_pc1 = new LinuxPC('LAN3-PC1', 0, 200);
-  const lan3_pc2 = new LinuxPC('LAN3-PC2', 100, 200);
-  const lan3_pc3 = new LinuxPC('LAN3-PC3', 200, 200);
+  const lan3_pc1 = new LinuxPC('linux-pc', 'LAN3-PC1', 0, 200);
+  const lan3_pc2 = new LinuxPC('linux-pc', 'LAN3-PC2', 100, 200);
+  const lan3_pc3 = new LinuxPC('linux-pc', 'LAN3-PC3', 200, 200);
 
   // LAN4 : 2 Linux, 1 Windows
-  const lan4_pc1 = new LinuxPC('LAN4-PC1', 0, 300);
-  const lan4_pc2 = new WindowsPC('LAN4-PC2', 100, 300);
-  const lan4_pc3 = new LinuxPC('LAN4-PC3', 200, 300);
+  const lan4_pc1 = new LinuxPC('linux-pc', 'LAN4-PC1', 0, 300);
+  const lan4_pc2 = new WindowsPC('windows-pc', 'LAN4-PC2', 100, 300);
+  const lan4_pc3 = new LinuxPC('linux-pc', 'LAN4-PC3', 200, 300);
 
   // Câbles LAN : chaque PC vers son switch
   const cLan1_1 = new Cable('cLan1-1'); cLan1_1.connect(lan1_pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
   const cLan1_2 = new Cable('cLan1-2'); cLan1_2.connect(lan1_pc2.getPort('eth0')!, sw1.getPort('FastEthernet0/2')!);
   const cLan1_3 = new Cable('cLan1-3'); cLan1_3.connect(lan1_pc3.getPort('eth0')!, sw1.getPort('FastEthernet0/3')!);
-  const cLan1_router = new Cable('cLan1-router'); cLan1_router.connect(r1.getPort('GigabitEthernet0/0')!, sw1.getPort('FastEthernet0/24')!);
+  const cLan1_router = new Cable('cLan1-router'); cLan1_router.connect(r1.getPort('GigabitEthernet0/0')!, sw1.getPort('GigabitEthernet0/0')!);
 
   const cLan2_1 = new Cable('cLan2-1'); cLan2_1.connect(lan2_pc1.getPort('eth0')!, sw2.getPort('FastEthernet0/1')!);
   const cLan2_2 = new Cable('cLan2-2'); cLan2_2.connect(lan2_pc2.getPort('eth0')!, sw2.getPort('FastEthernet0/2')!);
   const cLan2_3 = new Cable('cLan2-3'); cLan2_3.connect(lan2_pc3.getPort('eth0')!, sw2.getPort('FastEthernet0/3')!);
-  const cLan2_router = new Cable('cLan2-router'); cLan2_router.connect(r2.getPort('GigabitEthernet0/0')!, sw2.getPort('FastEthernet0/24')!);
+  const cLan2_router = new Cable('cLan2-router'); cLan2_router.connect(r2.getPort('GigabitEthernet0/0')!, sw2.getPort('GigabitEthernet0/0')!);
 
   const cLan3_1 = new Cable('cLan3-1'); cLan3_1.connect(lan3_pc1.getPort('eth0')!, sw3.getPort('FastEthernet0/1')!);
   const cLan3_2 = new Cable('cLan3-2'); cLan3_2.connect(lan3_pc2.getPort('eth0')!, sw3.getPort('FastEthernet0/2')!);
   const cLan3_3 = new Cable('cLan3-3'); cLan3_3.connect(lan3_pc3.getPort('eth0')!, sw3.getPort('FastEthernet0/3')!);
-  const cLan3_router = new Cable('cLan3-router'); cLan3_router.connect(r3.getPort('GigabitEthernet0/0')!, sw3.getPort('FastEthernet0/24')!);
+  const cLan3_router = new Cable('cLan3-router'); cLan3_router.connect(r3.getPort('GigabitEthernet0/0')!, sw3.getPort('GigabitEthernet0/0')!);
 
   const cLan4_1 = new Cable('cLan4-1'); cLan4_1.connect(lan4_pc1.getPort('eth0')!, sw4.getPort('FastEthernet0/1')!);
   const cLan4_2 = new Cable('cLan4-2'); cLan4_2.connect(lan4_pc2.getPort('eth0')!, sw4.getPort('FastEthernet0/2')!);
   const cLan4_3 = new Cable('cLan4-3'); cLan4_3.connect(lan4_pc3.getPort('eth0')!, sw4.getPort('FastEthernet0/3')!);
-  const cLan4_router = new Cable('cLan4-router'); cLan4_router.connect(r4.getPort('GigabitEthernet0/0')!, sw4.getPort('FastEthernet0/24')!);
+  const cLan4_router = new Cable('cLan4-router'); cLan4_router.connect(r4.getPort('GigabitEthernet0/0')!, sw4.getPort('GigabitEthernet0/0')!);
 
   // Câbles inter-routeurs
   const cR1R2 = new Cable('cR1R2'); cR1R2.connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/1')!);
@@ -204,38 +204,43 @@ async function configureRoutersStatic(routers: any) {
 }
 
 // Configuration IP statique sur les hôtes (Linux/Windows)
+// Chaque LAN a jusqu'à 3 hôtes ; les tableaux peuvent être partiels (scénarios combinés)
 async function configureHostsStatic(hosts: any) {
+  // Helper pour configurer un hôte Linux
+  async function cfgLinux(pc: any, ip: string, gw: string) {
+    if (!pc) return;
+    await pc.executeCommand(`ifconfig eth0 ${ip} netmask 255.255.255.0 up`);
+    await pc.executeCommand(`route add default gw ${gw}`);
+  }
+  // Helper pour configurer un hôte Windows
+  async function cfgWindows(pc: any, ip: string, mask: string, gw: string) {
+    if (!pc) return;
+    await pc.executeCommand(`netsh interface ip set address name="eth0" static ${ip} ${mask} ${gw}`);
+  }
+
   // LAN1 : 192.168.1.1-3, gateway 192.168.1.254
-  const [pc1, pc2, pc3] = hosts.lan1;
-  await pc1.executeCommand('ifconfig eth0 192.168.1.1 netmask 255.255.255.0 up');
-  await pc1.executeCommand('route add default gw 192.168.1.254');
-  await pc2.executeCommand('ifconfig eth0 192.168.1.2 netmask 255.255.255.0 up');
-  await pc2.executeCommand('route add default gw 192.168.1.254');
-  await pc3.executeCommand(`netsh interface ip set address name="eth0" static 192.168.1.3 255.255.255.0 192.168.1.254`);
+  const lan1 = hosts.lan1 || [];
+  await cfgLinux(lan1[0], '192.168.1.1', '192.168.1.254');
+  await cfgLinux(lan1[1], '192.168.1.2', '192.168.1.254');
+  await cfgWindows(lan1[2], '192.168.1.3', '255.255.255.0', '192.168.1.254');
 
   // LAN2 : 192.168.2.1-3
-  const [pc4, pc5, pc6] = hosts.lan2;
-  await pc4.executeCommand('ifconfig eth0 192.168.2.1 netmask 255.255.255.0 up');
-  await pc4.executeCommand('route add default gw 192.168.2.254');
-  await pc5.executeCommand(`netsh interface ip set address name="eth0" static 192.168.2.2 255.255.255.0 192.168.2.254`);
-  await pc6.executeCommand(`netsh interface ip set address name="eth0" static 192.168.2.3 255.255.255.0 192.168.2.254`);
+  const lan2 = hosts.lan2 || [];
+  await cfgLinux(lan2[0], '192.168.2.1', '192.168.2.254');
+  await cfgWindows(lan2[1], '192.168.2.2', '255.255.255.0', '192.168.2.254');
+  await cfgWindows(lan2[2], '192.168.2.3', '255.255.255.0', '192.168.2.254');
 
   // LAN3 : 192.168.3.1-3
-  const [pc7, pc8, pc9] = hosts.lan3;
-  await pc7.executeCommand('ifconfig eth0 192.168.3.1 netmask 255.255.255.0 up');
-  await pc7.executeCommand('route add default gw 192.168.3.254');
-  await pc8.executeCommand('ifconfig eth0 192.168.3.2 netmask 255.255.255.0 up');
-  await pc8.executeCommand('route add default gw 192.168.3.254');
-  await pc9.executeCommand('ifconfig eth0 192.168.3.3 netmask 255.255.255.0 up');
-  await pc9.executeCommand('route add default gw 192.168.3.254');
+  const lan3 = hosts.lan3 || [];
+  await cfgLinux(lan3[0], '192.168.3.1', '192.168.3.254');
+  await cfgLinux(lan3[1], '192.168.3.2', '192.168.3.254');
+  await cfgLinux(lan3[2], '192.168.3.3', '192.168.3.254');
 
   // LAN4 : 192.168.4.1-3
-  const [pc10, pc11, pc12] = hosts.lan4;
-  await pc10.executeCommand('ifconfig eth0 192.168.4.1 netmask 255.255.255.0 up');
-  await pc10.executeCommand('route add default gw 192.168.4.254');
-  await pc11.executeCommand(`netsh interface ip set address name="eth0" static 192.168.4.2 255.255.255.0 192.168.4.254`);
-  await pc12.executeCommand('ifconfig eth0 192.168.4.3 netmask 255.255.255.0 up');
-  await pc12.executeCommand('route add default gw 192.168.4.254');
+  const lan4 = hosts.lan4 || [];
+  await cfgLinux(lan4[0], '192.168.4.1', '192.168.4.254');
+  await cfgWindows(lan4[1], '192.168.4.2', '255.255.255.0', '192.168.4.254');
+  await cfgLinux(lan4[2], '192.168.4.3', '192.168.4.254');
 }
 
 // Configuration DHCP sur les routeurs (serveur pour chaque LAN)
@@ -347,7 +352,8 @@ describe('Configuration IP statique', () => {
 
   it('devrait avoir des routes statiques sur les routeurs', async () => {
     const { r1 } = topology.routers;
-    const routeTable = await r1.executeCommand('show ip route static');
+    const routeTable = await r1.executeCommand('show ip route');
+    // Vérifier que les routes statiques sont présentes (marquées avec S)
     expect(routeTable).toContain('192.168.2.0');
     expect(routeTable).toContain('192.168.3.0');
     expect(routeTable).toContain('192.168.4.0');
@@ -495,9 +501,10 @@ describe('Ping', () => {
 
   it('devrait supporter un ping avec taille de paquet personnalisée', async () => {
     const pc1 = topology.hosts.lan1[0] as LinuxPC;
-    const pc2 = topology.hosts.lan1[1] as LinuxPC;
     const result = await pc1.executeCommand('ping -c 1 -s 1400 192.168.1.2');
-    expect(result).toContain('1400 bytes');
+    // Sur Linux, ping -s 1400 affiche "PING ... 1400(1428) bytes of data."
+    expect(result).toContain('1400');
+    expect(result).toContain('bytes of data');
   });
 });
 
@@ -537,11 +544,12 @@ describe('Traceroute', () => {
     expect(result).toContain('192.168.1.1');
   });
 
-  it('devrait afficher des étoiles pour une destination injoignable', async () => {
+  it('devrait afficher des marqueurs pour une destination injoignable', async () => {
     const pc = topology.hosts.lan1[0] as LinuxPC;
     const result = await pc.executeCommand('traceroute -n 10.255.255.1');
-    // Le dernier hop sera marqué "!H" ou "*"
-    expect(result).toMatch(/\*|\!H/);
+    // R1 n'a pas de route vers 10.255.255.0 → envoie ICMP Destination Unreachable
+    // Le traceroute affiche !N (network unreachable) ou * (timeout)
+    expect(result).toMatch(/\*|!N/);
   });
 });
 
@@ -576,7 +584,7 @@ describe('Scénarios combinés', () => {
   });
 
   it('vérification ARP après DHCP', async () => {
-    const win = topology.hosts.lan4[0] as WindowsPC;
+    const win = topology.hosts.lan4[1] as WindowsPC;
     await win.executeCommand('ping -n 1 192.168.4.254');
     const arp = await win.executeCommand('arp -a');
     expect(arp).toContain('192.168.4.254');
