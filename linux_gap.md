@@ -494,3 +494,190 @@ peut offrir au simulateur. Toutes les différences « positives » de
 Cela confirme le diagnostic de la Section 1 : **la distinction entre
 PC et serveur n'est pas une distinction de classe, c'est une
 distinction de *profil* de configuration à la construction.**
+
+## 6. Architecture cible — hiérarchie `LinuxMachine`
+
+### 6.1 Principe directeur
+
+> *Un serveur Linux est une machine Linux.* Il n'a pas à vivre dans une
+> classe sœur de `LinuxPC` : il est un `LinuxPC` (ou plus exactement,
+> une `LinuxMachine`) configuré différemment.
+
+La hiérarchie cible devient :
+
+```
+Equipment (abstract)
+ └── EndHost (abstract, pile L2/L3 + DHCP + NDP + firewall hooks)
+      └── LinuxMachine (abstract, un "noyau Linux" simulé)
+           ├── LinuxPC     (profil desktop / workstation)
+           └── LinuxServer (profil serveur root-only + hooks DBMS)
+```
+
+`LinuxMachine` récupère **toute** la logique commune aujourd'hui
+dupliquée (Section 3) *et* **toutes** les fonctionnalités aujourd'hui
+réservées à `LinuxPC` (Section 4). Les sous-classes ne font que :
+
+1. fournir un `LinuxProfile` au constructeur de `LinuxMachine` ;
+2. éventuellement surcharger `registerDeviceCommands()` pour ajouter
+   des commandes propres (cas du serveur avec Oracle, cf. 6.5).
+
+### 6.2 Responsabilités de `LinuxMachine`
+
+`LinuxMachine extends EndHost` centralise :
+
+| Responsabilité                         | Ce qui disparaît de `LinuxPC`/`LinuxServer` |
+| -------------------------------------- | ------------------------------------------- |
+| Création des ports `eth0..eth3`        | `createPorts()` ×2                          |
+| Instanciation de `LinuxCommandExecutor`| constructeurs ×2                            |
+| Construction d'`IpNetworkContext`      | `buildIpNetworkContext` ×2 (123 l.)         |
+| Surcharges `firewallFilter`, `evaluateNat`, `evaluatePreRouting` | 3 méthodes ×2 |
+| `getOSType()`                          | 1 ligne ×2                                  |
+| Helpers éditeur / session (14 méthodes)| bloc de 25 lignes ×2                        |
+| Pipeline `executeCommand` (réseau + bash)| logique riche de `LinuxPC` réutilisée        |
+| État réseau additionnel (`xfrmCtx`, `dnsService`, `dnsResolverIP`) | champs ×1 au lieu de ×0 côté serveur |
+| Dispatch vers `LinuxCommandRegistry`    | switch `tryNetworkCommand` ×2               |
+
+Signature (squelette) :
+
+```ts
+export interface LinuxProfile {
+  /** Nombre et nommage des interfaces par défaut. */
+  portCount: number;
+  portPrefix: string;               // "eth"
+
+  /** Si vrai, l'executor démarre en root, sans utilisateur "user". */
+  isServer: boolean;
+
+  /** Nom d'hôte initial. */
+  hostname: string;
+
+  /** Active le démon dnsmasq par défaut (serveurs DNS). */
+  autoStartDnsmasq?: boolean;
+
+  /** Exposer les API registerProcess/clearSystemProcesses
+   *  (utilisé par Oracle, cf. 5.2). */
+  exposeSystemProcessApi?: boolean;
+}
+
+export abstract class LinuxMachine extends EndHost {
+  protected readonly defaultTTL = 64;
+  protected readonly executor: LinuxCommandExecutor;
+  protected readonly profile: LinuxProfile;
+
+  /** Démons L7 co-localisés avec la machine. */
+  readonly dnsService = new DnsService();
+  protected xfrmCtx: IpXfrmContext = { states: [], policies: [] };
+  protected dnsResolverIP = '';
+
+  /** Registre de commandes spécifiques à la machine (réseau, dhclient…). */
+  protected readonly commands: LinuxCommandRegistry;
+
+  constructor(type: DeviceType, name: string, x: number, y: number,
+              profile: LinuxProfile) {
+    super(type, name, x, y);
+    this.profile = profile;
+    this.createPorts();
+    this.executor = new LinuxCommandExecutor(profile.isServer);
+    this.executor.setIpNetworkContext(this.buildIpNetworkContext());
+    this.commands = new LinuxCommandRegistry();
+    this.registerCoreCommands();    // ping, traceroute, ifconfig, arp,
+                                    // dhclient, sysctl, dig, …
+    this.registerDeviceCommands();  // hook sous-classes
+  }
+
+  /* ─── Exécution ─────────────────────────────────────────────── */
+  async executeCommand(cmd: string): Promise<string> { /* voir §7 */ }
+
+  /* ─── Hooks surchargables ───────────────────────────────────── */
+  protected registerDeviceCommands(): void { /* no-op par défaut */ }
+
+  /* ─── Overrides EndHost (firewall/NAT, uniques) ─────────────── */
+  protected override firewallFilter(...): 'accept'|'drop'|'reject' { … }
+  protected override evaluateNat(...)      { … }
+  protected override evaluatePreRouting(...) { … }
+}
+```
+
+### 6.3 `LinuxPC` — profil desktop
+
+`LinuxPC` devient littéralement :
+
+```ts
+export class LinuxPC extends LinuxMachine {
+  constructor(type: DeviceType = 'linux-pc', name = 'PC', x = 0, y = 0) {
+    super(type, name, x, y, {
+      portCount: 4,
+      portPrefix: 'eth',
+      isServer: false,
+      hostname: 'linux-pc',
+    });
+  }
+}
+```
+
+Soit ~8 lignes au lieu de 801. Toutes les commandes historiquement
+implémentées dans le corps de `LinuxPC` (cf. §4) sont portées *une
+seule fois* dans le registre de `LinuxMachine`.
+
+### 6.4 `LinuxServer` — profil serveur
+
+```ts
+export class LinuxServer extends LinuxMachine {
+  constructor(type: DeviceType = 'linux-server', name = 'Server', x = 0, y = 0) {
+    super(type, name, x, y, {
+      portCount: 4,
+      portPrefix: 'eth',
+      isServer: true,
+      hostname: 'linux-server',
+      exposeSystemProcessApi: true,
+    });
+  }
+
+  // Uniquement les deux pass-throughs Oracle (cf. §5.2)
+  registerProcess(pid: number, user: string, command: string): void {
+    this.executor.registerProcess(pid, user, command);
+  }
+  clearSystemProcesses(): void {
+    this.executor.clearSystemProcesses();
+  }
+}
+```
+
+Résultat : ~18 lignes au lieu de 318. Et surtout, `ping`, `traceroute`,
+`dig`, `dhclient`, `dnsmasq`, `sysctl ip_forward`, DNAT préroutage,
+affichage riche de `ifconfig` — tout cela **fonctionne immédiatement**
+sur un `LinuxServer`, car le code vient de la classe mère.
+
+### 6.5 Variante : profils riches
+
+Si à terme on veut éviter que `LinuxServer` expose `registerProcess`
+comme passe-plat dans la classe, on peut rendre ce comportement
+optionnel directement dans `LinuxMachine` :
+
+```ts
+if (profile.exposeSystemProcessApi) {
+  // Les méthodes sont alors définies sur LinuxMachine conditionnellement
+  // via un mixin ou un flag lu par Oracle via un cast vers une interface
+  //   ISystemProcessHost { registerProcess(); clearSystemProcesses(); }
+}
+```
+
+Cela permettrait à `LinuxServer` d'être une simple différence de profil
+sans *aucune* méthode supplémentaire.
+
+### 6.6 Pourquoi pas une seule classe paramétrée ?
+
+On pourrait se passer de `LinuxPC` / `LinuxServer` et n'avoir que
+`LinuxMachine`. Deux raisons de garder les sous-classes :
+
+1. `DeviceFactory` continue de créer un `LinuxPC` ou un `LinuxServer`
+   en fonction du `DeviceType` (clé stable utilisée par le Zustand
+   store et la sérialisation des topologies).
+2. Les tests (`src/__tests__/unit/network-v2/`) instancient
+   directement ces classes — la transition est moins invasive si
+   elles continuent d'exister, ne serait-ce que comme coquilles.
+
+Les deux sous-classes restent donc, mais deviennent purement
+**déclaratives** : elles ne contiennent plus aucune logique, juste un
+profil. Tout le comportement vit dans `LinuxMachine` et le registre
+de commandes décrit à la Section 7.
