@@ -161,3 +161,109 @@ Tout ce qui est « TCP/IP » est déjà mutualisé.
 Ces comportements divergents ne sont pas voulus : ils résultent d'une
 copie partielle de `LinuxPC` vers `LinuxServer` au moment de la création
 de cette dernière, puis d'ajouts ultérieurs uniquement sur `LinuxPC`.
+
+## 3. Code dupliqué entre `LinuxPC` et `LinuxServer`
+
+Les blocs suivants sont présents **deux fois** (copie conforme ou quasi),
+pour un total d'environ 180 lignes de duplication stricte sur les
+318 lignes de `LinuxServer`. Autrement dit : **≈ 57 % de `LinuxServer`
+n'existe que parce que `LinuxPC` existe déjà**.
+
+### 3.1 Création des ports (`createPorts`)
+
+`LinuxPC.ts:38-42` et `LinuxServer.ts:30-34` — identique à la lettre :
+
+```ts
+for (let i = 0; i < 4; i++) {
+  this.addPort(new Port(`eth${i}`, 'ethernet'));
+}
+```
+
+### 3.2 `cmdIfconfig` / `showAllInterfaces`
+
+`LinuxPC.ts:339-368` vs `LinuxServer.ts:71-99` : même logique (parsing des
+arguments, appel à `configureInterface`, boucle d'affichage). Seule la
+mise en forme de `formatInterface` diffère (cf. 3.3).
+
+### 3.3 `formatInterface`
+
+`LinuxPC.ts:370-393` vs `LinuxServer.ts:101-111` : même rôle, mais la
+version `LinuxServer` est une version **dégradée** de celle de `LinuxPC` :
+
+- pas de `flags=<num>` dynamique basé sur `isUp && isConnected` ;
+- pas de compteurs `RX packets` / `TX packets` ;
+- MTU codé en dur à `1500` au lieu de `port.getMTU()`.
+
+C'est donc un bug latent : un `LinuxServer` affiche des données moins
+riches qu'un `LinuxPC` alors qu'il s'agit du même `ifconfig` GNU.
+
+### 3.4 `cmdArp`
+
+`LinuxPC.ts:635-643` et `LinuxServer.ts:113-121` — strictement identiques.
+Tous deux construisent le même `LinuxArpContext` et délèguent à
+`linuxArp()`.
+
+### 3.5 `buildIpNetworkContext`
+
+`LinuxPC.ts:441-564` (124 l.) vs `LinuxServer.ts:125-247` (123 l.) :
+**123 lignes identiques**, à la seule exception près du champ `xfrm`
+présent uniquement chez `LinuxPC` (1 ligne). Chaque méthode de
+l'interface `IpNetworkContext` (`getInterfaceNames`, `getInterfaceInfo`,
+`configureInterface`, `removeInterfaceIP`, `getRoutingTable`,
+`addDefaultRoute`, `addStaticRoute`, `deleteDefaultRoute`, `deleteRoute`,
+`getNeighborTable`, `setInterfaceUp`, `setInterfaceDown`) est copiée à
+l'identique.
+
+C'est la duplication la plus coûteuse du projet : toute évolution de
+l'adaptateur `ip` (ajout d'un champ, correction d'un bug de conversion
+CIDR, support d'un nouveau type de route) doit être faite deux fois —
+et à chaque fois qu'elle ne l'est pas, un nouveau gap apparaît.
+
+### 3.6 `firewallFilter`
+
+`LinuxPC.ts:673-691` vs `LinuxServer.ts:251-268` — identique : construction
+de `PacketInfo` puis appel à `executor.iptables.filterPacket()`.
+
+### 3.7 `evaluateNat`
+
+`LinuxPC.ts:693-708` vs `LinuxServer.ts:270-285` — identique.
+
+### 3.8 Helpers d'éditeur et de session
+
+`LinuxPC.ts:734-760` vs `LinuxServer.ts:289-315` — bloc de ~25 lignes
+parfaitement identique :
+
+```ts
+readFileForEditor / writeFileFromEditor / resolveAbsolutePath /
+getCwd / getCompletions / getCurrentUser / getCurrentUid / handleExit /
+resetSession / checkPassword / setUserPassword / userExists /
+setUserGecos / canSudo
+```
+
+Ce sont tous des *pass-through* vers l'`executor`. Ils existent parce
+que `Terminal.tsx` ne connaît que la classe `EndHost`-dérivée, pas
+l'`executor`, mais rien n'impose que ce soit l'équipement qui les
+implémente.
+
+### 3.9 `getOSType`
+
+Les deux classes implémentent `getOSType(): string { return 'linux'; }`
+à l'identique.
+
+### 3.10 Récapitulatif
+
+| Zone                         | Lignes dupliquées | Risque           |
+| ---------------------------- | ----------------- | ---------------- |
+| `createPorts`                |                 5 | faible           |
+| `cmdIfconfig`                |              ~20 | divergence facile|
+| `formatInterface`            |              ~15 | **déjà divergent** |
+| `cmdArp`                     |              ~10 | faible           |
+| `buildIpNetworkContext`      |             ~123 | **critique**     |
+| `firewallFilter`             |              ~20 | divergence facile|
+| `evaluateNat`                |              ~15 | divergence facile|
+| Helpers éditeur / session    |              ~25 | faible           |
+| `getOSType`                  |                 1 | nulle            |
+| **Total**                    |        **~234**   |                  |
+
+À comparer avec les 318 lignes totales de `LinuxServer` : pratiquement
+tout le fichier est un clone.
