@@ -15,8 +15,9 @@ import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
-import { sysctlCommand, arpCommand } from './linux/commands';
+import { sysctlCommand, arpCommand, ifconfigCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
+import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
 export class LinuxPC extends EndHost {
   protected readonly defaultTTL = 64;
@@ -336,68 +337,21 @@ export class LinuxPC extends EndHost {
 
   // ─── ifconfig ──────────────────────────────────────────────────
 
+  /**
+   * Delegates to the extracted `ifconfigCommand`. Phase 2 bridge —
+   * uses `defaultLinuxFormatHelpers` for output so PC and server now
+   * share the same (rich, with RX/TX counters) formatting.
+   */
   private cmdIfconfig(args: string[]): string {
-    if (args.length === 0) return this.showAllInterfaces();
-
-    const ifName = args[0];
-    const port = this.ports.get(ifName);
-    if (!port) return `ifconfig: interface ${ifName} not found`;
-
-    if (args.length === 1) return this.formatInterface(port);
-
-    const ipStr = args[1];
-    let maskStr = '255.255.255.0';
-    const nmIdx = args.indexOf('netmask');
-    if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
-
-    try {
-      this.configureInterface(ifName, new IPAddress(ipStr), new SubnetMask(maskStr));
-      return '';
-    } catch (e: any) {
-      return `ifconfig: ${e.message}`;
-    }
-  }
-
-  private showAllInterfaces(): string {
-    const lines: string[] = [];
-    for (const [, port] of this.ports) {
-      lines.push(this.formatInterface(port));
-      lines.push('');
-    }
-    return lines.join('\n');
-  }
-
-  private formatInterface(port: Port): string {
-    const ip = port.getIPAddress();
-    const mask = port.getSubnetMask();
-    const mac = port.getMAC();
-    // RUNNING flag: only shown when port is UP, connected, AND has link carrier
-    const isUp = port.getIsUp();
-    const isConnected = port.isConnected();
-    const hasCarrier = isUp && isConnected;
-    const flags: string[] = [];
-    if (isUp) flags.push('UP');
-    flags.push('BROADCAST');
-    if (hasCarrier) flags.push('RUNNING');
-    flags.push('MULTICAST');
-    const flagsStr = flags.join(',');
-    const flagNum = hasCarrier ? 4163 : 4099;
-    const counters = port.getCounters();
-    return [
-      `${port.getName()}: flags=${flagNum}<${flagsStr}>  mtu ${port.getMTU()}`,
-      ip ? `        inet ${ip}  netmask ${mask || '255.255.255.0'}` : '        inet (not configured)',
-      `        ether ${mac}`,
-      `        RX packets ${counters.framesIn}  bytes ${counters.bytesIn} (${this.formatBytes(counters.bytesIn)})`,
-      `        TX packets ${counters.framesOut}  bytes ${counters.bytesOut} (${this.formatBytes(counters.bytesOut)})`,
-    ].join('\n');
-  }
-
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0.0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    const val = bytes / Math.pow(1024, i);
-    return `${val.toFixed(1)} ${units[i]}`;
+    const bridge = {
+      net: {
+        getPorts: () => this.ports,
+        configureInterface: (name: string, ip: IPAddress, mask: SubnetMask) =>
+          this.configureInterface(name, ip, mask),
+      },
+      fmt: defaultLinuxFormatHelpers,
+    } as unknown as LinuxCommandContext;
+    return ifconfigCommand.run(bridge, args) as string;
   }
 
   // ─── sysctl ────────────────────────────────────────────────────

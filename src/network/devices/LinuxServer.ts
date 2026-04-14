@@ -13,8 +13,9 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
-import { arpCommand } from './linux/commands';
+import { arpCommand, ifconfigCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
+import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
 export class LinuxServer extends EndHost {
   protected readonly defaultTTL = 64;
@@ -68,46 +69,25 @@ export class LinuxServer extends EndHost {
 
   // ─── Networking commands ──────────────────────────────────────────
 
+  /**
+   * Delegates to the extracted `ifconfigCommand`. Phase 2 bridge.
+   *
+   * Side effect: `LinuxServer` now emits the **same** rich output as
+   * `LinuxPC` (with RX/TX counter lines, proper flag=4099 when the
+   * interface has no carrier, real port MTU instead of a hard-coded
+   * `1500`). This fixes the latent divergence documented in
+   * `linux_gap.md` §3.3.
+   */
   private cmdIfconfig(args: string[]): string {
-    if (args.length === 0) return this.showAllInterfaces();
-
-    const ifName = args[0];
-    const port = this.ports.get(ifName);
-    if (!port) return `ifconfig: interface ${ifName} not found`;
-    if (args.length === 1) return this.formatInterface(port);
-
-    const ipStr = args[1];
-    let maskStr = '255.255.255.0';
-    const nmIdx = args.indexOf('netmask');
-    if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
-
-    try {
-      this.configureInterface(ifName, new IPAddress(ipStr), new SubnetMask(maskStr));
-      return '';
-    } catch (e: any) {
-      return `ifconfig: ${e.message}`;
-    }
-  }
-
-  private showAllInterfaces(): string {
-    const lines: string[] = [];
-    for (const [, port] of this.ports) {
-      lines.push(this.formatInterface(port));
-      lines.push('');
-    }
-    return lines.join('\n');
-  }
-
-  private formatInterface(port: Port): string {
-    const ip = port.getIPAddress();
-    const mask = port.getSubnetMask();
-    const mac = port.getMAC();
-    const status = port.getIsUp() && port.isConnected() ? 'UP,BROADCAST,RUNNING,MULTICAST' : 'UP,BROADCAST,MULTICAST';
-    return [
-      `${port.getName()}: flags=4163<${status}>  mtu 1500`,
-      ip ? `        inet ${ip}  netmask ${mask || '255.255.255.0'}` : '        inet (not configured)',
-      `        ether ${mac}`,
-    ].join('\n');
+    const bridge = {
+      net: {
+        getPorts: () => this.ports,
+        configureInterface: (name: string, ip: IPAddress, mask: SubnetMask) =>
+          this.configureInterface(name, ip, mask),
+      },
+      fmt: defaultLinuxFormatHelpers,
+    } as unknown as LinuxCommandContext;
+    return ifconfigCommand.run(bridge, args) as string;
   }
 
   /**

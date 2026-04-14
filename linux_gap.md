@@ -1273,9 +1273,20 @@ intriquées) :
   duplication `linuxArp` de `LinuxServer` disparaît.
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 5. `commands/net/Ifconfig.ts` + `LinuxFormatHelpers.ts`.**
-- Un seul formatteur, celui riche de `LinuxPC` (avec compteurs).
-- **Corrige** le bug latent de `LinuxServer` (3.3).
+**PR 5. `commands/net/Ifconfig.ts` + `LinuxFormatHelpers.ts`.** ✅
+- ✅ Extrait `cmdIfconfig` → `commands/net/Ifconfig.ts`. Le rendu
+  passe intégralement par `ctx.fmt.formatInterface(port)`, qui pointe
+  sur `defaultLinuxFormatHelpers` (déjà livré en Phase 1, §7.3).
+- ✅ Un seul formatteur : celui riche de `LinuxPC` (avec RX/TX
+  counters, flag `4099`/`4163` selon le carrier, MTU réel du port).
+- ✅ **Corrige** le bug latent de `LinuxServer` (§3.3) : le serveur
+  n'a plus de `formatInterface` stubé — les deux machines émettent
+  maintenant exactement le même `ifconfig`.
+- ✅ `LinuxPC.cmdIfconfig`, `showAllInterfaces`, `formatInterface`,
+  `formatBytes` sont supprimés (bridge vers `ifconfigCommand`).
+- ✅ `LinuxServer.cmdIfconfig`, `showAllInterfaces`, `formatInterface`
+  sont supprimés de la même façon.
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 6. `commands/net/Ping.ts`.**
 - ⚠️ Passage sensible : `LinuxServer` gagne une *vraie* commande ping.
