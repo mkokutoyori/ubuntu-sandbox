@@ -939,3 +939,225 @@ peut soit être vide, soit n'ajouter que quelques alias. Tout comportement
   simulé, on liste `commands/` — c'est la documentation vivante.
 - **Extension isolée** : ajouter `traceroute6` revient à créer un
   fichier dans `commands/net/` et à l'enregistrer.
+
+## 8. Arborescence cible — une commande = un fichier
+
+### 8.1 Principe
+
+Objectif posé par l'utilisateur :
+
+> *« Idéalement chaque commande devrait être dans son propre fichier. »*
+
+Ce principe est appliqué aux commandes **qui ont besoin du
+contexte réseau** (`needsNetworkContext: true`) et donc qui étaient
+jusqu'ici enfouies dans `LinuxPC`. Les commandes purement userspace
+déjà isolées dans `LinuxFileCommands.ts`, `LinuxTextCommands.ts`,
+`LinuxNetCommands.ts`, etc. peuvent être migrées progressivement
+vers le même format (un fichier = un `LinuxCommand`), mais ce n'est
+pas un prérequis.
+
+### 8.2 Arborescence proposée
+
+```
+src/network/devices/linux/
+├── LinuxMachine.ts                ← nouvelle classe abstraite
+├── LinuxProfile.ts                ← interface LinuxProfile
+├── LinuxNetKernel.ts              ← interface + implémentation façade
+├── LinuxFormatHelpers.ts          ← formatage ping/traceroute/ifconfig
+│
+├── commands/
+│   ├── LinuxCommand.ts            ← interface LinuxCommand
+│   ├── LinuxCommandContext.ts     ← interface LinuxCommandContext
+│   ├── LinuxCommandRegistry.ts    ← registre + dispatcher
+│   ├── index.ts                   ← export de tous les commands objects
+│   │
+│   ├── net/
+│   │   ├── Ifconfig.ts            ← ifconfigCommand
+│   │   ├── Ping.ts                ← pingCommand
+│   │   ├── Traceroute.ts          ← tracerouteCommand
+│   │   ├── Arp.ts                 ← arpCommand (remplace LinuxArp.ts)
+│   │   ├── Sysctl.ts              ← sysctlCommand (ip_forward, etc.)
+│   │   ├── IptablesNatHook.ts     ← hook MASQUERADE → routing
+│   │   └── IpXfrm.ts              ← commande "ip xfrm …"
+│   │                                (adaptateur vers LinuxIpCommand)
+│   │
+│   ├── dhcp/
+│   │   ├── Dhclient.ts            ← dhclientCommand
+│   │   ├── DhcpLeaseFile.ts       ← intercepte cat/rm /var/lib/dhcp/…
+│   │   └── DhcpDiscovery.ts       ← helpers broadcast, partagés
+│   │
+│   ├── dns/
+│   │   ├── Dig.ts                 ← digCommand
+│   │   ├── Nslookup.ts            ← nslookupCommand
+│   │   ├── Host.ts                ← hostCommand
+│   │   ├── Dnsmasq.ts             ← dnsmasqCommand
+│   │   └── ResolvConf.ts          ← lecture /etc/resolv.conf
+│   │
+│   ├── ipsec/
+│   │   ├── Ipsec.ts               ← ipsec start/stop/status (déjà dans
+│   │   │                            LinuxCommandExecutor, à déplacer)
+│   │   └── StrongswanConfig.ts
+│   │
+│   └── ps/
+│       └── PsDhclientAugment.ts   ← augmente ps avec les dhclient actifs
+│                                    (hook post-processus)
+│
+└── (existant, inchangé en Phase 1)
+    ├── LinuxCommandExecutor.ts
+    ├── LinuxIpCommand.ts
+    ├── LinuxFileCommands.ts
+    ├── LinuxTextCommands.ts
+    ├── LinuxNetCommands.ts
+    ├── LinuxSystemCommands.ts
+    ├── LinuxProcessCommands.ts
+    ├── LinuxPermCommands.ts
+    ├── LinuxSearchCommands.ts
+    ├── LinuxUserCommands.ts
+    ├── LinuxIptablesManager.ts
+    ├── LinuxFirewallManager.ts
+    ├── LinuxServiceManager.ts
+    ├── LinuxProcessManager.ts
+    ├── LinuxUserManager.ts
+    ├── LinuxLogManager.ts
+    ├── LinuxCronManager.ts
+    ├── LinuxShellParser.ts
+    ├── LinuxScriptExecutor.ts
+    ├── LinuxDnsService.ts        (deviendra un simple démon appelé par
+    │                              commands/dns/Dnsmasq.ts)
+    ├── VirtualFileSystem.ts
+    └── SampleScripts.ts
+```
+
+Et côté équipements :
+
+```
+src/network/devices/
+├── LinuxPC.ts        ← ~10 lignes (constructeur + profil)
+├── LinuxServer.ts    ← ~20 lignes (profil + registerProcess/clear)
+└── (reste inchangé)
+```
+
+### 8.3 Table de correspondance ancienne / nouvelle localisation
+
+| Code actuel (source)                                           | Nouvelle localisation                     |
+| -------------------------------------------------------------- | ----------------------------------------- |
+| `LinuxPC.cmdPing`                                              | `commands/net/Ping.ts`                    |
+| `LinuxPC.cmdTraceroute`                                        | `commands/net/Traceroute.ts`              |
+| `LinuxPC.cmdIfconfig` + `showAllInterfaces` + `formatInterface`| `commands/net/Ifconfig.ts` + `LinuxFormatHelpers.ts` |
+| `LinuxPC.cmdArp` / `LinuxServer.cmdArp` / `LinuxArp.ts`        | `commands/net/Arp.ts`                     |
+| `LinuxPC.cmdSysctl`                                            | `commands/net/Sysctl.ts`                  |
+| `LinuxPC.handleIptablesNat`                                    | `commands/net/IptablesNatHook.ts`         |
+| `LinuxPC.xfrmCtx` + accès via `ip xfrm`                        | `commands/net/IpXfrm.ts`                  |
+| `LinuxPC.cmdDhclient` + `discoverDHCPServersBroadcast`         | `commands/dhcp/Dhclient.ts` + `DhcpDiscovery.ts` |
+| `LinuxPC.cmdPs` (dhclient augment)                             | `commands/ps/PsDhclientAugment.ts`        |
+| Interception `cat /var/lib/dhcp/...`                           | `commands/dhcp/DhcpLeaseFile.ts`          |
+| `LinuxPC.cmdDnsmasq` + `dnsService` + `LinuxDnsService.ts`     | `commands/dns/Dnsmasq.ts` (+ `LinuxDnsService.ts` réduit au démon) |
+| `executeDig` / `executeNslookup` / `executeHost`               | `commands/dns/Dig.ts`, `Nslookup.ts`, `Host.ts` |
+| `LinuxPC.getResolverIP`                                        | `commands/dns/ResolvConf.ts`              |
+| `LinuxCommandExecutor.handleIPSec`                             | `commands/ipsec/Ipsec.ts`                 |
+| `LinuxPC.buildIpNetworkContext` / `LinuxServer.buildIpNetworkContext` | `LinuxNetKernel.ts` + `LinuxMachine.buildIpNetworkContext()` (unique) |
+| `LinuxPC.firewallFilter/evaluateNat/evaluatePreRouting`        | `LinuxMachine` (unique)                   |
+| `LinuxPC/LinuxServer` helpers éditeur/session                  | `LinuxMachine` (unique)                   |
+| `LinuxPC.executePipedCommand`                                  | `LinuxMachine.runPipeline()` (réutilise `LinuxShellParser`) |
+| `LinuxPC.containsNetworkCommand`                               | `LinuxCommandRegistry.hasNetworkCommandIn()` |
+
+### 8.4 Convention de nommage à l'intérieur d'un fichier commande
+
+Chaque fichier exporte :
+
+- une constante `xxxCommand: LinuxCommand` (forme objet, recommandée) ;
+- éventuellement des fonctions internes privées ;
+- **pas** de classe, sauf si un état inter-appels est nécessaire
+  (cas rare : dnsmasq, qui a un démon — dans ce cas le démon reste
+  dans `LinuxDnsService.ts`, pas dans la commande).
+
+Exemple minimal de `commands/net/Sysctl.ts` :
+
+```ts
+import type { LinuxCommand, LinuxCommandContext } from '../LinuxCommand';
+
+export const sysctlCommand: LinuxCommand = {
+  name: 'sysctl',
+  needsNetworkContext: true,
+
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    const wIdx = args.indexOf('-w');
+    const params = wIdx !== -1 ? args.slice(wIdx + 1) : args.filter(a => !a.startsWith('-'));
+    for (const p of params) {
+      const [key, val] = p.split('=');
+      if (key === 'net.ipv4.ip_forward') {
+        ctx.net.setIpForward(val === '1');
+        return `net.ipv4.ip_forward = ${val ?? ''}`;
+      }
+    }
+    return '';
+  },
+};
+```
+
+Moins de 20 lignes, auto-contenu, testable isolément.
+
+### 8.5 Index `commands/index.ts`
+
+Un seul point d'entrée permet à `LinuxMachine` de s'enregistrer sans
+connaître la liste :
+
+```ts
+// src/network/devices/linux/commands/index.ts
+export * from './net/Ifconfig';
+export * from './net/Ping';
+export * from './net/Traceroute';
+// … etc.
+
+import { pingCommand } from './net/Ping';
+import { tracerouteCommand } from './net/Traceroute';
+// …
+
+export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
+  pingCommand,
+  tracerouteCommand,
+  ifconfigCommand,
+  arpCommand,
+  sysctlCommand,
+  dhclientCommand,
+  dhcpLeaseFileCommand,
+  digCommand,
+  nslookupCommand,
+  hostCommand,
+  dnsmasqCommand,
+  iptablesNatHookCommand,
+  ipXfrmCommand,
+];
+```
+
+`LinuxMachine.registerCoreCommands()` devient alors une boucle :
+
+```ts
+private registerCoreCommands(): void {
+  for (const c of CORE_LINUX_COMMANDS) this.commands.register(c);
+}
+```
+
+### 8.6 Cas particulier : commandes « hook » (non appelées directement)
+
+Certaines entrées ne sont pas de « vraies » commandes shell que
+l'utilisateur tape : ce sont des *hooks* — du code qui doit se
+déclencher lorsqu'une commande passe dans l'`executor`.
+
+Exemple : `handleIptablesNat()` doit s'exécuter quand
+`iptables -t nat -A POSTROUTING -j MASQUERADE -o eth0` est tapée,
+**en plus** du traitement normal de l'iptables manager.
+
+Deux options :
+
+1. **Hook dans le registre** : `LinuxCommandRegistry` accepte des
+   `LinuxObserver` qui observent chaque dispatch avant ou après la
+   commande native. `IptablesNatHookCommand` s'enregistre comme
+   observateur de `iptables`.
+2. **Wrapping** : la commande `iptables` est enregistrée dans
+   `commands/net/Iptables.ts`, et appelle à la fois
+   `ctx.executor.iptables.execute(args)` et
+   `ctx.net.addMasqueradeInterface(iface)` si les arguments matchent.
+
+L'option 2 est plus simple et garde l'esprit « une commande = un
+fichier ». Retenue par défaut.
