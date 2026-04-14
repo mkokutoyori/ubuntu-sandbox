@@ -1239,7 +1239,7 @@ export abstract class EndHost extends Equipment {
     targetIP: IPAddress,
     maxHops: number = 30,
     timeoutMs: number = 2000,
-  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean }>> {
+  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>> {
     const route = this.resolveRoute(targetIP);
     if (!route) return [];
 
@@ -1254,14 +1254,14 @@ export abstract class EndHost extends Equipment {
       return [{ hop: 1, timeout: true }];
     }
 
-    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean }> = [];
+    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }> = [];
 
     for (let ttl = 1; ttl <= maxHops; ttl++) {
       this.pingIdCounter++;
       const id = this.pingIdCounter;
       const seq = 1;
 
-      const result = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean }>((resolve) => {
+      const result = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean }>((resolve) => {
         const key = `${targetIP}-${id}-${seq}`;
         const sentAt = performance.now();
 
@@ -1280,7 +1280,8 @@ export abstract class EndHost extends Equipment {
             // Time exceeded or destination unreachable — extract IP from message
             const match = reason.match(/from ([\d.]+)/);
             const rtt = performance.now() - sentAt;
-            resolve({ ip: match ? match[1] : undefined, rttMs: rtt, timeout: false, reached: false });
+            const isUnreachable = reason.includes('Destination unreachable');
+            resolve({ ip: match ? match[1] : undefined, rttMs: rtt, timeout: false, reached: false, unreachable: isUnreachable });
           },
           timer,
           sentAt,
@@ -1301,9 +1302,10 @@ export abstract class EndHost extends Equipment {
         });
       });
 
-      hops.push({ hop: ttl, ip: result.ip, rttMs: result.rttMs, timeout: result.timeout });
+      hops.push({ hop: ttl, ip: result.ip, rttMs: result.rttMs, timeout: result.timeout, unreachable: result.unreachable });
 
       if (result.reached) break; // Reached destination
+      if (result.unreachable) break; // Destination unreachable — stop tracing
     }
 
     return hops;

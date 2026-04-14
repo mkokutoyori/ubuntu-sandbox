@@ -84,7 +84,7 @@ export class LinuxPC extends EndHost {
    * that need EndHost internals to handle.
    */
   private containsNetworkCommand(input: string): boolean {
-    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps', 'sysctl', 'iptables', 'dig', 'nslookup', 'host', 'dnsmasq'];
+    const networkCmds = ['ifconfig', 'ping', 'arp', 'traceroute', 'dhclient', 'ps', 'sysctl', 'iptables', 'dig', 'nslookup', 'host', 'dnsmasq', 'route'];
     // Also check for DHCP lease file paths (cat/rm of /var/lib/dhcp/)
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&]+/);
@@ -162,6 +162,10 @@ export class LinuxPC extends EndHost {
       case 'traceroute': {
         const parts = noSudo.split(/\s+/);
         return this.cmdTraceroute(parts.slice(1));
+      }
+      case 'route': {
+        const parts = noSudo.split(/\s+/);
+        return this.cmdRoute(parts.slice(1));
       }
       case 'dhclient': {
         const parts = noSudo.split(/\s+/);
@@ -568,27 +572,32 @@ export class LinuxPC extends EndHost {
   private async cmdPing(args: string[]): Promise<string> {
     let count = 4;
     let ttl: number | undefined;
+    let size = 56;
     let targetStr = '';
 
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10); i++; }
       else if (args[i] === '-t' && args[i + 1]) { ttl = parseInt(args[i + 1], 10); i++; }
+      else if (args[i] === '-s' && args[i + 1]) { size = parseInt(args[i + 1], 10); i++; }
+      else if (args[i] === '-W' && args[i + 1]) { i++; } // skip timeout value
+      else if (args[i] === '-i' && args[i + 1]) { i++; } // skip interval value
       else if (!args[i].startsWith('-')) { targetStr = args[i]; }
     }
 
-    if (!targetStr) return 'Usage: ping [-c count] [-t ttl] <destination>';
+    if (!targetStr) return 'Usage: ping [-c count] [-t ttl] [-s size] <destination>';
 
     let targetIP: IPAddress;
     try { targetIP = new IPAddress(targetStr); }
     catch { return `ping: ${targetStr}: Name or service not known`; }
 
     const results = await this.executePingSequence(targetIP, count, 2000, ttl);
-    return this.formatPingOutput(targetIP, count, results);
+    return this.formatPingOutput(targetIP, count, results, size);
   }
 
-  private formatPingOutput(targetIP: IPAddress, count: number, results: PingResult[]): string {
+  private formatPingOutput(targetIP: IPAddress, count: number, results: PingResult[], size: number = 56): string {
     const lines: string[] = [];
-    lines.push(`PING ${targetIP} (${targetIP}) 56(84) bytes of data.`);
+    const totalSize = size + 28; // ICMP header (8) + IP header (20)
+    lines.push(`PING ${targetIP} (${targetIP}) ${size}(${totalSize}) bytes of data.`);
 
     const received = results.filter(r => r.success);
     const failed = count - received.length;
@@ -598,7 +607,8 @@ export class LinuxPC extends EndHost {
     } else {
       for (const r of results) {
         if (r.success) {
-          lines.push(`64 bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
+          const replySize = size + 8; // data size + ICMP header
+          lines.push(`${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
         } else if (r.error) {
           // ICMP error messages from routers
           if (r.error.includes('Time to live exceeded')) {
@@ -630,6 +640,76 @@ export class LinuxPC extends EndHost {
     return lines.join('\n');
   }
 
+  // ─── route ─────────────────────────────────────────────────────
+
+  private cmdRoute(args: string[]): string {
+    // route (no args) or route -n: show routing table
+    if (args.length === 0 || (args.length === 1 && args[0] === '-n')) {
+      return this.showRouteTable();
+    }
+
+    // route add default gw <ip>
+    if (args[0] === 'add') {
+      if (args[1] === 'default' && args[2] === 'gw' && args[3]) {
+        try {
+          this.setDefaultGateway(new IPAddress(args[3]));
+          return '';
+        } catch (e: any) {
+          return `SIOCADDRT: ${e.message}`;
+        }
+      }
+      // route add -net <network> netmask <mask> gw <gateway>
+      if (args[1] === '-net' && args[2]) {
+        let network = args[2];
+        let mask = '255.255.255.0';
+        let gateway = '';
+        for (let i = 3; i < args.length; i++) {
+          if (args[i] === 'netmask' && args[i + 1]) { mask = args[i + 1]; i++; }
+          else if (args[i] === 'gw' && args[i + 1]) { gateway = args[i + 1]; i++; }
+        }
+        if (!gateway) return 'SIOCADDRT: No such process';
+        try {
+          this.addStaticRoute(new IPAddress(network), new SubnetMask(mask), new IPAddress(gateway));
+          return '';
+        } catch (e: any) {
+          return `SIOCADDRT: ${e.message}`;
+        }
+      }
+      return 'Usage: route add [-net|-host] target [netmask Nm] [gw Gw]';
+    }
+
+    // route del default gw <ip>
+    if (args[0] === 'del') {
+      if (args[1] === 'default') {
+        this.clearDefaultGateway();
+        return '';
+      }
+      return 'Usage: route del [-net|-host] target [netmask Nm] [gw Gw]';
+    }
+
+    return 'Usage: route [-n] | route add/del ...';
+  }
+
+  private showRouteTable(): string {
+    const table = this.getRoutingTable();
+    const lines = [
+      'Kernel IP routing table',
+      'Destination     Gateway         Genmask         Flags Metric Ref    Use Iface',
+    ];
+    for (const r of table) {
+      const dest = r.network.toString();
+      const gw = r.nextHop ? r.nextHop.toString() : '0.0.0.0';
+      const mask = r.mask.toString();
+      let flags = 'U';
+      if (r.nextHop) flags += 'G';
+      if (r.type === 'default') flags = 'UG';
+      lines.push(
+        `${dest.padEnd(16)}${gw.padEnd(16)}${mask.padEnd(16)}${flags.padEnd(6)}${String(r.metric ?? 0).padEnd(7)}0      0 ${r.iface}`,
+      );
+    }
+    return lines.join('\n');
+  }
+
   // ─── arp ───────────────────────────────────────────────────────
 
   private cmdArp(args: string[]): string {
@@ -647,20 +727,36 @@ export class LinuxPC extends EndHost {
   private async cmdTraceroute(args: string[]): Promise<string> {
     if (args.length === 0) return 'Usage: traceroute <destination>';
 
-    let targetIP: IPAddress;
-    try { targetIP = new IPAddress(args[0]); }
-    catch { return `traceroute: unknown host ${args[0]}`; }
-
-    const hops = await this.executeTraceroute(targetIP);
-
-    if (hops.length === 0) {
-      return `traceroute to ${targetIP}, 30 hops max, 60 byte packets\n * * * Network is unreachable`;
+    // Parse flags: -n (numeric), -m <maxhops>, -q <nqueries>, -w <waittime>
+    let targetStr = '';
+    let maxHops = 30;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-n') continue; // numeric (cosmetic in simulation)
+      if (args[i] === '-m' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10); i++; continue; }
+      if (args[i] === '-q' && args[i + 1]) { i++; continue; } // skip nqueries
+      if (args[i] === '-w' && args[i + 1]) { i++; continue; } // skip waittime
+      if (!args[i].startsWith('-')) { targetStr = args[i]; }
     }
 
-    const lines = [`traceroute to ${targetIP}, 30 hops max, 60 byte packets`];
+    if (!targetStr) return 'Usage: traceroute [-n] [-m maxhops] <destination>';
+
+    let targetIP: IPAddress;
+    try { targetIP = new IPAddress(targetStr); }
+    catch { return `traceroute: unknown host ${targetStr}`; }
+
+    const hops = await this.executeTraceroute(targetIP, maxHops);
+
+    if (hops.length === 0) {
+      return `traceroute to ${targetIP}, ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
+    }
+
+    const lines = [`traceroute to ${targetIP}, ${maxHops} hops max, 60 byte packets`];
     for (const hop of hops) {
       if (hop.timeout) {
         lines.push(` ${hop.hop}  * * *`);
+      } else if ((hop as any).unreachable) {
+        // ICMP Destination Unreachable: show !N (network) or !H (host)
+        lines.push(` ${hop.hop}  ${hop.ip}  ${hop.rttMs!.toFixed(3)} ms !N`);
       } else {
         lines.push(` ${hop.hop}  ${hop.ip}  ${hop.rttMs!.toFixed(3)} ms`);
       }

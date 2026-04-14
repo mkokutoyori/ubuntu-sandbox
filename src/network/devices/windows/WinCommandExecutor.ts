@@ -24,6 +24,7 @@ export interface TracerouteHop {
   ip?: string;
   rttMs?: number;
   timeout: boolean;
+  unreachable?: boolean;
 }
 
 /** Route entry from EndHost.getRoutingTable */
