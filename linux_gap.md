@@ -681,3 +681,261 @@ Les deux sous-classes restent donc, mais deviennent purement
 **déclaratives** : elles ne contiennent plus aucune logique, juste un
 profil. Tout le comportement vit dans `LinuxMachine` et le registre
 de commandes décrit à la Section 7.
+
+## 7. Pattern de commandes modulaires — interface et registre
+
+### 7.1 Problème à résoudre
+
+Aujourd'hui, chaque commande réseau spécifique (ping, traceroute,
+dhclient, dnsmasq, sysctl, dig, …) est une méthode privée de
+`LinuxPC` (`cmdPing`, `cmdTraceroute`, `cmdDhclient`, …) qui accède
+directement aux champs protégés de `EndHost` (`executePingSequence`,
+`arpTable`, `dhcpClient`, `ipForwardEnabled`, `masqueradeOnInterfaces`,
+`extractPorts`, …). Résultat :
+
+- impossible de tester une commande sans instancier une `LinuxPC`
+  complète et un `Equipment` ;
+- impossible de partager la commande entre `LinuxPC` et `LinuxServer`
+  sans la dupliquer ou la remonter dans la classe mère ;
+- `LinuxPC.ts` agrège des préoccupations qui n'ont rien à voir entre
+  elles (`cmdDhclient` et `cmdDnsmasq` ne partagent aucune logique).
+
+### 7.2 Interface `LinuxCommand`
+
+Chaque commande devient un objet qui implémente :
+
+```ts
+// src/network/devices/linux/commands/LinuxCommand.ts
+export interface LinuxCommand {
+  /** Nom invoqué depuis le shell (mot-clé du switch). */
+  readonly name: string;
+
+  /** Alias éventuels (ex: "ip6tables" → "iptables"). */
+  readonly aliases?: readonly string[];
+
+  /** True si la commande a besoin des internes de EndHost
+   *  et doit court-circuiter l'interpréteur bash. */
+  readonly needsNetworkContext: boolean;
+
+  /** Exécution. Peut être synchrone ou asynchrone. */
+  run(ctx: LinuxCommandContext, args: string[]): Promise<string> | string;
+}
+```
+
+### 7.3 Contexte `LinuxCommandContext`
+
+Le contexte expose aux commandes une surface **étroite et typée** sur
+la machine, sans avoir à passer la classe `LinuxMachine` elle-même :
+
+```ts
+// src/network/devices/linux/commands/LinuxCommandContext.ts
+export interface LinuxCommandContext {
+  /** Accès aux services du noyau simulé (VFS, users, iptables, …). */
+  readonly executor: LinuxCommandExecutor;
+
+  /** Pile L2/L3 : opérations sur ports et tables du host. */
+  readonly net: LinuxNetKernel;
+
+  /** Démons L7 co-localisés (DNS). */
+  readonly dnsService: DnsService;
+
+  /** Contexte XFRM (IPsec). */
+  readonly xfrm: IpXfrmContext;
+
+  /** Profil actif (isServer, hostname, …). */
+  readonly profile: LinuxProfile;
+
+  /** Helpers de parsing / formatage partagés. */
+  readonly fmt: LinuxFormatHelpers;
+}
+```
+
+`LinuxNetKernel` est la façade *minimale* sur `EndHost` que
+`LinuxMachine` expose à ses commandes (sans les laisser toucher
+tous les champs protégés de `EndHost`) :
+
+```ts
+export interface LinuxNetKernel {
+  getPorts(): ReadonlyMap<string, Port>;
+
+  configureInterface(name: string, ip: IPAddress, mask: SubnetMask): void;
+  isDHCPConfigured(name: string): boolean;
+
+  getRoutingTable(): HostRouteEntry[];
+  addStaticRoute(net: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
+  removeRoute(net: IPAddress, mask: SubnetMask): boolean;
+  setDefaultGateway(gw: IPAddress): void;
+  getDefaultGateway(): IPAddress | null;
+  clearDefaultGateway(): void;
+
+  getArpTable(): ReadonlyMap<string, ARPEntry>;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
+  deleteARP(ip: IPAddress): void;
+
+  pingSequence(target: IPAddress, count: number, timeout: number, ttl?: number): Promise<PingResult[]>;
+  traceroute(target: IPAddress): Promise<TracerouteHop[]>;
+
+  getDhcpClient(): DHCPClient;
+  autoDiscoverDHCPServers(): void;
+
+  setIpForward(enabled: boolean): void;
+  addMasqueradeInterface(iface: string): void;
+
+  extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number };
+}
+```
+
+Cette façade est la seule portion de `EndHost` exposée. Les commandes
+ne connaissent plus `EndHost`, ne peuvent plus appeler n'importe quoi,
+et deviennent **testables à l'unité** avec un `LinuxNetKernel` fake.
+
+### 7.4 Registre `LinuxCommandRegistry`
+
+```ts
+export class LinuxCommandRegistry {
+  private readonly cmds = new Map<string, LinuxCommand>();
+
+  register(cmd: LinuxCommand): void {
+    this.cmds.set(cmd.name, cmd);
+    for (const a of cmd.aliases ?? []) this.cmds.set(a, cmd);
+  }
+
+  get(name: string): LinuxCommand | undefined { return this.cmds.get(name); }
+
+  /** Vrai si `line` commence par une commande à routage réseau. */
+  hasNetworkCommandIn(line: string): boolean {
+    for (const word of line.split(/[\s;|&]+/)) {
+      const cmd = this.cmds.get(word);
+      if (cmd?.needsNetworkContext) return true;
+    }
+    return false;
+  }
+}
+```
+
+### 7.5 Boucle d'exécution dans `LinuxMachine`
+
+```ts
+async executeCommand(input: string): Promise<string> {
+  if (!this.isPoweredOn) return 'Device is powered off';
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+
+  // 1. Fast path : pas de commande réseau → direct bash
+  if (!this.commands.hasNetworkCommandIn(trimmed)) {
+    return this.executor.execute(trimmed);
+  }
+
+  // 2. Compound (;) : récursion
+  if (trimmed.includes(';')) {
+    const parts = trimmed.split(';').map(s => s.trim()).filter(Boolean);
+    const out: string[] = [];
+    for (const p of parts) {
+      const r = await this.executeCommand(p);
+      if (r) out.push(r);
+    }
+    return out.join('\n');
+  }
+
+  // 3. Pipe : délégation au LinuxShellParser partagé
+  if (/\|(?!\|)/.test(trimmed)) return this.runPipeline(trimmed);
+
+  // 4. Dispatch commande réseau
+  const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
+  const [head, ...rest] = noSudo.split(/\s+/);
+  const cmd = this.commands.get(head);
+  if (cmd?.needsNetworkContext) return await cmd.run(this.buildCmdContext(), rest);
+
+  // 5. Sinon → bash interpreter
+  return this.executor.execute(trimmed);
+}
+```
+
+### 7.6 Squelette type d'un fichier-commande
+
+Exemple — `commands/net/Ping.ts` :
+
+```ts
+import { LinuxCommand, LinuxCommandContext } from '../LinuxCommand';
+import { IPAddress } from '@/network/core/types';
+
+export const pingCommand: LinuxCommand = {
+  name: 'ping',
+  needsNetworkContext: true,
+
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    let count = 4; let ttl: number | undefined; let target = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-c' && args[i+1]) { count = parseInt(args[++i], 10); }
+      else if (args[i] === '-t' && args[i+1]) { ttl = parseInt(args[++i], 10); }
+      else if (!args[i].startsWith('-')) { target = args[i]; }
+    }
+    if (!target) return 'Usage: ping [-c count] [-t ttl] <destination>';
+
+    let ip: IPAddress;
+    try { ip = new IPAddress(target); }
+    catch { return `ping: ${target}: Name or service not known`; }
+
+    const results = await ctx.net.pingSequence(ip, count, 2000, ttl);
+    return ctx.fmt.formatPingOutput(ip, count, results);
+  },
+};
+```
+
+Tests associés (exemple) :
+
+```ts
+// src/__tests__/unit/network-v2/commands/ping.test.ts
+it('pings a destination and formats the GNU-like output', async () => {
+  const net = new FakeLinuxNetKernel(/* ... */);
+  const ctx = makeCtx({ net });
+  const out = await pingCommand.run(ctx, ['-c', '2', '10.0.0.1']);
+  expect(out).toContain('PING 10.0.0.1');
+  expect(out).toContain('2 packets transmitted');
+});
+```
+
+Plus besoin d'instancier `LinuxPC`, d'`EndHost`, ni de topologie.
+
+### 7.7 Enregistrement des commandes
+
+`LinuxMachine.registerCoreCommands()` fait l'inventaire (une fois) :
+
+```ts
+private registerCoreCommands(): void {
+  // Réseau L3
+  this.commands.register(pingCommand);
+  this.commands.register(tracerouteCommand);
+  this.commands.register(ifconfigCommand);
+  this.commands.register(arpCommand);
+  this.commands.register(sysctlCommand);
+
+  // DHCP client
+  this.commands.register(dhclientCommand);
+  this.commands.register(dhcpLeaseFileCommand); // intercepte cat/rm
+
+  // DNS
+  this.commands.register(digCommand);
+  this.commands.register(nslookupCommand);
+  this.commands.register(hostCommand);
+  this.commands.register(dnsmasqCommand);
+
+  // NAT router-layer hook
+  this.commands.register(iptablesNatHookCommand);
+}
+```
+
+Et `LinuxServer.registerDeviceCommands()` (dans notre variante minimale)
+peut soit être vide, soit n'ajouter que quelques alias. Tout comportement
+« serveur » vient en réalité du profil, pas d'une commande propre.
+
+### 7.8 Bénéfices
+
+- **Testabilité unitaire** : chaque commande a sa propre suite de tests.
+- **Fin de la duplication** : plus aucun switch `tryNetworkCommand` ×2.
+- **Parité immédiate PC/serveur** : tout ce qui est enregistré au
+  `core` fonctionne partout.
+- **Découvrabilité** : pour savoir ce que comprend le shell Linux
+  simulé, on liste `commands/` — c'est la documentation vivante.
+- **Extension isolée** : ajouter `traceroute6` revient à créer un
+  fichier dans `commands/net/` et à l'enregistrer.
