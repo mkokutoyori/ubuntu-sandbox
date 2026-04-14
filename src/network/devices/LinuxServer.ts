@@ -13,8 +13,8 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
-import { linuxArp } from './linux/LinuxArp';
-import type { LinuxArpContext } from './linux/LinuxArp';
+import { arpCommand } from './linux/commands';
+import type { LinuxCommandContext } from './linux/commands';
 
 export class LinuxServer extends EndHost {
   protected readonly defaultTTL = 64;
@@ -110,14 +110,22 @@ export class LinuxServer extends EndHost {
     ].join('\n');
   }
 
+  /**
+   * Delegates to the extracted `arpCommand`. Phase 2 bridge — Phase 3
+   * will replace this by the registry lookup once `LinuxServer` becomes
+   * a `LinuxMachine` subclass.
+   */
   private cmdArp(args: string[]): string {
-    const ctx: LinuxArpContext = {
-      arpTable: this.arpTable,
-      addStaticARP: (ip, mac, iface) => this.addStaticARP(ip, mac, iface),
-      deleteARP: (ip) => this.deleteARP(ip),
-      defaultIface: this.ports.keys().next().value || 'eth0',
-    };
-    return linuxArp(ctx, args);
+    const bridge = {
+      net: {
+        getPorts: () => this.ports,
+        getArpTable: () => this.arpTable,
+        addStaticARP: (ip: string, mac: import('../core/types').MACAddress, iface: string) =>
+          this.addStaticARP(ip, mac, iface),
+        deleteARP: (ip: string) => this.deleteARP(ip),
+      },
+    } as unknown as LinuxCommandContext;
+    return arpCommand.run(bridge, args) as string;
   }
 
   // ─── IpNetworkContext adapter ──────────────────────────────────

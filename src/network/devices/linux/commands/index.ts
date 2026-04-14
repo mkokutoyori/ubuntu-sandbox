@@ -18,8 +18,9 @@ export { LinuxCommandRegistry } from './LinuxCommandRegistry';
 
 import type { LinuxCommand } from './LinuxCommand';
 import { sysctlCommand } from './net/Sysctl';
+import { arpCommand } from './net/Arp';
 
-export { sysctlCommand };
+export { sysctlCommand, arpCommand };
 
 /**
  * Core commands registered on every `LinuxMachine`.
@@ -29,4 +30,5 @@ export { sysctlCommand };
  */
 export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   sysctlCommand,
+  arpCommand,
 ];

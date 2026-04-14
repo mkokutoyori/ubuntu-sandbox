@@ -1263,9 +1263,15 @@ intriquées) :
   `LinuxMachine`.
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 4. `commands/net/Arp.ts`.**
-- Même schéma. `LinuxServer.cmdArp` et `LinuxPC.cmdArp` disparaissent.
-- `LinuxArp.ts` devient un détail d'implémentation de la commande.
+**PR 4. `commands/net/Arp.ts`.** ✅
+- ✅ Extrait `cmdArp` → `commands/net/Arp.ts` (`arpCommand`). Mince
+  wrapper qui adapte `LinuxNetKernel` au `LinuxArpContext` déjà
+  existant et délègue à `linuxArp(...)`.
+- ✅ Enregistré dans `CORE_LINUX_COMMANDS`.
+- ✅ `LinuxPC.cmdArp` **et** `LinuxServer.cmdArp` délèguent maintenant
+  à `arpCommand.run(...)` via le même bridge minimal → la
+  duplication `linuxArp` de `LinuxServer` disparaît.
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 5. `commands/net/Ifconfig.ts` + `LinuxFormatHelpers.ts`.**
 - Un seul formatteur, celui riche de `LinuxPC` (avec compteurs).

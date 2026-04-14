@@ -15,9 +15,7 @@ import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
-import { linuxArp } from './linux/LinuxArp';
-import type { LinuxArpContext } from './linux/LinuxArp';
-import { sysctlCommand } from './linux/commands';
+import { sysctlCommand, arpCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 
 export class LinuxPC extends EndHost {
@@ -638,14 +636,22 @@ export class LinuxPC extends EndHost {
 
   // ─── arp ───────────────────────────────────────────────────────
 
+  /**
+   * Delegates to the extracted `arpCommand` (see
+   * `linux/commands/net/Arp.ts`). Phase 2 only: builds a minimal
+   * `LinuxNetKernel` bridge with the four methods the command needs.
+   */
   private cmdArp(args: string[]): string {
-    const ctx: LinuxArpContext = {
-      arpTable: this.arpTable,
-      addStaticARP: (ip, mac, iface) => this.addStaticARP(ip, mac, iface),
-      deleteARP: (ip) => this.deleteARP(ip),
-      defaultIface: this.ports.keys().next().value || 'eth0',
-    };
-    return linuxArp(ctx, args);
+    const bridge = {
+      net: {
+        getPorts: () => this.ports,
+        getArpTable: () => this.arpTable,
+        addStaticARP: (ip: string, mac: import('../core/types').MACAddress, iface: string) =>
+          this.addStaticARP(ip, mac, iface),
+        deleteARP: (ip: string) => this.deleteARP(ip),
+      },
+    } as unknown as LinuxCommandContext;
+    return arpCommand.run(bridge, args) as string;
   }
 
   // ─── traceroute ────────────────────────────────────────────────
