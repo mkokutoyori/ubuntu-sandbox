@@ -267,3 +267,172 @@ Les deux classes implémentent `getOSType(): string { return 'linux'; }`
 
 À comparer avec les 318 lignes totales de `LinuxServer` : pratiquement
 tout le fichier est un clone.
+
+## 4. Fonctionnalités présentes dans `LinuxPC`, absentes de `LinuxServer`
+
+Cette section énumère chaque capacité que `LinuxPC` a et que `LinuxServer`
+n'a pas. Pour chaque entrée : localisation dans le code, ce qui se passe
+actuellement côté serveur, et pourquoi c'est un bug par rapport au modèle
+GNU/Linux.
+
+### 4.1 Dispatch réseau riche + pipes + séparateurs
+
+`LinuxPC.ts:46-137`
+
+- `containsNetworkCommand()` détecte la présence d'une commande réseau
+  dans une ligne composée (`;`, `|`, `&&`, `||`).
+- `executePipedCommand()` applique `grep`, `head`, `tail` en aval d'une
+  sortie réseau.
+- Le séparateur `;` est géré par récursion.
+
+Côté `LinuxServer`, `executeCommand` ne regarde que le premier mot via
+`tryNetworkCommand()` et ne gère donc correctement ni `ifconfig | grep
+eth0`, ni `arp -n; ip route`, quand ces commandes ont besoin des internes
+`EndHost`. Le pipe `ifconfig eth0 | grep inet` exécuté sur un serveur
+tombera en fait sur le `cmdIfconfig` du *LinuxCommandExecutor* (version
+texte statique basée sur `IpNetworkContext`) et non sur la version riche
+avec compteurs.
+
+### 4.2 Vraie commande `ping` (ICMP)
+
+`LinuxPC.ts:568-631` — utilise `EndHost.executePingSequence()` pour
+envoyer de vrais paquets ICMP à travers la topologie simulée, mesure
+la RTT via `performance.now()`, et formate la sortie façon `iputils-ping`
+(ligne `PING`, lignes `icmp_seq=…`, bloc `--- statistics ---` avec
+`min/avg/max/mdev`).
+
+`LinuxServer.ts:63` retourne `null` pour `ping` → tombe sur le stub
+`LinuxCommandExecutor.dispatch()` (`LinuxCommandExecutor.ts:661-665`)
+qui retourne une chaîne canned :
+
+```
+64 bytes from X: icmp_seq=1 ttl=64 time=0.5 ms
+```
+
+**Conséquence** : depuis un `LinuxServer`, on ne peut pas tester la
+connectivité L3 réelle, ni vérifier un firewall, ni observer un drop,
+ni mesurer un `Destination Host Unreachable`. Les tests réseau
+regression sont donc aveugles sur les serveurs.
+
+### 4.3 Vraie commande `traceroute`
+
+`LinuxPC.ts:647-669` — utilise `EndHost.executeTraceroute()` (TTL
+décroissant, réception d'`ICMP Time Exceeded` des routeurs intermédiaires).
+
+`LinuxServer` → stub canné (`gateway (10.0.0.1)` en dur). Même
+conséquence que 4.2.
+
+### 4.4 Client DHCP (`dhclient`)
+
+`LinuxPC.ts:237-323` — gère tous les drapeaux utiles :
+`-v`, `-d`, `-r` (release), `-x` (stop), `-w`, `-s <server>`,
+`-t <timeout>`, plus la découverte par broadcast via
+`discoverDHCPServersBroadcast()` / `autoDiscoverDHCPServers()`.
+Intègre également le stockage / formatage du bail via
+`dhcpClient.requestLease()` / `releaseLease()`.
+
+`LinuxServer` : aucune gestion. La commande tombe sur le `default:
+command not found` du dispatcher. Un serveur Linux réel peut pourtant
+être configuré en DHCP (très fréquent en bord d'internet).
+
+### 4.5 Lecture des fichiers de bail DHCP
+
+`LinuxPC.ts:175-200` intercepte :
+
+- `cat /var/lib/dhcp/dhclient.leases` → concatène les baux de tous
+  les ports via `dhcpClient.formatLeaseFile(name)` ;
+- `cat /var/lib/dhcp/dhclient.<iface>.leases` → bail d'une interface ;
+- `rm /var/lib/dhcp/dhclient*` → no-op silencieux.
+
+Côté serveur, ces chemins n'existent pas dans le VFS, donc `cat`
+retourne `No such file or directory`.
+
+### 4.6 `ps` augmenté avec les processus `dhclient`
+
+`LinuxPC.ts:327-335` — ajoute une ligne par interface ayant un
+`dhclient` actif, en consultant `dhcpClient.isProcessRunning(name)`.
+
+`LinuxServer` s'appuie exclusivement sur `LinuxProcessManager`, qui
+ignore les clients DHCP.
+
+### 4.7 `sysctl net.ipv4.ip_forward`
+
+`LinuxPC.ts:405-417` — active le flag `ipForwardEnabled` de `EndHost`,
+qui est indispensable pour que la machine fasse du **forwarding**
+(routage inter-interfaces).
+
+`LinuxServer` : commande absente du dispatcher → la variable reste
+à `false`, et un serveur Linux **ne peut pas** être utilisé comme
+routeur logiciel, ce qui est pourtant un usage très courant.
+
+### 4.8 Hook `iptables MASQUERADE` → routing NAT
+
+`LinuxPC.ts:426-437` — `handleIptablesNat()` analyse les arguments
+`iptables -t nat -A POSTROUTING -j MASQUERADE -o <if>` et alimente
+`this.masqueradeOnInterfaces` (dans `EndHost`), ce qui connecte la
+règle au moteur de NAT au moment du forwarding.
+
+`LinuxServer` pose bien la règle dans `iptables` (via le manager), mais
+le moteur de routing de `EndHost` n'en est pas informé → le NAT sortant
+est silencieusement ignoré.
+
+### 4.9 DNAT / port-forwarding (`evaluatePreRouting`)
+
+`LinuxPC.ts:714-728` surcharge `evaluatePreRouting()` et délègue à
+`executor.iptables.evaluateNat(pkt, 'PREROUTING')`.
+
+`LinuxServer` **n'a pas cette surcharge**. Les règles
+`iptables -t nat -A PREROUTING -j DNAT --to-destination …` ne sont
+donc jamais consultées lorsque le paquet entre sur le serveur : le
+port-forwarding / redirection de port est mort côté serveur.
+
+### 4.10 Commandes DNS client (`dig`, `nslookup`, `host`)
+
+`LinuxPC.ts:215-226` appelle `executeDig()`, `executeNslookup()`,
+`executeHost()` du module `LinuxDnsService`, en passant le resolver
+lu depuis `/etc/resolv.conf` (`getResolverIP()`).
+
+`LinuxServer` → stub canné de `LinuxCommandExecutor` qui retourne
+toujours `93.184.216.34`. La simulation DNS n'est donc fonctionnelle
+que sur les `LinuxPC`.
+
+### 4.11 `dnsmasq` (serveur DNS)
+
+`LinuxPC.ts:776-800` lit `/etc/dnsmasq.conf`, parse éventuellement un
+`addn-hosts`, puis appelle `dnsService.parseConfig()` +
+`dnsService.start()`.
+
+`LinuxServer` → n'a ni champ `dnsService`, ni commande `dnsmasq`.
+**C'est le plus gros contresens du projet** : un PC utilisateur peut
+démarrer un serveur DNS, mais un serveur Linux ne le peut pas.
+
+### 4.12 `ip xfrm` (IPsec)
+
+`LinuxPC.ts:25` définit `xfrmCtx: IpXfrmContext` et le passe dans
+`IpNetworkContext`. `LinuxServer` ne l'a pas, donc toute commande
+`ip xfrm state/policy` sur un serveur retombera sur un `xfrm:
+undefined` côté `LinuxIpCommand`. Or, IPsec site-à-site est
+typiquement configuré **sur des serveurs/passerelles**, pas sur un
+PC de bureau.
+
+### 4.13 Compteurs `ifconfig` (RX/TX packets)
+
+Déjà couvert en 3.3 — `LinuxPC.formatInterface()` affiche :
+
+```
+RX packets 123  bytes 4567 (4.5 KB)
+TX packets 456  bytes 7890 (7.7 KB)
+```
+
+`LinuxServer.formatInterface()` les omet. Bug d'affichage pur,
+aggravé par le fait que les vraies données sont disponibles dans
+`port.getCounters()`.
+
+### 4.14 Synthèse
+
+Sur 14 écarts, **13 sont des régressions silencieuses** (comportement
+inférieur au PC, alors que le serveur Linux réel *supporte* ces fonctions
+— et souvent *mieux* que le PC). Seul l'écart 4.1 (pipe réseau)
+pourrait se défendre au motif que l'interpréteur bash complet de
+`LinuxCommandExecutor` gère déjà les pipes — mais pas sur les sorties
+venant des commandes réseau spécifiques à `LinuxPC`.
