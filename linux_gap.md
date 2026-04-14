@@ -1161,3 +1161,145 @@ Deux options :
 
 L'option 2 est plus simple et garde l'esprit « une commande = un
 fichier ». Retenue par défaut.
+
+## 9. Plan de migration incrémental
+
+La migration peut (et doit) être faite **sans jamais casser les tests
+existants**. Voici une séquence de PRs courts qui peuvent chacun être
+mergé indépendamment.
+
+### Phase 1 — Socle, sans casser l'existant
+
+**PR 1. `LinuxCommand` + `LinuxCommandContext` + `LinuxCommandRegistry`
++ `LinuxNetKernel`.**
+
+- Créer les interfaces et le registre sous `linux/commands/`.
+- Implémenter `LinuxNetKernel` concret qui enveloppe une `EndHost`.
+  Cette classe n'est utilisée par personne encore.
+- Pas de modification de `LinuxPC` / `LinuxServer`.
+- ✅ Aucune régression possible : code mort pour l'instant.
+
+**PR 2. `LinuxMachine` (vide).**
+
+- Créer `LinuxMachine extends EndHost` *identique à `LinuxPC`* pour le
+  moment : créer les ports, instancier l'executor, construire
+  l'`IpNetworkContext`, surcharger firewall/NAT, exposer les helpers
+  éditeur. C'est un gros copier-coller délibéré.
+- `LinuxPC` et `LinuxServer` continuent d'exister sans changement.
+- ✅ Aucune régression possible : `LinuxMachine` n'est instanciée nulle part.
+
+### Phase 2 — Extraction des commandes de `LinuxPC`
+
+Une commande par PR, dans cet ordre (des plus isolées aux plus
+intriquées) :
+
+**PR 3. `commands/net/Sysctl.ts`.**
+- Extraire `cmdSysctl`.
+- L'enregistrer dans `LinuxMachine.registerCoreCommands()`.
+- `LinuxPC.cmdSysctl` devient : `return this.commands.get('sysctl')!.run(...)`
+  (ou est supprimé si on route tout).
+- Ajouter test unitaire `commands/sysctl.test.ts`.
+
+**PR 4. `commands/net/Arp.ts`.**
+- Même schéma. `LinuxServer.cmdArp` et `LinuxPC.cmdArp` disparaissent.
+- `LinuxArp.ts` devient un détail d'implémentation de la commande.
+
+**PR 5. `commands/net/Ifconfig.ts` + `LinuxFormatHelpers.ts`.**
+- Un seul formatteur, celui riche de `LinuxPC` (avec compteurs).
+- **Corrige** le bug latent de `LinuxServer` (3.3).
+
+**PR 6. `commands/net/Ping.ts`.**
+- ⚠️ Passage sensible : `LinuxServer` gagne une *vraie* commande ping.
+  Les tests qui s'attendaient au stub canned (`LinuxCommandExecutor`)
+  doivent être mis à jour pour utiliser la topologie réelle.
+- `LinuxCommandExecutor.dispatch` perd sa branche `ping` stubée —
+  ou la conserve comme fallback pour les devices qui ne sont pas des
+  `LinuxMachine`.
+
+**PR 7. `commands/net/Traceroute.ts`.**
+- Même schéma que PR 6.
+
+**PR 8. `commands/dns/*` + `commands/dns/Dnsmasq.ts`.**
+- Extraire `executeDig`, `executeNslookup`, `executeHost` de
+  `LinuxDnsService.ts` en `Dig.ts`, `Nslookup.ts`, `Host.ts`.
+- `LinuxDnsService.ts` ne contient plus que le démon (`DnsService`).
+- `dnsmasqCommand` devient accessible depuis n'importe quelle
+  `LinuxMachine` → un `LinuxServer` peut maintenant être serveur DNS.
+- Ajouter le champ `dnsService` et `dnsResolverIP` dans `LinuxMachine`.
+- Tests : vérifier qu'un `LinuxServer` démarre bien dnsmasq et
+  répond aux requêtes venant d'un `LinuxPC` client.
+
+**PR 9. `commands/dhcp/Dhclient.ts` + `DhcpLeaseFile.ts` +
+`commands/ps/PsDhclientAugment.ts`.**
+- ⚠️ Passage le plus sensible : accès profond au `dhcpClient` de
+  `EndHost`. La façade `LinuxNetKernel` doit exposer
+  `getDhcpClient()`, `autoDiscoverDHCPServers()`.
+- Après ce PR, un `LinuxServer` peut être client DHCP.
+
+**PR 10. `commands/net/IptablesNatHook.ts` + `IpXfrm.ts`.**
+- Ajoute le hook MASQUERADE sur toutes les `LinuxMachine`.
+- Expose `xfrmCtx` dans la façade.
+- `LinuxServer.evaluatePreRouting` n'étant plus un bug parce que la
+  surcharge est portée sur `LinuxMachine`, DNAT fonctionne.
+
+### Phase 3 — Raccourcissement des sous-classes
+
+**PR 11. `LinuxPC` devient une coquille.**
+- Tout le corps de `LinuxPC` est supprimé.
+- Le constructeur appelle `super(... profile)` avec
+  `{ isServer: false, hostname: 'linux-pc', portCount: 4,
+     portPrefix: 'eth' }`.
+- Les tests de `LinuxPC` doivent continuer de passer sans
+  modification.
+
+**PR 12. `LinuxServer` devient une coquille + `exposeSystemProcessApi`.**
+- Même chose pour `LinuxServer`.
+- `registerProcess` / `clearSystemProcesses` restent dans la sous-classe
+  (ou sont hissés dans `LinuxMachine` derrière le flag du profil).
+- Vérifier que les tests Oracle (`unit/database/`) passent.
+
+### Phase 4 — Nettoyage facultatif
+
+**PR 13. Stub ping/traceroute/dig de `LinuxCommandExecutor`.**
+- Ces stubs (`LinuxCommandExecutor.ts:661-677`) étaient là pour fournir
+  une réponse à `bash -c 'ping foo'`. Après la migration, toute
+  `LinuxMachine` route d'abord vers `commands/`, donc les stubs ne
+  sont utilisés qu'en fallback.
+- Supprimer ou marquer `@deprecated` selon que d'autres classes
+  (Cisco, Huawei) les utilisent ou non.
+
+**PR 14. Migration cosmétique des commandes userspace.**
+- Port progressif de `LinuxFileCommands`, `LinuxTextCommands`,
+  `LinuxSearchCommands`, … vers le format `LinuxCommand`. Purement
+  cosmétique, aucun changement fonctionnel.
+
+### 9.1 Critères de validation continue
+
+À chaque PR :
+
+- `npm run test:run` doit passer intégralement ;
+- `npm run lint` ne doit introduire aucun warning ;
+- les tests GUI (`unit/gui/`) qui instancient `LinuxPC` ou
+  `LinuxServer` ne doivent pas être modifiés (la surface publique
+  utilisée par `Terminal.tsx`, `NetworkDesigner.tsx`, le store
+  Zustand reste intacte) ;
+- aucun import de `LinuxPC.ts` ou `LinuxServer.ts` ne doit être
+  ajouté — on doit pouvoir les considérer comme *fermés à la
+  modification* dès que le PR 11/12 est mergé.
+
+### 9.2 Bénéfices attendus à la fin
+
+- `LinuxPC.ts` : 801 → ~12 lignes.
+- `LinuxServer.ts` : 318 → ~20 lignes.
+- Parité complète PC/serveur sur les 14 écarts listés en §4 *sans*
+  écrire une seule ligne de code deux fois.
+- Chaque commande réseau a son propre fichier dédié et son propre
+  test unitaire, instanciable sans `EndHost` complet.
+- Base saine pour ajouter plus tard d'autres profils (ex :
+  `LinuxRouter`, `LinuxFirewall`, `LinuxContainer`) sans nouvelle
+  duplication.
+
+---
+
+*Fin du document. Les 9 sections ont été committées et poussées
+individuellement sur la branche `claude/analyze-linux-implementation-gaps-Juc4e`.*
