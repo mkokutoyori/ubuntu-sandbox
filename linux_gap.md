@@ -436,3 +436,61 @@ inférieur au PC, alors que le serveur Linux réel *supporte* ces fonctions
 pourrait se défendre au motif que l'interpréteur bash complet de
 `LinuxCommandExecutor` gère déjà les pipes — mais pas sur les sorties
 venant des commandes réseau spécifiques à `LinuxPC`.
+
+## 5. Fonctionnalités présentes dans `LinuxServer`, absentes de `LinuxPC`
+
+Le déséquilibre est beaucoup plus faible dans ce sens : seuls deux
+points distinguent positivement `LinuxServer`.
+
+### 5.1 Profil `executor` en mode serveur
+
+`LinuxServer.ts:26` : `new LinuxCommandExecutor(true)`.
+
+L'argument `isServer = true` change plusieurs comportements dans
+`LinuxCommandExecutor` :
+
+- aucun utilisateur `user` (uid 1000) n'est créé, la session démarre
+  directement en `root` (uid 0) ;
+- le cwd initial est `/root` au lieu de `/home/user` ;
+- le shell enregistré dans `LinuxProcessManager` est spawné en root ;
+- certaines commandes réseau (`netstat`, `ss`) dans `LinuxNetCommands`
+  exposent des sockets d'écoute différents selon le profil serveur.
+
+Techniquement, cela ne justifie pas une classe séparée : c'est une
+*option de construction* de l'`executor`, rien de plus.
+
+### 5.2 Exposition des API processus pour Oracle
+
+`LinuxServer.ts:316-317` :
+
+```ts
+registerProcess(pid: number, user: string, command: string): void
+clearSystemProcesses(): void
+```
+
+Ces deux méthodes sont utilisées par `src/database/oracle/…` pour
+faire apparaître les processus d'arrière-plan d'Oracle (`pmon`,
+`smon`, `lgwr`, `dbwr`, `ckpt`, `arch`…) dans la sortie de `ps`
+et `top`. Elles ne sont *pas* exposées par `LinuxPC`.
+
+**Remarque importante** : l'implémentation sous-jacente existe
+déjà dans `LinuxCommandExecutor` (cf.
+`LinuxCommandExecutor.ts:103-118`). C'est donc de nouveau une simple
+question de **surface publique de la classe** : `LinuxPC` pourrait
+exposer ces méthodes sans aucun effort. Un PC Linux peut parfaitement
+faire tourner une base Oracle Express ou Postgres en local pour du
+développement.
+
+### 5.3 Conclusion de cette section
+
+Il n'y a strictement **aucune** capacité métier que seul `LinuxServer`
+peut offrir au simulateur. Toutes les différences « positives » de
+`LinuxServer` se réduisent à :
+
+1. passer `isServer = true` au constructeur de l'`executor` ;
+2. rendre publics deux passe-plats vers `executor.registerProcess` /
+   `executor.clearSystemProcesses`.
+
+Cela confirme le diagnostic de la Section 1 : **la distinction entre
+PC et serveur n'est pas une distinction de classe, c'est une
+distinction de *profil* de configuration à la construction.**
