@@ -17,6 +17,8 @@ import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, 
 import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
 import { linuxArp } from './linux/LinuxArp';
 import type { LinuxArpContext } from './linux/LinuxArp';
+import { sysctlCommand } from './linux/commands';
+import type { LinuxCommandContext } from './linux/commands';
 
 export class LinuxPC extends EndHost {
   protected readonly defaultTTL = 64;
@@ -402,18 +404,22 @@ export class LinuxPC extends EndHost {
 
   // ─── sysctl ────────────────────────────────────────────────────
 
+  /**
+   * Delegates to the extracted `sysctlCommand` (see
+   * `linux/commands/net/Sysctl.ts`). Only the `net.setIpForward` /
+   * `isIpForwardEnabled` slice of the `LinuxNetKernel` façade is
+   * actually touched, so a minimal bridge is enough during Phase 2.
+   * Phase 3 will remove this wrapper when `LinuxPC` becomes a
+   * `LinuxMachine` subclass and gets the full registry.
+   */
   private cmdSysctl(args: string[]): string {
-    // sysctl -w net.ipv4.ip_forward=1
-    const wIdx = args.indexOf('-w');
-    const params = wIdx !== -1 ? args.slice(wIdx + 1) : args.filter(a => !a.startsWith('-'));
-    for (const param of params) {
-      const [key, val] = param.split('=');
-      if (key === 'net.ipv4.ip_forward') {
-        this.ipForwardEnabled = val === '1';
-        return `net.ipv4.ip_forward = ${val ?? ''}`;
-      }
-    }
-    return '';
+    const bridge = {
+      net: {
+        setIpForward: (enabled: boolean) => { this.ipForwardEnabled = enabled; },
+        isIpForwardEnabled: () => this.ipForwardEnabled,
+      },
+    } as unknown as LinuxCommandContext;
+    return sysctlCommand.run(bridge, args) as string;
   }
 
   // ─── iptables NAT helper ──────────────────────────────────────

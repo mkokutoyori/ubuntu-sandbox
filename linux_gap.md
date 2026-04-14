@@ -1252,12 +1252,16 @@ commençant par les commandes les plus isolées :
 Une commande par PR, dans cet ordre (des plus isolées aux plus
 intriquées) :
 
-**PR 3. `commands/net/Sysctl.ts`.**
-- Extraire `cmdSysctl`.
-- L'enregistrer dans `LinuxMachine.registerCoreCommands()`.
-- `LinuxPC.cmdSysctl` devient : `return this.commands.get('sysctl')!.run(...)`
-  (ou est supprimé si on route tout).
-- Ajouter test unitaire `commands/sysctl.test.ts`.
+**PR 3. `commands/net/Sysctl.ts`.** ✅
+- ✅ Extrait `cmdSysctl` → `src/network/devices/linux/commands/net/Sysctl.ts`
+  (`sysctlCommand`, 36 l.).
+- ✅ Enregistré dans `CORE_LINUX_COMMANDS` (`commands/index.ts`) — pris en
+  charge automatiquement par `LinuxMachine.registerCoreCommands()`.
+- ✅ `LinuxPC.cmdSysctl` réduit à une délégation via un bridge minimal
+  (`net.setIpForward` / `isIpForwardEnabled`) vers `sysctlCommand.run`.
+  Le bridge disparaîtra en Phase 3 quand `LinuxPC` deviendra
+  `LinuxMachine`.
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 4. `commands/net/Arp.ts`.**
 - Même schéma. `LinuxServer.cmdArp` et `LinuxPC.cmdArp` disparaissent.

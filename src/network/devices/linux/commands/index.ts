@@ -17,6 +17,16 @@ export type { LinuxCommandContext } from './LinuxCommandContext';
 export { LinuxCommandRegistry } from './LinuxCommandRegistry';
 
 import type { LinuxCommand } from './LinuxCommand';
+import { sysctlCommand } from './net/Sysctl';
 
-/** Core commands registered on every `LinuxMachine`. Empty until Phase 2. */
-export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [];
+export { sysctlCommand };
+
+/**
+ * Core commands registered on every `LinuxMachine`.
+ *
+ * Populated progressively during Phase 2 as commands are extracted
+ * from `LinuxPC` into their own files (see `linux_gap.md` §9).
+ */
+export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
+  sysctlCommand,
+];
