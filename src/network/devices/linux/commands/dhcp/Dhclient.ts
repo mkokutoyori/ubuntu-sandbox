@@ -20,6 +20,20 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 export const dhclientCommand: LinuxCommand = {
   name: 'dhclient',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'dhclient [-v] [-d] [-r] [-x] [-s server] [-w] [-t timeout] <interface>',
+  help:
+    'Dynamic Host Configuration Protocol Client.\n\n' +
+    'Requests an IP address lease from a DHCP server for the specified\n' +
+    'network interface.\n\n' +
+    'OPTIONS\n' +
+    '  -v            Enable verbose log messages.\n' +
+    '  -d            Run in daemon mode.\n' +
+    '  -r            Release the current lease.\n' +
+    '  -x            Stop the running dhclient process.\n' +
+    '  -s server     Send requests to a specific DHCP server.\n' +
+    '  -w            Wait for a lease to be acquired.\n' +
+    '  -t timeout    Timeout for the lease request in seconds.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     let verbose = false;

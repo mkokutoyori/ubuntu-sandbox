@@ -22,6 +22,15 @@ import { IPAddress, SubnetMask } from '../../../../core/types';
 export const ifconfigCommand: LinuxCommand = {
   name: 'ifconfig',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'ifconfig [interface] [address [netmask mask]]',
+  help:
+    'Configure a network interface.\n\n' +
+    'If no arguments are given, ifconfig displays the status of all active\n' +
+    'interfaces. If a single interface argument is given, it displays the\n' +
+    'status of that interface only. If an address is also specified, it\n' +
+    'configures the interface with the given IPv4 address and optional\n' +
+    'netmask.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     const ports = ctx.net.getPorts();

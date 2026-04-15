@@ -14,6 +14,15 @@ import { readResolverIP } from './resolverIP';
 export const hostCommand: LinuxCommand = {
   name: 'host',
   needsNetworkContext: true,
+  manSection: 1,
+  usage: 'host [name] [server]',
+  help:
+    'DNS lookup utility.\n\n' +
+    'A simple utility for performing DNS lookups. It is normally used\n' +
+    'to convert names to IP addresses and vice versa.\n\n' +
+    'OPTIONS\n' +
+    '  name          The domain name or IP address to look up.\n' +
+    '  server        The DNS server to query.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     return executeHost(args, readResolverIP(ctx.executor));

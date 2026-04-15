@@ -15,6 +15,12 @@ import { IPAddress } from '../../../../core/types';
 export const tracerouteCommand: LinuxCommand = {
   name: 'traceroute',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'traceroute <destination>',
+  help:
+    'Print the route packets trace to network host.\n\n' +
+    'Traces the path that an IP packet follows from the local host to a\n' +
+    'remote destination by sending probe packets with increasing TTL values.',
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     if (args.length === 0) return 'Usage: traceroute <destination>';

@@ -21,6 +21,14 @@ import { IPAddress } from '../../../../core/types';
 export const pingCommand: LinuxCommand = {
   name: 'ping',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'ping [-c count] [-t ttl] [-W timeout] <destination>',
+  help:
+    'Send ICMP ECHO_REQUEST packets to network hosts.\n\n' +
+    'OPTIONS\n' +
+    '  -c count      Stop after sending count ECHO_REQUEST packets.\n' +
+    '  -t ttl        Set the IP Time to Live.\n' +
+    '  -W timeout    Time to wait for a response, in seconds.',
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     let count = 4;

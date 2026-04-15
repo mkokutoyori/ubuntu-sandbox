@@ -17,6 +17,15 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 export const dnsmasqCommand: LinuxCommand = {
   name: 'dnsmasq',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'dnsmasq [-C config-file]',
+  help:
+    'A lightweight DHCP and caching DNS server.\n\n' +
+    'Reads configuration from /etc/dnsmasq.conf (or the file specified\n' +
+    'with -C) and starts the DNS service.\n\n' +
+    'OPTIONS\n' +
+    '  -C config-file  Read configuration from the specified file\n' +
+    '                  instead of /etc/dnsmasq.conf.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     let configFile = '/etc/dnsmasq.conf';

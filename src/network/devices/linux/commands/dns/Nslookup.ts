@@ -14,6 +14,15 @@ import { readResolverIP } from './resolverIP';
 export const nslookupCommand: LinuxCommand = {
   name: 'nslookup',
   needsNetworkContext: true,
+  manSection: 1,
+  usage: 'nslookup [name] [server]',
+  help:
+    'Query Internet name servers interactively.\n\n' +
+    'Queries the specified DNS server (or the system default) for\n' +
+    'information about the given hostname.\n\n' +
+    'OPTIONS\n' +
+    '  name          The domain name to look up.\n' +
+    '  server        The DNS server to query.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     return executeNslookup(args, readResolverIP(ctx.executor));

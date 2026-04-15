@@ -167,7 +167,7 @@ export abstract class LinuxMachine extends EndHost {
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&]+/);
     return words.some(w =>
-      w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' || w === 'ps',
+      w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' || w === 'ps' || w === 'man',
     );
   }
 
@@ -225,11 +225,42 @@ export abstract class LinuxMachine extends EndHost {
     const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
     const firstCmd = noSudo.split(/[\s|;&]/)[0];
 
+    // 0. man command — render a manual page from registry metadata
+    if (firstCmd === 'man') {
+      const tokens = noSudo.split(/\s+/);
+      if (tokens.length < 2) return 'What manual page do you want?';
+      const target = tokens[1];
+      const manCmd = this.commands.get(target);
+      if (!manCmd || !manCmd.help) return `No manual entry for ${target}`;
+      const section = manCmd.manSection ?? 8;
+      const header = `${manCmd.name.toUpperCase()}(${section})`;
+      const lines: string[] = [
+        header,
+        '',
+        'NAME',
+        `       ${manCmd.name}`,
+        '',
+        'SYNOPSIS',
+        `       ${manCmd.usage ?? manCmd.name}`,
+        '',
+        'DESCRIPTION',
+        ...manCmd.help.split('\n').map(l => `       ${l}`),
+        '',
+        header,
+      ];
+      return lines.join('\n');
+    }
+
     // 1. Commands registered in the LinuxCommandRegistry
     const cmd = this.commands.get(firstCmd);
     if (cmd && cmd.needsNetworkContext) {
       const tokens = noSudo.split(/\s+/);
-      return await cmd.run(this.buildCommandContext(), tokens.slice(1));
+      const cmdArgs = tokens.slice(1);
+      // --help flag: return usage instead of running the command
+      if (cmdArgs.includes('--help') && cmd.usage) {
+        return `Usage: ${cmd.usage}`;
+      }
+      return await cmd.run(this.buildCommandContext(), cmdArgs);
     }
 
     // 2. Commands that need special handling outside the registry

@@ -14,6 +14,15 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 export const sysctlCommand: LinuxCommand = {
   name: 'sysctl',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'sysctl [-w] variable[=value] ...',
+  help:
+    'Configure kernel parameters at runtime.\n\n' +
+    'OPTIONS\n' +
+    '  -w            Use this option when you want to change a sysctl setting.\n' +
+    '  -a            Display all values currently available.\n\n' +
+    'Supported parameters:\n' +
+    '  net.ipv4.ip_forward  Enable/disable IPv4 packet forwarding (0 or 1).',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     // sysctl -w key=value [key=value …]

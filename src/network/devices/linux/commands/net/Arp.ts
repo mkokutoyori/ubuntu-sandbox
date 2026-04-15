@@ -17,6 +17,15 @@ import { linuxArp, type LinuxArpContext } from '../../LinuxArp';
 export const arpCommand: LinuxCommand = {
   name: 'arp',
   needsNetworkContext: true,
+  manSection: 8,
+  usage: 'arp [-a] [-d hostname] [-s hostname hw_addr] [-i interface]',
+  help:
+    'Manipulate the system ARP cache.\n\n' +
+    'OPTIONS\n' +
+    '  -a            Display all entries in the ARP table.\n' +
+    '  -d hostname   Delete an entry from the ARP table.\n' +
+    '  -s hostname hw_addr   Create a static ARP entry.\n' +
+    '  -i interface  Limit operation to a specific interface.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     const ports = ctx.net.getPorts();

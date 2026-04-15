@@ -29,6 +29,17 @@ export interface LinuxCommand {
    */
   readonly needsNetworkContext: boolean;
 
+  // ─── Documentation ──────────────────────────────────────────────
+
+  /** One-line usage string. Shown by `--help` and in the SYNOPSIS of `man`. */
+  readonly usage?: string;
+
+  /** Multi-line description shown by `man <cmd>`. */
+  readonly help?: string;
+
+  /** Man section number (1 = user commands, 8 = admin commands). Default: 8. */
+  readonly manSection?: number;
+
   /**
    * Execute the command. May be synchronous or asynchronous (e.g. `ping`).
    *

@@ -15,6 +15,16 @@ import { readResolverIP } from './resolverIP';
 export const digCommand: LinuxCommand = {
   name: 'dig',
   needsNetworkContext: true,
+  manSection: 1,
+  usage: 'dig [@server] [name] [type]',
+  help:
+    'DNS lookup utility.\n\n' +
+    'Performs DNS lookups and displays the answers returned by the name\n' +
+    'server(s). The default query is for an A record.\n\n' +
+    'OPTIONS\n' +
+    '  @server       Query this specific DNS server.\n' +
+    '  name          The domain name to look up.\n' +
+    '  type          The query type (A, AAAA, MX, NS, etc.).',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     return executeDig(args, readResolverIP(ctx.executor));
