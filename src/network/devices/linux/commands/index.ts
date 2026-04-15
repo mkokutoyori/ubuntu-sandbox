@@ -29,6 +29,7 @@ import { dnsmasqCommand } from './dns/Dnsmasq';
 import { dhclientCommand } from './dhcp/Dhclient';
 import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
 import { dhclientPsLines } from './dhcp/PsDhclientAugment';
+import { applyIptablesNatHook } from './net/IptablesNatHook';
 
 export {
   sysctlCommand,
@@ -44,6 +45,7 @@ export {
   readDhcpLeaseFile,
   isDhcpLeasePath,
   dhclientPsLines,
+  applyIptablesNatHook,
 };
 
 /**

@@ -1354,11 +1354,26 @@ intriquées) :
   jusqu'à la Phase 3 (le serveur n'a pas encore de hook `cat`/`ps`).
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 10. `commands/net/IptablesNatHook.ts` + `IpXfrm.ts`.**
-- Ajoute le hook MASQUERADE sur toutes les `LinuxMachine`.
-- Expose `xfrmCtx` dans la façade.
-- `LinuxServer.evaluatePreRouting` n'étant plus un bug parce que la
-  surcharge est portée sur `LinuxMachine`, DNAT fonctionne.
+**PR 10. `commands/net/IptablesNatHook.ts` + `IpXfrm.ts`.** ✅
+- ✅ Crée `commands/net/IptablesNatHook.ts` : helper
+  `applyIptablesNatHook(net, args)` qui parse `-t nat -A POSTROUTING
+  -j MASQUERADE -o <iface>` et appelle `net.addMasqueradeInterface`.
+- ✅ Étend la `netKernelForBridges()` de `LinuxPC` pour exposer
+  `addMasqueradeInterface`, supprime `LinuxPC.handleIptablesNat` et
+  remplace son appel par `applyIptablesNatHook(...)`.
+- ✅ `LinuxServer.tryNetworkCommand` gagne enfin une branche
+  `iptables` / `iptables-save` : applique le hook MASQUERADE puis
+  délègue à `executor.iptables.execute(...)`. Régression silencieuse
+  §4 ("LinuxServer ne sait pas masquerade") résolue.
+- ✅ `LinuxServer` ajoute un `xfrmCtx: IpXfrmContext = { states: [],
+  policies: [] }` privé et le branche dans `buildIpNetworkContext` —
+  `ip xfrm state add/list/del` et `ip xfrm policy ...` fonctionnent
+  désormais sur `LinuxServer` (retournaient "Operation not supported"
+  avant). Régression §3 ("xfrm absent du serveur") résolue.
+- ⏳ `LinuxServer.evaluatePreRouting` (DNAT côté serveur) reste à
+  porter — sera réglé Phase 3 quand `LinuxServer` héritera de
+  `LinuxMachine` et reprendra la surcharge `LinuxPC`.
+- ✅ `tsc --noEmit` : 0 erreur.
 
 ### Phase 3 — Raccourcissement des sous-classes
 

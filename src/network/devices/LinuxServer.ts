@@ -12,7 +12,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
-import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
+import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 import {
   arpCommand,
   ifconfigCommand,
@@ -23,6 +23,7 @@ import {
   hostCommand,
   dnsmasqCommand,
   dhclientCommand,
+  applyIptablesNatHook,
 } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import type { LinuxNetKernel } from './linux/LinuxNetKernel';
@@ -38,6 +39,13 @@ export class LinuxServer extends EndHost {
    * other devices can resolve through `findDnsServerByIP(...)`.
    */
   public dnsService: DnsService = new DnsService();
+  /**
+   * XFRM (IPsec) state/policy database — Phase 2 / PR 10: `ip xfrm`
+   * now works on `LinuxServer` (it used to return "Operation not
+   * supported" because the field was simply not plumbed into
+   * `buildIpNetworkContext`).
+   */
+  private xfrmCtx: IpXfrmContext = { states: [], policies: [] };
 
   constructor(type: DeviceType = 'linux-server', name: string = 'Server', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -87,6 +95,17 @@ export class LinuxServer extends EndHost {
       case 'host': return hostCommand.run(this.dnsBridge(), parts.slice(1)) as string;
       case 'dnsmasq': return dnsmasqCommand.run(this.dnsBridge(), parts.slice(1)) as string;
       case 'dhclient': return dhclientCommand.run(this.dhcpBridge(), parts.slice(1)) as string;
+      case 'iptables': {
+        // Phase 2 / PR 10: capture the MASQUERADE side-effect via the
+        // shared hook, then delegate the rule itself to the executor.
+        const iptArgs = parts.slice(1);
+        const net = {
+          addMasqueradeInterface: (iface: string) => { this.masqueradeOnInterfaces.add(iface); },
+        } as unknown as LinuxNetKernel;
+        applyIptablesNatHook(net, iptArgs);
+        return this.executor.iptables.execute(iptArgs).output;
+      }
+      case 'iptables-save': return this.executor.iptables.executeSave();
       default: return null;
     }
   }
@@ -310,6 +329,7 @@ export class LinuxServer extends EndHost {
         port.setUp(false);
         return '';
       },
+      xfrm: self.xfrmCtx,
     };
   }
 

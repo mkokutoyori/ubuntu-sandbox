@@ -29,6 +29,7 @@ import {
   readDhcpLeaseFile,
   dhclientPsLines,
 } from './linux/commands';
+import { applyIptablesNatHook } from './linux/commands/net/IptablesNatHook';
 import type { LinuxNetKernel } from './linux/LinuxNetKernel';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
@@ -206,9 +207,11 @@ export class LinuxPC extends EndHost {
       }
       case 'iptables': {
         // Delegate to executor (which dispatches to LinuxIptablesManager)
-        // But we also handle NAT/MASQUERADE setup locally for routing
+        // The MASQUERADE / nat-table side-effect is captured by the
+        // shared `applyIptablesNatHook` helper (see PR 10) so both
+        // LinuxPC and LinuxServer share the same implementation.
         const iptArgs = noSudo.split(/\s+/).slice(1);
-        this.handleIptablesNat(iptArgs);
+        applyIptablesNatHook(this.netKernelForBridges(), iptArgs);
         const result = this.executor.iptables.execute(iptArgs);
         return result.output;
       }
@@ -258,6 +261,7 @@ export class LinuxPC extends EndHost {
       getPorts: () => this.ports,
       getDhcpClient: () => this.dhcpClient,
       autoDiscoverDHCPServers: () => this.autoDiscoverDHCPServers(),
+      addMasqueradeInterface: (iface: string) => { this.masqueradeOnInterfaces.add(iface); },
     } as unknown as LinuxNetKernel;
   }
 
@@ -302,26 +306,6 @@ export class LinuxPC extends EndHost {
       },
     } as unknown as LinuxCommandContext;
     return sysctlCommand.run(bridge, args) as string;
-  }
-
-  // ─── iptables NAT helper ──────────────────────────────────────
-
-  /**
-   * Extract MASQUERADE setup from iptables nat commands for routing.
-   * The actual iptables rule is handled by the iptables manager;
-   * this just hooks into the routing layer for NAT behavior.
-   */
-  private handleIptablesNat(args: string[]): void {
-    const table = args.indexOf('-t') !== -1 ? args[args.indexOf('-t') + 1] : 'filter';
-    if (table !== 'nat') return;
-    const chain = args.indexOf('-A') !== -1 ? args[args.indexOf('-A') + 1] : null;
-    if (chain === 'POSTROUTING') {
-      const jump = args.indexOf('-j') !== -1 ? args[args.indexOf('-j') + 1] : null;
-      const outIface = args.indexOf('-o') !== -1 ? args[args.indexOf('-o') + 1] : null;
-      if (jump === 'MASQUERADE' && outIface) {
-        this.masqueradeOnInterfaces.add(outIface);
-      }
-    }
   }
 
   // ─── IpNetworkContext adapter ──────────────────────────────────
