@@ -1375,21 +1375,40 @@ intriquées) :
   `LinuxMachine` et reprendra la surcharge `LinuxPC`.
 - ✅ `tsc --noEmit` : 0 erreur.
 
-### Phase 3 — Raccourcissement des sous-classes
+### Phase 3 — Raccourcissement des sous-classes ✅ **TERMINÉE**
 
-**PR 11. `LinuxPC` devient une coquille.**
-- Tout le corps de `LinuxPC` est supprimé.
-- Le constructeur appelle `super(... profile)` avec
-  `{ isServer: false, hostname: 'linux-pc', portCount: 4,
-     portPrefix: 'eth' }`.
-- Les tests de `LinuxPC` doivent continuer de passer sans
-  modification.
+**PR 11. `LinuxPC` devient une coquille.** ✅
+- ✅ Tout le corps de `LinuxPC` est supprimé (801 → 21 lignes).
+- ✅ Le constructeur appelle `super(... LINUX_PC_PROFILE)`.
+- ✅ Tous les tests `LinuxPC` passent sans modification.
 
-**PR 12. `LinuxServer` devient une coquille + `exposeSystemProcessApi`.**
-- Même chose pour `LinuxServer`.
-- `registerProcess` / `clearSystemProcesses` restent dans la sous-classe
-  (ou sont hissés dans `LinuxMachine` derrière le flag du profil).
-- Vérifier que les tests Oracle (`unit/database/`) passent.
+**PR 12. `LinuxServer` devient une coquille + `exposeSystemProcessApi`.** ✅
+- ✅ Tout le corps de `LinuxServer` est supprimé (405 → 33 lignes).
+- ✅ `registerProcess` / `clearSystemProcesses` restent dans la sous-classe
+  comme pass-throughs vers `executor`.
+- ✅ Tests Oracle (`unit/database/oracle-dbms-filesystem-coherence`) passent.
+
+**Corrections supplémentaires réalisées pendant la Phase 3 :**
+- ✅ Bug fix : les commandes `iptables` avec arguments entre guillemets
+  (ex. `--comment "Allow SSH"`) étaient cassées par le split naïf
+  `noSudo.split(/\s+/)`. Ajout d'un tokenizer quote-aware
+  (`LinuxMachine.tokenizeArgs`).
+- ✅ Bug fix : `iptables-save > file` et `iptables-restore < file`
+  n'étaient pas gérés (la redirection était interceptée avant le bash
+  interpreter). Maintenant les commandes avec redirections sont
+  correctement déléguées à l'executor.
+- ✅ La commande `ps` sur `LinuxMachine` augmente le résultat de
+  l'executor avec les lignes `dhclient` provenant d'`EndHost`,
+  corrigeant le comportement de l'ancien `LinuxPC` qui ne retournait
+  que les lignes dhclient et ignorait le processus list normal.
+- ✅ `LinuxMachine.executeCommand` gère désormais `iptables`,
+  `iptables-save`, `iptables-restore`, `ps`, `cat /var/lib/dhcp/...`,
+  et `rm /var/lib/dhcp/...` en plus des commandes du registre.
+- ✅ `tsc --noEmit` : 0 erreur.
+- ✅ `npx vitest run` : 7 fichiers en échec (identiques à avant la
+  refonte), 4305 tests passés, aucune régression.
+  Le fichier `linux-iptables.test.ts` qui échouait après PR 10 passe
+  désormais intégralement (128/128).
 
 ### Phase 4 — Nettoyage facultatif
 

@@ -15,10 +15,10 @@
  *   - co-located L7 daemons (`DnsService`) and `IpXfrmContext`
  *
  * ──────────────────────────────────────────────────────────────────────
- * PHASE 1 (current) — This class exists but is NOT yet instantiated
- * anywhere. `LinuxPC` and `LinuxServer` are untouched and keep working.
- * The class is intentionally self-sufficient so Phase 2 can migrate
- * commands into `commands/` one file at a time.
+ * PHASE 3 (current) — `LinuxPC` and `LinuxServer` are now thin shells
+ * extending this class. All behavior lives here; the subclasses only
+ * provide a `LinuxProfile` and (for `LinuxServer`) two Oracle API
+ * pass-throughs. See `linux_gap.md` §9, Phase 3.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -51,6 +51,9 @@ import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import {
   LinuxCommandRegistry,
   CORE_LINUX_COMMANDS,
+  readDhcpLeaseFile,
+  dhclientPsLines,
+  applyIptablesNatHook,
 } from './linux/commands';
 import {
   defaultLinuxFormatHelpers,
@@ -153,16 +156,30 @@ export abstract class LinuxMachine extends EndHost {
   // ─── Terminal entry point ────────────────────────────────────────────
 
   /**
-   * Execute a command string. The dispatch order is:
+   * Check whether the input contains any command that needs direct access
+   * to EndHost internals (and therefore cannot be delegated entirely to
+   * the bash interpreter).
+   */
+  private containsNetworkCommand(input: string): boolean {
+    if (this.commands.hasNetworkCommandIn(input)) return true;
+    // Additional commands that require EndHost access but are not in
+    // the registry because they need special dispatch logic.
+    if (input.includes('/var/lib/dhcp/')) return true;
+    const words = input.split(/[\s;|&]+/);
+    return words.some(w =>
+      w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' || w === 'ps',
+    );
+  }
+
+  /**
+   * Execute a command string. The dispatch order mirrors the original
+   * `LinuxPC.executeCommand()`:
    *
    *   1. If the line contains no network-context command, hand the whole
    *      line to the bash interpreter inside `LinuxCommandExecutor`.
    *   2. Otherwise, split on `;`, handle pipes, strip `sudo`, and
-   *      dispatch the head token through `LinuxCommandRegistry`.
-   *
-   * In Phase 1 the core registry is empty, so every input falls through
-   * to the bash interpreter — matching exactly what `LinuxCommandExecutor`
-   * already does for a typical command.
+   *      dispatch the head token through the registry or the built-in
+   *      network command handlers (iptables, ps, cat/rm of DHCP leases).
    */
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
@@ -171,7 +188,7 @@ export abstract class LinuxMachine extends EndHost {
     if (!trimmed) return '';
 
     // Fast path: no network command → straight to bash interpreter.
-    if (!this.commands.hasNetworkCommandIn(trimmed)) {
+    if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
     }
 
@@ -186,52 +203,107 @@ export abstract class LinuxMachine extends EndHost {
       return outputs.join('\n');
     }
 
-    // Piped command: route the head through the registry, then apply the
-    // remaining text filters through the bash interpreter.
+    // Piped command: route the head through the network dispatcher,
+    // then apply the remaining text filters through the bash interpreter.
     if (/\|(?!\|)/.test(trimmed)) {
       return this.executePipedCommand(trimmed);
     }
 
-    // Single command: strip sudo, look up in registry.
-    const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
-    const tokens = noSudo.split(/\s+/);
-    const head = tokens[0];
-    const cmd = this.commands.get(head);
-    if (cmd && cmd.needsNetworkContext) {
-      const result = await cmd.run(this.buildCommandContext(), tokens.slice(1));
-      return result;
-    }
+    // Single command: strip sudo, try network dispatch.
+    const networkResult = await this.tryNetworkCommand(trimmed);
+    if (networkResult !== null) return networkResult;
 
     // Otherwise, fall through to the bash interpreter.
     return this.executor.execute(trimmed);
   }
 
   /**
+   * Try to handle a command as a network-aware command. Returns null if
+   * the command should be delegated to the bash interpreter.
+   */
+  private async tryNetworkCommand(input: string): Promise<string | null> {
+    const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
+    const firstCmd = noSudo.split(/[\s|;&]/)[0];
+
+    // 1. Commands registered in the LinuxCommandRegistry
+    const cmd = this.commands.get(firstCmd);
+    if (cmd && cmd.needsNetworkContext) {
+      const tokens = noSudo.split(/\s+/);
+      return await cmd.run(this.buildCommandContext(), tokens.slice(1));
+    }
+
+    // 2. Commands that need special handling outside the registry
+    switch (firstCmd) {
+      case 'iptables': {
+        const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
+        applyIptablesNatHook(this.net, iptArgs);
+        return this.executor.iptables.execute(iptArgs).output;
+      }
+      case 'iptables-save': {
+        if (noSudo.includes('>')) return null; // redirect → let bash handle it
+        return this.executor.iptables.executeSave();
+      }
+      case 'iptables-restore': {
+        return null; // always let bash handle (needs < file redirection)
+      }
+      case 'ps': {
+        // Run the executor's ps first (shows init, bash, oracle, etc.)
+        // then append dhclient process lines from EndHost.
+        const basePs = this.executor.execute(input);
+        const extra = dhclientPsLines(this.net);
+        if (extra.length === 0) return basePs;
+        return basePs + '\n' + extra.join('\n');
+      }
+      case 'cat': {
+        const parts = noSudo.split(/\s+/);
+        const path = parts[1];
+        if (!path) return null;
+        const lease = readDhcpLeaseFile(this.net, path);
+        if (lease !== null) return lease;
+        return null;
+      }
+      case 'rm': {
+        if (noSudo.includes('/var/lib/dhcp/dhclient')) return '';
+        return null;
+      }
+      default: return null;
+    }
+  }
+
+  /**
    * Run the first segment of a pipeline through the network dispatcher,
    * then hand the remaining segments to the bash interpreter via a
-   * synthetic `echo <stdin> | <rest>` pipeline. Keeps the output semantics
-   * of `ifconfig | grep inet` without duplicating the filter logic.
+   * synthetic `printf <stdin> | <rest>` pipeline.
    */
   private async executePipedCommand(line: string): Promise<string> {
     const firstPipe = line.search(/\|(?!\|)/);
     const head = line.slice(0, firstPipe).trim();
     const tail = line.slice(firstPipe + 1).trim();
 
-    // Dispatch the head through the registry.
-    const noSudo = head.startsWith('sudo ') ? head.slice(5).trim() : head;
-    const tokens = noSudo.split(/\s+/);
-    const cmd = this.commands.get(tokens[0]);
-    if (!cmd || !cmd.needsNetworkContext) {
-      // Not actually a network command in the head — delegate everything.
+    const headResult = await this.tryNetworkCommand(head);
+    if (headResult === null) {
       return this.executor.execute(line);
     }
 
-    const headOutput = await cmd.run(this.buildCommandContext(), tokens.slice(1));
-
-    // Feed headOutput into the tail via the bash interpreter.
-    // Uses printf because `echo -n` behavior differs across shells.
-    const escaped = headOutput.replace(/'/g, "'\\''");
+    const escaped = headResult.replace(/'/g, "'\\''");
     return this.executor.execute(`printf '%s' '${escaped}' | ${tail}`);
+  }
+
+  /**
+   * Quote-aware argument tokenizer. Handles double and single quotes
+   * so that e.g. `--comment "Allow SSH"` stays as a single token.
+   */
+  private static tokenizeArgs(input: string): string[] {
+    const tokens: string[] = [];
+    let cur = '', inQ = false, qc = '';
+    for (const ch of input) {
+      if (inQ) { if (ch === qc) inQ = false; else cur += ch; }
+      else if (ch === '"' || ch === "'") { inQ = true; qc = ch; }
+      else if (ch === ' ' || ch === '\t') { if (cur) { tokens.push(cur); cur = ''; } }
+      else cur += ch;
+    }
+    if (cur) tokens.push(cur);
+    return tokens;
   }
 
   // ─── IpNetworkContext adapter (for the `ip` command) ────────────────
