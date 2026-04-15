@@ -21,8 +21,9 @@ import { sysctlCommand } from './net/Sysctl';
 import { arpCommand } from './net/Arp';
 import { ifconfigCommand } from './net/Ifconfig';
 import { pingCommand } from './net/Ping';
+import { tracerouteCommand } from './net/Traceroute';
 
-export { sysctlCommand, arpCommand, ifconfigCommand, pingCommand };
+export { sysctlCommand, arpCommand, ifconfigCommand, pingCommand, tracerouteCommand };
 
 /**
  * Core commands registered on every `LinuxMachine`.
@@ -35,4 +36,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   arpCommand,
   ifconfigCommand,
   pingCommand,
+  tracerouteCommand,
 ];

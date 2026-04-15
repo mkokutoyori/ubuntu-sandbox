@@ -1307,8 +1307,15 @@ intriquées) :
   + Network is unreachable + statistics block ».
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 7. `commands/net/Traceroute.ts`.**
-- Même schéma que PR 6.
+**PR 7. `commands/net/Traceroute.ts`.** ✅
+- ✅ Extrait `cmdTraceroute` → `commands/net/Traceroute.ts`. Drive
+  `ctx.net.traceroute(...)` et `ctx.fmt.formatTracerouteOutput(...)`.
+- ✅ Enregistré dans `CORE_LINUX_COMMANDS`.
+- ✅ `LinuxPC.cmdTraceroute` réduit à un bridge minimal.
+- ✅ `LinuxServer.tryNetworkCommand` reconnaît maintenant
+  `traceroute` et délègue au même bridge → ferme la régression
+  silencieuse correspondante (§4).
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 8. `commands/dns/*` + `commands/dns/Dnsmasq.ts`.**
 - Extraire `executeDig`, `executeNslookup`, `executeHost` de

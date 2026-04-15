@@ -13,7 +13,7 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
-import { arpCommand, ifconfigCommand, pingCommand } from './linux/commands';
+import { arpCommand, ifconfigCommand, pingCommand, tracerouteCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
@@ -62,9 +62,25 @@ export class LinuxServer extends EndHost {
     switch (cmd) {
       case 'ifconfig': return this.cmdIfconfig(parts.slice(1));
       case 'ping': return await this.cmdPing(parts.slice(1));
+      case 'traceroute': return await this.cmdTraceroute(parts.slice(1));
       case 'arp': return this.cmdArp(parts.slice(1));
       default: return null;
     }
+  }
+
+  /**
+   * Delegates to the extracted `tracerouteCommand`. Phase 2 / PR 7:
+   * `LinuxServer` gains a real traceroute (was routed to the
+   * executor stub before).
+   */
+  private async cmdTraceroute(args: string[]): Promise<string> {
+    const bridge = {
+      net: {
+        traceroute: (target: IPAddress) => this.executeTraceroute(target),
+      },
+      fmt: defaultLinuxFormatHelpers,
+    } as unknown as LinuxCommandContext;
+    return await tracerouteCommand.run(bridge, args);
   }
 
   /**

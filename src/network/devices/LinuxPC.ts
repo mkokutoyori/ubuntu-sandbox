@@ -15,7 +15,7 @@ import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
-import { sysctlCommand, arpCommand, ifconfigCommand, pingCommand } from './linux/commands';
+import { sysctlCommand, arpCommand, ifconfigCommand, pingCommand, tracerouteCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
@@ -561,28 +561,17 @@ export class LinuxPC extends EndHost {
 
   // ─── traceroute ────────────────────────────────────────────────
 
+  /**
+   * Delegates to the extracted `tracerouteCommand`. Phase 2 bridge.
+   */
   private async cmdTraceroute(args: string[]): Promise<string> {
-    if (args.length === 0) return 'Usage: traceroute <destination>';
-
-    let targetIP: IPAddress;
-    try { targetIP = new IPAddress(args[0]); }
-    catch { return `traceroute: unknown host ${args[0]}`; }
-
-    const hops = await this.executeTraceroute(targetIP);
-
-    if (hops.length === 0) {
-      return `traceroute to ${targetIP}, 30 hops max, 60 byte packets\n * * * Network is unreachable`;
-    }
-
-    const lines = [`traceroute to ${targetIP}, 30 hops max, 60 byte packets`];
-    for (const hop of hops) {
-      if (hop.timeout) {
-        lines.push(` ${hop.hop}  * * *`);
-      } else {
-        lines.push(` ${hop.hop}  ${hop.ip}  ${hop.rttMs!.toFixed(3)} ms`);
-      }
-    }
-    return lines.join('\n');
+    const bridge = {
+      net: {
+        traceroute: (target: IPAddress) => this.executeTraceroute(target),
+      },
+      fmt: defaultLinuxFormatHelpers,
+    } as unknown as LinuxCommandContext;
+    return await tracerouteCommand.run(bridge, args);
   }
 
   // ─── Firewall filtering ────────────────────────────────────────
