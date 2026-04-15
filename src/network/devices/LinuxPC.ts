@@ -8,14 +8,14 @@
  * The `ip` command is handled by LinuxIpCommand via LinuxCommandExecutor.
  */
 
-import { EndHost, PingResult, HostRouteEntry } from './EndHost';
+import { EndHost, HostRouteEntry } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
 import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
-import { sysctlCommand, arpCommand, ifconfigCommand } from './linux/commands';
+import { sysctlCommand, arpCommand, ifconfigCommand, pingCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
@@ -523,69 +523,20 @@ export class LinuxPC extends EndHost {
 
   // ─── ping ──────────────────────────────────────────────────────
 
+  /**
+   * Delegates to the extracted `pingCommand`. Phase 2 bridge — uses
+   * the real `EndHost` ICMP path through `executePingSequence` and
+   * the shared GNU-style formatter.
+   */
   private async cmdPing(args: string[]): Promise<string> {
-    let count = 4;
-    let ttl: number | undefined;
-    let targetStr = '';
-
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10); i++; }
-      else if (args[i] === '-t' && args[i + 1]) { ttl = parseInt(args[i + 1], 10); i++; }
-      else if (!args[i].startsWith('-')) { targetStr = args[i]; }
-    }
-
-    if (!targetStr) return 'Usage: ping [-c count] [-t ttl] <destination>';
-
-    let targetIP: IPAddress;
-    try { targetIP = new IPAddress(targetStr); }
-    catch { return `ping: ${targetStr}: Name or service not known`; }
-
-    const results = await this.executePingSequence(targetIP, count, 2000, ttl);
-    return this.formatPingOutput(targetIP, count, results);
-  }
-
-  private formatPingOutput(targetIP: IPAddress, count: number, results: PingResult[]): string {
-    const lines: string[] = [];
-    lines.push(`PING ${targetIP} (${targetIP}) 56(84) bytes of data.`);
-
-    const received = results.filter(r => r.success);
-    const failed = count - received.length;
-
-    if (results.length === 0) {
-      lines.push(`connect: Network is unreachable`);
-    } else {
-      for (const r of results) {
-        if (r.success) {
-          lines.push(`64 bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
-        } else if (r.error) {
-          // ICMP error messages from routers
-          if (r.error.includes('Time to live exceeded')) {
-            const match = r.error.match(/from ([\d.]+)/);
-            const fromIP = match ? match[1] : 'unknown';
-            lines.push(`From ${fromIP} icmp_seq=${r.seq} Time to live exceeded`);
-          } else if (r.error.includes('Destination unreachable')) {
-            const match = r.error.match(/from ([\d.]+)/);
-            const fromIP = match ? match[1] : 'unknown';
-            lines.push(`From ${fromIP} icmp_seq=${r.seq} Destination Host Unreachable`);
-          }
-        }
-      }
-    }
-
-    lines.push('');
-    lines.push(`--- ${targetIP} ping statistics ---`);
-    lines.push(`${count} packets transmitted, ${received.length} received, ${Math.round((failed / count) * 100)}% packet loss`);
-
-    if (received.length > 0) {
-      const rtts = received.map(r => r.rttMs);
-      const min = Math.min(...rtts).toFixed(3);
-      const max = Math.max(...rtts).toFixed(3);
-      const avg = (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(3);
-      const mdev = (Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length)).toFixed(3);
-      lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
-    }
-
-    return lines.join('\n');
+    const bridge = {
+      net: {
+        pingSequence: (target: IPAddress, count: number, timeoutMs?: number, ttl?: number) =>
+          this.executePingSequence(target, count, timeoutMs ?? 2000, ttl),
+      },
+      fmt: defaultLinuxFormatHelpers,
+    } as unknown as LinuxCommandContext;
+    return await pingCommand.run(bridge, args);
   }
 
   // ─── arp ───────────────────────────────────────────────────────

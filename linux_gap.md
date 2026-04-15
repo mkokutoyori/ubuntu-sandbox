@@ -1288,13 +1288,24 @@ intriquées) :
   sont supprimés de la même façon.
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 6. `commands/net/Ping.ts`.**
-- ⚠️ Passage sensible : `LinuxServer` gagne une *vraie* commande ping.
-  Les tests qui s'attendaient au stub canned (`LinuxCommandExecutor`)
-  doivent être mis à jour pour utiliser la topologie réelle.
-- `LinuxCommandExecutor.dispatch` perd sa branche `ping` stubée —
-  ou la conserve comme fallback pour les devices qui ne sont pas des
-  `LinuxMachine`.
+**PR 6. `commands/net/Ping.ts`.** ✅
+- ✅ Extrait `cmdPing` → `commands/net/Ping.ts` (`pingCommand`, async).
+  Drive `ctx.net.pingSequence(...)` et `ctx.fmt.formatPingOutput(...)`
+  → la sortie sort directement des helpers de Phase 1.
+- ✅ Enregistré dans `CORE_LINUX_COMMANDS`.
+- ✅ `LinuxPC.cmdPing` + `formatPingOutput` supprimés (delegate via
+  bridge minimal).
+- ⚠️ ✅ **Régression silencieuse fermée** : `LinuxServer` ne route
+  plus `ping` vers le stub de `LinuxCommandExecutor`. Sa méthode
+  `tryNetworkCommand` est devenue async, et `cmdPing` traverse
+  maintenant la pile `EndHost` réelle (ICMP, ARP, routage). Voir §4.
+- ✅ `LinuxCommandExecutor` conserve sa branche `ping` stubée mais
+  elle n'est plus atteignable depuis une `LinuxMachine` (utile encore
+  pour Cisco/Huawei). Sera marquée `@deprecated` en PR 13.
+- ✅ Tests `linux-commands-and-oracle-tools.test.ts` mis à jour : les
+  assertions sur `ping` sur un serveur isolé deviennent « PING header
+  + Network is unreachable + statistics block ».
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 7. `commands/net/Traceroute.ts`.**
 - Même schéma que PR 6.

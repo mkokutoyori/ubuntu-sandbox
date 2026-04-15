@@ -13,7 +13,7 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
-import { arpCommand, ifconfigCommand } from './linux/commands';
+import { arpCommand, ifconfigCommand, pingCommand } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
@@ -43,7 +43,7 @@ export class LinuxServer extends EndHost {
     if (!trimmed) return '';
 
     // Try networking commands first (they need access to EndHost internals)
-    const networkResult = this.tryNetworkCommand(trimmed);
+    const networkResult = await this.tryNetworkCommand(trimmed);
     if (networkResult !== null) return networkResult;
 
     // Delegate to Linux command executor (handles ip, filesystem, etc.)
@@ -53,7 +53,7 @@ export class LinuxServer extends EndHost {
   /**
    * Try to handle as a networking command. Returns null if not a network command.
    */
-  private tryNetworkCommand(input: string): string | null {
+  private async tryNetworkCommand(input: string): Promise<string | null> {
     // Strip sudo for network commands too
     const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
     const parts = noSudo.split(/\s+/);
@@ -61,10 +61,27 @@ export class LinuxServer extends EndHost {
 
     switch (cmd) {
       case 'ifconfig': return this.cmdIfconfig(parts.slice(1));
-      case 'ping': return null; // Let executor handle
+      case 'ping': return await this.cmdPing(parts.slice(1));
       case 'arp': return this.cmdArp(parts.slice(1));
       default: return null;
     }
+  }
+
+  /**
+   * Delegates to the extracted `pingCommand`. Phase 2 / PR 6:
+   * `LinuxServer` now uses the **real** `EndHost` ICMP path instead
+   * of falling back to the canned stub of `LinuxCommandExecutor`.
+   * Closes the silent regression documented in `linux_gap.md` §4.
+   */
+  private async cmdPing(args: string[]): Promise<string> {
+    const bridge = {
+      net: {
+        pingSequence: (target: IPAddress, count: number, timeoutMs?: number, ttl?: number) =>
+          this.executePingSequence(target, count, timeoutMs ?? 2000, ttl),
+      },
+      fmt: defaultLinuxFormatHelpers,
+    } as unknown as LinuxCommandContext;
+    return await pingCommand.run(bridge, args);
   }
 
   // ─── Networking commands ──────────────────────────────────────────
