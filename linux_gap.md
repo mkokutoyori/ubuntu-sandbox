@@ -1410,20 +1410,27 @@ intriquées) :
   Le fichier `linux-iptables.test.ts` qui échouait après PR 10 passe
   désormais intégralement (128/128).
 
-### Phase 4 — Nettoyage facultatif
+### Phase 4 — Nettoyage facultatif ✅ **TERMINÉE** (PR 13)
 
-**PR 13. Stub ping/traceroute/dig de `LinuxCommandExecutor`.**
-- Ces stubs (`LinuxCommandExecutor.ts:661-677`) étaient là pour fournir
-  une réponse à `bash -c 'ping foo'`. Après la migration, toute
-  `LinuxMachine` route d'abord vers `commands/`, donc les stubs ne
-  sont utilisés qu'en fallback.
-- Supprimer ou marquer `@deprecated` selon que d'autres classes
-  (Cisco, Huawei) les utilisent ou non.
+**PR 13. Stub ping/traceroute/dig de `LinuxCommandExecutor`.** ✅
+- ✅ Vérifié : aucune classe Cisco/Huawei/Windows n'instancie
+  `LinuxCommandExecutor`. Les stubs ne sont utilisés que comme
+  fallback pour des scripts bash exécutés dans le VFS.
+- ✅ Les 5 stubs (`ping`, `traceroute`, `nslookup`, `dig`, `host`)
+  sont marqués `@deprecated` avec un commentaire explicatif. Ils
+  restent en place pour les scripts shell qui pourraient les invoquer
+  via l'interpréteur bash interne.
+- ✅ `tsc --noEmit` : 0 erreur. Tests : aucune régression (7/116
+  fichiers en échec, identiques à l'état pré-refonte).
 
-**PR 14. Migration cosmétique des commandes userspace.**
-- Port progressif de `LinuxFileCommands`, `LinuxTextCommands`,
-  `LinuxSearchCommands`, … vers le format `LinuxCommand`. Purement
-  cosmétique, aucun changement fonctionnel.
+**PR 14. Migration cosmétique des commandes userspace.** ⏳ Reporté.
+- Les 8 modules (`LinuxFileCommands`, `LinuxTextCommands`,
+  `LinuxSearchCommands`, `LinuxPermCommands`, `LinuxUserCommands`,
+  `LinuxSystemCommands`, `LinuxNetCommands`, `LinuxProcessCommands`)
+  fonctionnent correctement dans `LinuxCommandExecutor.dispatch()`.
+- Le port vers le format `LinuxCommand` n'apporterait aucun gain
+  fonctionnel (purement stylistique). Reporté indéfiniment — à
+  réaliser progressivement au fil des besoins si nécessaire.
 
 ### 9.1 Critères de validation continue
 
