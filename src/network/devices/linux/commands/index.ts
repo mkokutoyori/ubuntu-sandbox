@@ -26,6 +26,9 @@ import { digCommand } from './dns/Dig';
 import { nslookupCommand } from './dns/Nslookup';
 import { hostCommand } from './dns/Host';
 import { dnsmasqCommand } from './dns/Dnsmasq';
+import { dhclientCommand } from './dhcp/Dhclient';
+import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
+import { dhclientPsLines } from './dhcp/PsDhclientAugment';
 
 export {
   sysctlCommand,
@@ -37,6 +40,10 @@ export {
   nslookupCommand,
   hostCommand,
   dnsmasqCommand,
+  dhclientCommand,
+  readDhcpLeaseFile,
+  isDhcpLeasePath,
+  dhclientPsLines,
 };
 
 /**
@@ -55,4 +62,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nslookupCommand,
   hostCommand,
   dnsmasqCommand,
+  dhclientCommand,
 ];

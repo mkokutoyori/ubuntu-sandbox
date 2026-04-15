@@ -1334,12 +1334,25 @@ intriquées) :
   peut **enfin** être serveur DNS, ferme la régression §4.
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 9. `commands/dhcp/Dhclient.ts` + `DhcpLeaseFile.ts` +
-`commands/ps/PsDhclientAugment.ts`.**
-- ⚠️ Passage le plus sensible : accès profond au `dhcpClient` de
-  `EndHost`. La façade `LinuxNetKernel` doit exposer
-  `getDhcpClient()`, `autoDiscoverDHCPServers()`.
-- Après ce PR, un `LinuxServer` peut être client DHCP.
+**PR 9. `commands/dhcp/*`.** ✅
+- ✅ Créés sous `commands/dhcp/` :
+  - `Dhclient.ts` (`dhclientCommand`) — extrait verbatim de
+    `LinuxPC.cmdDhclient`, utilise `ctx.net.getDhcpClient()` +
+    `autoDiscoverDHCPServers()`.
+  - `DhcpLeaseFile.ts` — helper pur (`readDhcpLeaseFile`,
+    `isDhcpLeasePath`) appelé depuis le hook `cat` plutôt qu'enregistré
+    comme commande (cf §8.6).
+  - `PsDhclientAugment.ts` — helper pur (`dhclientPsLines`) appelé
+    depuis `cmdPs` pour injecter les lignes `dhclient <iface>`.
+- ✅ `dhclientCommand` enregistré dans `CORE_LINUX_COMMANDS`.
+- ✅ `LinuxPC` : `cmdDhclient` et `discoverDHCPServersBroadcast`
+  supprimés ; `cmdPs` réduit à un appel à `dhclientPsLines` ;
+  l'interception `cat /var/lib/dhcp/...` passe par `readDhcpLeaseFile`.
+- ✅ **`LinuxServer` gagne `dhclient`** via le même bridge → un
+  serveur peut désormais être client DHCP, ferme la régression §4.
+  La cat lease intercept et l'augmentation `ps` resteront partielles
+  jusqu'à la Phase 3 (le serveur n'a pas encore de hook `cat`/`ps`).
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 10. `commands/net/IptablesNatHook.ts` + `IpXfrm.ts`.**
 - Ajoute le hook MASQUERADE sur toutes les `LinuxMachine`.

@@ -22,8 +22,10 @@ import {
   nslookupCommand,
   hostCommand,
   dnsmasqCommand,
+  dhclientCommand,
 } from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
+import type { LinuxNetKernel } from './linux/LinuxNetKernel';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 import { DnsService } from './linux/LinuxDnsService';
 
@@ -84,8 +86,22 @@ export class LinuxServer extends EndHost {
       case 'nslookup': return nslookupCommand.run(this.dnsBridge(), parts.slice(1)) as string;
       case 'host': return hostCommand.run(this.dnsBridge(), parts.slice(1)) as string;
       case 'dnsmasq': return dnsmasqCommand.run(this.dnsBridge(), parts.slice(1)) as string;
+      case 'dhclient': return dhclientCommand.run(this.dhcpBridge(), parts.slice(1)) as string;
       default: return null;
     }
+  }
+
+  /**
+   * Minimal `LinuxNetKernel` shim used by the DHCP command. Only the
+   * three methods `dhclientCommand` actually touches are defined.
+   */
+  private dhcpBridge(): LinuxCommandContext {
+    const net = {
+      getPorts: () => this.ports,
+      getDhcpClient: () => this.dhcpClient,
+      autoDiscoverDHCPServers: () => this.autoDiscoverDHCPServers(),
+    } as unknown as LinuxNetKernel;
+    return { net } as unknown as LinuxCommandContext;
   }
 
   /**

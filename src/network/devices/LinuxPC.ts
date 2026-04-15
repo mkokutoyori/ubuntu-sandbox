@@ -25,7 +25,11 @@ import {
   nslookupCommand,
   hostCommand,
   dnsmasqCommand,
+  dhclientCommand,
+  readDhcpLeaseFile,
+  dhclientPsLines,
 } from './linux/commands';
+import type { LinuxNetKernel } from './linux/LinuxNetKernel';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
@@ -174,7 +178,7 @@ export class LinuxPC extends EndHost {
       }
       case 'dhclient': {
         const parts = noSudo.split(/\s+/);
-        return this.cmdDhclient(parts.slice(1));
+        return dhclientCommand.run(this.dhcpBridge(), parts.slice(1)) as string;
       }
       case 'ps': {
         // Handle ps (return all DHCP-related processes)
@@ -186,18 +190,8 @@ export class LinuxPC extends EndHost {
         const path = parts[1];
         if (!path) return null;
         // Intercept DHCP lease file reads
-        const leaseMatch = path.match(/\/var\/lib\/dhcp\/dhclient\.(\w+)\.leases/);
-        if (leaseMatch) {
-          return this.dhcpClient.formatLeaseFile(leaseMatch[1]);
-        }
-        if (path === '/var/lib/dhcp/dhclient.leases') {
-          const outputs: string[] = [];
-          for (const [name] of this.ports) {
-            const lease = this.dhcpClient.formatLeaseFile(name);
-            if (lease) outputs.push(lease);
-          }
-          return outputs.join('\n\n');
-        }
+        const lease = readDhcpLeaseFile(this.netKernelForBridges(), path);
+        if (lease !== null) return lease;
         return null; // let executor handle other cat commands
       }
       case 'rm': {
@@ -240,104 +234,35 @@ export class LinuxPC extends EndHost {
 
   // ─── dhclient ───────────────────────────────────────────────────
 
-  private cmdDhclient(args: string[]): string {
-    let verbose = false;
-    let daemon = false;
-    let release = false;
-    let exit = false;
-    let wait = false;
-    let hasTimeout = false;
-    let timeout = 30;
-    let specificServer: string | null = null;
-    let iface = '';
-
-    for (let i = 0; i < args.length; i++) {
-      switch (args[i]) {
-        case '-v': verbose = true; break;
-        case '-d': daemon = true; break;
-        case '-r': release = true; break;
-        case '-x': exit = true; break;
-        case '-w': wait = true; break;
-        case '-s':
-          if (args[i + 1]) { specificServer = args[i + 1]; i++; }
-          break;
-        case '-t':
-          hasTimeout = true;
-          if (args[i + 1]) { timeout = parseInt(args[i + 1], 10); i++; }
-          break;
-        default:
-          if (!args[i].startsWith('-')) iface = args[i];
-          break;
-      }
-    }
-
-    // dhclient -x: stop dhclient process and release lease
-    if (exit) {
-      if (iface) {
-        this.dhcpClient.stopProcess(iface);
-        this.dhcpClient.releaseLease(iface);
-        return '';
-      }
-      // -x without interface: stop all
-      for (const [name] of this.ports) {
-        this.dhcpClient.stopProcess(name);
-        this.dhcpClient.releaseLease(name);
-      }
-      return '';
-    }
-
-    // dhclient -r without interface: release all interfaces
-    if (release && !iface) {
-      const outputs: string[] = [];
-      for (const [name] of this.ports) {
-        const result = this.dhcpClient.releaseLease(name);
-        if (result) outputs.push(result);
-      }
-      return outputs.join('\n');
-    }
-
-    if (!iface) return 'Usage: dhclient [-v] [-d] [-r] [-x] [-s server] [-w] [-t timeout] <interface>';
-    if (!this.ports.has(iface)) return `RTNETLINK answers: No such device ${iface}`;
-
-    if (release) {
-      return this.dhcpClient.releaseLease(iface);
-    }
-
-    // Discover DHCP servers via broadcast (simulated through topology)
-    this.discoverDHCPServersBroadcast(specificServer);
-
-    const opts: { verbose?: boolean; timeout?: number; daemon?: boolean } = { verbose, daemon };
-    if (hasTimeout) opts.timeout = timeout;
-    if (wait) opts.timeout = opts.timeout || 60; // -w: wait indefinitely (use long timeout)
-    return this.dhcpClient.requestLease(iface, opts);
-  }
+  // ─── ps (dhclient augmentation) ─────────────────────────────────
 
   /**
-   * Discover DHCP servers via broadcast simulation.
-   * Sends DHCPDISCOVER as broadcast (255.255.255.255 port 67) — simulated
-   * by traversing connected topology (since we can't do real L2 broadcast).
-   * If a specific server IP is given (-s flag), only register that server.
+   * Renders the per-interface `dhclient` lines for `ps`. The real
+   * `ps` output (init, oraclesvc, …) lives in `LinuxCommandExecutor`;
+   * this method only injects the DHCP lines that the executor doesn't
+   * know about.
    */
-  private discoverDHCPServersBroadcast(specificServer: string | null = null): void {
-    this.autoDiscoverDHCPServers();
-    // If -s flag specified, filter to only the specific server
-    if (specificServer) {
-      const servers = (this.dhcpClient as any).connectedServers as Array<{ server: any; serverIP: string }>;
-      const filtered = servers.filter(s => s.serverIP === specificServer);
-      (this.dhcpClient as any).connectedServers = filtered.length > 0 ? filtered : servers;
-    }
+  private cmdPs(_args: string[]): string {
+    return dhclientPsLines(this.netKernelForBridges()).join('\n');
   }
 
-  // ─── ps ─────────────────────────────────────────────────────────
+  // ─── DHCP bridges ───────────────────────────────────────────────
 
-  private cmdPs(args: string[]): string {
-    const lines: string[] = [];
-    for (const [name] of this.ports) {
-      if (this.dhcpClient.isProcessRunning(name)) {
-        lines.push(`root     ${1000 + Math.floor(Math.random() * 9000)}  0.0  0.1  5432  2100 ?  Ss  00:00  0:00 dhclient ${name}`);
-      }
-    }
-    return lines.join('\n');
+  /**
+   * Minimal `LinuxNetKernel` shim used by all DHCP commands and
+   * lease-file / ps helpers. Only the four methods they touch are
+   * defined; everything else is left undefined and never read.
+   */
+  private netKernelForBridges(): LinuxNetKernel {
+    return {
+      getPorts: () => this.ports,
+      getDhcpClient: () => this.dhcpClient,
+      autoDiscoverDHCPServers: () => this.autoDiscoverDHCPServers(),
+    } as unknown as LinuxNetKernel;
+  }
+
+  private dhcpBridge(): LinuxCommandContext {
+    return { net: this.netKernelForBridges() } as unknown as LinuxCommandContext;
   }
 
   // ─── ifconfig ──────────────────────────────────────────────────
