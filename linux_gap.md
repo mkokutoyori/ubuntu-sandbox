@@ -1317,15 +1317,22 @@ intriquées) :
   silencieuse correspondante (§4).
 - ✅ `tsc --noEmit` : 0 erreur.
 
-**PR 8. `commands/dns/*` + `commands/dns/Dnsmasq.ts`.**
-- Extraire `executeDig`, `executeNslookup`, `executeHost` de
-  `LinuxDnsService.ts` en `Dig.ts`, `Nslookup.ts`, `Host.ts`.
-- `LinuxDnsService.ts` ne contient plus que le démon (`DnsService`).
-- `dnsmasqCommand` devient accessible depuis n'importe quelle
-  `LinuxMachine` → un `LinuxServer` peut maintenant être serveur DNS.
-- Ajouter le champ `dnsService` et `dnsResolverIP` dans `LinuxMachine`.
-- Tests : vérifier qu'un `LinuxServer` démarre bien dnsmasq et
-  répond aux requêtes venant d'un `LinuxPC` client.
+**PR 8. `commands/dns/*` + `commands/dns/Dnsmasq.ts`.** ✅
+- ✅ Créés sous `commands/dns/` : `Dig.ts`, `Nslookup.ts`, `Host.ts`,
+  `Dnsmasq.ts`, plus l'helper interne `resolverIP.ts`
+  (`readResolverIP(executor)`). Les wrappers délèguent à
+  `executeDig` / `executeNslookup` / `executeHost` qui restent dans
+  `LinuxDnsService.ts` (où vit aussi le démon `DnsService`).
+- ✅ Enregistrés dans `CORE_LINUX_COMMANDS`.
+- ✅ `LinuxPC` : dispatch `dig` / `nslookup` / `host` / `dnsmasq`
+  passe par un nouveau `dnsBridge()`. Les méthodes locales
+  `cmdDnsmasq`, `getResolverIP` et le champ `dnsResolverIP` sont
+  supprimés.
+- ✅ **`LinuxServer` gagne `dig`, `nslookup`, `host` et `dnsmasq`** —
+  un nouveau champ public `dnsService = new DnsService()` permet à
+  `findDnsServerByIP(...)` de découvrir le serveur. Un `LinuxServer`
+  peut **enfin** être serveur DNS, ferme la régression §4.
+- ✅ `tsc --noEmit` : 0 erreur.
 
 **PR 9. `commands/dhcp/Dhclient.ts` + `DhcpLeaseFile.ts` +
 `commands/ps/PsDhclientAugment.ts`.**

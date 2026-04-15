@@ -13,13 +13,29 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry } from './linux/LinuxIpCommand';
-import { arpCommand, ifconfigCommand, pingCommand, tracerouteCommand } from './linux/commands';
+import {
+  arpCommand,
+  ifconfigCommand,
+  pingCommand,
+  tracerouteCommand,
+  digCommand,
+  nslookupCommand,
+  hostCommand,
+  dnsmasqCommand,
+} from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
+import { DnsService } from './linux/LinuxDnsService';
 
 export class LinuxServer extends EndHost {
   protected readonly defaultTTL = 64;
   private executor: LinuxCommandExecutor;
+  /**
+   * DNS service (dnsmasq) — Phase 2 / PR 8: a `LinuxServer` can now
+   * act as a DNS server, finally honouring its name. Public so that
+   * other devices can resolve through `findDnsServerByIP(...)`.
+   */
+  public dnsService: DnsService = new DnsService();
 
   constructor(type: DeviceType = 'linux-server', name: string = 'Server', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -64,8 +80,22 @@ export class LinuxServer extends EndHost {
       case 'ping': return await this.cmdPing(parts.slice(1));
       case 'traceroute': return await this.cmdTraceroute(parts.slice(1));
       case 'arp': return this.cmdArp(parts.slice(1));
+      case 'dig': return digCommand.run(this.dnsBridge(), parts.slice(1)) as string;
+      case 'nslookup': return nslookupCommand.run(this.dnsBridge(), parts.slice(1)) as string;
+      case 'host': return hostCommand.run(this.dnsBridge(), parts.slice(1)) as string;
+      case 'dnsmasq': return dnsmasqCommand.run(this.dnsBridge(), parts.slice(1)) as string;
       default: return null;
     }
+  }
+
+  /**
+   * Minimal `LinuxCommandContext` shim used by all four DNS commands.
+   */
+  private dnsBridge(): LinuxCommandContext {
+    return {
+      executor: this.executor,
+      dnsService: this.dnsService,
+    } as unknown as LinuxCommandContext;
   }
 
   /**

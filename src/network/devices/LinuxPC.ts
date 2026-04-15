@@ -14,8 +14,18 @@ import { IPAddress, SubnetMask, DeviceType, IPv4Packet } from '../core/types';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { IpNetworkContext, IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpXfrmContext } from './linux/LinuxIpCommand';
-import { DnsService, executeDig, executeNslookup, executeHost } from './linux/LinuxDnsService';
-import { sysctlCommand, arpCommand, ifconfigCommand, pingCommand, tracerouteCommand } from './linux/commands';
+import { DnsService } from './linux/LinuxDnsService';
+import {
+  sysctlCommand,
+  arpCommand,
+  ifconfigCommand,
+  pingCommand,
+  tracerouteCommand,
+  digCommand,
+  nslookupCommand,
+  hostCommand,
+  dnsmasqCommand,
+} from './linux/commands';
 import type { LinuxCommandContext } from './linux/commands';
 import { defaultLinuxFormatHelpers } from './linux/LinuxFormatHelpers';
 
@@ -26,8 +36,6 @@ export class LinuxPC extends EndHost {
   private xfrmCtx: IpXfrmContext = { states: [], policies: [] };
   /** DNS service (dnsmasq) — active when this machine acts as DNS server */
   public dnsService: DnsService = new DnsService();
-  /** Configured DNS resolver IP (from /etc/resolv.conf) */
-  private dnsResolverIP: string = '';
 
   constructor(type: DeviceType = 'linux-pc', name: string = 'LinuxPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -214,19 +222,16 @@ export class LinuxPC extends EndHost {
         return this.executor.iptables.executeSave();
       }
       case 'dig': {
-        const parts = noSudo.split(/\s+/).slice(1);
-        return executeDig(parts, this.getResolverIP());
+        return digCommand.run(this.dnsBridge(), noSudo.split(/\s+/).slice(1)) as string;
       }
       case 'nslookup': {
-        const parts = noSudo.split(/\s+/).slice(1);
-        return executeNslookup(parts, this.getResolverIP());
+        return nslookupCommand.run(this.dnsBridge(), noSudo.split(/\s+/).slice(1)) as string;
       }
       case 'host': {
-        const parts = noSudo.split(/\s+/).slice(1);
-        return executeHost(parts, this.getResolverIP());
+        return hostCommand.run(this.dnsBridge(), noSudo.split(/\s+/).slice(1)) as string;
       }
       case 'dnsmasq': {
-        return this.cmdDnsmasq(noSudo.split(/\s+/).slice(1));
+        return dnsmasqCommand.run(this.dnsBridge(), noSudo.split(/\s+/).slice(1)) as string;
       }
       default:
         return null;
@@ -665,43 +670,17 @@ export class LinuxPC extends EndHost {
   setUserGecos(username: string, fullName: string, room: string, workPhone: string, homePhone: string, other: string): void { this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other); }
   canSudo(): boolean { return this.executor.canSudo(); }
 
-  // ─── DNS helpers ────────────────────────────────────────────────
+  // ─── DNS bridge ────────────────────────────────────────────────
 
-  /** Read DNS resolver from /etc/resolv.conf in virtual filesystem */
-  private getResolverIP(): string {
-    if (this.dnsResolverIP) return this.dnsResolverIP;
-    const content = this.executor.readFile('/etc/resolv.conf');
-    if (content) {
-      const match = content.match(/nameserver\s+(\S+)/);
-      if (match) return match[1];
-    }
-    return '';
-  }
-
-  /** Handle dnsmasq startup: parse config file and start DNS service */
-  private cmdDnsmasq(args: string[]): string {
-    let configFile = '/etc/dnsmasq.conf';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-C' && args[i + 1]) {
-        configFile = args[i + 1]; i++;
-      }
-    }
-
-    // Read config from virtual filesystem
-    const config = this.executor.readFile(configFile);
-    if (!config) return `dnsmasq: failed to read ${configFile}`;
-
-    // Check for addn-hosts directive
-    const hostsMatch = config.match(/addn-hosts=(\S+)/);
-    if (hostsMatch) {
-      const hostsContent = this.executor.readFile(hostsMatch[1]);
-      if (hostsContent) {
-        this.dnsService.parseHostsFile(hostsContent);
-      }
-    }
-
-    this.dnsService.parseConfig(config);
-    this.dnsService.start();
-    return '';
+  /**
+   * Minimal `LinuxCommandContext` shim used by all four DNS commands
+   * (`dig`, `nslookup`, `host`, `dnsmasq`). They only need `executor`
+   * and `dnsService`; the rest is left undefined and never read.
+   */
+  private dnsBridge(): LinuxCommandContext {
+    return {
+      executor: this.executor,
+      dnsService: this.dnsService,
+    } as unknown as LinuxCommandContext;
   }
 }

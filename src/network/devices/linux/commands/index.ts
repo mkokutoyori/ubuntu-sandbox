@@ -22,8 +22,22 @@ import { arpCommand } from './net/Arp';
 import { ifconfigCommand } from './net/Ifconfig';
 import { pingCommand } from './net/Ping';
 import { tracerouteCommand } from './net/Traceroute';
+import { digCommand } from './dns/Dig';
+import { nslookupCommand } from './dns/Nslookup';
+import { hostCommand } from './dns/Host';
+import { dnsmasqCommand } from './dns/Dnsmasq';
 
-export { sysctlCommand, arpCommand, ifconfigCommand, pingCommand, tracerouteCommand };
+export {
+  sysctlCommand,
+  arpCommand,
+  ifconfigCommand,
+  pingCommand,
+  tracerouteCommand,
+  digCommand,
+  nslookupCommand,
+  hostCommand,
+  dnsmasqCommand,
+};
 
 /**
  * Core commands registered on every `LinuxMachine`.
@@ -37,4 +51,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ifconfigCommand,
   pingCommand,
   tracerouteCommand,
+  digCommand,
+  nslookupCommand,
+  hostCommand,
+  dnsmasqCommand,
 ];
