@@ -301,16 +301,20 @@ describe('wget', () => {
 
 describe('ping', () => {
 
-  it('ping shows ICMP responses', async () => {
+  // Phase 2 / PR 6: LinuxServer now uses the real EndHost ICMP path
+  // instead of the canned stub. With no topology cabled to the server,
+  // the destination is unreachable, so we assert the GNU-ping
+  // "Network is unreachable" wording rather than 0% packet loss.
+  it('ping prints PING header and reports unreachable on isolated host', async () => {
     const out = await server.executeCommand('ping 10.0.0.1');
-    expect(out).toContain('PING');
-    expect(out).toContain('icmp_seq');
-    expect(out).toContain('0% packet loss');
+    expect(out).toContain('PING 10.0.0.1');
+    expect(out).toContain('Network is unreachable');
+    expect(out).toContain('--- 10.0.0.1 ping statistics ---');
   });
 
   it('ping with no host shows usage', async () => {
     const out = await server.executeCommand('ping');
-    expect(out).toContain('Destination address required');
+    expect(out).toContain('Usage: ping');
   });
 });
 

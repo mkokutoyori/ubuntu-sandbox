@@ -658,6 +658,12 @@ export class LinuxCommandExecutor {
       case 'ss': return { output: cmdSs(args, this.isServer), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
+      // @deprecated — The following stubs (ping, traceroute, nslookup, dig,
+      // host) are retained only as a fallback for scripts executed inside the
+      // bash interpreter. Since Phase 3, LinuxMachine intercepts these
+      // commands *before* they reach the executor and routes them through the
+      // real EndHost network stack (see linux/commands/net/Ping.ts, etc.).
+      // These stubs will never fire for interactive terminal commands.
       case 'ping': {
         const host = args.filter(a => !a.startsWith('-'))[0];
         if (!host) return { output: 'ping: usage error: Destination address required', exitCode: 1 };
