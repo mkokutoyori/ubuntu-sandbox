@@ -35,6 +35,14 @@ export const dhclientCommand: LinuxCommand = {
     '  -w            Wait for a lease to be acquired.\n' +
     '  -t timeout    Timeout for the lease request in seconds.',
 
+  complete(ctx: LinuxCommandContext, args: string[]): string[] {
+    const partial = args[args.length - 1] ?? '';
+    if (partial.startsWith('-')) {
+      return ['-v', '-d', '-r', '-x', '-w', '-s', '-t'].filter(f => f.startsWith(partial));
+    }
+    return Array.from(ctx.net.getPorts().keys());
+  },
+
   run(ctx: LinuxCommandContext, args: string[]): string {
     let verbose = false;
     let daemon = false;

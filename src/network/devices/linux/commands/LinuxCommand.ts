@@ -48,4 +48,20 @@ export interface LinuxCommand {
    * narrow `LinuxCommandContext` passed here.
    */
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> | string;
+
+  /**
+   * Optional tab-completion callback. Called when the user presses TAB
+   * while typing an argument to this command.
+   *
+   * @param ctx  same context passed to `run()`
+   * @param args arguments typed so far; the last element is the partial
+   *             word being completed (may be `''` when the user has just
+   *             typed a space).
+   * @returns    candidate completions matching the partial word. Return
+   *             an empty array to fall back to default (path) completion.
+   *
+   * Implementations may return all candidates unfiltered — the caller
+   * filters by `args[args.length - 1]` as a safety net.
+   */
+  complete?(ctx: LinuxCommandContext, args: string[]): string[];
 }

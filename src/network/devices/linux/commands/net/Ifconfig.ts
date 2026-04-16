@@ -32,6 +32,16 @@ export const ifconfigCommand: LinuxCommand = {
     'configures the interface with the given IPv4 address and optional\n' +
     'netmask.',
 
+  complete(ctx: LinuxCommandContext, args: string[]): string[] {
+    // First arg: interface name. "netmask" keyword after an IP.
+    if (args.length <= 1) {
+      return Array.from(ctx.net.getPorts().keys());
+    }
+    const prev = args[args.length - 2];
+    if (prev && /^\d+\.\d+\.\d+\.\d+$/.test(prev)) return ['netmask'];
+    return [];
+  },
+
   run(ctx: LinuxCommandContext, args: string[]): string {
     const ports = ctx.net.getPorts();
 

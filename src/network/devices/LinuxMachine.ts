@@ -622,7 +622,55 @@ export abstract class LinuxMachine extends EndHost {
   }
 
   getCwd(): string { return this.executor.getCwd(); }
-  getCompletions(partial: string): string[] { return this.executor.getCompletions(partial); }
+
+  /**
+   * Tab completion. If the line is a registered network command with a
+   * `complete()` callback, delegate to it (optionally stripping a leading
+   * `sudo`). Otherwise fall back to the bash interpreter's default
+   * completion (commands / paths / env vars).
+   */
+  getCompletions(partial: string): string[] {
+    const trimmed = partial.trimStart();
+    if (!trimmed) return this.executor.getCompletions(partial);
+
+    // Split into tokens. `'arp -d '.split(/\s+/)` already yields
+    // `['arp', '-d', '']`, so the trailing empty token correctly
+    // signals "user just typed a space, completing a fresh argument".
+    const tokens = trimmed.split(/\s+/);
+
+    // Strip a leading `sudo` for dispatch purposes.
+    let head = tokens[0];
+    let rest = tokens.slice(1);
+    if (head === 'sudo' && rest.length > 0) {
+      head = rest[0];
+      rest = rest.slice(1);
+    }
+
+    // `man <prefix>` completes to registered command names.
+    if (head === 'man' && rest.length <= 1) {
+      const prefix = rest[0] ?? '';
+      return this.commands
+        .list()
+        .map(c => c.name)
+        .filter(n => n.startsWith(prefix))
+        .sort();
+    }
+
+    // Delegate to the command's `complete()` callback if we are completing
+    // an argument to a registered command.
+    if (rest.length >= 1) {
+      const cmd = this.commands.get(head);
+      if (cmd && cmd.complete) {
+        const partialArg = rest[rest.length - 1];
+        const candidates = cmd.complete(this.buildCommandContext(), rest);
+        if (candidates.length > 0) {
+          return candidates.filter(c => c.startsWith(partialArg)).sort();
+        }
+      }
+    }
+
+    return this.executor.getCompletions(partial);
+  }
   getCurrentUser(): string { return this.executor.getCurrentUser(); }
   getCurrentUid(): number { return this.executor.getCurrentUid(); }
   handleExit(): { output: string; inSu: boolean } { return this.executor.handleExit(); }

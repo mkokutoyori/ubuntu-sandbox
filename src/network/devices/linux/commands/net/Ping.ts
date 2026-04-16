@@ -30,6 +30,14 @@ export const pingCommand: LinuxCommand = {
     '  -t ttl        Set the IP Time to Live.\n' +
     '  -W timeout    Time to wait for a response, in seconds.',
 
+  complete(_ctx: LinuxCommandContext, args: string[]): string[] {
+    const partial = args[args.length - 1] ?? '';
+    if (partial.startsWith('-')) {
+      return ['-c', '-t', '-W'].filter(f => f.startsWith(partial));
+    }
+    return [];
+  },
+
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     let count = 4;
     let ttl: number | undefined;

@@ -27,6 +27,23 @@ export const arpCommand: LinuxCommand = {
     '  -s hostname hw_addr   Create a static ARP entry.\n' +
     '  -i interface  Limit operation to a specific interface.',
 
+  complete(ctx: LinuxCommandContext, args: string[]): string[] {
+    const partial = args[args.length - 1] ?? '';
+    const prev = args.length >= 2 ? args[args.length - 2] : '';
+    if (partial.startsWith('-')) {
+      return ['-a', '-d', '-s', '-i', '-n'].filter(f => f.startsWith(partial));
+    }
+    // After -d or -s, complete with IP addresses from the ARP cache
+    if (prev === '-d' || prev === '-s') {
+      return Array.from(ctx.net.getArpTable().keys());
+    }
+    // After -i, complete with interface names
+    if (prev === '-i') {
+      return Array.from(ctx.net.getPorts().keys());
+    }
+    return [];
+  },
+
   run(ctx: LinuxCommandContext, args: string[]): string {
     const ports = ctx.net.getPorts();
     const firstPortName = ports.keys().next().value ?? 'eth0';

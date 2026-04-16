@@ -24,6 +24,14 @@ export const sysctlCommand: LinuxCommand = {
     'Supported parameters:\n' +
     '  net.ipv4.ip_forward  Enable/disable IPv4 packet forwarding (0 or 1).',
 
+  complete(_ctx: LinuxCommandContext, args: string[]): string[] {
+    const partial = args[args.length - 1] ?? '';
+    if (partial.startsWith('-')) {
+      return ['-w', '-a'].filter(f => f.startsWith(partial));
+    }
+    return ['net.ipv4.ip_forward'];
+  },
+
   run(ctx: LinuxCommandContext, args: string[]): string {
     // sysctl -w key=value [key=value …]
     // sysctl key [key …]
