@@ -23,12 +23,12 @@ export const pingCommand: LinuxCommand = {
   needsNetworkContext: true,
   manSection: 8,
   usage: 'ping [-c count] [-t ttl] [-W timeout] <destination>',
-  help:
-    'Send ICMP ECHO_REQUEST packets to network hosts.\n\n' +
-    'OPTIONS\n' +
-    '  -c count      Stop after sending count ECHO_REQUEST packets.\n' +
-    '  -t ttl        Set the IP Time to Live.\n' +
-    '  -W timeout    Time to wait for a response, in seconds.',
+  help: 'Send ICMP ECHO_REQUEST packets to network hosts.',
+  options: [
+    { flag: '-c', description: 'Stop after sending count ECHO_REQUEST packets.', takesArg: true, argName: 'count' },
+    { flag: '-t', description: 'Set the IP Time to Live.', takesArg: true, argName: 'ttl' },
+    { flag: '-W', description: 'Time to wait for a response, in seconds.', takesArg: true, argName: 'timeout' },
+  ],
 
   complete(_ctx: LinuxCommandContext, args: string[]): string[] {
     const partial = args[args.length - 1] ?? '';

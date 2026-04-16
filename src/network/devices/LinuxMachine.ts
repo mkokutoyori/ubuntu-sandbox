@@ -59,6 +59,7 @@ import {
   defaultLinuxFormatHelpers,
   type LinuxFormatHelpers,
 } from './linux/LinuxFormatHelpers';
+import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 
 // ─── Class ─────────────────────────────────────────────────────────────
@@ -232,23 +233,7 @@ export abstract class LinuxMachine extends EndHost {
       const target = tokens[1];
       const manCmd = this.commands.get(target);
       if (!manCmd || !manCmd.help) return `No manual entry for ${target}`;
-      const section = manCmd.manSection ?? 8;
-      const header = `${manCmd.name.toUpperCase()}(${section})`;
-      const lines: string[] = [
-        header,
-        '',
-        'NAME',
-        `       ${manCmd.name}`,
-        '',
-        'SYNOPSIS',
-        `       ${manCmd.usage ?? manCmd.name}`,
-        '',
-        'DESCRIPTION',
-        ...manCmd.help.split('\n').map(l => `       ${l}`),
-        '',
-        header,
-      ];
-      return lines.join('\n');
+      return renderManPage(manCmd);
     }
 
     // 1. Commands registered in the LinuxCommandRegistry
@@ -256,9 +241,9 @@ export abstract class LinuxMachine extends EndHost {
     if (cmd && cmd.needsNetworkContext) {
       const tokens = noSudo.split(/\s+/);
       const cmdArgs = tokens.slice(1);
-      // --help flag: return usage instead of running the command
-      if (cmdArgs.includes('--help') && cmd.usage) {
-        return `Usage: ${cmd.usage}`;
+      // --help flag: return auto-generated help instead of running.
+      if (cmdArgs.includes('--help')) {
+        return renderHelp(cmd);
       }
       return await cmd.run(this.buildCommandContext(), cmdArgs);
     }

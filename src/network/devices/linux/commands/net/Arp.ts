@@ -19,13 +19,14 @@ export const arpCommand: LinuxCommand = {
   needsNetworkContext: true,
   manSection: 8,
   usage: 'arp [-a] [-d hostname] [-s hostname hw_addr] [-i interface]',
-  help:
-    'Manipulate the system ARP cache.\n\n' +
-    'OPTIONS\n' +
-    '  -a            Display all entries in the ARP table.\n' +
-    '  -d hostname   Delete an entry from the ARP table.\n' +
-    '  -s hostname hw_addr   Create a static ARP entry.\n' +
-    '  -i interface  Limit operation to a specific interface.',
+  help: 'Manipulate the system ARP cache.',
+  options: [
+    { flag: '-a', description: 'Display all entries in the ARP table.', takesArg: false },
+    { flag: '-d', description: 'Delete an entry from the ARP table.', takesArg: true, argName: 'hostname' },
+    { flag: '-s', description: 'Create a static ARP entry (requires hw_addr).', takesArg: true, argName: 'hostname' },
+    { flag: '-i', description: 'Limit operation to a specific interface.', takesArg: true, argName: 'interface' },
+    { flag: '-n', description: 'Show numerical addresses instead of resolving names.', takesArg: false },
+  ],
 
   complete(ctx: LinuxCommandContext, args: string[]): string[] {
     const partial = args[args.length - 1] ?? '';

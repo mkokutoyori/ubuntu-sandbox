@@ -10,6 +10,25 @@
 
 import type { LinuxCommandContext } from './LinuxCommandContext';
 
+/**
+ * Declarative specification of a single command-line option / flag.
+ * Used to auto-generate `--help` and `man` output (via
+ * `LinuxCommandHelp.renderHelp` / `renderManPage`).
+ */
+export interface LinuxCommandOption {
+  /** The flag as typed on the command line (e.g. `-c`, `--verbose`). */
+  readonly flag: string;
+
+  /** Short human-readable description for help/man output. */
+  readonly description: string;
+
+  /** True if the flag consumes the next argument (e.g. `-c 5`). Default: false. */
+  readonly takesArg?: boolean;
+
+  /** Placeholder name for the argument (e.g. `count`, `ttl`). Required when `takesArg` is true. */
+  readonly argName?: string;
+}
+
 export interface LinuxCommand {
   /** Primary name as typed in the shell (first switch key). */
   readonly name: string;
@@ -39,6 +58,13 @@ export interface LinuxCommand {
 
   /** Man section number (1 = user commands, 8 = admin commands). Default: 8. */
   readonly manSection?: number;
+
+  /**
+   * Declarative option specs, used to auto-generate help and man output.
+   * When provided, `LinuxMachine` uses these instead of the raw `help`
+   * string to render `--help` and `man <cmd>` output.
+   */
+  readonly options?: readonly LinuxCommandOption[];
 
   /**
    * Execute the command. May be synchronous or asynchronous (e.g. `ping`).

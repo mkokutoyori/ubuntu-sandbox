@@ -25,15 +25,16 @@ export const dhclientCommand: LinuxCommand = {
   help:
     'Dynamic Host Configuration Protocol Client.\n\n' +
     'Requests an IP address lease from a DHCP server for the specified\n' +
-    'network interface.\n\n' +
-    'OPTIONS\n' +
-    '  -v            Enable verbose log messages.\n' +
-    '  -d            Run in daemon mode.\n' +
-    '  -r            Release the current lease.\n' +
-    '  -x            Stop the running dhclient process.\n' +
-    '  -s server     Send requests to a specific DHCP server.\n' +
-    '  -w            Wait for a lease to be acquired.\n' +
-    '  -t timeout    Timeout for the lease request in seconds.',
+    'network interface.',
+  options: [
+    { flag: '-v', description: 'Enable verbose log messages.', takesArg: false },
+    { flag: '-d', description: 'Run in daemon mode.', takesArg: false },
+    { flag: '-r', description: 'Release the current lease.', takesArg: false },
+    { flag: '-x', description: 'Stop the running dhclient process.', takesArg: false },
+    { flag: '-w', description: 'Wait for a lease to be acquired.', takesArg: false },
+    { flag: '-s', description: 'Send requests to a specific DHCP server.', takesArg: true, argName: 'server' },
+    { flag: '-t', description: 'Timeout for the lease request in seconds.', takesArg: true, argName: 'timeout' },
+  ],
 
   complete(ctx: LinuxCommandContext, args: string[]): string[] {
     const partial = args[args.length - 1] ?? '';
