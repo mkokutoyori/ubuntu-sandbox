@@ -22,18 +22,20 @@ export const pingCommand: LinuxCommand = {
   name: 'ping',
   needsNetworkContext: true,
   manSection: 8,
-  usage: 'ping [-c count] [-t ttl] [-W timeout] <destination>',
+  usage: 'ping [-c count] [-t ttl] [-s size] [-W timeout] [-i interval] <destination>',
   help: 'Send ICMP ECHO_REQUEST packets to network hosts.',
   options: [
     { flag: '-c', description: 'Stop after sending count ECHO_REQUEST packets.', takesArg: true, argName: 'count' },
     { flag: '-t', description: 'Set the IP Time to Live.', takesArg: true, argName: 'ttl' },
+    { flag: '-s', description: 'ICMP payload size in bytes (default: 56).', takesArg: true, argName: 'size' },
     { flag: '-W', description: 'Time to wait for a response, in seconds.', takesArg: true, argName: 'timeout' },
+    { flag: '-i', description: 'Interval in seconds between packets.', takesArg: true, argName: 'interval' },
   ],
 
   complete(_ctx: LinuxCommandContext, args: string[]): string[] {
     const partial = args[args.length - 1] ?? '';
     if (partial.startsWith('-')) {
-      return ['-c', '-t', '-W'].filter(f => f.startsWith(partial));
+      return ['-c', '-t', '-s', '-W', '-i'].filter(f => f.startsWith(partial));
     }
     return [];
   },
@@ -41,6 +43,7 @@ export const pingCommand: LinuxCommand = {
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     let count = 4;
     let ttl: number | undefined;
+    let size = 56;
     let targetStr = '';
 
     for (let i = 0; i < args.length; i++) {
@@ -50,12 +53,19 @@ export const pingCommand: LinuxCommand = {
       } else if (args[i] === '-t' && args[i + 1]) {
         ttl = parseInt(args[i + 1], 10);
         i++;
+      } else if (args[i] === '-s' && args[i + 1]) {
+        size = parseInt(args[i + 1], 10);
+        i++;
+      } else if (args[i] === '-W' && args[i + 1]) {
+        i++; // timeout value accepted but not used in the simulation
+      } else if (args[i] === '-i' && args[i + 1]) {
+        i++; // interval value accepted but not used in the simulation
       } else if (!args[i].startsWith('-')) {
         targetStr = args[i];
       }
     }
 
-    if (!targetStr) return 'Usage: ping [-c count] [-t ttl] <destination>';
+    if (!targetStr) return 'Usage: ping [-c count] [-t ttl] [-s size] <destination>';
 
     let targetIP: IPAddress;
     try {
@@ -65,6 +75,6 @@ export const pingCommand: LinuxCommand = {
     }
 
     const results = await ctx.net.pingSequence(targetIP, count, 2000, ttl);
-    return ctx.fmt.formatPingOutput(targetIP, count, results);
+    return ctx.fmt.formatPingOutput(targetIP, count, results, size);
   },
 };

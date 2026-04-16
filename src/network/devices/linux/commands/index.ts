@@ -22,6 +22,7 @@ import { arpCommand } from './net/Arp';
 import { ifconfigCommand } from './net/Ifconfig';
 import { pingCommand } from './net/Ping';
 import { tracerouteCommand } from './net/Traceroute';
+import { routeCommand } from './net/Route';
 import { digCommand } from './dns/Dig';
 import { nslookupCommand } from './dns/Nslookup';
 import { hostCommand } from './dns/Host';
@@ -37,6 +38,7 @@ export {
   ifconfigCommand,
   pingCommand,
   tracerouteCommand,
+  routeCommand,
   digCommand,
   nslookupCommand,
   hostCommand,
@@ -60,6 +62,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ifconfigCommand,
   pingCommand,
   tracerouteCommand,
+  routeCommand,
   digCommand,
   nslookupCommand,
   hostCommand,

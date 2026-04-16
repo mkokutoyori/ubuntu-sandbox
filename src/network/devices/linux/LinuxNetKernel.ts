@@ -26,6 +26,8 @@ export interface TracerouteHop {
   ip?: string;
   rttMs?: number;
   timeout: boolean;
+  /** Set when the hop replied with an ICMP Destination Unreachable. */
+  unreachable?: boolean;
 }
 
 export interface LinuxNetKernel {
@@ -60,7 +62,7 @@ export interface LinuxNetKernel {
     ttl?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress): Promise<TracerouteHop[]>;
+  traceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]>;
 
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;

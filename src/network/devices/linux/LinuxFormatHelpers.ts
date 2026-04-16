@@ -18,11 +18,17 @@ import type { Port } from '../../hardware/Port';
 import type { TracerouteHop } from './LinuxNetKernel';
 
 export interface LinuxFormatHelpers {
-  /** Render a full `ping` sequence output (header + per-packet + stats). */
-  formatPingOutput(target: IPAddress, count: number, results: PingResult[]): string;
+  /**
+   * Render a full `ping` sequence output (header + per-packet + stats).
+   * @param size Payload size in bytes (defaults to 56, as in the real ping).
+   */
+  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number): string;
 
-  /** Render a `traceroute` output including header and per-hop lines. */
-  formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[]): string;
+  /**
+   * Render a `traceroute` output including header and per-hop lines.
+   * @param maxHops Advertised maxHops in the header (defaults to 30).
+   */
+  formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops?: number): string;
 
   /** Render a single interface in `ifconfig` style (UP/BROADCAST/...). */
   formatInterface(port: Port): string;
@@ -65,9 +71,10 @@ function formatInterface(port: Port): string {
   ].join('\n');
 }
 
-function formatPingOutput(target: IPAddress, count: number, results: PingResult[]): string {
+function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56): string {
   const lines: string[] = [];
-  lines.push(`PING ${target} (${target}) 56(84) bytes of data.`);
+  const totalSize = size + 28; // ICMP header (8) + IP header (20)
+  lines.push(`PING ${target} (${target}) ${size}(${totalSize}) bytes of data.`);
 
   const received = results.filter(r => r.success);
   const failed = count - received.length;
@@ -77,7 +84,8 @@ function formatPingOutput(target: IPAddress, count: number, results: PingResult[
   } else {
     for (const r of results) {
       if (r.success) {
-        lines.push(`64 bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
+        const replySize = size + 8; // data size + ICMP header
+        lines.push(`${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
       } else if (r.error) {
         if (r.error.includes('Time to live exceeded')) {
           const match = r.error.match(/from ([\d.]+)/);
@@ -108,14 +116,17 @@ function formatPingOutput(target: IPAddress, count: number, results: PingResult[
   return lines.join('\n');
 }
 
-function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[]): string {
+function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30): string {
   if (hops.length === 0) {
-    return `traceroute to ${target}, 30 hops max, 60 byte packets\n * * * Network is unreachable`;
+    return `traceroute to ${target}, ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
   }
-  const lines = [`traceroute to ${target}, 30 hops max, 60 byte packets`];
+  const lines = [`traceroute to ${target}, ${maxHops} hops max, 60 byte packets`];
   for (const hop of hops) {
     if (hop.timeout) {
       lines.push(` ${hop.hop}  * * *`);
+    } else if (hop.unreachable) {
+      // ICMP Destination Unreachable → !N (network unreachable) annotation
+      lines.push(` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)} ms !N`);
     } else {
       lines.push(` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)} ms`);
     }
