@@ -6,6 +6,7 @@
  *
  * Router-specific additions:
  *   - ping (async ICMP echo)
+ *   - traceroute (ICMP-based path trace)
  *   - show ip route, show running-config, show version, etc.
  *   - DHCP, RIP, OSPF, ACL, IPSec sub-modes and commands
  *
@@ -237,6 +238,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
+    this.userTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
+      return this._handleTraceroute(args);
+    });
 
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
@@ -244,6 +248,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
+    });
+    this.privilegedTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
+      return this._handleTraceroute(args);
     });
 
     // ── Config mode ──
@@ -382,6 +389,82 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
 
     return '';
+  }
+
+  private _handleTraceroute(args: string[]): string {
+    if (args.length === 0) {
+      return '% Traceroute requires a target IP address.';
+    }
+
+    let target = '';
+    let maxHops = 30;
+    let timeoutMs = 2000;
+
+    let i = 0;
+    target = args[i++]?.trim() || '';
+
+    while (i < args.length) {
+      const kw = args[i]?.toLowerCase();
+      if (kw === 'ttl' && args[i + 1]) {
+        const n = parseInt(args[i + 1], 10);
+        if (!isNaN(n) && n > 0) maxHops = n;
+        i += 2;
+      } else if (kw === 'timeout' && args[i + 1]) {
+        const n = parseInt(args[i + 1], 10);
+        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
+        i += 2;
+      } else {
+        i++;
+      }
+    }
+
+    if (!target) return '% Traceroute requires a target IP address.';
+
+    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!ipMatch) return `% Unrecognized host or address, or protocol not running.`;
+    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
+    if (octets.some(o => o > 255)) return `% Unrecognized host or address, or protocol not running.`;
+
+    const targetIP = new IPAddress(target);
+    const router = this.d();
+
+    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs).then(hops => {
+      return this._formatCiscoTraceroute(target, maxHops, hops);
+    });
+
+    return '';
+  }
+
+  private _formatCiscoTraceroute(
+    target: string,
+    maxHops: number,
+    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>,
+  ): string {
+    const lines: string[] = [
+      'Type escape sequence to abort.',
+      `Tracing the route to ${target}`,
+      `VRF info: (vrf in name/id, vrf out name/id)`,
+      '',
+    ];
+
+    if (hops.length === 0) {
+      lines.push(`% Network is unreachable`);
+      return lines.join('\n');
+    }
+
+    for (const hop of hops) {
+      if (hop.timeout) {
+        lines.push(`  ${hop.hop}  *  *  *`);
+      } else {
+        const ms = Math.round(hop.rttMs ?? 0);
+        const msStr = `${ms} msec`;
+        let annotation = '';
+        if (hop.unreachable) annotation = ' !N';
+        lines.push(`  ${hop.hop} ${hop.ip}  ${msStr} ${msStr} ${msStr}${annotation}`);
+      }
+    }
+
+    return lines.join('\n');
   }
 
   private _resolveSourceIP(router: any, source: string): string | null {

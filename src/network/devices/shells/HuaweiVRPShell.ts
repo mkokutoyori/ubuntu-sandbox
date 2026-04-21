@@ -22,6 +22,7 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
 import { HUAWEI_ERRORS } from './cli-utils';
+import { IPAddress } from '../../core/types';
 
 // Extracted command modules
 import {
@@ -68,6 +69,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
+  /** Pending async operation (e.g. tracert) — set by a command handler, consumed by execute() */
+  private _pendingAsync: Promise<string> | null = null;
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -180,6 +183,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.routerRef = router;
 
     const output = this.executeOnTrie(trimmed);
+
+    // Async escape hatch (e.g. tracert sets _pendingAsync)
+    if (this._pendingAsync) {
+      const asyncOp = this._pendingAsync;
+      this._pendingAsync = null;
+      this.routerRef = null;
+      return asyncOp;
+    }
 
     this.routerRef = null;
     return output;
@@ -326,6 +337,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('undo', 'Undo configuration', (args) => {
       return cmdUndo(getRouter(), this, args);
     });
+
+    // tracert — route tracing (async)
+    t.registerGreedy('tracert', 'Trace route to destination', (args) => {
+      return this._handleTracert(args);
+    });
+
+    // ping — ICMP echo (async)
+    t.registerGreedy('ping', 'Send ICMP echo messages', (args) => {
+      return this._handlePing(args);
+    });
   }
 
   // ─── System View ([hostname]) ────────────────────────────────────
@@ -410,5 +431,115 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfAreaTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
     buildOSPFAreaViewCommands(this.ospfAreaTrie, this as any, () => this.ospfArea);
+  }
+
+  // ─── Tracert command ──────────────────────────────────────────────
+
+  private _handleTracert(args: string[]): string {
+    if (args.length === 0) {
+      return 'Error: Please specify a destination IP address.';
+    }
+
+    let target = '';
+    let maxHops = 30;
+    let timeoutMs = 2000;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-h' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10) || 30; i++; }
+      else if (a === '-w' && args[i + 1]) { timeoutMs = (parseInt(args[i + 1], 10) || 2) * 1000; i++; }
+      else if (a === '-q' && args[i + 1]) { i++; } // nqueries ignored
+      else if (!a.startsWith('-')) { target = args[i]; }
+    }
+
+    if (!target) return 'Error: Please specify a destination IP address.';
+
+    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!ipMatch) return `Error: Unknown host ${target}.`;
+    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
+    if (octets.some(o => o > 255)) return `Error: Invalid IP address ${target}.`;
+
+    const targetIP = new IPAddress(target);
+    const router = this.r();
+
+    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs).then(hops =>
+      this._formatHuaweiTracert(target, maxHops, hops),
+    );
+
+    return '';
+  }
+
+  private _formatHuaweiTracert(
+    target: string,
+    maxHops: number,
+    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>,
+  ): string {
+    const lines: string[] = [
+      `tracert to ${target}(${target}), max hops: ${maxHops}, packet length: 40, press CTRL_C to break`,
+    ];
+
+    if (hops.length === 0) {
+      lines.push(' Network is unreachable');
+      return lines.join('\n');
+    }
+
+    for (const hop of hops) {
+      if (hop.timeout) {
+        lines.push(` ${hop.hop}  *  *  *`);
+      } else {
+        const ms = Math.round(hop.rttMs ?? 0);
+        const msStr = `${ms} ms`;
+        let annotation = '';
+        if (hop.unreachable) annotation = ' !N';
+        lines.push(` ${hop.hop} ${hop.ip}  ${msStr} ${msStr} ${msStr}${annotation}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  // ─── Ping command ─────────────────────────────────────────────────
+
+  private _handlePing(args: string[]): string {
+    if (args.length === 0) return 'Error: Please specify a destination IP address.';
+
+    let target = '';
+    let count = 5;
+    let timeoutMs = 2000;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10) || 5; i++; }
+      else if (a === '-t' && args[i + 1]) { timeoutMs = (parseInt(args[i + 1], 10) || 2) * 1000; i++; }
+      else if (!a.startsWith('-')) { target = args[i]; }
+    }
+
+    if (!target) return 'Error: Please specify a destination IP address.';
+
+    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!ipMatch) return `Error: Unknown host ${target}.`;
+    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
+    if (octets.some(o => o > 255)) return `Error: Invalid IP address ${target}.`;
+
+    const targetIP = new IPAddress(target);
+    const router = this.r();
+
+    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs).then(results => {
+      const successes = results.filter(r => r.success).length;
+      const lines = [
+        `PING ${target}: 56  data bytes, press CTRL_C to break`,
+        ...results.map(r =>
+          r.success
+            ? `Reply from ${r.fromIP}: bytes=56 Sequence=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(0)} ms`
+            : `Request timeout`,
+        ),
+        '',
+        `--- ${target} ping statistics ---`,
+        `${count} packet(s) transmitted, ${successes} packet(s) received, ${Math.round(((count - successes) / count) * 100)}% packet loss`,
+      ];
+      return lines.join('\n');
+    });
+
+    return '';
   }
 }

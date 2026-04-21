@@ -380,8 +380,8 @@ export class WindowsPC extends EndHost {
 
       executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number) =>
         this.executePingSequence(target, count, timeout, ttl),
-      executeTraceroute: (target: IPAddress) =>
-        this.executeTraceroute(target) as Promise<TracerouteHop[]>,
+      executeTraceroute: (target: IPAddress, maxHops?: number) =>
+        this.executeTraceroute(target, maxHops) as Promise<TracerouteHop[]>,
 
       resetStack: () => {
         for (const [name, port] of this.ports) {

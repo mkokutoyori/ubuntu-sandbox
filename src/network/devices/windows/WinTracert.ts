@@ -31,10 +31,13 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   }
 
   let targetStr = '';
+  let maxHops = 30;
+
   for (let i = 0; i < args.length; i++) {
     const a = args[i].toLowerCase();
-    if ((a === '-h' || a === '-w' || a === '-j') && args[i + 1]) { i++; }
-    else if (!a.startsWith('-')) { targetStr = args[i]; }
+    if (a === '-h' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10) || 30; i++; }
+    else if ((a === '-w' || a === '-j' || a === '-s') && args[i + 1]) { i++; }
+    else if (!a.startsWith('-') && !a.startsWith('/')) { targetStr = args[i]; }
   }
 
   if (!targetStr) return TRACERT_HELP;
@@ -43,7 +46,7 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   try { targetIP = new IPAddress(targetStr); }
   catch { return `Unable to resolve target system name ${targetStr}.`; }
 
-  const hops = await ctx.executeTraceroute(targetIP);
+  const hops = await ctx.executeTraceroute(targetIP, maxHops);
 
   if (hops.length === 0) {
     return `Unable to resolve target system name ${targetStr}.`;
@@ -51,9 +54,10 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
 
   const lines = [
     '',
-    `Tracing route to ${targetIP} over a maximum of 30 hops:`,
+    `Tracing route to ${targetIP} over a maximum of ${maxHops} hops:`,
     '',
   ];
+
   for (const hop of hops) {
     if (hop.timeout) {
       lines.push(`  ${String(hop.hop).padStart(2)}     *        *        *     Request timed out.`);
@@ -61,8 +65,12 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
       const ms = Math.round(hop.rttMs!);
       const msStr = ms < 1 ? '<1 ms' : `${ms} ms`;
       lines.push(`  ${String(hop.hop).padStart(2)}    ${msStr.padEnd(8)} ${msStr.padEnd(8)} ${msStr.padEnd(8)} ${hop.ip}`);
+      if (hop.unreachable) {
+        lines.push('        Destination net unreachable.');
+      }
     }
   }
+
   lines.push('');
   lines.push('Trace complete.');
   return lines.join('\n');
