@@ -443,12 +443,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     let target = '';
     let maxHops = 30;
     let timeoutMs = 2000;
+    let probesPerHop = 3;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-h' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10) || 30; i++; }
       else if (a === '-w' && args[i + 1]) { timeoutMs = (parseInt(args[i + 1], 10) || 2) * 1000; i++; }
-      else if (a === '-q' && args[i + 1]) { i++; } // nqueries ignored
+      else if (a === '-q' && args[i + 1]) { probesPerHop = parseInt(args[i + 1], 10) || 3; i++; }
       else if (!a.startsWith('-')) { target = args[i]; }
     }
 
@@ -462,7 +463,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const targetIP = new IPAddress(target);
     const router = this.r();
 
-    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs).then(hops =>
+    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs, probesPerHop).then(hops =>
       this._formatHuaweiTracert(target, maxHops, hops),
     );
 
@@ -472,7 +473,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private _formatHuaweiTracert(
     target: string,
     maxHops: number,
-    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>,
+    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes?: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>,
   ): string {
     const lines: string[] = [
       `tracert to ${target}(${target}), max hops: ${maxHops}, packet length: 40, press CTRL_C to break`,
@@ -484,14 +485,27 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
 
     for (const hop of hops) {
-      if (hop.timeout) {
+      if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
         lines.push(` ${hop.hop}  *  *  *`);
+        continue;
+      }
+
+      let annotation = '';
+      if (hop.unreachable) annotation = ' !N';
+
+      if (hop.probes && hop.probes.length > 0) {
+        const parts: string[] = [];
+        for (const probe of hop.probes) {
+          if (!probe.responded) {
+            parts.push('*');
+          } else {
+            parts.push(`${Math.round(probe.rttMs ?? 0)} ms`);
+          }
+        }
+        lines.push(` ${hop.hop} ${hop.ip}  ${parts.join(' ')}${annotation}`);
       } else {
         const ms = Math.round(hop.rttMs ?? 0);
-        const msStr = `${ms} ms`;
-        let annotation = '';
-        if (hop.unreachable) annotation = ' !N';
-        lines.push(` ${hop.hop} ${hop.ip}  ${msStr} ${msStr} ${msStr}${annotation}`);
+        lines.push(` ${hop.hop} ${hop.ip}  ${ms} ms${annotation}`);
       }
     }
 

@@ -1192,7 +1192,8 @@ export abstract class Router extends Equipment {
     targetIP: IPAddress,
     maxHops: number = 30,
     timeoutMs: number = 2000,
-  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>> {
+    probesPerHop: number = 3,
+  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>> {
     const route = this.lookupRoute(targetIP);
     if (!route) return [];
 
@@ -1208,50 +1209,74 @@ export abstract class Router extends Equipment {
     let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
     if (!nextHopMAC) {
       nextHopMAC = await this._resolveARPForPing(route.iface, outPort, nextHopIP, timeoutMs);
-      if (!nextHopMAC) return [{ hop: 1, timeout: true }];
+      if (!nextHopMAC) return [{ hop: 1, timeout: true, probes: [{ responded: false }] }];
     }
 
-    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }> = [];
+    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }> = [];
 
     for (let ttl = 1; ttl <= maxHops; ttl++) {
-      this.pingIdCounter++;
-      const id = this.pingIdCounter;
-      const seq = 1;
+      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> = [];
+      let destinationReached = false;
 
-      const result = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean }>((resolve) => {
-        const key = `trace-${id}-${seq}`;
-        const sentAt = performance.now();
+      for (let p = 0; p < probesPerHop; p++) {
+        this.pingIdCounter++;
+        const id = this.pingIdCounter;
+        const seq = p + 1;
 
-        const timer = setTimeout(() => {
-          this.pendingTraceHops.delete(key);
-          resolve({ timeout: true, reached: false });
-        }, timeoutMs);
+        const probe = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean }>((resolve) => {
+          const key = `trace-${id}-${seq}`;
+          const sentAt = performance.now();
 
-        this.pendingTraceHops.set(key, {
-          resolve: (r) => resolve({ ip: r.ip, rttMs: r.rttMs, timeout: false, reached: r.reached, unreachable: r.unreachable }),
-          timeout: () => { clearTimeout(timer); resolve({ timeout: true, reached: false }); },
-          timer,
-          sentAt,
+          const timer = setTimeout(() => {
+            this.pendingTraceHops.delete(key);
+            resolve({ timeout: true, reached: false });
+          }, timeoutMs);
+
+          this.pendingTraceHops.set(key, {
+            resolve: (r) => resolve({ ip: r.ip, rttMs: r.rttMs, timeout: false, reached: r.reached, unreachable: r.unreachable }),
+            timeout: () => { clearTimeout(timer); resolve({ timeout: true, reached: false }); },
+            timer,
+            sentAt,
+          });
+
+          const icmp: ICMPPacket = {
+            type: 'icmp', icmpType: 'echo-request', code: 0,
+            id, sequence: seq, dataSize: 56,
+          };
+          const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
+
+          this.sendFrame(route.iface, {
+            srcMAC: outPort.getMAC(),
+            dstMAC: nextHopMAC!,
+            etherType: ETHERTYPE_IPV4,
+            payload: ipPkt,
+          });
         });
 
-        const icmp: ICMPPacket = {
-          type: 'icmp', icmpType: 'echo-request', code: 0,
-          id, sequence: seq, dataSize: 56,
-        };
-        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
-
-        this.sendFrame(route.iface, {
-          srcMAC: outPort.getMAC(),
-          dstMAC: nextHopMAC!,
-          etherType: ETHERTYPE_IPV4,
-          payload: ipPkt,
+        probes.push({
+          responded: !probe.timeout,
+          rttMs: probe.rttMs,
+          ip: probe.ip,
+          unreachable: probe.unreachable,
         });
+        if (probe.reached) destinationReached = true;
+      }
+
+      const firstResponded = probes.find(p => p.responded);
+      const firstUnreachable = probes.find(p => p.unreachable);
+      const allTimeout = probes.every(p => !p.responded);
+
+      hops.push({
+        hop: ttl,
+        ip: firstResponded?.ip,
+        rttMs: firstResponded?.rttMs,
+        timeout: allTimeout,
+        unreachable: !!firstUnreachable,
+        probes,
       });
 
-      hops.push({ hop: ttl, ip: result.ip, rttMs: result.rttMs, timeout: result.timeout, unreachable: result.unreachable });
-
-      if (result.reached) break;
-      if (result.unreachable) break;
+      if (destinationReached) break;
+      if (firstUnreachable) break;
     }
 
     return hops;

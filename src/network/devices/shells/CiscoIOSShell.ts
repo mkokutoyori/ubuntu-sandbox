@@ -399,6 +399,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     let target = '';
     let maxHops = 30;
     let timeoutMs = 2000;
+    let probesPerHop = 3;
 
     let i = 0;
     target = args[i++]?.trim() || '';
@@ -412,6 +413,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       } else if (kw === 'timeout' && args[i + 1]) {
         const n = parseInt(args[i + 1], 10);
         if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
+        i += 2;
+      } else if (kw === 'probe' && args[i + 1]) {
+        const n = parseInt(args[i + 1], 10);
+        if (!isNaN(n) && n > 0) probesPerHop = n;
         i += 2;
       } else {
         i++;
@@ -428,7 +433,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     const targetIP = new IPAddress(target);
     const router = this.d();
 
-    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs).then(hops => {
+    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs, probesPerHop).then(hops => {
       return this._formatCiscoTraceroute(target, maxHops, hops);
     });
 
@@ -438,7 +443,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private _formatCiscoTraceroute(
     target: string,
     maxHops: number,
-    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>,
+    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes?: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>,
   ): string {
     const lines: string[] = [
       'Type escape sequence to abort.',
@@ -453,14 +458,27 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
 
     for (const hop of hops) {
-      if (hop.timeout) {
+      if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
         lines.push(`  ${hop.hop}  *  *  *`);
+        continue;
+      }
+
+      let annotation = '';
+      if (hop.unreachable) annotation = ' !N';
+
+      if (hop.probes && hop.probes.length > 0) {
+        const parts: string[] = [];
+        for (const probe of hop.probes) {
+          if (!probe.responded) {
+            parts.push('*');
+          } else {
+            parts.push(`${Math.round(probe.rttMs ?? 0)} msec`);
+          }
+        }
+        lines.push(`  ${hop.hop} ${hop.ip}  ${parts.join(' ')}${annotation}`);
       } else {
         const ms = Math.round(hop.rttMs ?? 0);
-        const msStr = `${ms} msec`;
-        let annotation = '';
-        if (hop.unreachable) annotation = ' !N';
-        lines.push(`  ${hop.hop} ${hop.ip}  ${msStr} ${msStr} ${msStr}${annotation}`);
+        lines.push(`  ${hop.hop} ${hop.ip}  ${ms} msec${annotation}`);
       }
     }
 

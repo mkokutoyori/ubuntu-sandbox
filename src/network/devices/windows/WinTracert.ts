@@ -59,15 +59,31 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   ];
 
   for (const hop of hops) {
-    if (hop.timeout) {
+    if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
       lines.push(`  ${String(hop.hop).padStart(2)}     *        *        *     Request timed out.`);
+      continue;
+    }
+
+    if (hop.probes && hop.probes.length > 0) {
+      const cols: string[] = [];
+      for (const probe of hop.probes) {
+        if (!probe.responded) {
+          cols.push('*'.padStart(5).padEnd(8));
+        } else {
+          const ms = Math.round(probe.rttMs ?? 0);
+          const msStr = ms < 1 ? '<1 ms' : `${ms} ms`;
+          cols.push(msStr.padEnd(8));
+        }
+      }
+      while (cols.length < 3) cols.push('*'.padStart(5).padEnd(8));
+      lines.push(`  ${String(hop.hop).padStart(2)}    ${cols.join(' ')} ${hop.ip}`);
     } else {
       const ms = Math.round(hop.rttMs!);
       const msStr = ms < 1 ? '<1 ms' : `${ms} ms`;
       lines.push(`  ${String(hop.hop).padStart(2)}    ${msStr.padEnd(8)} ${msStr.padEnd(8)} ${msStr.padEnd(8)} ${hop.ip}`);
-      if (hop.unreachable) {
-        lines.push('        Destination net unreachable.');
-      }
+    }
+    if (hop.unreachable) {
+      lines.push('        Destination net unreachable.');
     }
   }
 
