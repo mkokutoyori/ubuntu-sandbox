@@ -18,6 +18,14 @@ export interface PingResult {
   error?: string;
 }
 
+export interface TracerouteProbe {
+  responded: boolean;
+  rttMs?: number;
+  ip?: string;
+  unreachable?: boolean;
+  icmpCode?: number;
+}
+
 /** Traceroute hop from EndHost.executeTraceroute */
 export interface TracerouteHop {
   hop: number;
@@ -25,6 +33,8 @@ export interface TracerouteHop {
   rttMs?: number;
   timeout: boolean;
   unreachable?: boolean;
+  icmpCode?: number;
+  probes: TracerouteProbe[];
 }
 
 /** Route entry from EndHost.getRoutingTable */

@@ -116,19 +116,54 @@ function formatPingOutput(target: IPAddress, count: number, results: PingResult[
   return lines.join('\n');
 }
 
+function icmpCodeAnnotation(code: number | undefined): string {
+  if (code === undefined) return '';
+  switch (code) {
+    case 0: return ' !N';
+    case 1: return ' !H';
+    case 2: return ' !P';
+    case 3: return ' !P';
+    case 13: return ' !A';
+    default: return ` !${code}`;
+  }
+}
+
 function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30): string {
   if (hops.length === 0) {
-    return `traceroute to ${target}, ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
+    return `traceroute to ${target} (${target}), ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
   }
-  const lines = [`traceroute to ${target}, ${maxHops} hops max, 60 byte packets`];
+  const lines = [`traceroute to ${target} (${target}), ${maxHops} hops max, 60 byte packets`];
   for (const hop of hops) {
-    if (hop.timeout) {
+    const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
+
+    if (hop.timeout && (!probes || probes.every(p => !p.responded))) {
       lines.push(` ${hop.hop}  * * *`);
+      continue;
+    }
+
+    if (probes && probes.length > 0) {
+      const ip = hop.ip ?? '*';
+      let line = ` ${hop.hop}  ${ip} (${ip})`;
+      let lastIp = ip;
+      for (const probe of probes) {
+        if (!probe.responded) {
+          line += '  *';
+        } else {
+          const probeIp = probe.ip ?? ip;
+          if (probeIp !== lastIp) {
+            line += `  ${probeIp} (${probeIp})`;
+            lastIp = probeIp;
+          }
+          const annotation = icmpCodeAnnotation(probe.icmpCode);
+          line += `  ${(probe.rttMs ?? 0).toFixed(3)} ms${annotation}`;
+        }
+      }
+      lines.push(line);
     } else if (hop.unreachable) {
-      // ICMP Destination Unreachable → !N (network unreachable) annotation
-      lines.push(` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)} ms !N`);
+      const annotation = icmpCodeAnnotation(hop.icmpCode);
+      lines.push(` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms${annotation}`);
     } else {
-      lines.push(` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)} ms`);
+      lines.push(` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms`);
     }
   }
   return lines.join('\n');

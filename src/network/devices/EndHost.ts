@@ -840,12 +840,27 @@ export abstract class EndHost extends Equipment {
         });
       }
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
-      // ICMP errors come from intermediate routers, not the original target.
-      // The error source IP (router) won't match the target IP in pending keys.
-      // Since pings are sent sequentially (one outstanding at a time), reject all pending.
       const reason = icmp.icmpType === 'time-exceeded'
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
-        : `Destination unreachable (from ${ipPkt.sourceIP})`;
+        : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`;
+
+      // Correlate to a specific pending probe via the embedded original packet (P1.5).
+      // This allows multiple simultaneous probes (multi-probe per hop) to resolve independently.
+      if (icmp.originalPacket) {
+        const origICMP = icmp.originalPacket.payload as ICMPPacket;
+        if (origICMP && origICMP.type === 'icmp' && origICMP.icmpType === 'echo-request') {
+          const key = `${icmp.originalPacket.destinationIP}-${origICMP.id}-${origICMP.sequence}`;
+          const pending = this.pendingPings.get(key);
+          if (pending) {
+            clearTimeout(pending.timer);
+            this.pendingPings.delete(key);
+            pending.reject(reason);
+            return;
+          }
+        }
+      }
+
+      // Fallback: no originalPacket or no match — reject all pending (e.g. single-probe path)
       for (const [key, pending] of this.pendingPings) {
         clearTimeout(pending.timer);
         this.pendingPings.delete(key);
@@ -1233,13 +1248,15 @@ export abstract class EndHost extends Equipment {
   /**
    * Execute a traceroute: send ICMP echo with incrementing TTL.
    * Each router along the path returns ICMP Time Exceeded.
-   * Returns array of hops: { hopNum, ip, rttMs } or { hopNum, timeout: true }.
+   * probesPerHop controls how many probes are sent per TTL value (default 3, like real Linux traceroute).
    */
   protected async executeTraceroute(
     targetIP: IPAddress,
     maxHops: number = 30,
     timeoutMs: number = 2000,
-  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }>> {
+    probesPerHop: number = 3,
+    firstTtl: number = 1,
+  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; icmpCode?: number; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> }>> {
     const route = this.resolveRoute(targetIP);
     if (!route) return [];
 
@@ -1251,61 +1268,91 @@ export abstract class EndHost extends Equipment {
     try {
       nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
     } catch {
-      return [{ hop: 1, timeout: true }];
+      return [{ hop: firstTtl, timeout: true, probes: [{ responded: false }] }];
     }
 
-    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean }> = [];
+    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; icmpCode?: number; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> }> = [];
 
-    for (let ttl = 1; ttl <= maxHops; ttl++) {
-      this.pingIdCounter++;
-      const id = this.pingIdCounter;
-      const seq = 1;
+    for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
+      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> = [];
+      let destinationReached = false;
 
-      const result = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean }>((resolve) => {
-        const key = `${targetIP}-${id}-${seq}`;
-        const sentAt = performance.now();
+      for (let p = 0; p < probesPerHop; p++) {
+        this.pingIdCounter++;
+        const id = this.pingIdCounter;
+        const seq = p + 1;
 
-        const timer = setTimeout(() => {
-          this.pendingPings.delete(key);
-          resolve({ timeout: true, reached: false });
-        }, timeoutMs);
+        const probe = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean; icmpCode?: number }>((resolve) => {
+          const key = `${targetIP}-${id}-${seq}`;
+          const sentAt = performance.now();
 
-        this.pendingPings.set(key, {
-          resolve: (pingResult) => {
-            clearTimeout(timer);
-            resolve({ ip: pingResult.fromIP, rttMs: pingResult.rttMs, timeout: false, reached: true });
-          },
-          reject: (reason) => {
-            clearTimeout(timer);
-            // Time exceeded or destination unreachable — extract IP from message
-            const match = reason.match(/from ([\d.]+)/);
-            const rtt = performance.now() - sentAt;
-            const isUnreachable = reason.includes('Destination unreachable');
-            resolve({ ip: match ? match[1] : undefined, rttMs: rtt, timeout: false, reached: false, unreachable: isUnreachable });
-          },
-          timer,
-          sentAt,
+          const timer = setTimeout(() => {
+            this.pendingPings.delete(key);
+            resolve({ timeout: true, reached: false });
+          }, timeoutMs);
+
+          this.pendingPings.set(key, {
+            resolve: (pingResult) => {
+              clearTimeout(timer);
+              resolve({ ip: pingResult.fromIP, rttMs: pingResult.rttMs, timeout: false, reached: true });
+            },
+            reject: (reason) => {
+              clearTimeout(timer);
+              const match = reason.match(/from ([\d.]+)/);
+              const codeMatch = reason.match(/code (\d+)/);
+              const rtt = performance.now() - sentAt;
+              const isUnreachable = reason.includes('Destination unreachable');
+              const icmpCode = codeMatch ? parseInt(codeMatch[1], 10) : undefined;
+              resolve({ ip: match ? match[1] : undefined, rttMs: rtt, timeout: false, reached: false, unreachable: isUnreachable, icmpCode });
+            },
+            timer,
+            sentAt,
+          });
+
+          // Build ICMP with limited TTL
+          const icmp: ICMPPacket = {
+            type: 'icmp', icmpType: 'echo-request', code: 0,
+            id, sequence: seq, dataSize: 56,
+          };
+          const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
+
+          this.sendFrame(portName, {
+            srcMAC: route.port.getMAC(),
+            dstMAC: nextHopMAC,
+            etherType: ETHERTYPE_IPV4,
+            payload: ipPkt,
+          });
         });
 
-        // Build ICMP with limited TTL
-        const icmp: ICMPPacket = {
-          type: 'icmp', icmpType: 'echo-request', code: 0,
-          id, sequence: seq, dataSize: 56,
-        };
-        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
-
-        this.sendFrame(portName, {
-          srcMAC: route.port.getMAC(),
-          dstMAC: nextHopMAC,
-          etherType: ETHERTYPE_IPV4,
-          payload: ipPkt,
+        probes.push({
+          responded: !probe.timeout,
+          rttMs: probe.rttMs,
+          ip: probe.ip,
+          unreachable: probe.unreachable,
+          icmpCode: probe.icmpCode,
         });
-      });
+        if (probe.reached) destinationReached = true;
+      }
 
-      hops.push({ hop: ttl, ip: result.ip, rttMs: result.rttMs, timeout: result.timeout, unreachable: result.unreachable });
+      // Aggregate probe results into hop summary
+      const firstResponded = probes.find(p => p.responded);
+      const firstUnreachable = probes.find(p => p.unreachable);
+      const allTimeout = probes.every(p => !p.responded);
 
-      if (result.reached) break; // Reached destination
-      if (result.unreachable) break; // Destination unreachable — stop tracing
+      const hop = {
+        hop: ttl,
+        ip: firstResponded?.ip,
+        rttMs: firstResponded?.rttMs,
+        timeout: allTimeout,
+        unreachable: !!firstUnreachable,
+        icmpCode: firstUnreachable?.icmpCode ?? firstResponded?.icmpCode,
+        probes,
+      };
+
+      hops.push(hop);
+
+      if (destinationReached) break;
+      if (firstUnreachable) break;
     }
 
     return hops;

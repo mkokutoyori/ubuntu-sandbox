@@ -498,8 +498,8 @@ export abstract class LinuxMachine extends EndHost {
       ): Promise<PingResult[]> {
         return self.executePingSequence(target, count, timeoutMs, ttl);
       },
-      async traceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]> {
-        const hops = await self.executeTraceroute(target, maxHops);
+      async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]> {
+        const hops = await self.executeTraceroute(target, maxHops, 2000, probesPerHop, firstTtl);
         return hops as TracerouteHop[];
       },
       getDhcpClient(): DHCPClient {

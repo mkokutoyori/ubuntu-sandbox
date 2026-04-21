@@ -21,13 +21,29 @@ import type { IPAddress, SubnetMask, MACAddress, IPv4Packet } from '../../core/t
 import type { ARPEntry, HostRouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 
+export interface TracerouteProbe {
+  /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
+  responded: boolean;
+  rttMs?: number;
+  ip?: string;
+  unreachable?: boolean;
+  /** ICMP Destination Unreachable code (0=!N, 1=!H, 2=!P, 3=!X, 13=!A). */
+  icmpCode?: number;
+}
+
 export interface TracerouteHop {
   hop: number;
+  /** IP of the first responding probe. */
   ip?: string;
+  /** RTT of the first responding probe (backward compat). */
   rttMs?: number;
   timeout: boolean;
-  /** Set when the hop replied with an ICMP Destination Unreachable. */
+  /** True when any probe got ICMP Destination Unreachable. */
   unreachable?: boolean;
+  /** ICMP code from the first unreachable probe (0=!N, 1=!H, 2=!P, 13=!A). */
+  icmpCode?: number;
+  /** Per-probe detail — length equals probesPerHop. */
+  probes: TracerouteProbe[];
 }
 
 export interface LinuxNetKernel {
@@ -62,7 +78,7 @@ export interface LinuxNetKernel {
     ttl?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]>;
+  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]>;
 
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
