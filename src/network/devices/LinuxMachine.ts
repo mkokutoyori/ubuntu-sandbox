@@ -460,6 +460,14 @@ export abstract class LinuxMachine extends EndHost {
       configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean {
         return self.configureInterface(name, ip, mask);
       },
+      clearInterfaceIP(name: string): void {
+        const port = self.ports.get(name);
+        if (port) port.clearIP();
+      },
+      setInterfaceAdmin(name: string, enabled: boolean): void {
+        const port = self.ports.get(name);
+        if (port) port.setUp(enabled);
+      },
       isDHCPConfigured(name: string): boolean {
         return self.isDHCPConfigured(name);
       },

@@ -54,6 +54,12 @@ export interface LinuxNetKernel {
   /** Configure IPv4 address + mask on an interface. */
   configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean;
 
+  /** Remove IPv4 address from an interface (`ip addr del`). */
+  clearInterfaceIP(name: string): void;
+
+  /** Set admin state up/down (`ip link set dev X up/down`). */
+  setInterfaceAdmin(name: string, enabled: boolean): void;
+
   /** True if this interface was configured via DHCP (dynamic). */
   isDHCPConfigured(name: string): boolean;
 

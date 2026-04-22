@@ -14,7 +14,7 @@ import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } fro
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
-import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
+import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
@@ -628,13 +628,6 @@ export class LinuxCommandExecutor {
       // true/false
       case 'true': return { output: '', exitCode: 0 };
       case 'false': return { output: '', exitCode: 1 };
-
-      // ip (iproute2) — delegated to LinuxIpCommand
-      case 'ip': {
-        if (!this.ipNetworkCtx) return { output: 'ip: network context not available', exitCode: 1 };
-        const out = executeIpCommand(this.ipNetworkCtx, args);
-        return { output: out, exitCode: out.includes('Error') || out.includes('unknown') || out.includes('Cannot find') || out.includes('RTNETLINK') || out.includes('does not exist') ? 1 : 0 };
-      }
 
       // ipsec (strongSwan) — IPsec management
       case 'ipsec':
