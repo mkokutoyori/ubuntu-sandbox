@@ -11,7 +11,7 @@
  * Also provides buildSystemCommands() / buildInterfaceCommands() for CommandTrie wiring.
  */
 
-import { IPAddress, SubnetMask, MACAddress } from '../../../core/types';
+import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/types';
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
@@ -205,8 +205,18 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
 
   trie.registerGreedy('interface', 'Enter interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
-    const portName = resolveHuaweiInterfaceName(getRouter(), args.join(''));
-    if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    const raw = args.join('');
+    let portName = resolveHuaweiInterfaceName(getRouter(), raw);
+    if (!portName) {
+      const vMatch = raw.match(/^(loopback|tunnel)([\d]+)$/i);
+      if (vMatch) {
+        const typeMap: Record<string, string> = { 'loopback': 'LoopBack', 'tunnel': 'Tunnel' };
+        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        getRouter()._createVirtualInterface(fullName);
+        portName = fullName;
+      }
+      if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    }
     ctx.setSelectedInterface(portName);
     ctx.setMode('interface');
     return '';
@@ -233,6 +243,32 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     if (args.length < 2) return 'Error: Incomplete command.';
     return cmdArpStatic(getRouter(), args[0], args[1]);
   });
+
+  // IPv6 global enable
+  trie.register('ipv6', 'Enable IPv6', () => {
+    getRouter().enableIPv6Routing();
+    return '';
+  });
+
+  trie.register('undo ipv6', 'Disable IPv6', () => {
+    getRouter().disableIPv6Routing();
+    return '';
+  });
+
+  // IPv6 static route
+  trie.registerGreedy('ipv6 route-static', 'Configure IPv6 static route', (args) => {
+    if (args.length < 3) return 'Error: Incomplete command.';
+    try {
+      const prefix = new IPv6Address(args[0]);
+      const prefixLen = parseInt(args[1], 10);
+      if (isNaN(prefixLen)) return 'Error: Invalid prefix length';
+      const nextHop = new IPv6Address(args[2]);
+      getRouter().addIPv6StaticRoute(prefix, prefixLen, nextHop);
+      return '';
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  });
 }
 
 /**
@@ -253,6 +289,19 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return cmdUndoShutdown(getRouter(), ctx);
   });
 
+  trie.registerGreedy('description', 'Set interface description', (args) => {
+    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
+    if (args.length < 1) return 'Error: Incomplete command.';
+    getRouter().setInterfaceDescription(ctx.getSelectedInterface()!, args.join(' '));
+    return '';
+  });
+
+  trie.register('undo description', 'Remove interface description', () => {
+    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
+    getRouter().setInterfaceDescription(ctx.getSelectedInterface()!, '');
+    return '';
+  });
+
   trie.registerGreedy('undo', 'Undo configuration', (args) => {
     return cmdUndo(getRouter(), ctx, args);
   });
@@ -261,7 +310,39 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return cmdDhcpSelectGlobal(ctx);
   });
 
+  trie.register('dhcp select relay', 'Set DHCP relay mode on interface', () => '');
+
+  trie.registerGreedy('dhcp relay server-ip', 'Set DHCP relay server address', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
+    getRouter()._getDHCPServerInternal().addHelperAddress(ctx.getSelectedInterface()!, args[0]);
+    return '';
+  });
+
   trie.register('dhcp snooping enable', 'Enable DHCP snooping on interface', () => '');
+
+  // IPv6 interface commands
+  trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
+    return '';
+  });
+
+  trie.registerGreedy('ipv6 address', 'Configure IPv6 address', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
+    const addrStr = args[0];
+    const slashIdx = addrStr.indexOf('/');
+    if (slashIdx === -1) return 'Error: Invalid IPv6 address format (expected addr/prefix)';
+    const addr = addrStr.substring(0, slashIdx);
+    const prefixLen = parseInt(addrStr.substring(slashIdx + 1), 10);
+    if (isNaN(prefixLen)) return 'Error: Invalid prefix length';
+    try {
+      const ipv6Addr = new IPv6Address(addr);
+      getRouter().configureIPv6Interface(ctx.getSelectedInterface()!, ipv6Addr, prefixLen);
+      return '';
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  });
 }
 
 // ─── Utility Functions ───────────────────────────────────────────────

@@ -48,8 +48,15 @@ import {
   buildHuaweiIKEProposalCommands, buildHuaweiIKEPeerCommands,
   buildHuaweiIPSecProposalCommands, buildHuaweiIPSecPolicyCommands,
 } from './huawei/HuaweiIPSecCommands';
+import {
+  type HuaweiACLContext, type HuaweiACLMode,
+  registerHuaweiACLSystemCommands, registerHuaweiACLInterfaceCommands,
+  registerHuaweiACLDisplayCommands,
+  buildHuaweiBasicACLCommands, buildHuaweiAdvancedACLCommands,
+  runningConfigACL, runningConfigInterfaceACL,
+} from './huawei/HuaweiAclCommands';
 
-export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext {
+export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext {
   private mode: HuaweiShellMode | string = 'user';
   private selectedInterface: string | null = null;
   private selectedPool: string | null = null;
@@ -66,6 +73,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private selectedIPSecProposal: string | null = null;
   private selectedIPSecPolicy: string | null = null;
   private selectedIPSecPolicySeq: number | null = null;
+
+  // ── ACL sub-mode selections ────────────────────────────────────
+  private selectedACLNumber: number | null = null;
+  private selectedACLMode: HuaweiACLMode | null = null;
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
@@ -84,6 +95,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ikePeerTrie = new CommandTrie();
   private ipsecProposalTrie = new CommandTrie();
   private ipsecPolicyTrie = new CommandTrie();
+  // ACL sub-mode tries
+  private aclBasicTrie = new CommandTrie();
+  private aclAdvancedTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
@@ -93,6 +107,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildOSPFViewCommands();
     this.buildOSPFAreaViewCommands();
     this.buildIPSecSubViewCommands();
+    this.buildACLSubViewCommands();
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -127,6 +142,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   setSelectedIPSecPolicySeq(seq: number | null): void { this.selectedIPSecPolicySeq = seq; }
   getSelectedIPSecPolicySeq(): number | null { return this.selectedIPSecPolicySeq; }
 
+  // ─── HuaweiACLContext Implementation ────────────────────────────────
+
+  getSelectedACLNumber(): number | null { return this.selectedACLNumber; }
+  setSelectedACLNumber(n: number | null): void { this.selectedACLNumber = n; }
+  getSelectedACLMode(): HuaweiACLMode | null { return this.selectedACLMode; }
+  setSelectedACLMode(m: HuaweiACLMode | null): void { this.selectedACLMode = m; }
+
   // ─── HuaweiDisplayState Implementation ─────────────────────────────
 
   isDhcpEnabled(): boolean { return this.dhcpEnabled; }
@@ -147,6 +169,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
       case 'ipsec-policy':  return `[${host}-ipsec-policy-${this.selectedIPSecPolicy}-${this.selectedIPSecPolicySeq}]`;
+      case 'acl-basic':    return `[${host}-acl-basic-${this.selectedACLNumber}]`;
+      case 'acl-advanced': return `[${host}-acl-adv-${this.selectedACLNumber}]`;
       default:           return `<${host}>`;
     }
   }
@@ -175,6 +199,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.selectedIPSecProposal = null;
       this.selectedIPSecPolicy = null;
       this.selectedIPSecPolicySeq = null;
+      this.selectedACLNumber = null;
+      this.selectedACLMode = null;
       return '';
     }
     if (lower === 'quit') return this.cmdQuit();
@@ -255,6 +281,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.selectedIPSecPolicy = null;
         this.selectedIPSecPolicySeq = null;
         return '';
+      case 'acl-basic':
+      case 'acl-advanced':
+        this.mode = 'system';
+        this.selectedACLNumber = null;
+        this.selectedACLMode = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -296,6 +328,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ike-peer': return this.ikePeerTrie;
       case 'ipsec-proposal': return this.ipsecProposalTrie;
       case 'ipsec-policy': return this.ipsecPolicyTrie;
+      case 'acl-basic': return this.aclBasicTrie;
+      case 'acl-advanced': return this.aclAdvancedTrie;
       default: return this.userTrie;
     }
   }
@@ -325,6 +359,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // IPSec display commands
     registerHuaweiIPSecDisplayCommands(t, getRouter);
 
+    // ACL display commands
+    registerHuaweiACLDisplayCommands(t, getRouter);
+
     // Backward-compat aliases in user view
     t.registerGreedy('ip route-static', 'Configure static route', (args) => {
       return cmdIpRouteStatic(getRouter(), args);
@@ -346,6 +383,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // ping — ICMP echo (async)
     t.registerGreedy('ping', 'Send ICMP echo messages', (args) => {
       return this._handlePing(args);
+    });
+
+    // reset arp — clear dynamic ARP entries
+    t.register('reset arp', 'Clear dynamic ARP entries', () => {
+      getRouter()._clearARPCache();
+      return '';
+    });
+
+    // reset counters — reset IP traffic counters
+    t.register('reset counters', 'Reset traffic counters', () => {
+      getRouter().resetCounters();
+      return '';
     });
   }
 
@@ -379,6 +428,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // IPSec display commands
     registerHuaweiIPSecDisplayCommands(t, () => this.r());
+
+    // ACL system-mode commands
+    registerHuaweiACLSystemCommands(t, this);
+
+    // ACL display commands
+    registerHuaweiACLDisplayCommands(t, () => this.r());
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
@@ -396,6 +451,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // IPSec interface commands
     registerHuaweiIPSecInterfaceCommands(t, this);
+
+    // ACL interface commands
+    registerHuaweiACLInterfaceCommands(t, this);
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
@@ -421,6 +479,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildHuaweiIKEPeerCommands(this.ikePeerTrie, this);
     buildHuaweiIPSecProposalCommands(this.ipsecProposalTrie, this);
     buildHuaweiIPSecPolicyCommands(this.ipsecPolicyTrie, this);
+  }
+
+  // ─── ACL Sub-Views ──────────────────────────────────────────
+
+  private buildACLSubViewCommands(): void {
+    buildHuaweiBasicACLCommands(this.aclBasicTrie, this);
+    buildHuaweiAdvancedACLCommands(this.aclAdvancedTrie, this);
   }
 
   // ─── OSPF Area View ([hostname-ospf-1-area-X]) ────────────────
@@ -520,11 +585,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     let target = '';
     let count = 5;
     let timeoutMs = 2000;
+    let sourceIP: string | null = null;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10) || 5; i++; }
       else if (a === '-t' && args[i + 1]) { timeoutMs = (parseInt(args[i + 1], 10) || 2) * 1000; i++; }
+      else if (a === '-a' && args[i + 1]) { sourceIP = args[i + 1]; i++; }
       else if (!a.startsWith('-')) { target = args[i]; }
     }
 
@@ -538,7 +605,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const targetIP = new IPAddress(target);
     const router = this.r();
 
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs).then(results => {
+    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIP ?? undefined).then(results => {
       const successes = results.filter(r => r.success).length;
       const lines = [
         `PING ${target}: 56  data bytes, press CTRL_C to break`,
