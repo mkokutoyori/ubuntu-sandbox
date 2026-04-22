@@ -22,13 +22,13 @@ export interface LinuxFormatHelpers {
    * Render a full `ping` sequence output (header + per-packet + stats).
    * @param size Payload size in bytes (defaults to 56, as in the real ping).
    */
-  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number): string;
+  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number, hostname?: string): string;
 
   /**
    * Render a `traceroute` output including header and per-hop lines.
    * @param maxHops Advertised maxHops in the header (defaults to 30).
    */
-  formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops?: number): string;
+  formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops?: number, hostname?: string): string;
 
   /** Render a single interface in `ifconfig` style (UP/BROADCAST/...). */
   formatInterface(port: Port): string;
@@ -71,10 +71,11 @@ function formatInterface(port: Port): string {
   ].join('\n');
 }
 
-function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56): string {
+function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
   const lines: string[] = [];
   const totalSize = size + 28; // ICMP header (8) + IP header (20)
-  lines.push(`PING ${target} (${target}) ${size}(${totalSize}) bytes of data.`);
+  const displayName = hostname ?? target.toString();
+  lines.push(`PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`);
 
   const received = results.filter(r => r.success);
   const failed = count - received.length;
@@ -128,11 +129,12 @@ function icmpCodeAnnotation(code: number | undefined): string {
   }
 }
 
-function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30): string {
+function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30, hostname?: string): string {
+  const displayName = hostname ?? target.toString();
   if (hops.length === 0) {
-    return `traceroute to ${target} (${target}), ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
+    return `traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
   }
-  const lines = [`traceroute to ${target} (${target}), ${maxHops} hops max, 60 byte packets`];
+  const lines = [`traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets`];
   for (const hop of hops) {
     const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
 

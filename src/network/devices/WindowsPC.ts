@@ -65,6 +65,8 @@ export class WindowsPC extends EndHost {
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
   private dnsSuffix: string = '';
+  /** In-memory hosts table (mirrors C:\Windows\System32\drivers\etc\hosts) */
+  private hostsTable: Map<string, string> = new Map();
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
   /** Service manager (service lifecycle, dependencies) */
@@ -105,6 +107,21 @@ export class WindowsPC extends EndHost {
     this.env.set('OS', 'Windows_NT');
     this.env.set('PROCESSOR_ARCHITECTURE', 'AMD64');
     this.env.set('NUMBER_OF_PROCESSORS', '4');
+  }
+
+  // ─── Hosts table ──────────────────────────────────────────────
+
+  addHostsEntry(ip: string, hostname: string): void {
+    this.hostsTable.set(hostname.toLowerCase(), ip);
+  }
+
+  resolveHostname(name: string): IPAddress | null {
+    try { return new IPAddress(name); } catch { /* not an IP */ }
+    const ip = this.hostsTable.get(name.toLowerCase());
+    if (ip) {
+      try { return new IPAddress(ip); } catch { /* skip */ }
+    }
+    return null;
   }
 
   // ─── Terminal ──────────────────────────────────────────────────
@@ -465,6 +482,9 @@ export class WindowsPC extends EndHost {
         if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
         return true;
       },
+
+      // Hostname resolution
+      resolveHostname: (name: string) => this.resolveHostname(name),
     };
   }
 

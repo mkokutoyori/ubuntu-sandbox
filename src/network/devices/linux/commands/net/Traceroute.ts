@@ -10,7 +10,6 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { IPAddress } from '../../../../core/types';
 
 export const tracerouteCommand: LinuxCommand = {
   name: 'traceroute',
@@ -51,14 +50,13 @@ export const tracerouteCommand: LinuxCommand = {
 
     if (!targetStr) return 'Usage: traceroute [-InU] [-m maxhops] [-q nqueries] [-f first_ttl] <destination>';
 
-    let targetIP: IPAddress;
-    try {
-      targetIP = new IPAddress(targetStr);
-    } catch {
+    const targetIP = ctx.net.resolveHostname(targetStr);
+    if (!targetIP) {
       return `traceroute: unknown host ${targetStr}`;
     }
 
+    const isHostname = targetStr !== targetIP.toString();
     const hops = await ctx.net.traceroute(targetIP, maxHops, probesPerHop, firstTtl);
-    return ctx.fmt.formatTracerouteOutput(targetIP, hops, maxHops);
+    return ctx.fmt.formatTracerouteOutput(targetIP, hops, maxHops, isHostname ? targetStr : undefined);
   },
 };

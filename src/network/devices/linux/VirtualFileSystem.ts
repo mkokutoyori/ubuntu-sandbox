@@ -81,6 +81,13 @@ export class VirtualFileSystem {
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
+    this.createFileAt('/etc/hosts',
+      '127.0.0.1\tlocalhost\n' +
+      '127.0.1.1\tlocalhost\n' +
+      '\n' +
+      '# The following lines are desirable for IPv6 capable hosts\n' +
+      '::1\tlocalhost ip6-localhost ip6-loopback\n',
+      0o644, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
 

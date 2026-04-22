@@ -98,4 +98,19 @@ export interface LinuxNetKernel {
 
   /** Parsed TCP/UDP port numbers from an IPv4 packet, for NAT/firewall. */
   extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number };
+
+  // ─── Name resolution ────────────────────────────────────────────
+  /**
+   * Resolve a hostname to an IPv4 address.
+   *
+   * Resolution order (mirrors Linux NSS `files dns`):
+   *   1. If `name` is already a valid IPv4 address, return it directly.
+   *   2. Look up `name` in `/etc/hosts` (VFS).
+   *   3. Query the DNS server from `/etc/resolv.conf` (if configured).
+   *   4. Return `null` if unresolvable.
+   */
+  resolveHostname(name: string): IPAddress | null;
+
+  /** Read a file from the virtual filesystem (returns null if not found). */
+  readFile(path: string): string | null;
 }

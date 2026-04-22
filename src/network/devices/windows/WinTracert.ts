@@ -9,7 +9,6 @@
  */
 
 import type { WinCommandContext, TracerouteHop } from './WinCommandExecutor';
-import { IPAddress } from '../../core/types';
 
 const TRACERT_HELP = `
 Usage: tracert [-d] [-h maximum_hops] [-j host-list] [-w timeout]
@@ -42,9 +41,10 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
 
   if (!targetStr) return TRACERT_HELP;
 
-  let targetIP: IPAddress;
-  try { targetIP = new IPAddress(targetStr); }
-  catch { return `Unable to resolve target system name ${targetStr}.`; }
+  const targetIP = ctx.resolveHostname(targetStr);
+  if (!targetIP) {
+    return `Unable to resolve target system name ${targetStr}.`;
+  }
 
   const hops = await ctx.executeTraceroute(targetIP, maxHops);
 

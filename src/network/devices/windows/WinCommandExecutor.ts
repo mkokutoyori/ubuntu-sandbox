@@ -119,4 +119,7 @@ export interface WinCommandContext {
 
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;
+
+  // Hostname resolution
+  resolveHostname(name: string): IPAddress | null;
 }
