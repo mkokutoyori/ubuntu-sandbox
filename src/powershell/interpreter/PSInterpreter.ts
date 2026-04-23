@@ -1,0 +1,1094 @@
+/**
+ * PSInterpreter — PowerShell 5.1 AST walker / executor.
+ *
+ * Sections:
+ *   1. Class setup + expression evaluation
+ *   2. Statement executors (if / while / for / foreach / switch / try / function)
+ *   3. Pipeline engine + built-in cmdlets
+ */
+
+import { PSLexer } from '@/powershell/lexer/PSLexer';
+import { PSParser } from '@/powershell/parser/PSParser';
+import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
+import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
+import type {
+  PSProgram, PSStatementList, PSStatement,
+  PSPipelineStatement, PSAssignmentStatement,
+  PSIfStatement, PSWhileStatement, PSDoWhileStatement, PSDoUntilStatement,
+  PSForStatement, PSForeachStatement, PSSwitchStatement, PSTryStatement,
+  PSFunctionDefinition, PSReturnStatement, PSThrowStatement,
+  PSPipeline, PSCommand,
+  PSExpression, PSLiteralExpression, PSVariableExpression,
+  PSBinaryExpression, PSUnaryExpression, PSRangeExpression,
+  PSArrayExpression, PSHashtableExpression, PSSubExpressionExpression,
+  PSMemberExpression, PSStaticMemberExpression, PSIndexExpression,
+  PSInvocationExpression, PSCastExpression, PSCommandExpression,
+  PSScriptBlock, PSPipelineExpression,
+} from '@/powershell/parser/PSASTNode';
+
+// ─── Flow-control signals ─────────────────────────────────────────────────────
+
+class ReturnSignal  { constructor(public readonly value: PSValue) {} }
+class BreakSignal   {}
+class ContinueSignal {}
+
+export class PSRuntimeError extends Error {
+  constructor(message: string) { super(message); this.name = 'PSRuntimeError'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Section 1 — Class setup + expression evaluation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export class PSInterpreter {
+  private readonly lexer  = new PSLexer();
+  private readonly parser = new PSParser();
+  private readonly global: PSEnvironment;
+  private outputLines: string[] = [];
+
+  // ── User-defined functions registered at global scope ─────────────────────
+  private readonly functions = new Map<string, PSScriptBlock>();
+
+  constructor() {
+    this.global = new PSEnvironment();
+    seedBuiltins(this.global);
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
+
+  execute(code: string): string {
+    this.outputLines = [];
+    const tokens = this.lexer.tokenize(code);
+    const ast    = this.parser.parse(tokens);
+    this.execProgram(ast, this.global);
+    return this.outputLines.join('\n');
+  }
+
+  getVariable(name: string): PSValue {
+    return this.global.get(name);
+  }
+
+  setVariable(name: string, value: PSValue): void {
+    this.global.set(name, value);
+  }
+
+  // ── Program / StatementList ────────────────────────────────────────────────
+
+  private execProgram(node: PSProgram, env: PSEnvironment): PSValue {
+    return this.execStatementList(node.body, env);
+  }
+
+  execStatementList(node: PSStatementList, env: PSEnvironment): PSValue {
+    let last: PSValue = null;
+    for (const stmt of node.statements) {
+      last = this.execStatement(stmt, env);
+    }
+    return last;
+  }
+
+  // ── Statement dispatcher ───────────────────────────────────────────────────
+
+  execStatement(node: PSStatement, env: PSEnvironment): PSValue {
+    switch (node.type) {
+      case 'PipelineStatement':   return this.execPipelineStmt(node as PSPipelineStatement, env);
+      case 'AssignmentStatement': return this.execAssignment(node as PSAssignmentStatement, env);
+      case 'IfStatement':         return this.execIf(node as PSIfStatement, env);
+      case 'WhileStatement':      return this.execWhile(node as PSWhileStatement, env);
+      case 'DoWhileStatement':    return this.execDoWhile(node as PSDoWhileStatement, env);
+      case 'DoUntilStatement':    return this.execDoUntil(node as PSDoUntilStatement, env);
+      case 'ForStatement':        return this.execFor(node as PSForStatement, env);
+      case 'ForeachStatement':    return this.execForeach(node as PSForeachStatement, env);
+      case 'SwitchStatement':     return this.execSwitch(node as PSSwitchStatement, env);
+      case 'TryStatement':        return this.execTry(node as PSTryStatement, env);
+      case 'FunctionDefinition':  return this.execFunctionDef(node as PSFunctionDefinition, env);
+      case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
+      case 'BreakStatement':      throw new BreakSignal();
+      case 'ContinueStatement':   throw new ContinueSignal();
+      case 'ThrowStatement':      return this.execThrow(node as PSThrowStatement, env);
+      default:                    return null;
+    }
+  }
+
+  // ── Assignment ─────────────────────────────────────────────────────────────
+
+  private execAssignment(node: PSAssignmentStatement, env: PSEnvironment): PSValue {
+    const varName = (node.target as PSVariableExpression).varName ?? (node.target as PSVariableExpression).name;
+    const rhs = this.evalExpr(node.value, env);
+
+    if (node.operator === '=') {
+      env.set(varName, rhs);
+      return rhs;
+    }
+
+    const current = (env.get(varName) as number) ?? 0;
+    let result: PSValue;
+    switch (node.operator) {
+      case '+=': result = this.applyPlus(current, rhs); break;
+      case '-=': result = current - (rhs as number);    break;
+      case '*=': result = current * (rhs as number);    break;
+      case '/=': result = current / (rhs as number);    break;
+      case '%=': result = current % (rhs as number);    break;
+      default:   result = rhs;
+    }
+    env.update(varName, result);
+    return result;
+  }
+
+  private execPipelineStmt(node: PSPipelineStatement, env: PSEnvironment): PSValue {
+    return this.execPipeline(node.pipeline, env);
+  }
+
+  // ── ScriptBlock executor ───────────────────────────────────────────────────
+
+  execScriptBlock(block: PSScriptBlock, env: PSEnvironment): PSValue {
+    try {
+      if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
+      if (block.processBlock) this.execStatementList(block.processBlock, env);
+      if (block.endBlock)     this.execStatementList(block.endBlock,     env);
+      if (block.body)         return this.execStatementList(block.body,  env);
+      return null;
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    }
+  }
+
+  // ── ScriptBlock invocation (functions, cmdlet filter blocks) ──────────────
+
+  invokeScriptBlock(
+    block: PSScriptBlock,
+    namedArgs: Record<string, PSValue>,
+    positionalArgs: PSValue[],
+    parentEnv: PSEnvironment,
+    pipelineInput?: PSValue,
+  ): PSValue {
+    const childEnv = parentEnv.createChild();
+
+    // $_ / $PSItem for pipeline
+    if (pipelineInput !== undefined) {
+      childEnv.set('_',      pipelineInput);
+      childEnv.set('PSItem', pipelineInput);
+    }
+
+    // Bind declared parameters
+    if (block.paramBlock) {
+      block.paramBlock.parameters.forEach(p => {
+        const pname = p.name.varName ?? p.name.name;
+        const pkey  = pname.toLowerCase();
+        if (namedArgs[pkey] !== undefined) {
+          childEnv.set(pname, namedArgs[pkey]);
+        } else if (positionalArgs.length > 0) {
+          childEnv.set(pname, positionalArgs.shift()!);
+        } else if (p.defaultValue) {
+          childEnv.set(pname, this.evalExpr(p.defaultValue, parentEnv));
+        } else {
+          childEnv.set(pname, null);
+        }
+      });
+    }
+
+    return this.execScriptBlock(block, childEnv);
+  }
+
+  // ── Expression dispatcher ──────────────────────────────────────────────────
+
+  evalExpr(node: PSExpression, env: PSEnvironment): PSValue {
+    switch (node.type) {
+      case 'LiteralExpression':        return this.evalLiteral(node as PSLiteralExpression, env);
+      case 'VariableExpression':       return this.evalVariable(node as PSVariableExpression, env);
+      case 'BinaryExpression':         return this.evalBinary(node as PSBinaryExpression, env);
+      case 'UnaryExpression':          return this.evalUnary(node as PSUnaryExpression, env);
+      case 'ArrayExpression':          return this.evalArray(node as PSArrayExpression, env);
+      case 'HashtableExpression':      return this.evalHashtable(node as PSHashtableExpression, env);
+      case 'SubExpression':            return this.evalSubExpr(node as PSSubExpressionExpression, env);
+      case 'MemberExpression':         return this.evalMember(node as PSMemberExpression, env);
+      case 'StaticMemberExpression':   return this.evalStaticMember(node as PSStaticMemberExpression, env);
+      case 'IndexExpression':          return this.evalIndex(node as PSIndexExpression, env);
+      case 'InvocationExpression':     return this.evalInvocation(node as PSInvocationExpression, env);
+      case 'CastExpression':           return this.evalCast(node as PSCastExpression, env);
+      case 'RangeExpression':          return this.evalRange(node as PSRangeExpression, env);
+      case 'CommandExpression':        return this.evalCommandExpr(node as PSCommandExpression, env);
+      case 'PipelineExpression':       return this.execPipeline((node as PSPipelineExpression).pipeline, env);
+      case 'ScriptBlock':              return node as unknown as PSValue;
+      case 'AssignmentStatement':      return this.execAssignment(node as unknown as PSAssignmentStatement, env);
+      default:                         return null;
+    }
+  }
+
+  // ── Literal ────────────────────────────────────────────────────────────────
+
+  private evalLiteral(node: PSLiteralExpression, env: PSEnvironment): PSValue {
+    if (node.kind === 'expandable') {
+      return this.expandDoubleQuotedString(node.value as string, env);
+    }
+    return node.value as PSValue;
+  }
+
+  private expandDoubleQuotedString(raw: string, env: PSEnvironment): string {
+    return expandString(raw, env, (code) => {
+      const tokens = this.lexer.tokenize(code);
+      const ast    = this.parser.parse(tokens);
+      return this.execProgram(ast, env);
+    });
+  }
+
+  // ── Variable ───────────────────────────────────────────────────────────────
+
+  private evalVariable(node: PSVariableExpression, env: PSEnvironment): PSValue {
+    const name = node.varName ?? node.name;
+
+    if (node.scope === 'global') return env.getGlobal(name);
+    if (node.scope === 'env')    return process.env[name.toUpperCase()] ?? null;
+
+    // $true / $false / $null resolved via seedBuiltins
+    const val = env.get(name);
+    return val === undefined ? null : val;
+  }
+
+  // ── Binary ─────────────────────────────────────────────────────────────────
+
+  private evalBinary(node: PSBinaryExpression, env: PSEnvironment): PSValue {
+    const op = node.operator.toLowerCase();
+
+    // Short-circuit
+    if (op === '-and') {
+      return this.isTruthy(this.evalExpr(node.left, env))
+        ? this.evalExpr(node.right, env)
+        : false;
+    }
+    if (op === '-or') {
+      const l = this.evalExpr(node.left, env);
+      return this.isTruthy(l) ? l : this.evalExpr(node.right, env);
+    }
+
+    const left  = this.evalExpr(node.left,  env);
+    const right = this.evalExpr(node.right, env);
+
+    switch (op) {
+      case '+':  return this.applyPlus(left, right);
+      case '-':  return (left as number) - (right as number);
+      case '*':  return this.applyMultiply(left, right);
+      case '/':  return (left as number) / (right as number);
+      case '%':  return (left as number) % (right as number);
+
+      case '-eq':  return this.psEq(left, right, false);
+      case '-ne':  return !this.psEq(left, right, false);
+      case '-ceq': return this.psEq(left, right, true);
+      case '-cne': return !this.psEq(left, right, true);
+      case '-ieq': return this.psEq(left, right, false);
+      case '-ine': return !this.psEq(left, right, false);
+      case '-gt':  return (left as number) > (right as number);
+      case '-lt':  return (left as number) < (right as number);
+      case '-ge':  return (left as number) >= (right as number);
+      case '-le':  return (left as number) <= (right as number);
+      case '-cgt': return String(left) > String(right);
+      case '-clt': return String(left) < String(right);
+      case '-cge': return String(left) >= String(right);
+      case '-cle': return String(left) <= String(right);
+
+      case '-like':     return this.psLike(String(left), String(right), false);
+      case '-notlike':  return !this.psLike(String(left), String(right), false);
+      case '-clike':    return this.psLike(String(left), String(right), true);
+      case '-cnotlike': return !this.psLike(String(left), String(right), true);
+
+      case '-match': {
+        const matched = this.psMatch(String(left), String(right), false, env);
+        return matched;
+      }
+      case '-notmatch': return !this.psMatch(String(left), String(right), false, env);
+      case '-cmatch':   return this.psMatch(String(left), String(right), true, env);
+      case '-cnotmatch':return !this.psMatch(String(left), String(right), true, env);
+
+      case '-contains': {
+        const arr = Array.isArray(left) ? left : [];
+        return arr.some(e => this.psEq(e, right, false));
+      }
+      case '-notcontains': {
+        const arr = Array.isArray(left) ? left : [];
+        return !arr.some(e => this.psEq(e, right, false));
+      }
+      case '-in': {
+        const arr = Array.isArray(right) ? right : [];
+        return arr.some(e => this.psEq(e, left, false));
+      }
+      case '-notin': {
+        const arr = Array.isArray(right) ? right : [];
+        return !arr.some(e => this.psEq(e, left, false));
+      }
+
+      case '-xor':  return this.isTruthy(left) !== this.isTruthy(right);
+      case '-band': return (left as number) & (right as number);
+      case '-bor':  return (left as number) | (right as number);
+      case '-bxor': return (left as number) ^ (right as number);
+      case '-shl':  return (left as number) << (right as number);
+      case '-shr':  return (left as number) >> (right as number);
+
+      case '-replace': {
+        const pattern = String(right);
+        const [re, repl] = pattern.includes(',')
+          ? pattern.split(',', 2) as [string, string]
+          : [pattern, ''];
+        return String(left).replace(new RegExp(re, 'gi'), repl.trim());
+      }
+      case '-split':  return String(left).split(new RegExp(String(right)));
+      case '-join':   return (Array.isArray(left) ? left : [left]).map(psValueToString).join(String(right));
+
+      case '-is':   return this.psIs(left, String(right));
+      case '-isnot':return !this.psIs(left, String(right));
+      case '-as':   return this.psCast(left, String(right));
+
+      default:
+        throw new PSRuntimeError(`Unknown operator: ${op}`);
+    }
+  }
+
+  // ── Unary ──────────────────────────────────────────────────────────────────
+
+  private evalUnary(node: PSUnaryExpression, env: PSEnvironment): PSValue {
+    const val = this.evalExpr(node.operand, env);
+    switch (node.operator) {
+      case '-':    return -(val as number);
+      case '+':    return +(val as number);
+      case '-not': return !this.isTruthy(val);
+      case '!':    return !this.isTruthy(val);
+      case '-bnot':return ~(val as number);
+      default:     throw new PSRuntimeError(`Unknown unary operator: ${node.operator}`);
+    }
+  }
+
+  // ── Array @() ─────────────────────────────────────────────────────────────
+
+  private evalArray(node: PSArrayExpression, env: PSEnvironment): PSValue {
+    const result: PSValue[] = [];
+    for (const stmt of node.elements) {
+      const val = this.execStatement(stmt, env);
+      if (Array.isArray(val)) result.push(...val);
+      else if (val !== null && val !== undefined) result.push(val);
+    }
+    return result;
+  }
+
+  // ── Hashtable @{k=v} ──────────────────────────────────────────────────────
+
+  private evalHashtable(node: PSHashtableExpression, env: PSEnvironment): PSValue {
+    const result: Record<string, PSValue> = {};
+    for (const pair of node.pairs) {
+      const key = psValueToString(this.evalExpr(pair.key, env));
+      result[key] = this.evalExpr(pair.value, env);
+    }
+    return result;
+  }
+
+  // ── SubExpression $(...) ───────────────────────────────────────────────────
+
+  private evalSubExpr(node: PSSubExpressionExpression, env: PSEnvironment): PSValue {
+    return this.execStatementList(node.body, env);
+  }
+
+  // ── Range 1..5 ────────────────────────────────────────────────────────────
+
+  private evalRange(node: PSRangeExpression, env: PSEnvironment): PSValue {
+    const start = this.evalExpr(node.start, env) as number;
+    const end   = this.evalExpr(node.end,   env) as number;
+    const arr: number[] = [];
+    if (start <= end) for (let i = start; i <= end; i++) arr.push(i);
+    else              for (let i = start; i >= end; i--) arr.push(i);
+    return arr;
+  }
+
+  // ── Member $obj.Prop ──────────────────────────────────────────────────────
+
+  private evalMember(node: PSMemberExpression, env: PSEnvironment): PSValue {
+    const obj    = this.evalExpr(node.object, env);
+    const member = typeof node.member === 'string'
+      ? node.member.toLowerCase()
+      : psValueToString(this.evalExpr(node.member as PSExpression, env)).toLowerCase();
+    return this.getMember(obj, member);
+  }
+
+  // ── Static member [Type]::Member ─────────────────────────────────────────
+
+  private evalStaticMember(node: PSStaticMemberExpression, env: PSEnvironment): PSValue {
+    const typeName = node.typeName.toLowerCase();
+    const member   = node.member.toLowerCase();
+    const typeObj  = STATIC_TYPES[typeName];
+    if (typeObj) return this.getMember(typeObj as PSValue, member);
+    return null;
+  }
+
+  // ── Index $arr[i] ─────────────────────────────────────────────────────────
+
+  private evalIndex(node: PSIndexExpression, env: PSEnvironment): PSValue {
+    const obj = this.evalExpr(node.object, env);
+    const idx = this.evalExpr(node.index,  env);
+    if (Array.isArray(obj)) {
+      let i = idx as number;
+      if (i < 0) i = obj.length + i;
+      return obj[i] ?? null;
+    }
+    if (obj !== null && typeof obj === 'object') {
+      return (obj as Record<string, PSValue>)[String(idx)] ?? null;
+    }
+    return null;
+  }
+
+  // ── Method call $obj.Method(args) ────────────────────────────────────────
+
+  private evalInvocation(node: PSInvocationExpression, env: PSEnvironment): PSValue {
+    const callee = this.evalExpr(node.callee, env);
+    const args   = node.arguments.map(a => this.evalExpr(a, env));
+    if (typeof callee === 'function') {
+      return (callee as (...a: PSValue[]) => PSValue)(...args);
+    }
+    return null;
+  }
+
+  // ── Cast [type]expr ───────────────────────────────────────────────────────
+
+  private evalCast(node: PSCastExpression, env: PSEnvironment): PSValue {
+    const val = this.evalExpr(node.operand, env);
+    return this.psCast(val, node.targetType);
+  }
+
+  // ── CommandExpression (bareword as expression — may be a zero-arg function call) ─
+
+  private evalCommandExpr(node: PSCommandExpression, env: PSEnvironment): PSValue {
+    if (node.name === '++' || node.name === '--') return null;
+    const lname = node.name.toLowerCase();
+    const block = this.functions.get(lname);
+    if (block) return this.invokeScriptBlock(block, {}, [], env, undefined);
+    // Try as built-in with no args (e.g. Get-Date, Get-Location bareword in expression)
+    try { return this.execBuiltin(lname, [], {}, undefined, env); }
+    catch { return null; }
+  }
+
+  // ── Public coercion helpers ────────────────────────────────────────────────
+
+  psCast(val: PSValue, typeName: string): PSValue {
+    const t = typeName.replace(/^\[|\]$/g, '').toLowerCase();
+    switch (t) {
+      case 'int':
+      case 'int32':
+      case 'long':
+      case 'int64':   return parseInt(String(val), 10);
+      case 'double':
+      case 'float':
+      case 'single':
+      case 'decimal': return parseFloat(String(val));
+      case 'string':  return psValueToString(val);
+      case 'bool':
+      case 'boolean': return this.isTruthy(val);
+      case 'char':    return String(val).charAt(0);
+      case 'array':   return Array.isArray(val) ? val : [val];
+      default:        return val;
+    }
+  }
+
+  isTruthy(val: PSValue): boolean {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number')  return val !== 0;
+    if (typeof val === 'string')  return val.length > 0;
+    if (Array.isArray(val))       return val.length > 0;
+    return true;
+  }
+
+  private applyPlus(left: PSValue, right: PSValue): PSValue {
+    if (Array.isArray(left)) return [...left, ...(Array.isArray(right) ? right : [right])];
+    if (typeof left === 'string' || typeof right === 'string')
+      return psValueToString(left) + psValueToString(right);
+    return (left as number) + (right as number);
+  }
+
+  private applyMultiply(left: PSValue, right: PSValue): PSValue {
+    if (typeof left === 'string' && typeof right === 'number') return left.repeat(right);
+    if (typeof right === 'string' && typeof left === 'number') return right.repeat(left);
+    return (left as number) * (right as number);
+  }
+
+  private psEq(a: PSValue, b: PSValue, caseSensitive: boolean): boolean {
+    if (typeof a === 'string' && typeof b === 'string')
+      return caseSensitive ? a === b : a.toLowerCase() === b.toLowerCase();
+    return a === b;
+  }
+
+  private psLike(str: string, pattern: string, caseSensitive: boolean): boolean {
+    const regex = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+    return new RegExp(regex, caseSensitive ? '' : 'i').test(str);
+  }
+
+  private psMatch(str: string, pattern: string, caseSensitive: boolean, env: PSEnvironment): boolean {
+    const re = new RegExp(pattern, caseSensitive ? '' : 'i');
+    const m  = str.match(re);
+    if (m) {
+      const matches: Record<string, PSValue> = { '0': m[0] };
+      m.slice(1).forEach((g, i) => { matches[String(i + 1)] = g ?? null; });
+      env.set('Matches', matches);
+    }
+    return !!m;
+  }
+
+  private psIs(val: PSValue, typeName: string): boolean {
+    const t = typeName.replace(/^\[|\]$/g, '').toLowerCase();
+    switch (t) {
+      case 'string':           return typeof val === 'string';
+      case 'int': case 'int32':
+      case 'double': case 'float': return typeof val === 'number';
+      case 'bool': case 'boolean': return typeof val === 'boolean';
+      case 'array':            return Array.isArray(val);
+      case 'null':             return val === null;
+      default:                 return false;
+    }
+  }
+
+  // ── Member access helper ───────────────────────────────────────────────────
+
+  getMember(obj: PSValue, member: string): PSValue {
+    if (obj === null || obj === undefined) return null;
+
+    if (typeof obj === 'string') return this.getStringMember(obj, member);
+    if (Array.isArray(obj))     return this.getArrayMember(obj, member);
+
+    if (typeof obj === 'object') {
+      const rec = obj as Record<string, PSValue>;
+      const key = Object.keys(rec).find(k => k.toLowerCase() === member) ?? member;
+      const val = rec[key];
+      if (val !== undefined) return val;
+      // PSObject built-in properties
+      if (member === 'count') return Object.keys(rec).length;
+      if (member === 'keys')  return Object.keys(rec);
+    }
+    return null;
+  }
+
+  private getStringMember(s: string, member: string): PSValue {
+    switch (member) {
+      case 'length':     return s.length;
+      case 'toupper':    return () => s.toUpperCase();
+      case 'tolower':    return () => s.toLowerCase();
+      case 'trim':       return () => s.trim();
+      case 'trimstart':  return () => s.trimStart();
+      case 'trimend':    return () => s.trimEnd();
+      case 'contains':   return (sub: PSValue) => s.toLowerCase().includes(String(sub).toLowerCase());
+      case 'startswith': return (pfx: PSValue) => s.toLowerCase().startsWith(String(pfx).toLowerCase());
+      case 'endswith':   return (sfx: PSValue) => s.toLowerCase().endsWith(String(sfx).toLowerCase());
+      case 'replace':    return (o: PSValue, n: PSValue) => s.split(String(o)).join(String(n));
+      case 'split':      return (sep: PSValue) => s.split(String(sep));
+      case 'indexof':    return (sub: PSValue) => s.indexOf(String(sub));
+      case 'substring':  return (start: PSValue, len?: PSValue) =>
+        len !== undefined ? s.substr(Number(start), Number(len)) : s.substr(Number(start));
+      case 'padleft':    return (w: PSValue) => s.padStart(Number(w));
+      case 'padright':   return (w: PSValue) => s.padEnd(Number(w));
+      case 'chars':      return Array.from(s);
+      default:           return null;
+    }
+  }
+
+  private getArrayMember(arr: PSValue[], member: string): PSValue {
+    switch (member) {
+      case 'length':
+      case 'count':    return arr.length;
+      case 'contains': return (v: PSValue) => arr.some(e => this.psEq(e, v, false));
+      case 'indexof':  return (v: PSValue) => arr.findIndex(e => this.psEq(e, v, false));
+      default:         return null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Section 2 — Statement executors
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── if / elseif / else ─────────────────────────────────────────────────────
+
+  private execIf(node: PSIfStatement, env: PSEnvironment): PSValue {
+    if (this.isTruthy(this.evalExpr(node.condition, env))) {
+      return this.execScriptBlock(node.thenBody, env);
+    }
+    for (const ei of node.elseifClauses) {
+      if (this.isTruthy(this.evalExpr(ei.condition, env))) {
+        return this.execScriptBlock(ei.body, env);
+      }
+    }
+    if (node.elseBody) return this.execScriptBlock(node.elseBody, env);
+    return null;
+  }
+
+  // ── while ──────────────────────────────────────────────────────────────────
+
+  private execWhile(node: PSWhileStatement, env: PSEnvironment): PSValue {
+    while (this.isTruthy(this.evalExpr(node.condition, env))) {
+      try { this.execScriptBlock(node.body, env); }
+      catch (e) {
+        if (e instanceof BreakSignal)    break;
+        if (e instanceof ContinueSignal) continue;
+        throw e;
+      }
+    }
+    return null;
+  }
+
+  // ── do-while ───────────────────────────────────────────────────────────────
+
+  private execDoWhile(node: PSDoWhileStatement, env: PSEnvironment): PSValue {
+    do {
+      try { this.execScriptBlock(node.body, env); }
+      catch (e) {
+        if (e instanceof BreakSignal)    break;
+        if (e instanceof ContinueSignal) continue;
+        throw e;
+      }
+    } while (this.isTruthy(this.evalExpr(node.condition, env)));
+    return null;
+  }
+
+  // ── do-until ───────────────────────────────────────────────────────────────
+
+  private execDoUntil(node: PSDoUntilStatement, env: PSEnvironment): PSValue {
+    do {
+      try { this.execScriptBlock(node.body, env); }
+      catch (e) {
+        if (e instanceof BreakSignal)    break;
+        if (e instanceof ContinueSignal) continue;
+        throw e;
+      }
+    } while (!this.isTruthy(this.evalExpr(node.condition, env)));
+    return null;
+  }
+
+  // ── for (init; cond; iter) ─────────────────────────────────────────────────
+
+  private execFor(node: PSForStatement, env: PSEnvironment): PSValue {
+    if (node.init) this.execStatement(node.init, env);
+    outer: while (!node.condition || this.isTruthy(this.evalExpr(node.condition, env))) {
+      try { this.execScriptBlock(node.body, env); }
+      catch (e) {
+        if (e instanceof BreakSignal)    break outer;
+        if (e instanceof ContinueSignal) { /* fall through to iterator */ }
+        else throw e;
+      }
+      if (node.iterator) this.execStatement(node.iterator, env);
+    }
+    return null;
+  }
+
+  // ── foreach ($x in $collection) ───────────────────────────────────────────
+
+  private execForeach(node: PSForeachStatement, env: PSEnvironment): PSValue {
+    const varName    = node.variable.varName ?? node.variable.name;
+    const collection = this.evalExpr(node.collection, env);
+    const items: PSValue[] = Array.isArray(collection) ? collection
+      : collection !== null && collection !== undefined ? [collection] : [];
+
+    for (const item of items) {
+      env.set(varName, item);
+      try { this.execScriptBlock(node.body, env); }
+      catch (e) {
+        if (e instanceof BreakSignal)    break;
+        if (e instanceof ContinueSignal) continue;
+        throw e;
+      }
+    }
+    return null;
+  }
+
+  // ── switch ─────────────────────────────────────────────────────────────────
+
+  private execSwitch(node: PSSwitchStatement, env: PSEnvironment): PSValue {
+    const subject = this.evalExpr(node.subject, env);
+    let matched = false;
+
+    for (const clause of node.clauses) {
+      const test = this.evalExpr(clause.pattern, env);
+      if (this.switchMatch(subject, test)) {
+        matched = true;
+        try { this.execScriptBlock(clause.body, env); }
+        catch (e) { if (e instanceof BreakSignal) return null; throw e; }
+      }
+    }
+
+    if (!matched && node.defaultBody) {
+      try { this.execScriptBlock(node.defaultBody, env); }
+      catch (e) { if (e instanceof BreakSignal) return null; throw e; }
+    }
+    return null;
+  }
+
+  private switchMatch(subject: PSValue, test: PSValue): boolean {
+    if (typeof subject === 'string' && typeof test === 'string')
+      return subject.toLowerCase() === test.toLowerCase();
+    return subject === test;
+  }
+
+  // ── try / catch / finally ──────────────────────────────────────────────────
+
+  private execTry(node: PSTryStatement, env: PSEnvironment): PSValue {
+    let result: PSValue = null;
+    try {
+      result = this.execScriptBlock(node.tryBody, env);
+    } catch (e) {
+      if (node.catchClauses.length > 0) {
+        // Catch runs in current scope — set $_ directly in env, not a child
+        env.set('_', this.makeErrorRecord(e));
+        const clause = node.catchClauses.find(c => c.types.length === 0) ?? node.catchClauses[0];
+        result = this.execScriptBlock(clause.body, env);
+      } else {
+        throw e;
+      }
+    } finally {
+      if (node.finallyBody) this.execScriptBlock(node.finallyBody, env);
+    }
+    return result;
+  }
+
+  private makeErrorRecord(e: unknown): Record<string, PSValue> {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { Message: msg, Exception: msg, FullyQualifiedErrorId: 'RuntimeException' } as Record<string, PSValue>;
+  }
+
+  // ── function definition ────────────────────────────────────────────────────
+
+  private execFunctionDef(node: PSFunctionDefinition, env: PSEnvironment): PSValue {
+    const block = node.body;
+    this.functions.set(node.name.toLowerCase(), block);
+    env.set(node.name, node.name as PSValue); // marker so lookup can find it
+    return null;
+  }
+
+  // ── return ─────────────────────────────────────────────────────────────────
+
+  private execReturn(node: PSReturnStatement, env: PSEnvironment): PSValue {
+    const val = node.value ? this.evalExpr(node.value, env) : null;
+    throw new ReturnSignal(val);
+  }
+
+  // ── throw ──────────────────────────────────────────────────────────────────
+
+  private execThrow(node: PSThrowStatement, env: PSEnvironment): PSValue {
+    const val = node.value ? this.evalExpr(node.value, env) : new PSRuntimeError('ScriptHalted');
+    if (val instanceof Error) throw val;
+    throw new Error(String(val));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Section 3 — Pipeline engine + built-in cmdlets
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  execPipeline(node: PSPipeline, env: PSEnvironment): PSValue {
+    if (node.commands.length === 0) return null;
+    if (node.commands.length === 1) return this.execCommand(node.commands[0], env, undefined);
+
+    let pipeInput: PSValue = undefined;
+    let result: PSValue = null;
+    for (const cmd of node.commands) {
+      result = this.execCommand(cmd, env, pipeInput);
+      pipeInput = result;
+    }
+    return result;
+  }
+
+  private execCommand(node: PSCommand, env: PSEnvironment, pipeInput: PSValue): PSValue {
+    const nameNode = node.name;
+
+    // ── Special command-name cases ────────────────────────────────────────
+
+    // $x++ / $x-- encoded as AssignmentStatement in command name position
+    if (nameNode.type === 'AssignmentStatement') {
+      return this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
+    }
+
+    // ++$x / --$x: CommandExpression("++") with variable argument
+    if (nameNode.type === 'CommandExpression') {
+      const ce = nameNode as PSCommandExpression;
+      if ((ce.name === '++' || ce.name === '--') && node.arguments.length > 0) {
+        const varNode = node.arguments[0] as PSVariableExpression;
+        const vname = varNode.varName ?? varNode.name;
+        const cur = (env.get(vname) as number) ?? 0;
+        const newVal = ce.name === '++' ? cur + 1 : cur - 1;
+        env.update(vname, newVal);
+        return newVal;
+      }
+      // [Type] cast: TypeLiteral as name — handled below via cast
+    }
+
+    // [Type] cast: TypeLiteral in command name position with one argument
+    if (nameNode.type === 'TypeLiteral') {
+      const typeName = (nameNode as { typeName: string }).typeName;
+      const arg = node.arguments[0] ? this.evalExpr(node.arguments[0], env) : null;
+      return this.psCast(arg, typeName);
+    }
+
+    // ── Pure-value expressions: evaluate directly, not as cmdlet names ───
+    if (this.isPureValueNode(nameNode, env)) {
+      return this.evalExpr(nameNode, env);
+    }
+
+    // ── Resolve command name string ───────────────────────────────────────
+    const rawName = this.resolveCommandName(nameNode, env);
+    const lname   = rawName.toLowerCase();
+
+    // ── Collect parameters and positional args ────────────────────────────
+    const positional: PSValue[] = [];
+    const named: Record<string, PSValue> = {};
+
+    for (const p of node.parameters) {
+      named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true;
+    }
+    for (const a of node.arguments) {
+      positional.push(this.evalExpr(a, env));
+    }
+
+    // ── User-defined function lookup ──────────────────────────────────────
+    const block = this.functions.get(lname);
+    if (block) {
+      return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+    }
+
+    // ── Built-in cmdlet dispatch ──────────────────────────────────────────
+    return this.execBuiltin(lname, positional, named, pipeInput, env);
+  }
+
+  private resolveCommandName(nameNode: PSExpression, env: PSEnvironment): string {
+    if (nameNode.type === 'LiteralExpression')
+      return String((nameNode as PSLiteralExpression).value);
+    if (nameNode.type === 'CommandExpression')
+      return (nameNode as PSCommandExpression).name;
+    if (nameNode.type === 'VariableExpression') {
+      const val = this.evalVariable(nameNode as PSVariableExpression, env);
+      return psValueToString(val);
+    }
+    return psValueToString(this.evalExpr(nameNode, env));
+  }
+
+  // ── Built-in cmdlet table ─────────────────────────────────────────────────
+
+  private execBuiltin(
+    name: string,
+    pos: PSValue[],
+    named: Record<string, PSValue>,
+    pipeInput: PSValue,
+    env: PSEnvironment,
+  ): PSValue {
+    switch (name) {
+      // ── Output ────────────────────────────────────────────────────────────
+      case 'write-output': case 'echo': {
+        const val = pos[0] ?? pipeInput ?? null;
+        this.outputLines.push(psValueToString(val));
+        return val;
+      }
+      case 'write-host': {
+        const val = pos[0] ?? pipeInput ?? null;
+        this.outputLines.push(psValueToString(val));
+        return null;
+      }
+      case 'write-error': {
+        this.outputLines.push(`ERROR: ${psValueToString(pos[0] ?? pipeInput ?? null)}`);
+        return null;
+      }
+      case 'write-warning': {
+        this.outputLines.push(`WARNING: ${psValueToString(pos[0] ?? pipeInput ?? null)}`);
+        return null;
+      }
+      case 'write-verbose': {
+        this.outputLines.push(`VERBOSE: ${psValueToString(pos[0] ?? pipeInput ?? null)}`);
+        return null;
+      }
+      case 'out-null':   return null;
+      case 'out-string': return psValueToString(pipeInput ?? pos[0] ?? null);
+      case 'out-host': {
+        this.outputLines.push(psValueToString(pipeInput ?? pos[0] ?? null));
+        return null;
+      }
+
+      // ── Collection cmdlets ────────────────────────────────────────────────
+      case 'where-object': case '?': {
+        const input  = this.toArray(pipeInput);
+        const filter = (named['filterscript'] ?? pos[0]) as PSScriptBlock;
+        return input.filter(item =>
+          this.isTruthy(this.invokeScriptBlock(filter, {}, [], env, item)));
+      }
+      case 'foreach-object': case '%': {
+        const input  = this.toArray(pipeInput);
+        const script = (named['process'] ?? pos[0]) as PSScriptBlock;
+        return input.map(item => this.invokeScriptBlock(script, {}, [], env, item));
+      }
+      case 'select-object': {
+        const input = this.toArray(pipeInput);
+        const props = this.stringArgs(pos, named, 'property');
+        if (props.length === 0) return pipeInput;
+        return input.map(item => {
+          const src = item as Record<string, PSValue>;
+          const out: Record<string, PSValue> = {};
+          for (const p of props) {
+            const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
+            out[key] = src[key] ?? null;
+          }
+          return out;
+        });
+      }
+      case 'sort-object': {
+        const input = this.toArray(pipeInput);
+        const props = this.stringArgs(pos, named, 'property');
+        const desc  = this.isTruthy(named['descending'] ?? false);
+        return [...input].sort((a, b) => {
+          const av = props.length ? (a as Record<string, PSValue>)[props[0]] : a;
+          const bv = props.length ? (b as Record<string, PSValue>)[props[0]] : b;
+          const cmp = String(av).localeCompare(String(bv));
+          return desc ? -cmp : cmp;
+        });
+      }
+      case 'measure-object': {
+        const input = this.toArray(pipeInput);
+        const props = this.stringArgs(pos, named, 'property');
+        const nums  = input.map(item => {
+          const v = props.length ? (item as Record<string, PSValue>)[props[0]] : item;
+          return Number(v);
+        }).filter(n => !isNaN(n));
+
+        const result: Record<string, PSValue> = { Count: nums.length };
+        if ('sum' in named || pos.some(p => p === '-sum'))
+          result['Sum'] = nums.reduce((a, b) => a + b, 0);
+        if ('average' in named)
+          result['Average'] = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+        if ('minimum' in named || 'min' in named)
+          result['Minimum'] = nums.length ? Math.min(...nums) : null;
+        if ('maximum' in named || 'max' in named)
+          result['Maximum'] = nums.length ? Math.max(...nums) : null;
+        // -Sum as switch (named['sum'] === true)
+        if (named['sum'] === true)
+          result['Sum'] = nums.reduce((a, b) => a + b, 0);
+        return result;
+      }
+      case 'group-object': {
+        const input = this.toArray(pipeInput);
+        const props = this.stringArgs(pos, named, 'property');
+        const groups: Record<string, PSValue[]> = {};
+        for (const item of input) {
+          const key = props.length
+            ? psValueToString((item as Record<string, PSValue>)[props[0]] ?? null)
+            : psValueToString(item);
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(item);
+        }
+        return Object.entries(groups).map(([k, v]) =>
+          ({ Name: k, Count: v.length, Group: v } as Record<string, PSValue>));
+      }
+
+      // ── String / conversion ───────────────────────────────────────────────
+      case 'convertto-json':   return JSON.stringify(pipeInput ?? pos[0] ?? null, null, 2);
+      case 'convertfrom-json': {
+        try { return JSON.parse(psValueToString(pipeInput ?? pos[0] ?? null)) as PSValue; }
+        catch { return null; }
+      }
+      case 'format-list': case 'fl':
+      case 'format-table': case 'ft':
+        return this.toArray(pipeInput).map(v => psValueToString(v)).join('\n');
+
+      // ── Variable cmdlets ──────────────────────────────────────────────────
+      case 'set-variable': {
+        const vname = psValueToString(named['name'] ?? pos[0] ?? '');
+        env.set(vname, named['value'] ?? pos[1] ?? null);
+        return null;
+      }
+      case 'get-variable': {
+        const vname = psValueToString(named['name'] ?? pos[0] ?? '');
+        return env.get(vname) ?? null;
+      }
+      case 'clear-variable': case 'remove-variable': {
+        const vname = psValueToString(named['name'] ?? pos[0] ?? '');
+        env.set(vname, null);
+        return null;
+      }
+
+      // ── Misc ──────────────────────────────────────────────────────────────
+      case 'new-object': {
+        const tname = psValueToString(named['typename'] ?? pos[0] ?? '').toLowerCase();
+        if (tname.includes('hashtable') || tname.includes('dictionary'))
+          return {} as Record<string, PSValue>;
+        return [] as PSValue[];
+      }
+      case 'get-random': {
+        const max = named['maximum'] ?? pos[0] ?? null;
+        const min = Number(named['minimum'] ?? 0);
+        return max !== null
+          ? Math.floor(Math.random() * (Number(max) - min)) + min
+          : Math.random();
+      }
+      case 'tee-object': {
+        const vname = psValueToString(named['variable'] ?? pos[0] ?? '');
+        env.set(vname, pipeInput ?? null);
+        return pipeInput ?? null;
+      }
+      case 'invoke-expression': case 'iex': {
+        const code = psValueToString(named['command'] ?? pos[0] ?? pipeInput ?? '');
+        return this.execute(code) as unknown as PSValue;
+      }
+
+      default:
+        throw new PSRuntimeError(
+          `The term '${name}' is not recognized as a cmdlet, function, or operable program.`);
+    }
+  }
+
+  /** Returns true when a command-name node is really a value, not a cmdlet name. */
+  private isPureValueNode(node: PSExpression, env?: PSEnvironment): boolean {
+    switch (node.type) {
+      case 'ArrayExpression':
+      case 'HashtableExpression':
+      case 'RangeExpression':
+      case 'BinaryExpression':
+      case 'UnaryExpression':
+      case 'MemberExpression':
+      case 'StaticMemberExpression':
+      case 'IndexExpression':
+      case 'InvocationExpression':
+      case 'CastExpression':
+      case 'SubExpression':
+      case 'PipelineExpression':
+      case 'ScriptBlock':
+        return true;
+      case 'LiteralExpression': {
+        const k = (node as PSLiteralExpression).kind;
+        return k === 'number' || k === 'boolean' || k === 'null';
+      }
+      case 'VariableExpression': {
+        if (!env) return false;
+        const val = this.evalVariable(node as PSVariableExpression, env);
+        // If the variable holds a non-string, non-function value, it IS the value
+        return typeof val !== 'string' && typeof val !== 'function'
+          && !(val === null || val === undefined);
+      }
+      default:
+        return false;
+    }
+  }
+
+  private toArray(val: PSValue): PSValue[] {
+    if (val === null || val === undefined) return [];
+    return Array.isArray(val) ? val : [val];
+  }
+
+  private stringArgs(pos: PSValue[], named: Record<string, PSValue>, key: string): string[] {
+    const src = named[key] ?? (pos.length > 0 ? pos : null);
+    if (!src) return [];
+    return (Array.isArray(src) ? src : [src]).map(v => psValueToString(v));
+  }
+}
+
+// ─── Static type map ─────────────────────────────────────────────────────────
+
+const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
+  math: {
+    pi:    Math.PI,
+    e:     Math.E,
+    abs:   (x: PSValue) => Math.abs(x as number),
+    ceil:  (x: PSValue) => Math.ceil(x as number),
+    floor: (x: PSValue) => Math.floor(x as number),
+    round: (x: PSValue, d?: PSValue) =>
+      d !== undefined ? parseFloat((x as number).toFixed(d as number)) : Math.round(x as number),
+    sqrt:  (x: PSValue) => Math.sqrt(x as number),
+    pow:   (b: PSValue, e: PSValue) => Math.pow(b as number, e as number),
+    min:   (a: PSValue, b: PSValue) => Math.min(a as number, b as number),
+    max:   (a: PSValue, b: PSValue) => Math.max(a as number, b as number),
+  } as Record<string, PSValue>,
+};
+STATIC_TYPES['system.math'] = STATIC_TYPES['math'];
