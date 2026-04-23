@@ -516,7 +516,9 @@ export class PSInterpreter {
     if (block) return this.invokeScriptBlock(block, {}, [], env, undefined);
     // Try as built-in with no args (e.g. Get-Date, Get-Location bareword in expression)
     try { return this.execBuiltin(lname, [], {}, undefined, env); }
-    catch { return null; }
+    // In PS, a bareword that isn't a known command is treated as a string value
+    // (preserving the original casing) — e.g. `Select-Object Name` passes "Name".
+    catch { return node.name; }
   }
 
   // ── Public coercion helpers ────────────────────────────────────────────────
