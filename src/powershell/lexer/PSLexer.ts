@@ -152,7 +152,7 @@ export class PSLexer {
   private isAlNum(ch: string): boolean { return /[A-Za-z0-9_]/.test(ch); }
   private isWordChar(ch: string): boolean {
     // PowerShell word chars: letters, digits, _, -, ., \ (for paths), :, /
-    return /[A-Za-z0-9_.\\\/:-]/.test(ch);
+    return /[A-Za-z0-9_.\\/:-]/.test(ch);
   }
 
   // ─── Comments ──────────────────────────────────────────────────────────────

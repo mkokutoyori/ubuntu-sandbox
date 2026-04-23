@@ -1001,19 +1001,19 @@ export class PSParser {
     }
     if (this.checkValue(PSTokenType.PARAMETER, 'bnot')) {
       this.advance();
-      return makeUnary('-bnot' as any, this.parseUnaryExpression(), pos);
+      return makeUnary('-bnot' as PSUnaryOperator, this.parseUnaryExpression(), pos);
     }
 
     // Prefix ++ and --
     if (this.check(PSTokenType.INCREMENT)) {
       this.advance();
-      const operand = this.parseUnaryExpression();
-      return makeAssignment(operand as any, '+=', makeLiteral(1, '1', 'number', pos), pos) as any;
+      const operand = this.parseUnaryExpression() as PSVariableExpression;
+      return makeAssignment(operand, '+=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
     }
     if (this.check(PSTokenType.DECREMENT)) {
       this.advance();
-      const operand = this.parseUnaryExpression();
-      return makeAssignment(operand as any, '-=', makeLiteral(1, '1', 'number', pos), pos) as any;
+      const operand = this.parseUnaryExpression() as PSVariableExpression;
+      return makeAssignment(operand, '-=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
     }
 
     // Unary + and - (arithmetic sign)
@@ -1088,10 +1088,12 @@ export class PSParser {
           const args = this.parseArgumentList();
           this.expect(PSTokenType.RPAREN);
           // Static method call
-          const callee = { type: 'StaticMemberExpression' as const, typeName: (expr as any).typeName ?? '', member, position: pos };
+          const typeName = (expr as { typeName?: string }).typeName ?? '';
+          const callee = { type: 'StaticMemberExpression' as const, typeName, member, position: pos };
           expr = { type: 'InvocationExpression', callee, arguments: args, position: pos };
         } else {
-          expr = { type: 'StaticMemberExpression', typeName: (expr as any).typeName ?? '', member, position: pos };
+          const typeName = (expr as { typeName?: string }).typeName ?? '';
+          expr = { type: 'StaticMemberExpression', typeName, member, position: pos };
         }
         continue;
       }
@@ -1110,13 +1112,15 @@ export class PSParser {
       if (this.check(PSTokenType.INCREMENT)) {
         const pos = this.pos_();
         this.advance();
-        expr = makeAssignment(expr as any, '+=', makeLiteral(1, '1', 'number', pos), pos) as any;
+        const target = expr as PSVariableExpression;
+        expr = makeAssignment(target, '+=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
         continue;
       }
       if (this.check(PSTokenType.DECREMENT)) {
         const pos = this.pos_();
         this.advance();
-        expr = makeAssignment(expr as any, '-=', makeLiteral(1, '1', 'number', pos), pos) as any;
+        const target = expr as PSVariableExpression;
+        expr = makeAssignment(target, '-=', makeLiteral(1, '1', 'number', pos), pos) as unknown as PSExpression;
         continue;
       }
 

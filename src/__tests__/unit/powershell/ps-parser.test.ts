@@ -151,8 +151,8 @@ describe('Group 3: Pipeline Statements', () => {
     expect(p.type).toBe('Pipeline');
     expect(p.commands).toHaveLength(1);
     const cmd = p.commands[0];
-    expect((cmd.name as any).type).toBe('CommandExpression');
-    expect((cmd.name as any).name).toBe('Get-Process');
+    expect((cmd.name as unknown as { type: string; name: string }).type).toBe('CommandExpression');
+    expect((cmd.name as unknown as { type: string; name: string }).name).toBe('Get-Process');
   });
 
   it('command with positional argument', () => {
@@ -179,8 +179,8 @@ describe('Group 3: Pipeline Statements', () => {
   it('pipeline with two stages: cmd1 | cmd2', () => {
     const p = firstPipeline('Get-Service | Where-Object { $_.Status -eq "Running" }');
     expect(p.commands).toHaveLength(2);
-    expect((p.commands[0].name as any).name).toBe('Get-Service');
-    expect((p.commands[1].name as any).name).toBe('Where-Object');
+    expect((p.commands[0].name as unknown as { type: string; name: string }).name).toBe('Get-Service');
+    expect((p.commands[1].name as unknown as { type: string; name: string }).name).toBe('Where-Object');
   });
 
   it('pipeline with three stages', () => {
