@@ -198,6 +198,28 @@ export function displayCurrentConfig(
       lines.push(` network ${net.network}`);
     }
   }
+  // OSPF config
+  const ospf = router._getOSPFEngineInternal();
+  if (ospf) {
+    const config = ospf.getConfig();
+    lines.push('#');
+    lines.push(`ospf ${config.processId}`);
+    if (config.routerId && config.routerId !== '0.0.0.0') {
+      lines.push(` router-id ${config.routerId}`);
+    }
+    // Group network statements by area
+    const areaNetworks = new Map<string, Array<{ network: string; wildcard: string }>>();
+    for (const net of config.networks) {
+      if (!areaNetworks.has(net.areaId)) areaNetworks.set(net.areaId, []);
+      areaNetworks.get(net.areaId)!.push({ network: net.network, wildcard: net.wildcard });
+    }
+    for (const [areaId, nets] of areaNetworks) {
+      lines.push(` area ${areaId}`);
+      for (const net of nets) {
+        lines.push(`  network ${net.network} ${net.wildcard}`);
+      }
+    }
+  }
   lines.push('#');
   return lines.join('\n');
 }

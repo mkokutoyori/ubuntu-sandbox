@@ -39,6 +39,7 @@ import {
 } from './huawei/HuaweiDhcpCommands';
 import {
   registerOSPFSystemCommands, buildOSPFViewCommands, buildOSPFAreaViewCommands,
+  buildOSPFv3ViewCommands, registerOSPFInterfaceCommands,
   registerOSPFDisplayCommands,
 } from './huawei/HuaweiOspfCommands';
 import {
@@ -95,6 +96,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ikePeerTrie = new CommandTrie();
   private ipsecProposalTrie = new CommandTrie();
   private ipsecPolicyTrie = new CommandTrie();
+  // OSPFv3 sub-mode trie
+  private ospfv3Trie = new CommandTrie();
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
@@ -106,6 +109,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildDhcpPoolViewCommands();
     this.buildOSPFViewCommands();
     this.buildOSPFAreaViewCommands();
+    this.buildOSPFv3ViewCommands();
     this.buildIPSecSubViewCommands();
     this.buildACLSubViewCommands();
   }
@@ -120,6 +124,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   }
 
   setMode(mode: HuaweiShellMode): void { this.mode = mode; }
+  getMode(): string { return this.mode; }
 
   getSelectedInterface(): string | null { return this.selectedInterface; }
   setSelectedInterface(iface: string | null): void { this.selectedInterface = iface; }
@@ -165,6 +170,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool':  return `[${host}-ip-pool-${this.selectedPool}]`;
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
+      case 'ospfv3':     return `[${host}-ospfv3-1]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
@@ -264,6 +270,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':
         this.mode = 'system';
         return '';
+      case 'ospfv3':
+        this.mode = 'system';
+        return '';
       case 'ike-proposal':
         this.mode = 'system';
         this.selectedIKEProposal = null;
@@ -324,6 +333,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool': return this.dhcpPoolTrie;
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
+      case 'ospfv3': return this.ospfv3Trie;
       case 'ike-proposal': return this.ikeProposalTrie;
       case 'ike-peer': return this.ikePeerTrie;
       case 'ipsec-proposal': return this.ipsecProposalTrie;
@@ -446,8 +456,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // Display commands
     registerDisplayCommands(t, getRouter, getState);
 
+    // OSPF display commands (available in interface view too)
+    registerOSPFDisplayCommands(t, getRouter);
+
     // Interface-specific commands
     buildInterfaceCommands(t, this);
+
+    // OSPF interface commands
+    registerOSPFInterfaceCommands(t, this as any);
 
     // IPSec interface commands
     registerHuaweiIPSecInterfaceCommands(t, this);
@@ -470,6 +486,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfTrie, getRouter);
     buildOSPFViewCommands(this.ospfTrie, this as any, (area) => { this.ospfArea = area; });
+  }
+
+  // ─── OSPFv3 View ([hostname-ospfv3-1]) ─────────────────────────
+
+  private buildOSPFv3ViewCommands(): void {
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
+    registerDisplayCommands(this.ospfv3Trie, getRouter, getState);
+    registerOSPFDisplayCommands(this.ospfv3Trie, getRouter);
+    buildOSPFv3ViewCommands(this.ospfv3Trie, this as any);
   }
 
   // ─── IPSec Sub-Views ─────────────────────────────────────────
