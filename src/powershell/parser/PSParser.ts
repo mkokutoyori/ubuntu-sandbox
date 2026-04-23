@@ -426,15 +426,27 @@ export class PSParser {
     const pos = this.pos_();
     const first = this.parseCommaList();
 
-    // "CmdLet -ParamName value" — the first token was a WORD/cmdlet and a PARAMETER follows
-    // that is NOT an operator (e.g. not -eq, -and, …)
-    if (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+    // Cmdlet-style call on the RHS: `$r = CmdLet [args]` — either followed by a
+    // named parameter OR by a positional expression argument when the head was a
+    // bare command name.
+    const hasNamedParam = this.check(PSTokenType.PARAMETER)
+      && !PS_OPERATOR_PARAMS.has(this.peek().value);
+    const hasPositionalArg = first.type === 'CommandExpression'
+      && !this.isAtEnd() && !this.isTerminator()
+      && !this.check(PSTokenType.PIPE)
+      && this.canStartExpression();
+    if (hasNamedParam || hasPositionalArg) {
       const params: PSCommandParameter[] = [];
       const args:   PSExpression[]       = [];
-      while (this.check(PSTokenType.PARAMETER)) params.push(this.parseCommandParameter());
+      while (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+        params.push(this.parseCommandParameter());
+      }
       while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE)
              && this.canStartExpression()) {
         args.push(this.parseCommandArgument());
+        while (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+          params.push(this.parseCommandParameter());
+        }
       }
       const firstCmd = makeCommand(first, params, args, pos);
       const cmds = [firstCmd];

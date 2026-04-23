@@ -49,6 +49,9 @@ export class PSInterpreter {
   // ── User-defined functions registered at global scope ─────────────────────
   private readonly functions = new Map<string, PSScriptBlock>();
 
+  /** Host hook: returns true if a path exists on the embedding device. */
+  testPathHook: ((path: string) => boolean) | null = null;
+
   constructor() {
     this.global = new PSEnvironment();
     seedBuiltins(this.global);
@@ -968,7 +971,18 @@ export class PSInterpreter {
       case 'foreach-object': case '%': {
         const input  = this.toArray(pipeInput);
         const script = (named['process'] ?? pos[0]) as PSScriptBlock;
-        return input.map(item => this.invokeScriptBlock(script, {}, [], env, item));
+        const begin  = named['begin'] as PSScriptBlock | undefined;
+        const end    = named['end']   as PSScriptBlock | undefined;
+        const out: PSValue[] = [];
+        const captureOutput = (val: PSValue) => {
+          if (val === null || val === undefined) return;
+          if (Array.isArray(val)) for (const v of val) out.push(v);
+          else out.push(val);
+        };
+        if (begin) captureOutput(this.invokeScriptBlock(begin, {}, [], env, null));
+        for (const item of input) captureOutput(this.invokeScriptBlock(script, {}, [], env, item));
+        if (end) captureOutput(this.invokeScriptBlock(end, {}, [], env, null));
+        return out;
       }
       case 'select-object': {
         const input = this.toArray(pipeInput);
@@ -1082,6 +1096,174 @@ export class PSInterpreter {
         return this.execute(code) as unknown as PSValue;
       }
 
+      // ── Date / Time ───────────────────────────────────────────────────────
+      case 'get-date': {
+        const fmt = named['format'] ? psValueToString(named['format']) : null;
+        const d = new Date();
+        if (fmt !== null) return formatDate(d, fmt);
+        return {
+          Year:        d.getFullYear(),
+          Month:       d.getMonth() + 1,
+          Day:         d.getDate(),
+          Hour:        d.getHours(),
+          Minute:      d.getMinutes(),
+          Second:      d.getSeconds(),
+          Millisecond: d.getMilliseconds(),
+          DayOfWeek:   d.getDay(),
+          DayOfYear:   Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86400000),
+        } as Record<string, PSValue>;
+      }
+      case 'new-timespan': {
+        const days  = Number(named['days']    ?? 0);
+        const hours = Number(named['hours']   ?? 0);
+        const mins  = Number(named['minutes'] ?? 0);
+        const secs  = Number(named['seconds'] ?? 0);
+        const total = days * 86400 + hours * 3600 + mins * 60 + secs;
+        return {
+          Days:         Math.floor(total / 86400),
+          Hours:        Math.floor((total % 86400) / 3600),
+          Minutes:      Math.floor((total % 3600) / 60),
+          Seconds:      total % 60,
+          TotalSeconds: total,
+          TotalMinutes: total / 60,
+          TotalHours:   total / 3600,
+          TotalDays:    total / 86400,
+        } as Record<string, PSValue>;
+      }
+      case 'start-sleep': return null;
+
+      // ── Path helpers ──────────────────────────────────────────────────────
+      case 'split-path': {
+        const p = psValueToString(named['path'] ?? pos[0] ?? '');
+        const sep = p.includes('\\') ? '\\' : '/';
+        const idx = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+        const leaf = idx >= 0 ? p.slice(idx + 1) : p;
+        const parent = idx >= 0 ? p.slice(0, idx) : '';
+        if (named['leaf'] === true)      return leaf;
+        if (named['parent'] === true)    return parent;
+        if (named['extension'] === true) {
+          const dot = leaf.lastIndexOf('.');
+          return dot > 0 ? leaf.slice(dot) : '';
+        }
+        if (named['qualifier'] === true) {
+          const m = p.match(/^[A-Za-z]:/);
+          return m ? m[0] : '';
+        }
+        // Default = parent (matches PS behavior)
+        void sep;
+        return parent;
+      }
+      case 'join-path': {
+        const p1 = psValueToString(named['path']      ?? pos[0] ?? '').replace(/[\\/]+$/, '');
+        const p2 = psValueToString(named['childpath'] ?? pos[1] ?? '').replace(/^[\\/]+/,  '');
+        const sep = p1.includes('/') && !p1.includes('\\') ? '/' : '\\';
+        return `${p1}${sep}${p2}`;
+      }
+      case 'test-path': {
+        // Without a filesystem binding the interpreter can only return false.
+        // Host shells (PowerShellSubShell) may override this via a hook.
+        if (this.testPathHook) return this.testPathHook(psValueToString(named['path'] ?? pos[0] ?? ''));
+        return false;
+      }
+
+      // ── Comparison / uniqueness ───────────────────────────────────────────
+      case 'compare-object': {
+        const ref  = this.toArray(named['referenceobject']);
+        const diff = this.toArray(named['differenceobject']);
+        const includeEqual = named['includeequal'] === true;
+        const out: Record<string, PSValue>[] = [];
+        const refSet  = new Set(ref.map(v  => psValueToString(v)));
+        const diffSet = new Set(diff.map(v => psValueToString(v)));
+        for (const v of ref)  if (!diffSet.has(psValueToString(v))) out.push({ InputObject: v, SideIndicator: '<=' });
+        for (const v of diff) if (!refSet.has(psValueToString(v)))  out.push({ InputObject: v, SideIndicator: '=>' });
+        if (includeEqual) for (const v of ref) if (diffSet.has(psValueToString(v))) out.push({ InputObject: v, SideIndicator: '==' });
+        return out;
+      }
+      case 'get-unique': {
+        const arr = this.toArray(pipeInput);
+        const out: PSValue[] = [];
+        let prev: string | null = null;
+        for (const v of arr) {
+          const key = psValueToString(v);
+          if (key !== prev) { out.push(v); prev = key; }
+        }
+        return out;
+      }
+
+      // ── Select-String ─────────────────────────────────────────────────────
+      case 'select-string': {
+        const patterns = this.stringArgs(pos, named, 'pattern');
+        const pat = patterns[0] ?? '';
+        const simple = named['simplematch'] === true;
+        const notMatch = named['notmatch'] === true;
+        const caseSensitive = named['casesensitive'] === true;
+        const input = this.toArray(pipeInput);
+        const re = simple
+          ? new RegExp(escapeRegex(pat), caseSensitive ? '' : 'i')
+          : new RegExp(pat, caseSensitive ? '' : 'i');
+        const matches: Record<string, PSValue>[] = [];
+        for (const item of input) {
+          const line = psValueToString(item);
+          const hit = re.test(line);
+          if (hit !== notMatch) {
+            matches.push({ Line: line, Pattern: pat, LineNumber: matches.length + 1 });
+          }
+        }
+        return matches;
+      }
+
+      // ── CSV converters ────────────────────────────────────────────────────
+      case 'convertto-csv': {
+        const arr = this.toArray(pipeInput);
+        if (arr.length === 0) return [];
+        const first = arr[0] as Record<string, PSValue>;
+        const headers = Object.keys(first);
+        const lines: string[] = [];
+        if (!(named['notypeinformation'] === true)) lines.push('#TYPE Hashtable');
+        lines.push(headers.map(h => `"${h}"`).join(','));
+        for (const row of arr) {
+          const r = row as Record<string, PSValue>;
+          lines.push(headers.map(h => `"${psValueToString(r[h] ?? '')}"`).join(','));
+        }
+        return lines;
+      }
+      case 'convertfrom-csv': {
+        const lines = this.toArray(pipeInput).map(v => psValueToString(v));
+        if (lines.length < 2) return [];
+        const headers = parseCsvLine(lines[0]);
+        const rows: Record<string, PSValue>[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cells = parseCsvLine(lines[i]);
+          const obj: Record<string, PSValue> = {};
+          headers.forEach((h, j) => obj[h] = cells[j] ?? '');
+          rows.push(obj);
+        }
+        return rows;
+      }
+
+      // ── Get-Member ────────────────────────────────────────────────────────
+      case 'get-member': {
+        const input = this.toArray(pipeInput);
+        if (input.length === 0) return [];
+        const sample = input[0] as Record<string, PSValue>;
+        const filter = named['membertype'] ? psValueToString(named['membertype']).toLowerCase() : null;
+        const out: Record<string, PSValue>[] = [];
+        for (const key of Object.keys(sample)) {
+          const type = typeof sample[key] === 'function' ? 'Method' : 'Property';
+          if (filter && type.toLowerCase() !== filter) continue;
+          out.push({ Name: key, MemberType: type, Definition: `${typeof sample[key]} ${key}` });
+        }
+        return out;
+      }
+
+      // ── No-op / stubs ─────────────────────────────────────────────────────
+      case 'write-progress':
+      case 'write-debug':
+      case 'write-information':
+      case 'out-file':
+      case 'out-printer':
+        return null;
+
       default:
         throw new PSRuntimeError(
           `The term '${name}' is not recognized as a cmdlet, function, or operable program.`);
@@ -1154,3 +1336,46 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
   } as Record<string, PSValue>,
 };
 STATIC_TYPES['system.math'] = STATIC_TYPES['math'];
+
+// ─── Helper functions for built-in cmdlets ──────────────────────────────────
+
+/** Minimal PowerShell-style Get-Date -Format implementation. */
+function formatDate(d: Date, fmt: string): string {
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const pad3 = (n: number) => String(n).padStart(3, '0');
+  // Order matters: longer tokens first so yyyy is matched before yy, MM before M, etc.
+  return fmt
+    .replace(/yyyy/g, String(d.getFullYear()))
+    .replace(/yy/g,   String(d.getFullYear()).slice(-2))
+    .replace(/MM/g,   pad2(d.getMonth() + 1))
+    .replace(/dd/g,   pad2(d.getDate()))
+    .replace(/HH/g,   pad2(d.getHours()))
+    .replace(/mm/g,   pad2(d.getMinutes()))
+    .replace(/ss/g,   pad2(d.getSeconds()))
+    .replace(/fff/g,  pad3(d.getMilliseconds()));
+}
+
+/** Escape a string for literal use inside a RegExp. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Parse a single CSV line, handling "quoted,commas" and escaped "" quotes. */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
