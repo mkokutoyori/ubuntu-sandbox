@@ -112,8 +112,17 @@ export class PSInterpreter {
   // ── Assignment ─────────────────────────────────────────────────────────────
 
   private execAssignment(node: PSAssignmentStatement, env: PSEnvironment): PSValue {
-    const varName = (node.target as PSVariableExpression).varName ?? (node.target as PSVariableExpression).name;
     const rhs = this.evalExpr(node.value, env);
+
+    // Index / member targets: $h["x"] = v   /   $obj.prop = v
+    if (node.target.type === 'IndexExpression' || node.target.type === 'MemberExpression') {
+      const result = this.computeAssignResult(node, rhs, env);
+      this.writeTarget(node.target, result, env);
+      return result;
+    }
+
+    const target = node.target as PSVariableExpression;
+    const varName = target.varName ?? (target as unknown as { name: string }).name;
 
     if (node.operator === '=') {
       env.set(varName, rhs);
@@ -121,17 +130,60 @@ export class PSInterpreter {
     }
 
     const current = (env.get(varName) as number) ?? 0;
-    let result: PSValue;
-    switch (node.operator) {
-      case '+=': result = this.applyPlus(current, rhs); break;
-      case '-=': result = current - (rhs as number);    break;
-      case '*=': result = current * (rhs as number);    break;
-      case '/=': result = current / (rhs as number);    break;
-      case '%=': result = current % (rhs as number);    break;
-      default:   result = rhs;
-    }
+    const result = this.applyCompound(node.operator, current, rhs);
     env.update(varName, result);
     return result;
+  }
+
+  private applyCompound(op: PSAssignmentStatement['operator'], current: PSValue, rhs: PSValue): PSValue {
+    switch (op) {
+      case '+=': return this.applyPlus(current, rhs);
+      case '-=': return (current as number) - (rhs as number);
+      case '*=': return (current as number) * (rhs as number);
+      case '/=': return (current as number) / (rhs as number);
+      case '%=': return (current as number) % (rhs as number);
+      default:   return rhs;
+    }
+  }
+
+  private computeAssignResult(
+    node: PSAssignmentStatement,
+    rhs: PSValue,
+    env: PSEnvironment,
+  ): PSValue {
+    if (node.operator === '=') return rhs;
+    const current = this.evalExpr(node.target, env);
+    return this.applyCompound(node.operator, current, rhs);
+  }
+
+  /** Writes a value to an index- or member-target expression. */
+  private writeTarget(
+    target: PSIndexExpression | PSMemberExpression,
+    value: PSValue,
+    env: PSEnvironment,
+  ): void {
+    if (target.type === 'IndexExpression') {
+      const container = this.evalExpr(target.object, env);
+      const key = this.evalExpr(target.index, env);
+      if (Array.isArray(container)) {
+        container[Number(key)] = value;
+      } else if (container && typeof container === 'object') {
+        (container as Record<string, PSValue>)[psValueToString(key)] = value;
+      } else {
+        throw new PSRuntimeError(`Cannot index into value of type ${typeof container}`);
+      }
+      return;
+    }
+    // MemberExpression
+    const container = this.evalExpr(target.object, env);
+    const memberName = typeof target.member === 'string'
+      ? target.member
+      : psValueToString(this.evalExpr(target.member, env));
+    if (container && typeof container === 'object' && !Array.isArray(container)) {
+      (container as Record<string, PSValue>)[memberName] = value;
+      return;
+    }
+    throw new PSRuntimeError(`Cannot assign to property '${memberName}' of non-object value`);
   }
 
   private execPipelineStmt(node: PSPipelineStatement, env: PSEnvironment): PSValue {

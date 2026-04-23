@@ -202,9 +202,34 @@ export class PSParser {
 
   private pos_(): SourcePosition { return this.peek().position; }
 
-  /** Detect VARIABLE followed by an assignment operator */
+  /**
+   * Detect VARIABLE (possibly followed by index/member chain) followed by an
+   * assignment operator.  Matches: `$v =`, `$v[...] =`, `$v.prop =`, etc.
+   */
   private isAssignmentAhead(): boolean {
-    const next = this.peekAt(1);
+    let i = 1;
+    // Walk past postfix chain: [index], .member, ::member
+    while (true) {
+      const tok = this.peekAt(i);
+      if (!tok) return false;
+      if (tok.type === PSTokenType.LBRACKET) {
+        // Skip balanced brackets
+        let depth = 1;
+        i++;
+        while (depth > 0) {
+          const t = this.peekAt(i);
+          if (!t || t.type === PSTokenType.EOF) return false;
+          if (t.type === PSTokenType.LBRACKET) depth++;
+          else if (t.type === PSTokenType.RBRACKET) depth--;
+          i++;
+        }
+        continue;
+      }
+      if (tok.type === PSTokenType.DOT) { i += 2; continue; } // .member
+      if (tok.type === PSTokenType.STATIC_MEMBER) { i += 2; continue; } // ::member
+      break;
+    }
+    const next = this.peekAt(i);
     if (!next) return false;
     return next.type === PSTokenType.ASSIGN
       || next.type === PSTokenType.PLUS_ASSIGN
@@ -384,10 +409,9 @@ export class PSParser {
 
   private parseAssignmentStatement(): PSAssignmentStatement {
     const pos = this.pos_();
-    const varTok = this.advance(); // VARIABLE
-    const opTok = this.advance();  // = += -= etc.
-
-    const target = makeVariable(varTok.value, varTok.position);
+    // Parse a postfix expression so the target can be $v, $v[i], $v.prop, etc.
+    const target = this.parsePostfixExpression() as PSAssignmentStatement['target'];
+    const opTok = this.advance(); // = += -= etc.
     const operator = opTok.value as PSAssignmentStatement['operator'];
     const value = this.parseAssignmentRHS();
 
