@@ -324,13 +324,18 @@ export class PSInterpreter {
       case '-shr':  return (left as number) >> (right as number);
 
       case '-replace': {
-        const pattern = String(right);
-        const [re, repl] = pattern.includes(',')
-          ? pattern.split(',', 2) as [string, string]
-          : [pattern, ''];
-        return String(left).replace(new RegExp(re, 'gi'), repl.trim());
+        const args = Array.isArray(right) ? right : [right];
+        const pattern = String(args[0] ?? '');
+        const repl    = String(args[1] ?? '');
+        return String(left).replace(new RegExp(pattern, 'gi'), repl);
       }
-      case '-split':  return String(left).split(new RegExp(String(right)));
+      case '-split': {
+        const args = Array.isArray(right) ? right : [right];
+        const pattern = String(args[0] ?? '');
+        const limit   = args[1] !== undefined ? Number(args[1]) : undefined;
+        const parts = String(left).split(new RegExp(pattern));
+        return limit !== undefined ? parts.slice(0, limit) : parts;
+      }
       case '-join':   return (Array.isArray(left) ? left : [left]).map(psValueToString).join(String(right));
 
       case '-is':   return this.psIs(left, String(right));
@@ -1048,7 +1053,10 @@ export class PSInterpreter {
         return true;
       case 'LiteralExpression': {
         const k = (node as PSLiteralExpression).kind;
-        return k === 'number' || k === 'boolean' || k === 'null';
+        // Quoted strings ("…" / '…') are values, not cmdlet names.
+        // Bare words come through as CommandExpression, not LiteralExpression.
+        return k === 'number' || k === 'boolean' || k === 'null'
+            || k === 'string' || k === 'expandable';
       }
       case 'VariableExpression': {
         if (!env) return false;

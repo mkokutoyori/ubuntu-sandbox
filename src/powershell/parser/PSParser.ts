@@ -59,9 +59,10 @@ const PRECEDENCE: Record<string, number> = {
   '-split': 6, '-csplit': 6, '-isplit': 6,
   '-join': 6,
   '-f': 6,
-  '-shl': 7, '-shr': 7,
-  '+': 8, '-': 8,
-  '*': 9, '/': 9, '%': 9,
+  ',': 7,
+  '-shl': 8, '-shr': 8,
+  '+': 9, '-': 9,
+  '*': 10, '/': 10, '%': 10,
 };
 
 export class PSParser {
@@ -875,7 +876,8 @@ export class PSParser {
     let defaultValue: PSExpression | null = null;
     if (this.check(PSTokenType.ASSIGN)) {
       this.advance();
-      defaultValue = this.parseExpression();
+      // Comma separates parameters in the param block — don't let comma form an array here.
+      defaultValue = this.parseExpression(PRECEDENCE[',']);
     }
 
     return { type: 'ParamDeclaration', attributes: attrs, paramType, name, defaultValue, mandatory: false, position: pos };
@@ -922,6 +924,20 @@ export class PSParser {
       if (!op) break;
       const prec = PRECEDENCE[op] ?? 0;
       if (prec <= minPrec) break;
+
+      // Comma operator → build an ArrayExpression collecting all same-prec elements
+      if (op === ',') {
+        const elements: PSStatement[] = [this.exprToStatement(left)];
+        while (this.check(PSTokenType.COMMA)) {
+          this.advance();
+          this.skipTerminators();
+          if (this.isAtEnd() || this.isTerminator() || this.check(PSTokenType.PIPE)) break;
+          elements.push(this.exprToStatement(this.parseExpression(PRECEDENCE[','])));
+        }
+        left = makeArrayExpr(elements, left.position);
+        continue;
+      }
+
       this.advance(); // consume operator token
       const right = this.parseExpression(prec);
       left = makeBinary(op as PSBinaryOperator, left, right, left.position);
@@ -995,6 +1011,7 @@ export class PSParser {
     if (tok.type === PSTokenType.MULTIPLY) return '*';
     if (tok.type === PSTokenType.DIVIDE) return '/';
     if (tok.type === PSTokenType.MODULO) return '%';
+    if (tok.type === PSTokenType.COMMA) return ',';
 
     if (tok.type === PSTokenType.PARAMETER) {
       const v = `-${tok.value}`;
@@ -1235,10 +1252,11 @@ export class PSParser {
   private parseArgumentList(): PSExpression[] {
     const args: PSExpression[] = [];
     if (this.check(PSTokenType.RPAREN)) return args;
-    args.push(this.parseExpression());
+    // Pass minPrec = PRECEDENCE[','] so comma isn't consumed as array construction.
+    args.push(this.parseExpression(PRECEDENCE[',']));
     while (this.check(PSTokenType.COMMA)) {
       this.advance();
-      args.push(this.parseExpression());
+      args.push(this.parseExpression(PRECEDENCE[',']));
     }
     return args;
   }
