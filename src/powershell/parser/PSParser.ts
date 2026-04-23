@@ -192,6 +192,14 @@ export class PSParser {
     while (this.isTerminator()) this.advance();
   }
 
+  /**
+   * Skip only newline terminators — preserve semicolons so they can continue
+   * to delimit compound statements (e.g. `if (...) {} ;` followed by another stmt).
+   */
+  private skipNewlinesOnly(): void {
+    while (this.check(PSTokenType.NEWLINE)) this.advance();
+  }
+
   private pos_(): SourcePosition { return this.peek().position; }
 
   /** Detect VARIABLE followed by an assignment operator */
@@ -464,7 +472,9 @@ export class PSParser {
     const elseifClauses: PSElseifClause[] = [];
     let elseBody: PSScriptBlock | null = null;
 
-    this.skipTerminators();
+    // Only skip newlines here — semicolons must remain as statement separators
+    // so the if-statement can be followed by `; nextStatement` in a block.
+    this.skipNewlinesOnly();
     while (this.checkValue(PSTokenType.WORD, 'elseif')) {
       this.advance(); // elseif
       this.expect(PSTokenType.LPAREN);
@@ -472,7 +482,7 @@ export class PSParser {
       this.expect(PSTokenType.RPAREN);
       const eib = this.parseScriptBlock();
       elseifClauses.push({ condition: eic, body: eib });
-      this.skipTerminators();
+      this.skipNewlinesOnly();
     }
 
     if (this.checkValue(PSTokenType.WORD, 'else')) {
