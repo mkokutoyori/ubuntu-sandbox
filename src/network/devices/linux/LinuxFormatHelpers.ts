@@ -22,13 +22,13 @@ export interface LinuxFormatHelpers {
    * Render a full `ping` sequence output (header + per-packet + stats).
    * @param size Payload size in bytes (defaults to 56, as in the real ping).
    */
-  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number): string;
+  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number, hostname?: string): string;
 
   /**
    * Render a `traceroute` output including header and per-hop lines.
    * @param maxHops Advertised maxHops in the header (defaults to 30).
    */
-  formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops?: number): string;
+  formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops?: number, hostname?: string): string;
 
   /** Render a single interface in `ifconfig` style (UP/BROADCAST/...). */
   formatInterface(port: Port): string;
@@ -71,10 +71,11 @@ function formatInterface(port: Port): string {
   ].join('\n');
 }
 
-function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56): string {
+function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
   const lines: string[] = [];
   const totalSize = size + 28; // ICMP header (8) + IP header (20)
-  lines.push(`PING ${target} (${target}) ${size}(${totalSize}) bytes of data.`);
+  const displayName = hostname ?? target.toString();
+  lines.push(`PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`);
 
   const received = results.filter(r => r.success);
   const failed = count - received.length;
@@ -116,19 +117,55 @@ function formatPingOutput(target: IPAddress, count: number, results: PingResult[
   return lines.join('\n');
 }
 
-function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30): string {
-  if (hops.length === 0) {
-    return `traceroute to ${target}, ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
+function icmpCodeAnnotation(code: number | undefined): string {
+  if (code === undefined) return '';
+  switch (code) {
+    case 0: return ' !N';
+    case 1: return ' !H';
+    case 2: return ' !P';
+    case 3: return ' !P';
+    case 13: return ' !A';
+    default: return ` !${code}`;
   }
-  const lines = [`traceroute to ${target}, ${maxHops} hops max, 60 byte packets`];
+}
+
+function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30, hostname?: string): string {
+  const displayName = hostname ?? target.toString();
+  if (hops.length === 0) {
+    return `traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
+  }
+  const lines = [`traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets`];
   for (const hop of hops) {
-    if (hop.timeout) {
+    const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
+
+    if (hop.timeout && (!probes || probes.every(p => !p.responded))) {
       lines.push(` ${hop.hop}  * * *`);
+      continue;
+    }
+
+    if (probes && probes.length > 0) {
+      const ip = hop.ip ?? '*';
+      let line = ` ${hop.hop}  ${ip} (${ip})`;
+      let lastIp = ip;
+      for (const probe of probes) {
+        if (!probe.responded) {
+          line += '  *';
+        } else {
+          const probeIp = probe.ip ?? ip;
+          if (probeIp !== lastIp) {
+            line += `  ${probeIp} (${probeIp})`;
+            lastIp = probeIp;
+          }
+          const annotation = icmpCodeAnnotation(probe.icmpCode);
+          line += `  ${(probe.rttMs ?? 0).toFixed(3)} ms${annotation}`;
+        }
+      }
+      lines.push(line);
     } else if (hop.unreachable) {
-      // ICMP Destination Unreachable → !N (network unreachable) annotation
-      lines.push(` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)} ms !N`);
+      const annotation = icmpCodeAnnotation(hop.icmpCode);
+      lines.push(` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms${annotation}`);
     } else {
-      lines.push(` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)} ms`);
+      lines.push(` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms`);
     }
   }
   return lines.join('\n');

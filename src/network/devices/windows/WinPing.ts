@@ -11,7 +11,6 @@
  */
 
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
-import { IPAddress } from '../../core/types';
 
 const PING_HELP = `
 Usage: ping [-t] [-a] [-n count] [-l size] [-f] [-i TTL] [-v TOS]
@@ -69,9 +68,10 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
 
   if (!targetStr) return PING_HELP;
 
-  let targetIP: IPAddress;
-  try { targetIP = new IPAddress(targetStr); }
-  catch { return `Ping request could not find host ${targetStr}. Please check the name and try again.`; }
+  const targetIP = ctx.resolveHostname(targetStr);
+  if (!targetIP) {
+    return `Ping request could not find host ${targetStr}. Please check the name and try again.`;
+  }
 
   const results = await ctx.executePingSequence(targetIP, count, 2000, ttl);
   return formatPingOutput(targetIP, count, size, results);

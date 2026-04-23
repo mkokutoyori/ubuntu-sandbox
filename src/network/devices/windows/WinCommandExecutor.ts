@@ -18,6 +18,14 @@ export interface PingResult {
   error?: string;
 }
 
+export interface TracerouteProbe {
+  responded: boolean;
+  rttMs?: number;
+  ip?: string;
+  unreachable?: boolean;
+  icmpCode?: number;
+}
+
 /** Traceroute hop from EndHost.executeTraceroute */
 export interface TracerouteHop {
   hop: number;
@@ -25,6 +33,8 @@ export interface TracerouteHop {
   rttMs?: number;
   timeout: boolean;
   unreachable?: boolean;
+  icmpCode?: number;
+  probes: TracerouteProbe[];
 }
 
 /** Route entry from EndHost.getRoutingTable */
@@ -78,7 +88,7 @@ export interface WinCommandContext {
 
   // Network operations
   executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number): Promise<PingResult[]>;
-  executeTraceroute(target: IPAddress): Promise<TracerouteHop[]>;
+  executeTraceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]>;
 
   // TCP/IP stack reset
   resetStack(): void;
@@ -109,4 +119,7 @@ export interface WinCommandContext {
 
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;
+
+  // Hostname resolution
+  resolveHostname(name: string): IPAddress | null;
 }

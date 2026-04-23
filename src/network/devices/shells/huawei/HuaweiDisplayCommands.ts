@@ -10,6 +10,7 @@
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
+import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -41,15 +42,24 @@ export function displayInterface(router: Router, ifName: string): string {
   const mask = port.getSubnetMask();
   const isUp = port.getIsUp();
   const isConn = port.isConnected();
+  const isVirtual = /^(LoopBack|Tunnel)/i.test(portName);
 
-  return [
-    `${portName} current state : ${isUp ? (isConn ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
-    `Line protocol current state : ${isConn ? 'UP' : 'DOWN'}`,
+  const lines = [
+    `${portName} current state : ${isUp ? (isConn || isVirtual ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
+    `Line protocol current state : ${isConn || isVirtual ? 'UP' : 'DOWN'}`,
+  ];
+
+  const desc = router.getInterfaceDescription(portName);
+  if (desc) lines.push(`Description: ${desc}`);
+
+  lines.push(
     `Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`,
     `The Maximum Transmit Unit is 1500`,
     `Input:  0 packets, 0 bytes`,
     `Output: 0 packets, 0 bytes`,
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 }
 
 export function displayIpPool(router: Router, poolName: string): string {
@@ -145,10 +155,13 @@ export function displayCurrentConfig(
     lines.push('#');
   }
 
+  const descs = router._getInterfaceDescriptions();
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     lines.push(`interface ${name}`);
+    const desc = descs.get(name);
+    if (desc) lines.push(` description ${desc}`);
     if (ip && mask) {
       lines.push(` ip address ${ip} ${mask}`);
     } else {
@@ -157,8 +170,16 @@ export function displayCurrentConfig(
     if (dhcpSelectGlobal.has(name)) {
       lines.push(` dhcp select global`);
     }
+    lines.push(...runningConfigInterfaceACL(router, name));
     lines.push('#');
   }
+
+  // ACL configuration
+  const aclLines = runningConfigACL(router);
+  if (aclLines.length > 0) {
+    lines.push(...aclLines);
+  }
+
   for (const r of table) {
     if (r.type === 'static' && r.nextHop) {
       lines.push(`ip route-static ${r.network} ${r.mask} ${r.nextHop}`);
@@ -222,6 +243,28 @@ export function displayRip(router: Router): string {
   return lines.join('\n');
 }
 
+export function displayCurrentConfigInterface(router: Router, ifName: string): string {
+  const portName = resolveHuaweiInterfaceName(router, ifName) || ifName;
+  const port = router.getPort(portName);
+  if (!port) return `Error: Interface "${ifName}" does not exist.`;
+
+  const ip = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  const desc = router.getInterfaceDescription(portName);
+  const lines = [
+    '#',
+    `interface ${portName}`,
+  ];
+  if (desc) lines.push(` description ${desc}`);
+  if (ip && mask) {
+    lines.push(` ip address ${ip} ${mask}`);
+  } else {
+    lines.push(` shutdown`);
+  }
+  lines.push('#');
+  return lines.join('\n');
+}
+
 // ─── Trie Registration ──────────────────────────────────────────────
 
 /**
@@ -244,6 +287,11 @@ export function registerDisplayCommands(
   });
   trie.register('display counters', 'Display traffic counters', () => displayCounters(getRouter()));
   trie.register('display rip', 'Display RIP information', () => displayRip(getRouter()));
+
+  trie.registerGreedy('display current-configuration interface', 'Display interface running config', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    return displayCurrentConfigInterface(getRouter(), args.join(' '));
+  });
 
   trie.registerGreedy('display interface', 'Display interface information', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';

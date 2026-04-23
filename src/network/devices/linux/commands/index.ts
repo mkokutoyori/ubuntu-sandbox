@@ -27,6 +27,7 @@ import { digCommand } from './dns/Dig';
 import { nslookupCommand } from './dns/Nslookup';
 import { hostCommand } from './dns/Host';
 import { dnsmasqCommand } from './dns/Dnsmasq';
+import { ipCommand } from './net/Ip';
 import { dhclientCommand } from './dhcp/Dhclient';
 import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
 import { dhclientPsLines } from './dhcp/PsDhclientAugment';
@@ -39,6 +40,7 @@ export {
   pingCommand,
   tracerouteCommand,
   routeCommand,
+  ipCommand,
   digCommand,
   nslookupCommand,
   hostCommand,
@@ -63,6 +65,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   pingCommand,
   tracerouteCommand,
   routeCommand,
+  ipCommand,
   digCommand,
   nslookupCommand,
   hostCommand,

@@ -42,7 +42,7 @@ import type {
   IpNeighborEntry,
   IpXfrmContext,
 } from './linux/LinuxIpCommand';
-import { DnsService } from './linux/LinuxDnsService';
+import { DnsService, findDnsServerByIP } from './linux/LinuxDnsService';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
@@ -107,6 +107,7 @@ export abstract class LinuxMachine extends EndHost {
     // 2. Kernel / userspace
     this.executor = new LinuxCommandExecutor(profile.isServer);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
+    this.syncHostnameFiles(profile.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
@@ -115,6 +116,20 @@ export abstract class LinuxMachine extends EndHost {
     this.commands = new LinuxCommandRegistry();
     this.registerCoreCommands();
     this.registerDeviceCommands();
+  }
+
+  // ─── Hostname sync ───────────────────────────────────────────────────
+
+  private syncHostnameFiles(hostname: string): void {
+    const vfs = this.executor.vfs;
+    vfs.writeFile('/etc/hostname', hostname + '\n', 0, 0, 0o022);
+    vfs.writeFile('/etc/hosts',
+      '127.0.0.1\tlocalhost\n' +
+      `127.0.1.1\t${hostname}\n` +
+      '\n' +
+      '# The following lines are desirable for IPv6 capable hosts\n' +
+      '::1\tlocalhost ip6-localhost ip6-loopback\n',
+      0, 0, 0o022);
   }
 
   // ─── Ports ───────────────────────────────────────────────────────────
@@ -322,6 +337,52 @@ export abstract class LinuxMachine extends EndHost {
     return tokens;
   }
 
+  // ─── Hostname resolution (shared between buildNetKernel & commands) ─
+
+  private static resolveHostnameImpl(
+    name: string,
+    executor: LinuxCommandExecutor,
+  ): IPAddress | null {
+    // 1. Already a valid IPv4 address → pass through
+    try { return new IPAddress(name); } catch { /* not an IP */ }
+
+    // 2. /etc/hosts lookup
+    const hostsContent = executor.readFile('/etc/hosts');
+    if (hostsContent) {
+      for (const rawLine of hostsContent.split('\n')) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) continue;
+        const parts = line.split(/\s+/);
+        if (parts.length < 2) continue;
+        const ip = parts[0];
+        // Skip IPv6 entries
+        if (ip.includes(':')) continue;
+        for (let i = 1; i < parts.length; i++) {
+          if (parts[i] === name) {
+            try { return new IPAddress(ip); } catch { break; }
+          }
+        }
+      }
+    }
+
+    // 3. DNS fallback via /etc/resolv.conf
+    const resolvConf = executor.readFile('/etc/resolv.conf');
+    if (resolvConf) {
+      const match = resolvConf.match(/nameserver\s+(\S+)/);
+      if (match) {
+        const dnsServer = findDnsServerByIP(match[1]);
+        if (dnsServer) {
+          const records = dnsServer.query(name, 'A');
+          if (records.length > 0) {
+            try { return new IPAddress(records[0].value); } catch { /* skip */ }
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
   // ─── IpNetworkContext adapter (for the `ip` command) ────────────────
 
   private buildIpNetworkContext(): IpNetworkContext {
@@ -460,6 +521,14 @@ export abstract class LinuxMachine extends EndHost {
       configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean {
         return self.configureInterface(name, ip, mask);
       },
+      clearInterfaceIP(name: string): void {
+        const port = self.ports.get(name);
+        if (port) port.clearIP();
+      },
+      setInterfaceAdmin(name: string, enabled: boolean): void {
+        const port = self.ports.get(name);
+        if (port) port.setUp(enabled);
+      },
       isDHCPConfigured(name: string): boolean {
         return self.isDHCPConfigured(name);
       },
@@ -498,8 +567,8 @@ export abstract class LinuxMachine extends EndHost {
       ): Promise<PingResult[]> {
         return self.executePingSequence(target, count, timeoutMs, ttl);
       },
-      async traceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]> {
-        const hops = await self.executeTraceroute(target, maxHops);
+      async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]> {
+        const hops = await self.executeTraceroute(target, maxHops, 2000, probesPerHop, firstTtl);
         return hops as TracerouteHop[];
       },
       getDhcpClient(): DHCPClient {
@@ -522,6 +591,12 @@ export abstract class LinuxMachine extends EndHost {
       },
       extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number } {
         return self.extractPorts(pkt);
+      },
+      resolveHostname(name: string): IPAddress | null {
+        return LinuxMachine.resolveHostnameImpl(name, self.executor);
+      },
+      readFile(path: string): string | null {
+        return self.executor.readFile(path);
       },
     };
   }

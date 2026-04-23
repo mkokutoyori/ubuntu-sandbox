@@ -68,7 +68,7 @@ export class ACLEngine {
       dstPort?: number;
     },
   ): void {
-    const type: 'standard' | 'extended' = id < 100 ? 'standard' : 'extended';
+    const type: 'standard' | 'extended' = (id < 100 || (id >= 2000 && id <= 2999)) ? 'standard' : 'extended';
     let acl = this.accessLists.find(a => a.id === id);
     if (!acl) {
       acl = { id, type, entries: [] };

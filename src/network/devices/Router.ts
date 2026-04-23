@@ -169,6 +169,14 @@ export abstract class Router extends Equipment {
   }> = new Map();
   private pingIdCounter = 1;
 
+  // ── Pending Traceroute Hops (for router-initiated traceroute) ──
+  private pendingTraceHops: Map<string, {
+    resolve: (result: { ip: string; rttMs: number; reached: boolean; unreachable?: boolean }) => void;
+    timeout: () => void;
+    timer: ReturnType<typeof setTimeout>;
+    sentAt: number;
+  }> = new Map();
+
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
 
@@ -719,11 +727,11 @@ export abstract class Router extends Equipment {
         }
       } else if (icmp.icmpType === 'echo-reply') {
         // Match against pending pings (router-initiated)
-        const key = `ping-${icmp.id}-${icmp.sequence}`;
-        const pending = this.pendingPings.get(key);
+        const pingKey = `ping-${icmp.id}-${icmp.sequence}`;
+        const pending = this.pendingPings.get(pingKey);
         if (pending) {
           clearTimeout(pending.timer);
-          this.pendingPings.delete(key);
+          this.pendingPings.delete(pingKey);
           const rtt = performance.now() - pending.sentAt;
           pending.resolve({
             success: true,
@@ -732,6 +740,41 @@ export abstract class Router extends Equipment {
             seq: icmp.sequence,
             fromIP: ipPkt.sourceIP.toString(),
           });
+          return;
+        }
+        // Also match against pending traceroute hops (final destination reached)
+        const traceKey = `trace-${icmp.id}-${icmp.sequence}`;
+        const tracePending = this.pendingTraceHops.get(traceKey);
+        if (tracePending) {
+          clearTimeout(tracePending.timer);
+          this.pendingTraceHops.delete(traceKey);
+          const rtt = performance.now() - tracePending.sentAt;
+          tracePending.resolve({ ip: ipPkt.sourceIP.toString(), rttMs: rtt, reached: true });
+        }
+      } else if (icmp.icmpType === 'time-exceeded') {
+        // Router received ICMP Time Exceeded in response to a traceroute probe.
+        // Correlate via the original packet embedded in the ICMP error.
+        const traceKey = this._traceKeyFromICMPError(icmp);
+        if (traceKey) {
+          const tracePending = this.pendingTraceHops.get(traceKey);
+          if (tracePending) {
+            clearTimeout(tracePending.timer);
+            this.pendingTraceHops.delete(traceKey);
+            const rtt = performance.now() - tracePending.sentAt;
+            tracePending.resolve({ ip: ipPkt.sourceIP.toString(), rttMs: rtt, reached: false });
+          }
+        }
+      } else if (icmp.icmpType === 'destination-unreachable' && icmp.code !== 4) {
+        // Non-PMTU destination-unreachable: could be a traceroute reaching a dead end.
+        const traceKey = this._traceKeyFromICMPError(icmp);
+        if (traceKey) {
+          const tracePending = this.pendingTraceHops.get(traceKey);
+          if (tracePending) {
+            clearTimeout(tracePending.timer);
+            this.pendingTraceHops.delete(traceKey);
+            const rtt = performance.now() - tracePending.sentAt;
+            tracePending.resolve({ ip: ipPkt.sourceIP.toString(), rttMs: rtt, reached: false, unreachable: true });
+          }
         }
       }
     } else if (ipPkt.protocol === IP_PROTO_UDP) {
@@ -1130,6 +1173,113 @@ export abstract class Router extends Equipment {
       }
     }
     return results;
+  }
+
+  /** @internal Extract trace-${id}-${seq} key from an ICMP error's embedded original packet. */
+  private _traceKeyFromICMPError(icmp: ICMPPacket): string | undefined {
+    if (!icmp.originalPacket) return undefined;
+    const orig = icmp.originalPacket.payload as ICMPPacket;
+    if (!orig || orig.type !== 'icmp' || orig.icmpType !== 'echo-request') return undefined;
+    return `trace-${orig.id}-${orig.sequence}`;
+  }
+
+  /**
+   * Execute a traceroute from this router to `targetIP`.
+   * Used by Cisco IOS `traceroute` and Huawei VRP `tracert` CLI commands.
+   * Sends ICMP echo probes with incrementing TTL and collects Time Exceeded / echo-reply.
+   */
+  async executeTraceroute(
+    targetIP: IPAddress,
+    maxHops: number = 30,
+    timeoutMs: number = 2000,
+    probesPerHop: number = 3,
+  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>> {
+    const route = this.lookupRoute(targetIP);
+    if (!route) return [];
+
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return [];
+    const myIP = outPort.getIPAddress();
+    if (!myIP) return [];
+
+    const nextHopIP = route.nextHop || targetIP;
+
+    // ARP resolve first-hop MAC
+    const existingArp = this.arpTable.get(nextHopIP.toString());
+    let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
+    if (!nextHopMAC) {
+      nextHopMAC = await this._resolveARPForPing(route.iface, outPort, nextHopIP, timeoutMs);
+      if (!nextHopMAC) return [{ hop: 1, timeout: true, probes: [{ responded: false }] }];
+    }
+
+    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }> = [];
+
+    for (let ttl = 1; ttl <= maxHops; ttl++) {
+      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> = [];
+      let destinationReached = false;
+
+      for (let p = 0; p < probesPerHop; p++) {
+        this.pingIdCounter++;
+        const id = this.pingIdCounter;
+        const seq = p + 1;
+
+        const probe = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean }>((resolve) => {
+          const key = `trace-${id}-${seq}`;
+          const sentAt = performance.now();
+
+          const timer = setTimeout(() => {
+            this.pendingTraceHops.delete(key);
+            resolve({ timeout: true, reached: false });
+          }, timeoutMs);
+
+          this.pendingTraceHops.set(key, {
+            resolve: (r) => resolve({ ip: r.ip, rttMs: r.rttMs, timeout: false, reached: r.reached, unreachable: r.unreachable }),
+            timeout: () => { clearTimeout(timer); resolve({ timeout: true, reached: false }); },
+            timer,
+            sentAt,
+          });
+
+          const icmp: ICMPPacket = {
+            type: 'icmp', icmpType: 'echo-request', code: 0,
+            id, sequence: seq, dataSize: 56,
+          };
+          const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
+
+          this.sendFrame(route.iface, {
+            srcMAC: outPort.getMAC(),
+            dstMAC: nextHopMAC!,
+            etherType: ETHERTYPE_IPV4,
+            payload: ipPkt,
+          });
+        });
+
+        probes.push({
+          responded: !probe.timeout,
+          rttMs: probe.rttMs,
+          ip: probe.ip,
+          unreachable: probe.unreachable,
+        });
+        if (probe.reached) destinationReached = true;
+      }
+
+      const firstResponded = probes.find(p => p.responded);
+      const firstUnreachable = probes.find(p => p.unreachable);
+      const allTimeout = probes.every(p => !p.responded);
+
+      hops.push({
+        hop: ttl,
+        ip: firstResponded?.ip,
+        rttMs: firstResponded?.rttMs,
+        timeout: allTimeout,
+        unreachable: !!firstUnreachable,
+        probes,
+      });
+
+      if (destinationReached) break;
+      if (firstUnreachable) break;
+    }
+
+    return hops;
   }
 
   /** @internal Resolve ARP for ping, returns MAC or null on timeout */

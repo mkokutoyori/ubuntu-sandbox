@@ -16,7 +16,6 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { IPAddress } from '../../../../core/types';
 
 export const pingCommand: LinuxCommand = {
   name: 'ping',
@@ -67,14 +66,13 @@ export const pingCommand: LinuxCommand = {
 
     if (!targetStr) return 'Usage: ping [-c count] [-t ttl] [-s size] <destination>';
 
-    let targetIP: IPAddress;
-    try {
-      targetIP = new IPAddress(targetStr);
-    } catch {
+    const targetIP = ctx.net.resolveHostname(targetStr);
+    if (!targetIP) {
       return `ping: ${targetStr}: Name or service not known`;
     }
 
+    const isHostname = targetStr !== targetIP.toString();
     const results = await ctx.net.pingSequence(targetIP, count, 2000, ttl);
-    return ctx.fmt.formatPingOutput(targetIP, count, results, size);
+    return ctx.fmt.formatPingOutput(targetIP, count, results, size, isHostname ? targetStr : undefined);
   },
 };

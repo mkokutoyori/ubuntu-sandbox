@@ -82,4 +82,12 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     getRouter()._getDHCPServerInternal().configurePoolDNS(ctx.getSelectedPool()!, args);
     return '';
   });
+
+  trie.registerGreedy('excluded-ip-address', 'Exclude IP range from pool', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const start = args[0];
+    const end = args[1] || start;
+    getRouter()._getDHCPServerInternal().addExcludedRange(start, end);
+    return '';
+  });
 }

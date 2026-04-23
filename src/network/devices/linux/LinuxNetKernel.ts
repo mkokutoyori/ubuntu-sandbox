@@ -21,13 +21,29 @@ import type { IPAddress, SubnetMask, MACAddress, IPv4Packet } from '../../core/t
 import type { ARPEntry, HostRouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 
+export interface TracerouteProbe {
+  /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
+  responded: boolean;
+  rttMs?: number;
+  ip?: string;
+  unreachable?: boolean;
+  /** ICMP Destination Unreachable code (0=!N, 1=!H, 2=!P, 3=!X, 13=!A). */
+  icmpCode?: number;
+}
+
 export interface TracerouteHop {
   hop: number;
+  /** IP of the first responding probe. */
   ip?: string;
+  /** RTT of the first responding probe (backward compat). */
   rttMs?: number;
   timeout: boolean;
-  /** Set when the hop replied with an ICMP Destination Unreachable. */
+  /** True when any probe got ICMP Destination Unreachable. */
   unreachable?: boolean;
+  /** ICMP code from the first unreachable probe (0=!N, 1=!H, 2=!P, 13=!A). */
+  icmpCode?: number;
+  /** Per-probe detail — length equals probesPerHop. */
+  probes: TracerouteProbe[];
 }
 
 export interface LinuxNetKernel {
@@ -37,6 +53,12 @@ export interface LinuxNetKernel {
 
   /** Configure IPv4 address + mask on an interface. */
   configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean;
+
+  /** Remove IPv4 address from an interface (`ip addr del`). */
+  clearInterfaceIP(name: string): void;
+
+  /** Set admin state up/down (`ip link set dev X up/down`). */
+  setInterfaceAdmin(name: string, enabled: boolean): void;
 
   /** True if this interface was configured via DHCP (dynamic). */
   isDHCPConfigured(name: string): boolean;
@@ -62,7 +84,7 @@ export interface LinuxNetKernel {
     ttl?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]>;
+  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]>;
 
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
@@ -76,4 +98,19 @@ export interface LinuxNetKernel {
 
   /** Parsed TCP/UDP port numbers from an IPv4 packet, for NAT/firewall. */
   extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number };
+
+  // ─── Name resolution ────────────────────────────────────────────
+  /**
+   * Resolve a hostname to an IPv4 address.
+   *
+   * Resolution order (mirrors Linux NSS `files dns`):
+   *   1. If `name` is already a valid IPv4 address, return it directly.
+   *   2. Look up `name` in `/etc/hosts` (VFS).
+   *   3. Query the DNS server from `/etc/resolv.conf` (if configured).
+   *   4. Return `null` if unresolvable.
+   */
+  resolveHostname(name: string): IPAddress | null;
+
+  /** Read a file from the virtual filesystem (returns null if not found). */
+  readFile(path: string): string | null;
 }

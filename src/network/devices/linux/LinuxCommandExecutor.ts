@@ -14,7 +14,7 @@ import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } fro
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
-import { executeIpCommand, type IpNetworkContext } from './LinuxIpCommand';
+import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
@@ -490,7 +490,10 @@ export class LinuxCommandExecutor {
       case 'who': return { output: cmdWho(c), exitCode: 0 };
       case 'w': return { output: cmdW(c), exitCode: 0 };
       case 'last': return { output: cmdLast(c, args), exitCode: 0 };
-      case 'getent': return { output: cmdGetent(c, args), exitCode: 0 };
+      case 'getent': {
+        if (args[0] === 'hosts') return this.handleGetentHosts(args.slice(1));
+        return { output: cmdGetent(c, args), exitCode: 0 };
+      }
       case 'sudo': return this.handleSudoCmd(args);
 
       // su - switch user
@@ -582,8 +585,11 @@ export class LinuxCommandExecutor {
       }
 
       // Hostname
-      case 'hostname':
-        return { output: args[0] || 'localhost', exitCode: 0 };
+      case 'hostname': {
+        if (args[0]) return { output: args[0], exitCode: 0 };
+        const hn = this.vfs.readFile('/etc/hostname');
+        return { output: (hn ?? 'localhost').trim(), exitCode: 0 };
+      }
 
       // history — command history management
       case 'history': return this.handleHistory(args);
@@ -628,13 +634,6 @@ export class LinuxCommandExecutor {
       // true/false
       case 'true': return { output: '', exitCode: 0 };
       case 'false': return { output: '', exitCode: 1 };
-
-      // ip (iproute2) — delegated to LinuxIpCommand
-      case 'ip': {
-        if (!this.ipNetworkCtx) return { output: 'ip: network context not available', exitCode: 1 };
-        const out = executeIpCommand(this.ipNetworkCtx, args);
-        return { output: out, exitCode: out.includes('Error') || out.includes('unknown') || out.includes('Cannot find') || out.includes('RTNETLINK') || out.includes('does not exist') ? 1 : 0 };
-      }
 
       // ipsec (strongSwan) — IPsec management
       case 'ipsec':
@@ -768,6 +767,40 @@ export class LinuxCommandExecutor {
         return { output: `${cmd}: command not found`, exitCode: 127 };
       }
     }
+  }
+
+  private handleGetentHosts(args: string[]): { output: string; exitCode: number } {
+    const content = this.vfs.readFile('/etc/hosts');
+    if (!content) return { output: '', exitCode: 2 };
+
+    type HostEntry = { ip: string; names: string[] };
+    const entries: HostEntry[] = [];
+    for (const rawLine of content.split('\n')) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const parts = line.split(/\s+/);
+      if (parts.length < 2) continue;
+      if (parts[0].includes(':')) continue; // skip IPv6
+      entries.push({ ip: parts[0], names: parts.slice(1) });
+    }
+
+    const key = args[0];
+    if (!key) {
+      return {
+        output: entries.map(e => `${e.ip.padEnd(16)}${e.names.join(' ')}`).join('\n'),
+        exitCode: 0,
+      };
+    }
+
+    // Search by name or by IP
+    const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(key);
+    for (const e of entries) {
+      if (isIP ? e.ip === key : e.names.includes(key)) {
+        return { output: `${e.ip.padEnd(16)}${e.names.join(' ')}`, exitCode: 0 };
+      }
+    }
+
+    return { output: '', exitCode: 2 };
   }
 
   private handleHistory(args: string[]): { output: string; exitCode: number } {
