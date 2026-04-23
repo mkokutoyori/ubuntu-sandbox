@@ -243,6 +243,7 @@ export function buildHuaweiIKEProposalCommands(
     };
     const raw = args.join('-').toLowerCase();
     policy.encryption = algoMap[raw] || args.join(' ').toLowerCase();
+    (policy as any).huaweiEncryption = args.join('-').toLowerCase();
     return '';
   });
 
@@ -369,7 +370,9 @@ export function buildHuaweiIPSecProposalCommands(
   trie.registerGreedy('transform', 'Set transform mode (esp/ah/ah-esp)', (args) => {
     const name = ctx.getSelectedIPSecProposal();
     if (!name) return 'Error: No IPSec proposal selected.';
-    // 'esp', 'ah', 'ah-esp' → stored for reference but transforms are set separately
+    const protocol = args[0]?.toLowerCase() || 'esp';
+    const ts = eng(ctx).getOrCreateTransformSet(name, []);
+    (ts as any).protocol = protocol;
     return '';
   });
 
@@ -600,6 +603,33 @@ export function registerHuaweiIPSecDisplayCommands(
     const e = engOrNull(getRouter());
     if (!e) return 'Info: No IPSec configuration.';
     return e.showCryptoEngineConfiguration();
+  });
+
+  trie.register('display ipsec profile', 'Display IPSec profiles', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IPSec configuration.';
+    return e.showCryptoIPSecProfile();
+  });
+
+  trie.register('display ike peer', 'Display configured IKE peers', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKE peers configured.';
+    const kr = (e as any).ikev2Keyrings?.get('default');
+    if (!kr || kr.peers.size === 0) return 'Info: No IKE peers configured.';
+    const lines = ['IKE Peer Configuration:'];
+    for (const [name, peer] of kr.peers as Map<string, any>) {
+      lines.push(`  Peer name   : ${name}`);
+      lines.push(`  Remote addr : ${peer.address}`);
+      lines.push(`  PSK         : ${peer.preSharedKey ? '****' : 'not set'}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display ipsec sa verbose', 'Display detailed IPSec SAs', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IPSec configuration.';
+    return e.showCryptoIPSecSADetail?.() ?? e.showCryptoIPSecSA();
   });
 
   trie.register('display ipsec security-policy', 'Display IPSec security policies (SPD)', () => {

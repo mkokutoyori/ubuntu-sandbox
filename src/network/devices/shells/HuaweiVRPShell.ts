@@ -36,6 +36,7 @@ import {
 } from './huawei/HuaweiConfigCommands';
 import {
   registerDhcpSystemCommands, buildDhcpPoolCommands,
+  registerDhcpDisplayCommands, registerDhcpDebugCommands,
 } from './huawei/HuaweiDhcpCommands';
 import {
   registerOSPFSystemCommands, buildOSPFViewCommands, buildOSPFAreaViewCommands,
@@ -101,6 +102,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
+  // RIP view trie
+  private ripTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
@@ -112,6 +115,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildOSPFv3ViewCommands();
     this.buildIPSecSubViewCommands();
     this.buildACLSubViewCommands();
+    this.buildRIPViewCommands();
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -171,6 +175,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
+      case 'rip':        return `[${host}-rip-1]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
@@ -273,6 +278,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospfv3':
         this.mode = 'system';
         return '';
+      case 'rip':
+        this.mode = 'system';
+        return '';
       case 'ike-proposal':
         this.mode = 'system';
         this.selectedIKEProposal = null;
@@ -334,6 +342,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
       case 'ospfv3': return this.ospfv3Trie;
+      case 'rip': return this.ripTrie;
       case 'ike-proposal': return this.ikeProposalTrie;
       case 'ike-peer': return this.ikePeerTrie;
       case 'ipsec-proposal': return this.ipsecProposalTrie;
@@ -395,9 +404,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return this._handlePing(args);
     });
 
-    // reset arp — clear dynamic ARP entries
-    t.register('reset arp', 'Clear dynamic ARP entries', () => {
+    // reset arp — clear all ARP entries
+    t.register('reset arp', 'Clear all ARP entries', () => {
       getRouter()._clearARPCache();
+      return '';
+    });
+
+    // reset arp dynamic — clear only dynamic ARP entries
+    t.register('reset arp dynamic', 'Clear dynamic ARP entries', () => {
+      const arpTable = getRouter()._getArpTableInternal();
+      for (const [ip, entry] of [...arpTable.entries()]) {
+        if ((entry as any).type !== 'static') arpTable.delete(ip);
+      }
       return '';
     });
 
@@ -406,6 +424,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       getRouter().resetCounters();
       return '';
     });
+
+    // save — persist configuration (Huawei equivalent of write memory)
+    t.register('save', 'Save current configuration', () => {
+      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
+
+    // DHCP display commands
+    registerDhcpDisplayCommands(t, getRouter);
+
+    // DHCP debug/clear commands
+    registerDhcpDebugCommands(t, getRouter);
   }
 
   // ─── System View ([hostname]) ────────────────────────────────────
@@ -444,6 +473,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // ACL display commands
     registerHuaweiACLDisplayCommands(t, () => this.r());
+
+    // DHCP display commands
+    registerDhcpDisplayCommands(t, () => this.r());
+
+    // DHCP debug/clear commands
+    registerDhcpDebugCommands(t, () => this.r());
+
+    // save — persist configuration
+    t.register('save', 'Save current configuration', () => {
+      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
@@ -522,6 +562,33 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfAreaTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
     buildOSPFAreaViewCommands(this.ospfAreaTrie, this as any, () => this.ospfArea);
+  }
+
+  // ─── RIP View ([hostname-rip-1]) ────────────────────────────────
+
+  private buildRIPViewCommands(): void {
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
+    const t = this.ripTrie;
+
+    registerDisplayCommands(t, getRouter, getState);
+
+    t.registerGreedy('network', 'Advertise network in RIP', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      return cmdRip(getRouter(), ['network', ...args]);
+    });
+
+    t.registerGreedy('version', 'Set RIP version', (_args) => {
+      return '';
+    });
+
+    t.registerGreedy('preference', 'Set RIP preference value', (_args) => {
+      return '';
+    });
+
+    t.registerGreedy('undo network', 'Remove advertised network', (_args) => {
+      return '';
+    });
   }
 
   // ─── Tracert command ──────────────────────────────────────────────
