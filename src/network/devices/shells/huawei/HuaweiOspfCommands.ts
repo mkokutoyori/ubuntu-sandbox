@@ -232,6 +232,22 @@ export function buildOSPFViewCommands(
     else extra.nbmaNeighbors.push(entry);
     return '';
   });
+
+  trie.registerGreedy('bfd all-interfaces enable', 'Enable BFD on all OSPF interfaces', (_args) => {
+    return '';
+  });
+
+  trie.registerGreedy('asbr-summary', 'Summarize external routes for ASBR', (args) => {
+    if (args.length < 2) return 'Error: Incomplete command.';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    if (!extra.summaryAddresses) extra.summaryAddresses = [];
+    extra.summaryAddresses.push({ network: args[0], mask: args[1] });
+    return '';
+  });
+
+  trie.register('opaque-capability enable', 'Enable OSPF opaque capability', () => {
+    return '';
+  });
 }
 
 // ─── OSPF Area View Commands ─────────────────────────────────────────
@@ -446,6 +462,18 @@ export function registerOSPFInterfaceCommands(
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected.';
     setPendingOspfIf(ifName, { transmitDelay: val });
+    return '';
+  });
+
+  trie.registerGreedy('ospf demand-circuit', 'Configure demand circuit', (_args) => {
+    return '';
+  });
+
+  trie.registerGreedy('ospf mtu-enable', 'Enable MTU check in DBD packets', (_args) => {
+    return '';
+  });
+
+  trie.registerGreedy('ospf bfd enable', 'Enable BFD on OSPF interface', (_args) => {
     return '';
   });
 

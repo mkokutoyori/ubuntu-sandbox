@@ -222,6 +222,24 @@ export function registerHuaweiIPSecSystemCommands(
     if (!isNaN(n)) eng(ctx).setGlobalSALifetimeKB(n);
     return '';
   });
+
+  trie.registerGreedy('ipsec sa anti-replay window', 'Set anti-replay window size', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const n = parseInt(args[0], 10);
+    if (isNaN(n)) return 'Error: Invalid value.';
+    eng(ctx).setReplayWindowSize(n);
+    return '';
+  });
+
+  trie.register('ike aggressive-mode disable', 'Disable IKE aggressive mode', () => {
+    eng(ctx).setAggressiveMode(false);
+    return '';
+  });
+
+  trie.register('undo ike aggressive-mode disable', 'Enable IKE aggressive mode (default)', () => {
+    eng(ctx).setAggressiveMode(true);
+    return '';
+  });
 }
 
 // ─── IKE Proposal sub-view ───────────────────────────────────────────

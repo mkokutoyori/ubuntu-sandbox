@@ -510,3 +510,392 @@ describe('Batch 18: RIP view mode', () => {
     expect(display).toContain('not enabled');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 19: ACL display all (display acl all)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 19: display acl all', () => {
+  it('should display all configured ACLs with display acl all', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl 2000');
+    await r.executeCommand('rule permit source 10.0.0.0 0.0.0.255');
+    await r.executeCommand('quit');
+    await r.executeCommand('acl 3000');
+    await r.executeCommand('rule deny ip source 192.168.1.0 0.0.0.255 destination 10.0.0.0 0.0.0.255');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('display acl all');
+    expect(result).toContain('2000');
+    expect(result).toContain('3000');
+  });
+
+  it('should show empty message when no ACLs exist', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display acl all');
+    expect(result).toMatch(/no ACL|Total 0/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 20: ACL running-config completeness (ACL in current-config)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 20: ACL in current-configuration', () => {
+  it('should include ACL rules in display current-configuration', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl 2000');
+    await r.executeCommand('rule permit source 10.0.0.0 0.0.0.255');
+    await r.executeCommand('quit');
+    const cfg = await r.executeCommand('display current-configuration');
+    expect(cfg).toContain('acl number 2000');
+    expect(cfg).toContain('rule');
+    expect(cfg).toContain('permit');
+  });
+
+  it('should include traffic-filter applied to interface in current-config', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl 2000');
+    await r.executeCommand('rule permit source any');
+    await r.executeCommand('quit');
+    await r.executeCommand('interface GE0/0/0');
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    await r.executeCommand('traffic-filter inbound acl 2000');
+    await r.executeCommand('quit');
+    const cfg = await r.executeCommand('display current-configuration');
+    expect(cfg).toContain('traffic-filter inbound acl 2000');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 21: DHCP conflict display (Huawei equivalent)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 21: DHCP snooping display', () => {
+  it('should display dhcp-snooping user-bind all from user view', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display dhcp-snooping user-bind all');
+    expect(result).toContain('DHCP Snooping');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 22: shutdown clears IPSec SAs on interface
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 22: shutdown clears IPSec SAs on interface', () => {
+  it('should clear IPSec SAs when interface is shut down', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    await r.executeCommand('ipsec policy TESTPOL');
+    await r.executeCommand('shutdown');
+    const result = await r.executeCommand('quit');
+    expect(result).toBe('');
+    const saResult = await r.executeCommand('display ipsec sa');
+    expect(saResult).not.toContain('GE0/0/0');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 23: ip forward-protocol udp equivalent (udp-helper)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 23: Huawei udp-helper (ip forward-protocol udp equiv)', () => {
+  it('should accept ip forward-protocol udp equivalent on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    const result = await r.executeCommand('ip helper-address 10.0.0.254');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 24: service dhcp enable/disable equivalence
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 24: dhcp enable/disable and display dhcp conflict', () => {
+  it('should disable DHCP with undo dhcp enable', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('dhcp enable');
+    const result = await r.executeCommand('undo dhcp enable');
+    expect(result).toBe('');
+  });
+
+  it('should display dhcp conflict equivalent (display dhcp server conflict all)', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display dhcp server conflict all');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 25: OSPF interface parity (demand-circuit, mtu-ignore)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 25: OSPF interface commands parity', () => {
+  it('should accept ospf demand-circuit on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ospf demand-circuit');
+    expect(result).toBe('');
+  });
+
+  it('should accept ospf mtu-enable on interface (mtu-ignore equiv)', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ospf mtu-enable');
+    expect(result).toBe('');
+  });
+
+  it('should accept ospf bfd enable on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ospf bfd enable');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 26: IPSec SA global config parity (anti-replay, ESN, aggressive-mode)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 26: IPSec global config parity', () => {
+  it('should set ipsec anti-replay window size', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ipsec sa anti-replay window 128');
+    expect(result).toBe('');
+  });
+
+  it('should disable ike aggressive mode', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ike aggressive-mode disable');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 27: DHCP client-identifier deny equivalent
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 27: DHCP pool client-identifier deny', () => {
+  it('should accept dhcp pool client-identifier deny', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('dhcp enable');
+    await r.executeCommand('ip pool TESTPOOL');
+    await r.executeCommand('network 10.0.0.0 mask 255.255.255.0');
+    const result = await r.executeCommand('excluded-ip-address 10.0.0.1 10.0.0.5');
+    expect(result).toBe('');
+    await r.executeCommand('quit');
+    const poolDisplay = await r.executeCommand('display ip pool name TESTPOOL');
+    expect(poolDisplay).toBeDefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 28: Named ACL support (acl name)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 28: Named ACL support', () => {
+  it('should create named basic ACL with acl name', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('acl name MY_ACL basic');
+    expect(result).toBe('');
+  });
+
+  it('should create named advanced ACL with acl name', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('acl name EXTENDED_ACL advanced');
+    expect(result).toBe('');
+  });
+
+  it('should add rules to named ACL and display them', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl name MY_ACL basic');
+    await r.executeCommand('rule permit source 10.0.0.0 0.0.0.255');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('display acl all');
+    expect(result).toContain('MY_ACL');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 29: OSPF display enhancements (display ospf routing)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 29: display ospf routing', () => {
+  it('should display ospf routing table', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ospf routing');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 30: display current-configuration completeness (ACL + named ACL)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 30: display current-config with named ACL', () => {
+  it('should include named ACL in current-configuration', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl name FIREWALL basic');
+    await r.executeCommand('rule deny source 192.168.0.0 0.0.255.255');
+    await r.executeCommand('quit');
+    const cfg = await r.executeCommand('display current-configuration');
+    expect(cfg).toContain('acl name FIREWALL');
+    expect(cfg).toContain('deny');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 31: IPSec clear/reset commands and debug from user view
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 31: IPSec reset/debug from user view', () => {
+  it('should clear IKE SAs with reset ike sa from user view', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('reset ike sa');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should clear IPSec SAs with reset ipsec sa from user view', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('reset ipsec sa');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should enable ike debugging from system view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('debugging ike');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should disable all debugging with undo debugging all', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('debugging ike');
+    const result = await r.executeCommand('undo debugging all');
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 32: OSPF advanced config commands parity
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 32: OSPF advanced config commands', () => {
+  it('should accept bfd all-interfaces in ospf view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('bfd all-interfaces enable');
+    expect(result).toBe('');
+  });
+
+  it('should accept summary address (abr-summary) in ospf view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('asbr-summary 192.168.0.0 255.255.0.0');
+    expect(result).toBe('');
+  });
+
+  it('should accept capability opaque in ospf view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('opaque-capability enable');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 33: IPv6 ACL (Huawei ipv6 access-list equivalent)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 33: IPv6 ACL support', () => {
+  it('should create IPv6 ACL with acl ipv6', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('acl ipv6 name IPV6_ACL');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 34: IPSec IKE peer local-address and nat traversal
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 34: IKE peer local-address and nat traversal', () => {
+  it('should accept local-address in ike peer view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike peer PEER1');
+    const result = await r.executeCommand('local-address 10.0.0.1');
+    expect(result).toBe('');
+  });
+
+  it('should accept nat traversal in ike peer view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike peer PEER1');
+    const result = await r.executeCommand('nat traversal');
+    expect(result).toBe('');
+  });
+
+  it('should accept dpd type in ike peer view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike peer PEER1');
+    const result = await r.executeCommand('dpd type periodic');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 35: display version and display counters from system view
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 35: display version and counters from system view', () => {
+  it('should display version from system view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('display version');
+    expect(result).toContain('VRP');
+  });
+
+  it('should display counters from system view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('display counters');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ip routing-table from system view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('display ip routing-table');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});

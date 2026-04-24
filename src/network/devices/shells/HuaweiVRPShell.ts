@@ -79,6 +79,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // ── ACL sub-mode selections ────────────────────────────────────
   private selectedACLNumber: number | null = null;
   private selectedACLMode: HuaweiACLMode | null = null;
+  private selectedACLName: string | null = null;
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
@@ -157,6 +158,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   setSelectedACLNumber(n: number | null): void { this.selectedACLNumber = n; }
   getSelectedACLMode(): HuaweiACLMode | null { return this.selectedACLMode; }
   setSelectedACLMode(m: HuaweiACLMode | null): void { this.selectedACLMode = m; }
+  getSelectedACLName(): string | null { return this.selectedACLName; }
+  setSelectedACLName(n: string | null): void { this.selectedACLName = n; }
 
   // ─── HuaweiDisplayState Implementation ─────────────────────────────
 
@@ -180,8 +183,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
       case 'ipsec-policy':  return `[${host}-ipsec-policy-${this.selectedIPSecPolicy}-${this.selectedIPSecPolicySeq}]`;
-      case 'acl-basic':    return `[${host}-acl-basic-${this.selectedACLNumber}]`;
-      case 'acl-advanced': return `[${host}-acl-adv-${this.selectedACLNumber}]`;
+      case 'acl-basic':    return `[${host}-acl-basic-${this.selectedACLName || this.selectedACLNumber}]`;
+      case 'acl-advanced': return `[${host}-acl-adv-${this.selectedACLName || this.selectedACLNumber}]`;
       default:           return `<${host}>`;
     }
   }
@@ -212,6 +215,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.selectedIPSecPolicySeq = null;
       this.selectedACLNumber = null;
       this.selectedACLMode = null;
+      this.selectedACLName = null;
       return '';
     }
     if (lower === 'quit') return this.cmdQuit();
@@ -303,6 +307,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'system';
         this.selectedACLNumber = null;
         this.selectedACLMode = null;
+        this.selectedACLName = null;
         return '';
       case 'system':
         this.mode = 'user';

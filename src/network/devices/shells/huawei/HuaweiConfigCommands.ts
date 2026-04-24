@@ -114,6 +114,11 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
+  if (args[0] === 'dhcp' && args[1] === 'enable') {
+    router._getDHCPServerInternal().disable();
+    return '';
+  }
+
   // undo ip route-static <network> <mask> <next-hop>
   if (args[0] === 'ip' && args.length >= 5 && args[1] === 'route-static') {
     try {
@@ -320,6 +325,13 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.register('dhcp select relay', 'Set DHCP relay mode on interface', () => '');
 
   trie.registerGreedy('dhcp relay server-ip', 'Set DHCP relay server address', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
+    getRouter()._getDHCPServerInternal().addHelperAddress(ctx.getSelectedInterface()!, args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ip helper-address', 'Set DHCP relay helper address', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
     getRouter()._getDHCPServerInternal().addHelperAddress(ctx.getSelectedInterface()!, args[0]);

@@ -26,6 +26,8 @@ export interface HuaweiACLContext {
   setSelectedACLNumber(n: number | null): void;
   getSelectedACLMode(): HuaweiACLMode | null;
   setSelectedACLMode(m: HuaweiACLMode | null): void;
+  getSelectedACLName(): string | null;
+  setSelectedACLName(n: string | null): void;
   getSelectedInterface(): string | null;
 }
 
@@ -37,16 +39,41 @@ export function registerHuaweiACLSystemCommands(
 
   trie.registerGreedy('acl', 'Configure Access Control List', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+
+    if (args[0].toLowerCase() === 'name') {
+      if (args.length < 3) return 'Error: Incomplete command.';
+      const name = args[1];
+      const type = args[2].toLowerCase();
+      if (type !== 'basic' && type !== 'advanced') return 'Error: Expected basic or advanced.';
+      ctx.setSelectedACLName(name);
+      ctx.setSelectedACLNumber(null);
+      ctx.setSelectedACLMode(type === 'basic' ? 'acl-basic' : 'acl-advanced');
+      ctx.setMode(type === 'basic' ? 'acl-basic' : 'acl-advanced');
+      return '';
+    }
+
+    if (args[0].toLowerCase() === 'ipv6') {
+      if (args.length < 3 || args[1].toLowerCase() !== 'name') return 'Error: Incomplete command.';
+      const name = args[2];
+      ctx.setSelectedACLName(name);
+      ctx.setSelectedACLNumber(null);
+      ctx.setSelectedACLMode('acl-advanced');
+      ctx.setMode('acl-advanced');
+      return '';
+    }
+
     const num = parseInt(args[0], 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
     if (num >= 2000 && num <= 2999) {
       ctx.setSelectedACLNumber(num);
+      ctx.setSelectedACLName(null);
       ctx.setSelectedACLMode('acl-basic');
       ctx.setMode('acl-basic');
       return '';
     }
     if (num >= 3000 && num <= 3999) {
       ctx.setSelectedACLNumber(num);
+      ctx.setSelectedACLName(null);
       ctx.setSelectedACLMode('acl-advanced');
       ctx.setMode('acl-advanced');
       return '';
@@ -72,7 +99,8 @@ export function buildHuaweiBasicACLCommands(
   trie.registerGreedy('rule', 'Add ACL rule', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
-    if (aclNum === null) return 'Error: No ACL selected.';
+    const aclName = ctx.getSelectedACLName();
+    if (aclNum === null && aclName === null) return 'Error: No ACL selected.';
 
     const action = args[0].toLowerCase();
     if (action !== 'permit' && action !== 'deny') return 'Error: Expected permit or deny.';
@@ -94,10 +122,15 @@ export function buildHuaweiBasicACLCommands(
       }
     }
 
-    getRouter().addAccessListEntry(aclNum, action as 'permit' | 'deny', {
+    const opts = {
       srcIP: new IPAddress(srcIP),
       srcWildcard: new SubnetMask(srcWild),
-    });
+    };
+    if (aclName) {
+      getRouter().addNamedAccessListEntry(aclName, 'standard', action as 'permit' | 'deny', opts);
+    } else {
+      getRouter().addAccessListEntry(aclNum!, action as 'permit' | 'deny', opts);
+    }
     return '';
   });
 }
@@ -111,7 +144,8 @@ export function buildHuaweiAdvancedACLCommands(
   trie.registerGreedy('rule', 'Add ACL rule', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
-    if (aclNum === null) return 'Error: No ACL selected.';
+    const aclName = ctx.getSelectedACLName();
+    if (aclNum === null && aclName === null) return 'Error: No ACL selected.';
 
     const action = args[0].toLowerCase();
     if (action !== 'permit' && action !== 'deny') return 'Error: Expected permit or deny.';
@@ -149,13 +183,18 @@ export function buildHuaweiAdvancedACLCommands(
       }
     }
 
-    getRouter().addAccessListEntry(aclNum, action as 'permit' | 'deny', {
+    const opts = {
       protocol,
       srcIP: new IPAddress(srcIP),
       srcWildcard: new SubnetMask(srcWild),
       dstIP: new IPAddress(dstIP),
       dstWildcard: new SubnetMask(dstWild),
-    });
+    };
+    if (aclName) {
+      getRouter().addNamedAccessListEntry(aclName, 'extended', action as 'permit' | 'deny', opts);
+    } else {
+      getRouter().addAccessListEntry(aclNum!, action as 'permit' | 'deny', opts);
+    }
     return '';
   });
 }
@@ -216,6 +255,11 @@ export function registerHuaweiACLDisplayCommands(
 ): void {
   trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+
+    if (args[0].toLowerCase() === 'all') {
+      return formatAllACLs(getRouter());
+    }
+
     const num = parseInt(args[0], 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
 
@@ -241,14 +285,38 @@ export function registerHuaweiACLDisplayCommands(
   });
 }
 
+function formatAllACLs(router: Router): string {
+  const acls = router._getAccessListsInternal();
+  if (acls.length === 0) return 'Total 0 ACL(s)';
+
+  const lines: string[] = [];
+  for (const acl of acls) {
+    const label = acl.name ? `${acl.type === 'extended' ? 'Advanced' : 'Basic'} ACL ${acl.name}` :
+      `${(acl.id ?? 0) >= 3000 ? 'Advanced' : 'Basic'} ACL ${acl.id}`;
+    lines.push(`${label}, ${acl.entries.length} rule(s)`);
+    lines.push(`ACL's step is 5`);
+    acl.entries.forEach((entry, idx) => {
+      const ruleNum = idx * 5;
+      lines.push(` rule ${ruleNum} ${formatACLEntry(entry)}`);
+    });
+  }
+  lines.push(`Total ${acls.length} ACL(s)`);
+  return lines.join('\n');
+}
+
 export function runningConfigACL(router: Router): string[] {
   const acls = router._getAccessListsInternal();
   const lines: string[] = [];
 
   for (const acl of acls) {
-    if (acl.id === undefined) continue;
     lines.push('#');
-    lines.push(`acl number ${acl.id}`);
+    if (acl.name) {
+      lines.push(`acl name ${acl.name} ${acl.type === 'extended' ? 'advanced' : 'basic'}`);
+    } else if (acl.id !== undefined) {
+      lines.push(`acl number ${acl.id}`);
+    } else {
+      continue;
+    }
     acl.entries.forEach((entry, idx) => {
       const ruleNum = idx * 5;
       lines.push(` rule ${ruleNum} ${formatACLEntry(entry)}`);
