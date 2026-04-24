@@ -144,6 +144,24 @@ export function seedBuiltins(env: PSEnvironment): void {
   // $? — last command success status
   env.set('?', true);
 
+  // $LASTEXITCODE — exit code of last native command
+  env.set('LASTEXITCODE', 0);
+
   // $Error — accumulates error records
   env.set('Error', [] as PSValue[]);
+
+  // Preference variables — default values matching PS 5.1
+  env.set('ErrorActionPreference', 'Continue');
+  env.set('VerbosePreference',     'SilentlyContinue');
+  env.set('DebugPreference',       'SilentlyContinue');
+  env.set('WarningPreference',     'Continue');
+  env.set('ConfirmPreference',     'High');
+  env.set('WhatIfPreference',      false);
+  env.set('InformationPreference', 'SilentlyContinue');
+  env.set('ProgressPreference',    'Continue');
+
+  // Automatic path variables (generic defaults; host overrides via envVarHook)
+  env.set('HOME',    'C:\\Users\\User');
+  env.set('PSHOME',  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0');
+  env.set('PROFILE', 'C:\\Users\\User\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1');
 }

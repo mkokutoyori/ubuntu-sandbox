@@ -353,6 +353,36 @@ export class WindowsUserManager {
     return { members: [...group.members] };
   }
 
+  // ─── Rename operations ──────────────────────────────────────────
+
+  renameUser(name: string, newName: string): string {
+    if (!this.isCurrentUserAdmin()) return 'Access is denied.';
+    const user = this.users.get(name.toLowerCase());
+    if (!user) return `User '${name}' was not found.`;
+    if (this.users.has(newName.toLowerCase())) return `User '${newName}' already exists.`;
+    this.users.delete(name.toLowerCase());
+    user.name = newName;
+    this.users.set(newName.toLowerCase(), user);
+    // Update group membership references
+    for (const group of this.groups.values()) {
+      const idx = group.members.findIndex(m => m.toLowerCase() === name.toLowerCase());
+      if (idx !== -1) group.members[idx] = newName;
+    }
+    if (this.currentUser.toLowerCase() === name.toLowerCase()) this.currentUser = newName;
+    return '';
+  }
+
+  renameGroup(name: string, newName: string): string {
+    if (!this.isCurrentUserAdmin()) return 'Access is denied.';
+    const group = this.groups.get(name.toLowerCase());
+    if (!group) return `Group '${name}' was not found.`;
+    if (this.groups.has(newName.toLowerCase())) return `Group '${newName}' already exists.`;
+    this.groups.delete(name.toLowerCase());
+    group.name = newName;
+    this.groups.set(newName.toLowerCase(), group);
+    return '';
+  }
+
   // ─── User switch ────────────────────────────────────────────────
 
   setCurrentUser(name: string): boolean {
