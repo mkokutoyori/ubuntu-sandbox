@@ -26,6 +26,7 @@ import {
   psSetService, psSuspendService, psResumeService,
   psNewService, psRemoveService, buildDynamicServiceObjects,
 } from './PSServiceCmdlets';
+import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -110,11 +111,13 @@ export class PowerShellExecutor {
   private cwd: string;
   private device: PSDeviceContext;
   private commandHistory: string[];
+  private registry: PSRegistryProvider;
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
     this.device = device;
     this.commandHistory = [];
+    this.registry = new PSRegistryProvider();
   }
 
   getCwd(): string { return this.cwd; }
@@ -124,6 +127,14 @@ export class PowerShellExecutor {
 
   setHistory(history: string[]): void { this.commandHistory = history; }
   getHistory(): string[] { return this.commandHistory; }
+
+  /** Public test-path that handles both filesystem and registry paths. Used by PSInterpreter hook. */
+  testPathRaw(path: string): boolean {
+    if (isRegistryPath(path)) return this.registry.testPath(path);
+    const fs = this.device.getFileSystem();
+    const absPath = fs.normalizePath(path, this.cwd);
+    return fs.exists(absPath);
+  }
 
   /**
    * Execute a PowerShell command line.
@@ -241,6 +252,8 @@ export class PowerShellExecutor {
 
     // Get-ChildItem / ls / dir / gci
     if (cmdLower === 'get-childitem' || cmdLower === 'gci' || cmdLower === 'ls' || cmdLower === 'dir') {
+      const gciPath = args.filter(a => !a.startsWith('-')).join(' ');
+      if (gciPath && isRegistryPath(gciPath)) return this.registry.getChildItem(gciPath);
       return this.formatGetChildItem(args.join(' '));
     }
 
@@ -275,7 +288,31 @@ export class PowerShellExecutor {
     // Remove-Item / ri / rm / rmdir / del
     if (cmdLower === 'remove-item' || cmdLower === 'ri' || cmdLower === 'rm' || cmdLower === 'del' || cmdLower === 'erase') {
       const target = args.filter(a => !a.startsWith('-')).join(' ');
+      if (target && isRegistryPath(target)) {
+        const recurse = args.some(a => a === '-Recurse');
+        return this.registry.removeItem(target, recurse);
+      }
       return await this.device.executeCmdCommand('del ' + target);
+    }
+
+    // Get-ItemProperty / gp
+    if (cmdLower === 'get-itemproperty' || cmdLower === 'gp') {
+      return this.handleGetItemProperty(args);
+    }
+
+    // Set-ItemProperty / sp
+    if (cmdLower === 'set-itemproperty' || cmdLower === 'sp') {
+      return this.handleSetItemProperty(args);
+    }
+
+    // Remove-ItemProperty / rp
+    if (cmdLower === 'remove-itemproperty' || cmdLower === 'rp') {
+      return this.handleRemoveItemProperty(args);
+    }
+
+    // Get-PSDrive / gdr
+    if (cmdLower === 'get-psdrive' || cmdLower === 'gdr') {
+      return this.registry.getPSDrive();
     }
 
     // Copy-Item / cpi / copy / cp
@@ -663,16 +700,58 @@ export class PowerShellExecutor {
 
   private async handleNewItem(args: string[]): Promise<string> {
     let itemType = 'File', path = '';
+    const force = args.some(a => a === '-Force');
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-ItemType' && args[i + 1]) { itemType = args[++i]; }
       else if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
       else if (args[i] === '-Name' && args[i + 1]) { path = args[++i]; }
       else if (!args[i].startsWith('-') && !path) { path = args[i]; }
     }
+    if (path && isRegistryPath(path)) return this.registry.newItem(path, force);
     if (itemType.toLowerCase() === 'directory') {
       return await this.device.executeCmdCommand('mkdir ' + path);
     }
     return await this.device.executeCmdCommand('echo. > ' + path);
+  }
+
+  private handleGetItemProperty(args: string[]): string {
+    let path = '', name = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
+      else if (args[i] === '-Name' && args[i + 1]) { name = args[++i]; }
+      else if (!args[i].startsWith('-') && !path) { path = args[i]; }
+      else if (!args[i].startsWith('-') && path && !name) { name = args[i]; }
+    }
+    if (!path) return "Get-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    if (!isRegistryPath(path)) return `Get-ItemProperty : Cannot find path '${path}' because it does not exist.`;
+    return this.registry.getItemProperty(path, name || undefined);
+  }
+
+  private handleSetItemProperty(args: string[]): string {
+    let path = '', name = '', value: string | number = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
+      else if (args[i] === '-Name' && args[i + 1]) { name = args[++i]; }
+      else if (args[i] === '-Value' && args[i + 1]) {
+        const raw = args[++i].replace(/^["']|["']$/g, '');
+        // Only treat as integer if it's a bare integer literal (no quotes, no decimal)
+        value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
+      }
+    }
+    if (!path) return "Set-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    if (!isRegistryPath(path)) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
+    return this.registry.setItemProperty(path, name, value);
+  }
+
+  private handleRemoveItemProperty(args: string[]): string {
+    let path = '', name = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
+      else if (args[i] === '-Name' && args[i + 1]) { name = args[++i]; }
+    }
+    if (!path) return "Remove-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    if (!isRegistryPath(path)) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
+    return this.registry.removeItemProperty(path, name);
   }
 
   private async handleTestConnection(args: string[]): Promise<string> {
@@ -1014,9 +1093,10 @@ export class PowerShellExecutor {
   // ─── File management cmdlets ────────────────────────────────────
 
   private handleTestPath(args: string[]): string {
-    const fs = this.device.getFileSystem();
     const target = args.filter(a => !a.startsWith('-')).join(' ');
     if (!target) return 'False';
+    if (isRegistryPath(target)) return this.registry.testPath(target) ? 'True' : 'False';
+    const fs = this.device.getFileSystem();
     const absPath = fs.normalizePath(target, this.cwd);
     return fs.exists(absPath) ? 'True' : 'False';
   }
@@ -1061,9 +1141,10 @@ export class PowerShellExecutor {
   }
 
   private handleGetItem(args: string[]): string {
-    const fs = this.device.getFileSystem();
     const target = args.filter(a => !a.startsWith('-')).join(' ');
     if (!target) return "Get-Item : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    if (isRegistryPath(target)) return this.registry.getItem(target);
+    const fs = this.device.getFileSystem();
     const absPath = fs.normalizePath(target, this.cwd);
     const entry = fs.resolve(absPath);
     if (!entry) return `Get-Item : Cannot find path '${target}' because it does not exist.`;
