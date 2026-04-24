@@ -36,9 +36,11 @@ import {
 } from './huawei/HuaweiConfigCommands';
 import {
   registerDhcpSystemCommands, buildDhcpPoolCommands,
+  registerDhcpDisplayCommands, registerDhcpDebugCommands,
 } from './huawei/HuaweiDhcpCommands';
 import {
   registerOSPFSystemCommands, buildOSPFViewCommands, buildOSPFAreaViewCommands,
+  buildOSPFv3ViewCommands, registerOSPFInterfaceCommands,
   registerOSPFDisplayCommands,
 } from './huawei/HuaweiOspfCommands';
 import {
@@ -77,6 +79,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // ── ACL sub-mode selections ────────────────────────────────────
   private selectedACLNumber: number | null = null;
   private selectedACLMode: HuaweiACLMode | null = null;
+  private selectedACLName: string | null = null;
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
@@ -95,9 +98,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ikePeerTrie = new CommandTrie();
   private ipsecProposalTrie = new CommandTrie();
   private ipsecPolicyTrie = new CommandTrie();
+  // OSPFv3 sub-mode trie
+  private ospfv3Trie = new CommandTrie();
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
+  // RIP view trie
+  private ripTrie = new CommandTrie();
 
   constructor() {
     this.buildUserCommands();
@@ -106,8 +113,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildDhcpPoolViewCommands();
     this.buildOSPFViewCommands();
     this.buildOSPFAreaViewCommands();
+    this.buildOSPFv3ViewCommands();
     this.buildIPSecSubViewCommands();
     this.buildACLSubViewCommands();
+    this.buildRIPViewCommands();
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -120,6 +129,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   }
 
   setMode(mode: HuaweiShellMode): void { this.mode = mode; }
+  getMode(): string { return this.mode; }
 
   getSelectedInterface(): string | null { return this.selectedInterface; }
   setSelectedInterface(iface: string | null): void { this.selectedInterface = iface; }
@@ -148,6 +158,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   setSelectedACLNumber(n: number | null): void { this.selectedACLNumber = n; }
   getSelectedACLMode(): HuaweiACLMode | null { return this.selectedACLMode; }
   setSelectedACLMode(m: HuaweiACLMode | null): void { this.selectedACLMode = m; }
+  getSelectedACLName(): string | null { return this.selectedACLName; }
+  setSelectedACLName(n: string | null): void { this.selectedACLName = n; }
 
   // ─── HuaweiDisplayState Implementation ─────────────────────────────
 
@@ -165,12 +177,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool':  return `[${host}-ip-pool-${this.selectedPool}]`;
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
+      case 'ospfv3':     return `[${host}-ospfv3-1]`;
+      case 'rip':        return `[${host}-rip-1]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
       case 'ipsec-policy':  return `[${host}-ipsec-policy-${this.selectedIPSecPolicy}-${this.selectedIPSecPolicySeq}]`;
-      case 'acl-basic':    return `[${host}-acl-basic-${this.selectedACLNumber}]`;
-      case 'acl-advanced': return `[${host}-acl-adv-${this.selectedACLNumber}]`;
+      case 'acl-basic':    return `[${host}-acl-basic-${this.selectedACLName || this.selectedACLNumber}]`;
+      case 'acl-advanced': return `[${host}-acl-adv-${this.selectedACLName || this.selectedACLNumber}]`;
       default:           return `<${host}>`;
     }
   }
@@ -201,6 +215,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.selectedIPSecPolicySeq = null;
       this.selectedACLNumber = null;
       this.selectedACLMode = null;
+      this.selectedACLName = null;
       return '';
     }
     if (lower === 'quit') return this.cmdQuit();
@@ -264,6 +279,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':
         this.mode = 'system';
         return '';
+      case 'ospfv3':
+        this.mode = 'system';
+        return '';
+      case 'rip':
+        this.mode = 'system';
+        return '';
       case 'ike-proposal':
         this.mode = 'system';
         this.selectedIKEProposal = null;
@@ -286,6 +307,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'system';
         this.selectedACLNumber = null;
         this.selectedACLMode = null;
+        this.selectedACLName = null;
         return '';
       case 'system':
         this.mode = 'user';
@@ -324,6 +346,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool': return this.dhcpPoolTrie;
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
+      case 'ospfv3': return this.ospfv3Trie;
+      case 'rip': return this.ripTrie;
       case 'ike-proposal': return this.ikeProposalTrie;
       case 'ike-peer': return this.ikePeerTrie;
       case 'ipsec-proposal': return this.ipsecProposalTrie;
@@ -385,9 +409,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return this._handlePing(args);
     });
 
-    // reset arp — clear dynamic ARP entries
-    t.register('reset arp', 'Clear dynamic ARP entries', () => {
+    // reset arp — clear all ARP entries
+    t.register('reset arp', 'Clear all ARP entries', () => {
       getRouter()._clearARPCache();
+      return '';
+    });
+
+    // reset arp dynamic — clear only dynamic ARP entries
+    t.register('reset arp dynamic', 'Clear dynamic ARP entries', () => {
+      const arpTable = getRouter()._getArpTableInternal();
+      for (const [ip, entry] of [...arpTable.entries()]) {
+        if ((entry as any).type !== 'static') arpTable.delete(ip);
+      }
       return '';
     });
 
@@ -396,6 +429,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       getRouter().resetCounters();
       return '';
     });
+
+    // save — persist configuration (Huawei equivalent of write memory)
+    t.register('save', 'Save current configuration', () => {
+      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
+
+    // DHCP display commands
+    registerDhcpDisplayCommands(t, getRouter);
+
+    // DHCP debug/clear commands
+    registerDhcpDebugCommands(t, getRouter);
   }
 
   // ─── System View ([hostname]) ────────────────────────────────────
@@ -434,6 +478,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // ACL display commands
     registerHuaweiACLDisplayCommands(t, () => this.r());
+
+    // DHCP display commands
+    registerDhcpDisplayCommands(t, () => this.r());
+
+    // DHCP debug/clear commands
+    registerDhcpDebugCommands(t, () => this.r());
+
+    // save — persist configuration
+    t.register('save', 'Save current configuration', () => {
+      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
@@ -446,8 +501,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // Display commands
     registerDisplayCommands(t, getRouter, getState);
 
+    // OSPF display commands (available in interface view too)
+    registerOSPFDisplayCommands(t, getRouter);
+
     // Interface-specific commands
     buildInterfaceCommands(t, this);
+
+    // OSPF interface commands
+    registerOSPFInterfaceCommands(t, this as any);
 
     // IPSec interface commands
     registerHuaweiIPSecInterfaceCommands(t, this);
@@ -470,6 +531,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfTrie, getRouter);
     buildOSPFViewCommands(this.ospfTrie, this as any, (area) => { this.ospfArea = area; });
+  }
+
+  // ─── OSPFv3 View ([hostname-ospfv3-1]) ─────────────────────────
+
+  private buildOSPFv3ViewCommands(): void {
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
+    registerDisplayCommands(this.ospfv3Trie, getRouter, getState);
+    registerOSPFDisplayCommands(this.ospfv3Trie, getRouter);
+    buildOSPFv3ViewCommands(this.ospfv3Trie, this as any);
   }
 
   // ─── IPSec Sub-Views ─────────────────────────────────────────
@@ -496,6 +567,33 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfAreaTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
     buildOSPFAreaViewCommands(this.ospfAreaTrie, this as any, () => this.ospfArea);
+  }
+
+  // ─── RIP View ([hostname-rip-1]) ────────────────────────────────
+
+  private buildRIPViewCommands(): void {
+    const getRouter = () => this.r();
+    const getState = () => this as HuaweiDisplayState;
+    const t = this.ripTrie;
+
+    registerDisplayCommands(t, getRouter, getState);
+
+    t.registerGreedy('network', 'Advertise network in RIP', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      return cmdRip(getRouter(), ['network', ...args]);
+    });
+
+    t.registerGreedy('version', 'Set RIP version', (_args) => {
+      return '';
+    });
+
+    t.registerGreedy('preference', 'Set RIP preference value', (_args) => {
+      return '';
+    });
+
+    t.registerGreedy('undo network', 'Remove advertised network', (_args) => {
+      return '';
+    });
   }
 
   // ─── Tracert command ──────────────────────────────────────────────

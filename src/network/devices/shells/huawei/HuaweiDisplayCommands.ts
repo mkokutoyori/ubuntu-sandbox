@@ -52,8 +52,23 @@ export function displayInterface(router: Router, ifName: string): string {
   const desc = router.getInterfaceDescription(portName);
   if (desc) lines.push(`Description: ${desc}`);
 
+  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`);
+
+  // Tunnel-specific info
+  const isTunnel = /^Tunnel/i.test(portName);
+  if (isTunnel) {
+    const extra = router._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig?.get(portName) as any;
+    if (pending?.tunnelSource) lines.push(`Tunnel source ${pending.tunnelSource}`);
+    if (pending?.tunnelDest) lines.push(`Tunnel destination ${pending.tunnelDest}`);
+    const ipsecEng = (router as any)._getIPSecEngineInternal?.();
+    if (ipsecEng) {
+      const tp = (ipsecEng as any).tunnelProtection?.get(portName);
+      if (tp) lines.push(`Tunnel protection IPSec profile ${tp.profileName}${tp.shared ? ' shared' : ''}`);
+    }
+  }
+
   lines.push(
-    `Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`,
     `The Maximum Transmit Unit is 1500`,
     `Input:  0 packets, 0 bytes`,
     `Output: 0 packets, 0 bytes`,
@@ -67,6 +82,8 @@ export function displayIpPool(router: Router, poolName: string): string {
   const pool = dhcp.getPool(poolName);
   if (!pool) return `Error: Pool "${poolName}" does not exist.`;
 
+  const leaseDays = Math.floor(pool.leaseDuration / 86400);
+  const leaseStr = leaseDays >= 1 ? `${leaseDays} day(s)` : `${pool.leaseDuration} seconds`;
   const lines = [
     `Pool-name      : ${pool.name}`,
     `Pool-No        : 0`,
@@ -76,8 +93,22 @@ export function displayIpPool(router: Router, poolName: string): string {
     `Network        : ${pool.network || 'not configured'}`,
     `Mask           : ${pool.mask || 'not configured'}`,
     `DNS-list       : ${pool.dnsServers.join(' ') || 'not configured'}`,
+    `Domain-name    : ${pool.domainName || 'not configured'}`,
+    `Lease          : ${leaseStr}`,
   ];
   return lines.join('\n');
+}
+
+export function displayIpPoolAll(router: Router): string {
+  const dhcp = router._getDHCPServerInternal();
+  const pools = dhcp.getAllPools();
+  if (pools.size === 0) return 'No DHCP pools configured.';
+  const lines: string[] = [];
+  for (const [, pool] of pools) {
+    lines.push(displayIpPool(router, pool.name));
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
 }
 
 export function displayIpRoutingTable(router: Router): string {
@@ -132,6 +163,44 @@ export function displayArp(router: Router): string {
   return lines.join('\n');
 }
 
+export function displayArpFiltered(router: Router, filterType: 'static' | 'dynamic'): string {
+  const arpTable = router._getArpTableInternal();
+  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
+  let found = false;
+  for (const [ip, entry] of arpTable) {
+    const isStatic = (entry as any).type === 'static';
+    if (filterType === 'static' && !isStatic) continue;
+    if (filterType === 'dynamic' && isStatic) continue;
+    found = true;
+    const age = Math.floor((Date.now() - entry.timestamp) / 60000);
+    const type = isStatic ? 'static' : 'D';
+    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+  }
+  if (!found) lines.push(`No ${filterType} ARP entries found.`);
+  return lines.join('\n');
+}
+
+export function displayIpRoutingTableStatistics(router: Router): string {
+  const table = router.getRoutingTable();
+  const counts: Record<string, number> = {};
+  for (const r of table) {
+    const proto = r.type === 'connected' ? 'Direct' : r.type === 'rip' ? 'RIP' : r.type === 'ospf' ? 'OSPF' : 'Static';
+    counts[proto] = (counts[proto] || 0) + 1;
+  }
+  const lines = [
+    'Proto     route',
+    '--------------------',
+  ];
+  let total = 0;
+  for (const [proto, count] of Object.entries(counts)) {
+    lines.push(`${proto.padEnd(10)}${count}`);
+    total += count;
+  }
+  lines.push('--------------------');
+  lines.push(`Total     ${total}`);
+  return lines.join('\n');
+}
+
 export function displayCurrentConfig(
   router: Router,
   dhcpEnabled: boolean,
@@ -155,7 +224,45 @@ export function displayCurrentConfig(
     lines.push('#');
   }
 
+  // DHCP pool config
+  const dhcp = router._getDHCPServerInternal();
+  for (const [, pool] of dhcp.getAllPools()) {
+    lines.push(`ip pool ${pool.name}`);
+    if (pool.network && pool.mask) lines.push(` network ${pool.network} mask ${pool.mask}`);
+    if (pool.defaultRouter) lines.push(` gateway-list ${pool.defaultRouter}`);
+    if (pool.dnsServers.length > 0) lines.push(` dns-list ${pool.dnsServers.join(' ')}`);
+    if (pool.domainName) lines.push(` domain-name ${pool.domainName}`);
+    const days = Math.floor(pool.leaseDuration / 86400);
+    const remSecs = pool.leaseDuration % 86400;
+    const hours = Math.floor(remSecs / 3600);
+    const mins = Math.floor((remSecs % 3600) / 60);
+    if (pool.leaseDuration !== 86400) {
+      let leaseStr = ` lease day ${days}`;
+      if (hours > 0) leaseStr += ` hour ${hours}`;
+      if (mins > 0) leaseStr += ` minute ${mins}`;
+      lines.push(leaseStr);
+    }
+    lines.push('#');
+  }
+  const excluded = dhcp.getExcludedRanges();
+  for (const range of excluded) {
+    if (range.start === range.end) {
+      lines.push(`dhcp server forbidden-ip ${range.start}`);
+    } else {
+      lines.push(`dhcp server forbidden-ip ${range.start} ${range.end}`);
+    }
+  }
+
+  // ARP static entries
+  const arpTable = router._getArpTableInternal();
+  for (const [ip, entry] of arpTable) {
+    if ((entry as any).type === 'static') {
+      lines.push(`arp static ${ip} ${entry.mac.toString()}`);
+    }
+  }
+
   const descs = router._getInterfaceDescriptions();
+  const ospfExtra = router._getOSPFExtraConfig();
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
@@ -169,6 +276,23 @@ export function displayCurrentConfig(
     }
     if (dhcpSelectGlobal.has(name)) {
       lines.push(` dhcp select global`);
+    }
+    // DHCP relay helper addresses
+    const helpers = dhcp.getHelperAddresses(name);
+    for (const h of helpers) {
+      lines.push(` dhcp relay server-ip ${h}`);
+    }
+    // Tunnel source/destination
+    const pendingCfg = ospfExtra.pendingIfConfig?.get(name) as any;
+    if (pendingCfg?.tunnelSource) lines.push(` source ${pendingCfg.tunnelSource}`);
+    if (pendingCfg?.tunnelDest) lines.push(` destination ${pendingCfg.tunnelDest}`);
+    // IPSec policy/profile applied to interface
+    const ipsecEng2 = (router as any)._getIPSecEngineInternal?.();
+    if (ipsecEng2) {
+      const ifCrypto = (ipsecEng2 as any).ifaceCryptoMap?.get(name);
+      if (ifCrypto) lines.push(` ipsec policy ${ifCrypto}`);
+      const tp = (ipsecEng2 as any).tunnelProtection?.get(name);
+      if (tp) lines.push(` ipsec profile ${tp.profileName}`);
     }
     lines.push(...runningConfigInterfaceACL(router, name));
     lines.push('#');
@@ -198,6 +322,80 @@ export function displayCurrentConfig(
       lines.push(` network ${net.network}`);
     }
   }
+  // OSPF config
+  const ospf = router._getOSPFEngineInternal();
+  if (ospf) {
+    const config = ospf.getConfig();
+    lines.push('#');
+    lines.push(`ospf ${config.processId}`);
+    if (config.routerId && config.routerId !== '0.0.0.0') {
+      lines.push(` router-id ${config.routerId}`);
+    }
+    // Group network statements by area
+    const areaNetworks = new Map<string, Array<{ network: string; wildcard: string }>>();
+    for (const net of config.networks) {
+      if (!areaNetworks.has(net.areaId)) areaNetworks.set(net.areaId, []);
+      areaNetworks.get(net.areaId)!.push({ network: net.network, wildcard: net.wildcard });
+    }
+    for (const [areaId, nets] of areaNetworks) {
+      lines.push(` area ${areaId}`);
+      for (const net of nets) {
+        lines.push(`  network ${net.network} ${net.wildcard}`);
+      }
+    }
+  }
+
+  // IPSec/IKE configuration
+  const ipsecEng = (router as any)._getIPSecEngineInternal?.() ?? null;
+  if (ipsecEng) {
+    const isakmpPolicies: Map<number, any> = (ipsecEng as any).isakmpPolicies;
+    for (const [n, policy] of isakmpPolicies) {
+      lines.push('#');
+      lines.push(`ike proposal ${n}`);
+      if (policy.huaweiEncryption) lines.push(` encryption-algorithm ${policy.huaweiEncryption}`);
+      if (policy.hash) lines.push(` authentication-algorithm ${policy.hash}`);
+      if (policy.group) lines.push(` dh group${policy.group}`);
+    }
+    const kr: any = (ipsecEng as any).ikev2Keyrings?.get('default');
+    if (kr) {
+      for (const [peerName, peer] of kr.peers as Map<string, any>) {
+        lines.push('#');
+        lines.push(`ike peer ${peerName}`);
+        if (peer.address && peer.address !== '0.0.0.0') lines.push(` remote-address ${peer.address}`);
+        if (peer.preSharedKey) lines.push(` pre-shared-key simple ${peer.preSharedKey}`);
+      }
+    }
+    const transformSets: Map<string, any> = (ipsecEng as any).transformSets;
+    for (const [name, ts] of transformSets) {
+      lines.push('#');
+      lines.push(`ipsec proposal ${name}`);
+      if ((ts as any).protocol) lines.push(` transform ${(ts as any).protocol}`);
+      if (ts.mode) lines.push(` encapsulation-mode ${ts.mode}`);
+      const espEnc = ts.transforms.find((t: string) => t.match(/^esp-(aes|des|3des)/));
+      if (espEnc) lines.push(` esp encryption-algorithm ${espEnc.replace('esp-', '')}`);
+      const espAuth = ts.transforms.find((t: string) => t.includes('-hmac'));
+      if (espAuth) {
+        const algo = espAuth.replace('esp-', '').replace('-hmac', '');
+        lines.push(` esp authentication-algorithm ${algo}`);
+      }
+    }
+    const cryptoMaps: Map<string, any> = (ipsecEng as any).cryptoMaps;
+    for (const [mapName, cmap] of cryptoMaps) {
+      for (const [seq, entry] of cmap.staticEntries as Map<number, any>) {
+        lines.push('#');
+        lines.push(`ipsec policy ${mapName} ${seq} isakmp`);
+        if (entry.peers?.length > 0) lines.push(` ike-peer ${entry.peers[0]}`);
+        if (entry.transformSets?.length > 0) lines.push(` proposal ${entry.transformSets.join(' ')}`);
+      }
+    }
+    const ipsecProfiles: Map<string, any> = (ipsecEng as any).ipsecProfiles;
+    for (const [profName, prof] of ipsecProfiles) {
+      lines.push('#');
+      lines.push(`ipsec profile ${profName}`);
+      if (prof.transformSetName) lines.push(` proposal ${prof.transformSetName}`);
+    }
+  }
+
   lines.push('#');
   return lines.join('\n');
 }
@@ -217,6 +415,74 @@ export function displayCounters(router: Router): string {
     `    Time exceeded: ${c.icmpOutTimeExcds}`,
     `    Echo reply: ${c.icmpOutEchoReps}`,
   ].join('\n');
+}
+
+export function displayIpv6RoutingTable(router: Router): string {
+  const rt = (router as any)._getIPv6RoutingTableInternal?.() || [];
+  const lines = ['IPv6 Routing Table'];
+  if (rt.length === 0) {
+    lines.push('No IPv6 routes configured.');
+    return lines.join('\n');
+  }
+  for (const r of rt) {
+    const prefix = r.prefix ? `${r.prefix}/${r.prefixLength}` : 'unknown';
+    const nh = r.nextHop || 'directly connected';
+    const iface = r.iface || '';
+    lines.push(`  ${prefix} via ${nh} ${iface}`);
+  }
+  return lines.join('\n');
+}
+
+export function displayIpv6InterfaceBrief(router: Router): string {
+  const ports = router._getPortsInternal();
+  const lines = ['Interface                         IPv6 Address                    State'];
+  for (const [name, port] of ports) {
+    const addrs = port.getIPv6Addresses?.() || [];
+    const addrStr = addrs.length > 0 ? addrs.map((a: any) => `${a.address}/${a.prefixLength}`).join(', ') : 'unassigned';
+    const state = port.isConnected() ? 'up' : 'down';
+    lines.push(`${name.padEnd(34)}${addrStr.padEnd(32)}${state}`);
+  }
+  return lines.join('\n');
+}
+
+export function displayDebugging(router: Router): string {
+  const lines: string[] = [];
+  const dhcp = router._getDHCPServerInternal();
+  const dhcpDebug = dhcp.formatDebugShow();
+  if (!dhcpDebug.includes('No')) {
+    lines.push('DHCP debugging:');
+    lines.push(dhcpDebug);
+  }
+  const ipsecEng = (router as any)._getIPSecEngineInternal?.();
+  if (ipsecEng) {
+    const debug = (ipsecEng as any).debugFlags || {};
+    if (debug.isakmp) lines.push('IKE debugging is on');
+    if (debug.ipsec) lines.push('IPSec debugging is on');
+    if (debug.ikev2) lines.push('IKEv2 debugging is on');
+  }
+  if (lines.length === 0) return 'No debugging is enabled.';
+  return lines.join('\n');
+}
+
+export function displayIpProtocols(router: Router): string {
+  if (!router.isRIPEnabled()) return 'No routing protocol is configured.';
+  const cfg = router.getRIPConfig();
+  const ripRoutes = router.getRIPRoutes();
+  const lines = [
+    'Routing Protocol is "rip"',
+    '  Version: 2',
+    `  Update interval: ${cfg.updateInterval / 1000}s`,
+    `  Route timeout: ${cfg.routeTimeout / 1000}s`,
+    `  Garbage collection: ${cfg.gcTimeout / 1000}s`,
+    '',
+    '  Networks:',
+  ];
+  for (const net of cfg.networks) {
+    lines.push(`    ${net.network}/${net.mask}`);
+  }
+  lines.push('');
+  lines.push(`  Routes learned: ${ripRoutes.size}`);
+  return lines.join('\n');
 }
 
 export function displayRip(router: Router): string {
@@ -261,6 +527,13 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
   } else {
     lines.push(` shutdown`);
   }
+
+  // Tunnel interface source/destination
+  const extra = router._getOSPFExtraConfig();
+  const pending = extra.pendingIfConfig?.get(portName) as any;
+  if (pending?.tunnelSource) lines.push(` source ${pending.tunnelSource}`);
+  if (pending?.tunnelDest) lines.push(` destination ${pending.tunnelDest}`);
+
   lines.push('#');
   return lines.join('\n');
 }
@@ -281,12 +554,26 @@ export function registerDisplayCommands(
   trie.register('display ip interface brief', 'Display interface summary', () => displayIpIntBrief(getRouter()));
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
   trie.register('display arp', 'Display ARP table', () => displayArp(getRouter()));
+  trie.register('display arp static', 'Display static ARP entries', () => displayArpFiltered(getRouter(), 'static'));
+  trie.register('display arp dynamic', 'Display dynamic ARP entries', () => displayArpFiltered(getRouter(), 'dynamic'));
   trie.register('display current-configuration', 'Display running configuration', () => {
     const s = getState();
     return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
   });
   trie.register('display counters', 'Display traffic counters', () => displayCounters(getRouter()));
   trie.register('display rip', 'Display RIP information', () => displayRip(getRouter()));
+  trie.register('display ip protocols', 'Display routing protocol status', () => displayIpProtocols(getRouter()));
+  trie.register('display ip routing-table statistics', 'Display routing table statistics', () =>
+    displayIpRoutingTableStatistics(getRouter()));
+
+  trie.register('display debugging', 'Display active debugging flags', () =>
+    displayDebugging(getRouter()));
+
+  trie.register('display ipv6 routing-table', 'Display IPv6 routing table', () =>
+    displayIpv6RoutingTable(getRouter()));
+
+  trie.register('display ipv6 interface brief', 'Display IPv6 interface summary', () =>
+    displayIpv6InterfaceBrief(getRouter()));
 
   trie.registerGreedy('display current-configuration interface', 'Display interface running config', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -302,6 +589,9 @@ export function registerDisplayCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
     return displayIpPool(getRouter(), args.join(' '));
   });
+
+  trie.register('display ip pool', 'Display all DHCP pools', () =>
+    displayIpPoolAll(getRouter()));
 }
 
 // ─── Interface Name Resolution (Huawei format) ──────────────────────

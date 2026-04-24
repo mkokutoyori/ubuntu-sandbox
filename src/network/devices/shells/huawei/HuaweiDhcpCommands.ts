@@ -5,8 +5,9 @@
  *   - dhcp enable / dhcp snooping enable (system mode)
  *   - dhcp server ip-pool (system mode)
  *   - DHCP pool configuration mode commands
+ *   - DHCP display commands
  *
- * Provides registerDhcpSystemCommands() and buildDhcpPoolCommands() for CommandTrie.
+ * Provides registerDhcpSystemCommands(), buildDhcpPoolCommands(), registerDhcpDisplayCommands()
  */
 
 import type { Router } from '../../Router';
@@ -37,6 +38,14 @@ export function registerDhcpSystemCommands(
 
   trie.register('dhcp snooping enable', 'Enable DHCP snooping', () => {
     callbacks.setDhcpSnoopingEnabled(true);
+    return '';
+  });
+
+  trie.registerGreedy('dhcp server forbidden-ip', 'Exclude IP range from DHCP allocation', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const start = args[0];
+    const end = args[1] || start;
+    getRouter()._getDHCPServerInternal().addExcludedRange(start, end);
     return '';
   });
 
@@ -88,6 +97,76 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     const start = args[0];
     const end = args[1] || start;
     getRouter()._getDHCPServerInternal().addExcludedRange(start, end);
+    return '';
+  });
+
+  trie.registerGreedy('lease', 'Set lease duration (lease day D [hour H] [minute M])', (args) => {
+    if (!ctx.getSelectedPool()) return 'Error: No DHCP pool selected.';
+    let days = 0, hours = 0, minutes = 0;
+    for (let i = 0; i < args.length; i++) {
+      const kw = args[i].toLowerCase();
+      if (kw === 'day' && args[i + 1]) { days = parseInt(args[++i], 10) || 0; }
+      else if (kw === 'hour' && args[i + 1]) { hours = parseInt(args[++i], 10) || 0; }
+      else if (kw === 'minute' && args[i + 1]) { minutes = parseInt(args[++i], 10) || 0; }
+    }
+    const seconds = days * 86400 + hours * 3600 + minutes * 60;
+    getRouter()._getDHCPServerInternal().configurePoolLease(ctx.getSelectedPool()!, seconds || 86400);
+    return '';
+  });
+
+  trie.registerGreedy('domain-name', 'Set domain name for DHCP clients', (args) => {
+    if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
+    getRouter()._getDHCPServerInternal().configurePoolDomain(ctx.getSelectedPool()!, args[0]);
+    return '';
+  });
+}
+
+// ─── DHCP Display Commands ───────────────────────────────────────────
+
+export function registerDhcpDisplayCommands(trie: CommandTrie, getRouter: () => Router): void {
+  trie.register('display dhcp-server binding all', 'Display all DHCP bindings', () =>
+    getRouter()._getDHCPServerInternal().formatBindingsShow());
+
+  trie.register('display dhcp statistics', 'Display DHCP server statistics', () =>
+    getRouter()._getDHCPServerInternal().formatStatsShow());
+
+  trie.register('display dhcp-snooping user-bind all', 'Display DHCP snooping bindings', () =>
+    'DHCP Snooping dynamic binding: 0 entries');
+
+  trie.register('display dhcp server forbidden-ip', 'Display DHCP excluded addresses', () =>
+    getRouter()._getDHCPServerInternal().formatExcludedShow());
+}
+
+// ─── DHCP Debug Commands ─────────────────────────────────────────────
+
+export function registerDhcpDebugCommands(trie: CommandTrie, getRouter: () => Router): void {
+  trie.register('debugging dhcp server packet', 'Enable DHCP server packet debugging', () => {
+    getRouter()._getDHCPServerInternal().setDebugServerPacket(true);
+    return '';
+  });
+
+  trie.register('debugging dhcp server events', 'Enable DHCP server event debugging', () => {
+    getRouter()._getDHCPServerInternal().setDebugServerEvents(true);
+    return '';
+  });
+
+  trie.register('undo debugging dhcp server packet', 'Disable DHCP server packet debugging', () => {
+    getRouter()._getDHCPServerInternal().setDebugServerPacket(false);
+    return '';
+  });
+
+  trie.register('undo debugging dhcp server events', 'Disable DHCP server event debugging', () => {
+    getRouter()._getDHCPServerInternal().setDebugServerEvents(false);
+    return '';
+  });
+
+  trie.register('reset ip dhcp binding all', 'Clear all DHCP bindings', () => {
+    getRouter()._getDHCPServerInternal().clearBindings();
+    return '';
+  });
+
+  trie.register('reset ip dhcp statistics', 'Clear DHCP statistics', () => {
+    getRouter()._getDHCPServerInternal().clearStats();
     return '';
   });
 }
