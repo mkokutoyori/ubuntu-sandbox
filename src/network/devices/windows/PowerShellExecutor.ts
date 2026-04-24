@@ -27,6 +27,7 @@ import {
   psNewService, psRemoveService, buildDynamicServiceObjects,
 } from './PSServiceCmdlets';
 import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
+import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -112,12 +113,14 @@ export class PowerShellExecutor {
   private device: PSDeviceContext;
   private commandHistory: string[];
   private registry: PSRegistryProvider;
+  private eventLog: PSEventLogProvider;
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
     this.device = device;
     this.commandHistory = [];
     this.registry = new PSRegistryProvider();
+    this.eventLog = new PSEventLogProvider();
   }
 
   getCwd(): string { return this.cwd; }
@@ -313,6 +316,38 @@ export class PowerShellExecutor {
     // Get-PSDrive / gdr
     if (cmdLower === 'get-psdrive' || cmdLower === 'gdr') {
       return this.registry.getPSDrive();
+    }
+
+    // ─── Event Log Cmdlets ────────────────────────────────────────
+
+    // Get-EventLog
+    if (cmdLower === 'get-eventlog') {
+      return this.handleGetEventLog(args);
+    }
+
+    // Write-EventLog
+    if (cmdLower === 'write-eventlog') {
+      return this.handleWriteEventLog(args);
+    }
+
+    // Clear-EventLog
+    if (cmdLower === 'clear-eventlog') {
+      return this.handleClearEventLog(args);
+    }
+
+    // New-EventLog
+    if (cmdLower === 'new-eventlog') {
+      return this.handleNewEventLog(args);
+    }
+
+    // Limit-EventLog
+    if (cmdLower === 'limit-eventlog') {
+      return this.handleLimitEventLog(args);
+    }
+
+    // Get-WinEvent
+    if (cmdLower === 'get-winevent') {
+      return this.handleGetWinEvent(args);
     }
 
     // Copy-Item / cpi / copy / cp
@@ -753,6 +788,89 @@ export class PowerShellExecutor {
     if (!isRegistryPath(path)) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     return this.registry.removeItemProperty(path, name);
   }
+
+  // ─── Event Log Handlers ───────────────────────────────────────────
+
+  private handleGetEventLog(args: string[]): string {
+    const listFlag = args.some(a => a === '-List' || a.toLowerCase() === '-list');
+    if (listFlag) return this.eventLog.getEventLogList();
+
+    let logName = '', newest: number | undefined, entryType = '', source = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-LogName' && args[i + 1]) { logName = args[++i]; }
+      else if (a === '-Newest' && args[i + 1]) { newest = parseInt(args[++i], 10); }
+      else if (a === '-EntryType' && args[i + 1]) { entryType = args[++i]; }
+      else if (a === '-Source' && args[i + 1]) { source = args[++i]; }
+      else if (!a.startsWith('-') && !logName) { logName = a; }
+    }
+    if (!logName) return "Get-EventLog : Cannot bind argument to parameter 'LogName' because it is null.";
+    return this.eventLog.getEventLog(logName, { newest, entryType: entryType || undefined, source: source || undefined });
+  }
+
+  private handleWriteEventLog(args: string[]): string {
+    let logName = '', source = '', message = '', entryType: EntryType = 'Information';
+    let eventId = 0;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-LogName' && args[i + 1]) { logName = args[++i]; }
+      else if (a === '-Source' && args[i + 1]) { source = args[++i].replace(/^['"]|['"]$/g, ''); }
+      else if (a === '-Message' && args[i + 1]) { message = args[++i].replace(/^['"]|['"]$/g, ''); }
+      else if (a === '-EventId' && args[i + 1]) { eventId = parseInt(args[++i], 10); }
+      else if (a === '-EntryType' && args[i + 1]) { entryType = args[++i] as EntryType; }
+    }
+    if (!logName || !source || !eventId) {
+      return "Write-EventLog : -LogName, -Source, and -EventId are required parameters.";
+    }
+    return this.eventLog.writeEventLog(logName, source, eventId, entryType, message);
+  }
+
+  private handleClearEventLog(args: string[]): string {
+    let logName = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-LogName' && args[i + 1]) { logName = args[++i]; }
+      else if (!args[i].startsWith('-') && !logName) { logName = args[i]; }
+    }
+    if (!logName) return "Clear-EventLog : -LogName is required.";
+    return this.eventLog.clearEventLog(logName);
+  }
+
+  private handleNewEventLog(args: string[]): string {
+    let logName = '', source = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-LogName' && args[i + 1]) { logName = args[++i]; }
+      else if (args[i] === '-Source' && args[i + 1]) { source = args[++i].replace(/^['"]|['"]$/g, ''); }
+    }
+    if (!logName) return "New-EventLog : -LogName is required.";
+    return this.eventLog.newEventLog(logName, source);
+  }
+
+  private handleLimitEventLog(args: string[]): string {
+    let logName = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-LogName' && args[i + 1]) { logName = args[++i]; }
+      else if (!args[i].startsWith('-') && !logName) { logName = args[i]; }
+    }
+    if (!logName) return '';
+    return this.eventLog.limitEventLog(logName);
+  }
+
+  private handleGetWinEvent(args: string[]): string {
+    const listLogFlag = args.some(a => a === '-ListLog');
+    if (listLogFlag) return this.eventLog.getWinEventList();
+
+    let logName = '', maxEvents: number | undefined;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-LogName' && args[i + 1]) { logName = args[++i]; }
+      else if (a === '-MaxEvents' && args[i + 1]) { maxEvents = parseInt(args[++i], 10); }
+      else if (!a.startsWith('-') && !logName) { logName = a; }
+    }
+    if (!logName) return "Get-WinEvent : -LogName is required.";
+    return this.eventLog.getWinEvent(logName, maxEvents);
+  }
+
+  // ─── Connection Handlers ──────────────────────────────────────────
 
   private async handleTestConnection(args: string[]): Promise<string> {
     let target = '', count = '4';
