@@ -143,14 +143,18 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     }
   }
 
-  // undo arp static <ip>
-  if (args[0] === 'arp' && args.length >= 3 && args[1] === 'static') {
-    const arpTable = router._getArpTableInternal();
-    if (arpTable.has(args[2])) {
-      arpTable.delete(args[2]);
-      return '';
+  // undo arp [static] <ip>
+  if (args[0] === 'arp') {
+    let ip: string;
+    if (args[1] === 'static' && args.length >= 3) {
+      ip = args[2];
+    } else if (args.length >= 2) {
+      ip = args[1];
+    } else {
+      return 'Error: Incomplete command.';
     }
-    return 'Error: ARP entry not found.';
+    router._deleteARP(ip);
+    return '';
   }
 
   // undo shutdown (in interface mode)
@@ -256,6 +260,11 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return cmdArpStatic(getRouter(), args[0], args[1]);
   });
 
+  // ip routing — Huawei equivalent of Cisco's "ip routing" (routing is enabled by default)
+  trie.register('ip routing', 'Enable IP routing', () => {
+    return '';
+  });
+
   // IPv6 global enable
   trie.register('ipv6', 'Enable IPv6', () => {
     getRouter().enableIPv6Routing();
@@ -288,6 +297,24 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
  */
 export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
+
+  trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const raw = args.join('');
+    let portName = resolveHuaweiInterfaceName(getRouter(), raw);
+    if (!portName) {
+      const vMatch = raw.match(/^(loopback|tunnel)([\d]+)$/i);
+      if (vMatch) {
+        const typeMap: Record<string, string> = { 'loopback': 'LoopBack', 'tunnel': 'Tunnel' };
+        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        getRouter()._createVirtualInterface(fullName);
+        portName = fullName;
+      }
+      if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    }
+    ctx.setSelectedInterface(portName);
+    return '';
+  });
 
   trie.registerGreedy('ip address', 'Configure IP address', (args) => {
     return cmdIpAddress(getRouter(), ctx, args);
@@ -335,6 +362,10 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     if (args.length < 1) return 'Error: Incomplete command.';
     if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
     getRouter()._getDHCPServerInternal().addHelperAddress(ctx.getSelectedInterface()!, args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ip forward-protocol udp', 'Forward UDP port on interface', (_args) => {
     return '';
   });
 

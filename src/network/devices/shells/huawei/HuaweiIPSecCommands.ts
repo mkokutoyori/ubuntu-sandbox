@@ -157,10 +157,20 @@ export function registerHuaweiIPSecSystemCommands(
     return '';
   });
 
-  // ── ipsec security-policy NAME action direction [selectors] ────
+  // ── ipsec security-policy NAME [action direction [selectors]] ────
   trie.registerGreedy('ipsec security-policy', 'Define an IPSec security policy (SPD)', (args) => {
-    if (args.length < 3) return 'Error: Usage: ipsec security-policy NAME PROTECT|BYPASS|DISCARD in|outbound [source IP WILDCARD] [destination IP WILDCARD]';
+    if (args.length < 1) return 'Error: Incomplete command.';
     const name = args[0];
+    if (args.length < 3) {
+      eng(ctx).addSecurityPolicy({
+        name,
+        direction: 'out',
+        action: 'PROTECT',
+        srcAddress: '', srcWildcard: '', dstAddress: '', dstWildcard: '',
+        protocol: 0, srcPort: 0, dstPort: 0,
+      });
+      return '';
+    }
     const action = args[1].toUpperCase();
     if (action !== 'PROTECT' && action !== 'BYPASS' && action !== 'DISCARD') {
       return 'Error: Invalid action. Use PROTECT, BYPASS, or DISCARD.';
@@ -238,6 +248,77 @@ export function registerHuaweiIPSecSystemCommands(
 
   trie.register('undo ike aggressive-mode disable', 'Enable IKE aggressive mode (default)', () => {
     eng(ctx).setAggressiveMode(true);
+    return '';
+  });
+
+  // ── ipsec sa esn enable/disable ────────────────────────────────
+  trie.register('ipsec sa esn enable', 'Enable Extended Sequence Numbers (ESN)', () => {
+    eng(ctx).setESN(true);
+    return '';
+  });
+
+  trie.register('undo ipsec sa esn', 'Disable Extended Sequence Numbers (ESN)', () => {
+    eng(ctx).setESN(false);
+    return '';
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // IKEv2 commands — Huawei "ike v2" equivalents of Cisco IKEv2
+  // ═══════════════════════════════════════════════════════════════
+
+  trie.registerGreedy('ike v2 proposal', 'Create or enter IKEv2 proposal view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Proposal(args[0]);
+    ctx.setSelectedIPSecProposal(args[0]);
+    ctx.setMode('ikev2-proposal');
+    return '';
+  });
+
+  trie.registerGreedy('undo ike v2 proposal', 'Remove IKEv2 proposal', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).removeIKEv2Proposal(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ike v2 policy', 'Create or enter IKEv2 policy view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Policy(args[0]);
+    ctx.setSelectedIPSecPolicy(args[0]);
+    ctx.setMode('ikev2-policy');
+    return '';
+  });
+
+  trie.registerGreedy('undo ike v2 policy', 'Remove IKEv2 policy', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).removeIKEv2Policy(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ike v2 keyring', 'Create or enter IKEv2 keyring view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Keyring(args[0]);
+    ctx.setSelectedIKEPeer(args[0]);
+    ctx.setMode('ikev2-keyring');
+    return '';
+  });
+
+  trie.registerGreedy('undo ike v2 keyring', 'Remove IKEv2 keyring', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).removeIKEv2Keyring(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ike v2 profile', 'Create or enter IKEv2 profile view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Profile(args[0]);
+    ctx.setSelectedIPSecProposal(args[0]);
+    ctx.setMode('ikev2-profile');
+    return '';
+  });
+
+  trie.registerGreedy('undo ike v2 profile', 'Remove IKEv2 profile', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).removeIKEv2Profile(args[0]);
     return '';
   });
 }
@@ -513,6 +594,158 @@ export function buildHuaweiIPSecPolicyCommands(
   });
 }
 
+// ─── IKEv2 Proposal sub-view ────────────────────────────────────────
+
+export function buildHuaweiIKEv2ProposalCommands(
+  trie: CommandTrie,
+  ctx: HuaweiIPSecContext,
+): void {
+  trie.registerGreedy('encryption-algorithm', 'Set encryption algorithm(s)', (args) => {
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 proposal selected.';
+    const prop = eng(ctx).getOrCreateIKEv2Proposal(name);
+    prop.encryption = args.map(a => a.toLowerCase());
+    return '';
+  });
+
+  trie.registerGreedy('integrity-algorithm', 'Set integrity algorithm(s)', (args) => {
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 proposal selected.';
+    const prop = eng(ctx).getOrCreateIKEv2Proposal(name);
+    prop.integrity = args.map(a => a.toLowerCase());
+    return '';
+  });
+
+  trie.registerGreedy('dh', 'Set DH group(s)', (args) => {
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 proposal selected.';
+    const prop = eng(ctx).getOrCreateIKEv2Proposal(name);
+    prop.dhGroup = args.map(a => a.toLowerCase());
+    return '';
+  });
+}
+
+// ─── IKEv2 Policy sub-view ──────────────────────────────────────────
+
+export function buildHuaweiIKEv2PolicyCommands(
+  trie: CommandTrie,
+  ctx: HuaweiIPSecContext,
+): void {
+  trie.registerGreedy('proposal', 'Reference an IKEv2 proposal', (args) => {
+    const name = ctx.getSelectedIPSecPolicy();
+    if (!name) return 'Error: No IKEv2 policy selected.';
+    const pol = eng(ctx).getOrCreateIKEv2Policy(name);
+    pol.proposalNames = args.filter(a => a.trim());
+    return '';
+  });
+
+  trie.registerGreedy('match local address', 'Match local address for policy', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    return '';
+  });
+}
+
+// ─── IKEv2 Keyring sub-view ────────────────────────────────────────
+
+export function buildHuaweiIKEv2KeyringCommands(
+  trie: CommandTrie,
+  ctx: HuaweiIPSecContext,
+): void {
+  trie.registerGreedy('peer', 'Define a keyring peer', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const krName = ctx.getSelectedIKEPeer();
+    if (!krName) return 'Error: No keyring selected.';
+    const kr = eng(ctx).getOrCreateIKEv2Keyring(krName);
+    const peerName = args[0];
+    if (!kr.peers.has(peerName)) {
+      kr.peers.set(peerName, { name: peerName, address: '0.0.0.0', preSharedKey: '' });
+    }
+    ctx.setSelectedIPSecProposal(peerName);
+    ctx.setMode('ikev2-keyring-peer');
+    return '';
+  });
+}
+
+// ─── IKEv2 Keyring Peer sub-view ───────────────────────────────────
+
+export function buildHuaweiIKEv2KeyringPeerCommands(
+  trie: CommandTrie,
+  ctx: HuaweiIPSecContext,
+): void {
+  trie.registerGreedy('address', 'Set peer IP address', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const krName = ctx.getSelectedIKEPeer();
+    const peerName = ctx.getSelectedIPSecProposal();
+    if (!krName || !peerName) return 'Error: No keyring peer selected.';
+    const kr = eng(ctx).getOrCreateIKEv2Keyring(krName);
+    const peer = kr.peers.get(peerName);
+    if (peer) peer.address = args[0];
+    return '';
+  });
+
+  trie.registerGreedy('pre-shared-key', 'Set pre-shared key', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const krName = ctx.getSelectedIKEPeer();
+    const peerName = ctx.getSelectedIPSecProposal();
+    if (!krName || !peerName) return 'Error: No keyring peer selected.';
+    const kr = eng(ctx).getOrCreateIKEv2Keyring(krName);
+    const peer = kr.peers.get(peerName);
+    if (peer) peer.preSharedKey = args[0];
+    return '';
+  });
+}
+
+// ─── IKEv2 Profile sub-view ────────────────────────────────────────
+
+export function buildHuaweiIKEv2ProfileCommands(
+  trie: CommandTrie,
+  ctx: HuaweiIPSecContext,
+): void {
+  trie.registerGreedy('match remote identity address', 'Match remote identity by address', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 profile selected.';
+    const profile = eng(ctx).getOrCreateIKEv2Profile(name);
+    profile.matchIdentityRemoteAddress = args[0];
+    return '';
+  });
+
+  trie.register('match remote identity any', 'Match any remote identity', () => {
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 profile selected.';
+    const profile = eng(ctx).getOrCreateIKEv2Profile(name);
+    profile.matchIdentityRemoteAddress = 'any';
+    return '';
+  });
+
+  trie.registerGreedy('authentication-method local', 'Set local authentication method', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 profile selected.';
+    const profile = eng(ctx).getOrCreateIKEv2Profile(name);
+    profile.authLocal = args[0].toLowerCase();
+    return '';
+  });
+
+  trie.registerGreedy('authentication-method remote', 'Set remote authentication method', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 profile selected.';
+    const profile = eng(ctx).getOrCreateIKEv2Profile(name);
+    profile.authRemote = args[0].toLowerCase();
+    return '';
+  });
+
+  trie.registerGreedy('keyring', 'Associate keyring with profile', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 profile selected.';
+    const profile = eng(ctx).getOrCreateIKEv2Profile(name);
+    profile.keyringName = args[0];
+    return '';
+  });
+}
+
 // ─── Interface view: ipsec policy binding ────────────────────────────
 
 export function registerHuaweiIPSecInterfaceCommands(
@@ -703,5 +936,57 @@ export function registerHuaweiIPSecDisplayCommands(
       e.setDebug('ikev2', false);
     }
     return 'Info: All debugging turned off.';
+  });
+
+  // ── IKEv2 display commands ────────────────────────────────────
+
+  trie.register('display ike v2 proposal', 'Display IKEv2 proposals', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    return e.showCryptoIKEv2Proposal?.() ?? 'Info: No IKEv2 proposals.';
+  });
+
+  trie.register('display ike v2 policy', 'Display IKEv2 policies', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    return e.showCryptoIKEv2Policy?.() ?? 'Info: No IKEv2 policies.';
+  });
+
+  trie.register('display ike v2 profile', 'Display IKEv2 profiles', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    return e.showCryptoIKEv2Profile?.() ?? 'Info: No IKEv2 profiles.';
+  });
+
+  trie.register('display ike v2 sa', 'Display IKEv2 SAs', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    return e.showCryptoIKEv2SA?.() ?? 'Info: No IKEv2 SAs.';
+  });
+
+  trie.register('display ike v2 sa verbose', 'Display detailed IKEv2 SAs', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    return e.showCryptoIKEv2SADetail?.() ?? 'Info: No IKEv2 SAs.';
+  });
+
+  trie.register('reset ike v2 sa', 'Clear all IKEv2 SAs', () => {
+    engOrNull(getRouter())?.clearAllIKEv2SAs?.();
+    return 'Info: IKEv2 SAs cleared.';
+  });
+
+  trie.register('debugging ike v2', 'Enable IKEv2 debug output', () => {
+    const e = engOrNull(getRouter());
+    if (!e) {
+      (getRouter() as any)._getOrCreateIPSecEngine().setDebug('ikev2', true);
+    } else {
+      e.setDebug('ikev2', true);
+    }
+    return 'Info: IKEv2 debugging is on.';
+  });
+
+  trie.register('undo debugging ike v2', 'Disable IKEv2 debug output', () => {
+    engOrNull(getRouter())?.setDebug('ikev2', false);
+    return 'Info: IKEv2 debugging is off.';
   });
 }
