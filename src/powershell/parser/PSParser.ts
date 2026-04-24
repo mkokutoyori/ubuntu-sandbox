@@ -328,28 +328,36 @@ export class PSParser {
       return this.parsePrimaryExpression();
     }
 
+    // Command heads parse as expressions so binary operators (2+3, $_ * 10,
+    // "a" -eq "b"), postfix ($x++, $x.Prop, $x[i]) and assignment-ops ($x+=1)
+    // are consumed fully.
+    //
+    // VARIABLE heads use minPrec=0 so that comparison/logical operators embedded
+    // in a ScriptBlock body (e.g. `$_ -gt 3`) are parsed as a full expression
+    // rather than left as naked command parameters.  The @() evaluator already
+    // flattens one-level arrays, so consuming a comma inside @($a,$b) is safe.
+    //
+    // NUMBER/STRING/etc. heads use COMMA_PREC so that a literal comma in
+    // contexts like @(1, 2, 3) is left for the outer @() loop to consume.
+    const COMMA_PREC = PRECEDENCE[','];
     if (tok.type === PSTokenType.VARIABLE) {
-      // Use parseExpression so that binary ops ($_ * 10, $x -gt 3),
-      // postfix ($x++, $x.Prop, $x[i]), and assignment-ops ($x+=1) are consumed fully.
-      return this.parseExpression();
+      return this.parseExpression(0);
+    }
+    if (tok.type === PSTokenType.NUMBER
+        || tok.type === PSTokenType.STRING_SINGLE
+        || tok.type === PSTokenType.STRING_DOUBLE) {
+      return this.parseExpression(COMMA_PREC);
     }
 
-    if (tok.type === PSTokenType.WORD || tok.type === PSTokenType.NUMBER
-        || tok.type === PSTokenType.STRING_SINGLE || tok.type === PSTokenType.STRING_DOUBLE) {
+    if (tok.type === PSTokenType.WORD) {
       this.advance();
-      // Numbers and strings as command heads are treated as literals
-      if (tok.type === PSTokenType.NUMBER) return this.makeNumberLiteral(tok.value, pos);
-      if (tok.type === PSTokenType.STRING_SINGLE) {
-        return makeLiteral(tok.value, tok.value, 'string', pos);
-      }
-      if (tok.type === PSTokenType.STRING_DOUBLE) {
-        return makeLiteral(tok.value, tok.value, 'expandable', pos);
-      }
       return { type: 'CommandExpression', name: tok.value, position: pos };
     }
 
+    // Parenthesized / array / type-literal expressions: parse as expressions,
+    // again stopping before a top-level comma.
     if (tok.type === PSTokenType.LPAREN || tok.type === PSTokenType.AT || tok.type === PSTokenType.TYPE) {
-      return this.parsePrimaryExpression();
+      return this.parseExpression(COMMA_PREC);
     }
 
     this.advance();

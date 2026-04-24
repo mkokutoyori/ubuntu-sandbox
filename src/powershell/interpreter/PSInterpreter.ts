@@ -67,6 +67,32 @@ export class PSInterpreter {
     return this.outputLines.join('\n');
   }
 
+  /**
+   * Interactive variant of execute(): bare expressions that produce a value
+   * without explicitly writing to the pipeline (e.g. `$x`, `2+3`) are printed
+   * to the output, matching the PowerShell REPL.
+   */
+  executeInteractive(code: string): string {
+    this.outputLines = [];
+    const tokens = this.lexer.tokenize(code);
+    const ast    = this.parser.parse(tokens);
+    for (const stmt of ast.body.statements) {
+      const wasEmpty = this.outputLines.length;
+      const result = this.execStatement(stmt, this.global);
+      // If the statement produced a value but emitted no output, echo it
+      // (REPL-style) — unless it's an assignment ($x = ...) which never echoes.
+      const didOutput = this.outputLines.length > wasEmpty;
+      if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
+        if (Array.isArray(result)) {
+          for (const item of result) this.outputLines.push(psValueToString(item));
+        } else {
+          this.outputLines.push(psValueToString(result));
+        }
+      }
+    }
+    return this.outputLines.join('\n');
+  }
+
   getVariable(name: string): PSValue {
     return this.global.get(name);
   }
@@ -934,7 +960,11 @@ export class PSInterpreter {
       // ── Output ────────────────────────────────────────────────────────────
       case 'write-output': case 'echo': {
         const val = pos[0] ?? pipeInput ?? null;
-        this.outputLines.push(psValueToString(val));
+        if (Array.isArray(val)) {
+          for (const item of val) this.outputLines.push(psValueToString(item));
+        } else {
+          this.outputLines.push(psValueToString(val));
+        }
         return val;
       }
       case 'write-host': {

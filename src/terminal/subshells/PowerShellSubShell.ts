@@ -13,15 +13,32 @@ import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { PowerShellExecutor, PS_BANNER } from '@/network/devices/windows/PowerShellExecutor';
+import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
+import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
+import { PSParserError } from '@/powershell/parser/PSParserError';
+
+/**
+ * Tokens that clearly mark a line as needing device-bound execution; the
+ * interpreter should not even try to parse these — its parser would fail
+ * because they contain paths / switches that are not valid PS expressions.
+ */
+const DEVICE_ONLY_COMMANDS = new Set([
+  'ipconfig', 'ping', 'tracert', 'netsh', 'arp', 'route',
+  'hostname', 'systeminfo', 'ver', 'whoami', 'net',
+  'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'cp', 'mv',
+  'rm', 'del', 'ren', 'mkdir', 'rmdir',
+]);
 
 export class PowerShellSubShell implements ISubShell {
   private psExecutor: PowerShellExecutor;
+  private interp: PSInterpreter;
   private device: Equipment;
   private commandHistory: string[] = [];
 
   private constructor(device: Equipment) {
     this.device = device;
     this.psExecutor = new PowerShellExecutor(device as any);
+    this.interp = new PSInterpreter();
   }
 
   /**
@@ -90,16 +107,10 @@ export class PowerShellSubShell implements ISubShell {
     // Sync cwd to PS executor
     this.psExecutor.setCwd((this.device as any).getCwd());
 
-    // Execute the PowerShell command
-    const result = await this.psExecutor.execute(trimmed);
-
-    // Sync cwd back from PS executor (Set-Location, cd, etc.)
-    const newCwd = this.psExecutor.getCwd();
-    const deviceCwd = (this.device as any).getCwd();
-    if (newCwd !== deviceCwd) {
-      // Update the device's cwd if PS changed it
-      // (via executeCmdCommand('cd ...') which already updates the device)
-    }
+    // Execute the PowerShell command via the interpreter first, then fall back
+    // to the legacy executor for device-bound cmdlets or syntax the interpreter
+    // doesn't understand.
+    const result = await this.dispatchCommand(trimmed);
 
     const output = (result !== null && result !== undefined && result !== '')
       ? result.split('\n')
@@ -110,6 +121,48 @@ export class PowerShellSubShell implements ISubShell {
       exit: false,
       prompt: this.psExecutor.getPrompt(),
     };
+  }
+
+  /**
+   * Route a single command through the interpreter when possible, otherwise
+   * delegate to the legacy PowerShellExecutor (native cmdlets, device I/O).
+   */
+  private async dispatchCommand(line: string): Promise<string | null> {
+    if (this.shouldBypassInterpreter(line)) {
+      return this.psExecutor.execute(line);
+    }
+    try {
+      const out = this.interp.executeInteractive(line);
+      return out;
+    } catch (e) {
+      if (this.isFallbackError(e)) {
+        return this.psExecutor.execute(line);
+      }
+      return this.formatInterpreterError(e);
+    }
+  }
+
+  /**
+   * Heuristic: skip the interpreter entirely for commands that are clearly
+   * device-bound (ipconfig, ping, cd, ls, ...).  Avoids noisy parse errors
+   * and keeps fallback output identical to the pre-interpreter behavior.
+   */
+  private shouldBypassInterpreter(line: string): boolean {
+    const firstToken = line.split(/\s+/)[0]?.toLowerCase() ?? '';
+    return DEVICE_ONLY_COMMANDS.has(firstToken);
+  }
+
+  private isFallbackError(e: unknown): boolean {
+    if (e instanceof PSParserError) return true;
+    if (e instanceof PSRuntimeError) {
+      return /not recognized/i.test(e.message);
+    }
+    return false;
+  }
+
+  private formatInterpreterError(e: unknown): string {
+    if (e instanceof Error) return e.message;
+    return String(e);
   }
 
   dispose(): void {
