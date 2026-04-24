@@ -474,13 +474,8 @@ export function buildHuaweiIPSecPolicyCommands(
     const seq = ctx.getSelectedIPSecPolicySeq();
     if (!name || seq === null) return 'Error: No IPSec policy selected.';
     const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
-    // Find the peer's IP address from the keyring
     const peerName = args[0] || '';
-    const kr = eng(ctx).getOrCreateIKEv2Keyring('default');
-    const peer = kr.peers.get(peerName);
-    if (peer && peer.address !== '0.0.0.0') {
-      entry.peers = [peer.address];
-    }
+    entry.peers = [peerName];
     return '';
   });
 

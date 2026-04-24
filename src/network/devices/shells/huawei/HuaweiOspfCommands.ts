@@ -346,6 +346,18 @@ export function buildOSPFv3ViewCommands(
     v3.setDefaultInformationOriginate(true);
     return '';
   });
+
+  trie.registerGreedy('import-route', 'Redistribute routes from another protocol', (_args) => {
+    return '';
+  });
+
+  trie.registerGreedy('graceful-restart', 'Configure OSPFv3 graceful restart', (_args) => {
+    return '';
+  });
+
+  trie.registerGreedy('filter-policy', 'Filter OSPFv3 routes', (_args) => {
+    return '';
+  });
 }
 
 // ─── OSPF Interface Commands ────────────────────────────────────────
@@ -479,6 +491,14 @@ export function registerOSPFInterfaceCommands(
 
   // OSPFv3 interface commands
   trie.registerGreedy('ospfv3', 'Enable OSPFv3 on interface', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+
+    const subCmd = args[0].toLowerCase();
+    if (subCmd === 'cost' && args.length >= 2) return '';
+    if (subCmd === 'priority' && args.length >= 2) return '';
+    if (subCmd === 'network-type' && args.length >= 2) return '';
+    if (subCmd === 'authentication') return '';
+
     // ospfv3 <process-id> area <area-id>
     if (args.length < 3) return 'Error: Incomplete command.';
     const processId = parseInt(args[0], 10);

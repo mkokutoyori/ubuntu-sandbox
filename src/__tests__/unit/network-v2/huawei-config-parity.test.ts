@@ -899,3 +899,149 @@ describe('Batch 35: display version and counters from system view', () => {
     expect(typeof result).toBe('string');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 36: OSPF remaining parity (OSPFv3 redistribute, distribute-list, bfd)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 36: OSPFv3 advanced commands', () => {
+  it('should accept redistribute in ospfv3 view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospfv3 1');
+    const result = await r.executeCommand('default-route-advertise always');
+    expect(result).toBe('');
+  });
+
+  it('should accept redistribute static in ospfv3 view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospfv3 1');
+    const result = await r.executeCommand('import-route static');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 37: OSPF interface OSPFv3 and frame-relay parity
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 37: OSPF interface advanced', () => {
+  it('should accept ospfv3 cost on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ospfv3 cost 100');
+    expect(result).toBe('');
+  });
+
+  it('should accept ospfv3 priority on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ospfv3 priority 200');
+    expect(result).toBe('');
+  });
+
+  it('should accept ospfv3 network-type on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ospfv3 network-type broadcast');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 38: ACL show/display parity improvements
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 38: ACL display parity', () => {
+  it('should display named ACL by name', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl name TEST_ACL basic');
+    await r.executeCommand('rule permit source 10.0.0.0 0.0.0.255');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('display acl name TEST_ACL');
+    expect(result).toContain('TEST_ACL');
+    expect(result).toContain('permit');
+  });
+
+  it('should remove named ACL with undo acl name', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl name DELME basic');
+    await r.executeCommand('rule permit source any');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('undo acl name DELME');
+    expect(result).toBe('');
+    const aclResult = await r.executeCommand('display acl all');
+    expect(aclResult).not.toContain('DELME');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 39: IPSec proposal encapsulation-mode and ESP alg in running config
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 39: IPSec proposal encapsulation + ESP in current-config', () => {
+  it('should include ipsec proposal encapsulation-mode in current-config', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ipsec proposal TESTPROP');
+    await r.executeCommand('transform esp');
+    await r.executeCommand('encapsulation-mode tunnel');
+    await r.executeCommand('esp encryption-algorithm aes-128');
+    await r.executeCommand('esp authentication-algorithm sha2-256');
+    await r.executeCommand('quit');
+    const cfg = await r.executeCommand('display current-configuration');
+    expect(cfg).toContain('ipsec proposal TESTPROP');
+    expect(cfg).toContain('encapsulation-mode tunnel');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 40: OSPF display ospf lsdb typed queries
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 40: display ospf lsdb typed queries', () => {
+  it('should display ospf lsdb router', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ospf lsdb router');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ospf lsdb network', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ospf lsdb network');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 41: IPSec policy detail in current-config (ike-peer, proposal, pfs, sa duration)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 41: IPSec policy detail in current-config', () => {
+  it('should include ipsec policy with ike-peer and proposal references', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ipsec proposal PROP1');
+    await r.executeCommand('transform esp');
+    await r.executeCommand('quit');
+    await r.executeCommand('ike peer MYPEER');
+    await r.executeCommand('remote-address 10.0.0.2');
+    await r.executeCommand('quit');
+    await r.executeCommand('ipsec policy POL1 10 isakmp');
+    await r.executeCommand('ike-peer MYPEER');
+    await r.executeCommand('proposal PROP1');
+    await r.executeCommand('quit');
+    const cfg = await r.executeCommand('display current-configuration');
+    expect(cfg).toContain('ipsec policy POL1');
+    expect(cfg).toContain('ike-peer MYPEER');
+    expect(cfg).toContain('proposal PROP1');
+  });
+});

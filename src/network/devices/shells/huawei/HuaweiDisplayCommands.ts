@@ -370,6 +370,7 @@ export function displayCurrentConfig(
       lines.push('#');
       lines.push(`ipsec proposal ${name}`);
       if ((ts as any).protocol) lines.push(` transform ${(ts as any).protocol}`);
+      if (ts.mode) lines.push(` encapsulation-mode ${ts.mode}`);
       const espEnc = ts.transforms.find((t: string) => t.match(/^esp-(aes|des|3des)/));
       if (espEnc) lines.push(` esp encryption-algorithm ${espEnc.replace('esp-', '')}`);
       const espAuth = ts.transforms.find((t: string) => t.includes('-hmac'));

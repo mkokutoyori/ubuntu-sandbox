@@ -83,6 +83,10 @@ export function registerHuaweiACLSystemCommands(
 
   trie.registerGreedy('undo acl', 'Delete Access Control List', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    if (args[0].toLowerCase() === 'name' && args.length >= 2) {
+      getRouter().removeNamedAccessList(args[1]);
+      return '';
+    }
     const num = parseInt(args[0], 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
     getRouter().removeAccessList(num);
@@ -258,6 +262,21 @@ export function registerHuaweiACLDisplayCommands(
 
     if (args[0].toLowerCase() === 'all') {
       return formatAllACLs(getRouter());
+    }
+
+    if (args[0].toLowerCase() === 'name' && args.length >= 2) {
+      const name = args[1];
+      const acls = getRouter()._getAccessListsInternal();
+      const acl = acls.find(a => a.name === name);
+      if (!acl || acl.entries.length === 0) {
+        return `Error: ACL ${name} does not exist or has no rules.`;
+      }
+      const type = acl.type === 'extended' ? 'Advanced' : 'Basic';
+      const lines = [`${type} ACL ${name}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
+      acl.entries.forEach((entry, idx) => {
+        lines.push(` rule ${idx * 5} ${formatACLEntry(entry)}`);
+      });
+      return lines.join('\n');
     }
 
     const num = parseInt(args[0], 10);
