@@ -663,6 +663,74 @@ export function formatDefault(objects: PSObject[]): string {
   return formatList(objects, '');
 }
 
+/**
+ * Group-Object: group objects by one or more properties.
+ *
+ * Output format:
+ *   Count  Name     Group
+ *   -----  ----     -----
+ *   5      Running  {...}
+ *   2      Stopped  {...}
+ */
+export function groupObject(objects: PSObject[], args: string): string {
+  const tokens = tokenizeArgs(args);
+  const properties: string[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i].toLowerCase();
+    if (t === '-property' && tokens[i + 1]) {
+      i++;
+      while (i < tokens.length && !tokens[i].startsWith('-')) {
+        properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
+        i++;
+      }
+      i--;
+    } else if (!t.startsWith('-')) {
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
+    }
+  }
+
+  // Build groups
+  const groups = new Map<string, PSObject[]>();
+  for (const obj of objects) {
+    let key: string;
+    if (properties.length > 0) {
+      key = properties.map(p => {
+        const k = Object.keys(obj).find(ok => ok.toLowerCase() === p.toLowerCase()) || p;
+        return String(obj[k] ?? '');
+      }).join(', ');
+    } else {
+      key = Object.values(obj).map(v => String(v ?? '')).join(' ');
+    }
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(obj);
+  }
+
+  // Format as table
+  const result: PSObject[] = [];
+  for (const [name, group] of groups) {
+    result.push({ Count: group.length, Name: name, Group: `{${group.length} items}` });
+  }
+
+  if (result.length === 0) return '';
+  return formatTable(result, '');
+}
+
+/**
+ * ForEach-Object: run a script block for each object (legacy string-only path).
+ * Full pipeline ForEach-Object is handled by the PSInterpreter; this handles
+ * the PSPipeline fallback for script-block-free property selectors.
+ */
+export function foreachObject(objects: PSObject[], args: string): PSObject[] {
+  // Extract property name from args (simplified: % { $_.Prop } not supported here)
+  const prop = args.trim().replace(/^[{$_.\s]+|[}\s]+$/g, '');
+  if (!prop) return objects;
+  return objects.map(obj => {
+    const key = Object.keys(obj).find(k => k.toLowerCase() === prop.toLowerCase()) || prop;
+    return { Value: obj[key] ?? null };
+  });
+}
+
 // ─── Full pipeline execution ─────────────────────────────────────
 
 export type PipelineInput = PSObject[] | string;
@@ -733,6 +801,22 @@ export function applyPipelineStage(
   // Out-String (convert to string)
   if (filterLower.startsWith('out-string')) {
     return { output: [], formatted: formatDefault(objects) };
+  }
+
+  // Out-Null — suppress all output
+  if (filterLower.startsWith('out-null')) {
+    return { output: [], formatted: '' };
+  }
+
+  // Group-Object / group — group by property
+  if (filterLower.startsWith('group-object') || filterLower.startsWith('group ') || filterLower === 'group') {
+    return { output: [], formatted: groupObject(objects, args) };
+  }
+
+  // ForEach-Object / % — transform each object (legacy pipeline path)
+  if (filterLower.startsWith('foreach-object') || filterLower.startsWith('foreach ') || filterLower === 'foreach'
+      || filterLower.startsWith('% ') || filterLower === '%') {
+    return { output: foreachObject(objects, args) };
   }
 
   // Unknown filter — pass through as string

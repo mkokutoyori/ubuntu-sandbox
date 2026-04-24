@@ -346,6 +346,16 @@ export class PowerShellExecutor {
       return this.handleTestConnection(args);
     }
 
+    // Get-NetTCPConnection (simulated netstat-like)
+    if (cmdLower === 'get-nettcpconnection') {
+      return this.formatGetNetTCPConnection(args);
+    }
+
+    // Get-NetFirewallRule
+    if (cmdLower === 'get-netfirewallrule') {
+      return this.formatGetNetFirewallRule(args);
+    }
+
     // Resolve-DnsName
     if (cmdLower === 'resolve-dnsname') {
       return 'Resolve-DnsName: DNS resolution is not available in this simulation.';
@@ -864,6 +874,72 @@ export class PowerShellExecutor {
         `${displayName.padEnd(26)}${('Intel(R) Ethernet Connection').padEnd(40)}${String(ifIndex).padStart(7)} ${status.padEnd(13)}${mac.padEnd(19)}1 Gbps`
       );
       idx++;
+    }
+    return lines.join('\n');
+  }
+
+  private formatGetNetTCPConnection(args: string[]): string {
+    const ports = this.device.getPortsMap();
+    // Simulate standard TCP connections for a Windows PC
+    const lines: string[] = [
+      '',
+      'LocalAddress           LocalPort RemoteAddress          RemotePort State       AppliedSetting',
+      '------------           --------- -------------          ---------- -----       --------------',
+    ];
+
+    // Listening ports based on running services
+    const serviceMgr = this.device.getServiceManager();
+    const runningServices = serviceMgr.getAllServices().filter(s => s.status === 'Running');
+    const listeningPorts: Array<{ port: number; name: string }> = [
+      { port: 135, name: 'RpcSs' },
+      { port: 445, name: 'LanmanServer' },
+      { port: 49152, name: 'Services' },
+    ];
+    for (const svc of runningServices) {
+      if (svc.name === 'WinRM') listeningPorts.push({ port: 5985, name: 'WinRM' });
+    }
+
+    let localIp = '0.0.0.0';
+    for (const port of ports.values()) {
+      const ip = port.getIPAddress();
+      if (ip) { localIp = ip; break; }
+    }
+
+    const params = this.parsePSArgs(args);
+    const stateFilter = params.get('state')?.toLowerCase();
+
+    for (const lp of listeningPorts) {
+      if (!stateFilter || stateFilter === 'listen') {
+        lines.push(`${('0.0.0.0').padEnd(23)}${String(lp.port).padEnd(10)}${'0.0.0.0'.padEnd(23)}${'0'.padEnd(11)}Listen`);
+      }
+    }
+
+    // Simulate established connection to DNS server
+    if (!stateFilter || stateFilter === 'established') {
+      lines.push(`${localIp.padEnd(23)}${String(49153 + Math.floor(Math.random() * 100)).padEnd(10)}${'8.8.8.8'.padEnd(23)}${'53'.padEnd(11)}Established`);
+    }
+
+    if (lines.length <= 3) return '';
+    return lines.join('\n');
+  }
+
+  private formatGetNetFirewallRule(args: string[]): string {
+    const lines: string[] = [
+      '',
+      'Name                  DisplayName                  Enabled Action Direction',
+      '----                  -----------                  ------- ------ ---------',
+      'CoreNet-DHCP-In       DHCP (UDP-In)                True    Allow  Inbound',
+      'CoreNet-DHCP-Out      DHCP (UDP-Out)               True    Allow  Outbound',
+      'CoreNet-DNS-Out       DNS (UDP-Out)                True    Allow  Outbound',
+      'FPS-ICMP4-ERQ-In      File and Printer Sharing...  True    Allow  Inbound',
+      'RemoteDesktop-In-TCP  Remote Desktop - User Mode   False   Allow  Inbound',
+      'WinRM-HTTP-In-TCP     Windows Remote Management    False   Allow  Inbound',
+      'BlockTelemetry        Block Windows Telemetry      True    Block  Outbound',
+    ];
+    const params = this.parsePSArgs(args);
+    const nameFilter = (params.get('name') || params.get('_positional') || '').toLowerCase();
+    if (nameFilter) {
+      return lines.filter((l, i) => i < 3 || l.toLowerCase().includes(nameFilter)).join('\n');
     }
     return lines.join('\n');
   }
