@@ -229,7 +229,7 @@ export class PowerShellExecutor {
     }
 
     if (cmdLower.startsWith('$env:')) {
-      return this.resolveEnvVar(cmd.slice(5));
+      return this.resolveEnvVar(cmd.slice(5)) ?? '';
     }
 
     if (cmdLower === '$true') return 'True';
@@ -544,6 +544,33 @@ export class PowerShellExecutor {
       return this.handleGetAcl(args);
     }
 
+    // Rename-LocalUser
+    if (cmdLower === 'rename-localuser') {
+      return this.handleRenameLocalUser(args);
+    }
+
+    // Rename-LocalGroup
+    if (cmdLower === 'rename-localgroup') {
+      return this.handleRenameLocalGroup(args);
+    }
+
+    // Write-Error / Write-Warning (executor-level fallback if interpreter misses them)
+    if (cmdLower === 'write-error') {
+      const msg = args.join(' ').replace(/^["']|["']$/g, '');
+      return `Write-Error: ${msg}`;
+    }
+    if (cmdLower === 'write-warning') {
+      const msg = args.join(' ').replace(/^["']|["']$/g, '');
+      return `WARNING: ${msg}`;
+    }
+    if (cmdLower === 'write-verbose' || cmdLower === 'write-debug') return '';
+
+    // Invoke-Expression / iex
+    if (cmdLower === 'invoke-expression' || cmdLower === 'iex') {
+      const expr = args.join(' ').replace(/^["']|["']$/g, '');
+      return this.executeSingle(expr);
+    }
+
     // Fallback: try device command
     return this.executeFallback(cmdline);
   }
@@ -575,19 +602,40 @@ export class PowerShellExecutor {
     };
   }
 
-  private resolveEnvVar(varName: string): string {
+  resolveEnvVar(varName: string): string | null {
     const currentUser = this.device.getUserManager().currentUser;
+    const u = currentUser || 'User';
     const envMap: Record<string, string> = {
-      'USERNAME': currentUser, 'COMPUTERNAME': this.device.getHostname(),
-      'USERPROFILE': `C:\\Users\\${currentUser}`, 'SYSTEMROOT': 'C:\\Windows',
-      'WINDIR': 'C:\\Windows', 'TEMP': 'C:\\Users\\User\\AppData\\Local\\Temp',
-      'PATH': 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-      'HOMEDRIVE': 'C:', 'HOMEPATH': '\\Users\\User',
-      'PROCESSOR_ARCHITECTURE': 'AMD64', 'OS': 'Windows_NT',
-      'COMSPEC': 'C:\\Windows\\System32\\cmd.exe',
-      'PSModulePath': 'C:\\Users\\User\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules',
+      'USERNAME':               u,
+      'COMPUTERNAME':           this.device.getHostname(),
+      'USERPROFILE':            `C:\\Users\\${u}`,
+      'SYSTEMROOT':             'C:\\Windows',
+      'WINDIR':                 'C:\\Windows',
+      'TEMP':                   `C:\\Users\\${u}\\AppData\\Local\\Temp`,
+      'TMP':                    `C:\\Users\\${u}\\AppData\\Local\\Temp`,
+      'PATH':                   'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+      'HOMEDRIVE':              'C:',
+      'HOMEPATH':               `\\Users\\${u}`,
+      'PROCESSOR_ARCHITECTURE': 'AMD64',
+      'OS':                     'Windows_NT',
+      'COMSPEC':                'C:\\Windows\\System32\\cmd.exe',
+      'PSMODULEPATH':           `C:\\Users\\${u}\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules`,
+      // Phase 8 additions
+      'APPDATA':                `C:\\Users\\${u}\\AppData\\Roaming`,
+      'LOCALAPPDATA':           `C:\\Users\\${u}\\AppData\\Local`,
+      'PROGRAMFILES':           'C:\\Program Files',
+      'PROGRAMFILES(X86)':      'C:\\Program Files (x86)',
+      'PROGRAMDATA':            'C:\\ProgramData',
+      'PATHEXT':                '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1',
+      'NUMBER_OF_PROCESSORS':   '4',
+      'USERDOMAIN':             'WORKGROUP',
+      'LOGONSERVER':            `\\\\${this.device.getHostname()}`,
+      'SESSIONNAME':            'Console',
+      'SYSTEMDRIVE':            'C:',
+      'PUBLIC':                 'C:\\Users\\Public',
+      'ALLUSERSPROFILE':        'C:\\ProgramData',
     };
-    return envMap[varName.toUpperCase()] ?? '';
+    return envMap[varName.toUpperCase()] ?? null;
   }
 
   private async handleSetContent(args: string[]): Promise<string> {
@@ -1294,6 +1342,26 @@ export class PowerShellExecutor {
     }
 
     return lines.join('\n');
+  }
+
+  private handleRenameLocalUser(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    const newName = params.get('newname') || '';
+    if (!name) return "Rename-LocalUser : The -Name parameter is required.";
+    if (!newName) return "Rename-LocalUser : The -NewName parameter is required.";
+    const error = this.device.getUserManager().renameUser(name, newName);
+    return error || '';
+  }
+
+  private handleRenameLocalGroup(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const name = params.get('name') || params.get('_positional') || '';
+    const newName = params.get('newname') || '';
+    if (!name) return "Rename-LocalGroup : The -Name parameter is required.";
+    if (!newName) return "Rename-LocalGroup : The -NewName parameter is required.";
+    const error = this.device.getUserManager().renameGroup(name, newName);
+    return error || '';
   }
 
   private async executeFallback(cmdline: string): Promise<string> {

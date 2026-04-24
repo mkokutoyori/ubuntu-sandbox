@@ -52,6 +52,9 @@ export class PSInterpreter {
   /** Host hook: returns true if a path exists on the embedding device. */
   testPathHook: ((path: string) => boolean) | null = null;
 
+  /** Host hook: resolve a $env: variable name → string value (or null if unknown). */
+  envVarHook: ((name: string) => string | null) | null = null;
+
   constructor() {
     this.global = new PSEnvironment();
     seedBuiltins(this.global);
@@ -319,7 +322,15 @@ export class PSInterpreter {
     const name = node.varName ?? node.name;
 
     if (node.scope === 'global') return env.getGlobal(name);
-    if (node.scope === 'env')    return process.env[name.toUpperCase()] ?? null;
+    if (node.scope === 'env') {
+      // Try host hook first (provides Windows-specific simulated env vars)
+      if (this.envVarHook) {
+        const v = this.envVarHook(name);
+        if (v !== null) return v;
+      }
+      // Fall back to real process environment (works on native Windows)
+      return process.env[name.toUpperCase()] ?? null;
+    }
 
     // $true / $false / $null resolved via seedBuiltins
     const val = env.get(name);
@@ -981,7 +992,10 @@ export class PSInterpreter {
         return null;
       }
       case 'write-verbose': {
-        this.outputLines.push(`VERBOSE: ${psValueToString(pos[0] ?? pipeInput ?? null)}`);
+        const pref = psValueToString(env.get('VerbosePreference') ?? 'SilentlyContinue');
+        if (pref === 'Continue') {
+          this.outputLines.push(`VERBOSE: ${psValueToString(pos[0] ?? pipeInput ?? null)}`);
+        }
         return null;
       }
       case 'out-null':   return null;
@@ -1123,7 +1137,12 @@ export class PSInterpreter {
       }
       case 'invoke-expression': case 'iex': {
         const code = psValueToString(named['command'] ?? pos[0] ?? pipeInput ?? '');
-        return this.execute(code) as unknown as PSValue;
+        const outerOutput = this.outputLines;
+        this.executeInteractive(code); // internally resets then fills this.outputLines
+        const iexOutput = this.outputLines;
+        this.outputLines = outerOutput;
+        outerOutput.push(...iexOutput);
+        return null;
       }
 
       // ── Date / Time ───────────────────────────────────────────────────────
@@ -1325,11 +1344,9 @@ export class PSInterpreter {
             || k === 'string' || k === 'expandable';
       }
       case 'VariableExpression': {
-        if (!env) return false;
-        const val = this.evalVariable(node as PSVariableExpression, env);
-        // If the variable holds a non-string, non-function value, it IS the value
-        return typeof val !== 'string' && typeof val !== 'function'
-          && !(val === null || val === undefined);
+        // Variables always evaluate to their value, not as cmdlet invocations.
+        // Use `& $cmd` or Invoke-Expression to invoke a variable as a command.
+        return true;
       }
       default:
         return false;

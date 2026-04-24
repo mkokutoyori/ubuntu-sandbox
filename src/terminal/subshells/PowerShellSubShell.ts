@@ -50,6 +50,8 @@ export class PowerShellSubShell implements ISubShell {
     const subShell = new PowerShellSubShell(device);
     // Sync initial cwd from the device
     subShell.psExecutor.setCwd((device as any).getCwd());
+    // Wire env-var resolution so $env:APPDATA etc. return Windows-accurate values
+    subShell.interp.envVarHook = (name: string) => subShell.psExecutor.resolveEnvVar(name);
     return {
       subShell,
       banner: PS_BANNER.split('\n'),
