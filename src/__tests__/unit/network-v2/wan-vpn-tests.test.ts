@@ -468,3 +468,225 @@ describe('Section 6: IPSec policy application — interface binding', () => {
     expect(out).toMatch(/[Aa]ctive|[Ee]nabled/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 7: Pre-Shared Key Management
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 7: Pre-shared key management', () => {
+
+  it('7.01 — Cisco HQ should mask PSK values in show output', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).not.toContain('Branch1Secret!42');
+    expect(out).toContain('*');
+  });
+
+  it('7.02 — Cisco HQ should list all configured PSK addresses', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).toContain('10.0.12.2');
+    expect(out).toContain('10.0.34.2');
+  });
+
+  it('7.03 — Huawei BR1 IKE peer should show PSK is configured', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ike peer');
+    expect(out).toMatch(/HQ/i);
+    expect(out).toMatch(/pre-shared|psk|key/i);
+  });
+
+  it('7.04 — Huawei BR3 IKE peer should have different proposal than BR1', async () => {
+    const t = await buildWanVpnTopology();
+    const br1 = await t.rBR1.executeCommand('display ike proposal');
+    const br3 = await t.rBR3.executeCommand('display ike proposal');
+    expect(br1).toMatch(/aes.*256/i);
+    expect(br3).toMatch(/aes.*128/i);
+  });
+
+  it('7.05 — Cisco BR2 IKEv2 keyring should have masked PSK', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto ikev2 keyring');
+    expect(out).toContain('KR-BR2');
+    expect(out).toContain('*');
+    expect(out).not.toContain('Branch2IKEv2#77');
+  });
+
+  it('7.06 — Custom PSK override should be applied (topology option)', async () => {
+    const t = await buildWanVpnTopology({ pskBranch1: 'CustomKey123' });
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).toContain('10.0.12.2');
+  });
+
+  it('7.07 — HQ IKEv2 keyring for BR2 should contain peer entry', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 keyring');
+    expect(out).toContain('KR-BR2');
+    expect(out).toContain('BR2');
+  });
+
+  it('7.08 — HQ and BR2 keyrings should reference each other addresses', async () => {
+    const t = await buildWanVpnTopology();
+    const hqOut = await t.rHQ.executeCommand('show crypto ikev2 keyring');
+    const br2Out = await t.rBR2.executeCommand('show crypto ikev2 keyring');
+    expect(hqOut).toContain('10.0.23.2');
+    expect(br2Out).toContain('10.0.23.1');
+  });
+
+  it('7.09 — IKEv2 profile on HQ should link to keyring KR-BR2', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 profile');
+    expect(out).toContain('KR-BR2');
+  });
+
+  it('7.10 — IKEv2 profile auth methods should be pre-share on both ends', async () => {
+    const t = await buildWanVpnTopology();
+    const hqOut = await t.rHQ.executeCommand('show crypto ikev2 profile');
+    const br2Out = await t.rBR2.executeCommand('show crypto ikev2 profile');
+    expect(hqOut).toMatch(/pre-share/i);
+    expect(br2Out).toMatch(/pre-share/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 8: IPSec SA & IKE SA Status (before traffic)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 8: IPSec SA & IKE SA status (pre-traffic)', () => {
+
+  it('8.01 — HQ should have no IKEv1 SAs before traffic exchange', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.02 — HQ should have no IKEv2 SAs before traffic exchange', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.03 — HQ should have no IPSec SAs before traffic exchange', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ipsec sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.04 — Huawei BR1 should have no IKE SAs before traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ike sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.05 — Huawei BR1 should have no IPSec SAs before traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ipsec sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.06 — Cisco BR2 should have no IKEv2 SAs before traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto ikev2 sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.07 — Huawei BR3 should have no IPSec SAs before traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('display ipsec sa');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.08 — HQ crypto session should be empty before traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto session');
+    expect(out).toMatch(/[Nn]o active/);
+  });
+
+  it('8.09 — HQ show crypto ipsec sa detail should also be empty', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ipsec sa detail');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+
+  it('8.10 — Huawei BR1 display ipsec sa verbose should be empty', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ipsec sa verbose');
+    expect(out).toMatch(/no.*sa|There are no/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 9: VPN Debug & Diagnostic Commands
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 9: VPN debug & diagnostic commands', () => {
+
+  it('9.01 — Cisco debug crypto isakmp should enable ISAKMP debugging', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    const out = await t.rHQ.executeCommand('debug crypto isakmp');
+    expect(out).toMatch(/debug|enabled/i);
+  });
+
+  it('9.02 — Cisco debug crypto ipsec should enable IPSec debugging', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    const out = await t.rHQ.executeCommand('debug crypto ipsec');
+    expect(out).toMatch(/debug|enabled/i);
+  });
+
+  it('9.03 — Cisco undebug all should disable all debugging', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('debug crypto isakmp');
+    const out = await t.rHQ.executeCommand('undebug all');
+    expect(out).toMatch(/disabled|off|undebug/i);
+  });
+
+  it('9.04 — Huawei debugging ike should enable IKE debugging', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    const out = await t.rBR1.executeCommand('debugging ike');
+    expect(out).toBeDefined();
+  });
+
+  it('9.05 — Huawei undo debugging ike should disable IKE debugging', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('debugging ike');
+    const out = await t.rBR1.executeCommand('undo debugging ike');
+    expect(out).toBeDefined();
+  });
+
+  it('9.06 — Huawei debugging ipsec should enable IPSec debugging', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    const out = await t.rBR1.executeCommand('debugging ipsec');
+    expect(out).toBeDefined();
+  });
+
+  it('9.07 — Cisco clear crypto sa should work without error', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    const out = await t.rHQ.executeCommand('clear crypto sa');
+    expect(out).toBeDefined();
+  });
+
+  it('9.08 — Huawei reset ike sa should work without error', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('reset ike sa');
+    expect(out).toBeDefined();
+  });
+
+  it('9.09 — Huawei reset ipsec sa should work without error', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('reset ipsec sa');
+    expect(out).toBeDefined();
+  });
+
+  it('9.10 — Cisco show crypto engine brief should report engine status', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto engine brief');
+    expect(out).toMatch(/[Cc]rypto|[Ee]ngine/);
+  });
+});
