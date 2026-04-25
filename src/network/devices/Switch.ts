@@ -186,6 +186,16 @@ export abstract class Switch extends Equipment {
       this.stpStates.set(portName, initialSTP);
       // Port VLAN state
       this.portVlanStates.set(portName, 'active');
+
+      // Auto-advance STP on link-up (simulates RSTP rapid transition)
+      port.onLinkChange((state) => {
+        if (state === 'up') {
+          const stp = this.stpStates.get(portName);
+          if (stp === 'listening' || stp === 'learning') {
+            this.stpStates.set(portName, 'forwarding');
+          }
+        }
+      });
     }
   }
 

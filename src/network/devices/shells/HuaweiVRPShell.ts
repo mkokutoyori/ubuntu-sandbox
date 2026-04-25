@@ -49,6 +49,9 @@ import {
   registerHuaweiIPSecDisplayCommands,
   buildHuaweiIKEProposalCommands, buildHuaweiIKEPeerCommands,
   buildHuaweiIPSecProposalCommands, buildHuaweiIPSecPolicyCommands,
+  buildHuaweiIKEv2ProposalCommands, buildHuaweiIKEv2PolicyCommands,
+  buildHuaweiIKEv2KeyringCommands, buildHuaweiIKEv2KeyringPeerCommands,
+  buildHuaweiIKEv2ProfileCommands,
 } from './huawei/HuaweiIPSecCommands';
 import {
   type HuaweiACLContext, type HuaweiACLMode,
@@ -103,6 +106,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
+  // IKEv2 sub-mode tries
+  private ikev2ProposalTrie = new CommandTrie();
+  private ikev2PolicyTrie = new CommandTrie();
+  private ikev2KeyringTrie = new CommandTrie();
+  private ikev2KeyringPeerTrie = new CommandTrie();
+  private ikev2ProfileTrie = new CommandTrie();
   // RIP view trie
   private ripTrie = new CommandTrie();
 
@@ -115,6 +124,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildOSPFAreaViewCommands();
     this.buildOSPFv3ViewCommands();
     this.buildIPSecSubViewCommands();
+    this.buildIKEv2SubViewCommands();
     this.buildACLSubViewCommands();
     this.buildRIPViewCommands();
   }
@@ -185,6 +195,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ipsec-policy':  return `[${host}-ipsec-policy-${this.selectedIPSecPolicy}-${this.selectedIPSecPolicySeq}]`;
       case 'acl-basic':    return `[${host}-acl-basic-${this.selectedACLName || this.selectedACLNumber}]`;
       case 'acl-advanced': return `[${host}-acl-adv-${this.selectedACLName || this.selectedACLNumber}]`;
+      case 'ikev2-proposal': return `[${host}-ikev2-proposal-${this.selectedIPSecProposal}]`;
+      case 'ikev2-policy':   return `[${host}-ikev2-policy-${this.selectedIPSecPolicy}]`;
+      case 'ikev2-keyring':  return `[${host}-ikev2-keyring-${this.selectedIKEPeer}]`;
+      case 'ikev2-keyring-peer': return `[${host}-ikev2-keyring-peer-${this.selectedIPSecProposal}]`;
+      case 'ikev2-profile':  return `[${host}-ikev2-profile-${this.selectedIPSecProposal}]`;
       default:           return `<${host}>`;
     }
   }
@@ -309,6 +324,21 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.selectedACLMode = null;
         this.selectedACLName = null;
         return '';
+      case 'ikev2-proposal':
+      case 'ikev2-policy':
+      case 'ikev2-profile':
+        this.mode = 'system';
+        this.selectedIPSecProposal = null;
+        this.selectedIPSecPolicy = null;
+        return '';
+      case 'ikev2-keyring':
+        this.mode = 'system';
+        this.selectedIKEPeer = null;
+        return '';
+      case 'ikev2-keyring-peer':
+        this.mode = 'ikev2-keyring';
+        this.selectedIPSecProposal = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -354,6 +384,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ipsec-policy': return this.ipsecPolicyTrie;
       case 'acl-basic': return this.aclBasicTrie;
       case 'acl-advanced': return this.aclAdvancedTrie;
+      case 'ikev2-proposal': return this.ikev2ProposalTrie;
+      case 'ikev2-policy': return this.ikev2PolicyTrie;
+      case 'ikev2-keyring': return this.ikev2KeyringTrie;
+      case 'ikev2-keyring-peer': return this.ikev2KeyringPeerTrie;
+      case 'ikev2-profile': return this.ikev2ProfileTrie;
       default: return this.userTrie;
     }
   }
@@ -550,6 +585,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildHuaweiIKEPeerCommands(this.ikePeerTrie, this);
     buildHuaweiIPSecProposalCommands(this.ipsecProposalTrie, this);
     buildHuaweiIPSecPolicyCommands(this.ipsecPolicyTrie, this);
+  }
+
+  // ─── IKEv2 Sub-Views ─────────────────────────────────────────
+
+  private buildIKEv2SubViewCommands(): void {
+    buildHuaweiIKEv2ProposalCommands(this.ikev2ProposalTrie, this);
+    buildHuaweiIKEv2PolicyCommands(this.ikev2PolicyTrie, this);
+    buildHuaweiIKEv2KeyringCommands(this.ikev2KeyringTrie, this);
+    buildHuaweiIKEv2KeyringPeerCommands(this.ikev2KeyringPeerTrie, this);
+    buildHuaweiIKEv2ProfileCommands(this.ikev2ProfileTrie, this);
   }
 
   // ─── ACL Sub-Views ──────────────────────────────────────────

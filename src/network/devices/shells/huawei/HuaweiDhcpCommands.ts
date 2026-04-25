@@ -119,6 +119,13 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     getRouter()._getDHCPServerInternal().configurePoolDomain(ctx.getSelectedPool()!, args[0]);
     return '';
   });
+
+  trie.registerGreedy('denied-mac', 'Deny DHCP by MAC address', (args) => {
+    if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
+    const pool = getRouter()._getDHCPServerInternal().getPool(ctx.getSelectedPool()!);
+    if (pool) pool.denyPatterns.push(args[0]);
+    return '';
+  });
 }
 
 // ─── DHCP Display Commands ───────────────────────────────────────────

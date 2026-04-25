@@ -1045,3 +1045,450 @@ describe('Batch 41: IPSec policy detail in current-config', () => {
     expect(cfg).toContain('proposal PROP1');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 42: OSPF show/display remaining parity (border-routers, statistics, route ospf)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 42: OSPF display remaining parity', () => {
+  it('should display ospf abr-asbr (border routers)', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ospf abr-asbr');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ospf statistics', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ospf statistics');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ip routing-table protocol ospf', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ip routing-table protocol ospf');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ospf vlink', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ospf vlink');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 43: OSPF interface remaining (frame-relay, ip routing)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 43: OSPF config remaining', () => {
+  it('should accept ip routing in system view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ip routing');
+    expect(result).toBe('');
+  });
+
+  it('should accept ipv6 unicast-routing equivalent', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ipv6');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 44: IPSec SA global config remaining (ESN, global lifetime display)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 44: IPSec global SA config', () => {
+  it('should set global ipsec sa lifetime seconds', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ipsec sa global-duration time-based 3600');
+    expect(result).toBe('');
+  });
+
+  it('should set global ipsec sa lifetime kilobytes', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ipsec sa global-duration traffic-based 4096');
+    expect(result).toBe('');
+  });
+
+  it('should display ipsec statistics', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ipsec statistics');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 45: IPSec security-policy (SPD) parity
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 45: IPSec security-policy', () => {
+  it('should create ipsec security-policy', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ipsec security-policy TESTPOL');
+    expect(result).toBe('');
+  });
+
+  it('should display ipsec security-policy', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ipsec security-policy');
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 46: Cisco config-if commands parity (no interface, no ip address)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 46: Interface config commands parity', () => {
+  it('should switch interfaces from within interface view', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    const result = await r.executeCommand('interface GE0/0/1');
+    expect(result).toBe('');
+    const result2 = await r.executeCommand('ip address 10.0.1.1 255.255.255.0');
+    expect(result2).toBe('');
+  });
+
+  it('should support no description on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    await r.executeCommand('description Test Interface');
+    const result = await r.executeCommand('undo description');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 47: ACL interface parity (display show access-lists equivalent)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 47: ACL show equivalence', () => {
+  it('should display acl 2000 with rules', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('acl 2000');
+    await r.executeCommand('rule permit source 192.168.0.0 0.0.0.255');
+    await r.executeCommand('rule deny source 10.0.0.0 0.0.0.255');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('display acl 2000');
+    expect(result).toContain('Basic ACL 2000');
+    expect(result).toContain('permit');
+    expect(result).toContain('deny');
+    expect(result).toContain('rule 0');
+    expect(result).toContain('rule 5');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 48: IKEv2 equivalents — Huawei ike v2 proposal/profile
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 48: IKEv2 equivalents', () => {
+  it('should create ike v2 proposal', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ike v2 proposal MYPROP');
+    expect(result).toBe('');
+  });
+
+  it('should configure encryption in ike v2 proposal', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 proposal MYPROP');
+    const result = await r.executeCommand('encryption-algorithm aes-256');
+    expect(result).toBe('');
+  });
+
+  it('should create ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ike v2 profile MYPROF');
+    expect(result).toBe('');
+  });
+
+  it('should configure match in ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 profile MYPROF');
+    const result = await r.executeCommand('match remote identity address 10.0.0.1');
+    expect(result).toBe('');
+  });
+
+  it('should create ike v2 keyring', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ike v2 keyring MYKR');
+    expect(result).toBe('');
+  });
+
+  it('should configure peer in ike v2 keyring', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 keyring MYKR');
+    const result = await r.executeCommand('peer SITE1');
+    expect(result).toBe('');
+  });
+
+  it('should remove ike v2 proposal', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 proposal MYPROP');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('undo ike v2 proposal MYPROP');
+    expect(result).toBe('');
+  });
+
+  it('should display ike v2 proposal', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ike v2 proposal');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ike v2 profile');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should display ike v2 sa', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ike v2 sa');
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 49: IKEv2 sub-mode commands (keyring peer, profile auth)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 49: IKEv2 sub-mode commands', () => {
+  it('should set address on ike v2 keyring peer', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 keyring MYKR');
+    await r.executeCommand('peer SITE1');
+    const result = await r.executeCommand('address 10.0.0.2');
+    expect(result).toBe('');
+  });
+
+  it('should set pre-shared-key on ike v2 keyring peer', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 keyring MYKR');
+    await r.executeCommand('peer SITE1');
+    const result = await r.executeCommand('pre-shared-key cisco123');
+    expect(result).toBe('');
+  });
+
+  it('should set authentication local in ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 profile MYPROF');
+    const result = await r.executeCommand('authentication-method local pre-share');
+    expect(result).toBe('');
+  });
+
+  it('should set authentication remote in ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 profile MYPROF');
+    const result = await r.executeCommand('authentication-method remote pre-share');
+    expect(result).toBe('');
+  });
+
+  it('should set keyring in ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 profile MYPROF');
+    const result = await r.executeCommand('keyring MYKR');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 50: ESN, no arp, ip forward-protocol udp parity
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 50: Misc Cisco parity commands', () => {
+  it('should support ipsec sa esn enable', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ipsec sa esn enable');
+    expect(result).toBe('');
+  });
+
+  it('should support undo ipsec sa esn', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('undo ipsec sa esn');
+    expect(result).toBe('');
+  });
+
+  it('should support undo arp on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('arp static 10.0.0.5 aa-bb-cc-dd-ee-ff');
+    const result = await r.executeCommand('undo arp 10.0.0.5');
+    expect(result).toBe('');
+  });
+
+  it('should support ip forward-protocol udp on interface', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('interface GE0/0/0');
+    const result = await r.executeCommand('ip forward-protocol udp 67');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 51: OSPF view missing commands (auto-cost, max-lsa, log equiv)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 51: OSPF view remaining equivalents', () => {
+  it('should support ospf max-lsa equivalent (lsa-originate-count)', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('lsa-originate-count 5000');
+    expect(result).toBe('');
+  });
+
+  it('should support ospf log-adjacency-changes equivalent (log-peer-change)', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('log-peer-change');
+    expect(result).toBe('');
+  });
+
+  it('should support ospf auto-cost equivalent (bandwidth-reference)', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('bandwidth-reference 1000');
+    expect(result).toBe('');
+  });
+
+  it('should support ospf stub-router (max-metric equivalent)', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ospf 1');
+    const result = await r.executeCommand('stub-router on-startup 300');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 52: DHCP client-identifier deny equivalent
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 52: DHCP advanced commands', () => {
+  it('should support dhcp server denied-mac in pool', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ip pool TESTPOOL');
+    await r.executeCommand('network 192.168.1.0 mask 255.255.255.0');
+    const result = await r.executeCommand('denied-mac aa-bb-cc-dd-ee-ff');
+    expect(result).toBe('');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 53: IKEv2 display and clear commands
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 53: IKEv2 display and clear', () => {
+  it('should display ike v2 sa verbose', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ike v2 sa verbose');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should reset ike v2 sa', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('reset ike v2 sa');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should support debugging ike v2', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('debugging ike v2');
+    expect(typeof result).toBe('string');
+  });
+
+  it('should support undo debugging ike v2', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('undo debugging ike v2');
+    expect(typeof result).toBe('string');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 54: IKEv2 policy, undo profile/keyring
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 54: IKEv2 policy and removal', () => {
+  it('should create ike v2 policy', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    const result = await r.executeCommand('ike v2 policy MYPOL');
+    expect(result).toBe('');
+  });
+
+  it('should configure proposal in ike v2 policy', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 policy MYPOL');
+    const result = await r.executeCommand('proposal MYPROP');
+    expect(result).toBe('');
+  });
+
+  it('should remove ike v2 profile', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 profile MYPROF');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('undo ike v2 profile MYPROF');
+    expect(result).toBe('');
+  });
+
+  it('should remove ike v2 keyring', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 keyring MYKR');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('undo ike v2 keyring MYKR');
+    expect(result).toBe('');
+  });
+
+  it('should remove ike v2 policy', async () => {
+    const r = new HuaweiRouter('R1');
+    await r.executeCommand('system-view');
+    await r.executeCommand('ike v2 policy MYPOL');
+    await r.executeCommand('quit');
+    const result = await r.executeCommand('undo ike v2 policy MYPOL');
+    expect(result).toBe('');
+  });
+
+  it('should display ike v2 policy', async () => {
+    const r = new HuaweiRouter('R1');
+    const result = await r.executeCommand('display ike v2 policy');
+    expect(typeof result).toBe('string');
+  });
+});
