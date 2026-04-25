@@ -710,3 +710,122 @@ describe('Batch 11: NAT-T Keepalive Interval Parity', () => {
     expect(engine.getNATKeepalive()).toBe(20);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 12: Missing Display/Show Commands
+//
+// Cisco commands with no Huawei equivalent:
+//   show crypto isakmp       → display ike global-config
+//   show crypto session      → display ipsec session
+//   show crypto isakmp key   → display ike pre-shared-key
+//   show crypto dynamic-map  → display ipsec dynamic-policy
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 12: Missing Display Commands Parity', () => {
+
+  it('display ike global-config should return IKE global settings', async () => {
+    const h = new HuaweiRouter('R1');
+    await h.executeCommand('system-view');
+    await h.executeCommand('ike peer P1');
+    await h.executeCommand('pre-shared-key simple test123');
+    await h.executeCommand('remote-address 10.0.0.2');
+    await h.executeCommand('quit');
+    await h.executeCommand('return');
+
+    const result = await h.executeCommand('display ike global-config');
+    expect(result).not.toContain('%');
+    expect(result).not.toContain('Invalid');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('display ike global-config should match Cisco show crypto isakmp', async () => {
+    const cisco = new CiscoRouter('R-C');
+    const huawei = new HuaweiRouter('R-H');
+
+    await cisco.executeCommand('enable');
+    await cisco.executeCommand('configure terminal');
+    await cisco.executeCommand('crypto isakmp policy 10');
+    await cisco.executeCommand('encryption aes 256');
+    await cisco.executeCommand('hash sha256');
+    await cisco.executeCommand('authentication pre-share');
+    await cisco.executeCommand('group 14');
+    await cisco.executeCommand('exit');
+    await cisco.executeCommand('end');
+
+    await huawei.executeCommand('system-view');
+    await huawei.executeCommand('ike proposal 10');
+    await huawei.executeCommand('encryption-algorithm aes-256');
+    await huawei.executeCommand('authentication-algorithm sha2-256');
+    await huawei.executeCommand('authentication-method pre-share');
+    await huawei.executeCommand('dh group14');
+    await huawei.executeCommand('quit');
+    await huawei.executeCommand('return');
+
+    const ciscoResult = await cisco.executeCommand('show crypto isakmp');
+    const huaweiResult = await huawei.executeCommand('display ike global-config');
+
+    expect(ciscoResult).not.toContain('%');
+    expect(huaweiResult).not.toContain('%');
+    expect(huaweiResult.length).toBeGreaterThan(0);
+  });
+
+  it('display ipsec session should return session information', async () => {
+    const h = new HuaweiRouter('R1');
+    await h.executeCommand('system-view');
+    await h.executeCommand('ike peer P1');
+    await h.executeCommand('pre-shared-key simple test123');
+    await h.executeCommand('remote-address 10.0.0.2');
+    await h.executeCommand('quit');
+    await h.executeCommand('return');
+
+    const result = await h.executeCommand('display ipsec session');
+    expect(result).not.toContain('%');
+    expect(result).not.toContain('Invalid');
+  });
+
+  it('display ike pre-shared-key should show configured keys', async () => {
+    const h = new HuaweiRouter('R1');
+    await h.executeCommand('system-view');
+    await h.executeCommand('ike peer P1');
+    await h.executeCommand('pre-shared-key simple secretkey');
+    await h.executeCommand('remote-address 10.0.0.2');
+    await h.executeCommand('quit');
+    await h.executeCommand('return');
+
+    const result = await h.executeCommand('display ike pre-shared-key');
+    expect(result).not.toContain('%');
+    expect(result).not.toContain('Invalid');
+  });
+
+  it('display ipsec dynamic-policy should show dynamic maps', async () => {
+    const h = new HuaweiRouter('R1');
+    const result = await h.executeCommand('display ipsec dynamic-policy');
+    expect(result).not.toContain('%');
+    expect(result).not.toContain('Invalid');
+  });
+
+  it('display commands should delegate to same engine methods as Cisco', async () => {
+    const cisco = new CiscoRouter('R-C');
+    const huawei = new HuaweiRouter('R-H');
+
+    await cisco.executeCommand('enable');
+    await cisco.executeCommand('configure terminal');
+    await cisco.executeCommand('crypto isakmp key mykey address 10.0.0.2');
+    await cisco.executeCommand('end');
+
+    await huawei.executeCommand('system-view');
+    await huawei.executeCommand('ike peer P1');
+    await huawei.executeCommand('pre-shared-key simple mykey');
+    await huawei.executeCommand('remote-address 10.0.0.2');
+    await huawei.executeCommand('quit');
+    await huawei.executeCommand('return');
+
+    const cEngine = (cisco as any)._getIPSecEngineInternal();
+    const hEngine = (huawei as any)._getIPSecEngineInternal();
+
+    expect(hEngine.showCryptoSession()).toBe(cEngine.showCryptoSession());
+    expect(hEngine.showCryptoISAKMP()).toBe(cEngine.showCryptoISAKMP());
+    expect(hEngine.showCryptoISAKMPKey()).toBe(cEngine.showCryptoISAKMPKey());
+    expect(hEngine.showCryptoDynamicMap()).toBe(cEngine.showCryptoDynamicMap());
+  });
+});

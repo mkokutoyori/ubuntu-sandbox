@@ -911,6 +911,30 @@ export function registerHuaweiIPSecDisplayCommands(
     return e.showSecurityPolicy();
   });
 
+  trie.register('display ike global-config', 'Display IKE global configuration', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKE configuration.';
+    return e.showCryptoISAKMP();
+  });
+
+  trie.register('display ipsec session', 'Display IPSec session status', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IPSec sessions.';
+    return e.showCryptoSession();
+  });
+
+  trie.register('display ike pre-shared-key', 'Display IKE pre-shared keys', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKE pre-shared keys configured.';
+    return e.showCryptoISAKMPKey();
+  });
+
+  trie.register('display ipsec dynamic-policy', 'Display IPSec dynamic policies', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No dynamic IPSec policies.';
+    return e.showCryptoDynamicMap();
+  });
+
   // ── reset commands (privileged) ────────────────────────────────
 
   trie.register('reset ike sa', 'Clear all IKE SAs', () => {
