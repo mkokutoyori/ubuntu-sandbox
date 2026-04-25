@@ -18,6 +18,7 @@ import type { WindowsProcessManager } from './WindowsProcessManager';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
+  parseTable, parseKeyValueBlocks,
   type PSObject, type PipelineInput,
 } from './PSPipeline';
 import { psGetProcess, psStopProcess, buildDynamicProcessObjects } from './PSProcessCmdlets';
@@ -108,12 +109,42 @@ export interface PSDeviceContext {
 
 // ─── PowerShell Executor ──────────────────────────────────────────
 
+// ─── Structured PS object types (ACL, rule) ──────────────────────
+
+interface PSAclEntry { principal: string; permission: string; ruleType: 'Allow' | 'Deny' }
+
+interface PSAclObj {
+  kind: 'acl';
+  path: string;
+  rules: PSAclEntry[];
+  protected: boolean;
+}
+
+interface PSRuleObj {
+  kind: 'rule';
+  principal: string;
+  permission: string;
+  ruleType: 'Allow' | 'Deny';
+}
+
+type PSObjectVar = PSAclObj | PSRuleObj;
+
 export class PowerShellExecutor {
   private cwd: string;
   private device: PSDeviceContext;
   private commandHistory: string[];
   private registry: PSRegistryProvider;
   private eventLog: PSEventLogProvider;
+  /** Session variables: $name → string value */
+  private sessionVars: Map<string, string> = new Map();
+  /** Session environment overrides (Set-Item Env:X) */
+  private sessionEnv: Map<string, string> = new Map();
+  /** Structured PS objects (ACL, rule, etc.) keyed by variable name (lowercase) */
+  private sessionObjects: Map<string, PSObjectVar> = new Map();
+  /** Error log for $Error[n].Exception.Message */
+  private errorList: string[] = [];
+  /** Defined functions: name → { params, body } */
+  private sessionFunctions: Map<string, { params: string[]; body: string }> = new Map();
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -147,12 +178,251 @@ export class PowerShellExecutor {
     const trimmed = cmdline.trim();
     if (!trimmed) return '';
 
-    // Handle pipeline
-    if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
-      return this.executePipeline(trimmed);
+    // Handle semicolon-separated statements (outside of strings/braces)
+    const stmts = this.splitStatements(trimmed);
+    if (stmts.length > 1) {
+      const results: string[] = [];
+      for (const stmt of stmts) {
+        const r = await this.executeSingleStatement(stmt.trim());
+        if (r !== null && r !== '') results.push(r);
+      }
+      return results.join('\n');
     }
 
-    return this.executeSingle(trimmed);
+    return this.executeSingleStatement(trimmed);
+  }
+
+  private splitStatements(cmdline: string): string[] {
+    const parts: string[] = [];
+    let cur = '', depth = 0, inSingle = false, inDouble = false;
+    for (let i = 0; i < cmdline.length; i++) {
+      const ch = cmdline[i];
+      if (ch === "'" && !inDouble) { inSingle = !inSingle; cur += ch; continue; }
+      if (ch === '"' && !inSingle) { inDouble = !inDouble; cur += ch; continue; }
+      if (!inSingle && !inDouble) {
+        if (ch === '{' || ch === '(') { depth++; cur += ch; continue; }
+        if (ch === '}' || ch === ')') { depth--; cur += ch; continue; }
+        if ((ch === ';' || ch === '\n') && depth === 0) {
+          if (cur.trim()) parts.push(cur.trim()); cur = ''; continue;
+        }
+      }
+      cur += ch;
+    }
+    if (cur.trim()) parts.push(cur.trim());
+    return parts.length ? parts : [cmdline];
+  }
+
+  private async executeSingleStatement(trimmed: string): Promise<string | null> {
+    // try/catch block: try { ... } catch { ... }
+    const tryCatchMatch = trimmed.match(/^try\s*\{([\s\S]+?)\}\s*catch\s*\{([\s\S]+?)\}$/i);
+    if (tryCatchMatch) {
+      const tryBody = tryCatchMatch[1].trim();
+      const catchBody = tryCatchMatch[2].trim();
+      const tryResult = await this.execute(tryBody);
+      // Treat any non-empty error-like result (or -ErrorAction Stop) as a terminating error
+      const isErrorResult = tryResult && /:\s*(Cannot|Access|not found|does not exist|denied)/i.test(tryResult);
+      if (isErrorResult) {
+        const errMsg = tryResult ?? '';
+        const msgPart = errMsg.replace(/^[\w-]+\s*:\s*/s, '').split('\n')[0];
+        this.sessionVars.set('_', msgPart);
+        const processedCatch = catchBody
+          .replace(/\$\(\$_\.Exception\.Message\)/g, msgPart)
+          .replace(/\$_\.Exception\.Message/g, msgPart);
+        return this.execute(processedCatch);
+      }
+      return tryResult;
+    }
+
+    // Function definition: function Name { param(...) body }
+    const funcDefMatch = trimmed.match(/^function\s+(\w+)\s*\{([\s\S]*)\}$/i);
+    if (funcDefMatch) {
+      const funcName = funcDefMatch[1].toLowerCase();
+      const body = funcDefMatch[2].trim();
+      const paramMatch = body.match(/^param\s*\(([^)]*)\)([\s\S]*)$/i);
+      let params: string[] = [];
+      let funcBody = body;
+      if (paramMatch) {
+        params = paramMatch[1].split(',').map(p => p.trim().replace(/^\$/, '').toLowerCase()).filter(Boolean);
+        funcBody = paramMatch[2].trim();
+      }
+      this.sessionFunctions.set(funcName, { params, body: funcBody });
+      return '';
+    }
+
+    // Method call on object variable: $var.Method(args)
+    const methodCallMatch = trimmed.match(/^\$(\w+)\.(\w+)\(([^)]*)\)$/i);
+    if (methodCallMatch) {
+      const varName = methodCallMatch[1].toLowerCase();
+      const method = methodCallMatch[2].toLowerCase();
+      const rawArgs = methodCallMatch[3];
+      const result = this.handleObjectMethodCall(varName, method, rawArgs);
+      if (result !== null) return result;
+    }
+
+    // Variable assignment: $name = expr
+    const assignMatch = trimmed.match(/^\$(\w+)\s*=\s*(.+)$/s);
+    if (assignMatch) {
+      const varName = assignMatch[1].toLowerCase();
+      const expr = assignMatch[2].trim();
+      // Try to create a structured object
+      const obj = this.tryCreateObject(expr);
+      if (obj !== null) {
+        this.sessionObjects.set(varName, obj);
+        this.sessionVars.set(varName, '');
+        return '';
+      }
+      // Handle Get-Acl assignment → create ACL object
+      const getAclMatch = expr.match(/^Get-Acl\s+(.+)$/i);
+      if (getAclMatch) {
+        const path = getAclMatch[1].trim().replace(/^["']|["']$/g, '');
+        const fs = this.device.getFileSystem();
+        const absPath = fs.normalizePath(path, this.cwd);
+        const existingAcl = fs.getACL(absPath);
+        const rules: PSAclEntry[] = existingAcl.map(a => ({
+          principal: a.principal,
+          permission: a.permissions.join(', '),
+          ruleType: a.type === 'allow' ? 'Allow' : 'Deny',
+        }));
+        this.sessionObjects.set(varName, { kind: 'acl', path: absPath, rules, protected: false });
+        this.sessionVars.set(varName, '');
+        return '';
+      }
+      let value: string;
+      if ((expr.startsWith('"') && expr.endsWith('"')) ||
+          (expr.startsWith("'") && expr.endsWith("'"))) {
+        value = expr.slice(1, -1);
+      } else {
+        const result = await this.executeSingle(this.substituteVars(expr));
+        value = result?.trim() ?? '';
+      }
+      this.sessionVars.set(varName, value);
+      return '';
+    }
+
+    // Substitute session variables in the statement
+    const substituted = this.substituteVars(trimmed);
+
+    // Check if this is a defined function call (use tokenize to preserve quoted args)
+    const words = this.tokenize(substituted.trim());
+    const maybeFunc = words[0]?.toLowerCase() ?? '';
+    if (this.sessionFunctions.has(maybeFunc)) {
+      return this.callSessionFunction(maybeFunc, words.slice(1));
+    }
+
+    // Handle pipeline
+    if (substituted.includes('|') && !substituted.match(/[>]/)) {
+      return this.executePipeline(substituted);
+    }
+    return this.executeSingle(substituted);
+  }
+
+  /** Try to parse a New-Object call into a structured PSObjectVar */
+  private tryCreateObject(expr: string): PSObjectVar | null {
+    const newObjMatch = expr.match(/^New-Object\s+(.+)$/i);
+    if (!newObjMatch) return null;
+    const rest = newObjMatch[1].trim();
+
+    // FileSystemAccessRule("principal", "permission", "type")
+    const fsArMatch = rest.match(/^System\.Security\.AccessControl\.FileSystemAccessRule\(([^)]+)\)$/i);
+    if (fsArMatch) {
+      const parts = fsArMatch[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+      const principal = parts[0] ?? 'Everyone';
+      const permission = parts[1] ?? 'FullControl';
+      const ruleType = (parts[2] ?? 'Allow') as 'Allow' | 'Deny';
+      return { kind: 'rule', principal, permission, ruleType };
+    }
+
+    // FileSecurity (empty ACL)
+    if (/^System\.Security\.AccessControl\.FileSecurity$/i.test(rest)) {
+      return { kind: 'acl', path: '', rules: [], protected: false };
+    }
+
+    return null;
+  }
+
+  /** Handle $var.Method(args) for ACL objects */
+  private handleObjectMethodCall(varName: string, method: string, rawArgs: string): string | null {
+    const obj = this.sessionObjects.get(varName);
+    if (!obj) return null;
+
+    if (obj.kind === 'acl') {
+      if (method === 'setaccessrule' || method === 'addaccessrule') {
+        // Arg is $ruleName → look up the rule object
+        const ruleVarName = rawArgs.trim().replace(/^\$/, '').toLowerCase();
+        const ruleObj = this.sessionObjects.get(ruleVarName);
+        if (ruleObj && ruleObj.kind === 'rule') {
+          // Remove existing rule for same principal+type if SetAccessRule
+          if (method === 'setaccessrule') {
+            obj.rules = obj.rules.filter(
+              r => !(r.principal.toLowerCase() === ruleObj.principal.toLowerCase() && r.ruleType === ruleObj.ruleType)
+            );
+          }
+          obj.rules.push({ principal: ruleObj.principal, permission: ruleObj.permission, ruleType: ruleObj.ruleType });
+        }
+        return '';
+      }
+      if (method === 'setaccessruleprotection') {
+        const argParts = rawArgs.split(',').map(s => s.trim().toLowerCase());
+        obj.protected = argParts[0] === '$true' || argParts[0] === 'true';
+        return '';
+      }
+      if (method === 'removeaccessrule') {
+        const ruleVarName = rawArgs.trim().replace(/^\$/, '').toLowerCase();
+        const ruleObj = this.sessionObjects.get(ruleVarName);
+        if (ruleObj && ruleObj.kind === 'rule') {
+          obj.rules = obj.rules.filter(r => r.principal.toLowerCase() !== ruleObj.principal.toLowerCase());
+        }
+        return '';
+      }
+    }
+    return null;
+  }
+
+  /** Call a user-defined function with named/positional args */
+  private async callSessionFunction(name: string, args: string[]): Promise<string | null> {
+    const fn = this.sessionFunctions.get(name);
+    if (!fn) return null;
+
+    // Parse named args: -ParamName value
+    const localVars = new Map<string, string>(this.sessionVars);
+    const savedVars = new Map<string, string>(this.sessionVars);
+    const parsed = new Map<string, string>();
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].startsWith('-') && i + 1 < args.length) {
+        const pname = args[i].slice(1).toLowerCase();
+        parsed.set(pname, args[i + 1].replace(/^["']|["']$/g, ''));
+        i++;
+      }
+    }
+    // Bind params
+    for (const param of fn.params) {
+      if (parsed.has(param)) this.sessionVars.set(param, parsed.get(param)!);
+    }
+
+    // Execute body as a multi-statement script
+    const result = await this.execute(fn.body);
+
+    // Restore variables (simple scope)
+    this.sessionVars = savedVars;
+
+    return result;
+  }
+
+  /** Replace $varName with stored session variable values */
+  private substituteVars(cmdline: string): string {
+    return cmdline.replace(/\$\((\$\w+)\)/g, (_, inner) => {
+      const name = inner.slice(1).toLowerCase();
+      return this.sessionVars.get(name) ?? inner;
+    }).replace(/\$(\w+)/g, (match, name) => {
+      const lower = name.toLowerCase();
+      // Don't substitute reserved variables — handled by executeSingle
+      if (['psversiontable','host','pwd','true','false','null','pid','_'].includes(lower)) return match;
+      if (lower.startsWith('env:')) return match;
+      if (lower.startsWith('error')) return match;
+      // Don't substitute object variables — they're referenced by name in cmdlet args
+      if (this.sessionObjects.has(lower)) return match;
+      return this.sessionVars.get(lower) ?? match;
+    });
   }
 
   // ─── Pipeline handling ──────────────────────────────────────────
@@ -161,11 +431,82 @@ export class PowerShellExecutor {
     const parts = this.splitPipeline(cmdline);
     if (parts.length < 2) return this.executeSingle(cmdline);
 
-    // Execute first command — try to get structured output
-    const firstOutput = await this.executeForPipeline(parts[0]);
-    const filters = parts.slice(1);
+    // Process pipeline stages left-to-right so intermediate transformations compose correctly
+    let currentOutput: PipelineInput = await this.executeForPipeline(parts[0]);
 
-    return runPipeline(firstOutput, filters);
+    for (let i = 1; i < parts.length; i++) {
+      const filter = parts[i].trim();
+      const filterCmdLower = filter.split(/\s+/)[0].toLowerCase();
+
+      // ForEach-Object with PS scriptblock
+      const foreachMatch = filter.match(/^(?:foreach-object|foreach|%)\s*\{\s*([\s\S]+?)\s*\}$/i);
+      if (foreachMatch) {
+        const scriptBody = foreachMatch[1].trim();
+        // Simple $_.Property accessor on PSObjects → delegate to PSPipeline for correct property lookup
+        const propAccessMatch = Array.isArray(currentOutput) && scriptBody.match(/^\$_\.(\w+)$/i);
+        if (propAccessMatch) {
+          currentOutput = runPipeline(currentOutput as PipelineInput, [filter]);
+          continue;
+        }
+        // Complex scriptblock: text-based substitution on string lines
+        const items = this.pipelineToLines(currentOutput);
+        const results: string[] = [];
+        for (const item of items) {
+          const cmd = scriptBody
+            .replace(/\$\(\$_\)/g, item)
+            .replace(/\$_(?=\W|$)/g, item);
+          const result = await this.executeSingle(cmd.trim());
+          if (result !== null && result !== '') results.push(result);
+        }
+        currentOutput = results.join('\n');
+        continue;
+      }
+
+      // Set-Content as pipeline sink — terminates the pipeline
+      if (filterCmdLower === 'set-content') {
+        const sinkArgs = this.tokenize(filter).slice(1);
+        const content = this.pipelineToContent(currentOutput);
+        return this.handleSetContentWithPiped(sinkArgs, content);
+      }
+
+      // Other filters (Select-Object, Where-Object, Format-*, etc.) — use PSPipeline
+      currentOutput = runPipeline(currentOutput, [filter]);
+    }
+
+    if (typeof currentOutput === 'string') return currentOutput || null;
+    return runPipeline(currentOutput as PipelineInput, []) || null;
+  }
+
+  private pipelineToLines(input: PipelineInput): string[] {
+    if (typeof input === 'string') {
+      return input.split('\n').filter(l => l.trim());
+    }
+    return (input as PSObject[]).map(o => {
+      const key = Object.keys(o)[0];
+      return key ? String(o[key] ?? '') : '';
+    }).filter(s => s !== '');
+  }
+
+  private pipelineToContent(input: PipelineInput): string {
+    if (typeof input === 'string') return input;
+    return (input as PSObject[]).map(o => {
+      const key = Object.keys(o)[0];
+      return key ? String(o[key] ?? '') : '';
+    }).join('\n');
+  }
+
+  private handleSetContentWithPiped(args: string[], content: string): string {
+    const fs = this.device.getFileSystem();
+    let path = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+    }
+    if (!path) return '';
+    const absPath = fs.normalizePath(path, this.cwd);
+    fs.createFile(absPath, content);
+    return '';
   }
 
   /**
@@ -201,8 +542,41 @@ export class PowerShellExecutor {
    * Execute a single command and return structured output (PSObject[])
    * when possible, for proper pipeline processing.
    */
+  private tryParseArrayLiteral(expr: string): string[] | null {
+    if (!expr.includes(',')) return null;
+    const parts: string[] = [];
+    let cur = '', inSingle = false, inDouble = false;
+    for (const ch of expr) {
+      if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+      if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+      if (ch === ',' && !inSingle && !inDouble) {
+        const t = cur.trim();
+        if (!t) return null;
+        parts.push(t);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.trim()) parts.push(cur.trim());
+    if (parts.length < 2) return null;
+    // Each part must be a simple value (no spaces, looks like a literal)
+    for (const p of parts) {
+      if (p.includes(' ') || p.startsWith('-')) return null;
+    }
+    return parts;
+  }
+
   private async executeForPipeline(cmd: string): Promise<PipelineInput> {
-    const cmdLower = cmd.trim().split(/\s+/)[0].toLowerCase();
+    const trimmedCmd = cmd.trim();
+
+    // Array literal: "a","b","c" or 1,2,3
+    const arrayItems = this.tryParseArrayLiteral(trimmedCmd);
+    if (arrayItems !== null) {
+      return arrayItems.map(item => ({ Line: item }));
+    }
+
+    const cmdLower = trimmedCmd.split(/\s+/)[0].toLowerCase();
 
     // Return structured data for known cmdlets
     switch (cmdLower) {
@@ -225,8 +599,101 @@ export class PowerShellExecutor {
 
   // ─── Single command execution ───────────────────────────────────
 
+  /** Tokenize a PS cmdline respecting single/double quotes. */
+  private tokenize(cmdline: string): string[] {
+    const tokens: string[] = [];
+    let cur = '', inSingle = false, inDouble = false;
+    for (let i = 0; i < cmdline.length; i++) {
+      const ch = cmdline[i];
+      if (ch === "'" && !inDouble) { inSingle = !inSingle; cur += ch; continue; }
+      if (ch === '"' && !inSingle) { inDouble = !inDouble; cur += ch; continue; }
+      if ((ch === ' ' || ch === '\t') && !inSingle && !inDouble) {
+        if (cur) { tokens.push(cur); cur = ''; }
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur) tokens.push(cur);
+    return tokens;
+  }
+
   private async executeSingle(cmdline: string): Promise<string | null> {
-    const parts = cmdline.split(/\s+/);
+    const trimmedLine = cmdline.trim();
+
+    // Quoted string literal: "hello" or 'hello' → output the unquoted value
+    if ((trimmedLine.startsWith('"') && trimmedLine.endsWith('"') && trimmedLine.length > 1) ||
+        (trimmedLine.startsWith("'") && trimmedLine.endsWith("'") && trimmedLine.length > 1)) {
+      return trimmedLine.slice(1, -1);
+    }
+
+    // $Error[n].Exception.Message
+    const errorAccessMatch = trimmedLine.match(/^\$Error\[(\d+)\]\.Exception\.Message$/i);
+    if (errorAccessMatch) {
+      const idx = parseInt(errorAccessMatch[1], 10);
+      const errStr = this.errorList[idx];
+      if (!errStr) return '';
+      const msgMatch = errStr.match(/^[\w-]+\s*:\s*(.+)$/s);
+      return msgMatch ? msgMatch[1].trim() : errStr;
+    }
+
+    // Parenthesized sub-expression: (Get-Content $Path) etc.
+    if (trimmedLine.startsWith('(') && trimmedLine.endsWith(')')) {
+      let depth = 0;
+      let closeIdx = -1;
+      for (let i = 0; i < trimmedLine.length; i++) {
+        if (trimmedLine[i] === '(') depth++;
+        else if (trimmedLine[i] === ')') { depth--; if (depth === 0) { closeIdx = i; break; } }
+      }
+      if (closeIdx === trimmedLine.length - 1) {
+        return this.executeSingle(trimmedLine.slice(1, -1).trim());
+      }
+    }
+
+    // Property accessor: (command).PropertyName
+    const propAccessMatch = trimmedLine.match(/^\((.+)\)\.(\w+)$/);
+    if (propAccessMatch) {
+      const innerCmd = propAccessMatch[1];
+      const propName = propAccessMatch[2];
+      const result = await this.executeSingle(innerCmd);
+      if (!result) return '';
+      const parsed = parseTable(result) ?? parseKeyValueBlocks(result);
+      if (parsed && parsed.length > 0) {
+        const obj = parsed[0];
+        const key = Object.keys(obj).find(k => k.toLowerCase() === propName.toLowerCase());
+        if (key !== undefined) {
+          const val = obj[key];
+          if (val === true) return 'True';
+          if (val === false) return 'False';
+          return String(val ?? '');
+        }
+      }
+      // Fallback: search for "PropName : Value" in the output
+      const kvMatch = result.match(new RegExp(`${propName}\\s*:\\s*(.+)`, 'i'));
+      if (kvMatch) return kvMatch[1].trim();
+      return '';
+    }
+
+    // [System.Environment]:: static method calls
+    const dotnetStaticMatch = trimmedLine.match(/^\[System\.Environment\]::(Set|Get)EnvironmentVariable\((.+)\)$/i);
+    if (dotnetStaticMatch) {
+      const method = dotnetStaticMatch[1].toLowerCase(); // 'set' or 'get'
+      const rawArgs = dotnetStaticMatch[2];
+      const argParts = rawArgs.split(',').map(a => a.trim().replace(/^["']|["']$/g, ''));
+      if (method === 'set') {
+        const [varName, value] = argParts;
+        if (value === '$null' || value === '' || value === 'null') {
+          this.sessionEnv.delete(varName.toUpperCase());
+        } else {
+          this.sessionEnv.set(varName.toUpperCase(), value);
+        }
+        return '';
+      } else {
+        const varName = argParts[0].toUpperCase();
+        return this.sessionEnv.get(varName) ?? this.resolveEnvVar(varName) ?? '';
+      }
+    }
+
+    const parts = this.tokenize(cmdline);
     const cmd = parts[0];
     const cmdLower = cmd.toLowerCase();
     const args = parts.slice(1);
@@ -255,9 +722,18 @@ export class PowerShellExecutor {
 
     // Get-ChildItem / ls / dir / gci
     if (cmdLower === 'get-childitem' || cmdLower === 'gci' || cmdLower === 'ls' || cmdLower === 'dir') {
-      const gciPath = args.filter(a => !a.startsWith('-')).join(' ');
-      if (gciPath && isRegistryPath(gciPath)) return this.registry.getChildItem(gciPath);
-      return this.formatGetChildItem(args.join(' '));
+      return this.handleGetChildItem(args);
+    }
+
+    // Set-Item (handles Env: drive)
+    if (cmdLower === 'set-item') {
+      return this.handleSetItem(args);
+    }
+
+    // ConvertTo-SecureString (return plaintext for simulation)
+    if (cmdLower === 'convertto-securestring') {
+      const value = args.find(a => !a.startsWith('-'));
+      return value?.replace(/^["']|["']$/g, '') ?? '';
     }
 
     // Set-Location / cd / sl / chdir
@@ -275,7 +751,7 @@ export class PowerShellExecutor {
 
     // Get-Content / cat / type / gc
     if (cmdLower === 'get-content' || cmdLower === 'gc' || cmdLower === 'cat' || cmdLower === 'type') {
-      return await this.device.executeCmdCommand('type ' + args.join(' '));
+      return this.handleGetContent(args);
     }
 
     // Set-Content / sc
@@ -290,12 +766,7 @@ export class PowerShellExecutor {
 
     // Remove-Item / ri / rm / rmdir / del
     if (cmdLower === 'remove-item' || cmdLower === 'ri' || cmdLower === 'rm' || cmdLower === 'del' || cmdLower === 'erase') {
-      const target = args.filter(a => !a.startsWith('-')).join(' ');
-      if (target && isRegistryPath(target)) {
-        const recurse = args.some(a => a === '-Recurse');
-        return this.registry.removeItem(target, recurse);
-      }
-      return await this.device.executeCmdCommand('del ' + target);
+      return this.handleRemoveItem(args);
     }
 
     // Get-ItemProperty / gp
@@ -352,14 +823,12 @@ export class PowerShellExecutor {
 
     // Copy-Item / cpi / copy / cp
     if (cmdLower === 'copy-item' || cmdLower === 'cpi' || cmdLower === 'copy' || cmdLower === 'cp') {
-      const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await this.device.executeCmdCommand('copy ' + nonFlags.join(' '));
+      return this.handleCopyItem(args);
     }
 
     // Move-Item / mi / move / mv
     if (cmdLower === 'move-item' || cmdLower === 'mi' || cmdLower === 'move' || cmdLower === 'mv') {
-      const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await this.device.executeCmdCommand('move ' + nonFlags.join(' '));
+      return this.handleMoveItem(args);
     }
 
     // Rename-Item / rni / ren
@@ -430,7 +899,76 @@ export class PowerShellExecutor {
 
     // Resolve-DnsName
     if (cmdLower === 'resolve-dnsname') {
-      return 'Resolve-DnsName: DNS resolution is not available in this simulation.';
+      const target = args.find(a => !a.startsWith('-')) ?? '';
+      if (target.toLowerCase() === 'localhost' || target === '127.0.0.1') {
+        return `\nName                                           Type   TTL   Section    IPAddress\n----                                           ----   ---   -------    ---------\nlocalhost                                      A      86400 Answer     127.0.0.1\n`;
+      }
+      return `\nName   : ${target}\nType   : A\nTTL    : 3600\nSection: Answer\nIPAddress: 192.168.1.1\n`;
+    }
+
+    // Get-Disk
+    if (cmdLower === 'get-disk') {
+      return [
+        '',
+        'Number Friendly Name                    OperationalStatus TotalSize PartitionStyle',
+        '------ -------------                    ----------------- --------- --------------',
+        '0      Microsoft Virtual Disk           Online                50 GB MBR',
+      ].join('\n');
+    }
+
+    // Get-Volume
+    if (cmdLower === 'get-volume') {
+      return [
+        '',
+        'DriveLetter FriendlyName   FileSystemType DriveType HealthStatus OperationalStatus SizeRemaining      Size',
+        '----------- ------------   -------------- --------- ------------ ----------------- -------------      ----',
+        'C           Windows        NTFS           Fixed     Healthy      OK                     15.2 GB   50.0 GB',
+        'D           Data           NTFS           Fixed     Healthy      OK                     45.0 GB   50.0 GB',
+      ].join('\n');
+    }
+
+    // Get-ScheduledTask
+    if (cmdLower === 'get-scheduledtask') {
+      const nameParam = args.find((a, i) => args[i - 1]?.toLowerCase() === '-taskname') || args.find(a => !a.startsWith('-'));
+      const tasks = [
+        { TaskName: 'GoogleUpdateTaskUser', TaskPath: '\\', State: 'Ready' },
+        { TaskName: 'OneDrive Standalone Update Task', TaskPath: '\\', State: 'Ready' },
+        { TaskName: '.NET Framework NGEN v4.0.30319', TaskPath: '\\Microsoft\\Windows\\.NET', State: 'Ready' },
+        { TaskName: 'SimTestTask', TaskPath: '\\', State: 'Ready' },
+      ];
+      const filtered = nameParam ? tasks.filter(t => t.TaskName.toLowerCase().includes(nameParam.toLowerCase())) : tasks;
+      const lines = ['', 'TaskPath                          TaskName                        State    ', '--------                          --------                        -----    '];
+      for (const t of filtered) {
+        lines.push(`${t.TaskPath.padEnd(34)}${t.TaskName.padEnd(32)}${t.State}`);
+      }
+      return lines.join('\n');
+    }
+
+    // Register-ScheduledTask
+    if (cmdLower === 'register-scheduledtask') {
+      const nameIdx = args.findIndex(a => a.toLowerCase() === '-taskname');
+      const name = nameIdx >= 0 ? args[nameIdx + 1]?.replace(/^["']|["']$/g, '') : 'Task';
+      return `\n\\${name}\n`;
+    }
+
+    // New-ScheduledTaskAction / New-ScheduledTaskTrigger
+    if (cmdLower === 'new-scheduledtaskaction' || cmdLower === 'new-scheduledtasktrigger') {
+      return '';
+    }
+
+    // Unregister-ScheduledTask
+    if (cmdLower === 'unregister-scheduledtask') {
+      return '';
+    }
+
+    // Set-Acl
+    if (cmdLower === 'set-acl') {
+      return this.handleSetAcl(args);
+    }
+
+    // New-Object (simplified stub — creates object via executeSingleStatement for $var = New-Object)
+    if (cmdLower === 'new-object') {
+      return '';
     }
 
     // Get-Date
@@ -685,6 +1223,8 @@ export class PowerShellExecutor {
   }
 
   resolveEnvVar(varName: string): string | null {
+    const upper = varName.toUpperCase();
+    if (this.sessionEnv.has(upper)) return this.sessionEnv.get(upper)!;
     const currentUser = this.device.getUserManager().currentUser;
     const u = currentUser || 'User';
     const envMap: Record<string, string> = {
@@ -720,33 +1260,116 @@ export class PowerShellExecutor {
     return envMap[varName.toUpperCase()] ?? null;
   }
 
-  private async handleSetContent(args: string[]): Promise<string> {
-    let path = '', value = '';
+  private handleGetContent(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    let path = '';
+    let tail: number | undefined, totalCount: number | undefined;
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-      else if (args[i] === '-Value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (!path) { path = args[i]; }
+      const a = args[i].toLowerCase();
+      if ((a === '-path' || a === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-tail' && args[i + 1]) { tail = parseInt(args[++i], 10); }
+      else if ((a === '-totalcount' || a === '-head' || a === '-first') && args[i + 1]) { totalCount = parseInt(args[++i], 10); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
     }
-    if (path && value) {
-      return await this.device.executeCmdCommand(`echo ${value} > ${path}`);
+    if (!path) return '';
+    const absPath = fs.normalizePath(path, this.cwd);
+
+    // ACL enforcement: protected files require explicit Allow ACE covering the current user
+    if (fs.isAclProtected(absPath)) {
+      const mgr = this.device.getUserManager();
+      if (!mgr.isCurrentUserAdmin()) {
+        const acl = fs.getACL(absPath);
+        const user = mgr.currentUser.toLowerCase();
+        const isAdmin = mgr.isCurrentUserAdmin();
+        const hasAllow = acl.some(ace => {
+          if (ace.type !== 'allow') return false;
+          const p = ace.principal.toLowerCase();
+          if (p === 'everyone') return true;
+          if (p === user || p.endsWith('\\' + user)) return true;
+          if ((p === 'administrators' || p === 'builtin\\administrators') && isAdmin) return true;
+          if ((p === 'users' || p === 'builtin\\users') && !isAdmin) return true;
+          return false;
+        });
+        if (!hasAllow) {
+          const errMsg = `Get-Content : Access to the path '${absPath}' is denied.`;
+          this.errorList.unshift(errMsg);
+          return errMsg;
+        }
+      }
     }
+
+    const r = fs.readFile(absPath);
+    if (!r.ok) return `Get-Content : Cannot find path '${path}' because it does not exist.`;
+    const content = r.content ?? '';
+    if (!content) return '';
+    const lines = content.split(/\r?\n/);
+    if (tail !== undefined) return lines.slice(-tail).join('\n');
+    if (totalCount !== undefined) return lines.slice(0, totalCount).join('\n');
+    return content;
+  }
+
+  private handleSetContent(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    let path = '', value = '';
+    const positionals: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-value' && args[i + 1]) {
+        const raw = args[++i];
+        const stripped = raw.replace(/^["']|["']$/g, '');
+        const items = this.tryParseArrayLiteral(stripped);
+        value = items ? items.join('\n') : stripped;
+      }
+      else if (!args[i].startsWith('-')) {
+        const raw = args[i];
+        // Try array parse BEFORE stripping quotes (to handle "a","b" correctly)
+        const items = this.tryParseArrayLiteral(raw);
+        if (items) { positionals.push(...items); }
+        else { positionals.push(raw.replace(/^["']|["']$/g, '')); }
+      }
+    }
+    // Positional: first is path, rest are values joined by newlines
+    if (!path && positionals.length > 0) path = positionals[0];
+    if (!value && positionals.length > 1) value = positionals.slice(1).join('\n');
+    if (!path) return '';
+    const absPath = fs.normalizePath(path, this.cwd);
+    fs.createFile(absPath, value);
     return '';
   }
 
   private async handleNewItem(args: string[]): Promise<string> {
-    let itemType = 'File', path = '';
-    const force = args.some(a => a === '-Force');
+    const fs = this.device.getFileSystem();
+    let itemType = 'File', path = '', value = '';
+    const force = args.some(a => a.toLowerCase() === '-force');
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-ItemType' && args[i + 1]) { itemType = args[++i]; }
-      else if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-      else if (args[i] === '-Name' && args[i + 1]) { path = args[++i]; }
-      else if (!args[i].startsWith('-') && !path) { path = args[i]; }
+      const a = args[i].toLowerCase();
+      if (a === '-itemtype' && args[i + 1]) { itemType = args[++i]; }
+      else if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-name' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
     }
     if (path && isRegistryPath(path)) return this.registry.newItem(path, force);
+    const absPath = fs.normalizePath(path, this.cwd);
     if (itemType.toLowerCase() === 'directory') {
-      return await this.device.executeCmdCommand('mkdir ' + path);
+      if (fs.exists(absPath)) {
+        return force ? '' : `New-Item : An item with the specified name ${absPath} already exists.`;
+      }
+      fs.mkdirp(absPath);
+      return '';
     }
-    return await this.device.executeCmdCommand('echo. > ' + path);
+    // File
+    const parentPath = absPath.substring(0, absPath.lastIndexOf('\\'));
+    if (parentPath && !fs.exists(parentPath)) {
+      if (force) { fs.mkdirp(parentPath); } else { return `New-Item : Could not find a part of the path '${path}'.`; }
+    }
+    if (fs.exists(absPath) && !force) {
+      return `New-Item : The file '${absPath}' already exists.`;
+    }
+    const result = fs.createFile(absPath, value);
+    if (!result.ok) return `New-Item : ${result.error}`;
+    return '';
   }
 
   private handleGetItemProperty(args: string[]): string {
@@ -787,6 +1410,173 @@ export class PowerShellExecutor {
     if (!path) return "Remove-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
     if (!isRegistryPath(path)) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     return this.registry.removeItemProperty(path, name);
+  }
+
+  // ─── Get-ChildItem with Filter/Recurse/Env: ──────────────────────
+
+  private handleGetChildItem(args: string[]): string {
+    let path = '', filter = '', recurse = false;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-filter' && args[i + 1]) { filter = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-recurse') { recurse = true; }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+    }
+
+    // Env: drive
+    if (path.toLowerCase() === 'env:' || path.toLowerCase() === 'env:\\') {
+      return this.formatGetChildItemEnv();
+    }
+
+    // Registry path
+    if (path && isRegistryPath(path)) return this.registry.getChildItem(path);
+
+    const fs = this.device.getFileSystem();
+    const absPath = fs.normalizePath(path || '.', this.cwd);
+
+    if (recurse) {
+      const allDirs = fs.listDirectoryRecursive(absPath);
+      const lines: string[] = [];
+      for (const { path: dirPath, entries } of allDirs) {
+        let filtered = entries;
+        if (filter) {
+          const rx = new RegExp('^' + filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+          filtered = entries.filter(e => rx.test(e.entry.name));
+        }
+        if (filtered.length === 0) continue;
+        lines.push('', `    Directory: ${dirPath}`, '', 'Mode                 LastWriteTime         Length Name', '----                 -------------         ------ ----');
+        for (const { entry } of filtered) {
+          const mode = this.formatPSMode(entry);
+          const mtime = this.formatPSDate(entry.mtime);
+          const length = entry.type === 'file' ? String(entry.size) : '';
+          lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
+        }
+      }
+      return lines.join('\n');
+    }
+
+    const entries = fs.listDirectory(absPath);
+    let filtered = entries;
+    if (filter) {
+      const rx = new RegExp('^' + filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+      filtered = entries.filter(e => rx.test(e.entry.name));
+    }
+    if (filtered.length === 0) return '';
+
+    const lines: string[] = ['', `    Directory: ${absPath}`, '', 'Mode                 LastWriteTime         Length Name', '----                 -------------         ------ ----'];
+    for (const { entry } of filtered) {
+      const mode = this.formatPSMode(entry);
+      const mtime = this.formatPSDate(entry.mtime);
+      const length = entry.type === 'file' ? String(entry.size) : '';
+      lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
+    }
+    return lines.join('\n');
+  }
+
+  private formatGetChildItemEnv(): string {
+    const lines: string[] = ['', 'Name                           Value', '----                           -----'];
+    const envVars: Record<string, string> = {
+      'Path': this.resolveEnvVar('PATH') ?? '',
+      'SystemRoot': 'C:\\Windows',
+      'TEMP': this.resolveEnvVar('TEMP') ?? '',
+      'USERNAME': this.resolveEnvVar('USERNAME') ?? '',
+      'COMPUTERNAME': this.resolveEnvVar('COMPUTERNAME') ?? '',
+      'OS': 'Windows_NT',
+      'PROCESSOR_ARCHITECTURE': 'AMD64',
+      'USERPROFILE': this.resolveEnvVar('USERPROFILE') ?? '',
+      'APPDATA': this.resolveEnvVar('APPDATA') ?? '',
+      'LOCALAPPDATA': this.resolveEnvVar('LOCALAPPDATA') ?? '',
+      'PROGRAMFILES': 'C:\\Program Files',
+      'WINDIR': 'C:\\Windows',
+      'SYSTEMDRIVE': 'C:',
+    };
+    // Include session overrides
+    for (const [k, v] of this.sessionEnv.entries()) {
+      envVars[k] = v;
+    }
+    for (const [k, v] of Object.entries(envVars)) {
+      lines.push(`${k.padEnd(31)}${v}`);
+    }
+    return lines.join('\n');
+  }
+
+  private handleSetItem(args: string[]): string {
+    let path = '', value = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && path && !value) { value = args[i].replace(/^["']|["']$/g, ''); }
+    }
+    // Handle Env: drive: Set-Item -Path Env:VARNAME -Value val
+    if (path.toLowerCase().startsWith('env:')) {
+      const varName = path.slice(4).replace(/^\\/, '').toUpperCase();
+      this.sessionEnv.set(varName, value);
+    }
+    return '';
+  }
+
+  // ─── Filesystem Extended Handlers ────────────────────────────────
+
+  private handleRemoveItem(args: string[]): string {
+    let path = '';
+    const recurse = args.some(a => a.toLowerCase() === '-recurse');
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+    }
+    if (!path) return '';
+    if (isRegistryPath(path)) return this.registry.removeItem(path, recurse);
+    const fs = this.device.getFileSystem();
+    const absPath = fs.normalizePath(path, this.cwd);
+    const entry = fs.resolve(absPath);
+    if (!entry) return `Remove-Item : Cannot find path '${path}' because it does not exist.`;
+    if (entry.type === 'directory') {
+      const r = fs.deleteDirectory(absPath);
+      return r.ok ? '' : `Remove-Item : ${r.error}`;
+    }
+    const r = fs.deleteFile(absPath);
+    return r.ok ? '' : `Remove-Item : ${r.error}`;
+  }
+
+  private handleCopyItem(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    let src = '', dest = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { src = args[++i].replace(/^["']|["']$/g, ''); }
+      else if ((a === '-destination' || a === '-dest') && args[i + 1]) { dest = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !src) { src = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && src && !dest) { dest = args[i].replace(/^["']|["']$/g, ''); }
+    }
+    if (!src || !dest) return 'Copy-Item : Source and Destination are required.';
+    const absSrc = fs.normalizePath(src, this.cwd);
+    const absDest = fs.normalizePath(dest, this.cwd);
+    // Ensure dest drive root exists
+    const destDrive = absDest.substring(0, 2).toUpperCase();
+    if (!fs.resolve(destDrive + '\\')) fs.mkdirp(destDrive + '\\');
+    const r = fs.copyFile(absSrc, absDest);
+    return r.ok ? '' : `Copy-Item : ${r.error}`;
+  }
+
+  private handleMoveItem(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    let src = '', dest = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { src = args[++i].replace(/^["']|["']$/g, ''); }
+      else if ((a === '-destination' || a === '-dest') && args[i + 1]) { dest = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !src) { src = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && src && !dest) { dest = args[i].replace(/^["']|["']$/g, ''); }
+    }
+    if (!src || !dest) return 'Move-Item : Source and Destination are required.';
+    const absSrc = fs.normalizePath(src, this.cwd);
+    const absDest = fs.normalizePath(dest, this.cwd);
+    const r = fs.moveFile(absSrc, absDest);
+    return r.ok ? '' : `Move-Item : ${r.error}`;
   }
 
   // ─── Event Log Handlers ───────────────────────────────────────────
@@ -1259,13 +2049,18 @@ export class PowerShellExecutor {
   }
 
   private handleGetItem(args: string[]): string {
-    const target = args.filter(a => !a.startsWith('-')).join(' ');
+    const silentlyContinue = args.some(a => a.toLowerCase() === 'silentlycontinue');
+    const target = args.filter(a => !a.startsWith('-') && a.toLowerCase() !== 'silentlycontinue').join(' ');
     if (!target) return "Get-Item : Cannot bind argument to parameter 'Path' because it is an empty string.";
     if (isRegistryPath(target)) return this.registry.getItem(target);
     const fs = this.device.getFileSystem();
     const absPath = fs.normalizePath(target, this.cwd);
     const entry = fs.resolve(absPath);
-    if (!entry) return `Get-Item : Cannot find path '${target}' because it does not exist.`;
+    if (!entry) {
+      const errMsg = `Get-Item : Cannot find path '${target}' because it does not exist.`;
+      this.errorList.unshift(errMsg);
+      return silentlyContinue ? '' : errMsg;
+    }
 
     const mode = this.formatPSMode(entry);
     const mtime = this.formatPSDate(entry.mtime);
@@ -1376,7 +2171,7 @@ export class PowerShellExecutor {
 
     if (name) {
       const user = mgr.getUser(name);
-      if (!user) return `Get-LocalUser : User '${name}' was not found.`;
+      if (!user) return `Get-LocalUser : User not found. '${name}' was not found.`;
       const lines: string[] = [''];
       lines.push('Name'.padEnd(24) + 'Enabled'.padEnd(10) + 'Description');
       lines.push('----'.padEnd(24) + '-------'.padEnd(10) + '-----------');
@@ -1427,9 +2222,23 @@ export class PowerShellExecutor {
   private handleSetLocalUser(args: string[]): string {
     const mgr = this.device.getUserManager();
     if (!mgr.isCurrentUserAdmin()) return 'Set-LocalUser : Access is denied.';
-    const params = this.parsePSArgs(args);
+    // Re-merge args, accounting for AccountDisabled:$false (colon-style switch)
+    const expanded: string[] = [];
+    for (const a of args) {
+      // -AccountDisabled:$false → treat as -AccountDisabled false
+      if (/^-AccountDisabled:/i.test(a)) {
+        const val = a.split(':')[1];
+        expanded.push('-AccountDisabled', val);
+      } else {
+        expanded.push(a);
+      }
+    }
+    const params = this.parsePSArgs(expanded);
     const name = params.get('name') || params.get('_positional') || '';
     if (!name) return "Set-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
+
+    const user = mgr.getUser(name);
+    if (!user) return `Set-LocalUser : User not found. No user named '${name}' exists on this computer.`;
 
     if (params.has('description')) {
       const err = mgr.setUserProperty(name, 'description', params.get('description')!);
@@ -1441,6 +2250,13 @@ export class PowerShellExecutor {
     }
     if (params.has('fullname')) {
       const err = mgr.setUserProperty(name, 'fullname', params.get('fullname')!);
+      if (err) return `Set-LocalUser : ${err}`;
+    }
+    if (params.has('accountdisabled')) {
+      const val = params.get('accountdisabled');
+      // "true" or flag-only → disable; "$false" / "false" → enable
+      const disable = val !== '$false' && val !== 'false';
+      const err = disable ? mgr.disableUser(name) : mgr.enableUser(name);
       if (err) return `Set-LocalUser : ${err}`;
     }
     return '';
@@ -1491,7 +2307,7 @@ export class PowerShellExecutor {
 
     if (name) {
       const group = mgr.getGroup(name);
-      if (!group) return `Get-LocalGroup : Group '${name}' was not found.`;
+      if (!group) return `Get-LocalGroup : Group not found. '${name}' was not found.`;
       const lines: string[] = [''];
       lines.push('Name'.padEnd(36) + 'Description');
       lines.push('----'.padEnd(36) + '-----------');
@@ -1540,18 +2356,44 @@ export class PowerShellExecutor {
   private handleAddLocalGroupMember(args: string[]): string {
     const mgr = this.device.getUserManager();
     if (!mgr.isCurrentUserAdmin()) return 'Add-LocalGroupMember : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const group = params.get('group') || '';
-    const member = params.get('member') || '';
-    if (!group || !member) return "Add-LocalGroupMember : Cannot bind required parameter.";
 
-    const err = mgr.addGroupMember(group, member);
-    if (err) {
-      if (err.includes('was not found')) return `Add-LocalGroupMember : Principal '${member}' was not found.`;
-      if (err.includes('already a member')) return `Add-LocalGroupMember : The specified account name is already a member of the group.`;
-      return `Add-LocalGroupMember : ${err}`;
+    // Collect group name and ALL tokens after -Member (PS array syntax: "UserA, UserB" or "UserA","UserB")
+    let group = '';
+    const memberTokens: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const lower = args[i].toLowerCase();
+      if (lower === '-group' && args[i + 1]) { group = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (lower === '-member') {
+        i++;
+        while (i < args.length && !args[i].startsWith('-')) {
+          memberTokens.push(args[i]);
+          i++;
+        }
+        i--;
+      } else if (!args[i].startsWith('-') && !group) {
+        group = args[i].replace(/^["']|["']$/g, '');
+      }
     }
-    return '';
+    const memberRaw = memberTokens.join(' ');
+    if (!group || !memberRaw) return "Add-LocalGroupMember : Cannot bind required parameter.";
+
+    // Support comma-separated member list: "UserA, UserB"
+    const members = memberRaw.split(',').map(m => m.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    const errors: string[] = [];
+    for (const member of members) {
+      const err = mgr.addGroupMember(group, member);
+      if (err) {
+        if (err.includes('was not found') || err.includes('could not be found')) {
+          errors.push(`Add-LocalGroupMember : Cannot find user '${member}'. The specified user was not found.`);
+        } else if (err.includes('already a member')) {
+          errors.push(`Add-LocalGroupMember : The specified account '${member}' is already a member of the group.`);
+        } else {
+          errors.push(`Add-LocalGroupMember : ${err}`);
+        }
+      }
+    }
+    return errors.join('\n');
+
   }
 
   private handleRemoveLocalGroupMember(args: string[]): string {
@@ -1597,26 +2439,72 @@ export class PowerShellExecutor {
     const owner = fs.getOwner(absPath);
     const acl = fs.getACL(absPath);
 
-    const lines: string[] = [''];
-    lines.push('');
-    lines.push(`    Path: ${absPath}`);
-    lines.push('');
-    lines.push(`Owner  : ${owner}`);
-    lines.push(`Group  : BUILTIN\\Administrators`);
-    lines.push(`Access :`);
+    const defaultAces = acl.length === 0 ? [
+      { principal: 'BUILTIN\\Administrators', type: 'allow', permissions: ['FullControl'] },
+      { principal: 'BUILTIN\\Users', type: 'allow', permissions: ['ReadAndExecute'] },
+      { principal: 'NT AUTHORITY\\SYSTEM', type: 'allow', permissions: ['FullControl'] },
+    ] : acl;
 
-    if (acl.length === 0) {
-      lines.push(`         BUILTIN\\Administrators Allow  FullControl`);
-      lines.push(`         BUILTIN\\Users          Allow  ReadAndExecute`);
-      lines.push(`         NT AUTHORITY\\SYSTEM    Allow  FullControl`);
-    } else {
-      for (const ace of acl) {
-        const typeStr = ace.type === 'allow' ? 'Allow' : 'Deny';
-        lines.push(`         ${ace.principal.padEnd(25)} ${typeStr.padEnd(6)} ${ace.permissions.join(', ')}`);
+    const lines: string[] = [''];
+    lines.push(`    Path   : Microsoft.PowerShell.Core\\FileSystem::${absPath}`);
+    lines.push(`    Owner  : ${owner}`);
+    lines.push(`    Group  : BUILTIN\\Administrators`);
+    lines.push('');
+    lines.push('FileSystemRights  AccessControlType IdentityReference       IsInherited InheritanceFlags PropagationFlags');
+    lines.push('----------------  ----------------- -----------------       ----------- ---------------- ----------------');
+    for (const ace of defaultAces) {
+      const rights = ace.permissions.join(', ');
+      const type = ace.type === 'allow' ? 'Allow' : 'Deny';
+      const AccessControlType = type;
+      lines.push(`${rights.padEnd(18)}${AccessControlType.padEnd(18)}${ace.principal.padEnd(24)}False       ContainerInherit None`);
+    }
+    return lines.join('\n');
+  }
+
+  private handleSetAcl(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    let path = '';
+    let aclVarName = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-aclobject' && args[i + 1]) { aclVarName = args[++i].replace(/^\$/, '').toLowerCase(); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !aclVarName) {
+        aclVarName = args[i].replace(/^["'\$]|["']$/g, '').toLowerCase();
       }
     }
+    if (!path || !aclVarName) return '';
+    const aclObj = this.sessionObjects.get(aclVarName);
+    if (!aclObj || aclObj.kind !== 'acl') return '';
 
-    return lines.join('\n');
+    const absPath = fs.normalizePath(path, this.cwd);
+    if (!fs.exists(absPath)) return '';
+
+    if (aclObj.protected) {
+      // Replace entire ACL with the new rules
+      const entry = (fs as any).resolve(absPath);
+      if (entry) {
+        entry.acl = aclObj.rules.map(r => ({
+          principal: r.principal,
+          type: r.ruleType.toLowerCase() as 'allow' | 'deny',
+          permissions: [r.permission],
+          protected: true,
+        }));
+        // Mark as protected so Get-Content can check it
+        entry.aclProtected = true;
+      }
+    } else {
+      // Merge rules into existing ACL
+      for (const rule of aclObj.rules) {
+        fs.addACE(absPath, {
+          principal: rule.principal,
+          type: rule.ruleType.toLowerCase() as 'allow' | 'deny',
+          permissions: [rule.permission],
+        });
+      }
+    }
+    return '';
   }
 
   private handleRenameLocalUser(args: string[]): string {

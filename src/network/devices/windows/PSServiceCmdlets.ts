@@ -58,7 +58,8 @@ export function psGetService(ctx: PSServiceContext, args: string[]): string {
         `ObjectNotFound: (${name}:String) [Get-Service], ServiceCommandException`,
         'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.GetServiceCommand');
     }
-    return formatServiceTable([svc]);
+    // Append extended properties so property accessors (.Status, .StartType, etc.) work
+    return formatServiceTable([svc]) + formatServiceExtended(svc);
   }
 
   if (displayName) {
@@ -563,6 +564,20 @@ function formatServiceTable(services: WindowsService[]): string {
     );
   }
   return lines.join('\n');
+}
+
+// ─── Extended property block (appended to single-service output) ──
+
+function formatServiceExtended(svc: WindowsService): string {
+  return [
+    '',
+    `Status      : ${svc.state}`,
+    `Name        : ${svc.name}`,
+    `DisplayName : ${svc.displayName}`,
+    `StartType   : ${svc.startType}`,
+    `ServiceType : ${svc.serviceType}`,
+    `CanStop     : ${svc.state === 'Running'}`,
+  ].join('\n');
 }
 
 // ─── Error formatting (matches real PS5.1 error output) ──────────

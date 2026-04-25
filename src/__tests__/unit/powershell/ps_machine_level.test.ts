@@ -25,6 +25,7 @@ function createPC(name = 'WIN-STATE'): WindowsPC {
 }
 
 function createPS(pc: WindowsPC): PowerShellExecutor {
+  pc.setCurrentUser('Administrator');
   return new PowerShellExecutor(pc);
 }
 
@@ -139,9 +140,9 @@ describe('1. File System – Directories & Files', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\FolderA -ItemType Directory');
-    await ps.execute('Set-Content -Path C:\\FolderA\file.txt -Value "inside"');
+    await ps.execute('Set-Content -Path C:\\FolderA\\file.txt -Value "inside"');
     await ps.execute('Move-Item -Path C:\\FolderA -Destination C:\\FolderB');
-    const content = await ps.execute('Get-Content C:\\FolderB\file.txt');
+    const content = await ps.execute('Get-Content C:\\FolderB\\file.txt');
     expect(content.trim()).toBe('inside');
   });
 
@@ -169,8 +170,8 @@ describe('1. File System – Directories & Files', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\img -ItemType Directory');
-    await ps.execute('New-Item -Path C:\\img\photo1.jpg -ItemType File');
-    await ps.execute('New-Item -Path C:\\img\photo2.png -ItemType File');
+    await ps.execute('New-Item -Path C:\\img\\photo1.jpg -ItemType File');
+    await ps.execute('New-Item -Path C:\\img\\photo2.png -ItemType File');
     const jpgs = await ps.execute('Get-ChildItem C:\\img -Filter *.jpg');
     expect(jpgs).toContain('photo1.jpg');
     expect(jpgs).not.toContain('photo2.png');
@@ -508,14 +509,14 @@ describe('7. Service Management', () => {
     expect(output).toContain('Status');
     expect(output).toContain('Name');
     // typical service in simulated environment
-    expect(output).toContain('spooler');
+    expect(output).toContain('Spooler');
   });
 
   it('Get-Service -Name displays specific service', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const output = await ps.execute('Get-Service -Name spooler');
-    expect(output).toContain('spooler');
+    const output = await ps.execute('Get-Service -Name Spooler');
+    expect(output).toContain('Spooler');
   });
 
   it('Start-Service starts a stopped service', async () => {

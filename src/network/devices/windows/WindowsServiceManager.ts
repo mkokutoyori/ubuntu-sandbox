@@ -38,6 +38,8 @@ export interface WindowsService {
   /** Process name spawned when service runs (for process manager link) */
   processName: string;
   builtIn: boolean;
+  /** Critical OS services that cannot be stopped */
+  critical?: boolean;
 }
 
 /** State codes for sc query output */
@@ -84,7 +86,7 @@ export class WindowsServiceManager {
     const svc = (
       name: string, displayName: string, desc: string,
       opts: Partial<Pick<WindowsService, 'startType' | 'dependencies' | 'canPauseAndContinue'
-        | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state'>> = {}
+        | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state' | 'critical'>> = {}
     ) => {
       this.services.set(name.toLowerCase(), {
         name, displayName, description: desc,
@@ -98,6 +100,7 @@ export class WindowsServiceManager {
         acceptsShutdown: opts.acceptsShutdown ?? true,
         processName: opts.processName ?? 'svchost.exe',
         builtIn: true,
+        critical: opts.critical ?? false,
       });
     };
 
@@ -151,6 +154,14 @@ export class WindowsServiceManager {
     svc('WinRM', 'Windows Remote Management (WS-Management)',
       'Windows Remote Management (WinRM) service',
       { dependencies: ['RpcSs'], startType: 'Manual', state: 'Stopped', account: 'NT AUTHORITY\\NetworkService' });
+
+    // Bluetooth
+    svc('bthserv', 'Bluetooth Support Service', 'Supports Bluetooth HID devices and Audio',
+      { startType: 'Manual', state: 'Stopped', account: 'NT AUTHORITY\\LocalService' });
+
+    // Windows Logon (critical — cannot be stopped)
+    svc('winlogon', 'Windows Logon Application', 'Manages user logon and logoff',
+      { account: 'NT AUTHORITY\\SYSTEM', critical: true } as any);
 
     // Print
     svc('Spooler', 'Print Spooler', 'Loads files to memory for later printing',
@@ -226,6 +237,7 @@ export class WindowsServiceManager {
     if (!isAdmin) return 'Access is denied.';
     const svc = this.services.get(name.toLowerCase());
     if (!svc) return `The specified service does not exist. [SC] OpenService FAILED 1060.`;
+    if (svc.critical) return `Cannot stop ${svc.name}: This is a critical system service.`;
     if (svc.state === 'Stopped') return `The service has not been started.`;
 
     // Check running dependents
