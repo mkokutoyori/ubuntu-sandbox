@@ -401,6 +401,10 @@ export class IPSecEngine implements IProtocolEngine {
     this.dpdConfig = { interval, retries, mode };
   }
 
+  getDPDConfig(): DPDConfig | null {
+    return this.dpdConfig;
+  }
+
   setGlobalSALifetime(seconds: number): void {
     this.globalSALifetimeSeconds = seconds;
   }

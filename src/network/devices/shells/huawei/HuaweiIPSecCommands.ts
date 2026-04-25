@@ -452,9 +452,28 @@ export function buildHuaweiIKEPeerCommands(
     return '';
   });
 
-  trie.registerGreedy('dpd type', 'Configure Dead Peer Detection', (args) => {
+  trie.registerGreedy('dpd interval', 'Set DPD keepalive interval (seconds)', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const interval = parseInt(args[0], 10);
+    if (isNaN(interval) || interval < 1) return 'Error: Invalid interval value.';
+    const current = eng(ctx).getDPDConfig();
+    eng(ctx).setDPD(interval, current?.retries ?? 3, current?.mode ?? 'periodic');
+    return '';
+  });
+
+  trie.registerGreedy('dpd retries', 'Set DPD retry count', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const retries = parseInt(args[0], 10);
+    if (isNaN(retries) || retries < 1) return 'Error: Invalid retries value.';
+    const current = eng(ctx).getDPDConfig();
+    eng(ctx).setDPD(current?.interval ?? 10, retries, current?.mode ?? 'periodic');
+    return '';
+  });
+
+  trie.registerGreedy('dpd type', 'Set DPD mode (periodic or on-demand)', (args) => {
     const mode = args[0]?.toLowerCase() === 'on-demand' ? 'on-demand' : 'periodic';
-    eng(ctx).setDPD(10, 3, mode as 'periodic' | 'on-demand');
+    const current = eng(ctx).getDPDConfig();
+    eng(ctx).setDPD(current?.interval ?? 10, current?.retries ?? 3, mode as 'periodic' | 'on-demand');
     return '';
   });
 }
