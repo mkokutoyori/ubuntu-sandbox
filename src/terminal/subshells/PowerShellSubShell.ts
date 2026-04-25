@@ -52,6 +52,8 @@ export class PowerShellSubShell implements ISubShell {
     subShell.psExecutor.setCwd((device as any).getCwd());
     // Wire env-var resolution so $env:APPDATA etc. return Windows-accurate values
     subShell.interp.envVarHook = (name: string) => subShell.psExecutor.resolveEnvVar(name);
+    // Wire Test-Path to filesystem + registry
+    subShell.interp.testPathHook = (path: string) => subShell.psExecutor.testPathRaw(path);
     return {
       subShell,
       banner: PS_BANNER.split('\n'),

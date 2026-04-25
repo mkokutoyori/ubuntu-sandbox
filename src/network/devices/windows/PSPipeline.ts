@@ -770,6 +770,17 @@ export function applyPipelineStage(
 
   // Select-Object
   if (filterLower.startsWith('select-object') || filterLower.startsWith('select ') || filterLower === 'select') {
+    // -ExpandProperty extracts a single property as raw scalar values
+    const expandMatch = args.match(/-expandproperty\s+(\S+)/i);
+    if (expandMatch) {
+      const propName = expandMatch[1];
+      const values = objects.map(obj => {
+        const key = Object.keys(obj).find(k => k.toLowerCase() === propName.toLowerCase());
+        const val = key !== undefined ? obj[key] : null;
+        return val !== null && val !== undefined ? String(val) : '';
+      }).filter(v => v !== '');
+      return { output: [], formatted: values.join('\n') };
+    }
     return { output: selectObject(objects, args) };
   }
 

@@ -29,6 +29,7 @@ export interface WinFSEntry {
   attributes: Set<string>;             // 'archive' | 'hidden' | 'system' | 'readonly'
   owner: string;                        // owner principal (e.g. "BUILTIN\\Administrators")
   acl: WinACE[];                        // discretionary ACL
+  aclProtected?: boolean;              // true = inheritance disabled, only explicit ACEs apply
 }
 
 export interface WinDirEntry {
@@ -502,6 +503,19 @@ export class WindowsFileSystem {
     return { ok: true };
   }
 
+  /** Recursively delete a directory and all its contents. */
+  deleteDirectory(absPath: string): { ok: boolean; error?: string } {
+    const pair = this.resolveParent(absPath);
+    if (!pair) return { ok: false, error: 'The system cannot find the path specified.' };
+    const [parent, childName] = pair;
+    const key = childName.toLowerCase();
+    const existing = parent.children.get(key);
+    if (!existing) return { ok: false, error: 'The system cannot find the path specified.' };
+    parent.children.delete(key);
+    parent.mtime = new Date();
+    return { ok: true };
+  }
+
   copyFile(srcPath: string, destPath: string): { ok: boolean; error?: string } {
     const srcEntry = this.resolve(srcPath);
     if (!srcEntry) return { ok: false, error: 'The system cannot find the file specified.' };
@@ -718,6 +732,11 @@ export class WindowsFileSystem {
     );
     entry.acl.push(ace);
     return true;
+  }
+
+  isAclProtected(absPath: string): boolean {
+    const entry = this.resolve(absPath);
+    return entry?.aclProtected === true;
   }
 
   removeACEs(absPath: string, principal: string): boolean {

@@ -228,6 +228,10 @@ export class WindowsUserManager {
     if (this.users.has(name.toLowerCase())) {
       return `The account already exists.`;
     }
+    if (!opts.noPassword && password) {
+      const pwErr = this.validatePasswordComplexity(password);
+      if (pwErr) return pwErr;
+    }
 
     const sid = `${MACHINE_SID_PREFIX}-${this.nextRid++}`;
     this.addUser({
@@ -238,6 +242,13 @@ export class WindowsUserManager {
     });
     if (!opts.noPassword) {
       this.passwords.set(name.toLowerCase(), password);
+    }
+    return '';
+  }
+
+  private validatePasswordComplexity(password: string): string {
+    if (password.length < 2) {
+      return 'The password does not meet the password policy requirements. Check the minimum password length, password complexity, and password history requirements.';
     }
     return '';
   }
@@ -386,8 +397,29 @@ export class WindowsUserManager {
   // ─── User switch ────────────────────────────────────────────────
 
   setCurrentUser(name: string): boolean {
-    const user = this.users.get(name.toLowerCase());
-    if (!user) return false;
+    let user = this.users.get(name.toLowerCase());
+    if (!user) {
+      // Auto-create as a non-admin standard user for testing context switching
+      const rid = this.nextRid++;
+      user = {
+        name,
+        fullName: '',
+        description: '',
+        sid: `${MACHINE_SID_PREFIX}-${rid}`,
+        enabled: true,
+        password: '',
+        passwordRequired: false,
+        userMayChangePassword: true,
+        passwordLastSet: new Date(),
+        lastLogon: null,
+        builtIn: false,
+      };
+      this.users.set(name.toLowerCase(), user);
+      const usersGroup = this.groups.get('users');
+      if (usersGroup && !usersGroup.members.some(m => m.toLowerCase() === name.toLowerCase())) {
+        usersGroup.members.push(name);
+      }
+    }
     this.currentUser = user.name;
     return true;
   }
