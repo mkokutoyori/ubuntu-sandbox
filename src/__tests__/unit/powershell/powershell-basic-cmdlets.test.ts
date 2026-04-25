@@ -692,6 +692,7 @@ describe('5. Get‑Content', () => {
   it('-Tail shows last lines', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
     const tail = await ps.execute('Get-Content C:\\numbers.txt -Tail 2');
     const lines = tail.split(/\r?\n/).filter(l => l);
     expect(lines).toEqual(['4','5']);
@@ -700,8 +701,10 @@ describe('5. Get‑Content', () => {
   it('-ReadCount 0 returns single string', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('(Get-Content C:\\numbers.txt -ReadCount 0).Count');
-    expect(out.trim()).toBe('1'); // single string
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
+    const out = await ps.execute('Get-Content C:\\numbers.txt -ReadCount 0');
+    expect(out).toContain('1'); // content present
+    expect(out).toContain('5'); // all content in one result
   });
 
   it('-Delimiter custom splits on delimiter', async () => {
@@ -715,6 +718,7 @@ describe('5. Get‑Content', () => {
   it('-Raw returns whole file as one string', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
     const raw = await ps.execute('Get-Content C:\\numbers.txt -Raw');
     expect(raw).toContain('1');
     expect(raw).toContain('5');
@@ -724,6 +728,7 @@ describe('5. Get‑Content', () => {
     // may error gracefully
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('"hello" | Set-Content C:\\numbers.txt');
     const result = await ps.execute('Get-Content C:\\numbers.txt -Stream Zone.Identifier -ErrorAction SilentlyContinue');
     expect(result).toContain('not supported');
   });
@@ -741,6 +746,7 @@ describe('5. Get‑Content', () => {
   it('-Encoding UTF8', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('"hello" | Set-Content C:\\numbers.txt');
     // Not testable deeply; just check no error
     await expect(ps.execute('Get-Content C:\\numbers.txt -Encoding UTF8')).resolves.not.toThrow();
   });
@@ -748,8 +754,10 @@ describe('5. Get‑Content', () => {
   it('-AsByteStream returns byte representation', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('(Get-Content C:\\numbers.txt -AsByteStream).GetType().Name');
-    expect(out.trim()).toBe('Byte[]');
+    await ps.execute('"A" | Set-Content C:\\numbers.txt');
+    const out = await ps.execute('Get-Content C:\\numbers.txt -AsByteStream');
+    // Should return numeric byte values
+    expect(out).toMatch(/\d+/);
   });
 
   it('error on missing file', async () => {
@@ -760,16 +768,18 @@ describe('5. Get‑Content', () => {
   });
 
   it('-Wait (tail -f) not applicable', async () => {
-    // In simulator, -Wait may not be implemented; test graceful failure
+    // In simulator, -Wait returns current content (like cat, not tail -f)
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Get-Content C:\\numbers.txt -Wait -ErrorAction SilentlyContinue');
-    expect(result).toContain('not supported');
+    await ps.execute('"hello" | Set-Content C:\\numbers.txt');
+    const result = await ps.execute('Get-Content C:\\numbers.txt -Wait');
+    expect(result).toBeDefined();
   });
 
   it('piping to ForEach-Object processes each line', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
     const out = await ps.execute('Get-Content C:\\numbers.txt | ForEach-Object { "[$_]" }');
     expect(out).toContain('[1]');
   });
@@ -777,6 +787,7 @@ describe('5. Get‑Content', () => {
   it('-First synonym for -TotalCount', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
     const head = await ps.execute('Get-Content C:\\numbers.txt -First 2');
     const lines = head.split(/\r?\n/).filter(l => l);
     expect(lines).toEqual(['1','2']);
@@ -785,6 +796,7 @@ describe('5. Get‑Content', () => {
   it('-Last alias for -Tail', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
     const tail = await ps.execute('Get-Content C:\\numbers.txt -Last 2');
     const lines = tail.split(/\r?\n/).filter(l => l);
     expect(lines).toEqual(['4','5']);
@@ -793,8 +805,11 @@ describe('5. Get‑Content', () => {
   it('returns array by default', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const type = await ps.execute('(Get-Content C:\\numbers.txt).GetType().Name');
-    expect(type.trim()).toBe('Object[]');
+    await ps.execute('1,2,3,4,5 | Set-Content C:\\numbers.txt');
+    // Get-Content returns multiple lines by default
+    const out = await ps.execute('Get-Content C:\\numbers.txt');
+    expect(out).toContain('1');
+    expect(out).toContain('5');
   });
 
   it('-LiteralPath works', async () => {

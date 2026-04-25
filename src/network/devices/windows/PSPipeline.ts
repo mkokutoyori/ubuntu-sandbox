@@ -296,9 +296,10 @@ export function selectObject(objects: PSObject[], args: string): PSObject[] {
       expandProp = tokens[++i];
     } else if (t === '-unique') {
       unique = true;
-    } else if (!t.startsWith('-') && !properties) {
-      // Bare property names
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      // Bare property names — accumulate across multiple tokens (e.g. "Name, Id, Type")
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
@@ -777,7 +778,10 @@ export function applyPipelineStage(
       const values = objects.map(obj => {
         const key = Object.keys(obj).find(k => k.toLowerCase() === propName.toLowerCase());
         const val = key !== undefined ? obj[key] : null;
-        return val !== null && val !== undefined ? String(val) : '';
+        if (val === null || val === undefined) return '';
+        if (val === true) return 'True';
+        if (val === false) return 'False';
+        return String(val);
       }).filter(v => v !== '');
       return { output: [], formatted: values.join('\n') };
     }

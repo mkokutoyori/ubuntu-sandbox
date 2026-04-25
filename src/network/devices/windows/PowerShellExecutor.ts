@@ -97,6 +97,8 @@ export interface PSDeviceContext {
   getDefaultGateway(): string | null;
   /** Get DNS servers for an interface */
   getDnsServers(ifName: string): string[];
+  /** Set DNS servers for an interface (optional - for Set-DnsClientServerAddress) */
+  setDnsServers?(ifName: string, servers: string[]): void;
   /** Check if interface uses DHCP */
   isDHCPConfigured(ifName: string): boolean;
   /** Get the user manager for access control cmdlets */
@@ -145,6 +147,10 @@ export class PowerShellExecutor {
   private errorList: string[] = [];
   /** Defined functions: name → { params, body } */
   private sessionFunctions: Map<string, { params: string[]; body: string }> = new Map();
+  /** Additional IP addresses: ip → { ifAlias, prefixLength, origin, skipAsSource, gateway } */
+  private extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
+  /** Extra routes: destPrefix → { ifAlias, nextHop, metric } */
+  private extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -213,6 +219,12 @@ export class PowerShellExecutor {
   }
 
   private async executeSingleStatement(trimmed: string): Promise<string | null> {
+    // Script block invocation: & { ... } or & { ...; expr }
+    const scriptBlockMatch = trimmed.match(/^&\s*\{([\s\S]*)\}$/);
+    if (scriptBlockMatch) {
+      return this.execute(scriptBlockMatch[1].trim());
+    }
+
     // try/catch block: try { ... } catch { ... }
     const tryCatchMatch = trimmed.match(/^try\s*\{([\s\S]+?)\}\s*catch\s*\{([\s\S]+?)\}$/i);
     if (tryCatchMatch) {
@@ -462,6 +474,11 @@ export class PowerShellExecutor {
         continue;
       }
 
+      // Clear-Host as pipeline sink — discards input, clears screen
+      if (filterCmdLower === 'clear-host' || filterCmdLower === 'cls' || filterCmdLower === 'clear') {
+        return '';
+      }
+
       // Set-Content as pipeline sink — terminates the pipeline
       if (filterCmdLower === 'set-content') {
         const sinkArgs = this.tokenize(filter).slice(1);
@@ -626,6 +643,9 @@ export class PowerShellExecutor {
       return trimmedLine.slice(1, -1);
     }
 
+    // Number literal: integer or decimal
+    if (/^-?\d+(\.\d+)?$/.test(trimmedLine)) return trimmedLine;
+
     // $Error[n].Exception.Message
     const errorAccessMatch = trimmedLine.match(/^\$Error\[(\d+)\]\.Exception\.Message$/i);
     if (errorAccessMatch) {
@@ -696,7 +716,13 @@ export class PowerShellExecutor {
     const parts = this.tokenize(cmdline);
     const cmd = parts[0];
     const cmdLower = cmd.toLowerCase();
-    const args = parts.slice(1);
+    // Strip common PS parameters that don't affect output in simulation
+    const args = this.stripCommonParams(parts.slice(1));
+
+    // -? help shortcut: any cmdlet with -? → show help
+    if (args.includes('-?')) {
+      return this.formatGetHelp(cmd);
+    }
 
     // ─── PowerShell variables ─────────────────────────────────────
     if (cmdLower === '$psversiontable') return PS_VERSION_TABLE;
@@ -717,6 +743,12 @@ export class PowerShellExecutor {
     if (cmdLower === '$false') return 'False';
     if (cmdLower === '$null') return '';
     if (cmdLower === '$pid') return String(Math.floor(Math.random() * 10000 + 1000));
+
+    // Bare variable reference: $varName (no method call, no assignment)
+    if (/^\$[a-z_]\w*$/i.test(trimmedLine)) {
+      const varName = trimmedLine.slice(1).toLowerCase();
+      return this.sessionVars.get(varName) ?? '';
+    }
 
     // ─── Cmdlets mapped to device commands ────────────────────────
 
@@ -844,7 +876,7 @@ export class PowerShellExecutor {
 
     // Clear-Host / cls / clear
     if (cmdLower === 'clear-host' || cmdLower === 'cls' || cmdLower === 'clear') {
-      return null; // Caller handles screen clear
+      return ''; // Screen clear is handled by the sub-shell, executor returns empty string
     }
 
     // Get-Process / gps / ps
@@ -857,14 +889,34 @@ export class PowerShellExecutor {
       return psStopProcess(this.buildPSProcessCtx(), args);
     }
 
-    // Get-Help
-    if (cmdLower === 'get-help') {
-      return this.formatGetHelp(args[0]);
+    // Get-Help / man / help
+    if (cmdLower === 'get-help' || cmdLower === 'man' || cmdLower === 'help') {
+      let topic = '';
+      let category = '', paramName = '', component = '', role = '', functionality = '';
+      let examples = false, detailed = false, full = false, online = false, showWindow = false;
+      for (let i = 0; i < args.length; i++) {
+        const al = args[i].toLowerCase();
+        if ((al === '-name') && args[i+1]) { topic = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-category' && args[i+1]) { category = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-parameter' && args[i+1]) { paramName = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-component' && args[i+1]) { component = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-role' && args[i+1]) { role = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-functionality' && args[i+1]) { functionality = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-examples') { examples = true; }
+        else if (al === '-detailed') { detailed = true; }
+        else if (al === '-full') { full = true; }
+        else if (al === '-online') { online = true; }
+        else if (al === '-showwindow') { showWindow = true; }
+        else if (al === '-path' && args[i+1]) { i++; } // ignore -Path
+        else if (!args[i].startsWith('-') && !topic) { topic = args[i].replace(/^["']|["']$/g, ''); }
+      }
+      const helpOpts = { examples, detailed, full, online, showWindow, parameter: paramName || undefined, category: category || undefined, component: component || undefined, role: role || undefined, functionality: functionality || undefined };
+      return this.formatGetHelp(topic || undefined, helpOpts);
     }
 
     // Get-Command / gcm
     if (cmdLower === 'get-command' || cmdLower === 'gcm') {
-      return this.formatGetCommand();
+      return this.handleGetCommand(args);
     }
 
     // Get-NetIPConfiguration
@@ -874,12 +926,52 @@ export class PowerShellExecutor {
 
     // Get-NetIPAddress
     if (cmdLower === 'get-netipaddress') {
-      return this.formatGetNetIPAddress();
+      return this.handleGetNetIPAddress(args);
+    }
+
+    // New-NetIPAddress
+    if (cmdLower === 'new-netipaddress') {
+      return this.handleNewNetIPAddress(args);
+    }
+
+    // Remove-NetIPAddress
+    if (cmdLower === 'remove-netipaddress') {
+      return this.handleRemoveNetIPAddress(args);
+    }
+
+    // Set-NetIPAddress
+    if (cmdLower === 'set-netipaddress') {
+      return this.handleSetNetIPAddress(args);
+    }
+
+    // Get-NetRoute
+    if (cmdLower === 'get-netroute') {
+      return this.handleGetNetRoute(args);
+    }
+
+    // New-NetRoute
+    if (cmdLower === 'new-netroute') {
+      return this.handleNewNetRoute(args);
+    }
+
+    // Remove-NetRoute
+    if (cmdLower === 'remove-netroute') {
+      return this.handleRemoveNetRoute(args);
+    }
+
+    // Get-DnsClientServerAddress
+    if (cmdLower === 'get-dnsclientserveraddress') {
+      return this.handleGetDnsClientServerAddress(args);
+    }
+
+    // Set-DnsClientServerAddress
+    if (cmdLower === 'set-dnsclientserveraddress') {
+      return this.handleSetDnsClientServerAddress(args);
     }
 
     // Get-NetAdapter
     if (cmdLower === 'get-netadapter') {
-      return this.formatGetNetAdapter();
+      return this.handleGetNetAdapter(args);
     }
 
     // Test-Connection (PowerShell ping)
@@ -1263,16 +1355,32 @@ export class PowerShellExecutor {
   private handleGetContent(args: string[]): string {
     const fs = this.device.getFileSystem();
     let path = '';
-    let tail: number | undefined, totalCount: number | undefined;
+    let tail: number | undefined, totalCount: number | undefined, readCount: number | undefined;
+    let raw = false, asByteStream = false, stream = '', wait = false;
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if ((a === '-path' || a === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (a === '-tail' && args[i + 1]) { tail = parseInt(args[++i], 10); }
+      else if ((a === '-tail' || a === '-last') && args[i + 1]) { tail = parseInt(args[++i], 10); }
       else if ((a === '-totalcount' || a === '-head' || a === '-first') && args[i + 1]) { totalCount = parseInt(args[++i], 10); }
+      else if (a === '-readcount' && args[i + 1]) { readCount = parseInt(args[++i], 10); }
+      else if (a === '-raw') { raw = true; }
+      else if (a === '-asbytestream') { asByteStream = true; }
+      else if (a === '-stream' && args[i + 1]) { stream = args[++i].replace(/^["']|["']$/g, ''); i++; } // skip stream name
+      else if (a === '-wait') { wait = true; }
       else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
     }
     if (!path) return '';
     const absPath = fs.normalizePath(path, this.cwd);
+
+    // -Stream: alternate data streams not natively supported
+    if (stream) {
+      return `Get-Content : The -Stream parameter is not supported in this simulator.\nAt line:1 char:1\n    + CategoryInfo          : NotImplemented\n    + FullyQualifiedErrorId : NotImplemented,Microsoft.PowerShell.Commands.GetContentCommand`;
+    }
+
+    // -Wait: tail-follow not supported in simulator
+    if (wait) {
+      return `Get-Content : The -Wait parameter is not supported in this simulator.\nAt line:1 char:1\n    + CategoryInfo          : NotImplemented`;
+    }
 
     // ACL enforcement: protected files require explicit Allow ACE covering the current user
     if (fs.isAclProtected(absPath)) {
@@ -1301,10 +1409,23 @@ export class PowerShellExecutor {
     const r = fs.readFile(absPath);
     if (!r.ok) return `Get-Content : Cannot find path '${path}' because it does not exist.`;
     const content = r.content ?? '';
+
+    if (asByteStream) {
+      // Return byte values as space-separated numbers
+      const bytes = Array.from(content).map(c => c.charCodeAt(0));
+      return bytes.join('\n');
+    }
+
+    if (raw) {
+      // Return whole file as single string (no line splitting)
+      return content;
+    }
+
     if (!content) return '';
     const lines = content.split(/\r?\n/);
     if (tail !== undefined) return lines.slice(-tail).join('\n');
     if (totalCount !== undefined) return lines.slice(0, totalCount).join('\n');
+    if (readCount === 0) return content; // -ReadCount 0: return as one string
     return content;
   }
 
@@ -1415,12 +1536,26 @@ export class PowerShellExecutor {
   // ─── Get-ChildItem with Filter/Recurse/Env: ──────────────────────
 
   private handleGetChildItem(args: string[]): string {
-    let path = '', filter = '', recurse = false;
+    let path = '', filter = '';
+    const include: string[] = [], exclude: string[] = [];
+    let recurse = false, nameOnly = false, dirOnly = false, fileOnly = false;
+    let hidden = false, system = false, force = false;
+    let depth: number | undefined;
+
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
       else if (a === '-filter' && args[i + 1]) { filter = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-include' && args[i + 1]) { include.push(...args[++i].replace(/^["']/,'').replace(/["']$/,'').split(',')); }
+      else if (a === '-exclude' && args[i + 1]) { exclude.push(...args[++i].replace(/^["']/,'').replace(/["']$/,'').split(',')); }
       else if (a === '-recurse') { recurse = true; }
+      else if (a === '-name') { nameOnly = true; }
+      else if (a === '-directory') { dirOnly = true; }
+      else if (a === '-file') { fileOnly = true; }
+      else if (a === '-hidden') { hidden = true; }
+      else if (a === '-system') { system = true; }
+      else if (a === '-force') { force = true; hidden = true; system = true; }
+      else if (a === '-depth' && args[i + 1]) { depth = parseInt(args[++i], 10); recurse = true; }
       else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
     }
 
@@ -1433,18 +1568,60 @@ export class PowerShellExecutor {
     if (path && isRegistryPath(path)) return this.registry.getChildItem(path);
 
     const fs = this.device.getFileSystem();
-    const absPath = fs.normalizePath(path || '.', this.cwd);
 
-    if (recurse) {
-      const allDirs = fs.listDirectoryRecursive(absPath);
-      const lines: string[] = [];
-      for (const { path: dirPath, entries } of allDirs) {
-        let filtered = entries;
-        if (filter) {
-          const rx = new RegExp('^' + filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
-          filtered = entries.filter(e => rx.test(e.entry.name));
-        }
-        if (filtered.length === 0) continue;
+    // Handle wildcard in path
+    let absPath: string;
+    let wildcardFilter = '';
+    if (path.includes('*') || path.includes('?')) {
+      const lastSep = path.lastIndexOf('\\');
+      const dirPart = path.substring(0, lastSep);
+      wildcardFilter = path.substring(lastSep + 1);
+      absPath = fs.normalizePath(dirPart || '.', this.cwd);
+      // combine with filter
+      if (!filter) filter = wildcardFilter;
+    } else {
+      absPath = fs.normalizePath(path || '.', this.cwd);
+    }
+
+    const makeFilterFn = (name: string): boolean => {
+      if (filter) {
+        const rx = new RegExp('^' + filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+        if (!rx.test(name)) return false;
+      }
+      if (include.length > 0) {
+        const match = include.some(p => {
+          const clean = p.trim().replace(/^["']|["']$/g, '');
+          const rx = new RegExp('^' + clean.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$', 'i');
+          return rx.test(name);
+        });
+        if (!match) return false;
+      }
+      if (exclude.length > 0) {
+        const match = exclude.some(p => {
+          const clean = p.trim().replace(/^["']|["']$/g, '');
+          const rx = new RegExp('^' + clean.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$', 'i');
+          return rx.test(name);
+        });
+        if (match) return false;
+      }
+      return true;
+    };
+
+    const applyFilter = (entries: WinDirEntry[]) =>
+      entries.filter(({ entry }) => {
+        if (!makeFilterFn(entry.name)) return false;
+        if (dirOnly && entry.type !== 'directory') return false;
+        if (fileOnly && entry.type !== 'file') return false;
+        if (!hidden && !force && entry.attributes.has('hidden')) return false;
+        if (!system && !force && entry.attributes.has('system')) return false;
+        return true;
+      });
+
+    const renderEntries = (filtered: WinDirEntry[], dirPath: string, lines: string[]) => {
+      if (filtered.length === 0) return;
+      if (nameOnly) {
+        for (const { entry } of filtered) lines.push(entry.name);
+      } else {
         lines.push('', `    Directory: ${dirPath}`, '', 'Mode                 LastWriteTime         Length Name', '----                 -------------         ------ ----');
         for (const { entry } of filtered) {
           const mode = this.formatPSMode(entry);
@@ -1453,24 +1630,27 @@ export class PowerShellExecutor {
           lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
         }
       }
+    };
+
+    if (recurse) {
+      const allDirs = fs.listDirectoryRecursive(absPath);
+      const lines: string[] = [];
+      const baseDepth = absPath.split('\\').length;
+      for (const { path: dirPath, entries } of allDirs) {
+        const entryDepth = dirPath.split('\\').length - baseDepth;
+        if (depth !== undefined && entryDepth > depth) continue;
+        const filtered = applyFilter(entries);
+        renderEntries(filtered, dirPath, lines);
+      }
       return lines.join('\n');
     }
 
     const entries = fs.listDirectory(absPath);
-    let filtered = entries;
-    if (filter) {
-      const rx = new RegExp('^' + filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
-      filtered = entries.filter(e => rx.test(e.entry.name));
-    }
+    const filtered = applyFilter(entries);
     if (filtered.length === 0) return '';
 
-    const lines: string[] = ['', `    Directory: ${absPath}`, '', 'Mode                 LastWriteTime         Length Name', '----                 -------------         ------ ----'];
-    for (const { entry } of filtered) {
-      const mode = this.formatPSMode(entry);
-      const mtime = this.formatPSDate(entry.mtime);
-      const length = entry.type === 'file' ? String(entry.size) : '';
-      lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
-    }
+    const lines: string[] = [];
+    renderEntries(filtered, absPath, lines);
     return lines.join('\n');
   }
 
@@ -1544,22 +1724,126 @@ export class PowerShellExecutor {
 
   private handleCopyItem(args: string[]): string {
     const fs = this.device.getFileSystem();
-    let src = '', dest = '';
+    let src = '', dest = '', filter = '', literalPath = '';
+    const include: string[] = [], exclude: string[] = [];
+    let recurse = false, force = false, passThru = false, container = false, toSession = false;
+
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-path' && args[i + 1]) { src = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-literalpath' && args[i + 1]) { literalPath = args[++i].replace(/^["']|["']$/g, ''); }
       else if ((a === '-destination' || a === '-dest') && args[i + 1]) { dest = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && !src) { src = args[i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && src && !dest) { dest = args[i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-filter' && args[i + 1]) { filter = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-include' && args[i + 1]) { include.push(...args[++i].replace(/^["']|["']$/g, '').split(',')); }
+      else if (a === '-exclude' && args[i + 1]) { exclude.push(...args[++i].replace(/^["']|["']$/g, '').split(',')); }
+      else if (a === '-recurse') { recurse = true; }
+      else if (a === '-force') { force = true; }
+      else if (a === '-passthru') { passThru = true; }
+      else if (a === '-container') { container = true; }
+      else if (a === '-tosession') { toSession = true; i++; } // skip PSSession arg
+      else if (a === '-credential') { i++; } // skip credential arg (ignored in sim)
+      else if (!args[i].startsWith('-') && !src && !literalPath) { src = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && (src || literalPath) && !dest) { dest = args[i].replace(/^["']|["']$/g, ''); }
     }
-    if (!src || !dest) return 'Copy-Item : Source and Destination are required.';
-    const absSrc = fs.normalizePath(src, this.cwd);
+
+    if (toSession) return 'Copy-Item : Remote sessions (ToSession/FromSession) are not supported in this simulator.';
+
+    const effectiveSrc = literalPath || src;
+    if (!effectiveSrc || !dest) return 'Copy-Item : Source and Destination are required.';
+
     const absDest = fs.normalizePath(dest, this.cwd);
-    // Ensure dest drive root exists
     const destDrive = absDest.substring(0, 2).toUpperCase();
     if (!fs.resolve(destDrive + '\\')) fs.mkdirp(destDrive + '\\');
+
+    // Handle wildcard in source path
+    if (effectiveSrc.includes('*') || effectiveSrc.includes('?')) {
+      const lastSep = effectiveSrc.lastIndexOf('\\');
+      const srcDir = effectiveSrc.substring(0, lastSep);
+      const pattern = effectiveSrc.substring(lastSep + 1);
+      const absSrcDir = fs.normalizePath(srcDir, this.cwd);
+      const filterRx = pattern ? new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i') : null;
+      const entries = fs.listDirectory(absSrcDir);
+      fs.mkdirp(absDest);
+      for (const { entry } of entries) {
+        if (filterRx && !filterRx.test(entry.name)) continue;
+        if (filter) {
+          const filterPattern = filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.');
+          if (!new RegExp('^' + filterPattern + '$', 'i').test(entry.name)) continue;
+        }
+        if (include.length > 0 && !include.some(p => new RegExp('^' + p.trim().replace(/["']/g,'').replace(/\./g, '\\.').replace(/\*/g, '.*') + '$', 'i').test(entry.name))) continue;
+        if (exclude.some(p => new RegExp('^' + p.trim().replace(/["']/g,'').replace(/\./g, '\\.').replace(/\*/g, '.*') + '$', 'i').test(entry.name))) continue;
+        if (entry.type === 'file') {
+          fs.copyFile(absSrcDir + '\\' + entry.name, absDest + '\\' + entry.name);
+        } else if (entry.type === 'directory' && recurse) {
+          this.copyDirectoryRecursive(fs, absSrcDir + '\\' + entry.name, absDest + '\\' + entry.name, filter, include, exclude);
+        }
+      }
+      if (passThru) {
+        const destEntries = fs.listDirectory(absDest);
+        if (destEntries.length > 0) return destEntries.map(e => e.entry.name).join('\n');
+      }
+      return '';
+    }
+
+    const absSrc = fs.normalizePath(effectiveSrc, this.cwd);
+    const srcEntry = fs.resolve(absSrc);
+    if (!srcEntry) {
+      return `Copy-Item : Cannot find path '${absSrc}' because it does not exist.\nAt line:1 char:1\n    + CategoryInfo          : ObjectNotFound: (${absSrc}:String) [Copy-Item], ItemNotFoundException\n    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.CopyItemCommand`;
+    }
+
+    if (srcEntry.type === 'directory') {
+      if (!recurse && !container) {
+        return `Copy-Item : The directory '${absSrc}' is not empty. To copy the directory and its contents, use the -Recurse parameter.`;
+      }
+      if (container && !recurse) {
+        // Check if directory has children
+        const srcChildren = fs.listDirectory(absSrc);
+        if (srcChildren.length > 0) {
+          return `Copy-Item : The directory '${absSrc}' contains items. Use -Recurse to copy a directory with contents.`;
+        }
+        fs.mkdirp(absDest);
+        return '';
+      }
+      // Recursive directory copy
+      this.copyDirectoryRecursive(fs, absSrc, absDest, filter, include, exclude);
+      if (passThru) return absDest.substring(absDest.lastIndexOf('\\') + 1);
+      return '';
+    }
+
+    // File copy
+    const destEntry = fs.resolve(absDest);
+    if (destEntry && destEntry.type === 'file' && !force) {
+      return `Copy-Item : The file '${absDest}' already exists. Use the Force parameter to overwrite it.\nAt line:1 char:1\n    + CategoryInfo          : WriteError: (${absDest}:String) [Copy-Item], IOException`;
+    }
+
     const r = fs.copyFile(absSrc, absDest);
-    return r.ok ? '' : `Copy-Item : ${r.error}`;
+    if (!r.ok) return `Copy-Item : ${r.error}`;
+
+    if (passThru) {
+      const destName = absDest.substring(absDest.lastIndexOf('\\') + 1);
+      return `Name : ${destName}\nFullName : ${absDest}`;
+    }
+    return '';
+  }
+
+  private copyDirectoryRecursive(fs: ReturnType<typeof this.device.getFileSystem>, srcPath: string, destPath: string, filter: string, include: string[], exclude: string[]): void {
+    fs.mkdirp(destPath);
+    const entries = fs.listDirectory(srcPath);
+    for (const { entry } of entries) {
+      if (filter) {
+        const filterPattern = filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.');
+        if (!new RegExp('^' + filterPattern + '$', 'i').test(entry.name)) continue;
+      }
+      if (include.length > 0 && !include.some(p => new RegExp('^' + p.trim().replace(/["']/g,'').replace(/\./g, '\\.').replace(/\*/g, '.*') + '$', 'i').test(entry.name))) continue;
+      if (exclude.some(p => new RegExp('^' + p.trim().replace(/["']/g,'').replace(/\./g, '\\.').replace(/\*/g, '.*') + '$', 'i').test(entry.name))) continue;
+      const srcChild = srcPath + '\\' + entry.name;
+      const destChild = destPath + '\\' + entry.name;
+      if (entry.type === 'file') {
+        fs.copyFile(srcChild, destChild);
+      } else {
+        this.copyDirectoryRecursive(fs, srcChild, destChild, filter, include, exclude);
+      }
+    }
   }
 
   private handleMoveItem(args: string[]): string {
@@ -1708,35 +1992,466 @@ export class PowerShellExecutor {
     return lines.join('\n');
   }
 
-  private formatGetHelp(topic?: string): string {
-    return `TOPIC\n    Windows PowerShell Help System\n\nSHORT DESCRIPTION\n    Displays help about Windows PowerShell cmdlets and concepts.\n\nLONG DESCRIPTION\n    Windows PowerShell Help describes cmdlets, functions, scripts, and modules.\n\n    To get help for a cmdlet, type: Get-Help <cmdlet-name>\n\n${topic ? `Get-Help ${topic}: No help found for topic "${topic}".` : ''}`;
+  private formatGetHelp(topic?: string, opts?: { examples?: boolean; detailed?: boolean; full?: boolean; parameter?: string; online?: boolean; showWindow?: boolean; category?: string; component?: string; role?: string; functionality?: string }): string {
+    const helpDb: Record<string, { synopsis: string; description: string; syntax: string; examples?: string; parameters?: string }> = {
+      'clear-host': {
+        synopsis: 'Clears the display in the host program.',
+        description: 'The Clear-Host cmdlet deletes the current text from the display, including commands and any output that might have accumulated.',
+        syntax: 'Clear-Host [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Clear-Host\n    (Screen is cleared)',
+        parameters: '-WhatIf, -Confirm, -Verbose',
+      },
+      'copy-item': {
+        synopsis: 'Copies an item from one location to another.',
+        description: 'The Copy-Item cmdlet copies an item from one location to another location in the same namespace.',
+        syntax: 'Copy-Item [-Path] <String[]> [[-Destination] <String>] [-Recurse] [-Force] [-Filter <String>] [-Include <String[]>] [-Exclude <String[]>] [-LiteralPath <String[]>] [-PassThru] [-Container] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Copy-Item C:\\source.txt C:\\dest.txt',
+        parameters: '-Path, -Destination, -Recurse, -Force, -Filter, -Include, -Exclude, -LiteralPath, -PassThru, -Container',
+      },
+      'get-childitem': {
+        synopsis: 'Gets the items and child items in one or more specified locations.',
+        description: 'The Get-ChildItem cmdlet gets the items in one or more specified locations. If the item is a container, it gets the items inside the container.',
+        syntax: 'Get-ChildItem [[-Path] <String[]>] [-Filter <String>] [-Include <String[]>] [-Exclude <String[]>] [-Recurse] [-Depth <UInt32>] [-Name] [-Directory] [-File] [-Hidden] [-System] [-Force] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-ChildItem C:\\',
+        parameters: '-Path, -Filter, -Include, -Exclude, -Recurse, -Depth, -Name, -Directory, -File, -Hidden, -System, -Force',
+      },
+      'get-command': {
+        synopsis: 'Gets all commands.',
+        description: 'The Get-Command cmdlet gets all commands that are installed on the computer.',
+        syntax: 'Get-Command [[-Name] <String[]>] [-CommandType <CommandTypes>] [-Module <String[]>] [-Noun <String>] [-Verb <String>] [-All] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Command\n    (Lists all available commands)',
+        parameters: '-Name, -CommandType, -Module, -Noun, -Verb, -All',
+      },
+      'get-content': {
+        synopsis: 'Gets the content of the item at the specified location.',
+        description: 'The Get-Content cmdlet gets the content of the item at the location specified by the path.',
+        syntax: 'Get-Content [-Path] <String[]> [-TotalCount <Int64>] [-Tail <Int32>] [-Raw] [-AsByteStream] [-Stream <String>] [-Wait] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Content C:\\file.txt',
+        parameters: '-Path, -LiteralPath, -TotalCount, -Tail, -Raw, -AsByteStream, -Stream, -Wait, -First, -Last',
+      },
+      'get-help': {
+        synopsis: 'Displays information about Windows PowerShell commands and concepts.',
+        description: 'The Get-Help cmdlet displays information about PowerShell concepts and commands.',
+        syntax: 'Get-Help [[-Name] <String>] [-Full] [-Detailed] [-Examples] [-Online] [-Parameter <String>] [-Category <String>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Help Get-Process',
+        parameters: '-Name, -Full, -Detailed, -Examples, -Online, -Parameter, -Category, -Component, -Role, -Functionality',
+      },
+      'get-location': {
+        synopsis: 'Gets information about the current working location or a location stack.',
+        description: 'The Get-Location cmdlet gets an object that represents the current directory.',
+        syntax: 'Get-Location [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Location\n    Path\n    ----\n    C:\\Users\\User',
+        parameters: '-Stack, -StackName',
+      },
+      'get-netadapter': {
+        synopsis: 'Gets the basic network adapter properties.',
+        description: 'The Get-NetAdapter cmdlet gets the basic network adapter properties, including the name, interface description, interface index, and MAC address.',
+        syntax: 'Get-NetAdapter [[-Name] <String[]>] [-Physical] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-NetAdapter',
+        parameters: '-Name, -Physical, -IncludeHidden, -All',
+      },
+      'get-netipaddress': {
+        synopsis: 'Gets the IP address configuration.',
+        description: 'The Get-NetIPAddress cmdlet gets the IP address configuration for the specified interface.',
+        syntax: 'Get-NetIPAddress [[-IPAddress] <String[]>] [-InterfaceAlias <String[]>] [-AddressFamily <AddressFamily>] [-PrefixLength <Byte>] [-AddressState <AddressState>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-NetIPAddress\n    (Lists all IP addresses)',
+        parameters: '-IPAddress, -InterfaceAlias, -InterfaceIndex, -AddressFamily, -PrefixLength, -AddressState, -PrefixOrigin, -SuffixOrigin',
+      },
+      'new-netipaddress': {
+        synopsis: 'Creates and configures an IP address.',
+        description: 'The New-NetIPAddress cmdlet creates and configures an IP address and related settings.',
+        syntax: 'New-NetIPAddress [-IPAddress] <String> -InterfaceAlias <String> -PrefixLength <Byte> [-DefaultGateway <String>] [-AddressFamily <AddressFamily>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.10 -PrefixLength 24',
+        parameters: '-IPAddress, -InterfaceAlias, -InterfaceIndex, -PrefixLength, -DefaultGateway, -AddressFamily, -SkipAsSource',
+      },
+      'remove-netipaddress': {
+        synopsis: 'Removes an IP address and its configuration.',
+        description: 'The Remove-NetIPAddress cmdlet removes an IP address and its related settings.',
+        syntax: 'Remove-NetIPAddress [[-IPAddress] <String[]>] [-InterfaceAlias <String[]>] [-AddressFamily <AddressFamily>] [-Confirm:$false] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Remove-NetIPAddress -IPAddress 192.168.1.10 -Confirm:$false',
+        parameters: '-IPAddress, -InterfaceAlias, -AddressFamily, -Confirm',
+      },
+      'set-netipaddress': {
+        synopsis: 'Modifies the configuration of an IP address.',
+        description: 'The Set-NetIPAddress cmdlet modifies the configuration of an IP address.',
+        syntax: 'Set-NetIPAddress [[-IPAddress] <String[]>] [-PrefixLength <Byte>] [-PrefixOrigin <PrefixOrigin>] [-SkipAsSource <Boolean>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Set-NetIPAddress -IPAddress 192.168.1.10 -PrefixLength 16',
+        parameters: '-IPAddress, -PrefixLength, -PrefixOrigin, -SuffixOrigin, -SkipAsSource',
+      },
+      'get-netipconfiguration': {
+        synopsis: 'Gets IP network configuration.',
+        description: 'The Get-NetIPConfiguration cmdlet gets network configuration including adapter, IP address, and DNS server information.',
+        syntax: 'Get-NetIPConfiguration [[-InterfaceAlias] <String>] [-All] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-NetIPConfiguration',
+        parameters: '-InterfaceAlias, -InterfaceIndex, -All',
+      },
+      'get-netroute': {
+        synopsis: 'Gets the IP route information from the IP routing table.',
+        description: 'The Get-NetRoute cmdlet gets the IP route information from the IP routing table.',
+        syntax: 'Get-NetRoute [[-DestinationPrefix] <String[]>] [-InterfaceAlias <String[]>] [-NextHop <String[]>] [-RouteMetric <UInt16>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-NetRoute\n    (Lists routing table)',
+        parameters: '-DestinationPrefix, -InterfaceAlias, -NextHop, -RouteMetric, -AddressFamily',
+      },
+      'new-netroute': {
+        synopsis: 'Creates a route in the IP routing table.',
+        description: 'The New-NetRoute cmdlet creates a route in the IP routing table.',
+        syntax: 'New-NetRoute -DestinationPrefix <String> -InterfaceAlias <String> [-NextHop <String>] [-RouteMetric <UInt16>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> New-NetRoute -DestinationPrefix "10.0.0.0/8" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1',
+        parameters: '-DestinationPrefix, -InterfaceAlias, -NextHop, -RouteMetric, -PolicyStore',
+      },
+      'remove-netroute': {
+        synopsis: 'Removes IP routes from the IP routing table.',
+        description: 'The Remove-NetRoute cmdlet removes IP routes from the IP routing table.',
+        syntax: 'Remove-NetRoute [[-DestinationPrefix] <String[]>] [-InterfaceAlias <String[]>] [-NextHop <String[]>] [-Confirm:$false] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Remove-NetRoute -DestinationPrefix "10.0.0.0/8" -Confirm:$false',
+        parameters: '-DestinationPrefix, -InterfaceAlias, -NextHop, -Confirm',
+      },
+      'get-dnsclientserveraddress': {
+        synopsis: 'Gets the DNS server IP addresses from the TCP/IP properties on an interface.',
+        description: 'The Get-DnsClientServerAddress cmdlet gets the DNS server IP addresses from the TCP/IP properties on an interface.',
+        syntax: 'Get-DnsClientServerAddress [[-InterfaceAlias] <String[]>] [-AddressFamily <AddressFamily>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-DnsClientServerAddress -InterfaceAlias "Ethernet"',
+        parameters: '-InterfaceAlias, -InterfaceIndex, -AddressFamily',
+      },
+      'set-dnsclientserveraddress': {
+        synopsis: 'Sets the DNS server IP addresses for a network interface.',
+        description: 'The Set-DnsClientServerAddress cmdlet sets one or more IP addresses for DNS servers associated with the specified interface.',
+        syntax: 'Set-DnsClientServerAddress -InterfaceAlias <String> -ServerAddresses <String[]> [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "8.8.8.8","8.8.4.4"',
+        parameters: '-InterfaceAlias, -InterfaceIndex, -ServerAddresses, -ResetServerAddresses',
+      },
+      'get-process': {
+        synopsis: 'Gets the processes that are running on the local computer.',
+        description: 'The Get-Process cmdlet gets the processes that are running on the local computer.',
+        syntax: 'Get-Process [[-Name] <String[]>] [-Id <Int32[]>] [-ComputerName <String[]>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Process\n    (Lists all processes)',
+        parameters: '-Name, -Id, -ComputerName, -IncludeUserName, -Module, -FileVersionInfo',
+      },
+      'stop-process': {
+        synopsis: 'Stops one or more running processes.',
+        description: 'The Stop-Process cmdlet stops one or more running processes.',
+        syntax: 'Stop-Process [-Id] <Int32[]> [-Force] [<CommonParameters>]\nStop-Process -Name <String[]> [-Force] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Stop-Process -Name "notepad"',
+        parameters: '-Id, -Name, -Force, -PassThru, -WhatIf',
+      },
+      'get-service': {
+        synopsis: 'Gets the services on a local or remote computer.',
+        description: 'The Get-Service cmdlet gets objects that represent the services on a local computer.',
+        syntax: 'Get-Service [[-Name] <String[]>] [-DisplayName <String[]>] [-DependentServices] [-RequiredServices] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Service\n    (Lists all services)',
+        parameters: '-Name, -DisplayName, -Include, -Exclude, -DependentServices, -RequiredServices',
+      },
+      'move-item': {
+        synopsis: 'Moves an item from one location to another.',
+        description: 'The Move-Item cmdlet moves an item from one location to another.',
+        syntax: 'Move-Item [-Path] <String[]> [[-Destination] <String>] [-Force] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Move-Item C:\\source.txt C:\\dest.txt',
+        parameters: '-Path, -Destination, -Force, -Filter, -Include, -Exclude, -LiteralPath, -PassThru',
+      },
+      'new-item': {
+        synopsis: 'Creates a new item.',
+        description: 'The New-Item cmdlet creates a new item. The type of item that is created depends on the location.',
+        syntax: 'New-Item [-Path] <String[]> [-ItemType <String>] [-Value <Object>] [-Force] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> New-Item -Path C:\\newdir -ItemType Directory',
+        parameters: '-Path, -Name, -ItemType, -Value, -Force',
+      },
+      'remove-item': {
+        synopsis: 'Deletes the specified items.',
+        description: 'The Remove-Item cmdlet deletes one or more items.',
+        syntax: 'Remove-Item [-Path] <String[]> [-Recurse] [-Force] [-Filter <String>] [-Include <String[]>] [-Exclude <String[]>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Remove-Item C:\\oldfile.txt',
+        parameters: '-Path, -Recurse, -Force, -Filter, -Include, -Exclude, -WhatIf',
+      },
+      'rename-item': {
+        synopsis: 'Renames an item in a PowerShell provider namespace.',
+        description: 'The Rename-Item cmdlet changes the name of a specified item.',
+        syntax: 'Rename-Item [-Path] <String> [-NewName] <String> [-Force] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Rename-Item -Path C:\\old.txt -NewName new.txt',
+        parameters: '-Path, -LiteralPath, -NewName, -Force, -PassThru',
+      },
+      'set-content': {
+        synopsis: 'Writes new content or replaces existing content in a file.',
+        description: 'The Set-Content cmdlet is a string-processing cmdlet that writes new content or replaces existing content in a file.',
+        syntax: 'Set-Content [-Path] <String[]> [-Value] <Object[]> [-Force] [-NoNewline] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Set-Content -Path C:\\file.txt -Value "Hello World"',
+        parameters: '-Path, -LiteralPath, -Value, -Force, -NoNewline, -Encoding',
+      },
+      'set-location': {
+        synopsis: 'Sets the current working location to a specified location.',
+        description: 'The Set-Location cmdlet sets the working location to a specified location.',
+        syntax: 'Set-Location [[-Path] <String>] [-LiteralPath <String>] [-PassThru] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Set-Location C:\\Windows',
+        parameters: '-Path, -LiteralPath, -PassThru, -Stack, -StackName',
+      },
+      'test-connection': {
+        synopsis: 'Sends ICMP echo request packets (pings) to one or more computers.',
+        description: 'The Test-Connection cmdlet sends Internet Control Message Protocol (ICMP) echo request packets to one or more remote computers.',
+        syntax: 'Test-Connection [-ComputerName] <String[]> [-Count <Int32>] [-Delay <Int32>] [-Quiet] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Test-Connection -ComputerName 8.8.8.8',
+        parameters: '-ComputerName, -Count, -Delay, -BufferSize, -Quiet, -TTL, -DontFragment',
+      },
+      'write-host': {
+        synopsis: 'Writes customized output to a host.',
+        description: 'The Write-Host cmdlet writes output to the host. It bypasses the output stream.',
+        syntax: 'Write-Host [[-Object] <Object>] [-NoNewline] [-Separator <Object>] [-ForegroundColor <ConsoleColor>] [-BackgroundColor <ConsoleColor>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Write-Host "Hello World" -ForegroundColor Green',
+        parameters: '-Object, -NoNewline, -Separator, -ForegroundColor, -BackgroundColor',
+      },
+      'write-output': {
+        synopsis: 'Sends the specified objects to the next command in the pipeline.',
+        description: 'The Write-Output cmdlet sends the specified objects to the next command in the pipeline.',
+        syntax: 'Write-Output [-InputObject] <PSObject[]> [-NoEnumerate] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Write-Output "Hello"',
+        parameters: '-InputObject, -NoEnumerate',
+      },
+      'get-disk': {
+        synopsis: 'Gets one or more disks visible to the operating system.',
+        description: 'The Get-Disk cmdlet gets one or more disks visible to the operating system.',
+        syntax: 'Get-Disk [[-Number] <UInt32[]>] [-FriendlyName <String[]>] [-SerialNumber <String[]>] [-UniqueId <String[]>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Disk\n    (Lists all disks)',
+        parameters: '-Number, -FriendlyName, -SerialNumber, -UniqueId',
+      },
+      'get-volume': {
+        synopsis: 'Gets the specified Volume object, or all Volume objects if no filter is specified.',
+        description: 'The Get-Volume cmdlet returns a list of all available volumes.',
+        syntax: 'Get-Volume [[-DriveLetter] <Char[]>] [-FriendlyName <String[]>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-Volume\n    (Lists all volumes)',
+        parameters: '-DriveLetter, -FriendlyName, -FileSystemLabel',
+      },
+      'get-localuser': {
+        synopsis: 'Gets local user accounts.',
+        description: 'The Get-LocalUser cmdlet gets local user accounts.',
+        syntax: 'Get-LocalUser [[-Name] <String[]>] [-SID <SecurityIdentifier[]>] [<CommonParameters>]',
+        examples: 'EXAMPLE 1\n    PS> Get-LocalUser\n    (Lists all local users)',
+        parameters: '-Name, -SID',
+      },
+    };
+
+    if (!topic) {
+      return [
+        'TOPIC',
+        '    Windows PowerShell Help System',
+        '',
+        'SHORT DESCRIPTION',
+        '    Displays help about Windows PowerShell cmdlets and concepts.',
+        '',
+        'LONG DESCRIPTION',
+        '    Windows PowerShell Help describes cmdlets, functions, scripts, and modules.',
+        '',
+        '    To get help for a cmdlet, type: Get-Help <cmdlet-name>',
+      ].join('\n');
+    }
+
+    const key = topic.toLowerCase().replace(/^["']|["']$/g, '');
+    const entry = helpDb[key];
+
+    if (!entry) {
+      return [
+        'TOPIC',
+        '    Windows PowerShell Help System',
+        '',
+        'SHORT DESCRIPTION',
+        '    Displays help about Windows PowerShell cmdlets and concepts.',
+        '',
+        'LONG DESCRIPTION',
+        '    Windows PowerShell Help describes cmdlets, functions, scripts, and modules.',
+        '',
+        `    To get help for a cmdlet, type: Get-Help <cmdlet-name>`,
+        '',
+        `Get-Help : No help topic was not found for '${topic}'. Verify that the topic is correct and try the command again.`,
+      ].join('\n');
+    }
+
+    if (opts?.showWindow) {
+      return `Get-Help : The -ShowWindow parameter is not supported in this simulator.\n    Use Get-Help ${topic} to view help in the terminal.`;
+    }
+    if (opts?.online) {
+      return `Opening online help for ${topic}... (simulated: no browser in simulator)`;
+    }
+    if (opts?.parameter) {
+      return `PARAMETER: -${opts.parameter}\n\nName: -${opts.parameter}\n    ${entry.parameters ?? '(no parameter info)'}`;
+    }
+
+    const lines: string[] = [
+      `NAME`,
+      `    ${topic}`,
+      ``,
+      `SYNOPSIS`,
+      `    ${entry.synopsis}`,
+      ``,
+      `SYNTAX`,
+      `    ${entry.syntax}`,
+      ``,
+      `DESCRIPTION`,
+      `    ${entry.description}`,
+    ];
+
+    if (opts?.examples || opts?.detailed || opts?.full) {
+      if (entry.examples) {
+        lines.push('', 'EXAMPLES', `    ${entry.examples}`);
+      }
+    }
+    if (opts?.detailed || opts?.full) {
+      if (entry.parameters) {
+        lines.push('', 'PARAMETERS', `    ${entry.parameters}`);
+      }
+    }
+    if (opts?.full) {
+      lines.push('', 'INPUTS', `    None. You cannot pipe objects to ${topic}.`);
+      lines.push('', 'OUTPUTS', `    System.Object`);
+      lines.push('', 'NOTES', `    This is a simulated cmdlet.`);
+    }
+    lines.push('', 'RELATED LINKS', `    Get-Help ${topic} -Online`);
+
+    return lines.join('\n');
   }
 
-  private formatGetCommand(): string {
-    return [
-      'CommandType     Name                                               Version    Source',
-      '-----------     ----                                               -------    ------',
-      'Cmdlet          Clear-Host                                         3.1.0.0    Microsoft.PowerShell.Core',
-      'Cmdlet          Copy-Item                                          3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Get-ChildItem                                      3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Get-Command                                        3.0.0.0    Microsoft.PowerShell.Core',
-      'Cmdlet          Get-Content                                        3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Get-Help                                           3.0.0.0    Microsoft.PowerShell.Core',
-      'Cmdlet          Get-Location                                       3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Get-NetAdapter                                     2.0.0.0    NetAdapter',
-      'Cmdlet          Get-NetIPAddress                                   1.0.0.0    NetTCPIP',
-      'Cmdlet          Get-NetIPConfiguration                             1.0.0.0    NetTCPIP',
-      'Cmdlet          Get-Process                                        3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Move-Item                                          3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          New-Item                                           3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Remove-Item                                        3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Rename-Item                                        3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Set-Content                                        3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Set-Location                                       3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Test-Connection                                    3.1.0.0    Microsoft.PowerShell.Management',
-      'Cmdlet          Write-Host                                         3.1.0.0    Microsoft.PowerShell.Utility',
-      'Cmdlet          Write-Output                                       3.1.0.0    Microsoft.PowerShell.Utility',
-    ].join('\n');
+  private static readonly ALL_COMMANDS: Array<{ type: string; name: string; version: string; source: string; noun: string }> = [
+    { type: 'Cmdlet', name: 'Clear-Host',                    version: '3.1.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'Host' },
+    { type: 'Cmdlet', name: 'Copy-Item',                     version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Item' },
+    { type: 'Cmdlet', name: 'Get-ChildItem',                 version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'ChildItem' },
+    { type: 'Cmdlet', name: 'Get-Command',                   version: '3.0.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'Command' },
+    { type: 'Cmdlet', name: 'Get-Content',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Content' },
+    { type: 'Cmdlet', name: 'Get-Date',                      version: '3.1.0.0', source: 'Microsoft.PowerShell.Utility',    noun: 'Date' },
+    { type: 'Cmdlet', name: 'Get-Disk',                      version: '2.0.0.0', source: 'Storage',                        noun: 'Disk' },
+    { type: 'Cmdlet', name: 'Get-DnsClientServerAddress',    version: '1.0.0.0', source: 'DnsClient',                      noun: 'DnsClientServerAddress' },
+    { type: 'Cmdlet', name: 'Get-EventLog',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'EventLog' },
+    { type: 'Cmdlet', name: 'Get-Help',                      version: '3.0.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'Help' },
+    { type: 'Cmdlet', name: 'Get-History',                   version: '3.0.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'History' },
+    { type: 'Cmdlet', name: 'Get-LocalUser',                 version: '1.0.0.0', source: 'Microsoft.PowerShell.LocalAccounts', noun: 'LocalUser' },
+    { type: 'Cmdlet', name: 'Get-Location',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Location' },
+    { type: 'Cmdlet', name: 'Get-NetAdapter',                version: '2.0.0.0', source: 'NetAdapter',                     noun: 'NetAdapter' },
+    { type: 'Cmdlet', name: 'Get-NetIPAddress',              version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPAddress' },
+    { type: 'Cmdlet', name: 'Get-NetIPConfiguration',        version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPConfiguration' },
+    { type: 'Cmdlet', name: 'Get-NetRoute',                  version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetRoute' },
+    { type: 'Cmdlet', name: 'Get-Process',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Process' },
+    { type: 'Cmdlet', name: 'Get-Service',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Service' },
+    { type: 'Cmdlet', name: 'Get-Volume',                    version: '2.0.0.0', source: 'Storage',                        noun: 'Volume' },
+    { type: 'Cmdlet', name: 'Move-Item',                     version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Item' },
+    { type: 'Cmdlet', name: 'New-Item',                      version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Item' },
+    { type: 'Cmdlet', name: 'New-LocalUser',                 version: '1.0.0.0', source: 'Microsoft.PowerShell.LocalAccounts', noun: 'LocalUser' },
+    { type: 'Cmdlet', name: 'New-NetIPAddress',              version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPAddress' },
+    { type: 'Cmdlet', name: 'New-NetRoute',                  version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetRoute' },
+    { type: 'Cmdlet', name: 'Remove-Item',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Item' },
+    { type: 'Cmdlet', name: 'Remove-LocalUser',              version: '1.0.0.0', source: 'Microsoft.PowerShell.LocalAccounts', noun: 'LocalUser' },
+    { type: 'Cmdlet', name: 'Remove-NetIPAddress',           version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPAddress' },
+    { type: 'Cmdlet', name: 'Remove-NetRoute',               version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetRoute' },
+    { type: 'Cmdlet', name: 'Rename-Item',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Item' },
+    { type: 'Cmdlet', name: 'Set-Content',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Content' },
+    { type: 'Cmdlet', name: 'Set-DnsClientServerAddress',    version: '1.0.0.0', source: 'DnsClient',                      noun: 'DnsClientServerAddress' },
+    { type: 'Cmdlet', name: 'Set-Location',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Location' },
+    { type: 'Cmdlet', name: 'Set-NetIPAddress',              version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPAddress' },
+    { type: 'Cmdlet', name: 'Set-Service',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Service' },
+    { type: 'Cmdlet', name: 'Start-Service',                 version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Service' },
+    { type: 'Cmdlet', name: 'Stop-Process',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Process' },
+    { type: 'Cmdlet', name: 'Stop-Service',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Service' },
+    { type: 'Cmdlet', name: 'Test-Connection',               version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Connection' },
+    { type: 'Cmdlet', name: 'Test-Path',                     version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Path' },
+    { type: 'Cmdlet', name: 'Write-Host',                    version: '3.1.0.0', source: 'Microsoft.PowerShell.Utility',   noun: 'Host' },
+    { type: 'Cmdlet', name: 'Write-Output',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Utility',   noun: 'Output' },
+    { type: 'Function', name: 'prompt',                      version: '',        source: '',                               noun: 'prompt' },
+    { type: 'Alias', name: 'cls',                            version: '',        source: '',                               noun: 'cls' },
+    { type: 'Alias', name: 'clear',                          version: '',        source: '',                               noun: 'clear' },
+    { type: 'Alias', name: 'ls',                             version: '',        source: '',                               noun: 'ls' },
+    { type: 'Alias', name: 'dir',                            version: '',        source: '',                               noun: 'dir' },
+    { type: 'Alias', name: 'cd',                             version: '',        source: '',                               noun: 'cd' },
+    { type: 'Alias', name: 'pwd',                            version: '',        source: '',                               noun: 'pwd' },
+    { type: 'Alias', name: 'cat',                            version: '',        source: '',                               noun: 'cat' },
+    { type: 'Alias', name: 'echo',                           version: '',        source: '',                               noun: 'echo' },
+    { type: 'Alias', name: 'gci',                            version: '',        source: '',                               noun: 'gci' },
+    { type: 'Alias', name: 'gcm',                            version: '',        source: '',                               noun: 'gcm' },
+    { type: 'Alias', name: 'gps',                            version: '',        source: '',                               noun: 'gps' },
+    { type: 'Alias', name: 'gsv',                            version: '',        source: '',                               noun: 'gsv' },
+    { type: 'Alias', name: 'sort',                           version: '',        source: '',                               noun: 'sort' },
+    { type: 'Alias', name: 'man',                            version: '',        source: '',                               noun: 'man' },
+    { type: 'Alias', name: 'help',                           version: '',        source: '',                               noun: 'help' },
+  ];
+
+  private handleGetCommand(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const nameFilter = params.get('name') || params.get('_positional');
+    const commandTypeFilter = (params.get('commandtype') ?? '').toLowerCase();
+    const nounFilter = (params.get('noun') ?? '').toLowerCase();
+    const verbFilter = (params.get('verb') ?? '').toLowerCase();
+    const allFlag = params.has('all');
+    const argumentList = params.get('argumentlist');
+
+    // If a specific name is requested
+    if (nameFilter && !nameFilter.includes('*')) {
+      const names = nameFilter.split(',').map(n => n.trim().toLowerCase());
+      const found = PowerShellExecutor.ALL_COMMANDS.filter(c => names.includes(c.name.toLowerCase()));
+      if (found.length === 0) {
+        // Check for user-defined functions
+        const userFuncs = names.filter(n => this.sessionFunctions.has(n));
+        if (userFuncs.length === 0) {
+          return names.map(n =>
+            `Get-Command : The term '${n}' is not recognized as the name of a cmdlet, function, script file, or operable program.`
+          ).join('\n');
+        }
+        const lines = ['CommandType     Name                                               Version    Source',
+                        '-----------     ----                                               -------    ------'];
+        for (const fn of userFuncs) {
+          lines.push(`Function        ${fn.padEnd(51)}           `);
+        }
+        return lines.join('\n');
+      }
+      const lines = ['CommandType     Name                                               Version    Source',
+                      '-----------     ----                                               -------    ------'];
+      for (const c of found) {
+        lines.push(`${c.type.padEnd(16)}${c.name.padEnd(51)}${c.version.padEnd(11)}${c.source}`);
+      }
+      return lines.join('\n');
+    }
+
+    let filtered = [...PowerShellExecutor.ALL_COMMANDS];
+
+    // Add user-defined functions
+    for (const [name] of this.sessionFunctions) {
+      filtered.push({ type: 'Function', name, version: '', source: '', noun: name });
+    }
+
+    // Apply -CommandType filter
+    if (commandTypeFilter) {
+      if (commandTypeFilter === 'function') {
+        filtered = filtered.filter(c => c.type === 'Function');
+      } else if (commandTypeFilter === 'cmdlet') {
+        filtered = filtered.filter(c => c.type === 'Cmdlet');
+      } else if (commandTypeFilter === 'alias') {
+        filtered = filtered.filter(c => c.type === 'Alias');
+      }
+    }
+
+    // Apply -Noun filter
+    if (nounFilter) {
+      filtered = filtered.filter(c => c.noun.toLowerCase() === nounFilter);
+    }
+
+    // Apply -Verb filter
+    if (verbFilter) {
+      filtered = filtered.filter(c => c.name.toLowerCase().startsWith(verbFilter + '-'));
+    }
+
+    // Apply name wildcard filter
+    if (nameFilter && nameFilter.includes('*')) {
+      const rx = new RegExp('^' + nameFilter.replace(/\*/g, '.*') + '$', 'i');
+      filtered = filtered.filter(c => rx.test(c.name));
+    }
+
+    // -All: include duplicates (in our sim, just include everything)
+    if (!allFlag) {
+      // deduplicate by name (keep first occurrence)
+      const seen = new Set<string>();
+      filtered = filtered.filter(c => { if (seen.has(c.name.toLowerCase())) return false; seen.add(c.name.toLowerCase()); return true; });
+    }
+
+    if (filtered.length === 0) return '';
+
+    const lines = ['CommandType     Name                                               Version    Source',
+                    '-----------     ----                                               -------    ------'];
+    for (const c of filtered) {
+      lines.push(`${c.type.padEnd(16)}${c.name.padEnd(51)}${c.version.padEnd(11)}${c.source}`);
+    }
+    return lines.join('\n');
   }
 
   // ─── PowerShell-style output formatting ─────────────────────────
@@ -1809,60 +2524,401 @@ export class PowerShellExecutor {
     return lines.join('\n');
   }
 
-  private formatGetNetIPAddress(): string {
+  private buildAllIPEntries(): Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> {
+    const entries: Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> = [];
     const ports = this.device.getPortsMap();
-    const lines: string[] = [];
-    let idx = 0;
+    let idx = 2;
     for (const [name, port] of ports) {
       const displayName = name.replace(/^eth/, 'Ethernet ');
       const ip = port.getIPAddress()?.toString() ?? '';
       const mask = port.getSubnetMask()?.toString() ?? '';
-      // Calculate prefix length from mask
       const prefixLength = mask ? this.maskToPrefixLength(mask) : 0;
-
-      if (idx > 0) lines.push('');
-      lines.push(`IPAddress         : ${ip || 'Not configured'}`);
-      lines.push(`InterfaceIndex    : ${idx + 1}`);
-      lines.push(`InterfaceAlias    : ${displayName}`);
-      lines.push(`AddressFamily     : IPv4`);
-      lines.push(`Type              : Unicast`);
-      lines.push(`PrefixLength      : ${prefixLength}`);
-      lines.push(`PrefixOrigin      : ${this.device.isDHCPConfigured(name) ? 'Dhcp' : 'Manual'}`);
-      lines.push(`SuffixOrigin      : ${this.device.isDHCPConfigured(name) ? 'Dhcp' : 'Manual'}`);
-      lines.push(`AddressState      : ${ip ? 'Preferred' : 'Invalid'}`);
+      const isDhcp = this.device.isDHCPConfigured(name);
+      if (ip) {
+        entries.push({ ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength, prefixOrigin: isDhcp ? 'Dhcp' : 'Manual', suffixOrigin: isDhcp ? 'Dhcp' : 'Manual', addressState: 'Preferred', skipAsSource: false });
+      }
+      // Link-local IPv6
+      const macStr = port.getMAC()?.toString() ?? '00:00:00:00:00:00';
+      const macParts = macStr.split(':');
+      if (macParts.length === 6) {
+        const fe80 = `fe80::${macParts[0]}${macParts[1]}:${macParts[2]}ff:fe${macParts[3]}:${macParts[4]}${macParts[5]}`;
+        entries.push({ ip: fe80, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
+      }
       idx++;
     }
-    // Add loopback
-    if (lines.length > 0) lines.push('');
-    lines.push('IPAddress         : 127.0.0.1');
-    lines.push('InterfaceIndex    : 1');
-    lines.push('InterfaceAlias    : Loopback Pseudo-Interface 1');
-    lines.push('AddressFamily     : IPv4');
-    lines.push('Type              : Unicast');
-    lines.push('PrefixLength      : 8');
-    lines.push('PrefixOrigin      : WellKnown');
-    lines.push('SuffixOrigin      : WellKnown');
-    lines.push('AddressState      : Preferred');
+    // Extra IPs (added via New-NetIPAddress)
+    for (const [ip, info] of this.extraIPs) {
+      entries.push({ ip, ifAlias: info.ifAlias, ifIndex: idx++, addressFamily: info.addressFamily, prefixLength: info.prefixLength, prefixOrigin: info.prefixOrigin, suffixOrigin: info.suffixOrigin, addressState: 'Preferred', skipAsSource: info.skipAsSource });
+    }
+    // Loopback
+    entries.push({ ip: '127.0.0.1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv4', prefixLength: 8, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
+    entries.push({ ip: '::1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv6', prefixLength: 128, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
+    return entries;
+  }
+
+  private formatIPEntry(e: ReturnType<typeof this.buildAllIPEntries>[0]): string {
+    return [
+      `IPAddress         : ${e.ip}`,
+      `InterfaceIndex    : ${e.ifIndex}`,
+      `InterfaceAlias    : ${e.ifAlias}`,
+      `AddressFamily     : ${e.addressFamily}`,
+      `Type              : Unicast`,
+      `PrefixLength      : ${e.prefixLength}`,
+      `PrefixOrigin      : ${e.prefixOrigin}`,
+      `SuffixOrigin      : ${e.suffixOrigin}`,
+      `AddressState      : ${e.addressState}`,
+      `SkipAsSource      : ${e.skipAsSource ? 'True' : 'False'}`,
+    ].join('\n');
+  }
+
+  private handleGetNetIPAddress(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ipFilter = params.get('ipaddress') || params.get('_positional');
+    const ifFilter = (params.get('interfacealias') ?? '').toLowerCase().replace(/^["']|["']$/g, '');
+    const afFilter = (params.get('addressfamily') ?? '').toLowerCase();
+    const plFilter = params.has('prefixlength') ? parseInt(params.get('prefixlength')!, 10) : undefined;
+    const stateFilter = (params.get('addressstate') ?? '').toLowerCase();
+    const poFilter = (params.get('prefixorigin') ?? '').toLowerCase();
+    const soFilter = (params.get('suffixorigin') ?? '').toLowerCase();
+    // -IncludeAllCompartments: just ignore in sim
+    const errorAction = (params.get('erroraction') ?? '').toLowerCase();
+
+    // Validate explicit IP address filter
+    if (ipFilter && !this.isValidIP(ipFilter)) {
+      return `Get-NetIPAddress : Invalid IP address: '${ipFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    }
+
+    let entries = this.buildAllIPEntries();
+
+    if (ipFilter) entries = entries.filter(e => e.ip.toLowerCase() === ipFilter.toLowerCase());
+    if (ifFilter) entries = entries.filter(e => e.ifAlias.toLowerCase().includes(ifFilter) || e.ifAlias.toLowerCase() === ifFilter);
+    if (afFilter === 'ipv4') entries = entries.filter(e => e.addressFamily === 'IPv4');
+    if (afFilter === 'ipv6') entries = entries.filter(e => e.addressFamily === 'IPv6');
+    if (plFilter !== undefined) entries = entries.filter(e => e.prefixLength === plFilter);
+    if (stateFilter) entries = entries.filter(e => e.addressState.toLowerCase() === stateFilter);
+    if (poFilter) entries = entries.filter(e => e.prefixOrigin.toLowerCase() === poFilter);
+    if (soFilter) entries = entries.filter(e => e.suffixOrigin.toLowerCase() === soFilter);
+
+    if (entries.length === 0) {
+      if (ifFilter) {
+        return `Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to '${ifFilter}'. Verify the value of the property and retry.`;
+      }
+      if (ipFilter) {
+        return `Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ipFilter}'. Verify the value of the property and retry.`;
+      }
+      return '';
+    }
+
+    return entries.map(e => this.formatIPEntry(e)).join('\n\n');
+  }
+
+  private isValidIP(ip: string): boolean {
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+      return ip.split('.').every(p => parseInt(p) <= 255);
+    }
+    // IPv6 basic check
+    if (/^[0-9a-f:]+$/i.test(ip) && ip.includes(':')) return true;
+    return false;
+  }
+
+  private handleNewNetIPAddress(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ip = params.get('ipaddress') || params.get('_positional');
+    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
+    const prefixStr = params.get('prefixlength');
+    const gateway = params.get('defaultgateway');
+    const afParam = (params.get('addressfamily') ?? '').toLowerCase();
+    const skipAsSource = (params.get('skipassource') ?? '').toLowerCase() === '$true' || params.get('skipassource') === 'true';
+
+    if (!ip) return `New-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    if (!ifAlias) return `New-NetIPAddress : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    if (!prefixStr) return `New-NetIPAddress : The -PrefixLength parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    if (!this.isValidIP(ip)) return `New-NetIPAddress : Invalid IP address: '${ip}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+
+    const prefixLength = parseInt(prefixStr, 10);
+    const isIPv6 = ip.includes(':');
+    const maxPrefix = isIPv6 ? 128 : 32;
+    if (isNaN(prefixLength) || prefixLength < 0 || prefixLength > maxPrefix) {
+      return `New-NetIPAddress : PrefixLength '${prefixStr}' is not in the valid range 0-${maxPrefix}.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    }
+
+    // Check for duplicate
+    const existing = this.buildAllIPEntries();
+    if (existing.some(e => e.ip.toLowerCase() === ip.toLowerCase())) {
+      return `New-NetIPAddress : The IP address '${ip}' already exists on this system.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    }
+
+    const addressFamily = afParam === 'ipv6' || isIPv6 ? 'IPv6' : 'IPv4';
+    this.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
+
+    if (gateway) {
+      this.extraRoutes.set('0.0.0.0/0', { ifAlias, nextHop: gateway, metric: 0 });
+    }
+
+    return this.formatIPEntry({ ip, ifAlias, ifIndex: 99, addressFamily, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', addressState: 'Preferred', skipAsSource });
+  }
+
+  private handleRemoveNetIPAddress(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ip = params.get('ipaddress') || params.get('_positional');
+    const whatif = params.has('whatif') || args.some(a => a.toLowerCase() === '-whatif');
+
+    if (!ip) return `Remove-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+
+    if (ip === '127.0.0.1' || ip === '::1') {
+      return `Remove-NetIPAddress : Cannot remove the loopback address '${ip}'. This address is required for network functionality.`;
+    }
+
+    const entries = this.buildAllIPEntries();
+    const found = entries.find(e => e.ip.toLowerCase() === ip.toLowerCase());
+    if (!found) {
+      return `Remove-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
+    }
+
+    if (whatif) {
+      return `What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${ip}, InterfaceAlias: ${found.ifAlias}".`;
+    }
+
+    this.extraIPs.delete(ip.toLowerCase());
+    return '';
+  }
+
+  private handleSetNetIPAddress(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ip = params.get('ipaddress') || params.get('_positional');
+
+    if (!ip) return `Set-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+
+    const entry = this.extraIPs.get(ip.toLowerCase());
+    if (!entry) {
+      // Check device IPs
+      const all = this.buildAllIPEntries();
+      const found = all.find(e => e.ip.toLowerCase() === ip.toLowerCase());
+      if (!found) {
+        return `Set-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
+      }
+      // Device-level IPs can't be modified in this sim; add to extraIPs
+      this.extraIPs.set(ip.toLowerCase(), { ifAlias: found.ifAlias, prefixLength: found.prefixLength, prefixOrigin: found.prefixOrigin, suffixOrigin: found.suffixOrigin, skipAsSource: found.skipAsSource, addressFamily: found.addressFamily });
+    }
+
+    const e = this.extraIPs.get(ip.toLowerCase())!;
+    if (params.has('prefixlength')) e.prefixLength = parseInt(params.get('prefixlength')!, 10);
+    if (params.has('prefixorigin')) e.prefixOrigin = params.get('prefixorigin')!;
+    if (params.has('suffixorigin')) e.suffixOrigin = params.get('suffixorigin')!;
+    if (params.has('skipassource')) e.skipAsSource = (params.get('skipassource') ?? '').toLowerCase() !== 'false' && (params.get('skipassource') ?? '') !== '$false';
+    return '';
+  }
+
+  private buildDefaultRoutes(): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
+    const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
+    const gw = this.device.getDefaultGateway();
+    const ports = this.device.getPortsMap();
+    let firstIF = '';
+    for (const [name] of ports) { firstIF = name.replace(/^eth/, 'Ethernet '); break; }
+    // Always include default route (with gateway if configured, else 0.0.0.0)
+    routes.push({ dest: '0.0.0.0/0', ifAlias: firstIF || 'Ethernet 0', nextHop: gw || '0.0.0.0', metric: 0 });
+    // Loopback
+    routes.push({ dest: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', metric: 306 });
+    // Connected network routes
+    let idx = 2;
+    for (const [name, port] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const ip = port.getIPAddress()?.toString() ?? '';
+      const mask = port.getSubnetMask()?.toString() ?? '';
+      if (ip && mask) {
+        const prefix = this.maskToPrefixLength(mask);
+        const network = ip.split('.').map((o, i) => (parseInt(o) & parseInt(mask.split('.')[i])).toString()).join('.');
+        routes.push({ dest: `${network}/${prefix}`, ifAlias: displayName, nextHop: '0.0.0.0', metric: 256 });
+      }
+      idx++;
+    }
+    // Extra routes
+    for (const [dest, info] of this.extraRoutes) {
+      routes.push({ dest, ifAlias: info.ifAlias, nextHop: info.nextHop, metric: info.metric });
+    }
+    return routes;
+  }
+
+  private formatRouteEntry(r: { dest: string; ifAlias: string; nextHop: string; metric: number }): string {
+    return [
+      `ifIndex DestinationPrefix                                                         NextHop                                  RouteMetric ifMetric PolicyStore`,
+      `------- -----------------                                                         -------                                  ----------- -------- -----------`,
+      `      2 ${r.dest.padEnd(73)}${r.nextHop.padEnd(41)}${String(r.metric).padEnd(12)}256 ActiveStore`,
+    ].join('\n') + `\n\nDestinationPrefix : ${r.dest}\nNextHop           : ${r.nextHop}\nRouteMetric       : ${r.metric}\nInterfaceAlias    : ${r.ifAlias}\nInterfaceIndex    : 2\nAddressFamily     : IPv4\nPublish           : No\nPreferredLifetime : 10675199.02:48:05.4775807`;
+  }
+
+  private handleGetNetRoute(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const destFilter = (params.get('destinationprefix') ?? '').replace(/^["']|["']$/g, '');
+    const ifFilter = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+    const nhFilter = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
+    const metricFilter = params.has('routemetric') ? parseInt(params.get('routemetric')!, 10) : undefined;
+
+    // Validate destination prefix format — must be CIDR notation (ip/prefix or ipv6/prefix)
+    if (destFilter && !destFilter.match(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/) && !destFilter.match(/^[0-9a-f:]+\/\d+$/i)) {
+      return `Get-NetRoute : Invalid DestinationPrefix: '${destFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    }
+
+    let routes = this.buildDefaultRoutes();
+    if (destFilter) routes = routes.filter(r => r.dest === destFilter);
+    if (ifFilter) routes = routes.filter(r => r.ifAlias.toLowerCase().includes(ifFilter));
+    if (nhFilter) routes = routes.filter(r => r.nextHop === nhFilter);
+    if (metricFilter !== undefined) routes = routes.filter(r => r.metric === metricFilter);
+
+    if (routes.length === 0) return '';
+
+    // Format as key-value blocks for pipeline compatibility (Select -ExpandProperty works on these)
+    return routes.map((r, i) => [
+      `DestinationPrefix : ${r.dest}`,
+      `NextHop           : ${r.nextHop}`,
+      `RouteMetric       : ${r.metric}`,
+      `InterfaceAlias    : ${r.ifAlias}`,
+      `InterfaceIndex    : ${i + 2}`,
+      `AddressFamily     : IPv4`,
+    ].join('\n')).join('\n\n');
+  }
+
+  private handleNewNetRoute(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
+    const nextHop = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
+    const metricStr = params.get('routemetric') ?? '0';
+    const metric = parseInt(metricStr, 10);
+
+    if (!dest) return `New-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    if (!ifAlias) return `New-NetRoute : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    if (!nextHop) return `New-NetRoute : The -NextHop parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+
+    // Check for duplicates
+    if (this.extraRoutes.has(dest)) {
+      return `New-NetRoute : Route '${dest}' already exists.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    }
+
+    this.extraRoutes.set(dest, { ifAlias, nextHop, metric });
+    return [
+      `DestinationPrefix : ${dest}`,
+      `NextHop           : ${nextHop}`,
+      `RouteMetric       : ${metric}`,
+      `InterfaceAlias    : ${ifAlias}`,
+      `InterfaceIndex    : 2`,
+      `AddressFamily     : IPv4`,
+    ].join('\n');
+  }
+
+  private handleRemoveNetRoute(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    const whatif = args.some(a => a.toLowerCase() === '-whatif');
+
+    if (!dest) return `Remove-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+
+    const routes = this.buildDefaultRoutes();
+    const found = routes.find(r => r.dest === dest);
+    if (!found && !this.extraRoutes.has(dest)) {
+      return `Remove-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
+    }
+
+    if (whatif) {
+      return `What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${dest}".`;
+    }
+
+    this.extraRoutes.delete(dest);
+    return '';
+  }
+
+  private handleGetDnsClientServerAddress(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+    const afFilter = (params.get('addressfamily') ?? '').toLowerCase();
+
+    const ports = this.device.getPortsMap();
+    const lines: string[] = ['', 'InterfaceAlias               ServerAddresses', '--------------               ---------------'];
+    let found = false;
+
+    for (const [name] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
+      if (afFilter === 'ipv6') continue; // Only show IPv4 DNS in sim
+      const servers = this.device.getDnsServers(name);
+      lines.push(`${displayName.padEnd(29)}${servers.join(', ')}`);
+      found = true;
+    }
+
+    if (!found && ifFilter) {
+      return `Get-DnsClientServerAddress : No MSFT_DnsClientServerAddress objects found matching the specified interface.`;
+    }
+
     return lines.join('\n');
   }
 
-  private formatGetNetAdapter(): string {
+  private handleSetDnsClientServerAddress(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ifAlias = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    const serversRaw = (params.get('serveraddresses') ?? '').replace(/^["']|["']$/g, '');
+    const reset = params.has('resetserveraddresses');
+
+    if (!ifAlias) {
+      return `Set-DnsClientServerAddress : The -InterfaceAlias parameter is mandatory.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    }
+
+    // Find matching port name
     const ports = this.device.getPortsMap();
-    const lines: string[] = [];
-    lines.push('Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed');
-    lines.push('----                      --------------------                    ------- ------       ----------         ---------');
+    let matchedName = '';
+    for (const [name] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      if (displayName.toLowerCase() === ifAlias.toLowerCase() || name.toLowerCase() === ifAlias.toLowerCase()) {
+        matchedName = name;
+        break;
+      }
+    }
+
+    if (!matchedName) {
+      return `Set-DnsClientServerAddress : Interface '${ifAlias}' not found.`;
+    }
+
+    if (reset) {
+      this.device.setDnsServers?.(matchedName, []);
+      return '';
+    }
+
+    const servers = serversRaw.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    this.device.setDnsServers?.(matchedName, servers);
+    return '';
+  }
+
+  private handleGetNetAdapter(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+    const all = params.has('all') || params.has('includehidden');
+    const physical = params.has('physical');
+
+    const ports = this.device.getPortsMap();
+    const lines: string[] = ['Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed',
+                              '----                      --------------------                    ------- ------       ----------         ---------'];
     let idx = 0;
+    let found = false;
     for (const [name, port] of ports) {
       const displayName = name.replace(/^eth/, 'Ethernet ');
+      if (nameFilter && !displayName.toLowerCase().includes(nameFilter) && displayName.toLowerCase() !== nameFilter) { idx++; continue; }
       const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
       const status = port.getIsUp() ? 'Up' : 'Disconnected';
+      if (physical && !port.getIsUp() && !all) { idx++; continue; }
       const ifIndex = idx + 2;
-      lines.push(
-        `${displayName.padEnd(26)}${('Intel(R) Ethernet Connection').padEnd(40)}${String(ifIndex).padStart(7)} ${status.padEnd(13)}${mac.padEnd(19)}1 Gbps`
-      );
+      lines.push(`${displayName.padEnd(26)}${'Intel(R) Ethernet Connection'.padEnd(40)}${String(ifIndex).padStart(7)} ${status.padEnd(13)}${mac.padEnd(19)}1 Gbps`);
+      found = true;
       idx++;
     }
+
+    if (!found && nameFilter) {
+      return `Get-NetAdapter : No MSFT_NetAdapter objects found with property 'Name' equal to '${nameFilter}'.`;
+    }
+
     return lines.join('\n');
+  }
+
+  private formatGetNetIPAddress(): string {
+    return this.handleGetNetIPAddress([]);
   }
 
   private formatGetNetTCPConnection(args: string[]): string {
@@ -2121,6 +3177,33 @@ export class PowerShellExecutor {
   }
 
   // ─── User/Group/ACL Management Cmdlet Handlers ─────────────────
+
+  /**
+   * Strip common PS parameters that take a value or are boolean flags
+   * and don't affect simulator output: -ErrorAction, -WarningAction, -OutVariable,
+   * -InformationVariable, -Verbose, -Debug, -WhatIf (return WhatIf marker), -Confirm,
+   * -ErrorVariable, -InformationAction.
+   */
+  private stripCommonParams(args: string[]): string[] {
+    const valueParams = new Set([
+      'erroraction', 'warningaction', 'outvariable', 'informationvariable',
+      'errorvariable', 'informationaction', 'pipelinevariable',
+    ]);
+    const flagParams = new Set(['verbose', 'debug', 'whatif']);
+    const result: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const lower = args[i].toLowerCase();
+      // -Confirm:$false / -Confirm:$true → skip
+      if (lower.startsWith('-confirm')) continue;
+      // -WhatIf → keep as marker (handled by callers)
+      if (lower === '-whatif') { result.push(args[i]); continue; }
+      const paramName = lower.replace(/^-/, '');
+      if (valueParams.has(paramName)) { i++; continue; } // skip param + value
+      if (flagParams.has(paramName)) continue; // skip flag
+      result.push(args[i]);
+    }
+    return result;
+  }
 
   /**
    * Reassemble tokens that were split mid-quote, then parse PS-style args.

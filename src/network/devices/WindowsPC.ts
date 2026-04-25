@@ -562,6 +562,10 @@ export class WindowsPC extends EndHost {
     return cfg ? [...cfg.servers] : [];
   }
 
+  setDnsServers(ifName: string, servers: string[]): void {
+    this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
   /** nslookup command implementation for Windows */
   private cmdNslookup(args: string[]): string {
     // Get DNS server from any configured interface
