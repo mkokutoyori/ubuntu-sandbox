@@ -958,6 +958,12 @@ export function registerHuaweiIPSecDisplayCommands(
     return e.showCryptoIKEv2Profile?.() ?? 'Info: No IKEv2 profiles.';
   });
 
+  trie.register('display ike v2 keyring', 'Display IKEv2 keyrings', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    return e.showCryptoIKEv2Keyring?.() ?? 'Info: No IKEv2 keyrings.';
+  });
+
   trie.register('display ike v2 sa', 'Display IKEv2 SAs', () => {
     const e = engOrNull(getRouter());
     if (!e) return 'Info: No IKEv2 configuration.';

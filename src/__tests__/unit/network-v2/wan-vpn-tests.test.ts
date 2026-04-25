@@ -92,3 +92,151 @@ describe('Section 1: Topology validation — addressing & reachability', () => {
     expect(out).toContain('Lost = 0');
   }, 10000);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 2: IKEv1 (ISAKMP) Policy Configuration — Cisco & Huawei
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 2: IKEv1 (ISAKMP) policy configuration', () => {
+
+  it('2.01 — Cisco HQ should have ISAKMP policy 10 with AES-256/SHA256/DH14', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).toContain('priority 10');
+    expect(out).toMatch(/[Ee]ncryption.*aes.*256/i);
+    expect(out).toMatch(/hash.*256/i);
+    expect(out).toMatch(/#14/);
+  });
+
+  it('2.02 — Cisco HQ should have ISAKMP policy 20 with AES-128/SHA1/DH5', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).toContain('priority 20');
+    expect(out).toMatch(/AES 128/i);
+  });
+
+  it('2.03 — Cisco HQ should have PSK for Branch1 (10.0.12.2)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).toContain('10.0.12.2');
+  });
+
+  it('2.04 — Cisco HQ should have PSK for Branch3 (10.0.34.2)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).toContain('10.0.34.2');
+  });
+
+  it('2.05 — Huawei Branch1 should have IKE proposal 10 with AES-256', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ike proposal');
+    expect(out).toContain('10');
+    expect(out).toMatch(/aes.*256/i);
+  });
+
+  it('2.06 — Huawei Branch1 should have IKE peer HQ with correct remote address', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ike peer');
+    expect(out).toMatch(/HQ/i);
+    expect(out).toContain('10.0.12.1');
+  });
+
+  it('2.07 — Huawei Branch3 should have IKE proposal 20 with AES-128', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('display ike proposal');
+    expect(out).toContain('20');
+    expect(out).toMatch(/aes.*128/i);
+  });
+
+  it('2.08 — Huawei Branch3 IKE peer should point to HQ (10.0.34.1)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('display ike peer');
+    expect(out).toContain('10.0.34.1');
+  });
+
+  it('2.09 — ISAKMP lifetime should be 86400 on HQ policy 10', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).toContain('86400');
+  });
+
+  it('2.10 — Huawei Branch1 IKE proposal should reference DH group14', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ike proposal');
+    expect(out).toMatch(/group.*14|dh.*14|14/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 3: IKEv2 Configuration — Cisco Proposals, Policies, Keyrings
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 3: IKEv2 configuration verification', () => {
+
+  it('3.01 — Cisco HQ should have IKEv2 proposal PROP-BR2', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 proposal');
+    expect(out).toContain('PROP-BR2');
+    expect(out).toMatch(/aes-cbc-256/i);
+  });
+
+  it('3.02 — Cisco HQ IKEv2 proposal should have SHA256 integrity', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 proposal');
+    expect(out).toMatch(/sha256/i);
+  });
+
+  it('3.03 — Cisco HQ should have IKEv2 policy POL-BR2', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 policy');
+    expect(out).toContain('POL-BR2');
+  });
+
+  it('3.04 — Cisco HQ IKEv2 keyring KR-BR2 should exist', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 keyring');
+    expect(out).toContain('KR-BR2');
+  });
+
+  it('3.05 — Cisco HQ IKEv2 profile PROF-BR2 should exist', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ikev2 profile');
+    expect(out).toContain('PROF-BR2');
+  });
+
+  it('3.06 — Cisco BR2 should have matching IKEv2 proposal PROP-BR2', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto ikev2 proposal');
+    expect(out).toContain('PROP-BR2');
+    expect(out).toMatch(/aes-cbc-256/i);
+  });
+
+  it('3.07 — Cisco BR2 should have IKEv2 profile with HQ address match', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto ikev2 profile');
+    expect(out).toContain('PROF-BR2');
+    expect(out).toContain('10.0.23.1');
+  });
+
+  it('3.08 — Cisco BR2 keyring peer should reference HQ address', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto ikev2 keyring');
+    expect(out).toContain('KR-BR2');
+    expect(out).toContain('10.0.23.1');
+  });
+
+  it('3.09 — IKEv2 proposal on both HQ and BR2 should agree on DH group 14', async () => {
+    const t = await buildWanVpnTopology();
+    const hqOut = await t.rHQ.executeCommand('show crypto ikev2 proposal');
+    const br2Out = await t.rBR2.executeCommand('show crypto ikev2 proposal');
+    expect(hqOut).toMatch(/14/);
+    expect(br2Out).toMatch(/14/);
+  });
+
+  it('3.10 — IKEv2 policy on BR2 should reference PROP-BR2', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto ikev2 policy');
+    expect(out).toContain('POL-BR2');
+    expect(out).toContain('PROP-BR2');
+  });
+});

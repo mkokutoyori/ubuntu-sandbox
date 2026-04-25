@@ -3273,10 +3273,29 @@ export class IPSecEngine implements IProtocolEngine {
     const lines: string[] = [];
     for (const [name, prof] of this.ikev2Profiles) {
       lines.push(`IKEv2 Profile: ${name}`);
-      lines.push(`  Match identity : ${prof.matchIdentity || 'any'}`);
-      lines.push(`  Local auth     : ${prof.localAuth || 'pre-share'}`);
-      lines.push(`  Remote auth    : ${prof.remoteAuth || 'pre-share'}`);
+      const matchId = prof.matchIdentityRemoteAddress
+        ? `address ${prof.matchIdentityRemoteAddress}`
+        : (prof.matchIdentityRemoteAny ? 'any' : 'any');
+      lines.push(`  Match identity : ${matchId}`);
+      lines.push(`  Local auth     : ${prof.authLocal || 'pre-share'}`);
+      lines.push(`  Remote auth    : ${prof.authRemote || 'pre-share'}`);
       if (prof.keyringName) lines.push(`  Keyring        : ${prof.keyringName}`);
+      if (prof.keyringLocalName) lines.push(`  Keyring local  : ${prof.keyringLocalName}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  showCryptoIKEv2Keyring(): string {
+    if (this.ikev2Keyrings.size === 0) return 'No IKEv2 keyrings configured.';
+    const lines: string[] = [];
+    for (const [name, kr] of this.ikev2Keyrings) {
+      lines.push(`Keyring: ${name}`);
+      for (const [peerName, peer] of kr.peers) {
+        lines.push(`  Peer: ${peerName}`);
+        if (peer.address) lines.push(`    Address: ${peer.address}`);
+        if (peer.preSharedKey) lines.push(`    Pre-shared key: ${'*'.repeat(8)}`);
+      }
       lines.push('');
     }
     return lines.join('\n');
