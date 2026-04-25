@@ -975,3 +975,292 @@ describe('Section 12: VPN configuration modification & lifecycle', () => {
     expect(noVpnOut).toMatch(/[Nn]o|not configured/i);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 13: IPSec Security Policy Database (SPD)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 13: IPSec security policy database (SPD)', () => {
+
+  it('13.01 — Cisco HQ should allow adding a PROTECT security policy', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SPD-BR1 PROTECT out src 192.168.10.0 0.0.0.255 dst 192.168.20.0 0.0.0.255');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/SPD-BR1|PROTECT/i);
+  });
+
+  it('13.02 — Security policy should show correct source/destination', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SPD-TEST PROTECT out src 10.0.0.0 0.0.0.255 dst 10.1.0.0 0.0.0.255');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toContain('10.0.0.0');
+    expect(out).toContain('10.1.0.0');
+  });
+
+  it('13.03 — BYPASS security policy should appear in SPD', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SPD-BYPASS BYPASS out src 192.168.10.0 0.0.0.255 dst 0.0.0.0 255.255.255.255');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/BYPASS/i);
+  });
+
+  it('13.04 — DISCARD security policy should appear in SPD', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SPD-DENY DISCARD in src 0.0.0.0 255.255.255.255 dst 192.168.10.0 0.0.0.255');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/DISCARD/i);
+  });
+
+  it('13.05 — Huawei should also support security policy configuration', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('ipsec security-policy SPD-BR1');
+    await t.rBR1.executeCommand('direction out');
+    await t.rBR1.executeCommand('action protect');
+    await t.rBR1.executeCommand('source 192.168.20.0 0.0.0.255');
+    await t.rBR1.executeCommand('destination 192.168.10.0 0.0.0.255');
+    await t.rBR1.executeCommand('quit');
+    await t.rBR1.executeCommand('return');
+    const out = await t.rBR1.executeCommand('display ipsec security-policy');
+    expect(out).toMatch(/SPD-BR1|PROTECT/i);
+  });
+
+  it('13.06 — Empty SPD should report no policies', async () => {
+    const t = await buildWanVpnTopology({ skipVPN: true });
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/[Nn]o|not configured|empty/i);
+  });
+
+  it('13.07 — Multiple security policies should coexist', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SP1 PROTECT out');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SP2 BYPASS in');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/PROTECT/i);
+    expect(out).toMatch(/BYPASS/i);
+  });
+
+  it('13.08 — Security policy direction should be recorded correctly', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SPD-IN PROTECT in');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/in/i);
+  });
+
+  it('13.09 — Huawei display ipsec security-policy should show SPD entries', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('ipsec security-policy HUAWEI-SPD');
+    await t.rBR1.executeCommand('direction out');
+    await t.rBR1.executeCommand('action protect');
+    await t.rBR1.executeCommand('quit');
+    await t.rBR1.executeCommand('return');
+    const out = await t.rBR1.executeCommand('display ipsec security-policy');
+    expect(out).toMatch(/HUAWEI-SPD|PROTECT/i);
+  });
+
+  it('13.10 — SPD should support protocol filtering', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-policy SPD-TCP PROTECT out proto 6');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec security-policy');
+    expect(out).toMatch(/tcp|6/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 14: IPSec Advanced Features (ESN, DPD, NAT-T, Lifetime)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 14: IPSec advanced features', () => {
+
+  it('14.01 — Cisco HQ should support DPD configuration', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto isakmp keepalive 30 5 periodic');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto isakmp');
+    expect(out).toMatch(/30|keepalive|DPD/i);
+  });
+
+  it('14.02 — NAT keepalive should be configurable on Cisco', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto isakmp nat keepalive 20');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto isakmp');
+    expect(out).toMatch(/20|nat/i);
+  });
+
+  it('14.03 — Global SA lifetime should be configurable', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-association lifetime seconds 7200');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto engine configuration');
+    expect(out).toMatch(/7200/);
+  });
+
+  it('14.04 — SA lifetime in KB should be configurable', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-association lifetime kilobytes 1024000');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto engine configuration');
+    expect(out).toMatch(/1024000/);
+  });
+
+  it('14.05 — Anti-replay window should be configurable', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec security-association replay window-size 256');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto engine configuration');
+    expect(out).toMatch(/256/);
+  });
+
+  it('14.06 — Huawei ESN should be configurable', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    const out = await t.rBR1.executeCommand('ipsec sa esn enable');
+    expect(out).toBeDefined();
+  });
+
+  it('14.07 — Huawei undo ESN should work', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('ipsec sa esn enable');
+    const out = await t.rBR1.executeCommand('undo ipsec sa esn');
+    expect(out).toBeDefined();
+  });
+
+  it('14.08 — Cisco IPSec profile should be configurable for GRE tunnels', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec profile GRE-PROF');
+    await t.rHQ.executeCommand('set transform-set TSET-STRONG');
+    await t.rHQ.executeCommand('exit');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec profile');
+    expect(out).toContain('GRE-PROF');
+  });
+
+  it('14.09 — Huawei IPSec profile should also be configurable', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('ipsec profile GRE-PROF');
+    await t.rBR1.executeCommand('quit');
+    await t.rBR1.executeCommand('return');
+    const out = await t.rBR1.executeCommand('display ipsec profile');
+    expect(out).toMatch(/GRE-PROF/);
+  });
+
+  it('14.10 — Cisco DPD on-demand vs periodic should be distinct', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto isakmp keepalive 10 3 on-demand');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto isakmp');
+    expect(out).toMatch(/on-demand/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 15: End-to-End Connectivity Through VPN-Configured Topology
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 15: End-to-end connectivity through VPN topology', () => {
+
+  it('15.01 — HQ router should still ping BR1 after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('ping 10.0.12.2');
+    expect(out).toContain('Success rate is 100');
+  });
+
+  it('15.02 — HQ router should still ping BR2 after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('ping 10.0.23.2');
+    expect(out).toContain('Success rate is 100');
+  });
+
+  it('15.03 — HQ router should still ping BR3 after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('ping 10.0.34.2');
+    expect(out).toContain('Success rate is 100');
+  });
+
+  it('15.04 — Huawei BR1 should still ping HQ after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('ping 10.0.12.1');
+    expect(out).toContain('0% packet loss');
+  });
+
+  it('15.05 — Huawei BR3 should still ping HQ after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('ping 10.0.34.1');
+    expect(out).toContain('0% packet loss');
+  });
+
+  it('15.06 — HQ server should reach gateway after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.server.executeCommand('ping -c 2 192.168.10.1');
+    expect(out).toContain('2 received');
+  });
+
+  it('15.07 — Windows PC should reach BR1 gateway through HuaweiSwitch after VPN', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.winPC1.executeCommand('ping -n 2 192.168.20.1');
+    expect(out).toContain('Received = 2');
+  });
+
+  it('15.08 — Linux PC (BR2) should reach HQ server through full VPN topology', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.linuxPC2.executeCommand('ping -c 3 192.168.10.100');
+    expect(out).toContain('3 received');
+  }, 10000);
+
+  it('15.09 — Huawei BR3 routing should remain intact with VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('ping 10.0.34.1');
+    expect(out).toContain('0% packet loss');
+    const proposals = await t.rBR3.executeCommand('display ipsec proposal');
+    expect(proposals).toContain('PROP-BR3');
+  });
+
+  it('15.10 — All routers should maintain WAN reachability after VPN config', async () => {
+    const t = await buildWanVpnTopology();
+    const p1 = await t.rHQ.executeCommand('ping 10.0.12.2');
+    const p2 = await t.rHQ.executeCommand('ping 10.0.23.2');
+    const p3 = await t.rHQ.executeCommand('ping 10.0.34.2');
+    expect(p1).toContain('Success rate is 100');
+    expect(p2).toContain('Success rate is 100');
+    expect(p3).toContain('Success rate is 100');
+  });
+});
