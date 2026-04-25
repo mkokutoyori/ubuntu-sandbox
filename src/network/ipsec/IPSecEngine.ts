@@ -397,6 +397,10 @@ export class IPSecEngine implements IProtocolEngine {
     this.natKeepaliveInterval = interval;
   }
 
+  getNATKeepalive(): number {
+    return this.natKeepaliveInterval;
+  }
+
   setDPD(interval: number, retries: number, mode: 'periodic' | 'on-demand'): void {
     this.dpdConfig = { interval, retries, mode };
   }

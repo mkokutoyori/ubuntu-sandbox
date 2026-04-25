@@ -447,8 +447,16 @@ export function buildHuaweiIKEPeerCommands(
     return '';
   });
 
+  trie.registerGreedy('nat keepalive', 'Set NAT-T keepalive interval (seconds)', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const interval = parseInt(args[0], 10);
+    if (isNaN(interval) || interval < 1) return 'Error: Invalid keepalive interval.';
+    eng(ctx).setNATKeepalive(interval);
+    return '';
+  });
+
   trie.registerGreedy('nat traversal', 'Enable NAT traversal', () => {
-    eng(ctx).setNATKeepalive(20); // default 20s
+    eng(ctx).setNATKeepalive(20);
     return '';
   });
 

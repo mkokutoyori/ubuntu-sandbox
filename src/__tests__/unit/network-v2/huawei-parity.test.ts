@@ -647,3 +647,66 @@ describe('Batch 10: DPD Configuration Parity', () => {
     expect(dpd.mode).toBe('on-demand');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH 11: NAT-T Keepalive Interval — Configurable
+//
+// Cisco:  crypto isakmp nat keepalive 30
+// Huawei: ike peer view →
+//           nat keepalive <N>
+//
+// Currently Huawei hardcodes 20s with 'nat traversal'
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Batch 11: NAT-T Keepalive Interval Parity', () => {
+
+  it('should accept nat keepalive <N> in ike-peer view', async () => {
+    const h = new HuaweiRouter('R1');
+    await h.executeCommand('system-view');
+    await h.executeCommand('ike peer P1');
+    const result = await h.executeCommand('nat keepalive 30');
+    expect(result).toBe('');
+  });
+
+  it('should store NAT keepalive interval correctly', async () => {
+    const h = new HuaweiRouter('R1');
+    await h.executeCommand('system-view');
+    await h.executeCommand('ike peer P1');
+    await h.executeCommand('nat keepalive 45');
+    await h.executeCommand('quit');
+
+    const engine = (h as any)._getIPSecEngineInternal();
+    expect(engine.getNATKeepalive()).toBe(45);
+  });
+
+  it('should match Cisco NAT keepalive behavior', async () => {
+    const cisco = new CiscoRouter('R-C');
+    const huawei = new HuaweiRouter('R-H');
+
+    await cisco.executeCommand('enable');
+    await cisco.executeCommand('configure terminal');
+    await cisco.executeCommand('crypto isakmp nat keepalive 30');
+    await cisco.executeCommand('end');
+
+    await huawei.executeCommand('system-view');
+    await huawei.executeCommand('ike peer P1');
+    await huawei.executeCommand('nat keepalive 30');
+    await huawei.executeCommand('quit');
+    await huawei.executeCommand('return');
+
+    const cEngine = (cisco as any)._getIPSecEngineInternal();
+    const hEngine = (huawei as any)._getIPSecEngineInternal();
+    expect(hEngine.getNATKeepalive()).toBe(cEngine.getNATKeepalive());
+  });
+
+  it('should still accept nat traversal (enable with default 20s)', async () => {
+    const h = new HuaweiRouter('R1');
+    await h.executeCommand('system-view');
+    await h.executeCommand('ike peer P1');
+    await h.executeCommand('nat traversal');
+    await h.executeCommand('quit');
+
+    const engine = (h as any)._getIPSecEngineInternal();
+    expect(engine.getNATKeepalive()).toBe(20);
+  });
+});
