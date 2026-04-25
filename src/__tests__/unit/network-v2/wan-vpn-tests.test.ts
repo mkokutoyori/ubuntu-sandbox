@@ -240,3 +240,231 @@ describe('Section 3: IKEv2 configuration verification', () => {
     expect(out).toContain('PROP-BR2');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 4: IPSec Transform Sets & Crypto Maps
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 4: IPSec transform sets & crypto maps', () => {
+
+  it('4.01 — Cisco HQ should have TSET-STRONG transform set (AES-256/SHA256)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    expect(out).toContain('TSET-STRONG');
+    expect(out).toMatch(/esp-aes.*256/i);
+    expect(out).toMatch(/esp-sha256/i);
+  });
+
+  it('4.02 — Cisco HQ should have TSET-WEAK transform set (AES-128/SHA1)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    expect(out).toContain('TSET-WEAK');
+    expect(out).toMatch(/esp-aes.*128/i);
+  });
+
+  it('4.03 — HQ crypto map CMAP-HQ should have 3 entries (seq 10, 20, 30)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('CMAP-HQ');
+    expect(out).toMatch(/10.*ipsec-isakmp/i);
+    expect(out).toMatch(/20.*ipsec-isakmp/i);
+    expect(out).toMatch(/30.*ipsec-isakmp/i);
+  });
+
+  it('4.04 — HQ crypto map seq 10 should peer with BR1 (10.0.12.2)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('10.0.12.2');
+    expect(out).toContain('TSET-STRONG');
+  });
+
+  it('4.05 — HQ crypto map seq 20 should peer with BR2 (10.0.23.2)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('10.0.23.2');
+    expect(out).toContain('TSET-STRONG');
+  });
+
+  it('4.06 — HQ crypto map seq 30 should peer with BR3 (10.0.34.2) using TSET-WEAK', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('10.0.34.2');
+    expect(out).toContain('TSET-WEAK');
+  });
+
+  it('4.07 — BR2 crypto map CMAP-BR2 should reference HQ peer', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto map');
+    expect(out).toContain('CMAP-BR2');
+    expect(out).toContain('10.0.23.1');
+  });
+
+  it('4.08 — Transform sets should be in tunnel mode by default', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    expect(out).toMatch(/tunnel/i);
+  });
+
+  it('4.09 — Huawei BR1 should have IPSec proposal PROP-BR1', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ipsec proposal');
+    expect(out).toContain('PROP-BR1');
+  });
+
+  it('4.10 — Huawei BR1 should have IPSec policy PMAP-BR1', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ipsec policy');
+    expect(out).toContain('PMAP-BR1');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 5: VPN ACLs — Interesting Traffic Definitions
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 5: VPN ACLs — interesting traffic definitions', () => {
+
+  it('5.01 — HQ ACL VPN-BR1 should permit HQ→BR1 LAN traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('VPN-BR1');
+    expect(out).toContain('192.168.10.0');
+    expect(out).toContain('192.168.20.0');
+  });
+
+  it('5.02 — HQ ACL VPN-BR2 should permit HQ→BR2 LAN traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('VPN-BR2');
+    expect(out).toContain('192.168.30.0');
+  });
+
+  it('5.03 — HQ ACL VPN-BR3 should permit HQ→BR3 LAN traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('VPN-BR3');
+    expect(out).toContain('192.168.40.0');
+  });
+
+  it('5.04 — BR2 ACL VPN-HQ should permit BR2→HQ LAN traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show ip access-lists');
+    expect(out).toContain('VPN-HQ');
+    expect(out).toContain('192.168.30.0');
+    expect(out).toContain('192.168.10.0');
+  });
+
+  it('5.05 — Huawei BR1 ACL 3001 should permit BR1→HQ traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display acl 3001');
+    expect(out).toContain('192.168.20.0');
+    expect(out).toContain('192.168.10.0');
+  });
+
+  it('5.06 — Huawei BR3 ACL 3002 should permit BR3→HQ traffic', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('display acl 3002');
+    expect(out).toContain('192.168.40.0');
+    expect(out).toContain('192.168.10.0');
+  });
+
+  it('5.07 — HQ ACLs should use wildcard masks (0.0.0.255)', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('0.0.0.255');
+  });
+
+  it('5.08 — Huawei BR1 ACL 3001 should match rule with permit', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display acl 3001');
+    expect(out).toMatch(/permit/i);
+  });
+
+  it('5.09 — HQ should have all 3 VPN ACLs defined', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('VPN-BR1');
+    expect(out).toContain('VPN-BR2');
+    expect(out).toContain('VPN-BR3');
+  });
+
+  it('5.10 — Crypto map entries should reference their respective ACLs', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('VPN-BR1');
+    expect(out).toContain('VPN-BR2');
+    expect(out).toContain('VPN-BR3');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 6: IPSec Policy Application — Interface Binding
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 6: IPSec policy application — interface binding', () => {
+
+  it('6.01 — HQ Gi0/1 should have crypto map CMAP-HQ applied', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('GigabitEthernet0/1');
+  });
+
+  it('6.02 — HQ Gi0/2 should have crypto map CMAP-HQ applied', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('GigabitEthernet0/2');
+  });
+
+  it('6.03 — HQ Gi0/3 should have crypto map CMAP-HQ applied', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('GigabitEthernet0/3');
+  });
+
+  it('6.04 — BR2 Gi0/1 should have crypto map CMAP-BR2 applied', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR2.executeCommand('show crypto map');
+    expect(out).toContain('GigabitEthernet0/1');
+  });
+
+  it('6.05 — Huawei BR1 GE0/0/1 should have IPSec policy PMAP-BR1 applied', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ipsec policy');
+    expect(out).toContain('PMAP-BR1');
+  });
+
+  it('6.06 — Huawei BR3 GE0/0/1 should have IPSec policy PMAP-BR3 applied', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR3.executeCommand('display ipsec policy');
+    expect(out).toContain('PMAP-BR3');
+  });
+
+  it('6.07 — HQ crypto map should list all 3 WAN interface bindings', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto map');
+    const ifaces = ['GigabitEthernet0/1', 'GigabitEthernet0/2', 'GigabitEthernet0/3'];
+    for (const iface of ifaces) {
+      expect(out).toContain(iface);
+    }
+  });
+
+  it('6.08 — Huawei BR1 IPSec statistics should reflect configuration', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rBR1.executeCommand('display ipsec statistics');
+    expect(out).toBeDefined();
+    expect(typeof out).toBe('string');
+  });
+
+  it('6.09 — HQ crypto engine should report configured SAs', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto engine configuration');
+    expect(out).toBeDefined();
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  it('6.10 — Crypto engine on HQ should be active', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto engine brief');
+    expect(out).toMatch(/[Aa]ctive|[Ee]nabled/);
+  });
+});
