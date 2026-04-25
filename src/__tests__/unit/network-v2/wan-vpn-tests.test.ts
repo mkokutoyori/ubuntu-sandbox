@@ -690,3 +690,288 @@ describe('Section 9: VPN debug & diagnostic commands', () => {
     expect(out).toMatch(/[Cc]rypto|[Ee]ngine/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 10: Topology Options & VPN Variants
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 10: Topology options & VPN variants', () => {
+
+  it('10.01 — skipVPN=true should produce no ISAKMP policies on HQ', async () => {
+    const t = await buildWanVpnTopology({ skipVPN: true });
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).toMatch(/[Nn]o|not configured/i);
+  });
+
+  it('10.02 — skipVPN=true should produce no crypto maps on HQ', async () => {
+    const t = await buildWanVpnTopology({ skipVPN: true });
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toMatch(/[Nn]o crypto map|not configured/i);
+  });
+
+  it('10.03 — skipVPN=true should still have working IP connectivity', async () => {
+    const t = await buildWanVpnTopology({ skipVPN: true });
+    const out = await t.rHQ.executeCommand('ping 10.0.12.2');
+    expect(out).toContain('Success rate is 100');
+  });
+
+  it('10.04 — skipBranch3VPN should still configure Branch1 and Branch2 VPN', async () => {
+    const t = await buildWanVpnTopology({ skipBranch3VPN: true });
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).toContain('10.0.12.2');
+    expect(out).not.toContain('10.0.34.2');
+  });
+
+  it('10.05 — skipBranch3VPN should not create VPN-BR3 ACL', async () => {
+    const t = await buildWanVpnTopology({ skipBranch3VPN: true });
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('VPN-BR1');
+    expect(out).toContain('VPN-BR2');
+    expect(out).not.toContain('VPN-BR3');
+  });
+
+  it('10.06 — skipBranch3VPN should not apply crypto map on Gi0/3', async () => {
+    const t = await buildWanVpnTopology({ skipBranch3VPN: true });
+    const out = await t.rHQ.executeCommand('show crypto map');
+    expect(out).toContain('GigabitEthernet0/1');
+    expect(out).toContain('GigabitEthernet0/2');
+  });
+
+  it('10.07 — skipBranch3VPN should leave Huawei BR3 without IPSec config', async () => {
+    const t = await buildWanVpnTopology({ skipBranch3VPN: true });
+    const out = await t.rBR3.executeCommand('display ipsec policy');
+    expect(out).toMatch(/[Nn]o|not configured/i);
+  });
+
+  it('10.08 — Custom PSK for Branch2 should be applied', async () => {
+    const t = await buildWanVpnTopology({ pskBranch2: 'MyCustomIKEv2Key!' });
+    const out = await t.rBR2.executeCommand('show crypto ikev2 keyring');
+    expect(out).toContain('KR-BR2');
+    expect(out).toContain('*');
+  });
+
+  it('10.09 — Full topology should have both IKEv1 and IKEv2 on HQ', async () => {
+    const t = await buildWanVpnTopology();
+    const isakmpOut = await t.rHQ.executeCommand('show crypto isakmp policy');
+    const ikev2Out = await t.rHQ.executeCommand('show crypto ikev2 proposal');
+    expect(isakmpOut).toContain('priority 10');
+    expect(ikev2Out).toContain('PROP-BR2');
+  });
+
+  it('10.10 — Full topology should have exactly 3 PSK entries on HQ', async () => {
+    const t = await buildWanVpnTopology();
+    const keyOut = await t.rHQ.executeCommand('show crypto isakmp key');
+    const ikev2Out = await t.rHQ.executeCommand('show crypto ikev2 keyring');
+    expect(keyOut).toContain('10.0.12.2');
+    expect(keyOut).toContain('10.0.34.2');
+    expect(ikev2Out).toContain('KR-BR2');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 11: Cross-Vendor Config Comparison (Cisco vs Huawei)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 11: Cross-vendor config comparison', () => {
+
+  it('11.01 — Cisco and Huawei should both have IKEv1 Phase 1 configs for same tunnel', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto isakmp policy');
+    const huaweiOut = await t.rBR1.executeCommand('display ike proposal');
+    expect(ciscoOut).toContain('priority 10');
+    expect(huaweiOut).toContain('10');
+  });
+
+  it('11.02 — Cisco and Huawei AES-256 encryption should match', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto isakmp policy');
+    const huaweiOut = await t.rBR1.executeCommand('display ike proposal');
+    expect(ciscoOut).toMatch(/256/);
+    expect(huaweiOut).toMatch(/256/);
+  });
+
+  it('11.03 — Cisco transform set and Huawei IPSec proposal should have same algo', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    const huaweiOut = await t.rBR1.executeCommand('display ipsec proposal');
+    expect(ciscoOut).toContain('TSET-STRONG');
+    expect(huaweiOut).toContain('PROP-BR1');
+  });
+
+  it('11.04 — Cisco crypto map and Huawei ipsec policy should reference correct peers', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto map');
+    const huaweiOut = await t.rBR1.executeCommand('display ike peer');
+    expect(ciscoOut).toContain('10.0.12.2');
+    expect(huaweiOut).toContain('10.0.12.1');
+  });
+
+  it('11.05 — Both vendors should have tunnel mode encapsulation', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    const huaweiOut = await t.rBR1.executeCommand('display ipsec proposal');
+    expect(ciscoOut).toMatch(/tunnel/i);
+    expect(huaweiOut).toMatch(/tunnel/i);
+  });
+
+  it('11.06 — Cisco show and Huawei display for DH groups should be consistent', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto isakmp policy');
+    const huaweiOut = await t.rBR1.executeCommand('display ike proposal');
+    expect(ciscoOut).toMatch(/#14/);
+    expect(huaweiOut).toMatch(/14/);
+  });
+
+  it('11.07 — Weaker Branch3 config should differ from Branch1 on both vendors', async () => {
+    const t = await buildWanVpnTopology();
+    const br1Prop = await t.rBR1.executeCommand('display ike proposal');
+    const br3Prop = await t.rBR3.executeCommand('display ike proposal');
+    expect(br1Prop).toMatch(/256/);
+    expect(br3Prop).toMatch(/128/);
+    expect(br3Prop).not.toMatch(/256/);
+  });
+
+  it('11.08 — HQ should serve both strong (BR1/BR2) and weak (BR3) transform sets', async () => {
+    const t = await buildWanVpnTopology();
+    const out = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    expect(out).toContain('TSET-STRONG');
+    expect(out).toContain('TSET-WEAK');
+  });
+
+  it('11.09 — Cisco named ACLs vs Huawei numbered ACLs should both exist', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show ip access-lists');
+    const huaweiOut = await t.rBR1.executeCommand('display acl 3001');
+    expect(ciscoOut).toContain('VPN-BR1');
+    expect(huaweiOut).toMatch(/3001/);
+  });
+
+  it('11.10 — Both vendors should have IPSec policy applied to WAN interfaces', async () => {
+    const t = await buildWanVpnTopology();
+    const ciscoOut = await t.rHQ.executeCommand('show crypto map');
+    const huaweiOut = await t.rBR1.executeCommand('display ipsec policy');
+    expect(ciscoOut).toContain('GigabitEthernet0/1');
+    expect(huaweiOut).toContain('PMAP-BR1');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 12: VPN Configuration Modification & Lifecycle
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Section 12: VPN configuration modification & lifecycle', () => {
+
+  it('12.01 — Adding a new ISAKMP policy on HQ should appear in show', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto isakmp policy 30');
+    await t.rHQ.executeCommand('encryption aes 192');
+    await t.rHQ.executeCommand('hash sha512');
+    await t.rHQ.executeCommand('group 19');
+    await t.rHQ.executeCommand('exit');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).toContain('priority 30');
+  });
+
+  it('12.02 — Removing ISAKMP policy should remove it from show', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('no crypto isakmp policy 20');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).not.toContain('priority 20');
+    expect(out).toContain('priority 10');
+  });
+
+  it('12.03 — Removing PSK should remove it from show', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('no crypto isakmp key Branch1Secret!42 address 10.0.12.2');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto isakmp key');
+    expect(out).not.toContain('10.0.12.2');
+    expect(out).toContain('10.0.34.2');
+  });
+
+  it('12.04 — Adding new transform set should appear in show', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('crypto ipsec transform-set TSET-NEW esp-aes 192 esp-sha512-hmac');
+    await t.rHQ.executeCommand('mode tunnel');
+    await t.rHQ.executeCommand('exit');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show crypto ipsec transform-set');
+    expect(out).toContain('TSET-NEW');
+    expect(out).toContain('TSET-STRONG');
+    expect(out).toContain('TSET-WEAK');
+  });
+
+  it('12.05 — Huawei adding new IKE proposal should appear in display', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('ike proposal 30');
+    await t.rBR1.executeCommand('encryption-algorithm aes-192');
+    await t.rBR1.executeCommand('authentication-algorithm sha2-512');
+    await t.rBR1.executeCommand('dh group19');
+    await t.rBR1.executeCommand('quit');
+    await t.rBR1.executeCommand('return');
+    const out = await t.rBR1.executeCommand('display ike proposal');
+    expect(out).toContain('30');
+    expect(out).toContain('10');
+  });
+
+  it('12.06 — Cisco clear crypto sa should not break configuration', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('clear crypto sa');
+    const out = await t.rHQ.executeCommand('show crypto isakmp policy');
+    expect(out).toContain('priority 10');
+  });
+
+  it('12.07 — Huawei reset ike sa should not break configuration', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('reset ike sa');
+    const out = await t.rBR1.executeCommand('display ike proposal');
+    expect(out).toContain('10');
+  });
+
+  it('12.08 — Adding new ACL should coexist with VPN ACLs', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rHQ.executeCommand('enable');
+    await t.rHQ.executeCommand('configure terminal');
+    await t.rHQ.executeCommand('ip access-list extended TEST-ACL');
+    await t.rHQ.executeCommand('permit ip any any');
+    await t.rHQ.executeCommand('exit');
+    await t.rHQ.executeCommand('end');
+    const out = await t.rHQ.executeCommand('show ip access-lists');
+    expect(out).toContain('TEST-ACL');
+    expect(out).toContain('VPN-BR1');
+  });
+
+  it('12.09 — Huawei adding ACL should coexist with VPN ACLs', async () => {
+    const t = await buildWanVpnTopology();
+    await t.rBR1.executeCommand('system-view');
+    await t.rBR1.executeCommand('acl 3010');
+    await t.rBR1.executeCommand('rule permit ip source any destination any');
+    await t.rBR1.executeCommand('quit');
+    await t.rBR1.executeCommand('return');
+    const out3001 = await t.rBR1.executeCommand('display acl 3001');
+    const out3010 = await t.rBR1.executeCommand('display acl 3010');
+    expect(out3001).toMatch(/permit/i);
+    expect(out3010).toMatch(/permit/i);
+  });
+
+  it('12.10 — Multiple topology builds should be independent (no state leak)', async () => {
+    const t1 = await buildWanVpnTopology();
+    const t2 = await buildWanVpnTopology({ skipVPN: true });
+    const vpnOut = await t1.rHQ.executeCommand('show crypto isakmp policy');
+    const noVpnOut = await t2.rHQ.executeCommand('show crypto isakmp policy');
+    expect(vpnOut).toContain('priority 10');
+    expect(noVpnOut).toMatch(/[Nn]o|not configured/i);
+  });
+});
