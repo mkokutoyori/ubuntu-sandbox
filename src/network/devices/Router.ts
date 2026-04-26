@@ -382,7 +382,14 @@ export abstract class Router extends Equipment {
       const isVirtual = /^(Tunnel|Loopback)/i.test(route.iface);
       if (!isVirtual) {
         const port = this.ports.get(route.iface);
-        if (port && !port.isConnected()) continue;
+        if (port && !port.isConnected()) {
+          // Interface went down — clear any IPSec SAs using this interface
+          // (mirrors IOS: "line protocol down" triggers SA teardown)
+          if (this.ipsecEngine) {
+            this.ipsecEngine.clearSAsForInterface(route.iface);
+          }
+          continue;
+        }
       }
 
       const netInt = route.network.toUint32();
