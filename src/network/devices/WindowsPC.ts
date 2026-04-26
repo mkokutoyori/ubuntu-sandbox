@@ -140,6 +140,10 @@ export class WindowsPC extends EndHost {
 
     trimmed = trimmed.trim();
     if (!trimmed) return '';
+
+    // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
+    trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();
+
     // Handle piped commands (but not inside redirects)
     if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
@@ -485,6 +489,12 @@ export class WindowsPC extends EndHost {
 
       // Hostname resolution
       resolveHostname: (name: string) => this.resolveHostname(name),
+
+      // Service state query
+      isServiceRunning: (name: string) => {
+        const svc = this.svcMgr.getService(name);
+        return svc ? svc.state === 'Running' : false;
+      },
     };
   }
 
