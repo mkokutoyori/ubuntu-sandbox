@@ -494,7 +494,7 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
   // args[1] is optional interface name (already unquoted by parseCommandLine)
   const ifFilter = args[1] ? args[1].trim() : undefined;
 
-  if (sub === 'config' || sub === 'addresses') {
+  if (sub === 'config' || sub === 'addresses' || sub === 'address') {
     return handleShowConfig(ctx, ifFilter);
   }
 
@@ -528,18 +528,39 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
     const mask = port.getSubnetMask();
     const displayName = name.replace(/^eth/, 'Ethernet ');
     const isDHCP = ctx.isDHCPConfigured(name);
+    // Default state for unconfigured interfaces is DHCP
+    const dhcpEnabled = isDHCP || !ip;
 
     lines.push(`Configuration for interface "${displayName}"`);
-    lines.push(`    DHCP enabled:                         ${isDHCP ? 'Yes' : 'No'}`);
+    lines.push(`    DHCP enabled:                         ${dhcpEnabled ? 'Yes' : 'No'}`);
     if (ip) {
       lines.push(`    IP Address:                           ${ip}`);
       lines.push(`    Subnet Prefix:                        ${ip}/${mask?.toCIDR() || 24} (mask ${mask || '255.255.255.0'})`);
     }
-    if (ctx.defaultGateway) {
+    // Only show gateway on interfaces that have an IP configured
+    if (ip && ctx.defaultGateway) {
       lines.push(`    Default Gateway:                      ${ctx.defaultGateway}`);
+      lines.push(`    Gateway Metric:                       0`);
     }
-    lines.push(`    Gateway Metric:                       0`);
     lines.push(`    InterfaceMetric:                      25`);
+    // Show DNS servers (static or DHCP-assigned)
+    const dnsServers = ctx.getDnsServers(name);
+    if (dnsServers.length > 0) {
+      lines.push(`    Statically Configured DNS Servers:    ${dnsServers[0]}`);
+      for (let i = 1; i < dnsServers.length; i++) {
+        lines.push(`                                        ${dnsServers[i]}`);
+      }
+    } else if (isDHCP) {
+      const dhcpState = ctx.getDHCPState(name);
+      const leaseDns = dhcpState?.lease?.dnsServers ?? [];
+      if (leaseDns.length > 0) {
+        lines.push(`    DNS Servers Configured through DHCP:  ${leaseDns[0]}`);
+        for (let i = 1; i < leaseDns.length; i++) {
+          lines.push(`                                        ${leaseDns[i]}`);
+        }
+      }
+    }
+    lines.push(`    Register with which suffix:           Primary only`);
     lines.push('');
   }
   return lines.join('\n');
@@ -1115,7 +1136,8 @@ To view help for a command, type the command, followed by a space, and then
 
 interface DhcpClientState {
   installed: boolean;
-  tracingEnabled: boolean;
+  tracingEnabled: boolean;  // used by show tracing / set tracing
+  traceEnabled: boolean;    // used by trace enable/disable/show status
   tracingOutput: string;
   releasedIfaces: Set<string>;
 }
@@ -1123,11 +1145,23 @@ const dhcpClientStateStore = new WeakMap<Map<string, any>, DhcpClientState>();
 function getDhcpClientState(ctx: WinCommandContext): DhcpClientState {
   if (!dhcpClientStateStore.has(ctx.ports)) {
     dhcpClientStateStore.set(ctx.ports, {
-      installed: true, tracingEnabled: true, tracingOutput: '', releasedIfaces: new Set(),
+      installed: true, tracingEnabled: true, traceEnabled: false,
+      tracingOutput: '', releasedIfaces: new Set(),
     });
   }
   return dhcpClientStateStore.get(ctx.ports)!;
 }
+
+const NETSH_DHCP_TRACE_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+enable         - Enables DHCP client event tracing.
+disable        - Disables DHCP client event tracing.
+show           - Displays tracing information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
 
 const NETSH_DHCPCLIENT_HELP = `The following commands are available:
 
@@ -1135,10 +1169,12 @@ Commands in this context:
 ?              - Displays a list of commands.
 help           - Displays a list of commands.
 install        - Installs the DHCP client service.
+list           - Lists DHCP protocol interfaces and their state.
 release        - Releases a DHCP lease for an interface.
 renew          - Renews a DHCP lease for an interface.
 set            - Sets configuration information.
 show           - Displays information.
+trace          - Manages DHCP event tracing.
 uninstall      - Uninstalls the DHCP client service.
 
 To view help for a command, type the command, followed by a space, and then
@@ -1284,6 +1320,48 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
     return `Usage: netsh dhcpclient set tracing|interface ...`;
   }
 
+  if (sub === 'list') {
+    // Show all interfaces with their DHCP client state
+    const header = `\n${'Interface Name'.padEnd(28)}${'IP Address'.padEnd(18)}State`;
+    const sep   = '-'.repeat(68);
+    const rows: string[] = [header, sep];
+    for (const [name, port] of ctx.ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const ip = port.getIPAddress();
+      const isDHCP = ctx.isDHCPConfigured(name);
+      // State: Manual (static IP), BOUND (DHCP with lease), INIT (no IP/default DHCP)
+      const state = !isDHCP && ip ? 'Manual' : (isDHCP && ip ? 'BOUND' : 'INIT');
+      rows.push(`${displayName.padEnd(28)}${(ip ? ip.toString() : '---').padEnd(18)}${state}`);
+    }
+    rows.push('');
+    return rows.join('\n');
+  }
+
+  if (sub === 'trace') {
+    const traceCmd = (args[1] || '').toLowerCase();
+    if (!traceCmd || traceCmd === '?' || traceCmd === '/?') return NETSH_DHCP_TRACE_HELP;
+    if (traceCmd === 'enable') {
+      st.traceEnabled = true;
+      return 'DHCP tracing enabled.';
+    }
+    if (traceCmd === 'disable') {
+      st.traceEnabled = false;
+      return 'DHCP tracing disabled.';
+    }
+    if (traceCmd === 'show') {
+      const showSub = (args[2] || '').toLowerCase();
+      if (showSub === '?') return `Usage: netsh dhcpclient trace show status`;
+      return [
+        '',
+        'DHCP Client Trace Status',
+        '----------------------------------------------------------------------',
+        `  Trace:    ${st.traceEnabled ? 'enabled' : 'disabled'}`,
+        '',
+      ].join('\n');
+    }
+    return `The command "${args[1]}" was not found.\nType "netsh dhcpclient trace ?" for more information.`;
+  }
+
   return `The command "${args[0]}" was not found.\nType "netsh dhcpclient ?" for more information.`;
 }
 
@@ -1318,7 +1396,7 @@ function handleNetshDnsclient(ctx: WinCommandContext, args: string[]): string {
 }
 
 function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
-  const SHOW_HELP = `The following commands are available:\n\nCommands in this context:\nstate       - Displays DNS client state.\ninterfaces  - Displays interface DNS settings.\ndnsservers  - Displays DNS server addresses.`;
+  const SHOW_HELP = `The following commands are available:\n\nCommands in this context:\nstate       - Displays DNS client state.\ninterfaces  - Displays interface DNS settings.\ndnsservers  - Displays DNS server addresses.\nencryption  - Displays DNS over HTTPS (DoH) encryption settings.`;
   if (args.length === 0 || args[0] === '?') return SHOW_HELP;
   const sub = args[0].toLowerCase();
 
@@ -1377,6 +1455,18 @@ function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
       lines.push('');
     }
     return lines.join('\n');
+  }
+
+  if (sub === 'encryption') {
+    return [
+      '',
+      'DNS Client Encryption Settings',
+      '----------------------------------------------------------------------',
+      '  DNS over HTTPS (DoH):  Disabled',
+      '  Auto-upgrade:          Disabled',
+      '  No encryption fallback: Disabled',
+      '',
+    ].join('\n');
   }
 
   return SHOW_HELP;
