@@ -291,15 +291,55 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    // port trunk allow-pass vlan <id> [<id>...]
+    // port trunk allow-pass vlan <id> [<id>...] | all | none
     this.interfaceTrie.registerGreedy('port trunk allow-pass vlan', 'Set trunk allowed VLANs', (args) => {
       if (!this.swRef || !this.selectedInterface || args.length < 1) return 'Error: Incomplete command.';
+      if (args[0].toLowerCase() === 'all') {
+        this.swRef.setTrunkAllowedVlansAll(this.selectedInterface);
+        return '';
+      }
+      if (args[0].toLowerCase() === 'none') {
+        this.swRef.setTrunkAllowedVlansNone(this.selectedInterface);
+        return '';
+      }
+      const vlans = new Set<number>();
+      for (const arg of args) {
+        // Support range notation e.g. "10 to 20" or "10 20"
+        const id = parseInt(arg, 10);
+        if (!isNaN(id)) vlans.add(id);
+      }
+      // Huawei additive semantics: add to existing allowed list
+      this.swRef.addTrunkAllowedVlans(this.selectedInterface, vlans);
+      return '';
+    });
+
+    // undo port trunk allow-pass vlan <id> [<id>...] | all
+    this.interfaceTrie.registerGreedy('undo port trunk allow-pass vlan', 'Remove trunk allowed VLANs', (args) => {
+      if (!this.swRef || !this.selectedInterface || args.length < 1) return 'Error: Incomplete command.';
+      if (args[0].toLowerCase() === 'all') {
+        this.swRef.setTrunkAllowedVlansNone(this.selectedInterface);
+        return '';
+      }
       const vlans = new Set<number>();
       for (const arg of args) {
         const id = parseInt(arg, 10);
         if (!isNaN(id)) vlans.add(id);
       }
-      this.swRef.setTrunkAllowedVlans(this.selectedInterface, vlans);
+      this.swRef.removeTrunkAllowedVlans(this.selectedInterface, vlans);
+      return '';
+    });
+
+    // undo port default vlan — reset to VLAN 1
+    this.interfaceTrie.register('undo port default vlan', 'Reset access VLAN to default', () => {
+      if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      this.swRef.setSwitchportAccessVlan(this.selectedInterface, 1);
+      return '';
+    });
+
+    // undo port trunk pvid vlan — reset PVID to 1
+    this.interfaceTrie.register('undo port trunk pvid vlan', 'Reset trunk PVID to default', () => {
+      if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      this.swRef.setTrunkNativeVlan(this.selectedInterface, 1);
       return '';
     });
 
@@ -522,7 +562,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
           lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
         }
         const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-        if (allowedArr.length < 4094) {
+        if (allowedArr.length >= 4094) {
+          lines.push(` port trunk allow-pass vlan all`);
+        } else if (allowedArr.length === 0) {
+          lines.push(` port trunk allow-pass vlan none`);
+        } else {
           lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
         }
       } else {
@@ -554,7 +598,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
       }
       const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-      if (allowedArr.length < 4094) {
+      if (allowedArr.length >= 4094) {
+        lines.push(` port trunk allow-pass vlan all`);
+      } else if (allowedArr.length === 0) {
+        lines.push(` port trunk allow-pass vlan none`);
+      } else {
         lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
       }
     } else {

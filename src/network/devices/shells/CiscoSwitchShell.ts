@@ -284,6 +284,21 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── Config-if Commands ───────────────────────────────────────────
 
   private registerConfigIfCommands(): void {
+    // Cisco IOS: `interface X` from config-if switches to the new interface
+    this.configIfTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      if (args[0].toLowerCase() === 'range') {
+        return this.handleInterfaceRange(args.slice(1));
+      }
+      const portName = this.resolveInterfaceName(args[0]);
+      if (!portName || !this.d().getPort(portName)) {
+        return `% Invalid interface name "${args[0]}"`;
+      }
+      this.selectedInterface = portName;
+      this.selectedInterfaceRange = [portName];
+      return '';
+    });
+
     this.configIfTrie.register('switchport mode access', 'Set interface to access mode', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
@@ -316,6 +331,44 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.configIfTrie.registerGreedy('switchport trunk allowed vlan', 'Set trunk allowed VLANs', (args) => {
       if (args.length < 1) return '% Incomplete command.';
+      const sub = args[0].toLowerCase();
+
+      if (sub === 'all') {
+        return this.applyToSelectedInterfaces(portName =>
+          this.d().setTrunkAllowedVlansAll(portName) ? '' : '% Error'
+        );
+      }
+      if (sub === 'none') {
+        return this.applyToSelectedInterfaces(portName =>
+          this.d().setTrunkAllowedVlansNone(portName) ? '' : '% Error'
+        );
+      }
+      if (sub === 'add') {
+        if (args.length < 2) return '% Incomplete command.';
+        const vlans = this.parseVlanList(args[1]);
+        if (!vlans) return '% Invalid VLAN list';
+        return this.applyToSelectedInterfaces(portName =>
+          this.d().addTrunkAllowedVlans(portName, vlans) ? '' : '% Error'
+        );
+      }
+      if (sub === 'remove') {
+        if (args.length < 2) return '% Incomplete command.';
+        const vlans = this.parseVlanList(args[1]);
+        if (!vlans) return '% Invalid VLAN list';
+        return this.applyToSelectedInterfaces(portName =>
+          this.d().removeTrunkAllowedVlans(portName, vlans) ? '' : '% Error'
+        );
+      }
+      if (sub === 'except') {
+        if (args.length < 2) return '% Incomplete command.';
+        const vlans = this.parseVlanList(args[1]);
+        if (!vlans) return '% Invalid VLAN list';
+        return this.applyToSelectedInterfaces(portName =>
+          this.d().setTrunkAllowedVlansExcept(portName, vlans) ? '' : '% Error'
+        );
+      }
+
+      // Default: replace the full list
       const vlans = this.parseVlanList(args[0]);
       if (!vlans) return '% Invalid VLAN list';
       return this.applyToSelectedInterfaces(portName =>
@@ -408,6 +461,15 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         lines.push(` switchport mode trunk`);
         if (cfg.trunkNativeVlan !== 1) {
           lines.push(` switchport trunk native vlan ${cfg.trunkNativeVlan}`);
+        }
+        // Only show allowed VLAN line when not the default (all VLANs)
+        if (cfg.trunkAllowedVlans.size < 4094) {
+          if (cfg.trunkAllowedVlans.size === 0) {
+            lines.push(` switchport trunk allowed vlan none`);
+          } else {
+            const sorted = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
+            lines.push(` switchport trunk allowed vlan ${this.compactVlanList(sorted)}`);
+          }
         }
       } else {
         lines.push(` switchport mode access`);
@@ -718,6 +780,23 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   }
 
   // ─── Utility ──────────────────────────────────────────────────────
+
+  /** Compact a sorted VLAN list into ranges, e.g. [1,2,3,5] → "1-3,5" */
+  private compactVlanList(sorted: number[]): string {
+    if (sorted.length === 0) return '';
+    const ranges: string[] = [];
+    let start = sorted[0], end = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i] === end + 1) {
+        end = sorted[i];
+      } else {
+        ranges.push(start === end ? String(start) : `${start}-${end}`);
+        start = end = sorted[i];
+      }
+    }
+    ranges.push(start === end ? String(start) : `${start}-${end}`);
+    return ranges.join(',');
+  }
 
   private parseVlanList(input: string): Set<number> | null {
     const vlans = new Set<number>();
