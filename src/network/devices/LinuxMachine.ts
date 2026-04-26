@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
 import { Port } from '../hardware/Port';
 import {
   IPAddress,
@@ -489,10 +489,38 @@ export abstract class LinuxMachine extends EndHost {
             ip,
             mac: entry.mac.toString(),
             iface: entry.iface,
-            state: 'REACHABLE',
+            state: getNUDState(entry),
           });
         }
         return entries;
+      },
+      addNeighbor(ip: string, mac: string, ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `RTNETLINK answers: No such device`;
+        try {
+          const macAddr = new MACAddress(mac);
+          self.addStaticARP(ip, macAddr, ifName);
+          return '';
+        } catch {
+          return 'RTNETLINK answers: Invalid argument';
+        }
+      },
+      deleteNeighbor(ip: string, ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `RTNETLINK answers: No such device`;
+        const removed = self.deleteARP(ip);
+        if (!removed) return 'RTNETLINK answers: No such file or directory';
+        return '';
+      },
+      flushNeighbors(ifName?: string): string {
+        if (ifName) {
+          for (const [ip, entry] of self.arpTable) {
+            if (entry.iface === ifName) self.arpTable.delete(ip);
+          }
+        } else {
+          self.clearARPTable();
+        }
+        return '';
       },
       setInterfaceUp(ifName: string): string {
         const port = self.ports.get(ifName);
@@ -558,6 +586,9 @@ export abstract class LinuxMachine extends EndHost {
       },
       deleteARP(ip: string): boolean {
         return self.deleteARP(ip);
+      },
+      clearARPTable(): void {
+        self.clearARPTable();
       },
       pingSequence(
         target: IPAddress,

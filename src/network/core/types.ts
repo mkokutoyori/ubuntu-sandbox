@@ -770,6 +770,7 @@ export type ICMPType =
   | 'echo-request'            // Type 8
   | 'echo-reply'              // Type 0
   | 'destination-unreachable'  // Type 3
+  | 'redirect'                 // Type 5
   | 'time-exceeded';           // Type 11
 
 export interface ICMPPacket {
@@ -798,6 +799,11 @@ export interface ICMPPacket {
    * the original packet header (SPI, protocol, etc.).
    */
   originalPacket?: IPv4Packet;
+  /**
+   * Redirect Gateway — included in ICMP Type 5 (Redirect) per RFC 792.
+   * The host should send future packets for the destination to this address.
+   */
+  gateway?: IPAddress;
 }
 
 // ─── L4: UDP Datagram (RFC 768) ──────────────────────────────────────

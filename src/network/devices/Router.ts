@@ -851,6 +851,17 @@ export abstract class Router extends Equipment {
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
 
+    // Phase E.2a: ICMP Redirect (RFC 1812 §5.2.7.2)
+    // Send redirect when egress == ingress and source is on-link — host can reach next-hop directly.
+    if (route.iface === inPort && route.nextHop) {
+      const inPortObj = this.ports.get(inPort);
+      const inPortIP = inPortObj?.getIPAddress();
+      const inPortMask = inPortObj?.getSubnetMask();
+      if (inPortIP && inPortMask && ipPkt.sourceIP.isInSameSubnet(inPortIP, inPortMask)) {
+        this.sendICMPRedirect(inPort, ipPkt, route.nextHop);
+      }
+    }
+
     // Phase E.2b: Outbound ACL check
     const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');
     if (outboundACL !== null) {
@@ -986,6 +997,51 @@ export abstract class Router extends Equipment {
       });
     } else {
       this.queueAndResolve(errorIP, route.iface, nextHopIP, outPort);
+    }
+  }
+
+  /**
+   * Send ICMP Redirect (Type 5, Code 1 — Redirect for Host) back to the source.
+   * Tells the originating host to send future packets directly to `redirectGW`.
+   * RFC 792; RFC 1812 §5.2.7.
+   */
+  private sendICMPRedirect(inPort: string, offendingPkt: IPv4Packet, redirectGW: IPAddress): void {
+    const inPortObj = this.ports.get(inPort);
+    if (!inPortObj) return;
+    const myIP = inPortObj.getIPAddress();
+    if (!myIP) return;
+
+    const redirectICMP: ICMPPacket = {
+      type: 'icmp',
+      icmpType: 'redirect',
+      code: 1, // Redirect for Host
+      id: 0, sequence: 0, dataSize: 0,
+      gateway: redirectGW,
+      originalPacket: offendingPkt,
+    };
+
+    const redirectIP = createIPv4Packet(
+      myIP, offendingPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
+      redirectICMP, 8,
+    );
+
+    this.counters.icmpOutMsgs++;
+
+    const route = this.lookupRoute(offendingPkt.sourceIP);
+    if (!route) return;
+
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return;
+
+    const nextHopIP = route.nextHop || offendingPkt.sourceIP;
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(route.iface, {
+        srcMAC: outPort.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: redirectIP,
+      });
+    } else {
+      this.queueAndResolve(redirectIP, route.iface, nextHopIP, outPort);
     }
   }
 
