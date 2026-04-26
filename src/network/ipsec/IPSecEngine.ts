@@ -1467,18 +1467,9 @@ export class IPSecEngine implements IProtocolEngine {
       return entry.peers[0];
     }
     // Tunnel protection: peer is the tunnel destination (from config)
-    const extraConfig = (this.router as any).ospfExtraConfig?.pendingIfConfig;
-    if (extraConfig) {
-      const tunCfg = extraConfig.get(egressIface);
-      if (tunCfg?.tunnelDest) return tunCfg.tunnelDest;
-    }
-    // Fallback: check port method
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    const port = ports.get(egressIface);
-    if (port) {
-      const tunnelDst = port.getTunnelDestination?.();
-      if (tunnelDst) return tunnelDst.toString();
-    }
+    const ospfExtra = (this.router as any)._getOSPFExtraConfig?.();
+    const tunCfg = ospfExtra?.pendingIfConfig?.get(egressIface);
+    if (tunCfg?.tunnelDest) return tunCfg.tunnelDest;
     // Dynamic crypto map: use routing table next-hop as peer
     try {
       const route = (this.router as any).lookupRoute?.(pkt.destinationIP);
@@ -1497,10 +1488,21 @@ export class IPSecEngine implements IProtocolEngine {
     // Determine local IP on egress interface
     const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
     let localIP: IPAddress | null = null;
-    for (const [name, port] of ports) {
-      if (name === egressIface) {
-        localIP = port.getIPAddress?.() || null;
-        break;
+    // For GRE tunnels, the outer IP uses the physical tunnel source address
+    if (/^Tunnel/i.test(egressIface)) {
+      const extra = (this.router as any)._getOSPFExtraConfig?.();
+      const tunCfg = extra?.pendingIfConfig?.get(egressIface);
+      if (tunCfg?.tunnelSource) {
+        const srcPort = ports.get(tunCfg.tunnelSource);
+        localIP = srcPort?.getIPAddress?.() || null;
+      }
+    }
+    if (!localIP) {
+      for (const [name, port] of ports) {
+        if (name === egressIface) {
+          localIP = port.getIPAddress?.() || null;
+          break;
+        }
       }
     }
     if (!localIP) return null;
@@ -2611,6 +2613,17 @@ export class IPSecEngine implements IProtocolEngine {
   private getLocalIP(egressIface: string): string | null {
     const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
     if (egressIface) {
+      // For GRE tunnel interfaces, use the tunnel source's physical interface IP
+      // so that IKE uses WAN addresses, not the virtual tunnel address (RFC 2784)
+      if (/^Tunnel/i.test(egressIface)) {
+        const extra = (this.router as any)._getOSPFExtraConfig?.();
+        const tunCfg = extra?.pendingIfConfig?.get(egressIface);
+        if (tunCfg?.tunnelSource) {
+          const srcPort = ports.get(tunCfg.tunnelSource);
+          const srcIP = srcPort?.getIPAddress?.()?.toString();
+          if (srcIP) return srcIP;
+        }
+      }
       const port = ports.get(egressIface);
       return port?.getIPAddress?.()?.toString() || null;
     }
