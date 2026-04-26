@@ -51,6 +51,9 @@ export interface IpNetworkContext {
   deleteDefaultRoute(): string;
   deleteRoute(network: string, cidr: number): string;
   getNeighborTable(): IpNeighborEntry[];
+  addNeighbor(ip: string, mac: string, ifName: string): string;
+  deleteNeighbor(ip: string, ifName: string): string;
+  flushNeighbors(ifName?: string): string;
   setInterfaceUp(ifName: string): string;
   setInterfaceDown(ifName: string): string;
   /** Optional XFRM (IPsec) context for ip xfrm commands */
@@ -653,15 +656,76 @@ function isInSubnet(ip: string, network: string, cidr: number): boolean {
 // ─── ip neigh ───────────────────────────────────────────────────────
 
 function ipNeigh(ctx: IpNetworkContext, args: string[]): string {
-  // ip neigh [show]
+  const sub = args[0] ?? 'show';
+
+  if (sub === 'show' || sub === 'list') {
+    return ipNeighShow(ctx, args.slice(1));
+  }
+  if (sub === 'add' || sub === 'replace') {
+    return ipNeighAdd(ctx, args.slice(1));
+  }
+  if (sub === 'del' || sub === 'delete') {
+    return ipNeighDel(ctx, args.slice(1));
+  }
+  if (sub === 'flush') {
+    return ipNeighFlush(ctx, args.slice(1));
+  }
+  if (sub === 'help') {
+    return 'Usage: ip neigh { add | del | flush | show } [ dev DEV ] [ lladdr LLADDR ] [ nud STATE ] ADDRESS';
+  }
+  // bare call — treat as show
+  return ipNeighShow(ctx, args);
+}
+
+function ipNeighShow(ctx: IpNetworkContext, _args: string[]): string {
   const neighbors = ctx.getNeighborTable();
   if (neighbors.length === 0) return '';
+  return neighbors
+    .map(n => `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
+    .join('\n');
+}
 
-  const lines: string[] = [];
-  for (const n of neighbors) {
-    lines.push(`${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`);
+// ip neigh add <IP> lladdr <MAC> dev <DEV> [nud permanent|static]
+function ipNeighAdd(ctx: IpNetworkContext, args: string[]): string {
+  const ip = args[0];
+  if (!ip) return 'Usage: ip neigh add ADDRESS lladdr LLADDR dev DEV';
+
+  let mac: string | null = null;
+  let dev: string | null = null;
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === 'lladdr' && args[i + 1]) { mac = args[++i]; }
+    else if (args[i] === 'dev' && args[i + 1]) { dev = args[++i]; }
+    else if (args[i] === 'nud') { i++; } // accept but ignore (always static)
   }
-  return lines.join('\n');
+
+  if (!mac) return 'RTNETLINK answers: Invalid argument (missing lladdr)';
+  if (!dev) return 'RTNETLINK answers: Invalid argument (missing dev)';
+
+  return ctx.addNeighbor(ip, mac, dev);
+}
+
+// ip neigh del <IP> dev <DEV>
+function ipNeighDel(ctx: IpNetworkContext, args: string[]): string {
+  const ip = args[0];
+  if (!ip) return 'Usage: ip neigh del ADDRESS dev DEV';
+
+  let dev: string | null = null;
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === 'dev' && args[i + 1]) { dev = args[++i]; }
+  }
+  if (!dev) return 'RTNETLINK answers: Invalid argument (missing dev)';
+
+  return ctx.deleteNeighbor(ip, dev);
+}
+
+// ip neigh flush [dev DEV]
+function ipNeighFlush(ctx: IpNetworkContext, args: string[]): string {
+  let dev: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'dev' && args[i + 1]) { dev = args[++i]; }
+  }
+  return ctx.flushNeighbors(dev);
 }
 
 // ─── ip xfrm ────────────────────────────────────────────────────────

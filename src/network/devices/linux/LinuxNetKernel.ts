@@ -75,6 +75,7 @@ export interface LinuxNetKernel {
   getArpTable(): ReadonlyMap<string, ARPEntry>;
   addStaticARP(ip: string, mac: MACAddress, iface: string): void;
   deleteARP(ip: string): boolean;
+  clearARPTable(): void;
 
   // ─── L3 probes ───────────────────────────────────────────────────
   pingSequence(

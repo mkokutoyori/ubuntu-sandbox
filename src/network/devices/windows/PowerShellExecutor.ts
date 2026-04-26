@@ -469,6 +469,17 @@ export class PowerShellExecutor {
         return this.handleSetContentWithPiped(sinkArgs, content);
       }
 
+      // findstr / find — CMD-style line grep, must run on raw string
+      if (filterCmdLower === 'findstr' || filterCmdLower === 'find') {
+        const rawStr = typeof currentOutput === 'string'
+          ? currentOutput
+          : (runPipeline(currentOutput as PipelineInput, []) ?? '');
+        const patternRaw = filter.split(/\s+/).slice(1).join(' ').replace(/^["']|["']$/g, '').replace(/\s+\/[a-zA-Z]+/g, '').trim();
+        const lines = rawStr.split('\n');
+        currentOutput = lines.filter(l => l.toLowerCase().includes(patternRaw.toLowerCase())).join('\n');
+        continue;
+      }
+
       // Other filters (Select-Object, Where-Object, Format-*, etc.) — use PSPipeline
       currentOutput = runPipeline(currentOutput, [filter]);
     }

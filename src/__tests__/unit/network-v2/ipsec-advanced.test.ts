@@ -437,6 +437,9 @@ describe('IPSec – Multiple Peers et Failover', () => {
     await pc1.executeCommand('sudo ip route add default via 192.168.1.1');
     await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
     await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
+    // PC3 is behind R3 (backup peer) — same subnet as PC2, reachable after failover
+    await pc3.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
+    await pc3.executeCommand('sudo ip route add default via 192.168.2.1');
 
     // Tunnel avec peer primaire (R2)
     const pingPrimaire = await pc1.executeCommand('ping -c 3 192.168.2.10');

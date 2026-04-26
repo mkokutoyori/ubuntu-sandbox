@@ -49,6 +49,15 @@ export interface ARPEntry {
   type: 'dynamic' | 'static';
 }
 
+/** Linux reachable time default (RFC 4861 §10): 30 seconds */
+export const ARP_REACHABLE_TIME_MS = 30_000;
+
+/** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
+export function getNUDState(entry: ARPEntry): string {
+  if (entry.type === 'static') return 'PERMANENT';
+  return Date.now() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
+}
+
 interface PendingARP {
   resolve: (mac: MACAddress) => void;
   reject: (reason: string) => void;
@@ -237,6 +246,27 @@ export abstract class EndHost extends Equipment {
 
     Logger.info(this.id, 'host:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
+
+    // Send gratuitous ARP (RFC 5227) to announce new IP and update neighbors' caches
+    if (port.isConnected()) {
+      const gratuitousARP: ARPPacket = {
+        type: 'arp',
+        operation: 'request',
+        senderMAC: port.getMAC(),
+        senderIP: ip,
+        targetMAC: MACAddress.broadcast(),
+        targetIP: ip,
+      };
+      this.sendFrame(ifName, {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP,
+        payload: gratuitousARP,
+      });
+      Logger.info(this.id, 'arp:gratuitous',
+        `${this.name}: gratuitous ARP for ${ip} on ${ifName}`);
+    }
+
     return true;
   }
 
@@ -531,11 +561,9 @@ export abstract class EndHost extends Equipment {
 
     const port = this.ports.get(portName);
     if (!port) return;
-    const myIP = port.getIPAddress();
-    if (!myIP) return;
 
-    // Learn sender's MAC→IP mapping (on the receiving interface)
-    // Only overwrite if there's no static entry already
+    // Always learn sender's MAC→IP mapping — real Linux does this even when
+    // the interface has no IP configured yet (e.g. during bootstrap).
     const existing = this.arpTable.get(arp.senderIP.toString());
     if (!existing || existing.type !== 'static') {
       this.arpTable.set(arp.senderIP.toString(), {
@@ -545,6 +573,9 @@ export abstract class EndHost extends Equipment {
         type: 'dynamic',
       });
     }
+
+    const myIP = port.getIPAddress();
+    if (!myIP) return;
 
     if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
       // ARP request for our IP → reply with our MAC
@@ -866,6 +897,28 @@ export abstract class EndHost extends Equipment {
         this.pendingPings.delete(key);
         pending.reject(reason);
       }
+    } else if (icmp.icmpType === 'redirect' && icmp.gateway && icmp.originalPacket) {
+      // RFC 792: host updates its routing table to use the new gateway for this destination
+      const dest = icmp.originalPacket.destinationIP;
+      const gw = icmp.gateway;
+      const hostMask = new SubnetMask('255.255.255.255');
+      // Remove any existing host route for this specific destination
+      this.routingTable = this.routingTable.filter(
+        r => !(r.network.equals(dest) && r.mask.toCIDR() === 32),
+      );
+      // Find which interface the gateway is reachable on
+      const gwRoute = this.resolveRoute(gw);
+      const iface = gwRoute?.port.getName() ?? portName;
+      this.routingTable.push({
+        network: dest,
+        mask: hostMask,
+        nextHop: gw,
+        iface,
+        type: 'static',
+        metric: 1,
+      });
+      Logger.info(this.id, 'icmp:redirect',
+        `${this.name}: ICMP Redirect from ${ipPkt.sourceIP} — use ${gw} for ${dest}`);
     }
   }
 
@@ -906,14 +959,17 @@ export abstract class EndHost extends Equipment {
     if (verdict === 'drop' || verdict === 'reject') return;
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
-    if (!nextHopMAC) return;
-
-    this.sendFrame(outPortName, {
-      srcMAC: route.port.getMAC(),
-      dstMAC: nextHopMAC.mac,
-      etherType: ETHERTYPE_IPV4,
-      payload: replyIP,
-    });
+    if (nextHopMAC) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(),
+        dstMAC: nextHopMAC.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: replyIP,
+      });
+    } else {
+      // Next-hop MAC unknown — queue the reply and resolve via ARP
+      this.fwdQueueAndResolve(replyIP, outPortName, route.nextHopIP, route.port);
+    }
   }
 
   /**
