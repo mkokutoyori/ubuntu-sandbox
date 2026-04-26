@@ -131,6 +131,7 @@ export function buildDynamicProcessObjects(ctx: PSProcessContext): Array<Record<
     Id: p.pid,
     SI: p.sessionId,
     ProcessName: p.name.replace(/\.exe$/i, ''),
+    Name: p.name.replace(/\.exe$/i, ''),
   }));
 }
 

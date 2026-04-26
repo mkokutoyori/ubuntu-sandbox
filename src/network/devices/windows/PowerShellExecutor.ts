@@ -153,6 +153,14 @@ export class PowerShellExecutor {
   private extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
   /** Location stack for Push-Location/Pop-Location */
   private locationStack: Map<string, string[]> = new Map();
+  /** Array variables: $name → string[] */
+  private sessionArrays: Map<string, string[]> = new Map();
+  /** Variables explicitly assigned as string literals (for += string-concat behaviour) */
+  private sessionStringVars: Set<string> = new Set();
+  /** Set to true when a `break` statement is executed inside a loop */
+  private breakSignal = false;
+  /** Set to true when a `continue` statement is executed inside a loop */
+  private continueSignal = false;
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -227,6 +235,132 @@ export class PowerShellExecutor {
       return this.execute(scriptBlockMatch[1].trim());
     }
 
+    // ── Early returns that must run BEFORE substituteVars ────────────
+
+    // Bare single-quoted string literal — NO variable interpolation
+    if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
+      return trimmed.slice(1, -1).replace(/''/g, "'");
+    }
+
+    // $PSVersionTable.PropertyName — property access on the version table
+    const psVtMatch = trimmed.match(/^\$PSVersionTable\.(\w+)$/i);
+    if (psVtMatch) {
+      const prop = psVtMatch[1].toLowerCase();
+      switch (prop) {
+        case 'psversion':            return '5.1.19041.4412';
+        case 'psedition':            return 'Desktop';
+        case 'buildversion':         return '10.0.19041.4412';
+        case 'clrversion':           return '4.0.30319.42000';
+        case 'wsmanbuildversion':    return '3.0.0.0';
+        case 'pscompatibleversions': return '1.0 2.0 3.0 4.0 5.0 5.1.19041.4412';
+        case 'platform':             return 'Win32NT';
+        case 'os':                   return 'Microsoft Windows 10.0.19041';
+        default:                     return '';
+      }
+    }
+
+    // return statement (inside function bodies)
+    if (/^return\b/i.test(trimmed)) {
+      const retExpr = trimmed.slice(6).trim();
+      return retExpr ? this.executeSingleStatement(retExpr) : '';
+    }
+
+    // Post-increment: $x++ (standalone statement)
+    const postIncrMatch = trimmed.match(/^\$(\w+)\s*\+\+$/);
+    if (postIncrMatch) {
+      const n = postIncrMatch[1].toLowerCase();
+      const v = Number(this.sessionVars.get(n) ?? '0') || 0;
+      this.sessionVars.set(n, String(v + 1));
+      return '';
+    }
+
+    // Post-decrement: $x-- (standalone statement)
+    const postDecrMatch = trimmed.match(/^\$(\w+)\s*--$/);
+    if (postDecrMatch) {
+      const n = postDecrMatch[1].toLowerCase();
+      const v = Number(this.sessionVars.get(n) ?? '0') || 0;
+      this.sessionVars.set(n, String(v - 1));
+      return '';
+    }
+
+    // Compound assignment: $x += expr  /  -= *= /= %=
+    const compoundMatch = trimmed.match(/^\$(\w+)\s*(\+=|-=|\*=|\/=|%=)\s*(.+)$/s);
+    if (compoundMatch) {
+      const n   = compoundMatch[1].toLowerCase();
+      const op  = compoundMatch[2];
+      const rhs = this.tryEvalExpr(this.substituteVars(compoundMatch[3].trim())) ?? compoundMatch[3].trim();
+      const lhsVal = this.sessionVars.get(n) ?? '';
+      let result: string;
+      if (op === '+=') {
+        const isStrVar = this.sessionStringVars.has(n) || isNaN(Number(lhsVal)) || lhsVal === '';
+        result = isStrVar ? lhsVal + rhs : String(Number(lhsVal) + Number(rhs));
+      } else {
+        const l = Number(lhsVal) || 0, r = Number(rhs) || 0;
+        result = String(op === '-=' ? l-r : op === '*=' ? l*r : op === '/=' ? l/r : l%r);
+      }
+      this.sessionVars.set(n, result);
+      return '';
+    }
+
+    // Array index access: $arr[n] — before substituteVars erases $arr
+    const arrIdxMatch = trimmed.match(/^\$(\w+)\[(-?\d+)\]$/);
+    if (arrIdxMatch) {
+      const arrName = arrIdxMatch[1].toLowerCase();
+      const idx     = parseInt(arrIdxMatch[2], 10);
+      const arr     = this.sessionArrays.get(arrName);
+      if (arr) {
+        const i = idx < 0 ? arr.length + idx : idx;
+        return arr[i] ?? '';
+      }
+      // Handle $Matches[n] from -match operator
+      if (arrName === 'matches') {
+        const matchesJson = this.sessionVars.get('matches');
+        if (matchesJson) {
+          try {
+            const obj = JSON.parse(matchesJson);
+            return String(obj[String(idx)] ?? '');
+          } catch { /* ignore */ }
+        }
+      }
+    }
+
+    // $arr.Count / $arr.Length — before substituteVars
+    const arrCountMatch = trimmed.match(/^\$(\w+)\.(Count|Length)$/i);
+    if (arrCountMatch) {
+      const arrName = arrCountMatch[1].toLowerCase();
+      const arr = this.sessionArrays.get(arrName);
+      if (arr) return String(arr.length);
+    }
+
+    // if / elseif / else
+    if (/^if\s*\(/i.test(trimmed)) {
+      return this.execIfStatement(trimmed);
+    }
+
+    // for ($i=0; cond; incr) { body }
+    if (/^for\s*\(/i.test(trimmed)) {
+      return this.execForLoop(trimmed);
+    }
+
+    // foreach ($x in collection) { body }
+    if (/^foreach\s*\(/i.test(trimmed)) {
+      return this.execForeachLoop(trimmed);
+    }
+
+    // while (cond) { body }
+    if (/^while\s*\(/i.test(trimmed)) {
+      return this.execWhileLoop(trimmed);
+    }
+
+    // do { body } while (cond)
+    if (/^do\s*\{/i.test(trimmed)) {
+      return this.execDoWhileLoop(trimmed);
+    }
+
+    // break / continue inside loop bodies
+    if (/^break$/i.test(trimmed)) { this.breakSignal = true; return ''; }
+    if (/^continue$/i.test(trimmed)) { this.continueSignal = true; return ''; }
+
     // try/catch block: try { ... } catch { ... }
     const tryCatchMatch = trimmed.match(/^try\s*\{([\s\S]+?)\}\s*catch\s*\{([\s\S]+?)\}$/i);
     if (tryCatchMatch) {
@@ -248,16 +382,24 @@ export class PowerShellExecutor {
     }
 
     // Function definition: function Name { param(...) body }
-    const funcDefMatch = trimmed.match(/^function\s+(\w+)\s*\{([\s\S]*)\}$/i);
+    //                  or: function Name($a,$b) { body }
+    const funcDefMatch = trimmed.match(/^function\s+(\w+)\s*(?:\(([^)]*)\))?\s*\{([\s\S]*)\}$/i);
     if (funcDefMatch) {
       const funcName = funcDefMatch[1].toLowerCase();
-      const body = funcDefMatch[2].trim();
-      const paramMatch = body.match(/^param\s*\(([^)]*)\)([\s\S]*)$/i);
+      const inlineParamStr = funcDefMatch[2]; // may be undefined
+      const body = funcDefMatch[3].trim();
       let params: string[] = [];
       let funcBody = body;
-      if (paramMatch) {
-        params = paramMatch[1].split(',').map(p => p.trim().replace(/^\$/, '').toLowerCase()).filter(Boolean);
-        funcBody = paramMatch[2].trim();
+      if (inlineParamStr !== undefined) {
+        // function Add($a,$b) { ... } — params in parentheses after name
+        params = inlineParamStr.split(',').map(p => p.trim().replace(/^\$|\s*=.*$/g, '').toLowerCase()).filter(Boolean);
+      } else {
+        // function Greet { param($Name) ... } — params in body
+        const paramMatch = body.match(/^param\s*\(([^)]*)\)([\s\S]*)$/i);
+        if (paramMatch) {
+          params = paramMatch[1].split(',').map(p => p.trim().replace(/^\$|\s*=.*$/g, '').toLowerCase()).filter(Boolean);
+          funcBody = paramMatch[2].trim();
+        }
       }
       this.sessionFunctions.set(funcName, { params, body: funcBody });
       return '';
@@ -332,13 +474,34 @@ export class PowerShellExecutor {
         this.sessionVars.set(varName, '');
         return '';
       }
+      // Array literal: @(items) or bare comma-separated items (e.g. 1,2,3)
+      const isArrayLiteral = /^@\s*\(/.test(expr) || (/,/.test(expr) && !/\bwhere\b|\bselect\b/i.test(expr) && !expr.includes('|'));
+      if (isArrayLiteral) {
+        const arr = this.parseArrayLiteral(expr);
+        if (arr !== null) {
+          this.sessionArrays.set(varName, arr);
+          this.sessionStringVars.delete(varName);
+          this.sessionVars.set(varName, arr.join(' '));
+          return '';
+        }
+      }
       let value: string;
-      if ((expr.startsWith('"') && expr.endsWith('"')) ||
-          (expr.startsWith("'") && expr.endsWith("'"))) {
-        value = expr.slice(1, -1);
+      if (expr.startsWith('"') && expr.endsWith('"') && expr.length >= 2) {
+        value = this.expandDoubleQuotedString(expr.slice(1, -1));
+        this.sessionStringVars.add(varName);
+      } else if (expr.startsWith("'") && expr.endsWith("'") && expr.length >= 2) {
+        value = expr.slice(1, -1).replace(/''/g, "'");
+        this.sessionStringVars.add(varName);
       } else {
-        const result = await this.executeSingle(this.substituteVars(expr));
-        value = result?.trim() ?? '';
+        this.sessionStringVars.delete(varName);
+        const subst = this.substituteVars(expr);
+        const evaled = this.tryEvalExpr(subst);
+        if (evaled !== null) {
+          value = evaled;
+        } else {
+          const result = await this.executeSingle(subst);
+          value = result?.trim() ?? '';
+        }
       }
       this.sessionVars.set(varName, value);
       return '';
@@ -358,6 +521,9 @@ export class PowerShellExecutor {
     if (substituted.includes('|') && !substituted.match(/[>]/)) {
       return this.executePipeline(substituted);
     }
+    // Try expression evaluator before falling back to device command dispatch
+    const exprResult = this.tryEvalExpr(substituted);
+    if (exprResult !== null) return exprResult;
     return this.executeSingle(substituted);
   }
 
@@ -428,29 +594,608 @@ export class PowerShellExecutor {
     const fn = this.sessionFunctions.get(name);
     if (!fn) return null;
 
-    // Parse named args: -ParamName value
-    const localVars = new Map<string, string>(this.sessionVars);
     const savedVars = new Map<string, string>(this.sessionVars);
-    const parsed = new Map<string, string>();
+    const savedArrays = new Map<string, string[]>(this.sessionArrays);
+
+    // Separate named and positional args
+    const namedArgs = new Map<string, string>();
+    const positionalArgs: string[] = [];
     for (let i = 0; i < args.length; i++) {
-      if (args[i].startsWith('-') && i + 1 < args.length) {
-        const pname = args[i].slice(1).toLowerCase();
-        parsed.set(pname, args[i + 1].replace(/^["']|["']$/g, ''));
+      if (args[i].startsWith('-') && i + 1 < args.length && !args[i + 1]?.startsWith('-')) {
+        namedArgs.set(args[i].slice(1).toLowerCase(), args[i + 1].replace(/^["']|["']$/g, ''));
         i++;
+      } else if (!args[i].startsWith('-')) {
+        positionalArgs.push(args[i].replace(/^["']|["']$/g, ''));
       }
     }
-    // Bind params
+
+    // Bind named params
     for (const param of fn.params) {
-      if (parsed.has(param)) this.sessionVars.set(param, parsed.get(param)!);
+      if (namedArgs.has(param)) this.sessionVars.set(param, namedArgs.get(param)!);
+    }
+    // Bind positional params (for params not already filled by named args)
+    let posIdx = 0;
+    for (const param of fn.params) {
+      if (!namedArgs.has(param) && posIdx < positionalArgs.length) {
+        this.sessionVars.set(param, positionalArgs[posIdx++]);
+      }
     }
 
-    // Execute body as a multi-statement script
     const result = await this.execute(fn.body);
 
-    // Restore variables (simple scope)
+    // Restore scope
     this.sessionVars = savedVars;
+    this.sessionArrays = savedArrays;
 
     return result;
+  }
+
+  // ─── Expression evaluator ─────────────────────────────────────────
+
+  /** Parse @(...) or bare comma-separated list into string[] */
+  private parseArrayLiteral(expr: string): string[] | null {
+    let inner = expr.trim();
+    if (/^@\s*\(/.test(inner)) {
+      const block = this.extractBalancedBlock(inner, inner.indexOf('('), '(');
+      if (!block) return null;
+      inner = block.content;
+    }
+    if (!inner.includes(',')) {
+      // Single-element array
+      const v = inner.trim().replace(/^["']|["']$/g, '');
+      return [v];
+    }
+    return inner.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+  }
+
+  /** Expand $() subexpressions and $var references inside a double-quoted string */
+  private expandDoubleQuotedString(inner: string): string {
+    // Expand $($var) or $(expr) subexpressions
+    let result = inner.replace(/\$\(([^)]*)\)/g, (_match, sub) => {
+      const substituted = sub.replace(/\$(\w+)/g, (_m: string, n: string) => {
+        const lo = n.toLowerCase();
+        if (lo === 'true') return 'True';
+        if (lo === 'false') return 'False';
+        return this.sessionVars.get(lo) ?? _m;
+      });
+      return this.tryEvalExpr(substituted) ?? substituted;
+    });
+    // Expand remaining $var references
+    result = result.replace(/\$(\w+)/g, (_match, n) => {
+      const lo = n.toLowerCase();
+      if (lo === 'true') return 'True';
+      if (lo === 'false') return 'False';
+      if (lo === 'null') return '';
+      return this.sessionVars.get(lo) ?? _match;
+    });
+    return result;
+  }
+
+  /** Return true if the string value is truthy in PowerShell semantics */
+  private isTruthy(val: string): boolean {
+    const lo = val.trim().toLowerCase();
+    return lo !== '' && lo !== 'false' && lo !== '0' && lo !== '$false';
+  }
+
+  /**
+   * Find the matching close bracket starting from startPos (which must be openChar).
+   * Returns content between the brackets and the index of the closing bracket.
+   */
+  private extractBalancedBlock(str: string, startPos: number, openChar: string): { content: string; end: number } | null {
+    const closeChar = openChar === '{' ? '}' : openChar === '(' ? ')' : ']';
+    let depth = 0;
+    for (let i = startPos; i < str.length; i++) {
+      if (str[i] === openChar) depth++;
+      else if (str[i] === closeChar) {
+        depth--;
+        if (depth === 0) return { content: str.slice(startPos + 1, i), end: i };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Try to evaluate a PowerShell expression string synchronously.
+   * Returns the string result or null if the expression is not recognizable.
+   */
+  private tryEvalExpr(expr: string): string | null {
+    const e = expr.trim();
+    if (!e) return null;
+
+    // Boolean / null literals
+    if (/^\$true$/i.test(e)) return 'True';
+    if (/^\$false$/i.test(e)) return 'False';
+    if (/^\$null$/i.test(e)) return '';
+
+    // Already a number
+    if (/^-?\d+(\.\d+)?$/.test(e)) return e;
+
+    // Quoted string literals — only when the opening quote has its matching close at the END
+    if (e.startsWith('"') && e.length >= 2) {
+      let end = 1;
+      while (end < e.length && e[end] !== '"') end++;
+      if (end === e.length - 1) return this.expandDoubleQuotedString(e.slice(1, -1));
+    }
+    if (e.startsWith("'") && e.length >= 2) {
+      let end = 1;
+      while (end < e.length && e[end] !== "'") end++;
+      if (end === e.length - 1) return e.slice(1, -1).replace(/''/g, "'");
+    }
+
+    // -not <expr>
+    if (/^-not\s+/i.test(e)) {
+      const inner = this.tryEvalExpr(e.slice(5).trim());
+      if (inner !== null) return this.isTruthy(inner) ? 'False' : 'True';
+    }
+
+    // [math]::Method(args)
+    const mathMatch = e.match(/^\[math\]::(\w+)\(([^)]*)\)$/i);
+    if (mathMatch) {
+      const method = mathMatch[1].toLowerCase();
+      const argParts = mathMatch[2].split(',').map(a => parseFloat(a.trim()));
+      switch (method) {
+        case 'pow': return String(Math.pow(argParts[0], argParts[1]));
+        case 'round': return String(Math.round(argParts[0]));
+        case 'floor': return String(Math.floor(argParts[0]));
+        case 'ceiling': return String(Math.ceil(argParts[0]));
+        case 'abs': return String(Math.abs(argParts[0]));
+        case 'sqrt': return String(Math.sqrt(argParts[0]));
+        case 'max': return String(Math.max(argParts[0], argParts[1]));
+        case 'min': return String(Math.min(argParts[0], argParts[1]));
+        case 'log': return String(argParts.length > 1 ? Math.log(argParts[0]) / Math.log(argParts[1]) : Math.log(argParts[0]));
+        case 'truncate': return String(Math.trunc(argParts[0]));
+      }
+    }
+
+    // [int]::MaxValue / [int]::MinValue / [long]::MaxValue
+    const intStaticMatch = e.match(/^\[(int|long|double)\]::(MaxValue|MinValue)$/i);
+    if (intStaticMatch) {
+      const type = intStaticMatch[1].toLowerCase();
+      const prop = intStaticMatch[2].toLowerCase();
+      if (type === 'int') return prop === 'maxvalue' ? '2147483647' : '-2147483648';
+      if (type === 'long') return prop === 'maxvalue' ? '9223372036854775807' : '-9223372036854775808';
+      if (type === 'double') return prop === 'maxvalue' ? '1.7976931348623157E+308' : '5E-324';
+    }
+
+    // Type cast: [int]"42"  [string]42  [bool]...
+    const castMatch = e.match(/^\[(int|string|bool|double|float|long)\](.+)$/i);
+    if (castMatch) {
+      const type = castMatch[1].toLowerCase();
+      const inner = castMatch[2].trim().replace(/^["']|["']$/g, '');
+      if (type === 'int') { const n = parseInt(inner, 10); return isNaN(n) ? '0' : String(n); }
+      if (type === 'long') { const n = parseInt(inner, 10); return isNaN(n) ? '0' : String(n); }
+      if (type === 'double' || type === 'float') { const n = parseFloat(inner); return isNaN(n) ? '0' : String(n); }
+      if (type === 'string') return inner;
+      if (type === 'bool') return (inner === '0' || inner.toLowerCase() === 'false' || inner === '') ? 'False' : 'True';
+    }
+
+    // Array literal with property: @(1,2,3).Count
+    const arrLitPropMatch = e.match(/^(@\([^)]*\))\.(\w+)$/i);
+    if (arrLitPropMatch) {
+      const arr = this.parseArrayLiteral(arrLitPropMatch[1]);
+      if (arr !== null) {
+        const prop = arrLitPropMatch[2].toLowerCase();
+        if (prop === 'count' || prop === 'length') return String(arr.length);
+      }
+    }
+
+    // Array concatenation with property: (@(1,2) + @(3,4)).Count
+    const arrConcatPropMatch = e.match(/^\((.+)\)\.(\w+)$/);
+    if (arrConcatPropMatch) {
+      const prop = arrConcatPropMatch[2].toLowerCase();
+      if (prop === 'count' || prop === 'length') {
+        const inner = arrConcatPropMatch[1].trim();
+        const concatMatch = inner.match(/^(@\([^)]*\))\s*\+\s*(@\([^)]*\))$/);
+        if (concatMatch) {
+          const a = this.parseArrayLiteral(concatMatch[1]);
+          const b = this.parseArrayLiteral(concatMatch[2]);
+          if (a && b) return String(a.length + b.length);
+        }
+      }
+    }
+
+    // String method calls: "str".Method(args) or "str".Property
+    const strMethodMatch = e.match(/^(["'])(.+?)\1\.(\w+)(?:\(([^)]*)\))?$/);
+    if (strMethodMatch) {
+      const str = strMethodMatch[1] === '"' ? this.expandDoubleQuotedString(strMethodMatch[2]) : strMethodMatch[2].replace(/''/g, "'");
+      const method = strMethodMatch[3].toLowerCase();
+      const rawArg = strMethodMatch[4] ?? '';
+      const arg = rawArg.replace(/^["']|["']$/g, '');
+      switch (method) {
+        case 'toupper': return str.toUpperCase();
+        case 'tolower': return str.toLowerCase();
+        case 'trim': return str.trim();
+        case 'trimstart': return str.trimStart();
+        case 'trimend': return str.trimEnd();
+        case 'length': return String(str.length);
+        case 'count': return String(str.length);
+        case 'contains': return str.includes(arg) ? 'True' : 'False';
+        case 'startswith': return str.startsWith(arg) ? 'True' : 'False';
+        case 'endswith': return str.endsWith(arg) ? 'True' : 'False';
+        case 'indexof': return String(str.indexOf(arg));
+        case 'replace': {
+          const parts = rawArg.split(',').map(a => a.trim().replace(/^["']|["']$/g, ''));
+          return str.split(parts[0]).join(parts[1] ?? '');
+        }
+        case 'split': {
+          const sep = arg || ' ';
+          const parts = str.split(sep);
+          // Return as a representation — .Count on this is the common usage
+          return parts.join('\n');
+        }
+        case 'substring': {
+          const ps = rawArg.split(',').map(a => parseInt(a.trim(), 10));
+          return ps.length > 1 ? str.substring(ps[0], ps[0] + ps[1]) : str.substring(ps[0]);
+        }
+        case 'padleft': return str.padStart(parseInt(arg, 10));
+        case 'padright': return str.padEnd(parseInt(arg, 10));
+      }
+    }
+
+    // Parenthesized expression with .Count/.Length: (expr).Count
+    const parenPropMatch = e.match(/^\((.+)\)\.(\w+)(?:\(([^)]*)\))?$/);
+    if (parenPropMatch) {
+      const innerExpr = parenPropMatch[1].trim();
+      const prop = parenPropMatch[2].toLowerCase();
+      // Array split: ("hello world".Split(" ")).Count
+      if (prop === 'count' || prop === 'length') {
+        const inner = this.tryEvalExpr(innerExpr);
+        if (inner !== null) {
+          return String(inner.split('\n').filter(Boolean).length || (inner.trim() ? 1 : 0));
+        }
+      }
+    }
+
+    // Parenthesized expression: (expr)
+    if (e.startsWith('(') && e.endsWith(')')) {
+      const block = this.extractBalancedBlock(e, 0, '(');
+      if (block && block.end === e.length - 1) {
+        return this.tryEvalExpr(block.content.trim());
+      }
+    }
+
+    // Binary PS operators — split on the LAST operator to handle nested expressions
+    const binOpResult = this.tryEvalBinaryOp(e);
+    if (binOpResult !== null) return binOpResult;
+
+    // Pure arithmetic (numbers, operators, parens only)
+    return this.evalArithmetic(e);
+  }
+
+  /** Try to parse and evaluate a binary PS operator expression */
+  private tryEvalBinaryOp(e: string): string | null {
+    const ops = ['-and', '-or', '-eq', '-ne', '-ge', '-le', '-gt', '-lt',
+                 '-like', '-notlike', '-match', '-notmatch', '-replace', '-contains', '-in'];
+    // Scan right-to-left to find the last top-level operator (handles left-to-right eval)
+    for (const op of ops) {
+      const pattern = new RegExp(`^(.+?)\\s+${op.replace('-', '\\-')}\\s+(.+)$`, 'is');
+      const m = e.match(pattern);
+      if (!m) continue;
+      const lhsRaw = m[1].trim();
+      const rhsRaw = m[2].trim();
+      // Make sure we're at depth 0 (not inside parens/brackets)
+      let depth = 0;
+      let opIdx = -1;
+      const opStr = ` ${op} `;
+      const lo = e.toLowerCase();
+      let i = 0;
+      while (i < lo.length) {
+        if (lo[i] === '(' || lo[i] === '{' || lo[i] === '[') { depth++; i++; continue; }
+        if (lo[i] === ')' || lo[i] === '}' || lo[i] === ']') { depth--; i++; continue; }
+        if (lo[i] === '"') { i++; while (i < lo.length && lo[i] !== '"') i++; i++; continue; }
+        if (lo[i] === "'") { i++; while (i < lo.length && lo[i] !== "'") i++; i++; continue; }
+        if (depth === 0 && lo.startsWith(op, i) && (i === 0 || lo[i-1] === ' ') && (lo[i + op.length] === ' ' || lo[i + op.length] === undefined)) {
+          opIdx = i;
+          i += op.length;
+          continue;
+        }
+        i++;
+      }
+      if (opIdx < 0) continue;
+      const lhs = this.tryEvalExpr(e.slice(0, opIdx).trimEnd()) ?? e.slice(0, opIdx).trimEnd();
+      const rhs = this.tryEvalExpr(e.slice(opIdx + op.length).trimStart()) ?? e.slice(opIdx + op.length).trimStart();
+      return this.applyPSOp(lhs, op, rhs);
+    }
+    return null;
+  }
+
+  /** Apply a PowerShell binary operator to two already-evaluated operands */
+  private applyPSOp(lhs: string, op: string, rhs: string): string {
+    const lNum = parseFloat(lhs);
+    const rNum = parseFloat(rhs);
+    const bothNum = !isNaN(lNum) && !isNaN(rNum);
+    switch (op.toLowerCase()) {
+      case '-eq': return (bothNum ? lNum === rNum : lhs.toLowerCase() === rhs.toLowerCase()) ? 'True' : 'False';
+      case '-ne': return (bothNum ? lNum !== rNum : lhs.toLowerCase() !== rhs.toLowerCase()) ? 'True' : 'False';
+      case '-gt': return (bothNum && lNum > rNum) ? 'True' : 'False';
+      case '-lt': return (bothNum && lNum < rNum) ? 'True' : 'False';
+      case '-ge': return (bothNum && lNum >= rNum) ? 'True' : 'False';
+      case '-le': return (bothNum && lNum <= rNum) ? 'True' : 'False';
+      case '-and': return (this.isTruthy(lhs) && this.isTruthy(rhs)) ? 'True' : 'False';
+      case '-or':  return (this.isTruthy(lhs) || this.isTruthy(rhs)) ? 'True' : 'False';
+      case '-like': {
+        const pattern = '^' + rhs.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+        return new RegExp(pattern, 'i').test(lhs) ? 'True' : 'False';
+      }
+      case '-notlike': {
+        const pattern = '^' + rhs.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+        return new RegExp(pattern, 'i').test(lhs) ? 'False' : 'True';
+      }
+      case '-match': try {
+        const rx = new RegExp(rhs, 'i');
+        const m = lhs.match(rx);
+        if (m) { this.sessionVars.set('matches', JSON.stringify({ 0: m[0], ...Object.fromEntries(m.slice(1).map((v, i) => [String(i + 1), v ?? ''])) })); }
+        return m ? 'True' : 'False';
+      } catch { return 'False'; }
+      case '-notmatch': try { return new RegExp(rhs, 'i').test(lhs) ? 'False' : 'True'; } catch { return 'True'; }
+      case '-replace': {
+        // rhs may be "pattern","replacement" or just "pattern"
+        const comma = rhs.lastIndexOf(',');
+        const [pat, repl] = comma > 0
+          ? [rhs.slice(0, comma).trim().replace(/^["']|["']$/g, ''), rhs.slice(comma + 1).trim().replace(/^["']|["']$/g, '')]
+          : [rhs.replace(/^["']|["']$/g, ''), ''];
+        try { return lhs.replace(new RegExp(pat, 'gi'), repl); } catch { return lhs; }
+      }
+      case '-contains': return lhs.toLowerCase().includes(rhs.toLowerCase()) ? 'True' : 'False';
+      case '-in': return rhs.toLowerCase().includes(lhs.toLowerCase()) ? 'True' : 'False';
+      default: return 'False';
+    }
+  }
+
+  /**
+   * Evaluate a pure arithmetic expression (numbers + - * / % and parentheses).
+   * Returns the numeric result as a string, or null if the expression contains
+   * anything that is not a number/operator/paren.
+   */
+  private evalArithmetic(expr: string): string | null {
+    type Token = { t: 'num'; v: number } | { t: 'op'; v: string } | { t: 'lp' } | { t: 'rp' };
+    const tokens: Token[] = [];
+    let i = 0;
+    const e = expr.trim();
+    while (i < e.length) {
+      if (/\s/.test(e[i])) { i++; continue; }
+      if (/\d/.test(e[i]) || (e[i] === '.' && /\d/.test(e[i + 1] ?? ''))) {
+        let num = '';
+        while (i < e.length && (/\d/.test(e[i]) || e[i] === '.')) num += e[i++];
+        tokens.push({ t: 'num', v: parseFloat(num) });
+      } else if (e[i] === '(') { tokens.push({ t: 'lp' }); i++; }
+      else if (e[i] === ')') { tokens.push({ t: 'rp' }); i++; }
+      else if (['+', '-', '*', '/', '%'].includes(e[i])) {
+        tokens.push({ t: 'op', v: e[i] }); i++;
+      } else {
+        return null; // non-arithmetic character
+      }
+    }
+    if (tokens.length === 0) return null;
+
+    let pos = 0;
+    const peek = () => tokens[pos];
+    const consume = () => tokens[pos++];
+
+    function prec(op: string) { return (op === '+' || op === '-') ? 1 : 2; }
+
+    function parseE(minP: number): number | null {
+      let lhs = parsePrimary();
+      if (lhs === null) return null;
+      while (peek()?.t === 'op') {
+        const p = prec((peek() as { t: 'op'; v: string }).v);
+        if (p < minP) break;
+        const op = (consume() as { t: 'op'; v: string }).v;
+        const rhs = parseE(p + 1);
+        if (rhs === null) return null;
+        lhs = op === '+' ? lhs + rhs : op === '-' ? lhs - rhs : op === '*' ? lhs * rhs :
+              op === '/' ? (rhs !== 0 ? lhs / rhs : NaN) : lhs % rhs;
+      }
+      return lhs;
+    }
+
+    function parsePrimary(): number | null {
+      const tok = peek();
+      if (!tok) return null;
+      if (tok.t === 'num') { consume(); return tok.v; }
+      if (tok.t === 'op' && tok.v === '-') { consume(); const v = parsePrimary(); return v !== null ? -v : null; }
+      if (tok.t === 'lp') {
+        consume();
+        const v = parseE(1);
+        if (peek()?.t === 'rp') consume();
+        return v;
+      }
+      return null;
+    }
+
+    const result = parseE(1);
+    if (result === null || pos !== tokens.length) return null;
+    if (isNaN(result)) return null;
+    return Number.isInteger(result) ? String(result) : String(result);
+  }
+
+  // ─── Control flow methods ─────────────────────────────────────────
+
+  /** Execute an if/elseif/else chain */
+  private async execIfStatement(trimmed: string): Promise<string> {
+    let pos = 2; // skip 'if'
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const condBlock = this.extractBalancedBlock(trimmed, pos, '(');
+    if (!condBlock) return '';
+    pos = condBlock.end + 1;
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const bodyBlock = this.extractBalancedBlock(trimmed, pos, '{');
+    if (!bodyBlock) return '';
+    pos = bodyBlock.end + 1;
+
+    const condVal = this.tryEvalExpr(this.substituteVars(condBlock.content)) ?? condBlock.content;
+    if (this.isTruthy(condVal)) return (await this.execute(bodyBlock.content)) ?? '';
+
+    // elseif / else branches
+    while (pos < trimmed.length) {
+      while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+      const rest = trimmed.slice(pos);
+      if (/^elseif\s*\(/i.test(rest)) {
+        const kw = rest.match(/^elseif\s*/i)![0];
+        pos += kw.length;
+        const eiCond = this.extractBalancedBlock(trimmed, pos, '(');
+        if (!eiCond) break;
+        pos = eiCond.end + 1;
+        while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+        const eiBody = this.extractBalancedBlock(trimmed, pos, '{');
+        if (!eiBody) break;
+        pos = eiBody.end + 1;
+        const eiVal = this.tryEvalExpr(this.substituteVars(eiCond.content)) ?? eiCond.content;
+        if (this.isTruthy(eiVal)) return (await this.execute(eiBody.content)) ?? '';
+      } else if (/^else\s*\{/i.test(rest)) {
+        const kw = rest.match(/^else\s*/i)![0];
+        pos += kw.length;
+        const elseBody = this.extractBalancedBlock(trimmed, pos, '{');
+        if (!elseBody) break;
+        return (await this.execute(elseBody.content)) ?? '';
+      } else {
+        break;
+      }
+    }
+    return '';
+  }
+
+  /** Execute a for ($i=init; cond; incr) { body } loop */
+  private async execForLoop(trimmed: string): Promise<string> {
+    let pos = 3; // skip 'for'
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const headerBlock = this.extractBalancedBlock(trimmed, pos, '(');
+    if (!headerBlock) return '';
+    pos = headerBlock.end + 1;
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const bodyBlock = this.extractBalancedBlock(trimmed, pos, '{');
+    if (!bodyBlock) return '';
+
+    // Split header by semicolons (respects nested parens via splitStatements)
+    const hParts = this.splitStatements(headerBlock.content);
+    if (hParts.length < 3) return '';
+    const [initPart, condPart, incrPart] = hParts;
+
+    await this.executeSingleStatement(initPart.trim());
+
+    const outputs: string[] = [];
+    let iter = 0;
+    while (iter++ < 10000) {
+      const condVal = this.tryEvalExpr(this.substituteVars(condPart.trim())) ?? 'False';
+      if (!this.isTruthy(condVal)) break;
+
+      const bodyResult = await this.execute(bodyBlock.content);
+      if (this.breakSignal) { this.breakSignal = false; break; }
+      if (this.continueSignal) { this.continueSignal = false; }
+      else if (bodyResult) outputs.push(bodyResult);
+
+      await this.executeSingleStatement(incrPart.trim());
+    }
+    return outputs.filter(Boolean).join('\n');
+  }
+
+  /** Execute a foreach ($x in collection) { body } loop */
+  private async execForeachLoop(trimmed: string): Promise<string> {
+    let pos = 7; // skip 'foreach'
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const headerBlock = this.extractBalancedBlock(trimmed, pos, '(');
+    if (!headerBlock) return '';
+    pos = headerBlock.end + 1;
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const bodyBlock = this.extractBalancedBlock(trimmed, pos, '{');
+    if (!bodyBlock) return '';
+
+    // Parse header: $varName in <collection>
+    const headerMatch = headerBlock.content.match(/^\$(\w+)\s+in\s+(.+)$/is);
+    if (!headerMatch) return '';
+    const loopVar = headerMatch[1].toLowerCase();
+    const collExpr = headerMatch[2].trim();
+
+    // Resolve collection
+    let items: string[];
+    const arrVarName = collExpr.match(/^\$(\w+)$/)?.[1]?.toLowerCase();
+    if (arrVarName && this.sessionArrays.has(arrVarName)) {
+      items = this.sessionArrays.get(arrVarName)!;
+    } else {
+      const subst = this.substituteVars(collExpr);
+      // Comma-separated literal values (e.g. "1,2,3" or "a","b","c")
+      if (/,/.test(subst) && !subst.includes('|')) {
+        items = subst.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+      } else {
+        const res = await this.execute(subst);
+        items = res ? res.split('\n').filter(Boolean) : [];
+      }
+    }
+
+    const outputs: string[] = [];
+    for (const item of items) {
+      this.sessionVars.set(loopVar, item);
+      const bodyResult = await this.execute(bodyBlock.content);
+      if (this.breakSignal) { this.breakSignal = false; break; }
+      if (this.continueSignal) { this.continueSignal = false; continue; }
+      if (bodyResult) outputs.push(bodyResult);
+    }
+    return outputs.filter(Boolean).join('\n');
+  }
+
+  /** Execute a while (cond) { body } loop */
+  private async execWhileLoop(trimmed: string): Promise<string> {
+    let pos = 5; // skip 'while'
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const condBlock = this.extractBalancedBlock(trimmed, pos, '(');
+    if (!condBlock) return '';
+    pos = condBlock.end + 1;
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const bodyBlock = this.extractBalancedBlock(trimmed, pos, '{');
+    if (!bodyBlock) return '';
+
+    const outputs: string[] = [];
+    let iter = 0;
+    while (iter++ < 10000) {
+      const condVal = this.tryEvalExpr(this.substituteVars(condBlock.content)) ?? 'False';
+      if (!this.isTruthy(condVal)) break;
+
+      const bodyResult = await this.execute(bodyBlock.content);
+      if (this.breakSignal) { this.breakSignal = false; break; }
+      if (this.continueSignal) { this.continueSignal = false; continue; }
+      if (bodyResult) outputs.push(bodyResult);
+    }
+    return outputs.filter(Boolean).join('\n');
+  }
+
+  /** Execute a do { body } while (cond) loop */
+  private async execDoWhileLoop(trimmed: string): Promise<string> {
+    let pos = 2; // skip 'do'
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    const bodyBlock = this.extractBalancedBlock(trimmed, pos, '{');
+    if (!bodyBlock) return '';
+    pos = bodyBlock.end + 1;
+    while (pos < trimmed.length && /\s/.test(trimmed[pos])) pos++;
+
+    // Expect 'while'
+    const rest = trimmed.slice(pos);
+    const wMatch = rest.match(/^while\s*/i);
+    if (!wMatch) return '';
+    pos += wMatch[0].length;
+
+    const condBlock = this.extractBalancedBlock(trimmed, pos, '(');
+    if (!condBlock) return '';
+
+    const outputs: string[] = [];
+    let iter = 0;
+    do {
+      const bodyResult = await this.execute(bodyBlock.content);
+      if (this.breakSignal) { this.breakSignal = false; break; }
+      if (this.continueSignal) { this.continueSignal = false; }
+      else if (bodyResult) outputs.push(bodyResult);
+      const condVal = this.tryEvalExpr(this.substituteVars(condBlock.content)) ?? 'False';
+      if (!this.isTruthy(condVal)) break;
+    } while (iter++ < 10000);
+    return outputs.filter(Boolean).join('\n');
   }
 
   /** Replace $varName with stored session variable values */
@@ -973,9 +1718,11 @@ export class PowerShellExecutor {
     const trimmedLine = cmdline.trim();
 
     // Quoted string literal: "hello" or 'hello' → output the unquoted value
-    if ((trimmedLine.startsWith('"') && trimmedLine.endsWith('"') && trimmedLine.length > 1) ||
-        (trimmedLine.startsWith("'") && trimmedLine.endsWith("'") && trimmedLine.length > 1)) {
-      return trimmedLine.slice(1, -1);
+    if (trimmedLine.startsWith('"') && trimmedLine.endsWith('"') && trimmedLine.length > 1) {
+      return this.expandDoubleQuotedString(trimmedLine.slice(1, -1));
+    }
+    if (trimmedLine.startsWith("'") && trimmedLine.endsWith("'") && trimmedLine.length > 1) {
+      return trimmedLine.slice(1, -1).replace(/''/g, "'");
     }
 
     // Number literal: integer or decimal
