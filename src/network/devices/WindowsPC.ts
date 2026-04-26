@@ -65,8 +65,6 @@ export class WindowsPC extends EndHost {
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
   private dnsSuffix: string = '';
-  /** In-memory hosts table (mirrors C:\Windows\System32\drivers\etc\hosts) */
-  private hostsTable: Map<string, string> = new Map();
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
   /** Service manager (service lifecycle, dependencies) */
@@ -109,17 +107,30 @@ export class WindowsPC extends EndHost {
     this.env.set('NUMBER_OF_PROCESSORS', '4');
   }
 
-  // ─── Hosts table ──────────────────────────────────────────────
+  private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
+
+  // ─── Hosts file ──────────────────────────────────────────────
 
   addHostsEntry(ip: string, hostname: string): void {
-    this.hostsTable.set(hostname.toLowerCase(), ip);
+    this.fs.appendFile(WindowsPC.HOSTS_FILE, `${ip}       ${hostname}\n`);
   }
 
   resolveHostname(name: string): IPAddress | null {
     try { return new IPAddress(name); } catch { /* not an IP */ }
-    const ip = this.hostsTable.get(name.toLowerCase());
-    if (ip) {
-      try { return new IPAddress(ip); } catch { /* skip */ }
+    const result = this.fs.readFile(WindowsPC.HOSTS_FILE);
+    if (result.ok && result.content) {
+      for (const line of result.content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const parts = trimmed.split(/[\s\t]+/);
+        if (parts.length >= 2) {
+          const ip = parts[0];
+          const hostnames = parts.slice(1).filter(h => !h.startsWith('#'));
+          if (hostnames.some(h => h.toLowerCase() === name.toLowerCase())) {
+            try { return new IPAddress(ip); } catch { /* skip invalid */ }
+          }
+        }
+      }
     }
     return null;
   }
