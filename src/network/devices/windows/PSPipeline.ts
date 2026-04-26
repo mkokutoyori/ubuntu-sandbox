@@ -600,9 +600,10 @@ export function formatTable(objects: PSObject[], args: string): string {
   for (const obj of objects) {
     const row = columns.map(col => {
       const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
-      const val = String(obj[key] ?? '');
+      const raw = obj[key];
+      const val = raw === true ? 'True' : raw === false ? 'False' : String(raw ?? '');
       // Right-align numbers
-      if (typeof obj[key] === 'number') return val.padStart(widths[col]);
+      if (typeof raw === 'number') return val.padStart(widths[col]);
       return val.padEnd(widths[col]);
     }).join('  ');
     lines.push(row);

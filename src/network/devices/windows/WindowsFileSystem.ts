@@ -157,6 +157,15 @@ export class WindowsFileSystem {
       ['C:\\Windows\\regedit.exe', '', 360448, ['system']],
       ['C:\\Windows\\write.exe', '', 10752, ['system']],
       ['C:\\Windows\\win.ini', '; for 16-bit app support\n[fonts]\n[extensions]\n[mci extensions]\n[files]\n[Mail]\nMAPI=1\n', 92, ['hidden']],
+      // DLL files in System32
+      ['C:\\Windows\\System32\\ntdll.dll', '', 2027520, ['system']],
+      ['C:\\Windows\\System32\\kernel32.dll', '', 1248768, ['system']],
+      ['C:\\Windows\\System32\\user32.dll', '', 1671168, ['system']],
+      ['C:\\Windows\\System32\\msvcrt.dll', '', 822272, ['system']],
+      ['C:\\Windows\\System32\\advapi32.dll', '', 696320, ['system']],
+      ['C:\\Windows\\System32\\shell32.dll', '', 23224832, ['system']],
+      ['C:\\Windows\\System32\\ole32.dll', '', 1503232, ['system']],
+      ['C:\\Windows\\System32\\gdi32.dll', '', 483328, ['system']],
       ['C:\\Windows\\System32\\config\\SYSTEM', '', 26214400, ['system', 'hidden']],
       ['C:\\Windows\\System32\\config\\SOFTWARE', '', 104857600, ['system', 'hidden']],
       ['C:\\Windows\\System32\\config\\SAM', '', 262144, ['system', 'hidden']],
@@ -226,6 +235,14 @@ export class WindowsFileSystem {
           entry.attributes.add('system');
         }
       }
+    }
+
+    // Hidden/system directories at C:\
+    const hiddenRootDirs = ['C:\\$Recycle.Bin', 'C:\\System Volume Information'];
+    for (const hd of hiddenRootDirs) {
+      this.mkdirp(hd);
+      const entry = this.resolve(hd);
+      if (entry) { entry.attributes.add('hidden'); entry.attributes.add('system'); }
     }
 
     // Mark system directories as hidden/system

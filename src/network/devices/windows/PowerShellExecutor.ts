@@ -151,6 +151,8 @@ export class PowerShellExecutor {
   private extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
   /** Extra routes: destPrefix → { ifAlias, nextHop, metric } */
   private extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  /** Location stack for Push-Location/Pop-Location */
+  private locationStack: Map<string, string[]> = new Map();
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -269,6 +271,37 @@ export class PowerShellExecutor {
       const rawArgs = methodCallMatch[3];
       const result = this.handleObjectMethodCall(varName, method, rawArgs);
       if (result !== null) return result;
+    }
+
+    // File property setter: (Get-Item path).Prop [+]= value
+    const filePropSetMatch = trimmed.match(/^\(Get-Item\s+(.+?)\)\.([\w]+)\s*(\+?=)\s*(.+)$/i);
+    if (filePropSetMatch) {
+      const itemPath = filePropSetMatch[1].replace(/^["']|["']$/g, '').trim();
+      const propName = filePropSetMatch[2].toLowerCase();
+      const operator = filePropSetMatch[3];
+      const rawValue = filePropSetMatch[4].replace(/^["']|["']$/g, '').trim();
+      const fsInst = this.device.getFileSystem();
+      const absItemPath = fsInst.normalizePath(itemPath, this.cwd);
+      const itemEntry = fsInst.resolve(absItemPath);
+      if (itemEntry) {
+        if (propName === 'attributes') {
+          const attrToAdd = rawValue.toLowerCase();
+          if (operator === '+=') {
+            itemEntry.attributes.add(attrToAdd);
+          } else {
+            // = : replace all (keep Directory/Archive as base)
+            const preserve = new Set<string>();
+            if (itemEntry.type === 'directory') preserve.add('directory');
+            itemEntry.attributes = preserve;
+            itemEntry.attributes.add(attrToAdd);
+          }
+        } else if (propName === 'isreadonly') {
+          const val = rawValue.toLowerCase();
+          if (val === '$true' || val === 'true') itemEntry.attributes.add('readonly');
+          else itemEntry.attributes.delete('readonly');
+        }
+      }
+      return '';
     }
 
     // Variable assignment: $name = expr
@@ -450,6 +483,30 @@ export class PowerShellExecutor {
       const filter = parts[i].trim();
       const filterCmdLower = filter.split(/\s+/)[0].toLowerCase();
 
+      // ForEach-Object -MemberName: `% PropName` (no scriptblock) — extracts scalar property value
+      const memberNameMatch = filter.match(/^(?:foreach-object|foreach|%)\s+(\w+)$/i);
+      if (memberNameMatch) {
+        const memberName = memberNameMatch[1];
+        if (Array.isArray(currentOutput)) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          const values = objs.map(obj => {
+            const key = Object.keys(obj).find(k => k.toLowerCase() === memberName.toLowerCase());
+            return key !== undefined ? String(obj[key] ?? '') : '';
+          }).filter(Boolean);
+          currentOutput = values.join('\n');
+        } else {
+          const parsed = parseTable(String(currentOutput)) ?? parseKeyValueBlocks(String(currentOutput));
+          if (parsed && parsed.length > 0) {
+            const values = parsed.map(obj => {
+              const key = Object.keys(obj).find(k => k.toLowerCase() === memberName.toLowerCase());
+              return key !== undefined ? String(obj[key] ?? '') : '';
+            }).filter(Boolean);
+            currentOutput = values.join('\n');
+          }
+        }
+        continue;
+      }
+
       // ForEach-Object with PS scriptblock
       const foreachMatch = filter.match(/^(?:foreach-object|foreach|%)\s*\{\s*([\s\S]+?)\s*\}$/i);
       if (foreachMatch) {
@@ -458,6 +515,30 @@ export class PowerShellExecutor {
         const propAccessMatch = Array.isArray(currentOutput) && scriptBody.match(/^\$_\.(\w+)$/i);
         if (propAccessMatch) {
           currentOutput = runPipeline(currentOutput as PipelineInput, [filter]);
+          continue;
+        }
+        // PSObject array: substitute $_.PropName using object properties
+        if (Array.isArray(currentOutput) && currentOutput.length > 0) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          const results: string[] = [];
+          for (const obj of objs) {
+            let cmd = scriptBody;
+            // Replace $_.PropName with the property value from the object
+            cmd = cmd.replace(/\$_\.(\w+)/g, (_, prop) => {
+              const key = Object.keys(obj).find(k => k.toLowerCase() === prop.toLowerCase());
+              return key !== undefined ? String(obj[key] ?? '') : '';
+            });
+            // Replace bare $_ with the Name property or first property
+            cmd = cmd.replace(/\$_(?=\W|$)/g, () => {
+              const nameKey = Object.keys(obj).find(k => k.toLowerCase() === 'name');
+              if (nameKey) return String(obj[nameKey] ?? '');
+              const firstKey = Object.keys(obj)[0];
+              return firstKey ? String(obj[firstKey] ?? '') : '';
+            });
+            const result = await this.executeSingle(cmd.trim());
+            if (result !== null && result !== '') results.push(result);
+          }
+          currentOutput = results.join('\n');
           continue;
         }
         // Complex scriptblock: text-based substitution on string lines
@@ -484,6 +565,194 @@ export class PowerShellExecutor {
         const sinkArgs = this.tokenize(filter).slice(1);
         const content = this.pipelineToContent(currentOutput);
         return this.handleSetContentWithPiped(sinkArgs, content);
+      }
+
+      // Service action cmdlets accepting pipeline input
+      if (filterCmdLower === 'start-service' || filterCmdLower === 'sasv' ||
+          filterCmdLower === 'stop-service' || filterCmdLower === 'spsv' ||
+          filterCmdLower === 'restart-service') {
+        const filterTokens = this.tokenize(filter);
+        const filterArgs = filterTokens.slice(1);
+        const hasWhatIf = filterArgs.some(a => a.toLowerCase() === '-whatif');
+
+        // Extract service name from pipeline input
+        let svcName = '';
+        if (Array.isArray(currentOutput)) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          if (objs.length > 0) svcName = String(objs[0]['Name'] ?? '');
+        } else {
+          const kvMatch = String(currentOutput).match(/^Name\s*:\s*(.+)$/im);
+          if (kvMatch) svcName = kvMatch[1].trim();
+        }
+
+        if (hasWhatIf) {
+          const actionName = filterCmdLower === 'start-service' ? 'Start-Service'
+            : filterCmdLower === 'stop-service' ? 'Stop-Service' : 'Restart-Service';
+          const svc = svcName ? this.device.getServiceManager().getService(svcName) : null;
+          const target = svc ? `${svc.displayName} (${svc.name})` : svcName;
+          return `What if: Performing the operation "${actionName}" on target "${target}".`;
+        }
+
+        if (svcName) {
+          const svcArgs = [...filterArgs, '-Name', svcName];
+          const svcCtx = this.buildPSServiceCtx();
+          if (filterCmdLower === 'start-service' || filterCmdLower === 'sasv') {
+            currentOutput = psStartService(svcCtx, svcArgs);
+          } else if (filterCmdLower === 'stop-service' || filterCmdLower === 'spsv') {
+            currentOutput = psStopService(svcCtx, svcArgs);
+          } else {
+            currentOutput = psRestartService(svcCtx, svcArgs);
+          }
+        }
+        continue;
+      }
+
+      // Stop-Process pipeline sink
+      if (filterCmdLower === 'stop-process' || filterCmdLower === 'kill') {
+        const filterTokens = this.tokenize(filter);
+        const filterArgs = filterTokens.slice(1);
+        const hasWhatIf = filterArgs.some(a => a.toLowerCase() === '-whatif');
+
+        // Extract process name or id from pipeline input
+        let procName = '';
+        let procId = '';
+        if (Array.isArray(currentOutput)) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          if (objs.length > 0) {
+            procName = String(objs[0]['Name'] ?? objs[0]['ProcessName'] ?? '');
+            procId = String(objs[0]['Id'] ?? objs[0]['PID'] ?? '');
+          }
+        } else {
+          const kvName = String(currentOutput).match(/^(?:Name|ProcessName)\s*:\s*(.+)$/im);
+          const kvId = String(currentOutput).match(/^(?:Id|PID)\s*:\s*(.+)$/im);
+          if (kvName) procName = kvName[1].trim();
+          if (kvId) procId = kvId[1].trim();
+        }
+
+        if (hasWhatIf && (procName || procId)) {
+          return `What if: Performing the operation "Stop-Process" on target "${procName || procId}".`;
+        }
+
+        if (procName || procId) {
+          const procArgs = [...filterArgs];
+          if (procName) procArgs.push('-Name', procName);
+          else procArgs.push('-Id', procId);
+          currentOutput = psStopProcess(this.buildPSProcessCtx(), procArgs);
+        }
+        continue;
+      }
+
+      // Get-ChildItem accepting pipeline input (path from previous stage)
+      if (filterCmdLower === 'get-childitem' || filterCmdLower === 'gci' || filterCmdLower === 'ls' || filterCmdLower === 'dir') {
+        const filterArgs = this.tokenize(filter).slice(1);
+        const pipedPath = this.extractFullPathFromPipelineOutput(currentOutput);
+        currentOutput = this.handleGetChildItem(filterArgs, pipedPath || undefined);
+        continue;
+      }
+
+      // Move-Item accepting pipeline input
+      if (filterCmdLower === 'move-item' || filterCmdLower === 'mv' || filterCmdLower === 'move') {
+        const filterArgs = this.tokenize(filter).slice(1);
+        const pipedPath = this.extractFullPathFromPipelineOutput(currentOutput);
+        if (pipedPath) {
+          const allArgs = [...filterArgs];
+          // Only skip prepending if an explicit -Path/-LiteralPath is already present
+          if (!allArgs.some(a => a.toLowerCase() === '-path' || a.toLowerCase() === '-literalpath')) {
+            allArgs.unshift(pipedPath);
+          }
+          currentOutput = this.handleMoveItem(allArgs);
+        }
+        continue;
+      }
+
+      // Rename-Item accepting pipeline input
+      if (filterCmdLower === 'rename-item' || filterCmdLower === 'rni' || filterCmdLower === 'ren') {
+        const filterArgs = this.tokenize(filter).slice(1);
+        const pipedPath = this.extractFullPathFromPipelineOutput(currentOutput);
+        if (pipedPath) {
+          const allArgs = [pipedPath, ...filterArgs];
+          currentOutput = this.handleRenameItem(allArgs);
+        }
+        continue;
+      }
+
+      // Copy-Item accepting pipeline input
+      if (filterCmdLower === 'copy-item' || filterCmdLower === 'cp' || filterCmdLower === 'copy') {
+        const filterArgs = this.tokenize(filter).slice(1);
+        const hasWhatIf = filterArgs.some(a => a.toLowerCase() === '-whatif');
+        const pipedPath = this.extractFullPathFromPipelineOutput(currentOutput);
+        if (hasWhatIf && pipedPath) {
+          const destArg = filterArgs.find(a => !a.startsWith('-')) ?? '';
+          currentOutput = `What if: Performing the operation "Copy File" on target "Item: ${pipedPath} Destination: ${destArg}".`;
+          continue;
+        }
+        if (pipedPath) {
+          const allArgs = [pipedPath, ...filterArgs.filter(a => a.toLowerCase() !== '-whatif')];
+          currentOutput = this.handleCopyItem(allArgs);
+        }
+        continue;
+      }
+
+      // Remove-NetIPAddress accepting pipeline input
+      if (filterCmdLower === 'remove-netipaddress') {
+        const filterArgs = this.tokenize(filter).slice(1);
+        let pipedIP = '';
+        if (Array.isArray(currentOutput)) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          if (objs.length > 0) pipedIP = String(objs[0]['IPAddress'] ?? '');
+        } else {
+          const kvMatch = String(currentOutput).match(/^IPAddress\s*:\s*(.+)$/im);
+          if (kvMatch) pipedIP = kvMatch[1].trim();
+        }
+        if (pipedIP) {
+          const allArgs = [...filterArgs, '-IPAddress', pipedIP];
+          currentOutput = await this.executeSingle(['remove-netipaddress', ...allArgs].join(' ')) ?? '';
+        }
+        continue;
+      }
+
+      // Set-NetIPAddress accepting pipeline input
+      if (filterCmdLower === 'set-netipaddress') {
+        const filterArgs = this.tokenize(filter).slice(1);
+        let pipedIP = '';
+        if (Array.isArray(currentOutput)) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          if (objs.length > 0) pipedIP = String(objs[0]['IPAddress'] ?? '');
+        } else {
+          const kvMatch = String(currentOutput).match(/^IPAddress\s*:\s*(.+)$/im);
+          if (kvMatch) pipedIP = kvMatch[1].trim();
+        }
+        if (pipedIP) {
+          const allArgs = [...filterArgs, '-IPAddress', pipedIP];
+          currentOutput = await this.executeSingle(['set-netipaddress', ...allArgs].join(' ')) ?? '';
+        }
+        continue;
+      }
+
+      // Generic -WhatIf sink for storage/user cmdlets (Initialize-Disk, Format-Volume, Disable-LocalUser, Enable-LocalUser, etc.)
+      if (filter.toLowerCase().includes('-whatif')) {
+        const [sinkCmd] = this.tokenize(filter);
+        const actionMap: Record<string, string> = {
+          'initialize-disk': 'Initialize-Disk',
+          'format-volume': 'Format-Volume',
+          'disable-localuser': 'Disable-LocalUser',
+          'enable-localuser': 'Enable-LocalUser',
+          'disable-netadapter': 'Disable-NetAdapter',
+        };
+        const actionName = actionMap[sinkCmd.toLowerCase()] ?? sinkCmd;
+        // Extract a target identifier from pipeline input
+        let target = '';
+        if (Array.isArray(currentOutput)) {
+          const objs = currentOutput as import('./PSPipeline').PSObject[];
+          if (objs.length > 0) {
+            const firstObj = objs[0];
+            target = String(firstObj['Name'] ?? firstObj['Number'] ?? firstObj['DriveLetter'] ?? firstObj['FriendlyName'] ?? '');
+          }
+        } else {
+          const kvAny = String(currentOutput).match(/^(?:Name|Number|DriveLetter|FriendlyName)\s*:\s*(.+)$/im);
+          if (kvAny) target = kvAny[1].trim();
+        }
+        return `What if: Performing the operation "${actionName}" on target "${target}".`;
       }
 
       // Other filters (Select-Object, Where-Object, Format-*, etc.) — use PSPipeline
@@ -534,6 +803,7 @@ export class PowerShellExecutor {
     let current = '';
     let inQuote: string | null = null;
     let braceDepth = 0;
+    let parenDepth = 0;
 
     for (const ch of cmdline) {
       if (inQuote) {
@@ -544,7 +814,9 @@ export class PowerShellExecutor {
       if (ch === '"' || ch === "'") { inQuote = ch; current += ch; continue; }
       if (ch === '{') { braceDepth++; current += ch; continue; }
       if (ch === '}') { braceDepth--; current += ch; continue; }
-      if (ch === '|' && braceDepth === 0) {
+      if (ch === '(') { parenDepth++; current += ch; continue; }
+      if (ch === ')') { parenDepth--; current += ch; continue; }
+      if (ch === '|' && braceDepth === 0 && parenDepth === 0) {
         parts.push(current.trim());
         current = '';
         continue;
@@ -553,6 +825,48 @@ export class PowerShellExecutor {
     }
     if (current.trim()) parts.push(current.trim());
     return parts;
+  }
+
+  /**
+   * Extract a full filesystem path from pipeline output (GCI or Get-Item table).
+   * The GCI table format has fixed columns: mode(20) + ' ' + date(20) + ' ' + size(14) + ' ' + name
+   * Name starts at column index 57 of the data row.
+   * Priority: FullName K:V > PSObject FullName > GCI table parsing.
+   */
+  private extractFullPathFromPipelineOutput(output: PipelineInput): string {
+    // PSObject array: use FullName or Name property
+    if (Array.isArray(output)) {
+      const objs = output as import('./PSPipeline').PSObject[];
+      if (objs.length > 0) {
+        const fullName = objs[0]['FullName'] ?? objs[0]['fullName'];
+        if (fullName) return String(fullName);
+        const name = objs[0]['Name'] ?? objs[0]['name'];
+        if (name) return String(name);
+      }
+      return '';
+    }
+    const str = String(output);
+    // K:V FullName property (added by enhanced Get-Item / GCI)
+    const kvFullName = str.match(/^FullName\s*:\s*(.+)$/im);
+    if (kvFullName) return kvFullName[1].trim();
+    // K:V Path property
+    const kvPath = str.match(/^(?:Path|FullPath)\s*:\s*(.+)$/im);
+    if (kvPath) return kvPath[1].trim();
+    // GCI table: parse Directory line + name at column 57
+    const dirMatch = str.match(/Directory:\s+(.+)/i);
+    if (dirMatch) {
+      const parentRaw = dirMatch[1].trim();
+      // Name at fixed column 57 in each data row (mode padded to 20 + space + date 20 + space + size 14 + space)
+      const dataLine = str.split('\n').find(l => /^[-d][-a][-r][-h][-s][-l]/.test(l));
+      if (dataLine) {
+        const name = dataLine.length > 57 ? dataLine.substring(57).trim() : dataLine.trim().split(/\s+/).pop() ?? '';
+        if (name) {
+          const parent = parentRaw.endsWith('\\') ? parentRaw : parentRaw + '\\';
+          return parent + name;
+        }
+      }
+    }
+    return '';
   }
 
   /**
@@ -598,17 +912,38 @@ export class PowerShellExecutor {
     // Return structured data for known cmdlets
     switch (cmdLower) {
       case 'get-process':
-      case 'gps':
-        return buildDynamicProcessObjects(this.buildPSProcessCtx()) as PSObject[];
+      case 'gps': {
+        const gpArgs = this.tokenize(trimmedCmd).slice(1);
+        const gpParams = this.parsePSArgs(gpArgs);
+        const gpName = gpParams.get('name') ?? gpParams.get('_positional');
+        const gpId = gpParams.get('id');
+        const allProcs = buildDynamicProcessObjects(this.buildPSProcessCtx()) as PSObject[];
+        if (gpName) return allProcs.filter(p => String(p['ProcessName'] ?? '').toLowerCase() === gpName.toLowerCase());
+        if (gpId) return allProcs.filter(p => String(p['Id'] ?? '') === gpId);
+        return allProcs;
+      }
       case 'get-service':
       case 'gsv':
         return buildDynamicServiceObjects(this.buildPSServiceCtx()) as PSObject[];
       case 'get-command':
       case 'gcm':
         return buildCommandObjects();
+      case 'get-module': {
+        const moduleArgs = this.tokenize(trimmedCmd).slice(1);
+        const moduleParams = this.parsePSArgs(moduleArgs);
+        const listAll = moduleParams.has('listavailable');
+        const modules = listAll ? PowerShellExecutor.BUILTIN_MODULES : PowerShellExecutor.BUILTIN_MODULES.slice(0, 3);
+        return modules.map(m => ({ Name: m.Name, Version: m.Version, ModuleType: m.ModuleType }));
+      }
       default: {
         // Fall back to string output
         const result = await this.executeSingle(cmd);
+        // If this looks like a plain value (no spaces, non-cmdlet bare word) that returned an error,
+        // treat the original string as a literal (handles $var substitution in pipelines)
+        if (result && result.includes('is not recognized as the name of a cmdlet') &&
+            /^["']?[^-\s]+["']?$/.test(trimmedCmd)) {
+          return trimmedCmd.replace(/^["']|["']$/g, '');
+        }
         return result ?? '';
       }
     }
@@ -669,13 +1004,69 @@ export class PowerShellExecutor {
       }
     }
 
+    // Array-index property accessor: (command)[N].PropertyName
+    const arrayIdxPropMatch = trimmedLine.match(/^\((.+)\)\[(\d+)\]\.(\w+)$/);
+    if (arrayIdxPropMatch) {
+      const innerCmd2 = arrayIdxPropMatch[1];
+      const idx = parseInt(arrayIdxPropMatch[2], 10);
+      const propName2 = arrayIdxPropMatch[3];
+      const result2 = await this.execute(innerCmd2);
+      if (!result2) return '';
+      const parsed2 = parseTable(result2) ?? parseKeyValueBlocks(result2);
+      if (parsed2 && parsed2.length > idx) {
+        const obj2 = parsed2[idx];
+        const key2 = Object.keys(obj2).find(k => k.toLowerCase() === propName2.toLowerCase());
+        if (key2 !== undefined) {
+          const val2 = obj2[key2];
+          if (val2 === true) return 'True';
+          if (val2 === false) return 'False';
+          return String(val2 ?? '');
+        }
+      }
+      const kv2 = result2.match(new RegExp(`${propName2}\\s*:\\s*(.+)`, 'i'));
+      if (kv2) return kv2[1].trim();
+      return '';
+    }
+
+    // Nested property accessor: (command).Prop1.Prop2
+    const nestedPropMatch = trimmedLine.match(/^\((.+)\)\.(\w+)\.(\w+)$/);
+    if (nestedPropMatch) {
+      const innerCmd = nestedPropMatch[1];
+      const prop1 = nestedPropMatch[2];
+      const prop2 = nestedPropMatch[3];
+      const result = await this.execute(innerCmd);
+      if (!result) return '';
+      const kvMatch1 = result.match(new RegExp(`${prop1}\\s*:\\s*(.+)`, 'i'));
+      if (kvMatch1) {
+        const prop1Value = kvMatch1[1].trim();
+        if (prop2.toLowerCase() === 'name') {
+          return prop1Value.split(/[\\\/]/).pop() ?? prop1Value;
+        }
+        const kvMatch2 = prop1Value.match(new RegExp(`${prop2}\\s*:\\s*(.+)`, 'i'));
+        if (kvMatch2) return kvMatch2[1].trim();
+        return prop1Value;
+      }
+      return '';
+    }
+
     // Property accessor: (command).PropertyName
     const propAccessMatch = trimmedLine.match(/^\((.+)\)\.(\w+)$/);
     if (propAccessMatch) {
       const innerCmd = propAccessMatch[1];
       const propName = propAccessMatch[2];
-      const result = await this.executeSingle(innerCmd);
-      if (!result) return '';
+      // Use full execute() to handle pipelines inside parentheses
+      const result = await this.execute(innerCmd);
+      if (!result) return propName.toLowerCase() === 'count' ? '0' : '';
+      // .Count: return number of objects in the result
+      if (propName.toLowerCase() === 'count') {
+        const parsed = parseTable(result) ?? parseKeyValueBlocks(result);
+        if (parsed) return String(parsed.length);
+        const dataLines = result.split('\n').filter(l => {
+          const t = l.trim();
+          return t && !t.match(/^[-=]+$/) && !t.match(/^Status\s+Name/i) && !t.match(/^Name\s+Status/i);
+        });
+        return String(Math.max(0, dataLines.length));
+      }
       const parsed = parseTable(result) ?? parseKeyValueBlocks(result);
       if (parsed && parsed.length > 0) {
         const obj = parsed[0];
@@ -770,15 +1161,44 @@ export class PowerShellExecutor {
 
     // Set-Location / cd / sl / chdir
     if (cmdLower === 'set-location' || cmdLower === 'sl' || cmdLower === 'cd' || cmdLower === 'chdir') {
-      const target = args.join(' ') || 'C:\\Users\\User';
+      const target = args.find(a => !a.startsWith('-')) || 'C:\\Users\\User';
+      // Handle registry paths
+      if (isRegistryPath(target)) {
+        const hkMatch = target.match(/^HKCU:\\?(.*)$/i);
+        this.cwd = hkMatch ? `HKEY_CURRENT_USER\\${hkMatch[1]}`.replace(/\\$/, '') : target;
+        return '';
+      }
       const result = await this.device.executeCmdCommand('cd ' + target);
       await this.refreshCwd();
       return result || '';
     }
 
+    // Push-Location / pushd
+    if (cmdLower === 'push-location' || cmdLower === 'pushd' || cmdLower === 'push') {
+      const rawStackName = args.find((a, i) => args[i-1]?.toLowerCase() === '-stackname') ?? 'default';
+      const stackName = rawStackName.replace(/^["']|["']$/g, '');
+      const target = args.find(a => !a.startsWith('-')) ?? this.cwd;
+      if (!this.locationStack.has(stackName)) this.locationStack.set(stackName, []);
+      this.locationStack.get(stackName)!.push(this.cwd);
+      await this.execute('set-location ' + target);
+      return '';
+    }
+
+    // Pop-Location / popd
+    if (cmdLower === 'pop-location' || cmdLower === 'popd') {
+      const rawStackName = args.find((a, i) => args[i-1]?.toLowerCase() === '-stackname') ?? 'default';
+      const stackName = rawStackName.replace(/^["']|["']$/g, '');
+      const stack = this.locationStack.get(stackName);
+      if (stack && stack.length > 0) {
+        const prev = stack.pop()!;
+        await this.execute('set-location ' + prev);
+      }
+      return '';
+    }
+
     // Get-Location / pwd / gl
     if (cmdLower === 'get-location' || cmdLower === 'gl' || cmdLower === 'pwd') {
-      return `\nPath\n----\n${this.cwd}\n`;
+      return this.handleGetLocation(args);
     }
 
     // Get-Content / cat / type / gc
@@ -865,8 +1285,7 @@ export class PowerShellExecutor {
 
     // Rename-Item / rni / ren
     if (cmdLower === 'rename-item' || cmdLower === 'rni' || cmdLower === 'ren') {
-      const nonFlags = args.filter(a => !a.startsWith('-'));
-      return await this.device.executeCmdCommand('ren ' + nonFlags.join(' '));
+      return this.handleRenameItem(args);
     }
 
     // Write-Host / Write-Output / echo
@@ -919,9 +1338,14 @@ export class PowerShellExecutor {
       return this.handleGetCommand(args);
     }
 
+    // Get-Module
+    if (cmdLower === 'get-module') {
+      return this.handleGetModule(args);
+    }
+
     // Get-NetIPConfiguration
     if (cmdLower === 'get-netipconfiguration') {
-      return this.formatGetNetIPConfiguration();
+      return this.handleGetNetIPConfiguration(args);
     }
 
     // Get-NetIPAddress
@@ -1000,23 +1424,12 @@ export class PowerShellExecutor {
 
     // Get-Disk
     if (cmdLower === 'get-disk') {
-      return [
-        '',
-        'Number Friendly Name                    OperationalStatus TotalSize PartitionStyle',
-        '------ -------------                    ----------------- --------- --------------',
-        '0      Microsoft Virtual Disk           Online                50 GB MBR',
-      ].join('\n');
+      return this.handleGetDisk(args);
     }
 
     // Get-Volume
     if (cmdLower === 'get-volume') {
-      return [
-        '',
-        'DriveLetter FriendlyName   FileSystemType DriveType HealthStatus OperationalStatus SizeRemaining      Size',
-        '----------- ------------   -------------- --------- ------------ ----------------- -------------      ----',
-        'C           Windows        NTFS           Fixed     Healthy      OK                     15.2 GB   50.0 GB',
-        'D           Data           NTFS           Fixed     Healthy      OK                     45.0 GB   50.0 GB',
-      ].join('\n');
+      return this.handleGetVolume(args);
     }
 
     // Get-ScheduledTask
@@ -1429,18 +1842,72 @@ export class PowerShellExecutor {
     return content;
   }
 
+  private handleGetLocation(args: string[]): string {
+    const stackFlag = args.some(a => a.toLowerCase() === '-stack');
+    const psDriveFlag = args.find((a, i) => args[i-1]?.toLowerCase() === '-psdrive');
+    const psProviderFlag = args.find((a, i) => args[i-1]?.toLowerCase() === '-psprovider');
+    const stackNameFlag = args.find((a, i) => args[i-1]?.toLowerCase() === '-stackname');
+
+    if (stackNameFlag) {
+      const stackName = stackNameFlag.replace(/^["']|["']$/g, '');
+      const stack = this.locationStack.get(stackName) ?? [];
+      if (stack.length === 0) return '';
+      return stack.map(p => `\nPath\n----\n${p}\n`).join('\n');
+    }
+
+    if (stackFlag) {
+      const stack = this.locationStack.get('default') ?? [];
+      if (stack.length === 0) return '';
+      return stack.map(p => `\nPath\n----\n${p}\n`).join('\n');
+    }
+
+    if (psDriveFlag) {
+      const drive = psDriveFlag.toUpperCase().replace(/:$/, '');
+      if (!['C', 'D', 'E', 'A', 'B'].includes(drive)) {
+        return `Get-Location : Cannot find drive. A drive with name '${psDriveFlag}' does not exist.`;
+      }
+      return `\nName       : ${drive}\nPath       : ${drive}:\\\n`;
+    }
+
+    if (psProviderFlag) {
+      const provider = psProviderFlag.toLowerCase();
+      if (provider === 'filesystem') {
+        if (!this.cwd.match(/^[A-Z]:\\/i)) {
+          return `Get-Location : The current location is not set to a FileSystem provider.`;
+        }
+        return `\nProvider : Microsoft.PowerShell.Core\\FileSystem\nPath     : ${this.cwd}\nDrive    : ${this.cwd[0]}\n`;
+      }
+      if (provider === 'registry') {
+        if (!this.cwd.toLowerCase().startsWith('hkey_')) {
+          return `Get-Location : The current location is not set to a Registry provider location.`;
+        }
+        return `\nProvider : Microsoft.PowerShell.Core\\Registry\nPath     : ${this.cwd}\n`;
+      }
+      return `Get-Location : Cannot find a provider with the name '${psProviderFlag}'.`;
+    }
+
+    // Registry cwd
+    if (this.cwd.toLowerCase().startsWith('hkey_current_user')) {
+      return `\nPath\n----\n${this.cwd}\n`;
+    }
+
+    return `\nPath\n----\n${this.cwd}\n`;
+  }
+
   private handleSetContent(args: string[]): string {
     const fs = this.device.getFileSystem();
     let path = '', value = '';
+    let noNewline = false;
     const positionals: string[] = [];
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-nonewline') { noNewline = true; }
       else if (a === '-value' && args[i + 1]) {
         const raw = args[++i];
         const stripped = raw.replace(/^["']|["']$/g, '');
         const items = this.tryParseArrayLiteral(stripped);
-        value = items ? items.join('\n') : stripped;
+        value = items ? items.join(noNewline ? '' : '\n') : stripped;
       }
       else if (!args[i].startsWith('-')) {
         const raw = args[i];
@@ -1450,9 +1917,9 @@ export class PowerShellExecutor {
         else { positionals.push(raw.replace(/^["']|["']$/g, '')); }
       }
     }
-    // Positional: first is path, rest are values joined by newlines
+    // Positional: first is path, rest are values joined by newlines or empty string
     if (!path && positionals.length > 0) path = positionals[0];
-    if (!value && positionals.length > 1) value = positionals.slice(1).join('\n');
+    if (!value && positionals.length > 1) value = positionals.slice(1).join(noNewline ? '' : '\n');
     if (!path) return '';
     const absPath = fs.normalizePath(path, this.cwd);
     fs.createFile(absPath, value);
@@ -1473,6 +1940,9 @@ export class PowerShellExecutor {
     }
     if (path && isRegistryPath(path)) return this.registry.newItem(path, force);
     const absPath = fs.normalizePath(path, this.cwd);
+    if (itemType.toLowerCase() === 'symboliclink') {
+      return `New-Item : Creating symbolic links is not supported in this simulator.\n    + CategoryInfo          : NotImplemented: (:) [New-Item], NotSupportedException\n    + FullyQualifiedErrorId : NotSupported,Microsoft.PowerShell.Commands.NewItemCommand`;
+    }
     if (itemType.toLowerCase() === 'directory') {
       if (fs.exists(absPath)) {
         return force ? '' : `New-Item : An item with the specified name ${absPath} already exists.`;
@@ -1535,18 +2005,23 @@ export class PowerShellExecutor {
 
   // ─── Get-ChildItem with Filter/Recurse/Env: ──────────────────────
 
-  private handleGetChildItem(args: string[]): string {
+  private handleGetChildItem(args: string[], pipelinePath?: string): string {
     let path = '', filter = '';
     const include: string[] = [], exclude: string[] = [];
     let recurse = false, nameOnly = false, dirOnly = false, fileOnly = false;
-    let hidden = false, system = false, force = false;
+    let hidden = false, system = false, force = false, readonly = false;
     let depth: number | undefined;
+    let attributes = '';
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-literalpath' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
       else if (a === '-filter' && args[i + 1]) { filter = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (a === '-include' && args[i + 1]) { include.push(...args[++i].replace(/^["']/,'').replace(/["']$/,'').split(',')); }
+      else if (a === '-include' && args[i + 1]) {
+        const raw = args[++i].replace(/^["']/,'').replace(/["']$/,'');
+        include.push(...raw.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')));
+      }
       else if (a === '-exclude' && args[i + 1]) { exclude.push(...args[++i].replace(/^["']/,'').replace(/["']$/,'').split(',')); }
       else if (a === '-recurse') { recurse = true; }
       else if (a === '-name') { nameOnly = true; }
@@ -1554,9 +2029,23 @@ export class PowerShellExecutor {
       else if (a === '-file') { fileOnly = true; }
       else if (a === '-hidden') { hidden = true; }
       else if (a === '-system') { system = true; }
-      else if (a === '-force') { force = true; hidden = true; system = true; }
+      else if (a === '-readonly') { readonly = true; }
+      else if (a === '-force') { force = true; }
       else if (a === '-depth' && args[i + 1]) { depth = parseInt(args[++i], 10); recurse = true; }
+      else if (a === '-attributes' && args[i + 1]) { attributes = args[++i]; }
       else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+    }
+
+    // Pipeline input path override (from Get-Item piping)
+    if (pipelinePath && !path) path = pipelinePath;
+
+    // -Attributes validation
+    const validAttrs = new Set(['hidden', 'system', 'archive', 'readonly', 'normal', 'directory', 'encrypted', 'offline', 'reparse', 'sparse', 'temporary']);
+    if (attributes) {
+      const attrLower = attributes.toLowerCase().replace(/^!/, '');
+      if (!validAttrs.has(attrLower)) {
+        return `Get-ChildItem : Cannot convert value "${attributes}" to type "System.IO.FileAttributes". Error: "Invalid value for attributes."`;
+      }
     }
 
     // Env: drive
@@ -1612,8 +2101,11 @@ export class PowerShellExecutor {
         if (!makeFilterFn(entry.name)) return false;
         if (dirOnly && entry.type !== 'directory') return false;
         if (fileOnly && entry.type !== 'file') return false;
-        if (!hidden && !force && entry.attributes.has('hidden')) return false;
-        if (!system && !force && entry.attributes.has('system')) return false;
+        // Hidden items filtered by default; -Hidden shows ONLY hidden; -Force shows all
+        if (!force && !hidden && entry.attributes.has('hidden')) return false;
+        if (hidden && !force && !entry.attributes.has('hidden')) return false;
+        // -System shows ONLY system items
+        if (system && !force && !entry.attributes.has('system')) return false;
         return true;
       });
 
@@ -1631,6 +2123,18 @@ export class PowerShellExecutor {
         }
       }
     };
+
+    // If path is a file (not a directory), show just the file
+    const pathEntry = fs.resolve(absPath);
+    if (pathEntry && pathEntry.type === 'file') {
+      const parentPath = absPath.substring(0, absPath.lastIndexOf('\\')) || absPath;
+      const fakeEntries: WinDirEntry[] = [{ name: pathEntry.name, entry: pathEntry }];
+      const filtered = applyFilter(fakeEntries);
+      if (filtered.length === 0) return '';
+      const lines: string[] = [];
+      renderEntries(filtered, parentPath, lines);
+      return lines.join('\n');
+    }
 
     if (recurse) {
       const allDirs = fs.listDirectoryRecursive(absPath);
@@ -1715,6 +2219,9 @@ export class PowerShellExecutor {
     const entry = fs.resolve(absPath);
     if (!entry) return `Remove-Item : Cannot find path '${path}' because it does not exist.`;
     if (entry.type === 'directory') {
+      if (!recurse) {
+        return `Remove-Item : ${absPath} is a directory. Use -Recurse to remove the directory and all its contents.`;
+      }
       const r = fs.deleteDirectory(absPath);
       return r.ok ? '' : `Remove-Item : ${r.error}`;
     }
@@ -1726,7 +2233,7 @@ export class PowerShellExecutor {
     const fs = this.device.getFileSystem();
     let src = '', dest = '', filter = '', literalPath = '';
     const include: string[] = [], exclude: string[] = [];
-    let recurse = false, force = false, passThru = false, container = false, toSession = false;
+    let recurse = false, force = false, passThru = false, container = false, toSession = false, whatIf = false;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
@@ -1740,6 +2247,7 @@ export class PowerShellExecutor {
       else if (a === '-force') { force = true; }
       else if (a === '-passthru') { passThru = true; }
       else if (a === '-container') { container = true; }
+      else if (a === '-whatif') { whatIf = true; }
       else if (a === '-tosession') { toSession = true; i++; } // skip PSSession arg
       else if (a === '-credential') { i++; } // skip credential arg (ignored in sim)
       else if (!args[i].startsWith('-') && !src && !literalPath) { src = args[i].replace(/^["']|["']$/g, ''); }
@@ -1747,6 +2255,11 @@ export class PowerShellExecutor {
     }
 
     if (toSession) return 'Copy-Item : Remote sessions (ToSession/FromSession) are not supported in this simulator.';
+
+    const effectiveSrcForWhatIf = literalPath || src;
+    if (whatIf && effectiveSrcForWhatIf) {
+      return `What if: Performing the operation "Copy File" on target "Item: ${effectiveSrcForWhatIf} Destination: ${dest}".`;
+    }
 
     const effectiveSrc = literalPath || src;
     if (!effectiveSrc || !dest) return 'Copy-Item : Source and Destination are required.';
@@ -1863,6 +2376,24 @@ export class PowerShellExecutor {
     return r.ok ? '' : `Move-Item : ${r.error}`;
   }
 
+  private handleRenameItem(args: string[]): string {
+    const fs = this.device.getFileSystem();
+    let path = '', newName = '';
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if ((a === '-path' || a === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-newname' && args[i + 1]) { newName = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && path && !newName) { newName = args[i].replace(/^["']|["']$/g, ''); }
+    }
+    if (!path || !newName) return 'Rename-Item : -Path and -NewName are required.';
+    const absPath = fs.normalizePath(path, this.cwd);
+    const parentDir = absPath.substring(0, absPath.lastIndexOf('\\'));
+    const absDest = parentDir + '\\' + newName;
+    const r = fs.moveFile(absPath, absDest);
+    return r.ok ? '' : `Rename-Item : ${r.error}`;
+  }
+
   // ─── Event Log Handlers ───────────────────────────────────────────
 
   private handleGetEventLog(args: string[]): string {
@@ -1970,22 +2501,28 @@ export class PowerShellExecutor {
     const replyLines = pingOutput.split('\n').filter(l => l.trim().startsWith('Reply from'));
     const timeoutLines = pingOutput.split('\n').filter(l => l.trim() === 'Request timed out.');
 
-    if (replyLines.length === 0 && timeoutLines.length > 0) {
-      return `Test-Connection : Testing connection to computer '${target}' failed: host unreachable.`;
+    const isLocalhost = target === 'localhost' || target === '127.0.0.1' || target.toLowerCase() === this.device.getHostname().toLowerCase();
+
+    if (replyLines.length === 0 && !isLocalhost) {
+      return `Test-Connection : Testing connection to computer '${target}' failed: host unreachable.\n    + CategoryInfo          : ResourceUnavailable: (${target}:String) [Test-Connection], PingException\n    + FullyQualifiedErrorId : TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand`;
     }
 
-    lines.push('Source           Destination       IPV4Address      Bytes    Time(ms)');
-    lines.push('------           -----------       -----------      -----    --------');
+    lines.push('Source           Destination       IPV4Address      Bytes    Time(ms) Status');
+    lines.push('------           -----------       -----------      -----    -------- ------');
 
-    for (const line of replyLines) {
+    const effectiveReplies = isLocalhost && replyLines.length === 0
+      ? ['Reply from 127.0.0.1: bytes=32 time<1ms TTL=128']
+      : replyLines;
+
+    for (const line of effectiveReplies) {
       const ipMatch = line.match(/Reply from ([\d.]+)/);
       const timeMatch = line.match(/time[=<](\d+)/);
       const bytesMatch = line.match(/bytes=(\d+)/);
-      const ip = ipMatch ? ipMatch[1] : target;
+      const ip = ipMatch ? ipMatch[1] : (isLocalhost ? '127.0.0.1' : target);
       const time = timeMatch ? timeMatch[1] : '0';
       const bytes = bytesMatch ? bytesMatch[1] : '32';
       lines.push(
-        `${source.padEnd(17)}${target.padEnd(18)}${ip.padEnd(17)}${bytes.padEnd(9)}${time}`
+        `${source.padEnd(17)}${target.padEnd(18)}${ip.padEnd(17)}${bytes.padEnd(9)}${time.padEnd(9)}Success`
       );
     }
 
@@ -2312,6 +2849,9 @@ export class PowerShellExecutor {
     { type: 'Cmdlet', name: 'Get-ChildItem',                 version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'ChildItem' },
     { type: 'Cmdlet', name: 'Get-Command',                   version: '3.0.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'Command' },
     { type: 'Cmdlet', name: 'Get-Content',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Content' },
+    { type: 'Cmdlet', name: 'Get-Item',                      version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Item' },
+    { type: 'Cmdlet', name: 'Get-ItemProperty',              version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'ItemProperty' },
+    { type: 'Cmdlet', name: 'Get-Module',                    version: '3.0.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'Module' },
     { type: 'Cmdlet', name: 'Get-Date',                      version: '3.1.0.0', source: 'Microsoft.PowerShell.Utility',    noun: 'Date' },
     { type: 'Cmdlet', name: 'Get-Disk',                      version: '2.0.0.0', source: 'Storage',                        noun: 'Disk' },
     { type: 'Cmdlet', name: 'Get-DnsClientServerAddress',    version: '1.0.0.0', source: 'DnsClient',                      noun: 'DnsClientServerAddress' },
@@ -2371,6 +2911,7 @@ export class PowerShellExecutor {
     const params = this.parsePSArgs(args);
     const nameFilter = params.get('name') || params.get('_positional');
     const commandTypeFilter = (params.get('commandtype') ?? '').toLowerCase();
+    const moduleFilter = (params.get('module') ?? '').toLowerCase();
     const nounFilter = (params.get('noun') ?? '').toLowerCase();
     const verbFilter = (params.get('verb') ?? '').toLowerCase();
     const allFlag = params.has('all');
@@ -2431,6 +2972,11 @@ export class PowerShellExecutor {
       filtered = filtered.filter(c => c.name.toLowerCase().startsWith(verbFilter + '-'));
     }
 
+    // Apply -Module filter (match source field)
+    if (moduleFilter) {
+      filtered = filtered.filter(c => c.source.toLowerCase().includes(moduleFilter));
+    }
+
     // Apply name wildcard filter
     if (nameFilter && nameFilter.includes('*')) {
       const rx = new RegExp('^' + nameFilter.replace(/\*/g, '.*') + '$', 'i');
@@ -2450,6 +2996,40 @@ export class PowerShellExecutor {
                     '-----------     ----                                               -------    ------'];
     for (const c of filtered) {
       lines.push(`${c.type.padEnd(16)}${c.name.padEnd(51)}${c.version.padEnd(11)}${c.source}`);
+    }
+    return lines.join('\n');
+  }
+
+  private static readonly BUILTIN_MODULES: Array<{ Name: string; Version: string; ModuleType: string; ExportedCommands: string[] }> = [
+    { Name: 'Microsoft.PowerShell.Core',           Version: '3.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Command', 'Get-Help', 'Get-Module', 'Get-History', 'Clear-History', 'ForEach-Object', 'Where-Object', 'Select-Object', 'Measure-Object', 'Sort-Object', 'Group-Object', 'Out-Default', 'Out-Host', 'Out-Null', 'Out-String', 'Tee-Object', 'Import-Module'] },
+    { Name: 'Microsoft.PowerShell.Management',     Version: '3.1.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-ChildItem', 'Get-Content', 'Get-Item', 'Get-ItemProperty', 'Get-Location', 'Set-Location', 'Push-Location', 'Pop-Location', 'Set-Content', 'Add-Content', 'Copy-Item', 'Move-Item', 'Rename-Item', 'Remove-Item', 'New-Item', 'Test-Path', 'Get-Process', 'Stop-Process', 'Start-Process', 'Get-Service', 'Start-Service', 'Stop-Service', 'Restart-Service'] },
+    { Name: 'Microsoft.PowerShell.Utility',        Version: '3.1.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Date', 'Write-Host', 'Write-Output', 'Write-Error', 'Write-Warning', 'Format-List', 'Format-Table', 'ConvertTo-Json', 'ConvertFrom-Json', 'Select-String', 'Compare-Object', 'Start-Sleep', 'New-TimeSpan'] },
+    { Name: 'Microsoft.PowerShell.LocalAccounts',  Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-LocalUser', 'New-LocalUser', 'Set-LocalUser', 'Remove-LocalUser', 'Add-LocalGroupMember', 'Get-LocalGroup', 'New-LocalGroup'] },
+    { Name: 'NetTCPIP',                            Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetIPAddress', 'New-NetIPAddress', 'Remove-NetIPAddress', 'Set-NetIPAddress', 'Get-NetIPConfiguration', 'Get-NetRoute', 'New-NetRoute', 'Remove-NetRoute'] },
+    { Name: 'NetAdapter',                          Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetAdapter', 'Disable-NetAdapter', 'Enable-NetAdapter', 'Rename-NetAdapter'] },
+    { Name: 'DnsClient',                           Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-DnsClientServerAddress', 'Set-DnsClientServerAddress', 'Resolve-DnsName', 'Clear-DnsClientCache'] },
+    { Name: 'Storage',                             Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Disk', 'Get-Partition', 'Get-Volume', 'Initialize-Disk', 'New-Partition', 'Format-Volume'] },
+  ];
+
+  private handleGetModule(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const listAvailable = params.has('listavailable');
+    const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').toLowerCase();
+
+    const modules = listAvailable ? PowerShellExecutor.BUILTIN_MODULES : PowerShellExecutor.BUILTIN_MODULES.slice(0, 3);
+    const filtered = nameFilter
+      ? modules.filter(m => m.Name.toLowerCase().includes(nameFilter))
+      : modules;
+
+    if (filtered.length === 0) return '';
+
+    const lines = [
+      '',
+      'ModuleType Version    Name                                ExportedCommands',
+      '---------- -------    ----                                ----------------',
+    ];
+    for (const m of filtered) {
+      lines.push(`${m.ModuleType.padEnd(11)}${m.Version.padEnd(11)}${m.Name.padEnd(36)}${m.ExportedCommands[0]}...`);
     }
     return lines.join('\n');
   }
@@ -2501,17 +3081,22 @@ export class PowerShellExecutor {
     return `${m}/${d}/${y}  ${String(h).padStart(2)}:${min} ${ampm}`;
   }
 
-  private formatGetNetIPConfiguration(): string {
+  private handleGetNetIPConfiguration(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+    const detailed = params.has('detailed');
+    const all = params.has('all');
+
+    return this.formatGetNetIPConfiguration(ifFilter, detailed, all);
+  }
+
+  private formatGetNetIPConfiguration(ifFilter = '', detailed = false, all = false): string {
     const ports = this.device.getPortsMap();
     const lines: string[] = [];
     let idx = 0;
-    for (const [name, port] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      const gw = this.device.getDefaultGateway() ?? '';
-      const dns = this.device.getDnsServers(name);
+    let found = false;
 
+    const addEntry = (displayName: string, ip: string, mask: string, gw: string, dns: string[]) => {
       if (idx > 0) lines.push('');
       lines.push(`InterfaceAlias       : ${displayName}`);
       lines.push(`InterfaceIndex       : ${idx + 1}`);
@@ -2519,8 +3104,32 @@ export class PowerShellExecutor {
       if (mask) lines.push(`IPv4SubnetMask       : ${mask}`);
       lines.push(`IPv4DefaultGateway   : ${gw}`);
       lines.push(`DNSServer            : ${dns.length > 0 ? dns.join(', ') : ''}`);
+      if (detailed) {
+        lines.push(`ComputerName         : ${this.device.getHostname?.() ?? 'DESKTOP'}`);
+      }
       idx++;
+      found = true;
+    };
+
+    for (const [name, port] of ports) {
+      const displayName = name.replace(/^eth/, 'Ethernet ');
+      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
+      const ip = port.getIPAddress()?.toString() ?? '';
+      const mask = port.getSubnetMask()?.toString() ?? '';
+      const gw = this.device.getDefaultGateway() ?? '';
+      const dns = this.device.getDnsServers(name);
+      addEntry(displayName, ip, mask, gw, dns);
     }
+
+    // Loopback (shown with -All or when specifically requested)
+    if (all && (!ifFilter || 'loopback'.includes(ifFilter))) {
+      addEntry('Loopback Pseudo-Interface 1', '127.0.0.1', '255.0.0.0', '', []);
+    }
+
+    if (!found && ifFilter) {
+      return `Get-NetIPConfiguration : Interface '${ifFilter}' not found. No MSFT_NetIPConfiguration objects found.`;
+    }
+
     return lines.join('\n');
   }
 
@@ -2846,7 +3455,7 @@ export class PowerShellExecutor {
     }
 
     if (!found && ifFilter) {
-      return `Get-DnsClientServerAddress : No MSFT_DnsClientServerAddress objects found matching the specified interface.`;
+      return `Get-DnsClientServerAddress : Interface '${ifFilter}' not found. No MSFT_DnsClientServerAddress objects found matching the specified interface.`;
     }
 
     return lines.join('\n');
@@ -2867,7 +3476,9 @@ export class PowerShellExecutor {
     let matchedName = '';
     for (const [name] of ports) {
       const displayName = name.replace(/^eth/, 'Ethernet ');
-      if (displayName.toLowerCase() === ifAlias.toLowerCase() || name.toLowerCase() === ifAlias.toLowerCase()) {
+      const dn = displayName.toLowerCase();
+      const af = ifAlias.toLowerCase();
+      if (dn === af || name.toLowerCase() === af || dn.includes(af) || dn.startsWith(af)) {
         matchedName = name;
         break;
       }
@@ -2882,16 +3493,126 @@ export class PowerShellExecutor {
       return '';
     }
 
-    const servers = serversRaw.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    // Strip outer parens if present: ("8.8.8.8","1.1.1.1") → "8.8.8.8","1.1.1.1"
+    const cleanRaw = serversRaw.replace(/^\(|\)$/g, '');
+    const servers = cleanRaw.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
     this.device.setDnsServers?.(matchedName, servers);
     return '';
+  }
+
+  private readonly DISKS = [
+    { Number: 0, FriendlyName: 'Microsoft Virtual Disk', UniqueId: '{00000000-0000-0000-0000-000000000001}', SerialNumber: '', OperationalStatus: 'Online', TotalSize: '50 GB', PartitionStyle: 'MBR', IsBoot: true, IsSystem: true },
+  ];
+
+  private handleGetDisk(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const numberFilter = params.get('number');
+    const friendlyName = (params.get('friendlyname') ?? '').replace(/^["']|["']$/g, '');
+    const uniqueId = (params.get('uniqueid') ?? '').replace(/^["']|["']$/g, '');
+    const serialNumber = (params.get('serialnumber') ?? '').replace(/^["']|["']$/g, '');
+
+    let disks = [...this.DISKS];
+
+    if (numberFilter !== undefined) {
+      const num = parseInt(numberFilter, 10);
+      disks = disks.filter(d => d.Number === num);
+      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with Number = ${num}.\n    + CategoryInfo          : ObjectNotFound: (${num}:UInt32) [Get-Disk], CimException`;
+    }
+    if (friendlyName) {
+      disks = disks.filter(d => d.FriendlyName.toLowerCase().includes(friendlyName.toLowerCase()));
+      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with FriendlyName = '${friendlyName}'.`;
+    }
+    if (uniqueId) {
+      disks = disks.filter(d => d.UniqueId === uniqueId);
+      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with UniqueId = '${uniqueId}'.`;
+    }
+    if (serialNumber) {
+      disks = disks.filter(d => d.SerialNumber === serialNumber);
+      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with SerialNumber = '${serialNumber}'.`;
+    }
+
+    if (disks.length === 1) {
+      const d = disks[0];
+      return [
+        '',
+        'Number FriendlyName                      OperationalStatus TotalSize PartitionStyle IsBoot IsSystem UniqueId',
+        '------ ------------                      ----------------- --------- -------------- ------ -------- --------',
+        `${String(d.Number).padEnd(7)}${d.FriendlyName.padEnd(34)}${d.OperationalStatus.padEnd(18)}${d.TotalSize.padEnd(10)}${d.PartitionStyle.padEnd(15)}${String(d.IsBoot).padEnd(7)}${String(d.IsSystem).padEnd(9)}${d.UniqueId}`,
+        '',
+        `Number            : ${d.Number}`,
+        `Friendly Name     : ${d.FriendlyName}`,
+        `UniqueId          : ${d.UniqueId}`,
+        `OperationalStatus : ${d.OperationalStatus}`,
+        `PartitionStyle    : ${d.PartitionStyle}`,
+        `TotalSize         : ${d.TotalSize}`,
+        `IsBoot            : ${d.IsBoot}`,
+        `IsSystem          : ${d.IsSystem}`,
+      ].join('\n');
+    }
+
+    const lines: string[] = [
+      '',
+      'Number FriendlyName                      OperationalStatus TotalSize PartitionStyle IsBoot IsSystem UniqueId',
+      '------ ------------                      ----------------- --------- -------------- ------ -------- --------',
+    ];
+    for (const d of disks) {
+      lines.push(`${String(d.Number).padEnd(7)}${d.FriendlyName.padEnd(34)}${d.OperationalStatus.padEnd(18)}${d.TotalSize.padEnd(10)}${d.PartitionStyle.padEnd(15)}${String(d.IsBoot).padEnd(7)}${String(d.IsSystem).padEnd(9)}${d.UniqueId}`);
+    }
+    return lines.join('\n');
+  }
+
+  private handleGetVolume(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const driveLetter = (params.get('driveletter') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toUpperCase();
+
+    const volumes = [
+      { DriveLetter: 'C', FriendlyName: 'Windows', FileSystem: 'NTFS', DriveType: 'Fixed', HealthStatus: 'Healthy', OperationalStatus: 'OK', SizeRemaining: '15.2 GB', Size: '50.0 GB' },
+      { DriveLetter: 'D', FriendlyName: 'Data',    FileSystem: 'NTFS', DriveType: 'Fixed', HealthStatus: 'Healthy', OperationalStatus: 'OK', SizeRemaining: '45.0 GB', Size: '50.0 GB' },
+    ];
+
+    let filtered = driveLetter ? volumes.filter(v => v.DriveLetter === driveLetter) : volumes;
+    if (driveLetter && filtered.length === 0) return `Get-Volume : No MSFT_Volume objects found with DriveLetter = ${driveLetter}.`;
+
+    if (filtered.length === 1) {
+      const v = filtered[0];
+      return [
+        '',
+        'DriveLetter FriendlyName FileSystem DriveType HealthStatus OperationalStatus SizeRemaining  Size',
+        '----------- ------------ ---------- --------- ------------ ----------------- -------------  ----',
+        `${v.DriveLetter.padEnd(12)}${v.FriendlyName.padEnd(13)}${v.FileSystem.padEnd(11)}${v.DriveType.padEnd(10)}${v.HealthStatus.padEnd(13)}${v.OperationalStatus.padEnd(18)}${v.SizeRemaining.padEnd(15)}${v.Size}`,
+        '',
+        `DriveLetter       : ${v.DriveLetter}`,
+        `FriendlyName      : ${v.FriendlyName}`,
+        `FileSystem        : ${v.FileSystem}`,
+        `DriveType         : ${v.DriveType}`,
+        `HealthStatus      : ${v.HealthStatus}`,
+        `OperationalStatus : ${v.OperationalStatus}`,
+        `SizeRemaining     : ${v.SizeRemaining}`,
+        `Size              : ${v.Size}`,
+      ].join('\n');
+    }
+
+    const lines: string[] = [
+      '',
+      'DriveLetter FriendlyName FileSystem DriveType HealthStatus OperationalStatus SizeRemaining  Size',
+      '----------- ------------ ---------- --------- ------------ ----------------- -------------  ----',
+    ];
+    for (const v of filtered) {
+      lines.push(`${v.DriveLetter.padEnd(12)}${v.FriendlyName.padEnd(13)}${v.FileSystem.padEnd(11)}${v.DriveType.padEnd(10)}${v.HealthStatus.padEnd(13)}${v.OperationalStatus.padEnd(18)}${v.SizeRemaining.padEnd(15)}${v.Size}`);
+    }
+    return lines.join('\n');
   }
 
   private handleGetNetAdapter(args: string[]): string {
     const params = this.parsePSArgs(args);
     const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const all = params.has('all') || params.has('includehidden');
+    const includeHidden = params.has('includehidden');
     const physical = params.has('physical');
+    const cimSession = params.get('cimsession');
+
+    if (cimSession) {
+      return `Get-NetAdapter : Remote CIM sessions are not supported in this simulator.\n    + CategoryInfo          : NotImplemented: (:) [Get-NetAdapter], NotSupportedException`;
+    }
 
     const ports = this.device.getPortsMap();
     const lines: string[] = ['Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed',
@@ -2903,11 +3624,17 @@ export class PowerShellExecutor {
       if (nameFilter && !displayName.toLowerCase().includes(nameFilter) && displayName.toLowerCase() !== nameFilter) { idx++; continue; }
       const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
       const status = port.getIsUp() ? 'Up' : 'Disconnected';
-      if (physical && !port.getIsUp() && !all) { idx++; continue; }
+      if (physical && !port.getIsUp() && !includeHidden) { idx++; continue; }
       const ifIndex = idx + 2;
       lines.push(`${displayName.padEnd(26)}${'Intel(R) Ethernet Connection'.padEnd(40)}${String(ifIndex).padStart(7)} ${status.padEnd(13)}${mac.padEnd(19)}1 Gbps`);
       found = true;
       idx++;
+    }
+
+    // -IncludeHidden shows hidden adapters (Loopback, virtual)
+    if (includeHidden && (!nameFilter || 'loopback'.includes(nameFilter))) {
+      lines.push(`${'Loopback Pseudo-Interface 1'.padEnd(26)}${'Software Loopback Interface 1'.padEnd(40)}${String(1).padStart(7)} ${'Up'.padEnd(13)}${'00-00-00-00-00-00'.padEnd(19)}10 Gbps`);
+      found = true;
     }
 
     if (!found && nameFilter) {
@@ -3118,16 +3845,34 @@ export class PowerShellExecutor {
       return silentlyContinue ? '' : errMsg;
     }
 
+    const isDir = entry.type === 'directory';
     const mode = this.formatPSMode(entry);
     const mtime = this.formatPSDate(entry.mtime);
-    const length = entry.type === 'file' ? String(entry.size) : '';
+    const length = isDir ? '' : String(entry.size);
+    const parentDir = absPath.substring(0, absPath.lastIndexOf('\\')) || (absPath + '\\');
+    const attrNames = [...entry.attributes].map(a => a.charAt(0).toUpperCase() + a.slice(1));
+    if (isDir && !attrNames.includes('Directory')) attrNames.push('Directory');
+    if (!isDir && !attrNames.some(a => a.toLowerCase() === 'archive')) attrNames.push('Archive');
+    const attrStr = attrNames.join(', ');
+
     const lines: string[] = [];
     lines.push('');
-    lines.push(`    Directory: ${absPath.substring(0, absPath.lastIndexOf('\\')) || absPath}`);
+    lines.push(`    Directory: ${parentDir}`);
     lines.push('');
     lines.push('Mode                 LastWriteTime         Length Name');
     lines.push('----                 -------------         ------ ----');
     lines.push(`${mode.padEnd(20)} ${mtime} ${length.padStart(14)} ${entry.name}`);
+    // K:V properties — used by property accessor (Get-Item ...).PropName
+    lines.push('');
+    lines.push(`FullName      : ${absPath}`);
+    lines.push(`Name          : ${entry.name}`);
+    lines.push(`Length        : ${length || '0'}`);
+    lines.push(`Mode          : ${mode}`);
+    lines.push(`Attributes    : ${attrStr}`);
+    lines.push(`IsReadOnly    : ${entry.attributes.has('readonly') ? 'True' : 'False'}`);
+    lines.push(`LastWriteTime : ${mtime}`);
+    lines.push(`PSIsContainer : ${isDir ? 'True' : 'False'}`);
+    lines.push('');
     return lines.join('\n');
   }
 
