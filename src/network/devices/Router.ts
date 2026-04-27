@@ -59,6 +59,8 @@ export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
+import { NATEngine } from './router/NATEngine';
+export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -186,6 +188,9 @@ export abstract class Router extends Equipment {
   // ── IPSec Engine ─────────────────────────────────────────────
   private ipsecEngine: IPSecEngine | null = null;
 
+  // ── NAT Engine ───────────────────────────────────────────────
+  private natEngine = new NATEngine();
+
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
 
@@ -221,6 +226,14 @@ export abstract class Router extends Equipment {
       getIPv6AccessLists: () => (this as any).ipv6AccessLists,
     });
     this.shell = this.createShell();
+    this.natEngine.setACLMatchFn((aclId, srcIP) => {
+      const pkt = { type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any;
+      return this.aclEngine.evaluateACLByName(String(aclId), pkt) !== 'deny';
+    });
+    this.natEngine.setInterfaceIPFn((iface) => {
+      const port = this.ports.get(iface);
+      return port?.getIPAddress()?.toString() ?? null;
+    });
     this.createPorts();
     this._setupPortMonitoring();
   }
@@ -587,6 +600,10 @@ export abstract class Router extends Equipment {
       return;
     }
 
+    // NAT PREROUTING (DNAT): rewrite destination before routing decision
+    const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
+    if (natInbound) ipPkt = natInbound;
+
     // Phase C: Forwarding Decision
 
     // C.1: Is this packet for us? (any interface IP or broadcast)
@@ -872,6 +889,10 @@ export abstract class Router extends Equipment {
         return;
       }
     }
+
+    // NAT POSTROUTING (SNAT/PAT): rewrite source before sending
+    const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort);
+    if (natOutbound) fwdPkt = natOutbound;
 
     // Phase E.2c: SPD outbound check (RFC 4301 §4.4.1) + IPSec encryption
     if (this.ipsecEngine) {
@@ -1440,6 +1461,9 @@ export abstract class Router extends Equipment {
       });
     });
   }
+
+  /** @internal Used by CLI shells for NAT configuration */
+  _getNATEngine(): NATEngine { return this.natEngine; }
 
   /** @internal Lazily create + return the IPSec engine for this router */
   _getOrCreateIPSecEngine(): IPSecEngine {

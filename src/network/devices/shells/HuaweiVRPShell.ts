@@ -60,6 +60,10 @@ import {
   buildHuaweiBasicACLCommands, buildHuaweiAdvancedACLCommands,
   runningConfigACL, runningConfigInterfaceACL,
 } from './huawei/HuaweiAclCommands';
+import {
+  registerHuaweiNATInterfaceCommands,
+  registerHuaweiNATDisplayCommands,
+} from './huawei/HuaweiNATCommands';
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext {
   private mode: HuaweiShellMode | string = 'user';
@@ -421,6 +425,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // ACL display commands
     registerHuaweiACLDisplayCommands(t, getRouter);
 
+    // NAT display commands
+    registerHuaweiNATDisplayCommands(t, getRouter);
+
     // Backward-compat aliases in user view
     t.registerGreedy('ip route-static', 'Configure static route', (args) => {
       return cmdIpRouteStatic(getRouter(), args);
@@ -514,6 +521,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // ACL display commands
     registerHuaweiACLDisplayCommands(t, () => this.r());
 
+    // NAT display commands
+    registerHuaweiNATDisplayCommands(t, () => this.r());
+
     // DHCP display commands
     registerDhcpDisplayCommands(t, () => this.r());
 
@@ -550,6 +560,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // ACL interface commands
     registerHuaweiACLInterfaceCommands(t, this);
+
+    // NAT interface commands
+    registerHuaweiNATInterfaceCommands(t, this);
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
