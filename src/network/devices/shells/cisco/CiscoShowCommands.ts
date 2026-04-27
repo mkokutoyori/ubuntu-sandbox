@@ -7,6 +7,7 @@
 
 import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
+import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 
 export function showVersion(router: Router): string {
   const ports = router._getPortsInternal();
@@ -192,6 +193,8 @@ export function showRunningConfig(router: Router): string {
     }
     // ACL bindings on interface
     lines.push(...runningConfigInterfaceACL(router, name));
+    // NAT designation on interface
+    lines.push(...runningConfigInterfaceNAT(router, name));
     lines.push('!');
   }
 
@@ -199,6 +202,13 @@ export function showRunningConfig(router: Router): string {
   const aclLines = runningConfigACL(router);
   if (aclLines.length > 0) {
     lines.push(...aclLines);
+    lines.push('!');
+  }
+
+  // NAT configuration
+  const natLines = runningConfigNAT(router);
+  if (natLines.length > 0) {
+    lines.push(...natLines);
     lines.push('!');
   }
 
