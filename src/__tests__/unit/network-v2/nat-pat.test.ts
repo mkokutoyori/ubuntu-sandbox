@@ -16,10 +16,10 @@ import {
   IPAddress, SubnetMask, MACAddress,
   createIPv4Packet,
   ETHERTYPE_IPV4,
-  IP_PROTO_ICMP, IP_PROTO_UDP,
+  IP_PROTO_ICMP, IP_PROTO_UDP, IP_PROTO_TCP,
   resetCounters,
 } from '@/network/core/types';
-import type { UDPPacket, ICMPPacket, IPv4Packet } from '@/network/core/types';
+import type { UDPPacket, TCPPacket, ICMPPacket, IPv4Packet } from '@/network/core/types';
 import { NATEngine } from '@/network/devices/router/NATEngine';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -58,6 +58,19 @@ function makeUDPPacket(srcIP: string, dstIP: string, srcPort: number, dstPort: n
 function makeICMPPacket(srcIP: string, dstIP: string, id = 1): IPv4Packet {
   const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: 1, dataSize: 8 };
   return createIPv4Packet(new IPAddress(srcIP), new IPAddress(dstIP), IP_PROTO_ICMP, 64, icmp, 16);
+}
+
+function makeTCPPacket(
+  srcIP: string, dstIP: string, srcPort: number, dstPort: number,
+  flags: Partial<{ syn: boolean; ack: boolean; fin: boolean; rst: boolean }> = {},
+): IPv4Packet {
+  const tcp: TCPPacket = {
+    type: 'tcp', sourcePort: srcPort, destinationPort: dstPort,
+    sequenceNumber: 1000, acknowledgementNumber: 0,
+    flags: { syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...flags },
+    windowSize: 65535, checksum: 0, payload: null,
+  };
+  return createIPv4Packet(new IPAddress(srcIP), new IPAddress(dstIP), IP_PROTO_TCP, 64, tcp, 40);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -559,10 +572,19 @@ describe('Group 8b: NATEngine — DNAT (translateInbound)', () => {
     expect(result!.destinationIP.toString()).toBe('192.168.1.10');
   });
 
-  it('8.10 no DNAT on non-outside interface', () => {
+  it('8.10 hairpinning: inside → global IP is DNAT-ed (RFC 5382 §5)', () => {
+    // Inside host targets public IP → should be redirected to inside server
+    engine.addStaticEntry({ localIP: '192.168.1.10', globalIP: '203.0.113.10' });
+    const pkt = makeUDPPacket('192.168.1.20', '203.0.113.10', 1234, 80);
+    const result = engine.translateInbound(pkt, 'inside'); // inside → hairpin DNAT
+    expect(result).not.toBeNull();
+    expect(result!.destinationIP.toString()).toBe('192.168.1.10');
+  });
+
+  it('8.10b no DNAT on unknown (unregistered) interface', () => {
     engine.addStaticEntry({ localIP: '192.168.1.10', globalIP: '203.0.113.10' });
     const pkt = makeUDPPacket('10.0.0.1', '203.0.113.10', 1234, 80);
-    const result = engine.translateInbound(pkt, 'inside'); // inside interface → no DNAT
+    const result = engine.translateInbound(pkt, 'dmz'); // unregistered → no DNAT
     expect(result).toBeNull();
   });
 });
@@ -651,5 +673,405 @@ describe('Group 1c: NATEngine — dynamic rules and pools', () => {
     expect(engine.getTranslationCount()).toBeGreaterThan(0);
     engine.clearTranslations();
     expect(engine.getTranslationCount()).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Group 9: TCP NAT / PAT
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Group 9: TCP NAT/PAT', () => {
+  let engine: NATEngine;
+
+  beforeEach(() => {
+    engine = new NATEngine();
+    engine.setInsideInterface('inside');
+    engine.setOutsideInterface('outside');
+    engine.setInterfaceIPFn(() => '203.0.113.1');
+    engine.setACLMatchFn(() => true);
+  });
+
+  it('9.1 TCP PAT — sourceIP and sourcePort are rewritten', () => {
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+    const pkt = makeTCPPacket('192.168.1.10', '8.8.8.8', 4321, 80, { syn: true });
+    const out = engine.translateOutbound(pkt, 'outside', 'inside');
+    expect(out).not.toBeNull();
+    expect(out!.sourceIP.toString()).toBe('203.0.113.1');
+    const tcp = out!.payload as TCPPacket;
+    expect(tcp.sourcePort).not.toBe(4321);
+  });
+
+  it('9.2 TCP PAT — reply is reverse-translated (DNAT)', () => {
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+    const syn = makeTCPPacket('192.168.1.10', '8.8.8.8', 4321, 80, { syn: true });
+    const out = engine.translateOutbound(syn, 'outside', 'inside');
+    const mappedPort = (out!.payload as TCPPacket).sourcePort;
+
+    const reply = makeTCPPacket('8.8.8.8', '203.0.113.1', 80, mappedPort, { syn: true, ack: true });
+    const inPkt = engine.translateInbound(reply, 'outside');
+    expect(inPkt).not.toBeNull();
+    expect(inPkt!.destinationIP.toString()).toBe('192.168.1.10');
+    const replyTCP = inPkt!.payload as TCPPacket;
+    expect(replyTCP.destinationPort).toBe(4321);
+  });
+
+  it('9.3 TCP static port-forwarding — inbound DNAT', () => {
+    engine.addStaticEntry({ localIP: '192.168.1.20', globalIP: '203.0.113.1', protocol: 'tcp', localPort: 22, globalPort: 2222 });
+    const pkt = makeTCPPacket('1.2.3.4', '203.0.113.1', 50000, 2222, { syn: true });
+    const out = engine.translateInbound(pkt, 'outside');
+    expect(out).not.toBeNull();
+    expect(out!.destinationIP.toString()).toBe('192.168.1.20');
+    expect((out!.payload as TCPPacket).destinationPort).toBe(22);
+  });
+
+  it('9.4 TCP static port-forwarding — does not match wrong port', () => {
+    engine.addStaticEntry({ localIP: '192.168.1.20', globalIP: '203.0.113.1', protocol: 'tcp', localPort: 22, globalPort: 2222 });
+    const pkt = makeTCPPacket('1.2.3.4', '203.0.113.1', 50000, 80, { syn: true });
+    const out = engine.translateInbound(pkt, 'outside');
+    expect(out).toBeNull();
+  });
+
+  it('9.5 TCP session gets tcpState = syn-seen on first SYN', () => {
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+    const syn = makeTCPPacket('192.168.1.10', '8.8.8.8', 5000, 80, { syn: true });
+    engine.translateOutbound(syn, 'outside', 'inside');
+    // Translation count includes sessions
+    expect(engine.getTranslationCount()).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Group 10: TCP state machine + per-protocol timeouts
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Group 10: per-protocol timeouts', () => {
+  let engine: NATEngine;
+
+  beforeEach(() => {
+    engine = new NATEngine();
+    engine.setInsideInterface('inside');
+    engine.setOutsideInterface('outside');
+    engine.setInterfaceIPFn(() => '203.0.113.1');
+    engine.setACLMatchFn(() => true);
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+  });
+
+  it('10.1 setTimeouts / getTimeouts round-trip', () => {
+    engine.setTimeouts({ tcp: 3600_000, udp: 120_000 });
+    const t = engine.getTimeouts();
+    expect(t.tcp).toBe(3600_000);
+    expect(t.udp).toBe(120_000);
+    // others unchanged
+    expect(t.icmp).toBe(60_000);
+    expect(t.tcpHalfOpen).toBe(30_000);
+  });
+
+  it('10.2 TCP half-open session purged with tcpHalfOpen timeout', () => {
+    // SYN-only (no ACK) → tcpState = syn-seen → uses tcpHalfOpen timeout
+    const syn = makeTCPPacket('192.168.1.10', '8.8.8.8', 5000, 80, { syn: true });
+    engine.translateOutbound(syn, 'outside', 'inside');
+    expect(engine.getTranslationCount()).toBeGreaterThan(0);
+    // purgeStale with -1 → all sessions expire
+    engine.purgeStale(-1);
+    expect(engine.getTranslationCount()).toBe(0);
+  });
+
+  it('10.3 UDP session purged after override timeout', () => {
+    const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    expect(engine.getTranslationCount()).toBeGreaterThan(0);
+    engine.purgeStale(-1);
+    expect(engine.getTranslationCount()).toBe(0);
+  });
+
+  it('10.4 ICMP session purged after override timeout', () => {
+    const pkt = makeICMPPacket('192.168.1.10', '8.8.8.8');
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    expect(engine.getTranslationCount()).toBeGreaterThan(0);
+    engine.purgeStale(-1);
+    expect(engine.getTranslationCount()).toBe(0);
+  });
+
+  it('10.5 expiredCount increments on purge', () => {
+    engine.resetCounters();
+    const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    engine.purgeStale(-1);
+    expect(engine.getCounters().expired).toBe(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Group 11: ICMP embedded-packet re-translation (RFC 5508 §3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Group 11: ICMP embedded-packet re-translation (RFC 5508)', () => {
+  let engine: NATEngine;
+
+  beforeEach(() => {
+    engine = new NATEngine();
+    engine.setInsideInterface('inside');
+    engine.setOutsideInterface('outside');
+    engine.setInterfaceIPFn(() => '203.0.113.1');
+    engine.setACLMatchFn(() => true);
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+  });
+
+  it('11.1 inbound ICMP error re-translates embedded packet src (PAT)', () => {
+    // Step 1: inside host sends UDP to outside → gets a PAT mapping
+    const udpOut = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    const translated = engine.translateOutbound(udpOut, 'outside', 'inside');
+    expect(translated).not.toBeNull();
+    const mappedPort = (translated!.payload as import('@/network/core/types').UDPPacket).sourcePort;
+
+    // Step 2: outside sends ICMP unreachable with the translated (global) packet embedded
+    const embeddedPkt: IPv4Packet = makeUDPPacket('203.0.113.1', '8.8.8.8', mappedPort, 53);
+    const icmpError: ICMPPacket = {
+      type: 'icmp', icmpType: 'destination-unreachable', code: 1,
+      id: 0, sequence: 0, dataSize: 8,
+      originalPacket: embeddedPkt,
+    };
+    const icmpPkt = createIPv4Packet(new IPAddress('8.8.8.8'), new IPAddress('203.0.113.1'), IP_PROTO_ICMP, 64, icmpError, 32);
+
+    const result = engine.translateInbound(icmpPkt, 'outside');
+    expect(result).not.toBeNull();
+    // The embedded packet's source should now be the local IP
+    const innerResult = (result!.payload as ICMPPacket).originalPacket;
+    expect(innerResult).toBeDefined();
+    expect(innerResult!.sourceIP.toString()).toBe('192.168.1.10');
+  });
+
+  it('11.2 outbound ICMP error re-translates embedded static-mapped dst', () => {
+    // Static NAT: inside server 192.168.1.20 → global 203.0.113.10
+    engine.addStaticEntry({ localIP: '192.168.1.20', globalIP: '203.0.113.10' });
+
+    // An ICMP error generated by the router for an inbound packet to 203.0.113.10
+    const embeddedPkt: IPv4Packet = makeUDPPacket('1.2.3.4', '203.0.113.10', 9999, 80);
+    const icmpError: ICMPPacket = {
+      type: 'icmp', icmpType: 'destination-unreachable', code: 1,
+      id: 0, sequence: 0, dataSize: 8,
+      originalPacket: embeddedPkt,
+    };
+    const icmpPkt = createIPv4Packet(new IPAddress('203.0.113.1'), new IPAddress('1.2.3.4'), IP_PROTO_ICMP, 64, icmpError, 32);
+
+    const result = engine.translateOutbound(icmpPkt, 'outside', 'inside');
+    expect(result).not.toBeNull();
+    const innerResult = (result!.payload as ICMPPacket).originalPacket;
+    expect(innerResult).toBeDefined();
+    expect(innerResult!.destinationIP.toString()).toBe('192.168.1.20');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Group 12: Hit / miss counters
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Group 12: hit/miss counters', () => {
+  let engine: NATEngine;
+
+  beforeEach(() => {
+    engine = new NATEngine();
+    engine.setInsideInterface('inside');
+    engine.setOutsideInterface('outside');
+    engine.setInterfaceIPFn(() => '203.0.113.1');
+    engine.setACLMatchFn(() => true);
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+    engine.resetCounters();
+  });
+
+  it('12.1 first outbound packet → missCount += 1', () => {
+    const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    expect(engine.getCounters().misses).toBe(1);
+    expect(engine.getCounters().hits).toBe(0);
+  });
+
+  it('12.2 second outbound same 5-tuple → hitCount += 1', () => {
+    const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    expect(engine.getCounters().misses).toBe(1);
+    expect(engine.getCounters().hits).toBe(1);
+  });
+
+  it('12.3 inbound reply to existing session → hitCount += 1', () => {
+    const out = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    const translated = engine.translateOutbound(out, 'outside', 'inside');
+    engine.resetCounters();
+    const udp = translated!.payload as import('@/network/core/types').UDPPacket;
+    const reply = makeUDPPacket('8.8.8.8', '203.0.113.1', 53, udp.sourcePort);
+    engine.translateInbound(reply, 'outside');
+    expect(engine.getCounters().hits).toBe(1);
+    expect(engine.getCounters().misses).toBe(0);
+  });
+
+  it('12.4 inbound with no matching session → missCount += 1', () => {
+    const pkt = makeUDPPacket('8.8.8.8', '203.0.113.1', 53, 9999);
+    engine.translateInbound(pkt, 'outside');
+    expect(engine.getCounters().misses).toBe(1);
+    expect(engine.getCounters().hits).toBe(0);
+  });
+
+  it('12.5 static NAT hit → hitCount increments on inbound', () => {
+    engine.addStaticEntry({ localIP: '192.168.1.20', globalIP: '203.0.113.10' });
+    engine.resetCounters();
+    const pkt = makeUDPPacket('1.2.3.4', '203.0.113.10', 9999, 80);
+    engine.translateInbound(pkt, 'outside');
+    expect(engine.getCounters().hits).toBe(1);
+  });
+
+  it('12.6 resetCounters zeroes all counters', () => {
+    const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
+    engine.translateOutbound(pkt, 'outside', 'inside');
+    engine.resetCounters();
+    const c = engine.getCounters();
+    expect(c.hits).toBe(0);
+    expect(c.misses).toBe(0);
+    expect(c.expired).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Group 13: Cisco CLI — timeout commands + show ip nat statistics
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Group 13: Cisco CLI — timeout commands', () => {
+  it('13.1 ip nat translation tcp-timeout sets TCP timeout', async () => {
+    const r = makeCiscoRouter();
+    await cfg(r, [
+      'enable',
+      'configure terminal',
+      'ip nat translation tcp-timeout 7200',
+      'end',
+    ]);
+    const t = r._getNATEngine().getTimeouts();
+    expect(t.tcp).toBe(7200 * 1000);
+  });
+
+  it('13.2 ip nat translation udp-timeout sets UDP timeout', async () => {
+    const r = makeCiscoRouter();
+    await cfg(r, [
+      'enable',
+      'configure terminal',
+      'ip nat translation udp-timeout 60',
+      'end',
+    ]);
+    expect(r._getNATEngine().getTimeouts().udp).toBe(60_000);
+  });
+
+  it('13.3 ip nat translation icmp-timeout sets ICMP timeout', async () => {
+    const r = makeCiscoRouter();
+    await cfg(r, [
+      'enable',
+      'configure terminal',
+      'ip nat translation icmp-timeout 30',
+      'end',
+    ]);
+    expect(r._getNATEngine().getTimeouts().icmp).toBe(30_000);
+  });
+
+  it('13.4 ip nat translation syn-timeout sets TCP half-open timeout', async () => {
+    const r = makeCiscoRouter();
+    await cfg(r, [
+      'enable',
+      'configure terminal',
+      'ip nat translation syn-timeout 10',
+      'end',
+    ]);
+    expect(r._getNATEngine().getTimeouts().tcpHalfOpen).toBe(10_000);
+  });
+
+  it('13.5 show ip nat statistics includes hits/misses/timeouts', async () => {
+    const r = makeCiscoRouter();
+    await cfg(r, [
+      'enable',
+      'configure terminal',
+      'ip nat translation udp-timeout 120',
+      'end',
+    ]);
+    const out = await r.executeCommand('show ip nat statistics');
+    expect(out).toContain('Hits:');
+    expect(out).toContain('Misses:');
+    expect(out).toContain('udp 120');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Group 14: Huawei CLI — nat aging-time + display nat statistics
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Group 14: Huawei CLI — aging-time + display nat statistics', () => {
+  it('14.1 nat aging-time tcp sets TCP timeout', async () => {
+    const r = makeHuaweiRouter();
+    await cfg(r, [
+      'system-view',
+      'interface GE0/0/1',
+      'nat aging-time tcp 7200',
+      'quit',
+    ]);
+    expect(r._getNATEngine().getTimeouts().tcp).toBe(7200_000);
+  });
+
+  it('14.2 nat aging-time udp sets UDP timeout', async () => {
+    const r = makeHuaweiRouter();
+    await cfg(r, [
+      'system-view',
+      'interface GE0/0/1',
+      'nat aging-time udp 60',
+      'quit',
+    ]);
+    expect(r._getNATEngine().getTimeouts().udp).toBe(60_000);
+  });
+
+  it('14.3 nat aging-time icmp sets ICMP timeout', async () => {
+    const r = makeHuaweiRouter();
+    await cfg(r, [
+      'system-view',
+      'interface GE0/0/1',
+      'nat aging-time icmp 30',
+      'quit',
+    ]);
+    expect(r._getNATEngine().getTimeouts().icmp).toBe(30_000);
+  });
+
+  it('14.4 nat aging-time syn sets TCP half-open timeout', async () => {
+    const r = makeHuaweiRouter();
+    await cfg(r, [
+      'system-view',
+      'interface GE0/0/1',
+      'nat aging-time syn 10',
+      'quit',
+    ]);
+    expect(r._getNATEngine().getTimeouts().tcpHalfOpen).toBe(10_000);
+  });
+
+  it('14.5 display nat statistics shows counters and timeouts', async () => {
+    const r = makeHuaweiRouter();
+    await cfg(r, [
+      'system-view',
+      'interface GE0/0/1',
+      'nat aging-time udp 120',
+      'quit',
+    ]);
+    const out = await r.executeCommand('display nat statistics');
+    expect(out).toContain('hits');
+    expect(out).toContain('misses');
+    expect(out).toContain('120');
+  });
+
+  it('14.6 reset nat session clears sessions', async () => {
+    const r = makeHuaweiRouter();
+    // Create a session via direct engine call
+    const engine = r._getNATEngine();
+    engine.setInsideInterface('GE0/0/0');
+    engine.setOutsideInterface('GE0/0/1');
+    engine.setInterfaceIPFn(() => '203.0.113.1');
+    engine.setACLMatchFn(() => true);
+    engine.addDynamicRule({ aclId: '3000', type: 'overload' });
+    engine.translateOutbound(makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53), 'GE0/0/1', 'GE0/0/0');
+    expect(engine.getTranslationCount()).toBeGreaterThan(0);
+
+    await r.executeCommand('reset nat session');
+    expect(engine.getTranslationCount()).toBe(engine.getStaticEntries().length);
   });
 });

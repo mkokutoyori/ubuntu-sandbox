@@ -521,6 +521,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // ACL display commands
     registerHuaweiACLDisplayCommands(t, () => this.r());
 
+    // NAT display commands
+    registerHuaweiNATDisplayCommands(t, () => this.r());
+
     // DHCP display commands
     registerDhcpDisplayCommands(t, () => this.r());
 

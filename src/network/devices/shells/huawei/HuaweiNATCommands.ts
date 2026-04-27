@@ -107,6 +107,21 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
     return '';
   });
 
+  // nat aging-time tcp <seconds>  /  nat aging-time udp <seconds>  /  nat aging-time icmp <seconds>
+  trie.registerGreedy('nat aging-time', 'Configure NAT session aging time', (args) => {
+    if (args.length < 2) return 'Error: Incomplete command.';
+    const proto = args[0].toLowerCase();
+    const s = parseInt(args[1], 10);
+    if (isNaN(s) || s < 1) return 'Error: Invalid timeout value.';
+    const engine = ctx.r()._getNATEngine();
+    if (proto === 'tcp')       engine.setTimeouts({ tcp: s * 1000 });
+    else if (proto === 'udp')  engine.setTimeouts({ udp: s * 1000 });
+    else if (proto === 'icmp') engine.setTimeouts({ icmp: s * 1000 });
+    else if (proto === 'tcp-syn' || proto === 'syn') engine.setTimeouts({ tcpHalfOpen: s * 1000 });
+    else return `Error: Unknown protocol "${args[0]}".`;
+    return '';
+  });
+
   // nat inside (mark interface as inside)
   trie.register('nat inside', 'Mark interface as NAT inside', () => {
     const ifName = ctx.getSelectedInterface();
@@ -129,13 +144,20 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
   trie.register('display nat static', 'Display static NAT translations', () => displayNATStatic(getRouter()));
   trie.register('display nat outbound', 'Display NAT outbound rules', () => displayNATOutbound(getRouter()));
   trie.register('display nat session', 'Display active NAT sessions', () => displayNATSession(getRouter()));
+  trie.register('display nat statistics', 'Display NAT statistics', () => displayNATStatistics(getRouter()));
   trie.register('display nat all', 'Display all NAT information', () => [
     displayNATStatic(getRouter()),
     '',
     displayNATOutbound(getRouter()),
     '',
     displayNATSession(getRouter()),
+    '',
+    displayNATStatistics(getRouter()),
   ].join('\n'));
+  trie.register('reset nat session', 'Clear all dynamic NAT sessions', () => {
+    getRouter()._getNATEngine().clearTranslations();
+    return 'NAT sessions cleared.';
+  });
 }
 
 function displayNATStatic(router: Router): string {
@@ -177,20 +199,42 @@ function displayNATOutbound(router: Router): string {
 
 function displayNATSession(router: Router): string {
   const entries = router._getNATEngine().getTranslations();
-  const sessions = entries.filter(e => e.proto !== '---'); // dynamic sessions
+  const sessions = entries.filter(e => e.proto !== '---');
   if (sessions.length === 0) return 'No active NAT sessions.';
 
   const lines = [
     ' NAT Session Table Information:',
     ` Total sessions: ${sessions.length}`,
     '',
-    ' Proto  Inside Local           Inside Global',
-    ' ' + '-'.repeat(60),
+    ' Proto  Inside Local           Inside Global          Outside Global',
+    ' ' + '-'.repeat(75),
   ];
   for (const s of sessions) {
-    lines.push(` ${s.proto.padEnd(7)}${s.insideLocal.padEnd(23)}${s.insideGlobal}`);
+    lines.push(` ${s.proto.padEnd(7)}${s.insideLocal.padEnd(23)}${s.insideGlobal.padEnd(23)}${s.outsideGlobal}`);
   }
   return lines.join('\n');
+}
+
+function displayNATStatistics(router: Router): string {
+  const engine = router._getNATEngine();
+  const counters = engine.getCounters();
+  const timeouts = engine.getTimeouts();
+  const total = engine.getTranslationCount();
+  const statics = engine.getStaticEntries().length;
+
+  return [
+    ' NAT Statistics:',
+    `  Total sessions:      ${total} (${statics} static, ${total - statics} dynamic)`,
+    `  Translation hits:    ${counters.hits}`,
+    `  Translation misses:  ${counters.misses}`,
+    `  Expired sessions:    ${counters.expired}`,
+    '',
+    ' Session aging times (seconds):',
+    `  TCP established:     ${timeouts.tcp / 1000}`,
+    `  TCP SYN (half-open): ${timeouts.tcpHalfOpen / 1000}`,
+    `  UDP:                 ${timeouts.udp / 1000}`,
+    `  ICMP:                ${timeouts.icmp / 1000}`,
+  ].join('\n');
 }
 
 // ─── Running-config helpers (for display current-configuration) ───────────────

@@ -110,6 +110,38 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     ctx.r()._getNATEngine().removePool(args[0]);
     return '';
   });
+
+  // ip nat translation tcp-timeout <seconds>
+  trie.registerGreedy('ip nat translation tcp-timeout', 'Set TCP NAT session timeout', (args) => {
+    const s = parseInt(args[0], 10);
+    if (isNaN(s) || s < 1) return '% Invalid timeout value.';
+    ctx.r()._getNATEngine().setTimeouts({ tcp: s * 1000 });
+    return '';
+  });
+
+  // ip nat translation udp-timeout <seconds>
+  trie.registerGreedy('ip nat translation udp-timeout', 'Set UDP NAT session timeout', (args) => {
+    const s = parseInt(args[0], 10);
+    if (isNaN(s) || s < 1) return '% Invalid timeout value.';
+    ctx.r()._getNATEngine().setTimeouts({ udp: s * 1000 });
+    return '';
+  });
+
+  // ip nat translation icmp-timeout <seconds>
+  trie.registerGreedy('ip nat translation icmp-timeout', 'Set ICMP NAT session timeout', (args) => {
+    const s = parseInt(args[0], 10);
+    if (isNaN(s) || s < 1) return '% Invalid timeout value.';
+    ctx.r()._getNATEngine().setTimeouts({ icmp: s * 1000 });
+    return '';
+  });
+
+  // ip nat translation syn-timeout <seconds>  (TCP half-open)
+  trie.registerGreedy('ip nat translation syn-timeout', 'Set TCP SYN (half-open) timeout', (args) => {
+    const s = parseInt(args[0], 10);
+    if (isNaN(s) || s < 1) return '% Invalid timeout value.';
+    ctx.r()._getNATEngine().setTimeouts({ tcpHalfOpen: s * 1000 });
+    return '';
+  });
 }
 
 // ─── Interface Config Mode ────────────────────────────────────────────────────
@@ -157,6 +189,7 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
 
 export function registerNATShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.register('show ip nat translations', 'Display NAT translation table', () => showNATTranslations(getRouter()));
+  trie.register('show ip nat translations verbose', 'Display detailed NAT translations', () => showNATTranslationsVerbose(getRouter()));
   trie.register('show ip nat statistics', 'Display NAT statistics', () => showNATStatistics(getRouter()));
 }
 
@@ -177,6 +210,20 @@ export function showNATTranslations(router: Router): string {
   return lines.join('\n');
 }
 
+export function showNATTranslationsVerbose(router: Router): string {
+  const entries = router._getNATEngine().getTranslations();
+  if (entries.length === 0) return 'No NAT translations.';
+
+  const lines: string[] = [];
+  for (const e of entries) {
+    lines.push(`Pro  Inside global          Inside local           Outside local          Outside global`);
+    lines.push(`${e.proto.padEnd(4)} ${e.insideGlobal.padEnd(23)}${e.insideLocal.padEnd(23)}${e.outsideLocal.padEnd(23)}${e.outsideGlobal}`);
+    lines.push(`    create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --`);
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
+}
+
 export function showNATStatistics(router: Router): string {
   const engine = router._getNATEngine();
   const statics = engine.getStaticEntries().length;
@@ -185,13 +232,16 @@ export function showNATStatistics(router: Router): string {
   const total = engine.getTranslationCount();
   const inside = [...engine.getInsideInterfaces()].join(', ') || 'none';
   const outside = [...engine.getOutsideInterfaces()].join(', ') || 'none';
+  const counters = engine.getCounters();
+  const timeouts = engine.getTimeouts();
 
   return [
     `Total active translations: ${total} (${statics} static, ${total - statics} dynamic; 0 extended)`,
     `Outside interfaces:  ${outside}`,
     `Inside interfaces:   ${inside}`,
-    `Hits: 0  Misses: 0`,
-    `Expired translations: 0`,
+    `Hits: ${counters.hits}  Misses: ${counters.misses}`,
+    `Expired translations: ${counters.expired}`,
+    `Session timeouts (seconds): tcp ${timeouts.tcp / 1000}  udp ${timeouts.udp / 1000}  icmp ${timeouts.icmp / 1000}  syn ${timeouts.tcpHalfOpen / 1000}`,
     `Dynamic mappings:`,
     ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] :
       engine.getDynamicRules().map(r =>
@@ -229,6 +279,13 @@ export function runningConfigNAT(router: Router): string[] {
       lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}`);
     }
   }
+
+  // Non-default timeouts
+  const t = engine.getTimeouts();
+  if (t.tcp !== 86_400_000)       lines.push(`ip nat translation tcp-timeout ${t.tcp / 1000}`);
+  if (t.udp !== 300_000)          lines.push(`ip nat translation udp-timeout ${t.udp / 1000}`);
+  if (t.icmp !== 60_000)          lines.push(`ip nat translation icmp-timeout ${t.icmp / 1000}`);
+  if (t.tcpHalfOpen !== 30_000)   lines.push(`ip nat translation syn-timeout ${t.tcpHalfOpen / 1000}`);
 
   return lines;
 }
