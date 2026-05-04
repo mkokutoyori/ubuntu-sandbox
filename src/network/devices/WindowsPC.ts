@@ -80,6 +80,16 @@ export class WindowsPC extends EndHost {
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.initEnv();
+    this.initDefaultSockets();
+  }
+
+  private initDefaultSockets(): void {
+    // RDP — Remote Desktop Protocol (TermService)
+    this.socketTable.bind('tcp', '0.0.0.0', 3389, 1096, 'svchost.exe');
+    // SMB — file sharing / domain traffic (LanmanServer)
+    this.socketTable.bind('tcp', '0.0.0.0', 445, 4, 'System');
+    // NetBIOS Session Service (LanmanServer)
+    this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
   }
 
   private createPorts(): void {
@@ -200,7 +210,7 @@ export class WindowsPC extends EndHost {
       case 'sc':
       case 'sc.exe': return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
-      case 'netstat': return cmdNetstat(fileCtx);
+      case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable);
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args);
       case 'findstr': return cmdFindstr(fileCtx, args);

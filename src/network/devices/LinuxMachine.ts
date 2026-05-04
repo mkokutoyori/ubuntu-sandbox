@@ -108,6 +108,8 @@ export abstract class LinuxMachine extends EndHost {
     this.executor = new LinuxCommandExecutor(profile.isServer);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
+    this.initDefaultSockets(profile.isServer);
+    this.executor.setSocketTable(this.socketTable);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
@@ -130,6 +132,25 @@ export abstract class LinuxMachine extends EndHost {
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
       0, 0, 0o022);
+  }
+
+  // ─── Default OS sockets ──────────────────────────────────────────────
+
+  /**
+   * Pre-populate the socket table with services that are always running
+   * on a freshly booted Linux machine.  The PIDs match the static values
+   * used by ps/netstat output so the two are coherent.
+   */
+  private initDefaultSockets(isServer: boolean): void {
+    // sshd — listens on all interfaces (every Linux machine has SSH)
+    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
+    // systemd-resolved — DNS stub resolver bound to loopback only
+    this.socketTable.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolved');
+
+    if (isServer) {
+      // Oracle TNS listener — only on server profiles
+      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr');
+    }
   }
 
   // ─── Ports ───────────────────────────────────────────────────────────

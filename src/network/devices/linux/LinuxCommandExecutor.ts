@@ -17,6 +17,7 @@ import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
+import type { SocketTable } from '../../core/SocketTable';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
@@ -37,6 +38,7 @@ export class LinuxCommandExecutor {
   readonly processMgr: LinuxProcessManager;
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
+  private socketTable: SocketTable | null = null;
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
@@ -97,6 +99,11 @@ export class LinuxCommandExecutor {
   /** Set the network context for ip command support */
   setIpNetworkContext(ctx: IpNetworkContext): void {
     this.ipNetworkCtx = ctx;
+  }
+
+  /** Wire the device's socket table so netstat/ss output is dynamic */
+  setSocketTable(table: SocketTable): void {
+    this.socketTable = table;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -653,8 +660,8 @@ export class LinuxCommandExecutor {
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer), exitCode: 0 };
-      case 'ss': return { output: cmdSs(args, this.isServer), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable), exitCode: 0 };
+      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       // @deprecated — The following stubs (ping, traceroute, nslookup, dig,

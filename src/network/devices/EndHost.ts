@@ -20,6 +20,7 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
+import { SocketTable } from '../core/SocketTable';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket,
@@ -142,6 +143,10 @@ export interface HostRouteEntry {
 // ─── EndHost ───────────────────────────────────────────────────────
 
 export abstract class EndHost extends Equipment {
+  // ─── Socket Table (L4) ──────────────────────────────────────────
+  /** Per-device socket table — tracks listening and established sockets */
+  protected readonly socketTable: SocketTable = new SocketTable();
+
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
   protected arpTable: Map<string, ARPEntry> = new Map();
@@ -309,6 +314,9 @@ export abstract class EndHost extends Equipment {
   }
 
   // ─── DHCP Client API ──────────────────────────────────────────
+
+  /** Expose the per-device socket table (used by netstat/ss commands). */
+  getSocketTable(): SocketTable { return this.socketTable; }
 
   getDHCPClient(): DHCPClient { return this.dhcpClient; }
 
