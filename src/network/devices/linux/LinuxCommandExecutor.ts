@@ -727,6 +727,11 @@ export class LinuxCommandExecutor {
       case 'scp':
       case 'rsync':
         return { output: '', exitCode: 0 };
+      case 'sftp': {
+        const host = args.filter(a => !a.startsWith('-'))[0];
+        if (!host) return { output: 'usage: sftp [options] [user@]host[:path]', exitCode: 1 };
+        return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
+      }
       case 'ssh': {
         const host = args.filter(a => !a.startsWith('-'))[0];
         if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };

@@ -61,6 +61,7 @@ import {
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
+import type { ISftpServer } from '../protocols/sftp/ISftpServer';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -187,6 +188,19 @@ export abstract class LinuxMachine extends EndHost {
       xfrm: this.xfrmCtx,
       profile: this.profile,
       fmt: this.fmt,
+    };
+  }
+
+  /**
+   * Expose this machine as an SFTP server.
+   * Called by SftpServerResolver when a remote client connects to this device's IP.
+   */
+  getSftpServer(): ISftpServer {
+    return {
+      vfs:        this.executor.vfs,
+      userMgr:    this.executor.userMgr,
+      hostname:   this.profile.hostname,
+      socketTable: this.socketTable,
     };
   }
 
