@@ -9,7 +9,7 @@
  *   - Tab completion
  */
 
-import { Equipment } from '@/network';
+import { Equipment, IPAddress } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
@@ -556,13 +556,26 @@ export class LinuxTerminalSession extends TerminalSession {
 
   /**
    * Build a resolver that finds an ISftpServer by IP address.
-   * Walks Equipment.getAllEquipment() and duck-types each device.
+   *
+   * Two-stage check:
+   *   1. Routing reachability — the source device must have a route to the
+   *      destination IP (connected, static, or default gateway).  This mirrors
+   *      the OS-level routing decision made before a TCP connection attempt.
+   *   2. Device lookup — an equipment with getSftpServer() must own that IP.
+   *
+   * Without stage 1, machines on disconnected networks could "talk" to each
+   * other even with no cables, routers, or routing configured — which is
+   * physically impossible.
    */
   private buildSftpResolver(): SftpServerResolver {
+    const sourceDevice = this.device;
     return (ip: string): ISftpServer | null => {
-      for (const device of Equipment.getAllEquipment().values()) {
+      // Stage 1: can the source device route to this IP?
+      if (!this.canReachIp(sourceDevice, ip)) return null;
+
+      // Stage 2: find the device that owns the IP and exposes an SFTP server
+      for (const device of Equipment.getAllEquipment()) {
         if (!('getSftpServer' in device)) continue;
-        // Check if any of this device's ports has the given IP
         const ports: Array<{ getIPAddress(): { toString(): string } | null }> =
           'getInterfaces' in device ? (device as any).getInterfaces() : [];
         const matches = ports.some(p => p.getIPAddress()?.toString() === ip);
@@ -572,6 +585,19 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       return null;
     };
+  }
+
+  /**
+   * Return true if `device` has a routing-table entry that covers `destIp`.
+   * Uses the same Longest-Prefix-Match engine as sendPacket so the result is
+   * consistent with what ping/traceroute would report.
+   */
+  private canReachIp(device: any, destIp: string): boolean {
+    try {
+      return device.resolveRoute?.(new IPAddress(destIp)) !== null;
+    } catch {
+      return false;
+    }
   }
 
   /**
