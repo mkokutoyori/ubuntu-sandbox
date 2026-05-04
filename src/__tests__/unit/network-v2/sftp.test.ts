@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SftpSession } from '@/network/protocols/sftp/SftpSession';
 import type { ISftpServer, SftpServerResolver } from '@/network/protocols/sftp/ISftpServer';
+import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '@/network/protocols/sftp/LinuxSftpAdapter';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
@@ -52,7 +53,12 @@ function makeMockServer(opts: {
   for (const [path, content] of Object.entries(files)) {
     vfs.writeFile(path, content, 1000, 1000, 0o022);
   }
-  return { vfs, userMgr, hostname, socketTable: new SocketTable() };
+  return {
+    vfs:         new LinuxSftpFSAdapter(vfs),
+    userMgr:     new LinuxSftpUserAuthAdapter(userMgr),
+    hostname,
+    socketTable: new SocketTable(),
+  };
 }
 
 /** Build a resolver that returns `server` for `REMOTE_IP`, null otherwise. */
@@ -139,10 +145,9 @@ describe('SF-01 — SftpSession: connect / disconnect', () => {
   });
 
   it('uses localUser when host-only address is given', () => {
+    // makeMockServer already creates 'root' with password 'admin'
     const server = makeMockServer({ username: 'root', password: 'admin' });
     const session = makeSession(makeResolver(server));
-    // root is the localUser; server has root account
-    server.userMgr.setPassword('root', 'admin');
     const err = session.connect(REMOTE_IP, 'admin');
     expect(err).toBe('');
     expect(session.isConnected()).toBe(true);
@@ -302,7 +307,7 @@ describe('SF-04 — SftpSession: get (download)', () => {
   });
 
   it('get a directory instead of a file returns an error', () => {
-    server.vfs.mkdirp('/home/user/subdir', 0o755, 1000, 1000);
+    server.vfs.mkdirp('/home/user/subdir');
     const output = session.get('/home/user/subdir');
     expect(output).toContain('not a regular file');
   });

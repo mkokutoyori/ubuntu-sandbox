@@ -62,6 +62,7 @@ import {
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import type { ISftpServer } from '../protocols/sftp/ISftpServer';
+import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '../protocols/sftp/LinuxSftpAdapter';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -197,9 +198,9 @@ export abstract class LinuxMachine extends EndHost {
    */
   getSftpServer(): ISftpServer {
     return {
-      vfs:        this.executor.vfs,
-      userMgr:    this.executor.userMgr,
-      hostname:   this.profile.hostname,
+      vfs:         new LinuxSftpFSAdapter(this.executor.vfs),
+      userMgr:     new LinuxSftpUserAuthAdapter(this.executor.userMgr),
+      hostname:    this.profile.hostname,
       socketTable: this.socketTable,
     };
   }

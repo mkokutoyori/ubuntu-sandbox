@@ -17,6 +17,8 @@
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
+import type { ISftpServer } from '../protocols/sftp/ISftpServer';
+import { WindowsSftpFSAdapter, WindowsSftpUserAuthAdapter } from '../protocols/sftp/WindowsSftpAdapter';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -90,6 +92,19 @@ export class WindowsPC extends EndHost {
     this.socketTable.bind('tcp', '0.0.0.0', 445, 4, 'System');
     // NetBIOS Session Service (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
+  }
+
+  /**
+   * Expose this machine as an SFTP server.
+   * Uses OpenSSH-for-Windows path convention: /C:/Users/User/...
+   */
+  getSftpServer(): ISftpServer {
+    return {
+      vfs:         new WindowsSftpFSAdapter(this.fs),
+      userMgr:     new WindowsSftpUserAuthAdapter(this.userMgr),
+      hostname:    this.hostname,
+      socketTable: this.socketTable,
+    };
   }
 
   private createPorts(): void {
