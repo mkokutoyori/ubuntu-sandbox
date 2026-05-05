@@ -334,3 +334,281 @@ Toutes ces definitions sont des **types purs** : aucun import de classe concrete
 
 ---
 
+## 3. Value Objects et utilitaires purs (FP)
+
+### 3.1 Principes des Value Objects
+
+Un Value Object est :
+- **immuable** — aucune methode ne modifie ses champs
+- **compare par valeur** — deux objets avec les memes champs sont egaux
+- **autonome** — porte sa propre logique de validation et de comparaison
+
+Dans RMAN, les entites suivantes sont des Value Objects : `Scn`, `RmanTag`, `BackupKey`, `DbId`, `RmanTimestamp`.
+
+### 3.2 Scn — System Change Number
+
+Le SCN est la notion de temps logique d'Oracle. Il doit etre opaque, comparable et serialisable.
+
+```typescript
+// src/database/oracle/rman/values/Scn.ts
+
+export type Scn = Readonly<{ readonly _tag: 'Scn'; readonly value: number }>
+
+export const Scn = {
+  of(n: number): Scn {
+    if (!Number.isInteger(n) || n < 0) {
+      throw new RangeError(`SCN must be a non-negative integer, got: ${n}`)
+    }
+    return Object.freeze({ _tag: 'Scn', value: n })
+  },
+
+  zero: Object.freeze({ _tag: 'Scn' as const, value: 0 }),
+
+  compare(a: Scn, b: Scn): number {
+    return a.value - b.value
+  },
+
+  lt(a: Scn, b: Scn): boolean { return a.value < b.value },
+  lte(a: Scn, b: Scn): boolean { return a.value <= b.value },
+  eq(a: Scn, b: Scn): boolean { return a.value === b.value },
+
+  toString(scn: Scn): string { return scn.value.toString() },
+
+  fromString(s: string): Scn | null {
+    const n = parseInt(s, 10)
+    return isNaN(n) || n < 0 ? null : Scn.of(n)
+  },
+}
+```
+
+### 3.3 RmanTag — etiquette de backup
+
+Le TAG identifie un backup set de maniere unique et lisible. Format Oracle : `TAGYYYYMMDDTHHMMSS` ou personnalise.
+
+```typescript
+// src/database/oracle/rman/values/RmanTag.ts
+
+export type RmanTag = Readonly<{ readonly _tag: 'RmanTag'; readonly value: string }>
+
+const TAG_REGEX = /^[A-Za-z0-9_\-\.]{1,30}$/
+
+export const RmanTag = {
+  of(value: string): RmanTag {
+    const v = value.trim().toUpperCase()
+    if (!TAG_REGEX.test(v)) {
+      throw new Error(`Invalid RMAN tag format: "${value}" (max 30 alphanum/underscore chars)`)
+    }
+    return Object.freeze({ _tag: 'RmanTag', value: v })
+  },
+
+  /** Genere un tag Oracle standard base sur la date courante */
+  generate(now: Date): RmanTag {
+    const y  = now.getFullYear()
+    const mo = String(now.getMonth() + 1).padStart(2, '0')
+    const d  = String(now.getDate()).padStart(2, '0')
+    const h  = String(now.getHours()).padStart(2, '0')
+    const mi = String(now.getMinutes()).padStart(2, '0')
+    const s  = String(now.getSeconds()).padStart(2, '0')
+    return RmanTag.of(`TAG${y}${mo}${d}T${h}${mi}${s}`)
+  },
+
+  toString(t: RmanTag): string { return t.value },
+}
+```
+
+### 3.4 BackupKey — cle primaire d'un backup set
+
+```typescript
+// src/database/oracle/rman/values/BackupKey.ts
+
+export type BackupKey = Readonly<{ readonly _tag: 'BackupKey'; readonly value: number }>
+
+let _keyCounter = 1
+
+export const BackupKey = {
+  next(): BackupKey {
+    return Object.freeze({ _tag: 'BackupKey', value: _keyCounter++ })
+  },
+
+  of(n: number): BackupKey {
+    return Object.freeze({ _tag: 'BackupKey', value: n })
+  },
+
+  toString(k: BackupKey): string { return String(k.value) },
+
+  /** Remet le compteur a une valeur donnee (pour les tests uniquement) */
+  _resetForTests(n = 1): void { _keyCounter = n },
+}
+```
+
+### 3.5 DbId — identifiant Oracle de la base
+
+```typescript
+// src/database/oracle/rman/values/DbId.ts
+
+export type DbId = Readonly<{ readonly _tag: 'DbId'; readonly value: number }>
+
+export const DbId = {
+  of(n: number): DbId {
+    if (!Number.isInteger(n) || n < 1) {
+      throw new RangeError(`DBID must be a positive integer`)
+    }
+    return Object.freeze({ _tag: 'DbId', value: n })
+  },
+
+  /** DBID simulee deterministe a partir du nom de la base (fnv32) */
+  fromDbName(name: string): DbId {
+    let h = 0x811c9dc5
+    for (let i = 0; i < name.length; i++) {
+      h ^= name.charCodeAt(i)
+      h = (h * 0x01000193) >>> 0
+    }
+    return DbId.of(h || 1)
+  },
+
+  toString(id: DbId): string { return String(id.value) },
+}
+```
+
+### 3.6 RmanPureUtils — fonctions pures sans effet de bord
+
+Ce module regroupe toutes les fonctions de calcul, formatage et parsing qui n'ont aucun effet de bord. Conforme au principe de separation des preoccupations : la logique metier pure est separee des effets (I/O, VFS, Date).
+
+```typescript
+// src/database/oracle/rman/RmanPureUtils.ts
+
+import type { Scn } from './values/Scn'
+import type { RmanTag } from './values/RmanTag'
+
+// ─── Formatage de la taille ───────────────────────────────────────────────
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0'
+  if (bytes < 1024) return `${bytes}B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(2)}K`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb.toFixed(2)}M`
+  const gb = mb / 1024
+  return `${gb.toFixed(2)}G`
+}
+
+// ─── Formatage du temps ecoule ────────────────────────────────────────────
+
+export function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return [h, m, s].map(n => String(n).padStart(2, '0')).join(':')
+}
+
+// ─── Formatage de la date Oracle ──────────────────────────────────────────
+
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN',
+                'JUL','AUG','SEP','OCT','NOV','DEC']
+
+export function formatOracleDate(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0')
+  const mon = MONTHS[d.getMonth()]
+  const y   = d.getFullYear()
+  const h   = String(d.getHours()).padStart(2, '0')
+  const mi  = String(d.getMinutes()).padStart(2, '0')
+  const s   = String(d.getSeconds()).padStart(2, '0')
+  return `${day}-${mon}-${y} ${h}:${mi}:${s}`
+}
+
+// ─── Generation du nom de piece ───────────────────────────────────────────
+
+/**
+ * Genere un chemin de backup piece conforme au format Oracle.
+ * %d = db_name, %s = set count, %p = piece number, %t = timestamp
+ * %F = auto-unique name (ORCL-1234567890-20260505-01.bkp)
+ */
+export function expandPieceFormat(
+  fmt: string,
+  ctx: {
+    dbName:    string
+    setCount:  number
+    pieceNum:  number
+    timestamp: number
+    tag:       string
+  }
+): string {
+  return fmt
+    .replace(/%d/gi, ctx.dbName.toUpperCase())
+    .replace(/%s/gi, String(ctx.setCount).padStart(8, '0'))
+    .replace(/%p/gi, String(ctx.pieceNum).padStart(2, '0'))
+    .replace(/%t/gi, String(ctx.timestamp))
+    .replace(/%T/gi, String(ctx.timestamp))
+    .replace(/%g/gi, '1')
+    .replace(/%F/gi,
+      `${ctx.dbName.toUpperCase()}-${ctx.timestamp}-${
+        String(ctx.setCount).padStart(8, '0')
+      }-${String(ctx.pieceNum).padStart(2, '0')}`)
+}
+
+/** Format par defaut si aucun FORMAT n'est specifie dans CONFIGURE */
+export const DEFAULT_PIECE_FORMAT = '/u01/app/oracle/fast_recovery_area/%d/%F.bkp'
+
+// ─── Calcul de la duree simulee ───────────────────────────────────────────
+
+/**
+ * Simule une duree de backup realiste en fonction de la taille en octets.
+ * ~100 MB/s pour DISK, ~50 MB/s pour SBT.
+ */
+export function simulateBackupSeconds(bytes: number, deviceType: 'DISK' | 'SBT'): number {
+  const throughput = deviceType === 'DISK' ? 100 * 1024 * 1024 : 50 * 1024 * 1024
+  return Math.max(1, Math.ceil(bytes / throughput))
+}
+
+// ─── Parsing du checkpoint SCN ───────────────────────────────────────────
+
+/**
+ * Renvoie le SCN de checkpoint le plus ancien parmi les datafiles —
+ * represente le SCN minimum jusqu'auquel on peut recuperer.
+ */
+export function computeMinCkpScn(ckpScns: ReadonlyArray<Scn>): Scn | null {
+  if (ckpScns.length === 0) return null
+  return ckpScns.reduce((min, s) =>
+    s.value < min.value ? s : min
+  )
+}
+
+// ─── Validation de tag ────────────────────────────────────────────────────
+
+export function isValidTag(s: string): boolean {
+  return /^[A-Za-z0-9_\-\.]{1,30}$/.test(s)
+}
+
+// ─── Padding pour les tableaux LIST BACKUP ────────────────────────────────
+
+export function padRight(s: string, width: number): string {
+  return s.length >= width ? s : s + ' '.repeat(width - s.length)
+}
+
+export function padLeft(s: string, width: number): string {
+  return s.length >= width ? s : ' '.repeat(width - s.length) + s
+}
+```
+
+### 3.7 Diagramme des Value Objects
+
+```
+RmanPureUtils (module de fonctions pures — zero classe)
+  formatBytes()        formatElapsed()     formatOracleDate()
+  expandPieceFormat()  simulateBackupSeconds()
+  computeMinCkpScn()   padRight()          padLeft()
+
+  +--------- utilise ---------> Scn
+  +--------- utilise ---------> RmanTag
+
+Scn            (value object — comparable, serialisable)
+RmanTag        (value object — 30 chars max, uppercase)
+BackupKey      (value object — auto-incrementing integer)
+DbId           (value object — FNV-32 hash du db_name)
+```
+
+Invariant cle : **aucun de ces types n'importe depuis le DOM, le VFS, ou une classe Oracle**. Ils sont testables en isolation totale avec `vitest`.
+
+---
+
