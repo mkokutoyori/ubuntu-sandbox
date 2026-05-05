@@ -1156,3 +1156,207 @@ La règle de priorisation : d'abord corriger les **bugs visibles** (DEF-BLOQUANT
 | DEF-24 | Stub sftp executor cassé | 2 | A faire |
 
 ---
+
+## 7. Contraintes Techniques et NFR
+
+### 7.1 Contraintes architecturales
+
+#### C-01 — Synchronicité du simulateur
+
+Le simulateur utilise une livraison de frames **synchrone** : quand `cable.sendFrame()` est appelé, la frame traverse tout le réseau (switches, routeurs, host distant) avant que l'appel retourne. Cela permet des tests sans async/await complexe.
+
+La couche SSH simulée **doit** respecter cette contrainte :
+- Pas de véritables workers ou setTimeout dans le chemin critique
+- `SshSession.connect()` est `async` uniquement pour la résolution ARP (1 microtask) — comme l'est déjà `SftpSession.connect()`
+- Les "négociations" SSH (key exchange, etc.) sont simulées comme des échanges synchrones sur la connexion TCP in-memory
+
+#### C-02 — Pas de vraie cryptographie
+
+Le simulateur ne doit PAS importer de librairies cryptographiques (WebCrypto, libsodium, node:crypto) pour SSH. Les clés ED25519 sont des strings opaques déterministes (ex: hash de l'IP). Le fingerprint est calculé avec un hash simple (SHA-256 simulé ou déterministe). L'objectif est le comportement visible, pas la sécurité réelle.
+
+#### C-03 — Stockage dans VirtualFileSystem
+
+Tous les fichiers SSH (`~/.ssh/known_hosts`, `~/.ssh/id_ed25519`, `~/.ssh/config`, `/etc/ssh/sshd_config`, `/etc/motd`) doivent être stockés dans le `VirtualFileSystem` du device concerné. Ils sont donc editables via `vim`, `nano`, `cat`, `echo >` comme sur un vrai système.
+
+#### C-04 — Independance des devices
+
+Chaque device (`LinuxMachine`, `WindowsPC`) gere son propre état SSH de manière autonome. Pas de registre central SSH. Le host key d'un device est stocké dans son `VirtualFileSystem` sous `/etc/ssh/`.
+
+#### C-05 — Compatibilite avec les tests existants
+
+Les 127 tests existants (`sftp.test.ts`, `sftp-wan.test.ts`, `sftp-edge-cases.test.ts`) doivent continuer à passer sans modification significative. La refonte SSH introduit un wrapper au-dessus du transport TCP existant, sans casser l'interface `TcpConnection`.
+
+---
+
+### 7.2 Non-Functional Requirements
+
+#### NFR-01 — Performance
+
+| Metrique | Exigence |
+|---|---|
+| Etablissement de connexion SSH | < 5ms (synchrone, pas de vraie crypto) |
+| Transfert d'un fichier 1MB | < 10ms (in-memory) |
+| Cold start suite de tests | < 3s (identique à l'existant) |
+
+#### NFR-02 — Couverture de tests
+
+| Module | Couverture minimale |
+|---|---|
+| `SshHostKey.ts` | 90% |
+| `SshKnownHosts.ts` | 90% |
+| `SshSession.ts` | 85% |
+| `SshServerHandler.ts` | 85% |
+| `SftpSession.ts` (après corrections) | 90% |
+| `SftpServerHandler.ts` (après corrections) | 90% |
+| `SftpSubShell.ts` (après corrections) | 85% |
+| Adaptateurs Linux/Windows | 85% |
+
+#### NFR-03 — Réalisme comportemental
+
+Chaque interaction visible doit être validée contre le comportement OpenSSH réel (Ubuntu 22.04, OpenSSH 9.6). Les tests BDD décrivent les séquences exactes de commandes et les sorties attendues, copiées ou vérifiées sur un vrai système.
+
+#### NFR-04 — Maintenabilité
+
+- Chaque module SSH/SFTP est isolé dans `src/network/protocols/ssh/` ou `src/network/protocols/sftp/`
+- Les interfaces (`ISshServer`, `ISshClient`, `ISftpFileSystem`) permettent de swapper les implémentations Linux/Windows sans changer le code de session
+- Pas de couplage direct entre `SshSession` et les classes concrètes de devices
+
+#### NFR-05 — Retrocompatibilite
+
+- L'interface `TcpConnection` est inchangée
+- Les devices existants (`LinuxPC`, `LinuxServer`, `WindowsPC`) acquièrent le support SSH/SFTP par composition, sans modification de leur interface publique
+
+---
+
+### 7.3 Fichiers et répertoires créés par l'implémentation
+
+#### Structure du code source
+
+```
+src/network/protocols/
+  ssh/
+    SshHostKey.ts          -- Génération et stockage du host key par device
+    SshKnownHosts.ts       -- Lecture/écriture ~/.ssh/known_hosts
+    SshConfig.ts           -- Parser ~/.ssh/config
+    SshKeyPair.ts          -- Génération paire de clés ED25519 simulée
+    SshAuthorizedKeys.ts   -- Lecture/écriture ~/.ssh/authorized_keys
+    SshSession.ts          -- Client SSH (connect, auth, exec, sftp-subsystem)
+    SshServerHandler.ts    -- Serveur SSH (enregistré sur TCP 22)
+    ISshServer.ts          -- Interface serveur SSH
+  sftp/
+    (fichiers existants, modifiés)
+    ISftpFileSystem.ts     -- Interface enrichie (mkdir non-récursif, setPermissions, stat...)
+    SftpSession.ts         -- Refactored (utilise SshSession)
+    SftpServerHandler.ts   -- Refactored (corrections DEF-06 à DEF-09)
+    SftpSubShell.ts        -- Refactored (lmkdir, Ctrl+D, flags, chmod, chown, stat, df)
+```
+
+#### Fichiers système créés dans VirtualFileSystem à l'initialisation du device
+
+```
+/etc/ssh/
+  sshd_config              -- Configuration du serveur SSH
+  ssh_host_ed25519_key     -- Clé privée du serveur (simulée)
+  ssh_host_ed25519_key.pub -- Clé publique du serveur
+
+/etc/motd                  -- Message of the Day (optionnel, vide par défaut)
+/etc/issue.net             -- Bannière pre-auth (optionnel)
+
+~/.ssh/                    -- Dans le home de chaque utilisateur
+  known_hosts              -- Créé lors du premier connect
+  authorized_keys          -- Créé par ssh-copy-id
+  config                   -- Créé manuellement par l'utilisateur
+  id_ed25519               -- Créé par ssh-keygen
+  id_ed25519.pub           -- Créé par ssh-keygen
+```
+
+---
+
+### 7.4 Risques et mitigations
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| La synchronicité du simulateur casse avec les interactions SSH multi-step | Moyenne | Elevé | Utiliser le mécanisme `InteractiveStep` déjà en place dans `LinuxTerminalSession` pour les prompts (fingerprint, password) |
+| Les tests existants cassent après refactoring SFTP | Faible | Elevé | Phase 1 isolée : corriger sans toucher à l'architecture ; ajouter les tests de régression avant tout refactoring |
+| Complexité du parser `~/.ssh/config` | Faible | Faible | Parser minimaliste couvrant les 5 directives prioritaires seulement |
+| Incohérence comportementale Windows vs Linux SSH | Moyenne | Moyen | Définir un `ISshServer` commun ; tester les deux adapters séparément |
+| Performance dégradée avec beaucoup de clés dans known_hosts | Très faible | Faible | Recherche linéaire acceptable pour un simulateur (< 100 entrées) |
+
+---
+
+## Annexe A — Exemples de séquences complètes à implémenter
+
+### A.1 Premier connect SSH sur host inconnu
+
+```
+user@local:~$ ssh alice@192.168.1.10
+The authenticity of host '192.168.1.10 (192.168.1.10)' can't be established.
+ED25519 key fingerprint is SHA256:xLp3K1mNqRtU2vWzY0hBjCfD8gEsA9oP4iQe7nMkXcV.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '192.168.1.10' (ED25519) to the list of known hosts.
+alice@192.168.1.10's password: xxxxxxxx
+Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+Last login: Mon May  4 10:23:15 2026 from 192.168.1.5
+alice@server:~$ exit
+logout
+Connection to 192.168.1.10 closed.
+user@local:~$
+```
+
+### A.2 Authentification par clé publique
+
+```
+user@local:~$ ssh-keygen -t ed25519 -C "alice@local"
+Generating public/private ed25519 key pair.
+Enter file in which to save the key (/root/.ssh/id_ed25519): 
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in /root/.ssh/id_ed25519
+Your public key has been saved in /root/.ssh/id_ed25519.pub
+The key fingerprint is:
+SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdef alice@local
+The key's randomart image is:
++--[ED25519 256]--+
+|        .o+o.    |
+|       ..=+o     |
++----[SHA256]-----+
+
+user@local:~$ ssh-copy-id alice@192.168.1.10
+/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s)
+alice@192.168.1.10's password: xxxxxxxx
+Number of key(s) added: 1
+
+Now try logging into the machine, with:   "ssh 'alice@192.168.1.10'"
+
+user@local:~$ ssh alice@192.168.1.10
+alice@server:~$
+```
+
+### A.3 Session SFTP avec attributs et permissions
+
+```
+user@local:~$ sftp alice@192.168.1.10
+alice@192.168.1.10's password: xxxxxxxx
+Connected to 192.168.1.10.
+sftp> ls -l
+drwxr-xr-x    2 alice    alice        4096 May 05 10:20 documents
+-rw-r--r--    1 alice    alice        1399 May 05 10:23 report.txt
+sftp> chmod 600 report.txt
+Changing mode on /home/alice/report.txt
+sftp> get /etc/shadow
+Fetching /etc/shadow to shadow
+remote open("/etc/shadow"): Permission denied
+sftp> bye
+```
+
+### A.4 `scp` avec progression
+
+```
+user@local:~$ scp report.pdf alice@192.168.1.10:/home/alice/
+alice@192.168.1.10's password: xxxxxxxx
+report.pdf                                   100% 2048KB   2.0MB/s   00:01
+user@local:~$
+```
+
+---
