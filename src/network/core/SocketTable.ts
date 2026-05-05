@@ -1,0 +1,212 @@
+/**
+ * SocketTable — per-device socket registry (Registry Pattern)
+ *
+ * Tracks listening and established sockets for a simulated host, mirroring
+ * the kernel socket table that `netstat`/`ss` read from on a real Linux system.
+ *
+ * Design decisions:
+ * - Port uniqueness key is `protocol:port` (same port on TCP and UDP is OK).
+ * - Ephemeral ports are allocated from the RFC 6335 range (49152–65535).
+ * - bind() throws EADDRINUSE when the port/protocol pair is already taken.
+ * - connect() auto-allocates an ephemeral source port when localPort === 0.
+ * - Each SocketEntry gets a monotonically-increasing numeric id for O(1) close.
+ */
+
+import { EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX } from './WellKnownPorts';
+
+export type SocketProtocol = 'tcp' | 'udp';
+
+/** TCP connection state machine values (RFC 793) */
+export type SocketState =
+  | 'LISTEN'
+  | 'ESTABLISHED'
+  | 'SYN_SENT'
+  | 'SYN_RECEIVED'
+  | 'FIN_WAIT_1'
+  | 'FIN_WAIT_2'
+  | 'CLOSE_WAIT'
+  | 'CLOSING'
+  | 'LAST_ACK'
+  | 'TIME_WAIT'
+  | 'CLOSED';
+
+export interface SocketEntry {
+  /** Unique numeric identifier within this SocketTable */
+  readonly id: number;
+  readonly protocol: SocketProtocol;
+  /** Local bind address ('0.0.0.0' = all interfaces) */
+  readonly localAddress: string;
+  readonly localPort: number;
+  /** Remote peer address ('*' for listening sockets) */
+  readonly remoteAddress: string;
+  readonly remotePort: number;
+  state: SocketState;
+  /** PID of the owning process (optional) */
+  pid?: number;
+  /** Human-readable process name (optional) */
+  processName?: string;
+}
+
+// ─── SocketTable ───────────────────────────────────────────────────────
+
+export class SocketTable {
+  private readonly sockets: Map<number, SocketEntry> = new Map();
+  /** Bound port tracking: `${protocol}:${port}` */
+  private readonly bindings: Set<string> = new Set();
+  private idCounter = 0;
+
+  // ─── Helpers ────────────────────────────────────────────────────────
+
+  private bindKey(protocol: SocketProtocol, port: number): string {
+    return `${protocol}:${port}`;
+  }
+
+  // ─── Core operations ────────────────────────────────────────────────
+
+  /**
+   * Bind a port for listening (passive open).
+   * Throws EADDRINUSE if the port/protocol is already bound.
+   */
+  bind(
+    protocol: SocketProtocol,
+    localAddress: string,
+    localPort: number,
+    pid?: number,
+    processName?: string,
+  ): SocketEntry {
+    const key = this.bindKey(protocol, localPort);
+    if (this.bindings.has(key)) {
+      throw new Error(`EADDRINUSE: Port ${localPort}/${protocol} already in use`);
+    }
+
+    this.idCounter++;
+    const entry: SocketEntry = {
+      id: this.idCounter,
+      protocol,
+      localAddress,
+      localPort,
+      remoteAddress: '*',
+      remotePort: 0,
+      state: 'LISTEN',
+      pid,
+      processName,
+    };
+
+    this.sockets.set(this.idCounter, entry);
+    this.bindings.add(key);
+    return entry;
+  }
+
+  /**
+   * Open an active (outgoing) connection.
+   * When localPort === 0 the OS allocates an ephemeral port automatically.
+   */
+  connect(
+    protocol: SocketProtocol,
+    localAddress: string,
+    localPort: number,
+    remoteAddress: string,
+    remotePort: number,
+    pid?: number,
+    processName?: string,
+  ): SocketEntry {
+    const actualPort = localPort === 0 ? this.allocateEphemeralPort() : localPort;
+
+    this.idCounter++;
+    const entry: SocketEntry = {
+      id: this.idCounter,
+      protocol,
+      localAddress,
+      localPort: actualPort,
+      remoteAddress,
+      remotePort,
+      state: 'ESTABLISHED',
+      pid,
+      processName,
+    };
+
+    this.sockets.set(this.idCounter, entry);
+    return entry;
+  }
+
+  /**
+   * Close a socket by its id.
+   * Returns true if the socket existed and was removed, false otherwise.
+   */
+  close(socketId: number): boolean {
+    const entry = this.sockets.get(socketId);
+    if (!entry) return false;
+
+    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort));
+    this.sockets.delete(socketId);
+    return true;
+  }
+
+  // ─── Queries ────────────────────────────────────────────────────────
+
+  isPortBound(port: number, protocol: SocketProtocol): boolean {
+    return this.bindings.has(this.bindKey(protocol, port));
+  }
+
+  getAll(): SocketEntry[] {
+    return Array.from(this.sockets.values());
+  }
+
+  getListening(): SocketEntry[] {
+    return this.getAll().filter(s => s.state === 'LISTEN');
+  }
+
+  getEstablished(): SocketEntry[] {
+    return this.getAll().filter(s => s.state === 'ESTABLISHED');
+  }
+
+  findByLocalPort(port: number, protocol?: SocketProtocol): SocketEntry | undefined {
+    for (const s of this.sockets.values()) {
+      if (s.localPort === port && (protocol === undefined || s.protocol === protocol)) {
+        return s;
+      }
+    }
+    return undefined;
+  }
+
+  get size(): number {
+    return this.sockets.size;
+  }
+
+  // ─── Ephemeral port allocation ───────────────────────────────────────
+
+  /**
+   * Allocate an unused ephemeral port (RFC 6335 range: 49152–65535).
+   * Tries a random port first, then falls back to linear scan.
+   */
+  allocateEphemeralPort(): number {
+    const range = EPHEMERAL_PORT_MAX - EPHEMERAL_PORT_MIN + 1;
+
+    // Random probe (avoids sequential clustering under light load)
+    for (let attempt = 0; attempt < 256; attempt++) {
+      const port = EPHEMERAL_PORT_MIN + Math.floor(Math.random() * range);
+      if (!this.bindings.has(this.bindKey('tcp', port)) &&
+          !this.bindings.has(this.bindKey('udp', port))) {
+        return port;
+      }
+    }
+
+    // Linear fallback (guarantees success unless all ports are exhausted)
+    for (let port = EPHEMERAL_PORT_MIN; port <= EPHEMERAL_PORT_MAX; port++) {
+      if (!this.bindings.has(this.bindKey('tcp', port)) &&
+          !this.bindings.has(this.bindKey('udp', port))) {
+        return port;
+      }
+    }
+
+    throw new Error('EADDRINUSE: No ephemeral ports available');
+  }
+
+  // ─── Lifecycle ───────────────────────────────────────────────────────
+
+  clear(): void {
+    this.sockets.clear();
+    this.bindings.clear();
+    this.idCounter = 0;
+  }
+}

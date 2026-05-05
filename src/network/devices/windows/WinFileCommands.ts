@@ -10,6 +10,7 @@
  */
 
 import { WindowsFileSystem } from './WindowsFileSystem';
+import type { SocketTable } from '../../core/SocketTable';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -255,13 +256,32 @@ export function cmdTasklist(ctx: WinFileCommandContext): string {
 
 // ─── netstat ───────────────────────────────────────────────────────
 
-export function cmdNetstat(ctx: WinFileCommandContext): string {
-  const lines: string[] = [];
-  lines.push('');
-  lines.push('Active Connections');
-  lines.push('');
-  lines.push('  Proto  Local Address          Foreign Address        State');
-  // No active connections in a fresh system
+export function cmdNetstat(
+  ctx: WinFileCommandContext,
+  args: string[] = [],
+  socketTable?: SocketTable | null,
+): string {
+  // Expand combined flags: '-an' → chars a, n
+  const hasFlag = (ch: string): boolean =>
+    args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch));
+
+  const showAll = hasFlag('a') || args.includes('-an');
+
+  const lines: string[] = ['', 'Active Connections', '',
+    '  Proto  Local Address          Foreign Address        State'];
+
+  if (socketTable) {
+    for (const sock of socketTable.getAll()) {
+      if (!showAll && sock.state !== 'ESTABLISHED') continue;
+      // Windows uses LISTENING (not LISTEN) and TCP/UDP uppercase
+      const proto = sock.protocol.toUpperCase();
+      const local  = `0.0.0.0:${sock.localPort}`.padEnd(22);
+      const remote = (sock.state === 'LISTEN' ? '0.0.0.0:0' : `${sock.remoteAddress}:${sock.remotePort}`).padEnd(22);
+      const state  = sock.state === 'LISTEN' ? 'LISTENING' : sock.state;
+      lines.push(`  ${proto.padEnd(7)}${local}${remote}${state}`);
+    }
+  }
+
   return lines.join('\n');
 }
 

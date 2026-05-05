@@ -20,9 +20,11 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
+import { SocketTable } from '../core/SocketTable';
+import { TcpConnection } from '../core/TcpConnection';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket, UDPPacket,
+  ARPPacket, ICMPPacket, UDPPacket, TCPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
@@ -142,6 +144,10 @@ export interface HostRouteEntry {
 // ─── EndHost ───────────────────────────────────────────────────────
 
 export abstract class EndHost extends Equipment {
+  // ─── Socket Table (L4) ──────────────────────────────────────────
+  /** Per-device socket table — tracks listening and established sockets */
+  protected readonly socketTable: SocketTable = new SocketTable();
+
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
   protected arpTable: Map<string, ARPEntry> = new Map();
@@ -171,6 +177,14 @@ export abstract class EndHost extends Equipment {
   protected defaultGateway6: IPv6Address | null = null;
   /** IPv6 routing table */
   protected ipv6RoutingTable: HostIPv6RouteEntry[] = [];
+
+  // ─── TCP State (RFC 793) ─────────────────────────────────────────
+  /** Active TCP connections: "localPort:remoteIp:remotePort" → TcpConnection */
+  private readonly tcpConnections = new Map<string, TcpConnection>();
+  /** TCP server listeners: port → handler callback */
+  private readonly tcpListeners = new Map<number, (conn: TcpConnection) => void>();
+  /** Pending TCP handshakes: "remoteIp:remotePort:localPort" → resolve callback */
+  private readonly pendingTcpHandshakes = new Map<string, () => void>();
 
   // ─── DHCP Client (RFC 2131) ─────────────────────────────────────
   protected dhcpClient: DHCPClient;
@@ -309,6 +323,9 @@ export abstract class EndHost extends Equipment {
   }
 
   // ─── DHCP Client API ──────────────────────────────────────────
+
+  /** Expose the per-device socket table (used by netstat/ss commands). */
+  getSocketTable(): SocketTable { return this.socketTable; }
 
   getDHCPClient(): DHCPClient { return this.dhcpClient; }
 
@@ -731,8 +748,9 @@ export abstract class EndHost extends Equipment {
       // Deliver to upper layer
       if (ipPkt.protocol === IP_PROTO_ICMP) {
         this.handleICMP(portName, ipPkt);
+      } else if (ipPkt.protocol === IP_PROTO_TCP) {
+        this.handleTCP(portName, ipPkt);
       }
-      // Future: TCP, UDP dispatch here
       return;
     }
 
@@ -1009,6 +1027,248 @@ export abstract class EndHost extends Equipment {
       etherType: ETHERTYPE_IPV4,
       payload: errorIP,
     });
+  }
+
+  // ─── TCP Transport (RFC 793) ───────────────────────────────────
+
+  /**
+   * Register a TCP server listener on the given port.
+   * The handler is called synchronously (within the SYN handler) with the
+   * new server-side TcpConnection so it can set up onData() before data arrives.
+   */
+  public listenTcp(port: number, handler: (conn: TcpConnection) => void): void {
+    this.tcpListeners.set(port, handler);
+  }
+
+  /**
+   * Establish an outgoing TCP connection to dstIp:dstPort.
+   *
+   * Flow:
+   *   1. Route lookup (LPM) — fail fast if no route.
+   *   2. ARP resolution for next-hop (one Promise.resolve microtask if cached).
+   *   3. Send SYN.  The SYN travels synchronously through the cable/switch/router
+   *      chain; the remote device sends SYN-ACK synchronously inside our
+   *      sendFrame() call, which calls handleTCP() → pendingHandshake.resolve().
+   *   4. await the handshake Promise (one microtask — already resolved).
+   *   5. Return TcpConnection ready for write()/onData().
+   */
+  public async tcpConnect(dstIp: string, dstPort: number): Promise<TcpConnection | null> {
+    let dstIPObj: IPAddress;
+    try { dstIPObj = new IPAddress(dstIp); } catch { return null; }
+
+    const route = this.resolveRoute(dstIPObj);
+    if (!route) return null;
+
+    const portName = route.port.getName();
+    const myIP = route.port.getIPAddress();
+    if (!myIP) return null;
+
+    try {
+      await this.resolveARP(portName, route.nextHopIP);
+    } catch {
+      return null;
+    }
+
+    const localPort = this.socketTable.allocateEphemeralPort();
+    const initialSeq = Math.floor(Math.random() * 0xFFFF);
+
+    // Capture route once; the connection persists for its lifetime
+    const capturedRoute = { port: route.port, nextHopIP: route.nextHopIP };
+
+    const conn = new TcpConnection(
+      myIP.toString(), localPort,
+      dstIp, dstPort,
+      initialSeq + 1,
+      (seg: TCPPacket) => this.sendTcpFrame(myIP, dstIPObj, capturedRoute, seg),
+    );
+
+    const connKey = `${localPort}:${dstIp}:${dstPort}`;
+    this.tcpConnections.set(connKey, conn);
+
+    const handshakeKey = `${dstIp}:${dstPort}:${localPort}`;
+    const established = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingTcpHandshakes.delete(handshakeKey);
+        this.tcpConnections.delete(connKey);
+        reject(new Error('TCP handshake timeout'));
+      }, 2000);
+      this.pendingTcpHandshakes.set(handshakeKey, () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+
+    // Send SYN — SYN-ACK arrives synchronously, resolving `established`
+    const synSeg: TCPPacket = {
+      type: 'tcp',
+      sourcePort: localPort,
+      destinationPort: dstPort,
+      sequenceNumber: initialSeq,
+      acknowledgementNumber: 0,
+      flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+      windowSize: 65535,
+      checksum: 0,
+      payload: null,
+    };
+    this.sendTcpFrame(myIP, dstIPObj, capturedRoute, synSeg);
+
+    try {
+      await established;
+    } catch {
+      return null;
+    }
+
+    return conn;
+  }
+
+  /** Wrap a TCPPacket in IPv4 and send it using a pre-resolved route + ARP entry. */
+  private sendTcpFrame(
+    srcIP: IPAddress,
+    dstIP: IPAddress,
+    route: { port: Port; nextHopIP: IPAddress },
+    seg: TCPPacket,
+  ): void {
+    const ipPkt = createIPv4Packet(srcIP, dstIP, IP_PROTO_TCP, this.defaultTTL, seg, 0);
+    const nextHopMACEntry = this.arpTable.get(route.nextHopIP.toString());
+    if (nextHopMACEntry) {
+      this.sendFrame(route.port.getName(), {
+        srcMAC: route.port.getMAC(),
+        dstMAC: nextHopMACEntry.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: ipPkt,
+      });
+    } else {
+      // MAC not yet cached — queue and trigger ARP resolution synchronously
+      this.fwdQueueAndResolve(ipPkt, route.port.getName(), route.nextHopIP, route.port);
+    }
+  }
+
+  /** Dispatch an incoming IPv4/TCP packet to the correct connection or listener. */
+  private handleTCP(portName: string, ipPkt: IPv4Packet): void {
+    const seg = ipPkt.payload as TCPPacket;
+    if (!seg || seg.type !== 'tcp') return;
+
+    const srcIp = ipPkt.sourceIP.toString();
+    const { sourcePort: srcPort, destinationPort: dstPort, flags } = seg;
+
+    // ── Incoming SYN: passive open (server role) ──────────────────
+    if (flags.syn && !flags.ack) {
+      const handler = this.tcpListeners.get(dstPort);
+      if (!handler) return;
+
+      const rcvPort = this.ports.get(portName);
+      const serverIP = rcvPort?.getIPAddress();
+      if (!serverIP) return;
+
+      const serverSeq = Math.floor(Math.random() * 0xFFFF);
+      const connKey = `${dstPort}:${srcIp}:${srcPort}`;
+
+      const serverConn = new TcpConnection(
+        serverIP.toString(), dstPort,
+        srcIp, srcPort,
+        serverSeq + 1,
+        (respSeg: TCPPacket) => {
+          const r = this.resolveRoute(new IPAddress(srcIp));
+          if (!r) return;
+          this.sendTcpFrame(serverIP, new IPAddress(srcIp), r, respSeg);
+        },
+      );
+      serverConn.updateAck(seg.sequenceNumber, 1);
+      this.tcpConnections.set(connKey, serverConn);
+
+      // Send SYN-ACK
+      const r = this.resolveRoute(ipPkt.sourceIP);
+      if (!r) return;
+      const synAck: TCPPacket = {
+        type: 'tcp',
+        sourcePort: dstPort,
+        destinationPort: srcPort,
+        sequenceNumber: serverSeq,
+        acknowledgementNumber: seg.sequenceNumber + 1,
+        flags: { syn: true, ack: true, fin: false, rst: false, psh: false, urg: false },
+        windowSize: 65535,
+        checksum: 0,
+        payload: null,
+      };
+      this.sendTcpFrame(serverIP, ipPkt.sourceIP, r, synAck);
+
+      // Call the handler NOW so onData() is registered before the first data segment
+      handler(serverConn);
+      return;
+    }
+
+    // ── SYN-ACK: complete our outgoing handshake ──────────────────
+    if (flags.syn && flags.ack) {
+      const handshakeKey = `${srcIp}:${srcPort}:${dstPort}`;
+      const resolve = this.pendingTcpHandshakes.get(handshakeKey);
+      if (!resolve) return;
+
+      this.pendingTcpHandshakes.delete(handshakeKey);
+
+      // Update our connection's ACK counter
+      const connKey = `${dstPort}:${srcIp}:${srcPort}`;
+      const conn = this.tcpConnections.get(connKey);
+      if (conn) conn.updateAck(seg.sequenceNumber, 1);
+
+      // Send ACK to complete the 3-way handshake
+      const rcvPort = this.ports.get(portName);
+      const myIP = rcvPort?.getIPAddress();
+      if (myIP) {
+        const route = this.resolveRoute(ipPkt.sourceIP);
+        if (route) {
+          const ackSeg: TCPPacket = {
+            type: 'tcp',
+            sourcePort: dstPort,
+            destinationPort: srcPort,
+            sequenceNumber: seg.acknowledgementNumber,
+            acknowledgementNumber: seg.sequenceNumber + 1,
+            flags: { syn: false, ack: true, fin: false, rst: false, psh: false, urg: false },
+            windowSize: 65535,
+            checksum: 0,
+            payload: null,
+          };
+          this.sendTcpFrame(myIP, ipPkt.sourceIP, route, ackSeg);
+        }
+      }
+
+      resolve();
+      return;
+    }
+
+    // ── Data segment (PSH+ACK or ACK with payload) ────────────────
+    if (seg.payload != null) {
+      const connKey = `${dstPort}:${srcIp}:${srcPort}`;
+      const conn = this.tcpConnections.get(connKey);
+      if (conn && typeof seg.payload === 'string') {
+        conn.receiveData(seg.payload, seg.sequenceNumber);
+      }
+      return;
+    }
+
+    // ── FIN: connection teardown ──────────────────────────────────
+    if (flags.fin) {
+      const connKey = `${dstPort}:${srcIp}:${srcPort}`;
+      this.tcpConnections.delete(connKey);
+
+      const rcvPort = this.ports.get(portName);
+      const myIP = rcvPort?.getIPAddress();
+      if (!myIP) return;
+      const route = this.resolveRoute(ipPkt.sourceIP);
+      if (!route) return;
+
+      const finAck: TCPPacket = {
+        type: 'tcp',
+        sourcePort: dstPort,
+        destinationPort: srcPort,
+        sequenceNumber: seg.acknowledgementNumber,
+        acknowledgementNumber: seg.sequenceNumber + 1,
+        flags: { syn: false, ack: true, fin: false, rst: false, psh: false, urg: false },
+        windowSize: 65535,
+        checksum: 0,
+        payload: null,
+      };
+      this.sendTcpFrame(myIP, ipPkt.sourceIP, route, finAck);
+    }
   }
 
   // ─── ARP Resolution ────────────────────────────────────────────

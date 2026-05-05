@@ -19,6 +19,9 @@ import { completeInput } from '@/terminal/core/TabCompletionHelper';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import { SftpSession } from '@/network/protocols/sftp/SftpSession';
+import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
@@ -213,6 +216,10 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (parts[0] === 'rman') {
         this.enterRman(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'sftp') {
+        this.enterSftp(parts.slice(1));
         return;
       }
       if (parts[0] === 'lsnrctl') {
@@ -415,6 +422,13 @@ export class LinuxTerminalSession extends TerminalSession {
       this.enterSqlPlus(JSON.parse(sqlplusArgs));
       return;
     }
+    const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
+    if (sftpMeta) {
+      const { userAtHost } = JSON.parse(sftpMeta) as { userAtHost: string };
+      const password = ctx.values.get('sftp_password') ?? '';
+      this.connectAndEnterSftp(userAtHost, password);
+      return;
+    }
     this.syncDeviceState();
   }
 
@@ -450,6 +464,80 @@ export class LinuxTerminalSession extends TerminalSession {
       this.addLine(`bash: rman: ${err instanceof Error ? err.message : String(err)}`, 'error');
       this.notify();
     }
+  }
+
+  /**
+   * Start an interactive sftp session.
+   * Parses args for `[user@]host`, prompts for a password, then connects.
+   * Non-interactive batch-mode transfers (sftp user@host:/path /local) are
+   * handled by the LinuxCommandExecutor fallback (returns a canned error for now).
+   */
+  private enterSftp(args: string[]): void {
+    // Find the host argument (first non-flag token)
+    const userAtHost = args.find(a => !a.startsWith('-')) ?? '';
+    if (!userAtHost) {
+      this.addLine('usage: sftp [options] [user@]host[:path]', 'error');
+      this.notify();
+      return;
+    }
+
+    // Derive display name for the password prompt ("user@host's password:")
+    const user = userAtHost.includes('@')
+      ? userAtHost.split('@')[0]
+      : this.currentUser;
+    const host = userAtHost.includes('@')
+      ? userAtHost.split('@')[1]
+      : userAtHost;
+    const displayTarget = `${user}@${host}`;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: `${displayTarget}'s password: `,
+        mask: 'hidden',
+        storeAs: 'sftp_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set('enter_sftp', JSON.stringify({ userAtHost: displayTarget }));
+        },
+      },
+    ];
+    this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
+  }
+
+  private async connectAndEnterSftp(userAtHost: string, password: string): Promise<void> {
+    const localVfs = (this.device as any).executor?.vfs;
+    if (!localVfs) {
+      this.addLine('sftp: this device does not support SFTP', 'error');
+      this.notify();
+      return;
+    }
+
+    const tcpConnector: TcpConnector = (host, port) =>
+      (this.device as any).tcpConnect?.(host, port) ?? Promise.resolve(null);
+
+    const session = new SftpSession(
+      localVfs,
+      tcpConnector,
+      this.currentPath,
+      this.currentUser,
+    );
+
+    const err = await session.connect(userAtHost, password);
+    if (err) {
+      this.addLine(err, 'error');
+      this.notify();
+      return;
+    }
+
+    const host = userAtHost.includes('@') ? userAtHost.split('@')[1] : userAtHost;
+    this.addLine(`Connected to ${host}.`);
+
+    this.activeSubShell = new SftpSubShell(session);
+    this._inputBuf = '';
+    this.notify();
   }
 
   /**

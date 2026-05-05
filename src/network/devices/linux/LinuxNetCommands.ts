@@ -6,6 +6,7 @@
  */
 
 import type { IpNetworkContext } from './LinuxIpCommand';
+import type { SocketTable, SocketEntry } from '../../core/SocketTable';
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -94,11 +95,19 @@ function formatInterface(i: IfaceInfo): string {
 
 // ─── netstat ────────────────────────────────────────────────────────
 
-export function cmdNetstat(args: string[], ctx: IpNetworkContext | null, isServer: boolean): string {
-  const tulpn = args.some(a => a.includes('t') && a.includes('l')) ||
-                args.includes('-tulpn') || args.includes('-tlnp') || args.includes('-an');
-  const routing = args.includes('-r') || args.includes('--route');
-  const interfaces = args.includes('-i') || args.includes('--interfaces');
+export function cmdNetstat(
+  args: string[],
+  ctx: IpNetworkContext | null,
+  isServer: boolean,
+  socketTable?: SocketTable | null,
+): string {
+  // Expand combined flags: '-tlnp' → individual chars t,l,n,p
+  const hasFlag = (ch: string): boolean =>
+    args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch)) ||
+    args.includes(`--${ch}`);
+
+  const routing = hasFlag('r') || args.includes('--route');
+  const ifaces  = hasFlag('i') || args.includes('--interfaces');
 
   if (routing) {
     return [
@@ -110,7 +119,7 @@ export function cmdNetstat(args: string[], ctx: IpNetworkContext | null, isServe
     ].join('\n');
   }
 
-  if (interfaces) {
+  if (ifaces) {
     return [
       'Kernel Interface table',
       'Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg',
@@ -119,33 +128,79 @@ export function cmdNetstat(args: string[], ctx: IpNetworkContext | null, isServe
     ].join('\n');
   }
 
-  // Default: listening sockets
+  // Determine which protocols to show (no -t/-u → show both)
+  const wantTcp = hasFlag('t');
+  const wantUdp = hasFlag('u');
+  const showAll = !wantTcp && !wantUdp;
+
+  const showProcesses = hasFlag('p');
+
   const lines = [
     'Active Internet connections (only servers)',
     'Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name',
   ];
 
-  lines.push('tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      985/sshd: /usr/sbin');
+  if (socketTable) {
+    for (const sock of socketTable.getAll()) {
+      const isTcp = sock.protocol === 'tcp';
+      const isUdp = sock.protocol === 'udp';
+      if (!showAll && isTcp && !wantTcp) continue;
+      if (!showAll && isUdp && !wantUdp) continue;
 
-  if (isServer) {
-    lines.push('tcp        0      0 0.0.0.0:1521            0.0.0.0:*               LISTEN      2001/tnslsnr');
+      const localAddr  = `${sock.localAddress}:${sock.localPort}`;
+      const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
+      const stateCol   = isTcp ? sock.state : '';
+      const pidCol     = showProcesses && sock.pid ? `${sock.pid}/${sock.processName}` : '';
+
+      lines.push(formatNetstatLine(sock.protocol, localAddr, remoteAddr, stateCol, pidCol));
+    }
+  } else {
+    // Fallback when no socket table is wired (e.g. in test environments that
+    // construct LinuxCommandExecutor directly without a device).
+    if (wantTcp || showAll) {
+      lines.push(formatNetstatLine('tcp', '0.0.0.0:22', '0.0.0.0:*', 'LISTEN', '985/sshd: /usr/sbin'));
+      if (isServer) {
+        lines.push(formatNetstatLine('tcp', '0.0.0.0:1521', '0.0.0.0:*', 'LISTEN', '2001/tnslsnr'));
+      }
+    }
+    if (wantUdp || showAll) {
+      lines.push(formatNetstatLine('udp', '127.0.0.53:53', '0.0.0.0:*', '', '540/systemd-resolve'));
+    }
   }
-
-  lines.push('udp        0      0 127.0.0.53:53           0.0.0.0:*                           540/systemd-resolve');
 
   return lines.join('\n');
 }
 
+function formatNetstatLine(
+  proto: string,
+  local: string,
+  remote: string,
+  state: string,
+  pid: string,
+): string {
+  const p   = proto.padEnd(10);
+  const rq  = '0'.padStart(6);
+  const sq  = '0'.padStart(6);
+  const loc = local.padEnd(23);
+  const rem = remote.padEnd(23);
+  const st  = state.padEnd(11);
+  return `${p} ${rq} ${sq} ${loc} ${rem} ${st} ${pid}`.trimEnd();
+}
+
 // ─── ss ─────────────────────────────────────────────────────────────
 
-export function cmdSs(args: string[], isServer: boolean): string {
-  // Flatten combined flags: -tlnp → -t -l -n -p
-  const allFlags = args.join(' ');
-  const listening = allFlags.includes('-l') || args.includes('--listening');
-  const tcp = allFlags.includes('-t') || args.includes('--tcp');
-  const numeric = allFlags.includes('-n') || args.includes('--numeric');
-  const processes = allFlags.includes('-p') || args.includes('--processes');
-  const summary = args.includes('-s') || args.includes('--summary');
+export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTable | null): string {
+  // Expand combined flags: '-tlnp' → individual chars t,l,n,p
+  const hasFlag = (ch: string): boolean =>
+    args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch)) ||
+    args.includes(`--${ch}`);
+
+  const wantListening = hasFlag('l') || args.includes('--listening');
+  const wantTcp       = hasFlag('t') || args.includes('--tcp');
+  const wantUdp       = hasFlag('u') || args.includes('--udp');
+  const showProcesses = hasFlag('p') || args.includes('--processes');
+  const summary       = args.includes('-s') || args.includes('--summary');
+  const showAll       = !wantTcp && !wantUdp; // no proto filter → show both
 
   if (summary) {
     return [
@@ -164,15 +219,37 @@ export function cmdSs(args: string[], isServer: boolean): string {
   const lines: string[] = [];
   lines.push('State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process');
 
-  if (listening || tcp) {
-    lines.push('LISTEN     0       128      0.0.0.0:22            0.0.0.0:*         ' + (processes ? ' users:(("sshd",pid=985,fd=3))' : ''));
-    if (isServer) {
-      lines.push('LISTEN     0       128      0.0.0.0:1521          0.0.0.0:*         ' + (processes ? ' users:(("tnslsnr",pid=2001,fd=12))' : ''));
-    }
-  }
+  if (socketTable) {
+    for (const sock of socketTable.getAll()) {
+      const isTcp = sock.protocol === 'tcp';
+      const isUdp = sock.protocol === 'udp';
+      if (!showAll && isTcp && !wantTcp) continue;
+      if (!showAll && isUdp && !wantUdp) continue;
+      if (wantListening && sock.state !== 'LISTEN') continue;
 
-  if (!listening) {
-    lines.push('ESTAB      0       0        127.0.0.1:22          127.0.0.1:54322    ' + (processes ? ' users:(("sshd",pid=1200,fd=4))' : ''));
+      const localAddr  = `${sock.localAddress}:${sock.localPort}`;
+      const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
+      const stateCol   = sock.state;
+      const procCol    = showProcesses && sock.pid
+        ? ` users:(("${sock.processName}",pid=${sock.pid},fd=3))`
+        : '';
+
+      lines.push(`${stateCol.padEnd(10)} 0       0        ${localAddr.padEnd(22)} ${remoteAddr.padEnd(18)}${procCol}`);
+    }
+  } else {
+    // Fallback (no socket table)
+    if (wantListening || wantTcp || showAll) {
+      const proc = showProcesses ? ' users:(("sshd",pid=985,fd=3))' : '';
+      lines.push(`LISTEN     0       128      0.0.0.0:22            0.0.0.0:*        ${proc}`);
+      if (isServer) {
+        const sp = showProcesses ? ' users:(("tnslsnr",pid=2001,fd=12))' : '';
+        lines.push(`LISTEN     0       128      0.0.0.0:1521          0.0.0.0:*        ${sp}`);
+      }
+    }
+    if (!wantListening) {
+      const proc = showProcesses ? ' users:(("sshd",pid=1200,fd=4))' : '';
+      lines.push(`ESTAB      0       0        127.0.0.1:22          127.0.0.1:54322  ${proc}`);
+    }
   }
 
   return lines.join('\n');
