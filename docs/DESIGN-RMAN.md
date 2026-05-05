@@ -612,3 +612,354 @@ Invariant cle : **aucun de ces types n'importe depuis le DOM, le VFS, ou une cla
 
 ---
 
+## 4. Backup Catalog — Repository + Factory
+
+### 4.1 Pourquoi le pattern Repository ?
+
+Le catalog RMAN (aussi appele "RMAN Repository") est le coeur de toute session RMAN. Il enregistre chaque backup set, chaque piece, chaque archived log et chaque image copy. Dans l'implementation actuelle, ce catalog n'existe pas — tout est recalcule a la volee ou code en dur.
+
+Le **Repository Pattern** (DDD) isole la persistence du domaine : les commandes RMAN travaillent avec l'interface `IRmanCatalogRepository` sans savoir si les donnees viennent de la memoire, d'un fichier JSON, ou d'une vraie base Oracle.
+
+### 4.2 Entites du catalog — Value Objects immuables
+
+```typescript
+// src/database/oracle/rman/catalog/types.ts
+
+import type { Scn }       from '../values/Scn'
+import type { RmanTag }   from '../values/RmanTag'
+import type { BackupKey } from '../values/BackupKey'
+import type { DbId }      from '../values/DbId'
+
+// ─── BackupPiece ──────────────────────────────────────────────────────────
+
+export interface BackupPiece {
+  readonly bpKey:       number
+  readonly bsKey:       number       // FK vers BackupSet
+  readonly pieceNum:    number       // 1..N
+  readonly handle:      string       // chemin complet sur le VFS
+  readonly tag:         RmanTag
+  readonly deviceType:  'DISK' | 'SBT'
+  readonly sizeBytes:   number
+  readonly compressed:  boolean
+  readonly encrypted:   boolean
+  readonly status:      'AVAILABLE' | 'EXPIRED' | 'DELETED'
+  readonly completionTime: Date
+}
+
+// ─── BackupSet ────────────────────────────────────────────────────────────
+
+export type BackupType = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1_DIFF' | 'INCREMENTAL_1_CUM'
+export type BackupObject = 'DATABASE' | 'TABLESPACE' | 'DATAFILE' | 'ARCHIVELOG' | 'CONTROLFILE' | 'SPFILE'
+
+export interface BackupSet {
+  readonly bsKey:          BackupKey
+  readonly dbId:           DbId
+  readonly backupType:     BackupType
+  readonly backupObject:   BackupObject
+  readonly objectNames:    readonly string[]  // tablespace names, datafile paths, etc.
+  readonly tag:            RmanTag
+  readonly ckpScn:         Scn                // SCN de checkpoint au moment du backup
+  readonly ckpTime:        Date
+  readonly completionTime: Date
+  readonly elapsedSeconds: number
+  readonly sizeBytes:      number
+  readonly compressed:     boolean
+  readonly encrypted:      boolean
+  readonly deviceType:     'DISK' | 'SBT'
+  readonly pieces:         readonly BackupPiece[]
+  readonly status:         'AVAILABLE' | 'EXPIRED' | 'OBSOLETE' | 'DELETED'
+  /** true = backup specifie avec KEEP clause */
+  readonly keepForever:    boolean
+}
+
+// ─── ArchivedLog ──────────────────────────────────────────────────────────
+
+export interface ArchivedLog {
+  readonly recid:        number
+  readonly stamp:        number        // Oracle internal timestamp
+  readonly name:         string        // chemin complet
+  readonly thread:       number        // 1 (single instance)
+  readonly sequence:     number
+  readonly firstScn:     Scn
+  readonly firstTime:    Date
+  readonly nextScn:      Scn
+  readonly nextTime:     Date
+  readonly sizeBytes:    number
+  readonly status:       'A' | 'D'    // Available / Deleted
+  readonly backedUp:     boolean
+}
+
+// ─── DatafileCopy ─────────────────────────────────────────────────────────
+
+export interface DatafileCopy {
+  readonly recid:        number
+  readonly name:         string
+  readonly fileNum:      number        // datafile # (1=SYSTEM, 2=SYSAUX, ...)
+  readonly ckpScn:       Scn
+  readonly ckpTime:      Date
+  readonly sizeBytes:    number
+  readonly status:       'A' | 'X'    // Available / Expired
+  readonly completionTime: Date
+  readonly tag:          RmanTag | null
+}
+```
+
+### 4.3 Interface du Repository
+
+Segregation d'interface (ISP) : le repository est decoupage en operations de lecture et d'ecriture. Les commandes `LIST`/`REPORT` n'ont besoin que des methodes de lecture.
+
+```typescript
+// src/database/oracle/rman/catalog/IRmanCatalogRepository.ts
+
+import type { BackupSet, BackupPiece, ArchivedLog, DatafileCopy, BackupType } from './types'
+import type { BackupKey } from '../values/BackupKey'
+import type { Scn }       from '../values/Scn'
+import type { RmanTag }   from '../values/RmanTag'
+
+// ─── Lecture ─────────────────────────────────────────────────────────────
+
+export interface IRmanCatalogReader {
+  getAllBackupSets(): readonly BackupSet[]
+  getBackupSet(key: BackupKey): BackupSet | null
+  findBackupSetsByTag(tag: RmanTag): readonly BackupSet[]
+  findBackupSetsByType(type: BackupType): readonly BackupSet[]
+  /** Retourne les backup sets disponibles pour restaurer jusqu'au SCN donne */
+  findBackupSetsForScn(targetScn: Scn): readonly BackupSet[]
+  getArchivedLogs(): readonly ArchivedLog[]
+  getArchivedLogBySequence(seq: number): ArchivedLog | null
+  getArchivedLogsForRecovery(fromScn: Scn, toScn: Scn): readonly ArchivedLog[]
+  getDatafileCopies(): readonly DatafileCopy[]
+}
+
+// ─── Ecriture ─────────────────────────────────────────────────────────────
+
+export interface IRmanCatalogWriter {
+  addBackupSet(bs: BackupSet): void
+  updateBackupSetStatus(key: BackupKey, status: BackupSet['status']): void
+  addArchivedLog(log: ArchivedLog): void
+  deleteArchivedLog(recid: number): void
+  addDatafileCopy(copy: DatafileCopy): void
+  updateDatafileCopyStatus(recid: number, status: DatafileCopy['status']): void
+  /** Vide completement le catalog (tests uniquement) */
+  clear(): void
+}
+
+// ─── Interface complete ───────────────────────────────────────────────────
+
+export interface IRmanCatalogRepository
+  extends IRmanCatalogReader, IRmanCatalogWriter {}
+```
+
+### 4.4 Implementation InMemoryRmanCatalog
+
+```typescript
+// src/database/oracle/rman/catalog/InMemoryRmanCatalog.ts
+
+import type { IRmanCatalogRepository } from './IRmanCatalogRepository'
+import type { BackupSet, ArchivedLog, DatafileCopy, BackupType } from './types'
+import type { BackupKey } from '../values/BackupKey'
+import type { Scn }       from '../values/Scn'
+import type { RmanTag }   from '../values/RmanTag'
+
+export class InMemoryRmanCatalog implements IRmanCatalogRepository {
+  private readonly backupSets   = new Map<number, BackupSet>()
+  private readonly archivedLogs = new Map<number, ArchivedLog>()
+  private readonly dfCopies     = new Map<number, DatafileCopy>()
+
+  // ── Lecture ────────────────────────────────────────────────────────────
+
+  getAllBackupSets(): readonly BackupSet[] {
+    return [...this.backupSets.values()]
+  }
+
+  getBackupSet(key: BackupKey): BackupSet | null {
+    return this.backupSets.get(key.value) ?? null
+  }
+
+  findBackupSetsByTag(tag: RmanTag): readonly BackupSet[] {
+    return [...this.backupSets.values()]
+      .filter(bs => bs.tag.value === tag.value)
+  }
+
+  findBackupSetsByType(type: BackupType): readonly BackupSet[] {
+    return [...this.backupSets.values()]
+      .filter(bs => bs.backupType === type)
+  }
+
+  findBackupSetsForScn(targetScn: Scn): readonly BackupSet[] {
+    // Retourne les full + incrementaux dont le ckpScn <= targetScn
+    return [...this.backupSets.values()]
+      .filter(bs =>
+        bs.status === 'AVAILABLE' &&
+        bs.ckpScn.value <= targetScn.value &&
+        (bs.backupObject === 'DATABASE' ||
+         bs.backupObject === 'DATAFILE' ||
+         bs.backupObject === 'TABLESPACE')
+      )
+      .sort((a, b) => a.ckpScn.value - b.ckpScn.value)
+  }
+
+  getArchivedLogs(): readonly ArchivedLog[] {
+    return [...this.archivedLogs.values()]
+  }
+
+  getArchivedLogBySequence(seq: number): ArchivedLog | null {
+    for (const log of this.archivedLogs.values()) {
+      if (log.sequence === seq) return log
+    }
+    return null
+  }
+
+  getArchivedLogsForRecovery(fromScn: Scn, toScn: Scn): readonly ArchivedLog[] {
+    return [...this.archivedLogs.values()]
+      .filter(l =>
+        l.status === 'A' &&
+        l.firstScn.value >= fromScn.value &&
+        l.nextScn.value  <= toScn.value
+      )
+      .sort((a, b) => a.sequence - b.sequence)
+  }
+
+  getDatafileCopies(): readonly DatafileCopy[] {
+    return [...this.dfCopies.values()]
+  }
+
+  // ── Ecriture ───────────────────────────────────────────────────────────
+
+  addBackupSet(bs: BackupSet): void {
+    this.backupSets.set(bs.bsKey.value, bs)
+  }
+
+  updateBackupSetStatus(key: BackupKey, status: BackupSet['status']): void {
+    const existing = this.backupSets.get(key.value)
+    if (existing) {
+      this.backupSets.set(key.value, { ...existing, status })
+    }
+  }
+
+  addArchivedLog(log: ArchivedLog): void {
+    this.archivedLogs.set(log.recid, log)
+  }
+
+  deleteArchivedLog(recid: number): void {
+    const log = this.archivedLogs.get(recid)
+    if (log) this.archivedLogs.set(recid, { ...log, status: 'D' })
+  }
+
+  addDatafileCopy(copy: DatafileCopy): void {
+    this.dfCopies.set(copy.recid, copy)
+  }
+
+  updateDatafileCopyStatus(recid: number, status: DatafileCopy['status']): void {
+    const existing = this.dfCopies.get(recid)
+    if (existing) this.dfCopies.set(recid, { ...existing, status })
+  }
+
+  clear(): void {
+    this.backupSets.clear()
+    this.archivedLogs.clear()
+    this.dfCopies.clear()
+  }
+}
+```
+
+### 4.5 BackupSetFactory — Factory Pattern
+
+La creation d'un `BackupSet` necessite plusieurs parametres calcules (taille, SCN, tag...). Le Factory Pattern encapsule cette logique et garantit que chaque `BackupSet` est coherent des sa creation.
+
+```typescript
+// src/database/oracle/rman/catalog/BackupSetFactory.ts
+
+import type { BackupSet, BackupPiece, BackupType, BackupObject } from './types'
+import { BackupKey }     from '../values/BackupKey'
+import { RmanTag }       from '../values/RmanTag'
+import { Scn }           from '../values/Scn'
+import type { DbId }     from '../values/DbId'
+
+export interface BackupSetInput {
+  dbId:           DbId
+  backupType:     BackupType
+  backupObject:   BackupObject
+  objectNames:    readonly string[]
+  tag?:           string
+  ckpScn:         number
+  ckpTime:        Date
+  completionTime: Date
+  elapsedSeconds: number
+  sizeBytes:      number
+  compressed:     boolean
+  encrypted:      boolean
+  deviceType:     'DISK' | 'SBT'
+  pieces:         readonly BackupPiece[]
+  keepForever?:   boolean
+}
+
+export function createBackupSet(input: BackupSetInput): BackupSet {
+  const key = BackupKey.next()
+  const tag = input.tag
+    ? RmanTag.of(input.tag)
+    : RmanTag.generate(input.completionTime)
+
+  return Object.freeze({
+    bsKey:          key,
+    dbId:           input.dbId,
+    backupType:     input.backupType,
+    backupObject:   input.backupObject,
+    objectNames:    Object.freeze([...input.objectNames]),
+    tag,
+    ckpScn:         Scn.of(input.ckpScn),
+    ckpTime:        input.ckpTime,
+    completionTime: input.completionTime,
+    elapsedSeconds: input.elapsedSeconds,
+    sizeBytes:      input.sizeBytes,
+    compressed:     input.compressed,
+    encrypted:      input.encrypted,
+    deviceType:     input.deviceType,
+    pieces:         Object.freeze([...input.pieces]),
+    status:         'AVAILABLE' as const,
+    keepForever:    input.keepForever ?? false,
+  })
+}
+```
+
+### 4.6 Diagramme de classe du catalog
+
+```
+IRmanCatalogRepository
+  extends IRmanCatalogReader
+  extends IRmanCatalogWriter
+         |
+         v
+InMemoryRmanCatalog   (Map<number, BackupSet>, Map<number, ArchivedLog>)
+
+BackupSetFactory.createBackupSet(input) --> BackupSet (immuable, Object.freeze)
+                                         --> BackupPiece[] (immuable)
+
+BackupSet       1 --* BackupPiece    (pieces embeddees, pas de FK externe)
+BackupSet       *--1 DbId
+BackupSet       *--1 RmanTag
+BackupSet       *--1 Scn (ckpScn)
+
+ArchivedLog     *--1 Scn (firstScn, nextScn)
+DatafileCopy    *--1 Scn (ckpScn)
+DatafileCopy    *--0..1 RmanTag
+```
+
+### 4.7 Principe Repository : separation domaine / persistence
+
+```
+COMMAND LAYER            DOMAIN                  PERSISTENCE
+    |                      |                          |
+BackupCommand  ------>  IRmanCatalogRepository  <---- InMemoryRmanCatalog
+    |                      |                          |
+ListCommand    ------>  IRmanCatalogReader       <---- (meme impl.)
+    |                                                 |
+                   Test doubles possible :            |
+                   MockRmanCatalog()                  |
+                   (sans VFS, sans Oracle)            |
+```
+
+Le catalog est **injecte** dans chaque commande via `RmanCommandContext` (section 7). Aucune commande ne connait `InMemoryRmanCatalog` directement — DIP respecte.
+
+---
+
