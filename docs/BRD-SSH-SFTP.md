@@ -664,3 +664,339 @@ docs/file2.txt                               100%  256     0.3KB/s   00:00
 ---
 
 
+
+## 5. Requirements SFTP — Refonte
+
+### 5.1 Vue d'ensemble
+
+Le protocole SFTP est refondu pour tourner sur la couche SSH simulée (section 4). Les opérations SFTP restent simulées en JSON côté interne, mais du point de vue de l'utilisateur la séquence complète SSH est respectée avant que le sous-système SFTP ne démarre.
+
+Cette section couvre : les corrections des 24 défauts identifiés en section 2, les extensions de commandes, et les nouvelles fonctionnalités.
+
+---
+
+### 5.2 SFTP-01 — Transport sur couche SSH simulée
+
+#### Requirement
+
+Le sous-système SFTP doit démarrer APRES l'authentification SSH réussie. Du point de vue de l'utilisateur, lancer `sftp user@host` doit produire exactement la même séquence que `ssh user@host`, puis entrer dans le sous-shell sftp.
+
+```
+$ sftp alice@192.168.1.10
+The authenticity of host '192.168.1.10 (192.168.1.10)' can't be established.
+ED25519 key fingerprint is SHA256:xLp3K1...
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '192.168.1.10' (ED25519) to the list of known hosts.
+alice@192.168.1.10's password:
+Connected to 192.168.1.10.
+sftp>
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-01-R1 | `sftp user@host` passe par la couche SSH simulée (host key check + auth) avant d'entrer dans le sous-shell |
+| SFTP-01-R2 | `sftp -P <port> user@host` : support du port custom |
+| SFTP-01-R3 | `sftp -i <keyfile> user@host` : auth par clé publique |
+| SFTP-01-R4 | `sftp -o StrictHostKeyChecking=no user@host` : skip host key |
+| SFTP-01-R5 | Apres auth, afficher `Connected to <host>.` puis entrer dans le sous-shell |
+
+---
+
+### 5.3 SFTP-02 — Négociation de version SFTP
+
+#### Comportement attendu
+
+```
+$ sftp -v alice@192.168.1.10
+...
+debug1: Sending subsystem: sftp
+debug1: client_input_channel_req: channel 0 rtype exit-status reply 0
+Connected to alice@192.168.1.10
+sftp> version
+SFTP protocol version 3
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-02-R1 | Le serveur SFTP annonce la version 3 (compatibilité OpenSSH maximale) |
+| SFTP-02-R2 | La commande `version` dans le sous-shell affiche `SFTP protocol version 3` |
+| SFTP-02-R3 | Le client envoie SSH_FXP_INIT avec version=3, le serveur repond SSH_FXP_VERSION |
+
+---
+
+### 5.4 SFTP-03 — Correction DEF-06 : propagation des erreurs de `put`
+
+#### Comportement attendu
+
+```
+sftp> put /local/file.txt /readonly/dir/file.txt
+Uploading /local/file.txt to /readonly/dir/file.txt
+remote open("/readonly/dir/file.txt"): Permission denied
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-03-R1 | `SftpServerHandler` vérifie la valeur de retour de `vfs.writeFile` |
+| SFTP-03-R2 | Si l'écriture échoue, retourner `{ ok: false, error: 'Permission denied' }` ou `{ ok: false, error: 'No such file or directory' }` selon le cas |
+| SFTP-03-R3 | `ISftpFileSystem.writeFile` retourne un booléen ou un objet `{ ok, error }` |
+
+---
+
+### 5.5 SFTP-04 — Correction DEF-07 : `mkdir` non-récursif
+
+#### Comportement attendu
+
+```
+sftp> mkdir /home/alice/a/b/c
+Couldn't create directory: No such file or directory
+sftp> mkdir /home/alice/a
+sftp> mkdir /home/alice/a/b
+sftp> mkdir /home/alice/a/b/c
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-04-R1 | `SftpServerHandler` utilise `vfs.mkdir` (non-récursif) au lieu de `vfs.mkdirp` |
+| SFTP-04-R2 | Si le répertoire parent n'existe pas, retourner `{ ok: false, error: 'No such file or directory' }` |
+| SFTP-04-R3 | `ISftpFileSystem` expose `mkdir(path)` (non-récursif) distinct de `mkdirp(path)` |
+
+---
+
+### 5.6 SFTP-05 — Correction DEF-08 : `rename` protège la destination
+
+#### Comportement attendu
+
+```
+sftp> rename old.txt existing.txt
+Couldn't rename file: rename /home/alice/old.txt /home/alice/existing.txt: File exists
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-05-R1 | Avant de renommer, vérifier si la destination existe |
+| SFTP-05-R2 | Si la destination existe, retourner `{ ok: false, error: 'File exists' }` |
+| SFTP-05-R3 | Message client : `Couldn't rename file: rename <src> <dst>: File exists` |
+
+---
+
+### 5.7 SFTP-06 — Correction DEF-09 : `ls -l` avec attributs
+
+#### Comportement attendu
+
+```
+sftp> ls
+docs  file.txt  readme.md
+
+sftp> ls -l
+drwxr-xr-x    2 alice    alice        4096 May 05 10:20 docs
+-rw-r--r--    1 alice    alice        1024 May 05 10:23 file.txt
+-rw-r--r--    1 alice    alice         256 May 04 15:11 readme.md
+
+sftp> ls -la
+drwxr-xr-x    3 alice    alice        4096 May 05 10:20 .
+drwxr-xr-x    4 root     root         4096 May 01 09:00 ..
+-rw-------    1 alice    alice         128 May 03 11:45 .bash_history
+drwxr-xr-x    2 alice    alice        4096 May 05 10:20 docs
+-rw-r--r--    1 alice    alice        1024 May 05 10:23 file.txt
+-rw-r--r--    1 alice    alice         256 May 04 15:11 readme.md
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-06-R1 | Parser le flag `-l` dans `SftpSubShell.ls` (séparé des arguments de chemin) |
+| SFTP-06-R2 | Parser le flag `-a` pour inclure les fichiers cachés (`.dotfiles`) |
+| SFTP-06-R3 | `ISftpFileSystem.listDirectory` retourne les attributs : type, permissions, uid, gid, size, mtime |
+| SFTP-06-R4 | Avec `-l`, afficher le format `ls -l` : `<mode> <nlink> <owner> <group> <size> <date> <name>` |
+| SFTP-06-R5 | Sans `-l`, afficher les noms séparés par des espaces (comportement actuel) |
+| SFTP-06-R6 | Les répertoires affichés avec `/` suffixé dans le listing `-l` |
+| SFTP-06-R7 | Les attributs pour Windows passent par `WindowsSftpFSAdapter` avec conversion appropriée |
+
+---
+
+### 5.8 SFTP-07 — Correction DEF-10 : messages d'erreur conformes OpenSSH
+
+| Situation | Message à produire |
+|---|---|
+| `rm` sur un répertoire | `Couldn't remove file: remove "<path>": Failure` |
+| `get` fichier inexistant | `Fetching <remote> to <local>\n<remote>: No such file or directory` |
+| `rmdir` non-vide | `Couldn't remove directory: rmdir "<path>": Failure` |
+| `rename` src inexistant | `Couldn't rename file: rename <old> <new>: No such file or directory` |
+| `mkdir` parent inexistant | `Couldn't create directory: No such file or directory` |
+| `put` écriture refusée | `Uploading <local> to <remote>\nremote open("<remote>"): Permission denied` |
+
+| ID | Requirement |
+|---|---|
+| SFTP-07-R1 | `SftpSession.get` affiche `Fetching <remote> to <local>` avant le transfert |
+| SFTP-07-R2 | `SftpSession.put` affiche `Uploading <local> to <remote>` avant le transfert |
+| SFTP-07-R3 | Tous les messages d'erreur suivent le format OpenSSH listé ci-dessus |
+
+---
+
+### 5.9 SFTP-08 — Correction DEF-11 : fermeture propre de la connexion TCP
+
+| ID | Requirement |
+|---|---|
+| SFTP-08-R1 | En cas d'échec d'authentification, `SftpSession.connect` appelle `conn.close()` avant de mettre `this.conn = null` |
+| SFTP-08-R2 | `SftpSession.disconnect` appelle `conn.close()` (déjà implémenté, vérifier) |
+| SFTP-08-R3 | Aucune connexion TCP orpheline ne doit subsister après un échec d'auth ou un disconnect |
+
+---
+
+### 5.10 SFTP-09 — Correction DEF-14 : format de progression réaliste
+
+#### Comportement attendu
+
+```
+sftp> get large_file.dat
+Fetching /home/alice/large_file.dat to large_file.dat
+large_file.dat                               100% 1399KB   1.4MB/s   00:01
+```
+
+Format : `<nom_fichier_padded> 100% <taille_auto> <vitesse_auto>   <temps>`
+
+Règles de formatage (identiques à OpenSSH sftp) :
+- Taille : `< 1024` → `N B`, `< 1024*1024` → `N.NKB`, sinon → `N.NMB`
+- Vitesse : meme règle, suffixe `/s`
+- Temps : `MM:SS` (toujours `00:00` dans le simulateur, car transfert instantané)
+- Padding du nom : 40 caractères minimum, tronqué avec `...` si trop long
+
+| ID | Requirement |
+|---|---|
+| SFTP-09-R1 | La fonction `formatTransferLine` implémente les règles de taille automatique |
+| SFTP-09-R2 | Le padding du nom de fichier s'adapte (min 40, tronqué si > 40) |
+| SFTP-09-R3 | La vitesse simulée est coherente avec la taille (petits fichiers = KB/s, gros = MB/s) |
+
+---
+
+### 5.11 SFTP-10/11 — Corrections DEF-15/16 : `lmkdir` et Ctrl+D
+
+| ID | Requirement |
+|---|---|
+| SFTP-10-R1 | Implémenter `case 'lmkdir'` dans `SftpSubShell.processLine` |
+| SFTP-10-R2 | `lmkdir <path>` crée le répertoire local via `localVfs.mkdir` ou `mkdirp` |
+| SFTP-11-R1 | Ctrl+D dans `SftpSubShell.handleKey` doit déclencher la sortie (appeler `session.disconnect()`, retourner `{ exit: true }`) |
+
+---
+
+### 5.12 SFTP-12 — Correction DEF-17 : parsing des flags CLI
+
+#### Comportement attendu
+
+```
+sftp> ls -la /home/alice
+sftp> get -r remotedir/
+sftp> put -p localfile.txt
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-12-R1 | `SftpSubShell.processLine` sépare les flags (tokens commençant par `-`) des arguments positionnels pour `ls`, `get`, `put` |
+| SFTP-12-R2 | `ls` : supporter `-l` (format long), `-a` (fichiers cachés), `-1` (un par ligne) |
+| SFTP-12-R3 | `get` : flag `-r` déclenche un téléchargement récursif de répertoire |
+| SFTP-12-R4 | `put` : flag `-r` déclenche un envoi récursif de répertoire |
+| SFTP-12-R5 | Les flags non supportés sont ignorés silencieusement (pas d'erreur) |
+
+---
+
+### 5.13 SFTP-13 — Corrections adaptateur Windows (DEF-19/20/21)
+
+| ID | Requirement |
+|---|---|
+| SFTP-13-R1 | `sftpToWin` : les chemins SFTP sans lettre de lecteur (`/foo/bar`) doivent être rejetés ou documentés explicitement comme mappés sur `C:\` |
+| SFTP-13-R2 | `winToSftp` : la racine d'un lecteur `C:\` doit retourner `/C:/` (avec slash final) |
+| SFTP-13-R3 | `WindowsSftpFSAdapter.rename` gère les répertoires : si src est un répertoire, utiliser `wfs.renameEntry` ou équivalent |
+
+---
+
+### 5.14 SFTP-14/15 — `chmod` et `chown` en session interactive
+
+#### Comportement attendu
+
+```
+sftp> chmod 644 report.txt
+Changing mode on /home/alice/report.txt
+
+sftp> chown 1001 report.txt
+Changing owner on /home/alice/report.txt
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-14-R1 | Ajouter `chmod <mode_octal> <path>` dans `SftpSubShell` |
+| SFTP-14-R2 | Ajouter l'opération `setstat` dans `SftpServerHandler` pour modifier les permissions |
+| SFTP-14-R3 | `ISftpFileSystem.setPermissions(path, mode)` : méthode ajoutée |
+| SFTP-15-R1 | Ajouter `chown <uid> <path>` dans `SftpSubShell` |
+| SFTP-15-R2 | `ISftpFileSystem.setOwner(path, uid, gid)` : méthode ajoutée |
+
+---
+
+### 5.15 SFTP-16 — `stat` — attributs de fichier
+
+#### Comportement attendu
+
+```
+sftp> stat report.txt
+  File: /home/alice/report.txt
+  Size: 1024
+  Mode: 0644   UID: 1000   GID: 1000
+  Access: Mon May  5 10:23:15 2026
+  Modify: Mon May  5 10:23:15 2026
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-16-R1 | Ajouter `stat <path>` dans `SftpSubShell` |
+| SFTP-16-R2 | Ajouter l'opération `stat` dans `SftpServerHandler` |
+| SFTP-16-R3 | `ISftpFileSystem.stat(path)` retourne les attributs complets |
+
+---
+
+### 5.16 SFTP-17 — `df` — espace disque
+
+#### Comportement attendu
+
+```
+sftp> df -h /home/alice
+        Size         Used        Avail       (root)    %Capacity
+       19.6GB        4.2GB       14.3GB       14.3GB         21%
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-17-R1 | Ajouter `df [-h] [path]` dans `SftpSubShell` |
+| SFTP-17-R2 | Retourner des valeurs simulées cohérentes (capacité totale, utilisée, disponible) |
+| SFTP-17-R3 | Flag `-h` : format humain (GB/MB), sans flag : blocs de 1K |
+
+---
+
+### 5.17 SFTP-18/19 — Expansion `~` et port custom
+
+| ID | Requirement |
+|---|---|
+| SFTP-18-R1 | `SftpSession.get/put/cd` résout `~` en répertoire home local ou distant selon le contexte |
+| SFTP-18-R2 | `SftpSubShell` résout `~` dans tous les arguments de chemin avant de les passer à `SftpSession` |
+| SFTP-19-R1 | `sftp -P <port> user@host` passe le port à `tcpConnector(host, port)` |
+| SFTP-19-R2 | `SftpSession.connect` accepte un paramètre `port` optionnel (défaut : 22) |
+
+---
+
+### 5.18 SFTP-20 — Contrôle de permissions Unix côté serveur
+
+#### Comportement attendu
+
+```
+sftp> get /etc/shadow
+Fetching /etc/shadow to shadow
+remote open("/etc/shadow"): Permission denied
+```
+
+| ID | Requirement |
+|---|---|
+| SFTP-20-R1 | `SftpServerHandler` connait l'uid/gid de l'utilisateur authentifié |
+| SFTP-20-R2 | Pour `get`, vérifier les permissions de lecture (read bit) selon uid/gid de l'utilisateur |
+| SFTP-20-R3 | Pour `put`, vérifier les permissions d'écriture sur le répertoire parent |
+| SFTP-20-R4 | Pour `rm/rmdir`, vérifier les permissions d'écriture sur le répertoire parent |
+| SFTP-20-R5 | `root` (uid=0) contourne toutes les vérifications de permissions |
+| SFTP-20-R6 | `ISftpFileSystem.checkReadPermission(path, uid, gid)` et `checkWritePermission(path, uid, gid)` |
+
+---
