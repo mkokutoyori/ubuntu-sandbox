@@ -20,7 +20,8 @@ import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
-import { SftpSession } from '@/network/protocols/sftp/SftpSession';
+import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -508,7 +509,11 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private async connectAndEnterSftp(userAtHost: string, password: string): Promise<void> {
-    const localVfs = (this.device as any).executor?.vfs;
+    const dev = this.device as unknown as {
+      executor?: { vfs?: unknown; userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined } };
+      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+    };
+    const localVfs = dev.executor?.vfs;
     if (!localVfs) {
       this.addLine('sftp: this device does not support SFTP', 'error');
       this.notify();
@@ -516,24 +521,29 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     const tcpConnector: TcpConnector = (host, port) =>
-      (this.device as any).tcpConnect?.(host, port) ?? Promise.resolve(null);
+      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
 
-    const session = new SftpSession(
-      localVfs,
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const session = new SftpSession({
       tcpConnector,
-      this.currentPath,
-      this.currentUser,
-    );
+      localVfs: localVfs as never,
+      localUser: this.currentUser,
+      localUid: userEntry?.uid ?? 1000,
+      localGid: userEntry?.gid ?? 1000,
+      localCwd: this.currentPath,
+      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
+      interactionHandler: new SilentSshInteractionHandler(password),
+      homeDirectory: homeDir,
+    });
 
-    const err = await session.connect(userAtHost, password);
-    if (err) {
-      this.addLine(err, 'error');
+    const banner = await session.connect(userAtHost, { password });
+    if (!session.isConnected()) {
+      this.addLine(banner, 'error');
       this.notify();
       return;
     }
-
-    const host = userAtHost.includes('@') ? userAtHost.split('@')[1] : userAtHost;
-    this.addLine(`Connected to ${host}.`);
+    this.addLine(banner);
 
     this.activeSubShell = new SftpSubShell(session);
     this._inputBuf = '';

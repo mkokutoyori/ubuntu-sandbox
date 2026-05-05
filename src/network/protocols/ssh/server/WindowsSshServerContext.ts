@@ -18,16 +18,29 @@ import {
   type ISshServerContext,
   type SshServerConfig,
 } from './ISshServerContext';
+import {
+  DEFAULT_SSHD_CONFIG,
+  parseSshdConfig,
+  serializeSshdConfig,
+  type SshdConfig,
+} from './SshSshdConfig';
 
 const DEFAULT_USER_UID = 1000;
 const DEFAULT_USER_GID = 1000;
 const ADMIN_UID = 0;
 const ADMIN_GID = 0;
 
+// OpenSSH-for-Windows path conventions.
+const SSH_DIR = 'C:\\ProgramData\\ssh';
+const SSHD_CONFIG_PATH = `${SSH_DIR}\\sshd_config`;
+const HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_ed25519_key`;
+const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
+
 export class WindowsSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
+  readonly sshdConfig: SshdConfig;
 
   constructor(
     private readonly wfs: WindowsFileSystem,
@@ -35,9 +48,25 @@ export class WindowsSshServerContext implements ISshServerContext {
     private readonly hostname: string,
     config: Partial<SshServerConfig> = {},
   ) {
-    this.hostKey = SshHostKey.generate(hostname);
-    this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...config });
+    this.ensureSshDir();
+    this.hostKey = this.loadOrGenerateHostKey();
+    this.sshdConfig = this.loadOrGenerateSshdConfig();
+    this.config = Object.freeze({
+      ...DEFAULT_SSH_SERVER_CONFIG,
+      ...this.sshdConfig,
+      ...config,
+    });
     this.auth = this.buildAuthContext();
+  }
+
+  reloadConfig(): WindowsSshServerContext {
+    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname);
+  }
+
+  getBanner(): string | null {
+    if (!this.sshdConfig.banner) return null;
+    const result = this.wfs.readFile(this.sshdConfig.banner);
+    return result.ok ? result.content ?? null : null;
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
@@ -86,11 +115,47 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   // ─── private ─────────────────────────────────────────────────────
 
+  private ensureSshDir(): void {
+    if (!this.wfs.exists(SSH_DIR)) {
+      this.wfs.mkdirp(SSH_DIR);
+    }
+  }
+
+  private loadOrGenerateHostKey(): SshHostKey {
+    const pubResult = this.wfs.readFile(HOST_KEY_PUB_PATH);
+    const privResult = this.wfs.readFile(HOST_KEY_PATH);
+    if (pubResult.ok && privResult.ok && pubResult.content && privResult.content) {
+      const material = pubResult.content.trim().split(/\s+/)[1] ?? pubResult.content.trim();
+      return SshHostKey.fromFiles(material, privResult.content.trim(), 'ssh-ed25519');
+    }
+    const generated = SshHostKey.generate(this.hostname);
+    this.wfs.createFile(HOST_KEY_PUB_PATH, generated.publicKeyLine + '\n');
+    this.wfs.createFile(
+      HOST_KEY_PATH,
+      `-----BEGIN OPENSSH PRIVATE KEY-----\n${generated.publicKey}\n-----END OPENSSH PRIVATE KEY-----\n`,
+    );
+    return generated;
+  }
+
+  private loadOrGenerateSshdConfig(): SshdConfig {
+    const result = this.wfs.readFile(SSHD_CONFIG_PATH);
+    if (result.ok && result.content) return parseSshdConfig(result.content);
+    this.wfs.createFile(SSHD_CONFIG_PATH, serializeSshdConfig(DEFAULT_SSHD_CONFIG));
+    return DEFAULT_SSHD_CONFIG;
+  }
+
+  private userAllowed(user: string): boolean {
+    const allow = this.sshdConfig.allowUsers;
+    if (allow.length === 0) return true;
+    return allow.some((pattern) => matchesUserPattern(pattern, user));
+  }
+
   private buildAuthContext(): ISshAuthContext {
     let attemptsLeft = this.config.maxAuthTries;
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
+        if (!this.userAllowed(user)) return false;
         if (!this.config.passwordAuthentication) return false;
         return this.userManager.checkPassword(user, password);
       },
@@ -103,4 +168,17 @@ export class WindowsSshServerContext implements ISshServerContext {
       },
     };
   }
+}
+
+function matchesUserPattern(pattern: string, user: string): boolean {
+  if (pattern === user || pattern === '*') return true;
+  const re = new RegExp(
+    '^' +
+      pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.') +
+      '$',
+  );
+  return re.test(user);
 }
