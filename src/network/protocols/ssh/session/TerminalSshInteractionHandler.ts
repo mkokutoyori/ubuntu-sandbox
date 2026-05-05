@@ -11,6 +11,9 @@
  */
 
 import {
+  hostKeyFingerprint,
+  hostKeyNo,
+  hostKeyYes,
   type HostKeyResponse,
   type ISshInteractionHandler,
   type SshConnectionInfo,
@@ -46,13 +49,15 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
     );
     const answer = (
       await this.io.readInput(
-        `Are you sure you want to continue connecting (yes/no)? `,
+        `Are you sure you want to continue connecting (yes/no/[fingerprint])? `,
         false,
       )
-    )
-      .trim()
-      .toLowerCase();
-    return answer === 'yes' || answer === 'y' ? 'yes' : 'no';
+    ).trim();
+    const lowered = answer.toLowerCase();
+    if (lowered === 'yes' || lowered === 'y') return hostKeyYes();
+    if (lowered === 'no' || lowered === 'n' || lowered === '') return hostKeyNo();
+    // Anything else is interpreted as a fingerprint to compare against.
+    return hostKeyFingerprint(answer);
   }
 
   async promptPassword(user: string, host: string): Promise<string> {

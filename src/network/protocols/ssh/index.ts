@@ -11,6 +11,8 @@ export * from './SshKeyPair';
 export * from './SshConnectOptions';
 export * from './SshUserContext';
 export * from './SshPureUtils';
+export * from './SshConfig';
+export * from './SshAuthorizedKeys';
 
 export * from './auth/ISshAuthMethod';
 export * from './auth/PasswordAuthMethod';
@@ -50,3 +52,4 @@ export * from './server/SshServerEvent';
 export * from './server/SshServerHandler';
 export * from './server/LinuxSshServerContext';
 export * from './server/WindowsSshServerContext';
+export * from './server/SshSshdConfig';

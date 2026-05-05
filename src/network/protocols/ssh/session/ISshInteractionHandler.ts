@@ -7,7 +7,23 @@
 
 import type { SshFingerprint } from '../SshFingerprint';
 
-export type HostKeyResponse = 'yes' | 'no';
+/**
+ * Possible answers to the host-key prompt.
+ * Per BRD SSH-01-R3/R6: the user may type yes / no / a fingerprint string.
+ * Returning the raw fingerprint lets SshSession compare it against the
+ * received host key without persisting an unwanted known_hosts entry.
+ */
+export type HostKeyResponse =
+  | { kind: 'yes' }
+  | { kind: 'no' }
+  | { kind: 'fingerprint'; value: string };
+
+export const hostKeyYes = (): HostKeyResponse => ({ kind: 'yes' });
+export const hostKeyNo = (): HostKeyResponse => ({ kind: 'no' });
+export const hostKeyFingerprint = (value: string): HostKeyResponse => ({
+  kind: 'fingerprint',
+  value,
+});
 
 export interface SshConnectionInfo {
   readonly host: string;
@@ -40,7 +56,7 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
   ) {}
 
   async promptHostKeyConfirmation(): Promise<HostKeyResponse> {
-    return this.autoAccept ? 'yes' : 'no';
+    return this.autoAccept ? hostKeyYes() : hostKeyNo();
   }
 
   async promptPassword(): Promise<string> {

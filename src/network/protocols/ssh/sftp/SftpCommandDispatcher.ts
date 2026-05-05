@@ -13,6 +13,7 @@ import type {
 import {
   SftpChmodCommand,
   SftpChownCommand,
+  SftpDfCommand,
   SftpGetCommand,
   SftpLsCommand,
   SftpMkdirCommand,
@@ -21,6 +22,7 @@ import {
   SftpRmCommand,
   SftpRmdirCommand,
   SftpStatCommand,
+  SftpVersionCommand,
 } from './SftpCommands';
 
 export class SftpCommandDispatcher {
@@ -47,6 +49,8 @@ export class SftpCommandDispatcher {
       new SftpChmodCommand(),
       new SftpChownCommand(),
       new SftpStatCommand(),
+      new SftpVersionCommand(),
+      new SftpDfCommand(),
     ]);
   }
 

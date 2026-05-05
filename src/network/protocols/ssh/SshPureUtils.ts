@@ -113,9 +113,35 @@ export function parseAuthorizedKeysLine(line: string): AuthorizedKey | null {
   return { algorithm, material, comment: rest.join(' ') };
 }
 
+/**
+ * Format the transfer progress line per OpenSSH sftp conventions:
+ * <name padded 40> 100% <size> <speed>   00:00
+ *
+ * Reference: BRD-SSH-SFTP.md SFTP-09.
+ */
 export function formatTransferProgress(name: string, bytes: number): string {
-  const kb = (bytes / 1024).toFixed(1);
-  return `${name}  100% ${bytes}   ${kb}KB/s   00:00`;
+  const padded = padOrTruncate(name, 40);
+  const size = formatHumanSize(bytes);
+  const speed = `${formatHumanSize(bytes)}/s`;
+  return `${padded} 100% ${size.padStart(8, ' ')}   ${speed.padStart(9, ' ')}   00:00`;
+}
+
+function padOrTruncate(name: string, width: number): string {
+  if (name.length === width) return name;
+  if (name.length < width) return name.padEnd(width, ' ');
+  // Truncate keeping the trailing portion (so the basename stays visible).
+  return '...' + name.slice(name.length - (width - 3));
+}
+
+function formatHumanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+}
+
+export function formatHumanBytes(bytes: number): string {
+  return formatHumanSize(bytes);
 }
 
 /**

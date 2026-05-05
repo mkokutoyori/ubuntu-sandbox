@@ -232,15 +232,26 @@ export class SshSession implements ISshSession {
             host,
             decision.fingerprint,
           );
-        if (reply !== 'yes') {
-          return err({
-            kind: 'HOST_KEY_REJECTED',
-            host,
-            fingerprint: decision.fingerprint,
-          });
+        switch (reply.kind) {
+          case 'yes':
+            this.knownHosts.addHost(host, key);
+            return ok(undefined);
+          case 'fingerprint':
+            // SSH-01-R6: accept silently when the user types the exact
+            // fingerprint, but do NOT persist to known_hosts.
+            if (reply.value === decision.fingerprint) return ok(undefined);
+            return err({
+              kind: 'HOST_KEY_REJECTED',
+              host,
+              fingerprint: decision.fingerprint,
+            });
+          case 'no':
+            return err({
+              kind: 'HOST_KEY_REJECTED',
+              host,
+              fingerprint: decision.fingerprint,
+            });
         }
-        this.knownHosts.addHost(host, key);
-        return ok(undefined);
       }
 
       case 'reject': {

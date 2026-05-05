@@ -152,6 +152,44 @@ export class SftpChownCommand implements ISftpCommand<void> {
   }
 }
 
+export class SftpVersionCommand
+  implements ISftpCommand<{ protocolVersion: number }>
+{
+  readonly op = 'version';
+  execute(): Result<{ protocolVersion: number }> {
+    // SFTP-02: announce protocol version 3 (OpenSSH-compatible).
+    return ok({ protocolVersion: 3 });
+  }
+}
+
+export interface SftpDiskUsage {
+  readonly totalBytes: number;
+  readonly usedBytes: number;
+  readonly availableBytes: number;
+}
+
+export class SftpDfCommand implements ISftpCommand<SftpDiskUsage> {
+  readonly op = 'df';
+  // Simulator does not track real allocations; report a stable fake usage
+  // proportional to the number of entries below the queried path. Returns
+  // values in bytes; the sub-shell formats them with -h on demand.
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<SftpDiskUsage> {
+    const path = req.path
+      ? ctx.vfs.normalizePath(req.path, ctx.cwd)
+      : ctx.cwd;
+    if (!ctx.vfs.exists(path)) {
+      return err({ kind: 'IO_ERROR', message: `${path}: no such file or directory` });
+    }
+    const totalBytes = 20 * 1024 * 1024 * 1024; // 20 GB
+    const usedBytes = 4 * 1024 * 1024 * 1024; //  4 GB
+    return ok({
+      totalBytes,
+      usedBytes,
+      availableBytes: totalBytes - usedBytes,
+    });
+  }
+}
+
 export class SftpStatCommand implements ISftpCommand<SftpFileAttrs> {
   readonly op = 'stat';
   execute(

@@ -27,6 +27,36 @@ import type {
 const DEFAULT_FILE_MODE = 0o644;
 const DEFAULT_DIR_MODE = 0o755;
 
+/**
+ * Map an OpenSSH-for-Windows SFTP path (`/C:/Users/User/file.txt` or
+ * `/Users/...` assumed on C:) to the native Windows form (`C:\\Users\\...`).
+ * Reference: BRD-SSH-SFTP.md SFTP-13-R1/R2.
+ */
+export function sftpToWin(sftpPath: string): string {
+  if (!sftpPath) return 'C:\\';
+  const driveMatch = /^\/([A-Za-z]):\/?(.*)$/.exec(sftpPath);
+  if (driveMatch) {
+    const drive = driveMatch[1].toUpperCase();
+    const rest = driveMatch[2].replace(/\//g, '\\');
+    return rest ? `${drive}:\\${rest}` : `${drive}:\\`;
+  }
+  // No drive letter — assume C: per OpenSSH-for-Windows convention.
+  const rest = sftpPath.replace(/^\/+/, '').replace(/\//g, '\\');
+  return rest ? `C:\\${rest}` : 'C:\\';
+}
+
+/**
+ * Inverse of sftpToWin. Drive root yields `/C:/` (with trailing slash so
+ * SFTP_REALPATH responses behave like OpenSSH).
+ */
+export function winToSftp(winPath: string): string {
+  const driveMatch = /^([A-Za-z]):\\?(.*)$/.exec(winPath);
+  if (!driveMatch) return '/' + winPath.replace(/\\/g, '/');
+  const drive = driveMatch[1].toUpperCase();
+  const rest = driveMatch[2].replace(/\\/g, '/');
+  return rest ? `/${drive}:/${rest}` : `/${drive}:/`;
+}
+
 export class WindowsSftpFSAdapter implements ISftpFileSystem {
   constructor(
     private readonly wfs: WindowsFileSystem,
@@ -37,22 +67,28 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   // ── ISftpNavigable ─────────────────────────────────────────────────
 
   normalizePath(path: string, cwd: string): string {
-    return this.wfs.normalizePath(path, cwd);
+    // SFTP-13: callers may pass either native Windows or SFTP-style paths.
+    // Always convert to native form before delegating, then expose the
+    // SFTP-style form back to the caller for round-trip stability.
+    const nativeCwd = cwd.startsWith('/') ? sftpToWin(cwd) : cwd;
+    const nativeInput = path.startsWith('/') ? sftpToWin(path) : path;
+    return winToSftp(this.wfs.normalizePath(nativeInput, nativeCwd));
   }
 
   exists(path: string): boolean {
-    return this.wfs.exists(path);
+    return this.wfs.exists(this.toNative(path));
   }
 
   getEntryType(path: string): EntryType | null {
-    if (!this.wfs.exists(path)) return null;
-    return this.wfs.isDirectory(path) ? 'directory' : 'file';
+    const native = this.toNative(path);
+    if (!this.wfs.exists(native)) return null;
+    return this.wfs.isDirectory(native) ? 'directory' : 'file';
   }
 
   // ── ISftpReadable ──────────────────────────────────────────────────
 
   readFile(path: string): Result<string> {
-    const result = this.wfs.readFile(path);
+    const result = this.wfs.readFile(this.toNative(path));
     if (!result.ok) {
       return err({ kind: 'IO_ERROR', message: result.error ?? `${path}: read failed` });
     }
@@ -60,17 +96,18 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   }
 
   listDirectory(path: string): Result<readonly SftpDirEntry[]> {
-    if (!this.wfs.exists(path)) {
+    const native = this.toNative(path);
+    if (!this.wfs.exists(native)) {
       return err({ kind: 'IO_ERROR', message: `${path}: not found` });
     }
-    if (!this.wfs.isDirectory(path)) {
+    if (!this.wfs.isDirectory(native)) {
       return err({ kind: 'IO_ERROR', message: `${path}: not a directory` });
     }
-    return ok(this.wfs.listDirectory(path).map((e) => this.toDirEntry(e)));
+    return ok(this.wfs.listDirectory(native).map((e) => this.toDirEntry(e)));
   }
 
   stat(path: string): Result<SftpFileAttrs> {
-    const entry = this.resolveEntry(path);
+    const entry = this.resolveEntry(this.toNative(path));
     if (!entry) {
       return err({ kind: 'IO_ERROR', message: `${path}: not found` });
     }
@@ -80,7 +117,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   // ── ISftpWritable ──────────────────────────────────────────────────
 
   writeFile(path: string, content: string): Result<void> {
-    const created = this.wfs.createFile(path, content);
+    const created = this.wfs.createFile(this.toNative(path), content);
     if (!created.ok) {
       return err({ kind: 'IO_ERROR', message: created.error ?? 'write failed' });
     }
@@ -88,7 +125,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   }
 
   mkdir(path: string): Result<void> {
-    const result = this.wfs.mkdir(path);
+    const result = this.wfs.mkdir(this.toNative(path));
     if (!result.ok) {
       return err({ kind: 'IO_ERROR', message: result.error ?? 'mkdir failed' });
     }
@@ -96,7 +133,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   }
 
   deleteFile(path: string): Result<void> {
-    const result = this.wfs.deleteFile(path);
+    const result = this.wfs.deleteFile(this.toNative(path));
     if (!result.ok) {
       return err({ kind: 'IO_ERROR', message: result.error ?? 'delete failed' });
     }
@@ -104,7 +141,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   }
 
   rmdir(path: string): Result<void> {
-    const result = this.wfs.rmdir(path);
+    const result = this.wfs.rmdir(this.toNative(path));
     if (!result.ok) {
       return err({ kind: 'IO_ERROR', message: result.error ?? 'rmdir failed' });
     }
@@ -112,7 +149,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   }
 
   rename(src: string, dst: string): Result<void> {
-    const result = this.wfs.moveFile(src, dst);
+    const result = this.wfs.moveFile(this.toNative(src), this.toNative(dst));
     if (!result.ok) {
       return err({ kind: 'IO_ERROR', message: result.error ?? 'rename failed' });
     }
@@ -132,8 +169,13 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
 
   // ── private helpers ────────────────────────────────────────────────
 
-  private resolveEntry(path: string): WinFSEntry | null {
-    return this.wfs.resolve(path);
+  /** Convert any incoming path (SFTP or native) to native Windows form. */
+  private toNative(path: string): string {
+    return path.startsWith('/') ? sftpToWin(path) : path;
+  }
+
+  private resolveEntry(nativePath: string): WinFSEntry | null {
+    return this.wfs.resolve(nativePath);
   }
 
   private toFileAttrs(entry: WinFSEntry): SftpFileAttrs {

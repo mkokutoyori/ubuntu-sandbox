@@ -21,11 +21,21 @@ import {
   type ISshServerContext,
   type SshServerConfig,
 } from './ISshServerContext';
+import {
+  DEFAULT_SSHD_CONFIG,
+  parseSshdConfig,
+  serializeSshdConfig,
+  type SshdConfig,
+} from './SshSshdConfig';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
 
 const LASTLOG_PATH = '/var/log/lastlog.json';
+const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
+const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
+const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
+const ETC_SSH_DIR = '/etc/ssh';
 
 interface LastLoginEntry {
   user: string;
@@ -33,10 +43,24 @@ interface LastLoginEntry {
   at: number;
 }
 
+function matchesUserPattern(pattern: string, user: string): boolean {
+  if (pattern === user || pattern === '*') return true;
+  const re = new RegExp(
+    '^' +
+      pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.') +
+      '$',
+  );
+  return re.test(user);
+}
+
 export class LinuxSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
+  readonly sshdConfig: SshdConfig;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -44,9 +68,26 @@ export class LinuxSshServerContext implements ISshServerContext {
     private readonly hostname: string,
     config: Partial<SshServerConfig> = {},
   ) {
-    this.hostKey = SshHostKey.generate(hostname);
-    this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...config });
+    this.ensureEtcSshFiles();
+    this.hostKey = this.loadOrGenerateHostKey();
+    this.sshdConfig = this.loadOrGenerateSshdConfig();
+    this.config = Object.freeze({
+      ...DEFAULT_SSH_SERVER_CONFIG,
+      ...this.sshdConfig,
+      ...config,
+    });
     this.auth = this.buildAuthContext();
+  }
+
+  /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
+  reloadConfig(): LinuxSshServerContext {
+    return new LinuxSshServerContext(this.vfs, this.userManager, this.hostname);
+  }
+
+  /** Banner text shown before authentication (SSH-07-R8). */
+  getBanner(): string | null {
+    if (!this.sshdConfig.banner) return null;
+    return this.vfs.readFile(this.sshdConfig.banner);
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
@@ -129,15 +170,65 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   // ─── private ─────────────────────────────────────────────────────
 
+  private ensureEtcSshFiles(): void {
+    if (!this.vfs.exists(ETC_SSH_DIR)) {
+      this.vfs.mkdirp(ETC_SSH_DIR, 0o755, 0, 0);
+    }
+  }
+
+  private loadOrGenerateHostKey(): SshHostKey {
+    const pub = this.vfs.readFile(HOST_KEY_PUB_PATH);
+    const priv = this.vfs.readFile(HOST_KEY_PATH);
+    if (pub && priv) {
+      const material = pub.trim().split(/\s+/)[1] ?? pub.trim();
+      return SshHostKey.fromFiles(material, priv.trim(), 'ssh-ed25519');
+    }
+    const generated = SshHostKey.generate(this.hostname);
+    this.vfs.writeFile(
+      HOST_KEY_PUB_PATH,
+      generated.publicKeyLine + '\n',
+      0,
+      0,
+      0o022,
+    );
+    this.vfs.chmod(HOST_KEY_PUB_PATH, 0o644);
+    // Persist a stable opaque private key blob (no real crypto — see C-02).
+    this.vfs.writeFile(
+      HOST_KEY_PATH,
+      `-----BEGIN OPENSSH PRIVATE KEY-----\n${generated.publicKey}\n-----END OPENSSH PRIVATE KEY-----\n`,
+      0,
+      0,
+      0o022,
+    );
+    this.vfs.chmod(HOST_KEY_PATH, 0o600);
+    return generated;
+  }
+
+  private loadOrGenerateSshdConfig(): SshdConfig {
+    const existing = this.vfs.readFile(SSHD_CONFIG_PATH);
+    if (existing) return parseSshdConfig(existing);
+    this.vfs.writeFile(
+      SSHD_CONFIG_PATH,
+      serializeSshdConfig(DEFAULT_SSHD_CONFIG),
+      0,
+      0,
+      0o022,
+    );
+    this.vfs.chmod(SSHD_CONFIG_PATH, 0o644);
+    return DEFAULT_SSHD_CONFIG;
+  }
+
   private buildAuthContext(): ISshAuthContext {
     let attemptsLeft = this.config.maxAuthTries;
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
+        if (!this.userAllowed(user)) return false;
         if (!this.config.passwordAuthentication) return false;
         return this.userManager.checkPassword(user, password);
       },
       checkPublicKey: (user, publicKey) => {
+        if (!this.userAllowed(user)) return false;
         if (!this.config.pubkeyAuthentication) return false;
         const userEntry = this.userManager.getUser(user);
         if (!userEntry) return false;
@@ -156,5 +247,12 @@ export class LinuxSshServerContext implements ISshServerContext {
         return methods;
       },
     };
+  }
+
+  private userAllowed(user: string): boolean {
+    if (user === 'root' && !this.config.permitRootLogin) return false;
+    const allow = this.sshdConfig.allowUsers;
+    if (allow.length === 0) return true;
+    return allow.some((pattern) => matchesUserPattern(pattern, user));
   }
 }
