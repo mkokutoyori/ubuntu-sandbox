@@ -64,6 +64,8 @@ import type { DHCPClient } from '../dhcp/DHCPClient';
 import type { ISftpServer } from '../protocols/sftp/ISftpServer';
 import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '../protocols/sftp/LinuxSftpAdapter';
 import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
+import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -207,6 +209,28 @@ export abstract class LinuxMachine extends EndHost {
       hostname:    this.profile.hostname,
       socketTable: this.socketTable,
     };
+  }
+
+  /**
+   * Build a fresh ISshServerContext bound to this machine's VFS / users.
+   * Used by callers wanting to drive the new SSH stack against this device
+   * (tests, future cutover from the legacy SFTP-only handler).
+   */
+  getSshServerContext(): LinuxSshServerContext {
+    return new LinuxSshServerContext(
+      this.executor.vfs,
+      this.executor.userMgr,
+      this.profile.hostname,
+    );
+  }
+
+  /**
+   * Build a SshServerHandler ready to be hooked onto a TcpConnection.
+   * The legacy SFTP handler is left registered on port 22 for backward
+   * compatibility; a follow-up may swap it for this one.
+   */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   // ─── Terminal entry point ────────────────────────────────────────────

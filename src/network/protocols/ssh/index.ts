@@ -33,6 +33,7 @@ export * from './channels/SshChannelManager';
 export * from './session/SshSessionState';
 export * from './session/ISshInteractionHandler';
 export * from './session/TerminalSshInteractionHandler';
+export * from './session/QueuedTerminalIO';
 export * from './session/ISshSession';
 export * from './session/SshSession';
 
