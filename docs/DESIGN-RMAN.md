@@ -140,3 +140,197 @@ L'analyse de `RmanSubShell.ts` (382 lignes) revele les defauts suivants :
 - Recovery Catalog sur base separee (catalog en memoire uniquement)
 
 ---
+
+## 2. Fondations : Result monad + RmanError
+
+### 2.1 Pourquoi une monade Result ?
+
+L'implementation actuelle de `RmanSubShell` retourne des `string[]` ou des messages codes en dur, sans distinction entre succes et echec. Cela rend impossible :
+- la propagation d'erreurs typees depuis les couches profondes
+- le test unitaire des cas d'echec sans capturer stdout
+- la composition de commandes (`RUN {}` blocs) avec gestion d'erreur propre
+
+La monade `Result<T, E>` est le fondement de toute l'architecture.
+
+### 2.2 Le type Result<T, E> (module partage avec SSH)
+
+```typescript
+// src/network/protocols/ssh/result.ts  (deja existant apres implementation SSH)
+// src/database/oracle/rman/result.ts   (re-export ou import direct)
+
+export type Result<T, E = RmanError> =
+  | { readonly ok: true;  readonly value: T }
+  | { readonly ok: false; readonly error: E }
+
+// Constructeurs
+export const ok  = <T>(value: T): Result<T, never> => ({ ok: true, value })
+export const err = <E>(error: E): Result<never, E> => ({ ok: false, error })
+
+// Combinateurs — programmation fonctionnelle pure
+export const map = <T, U, E>(
+  r: Result<T, E>,
+  f: (v: T) => U
+): Result<U, E> =>
+  r.ok ? ok(f(r.value)) : r
+
+export const flatMap = <T, U, E>(
+  r: Result<T, E>,
+  f: (v: T) => Result<U, E>
+): Result<U, E> =>
+  r.ok ? f(r.value) : r
+
+export const mapError = <T, E, F>(
+  r: Result<T, E>,
+  f: (e: E) => F
+): Result<T, F> =>
+  r.ok ? r : err(f(r.error))
+
+export const getOrElse = <T, E>(
+  r: Result<T, E>,
+  fallback: T
+): T =>
+  r.ok ? r.value : fallback
+
+export const match = <T, E, U>(
+  r: Result<T, E>,
+  onOk: (v: T) => U,
+  onErr: (e: E) => U
+): U =>
+  r.ok ? onOk(r.value) : onErr(r.error)
+
+// Accumulation — sequencer plusieurs Result en une passe
+export const sequence = <T, E>(
+  results: ReadonlyArray<Result<T, E>>
+): Result<ReadonlyArray<T>, E> => {
+  const values: T[] = []
+  for (const r of results) {
+    if (!r.ok) return r
+    values.push(r.value)
+  }
+  return ok(values)
+}
+```
+
+### 2.3 RmanError — union discriminee
+
+Chaque code d'erreur RMAN officiel (RMAN-XXXXX) est modelise comme un variant distinct, garantissant l'exhaustivite au point de sortie :
+
+```typescript
+// src/database/oracle/rman/RmanError.ts
+
+export type RmanErrorCode =
+  // Erreurs de session / connexion
+  | 'RMAN_03002'   // failure of command at line N
+  | 'RMAN_03009'   // failure of allocate command on channel
+  | 'RMAN_06004'   // oracle error from target database: ORA-01034
+  | 'RMAN_06023'   // no backup or copy of datafile N found to restore
+  | 'RMAN_06059'   // expected archived log not found
+  | 'RMAN_08003'   // piece N expired
+  | 'RMAN_08120'   // unable to find archive log
+  // Erreurs de configuration
+  | 'RMAN_06550'   // retention policy conflict
+  // Erreurs de parsing / syntaxe
+  | 'RMAN_00558'   // error encountered while parsing input command
+  | 'RMAN_01009'   // syntax error: found X
+  | 'RMAN_01007'   // at line N column M file: standard input
+  // Erreurs de validation pre-execution
+  | 'DB_NOT_OPEN'        // commande requiert instance OPEN
+  | 'DB_NOT_MOUNT'       // commande requiert instance au moins MOUNT
+  | 'DB_NOT_CONNECTED'   // pas de connexion TARGET active
+  | 'NO_BACKUP_FOUND'    // aucun backup satisfait les criteres
+  | 'CHANNEL_FAILED'     // canal de sauvegarde en echec
+  | 'VFS_WRITE_ERROR'    // erreur d'ecriture sur le VFS
+  | 'VFS_READ_ERROR'     // erreur de lecture sur le VFS
+  | 'INVALID_FORMAT'     // format de piece invalide
+  | 'CATALOG_CORRUPT'    // incoherence dans le catalog interne
+
+export interface RmanError {
+  readonly code: RmanErrorCode
+  readonly message: string
+  readonly line?: number
+  /** Stack RMAN (RMAN-00571 + RMAN-00569 + code principal) */
+  readonly stack: readonly string[]
+}
+
+// Constructeur helper — genere le stack RMAN realiste
+export function makeRmanError(
+  code: RmanErrorCode,
+  message: string,
+  line?: number
+): RmanError {
+  return {
+    code,
+    message,
+    line,
+    stack: [
+      'RMAN-00571: ===========================================================',
+      'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+      'RMAN-00571: ===========================================================',
+      `RMAN-03002: failure of ${message.split(':')[0]} command at ${
+        line !== undefined ? `line ${line}` : 'standard input'
+      }`,
+      `${code.replace('_', '-')}: ${message}`,
+    ],
+  }
+}
+```
+
+### 2.4 RmanOutput — sortie structuree d'une commande
+
+Toute commande RMAN produit un `RmanOutput` : les lignes texte a afficher + metadata de la commande executee.
+
+```typescript
+// src/database/oracle/rman/RmanOutput.ts
+
+export interface RmanOutput {
+  /** Lignes a afficher dans le terminal (incluant les lignes blanches) */
+  readonly lines: readonly string[]
+  /** true = la session doit se fermer apres cet output */
+  readonly exit: boolean
+  /** Nombre de backup sets crees (0 si pas une commande de backup) */
+  readonly backupSetsCreated: number
+  /** Nombre de fichiers restaures (0 si pas une commande de restore) */
+  readonly filesRestored: number
+  /** Duree simulee en secondes */
+  readonly elapsedSeconds: number
+}
+
+export const emptyOutput: RmanOutput = {
+  lines: [],
+  exit: false,
+  backupSetsCreated: 0,
+  filesRestored: 0,
+  elapsedSeconds: 0,
+}
+
+export function outputLines(
+  lines: readonly string[],
+  opts?: Partial<Omit<RmanOutput, 'lines'>>
+): RmanOutput {
+  return { ...emptyOutput, lines, ...opts }
+}
+
+export function outputError(error: RmanError): RmanOutput {
+  return outputLines(error.stack)
+}
+```
+
+### 2.5 Diagramme de dependances des types fondamentaux
+
+```
+Result<T, E>       (type generique — zero dependance)
+     |
+     +--- RmanError          (code + message + stack)
+     |       |
+     |       +--- makeRmanError()   (constructeur helper pur)
+     |
+     +--- RmanOutput         (lignes + metadata)
+             |
+             +--- outputLines()     (constructeur helper pur)
+             +--- outputError()     (conversion RmanError -> RmanOutput)
+```
+
+Toutes ces definitions sont des **types purs** : aucun import de classe concrete, aucun effet de bord. Elles peuvent etre importees par n'importe quelle couche sans risque de couplage circulaire.
+
+---
+
