@@ -32,6 +32,7 @@ export * from './channels/SshChannelManager';
 
 export * from './session/SshSessionState';
 export * from './session/ISshInteractionHandler';
+export * from './session/TerminalSshInteractionHandler';
 export * from './session/ISshSession';
 export * from './session/SshSession';
 
@@ -40,7 +41,11 @@ export * from './sftp/ISftpCommand';
 export * from './sftp/SftpCommands';
 export * from './sftp/SftpCommandDispatcher';
 export * from './sftp/PermissionCheckingFSDecorator';
+export * from './sftp/LinuxSftpFSAdapter';
+export * from './sftp/WindowsSftpFSAdapter';
 
 export * from './server/ISshServerContext';
 export * from './server/SshServerEvent';
 export * from './server/SshServerHandler';
+export * from './server/LinuxSshServerContext';
+export * from './server/WindowsSshServerContext';
