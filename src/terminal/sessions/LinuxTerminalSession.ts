@@ -9,7 +9,7 @@
  *   - Tab completion
  */
 
-import { Equipment, IPAddress } from '@/network';
+import { Equipment } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
@@ -21,7 +21,7 @@ import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { SftpSession } from '@/network/protocols/sftp/SftpSession';
-import type { ISftpServer, SftpServerResolver } from '@/network/protocols/sftp/ISftpServer';
+import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
@@ -507,39 +507,25 @@ export class LinuxTerminalSession extends TerminalSession {
     this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
   }
 
-  private connectAndEnterSftp(userAtHost: string, password: string): void {
-    // Get local resources via duck-typing (this device is always a LinuxMachine)
-    const localVfs   = (this.device as any).executor?.vfs;
-    const socketTable = 'getSocketTable' in this.device
-      ? (this.device as Equipment & { getSocketTable(): unknown }).getSocketTable()
-      : null;
-
-    if (!localVfs || !socketTable) {
+  private async connectAndEnterSftp(userAtHost: string, password: string): Promise<void> {
+    const localVfs = (this.device as any).executor?.vfs;
+    if (!localVfs) {
       this.addLine('sftp: this device does not support SFTP', 'error');
       this.notify();
       return;
     }
 
-    // Resolve local IP from first configured interface
-    let localIp = '0.0.0.0';
-    if ('getInterfaces' in this.device) {
-      const ports = (this.device as any).getInterfaces() as Array<{ getIPAddress(): { toString(): string } | null }>;
-      for (const p of ports) {
-        const ip = p.getIPAddress()?.toString();
-        if (ip && !ip.startsWith('127.')) { localIp = ip; break; }
-      }
-    }
+    const tcpConnector: TcpConnector = (host, port) =>
+      (this.device as any).tcpConnect?.(host, port) ?? Promise.resolve(null);
 
     const session = new SftpSession(
       localVfs,
-      socketTable as import('@/network/core/SocketTable').SocketTable,
-      this.buildSftpResolver(),
+      tcpConnector,
       this.currentPath,
-      localIp,
       this.currentUser,
     );
 
-    const err = session.connect(userAtHost, password);
+    const err = await session.connect(userAtHost, password);
     if (err) {
       this.addLine(err, 'error');
       this.notify();
@@ -552,52 +538,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.activeSubShell = new SftpSubShell(session);
     this._inputBuf = '';
     this.notify();
-  }
-
-  /**
-   * Build a resolver that finds an ISftpServer by IP address.
-   *
-   * Two-stage check:
-   *   1. Routing reachability — the source device must have a route to the
-   *      destination IP (connected, static, or default gateway).  This mirrors
-   *      the OS-level routing decision made before a TCP connection attempt.
-   *   2. Device lookup — an equipment with getSftpServer() must own that IP.
-   *
-   * Without stage 1, machines on disconnected networks could "talk" to each
-   * other even with no cables, routers, or routing configured — which is
-   * physically impossible.
-   */
-  private buildSftpResolver(): SftpServerResolver {
-    const sourceDevice = this.device;
-    return (ip: string): ISftpServer | null => {
-      // Stage 1: can the source device route to this IP?
-      if (!this.canReachIp(sourceDevice, ip)) return null;
-
-      // Stage 2: find the device that owns the IP and exposes an SFTP server
-      for (const device of Equipment.getAllEquipment()) {
-        if (!('getSftpServer' in device)) continue;
-        const ports: Array<{ getIPAddress(): { toString(): string } | null }> =
-          'getInterfaces' in device ? (device as any).getInterfaces() : [];
-        const matches = ports.some(p => p.getIPAddress()?.toString() === ip);
-        if (matches) {
-          return (device as any).getSftpServer() as ISftpServer;
-        }
-      }
-      return null;
-    };
-  }
-
-  /**
-   * Return true if `device` has a routing-table entry that covers `destIp`.
-   * Uses the same Longest-Prefix-Match engine as sendPacket so the result is
-   * consistent with what ping/traceroute would report.
-   */
-  private canReachIp(device: any, destIp: string): boolean {
-    try {
-      return device.resolveRoute?.(new IPAddress(destIp)) !== null;
-    } catch {
-      return false;
-    }
   }
 
   /**

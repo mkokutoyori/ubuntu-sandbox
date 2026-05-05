@@ -63,6 +63,7 @@ import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import type { ISftpServer } from '../protocols/sftp/ISftpServer';
 import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '../protocols/sftp/LinuxSftpAdapter';
+import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -120,6 +121,9 @@ export abstract class LinuxMachine extends EndHost {
     this.commands = new LinuxCommandRegistry();
     this.registerCoreCommands();
     this.registerDeviceCommands();
+
+    // 5. TCP SFTP server on port 22
+    this.listenTcp(22, (conn) => registerSftpHandler(conn, this.getSftpServer()));
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────

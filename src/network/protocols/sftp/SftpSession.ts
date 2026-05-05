@@ -1,40 +1,36 @@
 /**
  * SftpSession — client-side SSH File Transfer Protocol session.
  *
- * Implements the core SFTP operations defined in draft-ietf-secsh-filexfer:
- *   SSH_FXP_OPENDIR / SSH_FXP_READDIR → ls / lls
- *   SSH_FXP_REALPATH                  → pwd / lpwd
- *   SSH_FXP_SETSTAT / SSH_FXP_RENAME  → rename
- *   SSH_FXP_REMOVE                    → rm
- *   SSH_FXP_RMDIR                     → rmdir
- *   SSH_FXP_MKDIR                     → mkdir
- *   SSH_FXP_READ  / SSH_FXP_WRITE     → get / put
+ * Transport: JSON-over-TCP on port 22.
+ * All SFTP operations (auth, ls, cd, get, put, …) are encoded as JSON
+ * request/response pairs sent over a TcpConnection.
  *
- * Authentication: delegates to ISftpUserAuth (RFC 4252 simulation).
+ * Because the simulator's cable delivery chain is synchronous, the server's
+ * onData handler fires during conn.write(request), so sendRequest() can
+ * collect the response synchronously before write() returns.
  *
- * Cross-platform: the remote VFS is accessed through ISftpFileSystem so
- * both Linux (VirtualFileSystem) and Windows (WindowsFileSystem) servers
- * are supported.  The local VFS is always a Linux VirtualFileSystem
- * (the client is always a Linux machine).
+ * connect() is the only async method because establishing the TCP connection
+ * requires one ARP resolution (one microtask) followed by one SYN→SYN-ACK
+ * roundtrip (also resolved as a microtask since delivery is synchronous).
+ *
+ * Standards:
+ *   - draft-ietf-secsh-filexfer (SSH File Transfer Protocol)
+ *   - Authentication based on RFC 4252 (SSH Auth)
  */
 
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
-import type { SocketTable } from '@/network/core/SocketTable';
-import type { ISftpServer, SftpServerResolver } from './ISftpServer';
+import type { TcpConnector, TcpConnection } from '@/network/core/TcpConnection';
 
 export class SftpSession {
-  private server: ISftpServer | null = null;
+  private conn: TcpConnection | null = null;
   private remoteUser = '';
   private remoteCwd = '/';
   private localCwd: string;
-  private socketId: number | null = null;
 
   constructor(
     private readonly localVfs: VirtualFileSystem,
-    private readonly socketTable: SocketTable,
-    private readonly resolver: SftpServerResolver,
+    private readonly tcpConnector: TcpConnector,
     initialLocalCwd: string,
-    private readonly localIp: string,
     private readonly localUser: string,
   ) {
     this.localCwd = initialLocalCwd;
@@ -43,46 +39,42 @@ export class SftpSession {
   // ─── Connection ─────────────────────────────────────────────────────
 
   /**
-   * Connect to a remote host.
+   * Connect to a remote SFTP server.
    * @param userAtHost  "user@host" or bare "host" (uses localUser).
    * @param password    Password for authentication.
    * @returns  Empty string on success; human-readable error otherwise.
    */
-  connect(userAtHost: string, password: string): string {
+  async connect(userAtHost: string, password: string): Promise<string> {
     const { user, host } = parseUserAtHost(userAtHost, this.localUser);
-    const server = this.resolver(host);
-    if (!server) {
+
+    const conn = await this.tcpConnector(host, 22);
+    if (!conn) {
       return `ssh: connect to host ${host} port 22: No route to host`;
     }
 
-    if (!server.userMgr.checkPassword(user, password)) {
+    this.conn = conn;
+
+    const authResp = this.sendRequest({ op: 'auth', user, password });
+    if (!authResp.ok) {
+      this.conn = null;
       return `${user}@${host}: Permission denied (publickey,password).`;
     }
 
-    this.server     = server;
     this.remoteUser = user;
-    this.remoteCwd  = server.userMgr.getHomeDirectory(user);
-
-    const localPort = this.socketTable.allocateEphemeralPort();
-    const entry     = this.socketTable.connect(
-      'tcp', this.localIp, localPort, host, 22,
-      undefined, 'sftp',
-    );
-    this.socketId = entry.id;
+    this.remoteCwd  = (authResp.cwd as string) ?? '/';
     return '';
   }
 
   disconnect(): void {
-    if (this.socketId !== null) {
-      this.socketTable.close(this.socketId);
-      this.socketId = null;
+    if (this.conn) {
+      this.conn.close();
+      this.conn = null;
     }
-    this.server     = null;
     this.remoteUser = '';
     this.remoteCwd  = '/';
   }
 
-  isConnected(): boolean { return this.server !== null; }
+  isConnected(): boolean { return this.conn !== null; }
   getPrompt(): string    { return 'sftp> '; }
 
   // ─── Remote navigation ──────────────────────────────────────────────
@@ -90,22 +82,22 @@ export class SftpSession {
   pwd(): string { return `Remote working directory: ${this.remoteCwd}`; }
 
   ls(args: string[]): string {
-    if (!this.server) return 'Not connected.';
-    const path = args[0]
-      ? this.server.vfs.normalizePath(args[0], this.remoteCwd)
-      : this.remoteCwd;
-    const entries = this.server.vfs.listDirectory(path);
-    if (!entries) return `ls: cannot access '${path}': No such file or directory`;
-    return entries.map(e => e.name).join('  ');
+    if (!this.conn) return 'Not connected.';
+    const req: Record<string, unknown> = { op: 'ls' };
+    if (args[0]) req.path = args[0];
+    const resp = this.sendRequest(req);
+    if (!resp.ok) return `ls: cannot access '${args[0] ?? this.remoteCwd}': No such file or directory`;
+    return (resp.entries as string[]).join('  ');
   }
 
   cd(path: string): string {
-    if (!this.server) return 'Not connected.';
-    const abs  = this.server.vfs.normalizePath(path, this.remoteCwd);
-    const type = this.server.vfs.getEntryType(abs);
-    if (!type)              return `Couldn't canonicalize: No such file or directory`;
-    if (type !== 'directory') return `${abs}: Not a directory`;
-    this.remoteCwd = abs;
+    if (!this.conn) return 'Not connected.';
+    const resp = this.sendRequest({ op: 'cd', path });
+    if (!resp.ok) {
+      if (String(resp.error ?? '').includes('Not a directory')) return `${path}: Not a directory`;
+      return `Couldn't canonicalize: No such file or directory`;
+    }
+    this.remoteCwd = resp.cwd as string;
     return '';
   }
 
@@ -137,21 +129,21 @@ export class SftpSession {
   // ─── Download ───────────────────────────────────────────────────────
 
   get(remotePath: string, localPath?: string): string {
-    if (!this.server) return 'Not connected.';
+    if (!this.conn) return 'Not connected.';
 
-    const absRemote = this.server.vfs.normalizePath(remotePath, this.remoteCwd);
-    const remoteType = this.server.vfs.getEntryType(absRemote);
-    if (!remoteType) {
-      return `File "${absRemote}" not found.  Ensure that the path and access permissions are correct.  No such file or directory`;
+    const resp = this.sendRequest({ op: 'get', path: remotePath });
+    if (!resp.ok) {
+      const err = String(resp.error ?? '');
+      if (err.includes('not a regular file')) return `${remotePath}: not a regular file`;
+      return `File "${remotePath}" not found.  Ensure that the path and access permissions are correct.  No such file or directory`;
     }
-    if (remoteType !== 'file') return `${absRemote}: not a regular file`;
 
-    const basename = baseName(absRemote);
-    const absLocal  = localPath
+    const content  = (resp.content as string) ?? '';
+    const basename = baseName(remotePath);
+    const absLocal = localPath
       ? this.localVfs.normalizePath(localPath, this.localCwd)
       : `${this.localCwd}/${basename}`;
 
-    const content = this.server.vfs.readFile(absRemote) ?? '';
     this.localVfs.writeFile(absLocal, content, 0, 0, 0o022);
     return formatTransferLine(basename, content.length);
   }
@@ -159,63 +151,82 @@ export class SftpSession {
   // ─── Upload ─────────────────────────────────────────────────────────
 
   put(localPath: string, remotePath?: string): string {
-    if (!this.server) return 'Not connected.';
+    if (!this.conn) return 'Not connected.';
 
     const absLocal   = this.localVfs.normalizePath(localPath, this.localCwd);
     const localInode = this.localVfs.resolveInode(absLocal);
     if (!localInode)                    return `${absLocal}: No such file or directory`;
     if (localInode.type !== 'file')     return `${absLocal}: not a regular file`;
 
+    const content   = this.localVfs.readFile(absLocal) ?? '';
     const basename  = baseName(absLocal);
-    const absRemote = remotePath
-      ? this.server.vfs.normalizePath(remotePath, this.remoteCwd)
-      : `${this.remoteCwd}/${basename}`;
+    const absRemote = remotePath ?? `${this.remoteCwd}/${basename}`;
 
-    const content = this.localVfs.readFile(absLocal) ?? '';
-    this.server.vfs.writeFile(absRemote, content);
+    const resp = this.sendRequest({ op: 'put', path: absRemote, content });
+    if (!resp.ok) return `Couldn't write file: ${resp.error}`;
     return formatTransferLine(basename, content.length);
   }
 
   // ─── Remote file operations ─────────────────────────────────────────
 
   mkdir(path: string): string {
-    if (!this.server) return 'Not connected.';
-    const abs = this.server.vfs.normalizePath(path, this.remoteCwd);
-    if (this.server.vfs.exists(abs)) return `Couldn't create directory: File exists`;
-    this.server.vfs.mkdirp(abs);
+    if (!this.conn) return 'Not connected.';
+    const resp = this.sendRequest({ op: 'mkdir', path });
+    if (!resp.ok) return `Couldn't create directory: ${resp.error}`;
     return '';
   }
 
   rm(path: string): string {
-    if (!this.server) return 'Not connected.';
-    const abs  = this.server.vfs.normalizePath(path, this.remoteCwd);
-    const type = this.server.vfs.getEntryType(abs);
-    if (!type) return `${abs}: No such file or directory`;
-    const ok = this.server.vfs.deleteFile(abs);
-    if (!ok)   return `Couldn't delete file: ${abs}`;
+    if (!this.conn) return 'Not connected.';
+    const resp = this.sendRequest({ op: 'rm', path });
+    if (!resp.ok) return `${path}: ${resp.error ?? 'Failed to remove'}`;
     return '';
   }
 
   rmdir(path: string): string {
-    if (!this.server) return 'Not connected.';
-    const abs  = this.server.vfs.normalizePath(path, this.remoteCwd);
-    const type = this.server.vfs.getEntryType(abs);
-    if (!type)              return `${abs}: No such file or directory`;
-    if (type !== 'directory') return `${abs}: Not a directory`;
-    const ok = this.server.vfs.rmdir(abs);
-    if (!ok)   return `Couldn't remove directory: ${abs}`;
+    if (!this.conn) return 'Not connected.';
+    const resp = this.sendRequest({ op: 'rmdir', path });
+    if (!resp.ok) {
+      const err = String(resp.error ?? '');
+      if (err.includes('Not a directory'))    return `${path}: Not a directory`;
+      if (err.includes('No such'))            return `${path}: No such file or directory`;
+      return `Couldn't remove directory: ${resp.error}`;
+    }
     return '';
   }
 
   rename(oldPath: string, newPath: string): string {
-    if (!this.server) return 'Not connected.';
-    const absOld = this.server.vfs.normalizePath(oldPath, this.remoteCwd);
-    const absNew = this.server.vfs.normalizePath(newPath, this.remoteCwd);
-    const type   = this.server.vfs.getEntryType(absOld);
-    if (!type) return `${absOld}: No such file or directory`;
-    const ok = this.server.vfs.rename(absOld, absNew);
-    if (!ok)   return `Couldn't rename file: operation failed`;
+    if (!this.conn) return 'Not connected.';
+    const resp = this.sendRequest({ op: 'rename', old: oldPath, new: newPath });
+    if (!resp.ok) {
+      if (String(resp.error ?? '').includes('No such')) return `${oldPath}: No such file or directory`;
+      return `Couldn't rename file: operation failed`;
+    }
     return '';
+  }
+
+  // ─── Private ────────────────────────────────────────────────────────
+
+  /**
+   * Send a JSON request and collect the synchronous response.
+   *
+   * Registers a one-shot onData handler BEFORE calling write() so it catches
+   * the response that arrives synchronously during network delivery.
+   */
+  private sendRequest(req: object): Record<string, unknown> {
+    if (!this.conn) return { ok: false, error: 'Not connected' };
+
+    let resp: Record<string, unknown> | null = null;
+    const off = this.conn.onData((data: string) => {
+      try { resp = JSON.parse(data) as Record<string, unknown>; } catch {
+        resp = { ok: false, error: 'parse error' };
+      }
+    });
+
+    this.conn.write(JSON.stringify(req));
+    off(); // unregister after the synchronous delivery
+
+    return resp ?? { ok: false, error: 'No response from server' };
   }
 }
 
@@ -230,7 +241,6 @@ function parseUserAtHost(
   return { user: userAtHost.slice(0, atIdx), host: userAtHost.slice(atIdx + 1) };
 }
 
-/** Last component of any path (POSIX or Windows). */
 function baseName(path: string): string {
   return path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? 'file';
 }

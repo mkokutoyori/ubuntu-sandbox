@@ -1,6 +1,11 @@
 /**
  * SFTP protocol — TDD tests.
  *
+ * Transport: JSON-over-TCP using in-memory linked TcpConnections.
+ * The mock connector creates a client-server pair where client.write() →
+ * server.receiveData() and vice versa, exactly mirroring the synchronous
+ * frame-delivery chain used in the real network stack.
+ *
  * Covers:
  *   SF-01  SftpSession — connect / disconnect
  *   SF-02  SftpSession — remote navigation (pwd / ls / cd)
@@ -9,18 +14,19 @@
  *   SF-05  SftpSession — put  (upload)
  *   SF-06  SftpSession — remote file operations (mkdir / rm / rmdir / rename)
  *   SF-07  sftp command — non-interactive batch transfer
- *   SF-08  SftpSession — socket table integration
+ *   SF-08  SftpSession — TCP connection state
  *   SF-09  SftpSubShell — processLine (interactive sub-shell commands)
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SftpSession } from '@/network/protocols/sftp/SftpSession';
-import type { ISftpServer, SftpServerResolver } from '@/network/protocols/sftp/ISftpServer';
+import type { ISftpServer } from '@/network/protocols/sftp/ISftpServer';
 import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '@/network/protocols/sftp/LinuxSftpAdapter';
+import { registerSftpHandler } from '@/network/protocols/sftp/SftpServerHandler';
+import { TcpConnection, type TcpConnector } from '@/network/core/TcpConnection';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
-import { SocketTable } from '@/network/core/SocketTable';
 
 // ─── Test fixtures ───────────────────────────────────────────────────────────
 
@@ -54,20 +60,45 @@ function makeMockServer(opts: {
     vfs.writeFile(path, content, 1000, 1000, 0o022);
   }
   return {
-    vfs:         new LinuxSftpFSAdapter(vfs),
-    userMgr:     new LinuxSftpUserAuthAdapter(userMgr),
+    vfs:     new LinuxSftpFSAdapter(vfs),
+    userMgr: new LinuxSftpUserAuthAdapter(userMgr),
     hostname,
-    socketTable: new SocketTable(),
+    socketTable: null as any,
   };
 }
 
-/** Build a resolver that returns `server` for `REMOTE_IP`, null otherwise. */
-function makeResolver(server: ISftpServer): SftpServerResolver {
-  return (ip: string) => (ip === REMOTE_IP ? server : null);
+/**
+ * Create a pair of in-memory linked TcpConnections.
+ * client.write() → server.receiveData(); server.write() → client.receiveData().
+ * The SFTP handler is registered on the server side.
+ */
+function makeLinkedPair(server: ISftpServer): TcpConnection {
+  const bridge: { serverConn: TcpConnection | null } = { serverConn: null };
+
+  const clientConn = new TcpConnection(LOCAL_IP, 49000, REMOTE_IP, 22, 100, (seg) => {
+    if (seg.payload != null && bridge.serverConn) {
+      bridge.serverConn.receiveData(String(seg.payload));
+    }
+  });
+
+  const serverConn = new TcpConnection(REMOTE_IP, 22, LOCAL_IP, 49000, 200, (seg) => {
+    if (seg.payload != null) clientConn.receiveData(String(seg.payload));
+  });
+
+  bridge.serverConn = serverConn;
+  registerSftpHandler(serverConn, server);
+
+  return clientConn;
+}
+
+/** TcpConnector that returns a linked pair for REMOTE_IP, null otherwise. */
+function makeConnector(server: ISftpServer): TcpConnector {
+  return async (host: string, _port: number): Promise<TcpConnection | null> =>
+    host === REMOTE_IP ? makeLinkedPair(server) : null;
 }
 
 function makeSession(
-  resolver: SftpServerResolver,
+  connector: TcpConnector,
   localFiles: Record<string, string> = {},
   localDirs: string[] = [],
 ): SftpSession {
@@ -80,8 +111,7 @@ function makeSession(
   for (const [path, content] of Object.entries(localFiles)) {
     localVfs.writeFile(path, content, 0, 0, 0o022);
   }
-  const socketTable = new SocketTable();
-  return new SftpSession(localVfs, socketTable, resolver, '/root', LOCAL_IP, 'root');
+  return new SftpSession(localVfs, connector, '/root', 'root');
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -90,65 +120,64 @@ function makeSession(
 
 describe('SF-01 — SftpSession: connect / disconnect', () => {
 
-  it('connects to a known host with correct credentials', () => {
+  it('connects to a known host with correct credentials', async () => {
     const server = makeMockServer({ username: 'user', password: 'admin' });
-    const session = makeSession(makeResolver(server));
-    const err = session.connect(`user@${REMOTE_IP}`, 'admin');
+    const session = makeSession(makeConnector(server));
+    const err = await session.connect(`user@${REMOTE_IP}`, 'admin');
     expect(err).toBe('');
     expect(session.isConnected()).toBe(true);
   });
 
-  it('returns an error for an unknown host', () => {
+  it('returns an error for an unknown host', async () => {
     const server = makeMockServer();
-    const session = makeSession(makeResolver(server));
-    const err = session.connect('user@10.0.0.99', 'admin');
+    const session = makeSession(makeConnector(server));
+    const err = await session.connect('user@10.0.0.99', 'admin');
     expect(err).toContain('No route to host');
     expect(session.isConnected()).toBe(false);
   });
 
-  it('returns an error for wrong password', () => {
+  it('returns an error for wrong password', async () => {
     const server = makeMockServer({ username: 'user', password: 'admin' });
-    const session = makeSession(makeResolver(server));
-    const err = session.connect(`user@${REMOTE_IP}`, 'wrong');
+    const session = makeSession(makeConnector(server));
+    const err = await session.connect(`user@${REMOTE_IP}`, 'wrong');
     expect(err).toContain('Permission denied');
     expect(session.isConnected()).toBe(false);
   });
 
-  it('returns an error for unknown user', () => {
+  it('returns an error for unknown user', async () => {
     const server = makeMockServer({ username: 'user', password: 'admin' });
-    const session = makeSession(makeResolver(server));
-    const err = session.connect(`nobody@${REMOTE_IP}`, 'admin');
+    const session = makeSession(makeConnector(server));
+    const err = await session.connect(`nobody@${REMOTE_IP}`, 'admin');
     expect(err).toContain('Permission denied');
     expect(session.isConnected()).toBe(false);
   });
 
-  it('disconnect clears the connected state', () => {
+  it('disconnect clears the connected state', async () => {
     const server = makeMockServer();
-    const session = makeSession(makeResolver(server));
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    const session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
     expect(session.isConnected()).toBe(true);
     session.disconnect();
     expect(session.isConnected()).toBe(false);
   });
 
   it('disconnect when already disconnected is a no-op', () => {
-    const session = makeSession(() => null);
+    const session = makeSession(async () => null);
     expect(() => session.disconnect()).not.toThrow();
     expect(session.isConnected()).toBe(false);
   });
 
-  it('getPrompt returns "sftp> " when connected', () => {
+  it('getPrompt returns "sftp> " when connected', async () => {
     const server = makeMockServer();
-    const session = makeSession(makeResolver(server));
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    const session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
     expect(session.getPrompt()).toBe('sftp> ');
   });
 
-  it('uses localUser when host-only address is given', () => {
-    // makeMockServer already creates 'root' with password 'admin'
+  it('uses localUser when host-only address is given', async () => {
     const server = makeMockServer({ username: 'root', password: 'admin' });
-    const session = makeSession(makeResolver(server));
-    const err = session.connect(REMOTE_IP, 'admin');
+    const session = makeSession(makeConnector(server));
+    const err = await session.connect(REMOTE_IP, 'admin');
     expect(err).toBe('');
     expect(session.isConnected()).toBe(true);
   });
@@ -161,7 +190,7 @@ describe('SF-01 — SftpSession: connect / disconnect', () => {
 describe('SF-02 — SftpSession: remote navigation', () => {
   let session: SftpSession;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const server = makeMockServer({
       files: {
         '/home/user/readme.txt': 'hello',
@@ -169,8 +198,8 @@ describe('SF-02 — SftpSession: remote navigation', () => {
       },
       dirs: ['/home/user/subdir'],
     });
-    session = makeSession(makeResolver(server));
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
   });
 
   it('pwd returns the remote home directory after connect', () => {
@@ -219,12 +248,12 @@ describe('SF-02 — SftpSession: remote navigation', () => {
 describe('SF-03 — SftpSession: local navigation', () => {
   let session: SftpSession;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const server = makeMockServer();
-    session = makeSession(makeResolver(server), {
+    session = makeSession(makeConnector(server), {
       '/root/notes.txt': 'notes',
     }, ['/root/subdir']);
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
   });
 
   it('lpwd returns the local working directory', () => {
@@ -265,7 +294,7 @@ describe('SF-04 — SftpSession: get (download)', () => {
   let localVfs: VirtualFileSystem;
   let server: ISftpServer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     server = makeMockServer({
       files: {
         '/home/user/report.txt': 'report content',
@@ -274,9 +303,8 @@ describe('SF-04 — SftpSession: get (download)', () => {
     });
     localVfs = new VirtualFileSystem();
     localVfs.mkdirp('/root/downloads', 0o755, 0, 0);
-    const socketTable = new SocketTable();
-    session = new SftpSession(localVfs, socketTable, makeResolver(server), '/root', LOCAL_IP, 'root');
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    session = new SftpSession(localVfs, makeConnector(server), '/root', 'root');
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
   });
 
   it('get downloads a remote file to the local cwd', () => {
@@ -322,14 +350,13 @@ describe('SF-05 — SftpSession: put (upload)', () => {
   let localVfs: VirtualFileSystem;
   let server: ISftpServer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     server = makeMockServer({ dirs: ['/home/user/incoming'] });
     localVfs = new VirtualFileSystem();
     localVfs.writeFile('/root/upload.txt', 'upload content', 0, 0, 0o022);
     localVfs.writeFile('/root/data.csv',   'col1,col2\n1,2', 0, 0, 0o022);
-    const socketTable = new SocketTable();
-    session = new SftpSession(localVfs, socketTable, makeResolver(server), '/root', LOCAL_IP, 'root');
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    session = new SftpSession(localVfs, makeConnector(server), '/root', 'root');
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
   });
 
   it('put uploads a local file to the remote cwd', () => {
@@ -374,7 +401,7 @@ describe('SF-06 — SftpSession: remote file operations', () => {
   let session: SftpSession;
   let server: ISftpServer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     server = makeMockServer({
       files: {
         '/home/user/old.txt': 'rename me',
@@ -382,8 +409,8 @@ describe('SF-06 — SftpSession: remote file operations', () => {
       },
       dirs: ['/home/user/emptydir'],
     });
-    session = makeSession(makeResolver(server));
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
   });
 
   it('mkdir creates a remote directory', () => {
@@ -438,18 +465,14 @@ describe('SF-06 — SftpSession: remote file operations', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('SF-07 — sftp command: non-interactive batch transfer', () => {
-  it('sftp user@host:/remote/file /local downloads the file', () => {
+  it('sftp user@host:/remote/file /local downloads the file', async () => {
     const server = makeMockServer({
       files: { '/home/user/remote.txt': 'remote data' },
     });
-
     const localVfs = new VirtualFileSystem();
-    const socketTable = new SocketTable();
-    const resolver: SftpServerResolver = (ip) => (ip === REMOTE_IP ? server : null);
+    const session = new SftpSession(localVfs, makeConnector(server), '/root', 'root');
 
-    const session = new SftpSession(localVfs, socketTable, resolver, '/root', LOCAL_IP, 'root');
-    // Simulate the batch-mode: connect + get
-    const err = session.connect(`user@${REMOTE_IP}`, 'admin');
+    const err = await session.connect(`user@${REMOTE_IP}`, 'admin');
     expect(err).toBe('');
     const output = session.get('/home/user/remote.txt', '/root/remote.txt');
     expect(output).toContain('100%');
@@ -457,56 +480,50 @@ describe('SF-07 — sftp command: non-interactive batch transfer', () => {
     expect(localVfs.readFile('/root/remote.txt')).toBe('remote data');
   });
 
-  it('sftp user@host:/remote/file /local returns error for unknown host', () => {
-    const session = makeSession(() => null);
-    const err = session.connect(`user@99.99.99.99`, 'admin');
+  it('sftp user@host:/remote/file /local returns error for unknown host', async () => {
+    const session = makeSession(async () => null);
+    const err = await session.connect(`user@99.99.99.99`, 'admin');
     expect(err).toContain('No route to host');
     expect(session.isConnected()).toBe(false);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// SF-08 — SftpSession: socket table integration
+// SF-08 — SftpSession: TCP connection state
 // ═══════════════════════════════════════════════════════════════════════
 
-describe('SF-08 — SftpSession: socket table integration', () => {
-  it('connect creates an ESTABLISHED TCP entry in the client socket table', () => {
+describe('SF-08 — SftpSession: TCP connection state', () => {
+  it('connect succeeds and session reports isConnected()', async () => {
     const server = makeMockServer();
-    const localVfs = new VirtualFileSystem();
-    const socketTable = new SocketTable();
-    const session = new SftpSession(localVfs, socketTable, makeResolver(server), '/root', LOCAL_IP, 'root');
-
-    session.connect(`user@${REMOTE_IP}`, 'admin');
-
-    const established = socketTable.getEstablished();
-    expect(established.length).toBe(1);
-    const entry = established[0];
-    expect(entry.protocol).toBe('tcp');
-    expect(entry.remoteAddress).toBe(REMOTE_IP);
-    expect(entry.remotePort).toBe(22);
-    expect(entry.localAddress).toBe(LOCAL_IP);
+    const session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
+    expect(session.isConnected()).toBe(true);
   });
 
-  it('disconnect removes the socket entry from the client socket table', () => {
+  it('disconnect transitions session to not-connected', async () => {
     const server = makeMockServer();
-    const localVfs = new VirtualFileSystem();
-    const socketTable = new SocketTable();
-    const session = new SftpSession(localVfs, socketTable, makeResolver(server), '/root', LOCAL_IP, 'root');
-
-    session.connect(`user@${REMOTE_IP}`, 'admin');
-    expect(socketTable.getEstablished().length).toBe(1);
-
+    const session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
+    expect(session.isConnected()).toBe(true);
     session.disconnect();
-    expect(socketTable.getEstablished().length).toBe(0);
+    expect(session.isConnected()).toBe(false);
   });
 
-  it('failed connect does not add any socket entry', () => {
-    const localVfs = new VirtualFileSystem();
-    const socketTable = new SocketTable();
-    const session = new SftpSession(localVfs, socketTable, () => null, '/root', LOCAL_IP, 'root');
+  it('auth failure leaves session disconnected', async () => {
+    const server = makeMockServer({ username: 'user', password: 'correct' });
+    const session = makeSession(makeConnector(server));
+    const err = await session.connect(`user@${REMOTE_IP}`, 'wrong');
+    expect(err).toContain('Permission denied');
+    expect(session.isConnected()).toBe(false);
+  });
 
-    session.connect(`user@${REMOTE_IP}`, 'admin');
-    expect(socketTable.getEstablished().length).toBe(0);
+  it('subsequent operations after disconnect return Not connected', async () => {
+    const server = makeMockServer();
+    const session = makeSession(makeConnector(server));
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
+    session.disconnect();
+    expect(session.ls([])).toBe('Not connected.');
+    expect(session.pwd()).toBe('Remote working directory: /');
   });
 });
 
@@ -518,16 +535,15 @@ describe('SF-09 — SftpSubShell: processLine', () => {
   let subShell: SftpSubShell;
   let server: ISftpServer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     server = makeMockServer({
       files: { '/home/user/readme.txt': 'hello' },
       dirs:  ['/home/user/docs'],
     });
     const localVfs = new VirtualFileSystem();
     localVfs.writeFile('/root/upload.txt', 'upload content', 0, 0, 0o022);
-    const socketTable = new SocketTable();
-    const session = new SftpSession(localVfs, socketTable, makeResolver(server), '/root', LOCAL_IP, 'root');
-    session.connect(`user@${REMOTE_IP}`, 'admin');
+    const session = new SftpSession(localVfs, makeConnector(server), '/root', 'root');
+    await session.connect(`user@${REMOTE_IP}`, 'admin');
     subShell = new SftpSubShell(session);
   });
 

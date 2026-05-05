@@ -19,6 +19,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import type { ISftpServer } from '../protocols/sftp/ISftpServer';
 import { WindowsSftpFSAdapter, WindowsSftpUserAuthAdapter } from '../protocols/sftp/WindowsSftpAdapter';
+import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -86,12 +87,17 @@ export class WindowsPC extends EndHost {
   }
 
   private initDefaultSockets(): void {
+    // OpenSSH Server — SFTP transport
+    this.socketTable.bind('tcp', '0.0.0.0', 22, 1088, 'sshd.exe');
     // RDP — Remote Desktop Protocol (TermService)
     this.socketTable.bind('tcp', '0.0.0.0', 3389, 1096, 'svchost.exe');
     // SMB — file sharing / domain traffic (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 445, 4, 'System');
     // NetBIOS Session Service (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
+
+    // TCP SFTP server on port 22
+    this.listenTcp(22, (conn) => registerSftpHandler(conn, this.getSftpServer()));
   }
 
   /**
