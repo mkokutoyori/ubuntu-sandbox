@@ -1000,3 +1000,159 @@ remote open("/etc/shadow"): Permission denied
 | SFTP-20-R6 | `ISftpFileSystem.checkReadPermission(path, uid, gid)` et `checkWritePermission(path, uid, gid)` |
 
 ---
+
+## 6. Plan d'Implémentation
+
+### 6.1 Stratégie
+
+L'implémentation se déroule en **4 phases séquentielles**, chacune livrable et testable indépendamment. Chaque phase se termine par une suite de tests unitaires complète.
+
+La règle de priorisation : d'abord corriger les **bugs visibles** (DEF-BLOQUANT), ensuite construire la **couche SSH** de bas en haut, puis enrichir SFTP, enfin ajouter les **fonctionnalités avancées**.
+
+---
+
+### 6.2 Phase 1 — Corrections SFTP immédiates (sans SSH)
+
+**Objectif** : Corriger tous les bugs BLOQUANT et MAJEUR de l'implémentation existante sans refactoring architectural. Ces corrections sont indépendantes de la couche SSH et apportent de la valeur immédiatement.
+
+**Durée estimée** : 1-2 sessions
+
+| Tâche | DEF / Req | Fichier(s) cible |
+|---|---|---|
+| 1.1 Fermer la connexion TCP après auth failure | DEF-11, SFTP-08 | `SftpSession.ts` |
+| 1.2 `put` vérifie le retour de `writeFile` | DEF-06, SFTP-03 | `SftpServerHandler.ts`, `ISftpFileSystem.ts` |
+| 1.3 `mkdir` utilise `mkdir` non-récursif | DEF-07, SFTP-04 | `SftpServerHandler.ts`, `ISftpFileSystem.ts`, adapters |
+| 1.4 `rename` protège la destination existante | DEF-08, SFTP-05 | `SftpServerHandler.ts` |
+| 1.5 Implémenter `lmkdir` dans `SftpSubShell` | DEF-15, SFTP-10 | `SftpSubShell.ts` |
+| 1.6 Ctrl+D quitte le sous-shell sftp | DEF-16, SFTP-11 | `SftpSubShell.ts` |
+| 1.7 Parser les flags dans `ls`, `get`, `put` | DEF-17, SFTP-12 | `SftpSubShell.ts`, `SftpSession.ts` |
+| 1.8 Corriger les messages d'erreur | DEF-10, SFTP-07 | `SftpSession.ts` |
+| 1.9 Format de progression réaliste | DEF-14, SFTP-09 | `SftpSession.ts` |
+| 1.10 Corriger adaptateur Windows (paths, rename) | DEF-19/20/21, SFTP-13 | `WindowsSftpAdapter.ts` |
+| 1.11 Expansion `~` dans les chemins | DEF-13, SFTP-18 | `SftpSubShell.ts`, `SftpSession.ts` |
+
+**Critere de done** : Les 24 défauts de la section 2 sont corrigés. Les tests existants (`sftp.test.ts`, `sftp-wan.test.ts`, `sftp-edge-cases.test.ts`) passent tous. De nouveaux tests couvrent les corrections.
+
+---
+
+### 6.3 Phase 2 — Couche SSH simulée (transport + auth)
+
+**Objectif** : Implémenter la couche SSH visible : version banner, host key, verification `known_hosts`, authentification mot de passe et clé publique. C'est le coeur du projet.
+
+**Durée estimée** : 3-4 sessions
+
+#### 6.3.1 Sous-phase 2a — Infrastructure SSH
+
+| Tâche | Req | Nouveaux fichiers |
+|---|---|---|
+| 2a.1 `SshHostKey` — génération et stockage du host key par device | SSH-01-R1 | `src/network/protocols/ssh/SshHostKey.ts` |
+| 2a.2 `SshKnownHosts` — lecture/écriture de `~/.ssh/known_hosts` | SSH-01-R2/4 | `src/network/protocols/ssh/SshKnownHosts.ts` |
+| 2a.3 `SshConfig` — parser de `~/.ssh/config` | SSH-06-R1/5 | `src/network/protocols/ssh/SshConfig.ts` |
+| 2a.4 `SshKeyPair` — génération et stockage ED25519 (simulé) | SSH-03-R1/3 | `src/network/protocols/ssh/SshKeyPair.ts` |
+| 2a.5 `SshAuthorizedKeys` — lecture/écriture `~/.ssh/authorized_keys` | SSH-03-R6/7 | `src/network/protocols/ssh/SshAuthorizedKeys.ts` |
+
+#### 6.3.2 Sous-phase 2b — Client SSH (`SshSession`)
+
+| Tâche | Req | Fichier |
+|---|---|---|
+| 2b.1 `SshSession.connect(userAtHost, opts)` — orchestration complète | SSH-01, SSH-02 | `src/network/protocols/ssh/SshSession.ts` |
+| 2b.2 Vérification host key + prompt yes/no | SSH-01-R2/5 | `SshSession.ts` |
+| 2b.3 Authentification par mot de passe (3 tentatives) | SSH-02-R1/5 | `SshSession.ts` |
+| 2b.4 Authentification par clé publique | SSH-03-R6/9 | `SshSession.ts` |
+| 2b.5 Gestion avertissement host key change (`@@@`) | SSH-01-R7 | `SshSession.ts` |
+
+#### 6.3.3 Sous-phase 2c — Serveur SSH (`SshServerHandler`)
+
+| Tâche | Req | Fichier |
+|---|---|---|
+| 2c.1 `SshServerHandler` — écoute TCP 22 sur chaque device | SSH-07-R1/2 | `src/network/protocols/ssh/SshServerHandler.ts` |
+| 2c.2 Auth mot de passe côté serveur | SSH-02-R1/7 | `SshServerHandler.ts` |
+| 2c.3 Auth clé publique (`authorized_keys`) côté serveur | SSH-03-R6 | `SshServerHandler.ts` |
+| 2c.4 MOTD + `Last login` | SSH-02-R2/3 | `SshServerHandler.ts` |
+| 2c.5 `PermitRootLogin`, `PasswordAuthentication` dans `sshd_config` | SSH-07-R5 | `SshServerHandler.ts` |
+
+#### 6.3.4 Sous-phase 2d — Commandes SSH
+
+| Tâche | Req | Fichier |
+|---|---|---|
+| 2d.1 `ssh user@host` — session interactive (shell distant) | SSH-04 | `LinuxTerminalSession.ts` |
+| 2d.2 `ssh user@host <cmd>` — commande non-interactive | SSH-05 | `LinuxTerminalSession.ts` |
+| 2d.3 `ssh-keygen` — génération de paire de clés | SSH-03-R1/4 | `LinuxCommandExecutor.ts` |
+| 2d.4 `ssh-copy-id` — déploiement de clé publique | SSH-03-R5 | `LinuxCommandExecutor.ts` |
+
+**Critere de done** : `ssh user@host` produit la séquence complète (fingerprint, password prompt, shell distant, exit). Les tests couvrent : host key inconnu, connu, changé ; auth mot de passe ok/ko ; auth clé publique ; limite de tentatives ; session interactive.
+
+---
+
+### 6.4 Phase 3 — SFTP sur SSH
+
+**Objectif** : Migrer `sftp` pour utiliser `SshSession` comme transport. Du point de vue de l'utilisateur, lancer `sftp` produit la même séquence SSH avant d'entrer dans le sous-shell.
+
+**Durée estimée** : 1-2 sessions
+
+| Tâche | Req | Fichier(s) cible |
+|---|---|---|
+| 3.1 `SftpSession` utilise `SshSession` pour l'établissement | SFTP-01 | `SftpSession.ts` |
+| 3.2 `sftp -P`, `sftp -i`, `sftp -o` transmis à `SshSession` | SFTP-01-R2/4 | `LinuxTerminalSession.ts`, `SftpSession.ts` |
+| 3.3 Ajouter `ls -l` avec attributs complets | SFTP-06 | `SftpSession.ts`, `SftpServerHandler.ts`, adapters |
+| 3.4 Ajouter `chmod`, `chown` | SFTP-14/15 | `SftpSubShell.ts`, `SftpServerHandler.ts`, adapters |
+| 3.5 Ajouter `stat` | SFTP-16 | `SftpSubShell.ts`, `SftpServerHandler.ts`, adapters |
+| 3.6 Ajouter `df` | SFTP-17 | `SftpSubShell.ts`, `SftpServerHandler.ts` |
+| 3.7 Contrôle de permissions Unix | SFTP-20 | `SftpServerHandler.ts`, `ISftpFileSystem.ts`, adapters |
+| 3.8 Port custom `-P` | SFTP-19 | `SftpSession.ts`, `LinuxTerminalSession.ts` |
+
+**Critere de done** : `sftp user@host` affiche le fingerprint SSH, demande le mot de passe, puis entre dans le sous-shell. `ls -l` affiche les attributs. `chmod 644 file.txt` modifie les permissions. Les fichiers root-only retournent `Permission denied`.
+
+---
+
+### 6.5 Phase 4 — `scp` et fonctionnalités avancées
+
+**Objectif** : Implémenter `scp`, affiner les comportements edge-case, et ajouter les fonctionnalités `~/.ssh/config`.
+
+**Durée estimée** : 1-2 sessions
+
+| Tâche | Req | Fichier(s) cible |
+|---|---|---|
+| 4.1 `scp local user@host:remote` | SSH-08-R1 | `LinuxCommandExecutor.ts` / `LinuxTerminalSession.ts` |
+| 4.2 `scp user@host:remote local` | SSH-08-R2 | idem |
+| 4.3 `scp -r` récursif | SSH-08-R3 | idem |
+| 4.4 `~/.ssh/config` — Host aliases et directives | SSH-06 | `SshConfig.ts`, `SshSession.ts` |
+| 4.5 Gestion `AllowUsers` dans `sshd_config` | SSH-07-R5 | `SshServerHandler.ts` |
+| 4.6 `systemctl restart sshd` relit la config | SSH-07-R6 | `LinuxCommandExecutor.ts` |
+| 4.7 `/etc/motd`, `/etc/issue.net` | SSH-07-R7/8 | `SshServerHandler.ts` |
+| 4.8 Transfert récursif `sftp get/put -r` | SFTP-12-R3/4 | `SftpSession.ts`, `SftpSubShell.ts` |
+
+**Critere de done** : `scp file.txt user@host:/tmp/` copie le fichier avec barre de progression. `~/.ssh/config` avec `Host prod` permet de taper `ssh prod`. `systemctl restart sshd` applique un changement de `PasswordAuthentication no`.
+
+---
+
+### 6.6 Matrice de couverture des défauts
+
+| DEF | Description courte | Phase | Statut |
+|---|---|---|---|
+| DEF-01 | Pas de couche SSH | 2 | A faire |
+| DEF-02 | Op `auth` non-standard | 2 | A faire |
+| DEF-03 | Pas de host key verification | 2 | A faire |
+| DEF-04 | Transfert atomique | 3 | Partiel (simulé) |
+| DEF-05 | Binaire non supporté | 3 | Partiel (base64 encoding) |
+| DEF-06 | `put` ignore erreurs | 1 | A faire |
+| DEF-07 | `mkdir` mkdirp | 1 | A faire |
+| DEF-08 | `rename` ecrase | 1 | A faire |
+| DEF-09 | `ls` sans attributs | 3 | A faire |
+| DEF-10 | Messages erreur incorrects | 1 | A faire |
+| DEF-11 | TCP orphelin apres auth failure | 1 | A faire |
+| DEF-12 | Port hardcode a 22 | 3 | A faire |
+| DEF-13 | Pas d'expansion `~` | 1 | A faire |
+| DEF-14 | Format progression incorrect | 1 | A faire |
+| DEF-15 | `lmkdir` absent | 1 | A faire |
+| DEF-16 | Ctrl+D ne quitte pas | 1 | A faire |
+| DEF-17 | Flags non parses | 1 | A faire |
+| DEF-18 | Commandes manquantes | 3 | A faire |
+| DEF-19 | Windows paths relatifs C: | 1 | A faire |
+| DEF-20 | Windows root slash manquant | 1 | A faire |
+| DEF-21 | Windows rename dirs | 1 | A faire |
+| DEF-22 | Pas de check permissions | 3 | A faire |
+| DEF-23 | Pas de cle publique | 2 | A faire |
+| DEF-24 | Stub sftp executor cassé | 2 | A faire |
+
+---
