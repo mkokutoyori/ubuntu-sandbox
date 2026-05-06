@@ -37,6 +37,13 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { isOk } from '@/network/protocols/ssh/Result';
 import {
+  parseSshKeygenArgs,
+  generateAndWriteKeyPair,
+} from '@/network/protocols/ssh/SshKeygen';
+import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
+import { parseScpArgs, parseScpEndpoint } from '@/network/protocols/ssh/Scp';
+import { SshConfig } from '@/network/protocols/ssh/SshConfig';
+import {
   formatTransferProgress,
   expandTilde,
   parseKnownHostsLine,
@@ -340,6 +347,131 @@ describe('SSH-05 — exec channel (non-interactive command)', () => {
       expect(result.stdout).toContain('hello');
       expect(result.exitCode).toBe(0);
     }
+  });
+});
+
+describe('SSH-03 — ssh-keygen (key pair generation)', () => {
+  it('writes a deterministic key pair under ~/.ssh/ with correct modes', () => {
+    const vfs = new VirtualFileSystem();
+    vfs.mkdirp('/home/alice', 0o755, 1000, 1000);
+    const opts = parseSshKeygenArgs(['-t', 'ed25519', '-C', 'alice@local'], '/home/alice');
+    const result = generateAndWriteKeyPair(vfs, 1000, 1000, opts);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(vfs.exists('/home/alice/.ssh/id_ed25519')).toBe(true);
+    expect(vfs.exists('/home/alice/.ssh/id_ed25519.pub')).toBe(true);
+    expect(result.fingerprint.startsWith('SHA256:')).toBe(true);
+    const pub = vfs.readFile('/home/alice/.ssh/id_ed25519.pub');
+    expect(pub).toContain('ssh-ed25519');
+    expect(pub).toContain('alice@local');
+  });
+
+  it('refuses to overwrite an existing private key', () => {
+    const vfs = new VirtualFileSystem();
+    vfs.mkdirp('/home/alice/.ssh', 0o700, 1000, 1000);
+    vfs.writeFile('/home/alice/.ssh/id_ed25519', 'pre-existing', 1000, 1000, 0o077);
+    const opts = parseSshKeygenArgs([], '/home/alice');
+    const result = generateAndWriteKeyPair(vfs, 1000, 1000, opts);
+    expect('error' in result).toBe(true);
+  });
+});
+
+describe('SSH-03 — ssh-copy-id (authorized_keys deployment)', () => {
+  it('appends the public key to remote ~/.ssh/authorized_keys', async () => {
+    const setup = makeServer({ username: 'alice', password: 'secret' });
+    const localVfs = new VirtualFileSystem();
+    const session = new SshSession({
+      tcpConnector: makeConnector(setup.handler),
+      vfs: localVfs,
+      localUser: 'root',
+      localUid: 0,
+      localGid: 0,
+      knownHostsPath: '/root/.ssh/known_hosts',
+      interactionHandler: new SilentSshInteractionHandler('secret'),
+    });
+    const opts = SshConnectOptionsBuilder.create()
+      .host(REMOTE_IP)
+      .user('alice')
+      .password('secret')
+      .strictHostKeyChecking('accept-new')
+      .build();
+    expect(isOk(await session.connect(opts))).toBe(true);
+
+    const result = await sshCopyId(
+      session,
+      'ssh-ed25519 AAAAabcXYZ alice@local',
+      '/home/alice',
+    );
+    expect('added' in result && result.added).toBe(1);
+    const stored = setup.vfs.readFile('/home/alice/.ssh/authorized_keys');
+    expect(stored).toContain('AAAAabcXYZ');
+    session.disconnect();
+  });
+});
+
+describe('SSH-08 — scp argument parsing', () => {
+  it('parseScpEndpoint distinguishes local from remote forms', () => {
+    expect(parseScpEndpoint('/etc/hosts')).toEqual({ remote: false, path: '/etc/hosts' });
+    expect(parseScpEndpoint('alice@host:/etc/hosts')).toEqual({
+      remote: true,
+      user: 'alice',
+      host: 'host',
+      path: '/etc/hosts',
+    });
+    expect(parseScpEndpoint('host:relative/path')).toEqual({
+      remote: true,
+      host: 'host',
+      path: 'relative/path',
+    });
+    // Local path with a colon AFTER a slash should stay local.
+    expect(parseScpEndpoint('/tmp/file:notremote').remote).toBe(false);
+  });
+
+  it('parseScpArgs collects -r, -P, -i, source, destination', () => {
+    const args = parseScpArgs([
+      '-r',
+      '-P',
+      '2222',
+      '-i',
+      '~/.ssh/id_ed25519',
+      'docs/',
+      'alice@host:/home/alice/',
+    ]);
+    expect(args).not.toBeNull();
+    expect(args?.recursive).toBe(true);
+    expect(args?.port).toBe(2222);
+    expect(args?.identityFiles).toEqual(['~/.ssh/id_ed25519']);
+    expect(args?.source.remote).toBe(false);
+    expect(args?.destination.remote).toBe(true);
+    expect(args?.destination.host).toBe('host');
+  });
+});
+
+describe('SSH-06 — ~/.ssh/config (multi-host + wildcard)', () => {
+  it('resolves an alias to its HostName/User/Port/IdentityFile', () => {
+    const cfg = SshConfig.parse(`
+Host *
+    User defaultuser
+    StrictHostKeyChecking accept-new
+
+Host prod
+    HostName 192.168.1.10
+    User alice
+    Port 2222
+    IdentityFile ~/.ssh/id_prod
+`);
+    const entry = cfg.resolve('prod');
+    expect(entry.hostName).toBe('192.168.1.10');
+    expect(entry.user).toBe('alice');
+    expect(entry.port).toBe(2222);
+    expect(entry.identityFile).toBe('~/.ssh/id_prod');
+    expect(entry.strictHostKeyChecking).toBe('accept-new');
+  });
+
+  it('falls back to wildcard defaults for unknown hosts', () => {
+    const cfg = SshConfig.parse('Host *\n    User defaultuser\n');
+    const entry = cfg.resolve('whatever');
+    expect(entry.user).toBe('defaultuser');
   });
 });
 

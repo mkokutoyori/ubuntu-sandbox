@@ -26,6 +26,13 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { isOk } from '@/network/protocols/ssh/Result';
+import {
+  parseSshKeygenArgs,
+  generateAndWriteKeyPair,
+} from '@/network/protocols/ssh/SshKeygen';
+import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
+import { parseScpArgs } from '@/network/protocols/ssh/Scp';
+import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -229,6 +236,18 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (parts[0] === 'ssh') {
         await this.enterSsh(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'ssh-keygen') {
+        this.runSshKeygen(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'ssh-copy-id') {
+        this.enterSshCopyId(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'scp') {
+        this.enterScp(parts.slice(1));
         return;
       }
       if (parts[0] === 'lsnrctl') {
@@ -451,6 +470,30 @@ export class LinuxTerminalSession extends TerminalSession {
       this.connectAndEnterSsh(meta, password);
       return;
     }
+    const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
+    if (sshCopyMeta) {
+      const meta = JSON.parse(sshCopyMeta) as {
+        userAtHost: string;
+        identityFile: string;
+      };
+      const password = ctx.values.get('ssh_copy_id_password') ?? '';
+      this.runSshCopyId(meta, password);
+      return;
+    }
+    const scpMeta = ctx.metadata.get('enter_scp') as string | undefined;
+    if (scpMeta) {
+      const meta = JSON.parse(scpMeta) as {
+        userAtHost: string;
+        port: number;
+        identityFiles: string[];
+        local: { path: string };
+        remote: { path: string };
+        direction: 'upload' | 'download';
+      };
+      const password = ctx.values.get('scp_password') ?? '';
+      this.runScp(meta, password);
+      return;
+    }
     this.syncDeviceState();
   }
 
@@ -589,7 +632,10 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
-    const { userAtHost, port, identityFiles, strict, command } = parsed;
+
+    // BRD SSH-06: merge ~/.ssh/config defaults under CLI overrides.
+    const merged = this.mergeWithSshConfig(parsed);
+    const { userAtHost, port, identityFiles, strict, command } = merged;
     const user = userAtHost.includes('@')
       ? userAtHost.split('@')[0]
       : this.currentUser;
@@ -722,6 +768,356 @@ export class LinuxTerminalSession extends TerminalSession {
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
     this.notify();
+  }
+
+  /**
+   * Resolve ~/.ssh/config for the host the user typed, merge CLI overrides
+   * on top, and rewrite the final userAtHost when the config maps an alias
+   * to a different HostName / User. CLI flags win over the file.
+   */
+  private mergeWithSshConfig(parsed: {
+    userAtHost: string;
+    port: number;
+    identityFiles: string[];
+    strict: 'yes' | 'no' | 'accept-new';
+    command: string | null;
+  }): typeof parsed {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { home?: string } | undefined };
+      };
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) return parsed;
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const configContent = localVfs.readFile(`${homeDir}/.ssh/config`);
+    if (!configContent) return parsed;
+    const cliUser = parsed.userAtHost.includes('@')
+      ? parsed.userAtHost.split('@')[0]
+      : null;
+    const targetHost = parsed.userAtHost.includes('@')
+      ? parsed.userAtHost.split('@')[1]
+      : parsed.userAtHost;
+    const entry = SshConfig.parse(configContent).resolve(targetHost);
+
+    const finalHost = entry.hostName ?? targetHost;
+    const finalUser = cliUser ?? entry.user ?? this.currentUser;
+    const finalPort =
+      // CLI wins when explicitly set (parser default = 22 means "unset").
+      parsed.port !== 22 ? parsed.port : entry.port ?? parsed.port;
+    const finalIdentityFiles =
+      parsed.identityFiles.length > 0
+        ? parsed.identityFiles
+        : entry.identityFile
+        ? [entry.identityFile]
+        : parsed.identityFiles;
+    const finalStrict =
+      // accept-new is the parser default ; treat it as "unset" too.
+      parsed.strict !== 'accept-new'
+        ? parsed.strict
+        : entry.strictHostKeyChecking ?? parsed.strict;
+    return {
+      userAtHost: `${finalUser}@${finalHost}`,
+      port: finalPort,
+      identityFiles: finalIdentityFiles,
+      strict: finalStrict,
+      command: parsed.command,
+    };
+  }
+
+  // ── ssh-keygen ──────────────────────────────────────────────────
+
+  /**
+   * Non-interactive `ssh-keygen` (BRD SSH-03-R1..R3, R10).
+   * Writes the key pair under ~/.ssh/ on the local VFS.
+   */
+  private runSshKeygen(args: string[]): void {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) {
+      this.addLine('ssh-keygen: this device has no filesystem', 'error');
+      this.notify();
+      return;
+    }
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const opts = parseSshKeygenArgs(args, homeDir);
+    const result = generateAndWriteKeyPair(
+      localVfs,
+      userEntry?.uid ?? 1000,
+      userEntry?.gid ?? 1000,
+      opts,
+    );
+    if ('error' in result) {
+      this.addLine(`ssh-keygen: ${result.error}`, 'error');
+      this.notify();
+      return;
+    }
+    for (const line of result.output) this.addLine(line);
+    this.notify();
+  }
+
+  // ── ssh-copy-id ─────────────────────────────────────────────────
+
+  /**
+   * Parse `ssh-copy-id [-i identity] [user@]host` then collect the password.
+   * BRD SSH-03-R5.
+   */
+  private enterSshCopyId(args: string[]): void {
+    let identityFile = '';
+    let userAtHost = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-i' && i + 1 < args.length) identityFile = args[++i];
+      else if (!args[i].startsWith('-')) userAtHost = args[i];
+    }
+    if (!userAtHost) {
+      this.addLine('usage: ssh-copy-id [-i identity_file] [user@]host', 'error');
+      this.notify();
+      return;
+    }
+    const dev = this.device as unknown as {
+      executor?: {
+        userMgr?: { getUser(name: string): { home?: string } | undefined };
+      };
+    };
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const resolvedIdentity = identityFile || `${homeDir}/.ssh/id_ed25519`;
+    const displayTarget = userAtHost.includes('@')
+      ? userAtHost
+      : `${this.currentUser}@${userAtHost}`;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: `${displayTarget}'s password: `,
+        mask: 'hidden',
+        storeAs: 'ssh_copy_id_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set(
+            'enter_ssh_copy_id',
+            JSON.stringify({
+              userAtHost: displayTarget,
+              identityFile: resolvedIdentity,
+            }),
+          );
+        },
+      },
+    ];
+    this.startFlowFromSteps(steps, `ssh-copy-id ${userAtHost}`);
+  }
+
+  private async runSshCopyId(
+    meta: { userAtHost: string; identityFile: string },
+    password: string,
+  ): Promise<void> {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+      };
+      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) {
+      this.addLine('ssh-copy-id: no local filesystem', 'error');
+      this.notify();
+      return;
+    }
+    const pubPath = `${meta.identityFile}.pub`;
+    const publicKeyLine = localVfs.readFile(pubPath);
+    if (!publicKeyLine) {
+      this.addLine(
+        `/usr/bin/ssh-copy-id: ERROR: failed to open ID file '${pubPath}': No such file or directory`,
+        'error',
+      );
+      this.notify();
+      return;
+    }
+    const session = await this.connectSshForBatch(meta.userAtHost, password);
+    if (!session) return;
+    const user = meta.userAtHost.split('@')[0];
+    const remoteHome = `/home/${user}`;
+    const result = await sshCopyId(session, publicKeyLine.trim(), remoteHome);
+    session.disconnect();
+    if ('error' in result) {
+      this.addLine(`ssh-copy-id: ${result.error}`, 'error');
+    } else {
+      for (const line of result.output) {
+        this.addLine(
+          line.replace('<user>', user).replace('<host>', meta.userAtHost.split('@')[1] ?? ''),
+        );
+      }
+    }
+    this.notify();
+  }
+
+  // ── scp ─────────────────────────────────────────────────────────
+
+  /** BRD SSH-08: parse scp args, collect password, defer transfer. */
+  private enterScp(args: string[]): void {
+    const parsed = parseScpArgs(args);
+    if (!parsed) {
+      this.addLine('usage: scp [-r] [-P port] [-i identity_file] src dst', 'error');
+      this.notify();
+      return;
+    }
+    const remoteEndpoint = parsed.source.remote ? parsed.source : parsed.destination;
+    const localEndpoint = parsed.source.remote ? parsed.destination : parsed.source;
+    if (parsed.source.remote === parsed.destination.remote) {
+      this.addLine(
+        'scp: exactly one of source/destination must be remote',
+        'error',
+      );
+      this.notify();
+      return;
+    }
+    const direction: 'upload' | 'download' = parsed.source.remote
+      ? 'download'
+      : 'upload';
+    const user = remoteEndpoint.user ?? this.currentUser;
+    const host = remoteEndpoint.host ?? '';
+    const displayTarget = `${user}@${host}`;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: `${displayTarget}'s password: `,
+        mask: 'hidden',
+        storeAs: 'scp_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set(
+            'enter_scp',
+            JSON.stringify({
+              userAtHost: displayTarget,
+              port: parsed.port,
+              identityFiles: parsed.identityFiles,
+              local: { path: localEndpoint.path },
+              remote: { path: remoteEndpoint.path },
+              direction,
+            }),
+          );
+        },
+      },
+    ];
+    this.startFlowFromSteps(steps, `scp ${args.join(' ')}`);
+  }
+
+  private async runScp(
+    meta: {
+      userAtHost: string;
+      port: number;
+      identityFiles: string[];
+      local: { path: string };
+      remote: { path: string };
+      direction: 'upload' | 'download';
+    },
+    password: string,
+  ): Promise<void> {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
+      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) {
+      this.addLine('scp: no local filesystem', 'error');
+      this.notify();
+      return;
+    }
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const tcpConnector: TcpConnector = (host, port) =>
+      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+
+    const sftp = new SftpSession({
+      tcpConnector,
+      localVfs,
+      localUser: this.currentUser,
+      localUid: userEntry?.uid ?? 1000,
+      localGid: userEntry?.gid ?? 1000,
+      localCwd: this.currentPath,
+      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
+      interactionHandler: new SilentSshInteractionHandler(password),
+      homeDirectory: homeDir,
+    });
+    const banner = await sftp.connect(meta.userAtHost, {
+      port: meta.port,
+      identityFiles: meta.identityFiles,
+      password,
+    });
+    if (!sftp.isConnected()) {
+      this.addLine(banner, 'error');
+      this.notify();
+      return;
+    }
+
+    const transferOutput =
+      meta.direction === 'upload'
+        ? sftp.put(meta.local.path, meta.remote.path)
+        : sftp.get(meta.remote.path, meta.local.path);
+    for (const line of transferOutput.split('\n')) this.addLine(line);
+    sftp.disconnect();
+    this.notify();
+  }
+
+  /** Common helper: auth-only SshSession used by ssh-copy-id. */
+  private async connectSshForBatch(
+    userAtHost: string,
+    password: string,
+  ): Promise<SshSession | null> {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
+      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) return null;
+    const tcpConnector: TcpConnector = (host, port) =>
+      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const user = userAtHost.split('@')[0];
+    const host = userAtHost.split('@')[1] ?? userAtHost;
+    const session = new SshSession({
+      tcpConnector,
+      vfs: localVfs,
+      localUser: this.currentUser,
+      localUid: userEntry?.uid ?? 1000,
+      localGid: userEntry?.gid ?? 1000,
+      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
+      interactionHandler: new SilentSshInteractionHandler(password),
+    });
+    const opts = SshConnectOptionsBuilder.create()
+      .host(host)
+      .user(user)
+      .port(22)
+      .strictHostKeyChecking('accept-new')
+      .password(password)
+      .build();
+    const result = await session.connect(opts);
+    if (!isOk(result)) {
+      this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
+      this.notify();
+      return null;
+    }
+    return session;
   }
 
   /** Best-effort MOTD fetch via a one-shot remote `cat /etc/motd`. */

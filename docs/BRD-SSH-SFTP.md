@@ -35,8 +35,9 @@
 > | CLI `ssh user@host` (interactif) | DONE | `LinuxTerminalSession.enterSsh` + `RemoteShellSubShell` |
 > | CLI `ssh user@host <cmd>` (non-interactif) | DONE | mode exec dans `enterSsh` via `SshExecChannel` |
 > | CLI `ssh -p / -i / -o` | DONE | `parseSshArgs` (port, identity, StrictHostKeyChecking) |
-> | CLI `ssh-keygen` / `ssh-copy-id` | TODO | classes `SshKeyPair` + `SshAuthorizedKeys` prêtes |
-> | CLI `scp` | TODO | s'appuie sur `SshExecChannel` + `ISftpFileSystem` |
+> | CLI `ssh-keygen` | DONE | `SshKeygen` (parser + générateur) câblé via `runSshKeygen` |
+> | CLI `ssh-copy-id` | DONE | `SshCopyId` (read-modify-write via SFTP) câblé via `enterSshCopyId` |
+> | CLI `scp` | DONE | `Scp` (parser endpoints + args) câblé via `enterScp` (upload + download) |
 > | Migration des tests legacy SFTP | PARTIAL | nouvelle suite `ssh-sftp.test.ts` en place ; `*.legacy.test.ts.bak` à porter |
 
 ---
@@ -539,11 +540,11 @@ alice@192.168.1.10: Permission denied (publickey).
 
 | ID | Requirement | Statut |
 |---|---|---|
-| SSH-03-R1 | `ssh-keygen -t ed25519 [-C comment] [-f filename]` : génère une paire de clés dans `~/.ssh/` | [TODO] `SshKeyPair.generate()` prêt ; commande CLI à câbler |
-| SSH-03-R2 | La clé privée est stockée dans `~/.ssh/id_ed25519` (permissions 600 simulées) | [TODO] dépend de la commande CLI |
-| SSH-03-R3 | La clé publique est stockée dans `~/.ssh/id_ed25519.pub` | [TODO] idem |
-| SSH-03-R4 | `ssh-keygen` interactif demande passphrase (peut être vide) | [TODO] |
-| SSH-03-R5 | `ssh-copy-id [-i keyfile] user@host` : copie la clé publique dans `~/.ssh/authorized_keys` du serveur distant | [TODO] `SshAuthorizedKeys.add()` prêt ; commande CLI à câbler |
+| SSH-03-R1 | `ssh-keygen -t ed25519 [-C comment] [-f filename]` : génère une paire de clés dans `~/.ssh/` | [DONE] `parseSshKeygenArgs` + `generateAndWriteKeyPair` câblés via `LinuxTerminalSession.runSshKeygen` |
+| SSH-03-R2 | La clé privée est stockée dans `~/.ssh/id_ed25519` (permissions 600 simulées) | [DONE] `vfs.chmod(privateKey, 0o600)` |
+| SSH-03-R3 | La clé publique est stockée dans `~/.ssh/id_ed25519.pub` | [DONE] mode 0644 |
+| SSH-03-R4 | `ssh-keygen` interactif demande passphrase (peut être vide) | [PARTIAL] flag `-N <passphrase>` accepté ; prompt interactif à brancher si nécessaire |
+| SSH-03-R5 | `ssh-copy-id [-i keyfile] user@host` : copie la clé publique dans `~/.ssh/authorized_keys` du serveur distant | [DONE] `SshCopyId.sshCopyId` (read-modify-write SFTP) câblé via `enterSshCopyId` |
 | SSH-03-R6 | Le serveur vérifie `~/.ssh/authorized_keys` de l'utilisateur cible | [DONE] `LinuxSshServerContext.checkPublicKey` |
 | SSH-03-R7 | Format de `authorized_keys` : une clé publique par ligne (`ssh-ed25519 AAAA...key comment`) | [DONE] `parseAuthorizedKeysLine` + `SshAuthorizedKeys` |
 | SSH-03-R8 | `ssh -i keyfile user@host` : utiliser la clé spécifiée explicitement | [DONE] `SshConnectOptions.identityFiles` + `createAuthMethods` |
@@ -632,9 +633,9 @@ $ ssh prod          # equivalent à : ssh -p 2222 -i ~/.ssh/id_prod alice@192.16
 
 | ID | Requirement | Statut |
 |---|---|---|
-| SSH-06-R1 | Parser `~/.ssh/config` lors de chaque connexion SSH | [PARTIAL] `SshConfig.parse` + `resolve(host)` prêts ; appel automatique au connect à câbler |
+| SSH-06-R1 | Parser `~/.ssh/config` lors de chaque connexion SSH | [DONE] `mergeWithSshConfig` lit `~/.ssh/config` et résout l'alias avant la connexion |
 | SSH-06-R2 | Directives supportées : `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `StrictHostKeyChecking` | [DONE] `SshConfig` |
-| SSH-06-R3 | Les options CLI (`-p`, `-i`, `-o`) ont priorité sur `~/.ssh/config` | [DONE] `parseSshArgs` capture les flags CLI ; merge avec `SshConfig` à faire si besoin de défauts |
+| SSH-06-R3 | Les options CLI (`-p`, `-i`, `-o`) ont priorité sur `~/.ssh/config` | [DONE] `mergeWithSshConfig` applique CLI au-dessus du fichier |
 | SSH-06-R4 | `Host *` comme wildcard pour les défauts globaux | [DONE] wildcard `*` + `?` dans `SshConfig` |
 | SSH-06-R5 | Commentaires `#` ignorés | [DONE] |
 
@@ -688,12 +689,12 @@ docs/file2.txt                               100%  256     0.3KB/s   00:00
 
 | ID | Requirement | Statut |
 |---|---|---|
-| SSH-08-R1 | `scp local user@host:remote` — copie locale vers distante | [TODO] s'appuiera sur `SftpSession.put` |
-| SSH-08-R2 | `scp user@host:remote local` — copie distante vers locale | [TODO] s'appuiera sur `SftpSession.get` |
-| SSH-08-R3 | `scp -r` — copie récursive de répertoire | [TODO] |
+| SSH-08-R1 | `scp local user@host:remote` — copie locale vers distante | [DONE] `Scp.parseScpArgs` + direction `upload` → `SftpSession.put` |
+| SSH-08-R2 | `scp user@host:remote local` — copie distante vers locale | [DONE] direction `download` → `SftpSession.get` |
+| SSH-08-R3 | `scp -r` — copie récursive de répertoire | [PARTIAL] flag `-r` parsé ; logique récursive à étendre |
 | SSH-08-R4 | Format de progression identique à sftp : `filename  100%  size  speed  time` | [DONE] `formatTransferProgress` partagé avec sftp |
 | SSH-08-R5 | Authentification identique à SSH (mot de passe ou clé publique) | [DONE] `SshSession` réutilisé |
-| SSH-08-R6 | Pas de `scp` interactif — transfert direct, pas de sous-shell | [TODO] dépend de la commande CLI |
+| SSH-08-R6 | Pas de `scp` interactif — transfert direct, pas de sous-shell | [DONE] `runScp` connecte, transfère, déconnecte sans sub-shell |
 
 ---
 
