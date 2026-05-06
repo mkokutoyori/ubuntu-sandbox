@@ -2127,3 +2127,1061 @@ dispatchPacket(pkt)          --> EigrpEvent[]
 ```
 
 ---
+
+## 8. Programmation reactive et RTP — Observable + Subject Pattern
+
+### 8.1 Pourquoi la programmation reactive pour EIGRP ?
+
+EIGRP est intrinsèquement **event-driven** : chaque packet recu, chaque timer expire, chaque changement d'interface topologique declenche une cascade d'evenements asynchrones. La programmation imperative (callbacks imbriques, state flags manuels) mène a du code spaghetti difficile a tester et a maintenir.
+
+L'approche **reactive** (Observable/Subject pattern) offre :
+- **Streams typees** : chaque type d'evenement est un flux distinct
+- **Composition** : `filter()`, `map()`, `merge()` pour combiner les flux
+- **Separation des preoccupations** : producteurs et consommateurs d'evenements sont decouplés
+- **Testabilite** : injecter des evenements de test = alimenter un Subject de test
+- **Lifecycle management** : `Subscription` permet de detacher proprement
+
+### 8.2 EigrpSubject<T> — implementation reactive minimaliste
+
+On n'importe pas RxJS — trop lourd pour le simulateur. On implement un `Subject<T>` leger (meme contrat qu'un BehaviorSubject RxJS sans la valeur courante).
+
+```typescript
+// src/network/eigrp/reactive/EigrpSubject.ts
+
+/**
+ * Subject minimal : peut emettre des valeurs ET etre observe.
+ * Equivalent leger d'un RxJS Subject — sans dependance externe.
+ *
+ * Interface :
+ *   next(value)  → emets une valeur a tous les abonnés
+ *   subscribe(fn) → s'abonne, retourne une fonction de desabonnement
+ *   pipe(operator) → transforme le subject en Observable derive
+ *   complete()   → ferme le flux (plus d'emission possible)
+ */
+export class EigrpSubject<T> {
+  private readonly _subscribers = new Set<(v: T) => void>()
+  private _completed = false
+
+  next(value: T): void {
+    if (this._completed) return
+    for (const sub of this._subscribers) {
+      sub(value)
+    }
+  }
+
+  subscribe(fn: (v: T) => void): () => void {
+    this._subscribers.add(fn)
+    return () => this._subscribers.delete(fn)
+  }
+
+  /** Transforme ce Subject en Observable<U> via un operateur */
+  pipe<U>(operator: EigrpOperator<T, U>): EigrpObservable<U> {
+    return operator(this.asObservable())
+  }
+
+  asObservable(): EigrpObservable<T> {
+    return {
+      subscribe: (fn) => this.subscribe(fn),
+      pipe:      (op) => op(this.asObservable()),
+    }
+  }
+
+  complete(): void {
+    this._completed = true
+    this._subscribers.clear()
+  }
+
+  get subscriberCount(): number { return this._subscribers.size }
+}
+
+// ─── Observable<T> — version lecture seule d'un Subject ─────────────────
+
+export interface EigrpObservable<T> {
+  subscribe(fn: (v: T) => void): () => void
+  pipe<U>(operator: EigrpOperator<T, U>): EigrpObservable<U>
+}
+
+// ─── Operateurs (pattern pipe) ────────────────────────────────────────────
+
+export type EigrpOperator<T, U> = (source: EigrpObservable<T>) => EigrpObservable<U>
+
+export const Operators = {
+
+  /** Filtre les valeurs qui satisfont le predicat */
+  filter<T>(predicate: (v: T) => boolean): EigrpOperator<T, T> {
+    return (source) => ({
+      subscribe: (fn) => source.subscribe(v => { if (predicate(v)) fn(v) }),
+      pipe:      (op) => op(Operators.filter<T>(predicate)(source)),
+    })
+  },
+
+  /** Transforme chaque valeur */
+  map<T, U>(transform: (v: T) => U): EigrpOperator<T, U> {
+    return (source) => ({
+      subscribe: (fn) => source.subscribe(v => fn(transform(v))),
+      pipe:      (op) => op(Operators.map<T, U>(transform)(source)),
+    })
+  },
+
+  /** Filtre par type discrimine (type guard) */
+  ofType<T, K extends T>(guard: (v: T) => v is K): EigrpOperator<T, K> {
+    return Operators.filter(guard) as EigrpOperator<T, K>
+  },
+
+  /** Fusionne plusieurs observables en un seul */
+  merge<T>(...sources: EigrpObservable<T>[]): EigrpObservable<T> {
+    const subject = new EigrpSubject<T>()
+    const unsubs  = sources.map(s => s.subscribe(v => subject.next(v)))
+    return {
+      subscribe: (fn) => {
+        const unsub = subject.subscribe(fn)
+        return () => { unsub(); unsubs.forEach(u => u()) }
+      },
+      pipe: (op) => op(Operators.merge(...sources)),
+    }
+  },
+
+  /** Buffer : accumule N valeurs puis emets le tableau */
+  bufferCount<T>(n: number): EigrpOperator<T, T[]> {
+    return (source) => {
+      let buffer: T[] = []
+      const out = new EigrpSubject<T[]>()
+      source.subscribe(v => {
+        buffer.push(v)
+        if (buffer.length >= n) { out.next([...buffer]); buffer = [] }
+      })
+      return out.asObservable()
+    }
+  },
+}
+```
+
+### 8.3 EigrpEventBus — hub central des evenements
+
+Le bus est le coeur du systeme reactif. Chaque composant publie sur le bus et s'y abonne selectivement. Les flux sont typees par le discriminant de `EigrpEvent`.
+
+```typescript
+// src/network/eigrp/reactive/EigrpEventBus.ts
+
+import type { EigrpEvent }     from '../EigrpEvent'
+import type { DualAction }     from '../dual/IDualAlgorithm'
+import { EigrpSubject, Operators } from './EigrpSubject'
+
+/**
+ * Hub central de la programmation reactive EIGRP.
+ *
+ * Architecture :
+ *
+ *   [Packet Layer]  -->  eventBus.emit(event)
+ *   [Timer Layer]   -->  eventBus.emit(event)
+ *   [Interface]     -->  eventBus.emit(event)
+ *
+ *   eventBus.events$          <-- stream de tous les evenements
+ *   eventBus.hello$           <-- sous-stream filtre HELLO_RECEIVED
+ *   eventBus.updates$         <-- sous-stream filtre UPDATE_RECEIVED
+ *   eventBus.queries$         <-- sous-stream filtre QUERY_RECEIVED
+ *   eventBus.replies$         <-- sous-stream filtre REPLY_RECEIVED
+ *   eventBus.neighborDown$    <-- sous-stream filtre NEIGHBOR_DOWN
+ *   eventBus.siaTimer$        <-- sous-stream filtre SIA_TIMER_EXPIRED
+ *   eventBus.localRoutes$     <-- sous-stream filtre LOCAL_ROUTE_UP/DOWN
+ *
+ *   [DUAL Layer]     -->  actionBus.emit(action)
+ *   [EigrpProcess]  <--  actionBus.actions$  (execute les DualActions)
+ */
+export class EigrpEventBus {
+  // ── Flux entrants (evenements) ─────────────────────────────────────────
+  private readonly _events$  = new EigrpSubject<EigrpEvent>()
+  private readonly _actions$ = new EigrpSubject<DualAction>()
+
+  // ── Sous-streams derives (views typees) ───────────────────────────────
+
+  readonly events$ = this._events$.asObservable()
+
+  readonly hello$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'HELLO_RECEIVED' }> =>
+      e.type === 'HELLO_RECEIVED')
+  )
+
+  readonly holdExpired$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'HOLD_TIMER_EXPIRED' }> =>
+      e.type === 'HOLD_TIMER_EXPIRED')
+  )
+
+  readonly neighborDown$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'NEIGHBOR_DOWN' }> =>
+      e.type === 'NEIGHBOR_DOWN')
+  )
+
+  readonly updates$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'UPDATE_RECEIVED' }> =>
+      e.type === 'UPDATE_RECEIVED')
+  )
+
+  readonly queries$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'QUERY_RECEIVED' }> =>
+      e.type === 'QUERY_RECEIVED')
+  )
+
+  readonly replies$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'REPLY_RECEIVED' }> =>
+      e.type === 'REPLY_RECEIVED')
+  )
+
+  readonly siaTimer$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'SIA_TIMER_EXPIRED' }> =>
+      e.type === 'SIA_TIMER_EXPIRED')
+  )
+
+  readonly localUp$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'LOCAL_ROUTE_UP' }> =>
+      e.type === 'LOCAL_ROUTE_UP')
+  )
+
+  readonly localDown$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<EigrpEvent, { type: 'LOCAL_ROUTE_DOWN' }> =>
+      e.type === 'LOCAL_ROUTE_DOWN')
+  )
+
+  readonly actions$ = this._actions$.asObservable()
+
+  // ── Emission ──────────────────────────────────────────────────────────
+
+  emit(event: EigrpEvent): void {
+    this._events$.next(event)
+  }
+
+  dispatch(action: DualAction): void {
+    this._actions$.next(action)
+  }
+
+  dispose(): void {
+    this._events$.complete()
+    this._actions$.complete()
+  }
+}
+```
+
+### 8.4 RTP — Reliable Transport Protocol avec programmation reactive
+
+Le RTP EIGRP garantit la livraison ordonnee des paquets (Update, Query, Reply) via un mecanisme ACK explicite et une retransmission unicast si l'ACK n'arrive pas dans le RTO.
+
+```typescript
+// src/network/eigrp/rtp/RtpChannel.ts
+
+import { EigrpSubject }     from '../reactive/EigrpSubject'
+import type { EigrpPacket } from '../packet/EigrpPacket'
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+import { EigrpPacketCodec }  from '../packet/EigrpPacketCodec'
+
+// ─── Types d'evenements RTP ──────────────────────────────────────────────
+
+export type RtpEvent =
+  | { readonly type: 'ACK_RECEIVED';    readonly neighbor: EigrpNeighborKey; readonly ackNo: number }
+  | { readonly type: 'RETRANSMIT';      readonly neighbor: EigrpNeighborKey; readonly seqNo: number; readonly attempt: number }
+  | { readonly type: 'MAX_RETRANS';     readonly neighbor: EigrpNeighborKey; readonly seqNo: number }
+  | { readonly type: 'PACKET_SENT';     readonly neighbor: EigrpNeighborKey; readonly seqNo: number; readonly opcode: number }
+  | { readonly type: 'DUPLICATE_RECV'; readonly neighbor: EigrpNeighborKey; readonly seqNo: number }
+
+/**
+ * RtpPendingPacket — paquet en attente d'ACK.
+ */
+export interface RtpPendingPacket {
+  readonly seqNo:    number
+  readonly packet:   EigrpPacket
+  readonly neighbor: EigrpNeighborKey
+  readonly sentAt:   number        // Date.now()
+  readonly attempts: number        // nb de retransmissions effectuees
+  readonly timerId:  ReturnType<typeof setTimeout>
+}
+
+/**
+ * RtpSequenceTracker — suivi des numeros de sequence par voisin.
+ * Un compteur different par voisin, reinitialisé quand le voisin est perdu.
+ */
+export class RtpSequenceTracker {
+  private readonly _sent     = new Map<string, number>()  // dernier seqNo envoye
+  private readonly _expected = new Map<string, number>()  // prochain seqNo attendu
+
+  nextSeq(neighborKey: string): number {
+    const current = this._sent.get(neighborKey) ?? 0
+    const next    = (current + 1) & 0xFFFFFFFF  // wrapping 32-bit
+    this._sent.set(neighborKey, next)
+    return next
+  }
+
+  isExpected(neighborKey: string, seqNo: number): boolean {
+    const expected = this._expected.get(neighborKey) ?? 1
+    return seqNo === expected
+  }
+
+  advance(neighborKey: string): void {
+    const current = this._expected.get(neighborKey) ?? 1
+    this._expected.set(neighborKey, (current + 1) & 0xFFFFFFFF)
+  }
+
+  reset(neighborKey: string): void {
+    this._sent.delete(neighborKey)
+    this._expected.delete(neighborKey)
+  }
+}
+
+/**
+ * IRtpChannel — canal de transport fiable vers un voisin.
+ *
+ * Reactive : expose un Subject<RtpEvent> pour les evenements de livraison.
+ */
+export interface IRtpChannel {
+  /** Stream des evenements RTP (ACK, retransmit, max retrans...) */
+  readonly events$: import('../reactive/EigrpSubject').EigrpObservable<RtpEvent>
+  /** Envoie un paquet avec garantie de livraison (retransmit si pas d'ACK) */
+  sendReliable(packet: EigrpPacket, neighbor: EigrpNeighborKey): void
+  /** Envoie un paquet sans garantie (Hello, ACK) */
+  sendUnreliable(packet: EigrpPacket, neighbor?: EigrpNeighborKey): void
+  /** Notifie la reception d'un ACK (stoppe la retransmission) */
+  onAckReceived(neighbor: EigrpNeighborKey, ackNo: number): void
+  /** Libere toutes les ressources */
+  dispose(): void
+}
+
+/**
+ * RtpChannel — implementation concrete du canal RTP.
+ *
+ * Logique reactive :
+ *   sendReliable() --> stocke dans _pending --> setInterval() --> RETRANSMIT event
+ *   onAckReceived() --> clearInterval() --> ACK_RECEIVED event --> retire de _pending
+ *   MAX_RETRANS --> MAX_RETRANS event --> EigrpEventBus.emit(NEIGHBOR_DOWN)
+ */
+export class RtpChannel implements IRtpChannel {
+  private readonly _events$  = new EigrpSubject<RtpEvent>()
+  private readonly _pending  = new Map<string, RtpPendingPacket>()  // key = neighborKey:seqNo
+  private readonly _seqTrack = new RtpSequenceTracker()
+  private readonly MAX_RETRANS = 16
+  private readonly BASE_RTO    = 200   // ms (initial RTO)
+
+  constructor(
+    private readonly _sendFn:   (pkt: EigrpPacket, neighbor?: EigrpNeighborKey) => void,
+    private readonly _eventBus: import('../reactive/EigrpEventBus').EigrpEventBus,
+  ) {}
+
+  readonly events$ = this._events$.asObservable()
+
+  sendReliable(packet: EigrpPacket, neighbor: EigrpNeighborKey): void {
+    const nk  = import('../values/EigrpNeighborKey').EigrpNeighborKey.toMapKey(neighbor)
+    const seq = packet.seqNo
+    const key = `${nk}:${seq}`
+
+    const timerId = setTimeout(() => this._retransmit(key, neighbor, seq), this.BASE_RTO)
+
+    this._pending.set(key, {
+      seqNo:    seq,
+      packet,
+      neighbor,
+      sentAt:   Date.now(),
+      attempts: 0,
+      timerId,
+    })
+
+    this._sendFn(packet, neighbor)
+    this._events$.next({ type: 'PACKET_SENT', neighbor, seqNo: seq, opcode: packet.op })
+  }
+
+  sendUnreliable(packet: EigrpPacket, neighbor?: EigrpNeighborKey): void {
+    this._sendFn(packet, neighbor)
+  }
+
+  onAckReceived(neighbor: EigrpNeighborKey, ackNo: number): void {
+    const nk  = import('../values/EigrpNeighborKey').EigrpNeighborKey.toMapKey(neighbor)
+    const key = `${nk}:${ackNo}`
+
+    const pending = this._pending.get(key)
+    if (!pending) return  // ACK pour un paquet inconnu, ignore
+
+    clearTimeout(pending.timerId)
+    this._pending.delete(key)
+    this._events$.next({ type: 'ACK_RECEIVED', neighbor, ackNo })
+  }
+
+  private _retransmit(key: string, neighbor: EigrpNeighborKey, seqNo: number): void {
+    const pending = this._pending.get(key)
+    if (!pending) return
+
+    if (pending.attempts >= this.MAX_RETRANS) {
+      clearTimeout(pending.timerId)
+      this._pending.delete(key)
+      this._events$.next({ type: 'MAX_RETRANS', neighbor, seqNo })
+      // Declenche un evenement NEIGHBOR_DOWN via le bus central
+      this._eventBus.emit({
+        type: 'NEIGHBOR_DOWN',
+        neighbor: import('../values/EigrpNeighborKey').EigrpNeighborKey.toMapKey(neighbor) as any,
+        reason: 'RTP_MAX_RETRANS_EXCEEDED',
+      })
+      return
+    }
+
+    // Retransmission exponential backoff : RTO × 2^attempts (cap a 5s)
+    const nextRto = Math.min(this.BASE_RTO * Math.pow(2, pending.attempts + 1), 5000)
+    const newTimerId = setTimeout(() => this._retransmit(key, neighbor, seqNo), nextRto)
+
+    this._pending.set(key, { ...pending, attempts: pending.attempts + 1, timerId: newTimerId })
+    this._sendFn(pending.packet, neighbor)
+    this._events$.next({ type: 'RETRANSMIT', neighbor, seqNo, attempt: pending.attempts + 1 })
+  }
+
+  dispose(): void {
+    for (const p of this._pending.values()) clearTimeout(p.timerId)
+    this._pending.clear()
+    this._events$.complete()
+  }
+}
+```
+
+### 8.5 Diagramme reactif du RTP
+
+```
+EigrpSubject<T>               (hot observable minimal — zero RxJS)
+  next(v)    --> tous les abonnes recevront v
+  subscribe  --> retourne () => void (desabonnement)
+  pipe(op)   --> retourne EigrpObservable<U>
+
+Operators.filter / map / ofType / merge / bufferCount
+  (fonctions pures d'ordre superieur — pas d'etat propre)
+
+EigrpEventBus
+  _events$: EigrpSubject<EigrpEvent>   (source unique)
+  hello$       = _events$.pipe(ofType(HELLO_RECEIVED))
+  updates$     = _events$.pipe(ofType(UPDATE_RECEIVED))
+  queries$     = _events$.pipe(ofType(QUERY_RECEIVED))
+  replies$     = _events$.pipe(ofType(REPLY_RECEIVED))
+  neighborDown$= _events$.pipe(ofType(NEIGHBOR_DOWN))
+  siaTimer$    = _events$.pipe(ofType(SIA_TIMER_EXPIRED))
+  actions$: EigrpSubject<DualAction>   (source des actions DUAL)
+  emit(event)     --> _events$.next(event)
+  dispatch(action)--> _actions$.next(action)
+
+RtpChannel
+  events$: EigrpObservable<RtpEvent>   (read-only view)
+  sendReliable()  --> multicast + setInterval (retransmit)
+  onAckReceived() --> clearInterval + ACK_RECEIVED event
+  MAX_RETRANS --> events$.next({MAX_RETRANS}) + eventBus.emit(NEIGHBOR_DOWN)
+```
+
+---
+
+## 9. EigrpProcess — Reactive Facade + Event Pipeline
+
+### 9.1 Architecture reactive de EigrpProcess
+
+`EigrpProcess` est la **Facade reactive** du module EIGRP. Son coeur est un pipeline d'evenements qui orchestre DUAL, RTP, et les voisins via des subscriptions declaratives.
+
+```
+EigrpProcess (Facade)
+    |
+    |  setup() — wire tous les streams au demarrage
+    |
+    +-- eventBus.hello$
+    |     .subscribe(e => neighborSM.processEvent(e))       // hello -> voisinage
+    |
+    +-- eventBus.neighborDown$
+    |     .subscribe(e => _handleNeighborDown(e))           // voisin perdu -> DUAL
+    |
+    +-- eventBus.updates$
+    |     .subscribe(e => _dispatchToDual(e))               // update -> DUAL.processUpdate()
+    |
+    +-- eventBus.queries$
+    |     .subscribe(e => _dispatchToDual(e))               // query -> DUAL.processQuery()
+    |
+    +-- eventBus.replies$
+    |     .subscribe(e => _dispatchToDual(e))               // reply -> DUAL.processReply()
+    |
+    +-- eventBus.actions$                                   // actions DUAL -> execution
+    |     .subscribe(action => _executeAction(action))
+    |
+    +-- eventBus.siaTimer$
+    |     .subscribe(e => _handleSiaTimeout(e))             // SIA -> voisin down
+    |
+    +-- rtpChannel.events$
+          .pipe(ofType(MAX_RETRANS))
+          .subscribe(e => eventBus.emit(NEIGHBOR_DOWN))     // RTP -> voisin down
+```
+
+### 9.2 EigrpProcessOptions — Builder Pattern
+
+```typescript
+// src/network/eigrp/process/EigrpProcessOptions.ts
+
+import type { EigrpKValues }  from '../values/EigrpMetric'
+import type { EigrpRid }      from '../values/EigrpRouterIdentifier'
+import { DEFAULT_K_VALUES }   from '../values/EigrpMetric'
+
+export interface EigrpNetworkStatement {
+  readonly network:   string   // ex. '10.0.0.0'
+  readonly wildcard:  string   // ex. '0.0.0.255'
+}
+
+export interface EigrpRedistribute {
+  readonly protocol: 'connected' | 'static' | 'ospf' | 'rip'
+  readonly metric?: {
+    readonly bandwidth:   number
+    readonly delay:       number
+    readonly reliability: number
+    readonly load:        number
+    readonly mtu:         number
+  }
+}
+
+export interface EigrpProcessOptions {
+  readonly asNumber:       number
+  readonly routerId?:      EigrpRid
+  readonly kValues:        EigrpKValues
+  readonly helloInterval:  number   // secondes (default 5 sur FastEthernet, 60 sur Serial)
+  readonly holdTime:       number   // secondes (default 15 ou 180)
+  readonly networks:       readonly EigrpNetworkStatement[]
+  readonly redistribute:   readonly EigrpRedistribute[]
+  readonly maximumPaths:   number   // ECMP (default 4)
+  readonly variance:       number   // load balancing unegal (1 = equal only)
+  readonly autoSummary:    boolean  // desactive en IOS 15+ (default: false)
+  readonly stub?:          readonly ('connected'|'static'|'summary'|'redistributed')[]
+  readonly passiveInterfaces: readonly string[]
+  readonly siaTimerMs:     number   // Stuck-In-Active timeout (default 90s)
+}
+
+export const DEFAULT_EIGRP_OPTIONS: Omit<EigrpProcessOptions, 'asNumber'> = Object.freeze({
+  kValues:           DEFAULT_K_VALUES,
+  helloInterval:     5,
+  holdTime:          15,
+  networks:          [],
+  redistribute:      [],
+  maximumPaths:      4,
+  variance:          1,
+  autoSummary:       false,
+  passiveInterfaces: [],
+  siaTimerMs:        90_000,
+})
+
+// ─── Builder ──────────────────────────────────────────────────────────────
+
+export class EigrpProcessOptionsBuilder {
+  private _opts: EigrpProcessOptions
+
+  constructor(asNumber: number) {
+    this._opts = { asNumber, ...DEFAULT_EIGRP_OPTIONS }
+  }
+
+  withRouterId(rid: EigrpRid): this     { this._opts = { ...this._opts, routerId: rid };  return this }
+  withKValues(k: EigrpKValues): this    { this._opts = { ...this._opts, kValues: k };     return this }
+  withHelloInterval(s: number): this    { this._opts = { ...this._opts, helloInterval: s }; return this }
+  withHoldTime(s: number): this         { this._opts = { ...this._opts, holdTime: s };    return this }
+  withMaxPaths(n: number): this         { this._opts = { ...this._opts, maximumPaths: n }; return this }
+  withVariance(v: number): this         { this._opts = { ...this._opts, variance: v };    return this }
+  addNetwork(net: string, wild: string): this {
+    this._opts = { ...this._opts, networks: [...this._opts.networks, { network: net, wildcard: wild }] }
+    return this
+  }
+  addRedistribute(r: EigrpRedistribute): this {
+    this._opts = { ...this._opts, redistribute: [...this._opts.redistribute, r] }
+    return this
+  }
+  stub(...types: ('connected'|'static'|'summary'|'redistributed')[]): this {
+    this._opts = { ...this._opts, stub: types }
+    return this
+  }
+  build(): EigrpProcessOptions { return Object.freeze(this._opts) }
+}
+```
+
+### 9.3 IEigrpProcess — interface publique (Facade)
+
+```typescript
+// src/network/eigrp/process/IEigrpProcess.ts
+
+import type { EigrpNeighborEntry }  from '../neighbor/types'
+import type { TopologyEntry }       from '../topology/types'
+import type { EigrpFibEntry }       from '../dual/EigrpFib'
+import type { EigrpProcessOptions } from './EigrpProcessOptions'
+import type { EigrpPacket }         from '../packet/EigrpPacket'
+import type { EigrpObservable }     from '../reactive/EigrpSubject'
+import type { DualAction }          from '../dual/IDualAlgorithm'
+import type { EigrpEvent }          from '../EigrpEvent'
+
+export interface IEigrpProcess {
+  readonly asNumber: number
+  readonly options:  EigrpProcessOptions
+
+  // ── Streams publics (read-only) ────────────────────────────────────────
+  /** Stream de tous les evenements EIGRP (pour monitoring) */
+  readonly events$:  EigrpObservable<EigrpEvent>
+  /** Stream des actions DUAL executees (pour tests) */
+  readonly actions$: EigrpObservable<DualAction>
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────
+  start(): void
+  stop(): void
+
+  // ── Point d'entree des paquets recus ──────────────────────────────────
+  /** Appele par RouterEigrpIntegration quand un paquet EIGRP arrive */
+  handlePacket(pkt: EigrpPacket): void
+
+  // ── Notification de changement d'interface ────────────────────────────
+  onInterfaceUp(iface: string, ip: string, bandwidth: number, delay: number): void
+  onInterfaceDown(iface: string): void
+
+  // ── Redistribution depuis le RIB ──────────────────────────────────────
+  redistributeRoute(prefix: string, prefixLen: number, metric: import('../values/EigrpMetric').EigrpInterfaceMetric): void
+  withdrawRedistributedRoute(prefix: string, prefixLen: number): void
+
+  // ── Queries (pour le CLI show) ─────────────────────────────────────────
+  getNeighbors(): readonly EigrpNeighborEntry[]
+  getTopologyTable(): readonly TopologyEntry[]
+  getFib(): readonly EigrpFibEntry[]
+}
+```
+
+### 9.4 EigrpProcess — implementation reactive
+
+```typescript
+// src/network/eigrp/process/EigrpProcess.ts
+
+import type { IEigrpProcess }        from './IEigrpProcess'
+import type { EigrpProcessOptions }  from './EigrpProcessOptions'
+import type { EigrpPacket }          from '../packet/EigrpPacket'
+import type { DualAction }           from '../dual/IDualAlgorithm'
+import type { EigrpEvent }           from '../EigrpEvent'
+import { EigrpEventBus }             from '../reactive/EigrpEventBus'
+import { EigrpNeighborStateMachine } from '../neighbor/EigrpNeighborStateMachine'
+import { InMemoryTopologyTable }     from '../topology/InMemoryTopologyTable'
+import { InMemoryNeighborTable }     from '../neighbor/InMemoryNeighborTable'
+import { DualAlgorithmImpl }         from '../dual/DualAlgorithmImpl'
+import { EigrpFib }                  from '../dual/EigrpFib'
+import { RtpChannel }                from '../rtp/RtpChannel'
+import { dispatchPacket }            from '../packet/EigrpPacketDispatcher'
+import { EigrpPacketCodec }          from '../packet/EigrpPacketCodec'
+import { Operators }                 from '../reactive/EigrpSubject'
+import { EigrpNeighborKey as NK }    from '../values/EigrpNeighborKey'
+import { EigrpPrefix as EP }         from '../values/EigrpPrefix'
+import { computeEigrpMetric, meetsVariance } from '../EigrpPureUtils'
+import type { IEigrpNetworkInterface } from '../integration/IEigrpNetworkInterface'
+
+export class EigrpProcess implements IEigrpProcess {
+  readonly asNumber: number
+  readonly options:  EigrpProcessOptions
+
+  private readonly _bus       = new EigrpEventBus()
+  private readonly _topo      = new InMemoryTopologyTable()
+  private readonly _neighbors = new InMemoryNeighborTable()
+  private readonly _fib       = new EigrpFib()
+  private readonly _rtp:      RtpChannel
+  private readonly _dual:     DualAlgorithmImpl
+  private readonly _nsm:      EigrpNeighborStateMachine
+  private readonly _unsubs:   Array<() => void> = []
+  private _helloTimers:       Map<string, ReturnType<typeof setInterval>> = new Map()
+  private _localSeq           = 0
+
+  readonly events$  = this._bus.events$
+  readonly actions$ = this._bus.actions$
+
+  constructor(
+    opts:    EigrpProcessOptions,
+    private readonly _iface: IEigrpNetworkInterface,
+  ) {
+    this.asNumber = opts.asNumber
+    this.options  = opts
+
+    this._rtp = new RtpChannel(
+      (pkt, neighbor) => this._sendPacket(pkt, neighbor),
+      this._bus,
+    )
+
+    this._dual = new DualAlgorithmImpl(
+      this._topo,
+      opts.kValues,
+      opts.routerId?.value ?? '0.0.0.0',
+      () => this._neighbors.getAll().map(n => n.key),
+    )
+
+    this._nsm = new EigrpNeighborStateMachine(
+      opts.kValues, opts.asNumber, this._neighbors,
+      {
+        onNeighborUp:   (key) => this._onNeighborUp(key),
+        onNeighborDown: (key, reason) => this._onNeighborDown(key, reason),
+        sendHello:      (iface) => this._sendHello(iface),
+      },
+    )
+  }
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────
+
+  start(): void {
+    this._wireReactiveStreams()
+    // Demarrer les timers Hello sur toutes les interfaces actives
+    for (const iface of this._iface.getActiveInterfaces()) {
+      this._startHelloTimer(iface)
+    }
+  }
+
+  stop(): void {
+    for (const unsub of this._unsubs) unsub()
+    this._unsubs.length = 0
+    for (const timer of this._helloTimers.values()) clearInterval(timer)
+    this._helloTimers.clear()
+    this._rtp.dispose()
+    this._bus.dispose()
+  }
+
+  // ── Pipeline reactif central ───────────────────────────────────────────
+
+  private _wireReactiveStreams(): void {
+    // 1. Hellos → machine a etats voisin
+    this._unsubs.push(
+      this._bus.hello$.subscribe(e =>
+        this._nsm.processEvent(NK.of(e.neighbor.ip, e.iface), e)
+      )
+    )
+
+    // 2. Hold timer expire → voisin down
+    this._unsubs.push(
+      this._bus.holdExpired$.subscribe(e =>
+        this._nsm.processEvent(e.neighbor, {
+          type: 'NEIGHBOR_DOWN', neighbor: NK.toMapKey(e.neighbor) as any,
+          reason: 'HOLD_EXPIRED',
+        })
+      )
+    )
+
+    // 3. Updates / Queries / Replies → DUAL
+    this._unsubs.push(
+      this._bus.updates$.subscribe(e => {
+        const result = this._dual.processUpdate(e.prefix, e.from, e.metric.composite, e.metric)
+        if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+      })
+    )
+
+    this._unsubs.push(
+      this._bus.queries$.subscribe(e => {
+        const result = this._dual.processQuery(e.prefix, e.from, e.metric.composite, e.metric)
+        if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+      })
+    )
+
+    this._unsubs.push(
+      this._bus.replies$.subscribe(e => {
+        const result = this._dual.processReply(e.prefix, e.from, e.metric.composite, e.metric)
+        if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+      })
+    )
+
+    // 4. Voisin down → DUAL + purge
+    this._unsubs.push(
+      this._bus.neighborDown$.subscribe(e => {
+        const result = this._dual.processNeighborDown(e.neighbor as any)
+        if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+      })
+    )
+
+    // 5. Actions DUAL → execution concrete
+    this._unsubs.push(
+      this._bus.actions$.subscribe(action => this._executeAction(action))
+    )
+
+    // 6. SIA timer → voisin qui n'a pas repondu est declare down
+    this._unsubs.push(
+      this._bus.siaTimer$.subscribe(e => {
+        const entry = this._topo.getEntry(e.prefix)
+        if (entry?.state.phase === 'active') {
+          const missing = [...entry.state.queriedNeighbors]
+            .filter(k => !entry.state.repliesReceived.has(k))
+          for (const nk of missing) {
+            this._bus.emit({ type: 'NEIGHBOR_DOWN', neighbor: nk as any, reason: 'DUAL_STUCK_IN_ACTIVE' })
+          }
+        }
+      })
+    )
+
+    // 7. RTP MAX_RETRANS → voisin down (via bus central — deja wire dans RtpChannel)
+    this._unsubs.push(
+      this._rtp.events$.pipe(
+        Operators.ofType((e): e is Extract<typeof e, { type: 'MAX_RETRANS' }> =>
+          e.type === 'MAX_RETRANS')
+      ).subscribe(e => {
+        this._bus.emit({ type: 'NEIGHBOR_DOWN', neighbor: e.neighbor as any, reason: 'RTP_MAX_RETRANS_EXCEEDED' })
+      })
+    )
+  }
+
+  // ── Execution des actions DUAL ─────────────────────────────────────────
+
+  private _executeAction(action: DualAction): void {
+    switch (action.type) {
+      case 'INSTALL_ROUTE':
+        this._fib.upsert(this._buildFibEntry(action.prefix, action.via, action.fd))
+        this._iface.installRoute(action.prefix, action.via, action.fd)
+        break
+
+      case 'WITHDRAW_ROUTE':
+        this._fib.remove(action.prefix)
+        this._iface.withdrawRoute(action.prefix)
+        break
+
+      case 'SEND_UPDATE':
+        this._sendUpdate(action.prefix, action.metric, action.to)
+        break
+
+      case 'SEND_QUERY':
+        this._sendQuery(action.prefix, action.metric, action.to)
+        break
+
+      case 'SEND_REPLY':
+        this._sendReply(action.prefix, action.metric, action.to)
+        break
+
+      case 'START_SIA_TIMER':
+        setTimeout(() => {
+          this._bus.emit({ type: 'SIA_TIMER_EXPIRED', prefix: action.prefix })
+        }, this.options.siaTimerMs)
+        break
+
+      case 'DECLARE_NEIGHBOR_DOWN':
+        this._bus.emit({ type: 'NEIGHBOR_DOWN', neighbor: action.neighbor as any, reason: action.reason })
+        break
+
+      case 'LOG':
+        // Les logs sont emis comme evenements (observable par les tests)
+        break
+    }
+  }
+
+  // ── Point d'entree paquets ─────────────────────────────────────────────
+
+  handlePacket(pkt: EigrpPacket): void {
+    // 1. ACK explicite — traite par le RTP, pas par DUAL
+    if (pkt.op === 5 && pkt.ackNo !== 0 && pkt.tlvs.length === 0) {
+      this._rtp.onAckReceived(NK.of(pkt.srcIp, pkt.srcIface), pkt.ackNo)
+      return
+    }
+    // 2. Envoyer un ACK si le seqNo != 0 (paquet fiable)
+    if (pkt.seqNo !== 0) {
+      const ack = EigrpPacketCodec.makeAck({
+        ackNo: pkt.seqNo, asNumber: this.asNumber,
+        srcIp: this._iface.getLocalIp(pkt.srcIface),
+        srcIface: pkt.srcIface,
+      })
+      this._rtp.sendUnreliable(ack, NK.of(pkt.srcIp, pkt.srcIface))
+    }
+    // 3. Dispatcher le paquet en evenements
+    for (const event of dispatchPacket(pkt)) {
+      this._bus.emit(event)
+    }
+  }
+
+  // ── Callbacks voisinage ────────────────────────────────────────────────
+
+  private _onNeighborUp(key: import('../values/EigrpNeighborKey').EigrpNeighborKey): void {
+    // Envoyer un full Update (INIT flag) au nouveau voisin
+    const allRoutes = this._topo.getRoutableEntries()
+    if (allRoutes.length === 0) return
+    const tlvs = allRoutes.map(e => this._routeToTlv(e))
+    const pkt  = EigrpPacketCodec.makeUpdate({
+      seqNo: ++this._localSeq, ackNo: 0, asNumber: this.asNumber,
+      tlvs, srcIp: this._iface.getLocalIp(key.iface), srcIface: key.iface,
+      init: true,
+    })
+    this._rtp.sendReliable(pkt, key)
+  }
+
+  private _onNeighborDown(
+    key: import('../values/EigrpNeighborKey').EigrpNeighborKey,
+    reason: string,
+  ): void {
+    this._neighbors.remove(key)
+    const result = this._dual.processNeighborDown(key)
+    if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+  }
+
+  // ── Emission de paquets ────────────────────────────────────────────────
+
+  private _sendHello(iface: string): void {
+    const pkt = EigrpPacketCodec.makeHello({
+      seqNo: 0, asNumber: this.asNumber,
+      kValues: this.options.kValues, holdTime: this.options.holdTime,
+      srcIp: this._iface.getLocalIp(iface), srcIface: iface,
+    })
+    this._rtp.sendUnreliable(pkt)  // Hello = multicast, pas fiable
+  }
+
+  private _startHelloTimer(iface: string): void {
+    this._sendHello(iface)
+    const timer = setInterval(
+      () => this._sendHello(iface),
+      this.options.helloInterval * 1000,
+    )
+    this._helloTimers.set(iface, timer)
+  }
+
+  private _sendUpdate(
+    prefix: import('../values/EigrpPrefix').EigrpPrefix,
+    metric: import('../values/EigrpMetric').EigrpMetric,
+    to?: import('../values/EigrpNeighborKey').EigrpNeighborKey,
+  ): void {
+    const tlv = this._prefixToInternalTlv(prefix, metric)
+    for (const iface of this._iface.getActiveInterfaces()) {
+      const pkt = EigrpPacketCodec.makeUpdate({
+        seqNo: ++this._localSeq, ackNo: 0, asNumber: this.asNumber,
+        tlvs: [tlv], srcIp: this._iface.getLocalIp(iface), srcIface: iface,
+      })
+      if (to) {
+        this._rtp.sendReliable(pkt, to)
+      } else {
+        const neighbors = this._neighbors.getByInterface(iface)
+        for (const n of neighbors) this._rtp.sendReliable(pkt, n.key)
+      }
+    }
+  }
+
+  private _sendQuery(
+    prefix: import('../values/EigrpPrefix').EigrpPrefix,
+    metric: import('../values/EigrpMetric').EigrpMetric,
+    to?: import('../values/EigrpNeighborKey').EigrpNeighborKey,
+  ): void {
+    const tlv = this._prefixToInternalTlv(prefix, metric)
+    const targets = to
+      ? [to]
+      : this._neighbors.getAll().map(n => n.key)
+    for (const neighbor of targets) {
+      const pkt = EigrpPacketCodec.makeQuery({
+        seqNo: ++this._localSeq, ackNo: 0, asNumber: this.asNumber,
+        tlvs: [tlv], srcIp: this._iface.getLocalIp(neighbor.iface),
+        srcIface: neighbor.iface,
+      })
+      this._rtp.sendReliable(pkt, neighbor)
+    }
+  }
+
+  private _sendReply(
+    prefix: import('../values/EigrpPrefix').EigrpPrefix,
+    metric: import('../values/EigrpMetric').EigrpMetric,
+    to:     import('../values/EigrpNeighborKey').EigrpNeighborKey,
+  ): void {
+    const tlv = this._prefixToInternalTlv(prefix, metric)
+    const pkt = EigrpPacketCodec.makeReply({
+      seqNo: ++this._localSeq, ackNo: 0, asNumber: this.asNumber,
+      tlvs: [tlv], srcIp: this._iface.getLocalIp(to.iface), srcIface: to.iface,
+    })
+    this._rtp.sendReliable(pkt, to)
+  }
+
+  private _sendPacket(
+    pkt:      EigrpPacket,
+    neighbor?: import('../values/EigrpNeighborKey').EigrpNeighborKey,
+  ): void {
+    this._iface.sendEigrpPacket(pkt, neighbor?.ip)
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  private _prefixToInternalTlv(
+    prefix: import('../values/EigrpPrefix').EigrpPrefix,
+    metric: import('../values/EigrpMetric').EigrpMetric,
+  ): import('../packet/EigrpTlv').EigrpTlv {
+    return {
+      type:              0x0102,
+      prefix,
+      metric:            metric.components,
+      advertisedMetric:  metric.composite,
+    }
+  }
+
+  private _routeToTlv(
+    entry: import('../topology/types').TopologyEntry,
+  ): import('../packet/EigrpTlv').EigrpTlv {
+    return this._prefixToInternalTlv(entry.prefix, entry.successor!.metric)
+  }
+
+  private _buildFibEntry(
+    prefix:    import('../values/EigrpPrefix').EigrpPrefix,
+    via:       import('../values/EigrpNeighborKey').EigrpNeighborKey,
+    fd:        number,
+  ): import('../dual/EigrpFib').EigrpFibEntry {
+    const entry = this._topo.getEntry(prefix)!
+    const sources = entry.sources
+      .filter(s => meetsVariance(s.fd, fd, this.options.variance))
+      .slice(0, this.options.maximumPaths)
+
+    return Object.freeze({
+      prefix, successor: via, fd,
+      ad: entry.successor?.ad ?? 0,
+      nextHops: Object.freeze(sources.map(s => ({
+        neighbor:     s.neighbor,
+        nextHopIp:    s.neighbor.ip,
+        iface:        s.neighbor.iface,
+        fd:           s.fd,
+        trafficShare: Math.ceil(fd / s.fd),  // unequal load balancing share
+      }))),
+    })
+  }
+
+  // ── Interface publique ────────────────────────────────────────────────
+
+  onInterfaceUp(iface: string, ip: string, bw: number, delay: number): void {
+    this._startHelloTimer(iface)
+    this._bus.emit({ type: 'LOCAL_ROUTE_UP', prefix: EP.of(ip, 24), iface, bandwidth: bw, delay })
+  }
+
+  onInterfaceDown(iface: string): void {
+    clearInterval(this._helloTimers.get(iface))
+    this._helloTimers.delete(iface)
+    for (const n of this._neighbors.getByInterface(iface)) {
+      this._bus.emit({ type: 'NEIGHBOR_DOWN', neighbor: n.key as any, reason: 'INTERFACE_DOWN' })
+    }
+  }
+
+  redistributeRoute(prefix: string, prefixLen: number, m: import('../values/EigrpMetric').EigrpInterfaceMetric): void {
+    const p      = EP.of(prefix, prefixLen)
+    const metric = computeEigrpMetric(m, this.options.kValues)
+    const result = this._dual.injectLocalRoute(p, metric)
+    if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+  }
+
+  withdrawRedistributedRoute(prefix: string, prefixLen: number): void {
+    const p = EP.of(prefix, prefixLen)
+    const result = this._dual.withdrawLocalRoute(p)
+    if (result.ok) for (const a of result.value) this._bus.dispatch(a)
+  }
+
+  getNeighbors():      readonly import('../neighbor/types').EigrpNeighborEntry[] { return this._neighbors.getAll() }
+  getTopologyTable():  readonly import('../topology/types').TopologyEntry[]       { return this._topo.getAllEntries() }
+  getFib():            readonly import('../dual/EigrpFib').EigrpFibEntry[]        { return this._fib.getAll() }
+}
+```
+
+### 9.5 Diagramme reactif complet de EigrpProcess
+
+```
+                    EigrpProcess (Facade reactive)
+                         |
+     start()  ─────────> _wireReactiveStreams()
+                         |
+           ┌─────────────┼──────────────────────────────────────┐
+           |             |             |              |          |
+       hello$         updates$     queries$       replies$   siaTimer$
+           |             |             |              |          |
+           v             v             v              v          v
+         NSM        DUAL.update  DUAL.query     DUAL.reply   _handleSia
+           |             |             |              |
+           v             v─────────────v──────────────v
+       onNeighborUp                actions$ (Subject<DualAction>)
+       onNeighborDown                   |
+           |                     ───────┼────────────────────────
+           |                    |       |       |       |       |
+           |               INSTALL  WITHDRAW  SEND   SEND  SEND
+           |                ROUTE   ROUTE    UPDATE  QUERY REPLY
+           |                   |       |       |       |       |
+           v                   v       v       v       v       v
+        sendUpdate        iface.     iface.  rtp.    rtp.    rtp.
+        (INIT flag)     install    withdraw send    send    send
+                        Route      Route   Reliable Reliable Reliable
+
+Streams RTP :
+  rtp.events$.pipe(ofType(MAX_RETRANS)) --> bus.emit(NEIGHBOR_DOWN)
+  bus.neighborDown$ --> dual.processNeighborDown() --> actions$
+```
+
+---
