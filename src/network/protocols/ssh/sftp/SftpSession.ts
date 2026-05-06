@@ -247,6 +247,92 @@ export class SftpSession {
     return lines.join('\n');
   }
 
+  /**
+   * BRD SSH-08-R3 / SFTP-12-R3: recursive download. Walks the remote
+   * tree via SFTP `ls` (with attributes), mirrors directories locally,
+   * then issues a flat `get` for each file. Returns concatenated output.
+   */
+  getRecursive(remotePath: string, localPath?: string): string {
+    if (!this.channel) return 'Not connected.';
+    const remote = this.expandRemote(remotePath);
+    const localBase = baseName(remotePath);
+    const localRoot = localPath
+      ? this.deps.localVfs.normalizePath(this.expandLocal(localPath), this.localCwd)
+      : `${this.localCwd}/${localBase}`;
+    const lines: string[] = [];
+    this.deps.localVfs.mkdir(localRoot, 0o755, this.deps.localUid, this.deps.localGid);
+    this.walkDownload(remote, localRoot, lines);
+    return lines.join('\n');
+  }
+
+  /**
+   * BRD SSH-08-R3 / SFTP-12-R4: recursive upload. Walks the local tree
+   * via the local VFS, mirrors directories on the remote, then issues a
+   * flat `put` for each file.
+   */
+  putRecursive(localPath: string, remotePath?: string): string {
+    if (!this.channel) return 'Not connected.';
+    const absLocal = this.deps.localVfs.normalizePath(
+      this.expandLocal(localPath),
+      this.localCwd,
+    );
+    const inode = this.deps.localVfs.resolveInode(absLocal);
+    if (!inode) return `${absLocal}: No such file or directory`;
+    if (inode.type !== 'directory') {
+      return this.put(localPath, remotePath);
+    }
+    const localBase = baseName(absLocal);
+    const remoteRoot = this.expandRemote(remotePath ?? `${this.remoteCwd}/${localBase}`);
+    this.channel.sendRequest({ op: 'mkdir', path: remoteRoot });
+    const lines: string[] = [];
+    this.walkUpload(absLocal, remoteRoot, lines);
+    return lines.join('\n');
+  }
+
+  private walkDownload(remoteDir: string, localDir: string, lines: string[]): void {
+    if (!this.channel) return;
+    const ls = this.channel.sendRequest({ op: 'ls', path: remoteDir });
+    if (!ls.ok) {
+      lines.push(`${remoteDir}: ${ls.error ?? 'No such file or directory'}`);
+      return;
+    }
+    const entries = (ls.entries as readonly SftpDirEntry[]) ?? [];
+    for (const entry of entries) {
+      if (entry.name === '.' || entry.name === '..') continue;
+      const remoteChild = `${remoteDir.replace(/\/$/, '')}/${entry.name}`;
+      const localChild = `${localDir.replace(/\/$/, '')}/${entry.name}`;
+      if (entry.type === 'directory') {
+        this.deps.localVfs.mkdir(
+          localChild,
+          entry.mode || 0o755,
+          this.deps.localUid,
+          this.deps.localGid,
+        );
+        this.walkDownload(remoteChild, localChild, lines);
+      } else {
+        const piece = this.get(remoteChild, localChild);
+        lines.push(...piece.split('\n'));
+      }
+    }
+  }
+
+  private walkUpload(localDir: string, remoteDir: string, lines: string[]): void {
+    if (!this.channel) return;
+    const entries = this.deps.localVfs.listDirectory(localDir) ?? [];
+    for (const entry of entries) {
+      if (entry.name === '.' || entry.name === '..') continue;
+      const localChild = `${localDir.replace(/\/$/, '')}/${entry.name}`;
+      const remoteChild = `${remoteDir.replace(/\/$/, '')}/${entry.name}`;
+      if (entry.inode.type === 'directory') {
+        this.channel.sendRequest({ op: 'mkdir', path: remoteChild });
+        this.walkUpload(localChild, remoteChild, lines);
+      } else {
+        const piece = this.put(localChild, remoteChild);
+        lines.push(...piece.split('\n'));
+      }
+    }
+  }
+
   // ── Remote file operations ───────────────────────────────────────
 
   mkdir(path: string): string {

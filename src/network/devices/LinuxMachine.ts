@@ -223,25 +223,41 @@ export abstract class LinuxMachine extends EndHost {
     };
   }
 
+  /** Cached SSH server context — replaced on `systemctl restart sshd`. */
+  private _sshContext: LinuxSshServerContext | null = null;
+  /** Unsubscribe hook for the service-manager lifecycle listener. */
+  private _sshLifecycleOff: (() => void) | null = null;
+
   /**
-   * Build a fresh ISshServerContext bound to this machine's VFS / users.
-   * Used by callers wanting to drive the new SSH stack against this device
-   * (tests, future cutover from the legacy SFTP-only handler).
+   * Return the cached `LinuxSshServerContext`, creating it on first use.
+   * Subscribes to the service manager so that `systemctl restart sshd`
+   * (or `reload`) reloads /etc/ssh/sshd_config and refreshes the context.
+   *
+   * BRD SSH-07-R6.
    */
   getSshServerContext(): LinuxSshServerContext {
-    return new LinuxSshServerContext(
+    if (this._sshContext) return this._sshContext;
+    this._sshContext = new LinuxSshServerContext(
       this.executor.vfs,
       this.executor.userMgr,
       this.profile.hostname,
       {},
       this.executor,
     );
+    this._sshLifecycleOff?.();
+    this._sshLifecycleOff = this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'ssh' && name !== 'sshd') return;
+      if (event === 'restart' || event === 'reload') {
+        this._sshContext = this._sshContext?.reloadConfig() ?? null;
+      }
+    });
+    return this._sshContext;
   }
 
   /**
    * Build a SshServerHandler ready to be hooked onto a TcpConnection.
-   * The legacy SFTP handler is left registered on port 22 for backward
-   * compatibility; a follow-up may swap it for this one.
+   * The handler captures the current cached context, so config reloads
+   * triggered by `systemctl restart sshd` apply to subsequent connections.
    */
   getSshServerHandler(): SshServerHandler {
     return new SshServerHandler(this.getSshServerContext());

@@ -543,12 +543,12 @@ alice@192.168.1.10: Permission denied (publickey).
 | SSH-03-R1 | `ssh-keygen -t ed25519 [-C comment] [-f filename]` : génère une paire de clés dans `~/.ssh/` | [DONE] `parseSshKeygenArgs` + `generateAndWriteKeyPair` câblés via `LinuxTerminalSession.runSshKeygen` |
 | SSH-03-R2 | La clé privée est stockée dans `~/.ssh/id_ed25519` (permissions 600 simulées) | [DONE] `vfs.chmod(privateKey, 0o600)` |
 | SSH-03-R3 | La clé publique est stockée dans `~/.ssh/id_ed25519.pub` | [DONE] mode 0644 |
-| SSH-03-R4 | `ssh-keygen` interactif demande passphrase (peut être vide) | [PARTIAL] flag `-N <passphrase>` accepté ; prompt interactif à brancher si nécessaire |
+| SSH-03-R4 | `ssh-keygen` interactif demande passphrase (peut être vide) | [DONE] `enterSshKeygen` lance un flow `text` pour le path et 2× `password` (saisie + confirmation) |
 | SSH-03-R5 | `ssh-copy-id [-i keyfile] user@host` : copie la clé publique dans `~/.ssh/authorized_keys` du serveur distant | [DONE] `SshCopyId.sshCopyId` (read-modify-write SFTP) câblé via `enterSshCopyId` |
 | SSH-03-R6 | Le serveur vérifie `~/.ssh/authorized_keys` de l'utilisateur cible | [DONE] `LinuxSshServerContext.checkPublicKey` |
 | SSH-03-R7 | Format de `authorized_keys` : une clé publique par ligne (`ssh-ed25519 AAAA...key comment`) | [DONE] `parseAuthorizedKeysLine` + `SshAuthorizedKeys` |
 | SSH-03-R8 | `ssh -i keyfile user@host` : utiliser la clé spécifiée explicitement | [DONE] `SshConnectOptions.identityFiles` + `createAuthMethods` |
-| SSH-03-R9 | Le client essaie les clés dans `~/.ssh/` automatiquement (`id_ed25519`, `id_rsa`) | [PARTIAL] support via `identityFiles` ; auto-discovery côté CLI à câbler |
+| SSH-03-R9 | Le client essaie les clés dans `~/.ssh/` automatiquement (`id_ed25519`, `id_rsa`) | [DONE] `LinuxTerminalSession.autoDiscoverIdentityFiles` ajoute id_ed25519 / id_rsa / id_ecdsa quand `-i` n'est pas fourni |
 | SSH-03-R10 | Fingerprint affiché lors de `ssh-keygen` : `SHA256:<base64>` format | [DONE] `SshFingerprint.fromPublicKey` (`SHA256:...`) |
 
 ---
@@ -663,7 +663,7 @@ $ systemctl status sshd
 | SSH-07-R3 | Le serveur gère le host key ED25519 stocké dans `/etc/ssh/ssh_host_ed25519_key` (Linux) ou simulé (Windows) | [DONE] `LinuxSshServerContext.loadOrGenerateHostKey()` + équivalent Windows sous `C:\ProgramData\ssh\` |
 | SSH-07-R4 | `sshd_config` simulé dans `/etc/ssh/sshd_config` avec valeurs par défaut réalistes | [DONE] `parseSshdConfig` + `serializeSshdConfig` ; persisté au boot |
 | SSH-07-R5 | Directives `sshd_config` simulées : `PermitRootLogin`, `PasswordAuthentication`, `PubkeyAuthentication`, `Port`, `AllowUsers` | [DONE] `SshSshdConfig` couvre `Port`, `MaxAuthTries`, `PermitRootLogin`, `PasswordAuthentication`, `PubkeyAuthentication`, `AllowUsers`, `Banner` |
-| SSH-07-R6 | `systemctl restart sshd` / `service ssh restart` relit la config (applique les changements) | [PARTIAL] `LinuxSshServerContext.reloadConfig()` ; `systemctl` à câbler dans `LinuxServiceManager` |
+| SSH-07-R6 | `systemctl restart sshd` / `service ssh restart` relit la config (applique les changements) | [DONE] `LinuxServiceManager.onLifecycle` émet `restart`/`reload` ; `LinuxMachine` rafraîchit son `LinuxSshServerContext` via `reloadConfig()` |
 | SSH-07-R7 | MOTD configurable via `/etc/motd` | [DONE] `getMotd()` + seed dans `LinuxMachine.initSshFiles()` |
 | SSH-07-R8 | Bannière de connexion configurable via `sshd_config Banner /etc/issue.net` | [DONE] `getBanner()` + `/etc/issue.net` seedé |
 
@@ -691,7 +691,7 @@ docs/file2.txt                               100%  256     0.3KB/s   00:00
 |---|---|---|
 | SSH-08-R1 | `scp local user@host:remote` — copie locale vers distante | [DONE] `Scp.parseScpArgs` + direction `upload` → `SftpSession.put` |
 | SSH-08-R2 | `scp user@host:remote local` — copie distante vers locale | [DONE] direction `download` → `SftpSession.get` |
-| SSH-08-R3 | `scp -r` — copie récursive de répertoire | [PARTIAL] flag `-r` parsé ; logique récursive à étendre |
+| SSH-08-R3 | `scp -r` — copie récursive de répertoire | [DONE] `SftpSession.getRecursive` / `putRecursive` parcourent l'arborescence ; `runScp` les appelle quand `-r` est passé |
 | SSH-08-R4 | Format de progression identique à sftp : `filename  100%  size  speed  time` | [DONE] `formatTransferProgress` partagé avec sftp |
 | SSH-08-R5 | Authentification identique à SSH (mot de passe ou clé publique) | [DONE] `SshSession` réutilisé |
 | SSH-08-R6 | Pas de `scp` interactif — transfert direct, pas de sous-shell | [DONE] `runScp` connecte, transfère, déconnecte sans sub-shell |
@@ -863,7 +863,7 @@ drwxr-xr-x    2 alice    alice        4096 May 05 10:20 docs
 |---|---|---|
 | SFTP-07-R1 | `SftpSession.get` affiche `Fetching <remote> to <local>` avant le transfert | [DONE] |
 | SFTP-07-R2 | `SftpSession.put` affiche `Uploading <local> to <remote>` avant le transfert | [DONE] |
-| SFTP-07-R3 | Tous les messages d'erreur suivent le format OpenSSH listé ci-dessus | [PARTIAL] format réaligné dans `SftpSession` ; quelques cas (rmdir non-vide vs introuvable) à raffiner |
+| SFTP-07-R3 | Tous les messages d'erreur suivent le format OpenSSH listé ci-dessus | [DONE] `errorToMessage` normalise `IO_ERROR`/`PERMISSION_DENIED` en messages courts (`No such file or directory`, `Permission denied`, `File exists`, `Failure`) ; `SftpSession` wrap dans le sentence OpenSSH |
 
 ---
 

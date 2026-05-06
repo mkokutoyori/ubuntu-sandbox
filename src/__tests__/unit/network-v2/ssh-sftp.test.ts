@@ -475,6 +475,57 @@ Host prod
   });
 });
 
+describe('SSH-07-R6 — sshd reloads /etc/ssh/sshd_config on restart', () => {
+  it('reloadConfig() returns a fresh context with the updated directives', () => {
+    const vfs = new VirtualFileSystem();
+    const userManager = new LinuxUserManager(vfs);
+    const ctx = new LinuxSshServerContext(vfs, userManager, 'host-a');
+    expect(ctx.config.permitRootLogin).toBe(false);
+    // Edit the file as the user would via vim/echo > and reload.
+    vfs.writeFile(
+      '/etc/ssh/sshd_config',
+      `Port 22\nPermitRootLogin yes\nPasswordAuthentication yes\nPubkeyAuthentication yes\n`,
+      0, 0, 0o022,
+    );
+    const reloaded = ctx.reloadConfig();
+    expect(reloaded.config.permitRootLogin).toBe(true);
+  });
+});
+
+describe('SSH-08-R3 — scp -r (recursive directory copy)', () => {
+  it('mirrors a remote directory tree onto the local VFS', async () => {
+    const setup = makeServer({
+      username: 'alice',
+      password: 'secret',
+      files: {
+        '/home/alice/project/main.txt': 'main',
+        '/home/alice/project/sub/inner.txt': 'inner',
+      },
+      dirs: ['/home/alice/project', '/home/alice/project/sub'],
+    });
+    const localVfs = new VirtualFileSystem();
+    localVfs.mkdirp('/root', 0o755, 0, 0);
+    const sftp = new SftpSession({
+      tcpConnector: makeConnector(setup.handler),
+      localVfs,
+      localUser: 'root',
+      localUid: 0,
+      localGid: 0,
+      localCwd: '/root',
+      knownHostsPath: '/root/.ssh/known_hosts',
+      interactionHandler: new SilentSshInteractionHandler('secret'),
+      homeDirectory: '/root',
+    });
+    expect((await sftp.connect(`alice@${REMOTE_IP}`)).startsWith('Connected')).toBe(true);
+    const out = sftp.getRecursive('/home/alice/project', '/root/project');
+    expect(out).toContain('main.txt');
+    expect(out).toContain('inner.txt');
+    expect(localVfs.readFile('/root/project/main.txt')).toBe('main');
+    expect(localVfs.readFile('/root/project/sub/inner.txt')).toBe('inner');
+    sftp.disconnect();
+  });
+});
+
 describe('Pure utilities (BRD SFTP-09/18, SSH-06)', () => {
   it('formatTransferProgress pads 40 chars and reports KB for small files', () => {
     const line = formatTransferProgress('foo.txt', 2048);

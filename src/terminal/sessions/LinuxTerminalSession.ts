@@ -239,7 +239,7 @@ export class LinuxTerminalSession extends TerminalSession {
         return;
       }
       if (parts[0] === 'ssh-keygen') {
-        this.runSshKeygen(parts.slice(1));
+        await this.enterSshKeygen(parts.slice(1));
         return;
       }
       if (parts[0] === 'ssh-copy-id') {
@@ -470,6 +470,23 @@ export class LinuxTerminalSession extends TerminalSession {
       this.connectAndEnterSsh(meta, password);
       return;
     }
+    const sshKeygenMeta = ctx.metadata.get('enter_ssh_keygen') as string | undefined;
+    if (sshKeygenMeta) {
+      const meta = JSON.parse(sshKeygenMeta) as { args: string[]; defaultFile: string };
+      const filePath = (ctx.values.get('keygen_file') ?? '').trim() || meta.defaultFile;
+      const passphrase = ctx.values.get('keygen_passphrase') ?? '';
+      const confirm = ctx.values.get('keygen_passphrase_confirm') ?? '';
+      if (passphrase !== confirm) {
+        this.addLine('Passphrases do not match.  Try again.', 'error');
+        this.notify();
+        return;
+      }
+      const expandedArgs = [...meta.args];
+      if (!expandedArgs.includes('-f')) expandedArgs.push('-f', filePath);
+      if (!expandedArgs.includes('-N')) expandedArgs.push('-N', passphrase);
+      this.runSshKeygen(expandedArgs);
+      return;
+    }
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
     if (sshCopyMeta) {
       const meta = JSON.parse(sshCopyMeta) as {
@@ -489,6 +506,7 @@ export class LinuxTerminalSession extends TerminalSession {
         local: { path: string };
         remote: { path: string };
         direction: 'upload' | 'download';
+        recursive: boolean;
       };
       const password = ctx.values.get('scp_password') ?? '';
       this.runScp(meta, password);
@@ -720,7 +738,9 @@ export class LinuxTerminalSession extends TerminalSession {
       .port(meta.port)
       .strictHostKeyChecking(meta.strict)
       .password(password);
-    for (const id of meta.identityFiles) builder.addIdentityFile(id);
+    for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
+      builder.addIdentityFile(id);
+    }
 
     const result = await session.connect(builder.build());
     if (!isOk(result)) {
@@ -768,6 +788,34 @@ export class LinuxTerminalSession extends TerminalSession {
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
     this.notify();
+  }
+
+  /**
+   * SSH-03-R9: when the user did not pass -i, auto-discover the standard
+   * identity files in ~/.ssh/. Returns the original list when at least one
+   * `-i` was supplied (CLI explicit choice wins).
+   */
+  private autoDiscoverIdentityFiles(
+    explicit: readonly string[],
+  ): string[] {
+    if (explicit.length > 0) return [...explicit];
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { home?: string } | undefined };
+      };
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) return [];
+    const home =
+      dev.executor?.userMgr?.getUser(this.currentUser)?.home ??
+      `/home/${this.currentUser}`;
+    const candidates = [
+      `${home}/.ssh/id_ed25519`,
+      `${home}/.ssh/id_rsa`,
+      `${home}/.ssh/id_ecdsa`,
+    ];
+    return candidates.filter((p) => localVfs.exists(p));
   }
 
   /**
@@ -828,6 +876,64 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   // ── ssh-keygen ──────────────────────────────────────────────────
+
+  /**
+   * `ssh-keygen` entry point. When invoked with `-f` and `-N` flags it
+   * runs non-interactively. Otherwise OpenSSH prompts the user for a
+   * destination file and a passphrase (BRD SSH-03-R1..R4, R10).
+   */
+  private async enterSshKeygen(args: string[]): Promise<void> {
+    const dev = this.device as unknown as {
+      executor?: {
+        userMgr?: { getUser(name: string): { home?: string } | undefined };
+      };
+    };
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const opts = parseSshKeygenArgs(args, homeDir);
+    const hasFlagF = args.includes('-f');
+    const hasFlagN = args.includes('-N');
+
+    // Both -f and -N supplied → non-interactive.
+    if (hasFlagF && hasFlagN) {
+      this.runSshKeygen(args);
+      return;
+    }
+
+    // Build an interactive flow: file path → passphrase → confirm passphrase.
+    const steps: InteractiveStep[] = [];
+    if (!hasFlagF) {
+      steps.push({
+        type: 'text',
+        prompt: `Enter file in which to save the key (${opts.file}): `,
+        storeAs: 'keygen_file',
+      });
+    }
+    if (!hasFlagN) {
+      steps.push({
+        type: 'password',
+        prompt: `Enter passphrase (empty for no passphrase): `,
+        mask: 'hidden',
+        storeAs: 'keygen_passphrase',
+      });
+      steps.push({
+        type: 'password',
+        prompt: `Enter same passphrase again: `,
+        mask: 'hidden',
+        storeAs: 'keygen_passphrase_confirm',
+      });
+    }
+    steps.push({
+      type: 'execute',
+      action: async (ctx: FlowContext) => {
+        ctx.metadata.set(
+          'enter_ssh_keygen',
+          JSON.stringify({ args, defaultFile: opts.file }),
+        );
+      },
+    });
+    this.startFlowFromSteps(steps, `ssh-keygen ${args.join(' ')}`);
+  }
 
   /**
    * Non-interactive `ssh-keygen` (BRD SSH-03-R1..R3, R10).
@@ -1007,6 +1113,7 @@ export class LinuxTerminalSession extends TerminalSession {
               local: { path: localEndpoint.path },
               remote: { path: remoteEndpoint.path },
               direction,
+              recursive: parsed.recursive,
             }),
           );
         },
@@ -1023,6 +1130,7 @@ export class LinuxTerminalSession extends TerminalSession {
       local: { path: string };
       remote: { path: string };
       direction: 'upload' | 'download';
+      recursive: boolean;
     },
     password: string,
   ): Promise<void> {
@@ -1057,7 +1165,7 @@ export class LinuxTerminalSession extends TerminalSession {
     });
     const banner = await sftp.connect(meta.userAtHost, {
       port: meta.port,
-      identityFiles: meta.identityFiles,
+      identityFiles: this.autoDiscoverIdentityFiles(meta.identityFiles),
       password,
     });
     if (!sftp.isConnected()) {
@@ -1068,9 +1176,15 @@ export class LinuxTerminalSession extends TerminalSession {
 
     const transferOutput =
       meta.direction === 'upload'
-        ? sftp.put(meta.local.path, meta.remote.path)
+        ? meta.recursive
+          ? sftp.putRecursive(meta.local.path, meta.remote.path)
+          : sftp.put(meta.local.path, meta.remote.path)
+        : meta.recursive
+        ? sftp.getRecursive(meta.remote.path, meta.local.path)
         : sftp.get(meta.remote.path, meta.local.path);
-    for (const line of transferOutput.split('\n')) this.addLine(line);
+    for (const line of transferOutput.split('\n')) {
+      if (line) this.addLine(line);
+    }
     sftp.disconnect();
     this.notify();
   }
@@ -1104,14 +1218,16 @@ export class LinuxTerminalSession extends TerminalSession {
       knownHostsPath: `${homeDir}/.ssh/known_hosts`,
       interactionHandler: new SilentSshInteractionHandler(password),
     });
-    const opts = SshConnectOptionsBuilder.create()
+    const builder = SshConnectOptionsBuilder.create()
       .host(host)
       .user(user)
       .port(22)
       .strictHostKeyChecking('accept-new')
-      .password(password)
-      .build();
-    const result = await session.connect(opts);
+      .password(password);
+    for (const id of this.autoDiscoverIdentityFiles([])) {
+      builder.addIdentityFile(id);
+    }
+    const result = await session.connect(builder.build());
     if (!isOk(result)) {
       this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
       this.notify();
