@@ -1227,3 +1227,400 @@ ReactiveChannelPool.release(handle)
 ```
 
 ---
+
+## 7. Job Execution Engine — pipeline réactif
+
+### 7.1 Types du moteur de jobs
+
+```typescript
+// src/terminal/subshells/rman/job/types.ts
+
+import type { RmanOperation } from '../core/types'
+import type { RmanError }     from '../core/RmanError'
+
+export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+
+export interface JobStep {
+  readonly name:    string
+  readonly pct:     number           // progression cible (0–100)
+  readonly message: string           // message RMAN à afficher
+}
+
+export interface RmanJob {
+  readonly id:        string
+  readonly operation: RmanOperation
+  readonly steps:     readonly JobStep[]
+  readonly startedAt: number
+}
+
+export interface JobResult {
+  readonly jobId:     string
+  readonly operation: RmanOperation
+  readonly elapsedMs: number
+  readonly output:    readonly string[]  // lignes de résultat final
+}
+
+export interface JobError {
+  readonly jobId:     string
+  readonly operation: RmanOperation
+  readonly error:     RmanError
+  readonly elapsedMs: number
+}
+```
+
+### 7.2 IRmanJobEngine — interface
+
+```typescript
+// src/terminal/subshells/rman/job/IRmanJobEngine.ts
+
+import type { Result }      from '../core/Result'
+import type { RmanError }   from '../core/RmanError'
+import type { RmanJob, JobResult } from './types'
+import type { RmanOperation } from '../core/types'
+
+export interface IRmanJobEngine {
+  /**
+   * Exécute un job RMAN.
+   * Émet des événements PROGRESS_UPDATED, BACKUP_PIECE_CREATED, etc.
+   * via le RmanEventBus injecté.
+   * Retourne Result uniquement en cas d'erreur fatale synchrone.
+   */
+  run(job: RmanJob): Result<void, RmanError>
+
+  /** Annule un job en cours (émet JOB_CANCELLED). */
+  cancel(jobId: string): void
+}
+```
+
+### 7.3 RmanJobEngine — exécution réactive par étapes
+
+```typescript
+// src/terminal/subshells/rman/job/RmanJobEngine.ts
+
+import { ok, err }          from '../core/Result'
+import type { Result }      from '../core/Result'
+import type { RmanError }   from '../core/RmanError'
+import type { IRmanJobEngine }  from './IRmanJobEngine'
+import type { IChannelPool }    from '../channel/IChannelPool'
+import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository'
+import type { IRmanOracleContext }      from '../integration/IRmanOracleContext'
+import type { RmanEventBus }            from '../reactive/RmanEventBus'
+import type { RmanJob }                 from './types'
+import { BackupSetFactory }             from '../catalog/BackupSetFactory'
+import { RmanTag }                      from '../values/RmanTag'
+import { formatElapsed, formatOracleDate, generatePieceName } from '../core/pureUtils'
+
+/**
+ * Moteur d'exécution des jobs RMAN.
+ *
+ * Pattern : TEMPLATE METHOD implicite — run() orchestre les étapes,
+ *           chaque opération (backup, restore…) est un job avec ses étapes.
+ * Pattern : OBSERVER    — chaque étape émet sur RmanEventBus.
+ *
+ * Principe : RmanJobEngine ne sait pas qu'un SubShell existe.
+ *            Il émet des événements ; le SubShell s'abonne séparément.
+ */
+export class RmanJobEngine implements IRmanJobEngine {
+  private readonly _cancelled = new Set<string>()
+
+  constructor(
+    private readonly _bus:     RmanEventBus,
+    private readonly _pool:    IChannelPool,
+    private readonly _catalog: IRmanCatalogRepository,
+    private readonly _ctx:     IRmanOracleContext,
+  ) {}
+
+  run(job: RmanJob): Result<void, RmanError> {
+    const start = Date.now()
+
+    // Annulation vérifiée avant de démarrer
+    if (this._cancelled.has(job.id)) {
+      return err({ code: 'JOB_CANCELLED', message: `Job ${job.id} was cancelled`, jobId: job.id })
+    }
+
+    // Émettre JOB_STARTED
+    this._bus.emit({ type: 'JOB_STARTED', jobId: job.id, operation: job.operation, startedAt: start })
+
+    // Allouer un canal
+    const chanResult = this._pool.allocate()
+    if (!chanResult.ok) {
+      this._emitFailed(job, chanResult.error, start)
+      return ok(undefined) // erreur propagée via événement, pas exception
+    }
+    const channel = chanResult.value
+
+    try {
+      // Exécuter les étapes du job
+      for (const step of job.steps) {
+        if (this._cancelled.has(job.id)) {
+          this._bus.emit({ type: 'JOB_CANCELLED', jobId: job.id, operation: job.operation })
+          return ok(undefined)
+        }
+        // Émettre la progression
+        this._bus.emit({
+          type: 'PROGRESS_UPDATED',
+          jobId: job.id, stepName: step.name,
+          pct: step.pct, message: step.message,
+        })
+      }
+
+      // Traitement spécifique par opération
+      const opResult = this._executeOperation(job, channel.id)
+      if (!opResult.ok) {
+        this._emitFailed(job, opResult.error, start)
+        return ok(undefined)
+      }
+
+      // JOB_COMPLETED
+      this._bus.emit({
+        type: 'JOB_COMPLETED',
+        jobId: job.id, operation: job.operation,
+        elapsedMs: Date.now() - start,
+      })
+    } finally {
+      this._pool.release(channel)
+    }
+
+    return ok(undefined)
+  }
+
+  cancel(jobId: string): void {
+    this._cancelled.add(jobId)
+  }
+
+  // ── Opérations spécifiques ────────────────────────────────────
+
+  private _executeOperation(job: RmanJob, channelId: string): Result<void, RmanError> {
+    switch (job.operation) {
+      case 'BACKUP_DATABASE':    return this._doBackup(job, channelId, 'database')
+      case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog all')
+      case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, 'tablespace')
+      case 'RESTORE_DATABASE':   return this._doRestore(job, channelId)
+      case 'RECOVER_DATABASE':   return this._doRecover(job)
+      case 'CROSSCHECK':         return this._doCrosscheck(job)
+      case 'DELETE_EXPIRED':     return this._doDeleteExpired(job)
+      case 'DELETE_OBSOLETE':    return this._doDeleteObsolete(job)
+      default:                   return ok(undefined)
+    }
+  }
+
+  private _doBackup(job: RmanJob, channelId: string, what: string): Result<void, RmanError> {
+    const tag  = RmanTag.generate()
+    const path = generatePieceName(this._ctx.dbName, tag)
+    const size = Math.floor(800_000_000 + Math.random() * 400_000_000)
+
+    // Émet pièce démarrée
+    this._bus.emit({
+      type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what,
+    })
+
+    // Simule les datafiles Oracle
+    const datafiles = this._ctx.getDatafiles()
+    const dfEntries = datafiles.map((df, i) => ({
+      fileNo: i + 1, level: 0 as const,
+      ckpScn: { _tag: 'Scn' as const, value: 1_892_354 },
+      ckpTime: Date.now(), path: df.path,
+    }))
+
+    // VFS write — peut échouer
+    const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(size))
+    if (!writeResult.ok) {
+      return err({ code: 'VFS_WRITE_ERROR', message: writeResult.error.message, path })
+    }
+
+    // Créer le BackupSet
+    const set = BackupSetFactory.createBackupSet({
+      type: 'FULL', level: 0, path, sizeBytes: size, datafiles: dfEntries,
+    })
+
+    // Émettre pièce créée (→ catalogue s'abonne et persiste)
+    this._bus.emit({
+      type: 'BACKUP_PIECE_CREATED', jobId: job.id, channelId,
+      piece: { key: set.pieces[0].key, tag, path, sizeBytes: size,
+               checkpointScn: set.pieces[0].checkpointScn },
+    })
+
+    // Persister au catalogue (aussi abonné via catalogUpdated$)
+    const catResult = this._catalog.recordBackupSet(set)
+    if (!catResult.ok) return catResult
+
+    // Émettre backup set complet
+    this._bus.emit({
+      type: 'BACKUP_SET_COMPLETE', jobId: job.id,
+      bsKey: set.bsKey, tag, sizeBytes: size,
+    })
+
+    return ok(undefined)
+  }
+
+  private _doRestore(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const snapshot = this._catalog.listAll()
+    if (!snapshot.ok) return snapshot
+    const sets = snapshot.value.sets
+    if (sets.length === 0) {
+      return err({ code: 'RMAN_06004', message: 'No backup found to restore' })
+    }
+
+    const datafiles = this._ctx.getDatafiles()
+    for (const df of datafiles) {
+      this._bus.emit({
+        type: 'RESTORE_DATAFILE_STARTED', jobId: job.id, channelId,
+        fileNo: df.fileNo, to: df.path,
+      })
+      this._bus.emit({
+        type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
+        fileNo: df.fileNo, elapsedMs: 5_000,
+      })
+    }
+    return ok(undefined)
+  }
+
+  private _doRecover(job: RmanJob): Result<void, RmanError> {
+    const fromScn = { _tag: 'Scn' as const, value: 1_892_354 }
+    const toScn   = { _tag: 'Scn' as const, value: 1_892_500 }
+    this._bus.emit({ type: 'RECOVER_STARTED', jobId: job.id, fromScn })
+    this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn, elapsedMs: 3_000 })
+    return ok(undefined)
+  }
+
+  private _doCrosscheck(job: RmanJob): Result<void, RmanError> {
+    const snapshot = this._catalog.listAll()
+    if (!snapshot.ok) return snapshot
+    let available = 0; let expired = 0
+    for (const piece of snapshot.value.pieces) {
+      // Vérifie si le fichier existe dans le VFS
+      const exists = this._ctx.vfs.fileExists(piece.path)
+      if (exists) { available++ } else {
+        this._catalog.expirePiece(piece.key)
+        expired++
+      }
+    }
+    this._bus.emit({ type: 'CROSSCHECK_DONE', available, expired })
+    return ok(undefined)
+  }
+
+  private _doDeleteExpired(job: RmanJob): Result<void, RmanError> {
+    const expired = this._catalog.listExpired()
+    if (!expired.ok) return expired
+    for (const piece of expired.value) {
+      this._catalog.deleteBackupSet(piece.bsKey)
+    }
+    return ok(undefined)
+  }
+
+  private _doDeleteObsolete(job: RmanJob): Result<void, RmanError> {
+    const obs = this._catalog.listObsolete(1)
+    if (!obs.ok) return obs
+    for (const set of obs.value) {
+      this._catalog.deleteBackupSet(set.bsKey)
+    }
+    return ok(undefined)
+  }
+
+  private _emitFailed(job: RmanJob, error: RmanError, start: number): void {
+    this._bus.emit({
+      type: 'JOB_FAILED', jobId: job.id, operation: job.operation,
+      error, elapsedMs: Date.now() - start,
+    })
+  }
+}
+```
+
+### 7.4 JobBuilder — construction déclarative des jobs
+
+```typescript
+// src/terminal/subshells/rman/job/JobBuilder.ts
+
+import type { RmanJob, JobStep } from './types'
+import type { RmanOperation }   from '../core/types'
+
+let _jobCounter = 1
+
+/**
+ * Builder pour créer des RmanJob avec leurs étapes Oracle.
+ * Chaque opération a des étapes prédéfinies qui correspondent
+ * exactement aux messages affichés par RMAN réel.
+ */
+export const JobBuilder = {
+  backupDatabase(): RmanJob {
+    return _make('BACKUP_DATABASE', [
+      { name: 'allocate_channel', pct: 5,  message: 'allocated channel: ORA_DISK_1' },
+      { name: 'start_backup',     pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
+      { name: 'specify_files',    pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },
+      { name: 'backup_system',    pct: 40, message: 'including current control file in backup set' },
+      { name: 'write_piece',      pct: 70, message: 'channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15' },
+      { name: 'autobackup_cf',    pct: 90, message: 'Finished Control File and SPFILE Autobackup' },
+    ])
+  },
+
+  backupArchivelog(): RmanJob {
+    return _make('BACKUP_ARCHIVELOG', [
+      { name: 'allocate_channel', pct: 5,  message: 'allocated channel: ORA_DISK_1' },
+      { name: 'start_archivelog', pct: 10, message: 'channel ORA_DISK_1: starting archived log backup set' },
+      { name: 'specify_archivelogs', pct: 30, message: 'channel ORA_DISK_1: specifying archived log(s) in backup set' },
+      { name: 'write_piece',      pct: 80, message: 'channel ORA_DISK_1: backup set complete, elapsed time: 00:00:03' },
+    ])
+  },
+
+  backupTablespace(tsName: string): RmanJob {
+    return _make('BACKUP_TABLESPACE', [
+      { name: 'allocate_channel', pct: 5,  message: 'allocated channel: ORA_DISK_1' },
+      { name: 'start_backup',     pct: 10, message: `channel ORA_DISK_1: starting full datafile backup set` },
+      { name: 'backup_ts',        pct: 50, message: `channel ORA_DISK_1: backing up tablespace ${tsName}` },
+      { name: 'write_piece',      pct: 90, message: 'channel ORA_DISK_1: backup set complete, elapsed time: 00:00:08' },
+    ])
+  },
+
+  restoreDatabase(): RmanJob {
+    return _make('RESTORE_DATABASE', [
+      { name: 'allocate_channel',   pct: 5,  message: 'allocated channel: ORA_DISK_1' },
+      { name: 'start_restore',      pct: 10, message: 'channel ORA_DISK_1: starting datafile backup set restore' },
+      { name: 'restore_system',     pct: 30, message: 'channel ORA_DISK_1: restoring datafile 00001 to /u01/app/oracle/oradata/ORCL/system01.dbf' },
+      { name: 'restore_sysaux',     pct: 50, message: 'channel ORA_DISK_1: restoring datafile 00002 to /u01/app/oracle/oradata/ORCL/sysaux01.dbf' },
+      { name: 'restore_undotbs',    pct: 65, message: 'channel ORA_DISK_1: restoring datafile 00003 to /u01/app/oracle/oradata/ORCL/undotbs01.dbf' },
+      { name: 'restore_users',      pct: 80, message: 'channel ORA_DISK_1: restoring datafile 00004 to /u01/app/oracle/oradata/ORCL/users01.dbf' },
+      { name: 'restore_complete',   pct: 95, message: 'channel ORA_DISK_1: restore complete, elapsed time: 00:00:25' },
+    ])
+  },
+
+  recoverDatabase(): RmanJob {
+    return _make('RECOVER_DATABASE', [
+      { name: 'start_recover',  pct: 20, message: 'starting media recovery' },
+      { name: 'apply_logs',     pct: 70, message: 'media recovery complete, elapsed time: 00:00:03' },
+    ])
+  },
+
+  crosscheck(): RmanJob {
+    return _make('CROSSCHECK', [
+      { name: 'allocate_channel', pct: 20, message: 'allocated channel: ORA_DISK_1' },
+      { name: 'crosscheck',       pct: 80, message: 'crosschecked backup piece: found to be \'AVAILABLE\'' },
+    ])
+  },
+
+  deleteExpired(): RmanJob {
+    return _make('DELETE_EXPIRED', [
+      { name: 'using_channel', pct: 50, message: 'using channel ORA_DISK_1' },
+      { name: 'delete',        pct: 90, message: 'specification does not match any backup in the repository' },
+    ])
+  },
+
+  deleteObsolete(): RmanJob {
+    return _make('DELETE_OBSOLETE', [
+      { name: 'retention_policy', pct: 30, message: 'RMAN retention policy will be applied to the command' },
+      { name: 'using_channel',    pct: 60, message: 'using channel ORA_DISK_1' },
+      { name: 'check_obsolete',   pct: 90, message: 'no obsolete backups found' },
+    ])
+  },
+}
+
+function _make(operation: RmanOperation, steps: JobStep[]): RmanJob {
+  return Object.freeze({
+    id:        `JOB-${_jobCounter++}`,
+    operation,
+    steps:     Object.freeze(steps),
+    startedAt: Date.now(),
+  })
+}
+```
+
+---
