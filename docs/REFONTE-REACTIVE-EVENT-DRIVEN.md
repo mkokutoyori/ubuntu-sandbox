@@ -14,7 +14,7 @@
 4. [Analyse des `devices` concrets et des moteurs de protocoles](#4-analyse-des-devices-concrets-et-des-moteurs-de-protocoles)
 5. [Analyse de la couche terminal](#5-analyse-de-la-couche-terminal)
 6. [Analyse du store Zustand et des composants React](#6-analyse-du-store-zustand-et-des-composants-react)
-7. Analyse de la couche base de données (Oracle) *(à venir)*
+7. [Analyse de la couche base de données (Oracle)](#7-analyse-de-la-couche-base-de-données-oracle)
 8. Architecture cible — bus d'événements, scheduler, état observable *(à venir)*
 9. Refactoring détaillé par classe *(à venir)*
 10. Plan de migration séquentiel *(à venir)*
@@ -1176,3 +1176,173 @@ Phase 3 : suppression de `instance` du `NetworkDeviceUI` ; `NetworkDeviceUI` dev
 ---
 
 *Section 6 close. Suivante : §7 — Couche base de données (Oracle).*
+
+---
+
+## 7. Analyse de la couche base de données (Oracle)
+
+La simulation Oracle (`src/database/`, ≈ 12 000 LoC réparties sur `engine/` et `oracle/`) est volumineuse mais **purement synchrone**. C'est la couche où la refonte est la plus chirurgicale : aucun timer natif n'y existe, l'état mute mais sans abonnés. La refonte se limite à **rendre observable** ce qui est aujourd'hui silencieux, et à **brancher** la couche sur le bus pour les besoins d'intégration UI.
+
+### 7.1 Cartographie
+
+```
+src/database/engine/                     « Engine SQL générique réutilisable »
+   ├─ lexer/    Tokenisation
+   ├─ parser/   AST + BaseParser (1 717 LoC)
+   ├─ executor/ BaseExecutor (57) + ResultSet (65)
+   ├─ storage/  BaseStorage (403)
+   ├─ catalog/  BaseCatalog (180) + DataType (147)
+   └─ types/    DatabaseConfig (51), DatabaseError (31), SQLDialect (5)
+
+src/database/oracle/                     « Spécialisation Oracle »
+   ├─ OracleInstance.ts    (542)  state machine SHUTDOWN→NOMOUNT→MOUNT→OPEN
+   ├─ OracleStorage.ts     (74)   tablespaces, datafiles, DUAL
+   ├─ OracleCatalog.ts     (1 917) data dictionary, V$/DBA_/USER_/ALL_/SYS
+   ├─ OracleLexer.ts       (102)
+   ├─ OracleParser.ts      (665)
+   ├─ OracleExecutor.ts    (3 441) DML/DDL/PL-SQL léger, transactions
+   ├─ OracleDatabase.ts    (1 305) façade — agrège tout pour un device
+   ├─ commands/            commandes spécifiques (RMAN, datapump, …)
+   └─ demo/                jeux de données
+
+Intégration terminal :
+   src/terminal/subshells/SqlPlusSubShell.ts   (104)
+   src/terminal/subshells/RmanSubShell.ts      (381)
+   src/terminal/commands/database.ts           (≈ 460)
+```
+
+### 7.2 État actuel — observations
+
+#### 7.2.1 Synchrone partout
+
+`OracleExecutor.execute(sql)` retourne un `ResultSet` synchrone. Pas de coroutines, pas de Promise, pas de timers. C'est cohérent avec une simulation pédagogique qui n'a pas vocation à émuler la latence d'un vrai SGBD.
+
+#### 7.2.2 Une instance Oracle par device
+
+`src/terminal/commands/database.ts` expose :
+
+```ts
+export function getOracleDatabase(deviceId: string): OracleDatabase;
+export function createSQLPlusSession(deviceId, ...): ...;
+export function removeOracleDatabase(deviceId: string): void;
+export function resetAllOracleInstances(): void;
+```
+
+Une `OracleDatabase` est cachée par `deviceId` dans une `Map` module-level. À l'allumage, `initOracleFilesystem(device)` mute le système de fichiers du device pour y poser `$ORACLE_HOME`, `$ORACLE_BASE`, datafiles, alert.log.
+
+#### 7.2.3 Synchronisation Oracle ↔ Filesystem du device
+
+Plusieurs fonctions de **synchronisation explicite** existent pour pousser l'état Oracle vers le système de fichiers virtuel du device :
+
+```ts
+export function updateSpfileOnDevice(device, parameters): void;
+export function syncAlertLogToDevice(device, alertLogEntries): void;
+export function syncDatafilesToDevice(device, db): void;
+export function syncOracleProcessesToDevice(device, db): void;
+```
+
+Ces fonctions sont appelées **manuellement** depuis `OracleInstance.startup`, `shutdown`, modification de paramètres, etc. C'est exactement le type d'effet qui mérite d'être déclenché par **événement** : `oracle.instance.opened` → handler qui sync le filesystem ; `oracle.instance.parameter-changed` → handler qui met à jour `spfile.ora` ; `oracle.instance.alert-log-entry-added` → handler qui ajoute une ligne à `alert_*.log` dans le filesystem.
+
+#### 7.2.4 Aucun pub/sub
+
+L'`OracleInstance` mute son `_state`, `_alertLog`, `_redoLogGroups`, `_backgroundProcesses`, sans aucun signal externe. Le `SqlPlusSubShell` et la UI ne savent pas si une autre session vient de faire `STARTUP` ou `SHUTDOWN ABORT`.
+
+### 7.3 Points de couplage avec le réseau
+
+- **SQL\*Net (TNS)** : aujourd'hui implémenté minimalement — `OracleExecutor` n'utilise pas le réseau ; les `connect user/password@SID` sont locaux. L'extension réseau (`sqlplus user/pass@host:1521/SID`) nécessitera un *listener* TNS qui écoute sur un port TCP simulé. C'est un bon candidat pour devenir un **acteur abonné au bus** : `tcp.listener.bound{port:1521}` → handler qui parse PDU TNS → publie `oracle.tns.connect-request` → `OracleInstance` lui répond.
+- **RMAN distant** : `RmanSubShell` (381 LoC) gère aujourd'hui le RMAN local. La cible « RMAN sur node distant » est nécessairement réseau, donc nécessairement bus.
+
+### 7.4 Décisions de refonte
+
+#### 7.4.1 Ce qui ne change pas
+
+- Lexer, Parser, BaseParser, AST, ResultSet, Catalog, Storage : **inchangés**. Logique métier pure.
+- API publique de `OracleInstance.startup()`, `shutdown()`, `OracleExecutor.execute()` : **inchangée** côté signature. `Promise` non introduits.
+- Performance synchrone conservée pour les tests et la fluidité UI.
+
+#### 7.4.2 Ce qui devient observable
+
+L'`OracleInstance` publie sur le bus :
+
+| Événement | Quand | Payload |
+|---|---|---|
+| `oracle.instance.state-changed` | `startup` ou `shutdown` change `_state` | `{ deviceId, oldState, newState }` |
+| `oracle.instance.background-process-started` | `startBackgroundProcesses` | `{ deviceId, name, pid }` |
+| `oracle.instance.background-process-stopped` | `shutdown` | `{ deviceId, name, pid }` |
+| `oracle.instance.alert-log-entry-added` | `logAlert` | `{ deviceId, line }` |
+| `oracle.instance.parameter-changed` | `setParameter` | `{ deviceId, key, oldValue, newValue }` |
+| `oracle.instance.redo-log-switched` | `switchRedoLog` | `{ deviceId, oldGroup, newGroup, sequence }` |
+| `oracle.archive-log.created` | quand archivelog mode + redo switch | `{ deviceId, sequence, path }` |
+
+L'`OracleExecutor` publie :
+
+| Événement | Quand | Payload |
+|---|---|---|
+| `oracle.session.connected` | `CONNECT user@SID` | `{ deviceId, sessionId, schema, role }` |
+| `oracle.session.disconnected` | `DISCONNECT` ou exit | `{ deviceId, sessionId }` |
+| `oracle.transaction.started` | début TX implicite ou `BEGIN` | `{ deviceId, sessionId, txId }` |
+| `oracle.transaction.committed` | `COMMIT` | `{ deviceId, sessionId, txId, durationMs }` |
+| `oracle.transaction.rolled-back` | `ROLLBACK` | `{ deviceId, sessionId, txId }` |
+| `oracle.dml.executed` | `INSERT/UPDATE/DELETE` | `{ deviceId, sessionId, schema, table, rowsAffected }` |
+| `oracle.ddl.executed` | `CREATE/ALTER/DROP` | `{ deviceId, sessionId, schema, kind, name }` |
+| `oracle.error.raised` | ORA-NNNNN | `{ deviceId, sessionId, code, message }` |
+
+#### 7.4.3 Synchronisation FS → handler unique
+
+Les quatre fonctions actuelles `updateSpfileOnDevice`, `syncAlertLogToDevice`, `syncDatafilesToDevice`, `syncOracleProcessesToDevice` deviennent **un seul module** `OracleFilesystemSync` qui s'abonne au bus :
+
+```ts
+// Pseudo
+bus.on('oracle.instance.parameter-changed', e => fs.write(`${oracleHome}/spfile${sid}.ora`, render(e)));
+bus.on('oracle.instance.alert-log-entry-added', e => fs.append(`${oracleBase}/diag/alert_${sid}.log`, e.line));
+bus.on('oracle.instance.background-process-started', e => fs.registerProcess(e));
+bus.on('oracle.instance.state-changed', e => { if (e.newState === 'OPEN') fs.attachDatafiles(...); });
+```
+
+Bénéfices :
+- L'`OracleInstance` n'a **plus de dépendance** vers `Equipment` ni vers `LinuxFileSystem`.
+- Tests unitaires d'`OracleInstance` : zéro mock filesystem requis.
+- L'utilisateur qui veut désactiver la synchronisation FS (mode purement DB) peut détacher l'abonnement.
+
+#### 7.4.4 Multi-session
+
+`createSQLPlusSession` actuellement crée un nouvel objet de session ; deux SQL\*Plus parallèles sur le même device partagent l'instance. Les événements `oracle.session.*` permettent à la UI d'afficher « 3 sessions actives, dont 1 en transaction ouverte ». Pas de changement structurel — c'est un *cadeau* de la refonte.
+
+#### 7.4.5 RMAN
+
+`RmanSubShell` reste local. Il publie `oracle.rman.backup-started`, `oracle.rman.backup-completed`, `oracle.rman.restore-started` pour permettre à la UI d'afficher une progression et aux tests de vérifier les invariants.
+
+### 7.5 Couche `database/engine/` (générique)
+
+Le code générique (`BaseStorage`, `BaseCatalog`, `BaseParser`, `BaseExecutor`, `DataType`) est destiné à servir d'autres SGBDs (PostgreSQL, MySQL) à terme. La refonte **ne le contamine pas** avec des dépendances bus : il reste fonctionnel-pur. Seules les sous-classes Oracle (et futures Postgres) émettent les événements.
+
+### 7.6 Tests existants
+
+Trois suites principales :
+
+- `src/__tests__/unit/database/oracle-dbms-filesystem-coherence.test.ts`
+- `src/__tests__/unit/database/filesystem-database-layer.test.ts`
+- `src/__tests__/unit/database/oracle-linux-filesystem.test.ts`
+
+— elles testent précisément les synchronisations FS ↔ Oracle. Elles sont **directement** au cœur du refactor §7.4.3. Stratégie : la migration adapte ces tests pour vérifier que les **événements** sont bien émis et que le handler `OracleFilesystemSync` produit le même état FS qu'avant. **Pas de régression fonctionnelle.**
+
+### 7.7 Synthèse — base de données
+
+| Élément | LoC | Réactivité actuelle | Réactivité cible |
+|---|---:|---|---|
+| `OracleInstance` | 542 | Mutations silencieuses | Émet `oracle.instance.*` |
+| `OracleExecutor` | 3 441 | Mutations silencieuses | Émet `oracle.session.*`, `oracle.transaction.*`, `oracle.dml.*`, `oracle.ddl.*`, `oracle.error.*` |
+| `OracleCatalog` | 1 917 | Pure | Inchangé |
+| `OracleStorage` | 74 | Pure | Inchangé |
+| `OracleDatabase` | 1 305 | Façade | Inchangée |
+| `OracleParser`, `OracleLexer` | 767 | Pure | Inchangés |
+| Engine `BaseXxx` | ≈ 3 700 | Pure | Inchangé |
+| Sync FS (4 fonctions) | ≈ 200 | Appels manuels | Module `OracleFilesystemSync` abonné au bus |
+| `SqlPlusSubShell`, `RmanSubShell` | 485 | sync subshells | Émettent `oracle.rman.*`, sinon inchangés |
+| `database.ts` (terminal) | 460 | Map deviceId → DB | Map conservée + émet `oracle.database.created/removed` |
+
+**Bilan** : la couche DB représente moins de **5 % de l'effort** de refonte (ajout d'événements, extraction d'un module sync FS). Pas de réécriture de l'engine.
+
+---
+
+*Section 7 close. Suivante : §8 — Architecture cible : event bus, scheduler, état observable.*
