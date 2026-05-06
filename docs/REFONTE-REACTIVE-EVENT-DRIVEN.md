@@ -9,7 +9,7 @@
 ## Table des matières
 
 1. [Introduction & objectifs de la refonte](#1-introduction--objectifs-de-la-refonte)
-2. État actuel de l'architecture *(à venir)*
+2. [État actuel de l'architecture](#2-état-actuel-de-larchitecture)
 3. Analyse de la couche réseau — `Equipment` / `Port` / `Cable` *(à venir)*
 4. Analyse des `devices` concrets et des moteurs de protocoles *(à venir)*
 5. Analyse de la couche terminal *(à venir)*
@@ -100,3 +100,160 @@ Le rapport est rédigé **séquentiellement, sans agent**, section par section. 
 ---
 
 *Section 1 close. Suivante : §2 — État actuel de l'architecture.*
+
+---
+
+## 2. État actuel de l'architecture
+
+Cette section dresse une cartographie objective du code tel qu'il existe avant refonte. Elle sert de référence aux sections suivantes (chaque problème identifié ici sera repris en §3 à §7 puis traité en §9).
+
+### 2.1 Vue d'ensemble en couches
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ React Components — src/components/                                   │
+│   NetworkDesigner • NetworkCanvas • NetworkDevice • ConnectionLine   │
+│   PropertiesPanel • TerminalModal • MinimizedTerminals • ...         │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │ useNetworkStore  (Zustand)
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Store — src/store/networkStore.ts                                    │
+│   deviceInstances: Map<string, Equipment>   connections: Connection[]│
+│   addDevice • addConnection • removeConnection • clearAll • ...      │
+│   ⤷ deviceToUI()  (recalcul à chaque getDevices())                   │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │ instances directes
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Terminal — src/terminal/                                             │
+│   TerminalSession (subscribe/notify) • TerminalManager • SubShells   │
+│   InteractiveFlowEngine • OutputFormatter • commands/ • flows/       │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │ device.executeCommand(...)
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Devices — src/network/devices/                                       │
+│   Router (1545 LoC)  Switch (838)  EndHost (2325)                    │
+│   LinuxMachine (827) WindowsPC (695) Hub …                           │
+│   ↳ delegates : LinuxXxxManager, WinXxx, shells/, router/, …         │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │ extends Equipment, owns Ports
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Hardware/Equipment — src/network/equipment + hardware                │
+│   Equipment (abstract, registry)    Port    Cable    PortSecurity    │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │ frame in/out
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Core — src/network/core/                                             │
+│   Logger (pub/sub texte) • PacketQueue • NeighborResolver            │
+│   TcpConnection • SocketTable • RoutingTable • types/constants       │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+Couches transverses : moteurs de protocoles (`ospf/`, `ipsec/`, `dhcp/`, `rip/`, `acl/`) attachés aux devices via composition ; base de données Oracle simulée (`src/database/oracle/`) attachée aux sub-shells SQL\*Plus.
+
+### 2.2 Mécanismes d'interconnexion existants
+
+Le code d'aujourd'hui exprime ses dépendances et ses notifications de **six façons distinctes**, chacune avec sa propre forme et son propre cycle de vie. C'est ce *patchwork* que la refonte vise à unifier.
+
+| # | Mécanisme | Localisation type | Illustration | Limite |
+|---|---|---|---|---|
+| M1 | **Callback unique posé sur un objet** | `Port.frameHandler` | `port.onFrame((portName, frame) => …)` | Un seul abonné possible ; pas d'observabilité externe (capture, animation). |
+| M2 | **Tableau de handlers maison** | `Port.linkChangeHandlers`, `TcpConnection.dataHandlers` | `port.onLinkChange(state => …)` | Pas de désinscription (Port) ou désinscription locale (Tcp) ; pas de filtrage ; pas de typage discriminé. |
+| M3 | **Map de callbacks pendantes** | `EndHost.pendingARPs`, `EndHost.pendingPings`, `EndHost.pendingNDPs`, `EndHost.tcpListeners`, `EndHost.pendingTcpHandshakes` | `pendingARPs.set(ip, [{ resolve, reject, timer }])` | Cycle de vie manuel (timer + cleanup), fuites possibles, pas d'observation externe pour la UI ni les tests. |
+| M4 | **Promise + setTimeout** | `NeighborResolver.resolve`, `withTimeout` | `new Promise<MAC>((res, rej) => { setTimeout(rej, …); …})` | Annulation difficile, dépend de l'horloge réelle, non rejouable. |
+| M5 | **Pub/sub Logger** | `Logger.subscribe(filter)` | `Logger.info(id, 'arp:reply', ...)` | Logger uniquement, payload texte non typé, pas d'usage UI réel. |
+| M6 | **Subscription versionnée** | `TerminalSession.subscribe / getVersion` | `useSyncExternalStore(s.subscribe, s.getVersion)` | Réinventé localement, propre au terminal, ne sait pas observer l'`Equipment` ni les ports. |
+
+À cela s'ajoute la **notification implicite** par mutation de la `Map` Zustand : `set(state => ({ deviceInstances: new Map(state.deviceInstances) }))`. C'est le seul lien entre les `Equipment` et le rerender React, et il n'est déclenché que sur les mutations *administrées par le store* (add/remove/move device, add/remove connection, power on/off). Tout changement d'état initié *à l'intérieur* d'un équipement (réception d'une trame, mise à jour d'une table de routage par OSPF, expiration d'un bail DHCP) **ne déclenche aucun rerender**.
+
+### 2.3 Inventaire des timers (`setInterval` / `setTimeout`)
+
+Le projet contient **104 occurrences** brutes de `setInterval` ou `setTimeout`, réparties ainsi (recensement par `grep -rn`) :
+
+| Couche | Occurrences | Fichiers concernés |
+|---|---|---|
+| `src/network/` | 87 | OSPFEngine, OSPFv3Engine, RIPEngine, RouterRIPEngine, DHCPClient, IPSecEngine, EndHost, Router, Switch, NATEngine, IPv6DataPlane, RouterOSPFIntegration, PacketQueue, NeighborResolver, CiscoNATCommands, HuaweiNATCommands. |
+| `src/terminal/` | 4 | `TerminalSession.replayRecording`, `CLITerminalSession` (boot delay, pager animations). |
+| `src/store/` + `src/components/` + `src/hooks/` | 13 | `PacketAnimation`, `MinimizedTerminals`, `TerminalView` (debounce, scroll-into-view), `use-toast`. |
+| `src/database/` | 0 | Pure-synchrone. |
+
+Ces timers ne partagent **aucune abstraction** : il n'y a ni table centrale, ni mode test commun. `vitest` doit appeler `vi.useFakeTimers()` dans chaque fichier de test concerné, et ce dispositif ne couvre pas les *Promise* qui contiennent un `setTimeout` (p. ex. `NeighborResolver`). Conséquence pratique : certains tests OSPF (`ospf-converge.test.ts`) appellent directement les méthodes internes du moteur (p. ex. `tickLSAge()`) plutôt que d'avancer le temps virtuellement, ce qui couple les tests à l'implémentation.
+
+### 2.4 Inventaire des points de logging
+
+`Logger` est appelé **environ 90 fois** dans la couche réseau (5× `Equipment`, 18× `Port`, 9× `Cable`, 17× `Router`, 11× `Switch`, 17× `EndHost`, plus tous les moteurs de protocoles et plusieurs commandes Linux/Cisco). Chaque appel produit un événement-texte typé `{ level, source, event, message, data? }` avec un `event` choisi à la volée par chaîne de caractères (`'arp:reply'`, `'frame:received'`, `'ospf:lsa-flood'`, …). Aucune validation. Aucun consommateur UI réel à ce jour ; le seul *abonné* est l'éventuel développeur qui branche un `subscribe` à la console.
+
+C'est une **base intéressante** pour le bus cible : le pattern publish/subscribe avec filtre par source/event existe déjà ; il suffit de **généraliser** en faisant porter au bus toute la communication inter-objets, pas seulement les logs.
+
+### 2.5 Vue d'ensemble du flux de données runtime
+
+Pour un scénario simple « PC-A ping PC-B via un switch », le flux actuel est :
+
+```
+EndHost-A.pingHost("10.0.0.2")
+  └─ ARP cache miss
+       ├─ pendingARPs.set("10.0.0.2", [{resolve, reject, timer}])
+       └─ sendFrame(eth0, ARP-Request broadcast)
+            └─ Port.sendFrame  →  Cable.transmit  →  PortB.receiveFrame  (synchrone, dans le même call-stack)
+                                                          └─ Switch.handleFrame   (synchrone)
+                                                                ├─ MAC learn
+                                                                └─ flood-out  →  ...  →  PortC.receiveFrame
+                                                                                              └─ EndHost-B.handleFrame
+                                                                                                    └─ ARP reply via le même call-stack inverse
+                                                                                                          └─ resolves pendingARPs callback
+                                                                                                                └─ flush fwdQueue ICMP echo
+                                                                                                                      └─ ... → echo reply → resolves pendingPings
+```
+
+L'intégralité de la résolution ARP + flood + reply + envoi du echo + retour du echo-reply se déroule **dans la même pile d'appels JavaScript**, sauf si un `setTimeout` du queue (par exemple `fwdQueue`) introduit un yield. Ce design a l'avantage d'être prévisible ; il a deux défauts pour la cible visée : (a) il rend impossible toute animation visuelle réaliste, puisque la trame est « livrée » avant que React ait pu rerender ; (b) il interdit toute logique transverse insérée *en milieu de chaîne* (filtrage, capture, mirror port, retard simulé) sans toucher chaque appelant.
+
+### 2.6 Points forts de l'architecture actuelle (à préserver)
+
+L'analyse n'est pas que critique. Plusieurs choix de design actuels sont solides et doivent **être conservés** par la refonte :
+
+- **Pas de simulateur central global** — chaque équipement encapsule sa logique. C'est une bonne décomposition orientée acteur ; le bus la prolonge plutôt qu'il ne la remplace.
+- **Hiérarchie d'héritage propre** — `Equipment → EndHost → LinuxMachine → LinuxPC` est lisible, peu profonde, sans hiérarchies fragiles.
+- **Délégation par composition** — `LinuxFirewallManager`, `LinuxProcessManager`, `WindowsServiceManager`, `PortSecurity`, `ACLEngine` sont des collaborateurs propres injectés ou détenus par le device.
+- **Types L2/L3 immuables et typés** — `EthernetFrame`, `IPv4Packet`, `IPv6Packet`, `ARPPacket` sont des structures de données simples ; aucun changement nécessaire.
+- **`PacketQueue` et `NeighborResolver` génériques** — déjà extraits, déjà testables. Ils restent des composants, simplement reformulés avec le scheduler et le bus.
+- **`SocketTable`** — registre clean, sans callbacks ni réactivité. Reste tel quel.
+- **`TerminalSession` versionnée** — mini-pub/sub déjà compatible `useSyncExternalStore`. Sera étendu, pas réécrit.
+- **Tests unitaires nombreux** (97+ fichiers réseau) — couverture suffisante pour faire de la refonte par tests préservés.
+
+### 2.7 Cartographie des problèmes par couche
+
+Les sections suivantes (§3 à §7) approfondissent. Synthèse avant entrée en détail :
+
+| Couche | Pattern problématique dominant | Impact sur la refonte |
+|---|---|---|
+| Hardware (`Port`, `Cable`) | Callbacks uniques M1 + tableau M2, transmission synchrone. | Cible la plus structurante — fonde le pipeline L2 événementiel (O4). |
+| Equipment | Registre statique global, méthodes virtuelles `handleFrame`. | Devient un *acteur* abonné au bus. |
+| Devices | Maps de callbacks M3 (ARP/ping/TCP), timers natifs disséminés. | Refonte des `pendingXxx` en *requêtes en vol* observables. |
+| Protocoles | Timers natifs + Promise jetables M4. | Migration vers Scheduler (O3). |
+| Terminal | Pub/sub maison M6 mais bien isolé. | Étendu pour s'aligner sur le bus, conservé sinon. |
+| Store + UI | Mutation Map pour rerender, `instance: Equipment` exposée à React. | Read-models projetés (O5). |
+| Database | Synchrone, peu de bus en sortie. | Intégration via événements de session uniquement. |
+
+### 2.8 Métriques de référence (avant refonte)
+
+| Métrique | Valeur |
+|---|---|
+| Fichiers TypeScript dans `src/` | ≈ 280 |
+| Fichiers de tests `vitest` | ≈ 100 (97+ réseau, plus DB et GUI) |
+| LoC `EndHost.ts` | 2 325 |
+| LoC `Router.ts` | 1 545 |
+| LoC `Switch.ts` | 838 |
+| LoC `OracleExecutor.ts` | 3 441 |
+| Occurrences `setInterval` / `setTimeout` | 104 (87 réseau + 4 terminal + 13 UI/hooks) |
+| Implémentations distinctes du pattern observable | 4 (Logger, Port handlers, TerminalSession version, Tcp dataHandlers) |
+| Maps de callbacks pendantes (`pendingXxx`) | 5+ rien que dans `EndHost` |
+
+Ces chiffres serviront de base de comparaison à la fin de la refonte (cf. §11).
+
+---
+
+*Section 2 close. Suivante : §3 — Analyse de la couche réseau (`Equipment` / `Port` / `Cable`).*
