@@ -3047,7 +3047,8 @@ majeure.
 | 2 | `Logger` adapter + `EquipmentRegistry` events | ✅ | Voir §12.8.3 |
 | 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ✅ | Voir §12.8.4 |
 | 4a | Scheduler dans `PacketQueue` et `NeighborResolver` | ✅ | Voir §12.8.5 |
-| 4b | Scheduler dans OSPF / RIP / DHCP / IPSec / NAT | ⏳ | – |
+| 4b1 | Scheduler dans `Switch.macAgingTimer` | ✅ | Voir §12.8.6 |
+| 4b2 | Scheduler dans OSPF / RIP / DHCP / IPSec / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -3321,8 +3322,38 @@ globale reste à la baseline préexistante (578 échecs, aucun ajouté).
 - ✅ Tests temporels passent avec `VirtualTimeScheduler` injecté.
 - ⏳ Migration équivalente requise pour `OSPFEngine`,
   `OSPFv3Engine`, `RIPEngine`, `RouterRIPEngine`, `DHCPClient`,
-  `DHCPServer`, `IPSecEngine`, `NATEngine`, `Switch.macAgingTimer`
-  → traités en Phase 4b.
+  `DHCPServer`, `IPSecEngine`, `NATEngine` → traités en Phase 4b2.
+
+### 12.8.6 Phase 4b1 — Scheduler dans `Switch.macAgingTimer` (livrée)
+
+**Objectif** : migrer le seul timer natif de la classe `Switch`
+(`macAgingTimer = setInterval(..., 1000)`) vers `IScheduler`.
+
+**Fichier modifié** :
+
+- `src/network/devices/Switch.ts` (≈ 855 LoC) :
+  - Champ `macAgingTimer: TimerHandle | null` (au lieu de
+    `ReturnType<typeof setInterval>`).
+  - Champ `macAgingScheduler: IScheduler | null` qui mémorise quel
+    scheduler a programmé le timer, pour que `stopMACAgingProcess()`
+    libère le bon handle même si `setScheduler()` est appelé entre
+    démarrage et arrêt.
+  - `setScheduler(scheduler)` : si l'aging était déjà actif, l'arrête
+    sur l'ancien scheduler puis le redémarre sur le nouveau (rebascule
+    transparente).
+  - `startMACAgingProcess()` utilise `getScheduler().setInterval(...)`.
+  - `stopMACAgingProcess()` utilise le scheduler **mémorisé** au
+    moment du démarrage, pas l'override courant — évite les fuites
+    de timer si on a basculé entre-temps.
+
+**Test ajouté** (`src/__tests__/unit/events/Switch.scheduler.test.ts`,
+1 test) : crée un `CiscoSwitch`, injecte un `VirtualTimeScheduler`
+après construction (forçant le rebascule), powerOn/powerOff, vérifie
+qu'aucun timer ne fuit (`scheduler.pendingCount() === 0`).
+
+**Résultat** : **65/65 tests events verts**. Suite globale : baseline
+préservée. 0 occurrence de `setInterval` natif dans
+`src/network/devices/Switch.ts`.
 
 ### 12.9 Mot de la fin
 
