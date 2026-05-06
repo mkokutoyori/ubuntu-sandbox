@@ -2661,3 +2661,431 @@ State Machine transitions :
 
 ---
 
+## 9. Integration : OracleInstance, VFS, SubShell
+
+### 9.1 IRmanOracleContext — Adapter Pattern
+
+`IRmanOracleContext` est le **pont d'integration** entre le module RMAN et le reste du simulateur (OracleInstance, VirtualFileSystem). Ce principe (Adapter + DIP) garantit :
+- Le module RMAN ne depends jamais directement d'`OracleInstance` ou de `VirtualFileSystem`
+- Les tests unitaires du module RMAN peuvent utiliser un contexte mock
+- Une future implémentation sur Windows (WindowsFileSystem) ne touche que l'adaptateur
+
+```typescript
+// src/database/oracle/rman/integration/IRmanOracleContext.ts
+
+import type { InstanceState } from '../../OracleInstance'
+import type { BackupSet }     from '../catalog/types'
+
+export interface DatafileInfo {
+  readonly num:       number    // 1=SYSTEM, 2=SYSAUX, 3=UNDOTBS1, 4=USERS
+  readonly name:      string    // chemin absolu sur le VFS
+  readonly sizeBytes: number
+  readonly tablespace: string
+  readonly checkpoint: number  // SCN du dernier checkpoint
+}
+
+export interface TablespaceInfo {
+  readonly name:      string
+  readonly datafiles: readonly DatafileInfo[]
+  readonly sizeBytes: number
+  readonly freeBytes: number
+}
+
+export interface ArchivedLogInfo {
+  readonly sequence:  number
+  readonly name:      string    // chemin absolu sur le VFS
+  readonly firstScn:  number
+  readonly nextScn:   number
+  readonly sizeBytes: number
+  readonly thread:    number
+}
+
+/**
+ * Contexte Oracle injecte dans RmanSession.
+ * Implementé par LinuxRmanContext (adaptateur vers OracleInstance + VirtualFileSystem).
+ * Testable via MockRmanOracleContext.
+ */
+export interface IRmanOracleContext {
+  // ── Etat de l'instance ────────────────────────────────────────────────
+  getInstanceState(): InstanceState
+  getDbName(): string
+  getDbId(): number
+  getCurrentScn(): number
+  isArchiveLogMode(): boolean
+
+  // ── Schema / datafiles ────────────────────────────────────────────────
+  getDatafiles(): readonly DatafileInfo[]
+  getTablespaces(): readonly TablespaceInfo[]
+  getArchivedLogs(): readonly ArchivedLogInfo[]
+
+  // ── Filesystem ────────────────────────────────────────────────────────
+  fileExists(path: string): boolean
+  readFile(path: string): string | null
+  writeFile(path: string, content: string): boolean
+  deleteFile(path: string): boolean
+  mkdirp(path: string): void
+  listDir(path: string): string[] | null
+
+  // ── Mutation d'etat Oracle ────────────────────────────────────────────
+  /** Archive le redo log courant et passe au suivant (ALTER SYSTEM ARCHIVE LOG CURRENT) */
+  archiveCurrentLog(): ArchivedLogInfo | null
+  /** Avance le SCN simule (apres une recovery) */
+  advanceScn(delta: number): void
+}
+```
+
+### 9.2 LinuxRmanContext — implementation concrete
+
+```typescript
+// src/database/oracle/rman/integration/LinuxRmanContext.ts
+
+import type { IRmanOracleContext, DatafileInfo, TablespaceInfo, ArchivedLogInfo }
+  from './IRmanOracleContext'
+import type { InstanceState }    from '../../OracleInstance'
+import type { OracleInstance }   from '../../OracleInstance'
+import type { VirtualFileSystem } from '../../../../network/devices/linux/VirtualFileSystem'
+import { ORACLE_CONFIG }         from '../../../../terminal/commands/OracleConfig'
+
+const ORADATA = `${ORACLE_CONFIG.BASE}/oradata`
+
+/**
+ * Adaptateur : mappe les methodes IRmanOracleContext vers OracleInstance + VirtualFileSystem.
+ * Respecte le Dependency Inversion : RmanSession depend de IRmanOracleContext, pas de cette classe.
+ */
+export class LinuxRmanContext implements IRmanOracleContext {
+  private _scn = 1892354  // SCN de depart realiste
+
+  constructor(
+    private readonly _instance: OracleInstance,
+    private readonly _vfs: VirtualFileSystem,
+  ) {}
+
+  // ── Etat de l'instance ────────────────────────────────────────────────
+
+  getInstanceState(): InstanceState { return this._instance.state }
+  getDbName(): string { return this._instance.config.sid }
+  getDbId(): number   { return this._deterministicDbId() }
+  getCurrentScn(): number { return this._scn }
+  isArchiveLogMode(): boolean { return this._instance.archiveLogMode }
+
+  // ── Schema / datafiles ────────────────────────────────────────────────
+
+  getDatafiles(): readonly DatafileInfo[] {
+    const sid   = this._instance.config.sid
+    const base  = `${ORADATA}/${sid}`
+    return [
+      { num: 1, name: `${base}/system01.dbf`,  sizeBytes: 838_860_800, tablespace: 'SYSTEM',  checkpoint: this._scn },
+      { num: 2, name: `${base}/sysaux01.dbf`,  sizeBytes: 576_716_800, tablespace: 'SYSAUX',  checkpoint: this._scn },
+      { num: 3, name: `${base}/undotbs01.dbf`, sizeBytes: 209_715_200, tablespace: 'UNDOTBS1', checkpoint: this._scn },
+      { num: 4, name: `${base}/users01.dbf`,   sizeBytes: 104_857_600, tablespace: 'USERS',   checkpoint: this._scn },
+    ]
+  }
+
+  getTablespaces(): readonly TablespaceInfo[] {
+    const dfs  = this.getDatafiles()
+    const ts   = new Map<string, DatafileInfo[]>()
+    for (const df of dfs) {
+      const arr = ts.get(df.tablespace) ?? []
+      arr.push(df)
+      ts.set(df.tablespace, arr)
+    }
+    return [...ts.entries()].map(([name, files]) => ({
+      name,
+      datafiles: files,
+      sizeBytes: files.reduce((s, f) => s + f.sizeBytes, 0),
+      freeBytes: Math.floor(files.reduce((s, f) => s + f.sizeBytes, 0) * 0.3),
+    }))
+  }
+
+  getArchivedLogs(): readonly ArchivedLogInfo[] {
+    const logs = this._instance.getRedoLogGroups()
+    const base = `${ORACLE_CONFIG.BASE}/archivelog`
+    return logs
+      .filter(g => g.status === 'INACTIVE' || g.status === 'ACTIVE')
+      .map((g, i) => ({
+        sequence:  g.sequence,
+        name:      `${base}/arch_1_${g.sequence}_${this._scn}.arc`,
+        firstScn:  this._scn - 1000 * (i + 1),
+        nextScn:   this._scn - 1000 * i,
+        sizeBytes: 50 * 1024 * 1024,
+        thread:    1,
+      }))
+  }
+
+  // ── Filesystem ────────────────────────────────────────────────────────
+
+  fileExists(path: string): boolean {
+    return this._vfs.getFile(path) !== undefined ||
+           this._vfs.getDirectory(path) !== undefined
+  }
+
+  readFile(path: string): string | null {
+    const f = this._vfs.getFile(path)
+    return f?.content ?? null
+  }
+
+  writeFile(path: string, content: string): boolean {
+    try {
+      this._vfs.writeFile(path, content, 'oracle')
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  deleteFile(path: string): boolean {
+    try {
+      this._vfs.deleteFile(path)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  mkdirp(path: string): void {
+    this._vfs.mkdirp(path, 'oracle')
+  }
+
+  listDir(path: string): string[] | null {
+    const dir = this._vfs.getDirectory(path)
+    return dir ? Object.keys(dir.children) : null
+  }
+
+  // ── Mutation d'etat Oracle ────────────────────────────────────────────
+
+  archiveCurrentLog(): ArchivedLogInfo | null {
+    if (!this._instance.archiveLogMode) return null
+    const result = this._instance.switchLogfile()
+    if (!result.startsWith('System altered')) return null
+    const seq  = this._instance.getRedoLogGroups()
+      .find(g => g.status === 'ACTIVE')?.sequence ?? 0
+    const base = `${ORACLE_CONFIG.BASE}/archivelog`
+    const name = `${base}/arch_1_${seq}_${this._scn}.arc`
+    this.mkdirp(base)
+    this.writeFile(name, `[Oracle archived log sequence ${seq}]`)
+    return {
+      sequence:  seq,
+      name,
+      firstScn:  this._scn - 1000,
+      nextScn:   this._scn,
+      sizeBytes: 50 * 1024 * 1024,
+      thread:    1,
+    }
+  }
+
+  advanceScn(delta: number): void {
+    this._scn += delta
+  }
+
+  private _deterministicDbId(): number {
+    let h = 0x811c9dc5
+    for (const c of this._instance.config.sid) {
+      h ^= c.charCodeAt(0)
+      h = (h * 0x01000193) >>> 0
+    }
+    return h || 1
+  }
+}
+```
+
+### 9.3 RmanSubShell refactorise — integration avec RmanSession
+
+```typescript
+// src/terminal/subshells/RmanSubShell.ts  (refactorise)
+
+import type { KeyEvent }     from '@/terminal/sessions/TerminalSession'
+import type { ISubShell, SubShellResult } from './ISubShell'
+import type { IRmanSession } from '@/database/oracle/rman/session/IRmanSession'
+
+/**
+ * RmanSubShell — pont entre ISubShell (UI) et IRmanSession (metier).
+ *
+ * Responsabilites :
+ *  - Gerait le buffering multi-ligne (prompt '2>')
+ *  - Convertit RmanOutput en SubShellResult
+ *  - Affiche le banner de demarrage
+ */
+export class RmanSubShell implements ISubShell {
+  private constructor(private readonly _session: IRmanSession) {}
+
+  static create(
+    session: IRmanSession,
+    connectOutput: import('@/database/oracle/rman/RmanOutput').RmanOutput,
+  ): { subShell: RmanSubShell; banner: string[] } {
+    return {
+      subShell: new RmanSubShell(session),
+      banner: [...connectOutput.lines],
+    }
+  }
+
+  getPrompt(): string {
+    return this._session.getPrompt()
+  }
+
+  handleKey(e: KeyEvent): boolean {
+    if (e.key === 'c' && e.ctrlKey) return true
+    return false
+  }
+
+  processLine(line: string): SubShellResult {
+    const output = this._session.processLine(line)
+
+    if (output === null) {
+      // Commande multi-ligne incomplete — continuer la saisie
+      return { output: [], exit: false, prompt: this._session.getPrompt() }
+    }
+
+    return {
+      output: [...output.lines],
+      exit:   output.exit,
+      prompt: output.exit ? '' : this._session.getPrompt(),
+    }
+  }
+
+  dispose(): void {
+    this._session.dispose()
+  }
+}
+```
+
+### 9.4 LinuxTerminalSession — wiring de la commande `rman`
+
+```typescript
+// Extrait de src/terminal/sessions/LinuxTerminalSession.ts
+
+// Dans la methode handleRmanCommand(args: string[]):
+
+handleRmanCommand(args: string[]): void {
+  const session = new RmanSession(
+    new LinuxRmanContext(this.device.oracleInstance, this.device.vfs)
+  )
+
+  // Traiter les arguments de la ligne de commande
+  // ex. "rman target /" ou "rman target sys/oracle@ORCL"
+  const opts = parseRmanArgs(args)
+
+  // Banner de demarrage
+  const banner = [
+    '',
+    `Recovery Manager: Release 19.0.0.0.0 - Production on ${formatOracleDate(new Date())}`,
+    '',
+    'Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.',
+    '',
+  ]
+
+  // Connexion automatique si TARGET specifie en argument
+  let connectOutput: RmanOutput | undefined
+  if (opts.target) {
+    connectOutput = session.connectFromArgs(opts)
+  }
+
+  const { subShell } = RmanSubShell.create(
+    session,
+    connectOutput ?? { lines: [], exit: false, backupSetsCreated: 0, filesRestored: 0, elapsedSeconds: 0 }
+  )
+
+  this.enterSubShell(subShell, [...banner, ...(connectOutput?.lines ?? [])])
+}
+```
+
+### 9.5 Diagramme d'integration complet
+
+```
+LinuxTerminalSession
+  |  handleRmanCommand(['target', '/'])
+  |
+  v
+RmanSubShell (ISubShell)
+  |  _session: IRmanSession
+  |
+  v
+RmanSession (IRmanSession)  <-- Facade
+  |  _oracleCtx: IRmanOracleContext (injected)
+  |
+  v
+LinuxRmanContext (IRmanOracleContext)  <-- Adapter
+  |  _instance: OracleInstance
+  |  _vfs: VirtualFileSystem
+  |
+  +-- getInstanceState()  --> OracleInstance.state
+  +-- getDatafiles()      --> calcule depuis config.sid
+  +-- writeFile(path, c)  --> VirtualFileSystem.writeFile()
+  +-- fileExists(path)    --> VirtualFileSystem.getFile()
+  +-- archiveCurrentLog() --> OracleInstance.switchLogfile()
+
+Test isolation :
+  MockRmanOracleContext  (zero OracleInstance, zero VFS)
+  InMemoryRmanCatalog    (deja zero dependance externe)
+  --> tests purs du module RMAN sans simulateur reseau
+```
+
+### 9.6 Structure de fichiers du module RMAN
+
+```
+src/database/oracle/rman/
+  result.ts
+  RmanError.ts
+  RmanOutput.ts
+  values/
+    Scn.ts
+    RmanTag.ts
+    BackupKey.ts
+    DbId.ts
+  config/
+    RmanConfig.ts
+  catalog/
+    types.ts
+    IRmanCatalogRepository.ts
+    InMemoryRmanCatalog.ts
+    BackupSetFactory.ts
+  channels/
+    IBackupDeviceStrategy.ts
+    DiskDeviceStrategy.ts
+    SbtDeviceStrategy.ts
+    IBackupChannel.ts
+    ConcreteBackupChannel.ts
+    ChannelPool.ts
+    ChannelAllocator.ts
+  retention/
+    IRetentionPolicy.ts
+    RedundancyPolicy.ts
+    RecoveryWindowPolicy.ts
+    NonePolicy.ts
+    RetentionPolicyFactory.ts
+    RmanRetentionEngine.ts
+  commands/
+    IRmanCommand.ts
+    RmanCommandContext.ts
+    RmanCommandDispatcher.ts
+    BackupCommand.ts
+    RestoreCommand.ts
+    RecoverCommand.ts
+    ListCommand.ts
+    ReportCommand.ts
+    CrosscheckCommand.ts
+    DeleteCommand.ts
+    ConfigureCommand.ts
+    ShowCommand.ts
+    ConnectCommand.ts
+    CatalogCommand.ts
+    DuplicateCommand.ts
+    ValidateCommand.ts
+  events/
+    IRmanEventBus.ts
+  session/
+    RmanSessionState.ts
+    RmanConnectOptions.ts
+    RmanScriptParser.ts
+    IRmanSession.ts
+    RmanSession.ts
+  integration/
+    IRmanOracleContext.ts
+    LinuxRmanContext.ts
+  RmanPureUtils.ts
+
+src/terminal/subshells/
+  RmanSubShell.ts           (refactorise — depend de IRmanSession)
+```
+
+---
+
