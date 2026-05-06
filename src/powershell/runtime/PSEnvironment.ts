@@ -98,6 +98,22 @@ export class PSEnvironment {
     this.vars.set(key, value);
   }
 
+  /** Removes a variable from the current scope (mimics Remove-Variable). */
+  delete(name: string): void {
+    this.vars.delete(name.toLowerCase());
+  }
+
+  /** Removes a variable from whichever scope owns it. */
+  deleteInScope(name: string): void {
+    const key = name.toLowerCase();
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    let scope: PSEnvironment | null = this;
+    while (scope !== null) {
+      if (scope.vars.has(key)) { scope.vars.delete(key); return; }
+      scope = scope.parent;
+    }
+  }
+
   // ─── Existence Check ─────────────────────────────────────────────────────
 
   has(name: string): boolean {
@@ -164,4 +180,10 @@ export function seedBuiltins(env: PSEnvironment): void {
   env.set('HOME',    'C:\\Users\\User');
   env.set('PSHOME',  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0');
   env.set('PROFILE', 'C:\\Users\\User\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1');
+
+  // Process / context automatic variables
+  env.set('PID', 1234 as PSValue);
+  env.set('ExecutionContext', { SessionState: { Path: { CurrentLocation: { Path: 'C:\\' } } } } as unknown as PSValue);
+  env.set('MyInvocation', { MyCommand: { Name: '<ScriptBlock>' } } as unknown as PSValue);
+  env.set('PWD', { Path: 'C:\\', ProviderPath: 'C:\\', Provider: 'FileSystem' } as unknown as PSValue);
 }

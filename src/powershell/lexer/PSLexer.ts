@@ -619,7 +619,7 @@ export class PSLexer {
       return psToken(PSTokenType.NUMBER, value, start);
     }
 
-    // Check if digit is '2' and followed by '>' → redirect 2> / 2>>
+    // Check if digit is '2' and followed by '>' → redirect 2> / 2>> / 2>&1
     if (first_ === '2' && this.peek1() === '>') {
       this.advance(); // skip 2
       this.advance(); // skip >
@@ -627,7 +627,16 @@ export class PSLexer {
         this.advance();
         return psToken(PSTokenType.REDIRECT_ERR_APPEND, '2>>', start);
       }
-      // 2>&1 — merge stderr to stdout
+      // 2>&1 — merge stderr to stdout: consume &1
+      if (!this.eof() && this.ch() === '&') {
+        const saved = this.pos;
+        this.advance(); // skip &
+        if (!this.eof() && this.isDigit(this.ch())) {
+          this.advance(); // skip stream number (e.g. 1)
+          return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>&1', start);
+        }
+        this.pos = saved; // restore if &N pattern not found
+      }
       return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>', start);
     }
 

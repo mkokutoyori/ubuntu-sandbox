@@ -117,6 +117,13 @@ function buildHKCU(): RegistryKey {
   const currentVersion = makeKey('CurrentVersion');
   windows.subkeys.set('currentversion', currentVersion);
 
+  // HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings
+  const internetSettings = makeKey('Internet Settings');
+  currentVersion.subkeys.set('internet settings', internetSettings);
+  seedValue(internetSettings, 'ProxyEnable', 0);
+  seedValue(internetSettings, 'ProxyServer', '');
+  seedValue(internetSettings, 'ProxyOverride', '<local>');
+
   // HKCU:\Environment
   const env = makeKey('Environment');
   root.subkeys.set('environment', env);

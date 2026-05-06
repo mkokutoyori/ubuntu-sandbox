@@ -161,6 +161,27 @@ export class PowerShellExecutor {
   private breakSignal = false;
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
+  /** Adapter state overrides: key = display name lowercase → { status, displayName } */
+  private adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
+  /** Dynamic firewall rules added via New-NetFirewallRule */
+  private dynamicFirewallRules: Map<string, {
+    name: string; displayName: string; enabled: boolean;
+    action: string; direction: string; protocol: string;
+    localPort: string; remotePort: string; description: string;
+  }> = new Map();
+  /** WinHTTP proxy setting (empty = direct access) */
+  private winhttpProxy: string = '';
+  /** WLAN: currently connected SSID (empty = disconnected) */
+  private wlanConnectedSSID: string = '';
+  /** WLAN: known profiles (SSIDs) */
+  private wlanProfiles: Set<string> = new Set();
+  /** Network connection profiles: ifIndex → category */
+  private networkProfiles: Map<number, string> = new Map();
+  /** VPN connections: lowercase name → connection info */
+  private vpnConnections: Map<string, {
+    name: string; serverAddress: string; tunnelType: string;
+    encryptionLevel: string; authMethod: string;
+  }> = new Map();
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -839,6 +860,9 @@ export class PowerShellExecutor {
       const prop = parenPropMatch[2].toLowerCase();
       // Array split: ("hello world".Split(" ")).Count
       if (prop === 'count' || prop === 'length') {
+        // -ReadCount 0 or -Raw → whole file is ONE string → Count = 1
+        const innerLower = innerExpr.toLowerCase();
+        if (/-readcount\s+0(\s|$)/.test(innerLower) || /(^|\s)-raw(\s|$)/.test(innerLower)) return '1';
         const inner = this.tryEvalExpr(innerExpr);
         if (inner !== null) {
           return String(inner.split('\n').filter(Boolean).length || (inner.trim() ? 1 : 0));
@@ -1268,12 +1292,13 @@ export class PowerShellExecutor {
           const results: string[] = [];
           for (const obj of objs) {
             let cmd = scriptBody;
-            // Replace $_.PropName with the property value from the object
-            cmd = cmd.replace(/\$_\.(\w+)/g, (_, prop) => {
+            // Replace $_.PropName ONLY when the property actually exists on the object
+            // (otherwise $_.txt would incorrectly eat ".txt" as a property name)
+            cmd = cmd.replace(/\$_\.(\w+)/g, (full, prop) => {
               const key = Object.keys(obj).find(k => k.toLowerCase() === prop.toLowerCase());
-              return key !== undefined ? String(obj[key] ?? '') : '';
+              return key !== undefined ? String(obj[key] ?? '') : full;
             });
-            // Replace bare $_ with the Name property or first property
+            // Replace bare $_ (or $_ immediately before non-word chars like . " etc.)
             cmd = cmd.replace(/\$_(?=\W|$)/g, () => {
               const nameKey = Object.keys(obj).find(k => k.toLowerCase() === 'name');
               if (nameKey) return String(obj[nameKey] ?? '');
@@ -1646,6 +1671,19 @@ export class PowerShellExecutor {
   private async executeForPipeline(cmd: string): Promise<PipelineInput> {
     const trimmedCmd = cmd.trim();
 
+    // Range expression: 1..5 → ['1','2','3','4','5']
+    const rangeMatch = trimmedCmd.match(/^(-?\d+)\.\.(-?\d+)$/);
+    if (rangeMatch) {
+      const start = parseInt(rangeMatch[1], 10);
+      const end   = parseInt(rangeMatch[2], 10);
+      const step  = start <= end ? 1 : -1;
+      const nums: PSObject[] = [];
+      for (let n = start; step > 0 ? n <= end : n >= end; n += step) {
+        nums.push({ Line: String(n) });
+      }
+      return nums;
+    }
+
     // Array literal: "a","b","c" or 1,2,3
     const arrayItems = this.tryParseArrayLiteral(trimmedCmd);
     if (arrayItems !== null) {
@@ -1796,6 +1834,21 @@ export class PowerShellExecutor {
       return '';
     }
 
+    // .GetType().Name accessor: (expr).GetType().Name
+    const getTypeNameMatch = trimmedLine.match(/^\((.+)\)\.GetType\(\)\.Name$/i);
+    if (getTypeNameMatch) {
+      const innerCmd = getTypeNameMatch[1].trim();
+      const innerLower = innerCmd.toLowerCase();
+      if (/-asbytestream\b/.test(innerLower)) return 'Byte[]';
+      if (/^(get-content|gc|cat|type)\b/.test(innerLower)) return 'Object[]';
+      // Execute and determine type from result
+      const result = await this.execute(innerCmd);
+      if (!result) return 'Object[]';
+      const lines = result.split('\n').filter(l => l.trim());
+      if (lines.length > 1) return 'Object[]';
+      return 'String';
+    }
+
     // Property accessor: (command).PropertyName
     const propAccessMatch = trimmedLine.match(/^\((.+)\)\.(\w+)$/);
     if (propAccessMatch) {
@@ -1806,6 +1859,9 @@ export class PowerShellExecutor {
       if (!result) return propName.toLowerCase() === 'count' ? '0' : '';
       // .Count: return number of objects in the result
       if (propName.toLowerCase() === 'count') {
+        // -ReadCount 0 or -Raw → whole file is ONE string → Count = 1
+        const innerLower = innerCmd.toLowerCase();
+        if (/-readcount\s+0(\s|$)/.test(innerLower) || /(^|\s)-raw(\s|$)/.test(innerLower)) return '1';
         const parsed = parseTable(result) ?? parseKeyValueBlocks(result);
         if (parsed) return String(parsed.length);
         const dataLines = result.split('\n').filter(l => {
@@ -1814,20 +1870,35 @@ export class PowerShellExecutor {
         });
         return String(Math.max(0, dataLines.length));
       }
-      const parsed = parseTable(result) ?? parseKeyValueBlocks(result);
+      // Prefer KV block when result contains extended properties (e.g. Get-Service -Name X)
+      // This avoids parseTable incorrectly parsing KV lines as table data rows.
+      const kvParsed = parseKeyValueBlocks(result);
+      const tableParsed = parseTable(result);
+      // Use KV block if it has the requested property, else use table
+      const parsed = (() => {
+        if (kvParsed && kvParsed.length === 1 && Object.keys(kvParsed[0]).find(k => k.toLowerCase() === propName.toLowerCase())) {
+          return kvParsed;
+        }
+        return tableParsed ?? kvParsed;
+      })();
       if (parsed && parsed.length > 0) {
-        const obj = parsed[0];
-        const key = Object.keys(obj).find(k => k.toLowerCase() === propName.toLowerCase());
+        const key = Object.keys(parsed[0]).find(k => k.toLowerCase() === propName.toLowerCase());
         if (key !== undefined) {
-          const val = obj[key];
-          if (val === true) return 'True';
-          if (val === false) return 'False';
-          return String(val ?? '');
+          // Collect values from ALL objects (PowerShell array property access)
+          const values = parsed.map(o => {
+            const v = o[key];
+            if (v === true) return 'True';
+            if (v === false) return 'False';
+            return String(v ?? '');
+          }).filter(v => v !== '');
+          return values.join('\n');
         }
       }
-      // Fallback: search for "PropName : Value" in the output
-      const kvMatch = result.match(new RegExp(`${propName}\\s*:\\s*(.+)`, 'i'));
-      if (kvMatch) return kvMatch[1].trim();
+      // Fallback: collect ALL key:value matches (multiple objects)
+      const kvAllMatches = [...result.matchAll(new RegExp(`${propName}\\s*:\\s*(.+)`, 'gi'))];
+      if (kvAllMatches.length > 0) {
+        return kvAllMatches.map(m => m[1].trim()).join('\n');
+      }
       return '';
     }
 
@@ -2042,6 +2113,19 @@ export class PowerShellExecutor {
 
     // Clear-Host / cls / clear
     if (cmdLower === 'clear-host' || cmdLower === 'cls' || cmdLower === 'clear') {
+      // Clear-Host accepts no parameters except common parameters
+      const commonParams = new Set(['-erroraction', '-warningaction', '-informationaction',
+        '-errorvariable', '-warningvariable', '-informationvariable', '-outvariable',
+        '-outbuffer', '-pipelinevariable', '-verbose', '-debug', '-whatif', '-confirm']);
+      for (const a of args) {
+        if (!a.startsWith('-')) {
+          return `Clear-Host : A positional parameter cannot be found that accepts argument '${a}'.`;
+        }
+        const aLower = a.split(':')[0].toLowerCase();
+        if (!commonParams.has(aLower)) {
+          return `Clear-Host : A parameter cannot be found that matches parameter name '${a.slice(1)}'.`;
+        }
+      }
       return ''; // Screen clear is handled by the sub-shell, executor returns empty string
     }
 
@@ -2062,7 +2146,11 @@ export class PowerShellExecutor {
       let examples = false, detailed = false, full = false, online = false, showWindow = false;
       for (let i = 0; i < args.length; i++) {
         const al = args[i].toLowerCase();
-        if ((al === '-name') && args[i+1]) { topic = args[++i].replace(/^["']|["']$/g, ''); }
+        if ((al === '-name') && args[i+1] && !args[i+1].startsWith('-')) { topic = args[++i].replace(/^["']|["']$/g, ''); }
+        else if (al === '-name') {
+          // -Name with no value or followed by another switch → report missing argument
+          return `Get-Help : Missing an argument for parameter 'Name'. Specify a parameter of type 'System.String' and try again.`;
+        }
         else if (al === '-category' && args[i+1]) { category = args[++i].replace(/^["']|["']$/g, ''); }
         else if (al === '-parameter' && args[i+1]) { paramName = args[++i].replace(/^["']|["']$/g, ''); }
         else if (al === '-component' && args[i+1]) { component = args[++i].replace(/^["']|["']$/g, ''); }
@@ -2160,6 +2248,103 @@ export class PowerShellExecutor {
       return this.formatGetNetFirewallRule(args);
     }
 
+    // New-NetFirewallRule
+    if (cmdLower === 'new-netfirewallrule') {
+      return this.handleNewNetFirewallRule(args);
+    }
+
+    // Set-NetFirewallRule
+    if (cmdLower === 'set-netfirewallrule') {
+      return this.handleSetNetFirewallRule(args);
+    }
+
+    // Enable-NetFirewallRule
+    if (cmdLower === 'enable-netfirewallrule') {
+      return this.handleToggleNetFirewallRule(args, true);
+    }
+
+    // Disable-NetFirewallRule
+    if (cmdLower === 'disable-netfirewallrule') {
+      return this.handleToggleNetFirewallRule(args, false);
+    }
+
+    // Remove-NetFirewallRule
+    if (cmdLower === 'remove-netfirewallrule') {
+      return this.handleRemoveNetFirewallRule(args);
+    }
+
+    // Disable-NetAdapter
+    if (cmdLower === 'disable-netadapter') {
+      return this.handleDisableEnableNetAdapter(args, 'Disabled');
+    }
+
+    // Enable-NetAdapter
+    if (cmdLower === 'enable-netadapter') {
+      return this.handleDisableEnableNetAdapter(args, 'Up');
+    }
+
+    // Rename-NetAdapter
+    if (cmdLower === 'rename-netadapter') {
+      return this.handleRenameNetAdapter(args);
+    }
+
+    // Restart-NetAdapter
+    if (cmdLower === 'restart-netadapter') {
+      const params = this.parsePSArgs(args);
+      const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+      if (name) {
+        const override = this.adapterOverrides.get(name) ?? {};
+        override.status = 'Up';
+        this.adapterOverrides.set(name, override);
+      }
+      return '';
+    }
+
+    // Set-NetRoute
+    if (cmdLower === 'set-netroute') {
+      return this.handleSetNetRoute(args);
+    }
+
+    // Test-NetConnection
+    if (cmdLower === 'test-netconnection') {
+      return this.handleTestNetConnection(args);
+    }
+
+    // Get-NetConnectionProfile
+    if (cmdLower === 'get-netconnectionprofile') {
+      return this.handleGetNetConnectionProfile(args);
+    }
+
+    // Set-NetConnectionProfile
+    if (cmdLower === 'set-netconnectionprofile') {
+      return this.handleSetNetConnectionProfile(args);
+    }
+
+    // Add-VpnConnection
+    if (cmdLower === 'add-vpnconnection') {
+      return this.handleAddVpnConnection(args);
+    }
+
+    // Get-VpnConnection
+    if (cmdLower === 'get-vpnconnection') {
+      return this.handleGetVpnConnection(args);
+    }
+
+    // Set-VpnConnection
+    if (cmdLower === 'set-vpnconnection') {
+      return this.handleSetVpnConnection(args);
+    }
+
+    // Remove-VpnConnection
+    if (cmdLower === 'remove-vpnconnection') {
+      return this.handleRemoveVpnConnection(args);
+    }
+
+    // Clear-DnsClientCache
+    if (cmdLower === 'clear-dnsclientcache') {
+      return '';
+    }
+
     // Resolve-DnsName
     if (cmdLower === 'resolve-dnsname') {
       const target = args.find(a => !a.startsWith('-')) ?? '';
@@ -2237,6 +2422,16 @@ export class PowerShellExecutor {
     // hostname
     if (cmdLower === 'hostname') {
       return this.device.getHostname();
+    }
+
+    // Intercept netsh winhttp before CMD delegation (PS-level proxy state)
+    if (cmdLower === 'netsh' && args[0]?.toLowerCase() === 'winhttp') {
+      return this.handleNetshWinhttp(args.slice(1));
+    }
+
+    // Intercept netsh wlan before CMD delegation (PS-level WLAN state)
+    if (cmdLower === 'netsh' && args[0]?.toLowerCase() === 'wlan') {
+      return this.handleNetshWlan(args.slice(1));
     }
 
     // Native commands that work in both CMD and PS
@@ -2598,14 +2793,16 @@ export class PowerShellExecutor {
     if (stackNameFlag) {
       const stackName = stackNameFlag.replace(/^["']|["']$/g, '');
       const stack = this.locationStack.get(stackName) ?? [];
-      if (stack.length === 0) return '';
-      return stack.map(p => `\nPath\n----\n${p}\n`).join('\n');
+      // Show current location followed by saved stack entries
+      const allPaths = [this.cwd, ...stack.slice().reverse()];
+      return allPaths.map(p => `\nPath\n----\n${p}\n`).join('\n');
     }
 
     if (stackFlag) {
       const stack = this.locationStack.get('default') ?? [];
-      if (stack.length === 0) return '';
-      return stack.map(p => `\nPath\n----\n${p}\n`).join('\n');
+      // Show current location followed by saved stack entries
+      const allPaths = [this.cwd, ...stack.slice().reverse()];
+      return allPaths.map(p => `\nPath\n----\n${p}\n`).join('\n');
     }
 
     if (psDriveFlag) {
@@ -2713,10 +2910,11 @@ export class PowerShellExecutor {
   private handleGetItemProperty(args: string[]): string {
     let path = '', name = '';
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-      else if (args[i] === '-Name' && args[i + 1]) { name = args[++i]; }
-      else if (!args[i].startsWith('-') && !path) { path = args[i]; }
-      else if (!args[i].startsWith('-') && path && !name) { name = args[i]; }
+      const al = args[i].toLowerCase();
+      if ((al === '-path' || al === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (al === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
+      else if (!args[i].startsWith('-') && path && !name) { name = args[i].replace(/^["']|["']$/g, ''); }
     }
     if (!path) return "Get-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
     if (!isRegistryPath(path)) return `Get-ItemProperty : Cannot find path '${path}' because it does not exist.`;
@@ -2726,11 +2924,11 @@ export class PowerShellExecutor {
   private handleSetItemProperty(args: string[]): string {
     let path = '', name = '', value: string | number = '';
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-      else if (args[i] === '-Name' && args[i + 1]) { name = args[++i]; }
-      else if (args[i] === '-Value' && args[i + 1]) {
+      const al = args[i].toLowerCase();
+      if ((al === '-path' || al === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (al === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (al === '-value' && args[i + 1]) {
         const raw = args[++i].replace(/^["']|["']$/g, '');
-        // Only treat as integer if it's a bare integer literal (no quotes, no decimal)
         value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
       }
     }
@@ -2871,8 +3069,14 @@ export class PowerShellExecutor {
       }
     };
 
-    // If path is a file (not a directory), show just the file
+    // Error if path doesn't exist (not a wildcard query)
     const pathEntry = fs.resolve(absPath);
+    if (!pathEntry && !wildcardFilter) {
+      const displayPath = path || '.';
+      return `Get-ChildItem : Cannot find path '${absPath}' because it does not exist.\nAt line:1 char:1\n    + CategoryInfo          : ObjectNotFound: (${displayPath}:String) [Get-ChildItem], ItemNotFoundException`;
+    }
+
+    // If path is a file (not a directory), show just the file
     if (pathEntry && pathEntry.type === 'file') {
       const parentPath = absPath.substring(0, absPath.lastIndexOf('\\')) || absPath;
       const fakeEntries: WinDirEntry[] = [{ name: pathEntry.name, entry: pathEntry }];
@@ -3586,6 +3790,7 @@ export class PowerShellExecutor {
       lines.push('', 'NOTES', `    This is a simulated cmdlet.`);
     }
     lines.push('', 'RELATED LINKS', `    Get-Help ${topic} -Online`);
+    lines.push('', 'REMARKS', `    To see the examples, type: "Get-Help ${topic} -Examples"`, `    For more information, type: "Get-Help ${topic} -Detailed"`, `    For technical information, type: "Get-Help ${topic} -Full"`);
 
     return lines.join('\n');
   }
@@ -3721,8 +3926,16 @@ export class PowerShellExecutor {
 
     // Apply -Module filter (match source field)
     if (moduleFilter) {
+      const moduleExists = PowerShellExecutor.BUILTIN_MODULES.some(m => m.Name.toLowerCase().includes(moduleFilter));
+      if (!moduleExists) {
+        return `Get-Command : No module with the name '${moduleFilter}' was found.`;
+      }
       filtered = filtered.filter(c => c.source.toLowerCase().includes(moduleFilter));
     }
+
+    // -TotalCount / -Skip: limit output (no error; just silently honour)
+    const totalCount = params.has('totalcount') ? parseInt(params.get('totalcount') ?? '0', 10) : undefined;
+    const skip = params.has('skip') ? parseInt(params.get('skip') ?? '0', 10) : undefined;
 
     // Apply name wildcard filter
     if (nameFilter && nameFilter.includes('*')) {
@@ -3739,9 +3952,13 @@ export class PowerShellExecutor {
 
     if (filtered.length === 0) return '';
 
+    let output = filtered;
+    if (skip !== undefined) output = output.slice(skip);
+    if (totalCount !== undefined) output = output.slice(0, totalCount);
+
     const lines = ['CommandType     Name                                               Version    Source',
                     '-----------     ----                                               -------    ------'];
-    for (const c of filtered) {
+    for (const c of output) {
       lines.push(`${c.type.padEnd(16)}${c.name.padEnd(51)}${c.version.padEnd(11)}${c.source}`);
     }
     return lines.join('\n');
@@ -3859,7 +4076,7 @@ export class PowerShellExecutor {
     };
 
     for (const [name, port] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = this.portToDisplayName(name);
       if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
       const ip = port.getIPAddress()?.toString() ?? '';
       const mask = port.getSubnetMask()?.toString() ?? '';
@@ -3884,14 +4101,19 @@ export class PowerShellExecutor {
     const entries: Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> = [];
     const ports = this.device.getPortsMap();
     let idx = 2;
+    let ethIdx = 0;
     for (const [name, port] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = this.portToDisplayName(name);
       const ip = port.getIPAddress()?.toString() ?? '';
       const mask = port.getSubnetMask()?.toString() ?? '';
       const prefixLength = mask ? this.maskToPrefixLength(mask) : 0;
       const isDhcp = this.device.isDHCPConfigured(name);
       if (ip) {
         entries.push({ ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength, prefixOrigin: isDhcp ? 'Dhcp' : 'Manual', suffixOrigin: isDhcp ? 'Dhcp' : 'Manual', addressState: 'Preferred', skipAsSource: false });
+      } else if (!this.extraIPs.has(displayName.toLowerCase())) {
+        // Simulated default private IP for unconfigured adapters (192.168.1.100+offset/24)
+        const simIp = `192.168.1.${100 + ethIdx}`;
+        entries.push({ ip: simIp, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength: 24, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
       }
       // Link-local IPv6
       const macStr = port.getMAC()?.toString() ?? '00:00:00:00:00:00';
@@ -3901,6 +4123,7 @@ export class PowerShellExecutor {
         entries.push({ ip: fe80, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
       }
       idx++;
+      ethIdx++;
     }
     // Extra IPs (added via New-NetIPAddress)
     for (const [ip, info] of this.extraIPs) {
@@ -4041,24 +4264,38 @@ export class PowerShellExecutor {
 
   private handleSetNetIPAddress(args: string[]): string {
     const params = this.parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
+    const ip = (params.get('ipaddress') || params.get('_positional'))?.replace(/^["']|["']$/g, '');
+    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
+    const prefixStr = params.get('prefixlength');
+    const prefixLength = prefixStr ? parseInt(prefixStr, 10) : undefined;
+
+    // When -InterfaceAlias is given, replace the existing IPv4 for that adapter with the new IP
+    if (ifAlias && ip) {
+      if (!this.isValidIP(ip)) return `Set-NetIPAddress : Invalid IP address '${ip}'.`;
+      const all = this.buildAllIPEntries();
+      const existing = all.find(e => e.ifAlias.toLowerCase() === ifAlias.toLowerCase() && e.addressFamily === 'IPv4');
+      if (existing) this.extraIPs.delete(existing.ip.toLowerCase());
+      this.extraIPs.set(ip.toLowerCase(), {
+        ifAlias, prefixLength: prefixLength ?? existing?.prefixLength ?? 24,
+        prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource: false, addressFamily: 'IPv4',
+      });
+      return '';
+    }
 
     if (!ip) return `Set-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
 
     const entry = this.extraIPs.get(ip.toLowerCase());
     if (!entry) {
-      // Check device IPs
       const all = this.buildAllIPEntries();
       const found = all.find(e => e.ip.toLowerCase() === ip.toLowerCase());
       if (!found) {
         return `Set-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
       }
-      // Device-level IPs can't be modified in this sim; add to extraIPs
       this.extraIPs.set(ip.toLowerCase(), { ifAlias: found.ifAlias, prefixLength: found.prefixLength, prefixOrigin: found.prefixOrigin, suffixOrigin: found.suffixOrigin, skipAsSource: found.skipAsSource, addressFamily: found.addressFamily });
     }
 
     const e = this.extraIPs.get(ip.toLowerCase())!;
-    if (params.has('prefixlength')) e.prefixLength = parseInt(params.get('prefixlength')!, 10);
+    if (prefixLength !== undefined) e.prefixLength = prefixLength;
     if (params.has('prefixorigin')) e.prefixOrigin = params.get('prefixorigin')!;
     if (params.has('suffixorigin')) e.suffixOrigin = params.get('suffixorigin')!;
     if (params.has('skipassource')) e.skipAsSource = (params.get('skipassource') ?? '').toLowerCase() !== 'false' && (params.get('skipassource') ?? '') !== '$false';
@@ -4070,15 +4307,17 @@ export class PowerShellExecutor {
     const gw = this.device.getDefaultGateway();
     const ports = this.device.getPortsMap();
     let firstIF = '';
-    for (const [name] of ports) { firstIF = name.replace(/^eth/, 'Ethernet '); break; }
-    // Always include default route (with gateway if configured, else 0.0.0.0)
-    routes.push({ dest: '0.0.0.0/0', ifAlias: firstIF || 'Ethernet 0', nextHop: gw || '0.0.0.0', metric: 0 });
+    for (const [name] of ports) { firstIF = this.portToDisplayName(name); break; }
+    // Default route — skip built-in if extraRoutes already has a 0.0.0.0/0 (set by New-NetIPAddress -DefaultGateway)
+    if (!this.extraRoutes.has('0.0.0.0/0')) {
+      routes.push({ dest: '0.0.0.0/0', ifAlias: firstIF || 'Ethernet', nextHop: gw || '0.0.0.0', metric: 0 });
+    }
     // Loopback
     routes.push({ dest: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', metric: 306 });
     // Connected network routes
     let idx = 2;
     for (const [name, port] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = this.portToDisplayName(name);
       const ip = port.getIPAddress()?.toString() ?? '';
       const mask = port.getSubnetMask()?.toString() ?? '';
       if (ip && mask) {
@@ -4193,7 +4432,7 @@ export class PowerShellExecutor {
     let found = false;
 
     for (const [name] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = this.portToDisplayName(name);
       if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
       if (afFilter === 'ipv6') continue; // Only show IPv4 DNS in sim
       const servers = this.device.getDnsServers(name);
@@ -4222,7 +4461,7 @@ export class PowerShellExecutor {
     const ports = this.device.getPortsMap();
     let matchedName = '';
     for (const [name] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = this.portToDisplayName(name);
       const dn = displayName.toLowerCase();
       const af = ifAlias.toLowerCase();
       if (dn === af || name.toLowerCase() === af || dn.includes(af) || dn.startsWith(af)) {
@@ -4364,28 +4603,57 @@ export class PowerShellExecutor {
     const ports = this.device.getPortsMap();
     const lines: string[] = ['Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed',
                               '----                      --------------------                    ------- ------       ----------         ---------'];
+
+    // Collect all adapter entries (Ethernet ports + virtual Wi-Fi)
+    type AdapterEntry = { displayName: string; desc: string; ifIndex: number; status: string; mac: string; speed: string };
+    const adapterEntries: AdapterEntry[] = [];
+
     let idx = 0;
-    let found = false;
     for (const [name, port] of ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
-      if (nameFilter && !displayName.toLowerCase().includes(nameFilter) && displayName.toLowerCase() !== nameFilter) { idx++; continue; }
+      let displayName = this.portToDisplayName(name);
+      // Apply rename override
+      const overrideKey = displayName.toLowerCase();
+      const override = this.adapterOverrides.get(overrideKey);
+      if (override?.displayName) displayName = override.displayName;
+
       const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
-      const status = port.getIsUp() ? 'Up' : 'Disconnected';
-      if (physical && !port.getIsUp() && !includeHidden) { idx++; continue; }
-      const ifIndex = idx + 2;
-      lines.push(`${displayName.padEnd(26)}${'Intel(R) Ethernet Connection'.padEnd(40)}${String(ifIndex).padStart(7)} ${status.padEnd(13)}${mac.padEnd(19)}1 Gbps`);
-      found = true;
+      let status = port.getIsUp() ? 'Up' : 'Disconnected';
+      // Apply disable/enable override
+      if (override?.status) status = override.status;
+
+      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: '1 Gbps' });
       idx++;
     }
 
-    // -IncludeHidden shows hidden adapters (Loopback, virtual)
+    // Add virtual Wi-Fi adapter (always present on a Windows PC)
+    const wifiOverride = this.adapterOverrides.get('wi-fi');
+    const wifiDisplayName = wifiOverride?.displayName ?? 'Wi-Fi';
+    const wifiStatus = wifiOverride?.status ?? 'Up';
+    adapterEntries.push({ displayName: wifiDisplayName, desc: 'Intel(R) Wireless-AC 9560 160MHz', ifIndex: idx + 2, status: wifiStatus, mac: '02-00-00-FF-FF-01', speed: '54 Mbps' });
+
+    // Filter by name — exact match unless wildcard '*' or '?' is present
+    const filteredEntries = nameFilter
+      ? adapterEntries.filter(e => {
+          const dn = e.displayName.toLowerCase();
+          if (nameFilter.includes('*') || nameFilter.includes('?')) {
+            const regex = new RegExp('^' + nameFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+            return regex.test(dn);
+          }
+          return dn === nameFilter;
+        })
+      : adapterEntries;
+
+    // Apply -IncludeHidden (show Loopback)
     if (includeHidden && (!nameFilter || 'loopback'.includes(nameFilter))) {
       lines.push(`${'Loopback Pseudo-Interface 1'.padEnd(26)}${'Software Loopback Interface 1'.padEnd(40)}${String(1).padStart(7)} ${'Up'.padEnd(13)}${'00-00-00-00-00-00'.padEnd(19)}10 Gbps`);
-      found = true;
     }
 
-    if (!found && nameFilter) {
+    if (filteredEntries.length === 0 && !includeHidden) {
       return `Get-NetAdapter : No MSFT_NetAdapter objects found with property 'Name' equal to '${nameFilter}'.`;
+    }
+
+    for (const e of filteredEntries) {
+      lines.push(`${e.displayName.padEnd(26)}${e.desc.padEnd(40)}${String(e.ifIndex).padStart(7)} ${e.status.padEnd(13)}${e.mac.padEnd(19)}${e.speed}`);
     }
 
     return lines.join('\n');
@@ -4393,6 +4661,370 @@ export class PowerShellExecutor {
 
   private formatGetNetIPAddress(): string {
     return this.handleGetNetIPAddress([]);
+  }
+
+  // ─── Adapter State Management ─────────────────────────────────────
+
+  private handleDisableEnableNetAdapter(args: string[], newStatus: string): string {
+    const params = this.parsePSArgs(args);
+    const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    if (!name) return '';
+    const key = name.toLowerCase();
+    // WhatIf support
+    if (params.has('whatif')) {
+      return `What if: Performing the operation "${newStatus === 'Disabled' ? 'Disable' : 'Enable'}-NetAdapter" on target "${name}".`;
+    }
+    const override = this.adapterOverrides.get(key) ?? {};
+    override.status = newStatus;
+    this.adapterOverrides.set(key, override);
+    return '';
+  }
+
+  private handleRenameNetAdapter(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const oldName = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    const newName = (params.get('newname') ?? '').replace(/^["']|["']$/g, '');
+    if (!oldName || !newName) return '';
+    const oldKey = oldName.toLowerCase();
+    const existing = this.adapterOverrides.get(oldKey) ?? {};
+    // Move entry to new name key
+    existing.displayName = newName;
+    this.adapterOverrides.set(oldKey, existing);
+    // Also register under new name key pointing to same override
+    this.adapterOverrides.set(newName.toLowerCase(), existing);
+    return '';
+  }
+
+  // ─── Set-NetRoute ──────────────────────────────────────────────────
+
+  private handleSetNetRoute(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    const nextHop = params.get('nexthop')?.replace(/^["']|["']$/g, '');
+    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
+
+    if (!dest) return `Set-NetRoute : The -DestinationPrefix parameter is required.`;
+
+    const existing = this.extraRoutes.get(dest);
+    if (existing) {
+      if (nextHop) existing.nextHop = nextHop;
+      if (ifAlias) existing.ifAlias = ifAlias;
+    } else {
+      // Create if not exists
+      this.extraRoutes.set(dest, { ifAlias: ifAlias ?? '', nextHop: nextHop ?? '0.0.0.0', metric: 256 });
+    }
+    return '';
+  }
+
+  // ─── Set-NetIPAddress (upsert) ─────────────────────────────────────
+
+  // ─── Firewall Rules ────────────────────────────────────────────────
+
+  private handleNewNetFirewallRule(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? displayName.replace(/\s+/g, '-');
+    const direction = params.get('direction')?.replace(/^["']|["']$/g, '') ?? 'Inbound';
+    const protocol = params.get('protocol')?.replace(/^["']|["']$/g, '') ?? 'Any';
+    const localPort = params.get('localport')?.replace(/^["']|["']$/g, '') ?? '';
+    const remotePort = params.get('remoteport')?.replace(/^["']|["']$/g, '') ?? '';
+    const action = params.get('action')?.replace(/^["']|["']$/g, '') ?? 'Allow';
+    const description = params.get('description')?.replace(/^["']|["']$/g, '') ?? '';
+
+    if (!displayName && !name) return `New-NetFirewallRule : -DisplayName or -Name is required.`;
+
+    const key = displayName.toLowerCase() || name.toLowerCase();
+    this.dynamicFirewallRules.set(key, {
+      name, displayName, enabled: true, action, direction, protocol, localPort, remotePort, description
+    });
+
+    return [
+      `Name                  : ${name}`,
+      `DisplayName           : ${displayName}`,
+      `Description           : ${description}`,
+      `Direction             : ${direction}`,
+      `Action                : ${action}`,
+      `Enabled               : True`,
+      `Protocol              : ${protocol}`,
+      `LocalPort             : ${localPort}`,
+      `RemotePort            : ${remotePort}`,
+    ].join('\n');
+  }
+
+  private handleSetNetFirewallRule(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
+    const key = (displayName || name).toLowerCase();
+
+    const rule = this.dynamicFirewallRules.get(key);
+    if (!rule) return `Set-NetFirewallRule : No MSFT_NetFirewallRule objects found with property 'DisplayName' equal to '${displayName || name}'.`;
+
+    if (params.has('action')) rule.action = params.get('action')!.replace(/^["']|["']$/g, '');
+    if (params.has('direction')) rule.direction = params.get('direction')!.replace(/^["']|["']$/g, '');
+    if (params.has('enabled')) rule.enabled = (params.get('enabled') ?? '').toLowerCase() !== 'false';
+    return '';
+  }
+
+  private handleToggleNetFirewallRule(args: string[], enable: boolean): string {
+    const params = this.parsePSArgs(args);
+    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
+    const key = (displayName || name).toLowerCase();
+
+    const rule = this.dynamicFirewallRules.get(key);
+    if (!rule) {
+      // Check if it's a built-in static rule — simulate graceful no-op
+      return '';
+    }
+    rule.enabled = enable;
+    return '';
+  }
+
+  private handleRemoveNetFirewallRule(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
+    const key = (displayName || name).toLowerCase();
+    this.dynamicFirewallRules.delete(key);
+    return '';
+  }
+
+  // ─── Test-NetConnection ────────────────────────────────────────────
+
+  private handleTestNetConnection(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const target = (params.get('computername') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
+    const port = params.has('port') ? parseInt(params.get('port')!, 10) : undefined;
+
+    const isLocal = target === 'localhost' || target === '127.0.0.1' || !target;
+
+    // Check if port is in the set of listening ports
+    const listeningPorts = new Set([80, 135, 443, 445, 5985, 49152]);
+    let tcpSucceeded = false;
+    if (port !== undefined) {
+      tcpSucceeded = isLocal && listeningPorts.has(port);
+    }
+
+    const destIp = isLocal ? '127.0.0.1' : '192.168.1.1';
+    return [
+      `\nComputerName           : ${target || 'localhost'}`,
+      `RemoteAddress          : ${destIp}`,
+      port !== undefined ? `RemotePort             : ${port}` : '',
+      `InterfaceAlias         : Ethernet`,
+      `SourceAddress          : 127.0.0.1`,
+      `PingSucceeded          : True`,
+      `PingReplyDetails (RTT) : 0 ms`,
+      port !== undefined ? `TcpTestSucceeded       : ${tcpSucceeded ? 'True' : 'False'}` : '',
+    ].filter(l => l !== '').join('\n');
+  }
+
+  // ─── Network Connection Profile ────────────────────────────────────
+
+  private handleGetNetConnectionProfile(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ifIndexParam = params.get('interfaceindex');
+    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
+
+    // Default profile for first adapter
+    const ifIndex = ifIndexParam ? parseInt(ifIndexParam, 10) : 2;
+    const category = this.networkProfiles.get(ifIndex) ?? 'DomainAuthenticated';
+
+    const ports = this.device.getPortsMap();
+    let adapterName = 'Ethernet';
+    let portIdx = 2;
+    for (const [name] of ports) {
+      if (portIdx === ifIndex) { adapterName = this.portToDisplayName(name); break; }
+      portIdx++;
+    }
+    if (ifAlias) adapterName = ifAlias;
+
+    return [
+      `Name             : ${adapterName}`,
+      `InterfaceAlias   : ${adapterName}`,
+      `InterfaceIndex   : ${ifIndex}`,
+      `NetworkCategory  : ${category}`,
+      `IPv4Connectivity : Internet`,
+      `IPv6Connectivity : LocalNetwork`,
+    ].join('\n');
+  }
+
+  private handleSetNetConnectionProfile(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const ifIndexParam = params.get('interfaceindex');
+    const category = params.get('networkcategory')?.replace(/^["']|["']$/g, '');
+    if (!category) return '';
+    const ifIndex = ifIndexParam ? parseInt(ifIndexParam, 10) : 2;
+    this.networkProfiles.set(ifIndex, category);
+    return '';
+  }
+
+  // ─── VPN Connection Management ──────────────────────────────────────
+
+  private handleAddVpnConnection(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
+    const serverAddress = params.get('serveraddress')?.replace(/^["']|["']$/g, '') ?? '';
+    const tunnelType = params.get('tunneltype')?.replace(/^["']|["']$/g, '') ?? 'Automatic';
+    const encryptionLevel = params.get('encryptionlevel')?.replace(/^["']|["']$/g, '') ?? 'Optional';
+    const authMethod = params.get('authenticationmethod')?.replace(/^["']|["']$/g, '') ?? 'MSChapv2';
+
+    if (!name) return `Add-VpnConnection : -Name is required.`;
+
+    this.vpnConnections.set(name.toLowerCase(), { name, serverAddress, tunnelType, encryptionLevel, authMethod });
+    return '';
+  }
+
+  private handleGetVpnConnection(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const nameFilter = params.get('name')?.replace(/^["']|["']$/g, '').toLowerCase();
+
+    const results = nameFilter
+      ? Array.from(this.vpnConnections.values()).filter(v => v.name.toLowerCase() === nameFilter)
+      : Array.from(this.vpnConnections.values());
+
+    if (results.length === 0) {
+      if (nameFilter) return '';  // -ErrorAction SilentlyContinue
+      return '';
+    }
+
+    return results.map(v => [
+      `Name                  : ${v.name}`,
+      `ServerAddress         : ${v.serverAddress}`,
+      `TunnelType            : ${v.tunnelType}`,
+      `EncryptionLevel       : ${v.encryptionLevel}`,
+      `AuthenticationMethod  : ${v.authMethod}`,
+      `ConnectionStatus      : Disconnected`,
+    ].join('\n')).join('\n\n');
+  }
+
+  private handleSetVpnConnection(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
+    if (!name) return '';
+
+    const key = name.toLowerCase();
+    const existing = this.vpnConnections.get(key) ?? { name, serverAddress: '', tunnelType: 'Automatic', encryptionLevel: 'Optional', authMethod: 'MSChapv2' };
+
+    if (params.has('serveraddress')) existing.serverAddress = params.get('serveraddress')!.replace(/^["']|["']$/g, '');
+    if (params.has('tunneltype')) existing.tunnelType = params.get('tunneltype')!.replace(/^["']|["']$/g, '');
+    if (params.has('encryptionlevel')) existing.encryptionLevel = params.get('encryptionlevel')!.replace(/^["']|["']$/g, '');
+    this.vpnConnections.set(key, existing);
+    return '';
+  }
+
+  private handleRemoveVpnConnection(args: string[]): string {
+    const params = this.parsePSArgs(args);
+    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
+    this.vpnConnections.delete(name.toLowerCase());
+    return '';
+  }
+
+  // ─── netsh winhttp ────────────────────────────────────────────────
+  private handleNetshWinhttp(args: string[]): string {
+    const sub = args[0]?.toLowerCase() ?? '';
+    const rest = args.slice(1).map(a => a.toLowerCase());
+
+    if (sub === 'show' && rest[0] === 'proxy') {
+      if (!this.winhttpProxy) {
+        return 'Current WinHTTP proxy settings:\n\n    Direct access (no proxy server).';
+      }
+      return `Current WinHTTP proxy settings:\n\n    Proxy Server(s) :  ${this.winhttpProxy}\n    Bypass List     :  (none)`;
+    }
+
+    if (sub === 'set' && rest[0] === 'proxy') {
+      const proxyArg = args[2]?.replace(/^["']|["']$/g, '') ?? '';
+      if (!proxyArg) return 'Usage: netsh winhttp set proxy <proxy-server> [<bypass-list>]';
+      this.winhttpProxy = proxyArg;
+      return `Current WinHTTP proxy settings:\n\n    Proxy Server(s) :  ${this.winhttpProxy}\n    Bypass List     :  (none)`;
+    }
+
+    if (sub === 'reset' && rest[0] === 'proxy') {
+      this.winhttpProxy = '';
+      return 'Current WinHTTP proxy settings:\n\n    Direct access (no proxy server).';
+    }
+
+    if (sub === 'import' && rest[0] === 'proxy') {
+      return 'Current WinHTTP proxy settings are set to match those of Internet Explorer.\n(Direct access - no proxy server.)';
+    }
+
+    return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\nimport         - Imports WinHTTP proxy settings.\nreset          - Resets WinHTTP settings.\nset            - Configures WinHTTP settings.\nshow           - Displays current settings.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
+  }
+
+  // ─── netsh wlan ───────────────────────────────────────────────────
+  private handleNetshWlan(args: string[]): string {
+    const sub = args[0]?.toLowerCase() ?? '';
+    const arg1 = args[1]?.toLowerCase() ?? '';
+
+    // show profiles
+    if (sub === 'show' && arg1 === 'profiles') {
+      const profileFilter = args.slice(2).join(' ').match(/name="?([^"]+)"?/i)?.[1];
+      if (profileFilter) {
+        const key = profileFilter.toLowerCase();
+        const name = [...this.wlanProfiles].find(p => p.toLowerCase() === key);
+        if (!name) return `There is no profile "name" to show on this interface.`;
+        return `Profile ${name} on interface Wi-Fi:\n=======================================================================\n\nProfile information\n-------------------\n    Applied:                All User Profile\n    Profile name            : ${name}\n    SSID name               : "${name}"\n    Connection mode         : Connect automatically\n    Network broadcast       : Connect only if this network is broadcasting\n`;
+      }
+      if (this.wlanProfiles.size === 0) {
+        return `Profiles on interface Wi-Fi:\n\nUser profiles\n-------------\n    <None>\n`;
+      }
+      const profileLines = [...this.wlanProfiles].map(p => `    All User Profile     : ${p}`).join('\n');
+      return `Profiles on interface Wi-Fi:\n\nUser profiles\n-------------\n${profileLines}\n`;
+    }
+
+    // show interfaces
+    if (sub === 'show' && arg1 === 'interfaces') {
+      const state = this.wlanConnectedSSID ? 'Connected' : 'Disconnected';
+      const ssidLine = this.wlanConnectedSSID ? `    SSID                   : ${this.wlanConnectedSSID}\n` : '';
+      return `There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n    Description            : Intel(R) Wi-Fi 6 AX201\n    GUID                   : b1234567-89ab-cdef-0123-456789abcdef\n    Physical address       : 00:11:22:33:44:55\n    State                  : ${state}\n${ssidLine}    Radio status           : Hardware On\n                             Software On\n`;
+    }
+
+    // show networks
+    if (sub === 'show' && arg1 === 'networks') {
+      return `Interface name : Wi-Fi\nThere are 2 networks currently visible.\n\nSSID 1 : HomeNetwork\n    Network type            : Infrastructure\n    Authentication          : WPA2-Personal\n    Encryption              : CCMP\n\nSSID 2 : OfficeNet\n    Network type            : Infrastructure\n    Authentication          : WPA2-Personal\n    Encryption              : CCMP\n`;
+    }
+
+    // add profile
+    if (sub === 'add' && arg1 === 'profile') {
+      const nameArg = args.slice(2).join(' ').match(/name="?([^"]+)"?/i)?.[1];
+      if (nameArg) {
+        this.wlanProfiles.add(nameArg);
+        return `Profile ${nameArg} is added on interface Wi-Fi.`;
+      }
+      return 'Usage: netsh wlan add profile name="<profile-name>"';
+    }
+
+    // delete profile
+    if (sub === 'delete' && arg1 === 'profile') {
+      const nameArg = args.slice(2).join(' ').match(/name="?([^"]+)"?/i)?.[1];
+      if (nameArg) {
+        this.wlanProfiles.delete(nameArg);
+        if (this.wlanConnectedSSID.toLowerCase() === nameArg.toLowerCase()) {
+          this.wlanConnectedSSID = '';
+        }
+        return `Profile "${nameArg}" is deleted from interface Wi-Fi.`;
+      }
+      return 'Usage: netsh wlan delete profile name="<profile-name>"';
+    }
+
+    // connect
+    if (sub === 'connect') {
+      const nameArg = args.slice(1).join(' ').match(/name="?([^"]+)"?/i)?.[1];
+      if (nameArg) {
+        this.wlanConnectedSSID = nameArg;
+        this.wlanProfiles.add(nameArg);
+        return `Connection request was completed successfully.`;
+      }
+      return 'Usage: netsh wlan connect name="<profile-name>"';
+    }
+
+    // disconnect
+    if (sub === 'disconnect') {
+      this.wlanConnectedSSID = '';
+      return 'Disconnection request was completed successfully.';
+    }
+
+    return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\ndump           - Displays a configuration script.\nhelp           - Displays a list of commands.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
   }
 
   private formatGetNetTCPConnection(args: string[]): string {
@@ -4441,24 +5073,55 @@ export class PowerShellExecutor {
   }
 
   private formatGetNetFirewallRule(args: string[]): string {
-    const lines: string[] = [
+    type FwRule = { name: string; displayName: string; enabled: boolean; action: string; direction: string };
+    const staticRules: FwRule[] = [
+      { name: 'CoreNet-DHCP-In',       displayName: 'DHCP (UDP-In)',               enabled: true,  action: 'Allow', direction: 'Inbound'  },
+      { name: 'CoreNet-DHCP-Out',      displayName: 'DHCP (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound' },
+      { name: 'CoreNet-DNS-Out',       displayName: 'DNS (UDP-Out)',               enabled: true,  action: 'Allow', direction: 'Outbound' },
+      { name: 'FPS-ICMP4-ERQ-In',      displayName: 'File and Printer Sharing...', enabled: true,  action: 'Allow', direction: 'Inbound'  },
+      { name: 'RemoteDesktop-In-TCP',  displayName: 'Remote Desktop - User Mode',  enabled: false, action: 'Allow', direction: 'Inbound'  },
+      { name: 'WinRM-HTTP-In-TCP',     displayName: 'Windows Remote Management',   enabled: false, action: 'Allow', direction: 'Inbound'  },
+      { name: 'BlockTelemetry',        displayName: 'Block Windows Telemetry',     enabled: true,  action: 'Block', direction: 'Outbound' },
+    ];
+
+    // Merge in dynamic rules (override static if same key)
+    const allRules: FwRule[] = [...staticRules];
+    for (const [, r] of this.dynamicFirewallRules) {
+      allRules.push({ name: r.name, displayName: r.displayName, enabled: r.enabled, action: r.action, direction: r.direction });
+    }
+
+    const params = this.parsePSArgs(args);
+    const nameFilter    = (params.get('name')        ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+    const dnFilter      = (params.get('displayname') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+    const errorAction   = (params.get('erroraction') ?? '').toLowerCase();
+
+    let filtered = allRules;
+    if (nameFilter) filtered = filtered.filter(r => r.name.toLowerCase() === nameFilter || r.name.toLowerCase().includes(nameFilter));
+    if (dnFilter)   filtered = filtered.filter(r => r.displayName.toLowerCase() === dnFilter || r.displayName.toLowerCase().includes(dnFilter));
+
+    if (filtered.length === 0) {
+      // Return empty string — callers use -ErrorAction SilentlyContinue for "not found" checks
+      // (ErrorAction is stripped by stripCommonParams before reaching this handler)
+      return '';
+    }
+
+    const header = [
       '',
       'Name                  DisplayName                  Enabled Action Direction',
       '----                  -----------                  ------- ------ ---------',
-      'CoreNet-DHCP-In       DHCP (UDP-In)                True    Allow  Inbound',
-      'CoreNet-DHCP-Out      DHCP (UDP-Out)               True    Allow  Outbound',
-      'CoreNet-DNS-Out       DNS (UDP-Out)                True    Allow  Outbound',
-      'FPS-ICMP4-ERQ-In      File and Printer Sharing...  True    Allow  Inbound',
-      'RemoteDesktop-In-TCP  Remote Desktop - User Mode   False   Allow  Inbound',
-      'WinRM-HTTP-In-TCP     Windows Remote Management    False   Allow  Inbound',
-      'BlockTelemetry        Block Windows Telemetry      True    Block  Outbound',
     ];
-    const params = this.parsePSArgs(args);
-    const nameFilter = (params.get('name') || params.get('_positional') || '').toLowerCase();
-    if (nameFilter) {
-      return lines.filter((l, i) => i < 3 || l.toLowerCase().includes(nameFilter)).join('\n');
-    }
-    return lines.join('\n');
+    const rows = filtered.map(r =>
+      `${r.name.padEnd(22)}${r.displayName.substring(0, 29).padEnd(29)}${(r.enabled ? 'True' : 'False').padEnd(8)}${r.action.padEnd(7)}${r.direction}`
+    );
+    return [...header, ...rows].join('\n');
+  }
+
+  /** Converts port name (eth0, eth1…) to Windows display name (Ethernet, Ethernet 2…) */
+  private portToDisplayName(portName: string): string {
+    const m = portName.match(/^eth(\d+)$/i);
+    if (!m) return portName;
+    const idx = parseInt(m[1], 10);
+    return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
   }
 
   private maskToPrefixLength(mask: string): number {

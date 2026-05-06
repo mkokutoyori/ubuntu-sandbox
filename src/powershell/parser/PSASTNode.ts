@@ -122,6 +122,7 @@ export interface PSWhileStatement extends ASTBase {
   type: 'WhileStatement';
   condition: PSExpression;
   body: PSScriptBlock;
+  label?: string;
 }
 
 // ─── do {} while () / do {} until () ─────────────────────────────────────────
@@ -130,12 +131,14 @@ export interface PSDoWhileStatement extends ASTBase {
   type: 'DoWhileStatement';
   body: PSScriptBlock;
   condition: PSExpression;
+  label?: string;
 }
 
 export interface PSDoUntilStatement extends ASTBase {
   type: 'DoUntilStatement';
   body: PSScriptBlock;
   condition: PSExpression;
+  label?: string;
 }
 
 // ─── for (init; cond; iter) ───────────────────────────────────────────────────
@@ -146,6 +149,7 @@ export interface PSForStatement extends ASTBase {
   condition: PSExpression | null;
   iterator: PSStatement | null;
   body: PSScriptBlock;
+  label?: string;
 }
 
 // ─── foreach ($item in $collection) ─────────────────────────────────────────
@@ -156,6 +160,7 @@ export interface PSForeachStatement extends ASTBase {
   variable: PSVariableExpression;
   collection: PSExpression;
   body: PSScriptBlock;
+  label?: string;
 }
 
 // ─── switch ───────────────────────────────────────────────────────────────────
@@ -208,12 +213,18 @@ export interface PSClassDefinition extends ASTBase {
 
 export type PSClassMember = PSPropertyDeclaration | PSMethodDefinition;
 
+export interface PSValidateAttribute {
+  name: string;          // e.g. 'ValidateRange', 'ValidateSet', 'ValidatePattern'
+  args: Array<string | number>;
+}
+
 export interface PSPropertyDeclaration extends ASTBase {
   type: 'PropertyDeclaration';
   modifiers: string[];   // hidden, static
   propertyType: string | null;
   name: string;
   initializer: PSExpression | null;
+  attributes: PSValidateAttribute[];
 }
 
 export interface PSMethodDefinition extends ASTBase {
@@ -302,6 +313,7 @@ export type PSExpression =
 export interface PSPipelineExpression extends ASTBase {
   type: 'PipelineExpression';
   pipeline: PSPipeline;
+  redirections?: PSRedirection[];  // e.g. 2>&1 stream merges
 }
 
 // ─── Literal ──────────────────────────────────────────────────────────────────
@@ -503,7 +515,7 @@ export interface PSCommandExpression extends ASTBase {
 
 // ─── Redirection ──────────────────────────────────────────────────────────────
 
-export type PSRedirectionOp = '>' | '>>' | '2>' | '2>>' | '*>' | '*>>';
+export type PSRedirectionOp = '>' | '>>' | '2>' | '2>>' | '*>' | '*>>' | '2>&1' | '3>&1';
 
 export interface PSRedirection extends ASTBase {
   type: 'Redirection';

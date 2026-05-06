@@ -1872,7 +1872,7 @@ describe('3. Get-ChildItem', () => {
   it('-Name returns names as strings', async () => {
     const pc = createPC(); const ps = createPS(pc);
     await ps.execute('New-Item C:\\nam -ItemType Directory'); await ps.execute('Set-Content C:\\nam\\f.txt "f"');
-    expect(await ps.execute('Get-ChildItem C:\\nam -Name').trim()).toBe('f.txt');
+    expect((await ps.execute('Get-ChildItem C:\\nam -Name')).trim()).toBe('f.txt');
   });
   it('-Directory returns only directories', async () => {
     const pc = createPC(); const ps = createPS(pc);
@@ -2040,6 +2040,7 @@ describe('4. Get-Command', () => {
     expect(await ps.execute('Get-Help Get-Command')).toContain('SYNOPSIS');
   });
   it('-TotalCount -Skip not applicable but ignored', async () => {
+    const pc = createPC(); const ps = createPS(pc);
     // just check no error
     await expect(ps.execute('Get-Command -TotalCount 1')).resolves.not.toThrow();
   });
@@ -2084,7 +2085,7 @@ describe('5. Get-Content', () => {
   });
   it('-AsByteStream returns Byte[]', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    expect(await ps.execute('(Get-Content C:\\nums.txt -AsByteStream).GetType().Name').trim()).toBe('Byte[]');
+    expect((await ps.execute('(Get-Content C:\\nums.txt -AsByteStream).GetType().Name')).trim()).toBe('Byte[]');
   });
   it('wildcard path reads multiple files', async () => {
     const pc = createPC(); const ps = createPS(pc);

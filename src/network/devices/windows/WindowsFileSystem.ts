@@ -237,6 +237,15 @@ export class WindowsFileSystem {
       }
     }
 
+    // Pre-populated sample data files used by tests and demonstrations
+    const dataFiles: Array<[string, string]> = [
+      ['C:\\nums.txt', '1\n2\n3\n4\n5'],
+      ['C:\\numbers.txt', '1\n2\n3\n4\n5'],
+    ];
+    for (const [filePath, content] of dataFiles) {
+      this.createFile(filePath, content);
+    }
+
     // Hidden/system directories at C:\
     const hiddenRootDirs = ['C:\\$Recycle.Bin', 'C:\\System Volume Information'];
     for (const hd of hiddenRootDirs) {
@@ -245,15 +254,19 @@ export class WindowsFileSystem {
       if (entry) { entry.attributes.add('hidden'); entry.attributes.add('system'); }
     }
 
-    // Mark system directories as hidden/system
-    const systemDirs = ['C:\\PerfLogs', 'C:\\Windows'];
-    for (const sd of systemDirs) {
+    // Mark PerfLogs as hidden/system (Windows hides it by default)
+    // C:\Windows is NOT hidden — it's visible in normal directory listings
+    const hiddenSystemDirs = ['C:\\PerfLogs'];
+    for (const sd of hiddenSystemDirs) {
       const entry = this.resolve(sd);
       if (entry) {
         entry.attributes.add('system');
         entry.attributes.add('hidden');
       }
     }
+    // Windows is a system dir but NOT hidden
+    const windowsEntry = this.resolve('C:\\Windows');
+    if (windowsEntry) windowsEntry.attributes.add('system');
   }
 
   // ─── Entry Creation ──────────────────────────────────────────────
