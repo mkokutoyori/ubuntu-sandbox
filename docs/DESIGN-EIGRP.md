@@ -700,3 +700,588 @@ EigrpPureUtils (module de fonctions pures — zero etat)
 Invariant : **tous immuables** (`Object.freeze`). La metrique EIGRP est calculee une fois a la reception d'un Update, jamais recalculee en ligne lors du lookup. Testable sans aucun mock.
 
 ---
+
+## 4. Topology Table et Neighbor Table — Repository
+
+### 4.1 Pourquoi deux tables separees ?
+
+EIGRP maintient deux bases de donnees distinctes :
+1. **Topology Table** : toutes les routes connues avec leurs metriques par voisin, l'etat DUAL (Passive/Active) et les successeurs. C'est le coeur de DUAL.
+2. **Neighbor Table** : les voisins actifs avec leurs parametres (K-values, hold timer, seq numbers). C'est le socle du RTP.
+
+La separation respecte le **Single Responsibility Principle** : les operations de voisinage n'ont pas besoin d'acceder a la topology table et vice-versa.
+
+### 4.2 RouteSource — source d'une entree de topologie
+
+```typescript
+// src/network/eigrp/topology/types.ts
+
+import type { EigrpNeighborKey }  from '../values/EigrpNeighborKey'
+import type { EigrpMetric }       from '../values/EigrpMetric'
+import type { EigrpInterfaceMetric } from '../values/EigrpMetric'
+
+/**
+ * Un Successor ou Feasible Successor dans la Topology Table.
+ * Immuable — produit un nouvel objet a chaque mise a jour.
+ */
+export interface RouteSource {
+  readonly neighbor:     EigrpNeighborKey
+  /** Advertised Distance : metrique annoncee PAR le voisin (son FD a lui) */
+  readonly ad:           number
+  /** Feasible Distance : metrique LOCALE = metric(neighbor) + ad */
+  readonly fd:           number
+  readonly metric:       EigrpMetric          // metrique composite calculee
+  readonly components:   EigrpInterfaceMetric  // composantes brutes (BW, delay...)
+  readonly isSuccessor:  boolean               // true = meilleur chemin actuel
+}
+
+// ─── Etat DUAL d'une entree de topologie ──────────────────────────────────
+
+/**
+ * Une entree de topologie peut etre dans 4 etats DUAL (RFC 7868 §5.4.2) :
+ *
+ * Passive (P) : route stable, un successor existe
+ *   - Aucun calcul DUAL en cours
+ *   - Les mises a jour sont appliquees immediatement
+ *
+ * Active (A) : DUAL en cours de diffusion (Diffusing Computation)
+ *   - Le routeur a envoye des Queries a ses voisins
+ *   - En attente de Replies avant de ré-evaluer
+ *   - Sous-etats definis par l'origine de l'Active et qui a ete query
+ *
+ * SIA (Stuck-In-Active) : Active depuis trop longtemps
+ *   - SIA timer expire sans avoir recu tous les Replies
+ *   - Le voisin qui n'a pas repondu est declare down
+ */
+export type DualState =
+  | { readonly phase: 'passive' }
+  | {
+      readonly phase:          'active'
+      readonly queryOrigin:    'local' | 'received'
+      readonly queriedNeighbors: ReadonlySet<string>   // EigrpNeighborKey.toMapKey()
+      readonly repliesReceived:  ReadonlySet<string>
+      readonly siaTimerStart:  number    // Date.now() quand Active demarre
+    }
+  | { readonly phase: 'sia' }  // Stuck-In-Active
+
+// ─── TopologyEntry — entree complete dans la topology table ───────────────
+
+export interface TopologyEntry {
+  readonly prefix:     import('../values/EigrpPrefix').EigrpPrefix
+  readonly state:      DualState
+  /** Successeurs et feasible successors (tri par FD asc) */
+  readonly sources:    readonly RouteSource[]
+  /** Meilleure FD connue (min des FD des sources disponibles) */
+  readonly bestFd:     number
+  /** Successeur courant (sources[0] si state=passive et non-infini) */
+  readonly successor:  RouteSource | null
+  /** Feasible Successors (sources dont AD < bestFd) */
+  readonly feasibleSuccessors: readonly RouteSource[]
+  /** true = route originee localement (connected / redistributed) */
+  readonly isLocal:    boolean
+  /** Summary address qui subsume cette route (si definie) */
+  readonly subsumedBy: import('../values/EigrpPrefix').EigrpPrefix | null
+}
+```
+
+### 4.3 IEigrpTopologyRepository — interface Repository
+
+```typescript
+// src/network/eigrp/topology/IEigrpTopologyRepository.ts
+
+import type { TopologyEntry, RouteSource, DualState } from './types'
+import type { EigrpPrefix }     from '../values/EigrpPrefix'
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+
+// ─── Lecture ─────────────────────────────────────────────────────────────
+
+export interface IEigrpTopologyReader {
+  getEntry(prefix: EigrpPrefix): TopologyEntry | null
+  getAllEntries(): readonly TopologyEntry[]
+  getPassiveEntries(): readonly TopologyEntry[]
+  getActiveEntries(): readonly TopologyEntry[]
+  /** Retourne toutes les routes apprises via un voisin donne */
+  getEntriesFromNeighbor(neighbor: EigrpNeighborKey): readonly TopologyEntry[]
+  /** Routes installables dans le RIB (passive + successor non-infini) */
+  getRoutableEntries(): readonly TopologyEntry[]
+}
+
+// ─── Ecriture ─────────────────────────────────────────────────────────────
+
+export interface IEigrpTopologyWriter {
+  /** Ajoute ou met a jour une source (voisin) pour un prefix */
+  upsertSource(prefix: EigrpPrefix, source: RouteSource): void
+  /** Retire toutes les sources apprises d'un voisin (voisin down) */
+  removeNeighborSources(neighbor: EigrpNeighborKey): readonly EigrpPrefix[]
+  /** Met a jour l'etat DUAL d'une entree */
+  setDualState(prefix: EigrpPrefix, state: DualState): void
+  /** Supprime une entree (route retiree de partout) */
+  removeEntry(prefix: EigrpPrefix): void
+  /** Ajoute une route locale (connected / redistributed) */
+  addLocalEntry(entry: TopologyEntry): void
+  clear(): void
+}
+
+export interface IEigrpTopologyRepository
+  extends IEigrpTopologyReader, IEigrpTopologyWriter {}
+```
+
+### 4.4 InMemoryTopologyTable — implementation
+
+```typescript
+// src/network/eigrp/topology/InMemoryTopologyTable.ts
+
+import type { IEigrpTopologyRepository }    from './IEigrpTopologyRepository'
+import type { TopologyEntry, RouteSource, DualState } from './types'
+import type { EigrpPrefix }    from '../values/EigrpPrefix'
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+import { EigrpPrefix as EigrpPrefixNS } from '../values/EigrpPrefix'
+import { EigrpNeighborKey as NK }        from '../values/EigrpNeighborKey'
+import { isFeasibleSuccessor }           from '../EigrpPureUtils'
+
+export class InMemoryTopologyTable implements IEigrpTopologyRepository {
+  private readonly _entries = new Map<string, TopologyEntry>()
+
+  private _key(p: EigrpPrefix): string { return EigrpPrefixNS.toString(p) }
+
+  // ── Lecture ────────────────────────────────────────────────────────────
+
+  getEntry(prefix: EigrpPrefix): TopologyEntry | null {
+    return this._entries.get(this._key(prefix)) ?? null
+  }
+
+  getAllEntries(): readonly TopologyEntry[] {
+    return [...this._entries.values()]
+  }
+
+  getPassiveEntries(): readonly TopologyEntry[] {
+    return this.getAllEntries().filter(e => e.state.phase === 'passive')
+  }
+
+  getActiveEntries(): readonly TopologyEntry[] {
+    return this.getAllEntries().filter(e => e.state.phase === 'active')
+  }
+
+  getEntriesFromNeighbor(neighbor: EigrpNeighborKey): readonly TopologyEntry[] {
+    const nk = NK.toMapKey(neighbor)
+    return this.getAllEntries().filter(e =>
+      e.sources.some(s => NK.toMapKey(s.neighbor) === nk)
+    )
+  }
+
+  getRoutableEntries(): readonly TopologyEntry[] {
+    return this.getAllEntries().filter(e =>
+      e.state.phase === 'passive' &&
+      e.successor !== null &&
+      e.successor.fd < 0xFFFFFFFF
+    )
+  }
+
+  // ── Ecriture ───────────────────────────────────────────────────────────
+
+  upsertSource(prefix: EigrpPrefix, source: RouteSource): void {
+    const key     = this._key(prefix)
+    const existing = this._entries.get(key)
+    const nk       = NK.toMapKey(source.neighbor)
+
+    const sources = existing
+      ? existing.sources.filter(s => NK.toMapKey(s.neighbor) !== nk)
+      : []
+    sources.push(source)
+
+    this._entries.set(key, this._recompute(prefix, existing, sources, existing?.state))
+  }
+
+  removeNeighborSources(neighbor: EigrpNeighborKey): readonly EigrpPrefix[] {
+    const nk       = NK.toMapKey(neighbor)
+    const affected: EigrpPrefix[] = []
+
+    for (const [key, entry] of this._entries) {
+      const remaining = entry.sources.filter(s => NK.toMapKey(s.neighbor) !== nk)
+      if (remaining.length !== entry.sources.length) {
+        affected.push(entry.prefix)
+        if (remaining.length === 0 && !entry.isLocal) {
+          this._entries.delete(key)
+        } else {
+          this._entries.set(key, this._recompute(entry.prefix, entry, remaining, entry.state))
+        }
+      }
+    }
+    return affected
+  }
+
+  setDualState(prefix: EigrpPrefix, state: DualState): void {
+    const entry = this._entries.get(this._key(prefix))
+    if (entry) {
+      this._entries.set(this._key(prefix), { ...entry, state })
+    }
+  }
+
+  removeEntry(prefix: EigrpPrefix): void {
+    this._entries.delete(this._key(prefix))
+  }
+
+  addLocalEntry(entry: TopologyEntry): void {
+    this._entries.set(this._key(entry.prefix), entry)
+  }
+
+  clear(): void { this._entries.clear() }
+
+  // ── Helper : recalcul de successor et FS ──────────────────────────────
+
+  private _recompute(
+    prefix: EigrpPrefix,
+    existing: TopologyEntry | undefined,
+    sources: RouteSource[],
+    state: DualState | undefined,
+  ): TopologyEntry {
+    // Trier par FD croissante
+    const sorted = [...sources].sort((a, b) => a.fd - b.fd)
+    const bestFd  = sorted[0]?.fd ?? 0xFFFFFFFF
+
+    // Successeur = source avec la plus faible FD
+    const successor = sorted[0] ?? null
+
+    // Feasible Successors = sources dont AD < bestFD (condition de faisabilite)
+    const fs = sorted.slice(1).filter(s =>
+      isFeasibleSuccessor(s.ad, bestFd) && !s.isSuccessor
+    )
+
+    return Object.freeze({
+      prefix,
+      state:              state ?? { phase: 'passive' },
+      sources:            Object.freeze(sorted),
+      bestFd,
+      successor:          successor ? { ...successor, isSuccessor: true } : null,
+      feasibleSuccessors: Object.freeze(fs),
+      isLocal:            existing?.isLocal ?? false,
+      subsumedBy:         existing?.subsumedBy ?? null,
+    })
+  }
+}
+```
+
+### 4.5 EigrpNeighborEntry et IEigrpNeighborRepository
+
+```typescript
+// src/network/eigrp/neighbor/types.ts
+
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+import type { EigrpKValues }     from '../values/EigrpMetric'
+
+export interface EigrpNeighborEntry {
+  readonly key:           EigrpNeighborKey
+  readonly routerId:      string          // RID annonce dans le Hello
+  readonly asNumber:      number
+  readonly kValues:       EigrpKValues
+  readonly holdTime:      number          // secondes (annonce dans le Hello)
+  readonly uptime:        Date            // quand le voisin est passe Up
+  readonly lastHelloRx:   number          // Date.now() de la derniere reception
+  readonly seqSent:       number          // dernier seqno envoye a ce voisin
+  readonly seqExpected:   number          // prochain seqno attendu de ce voisin
+  readonly srtt:          number          // Smooth Round-Trip Time en ms
+  readonly rto:           number          // Retransmit Timeout en ms
+  readonly qCount:        number          // nb de paquets en file retransmission
+  readonly version:       { ios: string; eigrp: string }  // versions logicielles
+  readonly isStub:        boolean         // voisin en mode stub
+  readonly stubRoutes:    readonly ('connected'|'static'|'summary'|'redistributed')[]
+}
+
+// ─── Repository ─────────────────────────────────────────────────────────
+
+export interface IEigrpNeighborRepository {
+  get(key: EigrpNeighborKey): EigrpNeighborEntry | null
+  getAll(): readonly EigrpNeighborEntry[]
+  getByInterface(iface: string): readonly EigrpNeighborEntry[]
+  add(entry: EigrpNeighborEntry): void
+  update(key: EigrpNeighborKey, patch: Partial<EigrpNeighborEntry>): void
+  remove(key: EigrpNeighborKey): EigrpNeighborEntry | null
+  clear(): void
+}
+```
+
+### 4.6 Diagramme des tables
+
+```
+IEigrpTopologyRepository (ISP: Reader + Writer)
+  |
+  +-- InMemoryTopologyTable
+        _entries: Map<string, TopologyEntry>
+        upsertSource() -> _recompute() -> recalcule successor + FS
+        removeNeighborSources() -> retourne prefixes affectes
+
+TopologyEntry (immuable)
+  prefix: EigrpPrefix
+  state:  DualState (passive | active | sia)
+  sources: RouteSource[]         tri par FD asc
+  successor: RouteSource | null  sources[0]
+  feasibleSuccessors: RouteSource[]  AD < bestFD
+
+RouteSource (immuable)
+  neighbor: EigrpNeighborKey
+  ad:  Advertised Distance   (metric du voisin)
+  fd:  Feasible Distance     (metric locale = metric(neighbor) + ad)
+  metric: EigrpMetric        (composite + composantes)
+
+IEigrpNeighborRepository
+  +-- InMemoryNeighborTable
+        _neighbors: Map<string, EigrpNeighborEntry>
+
+EigrpNeighborEntry (immuable)
+  key: EigrpNeighborKey
+  kValues, holdTime, uptime, seqSent, seqExpected, srtt, rto...
+```
+
+---
+
+## 5. Machine a etats voisin — State Machine discriminee
+
+### 5.1 Etats du voisin EIGRP
+
+EIGRP est beaucoup plus simple qu'OSPF pour le voisinage : il n'y a que **2 etats** (vs 8 pour OSPF). La complexite est dans la robustesse des checks a la transition.
+
+```typescript
+// src/network/eigrp/neighbor/EigrpNeighborState.ts
+
+export type EigrpNeighborState =
+  | {
+      readonly phase: 'idle'
+      // Aucun voisin connu. Etat initial et final.
+    }
+  | {
+      readonly phase:     'pending'
+      readonly seenAt:    number     // Date.now() du premier Hello recu
+      readonly kValues:   import('../values/EigrpMetric').EigrpKValues
+      readonly asNumber:  number
+      // Hello recu mais pas encore envoye de Hello en retour (race condition).
+      // Necessite un Hello sortant pour confirmer la relation.
+    }
+  | {
+      readonly phase:       'up'
+      readonly upSince:     number   // Date.now()
+      readonly holdTimerId: ReturnType<typeof setTimeout>
+      // Voisin actif. Hold timer redemarre a chaque Hello recu.
+    }
+  | {
+      readonly phase:  'down'
+      readonly reason: import('../EigrpError').EigrpErrorCode
+      // Etat transitoire avant purge de la neighbor table.
+      // Declenche removeNeighborSources() dans la topology table.
+    }
+```
+
+### 5.2 Evenements de transition
+
+```
+          ┌──────────────────────────────────────────────────────────────┐
+          │                  EIGRP NEIGHBOR STATE MACHINE               │
+          └──────────────────────────────────────────────────────────────┘
+
+  ┌──────┐   HELLO_RECEIVED          ┌─────────┐  HELLO_SENT_BACK    ┌────┐
+  │      │ ─────────────────────────>│ pending │ ──────────────────> │    │
+  │ idle │                           └─────────┘                     │ up │
+  │      │                                |                          │    │
+  └──────┘ <───────────────────────────── |  K_MISMATCH              └────┘
+     ^                                   AS_MISMATCH                   |
+     |                                   AUTH_FAIL                     |
+     |                                                                  |
+     |  INTERFACE_DOWN / RESET                                         |
+     |                                                HOLD_EXPIRED     |
+     |                                                INTERFACE_DOWN   |
+     |                                                K_MISMATCH       |
+     |                                                                  |
+     |      ┌──────┐                                                   |
+     └───── │ down │ <─────────────────────────────────────────────────┘
+            └──────┘
+              (transitoire -> retour idle + purge topology)
+```
+
+### 5.3 EigrpNeighborStateMachine — implementation
+
+```typescript
+// src/network/eigrp/neighbor/EigrpNeighborStateMachine.ts
+
+import type { EigrpNeighborState }       from './EigrpNeighborState'
+import type { EigrpEvent }               from '../EigrpEvent'
+import type { EigrpNeighborKey }         from '../values/EigrpNeighborKey'
+import type { IEigrpNeighborRepository } from './types'
+import type { EigrpKValues }             from '../values/EigrpMetric'
+import { makeEigrpError }                from '../EigrpError'
+import { DEFAULT_K_VALUES }              from '../values/EigrpMetric'
+
+export interface NeighborStateMachineCallbacks {
+  /** Declenche quand un voisin passe Up — envoie un Update complet */
+  onNeighborUp(key: EigrpNeighborKey): void
+  /** Declenche quand un voisin passe Down — purge ses routes */
+  onNeighborDown(key: EigrpNeighborKey, reason: string): void
+  /** Envoie un Hello de retour (transition pending -> up) */
+  sendHello(iface: string): void
+}
+
+export class EigrpNeighborStateMachine {
+  private readonly _states = new Map<string, EigrpNeighborState>()
+
+  constructor(
+    private readonly _localKValues: EigrpKValues,
+    private readonly _localAs:      number,
+    private readonly _repo:         IEigrpNeighborRepository,
+    private readonly _cb:           NeighborStateMachineCallbacks,
+    private readonly _holdDefault   = 15,  // secondes
+  ) {}
+
+  /**
+   * Traite un evenement et fait transitionner la machine d'etat du voisin.
+   * Fonction principale d'orchestration — appele par EigrpProcess.
+   */
+  processEvent(key: EigrpNeighborKey, event: EigrpEvent): void {
+    const stateKey = import('../values/EigrpNeighborKey').EigrpNeighborKey.toMapKey(key)
+    const current  = this._states.get(stateKey) ?? { phase: 'idle' }
+
+    const next = this._transition(key, current, event)
+    if (next !== current) {
+      this._states.set(stateKey, next)
+      this._onTransition(key, current, next)
+    }
+  }
+
+  private _transition(
+    key:     EigrpNeighborKey,
+    current: EigrpNeighborState,
+    event:   EigrpEvent,
+  ): EigrpNeighborState {
+    switch (current.phase) {
+      case 'idle':
+        if (event.type === 'HELLO_RECEIVED') {
+          if (!this._kValuesMatch(event.kValues)) {
+            return { phase: 'down', reason: 'NEIGHBOR_K_MISMATCH' }
+          }
+          if (event.asNumber !== this._localAs) {
+            return { phase: 'down', reason: 'NEIGHBOR_AS_MISMATCH' }
+          }
+          // Envoyer un Hello de retour est requis avant de passer Up
+          return {
+            phase:    'pending',
+            seenAt:   Date.now(),
+            kValues:  { k1: event.kValues[0], k2: event.kValues[1],
+                        k3: event.kValues[2], k4: event.kValues[3], k5: event.kValues[4] },
+            asNumber: event.asNumber,
+          }
+        }
+        return current
+
+      case 'pending':
+        if (event.type === 'HELLO_RECEIVED') {
+          // Deuxieme Hello confirme — voisin passe Up
+          const timerId = setTimeout(
+            () => this.processEvent(key, { type: 'HOLD_TIMER_EXPIRED',
+              neighbor: key, iface: key.iface }),
+            current.kValues.k1 * this._holdDefault * 1000,  // hold time en ms
+          )
+          return { phase: 'up', upSince: Date.now(), holdTimerId: timerId }
+        }
+        if (event.type === 'NEIGHBOR_DOWN') {
+          return { phase: 'down', reason: event.reason }
+        }
+        return current
+
+      case 'up':
+        if (event.type === 'HELLO_RECEIVED') {
+          // Reset du hold timer
+          clearTimeout(current.holdTimerId)
+          const timerId = setTimeout(
+            () => this.processEvent(key, { type: 'HOLD_TIMER_EXPIRED',
+              neighbor: key, iface: key.iface }),
+            event.holdTime * 1000,
+          )
+          return { ...current, holdTimerId: timerId }
+        }
+        if (event.type === 'HOLD_TIMER_EXPIRED' || event.type === 'NEIGHBOR_DOWN') {
+          clearTimeout(current.holdTimerId)
+          const reason = event.type === 'HOLD_TIMER_EXPIRED'
+            ? 'NEIGHBOR_HOLD_EXPIRED'
+            : event.reason
+          return { phase: 'down', reason }
+        }
+        return current
+
+      case 'down':
+        // Etat transitoire — retour automatique a idle dans _onTransition
+        return { phase: 'idle' }
+    }
+  }
+
+  private _onTransition(
+    key:  EigrpNeighborKey,
+    from: EigrpNeighborState,
+    to:   EigrpNeighborState,
+  ): void {
+    if (to.phase === 'pending') {
+      // Envoyer un Hello de retour pour confirmer la relation
+      this._cb.sendHello(key.iface)
+    }
+    if (to.phase === 'up') {
+      this._cb.onNeighborUp(key)
+    }
+    if (to.phase === 'down') {
+      this._cb.onNeighborDown(key, to.reason)
+      // Retour immediat a idle (down est juste un signal)
+      const stateKey = import('../values/EigrpNeighborKey').EigrpNeighborKey.toMapKey(key)
+      this._states.set(stateKey, { phase: 'idle' })
+    }
+  }
+
+  private _kValuesMatch(
+    received: readonly [number, number, number, number, number],
+  ): boolean {
+    return received[0] === this._localKValues.k1 &&
+           received[1] === this._localKValues.k2 &&
+           received[2] === this._localKValues.k3 &&
+           received[3] === this._localKValues.k4 &&
+           received[4] === this._localKValues.k5
+  }
+
+  getState(key: EigrpNeighborKey): EigrpNeighborState {
+    const stateKey = import('../values/EigrpNeighborKey').EigrpNeighborKey.toMapKey(key)
+    return this._states.get(stateKey) ?? { phase: 'idle' }
+  }
+}
+```
+
+### 5.4 Conditions de voisinage EIGRP
+
+Un voisin EIGRP n'est accepte que si **toutes** les conditions suivantes sont remplies :
+
+| Condition | Verification | Consequence si echec |
+|---|---|---|
+| Meme AS number | `hello.asNumber === local.asNumber` | Paquet ignore (silencieux) |
+| K-values identiques | `K1..K5 du Hello == K1..K5 locaux` | `%DUAL-5-NBRCHANGE: K-value mismatch` |
+| Authentification | MD5 HMAC ou SHA-256 valide | Hello rejete |
+| Meme sous-reseau | IP du voisin dans le meme /N | Voisinage impossible |
+| TTL = 1 | EIGRP hello non routable | Protection contre reflexion |
+
+### 5.5 Diagramme complet du sous-systeme voisin
+
+```
+EigrpNeighborStateMachine
+  _states: Map<string, EigrpNeighborState>
+  _localKValues: EigrpKValues
+  _localAs: number
+  processEvent(key, event) --> transition --> callback
+
+  Transitions :
+  idle    --[HELLO_RECEIVED + checks OK]-->  pending
+  idle    --[HELLO_RECEIVED + K_mismatch]--> down -> idle
+  pending --[HELLO_RECEIVED]-->              up    (holdTimer demarre)
+  up      --[HELLO_RECEIVED]-->              up    (holdTimer reset)
+  up      --[HOLD_EXPIRED | NEIGHBOR_DOWN]-> down -> idle
+
+Callbacks (implementes par EigrpProcess) :
+  onNeighborUp(key)    --> sendFullUpdate() + log
+  onNeighborDown(key)  --> topology.removeNeighborSources() + DUAL.recompute()
+  sendHello(iface)     --> EigrpPacketDispatcher.sendHello()
+
+IEigrpNeighborRepository
+  get / getAll / getByInterface / add / update / remove
+```
+
+---
