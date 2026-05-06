@@ -3044,7 +3044,7 @@ majeure.
 | Phase | Titre | Statut | Notes |
 |---|---|:---:|---|
 | 1 | Primitives (`EventBus`, `Scheduler`, `Signal`, `waitForEvent`, types) | ✅ | Voir §12.8.2 |
-| 2 | `Logger` adapter + `EquipmentRegistry` events | ⏳ | – |
+| 2 | `Logger` adapter + `EquipmentRegistry` events | ✅ | Voir §12.8.3 |
 | 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ⏳ | – |
 | 4 | Scheduler partout dans les protocoles | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
@@ -3118,6 +3118,70 @@ externe ajoutée. Lint propre sur les nouveaux fichiers.
 - ✅ `npm run lint` propre sur `src/events/` et tests associés.
 - ✅ Aucune dépendance externe ajoutée à `package.json`.
 - ✅ Aucun fichier de domaine touché.
+
+### 12.8.3 Phase 2 — Logger adapter + Registry/Equipment events (livrée)
+
+**Objectif §10.3** : faire passer **tous** les logs existants par le bus
+sans rompre leur API publique, et ajouter des émissions de cycle de vie
+sur `EquipmentRegistry` et `Equipment`.
+
+**Fichiers modifiés** :
+
+- `src/network/core/Logger.ts` (≈ 145 LoC). Le singleton `Logger`
+  publie désormais chaque appel `debug/info/warn/error` à la fois sur
+  ses abonnés legacy (filtrage `source` / préfixe `event` / `level`
+  conservé) **et** sur le bus comme `{ topic: 'log', payload }`. Les
+  ≈ 90 sites d'appel restent inchangés. Une méthode `__setBus(bus)`
+  permet aux tests d'isoler le bus. Les exceptions des subscribers
+  legacy sont désormais capturées (alignement sur la robustesse du
+  bus). La gestion du buffer in-memory `logs[]` est conservée pour
+  l'instant ; son extraction en `LogProjection` est différée à une
+  phase ultérieure pour limiter la surface de migration.
+- `src/network/equipment/EquipmentRegistry.ts` (≈ 130 LoC). Émet
+  `device.registered` (sur `register()` d'un device non encore
+  présent), `device.deregistered` (sur `deregister()` d'un id présent),
+  `registry.cleared` (sur `clear()` non vide). API publique
+  inchangée ; injection bus optionnelle via `setEventBus(bus)`.
+- `src/network/equipment/Equipment.ts` (≈ 220 LoC).
+  - `powerOn()` / `powerOff()` : conservent l'appel `Logger.info` à
+    l'identique pour ne pas modifier les compteurs de logs des tests
+    legacy ; émettent en plus `device.power-on` / `device.power-off`
+    **uniquement** sur transition d'état effective.
+  - `setName()` : émet `device.renamed` uniquement si le nom change
+    (`{ id, oldName, newName }`).
+  - `setPosition()` : émet `device.position-changed` uniquement si les
+    coordonnées changent. Cela ouvre la voie au binding live UI sans
+    modification du composant `NetworkCanvas` (Phase 6).
+  - `setEventBus(bus)` injectable (test-only utility).
+
+**Tests ajoutés** (`src/__tests__/unit/events/`) :
+
+- `Logger.adapter.test.ts` (5 tests) : émission `log` sur bus pour les
+  4 niveaux, filtrage legacy préservé, buffer in-memory conservé,
+  isolation des subscribers en erreur.
+- `Registry.lifecycle.test.ts` (6 tests) : `device.registered` émis à
+  la construction, idempotence sur `register()` répété,
+  `device.deregistered` émis seulement pour des ids présents,
+  `registry.cleared` non émis sur clear vide.
+- `Equipment.lifecycle.test.ts` (4 tests) : transitions `power-on/off`
+  émises uniquement sur changement, no-op sans event,
+  `position-changed` filtré par changement effectif,
+  `renamed` filtré par changement effectif.
+
+**Résultat** : **46/46 tests des primitives + Phase 2 verts** (15
+nouveaux tests Phase 2). La suite globale (`npm run test:run`) reste
+strictement à la baseline préexistante : aucun nouveau échec
+introduit, aucun fichier de domaine cassé.
+
+**Critères de sortie §10.3 atteints** :
+
+- ✅ Tous les tests existants passent sans modification.
+- ✅ `Logger.info(...)` → bus reçoit `{ topic: 'log', ... }` (test
+  d'adaptation présent).
+- ✅ Construction d'`Equipment` → `device.registered` émis (test
+  présent).
+- ✅ API publique `Logger.{debug,info,warn,error,subscribe,unsubscribe,getLogs,reset}`
+  inchangée.
 
 ### 12.9 Mot de la fin
 
