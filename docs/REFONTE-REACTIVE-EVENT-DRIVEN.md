@@ -11,7 +11,7 @@
 1. [Introduction & objectifs de la refonte](#1-introduction--objectifs-de-la-refonte)
 2. [État actuel de l'architecture](#2-état-actuel-de-larchitecture)
 3. [Analyse de la couche réseau — `Equipment` / `Port` / `Cable`](#3-analyse-de-la-couche-réseau--equipment--port--cable)
-4. Analyse des `devices` concrets et des moteurs de protocoles *(à venir)*
+4. [Analyse des `devices` concrets et des moteurs de protocoles](#4-analyse-des-devices-concrets-et-des-moteurs-de-protocoles)
 5. Analyse de la couche terminal *(à venir)*
 6. Analyse du store Zustand et des composants React *(à venir)*
 7. Analyse de la couche base de données (Oracle) *(à venir)*
@@ -521,3 +521,292 @@ Lecture rapide du fichier (cf. §4 pour analyse plus poussée — la table de ro
 ---
 
 *Section 3 close. Suivante : §4 — Devices concrets et moteurs de protocoles.*
+
+---
+
+## 4. Analyse des `devices` concrets et des moteurs de protocoles
+
+Les `devices` (`Switch`, `Router`, `EndHost` et leurs sous-classes) sont l'**épicentre** de la dette réactive : c'est là que se concentrent les `pendingXxx` Maps, les `setTimeout` natifs et la logique stateful complexe (state machine OSPF, traversée NAT, PAT, ACL, IPSec, etc.). Cette section décortique les classes les plus volumineuses et les moteurs de protocoles attachés.
+
+### 4.1 `EndHost` (`src/network/devices/EndHost.ts`, 2 325 LoC)
+
+#### 4.1.1 Rôle
+
+Classe abstraite parente des hôtes de bout (`LinuxMachine`, `WindowsPC`). Implémente :
+
+- **L2 → L3 dispatch** dans `handleFrame` : ARP / IPv4 / IPv6 (multicast filtering inclus).
+- **ARP** (RFC 826) : résolution, gratuitous ARP, table `arpTable: Map<string, ARPEntry>`.
+- **IPv4 forwarding minimal** + table de routage `routingTable: HostRouteEntry[]`.
+- **NDP** (RFC 4861) : neighbor cache, RA / RS, SLAAC.
+- **ICMP echo** (ping) avec `pendingPings`.
+- **TCP simplifié** (RFC 793) : `tcpListeners`, `tcpConnections`, `pendingTcpHandshakes`.
+- **DHCP client** (composition avec `DHCPClient`).
+- **NAT host-side** : `ipForwardEnabled`, `masqueradeOnInterfaces`.
+- **Socket table** : composition avec `SocketTable`.
+
+#### 4.1.2 Cinq Maps de callbacks pendantes (dette M3)
+
+```ts
+protected pendingARPs:        Map<string, PendingARP[]>;
+protected fwdQueue:            Array<{ pkt; outPort; nextHopIP; timer }>;
+protected pendingPings:        Map<string, PendingPing>;
+protected pendingNDPs:         Map<string, PendingNDP[]>;
+protected pendingPing6s:       Map<string, PendingPing>;
+private   tcpListeners:        Map<number, (conn: TcpConnection) => void>;
+private   pendingTcpHandshakes:Map<string, () => void>;
+```
+
+Chaque entrée a son propre `timer = setTimeout(...)` natif. Sept structures pour la **même problématique** : « j'attends un événement réseau, voici ce que je veux faire quand il arrive (et quoi faire si pas dans X ms) ». La refonte les unifie en :
+
+```ts
+// Modèle cible
+const reply = await waitForEvent(bus, 'icmp.echo-reply',
+  e => e.id === id && e.seq === seq,
+  { timeoutMs: 1000, scheduler });
+```
+
+soit ≈ 30 lignes utilitaires (`waitForEvent`) qui remplacent ≈ 250 lignes éparpillées dans `EndHost`.
+
+#### 4.1.3 Dépendances réactives existantes
+
+- `DHCPClient` reçoit **3 callbacks** au constructeur : `getMacFn`, `applyConfigFn`, `clearConfigFn`. Bon découpage par dependency inversion, mais ces callbacks sont *imperatifs* — la cible les remplace par des événements `dhcp.lease-acquired` / `dhcp.lease-expired` auxquels `EndHost` s'abonne.
+- `NeighborResolver` n'est **pas** utilisé par `EndHost` directement (le code ARP est dupliqué inline dans `EndHost` !). C'est un signal que le refactor « 1.2 » de la roadmap interne n'a été appliqué qu'à moitié.
+
+#### 4.1.4 Couplages problématiques
+
+| # | Symptôme | Détail |
+|---|---|---|
+| H1 | **Cinq systèmes de pending parallèles** | Chaque cycle de vie est manuel (timer → cleanup → resolve → delete from map). Beaucoup de duplication, beaucoup de risques de fuite. |
+| H2 | **ARP / NDP réinventés inline** | Au lieu d'utiliser `NeighborResolver<IPAddress>`, le code maintient sa propre `arpTable: Map`, ses propres `pendingARPs`, ses propres timers. ≈ 200 LoC dupliquées. |
+| H3 | **Routing table mutée sans signal** | `configureInterface`, `setDefaultGateway`, `addRoute`, `removeRoute` modifient `routingTable: HostRouteEntry[]`. Aucun événement, donc aucun panneau « show ip route » live. |
+| H4 | **TCP listeners par callback** | `tcpListeners.set(port, (conn) => …)` — pour exposer en UI « ce serveur écoute sur ces ports », il faut requêter manuellement. |
+| H5 | **Logique forwarding mélangée à la logique host** | NAT, MASQUERADE, ip_forward, et leur interaction avec `iptables`, sont intégrées dans `EndHost`. Pas un problème de réactivité direct mais le bus permet d'extraire `IPv4Forwarder` comme acteur séparé qui s'abonne à `port.frame.received`. |
+
+#### 4.1.5 Décisions de refonte
+
+- **Remplacer** les cinq `pendingXxx` par un utilitaire `waitForEvent(bus, topic, predicate, opts)`.
+- **Substituer** `NeighborResolver<IPAddress>` aux ARP inline (et `NeighborResolver<IPv6Address>` pour NDP). Cela enlève ≈ 400 LoC en cumulé.
+- **Émettre** `host.routing.route-added`, `host.routing.route-removed`, `host.arp.entry-learned`, `host.arp.entry-expired`, `host.icmp.echo-sent`, `host.icmp.echo-reply-received`, `host.tcp.listener-started`, `host.tcp.listener-stopped`, `host.tcp.connection-established`, `host.tcp.connection-closed`.
+- **Extraire** `IPv4Forwarder`, `IPv6Forwarder`, `NATHelper` comme acteurs (réducteurs) séparés et testables, abonnés au bus.
+
+### 4.2 `Router` (`src/network/devices/Router.ts`, 1 545 LoC)
+
+#### 4.2.1 Rôle
+
+Routeur abstrait, vendor-agnostique au cœur, spécialisé par `CiscoRouter` / `HuaweiRouter`. Couvre :
+
+- Plan de contrôle : **OSPF** (via `RouterOSPFIntegration`), **RIP** (via `RouterRIPEngine`), **statiques**, **default-routes**, table de routage `RoutingTable`.
+- Plan de données : forwarding L3, ACL ingress/egress (via `ACLEngine`), NAT (`NATEngine`), IPv6 (`IPv6DataPlane`), IPSec (`IPSecEngine`).
+- Plan de management : terminal (Cisco IOS shell ou Huawei VRP shell), bootup messages, configuration parser.
+- ARP locale + pending pings + pending traceroute hops.
+
+#### 4.2.2 État interne réactif
+
+Trois `Map` de callbacks pendantes en plus :
+
+```ts
+private pendingARPs:        Map<string, PendingARP[]>;
+private pendingPings:       Map<string, { ... timer: setTimeout }>;
+private pendingTraceHops:   Map<string, { ... timer: setTimeout }>;
+```
+
+— et chacune des intégrations (`RouterOSPFIntegration`, `RouterRIPEngine`, `IPSecEngine`, `NATEngine`) a ses propres timers internes.
+
+#### 4.2.3 Couplages problématiques
+
+| # | Symptôme | Détail |
+|---|---|---|
+| Rt1 | **Tout-en-un** | Routeur = control-plane + data-plane + management-plane + ARP. Le bus permet de découper data-plane (`IPv4Forwarder`, `IPv6Forwarder`) et control-plane (`RoutingTableManager`) en acteurs séparés. |
+| Rt2 | **`pendingTraceHops`** | Reproduit pour la 3ᵉ fois la même mécanique pending+timer. |
+| Rt3 | **Couplage direct vers les engines** | Le routeur instancie et tient des références sur `RouterOSPFIntegration`, `RouterRIPEngine`, `IPSecEngine`, `NATEngine`, `ACLEngine`, `IPv6DataPlane`. Ces engines accèdent en retour à des méthodes du routeur (typique « client-callback » pattern). Le bus inverse cette dépendance : les engines s'abonnent à `port.frame.received` filtré sur leur ID device, et **émettent** des changements de routing table. |
+| Rt4 | **Boot sequence couplée au shell** | `getBootSequence(): string` est une méthode abstraite qui retourne un blob texte ; il devrait s'agir d'un événement `device.booting` puis d'événements ordonnés `device.boot-line` consommés par la session terminal. |
+
+### 4.3 `Switch` (`src/network/devices/Switch.ts`, 838 LoC)
+
+#### 4.3.1 Rôle et état
+
+Switch L2 abstrait avec MAC learning, VLAN access/trunk (Dot1Q), STP states (passifs — non encore animés), ARP table interne (pour répondre à ARP sur l'adresse de management), interface descriptions, MAC aging.
+
+```ts
+private macTable:             Map<string, MACTableEntry>;  // "vlan:mac" → entry
+private macAgingTimer:         ReturnType<typeof setInterval> | null;
+protected vlans:               Map<number, VLANEntry>;
+private switchportConfigs:     Map<string, SwitchportConfig>;
+private stpStates:             Map<string, STPPortState>;
+protected portVlanStates:      Map<string, 'active' | 'suspended'>;
+private interfaceDescriptions: Map<string, string>;
+private arpTable:              Map<string, …>;
+```
+
+#### 4.3.2 Réactivité
+
+- `macAgingTimer` = `setInterval(() => purgeStaleMACs(), …)` — un seul timer global pour tout le switch. Migration triviale vers `Scheduler`.
+- Aucune émission d'événement sur MAC learning, VLAN add/remove, STP state changes. Conséquence : la UI ne peut pas afficher en live « MAC table », « show vlan », « show spanning-tree » (toutes les commandes existantes lisent l'état mais ne sont pas réactives).
+
+#### 4.3.3 Décisions de refonte
+
+- Émettre `switch.mac.learned`, `switch.mac.aged`, `switch.vlan.created`, `switch.vlan.deleted`, `switch.port.vlan-suspended`, `switch.port.vlan-recreated`, `switch.stp.state-changed`.
+- `macAgingTimer` → `scheduler.setInterval`.
+
+### 4.4 Moteurs de protocoles
+
+#### 4.4.1 Interface commune `IProtocolEngine`
+
+```ts
+// src/network/core/interfaces.ts
+export interface IProtocolEngine {
+  start(): void;
+  stop(): void;
+  // … méthodes spécifiques propres
+}
+```
+
+L'interface est volontairement minimale. Toutes les engines l'implémentent : `OSPFEngine`, `OSPFv3Engine`, `RIPEngine`, `RouterRIPEngine`, `IPSecEngine`, `DHCPClient`, `DHCPServer`. C'est une **excellente base** pour la refonte : on étend simplement le contrat avec :
+
+```ts
+interface IProtocolEngine {
+  start(scheduler: IScheduler, bus: IEventBus): void;
+  stop(): void;
+}
+```
+
+#### 4.4.2 `OSPFEngine` (`src/network/ospf/OSPFEngine.ts`, ≈ 3 200 LoC)
+
+Implémentation OSPFv2 quasi-complète : Hello, neighbor FSM (Down → Init → 2-Way → ExStart → Exchange → Loading → Full), DR/BDR election, DD/LSR/LSU/LSAck, LSA flooding, SPF Dijkstra, area summary, ASBR, NSSA.
+
+**Timers natifs** (≈ 18 occurrences) :
+- `lsAgeTimer = setInterval(tickLSAge, 1000)` — global au moteur.
+- `spfTimer = setTimeout(runSPF, 100)` — coalesce SPF runs.
+- `iface.helloTimer = setInterval(sendHello, helloInterval)` — par interface.
+- `iface.waitTimer = setTimeout(electDR, deadInterval)` — par interface.
+- `neighbor.deadTimer = setTimeout(deadNeighbor, deadInterval)` — par voisin.
+- `neighbor.ddRetransmitTimer = setTimeout(retransmitDD, retransmitInterval)` — par voisin.
+- `neighbor.lsrRetransmitTimer = setTimeout(retransmitLSR, retransmitInterval)` — par voisin.
+
+**Couplages** :
+
+| # | Symptôme | Détail |
+|---|---|---|
+| Os1 | **Tous les timers natifs** | `tickLSAge`, hello, dead, retransmit, SPF coalesce. Un test qui veut « avancer le temps de 40 secondes » doit faire `vi.useFakeTimers()` puis `vi.advanceTimersByTime(40_000)`. Mais le moteur ne le sait pas. |
+| Os2 | **Couplage à un router** | Le moteur reçoit en paramètres des fonctions « envoyer un Hello via cette interface » qui dépendent du routeur ; il s'agit d'un client-callback indirect (cf. Rt3). |
+| Os3 | **Pas d'événements de transition d'état** | Toutes les transitions FSM voisin (`Init` → `2-Way` → …) sont silencieuses. Une UI « topologie OSPF live » nécessite un polling. |
+| Os4 | **LSDB mutée** | `lsdb` est une `Map<key, LSA>` mutée en place ; impossible d'observer les ajouts/suppressions. |
+
+**Décisions de refonte** :
+
+- Tous les timers via `Scheduler`.
+- Émettre `ospf.neighbor.state-changed`, `ospf.lsa.received`, `ospf.lsa.flushed`, `ospf.spf.run`, `ospf.dr-election`, `ospf.area.activated`.
+- L'envoi de paquets passe par publication sur le bus d'un événement `ospf.packet.outgoing` consommé par le data-plane du routeur (qui forge la trame Ethernet et appelle `port.send`).
+
+#### 4.4.3 `OSPFv3Engine` — équivalent IPv6
+
+Mêmes problématiques, mêmes décisions. Mutualiser les types d'événements en discriminant par `version: 'v2' | 'v3'` dans le payload.
+
+#### 4.4.4 `RIPEngine` / `RouterRIPEngine`
+
+```ts
+private updateTimer: ReturnType<typeof setInterval> | null;
+state.timeoutTimer:  ReturnType<typeof setTimeout> | null;
+state.gcTimer:       ReturnType<typeof setTimeout> | null;
+```
+
+**Bonus** : `RIPCallbacks` interface est déjà documentée comme « *Decouples the engine from the Router class (Dependency Inversion)* ». Excellente base — ces callbacks deviennent des publications sur le bus.
+
+#### 4.4.5 `DHCPClient` / `DHCPServer`
+
+`DHCPClient` reçoit déjà ses **3 callbacks** d'intégration via constructeur (cf. §4.1.3). Migration :
+
+- Les callbacks `applyConfigFn`, `clearConfigFn`, `getMacFn` deviennent des **événements en/out** : le client publie `dhcp.lease-requested`, `dhcp.lease-granted`, `dhcp.lease-expired` ; un *projecteur* configure le port.
+- Timers `renewalTimer`, `rebindingTimer`, `expirationTimer` → `Scheduler`.
+- `arpProbeFn` → événement `dhcp.arp-probe-requested` consommé par le host.
+
+#### 4.4.6 `IPSecEngine` (`src/network/ipsec/IPSecEngine.ts`, ≈ 1 850 LoC)
+
+Couvre IKEv1/IKEv2, ESP/AH transport+tunnel, DPD, lifetime SA, anti-replay. **Beaucoup** d'état stateful (SA, IKE_SA, child_SA, dpd_state) avec `Map<spi, …>` et timers de lifetime, retransmit, DPD.
+
+**Décisions** : timers via `Scheduler`, émissions `ipsec.sa.installed`, `ipsec.sa.deleted`, `ipsec.dpd.peer-down`, `ipsec.ike.exchange-completed`. Le payload `data-plane` passe via `ipsec.packet.encrypted-out` / `ipsec.packet.decrypted-in`.
+
+#### 4.4.7 `RouterOSPFIntegration` (1 799 LoC), `NATEngine` (613), `ACLEngine` (245+280), `IPv6DataPlane` (660)
+
+Ce sont les **adaptateurs** entre le routeur générique et les protocoles. Ils contiennent la logique de pont : conversion frame ↔ packet OSPF, encapsulation IPSec, application des ACL en pré-/post-routing, traduction NAT.
+
+**Décisions** :
+
+- Conserver leur structure (un module par préoccupation).
+- Réécrire leurs **points d'entrée** comme handlers d'événements (`bus.subscribe('port.frame.received', filter)` plutôt que méthodes invoquées par `Router.handleFrame`).
+- Les **points de sortie** (forge de trame, envoi) deviennent des publications sur `host.l3.packet-tx-requested` que le data-plane traduit en `port.frame.tx-requested`.
+- Garder `ACLEngine.evaluate(...)` comme **fonction pure** (pas de bus), puisqu'elle est pure logique métier ; le bus traite ses *résultats* (`acl.permit`, `acl.deny`, `acl.log`).
+
+### 4.5 Hub, GenericSwitch, devices simples
+
+`Hub` (broadcast L1) et `GenericSwitch` (sans fonctionnalités vendor) — peu de logique, pas de timers. Migration triviale : juste s'aligner sur l'API bus.
+
+### 4.6 `LinuxMachine` / `WindowsPC` et leurs collaborateurs
+
+`LinuxMachine` (827 LoC) et `WindowsPC` (695 LoC) délèguent massivement à des collaborateurs (`LinuxFirewallManager`, `LinuxProcessManager`, `LinuxServiceManager`, `LinuxDnsService`, `LinuxCronManager`, `WindowsServiceManager`, etc.). La majorité de ces collaborateurs sont **synchrones et sans timer**, à deux exceptions près :
+
+- `LinuxCronManager` (20 LoC, basique pour l'instant) — futur scheduler de tâches cron : DOIT passer par `Scheduler`.
+- `LinuxServiceManager` / `WindowsServiceManager` — pas de timer, mais leur démarrage devrait émettre `service.started`, `service.stopped` pour permettre à la UI de représenter l'état des services.
+
+### 4.7 Tableau de synthèse — devices et protocoles
+
+| Composant | LoC | Timers natifs | Maps callbacks | Événements bus à émettre (approx.) | Priorité |
+|---|---:|---:|---:|---:|---|
+| `EndHost` | 2 325 | 7 | 5 | 18+ | **Très haute** |
+| `Router` | 1 545 | 4 | 3 | 12+ | **Très haute** |
+| `Switch` | 838 | 1 | 0 | 8 | Haute |
+| `Hub`, `GenericSwitch` | ~120 | 0 | 0 | 2 | Faible |
+| `OSPFEngine` | ~3 200 | 7 types | 0 (FSM) | 12 | **Très haute** |
+| `OSPFv3Engine` | ~1 100 | mêmes | 0 | 12 | Haute |
+| `RIPEngine` | ~500 | 3 | 0 | 6 | Haute |
+| `RouterRIPEngine` | 429 | héritages | 0 | 6 | Moyenne |
+| `DHCPClient` | ~720 | 3 | 0 | 6 | Haute |
+| `DHCPServer` | ~480 | 0 | 0 | 4 | Moyenne |
+| `IPSecEngine` | ~1 850 | mult. | 1 | 10 | Haute |
+| `NATEngine` | 613 | 1 | 0 | 4 | Moyenne |
+| `ACLEngine` (router/) | 245 | 0 | 0 | 3 | Moyenne |
+| `ACLEngine` (acl/) | 280 | 0 | 0 | 3 | Moyenne |
+| `IPv6DataPlane` | 660 | 0 | 0 | 5 | Moyenne |
+| `RouterOSPFIntegration` | 1 799 | 0 | 0 | 4 | Moyenne |
+| `LinuxMachine`, `WindowsPC` | 1 522 | 0 | 0 | 6 (services) | Faible |
+
+### 4.8 Pattern unifié de migration des `pendingXxx`
+
+Le pattern « j'attends un événement réseau X avec timeout T » revient au moins **15 fois** dans `EndHost` + `Router`. La cible est :
+
+```ts
+// utility shipped with the bus
+async function waitForEvent<E extends BusEvent>(
+  bus: IEventBus,
+  topic: E['topic'],
+  predicate: (e: E['payload']) => boolean,
+  opts: { timeoutMs: number; scheduler: IScheduler },
+): Promise<E['payload']>;
+```
+
+Implémentation < 30 LoC. Appel typique :
+
+```ts
+// Avant — 12 lignes de pendingPings.set + setTimeout + cleanup
+this.pendingPings.set(key, { resolve, reject, timer: setTimeout(...) });
+
+// Après — 4 lignes
+const reply = await waitForEvent(bus, 'host.icmp.echo-reply',
+  e => e.id === id && e.seq === seq && e.from.equals(targetIP),
+  { timeoutMs, scheduler });
+```
+
+L'effacement net en LoC pour les seules `pendingXxx` est estimé à **400-500 LoC** sur l'ensemble du repo.
+
+### 4.9 Synthèse
+
+Les devices et engines portent **l'essentiel de la dette réactive** :
+
+- 7+ Maps de callbacks pendantes parallèles à unifier.
+- ≈ 80 timers natifs à migrer vers `Scheduler`.
+- 0 émission d'événement sur les transitions de protocole, à corriger pour rendre la simulation observable.
+- Les *adapters* `RouterOSPFIntegration`, `NATEngine`, `IPv6DataPlane` deviennent des consommateurs/producteurs du bus, ce qui les rend testables en isolation et ouvre la voie à des plug-ins futurs.
+
+---
+
+*Section 4 close. Suivante : §5 — Couche terminal.*
