@@ -129,6 +129,22 @@ export class SshServerHandler {
           break;
         }
 
+        case 'exec': {
+          // BRD SSH-05: non-interactive command execution. Also used by the
+          // interactive shell sub-shell, which routes one exec per line.
+          if (!userCtx) {
+            conn.write(JSON.stringify({ stdout: '', stderr: 'not authenticated', exitCode: 255 }));
+            return;
+          }
+          const command = (parsed.command as string | undefined) ?? '';
+          const channelId = parsed.channelId as number | undefined;
+          const cwd = (channelId !== undefined && channels.get(channelId)?.cwd) || userCtx.homeDirectory;
+          const shell = this.ctx.getShell(userCtx, cwd);
+          const result = shell.execute(command);
+          conn.write(JSON.stringify(result));
+          break;
+        }
+
         default: {
           // Treat as SFTP command if user is authenticated.
           if (!userCtx) {

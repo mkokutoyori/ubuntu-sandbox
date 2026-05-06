@@ -10,6 +10,7 @@
 
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
+import type { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
@@ -67,6 +68,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     private readonly userManager: LinuxUserManager,
     private readonly hostname: string,
     config: Partial<SshServerConfig> = {},
+    private readonly executor: LinuxCommandExecutor | null = null,
   ) {
     this.ensureEtcSshFiles();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -95,16 +97,27 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
-    // Minimal placeholder shell. The real Linux command pipeline is async,
-    // so we return a stub that the SSH layer can extend later by injecting
-    // a proper LinuxShellSession wrapper.
-    return {
-      execute(line: string) {
-        return {
-          stdout: `${line}: shell execution not yet wired\n`,
+    // BRD SSH-05/SSH-04: when an executor is wired in, route each command
+    // through the real Linux interpreter. Otherwise fall back to an
+    // informative stub so unit tests of the server stay self-contained.
+    const executor = this.executor;
+    if (!executor) {
+      return {
+        execute: (line: string) => ({
+          stdout: `${line}: shell execution not wired (no executor)\n`,
           stderr: '',
           exitCode: 0,
-        };
+        }),
+      };
+    }
+    return {
+      execute: (line: string) => {
+        const stdout = executor.execute(line);
+        // The synchronous bash interpreter does not surface a separate stderr
+        // or exit code yet; treat presence of a leading "bash: …: command
+        // not found" or "Permission denied" segment as a non-zero exit.
+        const exitCode = /command not found|Permission denied/.test(stdout) ? 1 : 0;
+        return { stdout, stderr: '', exitCode };
       },
     };
   }

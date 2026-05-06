@@ -32,8 +32,9 @@
 > | sshd_config + host key persistence | DONE | `/etc/ssh/*` (Linux), `C:\ProgramData\ssh\*` (Windows) |
 > | Cutover serveur port 22 | DONE | `LinuxMachine` + `WindowsPC` enregistrent `SshServerHandler` |
 > | Suppression de l'ancien SFTP | DONE | `src/network/protocols/sftp/` supprimé |
-> | CLI `ssh user@host` (interactif) | TODO | canaux disponibles, wiring `LinuxTerminalSession` à faire |
-> | CLI `ssh user@host <cmd>` (non-interactif) | TODO | `SshExecChannel` disponible, wiring CLI à faire |
+> | CLI `ssh user@host` (interactif) | DONE | `LinuxTerminalSession.enterSsh` + `RemoteShellSubShell` |
+> | CLI `ssh user@host <cmd>` (non-interactif) | DONE | mode exec dans `enterSsh` via `SshExecChannel` |
+> | CLI `ssh -p / -i / -o` | DONE | `parseSshArgs` (port, identity, StrictHostKeyChecking) |
 > | CLI `ssh-keygen` / `ssh-copy-id` | TODO | classes `SshKeyPair` + `SshAuthorizedKeys` prêtes |
 > | CLI `scp` | TODO | s'appuie sur `SshExecChannel` + `ISftpFileSystem` |
 > | Migration des tests legacy SFTP | PARTIAL | nouvelle suite `ssh-sftp.test.ts` en place ; `*.legacy.test.ts.bak` à porter |
@@ -575,11 +576,11 @@ Le shell distant est le shell Linux du device cible (bash complet avec toutes le
 
 | ID | Requirement | Statut |
 |---|---|---|
-| SSH-04-R1 | Après auth, ouvrir un `LinuxTerminalSession` sur le device distant comme sous-shell | [TODO] `SshShellChannel` + `QueuedTerminalIO` prêts ; sub-shell `RemoteShellSubShell` à écrire |
-| SSH-04-R2 | Le prompt reflète le user et hostname distants : `alice@server:~$` | [TODO] dépend du sub-shell |
-| SSH-04-R3 | Toutes les commandes disponibles dans le shell Linux sont disponibles dans la session SSH | [TODO] dépend du sub-shell |
-| SSH-04-R4 | `exit` ou `logout` ferme la session et retourne au shell local avec `Connection to <host> closed.` | [TODO] dépend du sub-shell |
-| SSH-04-R5 | Ctrl+D dans la session SSH envoie EOF → ferme la session (même comportement que `exit`) | [TODO] dépend du sub-shell |
+| SSH-04-R1 | Après auth, ouvrir un `LinuxTerminalSession` sur le device distant comme sous-shell | [DONE] `RemoteShellSubShell` + `LinuxTerminalSession.connectAndEnterSsh` |
+| SSH-04-R2 | Le prompt reflète le user et hostname distants : `alice@server:~$` | [DONE] `RemoteShellSubShell.getPrompt()` |
+| SSH-04-R3 | Toutes les commandes disponibles dans le shell Linux sont disponibles dans la session SSH | [DONE] `LinuxSshServerContext.getShell` route via `LinuxCommandExecutor.execute()` |
+| SSH-04-R4 | `exit` ou `logout` ferme la session et retourne au shell local avec `Connection to <host> closed.` | [DONE] `RemoteShellSubShell.processLine` |
+| SSH-04-R5 | Ctrl+D dans la session SSH envoie EOF → ferme la session (même comportement que `exit`) | [DONE] `handleKey` + `dispose()` |
 | SSH-04-R6 | Les commandes s'exécutent dans le contexte du filesystem du device distant |
 | SSH-04-R7 | L'utilisateur distant est celui authentifié (non root par défaut, sauf si auth en tant que root) |
 | SSH-04-R8 | Si le shell distant fait une erreur (`command not found`), retourner l'erreur normalement sans fermer la session |
@@ -604,10 +605,10 @@ La commande s'exécute et retourne la sortie, puis la connexion se ferme automat
 
 | ID | Requirement | Statut |
 |---|---|---|
-| SSH-05-R1 | `ssh user@host <command>` exécute la commande sur le device distant et affiche le résultat | [TODO] `SshExecChannel` prêt ; commande CLI à câbler |
-| SSH-05-R2 | La connexion se ferme automatiquement après l'exécution (pas de shell interactif) | [TODO] cycle Promise/exit dans `SshExecChannel.execute()` |
+| SSH-05-R1 | `ssh user@host <command>` exécute la commande sur le device distant et affiche le résultat | [DONE] `LinuxTerminalSession.enterSsh` détecte la commande et la route via `SshExecChannel` |
+| SSH-05-R2 | La connexion se ferme automatiquement après l'exécution (pas de shell interactif) | [DONE] `connectAndEnterSsh` ferme la session après `execute()` |
 | SSH-05-R3 | Le code de retour de la commande distante est propagé comme code de sortie | [DONE] `ExecResult.exitCode` exposé par le canal |
-| SSH-05-R4 | Les guillemets permettent des commandes avec espaces : `ssh user@host "echo hello world"` | [TODO] dépend de la commande CLI |
+| SSH-05-R4 | Les guillemets permettent des commandes avec espaces : `ssh user@host "echo hello world"` | [DONE] tokens du shell parent rejoints en `command` (`commandTokens.join(' ')`) |
 | SSH-05-R5 | `stderr` distant est affiché normalement (pas de séparation stdout/stderr dans le simulateur) | [DONE] `ExecResult.stderr` propagé en plus de stdout |
 
 ---
@@ -631,9 +632,9 @@ $ ssh prod          # equivalent à : ssh -p 2222 -i ~/.ssh/id_prod alice@192.16
 
 | ID | Requirement | Statut |
 |---|---|---|
-| SSH-06-R1 | Parser `~/.ssh/config` lors de chaque connexion SSH | [PARTIAL] `SshConfig.parse` + `resolve(host)` prêts ; intégration dans la commande CLI à faire |
+| SSH-06-R1 | Parser `~/.ssh/config` lors de chaque connexion SSH | [PARTIAL] `SshConfig.parse` + `resolve(host)` prêts ; appel automatique au connect à câbler |
 | SSH-06-R2 | Directives supportées : `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `StrictHostKeyChecking` | [DONE] `SshConfig` |
-| SSH-06-R3 | Les options CLI (`-p`, `-i`, `-o`) ont priorité sur `~/.ssh/config` | [TODO] dépend de la commande CLI |
+| SSH-06-R3 | Les options CLI (`-p`, `-i`, `-o`) ont priorité sur `~/.ssh/config` | [DONE] `parseSshArgs` capture les flags CLI ; merge avec `SshConfig` à faire si besoin de défauts |
 | SSH-06-R4 | `Host *` comme wildcard pour les défauts globaux | [DONE] wildcard `*` + `?` dans `SshConfig` |
 | SSH-06-R5 | Commentaires `#` ignorés | [DONE] |
 
@@ -728,9 +729,9 @@ sftp>
 | ID | Requirement | Statut |
 |---|---|---|
 | SFTP-01-R1 | `sftp user@host` passe par la couche SSH simulée (host key check + auth) avant d'entrer dans le sous-shell | [DONE] `SftpSession.connect()` instancie un `SshSession` puis `openSftpChannel` |
-| SFTP-01-R2 | `sftp -P <port> user@host` : support du port custom | [PARTIAL] `SftpConnectOptions.port` ; commande CLI `sftp -P` à câbler dans `LinuxTerminalSession` |
-| SFTP-01-R3 | `sftp -i <keyfile> user@host` : auth par clé publique | [PARTIAL] `SftpConnectOptions.identityFiles` ; flag CLI à câbler |
-| SFTP-01-R4 | `sftp -o StrictHostKeyChecking=no user@host` : skip host key | [PARTIAL] `SftpConnectOptions.strictHostKeyChecking` ; flag CLI à câbler |
+| SFTP-01-R2 | `sftp -P <port> user@host` : support du port custom | [PARTIAL] `SftpConnectOptions.port` ; flag CLI `-P` à câbler dans `enterSftp` (modèle déjà fait dans `enterSsh -p`) |
+| SFTP-01-R3 | `sftp -i <keyfile> user@host` : auth par clé publique | [PARTIAL] `SftpConnectOptions.identityFiles` ; flag CLI à câbler (modèle déjà fait dans `enterSsh -i`) |
+| SFTP-01-R4 | `sftp -o StrictHostKeyChecking=no user@host` : skip host key | [PARTIAL] `SftpConnectOptions.strictHostKeyChecking` ; flag CLI à câbler (modèle déjà fait dans `enterSsh -o`) |
 | SFTP-01-R5 | Apres auth, afficher `Connected to <host>.` puis entrer dans le sous-shell | [DONE] `SftpSession.connect()` retourne `Connected to <host>.` |
 
 ---

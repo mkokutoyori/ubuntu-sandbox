@@ -20,8 +20,12 @@ import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
+import { isOk } from '@/network/protocols/ssh/Result';
 import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -221,6 +225,10 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (parts[0] === 'sftp') {
         this.enterSftp(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'ssh') {
+        await this.enterSsh(parts.slice(1));
         return;
       }
       if (parts[0] === 'lsnrctl') {
@@ -430,6 +438,19 @@ export class LinuxTerminalSession extends TerminalSession {
       this.connectAndEnterSftp(userAtHost, password);
       return;
     }
+    const sshMeta = ctx.metadata.get('enter_ssh') as string | undefined;
+    if (sshMeta) {
+      const meta = JSON.parse(sshMeta) as {
+        userAtHost: string;
+        port: number;
+        identityFiles: string[];
+        strict: 'yes' | 'no' | 'accept-new';
+        command: string | null;
+      };
+      const password = ctx.values.get('ssh_password') ?? '';
+      this.connectAndEnterSsh(meta, password);
+      return;
+    }
     this.syncDeviceState();
   }
 
@@ -550,6 +571,171 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  // ── ssh entry point ─────────────────────────────────────────────
+
+  /**
+   * Parse `ssh [options] [user@]host [command...]` and start either an
+   * interactive sub-shell (BRD SSH-04) or a one-shot exec (BRD SSH-05).
+   *
+   * Supported flags: -p <port>, -i <keyfile>, -o StrictHostKeyChecking=value.
+   */
+  private async enterSsh(args: string[]): Promise<void> {
+    const parsed = parseSshArgs(args);
+    if (!parsed) {
+      this.addLine(
+        'usage: ssh [-p port] [-i identity_file] [-o option=value] [user@]host [command...]',
+        'error',
+      );
+      this.notify();
+      return;
+    }
+    const { userAtHost, port, identityFiles, strict, command } = parsed;
+    const user = userAtHost.includes('@')
+      ? userAtHost.split('@')[0]
+      : this.currentUser;
+    const host = userAtHost.includes('@') ? userAtHost.split('@')[1] : userAtHost;
+    const displayTarget = `${user}@${host}`;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: `${displayTarget}'s password: `,
+        mask: 'hidden',
+        storeAs: 'ssh_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set(
+            'enter_ssh',
+            JSON.stringify({
+              userAtHost: displayTarget,
+              port,
+              identityFiles,
+              strict,
+              command,
+            }),
+          );
+        },
+      },
+    ];
+    this.startFlowFromSteps(steps, `ssh ${userAtHost}`);
+  }
+
+  private async connectAndEnterSsh(
+    meta: {
+      userAtHost: string;
+      port: number;
+      identityFiles: string[];
+      strict: 'yes' | 'no' | 'accept-new';
+      command: string | null;
+    },
+    password: string,
+  ): Promise<void> {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: unknown;
+        userMgr?: {
+          getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined;
+        };
+      };
+      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs) {
+      this.addLine('ssh: this device does not support SSH', 'error');
+      this.notify();
+      return;
+    }
+    const tcpConnector: TcpConnector = (host, port) =>
+      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const user = meta.userAtHost.includes('@')
+      ? meta.userAtHost.split('@')[0]
+      : this.currentUser;
+    const host = meta.userAtHost.includes('@')
+      ? meta.userAtHost.split('@')[1]
+      : meta.userAtHost;
+
+    const session = new SshSession({
+      tcpConnector,
+      vfs: localVfs as never,
+      localUser: this.currentUser,
+      localUid: userEntry?.uid ?? 1000,
+      localGid: userEntry?.gid ?? 1000,
+      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
+      interactionHandler: new SilentSshInteractionHandler(password),
+    });
+
+    const builder = SshConnectOptionsBuilder.create()
+      .host(host)
+      .user(user)
+      .port(meta.port)
+      .strictHostKeyChecking(meta.strict)
+      .password(password);
+    for (const id of meta.identityFiles) builder.addIdentityFile(id);
+
+    const result = await session.connect(builder.build());
+    if (!isOk(result)) {
+      const errKind = (result as { error: { kind: string } }).error.kind;
+      const msg =
+        errKind === 'CONNECTION_REFUSED'
+          ? `ssh: connect to host ${host} port ${meta.port}: No route to host`
+          : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
+          ? 'Host key verification failed.'
+          : `${user}@${host}: Permission denied (publickey,password).`;
+      this.addLine(msg, 'error');
+      this.notify();
+      return;
+    }
+
+    if (meta.command) {
+      // BRD SSH-05: non-interactive — run the command, print output, close.
+      const channelResult = session.openExecChannel(meta.command);
+      if (!isOk(channelResult)) {
+        this.addLine('ssh: failed to open exec channel', 'error');
+        session.disconnect();
+        this.notify();
+        return;
+      }
+      const exec = await channelResult.value.execute();
+      if (exec.stdout) {
+        for (const line of exec.stdout.replace(/\n$/, '').split('\n')) {
+          this.addLine(line);
+        }
+      }
+      if (exec.stderr) {
+        for (const line of exec.stderr.replace(/\n$/, '').split('\n')) {
+          this.addLine(line, 'error');
+        }
+      }
+      channelResult.value.close();
+      session.disconnect();
+      this.notify();
+      return;
+    }
+
+    // BRD SSH-04: interactive — open a remote shell sub-shell.
+    const motd = this.tryReadRemoteMotd(session);
+    for (const line of motd) this.addLine(line);
+    this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  /** Best-effort MOTD fetch via a one-shot remote `cat /etc/motd`. */
+  private tryReadRemoteMotd(session: SshSession): string[] {
+    const channelResult = session.openExecChannel('cat /etc/motd 2>/dev/null');
+    if (!isOk(channelResult)) return [];
+    // Synchronous delivery: result is populated immediately by the simulator.
+    const channel = channelResult.value;
+    void channel.execute();
+    const out = channel.stdout;
+    channel.close();
+    return out ? out.replace(/\n$/, '').split('\n') : [];
+  }
+
   /**
    * Generic sub-shell key handler.
    * Works for SQL*Plus and any future ISubShell implementations.
@@ -660,4 +846,53 @@ export class LinuxTerminalSession extends TerminalSession {
     this.inputMode = { type: 'normal' };
     this.notify();
   }
+}
+
+// ── ssh CLI argument parser ─────────────────────────────────────
+
+interface ParsedSshArgs {
+  userAtHost: string;
+  port: number;
+  identityFiles: string[];
+  strict: 'yes' | 'no' | 'accept-new';
+  command: string | null;
+}
+
+/**
+ * Parse `ssh [-p port] [-i identity] [-o option=value] user@host [cmd...]`.
+ * Returns null if no host argument is found.
+ */
+function parseSshArgs(args: string[]): ParsedSshArgs | null {
+  let port = 22;
+  const identityFiles: string[] = [];
+  let strict: 'yes' | 'no' | 'accept-new' = 'accept-new';
+  let host: string | null = null;
+  const commandTokens: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (host) {
+      commandTokens.push(arg);
+      continue;
+    }
+    if (arg === '-p' && i + 1 < args.length) {
+      port = Number.parseInt(args[++i], 10) || 22;
+    } else if (arg === '-i' && i + 1 < args.length) {
+      identityFiles.push(args[++i]);
+    } else if (arg === '-o' && i + 1 < args.length) {
+      const next = args[++i];
+      const m = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(next);
+      if (m) strict = m[1].toLowerCase() as ParsedSshArgs['strict'];
+    } else if (!arg.startsWith('-')) {
+      host = arg;
+    }
+  }
+  if (!host) return null;
+  return {
+    userAtHost: host,
+    port,
+    identityFiles,
+    strict,
+    command: commandTokens.length > 0 ? commandTokens.join(' ') : null,
+  };
 }

@@ -233,6 +233,8 @@ export abstract class LinuxMachine extends EndHost {
       this.executor.vfs,
       this.executor.userMgr,
       this.profile.hostname,
+      {},
+      this.executor,
     );
   }
 

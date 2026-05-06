@@ -32,6 +32,10 @@ import { SshServerHandler } from '@/network/protocols/ssh/server/SshServerHandle
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { ParsedArgs } from '@/network/protocols/ssh/sftp/ParsedArgs';
+import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
+import { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import { isOk } from '@/network/protocols/ssh/Result';
 import {
   formatTransferProgress,
   expandTilde,
@@ -286,6 +290,56 @@ describe('SftpSession — round-trip get/put (BRD SFTP-01,03,07,09,20)', () => {
     const out = session.put('/root/upload.txt', '/home/alice/upload.txt');
     expect(out).toContain('Uploading');
     expect(setup.vfs.readFile('/home/alice/upload.txt')).toBe('content');
+  });
+});
+
+describe('SSH-05 — exec channel (non-interactive command)', () => {
+  it('runs a remote command through the bash interpreter and returns stdout', async () => {
+    const vfs = new VirtualFileSystem();
+    const userManager = new LinuxUserManager(vfs);
+    userManager.useradd('alice', { m: true, s: '/bin/bash' });
+    userManager.setPassword('alice', 'secret');
+    const executor = new LinuxCommandExecutor(false);
+    // Seed the executor's VFS so `cat /etc/motd` returns content
+    executor.vfs.writeFile('/etc/motd', 'Welcome\n', 0, 0, 0o022);
+    // The context sees the executor's vfs (which is independent), so use it
+    const ctx = new LinuxSshServerContext(
+      executor.vfs,
+      executor.userMgr,
+      'remote',
+      { permitRootLogin: true },
+      executor,
+    );
+    executor.userMgr.useradd('alice', { m: true, s: '/bin/bash' });
+    executor.userMgr.setPassword('alice', 'secret');
+    const handler = new SshServerHandler(ctx);
+
+    const localVfs = new VirtualFileSystem();
+    const session = new SshSession({
+      tcpConnector: makeConnector(handler),
+      vfs: localVfs,
+      localUser: 'root',
+      localUid: 0,
+      localGid: 0,
+      knownHostsPath: '/root/.ssh/known_hosts',
+      interactionHandler: new SilentSshInteractionHandler('secret'),
+    });
+    const opts = SshConnectOptionsBuilder.create()
+      .host(REMOTE_IP)
+      .user('alice')
+      .password('secret')
+      .strictHostKeyChecking('accept-new')
+      .build();
+    const connect = await session.connect(opts);
+    expect(isOk(connect)).toBe(true);
+
+    const channel = session.openExecChannel('echo hello');
+    expect(isOk(channel)).toBe(true);
+    if (isOk(channel)) {
+      const result = await channel.value.execute();
+      expect(result.stdout).toContain('hello');
+      expect(result.exitCode).toBe(0);
+    }
   });
 });
 
