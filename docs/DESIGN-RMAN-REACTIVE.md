@@ -739,3 +739,274 @@ Abonnés :
 ```
 
 ---
+
+## 5. Backup Catalog réactif — Repository + Factory + événements
+
+### 5.1 Types du catalogue
+
+```typescript
+// src/terminal/subshells/rman/catalog/types.ts
+
+import type { BackupKey } from '../values/BackupKey'
+import type { RmanTag }   from '../values/RmanTag'
+import type { Scn }       from '../values/Scn'
+import type { DbId }      from '../values/DbId'
+
+export type BackupType   = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1'
+export type DeviceType   = 'DISK' | 'SBT'
+export type PieceStatus  = 'AVAILABLE' | 'EXPIRED' | 'DELETED'
+
+export interface BackupPiece {
+  readonly key:            BackupKey
+  readonly bsKey:          number
+  readonly status:         PieceStatus
+  readonly path:           string
+  readonly tag:            RmanTag
+  readonly deviceType:     DeviceType
+  readonly sizeBytes:      number
+  readonly checkpointScn:  Scn
+  readonly completionTime: number   // epoch ms
+  readonly compressed:     boolean
+}
+
+export interface BackupSet {
+  readonly bsKey:          number
+  readonly type:           BackupType
+  readonly level:          0 | 1
+  readonly dbId:           DbId
+  readonly tag:            RmanTag
+  readonly pieces:         readonly BackupPiece[]
+  readonly startTime:      number
+  readonly completionTime: number
+  readonly sizeBytes:      number
+  readonly datafiles:      readonly DatafileEntry[]
+}
+
+export interface DatafileEntry {
+  readonly fileNo:    number
+  readonly level:     0 | 1
+  readonly ckpScn:    Scn
+  readonly ckpTime:   number
+  readonly path:      string
+}
+
+export interface CatalogSnapshot {
+  readonly sets:    readonly BackupSet[]
+  readonly pieces:  readonly BackupPiece[]
+  readonly dbId:    DbId
+}
+```
+
+### 5.2 IRmanCatalogRepository — Interface Segregation
+
+```typescript
+// src/terminal/subshells/rman/catalog/IRmanCatalogRepository.ts
+
+import type { Result }       from '../core/Result'
+import type { RmanError }    from '../core/RmanError'
+import type { BackupSet, BackupPiece, CatalogSnapshot } from './types'
+import type { BackupKey }    from '../values/BackupKey'
+import type { RmanTag }      from '../values/RmanTag'
+import type { RmanObservable } from '../reactive/RmanSubject'
+import type { RmanEvent }    from '../core/types'
+
+/**
+ * ISP : lecture séparée de l'écriture.
+ * Les commandes LIST/REPORT n'ont besoin que de IRmanCatalogReader.
+ */
+export interface IRmanCatalogReader {
+  findByKey(key: BackupKey):              Result<BackupSet,    RmanError>
+  findByTag(tag: RmanTag):                Result<BackupSet[],  RmanError>
+  listAll():                              Result<CatalogSnapshot, RmanError>
+  listExpired():                          Result<BackupPiece[], RmanError>
+  listObsolete(redundancy: number):       Result<BackupSet[],  RmanError>
+}
+
+export interface IRmanCatalogWriter {
+  recordBackupSet(set: BackupSet):        Result<void, RmanError>
+  expirePiece(key: BackupKey):            Result<void, RmanError>
+  deleteBackupSet(bsKey: number):         Result<void, RmanError>
+}
+
+/** Interface complète = Reader + Writer + stream de changements. */
+export interface IRmanCatalogRepository
+  extends IRmanCatalogReader, IRmanCatalogWriter {
+  /** Stream des événements de catalogue (insert/expire/delete). */
+  readonly changes$: RmanObservable<Extract<RmanEvent, { type: 'CATALOG_UPDATED' }>>
+}
+```
+
+### 5.3 InMemoryRmanCatalog — implémentation réactive
+
+```typescript
+// src/terminal/subshells/rman/catalog/InMemoryRmanCatalog.ts
+
+import { RmanSubject }              from '../reactive/RmanSubject'
+import { ok, err }                  from '../core/Result'
+import type { Result }              from '../core/Result'
+import type { RmanError }           from '../core/RmanError'
+import type { IRmanCatalogRepository } from './IRmanCatalogRepository'
+import type { BackupSet, BackupPiece, CatalogSnapshot } from './types'
+import type { BackupKey }           from '../values/BackupKey'
+import type { RmanTag }             from '../values/RmanTag'
+import type { RmanEvent }           from '../core/types'
+
+export class InMemoryRmanCatalog implements IRmanCatalogRepository {
+  private readonly _sets   = new Map<number, BackupSet>()
+  private readonly _pieces = new Map<string, BackupPiece>()
+
+  private readonly _changes$ = new RmanSubject<Extract<RmanEvent, { type: 'CATALOG_UPDATED' }>>()
+  readonly changes$ = this._changes$.asObservable()
+
+  // ── Writer ────────────────────────────────────────────────────
+
+  recordBackupSet(set: BackupSet): Result<void, RmanError> {
+    try {
+      this._sets.set(set.bsKey, set)
+      for (const p of set.pieces) {
+        this._pieces.set(BackupKeyStr(p.key), p)
+      }
+      // Réactif : émet pour chaque pièce créée
+      for (const p of set.pieces) {
+        this._changes$.next({
+          type: 'CATALOG_UPDATED', operation: 'INSERT', key: p.key,
+        })
+      }
+      return ok(undefined)
+    } catch (e) {
+      return err({ code: 'CATALOG_WRITE_ERROR', message: String(e) })
+    }
+  }
+
+  expirePiece(key: BackupKey): Result<void, RmanError> {
+    const str = BackupKeyStr(key)
+    const p   = this._pieces.get(str)
+    if (!p) return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `Piece ${str} not found`, key: str })
+    this._pieces.set(str, { ...p, status: 'EXPIRED' })
+    this._changes$.next({ type: 'CATALOG_UPDATED', operation: 'EXPIRE', key })
+    return ok(undefined)
+  }
+
+  deleteBackupSet(bsKey: number): Result<void, RmanError> {
+    const set = this._sets.get(bsKey)
+    if (!set) return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `BS key ${bsKey} not found`, key: String(bsKey) })
+    for (const p of set.pieces) this._pieces.delete(BackupKeyStr(p.key))
+    this._sets.delete(bsKey)
+    for (const p of set.pieces) {
+      this._changes$.next({ type: 'CATALOG_UPDATED', operation: 'DELETE', key: p.key })
+    }
+    return ok(undefined)
+  }
+
+  // ── Reader ────────────────────────────────────────────────────
+
+  findByKey(key: BackupKey): Result<BackupSet, RmanError> {
+    const str = BackupKeyStr(key)
+    const p   = this._pieces.get(str)
+    if (!p) return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `Piece ${str} not found`, key: str })
+    const set = this._sets.get(p.bsKey)
+    if (!set) return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `BS ${p.bsKey} not found`, key: String(p.bsKey) })
+    return ok(set)
+  }
+
+  findByTag(tag: RmanTag): Result<BackupSet[], RmanError> {
+    const results: BackupSet[] = []
+    for (const set of this._sets.values()) {
+      if (set.tag.label === tag.label) results.push(set)
+    }
+    return ok(results)
+  }
+
+  listAll(): Result<CatalogSnapshot, RmanError> {
+    return ok({
+      sets:   [...this._sets.values()],
+      pieces: [...this._pieces.values()],
+      dbId:   (this._sets.values().next().value as BackupSet | undefined)?.dbId
+              ?? (await import('../values/DbId').then(m => m.DbId.DEFAULT)),
+    } as any)
+  }
+
+  listExpired(): Result<BackupPiece[], RmanError> {
+    return ok([...this._pieces.values()].filter(p => p.status === 'EXPIRED'))
+  }
+
+  listObsolete(redundancy: number): Result<BackupSet[], RmanError> {
+    // Tri par completionTime DESC ; les plus anciens au-delà de `redundancy` sont obsolètes
+    const sorted = [...this._sets.values()].sort((a, b) => b.completionTime - a.completionTime)
+    return ok(sorted.slice(redundancy))
+  }
+
+  dispose(): void {
+    this._changes$.complete()
+  }
+}
+
+function BackupKeyStr(k: BackupKey): string {
+  return `${k.bsKey}:${k.bpKey}`
+}
+```
+
+### 5.4 BackupSetFactory — Factory Pattern
+
+```typescript
+// src/terminal/subshells/rman/catalog/BackupSetFactory.ts
+
+import { BackupKey }      from '../values/BackupKey'
+import { RmanTag }        from '../values/RmanTag'
+import { Scn }            from '../values/Scn'
+import { DbId }           from '../values/DbId'
+import type { BackupSet, BackupPiece, DatafileEntry, BackupType } from './types'
+
+export interface BackupSetSpec {
+  type:         BackupType
+  level:        0 | 1
+  dbId?:        typeof DbId.DEFAULT
+  tag?:         typeof RmanTag
+  path:         string
+  sizeBytes:    number
+  datafiles:    DatafileEntry[]
+  compressed?:  boolean
+}
+
+export const BackupSetFactory = {
+  /**
+   * Crée un BackupSet complet avec une pièce.
+   * Toutes les valeurs sont Object.freeze'd.
+   */
+  createBackupSet(spec: BackupSetSpec): BackupSet {
+    const now  = Date.now()
+    const key  = BackupKey.next()
+    const tag  = spec.tag ? RmanTag.of(String(spec.tag)) : RmanTag.generate()
+    const scn  = Scn.of(Math.floor(1_800_000 + Math.random() * 100_000))
+    const dbId = spec.dbId ?? DbId.DEFAULT
+
+    const piece: BackupPiece = Object.freeze({
+      key,
+      bsKey:           key.bsKey,
+      status:          'AVAILABLE',
+      path:            spec.path,
+      tag,
+      deviceType:      'DISK',
+      sizeBytes:       spec.sizeBytes,
+      checkpointScn:   scn.ok ? scn.value : Scn.ZERO,
+      completionTime:  now,
+      compressed:      spec.compressed ?? false,
+    })
+
+    return Object.freeze({
+      bsKey:           key.bsKey,
+      type:            spec.type,
+      level:           spec.level,
+      dbId,
+      tag,
+      pieces:          Object.freeze([piece]),
+      startTime:       now - 15_000,
+      completionTime:  now,
+      sizeBytes:       spec.sizeBytes,
+      datafiles:       Object.freeze(spec.datafiles),
+    })
+  },
+}
+```
+
+---
