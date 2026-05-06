@@ -18,7 +18,7 @@
 8. [Architecture cible — bus d'événements, scheduler, état observable](#8-architecture-cible--bus-dévénements-scheduler-état-observable)
 9. [Refactoring détaillé par classe](#9-refactoring-détaillé-par-classe)
 10. [Plan de migration séquentiel](#10-plan-de-migration-séquentiel)
-11. Risques, tests et métriques de succès *(à venir)*
+11. [Risques, tests et métriques de succès](#11-risques-tests-et-métriques-de-succès)
 12. Conclusion et annexes *(à venir)*
 
 ---
@@ -2626,3 +2626,255 @@ Les flags sont **internes** (pas exposés à l'utilisateur final) et basculés e
 ---
 
 *Section 10 close. Suivante : §11 — Risques, tests et métriques de succès.*
+
+---
+
+## 11. Risques, tests et métriques de succès
+
+Cette section recense l'ensemble des risques techniques de la refonte, propose une stratégie de tests rigoureuse, et fixe les métriques quantitatives qui valideront le succès du chantier.
+
+### 11.1 Cartographie des risques
+
+Les risques sont notés sur trois axes : **probabilité** (P), **impact** (I), **détection** (D — probabilité de le détecter avant qu'il ne fasse mal). Score = P × I × (6 - D), max 150.
+
+| # | Risque | P | I | D | Score | Mitigation |
+|---|---|:---:|:---:|:---:|:---:|---|
+| R1 | Les tests OSPF deviennent flaky lors de la bascule scheduler. | 4 | 4 | 4 | 32 | Phase 4 isolée ; faire passer un sous-ensemble strictement temporel d'abord ; conserver `vi.useFakeTimers` en fallback dans certains tests pendant la transition. |
+| R2 | Bascule sync → async des trames casse des tests qui supposent l'ordre dans le call-stack. | 5 | 4 | 3 | 60 | Feature flag `asyncFrameDelivery` ; activation via test-by-test ; `await scheduler.advance(0)` injecté dans les helpers de test. |
+| R3 | Régression silencieuse sur Logger : un site d'appel passe entre les mailles. | 3 | 3 | 5 | 9 | API publique conservée ; tests `Logger.info → bus.publish` exhaustifs ; build TS strict. |
+| R4 | `EndHost` migration `pendingXxx` perd un cas particulier (timeout, race). | 4 | 5 | 3 | 60 | Conserver émissions parallèles aux callbacks legacy en phase 5 ; tests d'intégration ARP/ICMP/TCP/Trace sont *pre-écrits* avant la suppression des Maps. |
+| R5 | Performance : explosion du dispatch événement (par exemple en cas de wildcard subscribers). | 3 | 3 | 4 | 18 | Indexation par topic dans `EventBus` ; benchmarks ciblés (1 000 frames/sec) ; pas de wildcard en production. |
+| R6 | Mémoire : leak d'abonnements non désinscrits (devices détruits, sessions terminales fermées). | 4 | 3 | 3 | 36 | `dispose()` obligatoire sur tous les acteurs ; lint rule custom : tout `subscribe` doit avoir un `unsubscribe` correspondant ; test « créer/détruire 100 devices » ne doit laisser aucun handler résiduel. |
+| R7 | Cycles de réentrance dans le bus (publish → handler → publish → … infini). | 2 | 4 | 4 | 16 | Sub-event queue (cf. §8.2.3) plafonne la pile ; détecteur de cycle simple : compteur de profondeur par dispatch, throw au-delà d'un seuil (p. ex. 50). |
+| R8 | Désynchronisation projecteur ↔ état domaine après un bug d'event manquant. | 3 | 4 | 5 | 12 | Test de cohérence : dans un test d'intégration, `expect(projection.devices.get(id)).toEqual(deviceToVM(registry.getById(id)))` après chaque action significative. |
+| R9 | Compatibilité `useSyncExternalStore` cassée sur certains navigateurs anciens. | 1 | 3 | 5 | 3 | React 18+ requis (cible déjà du projet). |
+| R10 | Blow-up du type union `DomainEvent` (compilation lente, message d'erreur illisible). | 3 | 2 | 4 | 12 | Découper l'union par module (`port.events.ts`, `ospf.events.ts`, …) ; agréger via `type DomainEvent = PortEvents \| OspfEvents \| …` ; éviter les unions à 100+ branches dans un seul fichier. |
+| R11 | `Cable.transmit` async casse les comportements sync attendus par certains tests rapides (réponses ARP immédiates en quelques µs). | 4 | 3 | 3 | 36 | Le scheduler virtuel autorise `propagationMs = 0` en config par défaut pour la plupart des tests ; `scheduler.advance(0)` ou `flushMicrotasks()` au lieu de polling. |
+| R12 | Migration UI partielle : un composant lit une `instance: Equipment` après suppression. | 3 | 3 | 5 | 9 | TypeScript strict (suppression du champ = erreur de compile) ; lint rule : interdire l'import de `@/network/equipment/Equipment` dans `src/components/`. |
+| R13 | Sérialisation cassée par les nouveaux états observables. | 2 | 4 | 4 | 16 | `topologySerializer` adapté en phase 6 ; tests d'export/import ronde-trip. |
+| R14 | Confusion d'identité sur les événements (mauvais `deviceId`, mauvais `portName`). | 3 | 4 | 4 | 24 | Helper `mkEvent(...)` typé qui force la présence des champs obligatoires ; tests d'intégration matching deviceId. |
+| R15 | Régression de UX : terminaux figés ou rerenders excessifs après bascule projections. | 3 | 4 | 3 | 36 | Mesure FPS avant/après ; granularité par signal si profilage révèle un hotspot ; React DevTools Profiler contrôlé. |
+| R16 | Tests UI lents à cause du nombre d'abonnements créés à chaque mount. | 2 | 2 | 4 | 8 | Projecteurs hoistés au niveau module, pas par composant ; mémoization React. |
+| R17 | Plan trop long : abandon avant complétion. | 4 | 5 | 5 | 20 | Phases mergeables indépendamment ; chaque phase apporte une valeur observable (logs, animations, tests déterministes). |
+
+**Top risques (score ≥ 30)** : R2 (bascule sync→async), R4 (perte de cas pending), R1 (flakiness OSPF), R6 (leaks), R11 (timing tests rapides), R15 (perf UX). Ces six points concentrent l'attention de la revue.
+
+### 11.2 Stratégie de tests détaillée
+
+#### 11.2.1 Pyramide de tests cible
+
+```
+          ▲
+          │  Snapshot scenarios end-to-end (5-10)         ← § 11.2.5
+          │  Trace OSPF-converge, DHCP DORA, TCP echo
+          │
+          │  Tests d'intégration acteurs (40-60)           ← § 11.2.4
+          │  EndHost ↔ Switch ↔ Router via bus virtuel
+          │
+          │  Tests unitaires acteurs (60+ existants)       ← § 11.2.3
+          │  Émission attendue, état observé après event
+          │
+          │  Tests primitives (6 nouveaux fichiers)         ← § 11.2.2
+          │  EventBus, Scheduler, Signal, waitForEvent
+          ▼
+```
+
+#### 11.2.2 Tests primitives (`src/__tests__/unit/events/`)
+
+- **`EventBus.test.ts`** :
+  - `publish` invoque les handlers dans l'ordre de souscription.
+  - `subscribe` retourne un unsubscribe fonctionnel.
+  - Réentrance : publier dans un handler → l'événement secondaire est dispatché après le courant.
+  - Wildcard `'*'` reçoit tout.
+  - Erreur dans un handler n'interrompt pas la chaîne ; `bus.handler-error` émis.
+  - Pas de leak après `clear()`.
+- **`Scheduler.test.ts`** (real + virtual) :
+  - `setTimeout` exécuté à `delay` ; `clear` annule.
+  - `setInterval` exécuté périodiquement.
+  - `advance(ms)` déclenche les timers dans l'ordre temporel.
+  - `delay(ms)` retourne une Promise qui résout après `advance(ms)`.
+  - `now()` est monotone.
+- **`Signal.test.ts`** :
+  - `set` même valeur ne notifie pas (Object.is).
+  - `subscribe`/`unsubscribe` cohérents.
+  - `derived` recalcule quand un dépendant change.
+- **`waitForEvent.test.ts`** :
+  - Résout sur match du predicate.
+  - Rejette après timeout.
+  - Désinscrit le handler à la résolution (pas de leak).
+
+#### 11.2.3 Tests unitaires acteurs
+
+Pour chaque acteur (Port, Cable, Equipment, Switch, Router, EndHost, OSPFEngine, DHCPClient, …), pattern :
+
+```ts
+const bus = new EventBus();
+const scheduler = new VirtualTimeScheduler();
+const trace: DomainEvent[] = [];
+bus.subscribe('*', e => trace.push(e));
+
+const port = new Port('eth0', 'ethernet', { bus, scheduler });
+port.setUp(true);
+port.sendFrame(buildEthernetFrame(...));
+
+expect(trace.map(e => e.topic)).toEqual([
+  'port.link.up',
+  'port.frame.tx-requested',
+  // ...
+]);
+```
+
+Vérifications systématiques :
+- Émissions attendues, dans l'ordre attendu.
+- Pas d'émission inattendue.
+- État observable cohérent après chaque event (compteurs, table ARP, table de routage, FSM voisin).
+
+#### 11.2.4 Tests d'intégration (40-60 fichiers existants à adapter + nouveaux)
+
+Patterns récurrents :
+
+- **Ping bout-en-bout** : `PC-A → Switch → PC-B`, `PC-A → Router → PC-B`, en IPv4 et IPv6.
+- **Convergence OSPF** : `R1 ↔ R2 ↔ R3` Hello → 2-Way → ExStart → Full ; SPF run produit les routes.
+- **DHCP DORA** : DHCPDISCOVER → OFFER → REQUEST → ACK ; bail renouvelé après T1 ; expiré après T2.
+- **TCP echo** : listener → SYN → SYN-ACK → ACK → DATA → FIN-ACK.
+- **VLAN trunk** : trafic taggé entre access et trunk via switch.
+- **NAT/PAT** : translation à l'ingress du routeur.
+- **IPSec tunnel** : IKE phase 1 + 2, ESP en mode tunnel.
+
+Chaque test crée son `EventBus` et `VirtualTimeScheduler` isolés, instancie une mini-topologie, exécute un scénario, et asserte sur l'**état final** + la **trace**.
+
+#### 11.2.5 Tests snapshot bout-en-bout
+
+Cinq à dix scénarios « historiques » sont figés en snapshot d'événements :
+
+```ts
+test('OSPF converge sur topo en chaîne 4 routeurs', () => {
+  const trace = runScenario('ospf-chain-4', { duration: 60_000 });
+  expect(redactTimestamps(trace)).toMatchSnapshot();
+});
+```
+
+Bénéfices :
+- Détection immédiate de toute modification de comportement non intentionnelle.
+- Documentation vivante : un nouveau dev peut lire le snapshot pour comprendre la séquence d'événements typique.
+
+#### 11.2.6 Tests UI (`__tests__/unit/gui/`)
+
+- Mock du `EventBus` injecté via `Provider` React.
+- Hooks `useDevices`, `useDevice`, etc. testés en isolation : publier un événement → asserter que le hook re-renderise avec le nouvel état.
+- Composants montés avec `@testing-library/react` ; vérification que `PacketAnimation` rend une particule par paquet en transit.
+
+#### 11.2.7 Lint & CI
+
+- ESLint rule custom (ou regex CI) interdisant :
+  - `setTimeout` / `setInterval` natifs hors `src/events/`, `src/components/`, `src/hooks/`, et `vi.useFakeTimers` (tests legacy).
+  - `import .* Equipment` dans `src/components/`.
+  - `Equipment.getById|getAllEquipment|clearRegistry` après phase 8.
+- TypeScript en mode `strict` (déjà actif) ; `noImplicitOverride` et `exactOptionalPropertyTypes` activés.
+- Hook pre-commit : `npm run lint` + `npm run test:run` doivent passer.
+
+### 11.3 Métriques de succès quantitatives
+
+#### 11.3.1 Métriques de code
+
+| Métrique | Avant | Cible (post-phase 8) | Mesure |
+|---|---:|---:|---|
+| `setTimeout/setInterval` natifs (réseau + terminal) | 91 | **0** | grep |
+| Maps `pendingXxx` dans `EndHost`+`Router` | 7 | **0** | grep |
+| Implémentations distinctes du pattern observable | 4 | **2** (bus + signal) | inventaire |
+| LoC `EndHost.ts` | 2 325 | ≤ **1 750** | wc -l |
+| LoC `Router.ts` | 1 545 | ≤ **1 250** | wc -l |
+| LoC nouveau code (events + projections + adapters) | 0 | **~ 2 250** | wc -l |
+| Composants React important `Equipment` | 5 | **0** | grep |
+| `instance: Equipment` dans `NetworkDeviceUI` | 1 | **0** | type check |
+| Méthodes statiques deprecated `Equipment.getById/...` | 3 | **0** | grep |
+| Couverture tests `src/events/` | – | ≥ **95 %** | vitest --coverage |
+| Couverture tests `src/network/` | (actuelle) | **inchangée ou améliorée** | vitest --coverage |
+
+#### 11.3.2 Métriques fonctionnelles
+
+| Capacité | Avant | Cible |
+|---|:---:|:---:|
+| `PacketAnimation` rend des paquets en transit | ❌ | ✅ |
+| Trace d'événements rejouable (replay déterministe) | ❌ | ✅ |
+| Pause / play / vitesse simulation modulable | ❌ | ✅ |
+| Hook `useArpTable(deviceId)` live | ❌ | ✅ |
+| Hook `useRoutingTable(deviceId)` live | ❌ | ✅ |
+| Hook `useOspfNeighbors(deviceId)` live | ❌ | ✅ |
+| Mode capture style tcpdump (en lecture seule) | ❌ | ✅ |
+| Test snapshot OSPF converge stable cross-runs | ❌ | ✅ |
+| Test snapshot DHCP DORA stable | ❌ | ✅ |
+| Plug-in API protocolaire démontrée (LLDP en démonstrateur) | ❌ | ✅ (post-refonte, hors périmètre strict) |
+
+#### 11.3.3 Métriques de performance
+
+Benchmarks à mesurer avant/après :
+
+| Scénario | Mesure | Cible |
+|---|---|---|
+| 100 frames consécutives PC→PC à travers un switch | Latence p50, p99 | Δ ≤ +20 % vs avant (overhead bus) |
+| Topologie 30 devices, 50 cables | FPS du canvas pendant un drag | ≥ 55 FPS |
+| Convergence OSPF 5 routeurs | Temps simulation pour atteindre Full | Identique (déterministe via VirtualTimeScheduler) |
+| Création/destruction de 100 devices | Mémoire résiduelle | 0 leak |
+| Souscription massive (1 000 handlers, 10 000 events) | Throughput | ≥ 500 K events/sec côté bus |
+
+Outils :
+- **Vitest bench** pour les benchmarks logiques.
+- **React DevTools Profiler** pour les rerenders UI.
+- **Chrome Memory** snapshot pour les leaks.
+
+### 11.4 Stratégie de rollback
+
+Chaque phase produit un commit (et idéalement un PR) **réversible**. Hypothèses :
+
+- Phase 1 (primitives) : pure addition. Rollback = `git revert` sans effet sur l'existant.
+- Phase 2 (logger adapter) : API conservée — rollback isolé.
+- Phase 3 (Port/Cable double-émission) : rollback enlève juste les nouveaux `bus.publish` sans casser le legacy.
+- Phase 4 (scheduler) : rollback restaure les `setTimeout` natifs ; faisable mais coûteux. **Mitigation** : deux sous-phases (4a moteurs critiques OSPF/RIP, 4b autres).
+- Phase 5 (devices, suppression pendings) : rollback complexe — la suppression de Maps est irréversible facilement. **Mitigation** : feature flag `useWaitForEvent`, double-implementation maintenue *deux semaines* après la fusion.
+- Phase 6 (UI) : rollback partiel composant par composant possible.
+- Phase 7 (Oracle) : isolé, rollback simple.
+- Phase 8 (suppression legacy) : la plus risquée à rollback. **Mitigation** : ne pas merger phase 8 avant que phases 6+7 soient en production stable depuis ≥ 1 mois (équivalent : « cycle de stabilisation »).
+
+### 11.5 Critères d'acceptation par phase
+
+| Phase | Critères « go » pour merger |
+|---|---|
+| 1 | Tests primitives ≥ 95 % couverture. Aucun fichier domaine modifié. CI verte. |
+| 2 | Tous tests existants verts. Adapter `Logger` couvre 100 % API publique. |
+| 3 | Tous tests réseau verts. `BusTracer` capture une session de ping bout-en-bout. |
+| 4 | 0 occurrence `setTimeout/setInterval` natif dans `src/network/`. Tests temporels passent avec `VirtualTimeScheduler`. |
+| 5 | 0 occurrence des 7 Maps `pendingXxx`. ARP/NDP unifié. Tests intégration ping/TCP/trace verts. |
+| 6 | `PacketAnimation` opérationnel. 0 import `Equipment` dans `src/components/`. Profiler React : pas de rerender global sur changement isolé. |
+| 7 | Tests Oracle FS-coherence verts via le nouveau adapter. |
+| 8 | Suppression legacy. Suite complète verte. Documentation `CLAUDE.md` à jour. |
+
+### 11.6 Checklist de revue de PR pour cette refonte
+
+À utiliser pour chaque PR de la migration :
+
+- [ ] Aucun nouveau `setTimeout`/`setInterval` natif (sauf justification dans la description).
+- [ ] Tout `subscribe` a un `unsubscribe` correspondant (vérifié par lint ou par revue manuelle).
+- [ ] Tout nouvel événement est ajouté à `DomainEvent` et son nom respecte la convention `domain.subdomain.action`.
+- [ ] Tests unitaires de l'acteur ajoutés ou mis à jour ; trace d'événements vérifiée.
+- [ ] Tests d'intégration concernés passent.
+- [ ] CHANGELOG ou commit message explique la phase et la valeur livrée.
+- [ ] La feature flag est mise à jour si applicable.
+- [ ] Pas de régression de FPS du canvas (mesure ad-hoc si la PR touche `Cable` ou les projections).
+- [ ] Pas d'augmentation de la mémoire après création/destruction de 50 devices.
+
+### 11.7 Synthèse — gestion du risque
+
+La refonte est **structurellement risquée** parce qu'elle touche le cœur du modèle de réactivité d'un projet de plus de 50 000 LoC. Les leviers principaux pour absorber ce risque sont :
+
+1. **Phasage strict** : 8 phases mergeables indépendamment, gain visible à chaque étape.
+2. **Coexistence transitoire** : double-écriture (callbacks + bus) pendant les phases 3-5 pour éviter le saut dans le vide.
+3. **Tests pré-existants conservés** : aucune phase ne demande de réécrire la suite — seules les phases 4 et 5 demandent de basculer le scheduler dans certains tests.
+4. **Feature flags** : permettent de geler l'état exposé en production tout en avançant en interne.
+5. **Snapshots de trace** : détectent immédiatement toute déviation de comportement.
+
+Ces cinq leviers, combinés à une checklist de revue rigoureuse, ramènent les risques restants (R2, R4 principalement) à un niveau gérable.
+
+---
+
+*Section 11 close. Suivante : §12 — Conclusion et annexes.*
