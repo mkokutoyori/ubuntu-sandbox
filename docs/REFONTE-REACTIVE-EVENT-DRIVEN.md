@@ -16,7 +16,7 @@
 6. [Analyse du store Zustand et des composants React](#6-analyse-du-store-zustand-et-des-composants-react)
 7. [Analyse de la couche base de données (Oracle)](#7-analyse-de-la-couche-base-de-données-oracle)
 8. [Architecture cible — bus d'événements, scheduler, état observable](#8-architecture-cible--bus-dévénements-scheduler-état-observable)
-9. Refactoring détaillé par classe *(à venir)*
+9. [Refactoring détaillé par classe](#9-refactoring-détaillé-par-classe)
 10. Plan de migration séquentiel *(à venir)*
 11. Risques, tests et métriques de succès *(à venir)*
 12. Conclusion et annexes *(à venir)*
@@ -1904,3 +1904,448 @@ Toute la chaîne est **observable**, **testable**, **rejouable**.
 ---
 
 *Section 8 close. Suivante : §9 — Refactoring détaillé par classe.*
+
+---
+
+## 9. Refactoring détaillé par classe
+
+Cette section donne, pour **chaque classe ou module impacté**, la liste exacte de ce qui change : suppressions, ajouts, conservation, événements émis, événements consommés, dépendances injectées, et éventuelles migrations de tests.
+
+Pour la lisibilité, les classes sont regroupées par couche (réseau core, hardware, devices, protocoles, terminal, UI, database). Chaque entrée suit le canevas :
+
+> **Classe** (chemin, LoC actuelles → cibles)
+> - **Conservé**
+> - **Supprimé**
+> - **Ajouté**
+> - **Émet**
+> - **Consomme**
+> - **Dépendances injectées**
+> - **Notes**
+
+### 9.1 Couche réseau — `core/`
+
+#### `Logger` (`src/network/core/Logger.ts`, 123 → ~ 80)
+
+- **Conservé** : API publique `info/warn/error/debug/subscribe/unsubscribe/getLogs`. Tous les sites d'appel (≈ 90) restent inchangés.
+- **Supprimé** : tableau interne `subscriptions`, gestion FIFO du `logs[]` (déléguée au bus + un projecteur `LogProjection` capé à 10 000 entrées).
+- **Ajouté** : adapter qui republie chaque `log(...)` sur le bus comme `{ topic: 'log', payload: { … } }`.
+- **Émet** : `log`.
+- **Consomme** : rien.
+- **Dépendances injectées** : `IEventBus` (avec fallback singleton).
+- **Notes** : la classe devient un facade ; un projecteur `LogProjection` détient le buffer historique.
+
+#### `EventBus` (nouveau, `src/events/EventBus.ts`, 0 → ~ 100)
+
+- **Ajouté** : implémentation décrite en §8.2.
+- **Émet** : rien (c'est lui-même).
+- **Notes** : exporté par `src/events/index.ts`.
+
+#### `Scheduler` (nouveau, `src/events/Scheduler.ts`, 0 → ~ 200)
+
+- **Ajouté** : `IScheduler`, `RealTimeScheduler`, `VirtualTimeScheduler`, `TimerHandle`.
+- **Notes** : ne dépend pas du bus ; testable en isolation.
+
+#### `Signal` / `WritableSignal` / `derived` (nouveau, 0 → ~ 80)
+
+- **Ajouté** : primitives décrites en §8.4.
+- **Notes** : zéro dépendance externe.
+
+#### `waitForEvent` (nouveau, 0 → ~ 30)
+
+- **Ajouté** : helper §8.5.1.
+
+#### `PacketQueue` (`src/network/core/PacketQueue.ts`, 142 → ~ 130)
+
+- **Conservé** : API `enqueue / flush / size / clear / purgeExpired / getByNextHop`.
+- **Supprimé** : appels directs à `setTimeout`.
+- **Ajouté** : injection `IScheduler` ; les expirations utilisent `scheduler.setTimeout`.
+- **Émet** : `packetqueue.depth-changed` (optionnel, débrayable).
+- **Notes** : conserve sa généricité ARP/NDP.
+
+#### `NeighborResolver` (`src/network/core/NeighborResolver.ts`, 204 → ~ 200)
+
+- **Conservé** : API publique `learn / lookup / resolve / clear / remove / hasPending / purgeExpired`.
+- **Supprimé** : `setTimeout` natif.
+- **Ajouté** : injection `IScheduler` + `IEventBus` ; `resolve` utilise `scheduler.setTimeout` et publie `neighbor.solicitation-sent`.
+- **Émet** : `neighbor.learned`, `neighbor.expired`, `neighbor.cache-cleared`, `neighbor.solicitation-sent`, `neighbor.resolution-timeout`.
+- **Notes** : la `Promise<MAC>` reste l'API publique pour les callers (l'await est confortable).
+
+#### `TcpConnection` (`src/network/core/TcpConnection.ts`, 97 → ~ 110)
+
+- **Conservé** : API `write / close / onData / receiveData / updateAck`.
+- **Ajouté** : `IEventBus` injecté ; émet `tcp.data.received`, `tcp.data.sent`, `tcp.connection-closed`.
+- **Émet** : ci-dessus.
+- **Notes** : `dataHandlers[]` (M2 propre) reste interne — utile pour les callers locaux qui ne veulent pas s'abonner au bus pour chaque connexion.
+
+#### `SocketTable` (`src/network/core/SocketTable.ts`, 212 → ~ 230)
+
+- **Conservé** : API `bind / connect / close / isPortBound / getAll / findByLocalPort / allocateEphemeralPort / clear`.
+- **Ajouté** : `IEventBus` injecté ; émet `socket.bound / socket.connected / socket.closed / socket.state-changed`.
+- **Notes** : permet à la UI d'afficher netstat/ss en live.
+
+#### `RoutingTable` (`src/network/core/RoutingTable.ts`)
+
+- **Ajouté** : émission `routing.route-added / routing.route-removed / routing.route-changed`.
+- **Notes** : utilisé par les routes statiques + DHCP + OSPF.
+
+### 9.2 Couche réseau — `equipment/` et `hardware/`
+
+#### `Equipment` (`src/network/equipment/Equipment.ts`, 194 → ~ 200)
+
+- **Conservé** : structure d'héritage, méthodes `powerOn/Off`, `setName/Hostname`, `setPosition`, `addPort`, `getPorts`, surface terminal (`getCwd`, `executeCommand`, …).
+- **Supprimé** :
+  - Méthodes statiques `getById / getAllEquipment / clearRegistry` (deprecated).
+  - Câblage de callback dans `addPort` (`port.onFrame(...)`).
+- **Ajouté** :
+  - Constructor accepte `{ bus?: IEventBus; scheduler?: IScheduler }` (fallback singletons).
+  - Souscription dans le constructor : `bus.subscribeWhere('port.frame.received', e => e.deviceId === this.id, e => this.handleFrame(e.portName, e.frame))`.
+  - Méthodes `dispose()` qui désinscrit ses abonnements.
+- **Émet** : `device.power-on`, `device.power-off`, `device.position-changed`, `device.renamed`, `device.boot.started/line/completed`.
+- **Consomme** : `port.frame.received` (filtré par `deviceId`).
+- **Notes** : `handleFrame` reste abstrait pour les sous-classes.
+
+#### `EquipmentRegistry` (`src/network/equipment/EquipmentRegistry.ts`, 107 → ~ 120)
+
+- **Conservé** : CRUD, requêtes, `clear`, instanciation isolée pour tests.
+- **Supprimé** : usage du singleton implicite via `Equipment` constructor (devient explicite).
+- **Ajouté** : émission sur registre + signal direct.
+- **Émet** : `device.registered`, `device.deregistered`, `registry.cleared`.
+- **Notes** : continue d'exposer `getInstance()` pour la rétro-compat ; intérieurement, accepte un `IEventBus` injecté.
+
+#### `Port` (`src/network/hardware/Port.ts`, 487 → ~ 460)
+
+- **Conservé** : API de configuration (`configureIP/clearIP/enableIPv6/configureIPv6/addSLAACAddress/removeIPv6Address/setSpeed/setDuplex/setMTU`), accesseurs (`getIPAddress/getMAC/getSpeed/...`), gestion de `PortSecurity`, compteurs RFC 2863.
+- **Supprimé** :
+  - `frameHandler` (M1) et `onFrame`.
+  - `linkChangeHandlers` (M2) et `onLinkChange`.
+  - `_setCableNoNotify`, `_notifyLinkUp` (hacks).
+  - `notifyLinkChange` privé.
+- **Ajouté** :
+  - Injection optionnelle `{ bus?: IEventBus }`.
+  - `sendFrame` publie `port.frame.tx-requested` puis appelle `cable.transmit(frame, this)`.
+  - `receiveFrame` publie `port.frame.received` (l'`Equipment` y est abonné).
+  - `setUp(up)` publie `port.link.up` ou `port.link.down`.
+  - `configureIP/...` publient `port.config.ip-changed`/`...`.
+- **Émet** : `port.frame.tx-requested`, `port.frame.tx-blocked`, `port.frame.received`, `port.frame.dropped`, `port.link.up`, `port.link.down`, `port.config.*`, `port.security.violation`.
+- **Consomme** : `cable.connected` / `cable.disconnected` (pour mettre à jour son état `cable: Cable | null`).
+- **Notes** : zéro callbacks publics. Tous les anciens consommateurs migrent sur le bus.
+
+#### `Cable` (`src/network/hardware/Cable.ts`, 266 → ~ 280)
+
+- **Conservé** : API `connect/disconnect/transmit/setUp/setPacketLossRate/getInfo`, calcul du `propagationDelay`, négociation auto, détection duplex-mismatch.
+- **Supprimé** : appels directs à `Math.random` (passe par `rng()` injecté).
+- **Ajouté** :
+  - Injection `{ bus?: IEventBus; scheduler?: IScheduler; rng?: () => number }`.
+  - `transmit` publie `cable.frame.dispatched`, programme `scheduler.setTimeout(deliver, propagationMs)`, qui publie `cable.frame.delivered` puis appelle `targetPort.receiveFrame(frame)`.
+  - `connect` publie `cable.connected` puis `cable.negotiated` ; déclenche éventuellement `cable.duplex-mismatch`.
+- **Émet** : `cable.connected`, `cable.disconnected`, `cable.negotiated`, `cable.duplex-mismatch`, `cable.frame.dispatched`, `cable.frame.delivered`, `cable.frame.lost`.
+- **Notes** : la livraison devient asynchrone (microtâche ou délai propagation). Les tests d'intégration doivent advance(ms) pour faire avancer la simulation.
+
+#### `PortSecurity` (`src/network/hardware/PortSecurity.ts`)
+
+- **Ajouté** : émission `port.security.violation`, `port.security.shutdown`, `port.security.mac-learned`.
+- **Notes** : la décision « shutdown port » reste interne mais est journalisée par bus.
+
+### 9.3 Couche réseau — `devices/`
+
+#### `EndHost` (`src/network/devices/EndHost.ts`, 2 325 → ~ 1 700)
+
+- **Conservé** : abstractions générales (`getInterface(s)`, `configureInterface`, `setDefaultGateway`, `getSocketTable`, `dhcpClient`, `tcpListeners` et `tcpConnections` Maps internes, `handleFrame`, `handleARP`, `handleIPv4`, `handleIPv6`, sous-méthodes ICMP/UDP/TCP).
+- **Supprimé** :
+  - `pendingARPs`, `pendingPings`, `pendingNDPs`, `pendingPing6s`, `pendingTcpHandshakes` Maps.
+  - `fwdQueue` Array (remplacée par `PacketQueue` géré par scheduler).
+  - Implémentation inline d'ARP/NDP (déléguée à `NeighborResolver<IPAddress>` et `NeighborResolver<IPv6Address>`).
+- **Ajouté** :
+  - Injection `{ bus, scheduler }` propagée par le constructor `Equipment`.
+  - Champs `arp = new NeighborResolver<IPAddress>('ARP', timeout, ttl, bus, scheduler)` et `ndp = new NeighborResolver<IPv6Address>('NDP', ...)`.
+  - Réécriture de `pingHost`, `pingHost6`, `tcpConnect`, `tracerouteHop` autour de `waitForEvent`.
+- **Émet** : `host.arp.entry-learned`, `host.arp.entry-expired`, `host.icmp.echo-sent`, `host.icmp.echo-reply`, `host.icmp.echo-timeout`, `host.tcp.listener-started/stopped`, `host.tcp.connection-established/closed`, `host.routing.route-added/removed`.
+- **Consomme** : `port.frame.received` (déjà via `Equipment`), `dhcp.lease-granted` (auto-config IP).
+- **Notes** : gain net en LoC ≈ -600.
+
+#### `LinuxMachine`, `LinuxPC`, `LinuxServer`, `WindowsPC` (sous-classes EndHost)
+
+- **Conservé** : tout (logique terminal, DNS, services).
+- **Ajouté** : éventuelles publications `host.dns.query / host.dns.response`, `service.started / service.stopped`.
+- **Notes** : impact mineur ; refactor concentré sur `EndHost`.
+
+#### `Switch` (`src/network/devices/Switch.ts`, 838 → ~ 850)
+
+- **Conservé** : tout sauf timer.
+- **Supprimé** : `macAgingTimer = setInterval(...)`.
+- **Ajouté** : `scheduler.setInterval(this.purgeMacTable, MAC_AGING_INTERVAL_MS)`.
+- **Émet** : `switch.mac.learned`, `switch.mac.aged`, `switch.vlan.created`, `switch.vlan.deleted`, `switch.port.vlan-suspended`, `switch.port.vlan-recreated`, `switch.stp.state-changed`.
+
+#### `Router` (`src/network/devices/Router.ts`, 1 545 → ~ 1 200)
+
+- **Conservé** : couche shell (vendor-specific), API publique, intégrations protocoles (toujours composées).
+- **Supprimé** : `pendingARPs`, `pendingPings`, `pendingTraceHops` Maps + leurs timers natifs.
+- **Ajouté** : utilise `NeighborResolver<IPAddress>` partagé avec `EndHost` ; ping et traceroute via `waitForEvent`.
+- **Émet** : `router.routing.route-added/removed/changed`, `router.acl.denied`, `router.nat.translation-applied`.
+- **Consomme** : `port.frame.received`, `ospf.routes-recomputed`, `rip.routes-recomputed`.
+- **Notes** : data-plane forwarding déplacé dans un acteur séparé `IPv4Forwarder` (ci-dessous).
+
+#### `IPv4Forwarder` (nouveau, ~ 200 LoC)
+
+- **Ajouté** : extrait du data-plane de `Router`. S'abonne à `port.frame.received` filtré par device ; route et publie `host.l3.packet-tx-requested` consommé par `Router` pour appeler `port.send`.
+- **Notes** : facilite l'ajout de NAT, ACL, multipath.
+
+#### `IPv6DataPlane` (`src/network/devices/router/IPv6DataPlane.ts`, 660 → ~ 660)
+
+- **Conservé** : logique métier.
+- **Ajouté** : entrées via `port.frame.received` filtré IPv6 ; sorties via émissions au lieu d'appels directs au routeur.
+
+#### `RouterOSPFIntegration` (`src/network/devices/router/RouterOSPFIntegration.ts`, 1 799 → ~ 1 500)
+
+- **Conservé** : pont OSPF ↔ routeur.
+- **Supprimé** : appels directs à `router.sendOspfHello(...)` etc.
+- **Ajouté** : émission `ospf.packet.outgoing` consommée par le routeur.
+- **Notes** : devient symétrique avec `RouterRIPEngine`.
+
+#### `RouterRIPEngine` (`src/network/devices/router/RouterRIPEngine.ts`, 429 → ~ 400)
+
+- **Conservé** : intégration.
+- **Ajouté** : utilise `Scheduler` ; émet `rip.update.sent / received`.
+
+#### `NATEngine` (`src/network/devices/router/NATEngine.ts`, 613 → ~ 620)
+
+- **Ajouté** : émet `nat.translation-applied`, `nat.session-created/closed`.
+- **Notes** : timer de session NAT déplacé sur `Scheduler`.
+
+#### `ACLEngine` (`src/network/acl/ACLEngine.ts` 280, `src/network/devices/router/ACLEngine.ts` 245)
+
+- **Conservé** : logique d'évaluation pure.
+- **Ajouté** : les *consommateurs* (router, switch L3) émettent `acl.permit/deny/log` après évaluation.
+
+### 9.4 Moteurs de protocoles
+
+#### `OSPFEngine` (`src/network/ospf/OSPFEngine.ts`, ~ 3 200 → ~ 3 200)
+
+- **Conservé** : FSM voisin, DR/BDR, DD/LSR/LSU/LSAck, SPF Dijkstra, areas, NSSA, ASBR.
+- **Supprimé** : tous les `setInterval/setTimeout` natifs (`lsAgeTimer`, `helloTimer`, `waitTimer`, `deadTimer`, `ddRetransmitTimer`, `lsrRetransmitTimer`, `spfTimer`).
+- **Ajouté** :
+  - Injection `{ scheduler, bus }` dans `start()`.
+  - Émission de toutes les transitions FSM voisin.
+  - Émission LSDB delta (insert/remove/refresh).
+  - Émission SPF run (avec routes ajoutées/retirées).
+- **Émet** : `ospf.neighbor.state-changed`, `ospf.lsa.received`, `ospf.lsa.flushed`, `ospf.lsa.installed`, `ospf.spf.run`, `ospf.dr-election`, `ospf.area.activated`, `ospf.routes-recomputed`, `ospf.packet.outgoing`.
+- **Consomme** : `port.frame.received` (filtré IPv4 + protocole 89), `port.link.up/down` (pour invalider voisins).
+- **Notes** : la signature de `tickLSAge()`, `runSPF()`, etc. est conservée pour la rétro-compatibilité des tests.
+
+#### `OSPFv3Engine` (mêmes ~ 1 100 LoC) — mêmes décisions, payloads `version: 'v3'`.
+
+#### `RIPEngine` (`src/network/rip/RIPEngine.ts`, ~ 500 → ~ 500)
+
+- **Conservé** : metrics, RIB, FSM routes (timeout/garbage).
+- **Supprimé** : `updateTimer`, `timeoutTimer`, `gcTimer` natifs.
+- **Ajouté** : Scheduler injecté ; `RIPCallbacks` remplacé par publications bus.
+- **Émet** : `rip.update.sent`, `rip.update.received`, `rip.route-added`, `rip.route-removed`.
+
+#### `DHCPClient` (`src/network/dhcp/DHCPClient.ts`, ~ 720 → ~ 700)
+
+- **Conservé** : FSM (INIT → SELECTING → REQUESTING → BOUND → RENEWING → REBINDING).
+- **Supprimé** : 3 callbacks constructor → publications.
+- **Supprimé** : timers natifs.
+- **Ajouté** : Scheduler ; émet `dhcp.lease-requested`, `dhcp.offer-received`, `dhcp.lease-granted`, `dhcp.lease-renewing`, `dhcp.lease-rebinding`, `dhcp.lease-expired`, `dhcp.arp-probe-requested`.
+- **Consomme** : `dhcp.arp-probe-result`, `host.arp.entry-learned` (pour vérifier conflits).
+
+#### `DHCPServer` (`src/network/dhcp/DHCPServer.ts`, ~ 480 → ~ 480)
+
+- **Conservé** : pool, leases, options.
+- **Ajouté** : émet `dhcp.server.lease-allocated`, `dhcp.server.lease-released`, `dhcp.server.lease-expired`.
+
+#### `IPSecEngine` (`src/network/ipsec/IPSecEngine.ts`, ~ 1 850 → ~ 1 850)
+
+- **Supprimé** : timers natifs lifetime / DPD / retransmit.
+- **Ajouté** : Scheduler ; émet `ipsec.ike.exchange-started/completed`, `ipsec.sa.installed/deleted`, `ipsec.dpd.peer-down`, `ipsec.packet.encrypted-out`, `ipsec.packet.decrypted-in`.
+
+### 9.5 Couche terminal
+
+#### `TerminalSession` (`src/terminal/sessions/TerminalSession.ts`, 897 → ~ 900)
+
+- **Conservé** : `subscribe / getVersion / notify` (compat `useSyncExternalStore`), template methods, flow engine, session recorder, scrollback management, key dispatch, reverse search.
+- **Supprimé** : `setTimeout` natif dans `replayRecording`.
+- **Ajouté** : Scheduler injecté ; `replayRecording` utilise `scheduler.delay`. Publications `terminal.session.*`.
+- **Émet** : `terminal.session.opened/closed/line-added/input-mode-changed/flow-started/flow-completed/subshell-entered/subshell-exited`.
+- **Consomme** : `device.power-off` (force la fermeture des flows / subshells), `command.output-line` (streaming).
+
+#### `TerminalManager` (`src/terminal/sessions/TerminalManager.ts`, 198 → ~ 220)
+
+- **Conservé** : API publique, gestion des sessions par device.
+- **Ajouté** : émission `terminal.manager.session-opened/closed`. Conserve son propre `subscribe / getVersion` (compat).
+- **Consomme** : `device.deregistered` (ferme automatiquement les sessions).
+
+#### `LinuxTerminalSession`, `CLITerminalSession`, `CiscoTerminalSession`, `HuaweiTerminalSession`, `WindowsTerminalSession`
+
+- **Conservé** : tout.
+- **Modifié** : `await new Promise(r => setTimeout(r, 12))` → `await scheduler.delay(12)` dans les boot delays.
+
+#### `InteractiveFlowEngine`, `OutputFormatter`, `TabCompletionHelper`
+
+- **Inchangés**.
+
+#### Sub-shells (`SqlPlusSubShell`, `RmanSubShell`, `SftpSubShell`, `CmdSubShell`, `PowerShellSubShell`)
+
+- **Conservés** dans leur structure.
+- **Ajouté** : `RmanSubShell` émet `oracle.rman.backup-started/completed`, `oracle.rman.restore-started/completed`. `SftpSubShell` émet `sftp.transfer-started/completed/failed`.
+
+### 9.6 Store Zustand et UI
+
+#### `networkStore` (`src/store/networkStore.ts`, 353 → ~ 280)
+
+- **Conservé** : `selectedDeviceId`, `selectedConnectionId`, `isConnecting`, `connectionSource`, `zoom`, `panX/Y` ; actions `addDevice/removeDevice/updateDevice/moveDevice/addConnection/removeConnection/clearAll/...`.
+- **Supprimé** :
+  - `deviceInstances: Map<id, Equipment>` (les instances sont accédées via `EquipmentRegistry` injecté).
+  - `instance: Equipment` dans `NetworkDeviceUI`.
+  - Mutations `set(state => ({ deviceInstances: new Map(...) }))` répétitives.
+- **Ajouté** :
+  - Le store ne fait plus de notification UI domaine — les hooks `useDevice/useDevices/useCable/...` consomment les projecteurs.
+  - Les actions du store *publient* sur le bus pour invalider les caches du sérialiseur.
+- **Émet** (indirectement, via les actions qui appellent les acteurs) : `device.registered/deregistered`, `cable.connected/disconnected`, `device.position-changed`.
+- **Notes** : Zustand reste pour l'**état UI** uniquement. Plus simple, moins fragile.
+
+#### `topologySerializer` (`src/store/topologySerializer.ts`, ~ 250 → ~ 270)
+
+- **Conservé** : schéma JSON, fonction d'export, fonction d'import.
+- **Modifié** : import publie `topology.import-started`, instancie devices, configure ports, câble cables, puis `topology.import-completed`.
+
+#### Composants React
+
+| Composant | Modifications |
+|---|---|
+| `NetworkDesigner` | Substitue `getDevices()` par `useDevices()`. État UI tiling conservé. |
+| `NetworkCanvas` | `useDevices()`, `useConnections()`, `useActivePackets()`. |
+| `NetworkDevice` | Reçoit `DeviceVM` au lieu de `NetworkDeviceUI` ; supprime tout accès `device.instance`. |
+| `ConnectionLine` | Reçoit `CableVM` ; couleur réactive aux changements `cable.duplex-mismatch`, `port.link.down`. |
+| `PacketAnimation` | `useActivePackets()` ; consomme `cable.frame.dispatched/delivered`. **Désormais fonctionnel.** |
+| `PropertiesPanel` | Hooks ciblés `useDevice(id)`, `usePort(id, port)`, `useArpTable(id)`, `useRoutingTable(id)`. Émet des intentions `command.configure-port-ip` au bus, traitées par `IntentHandler`. |
+| `TerminalModal`, `TerminalView`, `MinimizedTerminals` | Inchangés (déjà conformes). |
+| `Toolbar`, `DevicePalette`, `DeviceIcon` | Inchangés. |
+| `InterfaceSelectorPopover` | Reçoit `PortVM[]` au lieu d'instance Port. |
+
+### 9.7 Couche base de données
+
+#### `OracleInstance` (`src/database/oracle/OracleInstance.ts`, 542 → ~ 560)
+
+- **Conservé** : FSM, processus background, redo logs, paramètres, alert log.
+- **Ajouté** : `IEventBus` injecté ; `startup/shutdown/setParameter/logAlert/switchRedoLog` publient les événements `oracle.instance.*`.
+- **Émet** : voir §7.4.2.
+- **Notes** : zéro dépendance vers `Equipment` ou filesystem.
+
+#### `OracleExecutor` (3 441 → ~ 3 470)
+
+- **Conservé** : tout sauf injections.
+- **Ajouté** : émission `oracle.session.*`, `oracle.transaction.*`, `oracle.dml/ddl.executed`, `oracle.error.raised`.
+
+#### `OracleCatalog`, `OracleStorage`, `OracleParser`, `OracleLexer`, `OracleDatabase`
+
+- **Inchangés**.
+
+#### `OracleFilesystemSync` (nouveau, ~ 200 LoC)
+
+- **Ajouté** : module qui s'abonne aux événements `oracle.instance.*` et appelle les fonctions de synchronisation FS existantes (`updateSpfileOnDevice`, `syncAlertLogToDevice`, etc.).
+- **Notes** : remplace les appels manuels disséminés.
+
+#### `database.ts` (`src/terminal/commands/database.ts`, ~ 460 → ~ 460)
+
+- **Conservé** : Map `deviceId → OracleDatabase`, helpers d'init filesystem.
+- **Ajouté** : à l'init, instancie le `OracleFilesystemSync` lié au device.
+
+### 9.8 Tests
+
+| Catégorie | Action |
+|---|---|
+| Tests `core/EventBus`, `Scheduler`, `Signal`, `waitForEvent` | Nouveaux. ~ 6 fichiers, ~ 400 LoC. |
+| Tests `Port`, `Cable` (nouveaux) | Émission d'événements vérifiée ; livraison via `scheduler.advance(ms)`. |
+| Tests OSPF / DHCP / RIP / IPSec existants | Adaptés : remplacent `vi.useFakeTimers/advanceTimersByTime` par `scheduler.advance`. Snapshots de trace d'événements. |
+| Tests `EndHost.pingHost / arpResolve` | Réécrits autour de `waitForEvent` ; suppression des Maps de pending. |
+| Tests Oracle FS sync | Vérifient l'émission des events + l'effet du `OracleFilesystemSync` adapter. |
+| Tests UI (`__tests__/unit/gui`) | Adaptés pour consommer les hooks et projeter via mock `EventBus`. |
+
+### 9.9 Tableau global — refactor par classe
+
+| Classe / module | LoC actuelles | LoC cibles | Émet | Consomme | Note |
+|---|---:|---:|---:|---:|---|
+| `EventBus` (nouveau) | 0 | 100 | – | – | Primitive |
+| `Scheduler` (nouveau) | 0 | 200 | – | – | Primitive |
+| `Signal` (nouveau) | 0 | 80 | – | – | Primitive |
+| `waitForEvent` (nouveau) | 0 | 30 | – | – | Helper |
+| `Logger` | 123 | 80 | log | – | Adapter |
+| `PacketQueue` | 142 | 130 | depth-changed | – | Scheduler |
+| `NeighborResolver` | 204 | 200 | neighbor.* | – | Scheduler + Bus |
+| `TcpConnection` | 97 | 110 | tcp.data.* | – | Bus |
+| `SocketTable` | 212 | 230 | socket.* | – | Bus |
+| `RoutingTable` | (n/a) | – | routing.* | – | Bus |
+| `Equipment` | 194 | 200 | device.* | port.frame.received | Bus |
+| `EquipmentRegistry` | 107 | 120 | device.registered/deregistered | – | Bus |
+| `Port` | 487 | 460 | port.* | cable.connected | Bus |
+| `Cable` | 266 | 280 | cable.* | – | Bus + Scheduler |
+| `PortSecurity` | (lu non détail) | – | port.security.* | – | Bus |
+| `EndHost` | 2 325 | 1 700 | host.* | port.frame.received, dhcp.* | Bus + Scheduler — gain net **-625** |
+| `LinuxMachine`/`WindowsPC`/sub | 1 522 | 1 530 | service.* | – | Mineur |
+| `Switch` | 838 | 850 | switch.* | port.frame.received | Bus + Scheduler |
+| `Router` | 1 545 | 1 200 | router.* | port.frame.received | Bus + Scheduler — gain **-345** |
+| `IPv4Forwarder` (nouveau) | 0 | 200 | host.l3.* | port.frame.received | Acteur extrait |
+| `IPv6DataPlane` | 660 | 660 | – | – | Adapter bus |
+| `OSPFEngine` | 3 200 | 3 200 | ospf.* | port.frame.received, port.link.* | Scheduler |
+| `OSPFv3Engine` | 1 100 | 1 100 | ospf.* | – | Scheduler |
+| `RIPEngine` | 500 | 500 | rip.* | – | Scheduler |
+| `RouterRIPEngine` | 429 | 400 | rip.* | – | Scheduler |
+| `DHCPClient` | 720 | 700 | dhcp.* | dhcp.arp-probe-result | Scheduler |
+| `DHCPServer` | 480 | 480 | dhcp.server.* | – | Scheduler |
+| `IPSecEngine` | 1 850 | 1 850 | ipsec.* | – | Scheduler |
+| `NATEngine` | 613 | 620 | nat.* | – | Scheduler |
+| `ACLEngine`s | 525 | 525 | (par appelant) | – | – |
+| `RouterOSPFIntegration` | 1 799 | 1 500 | ospf.packet.outgoing | – | Adapter |
+| `TerminalSession` | 897 | 900 | terminal.* | device.power-off | Scheduler + Bus |
+| `LinuxTerminalSession` | 653 | 653 | – | – | Mineur |
+| `CLITerminalSession`+vendors | 490 | 490 | – | – | Mineur |
+| `WindowsTerminalSession` | 457 | 457 | – | – | – |
+| `TerminalManager` | 198 | 220 | terminal.manager.* | device.deregistered | Bus |
+| Sub-shells (5) | 1 030 | 1 040 | sftp.*/oracle.rman.* | – | Mineur |
+| `networkStore` | 353 | 280 | – | – | Allégé |
+| `topologySerializer` | 250 | 270 | topology.* | – | Bus |
+| `OracleInstance` | 542 | 560 | oracle.instance.* | – | Bus |
+| `OracleExecutor` | 3 441 | 3 470 | oracle.session/transaction/dml/ddl.* | – | Bus |
+| `OracleCatalog`/Storage/Parser/Lexer | 2 758 | 2 758 | – | – | – |
+| `OracleDatabase` | 1 305 | 1 305 | – | – | – |
+| `OracleFilesystemSync` (nouveau) | 0 | 200 | – | oracle.instance.* | Adapter |
+| Composants React (12 fichiers) | 3 100 | 3 100 | – | (via hooks) | Réécriture interne |
+| `TerminalView` | 534 | 534 | – | – | Inchangé |
+| Hooks + projecteurs (nouveaux) | 0 | 1 000 | – | bus.* | Voir §8.8 |
+
+### 9.10 Synthèse des suppressions
+
+| Élément supprimé | Localisation | Quantité approximative |
+|---|---|---|
+| `setInterval` / `setTimeout` natifs (réseau + terminal) | divers | 91 sites → 0 |
+| Maps `pendingXxx` | `EndHost`, `Router` | 7 → 0 |
+| Tableaux `linkChangeHandlers` | `Port` | 1 → 0 |
+| Callbacks `frameHandler` | `Port` | 1 par port |
+| Méthodes `_setCableNoNotify`, `_notifyLinkUp` | `Port` | 2 |
+| Méthodes statiques `Equipment.getById/getAllEquipment/clearRegistry` | `Equipment` | 3 |
+| Recopie manuelle `new Map(state.deviceInstances)` | `networkStore` | ≈ 5 sites |
+| Implémentations parallèles ARP / NDP | `EndHost` | ~ 200 LoC |
+
+### 9.11 Synthèse des ajouts
+
+| Élément ajouté | Localisation | LoC |
+|---|---|---|
+| `EventBus` | `src/events/` | 100 |
+| `Scheduler` (real + virtual) | `src/events/` | 200 |
+| `Signal` / `derived` | `src/events/` | 80 |
+| `waitForEvent` | `src/events/` | 30 |
+| Type union `DomainEvent` + sub-events | `src/events/types.ts` + `*.events.ts` | ~ 300 |
+| Projections (8) | `src/projections/` | ~ 800 |
+| Hooks (8 modules) | `src/hooks/` | ~ 300 |
+| Adapter `OracleFilesystemSync` | `src/adapters/` | 200 |
+| Adapter `BusTracer` | `src/adapters/` | 60 |
+| Adapter `PacketCapture` (optionnel) | `src/adapters/` | 150 |
+| `IPv4Forwarder` | `src/network/devices/router/` | 200 |
+| Tests primitives | `src/__tests__/unit/events/` | 400 |
+
+**Solde global** : ~ +1 800 LoC ajoutées vs ~ -1 200 LoC supprimées = **+ ~600 LoC nets**, mais *modulaires, observables, testables et plug-able*.
+
+---
+
+*Section 9 close. Suivante : §10 — Plan de migration séquentiel.*
