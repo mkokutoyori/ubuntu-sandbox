@@ -12,7 +12,7 @@
 2. [État actuel de l'architecture](#2-état-actuel-de-larchitecture)
 3. [Analyse de la couche réseau — `Equipment` / `Port` / `Cable`](#3-analyse-de-la-couche-réseau--equipment--port--cable)
 4. [Analyse des `devices` concrets et des moteurs de protocoles](#4-analyse-des-devices-concrets-et-des-moteurs-de-protocoles)
-5. Analyse de la couche terminal *(à venir)*
+5. [Analyse de la couche terminal](#5-analyse-de-la-couche-terminal)
 6. Analyse du store Zustand et des composants React *(à venir)*
 7. Analyse de la couche base de données (Oracle) *(à venir)*
 8. Architecture cible — bus d'événements, scheduler, état observable *(à venir)*
@@ -810,3 +810,140 @@ Les devices et engines portent **l'essentiel de la dette réactive** :
 ---
 
 *Section 4 close. Suivante : §5 — Couche terminal.*
+
+---
+
+## 5. Analyse de la couche terminal
+
+La couche terminal (`src/terminal/`, ≈ 5 600 LoC sans les commandes) est paradoxalement la **mieux préparée** à la migration : elle possède déjà un mini-pub/sub `subscribe / getVersion / notify`, conçu pour `useSyncExternalStore`. La refonte n'y supprime presque rien — elle généralise le pattern, branche les sessions sur le bus principal, et introduit le `Scheduler` pour les rares timers.
+
+### 5.1 Architecture actuelle
+
+```
+TerminalManager  (singleton, src/terminal/sessions/TerminalManager.ts, 198 LoC)
+   ├─ Map<sessionId, TerminalSession>
+   ├─ Map<deviceId, sessionId[]>
+   └─ subscribe / getVersion / notify  ── pour la liste de sessions
+
+TerminalSession  (abstract, 897 LoC)
+   ├─ subscribe / getVersion / notify   ── pour l'état d'une session
+   ├─ lines, history, input, inputMode, _passwordBuf, _inputBuf
+   ├─ flowEngine?: InteractiveFlowEngine
+   ├─ activeSubShell?: ISubShell
+   ├─ recorder?: SessionRecorder
+   ├─ template methods: onEnter, onTab, getPrompt, getTheme, init
+   └─ keyboard dispatch: handleKey → handleModeKey → handleNormalKey
+       ├── LinuxTerminalSession    (653)
+       ├── CLITerminalSession      (317, abstract)
+       │     ├── CiscoTerminalSession   (80)
+       │     └── HuaweiTerminalSession  (93)
+       └── WindowsTerminalSession  (457)
+
+InteractiveFlowEngine  (src/terminal/core/InteractiveFlow.ts, 316 LoC)
+   ├─ Steps déclaratifs (password / text / confirmation / choice / command / output / set)
+   ├─ État : currentIndex, context, retryCount
+   └─ advance(userInput?) → Promise<TerminalResponse>
+
+ISubShell  (interface, 41 LoC)
+   ├─ getPrompt, handleKey, processLine, dispose
+   └─ implémentations: SqlPlusSubShell (104), RmanSubShell (381),
+                       SftpSubShell (153), CmdSubShell (216),
+                       PowerShellSubShell (175)
+
+OutputFormatter  (218 LoC) — abstrait l'ANSI / texte plain pour les flows.
+TabCompletionHelper  (132 LoC) — utilitaire de complétion.
+```
+
+### 5.2 Ce qui fonctionne bien (à conserver)
+
+| # | Élément | Pourquoi le conserver |
+|---|---|---|
+| T+1 | **`subscribe / getVersion / notify`** | Compatible `useSyncExternalStore`. Granularité par session. |
+| T+2 | **Hiérarchie de sessions** | Linux/CLI/Windows parfaitement délimités, peu de duplication grâce aux template methods. |
+| T+3 | **`InteractiveFlowEngine`** | Machine à états déclarative pour les wizards (passwd, useradd, vty). Synchrone-ou-async, propre. |
+| T+4 | **`ISubShell`** | Interface minimale et bien pensée ; les 5 sub-shells l'implémentent sans frottement. |
+| T+5 | **`OutputFormatter`** | Sépare proprement la production de texte (ANSI Linux vs plain Cisco/Huawei). |
+| T+6 | **`SessionRecorder`** | Enregistrement d'événements `input/output/error` avec timing — préfigure très bien l'observation par bus. |
+| T+7 | **`MAX_SCROLLBACK_LINES`, `withTimeout`, `sanitiseInput`** | Garde-fous robustes en place. |
+
+### 5.3 Limites actuelles
+
+| # | Limite | Conséquence |
+|---|---|---|
+| T-1 | **Pub/sub ad-hoc, scope par session** | Quatre lieux ont leur propre `_listeners` : `Logger`, `TerminalSession`, `TerminalManager`, et chaque `Port`/`TcpConnection` (cf. §3). Aucun n'observe les autres. |
+| T-2 | **Couplage direct `device.executeCommand(string)`** | La session attend une `Promise<string>`. C'est pratique pour les tests, mais ça empêche les commandes longues d'émettre des **lignes intermédiaires** (typique : `traceroute`, `ping -c 4`, `tcpdump`, `find /`). Aujourd'hui ces commandes simulent leur sortie en collectant tout puis en retournant un blob. |
+| T-3 | **`replayRecording` utilise `setTimeout` natif** | `await new Promise(r => setTimeout(r, ...))` ; non rejouable de manière déterministe. |
+| T-4 | **Boot sequence comme blob** | `Router.getBootSequence(): string` retourne un texte multi-ligne ; la session le découpe et l'affiche avec des `setTimeout(12 ms)` (cf. `CLITerminalSession`). Pas d'événement `device.boot.line`. |
+| T-5 | **Aucune observation transverse** | Une UI ne peut pas afficher « 3 sessions actives sur PC-A » sans lire `TerminalManager` et y poser un `subscribe`. C'est faisable, mais hétérogène avec l'observation des `Equipment`. |
+| T-6 | **`onRequestClose` callback unique** | Chaque session expose un single-callback `onRequestClose(cb)` pour signaler à `TerminalManager` qu'elle veut être fermée. Pattern M1. |
+| T-7 | **`flowEngine` mute `inputMode` puis appelle `notify()`** | Beaucoup d'états à synchroniser entre flow / session / view. Le bus permettrait d'émettre `terminal.input-mode-changed` et de laisser la view se rafraîchir. |
+| T-8 | **`SessionRecorder` interne** | Bonnes données enregistrées, mais elles ne sortent pas du recorder. Or la trace d'événements sera **exactement** ce que l'on veut journaliser dans le bus (idem capture, replay déterministe). |
+
+### 5.4 Imbrication terminal ↔ réseau
+
+Trois points de couplage majeurs :
+
+1. **Boot et power-state** : `TerminalSession.assertDeviceOnline()` lit `device.getIsPoweredOn()` ; en cas de power-off pendant une commande, `withTimeout` ne détecte pas. Migration : la session s'abonne à `device.power-off` et clôt elle-même les `flowEngine`/`activeSubShell`.
+
+2. **Exécution de commandes réseau** : `executeOnDevice(cmd)` appelle `device.executeCommand` qui descend potentiellement dans `LinuxNetCommands.ping` → `EndHost.pingHost` → résolution ARP → … → `pendingPings` resolve → reply texte. Tout ce *long-running* doit pouvoir émettre des lignes intermédiaires (`reply from 10.0.0.2: …`) **avant** la complétion. La cible : `executeCommand` peut émettre `command.output-line` au fil de l'exécution, la session s'y abonne et les ajoute à ses lignes.
+
+3. **Sub-shells** : `SftpSubShell` et `RmanSubShell` réalisent du I/O réseau (SFTP) ou des opérations DB (RMAN). Mêmes besoins en streaming.
+
+### 5.5 Points de migration
+
+| # | Élément | Action de refonte |
+|---|---|---|
+| TR1 | `Logger` ↔ `TerminalSession` ↔ `TerminalManager` | Tous trois deviennent des **adapters** sur l'`EventBus` central. L'API `subscribe / getVersion` est conservée (compat `useSyncExternalStore`) mais remappée à un *signal* dérivé. |
+| TR2 | `SessionRecorder` | Devient un consommateur du bus filtré sur `terminal.session.{id}.*`. La trace d'événements *est* le recording. |
+| TR3 | `executeCommand: string → Promise<string>` | Étendu à `executeCommand(cmd) → AsyncIterable<OutputChunk>` (ou plus simple : la commande peut publier `terminal.output-line` qui sont consommés par la session). Compatibilité conservée : si la commande retourne juste une string, elle est traitée comme un seul chunk. |
+| TR4 | `getBootSequence(): string` | Remplacé par un publication d'événements `device.boot.line` séquencés via `Scheduler`. La session s'y abonne ; les tests y branchent un collecteur. |
+| TR5 | `replayRecording` | Avance virtuellement le scheduler au lieu de `setTimeout`. |
+| TR6 | `onRequestClose` | Devient `terminal.session.close-requested` sur le bus. |
+| TR7 | Émissions à ajouter | `terminal.session.opened`, `terminal.session.closed`, `terminal.session.line-added`, `terminal.session.input-mode-changed`, `terminal.session.flow-started`, `terminal.session.flow-completed`, `terminal.session.subshell-entered`, `terminal.session.subshell-exited`. |
+| TR8 | `InteractiveFlowEngine.advance` async | Conservé tel quel. Les `command` steps peuvent émettre des output-lines intermédiaires via le bus. |
+| TR9 | Boot delays `await new Promise(r => setTimeout(r, 12))` | Remplacé par `await scheduler.delay(12)`. |
+
+### 5.6 Préservation rigoureuse de l'API view
+
+L'API consommée par `TerminalView.tsx` est :
+
+```ts
+useSyncExternalStore(session.subscribe, session.getVersion);
+session.lines, session.input, session.inputMode, session.getPrompt(), session.getTheme();
+session.handleKey(e); session.setInput(s); session.setPasswordBuf(s); session.setInputBuf(s);
+```
+
+Cette surface **ne change pas**. La view ne doit avoir aucune connaissance du bus. C'est un invariant fort de la refonte côté UI : seuls les *shims* internes changent.
+
+### 5.7 Sub-shells et composabilité
+
+Les 5 sub-shells (`SqlPlus`, `Rman`, `Sftp`, `Cmd`, `PowerShell`) suivent le même cycle : create → handleKey → processLine → dispose. La refonte les laisse intactes, mais leur ouvre la possibilité d'émettre `subshell.line-output` au fil de l'exécution (pertinent pour PowerShell qui a aujourd'hui une `processLine` async retournant un blob).
+
+`SftpSubShell` et `RmanSubShell` ont vocation à parler au bus directement pour leurs effets réseau / DB ; cf. §7 pour la couche Oracle.
+
+### 5.8 `InteractiveFlowEngine`
+
+Aucun changement structurel. Possibilités à explorer en post-refonte :
+
+- Faire émettre par l'engine `flow.step-entered`, `flow.validation-failed`, `flow.completed` pour permettre aux tests d'instrumenter sans toucher au moteur.
+- Permettre aux `CommandStep` d'invoquer une commande qui produit du streaming.
+
+### 5.9 Synthèse — couche terminal
+
+| Classe | LoC | Rôle | Action |
+|---|---:|---|---|
+| `TerminalSession` | 897 | base abstract sessions | Étendue : émet `terminal.*`, replay déterministe, scheduler |
+| `LinuxTerminalSession` | 653 | session Linux interactive | Inchangée fonctionnellement |
+| `CLITerminalSession` + Cisco + Huawei | 490 | sessions CLI vendor | Boot via Scheduler |
+| `WindowsTerminalSession` | 457 | session Windows dual-mode | Inchangée |
+| `TerminalManager` | 198 | registry sessions | API conservée + adapter bus |
+| `InteractiveFlowEngine` | 316 | wizard FSM | Émet `flow.*` (optionnel) |
+| `ISubShell` + 5 impls | ≈ 1 030 | sub-shells | Inchangées, peuvent stream via bus |
+| `OutputFormatter` | 218 | format ANSI/plain | Inchangé |
+| `TabCompletionHelper` | 132 | complétion | Inchangé |
+
+**Bilan** : la couche terminal **n'absorbe que ≈ 5 % de l'effort de refonte**, mais profite directement de l'unification (recording = trace bus, output streaming, observation des sessions par la UI sans coupler à `TerminalManager`).
+
+---
+
+*Section 5 close. Suivante : §6 — Store Zustand et UI React.*
