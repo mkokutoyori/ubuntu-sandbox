@@ -2163,3 +2163,501 @@ Chaque commande retourne : Result<RmanOutput, RmanError>
 
 ---
 
+## 8. Session RMAN — Facade + State Machine + Builder
+
+### 8.1 Responsabilites de RmanSession
+
+`RmanSession` est la **Facade** du module RMAN. Elle orchestre :
+1. La machine a etats (idle → connecting → connected → running_job → disconnected)
+2. Le parsing multi-ligne et les blocs `RUN { }`
+3. La creation et l'injection du `RmanCommandContext`
+4. La gestion de la configuration (`RmanConfig` immuable)
+5. Le cycle de vie des canaux (allocation auto + liberation)
+
+Aucun appelant exterieur ne connait `RmanCommandDispatcher`, `ChannelPool`, `InMemoryRmanCatalog`, ou `IRetentionPolicy` directement.
+
+### 8.2 RmanSessionState — State Machine discriminee
+
+```typescript
+// src/database/oracle/rman/session/RmanSessionState.ts
+
+import type { DbId } from '../values/DbId'
+import type { Scn }  from '../values/Scn'
+import type { InstanceState } from '../../OracleInstance'
+
+export type RmanSessionState =
+  | {
+      readonly phase: 'idle'
+    }
+  | {
+      readonly phase:   'connecting'
+      readonly target:  string    // '/', 'sys/oracle@ORCL', etc.
+    }
+  | {
+      readonly phase:      'connected'
+      readonly dbId:       DbId
+      readonly dbName:     string
+      readonly dbMode:     InstanceState    // OPEN, MOUNT, NOMOUNT, SHUTDOWN
+      readonly currentScn: Scn
+      readonly connectedAt: Date
+    }
+  | {
+      readonly phase:     'running_job'
+      readonly jobId:     string
+      readonly command:   string
+      readonly startedAt: Date
+    }
+  | {
+      readonly phase:  'disconnected'
+      readonly reason: string
+    }
+
+// Transitions valides :
+//   idle           --> connecting       (CONNECT TARGET)
+//   connecting     --> connected        (auth OK)
+//   connecting     --> disconnected     (auth fail / instance SHUTDOWN)
+//   connected      --> running_job      (debut execution d'une commande)
+//   running_job    --> connected        (commande terminee)
+//   running_job    --> disconnected     (erreur fatale)
+//   connected      --> disconnected     (EXIT / QUIT / erreur)
+//   any            --> idle             (reset interne)
+```
+
+### 8.3 RmanConnectOptions + Builder Pattern
+
+```typescript
+// src/database/oracle/rman/session/RmanConnectOptions.ts
+
+export interface RmanConnectOptions {
+  readonly target:   string    // '/' ou 'user/pass@service'
+  readonly catalog?: string    // optionnel : 'user/pass@catalog'
+  readonly nocatalog: boolean  // RMAN NOCATALOG mode
+  readonly auxiliary?: string  // pour DUPLICATE DATABASE
+}
+
+// ─── Builder ──────────────────────────────────────────────────────────────
+
+export class RmanConnectOptionsBuilder {
+  private _target   = '/'
+  private _catalog: string | undefined
+  private _nocatalog = true
+  private _auxiliary: string | undefined
+
+  forTarget(target: string): this {
+    this._target = target
+    return this
+  }
+
+  withCatalog(catalog: string): this {
+    this._catalog   = catalog
+    this._nocatalog = false
+    return this
+  }
+
+  noAuxiliary(): this { return this }
+  withAuxiliary(aux: string): this {
+    this._auxiliary = aux
+    return this
+  }
+
+  build(): RmanConnectOptions {
+    return Object.freeze({
+      target:    this._target,
+      catalog:   this._catalog,
+      nocatalog: this._nocatalog,
+      auxiliary: this._auxiliary,
+    })
+  }
+}
+
+// Usage :
+// const opts = new RmanConnectOptionsBuilder()
+//   .forTarget('sys/oracle@ORCL')
+//   .build()
+```
+
+### 8.4 RmanScriptParser — multi-ligne et blocs RUN {}
+
+Oracle RMAN supporte les commandes multi-lignes et les blocs `RUN { }` :
+```
+RMAN> BACKUP DATABASE
+2> PLUS ARCHIVELOG
+3> DELETE INPUT;
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   BACKUP DATABASE;
+4>   RELEASE CHANNEL c1;
+5> }
+```
+
+```typescript
+// src/database/oracle/rman/session/RmanScriptParser.ts
+
+export type ParsedScript =
+  | { readonly type: 'single';   readonly tokens: readonly string[] }
+  | { readonly type: 'run_block'; readonly statements: readonly (readonly string[])[] }
+  | { readonly type: 'incomplete' }   // besoin de plus d'input (multi-ligne)
+  | { readonly type: 'empty' }
+
+/**
+ * Parseur de script RMAN.
+ *
+ * Regles :
+ * - Une commande se termine par ';' ou par une ligne vide apres le premier token
+ * - Un bloc RUN { ... } est multi-lignes, se termine par '}'
+ * - Les commentaires '#' sont ignores
+ * - Les tokens sont split sur les espaces apres normalisation
+ */
+export class RmanScriptParser {
+  private _buffer: string[] = []
+  private _inRunBlock = false
+  private _runStatements: string[][] = []
+
+  /** Ajoute une ligne et retourne le script parse si complet, ou 'incomplete' */
+  feed(line: string): ParsedScript {
+    const cleaned = line.replace(/#.*$/, '').trim()
+
+    if (!cleaned) {
+      if (this._buffer.length === 0 && !this._inRunBlock) return { type: 'empty' }
+      // Ligne vide dans un contexte multi-ligne = peut terminer la commande
+      if (!this._inRunBlock && this._buffer.length > 0) {
+        return this._flush()
+      }
+      return { type: 'incomplete' }
+    }
+
+    // Debut de bloc RUN {
+    if (/^RUN\s*\{?$/i.test(cleaned) || (cleaned.toUpperCase().startsWith('RUN') && cleaned.endsWith('{'))) {
+      this._inRunBlock   = true
+      this._runStatements = []
+      this._buffer       = []
+      return { type: 'incomplete' }
+    }
+
+    // Fin de bloc RUN }
+    if (this._inRunBlock && cleaned === '}') {
+      this._inRunBlock = false
+      const stmts = this._runStatements.slice()
+      this._runStatements = []
+      return {
+        type: 'run_block',
+        statements: stmts.map(s => RmanScriptParser.tokenize(s.join(' '))),
+      }
+    }
+
+    // Dans un bloc RUN : accumule les statements jusqu'au ;
+    if (this._inRunBlock) {
+      this._buffer.push(cleaned)
+      if (cleaned.endsWith(';')) {
+        const stmt = this._buffer.join(' ').replace(/;$/, '').trim()
+        this._runStatements.push([stmt])
+        this._buffer = []
+      }
+      return { type: 'incomplete' }
+    }
+
+    // Commande normale : accumule jusqu'au ;
+    this._buffer.push(cleaned)
+    if (cleaned.endsWith(';')) {
+      return this._flush()
+    }
+
+    return { type: 'incomplete' }
+  }
+
+  private _flush(): ParsedScript {
+    const full = this._buffer.join(' ').replace(/;$/, '').trim()
+    this._buffer = []
+    if (!full) return { type: 'empty' }
+    return { type: 'single', tokens: RmanScriptParser.tokenize(full) }
+  }
+
+  /** Remet a zero l'etat du parseur */
+  reset(): void {
+    this._buffer      = []
+    this._inRunBlock  = false
+    this._runStatements = []
+  }
+
+  /** Indique si on attend encore des lignes (prompt '2>' au lieu de 'RMAN>') */
+  get isMultiLine(): boolean {
+    return this._buffer.length > 0 || this._inRunBlock
+  }
+
+  /** Tokenise une ligne RMAN en respectant les strings entre quotes */
+  static tokenize(line: string): readonly string[] {
+    const tokens: string[] = []
+    let current = ''
+    let inQuote: '"' | "'" | null = null
+
+    for (const ch of line) {
+      if (inQuote) {
+        if (ch === inQuote) { inQuote = null; tokens.push(current); current = '' }
+        else current += ch
+      } else if (ch === '"' || ch === "'") {
+        inQuote = ch
+      } else if (ch === ' ' || ch === '\t') {
+        if (current) { tokens.push(current); current = '' }
+      } else {
+        current += ch
+      }
+    }
+    if (current) tokens.push(current)
+    return tokens
+  }
+}
+```
+
+### 8.5 IRmanSession — interface publique (Facade)
+
+```typescript
+// src/database/oracle/rman/session/IRmanSession.ts
+
+import type { RmanOutput }       from '../RmanOutput'
+import type { RmanSessionState } from './RmanSessionState'
+import type { RmanConfig }       from '../config/RmanConfig'
+import type { RmanConnectOptions } from './RmanConnectOptions'
+
+export interface IRmanSession {
+  /** Etat courant de la machine a etats */
+  readonly state: RmanSessionState
+
+  /** Configuration RMAN courante (immuable) */
+  readonly config: RmanConfig
+
+  /**
+   * Execute une ligne d'input utilisateur.
+   * Gere le buffering multi-ligne en interne.
+   * Retourne null si la ligne est incomplete (prompt '2>').
+   */
+  processLine(line: string): RmanOutput | null
+
+  /** Connecte au target depuis la ligne de commande (rman target /) */
+  connectFromArgs(opts: RmanConnectOptions): RmanOutput
+
+  /** Retourne le prompt courant ('RMAN> ' ou '2> ') */
+  getPrompt(): string
+
+  /** true si la session doit se fermer */
+  isExited(): boolean
+
+  /** Libere toutes les ressources (canaux, catalog snapshot) */
+  dispose(): void
+}
+```
+
+### 8.6 RmanSession — implementation de la Facade
+
+```typescript
+// src/database/oracle/rman/session/RmanSession.ts
+
+import type { IRmanSession }          from './IRmanSession'
+import type { RmanSessionState }      from './RmanSessionState'
+import type { RmanConfig }            from '../config/RmanConfig'
+import type { RmanOutput }            from '../RmanOutput'
+import type { IRmanOracleContext }    from '../integration/IRmanOracleContext'
+import { DEFAULT_RMAN_CONFIG, withConfig } from '../config/RmanConfig'
+import { InMemoryRmanCatalog }        from '../catalog/InMemoryRmanCatalog'
+import { ChannelAllocator }           from '../channels/ChannelAllocator'
+import { ChannelPool }                from '../channels/ChannelPool'
+import { InMemoryEventBus }           from '../events/IRmanEventBus'
+import { createDefaultDispatcher }    from '../commands/RmanCommandDispatcher'
+import { RmanScriptParser }           from './RmanScriptParser'
+import { createRetentionPolicy }      from '../retention/RetentionPolicyFactory'
+import { DbId }                       from '../values/DbId'
+import { Scn }                        from '../values/Scn'
+import { outputLines, outputError }   from '../RmanOutput'
+import { match }                      from '../result'
+
+export class RmanSession implements IRmanSession {
+  private _state:   RmanSessionState = { phase: 'idle' }
+  private _config:  RmanConfig       = DEFAULT_RMAN_CONFIG
+  private _exited   = false
+
+  private readonly _catalog    = new InMemoryRmanCatalog()
+  private readonly _eventBus   = new InMemoryEventBus()
+  private readonly _dispatcher = createDefaultDispatcher()
+  private readonly _parser     = new RmanScriptParser()
+
+  constructor(private readonly _oracleCtx: IRmanOracleContext) {}
+
+  get state():  RmanSessionState { return this._state }
+  get config(): RmanConfig       { return this._config }
+
+  getPrompt(): string {
+    return this._parser.isMultiLine ? '2> ' : 'RMAN> '
+  }
+
+  isExited(): boolean { return this._exited }
+
+  connectFromArgs(opts: import('./RmanConnectOptions').RmanConnectOptions): RmanOutput {
+    const result = this._doConnect(opts.target)
+    return result
+  }
+
+  processLine(line: string): RmanOutput | null {
+    if (this._exited) return outputLines(['Recovery Manager complete.'], { exit: true })
+
+    // Commandes immediates (EXIT/QUIT sans ;)
+    const upper = line.trim().toUpperCase()
+    if (upper === 'EXIT' || upper === 'QUIT') {
+      this._exited = true
+      this._state = { phase: 'disconnected', reason: 'user exit' }
+      return outputLines(['Recovery Manager complete.'], { exit: true })
+    }
+
+    const parsed = this._parser.feed(line)
+
+    switch (parsed.type) {
+      case 'empty':
+        return outputLines([])
+
+      case 'incomplete':
+        return null  // signal a RmanSubShell : continuer la saisie, prompt '2>'
+
+      case 'single':
+        return this._executeTokens(parsed.tokens)
+
+      case 'run_block':
+        return this._executeRunBlock(parsed.statements)
+    }
+  }
+
+  private _executeTokens(tokens: readonly string[]): RmanOutput {
+    if (tokens.length === 0) return outputLines([])
+
+    const pool      = new ChannelAllocator(this._config, this._oracleCtx).createAutoPool()
+    const allocator = new ChannelAllocator(this._config, this._oracleCtx)
+    const ctx       = this._buildContext(pool, allocator)
+
+    const result = this._dispatcher.dispatch(tokens, ctx)
+    pool.releaseAll()
+
+    return match(result,
+      output => output,
+      error  => outputError(error),
+    )
+  }
+
+  private _executeRunBlock(
+    statements: readonly (readonly string[])[],
+  ): RmanOutput {
+    // Dans un bloc RUN, les canaux sont partages entre toutes les commandes
+    const pool      = new ChannelAllocator(this._config, this._oracleCtx).createAutoPool()
+    const allocator = new ChannelAllocator(this._config, this._oracleCtx)
+    const allLines: string[] = []
+
+    for (const tokens of statements) {
+      const ctx    = this._buildContext(pool, allocator)
+      const result = this._dispatcher.dispatch(tokens, ctx)
+
+      const output = match(result,
+        o => o,
+        e => outputError(e),
+      )
+      allLines.push(...output.lines)
+      if (output.exit) {
+        pool.releaseAll()
+        return outputLines(allLines, { exit: true })
+      }
+    }
+    pool.releaseAll()
+    return outputLines(allLines)
+  }
+
+  private _buildContext(
+    pool: ChannelPool,
+    allocator: ChannelAllocator,
+  ): import('../commands/RmanCommandContext').RmanCommandContext {
+    const state     = this._state
+    const dbId      = state.phase === 'connected' ? state.dbId  : DbId.fromDbName('ORCL')
+    const currentScn = state.phase === 'connected' ? state.currentScn : Scn.zero
+
+    return {
+      catalog:          this._catalog,
+      channelPool:      pool,
+      channelAllocator: allocator,
+      config:           this._config,
+      retentionPolicy:  createRetentionPolicy(this._config),
+      oracleCtx:        this._oracleCtx,
+      eventBus:         this._eventBus,
+      dbId,
+      currentScn,
+      now:              new Date(),
+      updateConfig:     (fn) => { this._config = fn(this._config) },
+    }
+  }
+
+  private _doConnect(target: string): RmanOutput {
+    this._state = { phase: 'connecting', target }
+    const instanceState = this._oracleCtx.getInstanceState()
+
+    if (instanceState === 'SHUTDOWN') {
+      this._state = { phase: 'disconnected', reason: 'instance not available' }
+      return outputLines([
+        'RMAN-00571: ===========================================================',
+        'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+        'RMAN-00571: ===========================================================',
+        'RMAN-03002: failure of connect command',
+        'RMAN-06004: oracle error from target database: ORA-01034: ORACLE not available',
+      ])
+    }
+
+    const dbName = this._oracleCtx.getDbName()
+    const dbId   = DbId.fromDbName(dbName)
+    const scn    = Scn.of(this._oracleCtx.getCurrentScn())
+
+    this._state = {
+      phase:       'connected',
+      dbId,
+      dbName,
+      dbMode:      instanceState,
+      currentScn:  scn,
+      connectedAt: new Date(),
+    }
+
+    return outputLines([
+      `connected to target database: ${dbName} (DBID=${dbId.value})`,
+      '',
+    ])
+  }
+
+  dispose(): void {
+    this._parser.reset()
+    this._catalog.clear()
+  }
+}
+```
+
+### 8.7 Diagramme de la Facade RmanSession
+
+```
+RmanSubShell (ISubShell)
+  |  processLine(line) --> RmanSession.processLine()
+  |
+  v
+RmanSession (IRmanSession)  <-- Facade
+  |  state: RmanSessionState (idle/connecting/connected/running_job/disconnected)
+  |  config: RmanConfig (immuable)
+  |  _parser: RmanScriptParser (multi-ligne + RUN {})
+  |  _dispatcher: RmanCommandDispatcher
+  |  _catalog: InMemoryRmanCatalog
+  |  _eventBus: InMemoryEventBus
+  |
+  +-- processLine(line) --> RmanScriptParser.feed()
+        |
+        +-- 'single'    --> _executeTokens()    --> dispatcher.dispatch()
+        +-- 'run_block' --> _executeRunBlock()  --> dispatcher.dispatch() x N
+        +-- 'incomplete'--> null (prompt '2>')
+        +-- 'empty'     --> outputLines([])
+
+State Machine transitions :
+  idle  --[CONNECT TARGET]-->  connecting  --[OK]--> connected
+  connected  --[command]-->  running_job  --[done]--> connected
+  connected  --[EXIT/QUIT]-->  disconnected
+  any  --[fatal error]-->  disconnected
+```
+
+---
+
