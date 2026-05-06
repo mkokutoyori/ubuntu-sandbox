@@ -3326,3 +3326,168 @@ RMAN> SHOW ALL;
 
 ---
 
+## 11. Recapitulatif des principes appliques
+
+### 11.1 Tableau des patterns de conception
+
+| Pattern | Ou | Benefice |
+|---|---|---|
+| **Result Monad (FP)** | `result.ts`, toutes les commandes | Erreurs typees, pas de try/catch, composition garantie |
+| **Discriminated Union** | `RmanSessionState`, `RmanErrorCode`, `ParsedScript` | Exhaustivite verifiee par le compilateur, zero cas non-traite |
+| **Value Object** | `Scn`, `RmanTag`, `BackupKey`, `DbId`, `BackupSet`, `RmanConfig` | Immutabilite, comparaison par valeur, thread-safety |
+| **Pure Functions (FP)** | `RmanPureUtils`, `RmanRetentionEngine` | Testabilite parfaite (zero mock), determinisme, composabilite |
+| **Repository** | `IRmanCatalogRepository`, `InMemoryRmanCatalog` | Separation persistence/domaine, testable avec in-memory impl |
+| **Factory** | `BackupSetFactory.createBackupSet()`, `createDefaultDispatcher()` | Garantit la coherence a la creation, encapsule la complexite |
+| **Strategy** | `IBackupDeviceStrategy` (DISK/SBT), `IRetentionPolicy` (REDUNDANCY/WINDOW/NONE) | Algorithmes interchangeables, Open/Closed respecte |
+| **Composite** | `ChannelPool` | Traitement uniforme d'une collection de canaux (allocate/release) |
+| **Command** | `IRmanCommand`, `RmanCommandDispatcher` | Open/Closed : ajouter une commande = 1 fichier, 1 ligne d'enregistrement |
+| **Facade** | `RmanSession` | Cache la complexite interne (dispatcher, parser, catalog, canaux) |
+| **State Machine** | `RmanSessionState` (discriminated union) | Transitions explicites, impossibilite d'etre dans un etat invalide |
+| **Builder** | `RmanConnectOptionsBuilder` | Construction lisible d'objets avec de nombreux parametres optionnels |
+| **Adapter** | `LinuxRmanContext` | Decouple le module RMAN de OracleInstance + VirtualFileSystem |
+| **Observer** | `IRmanEventBus`, `InMemoryEventBus` | Progression du backup/restore sans couplage direct |
+| **Template Method** | Via le flux BACKUP (allocate → write pieces → update catalog → autobackup) | Sequence immuable, points d'extension aux etapes |
+
+### 11.2 Principes SOLID appliques
+
+#### S — Single Responsibility Principle
+
+Chaque classe a une seule raison de changer :
+- `RmanScriptParser` : uniquement le parsing (tokenization, multi-ligne, RUN {})
+- `InMemoryRmanCatalog` : uniquement la persistence en memoire du catalog
+- `DiskDeviceStrategy` : uniquement l'ecriture/lecture sur le VFS
+- `RedundancyPolicy` : uniquement le calcul de l'obsolescence par redondance
+- `BackupSetFactory` : uniquement la creation coherente de BackupSet
+
+#### O — Open/Closed Principle
+
+```
+Extension sans modification :
+  Nouvelle commande RMAN  --> creer XxxCommand.ts, enregistrer dans createDefaultDispatcher()
+  Nouveau device type     --> creer XxxDeviceStrategy.ts, implementer IBackupDeviceStrategy
+  Nouvelle retention      --> creer XxxRetentionPolicy.ts, ajouter dans RetentionPolicyFactory
+  Nouveau contexte Oracle --> creer WindowsRmanContext.ts, implementer IRmanOracleContext
+```
+
+#### L — Liskov Substitution Principle
+
+```
+Toute IRmanOracleContext peut remplacer LinuxRmanContext sans changer RmanSession.
+Toute IRetentionPolicy peut remplacer RedundancyPolicy sans changer RmanRetentionEngine.
+Toute IBackupDeviceStrategy peut remplacer DiskDeviceStrategy sans changer ConcreteBackupChannel.
+```
+
+#### I — Interface Segregation Principle
+
+```
+IRmanCatalogRepository = IRmanCatalogReader + IRmanCatalogWriter
+  --> ListCommand n'a besoin que de IRmanCatalogReader (lecture seule)
+  --> BackupCommand n'a besoin que de IRmanCatalogWriter pour addBackupSet()
+  --> CrosscheckCommand utilise les deux
+
+IBackupDeviceStrategy = writePiece + pieceExists + deletePiece
+  --> 3 methodes cohesives, pas de methodes imposees inutilement
+
+IRmanSession = processLine + connectFromArgs + getPrompt + isExited + dispose
+  --> RmanSubShell ne voit que cette interface, pas RmanSession concrete
+```
+
+#### D — Dependency Inversion Principle
+
+```
+Couche haute (RmanSession) --> depend de IRmanCatalogRepository (interface)
+                           --> depend de IRmanOracleContext (interface)
+                           --> depend de IRetentionPolicy (interface)
+                           --> depend de IRmanEventBus (interface)
+
+Couche basse (InMemoryRmanCatalog, LinuxRmanContext) --> implementent les interfaces
+
+Aucune dependance vers le haut : LinuxRmanContext ne connait pas RmanSession.
+```
+
+### 11.3 Garanties de programmation fonctionnelle
+
+| Propriete | Mecanisme | Verification |
+|---|---|---|
+| **Immutabilite** | `Object.freeze()` sur tous les Value Objects | Erreur runtime si mutation tentee |
+| **Fonctions pures** | `RmanPureUtils` et `RmanRetentionEngine` sans `this`, sans side effects | Tests sans mock |
+| **Monade Result** | `map/flatMap/match` au lieu de try/catch | Pas d'exception non geree |
+| **Composition** | `sequence()`, `flatMap()` pour chainer les operatins | Propagation automatique des erreurs |
+| **Separation FP/OOP** | Modules de fonctions pures + classes pour l'etat | Logique testable sans instanciation |
+
+### 11.4 Couverture des defauts identifies (section 1.2)
+
+| DEF | Defaut | Solution dans ce design |
+|---|---|---|
+| DEF-RMAN-01 | Pas de catalog persistant | `InMemoryRmanCatalog` + `BackupSetFactory` (section 4) |
+| DEF-RMAN-02 | `SHOW ALL` hardcode | `ShowCommand` lit `RmanConfig` immuable (section 7) |
+| DEF-RMAN-03 | Pieces non ecrites sur VFS | `DiskDeviceStrategy.writePiece()` --> VFS (section 5) |
+| DEF-RMAN-04 | Pas d'INCREMENTAL | `BackupCommand` : parse `LEVEL 0/1`, `BackupType` enum (section 7) |
+| DEF-RMAN-05 | Pas de FORMAT/TAG | `BackupCommand` : parse clauses, `expandPieceFormat()` (sections 3, 7) |
+| DEF-RMAN-06 | Pas de CONFIGURE | `ConfigureCommand` + `withConfig()` immuable (sections 6, 7) |
+| DEF-RMAN-07 | Pas de canaux | `ChannelPool` + `ChannelAllocator` (section 5) |
+| DEF-RMAN-08 | LIST statique | `ListCommand` lit `IRmanCatalogReader` (sections 4, 7) |
+| DEF-RMAN-09 | RESTORE sans check | `RestoreCommand` verifie `getInstanceState() === 'MOUNT'` (section 7) |
+| DEF-RMAN-10 | Mono-ligne seulement | `RmanScriptParser` multi-ligne avec buffering (section 8) |
+| DEF-RMAN-11 | Pas de RUN {} | `RmanScriptParser` : detection et execution de blocs RUN (section 8) |
+| DEF-RMAN-12 | CROSSCHECK fictif | `CrosscheckCommand` --> `IBackupDeviceStrategy.pieceExists()` (sections 5, 7) |
+| DEF-RMAN-13 | DELETE ne fait rien | `DeleteCommand` --> `deletePiece()` + `updateBackupSetStatus()` (sections 5, 7) |
+| DEF-RMAN-14 | Pas de BACKUP CONTROLFILE | `BackupCommand` : `BackupObject = 'CONTROLFILE'` (section 7) |
+| DEF-RMAN-15 | Pas de BACKUP VALIDATE | `ValidateCommand` (section 7) |
+| DEF-RMAN-16 | Pas de CATALOG | `CatalogCommand` (section 7) |
+| DEF-RMAN-17 | Pas de DUPLICATE | `DuplicateCommand` (section 7) |
+| DEF-RMAN-18 | Pas de SCN/time recovery | `RecoverCommand` : parse `UNTIL SCN n` / `UNTIL TIME 'date'` (sections 7, 10) |
+| DEF-RMAN-19 | CONNECT non valide | `ConnectCommand` --> `IRmanOracleContext.getInstanceState()` (sections 7, 9) |
+| DEF-RMAN-20 | DELETE INPUT ignore | `BackupCommand` : flag `deleteInput` supprime les archivelogs apres backup (section 7) |
+
+### 11.5 Guide d'implementation (ordre recommande)
+
+L'ordre de developpement suit la pyramide de dependances — chaque couche est testable avant de construire la suivante :
+
+```
+Phase 1 — Fondations (zero dependance externe)
+  result.ts  RmanError.ts  RmanOutput.ts
+  values/: Scn.ts  RmanTag.ts  BackupKey.ts  DbId.ts
+  RmanPureUtils.ts
+  config/RmanConfig.ts
+
+Phase 2 — Catalog (depend uniquement des fondations)
+  catalog/types.ts
+  catalog/IRmanCatalogRepository.ts
+  catalog/InMemoryRmanCatalog.ts
+  catalog/BackupSetFactory.ts
+
+Phase 3 — Canaux et retention (depend du catalog)
+  retention/: IRetentionPolicy + 3 implementations + factory + engine
+  channels/: IBackupDeviceStrategy + DiskDevice + SbtDevice
+             IBackupChannel + ConcreteBackupChannel
+             ChannelPool + ChannelAllocator
+
+Phase 4 — Commandes (depend de tout le reste)
+  commands/: IRmanCommand + RmanCommandContext + RmanCommandDispatcher
+             13 commandes implementations
+
+Phase 5 — Session (orchestration)
+  session/: RmanSessionState + RmanConnectOptions + RmanScriptParser
+            IRmanSession + RmanSession
+
+Phase 6 — Integration (depend du simulateur)
+  integration/IRmanOracleContext.ts
+  integration/LinuxRmanContext.ts
+
+Phase 7 — Wiring (depend de toutes les couches)
+  RmanSubShell.ts (refactorise)
+  LinuxTerminalSession.ts (wiring de la commande rman)
+
+Phase 8 — Tests
+  rman-core.test.ts    (Phases 1-3 : fonctions pures, catalog, retention)
+  rman-commands.test.ts (Phase 4 : chaque commande avec MockOracleContext)
+  rman-session.test.ts  (Phase 5 : scripts multi-lignes, blocs RUN)
+  rman-integration.test.ts (Phases 6-7 : avec OracleInstance + VFS reels)
+```
+
+---
+
+*Document genere par Claude Code — Ubuntu Sandbox v1.0*  
+*Toute modification doit etre accompagnee d'une mise a jour de la table de couverture (section 11.4)*
+
