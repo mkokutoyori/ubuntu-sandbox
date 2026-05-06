@@ -162,3 +162,541 @@ type RouteEntry = {
 - EIGRP over DMVPN
 
 ---
+
+## 2. Fondations : Result monad + EigrpError
+
+### 2.1 Reutilisation du Result monad
+
+Le module EIGRP reutilise le type `Result<T, E>` et ses combinateurs definis dans le module SSH (`src/network/protocols/ssh/result.ts`). Aucune duplication — import direct. Le principe est identique :
+
+```typescript
+// src/network/eigrp/result.ts  (re-export)
+export type { Result } from '@/network/protocols/ssh/result'
+export { ok, err, map, flatMap, mapError, getOrElse, match, sequence }
+  from '@/network/protocols/ssh/result'
+```
+
+### 2.2 EigrpError — union discriminee propre a EIGRP
+
+Les erreurs EIGRP ont leurs propres codes. Chaque variant correspond a un cas d'echec distinct, verifiable statiquement par le compilateur.
+
+```typescript
+// src/network/eigrp/EigrpError.ts
+
+export type EigrpErrorCode =
+  // Erreurs de voisinage
+  | 'NEIGHBOR_K_MISMATCH'       // K-values incompatibles -> voisinage impossible
+  | 'NEIGHBOR_AS_MISMATCH'      // AS numbers differents -> pas de voisinage
+  | 'NEIGHBOR_AUTH_FAIL'        // Echec authentification MD5/SHA
+  | 'NEIGHBOR_HOLD_EXPIRED'     // Hold timer expire -> voisin perdu
+  | 'NEIGHBOR_NOT_FOUND'        // Voisin inconnu dans la neighbor table
+  | 'NEIGHBOR_ALREADY_UP'       // Tentative de re-init d'un voisin deja Up
+  // Erreurs DUAL
+  | 'DUAL_STUCK_IN_ACTIVE'      // SIA : Query sans Reply apres SIA-timer
+  | 'DUAL_NO_FEASIBLE_SUCCESSOR' // Aucun FS disponible -> passage en Active
+  | 'DUAL_INVALID_METRIC'       // Metrique infinie ou overflow
+  | 'DUAL_LOOP_DETECTED'        // Condition de faisabilite violee
+  // Erreurs RTP (Reliable Transport)
+  | 'RTP_SEQ_OUT_OF_ORDER'      // Paquet recu avec seqno hors ordre
+  | 'RTP_MAX_RETRANS_EXCEEDED'  // 16 retransmissions sans ACK -> voisin perdu
+  | 'RTP_DUPLICATE_PACKET'      // Seqno deja vu (deduplication)
+  // Erreurs de paquet
+  | 'PACKET_INVALID_OPCODE'     // Opcode inconnu (1/3/4/5 attendus)
+  | 'PACKET_CHECKSUM_MISMATCH'  // Checksum IP/EIGRP invalide
+  | 'PACKET_TLV_MALFORMED'      // TLV tronque ou type inconnu
+  | 'PACKET_VERSION_MISMATCH'   // Version EIGRP != 2
+  // Erreurs de configuration
+  | 'CONFIG_INVALID_AS'         // AS number hors range [1, 65535]
+  | 'CONFIG_INTERFACE_NOT_FOUND' // Interface inconnue
+  | 'CONFIG_WILDCARD_INVALID'   // Wildcard mask invalide dans 'network'
+  | 'CONFIG_SUMMARY_OVERLAP'    // Summary address se chevauche avec route plus specifique
+
+export interface EigrpError {
+  readonly code:    EigrpErrorCode
+  readonly message: string
+  /** Contexte additionnel (voisin, prefix, interface...) */
+  readonly context?: Record<string, string | number>
+}
+
+export function makeEigrpError(
+  code: EigrpErrorCode,
+  message: string,
+  context?: Record<string, string | number>,
+): EigrpError {
+  return Object.freeze({ code, message, context })
+}
+```
+
+### 2.3 EigrpEvent — union discriminee pour les evenements internes
+
+EIGRP est pilote par des evenements (packets recus, timers expires, changements topologiques). Modeliser les evenements comme une union discriminee permet une machine a etats exhaustivement couverte par le compilateur.
+
+```typescript
+// src/network/eigrp/EigrpEvent.ts
+
+import type { EigrpNeighborAddress } from './values/EigrpNeighborAddress'
+import type { EigrpPrefix }          from './values/EigrpPrefix'
+import type { EigrpMetric }          from './values/EigrpMetric'
+import type { EigrpNeighborKey }     from './values/EigrpNeighborKey'
+
+export type EigrpEvent =
+  // ── Evenements de voisinage ───────────────────────────────────────────
+  | {
+      readonly type:     'HELLO_RECEIVED'
+      readonly neighbor: EigrpNeighborAddress
+      readonly iface:    string
+      readonly holdTime: number
+      readonly kValues:  readonly [number, number, number, number, number]
+      readonly asNumber: number
+    }
+  | {
+      readonly type:     'HOLD_TIMER_EXPIRED'
+      readonly neighbor: EigrpNeighborKey
+      readonly iface:    string
+    }
+  | {
+      readonly type:     'NEIGHBOR_DOWN'
+      readonly neighbor: EigrpNeighborKey
+      readonly reason:   'HOLD_EXPIRED' | 'K_MISMATCH' | 'AS_MISMATCH' | 'AUTH_FAIL' | 'INTERFACE_DOWN'
+    }
+  // ── Evenements DUAL (routes) ──────────────────────────────────────────
+  | {
+      readonly type:    'UPDATE_RECEIVED'
+      readonly from:    EigrpNeighborKey
+      readonly prefix:  EigrpPrefix
+      readonly metric:  EigrpMetric   // metrique annoncee par le voisin (AD)
+      readonly isWithdraw: boolean    // infinite metric = retrait de route
+    }
+  | {
+      readonly type:   'QUERY_RECEIVED'
+      readonly from:   EigrpNeighborKey
+      readonly prefix: EigrpPrefix
+      readonly metric: EigrpMetric
+    }
+  | {
+      readonly type:   'REPLY_RECEIVED'
+      readonly from:   EigrpNeighborKey
+      readonly prefix: EigrpPrefix
+      readonly metric: EigrpMetric
+    }
+  // ── Evenements de route locale ─────────────────────────────────────────
+  | {
+      readonly type:        'LOCAL_ROUTE_UP'
+      readonly prefix:      EigrpPrefix
+      readonly iface:       string
+      readonly bandwidth:   number     // Kbps
+      readonly delay:       number     // microseconds
+    }
+  | {
+      readonly type:   'LOCAL_ROUTE_DOWN'
+      readonly prefix: EigrpPrefix
+      readonly iface:  string
+    }
+  // ── Evenements DUAL internes ──────────────────────────────────────────
+  | {
+      readonly type:   'SIA_TIMER_EXPIRED'
+      readonly prefix: EigrpPrefix
+    }
+  | {
+      readonly type:   'SIA_QUERY_SENT'
+      readonly prefix: EigrpPrefix
+      readonly to:     EigrpNeighborKey
+    }
+```
+
+### 2.4 Diagramme des types fondamentaux
+
+```
+Result<T, E>        (partage avec SSH — zero duplication)
+      |
+      +-- EigrpError   (code + message + context)
+            makeEigrpError() pur
+
+EigrpEvent           (union discriminee — 10 variants)
+  HELLO_RECEIVED, HOLD_TIMER_EXPIRED, NEIGHBOR_DOWN
+  UPDATE_RECEIVED, QUERY_RECEIVED, REPLY_RECEIVED
+  LOCAL_ROUTE_UP, LOCAL_ROUTE_DOWN
+  SIA_TIMER_EXPIRED, SIA_QUERY_SENT
+
+Proprietes :
+  - Zero dependance externe (pas de Router, pas de VFS)
+  - Chaque variant est exhaustif dans les switch/match
+  - Immuables (Object.freeze via readonly)
+```
+
+---
+
+## 3. Value Objects et metrique EIGRP (FP)
+
+### 3.1 EigrpAsNumber — numero de systeme autonome
+
+```typescript
+// src/network/eigrp/values/EigrpAsNumber.ts
+
+export type EigrpAsNumber = Readonly<{ readonly _tag: 'EigrpAsNumber'; readonly value: number }>
+
+export const EigrpAsNumber = {
+  of(n: number): EigrpAsNumber {
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+      throw new RangeError(`EIGRP AS number must be in [1, 65535], got: ${n}`)
+    }
+    return Object.freeze({ _tag: 'EigrpAsNumber', value: n })
+  },
+  toString(a: EigrpAsNumber): string { return String(a.value) },
+}
+```
+
+### 3.2 EigrpRouterIdentifier — identifiant du routeur
+
+```typescript
+// src/network/eigrp/values/EigrpRouterIdentifier.ts
+
+export type EigrpRid = Readonly<{ readonly _tag: 'EigrpRid'; readonly value: string }>
+
+const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/
+
+export const EigrpRid = {
+  of(s: string): EigrpRid {
+    if (!IPV4_RE.test(s)) throw new Error(`Invalid EIGRP RID: "${s}"`)
+    return Object.freeze({ _tag: 'EigrpRid', value: s })
+  },
+
+  /** Derive le RID de la plus haute adresse IPv4 des interfaces Loopback (RFC 7868 §4) */
+  fromHighestLoopback(addresses: readonly string[]): EigrpRid | null {
+    if (addresses.length === 0) return null
+    const sorted = [...addresses].sort((a, b) => {
+      const toNum = (ip: string) => ip.split('.').reduce((acc, o) => acc * 256 + Number(o), 0)
+      return toNum(b) - toNum(a)
+    })
+    return EigrpRid.of(sorted[0])
+  },
+
+  toString(r: EigrpRid): string { return r.value },
+}
+```
+
+### 3.3 EigrpPrefix — reseau IPv4 avec masque
+
+```typescript
+// src/network/eigrp/values/EigrpPrefix.ts
+
+export type EigrpPrefix = Readonly<{
+  readonly _tag:    'EigrpPrefix'
+  readonly network: string    // ex. '10.0.0.0'
+  readonly prefixLen: number  // 0..32
+}>
+
+export const EigrpPrefix = {
+  of(network: string, prefixLen: number): EigrpPrefix {
+    if (prefixLen < 0 || prefixLen > 32) {
+      throw new RangeError(`Prefix length must be in [0,32], got: ${prefixLen}`)
+    }
+    return Object.freeze({ _tag: 'EigrpPrefix', network, prefixLen })
+  },
+
+  fromCidr(cidr: string): EigrpPrefix {
+    const [net, len] = cidr.split('/')
+    return EigrpPrefix.of(net, Number(len))
+  },
+
+  toString(p: EigrpPrefix): string {
+    return `${p.network}/${p.prefixLen}`
+  },
+
+  /** Compare deux prefixes — utile pour trier la topology table */
+  compare(a: EigrpPrefix, b: EigrpPrefix): number {
+    if (a.prefixLen !== b.prefixLen) return b.prefixLen - a.prefixLen  // plus long = premier
+    return a.network.localeCompare(b.network)
+  },
+
+  /** Verifie si une adresse appartient a ce prefix */
+  contains(prefix: EigrpPrefix, ip: string): boolean {
+    const toNum = (s: string) => s.split('.').reduce((a, o) => a * 256 + Number(o), 0)
+    const mask = prefix.prefixLen === 0 ? 0 : (~0 << (32 - prefix.prefixLen)) >>> 0
+    return (toNum(ip) & mask) === (toNum(prefix.network) & mask)
+  },
+}
+```
+
+### 3.4 EigrpMetric — metrique composite EIGRP
+
+La metrique EIGRP est l'element le plus complexe du protocole. Elle encode la bande passante minimale sur le chemin, la somme des delais, la fiabilite et la charge. Les coefficients K1..K5 pondèrent chaque composante.
+
+```typescript
+// src/network/eigrp/values/EigrpMetric.ts
+
+/**
+ * Valeurs brutes d'interface utilisees pour calculer la metrique EIGRP.
+ * Transmises dans le TLV IPv4 Internal Route.
+ */
+export interface EigrpInterfaceMetric {
+  readonly bandwidth:   number   // Kbps (interface bandwidth)
+  readonly delay:       number   // microseconds (interface delay)
+  readonly reliability: number   // 0-255 (255 = 100%)
+  readonly load:        number   // 0-255 (255 = 100% utilization)
+  readonly mtu:         number   // bytes (minimum MTU on path)
+}
+
+/**
+ * Coefficients K pour le calcul de metrique.
+ * Default Cisco : K1=1, K2=0, K3=1, K4=0, K5=0
+ */
+export interface EigrpKValues {
+  readonly k1: number   // BW coefficient
+  readonly k2: number   // load coefficient
+  readonly k3: number   // delay coefficient
+  readonly k4: number   // reliability coefficient (part 1)
+  readonly k5: number   // reliability coefficient (part 2)
+}
+
+export const DEFAULT_K_VALUES: EigrpKValues = Object.freeze({
+  k1: 1, k2: 0, k3: 1, k4: 0, k5: 0,
+})
+
+/**
+ * Valeur de metrique EIGRP calculee (Feasible Distance ou Advertised Distance).
+ * INFINIE = 0xFFFFFFFF = route inaccessible.
+ */
+export type EigrpMetric = Readonly<{
+  readonly _tag:       'EigrpMetric'
+  readonly composite:  number                    // valeur composite finale
+  readonly components: EigrpInterfaceMetric      // composantes brutes (pour display)
+}>
+
+export const EIGRP_INFINITY: EigrpMetric = Object.freeze({
+  _tag: 'EigrpMetric',
+  composite: 0xFFFFFFFF,
+  components: { bandwidth: 0, delay: 0xFFFFFFFF, reliability: 0, load: 255, mtu: 0 },
+})
+
+export const EigrpMetric = {
+  isInfinite(m: EigrpMetric): boolean { return m.composite >= 0xFFFFFFFF },
+
+  /** Retourne la metrique la plus faible */
+  min(a: EigrpMetric, b: EigrpMetric): EigrpMetric {
+    return a.composite <= b.composite ? a : b
+  },
+
+  compare(a: EigrpMetric, b: EigrpMetric): number {
+    return a.composite - b.composite
+  },
+}
+```
+
+### 3.5 EigrpPureUtils — calcul de metrique et helpers purs
+
+```typescript
+// src/network/eigrp/EigrpPureUtils.ts
+
+import type { EigrpInterfaceMetric, EigrpKValues, EigrpMetric } from './values/EigrpMetric'
+import { EIGRP_INFINITY } from './values/EigrpMetric'
+import type { EigrpPrefix } from './values/EigrpPrefix'
+
+// ─── Constantes de bande passante par defaut Cisco ────────────────────────
+
+/** Bandes passantes Cisco IOS par defaut en Kbps */
+export const CISCO_DEFAULT_BANDWIDTHS: Record<string, number> = {
+  'FastEthernet':       100_000,   // 100 Mbps
+  'GigabitEthernet':  1_000_000,   // 1 Gbps
+  'TenGigabitEthernet': 10_000_000, // 10 Gbps
+  'Serial':               1_544,   // T1 = 1.544 Mbps
+  'Loopback':         8_000_000,   // 8 Gbps (never used in metric)
+  'Tunnel':              100,      // 100 Kbps (conservative default)
+}
+
+/** Delais Cisco IOS par defaut en microseconds */
+export const CISCO_DEFAULT_DELAYS: Record<string, number> = {
+  'FastEthernet':      100,    // 0.1 ms
+  'GigabitEthernet':    10,    // 0.01 ms
+  'TenGigabitEthernet':  1,    // 0.001 ms (0.01 ms en pratique)
+  'Serial':          20_000,   // 20 ms
+  'Loopback':         5_000,   // 5 ms (never used in real EIGRP)
+  'Tunnel':         50_000,    // 50 ms
+}
+
+// ─── Calcul de la metrique composite ─────────────────────────────────────
+
+/**
+ * Calcule la metrique EIGRP composite.
+ *
+ * Formule RFC 7868 §5.6.1 :
+ *   metric = 256 × [K1×BW + K2×BW/(256-load) + K3×delay]
+ *   avec :
+ *     BW    = 10^7 / bandwidth_kbps  (inverse bande passante minimale)
+ *     delay = sum_of_delays / 10      (en dizaines de microsecondes)
+ *
+ *   Si K5 != 0 : multiply by K5 / (reliability + K4)
+ *
+ * Note : 'bandwidth' dans le TLV est exprime en 256 × 10^7/kbps
+ *        'delay'     dans le TLV est exprime en 256 × delay_us / 10
+ *
+ * @param m        Composantes de l'interface (bw en Kbps, delay en µs)
+ * @param k        Coefficients K (default: K1=K3=1, reste=0)
+ */
+export function computeEigrpMetric(
+  m: EigrpInterfaceMetric,
+  k: EigrpKValues,
+): EigrpMetric {
+  if (m.bandwidth === 0) return EIGRP_INFINITY
+
+  // Scaleur BW = 10^7 / bandwidth_kbps (BW inverse, minimum sur le chemin)
+  const bw    = Math.floor(10_000_000 / m.bandwidth)
+  // Scaleur delay = sum_of_delays / 10 (en dizaines de µs)
+  const delay = Math.floor(m.delay / 10)
+
+  let raw = k.k1 * bw + k.k3 * delay
+
+  if (k.k2 !== 0) {
+    raw += Math.floor(k.k2 * bw / (256 - m.load))
+  }
+
+  let composite = 256 * raw
+
+  if (k.k5 !== 0 && m.reliability > 0) {
+    composite = Math.floor(composite * k.k5 / (m.reliability + k.k4))
+  }
+
+  return Object.freeze({
+    _tag: 'EigrpMetric',
+    composite: Math.min(composite, 0xFFFFFFFE),  // cap < INFINITY
+    components: m,
+  })
+}
+
+/**
+ * Accumule les composantes de metrique le long d'un chemin.
+ * BW : prend le minimum (bottleneck), delay : somme, load/reliability : max.
+ */
+export function accumulateMetric(
+  pathSoFar: EigrpInterfaceMetric,
+  nextHop: EigrpInterfaceMetric,
+): EigrpInterfaceMetric {
+  return {
+    bandwidth:   Math.min(pathSoFar.bandwidth, nextHop.bandwidth),
+    delay:       pathSoFar.delay + nextHop.delay,
+    reliability: Math.min(pathSoFar.reliability, nextHop.reliability),
+    load:        Math.max(pathSoFar.load, nextHop.load),
+    mtu:         Math.min(pathSoFar.mtu, nextHop.mtu),
+  }
+}
+
+// ─── Condition de faisabilite DUAL ────────────────────────────────────────
+
+/**
+ * Condition de Faisabilite (FC) de DUAL :
+ * Un voisin est un Feasible Successor si son Advertised Distance (AD)
+ * est strictement inferieure a la Feasible Distance (FD) courante.
+ *
+ * FC : AD(neighbor) < FD(current_successor)
+ *
+ * Cette condition garantit mathematiquement l'absence de boucle.
+ */
+export function isFeasibleSuccessor(
+  neighborAd: number,   // Advertised Distance du voisin
+  currentFd:  number,   // Feasible Distance actuelle (best known metric)
+): boolean {
+  return neighborAd < currentFd
+}
+
+// ─── Summarization ────────────────────────────────────────────────────────
+
+/**
+ * Verifie qu'un prefix est couvert par une adresse summary.
+ * Ex. 10.1.1.0/24 couvert par 10.0.0.0/8 : true
+ */
+export function isSubsumedBy(
+  prefix: EigrpPrefix,
+  summary: EigrpPrefix,
+): boolean {
+  return prefix.prefixLen >= summary.prefixLen &&
+    EigrpPrefix.contains(summary, prefix.network)
+}
+
+// ─── Calcul de variance (unequal-cost load balancing) ────────────────────
+
+/**
+ * Retourne true si la metrique 'candidate' peut participer au load balancing
+ * avec 'bestMetric' selon le parametre variance.
+ *
+ * Cisco variance : candidate_FD <= variance × best_FD
+ * (ET candidate_AD < best_FD pour satisfaire la condition de faisabilite)
+ */
+export function meetsVariance(
+  candidateFd: number,
+  bestFd:      number,
+  variance:    number,   // 1..128 (1 = equal-cost only)
+): boolean {
+  return candidateFd <= variance * bestFd
+}
+
+// ─── Formatage pour 'show ip eigrp topology' ─────────────────────────────
+
+export function formatEigrpMetricDisplay(m: EigrpInterfaceMetric): string {
+  const bw = m.bandwidth >= 1_000_000
+    ? `${m.bandwidth / 1_000_000} Gb/s`
+    : m.bandwidth >= 1_000
+      ? `${m.bandwidth / 1_000} Mb/s`
+      : `${m.bandwidth} Kb/s`
+  return `BW ${bw}, DLY ${m.delay} usec`
+}
+
+export function formatFdAd(fd: number, ad: number): string {
+  return `(${fd}/${ad})`
+}
+```
+
+### 3.6 EigrpNeighborKey — cle unique d'un voisin
+
+```typescript
+// src/network/eigrp/values/EigrpNeighborKey.ts
+
+/**
+ * Cle unique d'un voisin EIGRP : adresse IP + interface locale.
+ * Deux voisins avec la meme IP sur des interfaces differentes sont distincts.
+ */
+export type EigrpNeighborKey = Readonly<{
+  readonly _tag:    'EigrpNeighborKey'
+  readonly ip:      string   // ex. '10.0.0.2'
+  readonly iface:   string   // ex. 'GigabitEthernet0/0'
+}>
+
+export const EigrpNeighborKey = {
+  of(ip: string, iface: string): EigrpNeighborKey {
+    return Object.freeze({ _tag: 'EigrpNeighborKey', ip, iface })
+  },
+
+  toString(k: EigrpNeighborKey): string { return `${k.ip}%${k.iface}` },
+
+  equals(a: EigrpNeighborKey, b: EigrpNeighborKey): boolean {
+    return a.ip === b.ip && a.iface === b.iface
+  },
+
+  toMapKey(k: EigrpNeighborKey): string { return EigrpNeighborKey.toString(k) },
+}
+```
+
+### 3.7 Diagramme des Value Objects
+
+```
+EigrpAsNumber      (1..65535, validé a la construction)
+EigrpRid           (IPv4 dotted, highest loopback rule)
+EigrpPrefix        (network + prefixLen, contains(), compare())
+EigrpMetric        (composite + components, isInfinite(), min())
+EigrpNeighborKey   (ip + iface, used as Map key)
+
+EigrpInterfaceMetric   (bandwidth, delay, reliability, load, mtu)
+EigrpKValues           (K1..K5, DEFAULT_K_VALUES)
+
+EigrpPureUtils (module de fonctions pures — zero etat)
+  computeEigrpMetric(components, kValues) --> EigrpMetric
+  accumulateMetric(pathSoFar, nextHop)    --> EigrpInterfaceMetric
+  isFeasibleSuccessor(neighborAd, currentFd) --> boolean
+  isSubsumedBy(prefix, summary)           --> boolean
+  meetsVariance(candidateFd, bestFd, v)   --> boolean
+  formatEigrpMetricDisplay(m)             --> string
+  formatFdAd(fd, ad)                      --> string
+```
+
+Invariant : **tous immuables** (`Object.freeze`). La metrique EIGRP est calculee une fois a la reception d'un Update, jamais recalculee en ligne lors du lookup. Testable sans aucun mock.
+
+---
