@@ -1010,3 +1010,220 @@ export const BackupSetFactory = {
 ```
 
 ---
+
+## 6. Canaux de sauvegarde réactifs — ReactiveChannelPool
+
+### 6.1 Types des canaux
+
+```typescript
+// src/terminal/subshells/rman/channel/types.ts
+
+export type DeviceType   = 'DISK' | 'SBT'
+export type ChannelState = 'IDLE' | 'BUSY' | 'ERROR' | 'RELEASED'
+
+export interface ChannelConfig {
+  readonly id:          string        // 'ORA_DISK_1', 'ORA_DISK_2', …
+  readonly deviceType:  DeviceType
+  readonly parallelism: number        // max jobs simultanés
+  readonly maxOpenFiles: number
+  readonly sid:         number        // Oracle SID simulé
+}
+
+export interface ChannelHandle {
+  readonly id:         string
+  readonly deviceType: DeviceType
+  readonly sid:        number
+  readonly allocatedAt: number        // epoch ms
+}
+
+export interface ChannelStats {
+  readonly totalAllocated:  number
+  readonly totalReleased:   number
+  readonly currentBusy:     number
+  readonly errors:          number
+}
+```
+
+### 6.2 IChannelPool — interface
+
+```typescript
+// src/terminal/subshells/rman/channel/IChannelPool.ts
+
+import type { Result }         from '../core/Result'
+import type { RmanError }      from '../core/RmanError'
+import type { ChannelHandle, ChannelStats } from './types'
+import type { RmanObservable } from '../reactive/RmanSubject'
+import type { RmanEvent }      from '../core/types'
+
+export interface IChannelPool {
+  /**
+   * Alloue un canal. Émet CHANNEL_ALLOCATED sur le bus.
+   * Retourne Result.err(NO_CHANNEL_AVAILABLE) si tous occupés.
+   */
+  allocate(): Result<ChannelHandle, RmanError>
+
+  /**
+   * Libère un canal. Émet CHANNEL_RELEASED sur le bus.
+   */
+  release(handle: ChannelHandle): Result<void, RmanError>
+
+  /** Statistiques courantes (lecture seule). */
+  getStats(): ChannelStats
+
+  /** Stream des allocations (utile pour monitoring). */
+  readonly allocations$: RmanObservable<Extract<RmanEvent, { type: 'CHANNEL_ALLOCATED' }>>
+
+  /** Stream des libérations. */
+  readonly releases$: RmanObservable<Extract<RmanEvent, { type: 'CHANNEL_RELEASED' }>>
+
+  dispose(): void
+}
+```
+
+### 6.3 ReactiveChannelPool — implémentation
+
+```typescript
+// src/terminal/subshells/rman/channel/ReactiveChannelPool.ts
+
+import { RmanSubject }    from '../reactive/RmanSubject'
+import { ok, err }        from '../core/Result'
+import type { Result }    from '../core/Result'
+import type { RmanError } from '../core/RmanError'
+import type { IChannelPool } from './IChannelPool'
+import type { ChannelConfig, ChannelHandle, ChannelState, ChannelStats } from './types'
+import type { RmanEvent } from '../core/types'
+
+/**
+ * Pool de canaux réactif.
+ *
+ * Pattern : COMPOSITE — gère N ChannelConfig comme un pool unifié.
+ * Pattern : OBSERVER  — émet CHANNEL_ALLOCATED / CHANNEL_RELEASED.
+ *
+ * Règle : parallelism par config = nombre max de handles simultanés
+ *         sur cette config. Par défaut : 1 handle par config.
+ */
+export class ReactiveChannelPool implements IChannelPool {
+  private readonly _handles  = new Map<string, { handle: ChannelHandle; state: ChannelState }>()
+  private readonly _sidCounter = { n: 100 }
+
+  private readonly _alloc$ = new RmanSubject<Extract<RmanEvent, { type: 'CHANNEL_ALLOCATED' }>>()
+  private readonly _rel$   = new RmanSubject<Extract<RmanEvent, { type: 'CHANNEL_RELEASED' }>>()
+
+  readonly allocations$ = this._alloc$.asObservable()
+  readonly releases$    = this._rel$.asObservable()
+
+  private _stats: ChannelStats = { totalAllocated: 0, totalReleased: 0, currentBusy: 0, errors: 0 }
+
+  constructor(private readonly _configs: readonly ChannelConfig[]) {}
+
+  allocate(): Result<ChannelHandle, RmanError> {
+    // Cherche un canal libre dans l'ordre des configs
+    for (const cfg of this._configs) {
+      const busyCount = [...this._handles.values()]
+        .filter(e => e.handle.id.startsWith(cfg.id) && e.state === 'BUSY').length
+
+      if (busyCount < cfg.parallelism) {
+        const idx    = busyCount + 1
+        const id     = `${cfg.id}_${idx}`
+        const sid    = this._sidCounter.n++
+        const handle: ChannelHandle = Object.freeze({
+          id, deviceType: cfg.deviceType, sid, allocatedAt: Date.now(),
+        })
+        this._handles.set(id, { handle, state: 'BUSY' })
+        this._stats = {
+          ...this._stats,
+          totalAllocated: this._stats.totalAllocated + 1,
+          currentBusy:    this._stats.currentBusy + 1,
+        }
+        // Émet l'événement CHANNEL_ALLOCATED (réactif)
+        this._alloc$.next({ type: 'CHANNEL_ALLOCATED', channelId: id, sid, deviceType: cfg.deviceType })
+        return ok(handle)
+      }
+    }
+    return err({ code: 'NO_CHANNEL_AVAILABLE', message: 'All channels are busy' })
+  }
+
+  release(handle: ChannelHandle): Result<void, RmanError> {
+    const entry = this._handles.get(handle.id)
+    if (!entry) return ok(undefined) // déjà libéré — idempotent
+    entry.state = 'RELEASED'
+    this._handles.delete(handle.id)
+    this._stats = {
+      ...this._stats,
+      totalReleased: this._stats.totalReleased + 1,
+      currentBusy:   Math.max(0, this._stats.currentBusy - 1),
+    }
+    // Émet l'événement CHANNEL_RELEASED (réactif)
+    this._rel$.next({ type: 'CHANNEL_RELEASED', channelId: handle.id })
+    return ok(undefined)
+  }
+
+  getStats(): ChannelStats { return this._stats }
+
+  dispose(): void {
+    this._alloc$.complete()
+    this._rel$.complete()
+    this._handles.clear()
+  }
+}
+```
+
+### 6.4 Configs par défaut
+
+```typescript
+// src/terminal/subshells/rman/channel/defaults.ts
+
+import type { ChannelConfig } from './types'
+
+/** Config par défaut : 1 canal DISK parallèle (RMAN default). */
+export const DEFAULT_CHANNEL_CONFIGS: readonly ChannelConfig[] = Object.freeze([
+  Object.freeze({
+    id:           'ORA_DISK',
+    deviceType:   'DISK',
+    parallelism:  1,
+    maxOpenFiles: 64,
+    sid:          142,
+  }),
+])
+
+/** Config pour backup parallèle à 4 canaux. */
+export const PARALLEL_4_CONFIGS: readonly ChannelConfig[] = Object.freeze(
+  [1, 2, 3, 4].map(i => Object.freeze({
+    id:           `ORA_DISK_${i}`,
+    deviceType:   'DISK' as const,
+    parallelism:  1,
+    maxOpenFiles: 64,
+    sid:          140 + i,
+  }))
+)
+```
+
+### 6.5 Cycle de vie réactif d'un canal
+
+```
+ReactiveChannelPool.allocate()
+        │
+        ├─ Cherche cfg avec busyCount < parallelism
+        │
+        ├─ Crée ChannelHandle (immutable)
+        │
+        ├─ _alloc$.next(CHANNEL_ALLOCATED)
+        │       │
+        │       └─► RmanEventBus.channelAllocated$ → RmanSubShell.print(
+        │               "allocated channel: ORA_DISK_1\n"
+        │               "channel ORA_DISK_1: SID=142 device type=DISK")
+        │
+        └─ Result.ok(handle)
+
+[Job utilise le canal...]
+
+ReactiveChannelPool.release(handle)
+        │
+        ├─ Retire de _handles
+        │
+        ├─ _rel$.next(CHANNEL_RELEASED)
+        │
+        └─ Result.ok()
+```
+
+---
