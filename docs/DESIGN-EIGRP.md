@@ -1285,3 +1285,845 @@ IEigrpNeighborRepository
 ```
 
 ---
+
+## 6. Algorithme DUAL — Strategy + Pure Functions
+
+### 6.1 Theorie de DUAL (RFC 7868 §5)
+
+DUAL (Diffusing Update Algorithm, Cisco/Garcia-Luna-Aceves 1993) garantit la convergence sans boucle par la **condition de faisabilite** :
+
+```
+Pour qu'un chemin via le voisin V soit un Feasible Successor de D :
+  AD(V, D) < FD(local, D)
+
+Ou :
+  AD(V, D) = Advertised Distance de V vers D (metrique de V vers D)
+  FD(local, D) = Feasible Distance locale courante (meilleure metrique connue)
+```
+
+Cette condition garantit mathematiquement que V n'a pas de route passant par le routeur local — donc pas de boucle.
+
+**Cas sans FS disponible → Active State :**
+Quand le successeur est perdu et qu'aucun FS ne satisfait la condition, le routeur demarre une **Diffusing Computation** :
+1. Passe en etat Active
+2. Envoie une Query a tous ses voisins (sauf le nouveau successeur eventuel)
+3. Attend les Replies de tous les voisins queried
+4. Re-evalue avec les nouvelles metriques recues
+
+### 6.2 IDualAlgorithm — interface Strategy
+
+```typescript
+// src/network/eigrp/dual/IDualAlgorithm.ts
+
+import type { Result }            from '../result'
+import type { EigrpError }        from '../EigrpError'
+import type { EigrpPrefix }       from '../values/EigrpPrefix'
+import type { EigrpNeighborKey }  from '../values/EigrpNeighborKey'
+import type { EigrpMetric }       from '../values/EigrpMetric'
+import type { TopologyEntry }     from '../topology/types'
+
+/**
+ * Actions que DUAL demande au processus EIGRP d'effectuer
+ * (envoyer des paquets, mettre a jour le RIB...).
+ * DUAL lui-meme est pur : il ne fait rien, il retourne des actions.
+ */
+export type DualAction =
+  | { readonly type: 'INSTALL_ROUTE';   readonly prefix: EigrpPrefix; readonly via: EigrpNeighborKey; readonly fd: number }
+  | { readonly type: 'WITHDRAW_ROUTE';  readonly prefix: EigrpPrefix }
+  | { readonly type: 'SEND_UPDATE';     readonly prefix: EigrpPrefix; readonly metric: EigrpMetric; readonly to?: EigrpNeighborKey }
+  | { readonly type: 'SEND_QUERY';      readonly prefix: EigrpPrefix; readonly metric: EigrpMetric; readonly to?: EigrpNeighborKey }
+  | { readonly type: 'SEND_REPLY';      readonly prefix: EigrpPrefix; readonly metric: EigrpMetric; readonly to: EigrpNeighborKey }
+  | { readonly type: 'START_SIA_TIMER'; readonly prefix: EigrpPrefix }
+  | { readonly type: 'DECLARE_NEIGHBOR_DOWN'; readonly neighbor: EigrpNeighborKey; readonly reason: string }
+  | { readonly type: 'LOG';            readonly message: string; readonly level: 'info' | 'warn' | 'error' }
+
+/**
+ * Interface Strategy pour l'algorithme DUAL.
+ * Peut etre remplacee par une implementation simplifiee pour les tests
+ * ou etendue pour EIGRP Named Mode avec variance.
+ */
+export interface IDualAlgorithm {
+  /**
+   * Traite une mise a jour de metrique depuis un voisin.
+   * Retourne les actions a executer (update RIB, envoyer Query, etc.)
+   */
+  processUpdate(
+    prefix:  EigrpPrefix,
+    from:    EigrpNeighborKey,
+    ad:      number,
+    metric:  EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError>
+
+  /**
+   * Traite une Query recue d'un voisin.
+   * Retourne toujours un Reply (avec la metrique courante ou infinie).
+   */
+  processQuery(
+    prefix: EigrpPrefix,
+    from:   EigrpNeighborKey,
+    ad:     number,
+    metric: EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError>
+
+  /**
+   * Traite un Reply recu en reponse a une Query.
+   * Si tous les Replies sont recus, termine l'etat Active.
+   */
+  processReply(
+    prefix: EigrpPrefix,
+    from:   EigrpNeighborKey,
+    ad:     number,
+    metric: EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError>
+
+  /**
+   * Declenche la re-evaluation de toutes les routes apprises via ce voisin.
+   * Appele quand un voisin passe Down.
+   */
+  processNeighborDown(
+    neighbor: EigrpNeighborKey,
+  ): Result<readonly DualAction[], EigrpError>
+
+  /**
+   * Injecte une route locale (connected / redistributed).
+   * Retourne les actions d'annonce aux voisins.
+   */
+  injectLocalRoute(
+    prefix:  EigrpPrefix,
+    metric:  EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError>
+
+  /**
+   * Retire une route locale (interface down / no redistribute).
+   */
+  withdrawLocalRoute(
+    prefix: EigrpPrefix,
+  ): Result<readonly DualAction[], EigrpError>
+}
+```
+
+### 6.3 DualAlgorithmImpl — implementation
+
+```typescript
+// src/network/eigrp/dual/DualAlgorithmImpl.ts
+
+import type { IDualAlgorithm }           from './IDualAlgorithm'
+import type { DualAction }               from './IDualAlgorithm'
+import type { IEigrpTopologyRepository } from '../topology/IEigrpTopologyRepository'
+import type { EigrpPrefix }              from '../values/EigrpPrefix'
+import type { EigrpNeighborKey }         from '../values/EigrpNeighborKey'
+import type { EigrpMetric }              from '../values/EigrpMetric'
+import type { EigrpKValues }             from '../values/EigrpMetric'
+import type { Result }                   from '../result'
+import type { EigrpError }               from '../EigrpError'
+import { ok, err }                       from '../result'
+import { makeEigrpError }                from '../EigrpError'
+import { EIGRP_INFINITY }                from '../values/EigrpMetric'
+import { EigrpNeighborKey as NK }        from '../values/EigrpNeighborKey'
+import { EigrpPrefix as EP }             from '../values/EigrpPrefix'
+import { computeEigrpMetric, isFeasibleSuccessor } from '../EigrpPureUtils'
+import type { RouteSource }              from '../topology/types'
+
+export class DualAlgorithmImpl implements IDualAlgorithm {
+  constructor(
+    private readonly _topo:        IEigrpTopologyRepository,
+    private readonly _kValues:     EigrpKValues,
+    private readonly _localRid:    string,
+    private readonly _allNeighborKeys: () => readonly EigrpNeighborKey[],
+    private readonly _siaTimeoutMs: number = 90_000,
+  ) {}
+
+  // ── processUpdate ─────────────────────────────────────────────────────
+
+  processUpdate(
+    prefix:  EigrpPrefix,
+    from:    EigrpNeighborKey,
+    ad:      number,
+    metric:  EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError> {
+    const actions: DualAction[] = []
+    const isWithdraw = metric.composite >= 0xFFFFFFFF
+
+    if (isWithdraw) {
+      this._topo.upsertSource(prefix, {
+        neighbor: from, ad: 0xFFFFFFFF, fd: 0xFFFFFFFF,
+        metric: EIGRP_INFINITY, components: metric.components, isSuccessor: false,
+      })
+    } else {
+      const source: RouteSource = {
+        neighbor: from, ad, fd: ad + metric.composite,
+        metric, components: metric.components, isSuccessor: false,
+      }
+      this._topo.upsertSource(prefix, source)
+    }
+
+    const entry = this._topo.getEntry(prefix)!
+
+    if (entry.state.phase === 'active') {
+      // En etat Active : on ne change pas le RIB, on attend les Replies
+      return ok(actions)
+    }
+
+    // Etat Passive : recalcul immédiat
+    return this._recomputePassive(prefix, actions)
+  }
+
+  // ── processQuery ──────────────────────────────────────────────────────
+
+  processQuery(
+    prefix: EigrpPrefix,
+    from:   EigrpNeighborKey,
+    ad:     number,
+    metric: EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError> {
+    const actions: DualAction[] = []
+    const entry = this._topo.getEntry(prefix)
+
+    if (!entry || entry.successor === null || entry.state.phase === 'active') {
+      // Pas de route -> Reply avec metric infinie
+      actions.push({
+        type: 'SEND_REPLY', prefix,
+        metric: EIGRP_INFINITY, to: from,
+      })
+      return ok(actions)
+    }
+
+    // On a un successor : reply avec notre FD actuelle
+    const ourFd = entry.bestFd
+    const ourMetric = entry.successor.metric
+
+    // Mettre a jour la source du voisin queriant
+    this._topo.upsertSource(prefix, {
+      neighbor: from, ad, fd: ad + metric.composite,
+      metric, components: metric.components, isSuccessor: false,
+    })
+
+    if (entry.successor && NK.toMapKey(entry.successor.neighbor) !== NK.toMapKey(from)) {
+      // Notre successor n'est PAS ce voisin -> on peut repondre avec notre route
+      actions.push({ type: 'SEND_REPLY', prefix, metric: ourMetric, to: from })
+    } else {
+      // Notre successor EST le voisin qui query -> on doit lancer une diffusion
+      actions.push({ type: 'SEND_REPLY', prefix, metric: EIGRP_INFINITY, to: from })
+      actions.push(...this._startDiffusion(prefix, from))
+    }
+
+    return ok(actions)
+  }
+
+  // ── processReply ──────────────────────────────────────────────────────
+
+  processReply(
+    prefix: EigrpPrefix,
+    from:   EigrpNeighborKey,
+    ad:     number,
+    metric: EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError> {
+    const actions: DualAction[] = []
+    const entry = this._topo.getEntry(prefix)
+
+    if (!entry || entry.state.phase !== 'active') {
+      return ok(actions)  // Reply inattendu, ignore
+    }
+
+    const activeState = entry.state
+    // Enregistrer le Reply recu
+    const fromKey     = NK.toMapKey(from)
+    const newReplied  = new Set([...activeState.repliesReceived, fromKey])
+
+    // Mettre a jour la source
+    this._topo.upsertSource(prefix, {
+      neighbor: from, ad, fd: ad + metric.composite,
+      metric, components: metric.components, isSuccessor: false,
+    })
+
+    // Verifier si tous les Replies sont recus
+    if ([...activeState.queriedNeighbors].every(nk => newReplied.has(nk))) {
+      // Diffusion terminee -> retour en Passive
+      this._topo.setDualState(prefix, { phase: 'passive' })
+      actions.push({ type: 'LOG', message: `DUAL: ${EP.toString(prefix)} active -> passive`, level: 'info' })
+      return this._recomputePassive(prefix, actions)
+    }
+
+    // Mise a jour partielle de l'etat Active
+    this._topo.setDualState(prefix, {
+      ...activeState,
+      repliesReceived: newReplied,
+    })
+    return ok(actions)
+  }
+
+  // ── processNeighborDown ───────────────────────────────────────────────
+
+  processNeighborDown(
+    neighbor: EigrpNeighborKey,
+  ): Result<readonly DualAction[], EigrpError> {
+    const actions: DualAction[] = []
+    const affectedPrefixes = this._topo.removeNeighborSources(neighbor)
+
+    for (const prefix of affectedPrefixes) {
+      const sub = this._recomputePassive(prefix, actions)
+      if (!sub.ok) return sub
+    }
+    return ok(actions)
+  }
+
+  // ── injectLocalRoute ──────────────────────────────────────────────────
+
+  injectLocalRoute(
+    prefix:  EigrpPrefix,
+    metric:  EigrpMetric,
+  ): Result<readonly DualAction[], EigrpError> {
+    const source: RouteSource = {
+      neighbor: { _tag: 'EigrpNeighborKey', ip: 'local', iface: 'local' } as EigrpNeighborKey,
+      ad: 0, fd: metric.composite,
+      metric, components: metric.components, isSuccessor: true,
+    }
+    this._topo.addLocalEntry({
+      prefix,
+      state: { phase: 'passive' },
+      sources: [source],
+      bestFd: metric.composite,
+      successor: source,
+      feasibleSuccessors: [],
+      isLocal: true,
+      subsumedBy: null,
+    })
+    return ok([{
+      type: 'SEND_UPDATE', prefix, metric,
+    }])
+  }
+
+  withdrawLocalRoute(prefix: EigrpPrefix): Result<readonly DualAction[], EigrpError> {
+    this._topo.removeEntry(prefix)
+    return ok([{
+      type: 'SEND_UPDATE', prefix, metric: EIGRP_INFINITY,
+    }])
+  }
+
+  // ── Helpers prives ────────────────────────────────────────────────────
+
+  private _recomputePassive(
+    prefix:  EigrpPrefix,
+    actions: DualAction[],
+  ): Result<readonly DualAction[], EigrpError> {
+    const entry = this._topo.getEntry(prefix)
+    if (!entry) return ok(actions)
+
+    if (entry.successor !== null && entry.successor.fd < 0xFFFFFFFF) {
+      // Route accessible -> installer dans le RIB et annoncer
+      actions.push({
+        type: 'INSTALL_ROUTE', prefix,
+        via: entry.successor.neighbor, fd: entry.successor.fd,
+      })
+      actions.push({
+        type: 'SEND_UPDATE', prefix, metric: entry.successor.metric,
+      })
+    } else if (!entry.isLocal) {
+      // Pas de route -> lancer DUAL Active ou retirer du RIB
+      const feasible = entry.feasibleSuccessors
+      if (feasible.length > 0) {
+        // Basculement instantane sur un FS — pas de Query necessaire
+        actions.push({
+          type: 'INSTALL_ROUTE', prefix,
+          via: feasible[0].neighbor, fd: feasible[0].fd,
+        })
+        actions.push({ type: 'SEND_UPDATE', prefix, metric: feasible[0].metric })
+      } else {
+        // Aucun FS disponible -> Active State + Query tous les voisins
+        actions.push({ type: 'WITHDRAW_ROUTE', prefix })
+        actions.push(...this._startDiffusion(prefix))
+      }
+    }
+    return ok(actions)
+  }
+
+  private _startDiffusion(
+    prefix:   EigrpPrefix,
+    exclude?: EigrpNeighborKey,
+  ): DualAction[] {
+    const actions: DualAction[] = []
+    const neighbors  = this._allNeighborKeys()
+    const toQuery    = exclude
+      ? neighbors.filter(n => NK.toMapKey(n) !== NK.toMapKey(exclude))
+      : neighbors
+    const queriedSet = new Set(toQuery.map(NK.toMapKey))
+
+    this._topo.setDualState(prefix, {
+      phase:            'active',
+      queryOrigin:      'local',
+      queriedNeighbors: queriedSet,
+      repliesReceived:  new Set(),
+      siaTimerStart:    Date.now(),
+    })
+    actions.push({ type: 'START_SIA_TIMER', prefix })
+
+    for (const neighbor of toQuery) {
+      actions.push({
+        type: 'SEND_QUERY', prefix,
+        metric: EIGRP_INFINITY, to: neighbor,
+      })
+    }
+    actions.push({
+      type: 'LOG',
+      message: `DUAL: ${EP.toString(prefix)} passive -> active (no feasible successor)`,
+      level: 'warn',
+    })
+    return actions
+  }
+}
+```
+
+### 6.4 EigrpFib — table de forwardage EIGRP
+
+La FIB EIGRP ne contient que les routes successeurs (passives) avec leur load balancing. Elle est installee dans le RIB du Router (RouteEntry type='eigrp').
+
+```typescript
+// src/network/eigrp/dual/EigrpFib.ts
+
+import type { EigrpPrefix }      from '../values/EigrpPrefix'
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+
+export interface EigrpFibEntry {
+  readonly prefix:    EigrpPrefix
+  readonly successor: EigrpNeighborKey
+  /** Tous les nexthops (ECMP ou variance-based load balancing) */
+  readonly nextHops:  readonly {
+    readonly neighbor:   EigrpNeighborKey
+    readonly nextHopIp:  string
+    readonly iface:      string
+    readonly fd:         number
+    readonly trafficShare: number  // 1..256 (variance load-balancing)
+  }[]
+  readonly fd:        number
+  readonly ad:        number
+}
+
+export class EigrpFib {
+  private readonly _entries = new Map<string, EigrpFibEntry>()
+
+  upsert(entry: EigrpFibEntry): void {
+    this._entries.set(import('../values/EigrpPrefix').EigrpPrefix.toString(entry.prefix), entry)
+  }
+
+  remove(prefix: EigrpPrefix): void {
+    this._entries.delete(import('../values/EigrpPrefix').EigrpPrefix.toString(prefix))
+  }
+
+  getAll(): readonly EigrpFibEntry[] { return [...this._entries.values()] }
+
+  get(prefix: EigrpPrefix): EigrpFibEntry | null {
+    return this._entries.get(import('../values/EigrpPrefix').EigrpPrefix.toString(prefix)) ?? null
+  }
+}
+```
+
+### 6.5 Diagramme DUAL complet
+
+```
+IDualAlgorithm  (Strategy — remplacable par SimpleDual pour les tests)
+  |
+  +-- DualAlgorithmImpl
+        _topo: IEigrpTopologyRepository   (inject)
+        _allNeighborKeys(): EigrpNeighborKey[]  (inject)
+
+        processUpdate(prefix, from, ad, metric)
+          --> upsertSource() --> _recomputePassive()
+              |
+              +-- Successor existe        --> INSTALL_ROUTE + SEND_UPDATE
+              +-- FS disponible           --> INSTALL_ROUTE + SEND_UPDATE (instant failover)
+              +-- Aucun FS               --> WITHDRAW_ROUTE + _startDiffusion()
+                                                --> SEND_QUERY * N + START_SIA_TIMER
+
+        processQuery(prefix, from, ad, metric)
+          --> Our successor != from      --> SEND_REPLY(our_metric)
+          --> Our successor == from      --> SEND_REPLY(infinity) + _startDiffusion()
+
+        processReply(prefix, from, ad, metric)
+          --> All replies received?      --> passive + _recomputePassive()
+          --> Not yet                    --> update Active state
+
+        processNeighborDown(neighbor)
+          --> removeNeighborSources() --> _recomputePassive() for each affected prefix
+
+Toutes les methodes retournent Result<DualAction[], EigrpError>
+Les actions sont PURES — c'est EigrpProcess qui les execute (sendUpdate, etc.)
+```
+
+---
+
+## 7. Paquets EIGRP et TLV — Codec + Discriminated Union
+
+### 7.1 Structure d'un paquet EIGRP (RFC 7868 §6)
+
+Un paquet EIGRP est encapsule directement dans IPv4 (protocol 88), pas dans UDP/TCP.
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Version    |    Opcode     |          Checksum             |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         Flags (32 bits)       |                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                      Sequence Number                          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                   Acknowledgment Number                       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|            Virtual Router ID  |  Autonomous System Number     |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                       TLV (variable)                          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Opcodes :
+  1 = Update     (annonce de route)
+  3 = Query      (recherche d'une route)
+  4 = Reply      (reponse a une Query)
+  5 = Hello      (decouverte de voisin, aussi utilise comme ACK si TLV vide)
+  11 = SIA-Query (Stuck-In-Active Query)
+  12 = SIA-Reply (Stuck-In-Active Reply)
+
+Flags (bits 0-31) :
+  Bit 0 (0x01) = Init    : premier Update apres etablissement du voisinage
+  Bit 1 (0x02) = CR      : Conditionally Received (flux fiable)
+  Bit 3 (0x08) = RS      : Reset (reinitialisation de la relation)
+  Bit 4 (0x10) = EOT     : End Of Table (dernier paquet du full Update initial)
+```
+
+### 7.2 Discriminated union EigrpPacket
+
+```typescript
+// src/network/eigrp/packet/EigrpPacket.ts
+
+import type { EigrpTlv }        from './EigrpTlv'
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+
+export type EigrpOpcode = 1 | 3 | 4 | 5 | 11 | 12
+
+export type EigrpPacket =
+  | {
+      readonly op:        1  // Update
+      readonly seqNo:     number
+      readonly ackNo:     number
+      readonly asNumber:  number
+      readonly flags:     { init: boolean; eot: boolean; rs: boolean }
+      readonly tlvs:      readonly EigrpTlv[]
+      readonly srcIp:     string
+      readonly srcIface:  string
+    }
+  | {
+      readonly op:        3  // Query
+      readonly seqNo:     number
+      readonly ackNo:     number
+      readonly asNumber:  number
+      readonly flags:     { cr: boolean }
+      readonly tlvs:      readonly EigrpTlv[]
+      readonly srcIp:     string
+      readonly srcIface:  string
+    }
+  | {
+      readonly op:        4  // Reply
+      readonly seqNo:     number
+      readonly ackNo:     number
+      readonly asNumber:  number
+      readonly tlvs:      readonly EigrpTlv[]
+      readonly srcIp:     string
+      readonly srcIface:  string
+    }
+  | {
+      readonly op:        5  // Hello (ou ACK si tlvs vide et ackNo != 0)
+      readonly seqNo:     number
+      readonly ackNo:     number
+      readonly asNumber:  number
+      readonly tlvs:      readonly EigrpTlv[]   // Parameter TLV + optionnel Auth
+      readonly srcIp:     string
+      readonly srcIface:  string
+      readonly isAck:     boolean    // true si ackNo != 0 et tlvs vide
+    }
+  | {
+      readonly op:        11  // SIA-Query
+      readonly seqNo:     number
+      readonly ackNo:     number
+      readonly asNumber:  number
+      readonly tlvs:      readonly EigrpTlv[]
+      readonly srcIp:     string
+      readonly srcIface:  string
+    }
+  | {
+      readonly op:        12  // SIA-Reply
+      readonly seqNo:     number
+      readonly ackNo:     number
+      readonly asNumber:  number
+      readonly tlvs:      readonly EigrpTlv[]
+      readonly srcIp:     string
+      readonly srcIface:  string
+    }
+```
+
+### 7.3 EigrpTlv — discriminated union des TLV
+
+```typescript
+// src/network/eigrp/packet/EigrpTlv.ts
+
+import type { EigrpKValues, EigrpInterfaceMetric } from '../values/EigrpMetric'
+import type { EigrpPrefix } from '../values/EigrpPrefix'
+
+/**
+ * TLV Types EIGRP (RFC 7868 Appendix) :
+ *
+ * 0x0001 = EIGRP Parameter (K-values + hold time)
+ * 0x0002 = Authentication (MD5 ou SHA-256)
+ * 0x0003 = Sequence (liste de voisins CR)
+ * 0x0004 = Software Version
+ * 0x0005 = Next Multicast Sequence
+ * 0x0102 = IPv4 Internal Route
+ * 0x0103 = IPv4 External Route (route redistribuee)
+ * 0x0402 = IPv6 Internal Route
+ * 0x0403 = IPv6 External Route
+ */
+export type EigrpTlv =
+  | {
+      readonly type:     0x0001  // Parameter
+      readonly kValues:  EigrpKValues
+      readonly holdTime: number  // secondes
+    }
+  | {
+      readonly type:     0x0002  // Authentication
+      readonly authType: 'MD5' | 'SHA256'
+      readonly keyId:    number
+      readonly digest:   string  // hex string (simule)
+    }
+  | {
+      readonly type:     0x0003  // Sequence
+      readonly addresses: readonly string[]  // IP addrs des voisins CR
+    }
+  | {
+      readonly type:     0x0004  // Software Version
+      readonly iosVersion:  string   // ex. '15.4'
+      readonly eigrpVersion: string  // ex. '1.2'
+    }
+  | {
+      readonly type:        0x0102  // IPv4 Internal Route
+      readonly prefix:      EigrpPrefix
+      readonly nextHop?:    string        // si different du srcIp
+      readonly metric:      EigrpInterfaceMetric
+      /** AD du voisin annonceur (pour calcul local de FD = local_metric + neighbor_AD) */
+      readonly advertisedMetric: number
+    }
+  | {
+      readonly type:          0x0103  // IPv4 External Route
+      readonly prefix:        EigrpPrefix
+      readonly nextHop?:      string
+      readonly metric:        EigrpInterfaceMetric
+      readonly advertisedMetric: number
+      /** Protocole source de la redistribution */
+      readonly originProtocol: 'connected' | 'static' | 'ospf' | 'rip' | 'bgp'
+      readonly originMetric:   number
+      readonly routerIdOrigin: string    // RID du routeur qui a redistribue
+      readonly externalFlags:  number    // 0x01 = external candidate default
+    }
+```
+
+### 7.4 EigrpPacketCodec — fonctions pures de serialisation
+
+```typescript
+// src/network/eigrp/packet/EigrpPacketCodec.ts
+
+import type { EigrpPacket } from './EigrpPacket'
+import type { EigrpTlv }    from './EigrpTlv'
+import type { Result }      from '../result'
+import type { EigrpError }  from '../EigrpError'
+import { ok, err }          from '../result'
+import { makeEigrpError }   from '../EigrpError'
+
+/**
+ * Codec EIGRP — fonctions pures sans etat.
+ * Dans le simulateur, on ne manipule pas de vrais octets :
+ * on travaille avec des objets JavaScript structurels.
+ * La "serialisation" produit un objet portable (shallow clone + freeze).
+ */
+export const EigrpPacketCodec = {
+
+  /**
+   * "Serialise" un paquet en un objet JSON-safe (deep freeze).
+   * Dans un vrai simulateur reseau, ce serait un Buffer d'octets.
+   */
+  serialize(pkt: EigrpPacket): Result<EigrpPacket, EigrpError> {
+    // Validation
+    if (pkt.seqNo < 0 || pkt.seqNo > 0xFFFFFFFF) {
+      return err(makeEigrpError('PACKET_CHECKSUM_MISMATCH',
+        `seqNo out of range: ${pkt.seqNo}`))
+    }
+    // Deep freeze pour garantir l'immutabilite sur le reseau simule
+    return ok(Object.freeze({ ...pkt, tlvs: Object.freeze([...pkt.tlvs]) }))
+  },
+
+  /**
+   * "Deserialie" un paquet recu (valide les champs critiques).
+   */
+  deserialize(raw: unknown): Result<EigrpPacket, EigrpError> {
+    if (!raw || typeof raw !== 'object') {
+      return err(makeEigrpError('PACKET_TLV_MALFORMED', 'not an object'))
+    }
+    const pkt = raw as Record<string, unknown>
+
+    if (![1, 3, 4, 5, 11, 12].includes(pkt['op'] as number)) {
+      return err(makeEigrpError('PACKET_INVALID_OPCODE',
+        `unknown opcode: ${pkt['op']}`))
+    }
+
+    return ok(pkt as EigrpPacket)
+  },
+
+  // ── Constructeurs de paquets courants ─────────────────────────────────
+
+  makeHello(opts: {
+    seqNo: number; asNumber: number; kValues: import('../values/EigrpMetric').EigrpKValues;
+    holdTime: number; srcIp: string; srcIface: string; iosVersion?: string;
+  }): EigrpPacket {
+    const tlvs: EigrpTlv[] = [
+      { type: 0x0001, kValues: opts.kValues, holdTime: opts.holdTime },
+      { type: 0x0004, iosVersion: opts.iosVersion ?? '15.4', eigrpVersion: '1.2' },
+    ]
+    return Object.freeze({
+      op: 5, seqNo: opts.seqNo, ackNo: 0, asNumber: opts.asNumber,
+      tlvs: Object.freeze(tlvs), srcIp: opts.srcIp, srcIface: opts.srcIface,
+      isAck: false,
+    })
+  },
+
+  makeAck(opts: {
+    ackNo: number; asNumber: number; srcIp: string; srcIface: string;
+  }): EigrpPacket {
+    return Object.freeze({
+      op: 5, seqNo: 0, ackNo: opts.ackNo, asNumber: opts.asNumber,
+      tlvs: Object.freeze([]), srcIp: opts.srcIp, srcIface: opts.srcIface,
+      isAck: true,
+    })
+  },
+
+  makeUpdate(opts: {
+    seqNo: number; ackNo: number; asNumber: number;
+    tlvs: readonly EigrpTlv[]; srcIp: string; srcIface: string;
+    init?: boolean; eot?: boolean;
+  }): EigrpPacket {
+    return Object.freeze({
+      op: 1, seqNo: opts.seqNo, ackNo: opts.ackNo, asNumber: opts.asNumber,
+      flags: { init: opts.init ?? false, eot: opts.eot ?? false, rs: false },
+      tlvs: Object.freeze([...opts.tlvs]), srcIp: opts.srcIp, srcIface: opts.srcIface,
+    })
+  },
+
+  makeQuery(opts: {
+    seqNo: number; ackNo: number; asNumber: number;
+    tlvs: readonly EigrpTlv[]; srcIp: string; srcIface: string;
+  }): EigrpPacket {
+    return Object.freeze({
+      op: 3, seqNo: opts.seqNo, ackNo: opts.ackNo, asNumber: opts.asNumber,
+      flags: { cr: false }, tlvs: Object.freeze([...opts.tlvs]),
+      srcIp: opts.srcIp, srcIface: opts.srcIface,
+    })
+  },
+
+  makeReply(opts: {
+    seqNo: number; ackNo: number; asNumber: number;
+    tlvs: readonly EigrpTlv[]; srcIp: string; srcIface: string;
+  }): EigrpPacket {
+    return Object.freeze({
+      op: 4, seqNo: opts.seqNo, ackNo: opts.ackNo, asNumber: opts.asNumber,
+      tlvs: Object.freeze([...opts.tlvs]), srcIp: opts.srcIp, srcIface: opts.srcIface,
+    })
+  },
+}
+```
+
+### 7.5 EigrpPacketDispatcher — Command Pattern pour le dispatch
+
+```typescript
+// src/network/eigrp/packet/EigrpPacketDispatcher.ts
+
+import type { EigrpPacket }  from './EigrpPacket'
+import type { EigrpTlv }     from './EigrpTlv'
+import type { EigrpEvent }   from '../EigrpEvent'
+import type { EigrpPrefix }  from '../values/EigrpPrefix'
+import type { EigrpNeighborKey } from '../values/EigrpNeighborKey'
+import { EigrpNeighborKey as NK } from '../values/EigrpNeighborKey'
+import { EigrpPrefix as EP }      from '../values/EigrpPrefix'
+import { EIGRP_INFINITY }         from '../values/EigrpMetric'
+
+/**
+ * Traduit un EigrpPacket recu en une sequence d'EigrpEvent.
+ * Stateless — fonction pure (sauf extraction de la cle voisin).
+ */
+export function dispatchPacket(pkt: EigrpPacket): readonly EigrpEvent[] {
+  const neighbor = NK.of(pkt.srcIp, pkt.srcIface)
+
+  switch (pkt.op) {
+    case 5: {  // Hello ou ACK
+      if (pkt.isAck) return []  // Les ACK sont traites par le RTP, pas par le processus
+
+      const paramTlv = pkt.tlvs.find(t => t.type === 0x0001)
+      if (!paramTlv || paramTlv.type !== 0x0001) return []
+
+      const k = paramTlv.kValues
+      return [{
+        type:     'HELLO_RECEIVED',
+        neighbor: { ip: pkt.srcIp },
+        iface:    pkt.srcIface,
+        holdTime: paramTlv.holdTime,
+        kValues:  [k.k1, k.k2, k.k3, k.k4, k.k5],
+        asNumber: pkt.asNumber,
+      }] as EigrpEvent[]
+    }
+
+    case 1:   // Update
+    case 3:   // Query
+    case 4: { // Reply
+      const events: EigrpEvent[] = []
+      for (const tlv of pkt.tlvs) {
+        if (tlv.type !== 0x0102 && tlv.type !== 0x0103) continue
+        const prefix = tlv.prefix
+        const metric = {
+          _tag: 'EigrpMetric' as const,
+          composite: tlv.advertisedMetric,
+          components: tlv.metric,
+        }
+        const isWithdraw = tlv.metric.bandwidth === 0 ||
+          tlv.advertisedMetric >= 0xFFFFFFFF
+
+        if (pkt.op === 1) {
+          events.push({ type: 'UPDATE_RECEIVED', from: neighbor, prefix, metric, isWithdraw })
+        } else if (pkt.op === 3) {
+          events.push({ type: 'QUERY_RECEIVED', from: neighbor, prefix, metric })
+        } else {
+          events.push({ type: 'REPLY_RECEIVED', from: neighbor, prefix, metric })
+        }
+      }
+      return events
+    }
+
+    default:
+      return []
+  }
+}
+```
+
+### 7.6 Diagramme du sous-systeme paquet
+
+```
+EigrpPacket (discriminated union — op 1/3/4/5/11/12)
+  contient TLVs : EigrpTlv (0x0001/0x0002/0x0003/0x0004/0x0102/0x0103)
+
+EigrpPacketCodec (fonctions pures)
+  serialize(pkt)             --> Result<EigrpPacket>
+  deserialize(raw)           --> Result<EigrpPacket>
+  makeHello / makeAck / makeUpdate / makeQuery / makeReply
+
+dispatchPacket(pkt)          --> EigrpEvent[]
+  Hello  --> HELLO_RECEIVED
+  Update --> UPDATE_RECEIVED * N (une par route TLV)
+  Query  --> QUERY_RECEIVED  * N
+  Reply  --> REPLY_RECEIVED  * N
+  ACK    --> []  (gere par RTP)
+```
+
+---
