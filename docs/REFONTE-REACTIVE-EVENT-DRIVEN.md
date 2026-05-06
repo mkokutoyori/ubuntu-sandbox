@@ -3034,6 +3034,91 @@ Ces sujets relèvent de chantiers ultérieurs qui pourront s'appuyer sur les fon
 
 Document rédigé séquentiellement, sans agent, section par section, sur la branche `claude/reactive-event-driven-refactor-8hVAE`.
 
+### 12.8.1 Avancement de la migration (branche `claude/reactive-refactor-JYsTE`)
+
+La migration est implémentée séquentiellement, sans agent, sur la branche
+`claude/reactive-refactor-JYsTE`. Chaque phase fait l'objet d'un commit
+dédié. Le statut ci-dessous est mis à jour à la fin de chaque phase
+majeure.
+
+| Phase | Titre | Statut | Notes |
+|---|---|:---:|---|
+| 1 | Primitives (`EventBus`, `Scheduler`, `Signal`, `waitForEvent`, types) | ✅ | Voir §12.8.2 |
+| 2 | `Logger` adapter + `EquipmentRegistry` events | ⏳ | – |
+| 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ⏳ | – |
+| 4 | Scheduler partout dans les protocoles | ⏳ | – |
+| 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
+| 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
+| 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
+| 8 | Suppression du legacy | ⏳ | – |
+
+### 12.8.2 Phase 1 — Primitives (livrée)
+
+**Fichiers créés** (`src/events/`) :
+
+- `EventBus.ts` (≈ 165 LoC) — implémentation conforme à §8.2 :
+  dispatch synchrone FIFO, sub-event queue pour la réentrance bornée
+  (limite `MAX_REENTRANCE_DEPTH = 64`), capture des exceptions avec
+  réémission sur `bus.handler-error`, snapshot de la liste de handlers
+  pendant le dispatch (un handler peut s'inscrire/désinscrire pendant
+  l'exécution sans corrompre la chaîne), wildcard `subscribeAll`,
+  `subscribeWhere` avec prédicat sur le payload. Singleton paresseux
+  `getDefaultEventBus()` exporté pour le fallback ; les acteurs
+  injecteront leur propre bus en priorité.
+- `Scheduler.ts` (≈ 215 LoC) — interface `IScheduler` + deux
+  implémentations conformes à §8.3 :
+  - `RealTimeScheduler` : délègue à `globalThis.setTimeout/setInterval`,
+    `now()` via `performance.now()` avec fallback `Date.now()`, capture
+    des exceptions des callbacks.
+  - `VirtualTimeScheduler` : horloge virtuelle, `advance(ms)` qui
+    déclenche les timers dans l'ordre chronologique (avec tie-break
+    déterministe par `seq` d'insertion), gestion des intervals avec
+    re-scheduling avant exécution du body (pour qu'une exception ne
+    saute pas le tick suivant), exécution des tâches schedulées
+    *pendant* l'`advance` au sein de la même fenêtre, `delay(ms)` qui
+    résout après `advance(ms)`, `runAll()` pour flush total, `reset()`,
+    `pendingCount()` pour les assertions de tests.
+- `Signal.ts` (≈ 65 LoC) — `Signal<T>` interface + `WritableSignal<T>`
+  avec comparaison `Object.is`, `update(mutator)`, snapshot des
+  listeners pour permettre les (un)subscriptions en cours de notify, et
+  helper `derived()` qui ne ré-émet qu'en cas de changement réel de la
+  valeur dérivée.
+- `waitForEvent.ts` (≈ 65 LoC) — helper qui transforme une attente
+  d'événement en `Promise<payload>` avec timeout via `IScheduler`,
+  cleanup garanti (timer + unsubscribe) sur résolution / rejet /
+  abort, support optionnel d'`AbortSignal`. Erreurs typées
+  `WaitForEventTimeoutError` et `WaitForEventAbortedError`.
+- `types.ts` (≈ 75 LoC) — union discriminée `DomainEvent` initiale :
+  topics `log`, `bus.handler-error` et la famille `device.*` consommée
+  par la Phase 2. Helpers de type `EventOf<T>` et `PayloadOf<T>`. Les
+  phases ultérieures étendent cette union (en gardant la convention
+  `domain.subdomain.action` du §8.9).
+- `index.ts` (≈ 40 LoC) — re-exports publics.
+
+**Tests** (`src/__tests__/unit/events/`) :
+
+- `EventBus.test.ts` : 8 tests (FIFO, unsubscribe, réentrance,
+  wildcard, isolation d'erreur + réémission, predicate, clear,
+  snapshot semantics).
+- `Scheduler.test.ts` : 9 tests virtuel + réel (ordres, periodes,
+  cancel, delay, scheduling pendant `advance`, reset, garde-fou
+  négatif).
+- `Signal.test.ts` : 8 tests (Object.is, NaN, unsubscribe, update,
+  derived recompute, derived ne notifie qu'au changement effectif).
+- `waitForEvent.test.ts` : 6 tests (résolution, timeout, cleanup,
+  abort, abort déjà déclenché).
+
+**Résultat** : **31/31 tests verts**, primitives 100 % couvertes en
+comportement public. Aucun fichier de domaine touché. Aucune dépendance
+externe ajoutée. Lint propre sur les nouveaux fichiers.
+
+**Critères de sortie §10.2 atteints** :
+
+- ✅ Suite de tests primitives 100 % verte.
+- ✅ `npm run lint` propre sur `src/events/` et tests associés.
+- ✅ Aucune dépendance externe ajoutée à `package.json`.
+- ✅ Aucun fichier de domaine touché.
+
 ### 12.9 Mot de la fin
 
 La transformation décrite ici n'est pas une réécriture : c'est une **mise à plat** des canaux d'information qui circulaient déjà implicitement dans le projet, à travers ses callbacks, ses Maps de pending, ses subscribes locaux et son Logger. Le code existant **fonctionne**, et il fonctionne plutôt bien — la dette est dans la **dispersion** des mécanismes, pas dans leur correction. Unifier ces mécanismes autour d'un bus typé, d'un scheduler abstrait et de signaux observables ramène la complexité accidentelle à zéro, libère l'observabilité, et ouvre la voie à des fonctionnalités jusqu'ici hors d'atteinte (animation, capture, replay, plug-ins protocolaires).
