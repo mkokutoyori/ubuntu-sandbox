@@ -2905,3 +2905,220 @@ function cleanup() {
 ```
 
 ---
+
+## 12. Récapitulatif — Patterns, SOLID, FP, Réactif
+
+### 12.1 Tableau des design patterns appliqués
+
+| Pattern (GoF / Enterprise) | Classe(s) | Justification |
+|---|---|---|
+| **Value Object** | `Scn`, `RmanTag`, `BackupKey`, `DbId` | Immutabilité (`Object.freeze`), sémantique par valeur, pas de setters |
+| **Observer / Subject** | `RmanSubject<T>`, `RmanEventBus` | Découplage producteurs/consommateurs, streams typés sans RxJS |
+| **Facade** | `RmanSession` | Cache la complexité interne (bus, pool, catalog, engine, dispatcher) |
+| **Command** | `IRmanCommand<T>`, `BackupCommand`, `ListBackupCommand`, … | Encapsule opérations, registre extensible sans modifier le dispatcher |
+| **Adapter** | `LinuxRmanContext`, `VfsAdapter` | Traduit VirtualFileSystem/OracleInstance → IRmanOracleContext |
+| **Builder** | `RmanSessionOptionsBuilder` | Construction fluide avec valeurs par défaut Oracle réalistes |
+| **Repository** | `IRmanCatalogRepository` (ISP: Reader/Writer), `InMemoryRmanCatalog` | Découplage stockage/logique métier |
+| **Factory** | `BackupSetFactory`, `RmanSession.create()` | Points uniques de création d'objets complexes |
+| **Strategy** | `IRetentionPolicy`, `RedundancyPolicy`, `RecoveryWindowPolicy`, `NonePolicy` | Algorithmes de rétention interchangeables sans modifier l'engine |
+| **State Machine** | `RmanSessionState` (IDLE→CONNECTING→CONNECTED→RUNNING_JOB→DISCONNECTED) | Transitions explicites, transitions illégales impossibles |
+| **Composite** | `ReactiveChannelPool` (N `ChannelConfig` → 1 pool) | Gestion unifiée de N canaux RMAN parallèles |
+| **Pipe & Filter** | `RmanObservable.pipe(op1).pipe(op2)…` | Composition d'opérateurs réactifs (filter, map, ofType, bufferTime) |
+| **Iterator** | `RmanScriptParser.parseRmanScript()` | Parcours ligne par ligne d'un script RMAN multi-lignes |
+| **Null Object** | `RmanSessionOptions` defaults | Valeurs par défaut explicites, pas de null-checks en aval |
+
+---
+
+### 12.2 Principes SOLID respectés
+
+#### S — Single Responsibility
+
+| Classe | Responsabilité unique |
+|---|---|
+| `RmanSubject<T>` | Observable multicast uniquement |
+| `Operators` | Transformateurs de streams (fonctions pures) |
+| `RmanEventBus` | Routage d'événements typés |
+| `RmanJobEngine` | Exécution des jobs + émission d'événements |
+| `ReactiveChannelPool` | Allocation/libération de canaux |
+| `InMemoryRmanCatalog` | Persistance des BackupSets en mémoire |
+| `RmanCommandDispatcher` | Résolution commande → handler |
+| `BackupCommand` | Logique de backup uniquement |
+| `LinuxRmanContext` | Adaptation VFS/OracleInstance ↔ IRmanOracleContext |
+| `ReactiveRmanSubShell` | Conversion événements → lignes de texte terminal |
+
+#### O — Open/Closed
+
+- `RmanCommandDispatcher.registerCommand()` : ajout de commandes sans modifier le dispatcher.
+- `RmanEventBus` : nouveaux types `RmanEvent` ajoutés sans toucher aux abonnés existants.
+- `IRetentionPolicy` : nouvelle stratégie = nouvelle classe, sans modifier `RmanJobEngine`.
+- `Operators` : nouveaux opérateurs (`throttleTime`, `takeUntil`) ajoutés sans casser les existants.
+
+#### L — Liskov Substitution
+
+- `LinuxRmanContext` est substituable par tout mock `IRmanOracleContext` en test.
+- `InMemoryRmanCatalog` est substituable par une implémentation persistante (SQLite, fichier JSON) sans changer `RmanJobEngine`.
+- Toutes les commandes (`BackupCommand`, etc.) satisfont `IRmanCommand<T>` — le dispatcher ne connaît que l'interface.
+
+#### I — Interface Segregation
+
+- `IRmanCatalogReader` / `IRmanCatalogWriter` séparés — `ListBackupCommand` n'utilise que le Reader.
+- `IChannelPool` : 4 méthodes uniquement (allocate, release, getStats, dispose).
+- `IRmanSession` : 4 méthodes publiques (connect, processLine, getBanner, dispose) + 1 stream.
+- `VfsAdapter` : 4 méthodes uniquement (writeFile, readFile, fileExists, availableBytes).
+
+#### D — Dependency Inversion
+
+- `RmanJobEngine` dépend de `IRmanCatalogRepository`, `IChannelPool`, `IRmanOracleContext` — pas des implémentations concrètes.
+- `RmanSession` dépend de `IRmanOracleContext` — pas de `LinuxRmanContext` directement.
+- `RmanCommandDispatcher` dépend de `IRmanCommand<unknown>` — pas des classes concrètes.
+
+---
+
+### 12.3 Programmation Fonctionnelle — garanties
+
+| Garantie | Où | Détail |
+|---|---|---|
+| **Pureté** | `formatElapsed`, `formatSize`, `formatOracleDate`, `generatePieceName` | Même entrée → même sortie, aucun side-effect |
+| **Pureté** | `parseRmanScript()` | `string → ParsedLine[]`, aucune mutation |
+| **Pureté** | `Operators.filter/map/ofType/merge/bufferTime/distinctUntilChanged` | Higher-order functions sans état |
+| **Pureté** | `BackupSetFactory.createBackupSet()` | Crée un objet immuable, ne modifie rien |
+| **Immutabilité** | Tous les Value Objects | `Object.freeze()` à la construction |
+| **Immutabilité** | `RmanJob`, `JobStep`, `RmanSessionOptions` | `readonly` sur tous les champs |
+| **Result<T,E>** | `IRmanCatalogRepository`, `IChannelPool`, `IRmanJobEngine`, `VfsAdapter` | Pas d'exceptions, erreurs typées |
+| **No null** | Value Objects via factories | `Result.err(...)` au lieu de `null` |
+| **readonly arrays** | `BackupSet.pieces`, `BackupSet.datafiles`, `RmanJob.steps` | Pas de mutation après création |
+
+---
+
+### 12.4 Architecture réactive — comparaison avec le design original
+
+```
+Design original (DESIGN-RMAN.md) :
+────────────────────────────────────
+  RmanSession.execute(cmd) → Result<string[], E>
+       │   synchrone, bloquant
+       └─► retourne les lignes directement
+
+  Inconvénients :
+    ✗ Difficile de simuler la progression en temps réel
+    ✗ Tests : vérifier la sortie globale, pas les étapes
+    ✗ Pas d'abonnement externe possible (UI, logger)
+    ✗ Channel pool couplé à la session
+    ✗ Catalogue mis à jour après l'opération complète
+
+Design réactif (ce document) :
+────────────────────────────────────
+  RmanSession.processLine(cmd) → Result<string[], E>
+       │   (string[] = lignes synchrones uniquement)
+       │   + events$ stream pour tout le reste
+       │
+       ├─ JOB_STARTED         → state: RUNNING_JOB
+       ├─ PROGRESS_UPDATED    → SubShell accumule les lignes
+       ├─ CHANNEL_ALLOCATED   → SubShell affiche "allocated channel..."
+       ├─ BACKUP_PIECE_CREATED→ SubShell + Catalog (double abonné)
+       ├─ JOB_COMPLETED       → SubShell + state: CONNECTED
+       └─ JOB_FAILED          → SubShell (erreur) + state: CONNECTED
+
+  Avantages :
+    ✓ Extensible : tout abonné peut réagir aux événements
+    ✓ Testable : subscribe aux streams, vérifier séquence
+    ✓ Découplé : SubShell ne connaît pas l'engine ni le catalog
+    ✓ Observable : bar de progression UI possible
+    ✓ Composable : pipe(filter, map) sur n'importe quel stream
+    ✓ Pas de RxJS : RmanSubject (~120 lignes) suffit
+```
+
+---
+
+### 12.5 Guide d'implémentation — ordre recommandé
+
+```
+Phase 1 — Fondations (testables en isolation, ~1 jour)
+  ├─ 1. core/RmanError.ts + core/types.ts (RmanEvent union)
+  ├─ 2. values/ (Scn, RmanTag, BackupKey, DbId) + pureUtils.ts
+  └─ 3. reactive/RmanSubject.ts + reactive/operators.ts
+
+Phase 2 — Infrastructure réactive (~1 jour)
+  └─ 4. reactive/RmanEventBus.ts
+
+Phase 3 — Sous-systèmes (chacun testable isolément, ~2 jours)
+  ├─ 5. catalog/InMemoryRmanCatalog.ts + BackupSetFactory.ts
+  ├─ 6. channel/ReactiveChannelPool.ts
+  └─ 7. policy/ (RedundancyPolicy, RecoveryWindowPolicy, NonePolicy)
+
+Phase 4 — Moteur de jobs (~1 jour)
+  ├─ 8. job/RmanJobEngine.ts
+  └─ 9. job/JobBuilder.ts
+
+Phase 5 — Command layer (~1 jour)
+  ├─ 10. commands/RmanCommandDispatcher.ts
+  ├─ 11. commands/BackupCommand.ts, RestoreCommand.ts, …
+  └─ 12. commands/RmanScriptParser.ts
+
+Phase 6 — Facade + Intégration (~1 jour)
+  ├─ 13. session/RmanSession.ts
+  ├─ 14. integration/LinuxRmanContext.ts
+  └─ 15. ReactiveRmanSubShell.ts (remplace RmanSubShell.ts)
+
+Phase 7 — Tests d'intégration (~1 jour)
+  └─ 16. __tests__/rmanSession.test.ts
+         : backup complet → vérifier séquence events$
+         : restore → vérifier RESTORE_DATAFILE_STARTED×4
+         : crosscheck avec fichier manquant → CATALOG_UPDATED(EXPIRE)
+```
+
+#### Invariants à maintenir
+
+1. **`RmanJobEngine` n'imprime jamais** — il émet des événements. `ReactiveRmanSubShell` est le seul responsable du texte affiché.
+2. **`RmanSubject.next()` est synchrone** — les handlers dans `_handleEvent()` ne doivent pas être longs ni contenir d'`await`.
+3. **Toute émission se fait via `RmanEventBus.emit()`** — jamais d'accès direct à `_events$` depuis l'extérieur.
+4. **`processLine()` vide le buffer avant exécution** — sinon les événements d'une commande précédente contaminent la sortie.
+5. **`dispose()` est idempotent** — appels multiples n'ont pas d'effet secondaire.
+
+---
+
+### 12.6 Résumé visuel — dépendances entre modules
+
+```
+                   ┌──────────────────────────────────────────────┐
+                   │            ReactiveRmanSubShell              │
+                   │         (ISubShell ← TerminalSession)        │
+                   └────────────────────┬─────────────────────────┘
+                                        │ processLine() / events$.subscribe()
+                                        ▼
+                   ┌──────────────────────────────────────────────┐
+                   │               RmanSession                    │
+                   │              (Facade + State)                │
+                   └──┬──────┬──────────┬──────────┬─────────────┘
+                      │      │          │          │
+              ┌───────▼──┐ ┌─▼──────┐ ┌─▼──────┐ ┌▼──────────────────┐
+              │RmanEvent │ │ Channel│ │ Job    │ │  Command           │
+              │  Bus     │ │ Pool   │ │ Engine │ │  Dispatcher        │
+              └─────┬────┘ └────────┘ └───┬────┘ └──────────────────┘
+                    │                     │              │
+                    │              ┌──────▼──────┐  ┌───▼──────────────┐
+                    │              │IRmanCatalog │  │ IRmanCommand<T>  │
+                    │              │Repository   │  │ BackupCmd etc.   │
+                    │              └─────────────┘  └──────────────────┘
+                    │                     │
+                    │              ┌──────▼──────────────────────┐
+                    │              │  IRmanOracleContext (Adapter)│
+                    │              │  LinuxRmanContext            │
+                    │              └─────────────────────────────┘
+                    │
+              events$ (Observable<RmanEvent>)
+                    │
+              ┌─────▼──────────────────────────┐
+              │ Abonnés externes possibles :   │
+              │  - Logger global               │
+              │  - Store Zustand (UI progress) │
+              │  - Tests (vérification events) │
+              └────────────────────────────────┘
+
+Dépendances vers le haut uniquement — aucun cycle.
+RmanEventBus est le seul composant partagé entre tous les sous-systèmes.
+```
+
+---
+
+*Fin du document — RMAN Reactive Technical Class Diagram v1.0*
