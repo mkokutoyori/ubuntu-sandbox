@@ -963,3 +963,412 @@ Le catalog est **injecte** dans chaque commande via `RmanCommandContext` (sectio
 
 ---
 
+## 5. Canaux de sauvegarde — Composite + Strategy
+
+### 5.1 Modele de canal RMAN
+
+Un **canal** (channel) est l'unite de travail RMAN : il represente une connexion a un device type (DISK ou SBT/tape) sur lequel les backup pieces sont ecrites. Les canaux sont alloues avant un backup (automatiquement ou manuellement dans un bloc `RUN {}`), et liberes a la fin.
+
+Caracteristiques reelles d'un canal Oracle :
+- Parallelisme : N canaux = N pieces ecrites simultanement (simule sequentiellement ici)
+- Chaque canal porte un SID Oracle unique
+- Un canal DISK ecrit sur le filesystem local
+- Un canal SBT utilise la Media Management Library (bande, OSB, etc.)
+
+### 5.2 Strategy Pattern — IBackupDeviceStrategy
+
+```typescript
+// src/database/oracle/rman/channels/IBackupDeviceStrategy.ts
+
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+
+export interface BackupWriteRequest {
+  readonly handle:    string    // chemin/identifiant de la piece
+  readonly content:   string    // contenu simule (metadata textuelle)
+  readonly sizeHint:  number    // taille en octets (pour simulation)
+}
+
+export interface BackupReadRequest {
+  readonly handle: string
+}
+
+/**
+ * Strategie d'acces au device de sauvegarde.
+ * DISK ecrit sur le VFS ; SBT simule un media manager.
+ */
+export interface IBackupDeviceStrategy {
+  readonly deviceType: 'DISK' | 'SBT'
+
+  /** Ecrit une piece de backup. Retourne l'handle confirme. */
+  writePiece(req: BackupWriteRequest): Result<string, RmanError>
+
+  /** Verifie qu'une piece existe (pour CROSSCHECK). */
+  pieceExists(handle: string): boolean
+
+  /** Supprime une piece (pour DELETE). */
+  deletePiece(handle: string): Result<void, RmanError>
+}
+```
+
+### 5.3 DiskDeviceStrategy — ecriture sur VFS
+
+```typescript
+// src/database/oracle/rman/channels/DiskDeviceStrategy.ts
+
+import type { IBackupDeviceStrategy, BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import { ok, err } from '../result'
+import { makeRmanError } from '../RmanError'
+import type { IRmanOracleContext } from '../integration/IRmanOracleContext'
+
+export class DiskDeviceStrategy implements IBackupDeviceStrategy {
+  readonly deviceType = 'DISK' as const
+
+  constructor(private readonly ctx: IRmanOracleContext) {}
+
+  writePiece(req: BackupWriteRequest): Result<string, RmanError> {
+    // Cree les repertoires intermediaires si necessaire
+    const dir = req.handle.substring(0, req.handle.lastIndexOf('/'))
+    this.ctx.mkdirp(dir)
+
+    const written = this.ctx.writeFile(req.handle, this.buildPieceContent(req))
+    if (!written) {
+      return err(makeRmanError('VFS_WRITE_ERROR',
+        `writePiece: cannot write to ${req.handle}`))
+    }
+    return ok(req.handle)
+  }
+
+  pieceExists(handle: string): boolean {
+    return this.ctx.fileExists(handle)
+  }
+
+  deletePiece(handle: string): Result<void, RmanError> {
+    const deleted = this.ctx.deleteFile(handle)
+    if (!deleted) {
+      return err(makeRmanError('VFS_WRITE_ERROR',
+        `deletePiece: cannot delete ${handle}`))
+    }
+    return ok(undefined)
+  }
+
+  private buildPieceContent(req: BackupWriteRequest): string {
+    // Contenu simule : entete Oracle backup piece
+    return [
+      `RMAN BACKUP PIECE`,
+      `Handle: ${req.handle}`,
+      `Size: ${req.sizeHint} bytes`,
+      `Created: ${new Date().toISOString()}`,
+      `[Binary backup data — ${req.sizeHint} bytes]`,
+    ].join('\n')
+  }
+}
+```
+
+### 5.4 SbtDeviceStrategy — simulation media manager
+
+```typescript
+// src/database/oracle/rman/channels/SbtDeviceStrategy.ts
+
+import type { IBackupDeviceStrategy, BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import { ok } from '../result'
+
+/**
+ * SBT (System Backup to Tape) — simule un media manager.
+ * Les pieces SBT sont enregistrees en memoire (pas de VFS).
+ * Reproduit le comportement d'Oracle Secure Backup ou NetBackup.
+ */
+export class SbtDeviceStrategy implements IBackupDeviceStrategy {
+  readonly deviceType = 'SBT' as const
+  private readonly _pieces = new Map<string, { size: number; created: Date }>()
+
+  writePiece(req: BackupWriteRequest): Result<string, RmanError> {
+    this._pieces.set(req.handle, { size: req.sizeHint, created: new Date() })
+    return ok(req.handle)
+  }
+
+  pieceExists(handle: string): boolean {
+    return this._pieces.has(handle)
+  }
+
+  deletePiece(handle: string): Result<void, RmanError> {
+    this._pieces.delete(handle)
+    return ok(undefined)
+  }
+}
+```
+
+### 5.5 IBackupChannel — interface d'un canal
+
+```typescript
+// src/database/oracle/rman/channels/IBackupChannel.ts
+
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import type { BackupPiece } from '../catalog/types'
+import type { BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Scn } from '../values/Scn'
+
+export interface ChannelAllocationOptions {
+  readonly name:        string           // ex. 'ORA_DISK_1'
+  readonly deviceType:  'DISK' | 'SBT'
+  readonly format?:     string           // format de piece (%d, %s, %p, %t)
+  readonly maxpiecesize?: number         // bytes
+  readonly parallelism?: number          // nb de pieces en parallele
+}
+
+export interface IBackupChannel {
+  readonly name:       string
+  readonly deviceType: 'DISK' | 'SBT'
+  readonly sid:        number            // SID Oracle simule
+  readonly isAllocated: boolean
+
+  /** Alloue le canal (ouvre une connexion) */
+  allocate(): Result<void, RmanError>
+
+  /** Ecrit une piece et retourne les metadata de la piece */
+  writePiece(
+    req: BackupWriteRequest,
+    pieceNum: number,
+    bsKey: number,
+    ckpScn: Scn,
+  ): Result<BackupPiece, RmanError>
+
+  /** Verifie qu'une piece existe (CROSSCHECK) */
+  crosscheck(handle: string): 'AVAILABLE' | 'EXPIRED'
+
+  /** Supprime une piece du device */
+  deletePiece(handle: string): Result<void, RmanError>
+
+  /** Libere le canal */
+  release(): void
+
+  /** Representation pour l'affichage (ex. "channel ORA_DISK_1: SID=142 device type=DISK") */
+  toStatusLine(): string
+}
+```
+
+### 5.6 ConcreteBackupChannel — implementation
+
+```typescript
+// src/database/oracle/rman/channels/ConcreteBackupChannel.ts
+
+import type { IBackupChannel, ChannelAllocationOptions } from './IBackupChannel'
+import type { IBackupDeviceStrategy, BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import type { BackupPiece } from '../catalog/types'
+import type { Scn } from '../values/Scn'
+import type { RmanTag } from '../values/RmanTag'
+import { ok, err } from '../result'
+import { makeRmanError } from '../RmanError'
+
+let _sidCounter = 100
+
+export class ConcreteBackupChannel implements IBackupChannel {
+  readonly name:       string
+  readonly deviceType: 'DISK' | 'SBT'
+  readonly sid:        number
+  private _allocated   = false
+  private readonly _format: string
+  private readonly _strategy: IBackupDeviceStrategy
+
+  constructor(opts: ChannelAllocationOptions, strategy: IBackupDeviceStrategy) {
+    this.name       = opts.name
+    this.deviceType = opts.deviceType
+    this.sid        = _sidCounter++
+    this._format    = opts.format ?? ''
+    this._strategy  = strategy
+  }
+
+  get isAllocated(): boolean { return this._allocated }
+
+  allocate(): Result<void, RmanError> {
+    if (this._allocated) return ok(undefined)
+    this._allocated = true
+    return ok(undefined)
+  }
+
+  writePiece(
+    req: BackupWriteRequest,
+    pieceNum: number,
+    bsKey: number,
+    ckpScn: Scn,
+  ): Result<BackupPiece, RmanError> {
+    if (!this._allocated) {
+      return err(makeRmanError('RMAN_03009',
+        `allocate command on channel ${this.name}: channel not allocated`))
+    }
+
+    const result = this._strategy.writePiece(req)
+    if (!result.ok) return result
+
+    const piece: BackupPiece = {
+      bpKey:          bsKey * 100 + pieceNum,
+      bsKey,
+      pieceNum,
+      handle:         result.value,
+      tag:            { _tag: 'RmanTag', value: '' } as RmanTag,  // sera rempli par la commande
+      deviceType:     this.deviceType,
+      sizeBytes:      req.sizeHint,
+      compressed:     false,
+      encrypted:      false,
+      status:         'AVAILABLE',
+      completionTime: new Date(),
+    }
+    return ok(piece)
+  }
+
+  crosscheck(handle: string): 'AVAILABLE' | 'EXPIRED' {
+    return this._strategy.pieceExists(handle) ? 'AVAILABLE' : 'EXPIRED'
+  }
+
+  deletePiece(handle: string): Result<void, RmanError> {
+    return this._strategy.deletePiece(handle)
+  }
+
+  release(): void {
+    this._allocated = false
+  }
+
+  toStatusLine(): string {
+    return `channel ${this.name}: SID=${this.sid} device type=${this.deviceType}`
+  }
+}
+```
+
+### 5.7 ChannelPool — Composite Pattern
+
+Le `ChannelPool` gere une collection de canaux et permet les operations en lot : allouer tous les canaux d'un `RUN {}` bloc, ecrire en parallele (simule), liberer apres la commande.
+
+```typescript
+// src/database/oracle/rman/channels/ChannelPool.ts
+
+import type { IBackupChannel, ChannelAllocationOptions } from './IBackupChannel'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import { ok, err } from '../result'
+import { makeRmanError } from '../RmanError'
+import { sequence } from '../result'
+
+export class ChannelPool {
+  private readonly _channels: IBackupChannel[] = []
+
+  add(channel: IBackupChannel): void {
+    this._channels.push(channel)
+  }
+
+  /** Alloue tous les canaux. Arrete a la premiere erreur. */
+  allocateAll(): Result<readonly IBackupChannel[], RmanError> {
+    const results = this._channels.map(ch => ch.allocate().ok
+      ? { ok: true as const, value: ch }
+      : ch.allocate()
+    )
+    // Retourne les canaux ou la premiere erreur
+    for (const ch of this._channels) {
+      const r = ch.allocate()
+      if (!r.ok) return r
+    }
+    return ok([...this._channels])
+  }
+
+  /** Libere tous les canaux (appele en fin de bloc RUN ou de commande) */
+  releaseAll(): void {
+    for (const ch of this._channels) ch.release()
+  }
+
+  /** Premier canal disponible pour une operation (parallelisme simule = round-robin) */
+  getChannel(index = 0): IBackupChannel | null {
+    return this._channels[index % this._channels.length] ?? null
+  }
+
+  get count(): number { return this._channels.length }
+  get all(): readonly IBackupChannel[] { return [...this._channels] }
+  clear(): void { this._channels.length = 0 }
+}
+```
+
+### 5.8 ChannelAllocator — fabrique de canaux selon la configuration
+
+```typescript
+// src/database/oracle/rman/channels/ChannelAllocator.ts
+
+import { ConcreteBackupChannel } from './ConcreteBackupChannel'
+import { DiskDeviceStrategy }    from './DiskDeviceStrategy'
+import { SbtDeviceStrategy }     from './SbtDeviceStrategy'
+import { ChannelPool }           from './ChannelPool'
+import type { RmanConfig }       from '../config/RmanConfig'
+import type { IRmanOracleContext } from '../integration/IRmanOracleContext'
+
+export class ChannelAllocator {
+  constructor(
+    private readonly config: RmanConfig,
+    private readonly ctx: IRmanOracleContext,
+  ) {}
+
+  /**
+   * Cree un ChannelPool automatique base sur la configuration RMAN.
+   * Reproduit le comportement de CONFIGURE DEFAULT DEVICE TYPE et
+   * CONFIGURE DEVICE TYPE DISK PARALLELISM N.
+   */
+  createAutoPool(): ChannelPool {
+    const pool = new ChannelPool()
+    const parallelism = this.config.parallelism
+    const deviceType  = this.config.defaultDeviceType
+
+    for (let i = 1; i <= parallelism; i++) {
+      const strategy = deviceType === 'DISK'
+        ? new DiskDeviceStrategy(this.ctx)
+        : new SbtDeviceStrategy()
+
+      const channel = new ConcreteBackupChannel(
+        { name: `ORA_${deviceType}_${i}`, deviceType, format: this.config.pieceFormat },
+        strategy,
+      )
+      pool.add(channel)
+    }
+    return pool
+  }
+
+  /** Cree un canal unique avec des options explicites (bloc RUN ALLOCATE CHANNEL) */
+  createExplicitChannel(
+    name: string,
+    deviceType: 'DISK' | 'SBT',
+    format?: string,
+  ): ConcreteBackupChannel {
+    const strategy = deviceType === 'DISK'
+      ? new DiskDeviceStrategy(this.ctx)
+      : new SbtDeviceStrategy()
+    return new ConcreteBackupChannel({ name, deviceType, format }, strategy)
+  }
+}
+```
+
+### 5.9 Diagramme du sous-systeme canaux
+
+```
+ChannelAllocator
+  - createAutoPool()      --> ChannelPool (Composite)
+  - createExplicitChannel --> ConcreteBackupChannel
+
+ChannelPool (Composite)
+  +-- IBackupChannel[]
+  - allocateAll()  releaseAll()  getChannel()
+
+ConcreteBackupChannel implements IBackupChannel
+  |
+  +-- IBackupDeviceStrategy (Strategy)
+        |
+        +-- DiskDeviceStrategy   --> IRmanOracleContext.writeFile() / fileExists()
+        +-- SbtDeviceStrategy    --> Map<string, PieceInfo> (in-memory)
+
+Strategy Pattern : ajouter NFS, SMB, OSB = implementer IBackupDeviceStrategy
+                   zero modification dans ConcreteBackupChannel
+```
+
+---
+
