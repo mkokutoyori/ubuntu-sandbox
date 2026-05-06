@@ -422,3 +422,320 @@ export function formatOracleDate(d: Date = new Date()): string {
 ```
 
 ---
+
+## 4. Programmation réactive : RmanSubject + Operators + RmanEventBus
+
+### 4.1 RmanSubject<T> — Observable maison sans dépendance RxJS
+
+```typescript
+// src/terminal/subshells/rman/reactive/RmanSubject.ts
+
+/**
+ * Observable léger (~120 lignes) spécifique au module RMAN.
+ * Sémantique : multicast synchrone, hot observable.
+ * Pas de dépendance externe (pas de RxJS).
+ */
+
+export interface RmanObservable<T> {
+  subscribe(fn: (value: T) => void): () => void
+  pipe<U>(operator: RmanOperator<T, U>): RmanObservable<U>
+}
+
+export type RmanOperator<T, U> = (source: RmanObservable<T>) => RmanObservable<U>
+
+export class RmanSubject<T> implements RmanObservable<T> {
+  private readonly _subscribers = new Set<(v: T) => void>()
+  private _completed = false
+
+  /** Émet une valeur vers tous les abonnés actifs. Synchrone. */
+  next(value: T): void {
+    if (this._completed) return
+    for (const sub of this._subscribers) sub(value)
+  }
+
+  /** Termine le subject — les émissions futures sont ignorées. */
+  complete(): void {
+    this._completed = true
+    this._subscribers.clear()
+  }
+
+  /** S'abonner — retourne la fonction de désabonnement. */
+  subscribe(fn: (value: T) => void): () => void {
+    if (this._completed) return () => {}
+    this._subscribers.add(fn)
+    return () => this._subscribers.delete(fn)
+  }
+
+  /** Crée un observable en lecture seule sur ce subject. */
+  asObservable(): RmanObservable<T> {
+    return {
+      subscribe: (fn) => this.subscribe(fn),
+      pipe:      (op) => this.pipe(op),
+    }
+  }
+
+  /** Compose des opérateurs sur le stream. */
+  pipe<U>(operator: RmanOperator<T, U>): RmanObservable<U> {
+    return operator(this.asObservable())
+  }
+}
+```
+
+### 4.2 Operators — pure higher-order functions
+
+```typescript
+// src/terminal/subshells/rman/reactive/operators.ts
+
+import type { RmanObservable, RmanOperator, RmanSubject } from './RmanSubject'
+
+export const Operators = {
+  /**
+   * filter<T> — ne laisse passer que les valeurs satisfaisant le prédicat.
+   */
+  filter<T>(predicate: (v: T) => boolean): RmanOperator<T, T> {
+    return (source) => ({
+      subscribe(fn) {
+        return source.subscribe(v => { if (predicate(v)) fn(v) })
+      },
+      pipe(op) { return op(this) },
+    })
+  },
+
+  /**
+   * map<T,U> — transforme chaque valeur.
+   */
+  map<T, U>(transform: (v: T) => U): RmanOperator<T, U> {
+    return (source) => ({
+      subscribe(fn) {
+        return source.subscribe(v => fn(transform(v)))
+      },
+      pipe(op) { return op(this) },
+    })
+  },
+
+  /**
+   * ofType<T,K> — filtre par type guard TypeScript.
+   * Retourne un stream fortement typé sur le sous-type K.
+   */
+  ofType<T, K extends T>(guard: (v: T) => v is K): RmanOperator<T, K> {
+    return (source) => ({
+      subscribe(fn) {
+        return source.subscribe(v => { if (guard(v)) fn(v) })
+      },
+      pipe(op) { return op(this) },
+    })
+  },
+
+  /**
+   * merge<T> — fusionne plusieurs observables en un seul stream.
+   */
+  merge<T>(...sources: RmanObservable<T>[]): RmanObservable<T> {
+    const subject = new (require('./RmanSubject').RmanSubject as new () => import('./RmanSubject').RmanSubject<T>)()
+    const unsubs  = sources.map(s => s.subscribe(v => subject.next(v)))
+    return {
+      subscribe(fn) {
+        const unsub = subject.subscribe(fn)
+        return () => { unsub(); unsubs.forEach(u => u()) }
+      },
+      pipe(op) { return op(this) },
+    }
+  },
+
+  /**
+   * bufferTime<T> — accumule les valeurs sur une fenêtre de temps (ms),
+   * émet un tableau. Utile pour batcher les updates de progression.
+   */
+  bufferTime<T>(windowMs: number): RmanOperator<T, T[]> {
+    return (source) => {
+      const out     = new (require('./RmanSubject').RmanSubject as any)() as import('./RmanSubject').RmanSubject<T[]>
+      let   buffer: T[] = []
+      let   timer:  ReturnType<typeof setTimeout> | null = null
+
+      const flush = () => {
+        if (buffer.length > 0) { out.next(buffer); buffer = [] }
+        timer = null
+      }
+
+      const unsub = source.subscribe(v => {
+        buffer.push(v)
+        if (!timer) timer = setTimeout(flush, windowMs)
+      })
+
+      return {
+        subscribe(fn) {
+          const u = out.subscribe(fn)
+          return () => { u(); unsub(); if (timer) clearTimeout(timer) }
+        },
+        pipe(op) { return op(this) },
+      }
+    }
+  },
+
+  /**
+   * distinctUntilChanged<T> — ne réémet que si la valeur change.
+   * Comparateur par défaut : égalité stricte.
+   */
+  distinctUntilChanged<T>(eq: (a: T, b: T) => boolean = (a, b) => a === b): RmanOperator<T, T> {
+    return (source) => {
+      let last: T | undefined
+      let hasLast = false
+      return {
+        subscribe(fn) {
+          return source.subscribe(v => {
+            if (!hasLast || !eq(last as T, v)) { last = v; hasLast = true; fn(v) }
+          })
+        },
+        pipe(op) { return op(this) },
+      }
+    }
+  },
+}
+```
+
+### 4.3 RmanEventBus — bus central avec streams typés
+
+```typescript
+// src/terminal/subshells/rman/reactive/RmanEventBus.ts
+
+import { RmanSubject }   from './RmanSubject'
+import { Operators }     from './operators'
+import type { RmanEvent, RmanSessionState } from '../core/types'
+import type { RmanError } from '../core/RmanError'
+
+/**
+ * Bus d'événements central pour le module RMAN.
+ *
+ * Expose un stream générique _events$ (privé) et des sous-streams
+ * publics fortement typés par ofType().
+ *
+ * Pattern : Observer (GoF) — producteurs appellent emit(),
+ *            consommateurs s'abonnent aux streams spécialisés.
+ */
+export class RmanEventBus {
+  private readonly _events$ = new RmanSubject<RmanEvent>()
+
+  // ── Sous-streams typés (lecture seule) ──────────────────────────
+
+  /** Changements d'état de session (IDLE → CONNECTED, etc.) */
+  readonly sessionState$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'SESSION_STATE_CHANGED' }> =>
+      e.type === 'SESSION_STATE_CHANGED')
+  )
+
+  /** Démarrage d'un job (backup, restore, crosscheck, …) */
+  readonly jobStarted$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'JOB_STARTED' }> =>
+      e.type === 'JOB_STARTED')
+  )
+
+  /** Fin réussie d'un job */
+  readonly jobCompleted$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'JOB_COMPLETED' }> =>
+      e.type === 'JOB_COMPLETED')
+  )
+
+  /** Échec d'un job */
+  readonly jobFailed$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'JOB_FAILED' }> =>
+      e.type === 'JOB_FAILED')
+  )
+
+  /** Mise à jour de progression (% avancement, message courant) */
+  readonly progress$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'PROGRESS_UPDATED' }> =>
+      e.type === 'PROGRESS_UPDATED')
+  )
+
+  /** Canal alloué */
+  readonly channelAllocated$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'CHANNEL_ALLOCATED' }> =>
+      e.type === 'CHANNEL_ALLOCATED')
+  )
+
+  /** Canal libéré */
+  readonly channelReleased$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'CHANNEL_RELEASED' }> =>
+      e.type === 'CHANNEL_RELEASED')
+  )
+
+  /** Pièce de backup créée (avec métadonnées complètes) */
+  readonly pieceCreated$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'BACKUP_PIECE_CREATED' }> =>
+      e.type === 'BACKUP_PIECE_CREATED')
+  )
+
+  /** Backup set terminé */
+  readonly backupSetComplete$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'BACKUP_SET_COMPLETE' }> =>
+      e.type === 'BACKUP_SET_COMPLETE')
+  )
+
+  /** Mise à jour du catalogue (insert/delete/expire) */
+  readonly catalogUpdated$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'CATALOG_UPDATED' }> =>
+      e.type === 'CATALOG_UPDATED')
+  )
+
+  /** Crosscheck terminé */
+  readonly crosscheckDone$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'CROSSCHECK_DONE' }> =>
+      e.type === 'CROSSCHECK_DONE')
+  )
+
+  /** Stream brut de tous les événements (pour debug/logging) */
+  readonly events$ = this._events$.asObservable()
+
+  // ── API d'émission ───────────────────────────────────────────────
+
+  /** Publie un événement sur le bus. */
+  emit(event: RmanEvent): void {
+    this._events$.next(event)
+  }
+
+  /** Arrête tous les streams. Appelé lors de la destruction de la session. */
+  dispose(): void {
+    this._events$.complete()
+  }
+}
+```
+
+### 4.4 Diagramme des streams
+
+```
+emit(RmanEvent)
+      │
+      ▼
+  _events$: RmanSubject<RmanEvent>
+      │
+      ├─ ofType(SESSION_STATE_CHANGED) ──► sessionState$
+      │
+      ├─ ofType(JOB_STARTED)          ──► jobStarted$
+      │
+      ├─ ofType(JOB_COMPLETED)        ──► jobCompleted$
+      │
+      ├─ ofType(JOB_FAILED)           ──► jobFailed$
+      │
+      ├─ ofType(PROGRESS_UPDATED)     ──► progress$
+      │
+      ├─ ofType(CHANNEL_ALLOCATED)    ──► channelAllocated$
+      │
+      ├─ ofType(CHANNEL_RELEASED)     ──► channelReleased$
+      │
+      ├─ ofType(BACKUP_PIECE_CREATED) ──► pieceCreated$
+      │
+      ├─ ofType(BACKUP_SET_COMPLETE)  ──► backupSetComplete$
+      │
+      ├─ ofType(CATALOG_UPDATED)      ──► catalogUpdated$
+      │
+      └─ ofType(CROSSCHECK_DONE)      ──► crosscheckDone$
+
+Abonnés :
+  progress$       → RmanSubShell (imprime output ligne par ligne)
+  pieceCreated$   → InMemoryRmanCatalog (persiste la pièce)
+  channelAllocated$ / channelReleased$ → ReactiveChannelPool (tracking)
+  jobCompleted$   → RmanSession (transitions d'état)
+  jobFailed$      → RmanSession (transitions d'état + log)
+  events$         → Logger global (debug)
+```
+
+---
