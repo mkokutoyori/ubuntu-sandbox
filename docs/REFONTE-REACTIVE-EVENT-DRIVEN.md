@@ -3045,7 +3045,7 @@ majeure.
 |---|---|:---:|---|
 | 1 | Primitives (`EventBus`, `Scheduler`, `Signal`, `waitForEvent`, types) | ✅ | Voir §12.8.2 |
 | 2 | `Logger` adapter + `EquipmentRegistry` events | ✅ | Voir §12.8.3 |
-| 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ⏳ | – |
+| 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ✅ | Voir §12.8.4 |
 | 4 | Scheduler partout dans les protocoles | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -3182,6 +3182,93 @@ introduit, aucun fichier de domaine cassé.
   présent).
 - ✅ API publique `Logger.{debug,info,warn,error,subscribe,unsubscribe,getLogs,reset}`
   inchangée.
+
+### 12.8.4 Phase 3 — Hardware : Port et Cable émettent (livrée)
+
+**Objectif §10.4** : ajouter les émissions `port.*` et `cable.*` sans
+casser le pipeline synchrone existant. Les callbacks `onFrame`,
+`onLinkChange`, `frameHandler` restent **fonctionnels** ; ils sont
+simplement **doublés** par les événements pour permettre aux
+abonnés bus (futur `PacketAnimation`, `BusTracer`, projections,
+adapter de capture) d'observer la circulation des trames.
+
+**Topics ajoutés à `DomainEvent`** (≈ 25 nouveaux discriminants dans
+`src/events/types.ts`) :
+
+- L1/L2 Port : `port.frame.tx-requested`, `port.frame.tx-blocked`,
+  `port.frame.received`, `port.frame.dropped`, `port.link.up`,
+  `port.link.down`, `port.config.ip-changed`,
+  `port.config.ipv6-added`, `port.config.ipv6-removed`,
+  `port.config.mtu-changed`, `port.config.speed-changed`,
+  `port.config.duplex-changed`, `port.security.violation`.
+- L1/L2 Cable : `cable.connected`, `cable.disconnected`,
+  `cable.negotiated`, `cable.duplex-mismatch`,
+  `cable.frame.dispatched`, `cable.frame.delivered`,
+  `cable.frame.lost`.
+
+Les payloads utilisent les types existants (`EthernetFrame`,
+`MACAddress`, `IPAddress`, `SubnetMask`, `IPv6Address`, `PortDuplex`,
+`PortSpeed`, `PortViolationMode`) via des `import type`, donc zéro coût
+runtime et zéro dépendance circulaire.
+
+**Fichiers modifiés** :
+
+- `src/network/hardware/Port.ts` (≈ 535 LoC) :
+  - Injection bus optionnelle `setEventBus(bus)`, helper `portRef()`.
+  - `configureIP/clearIP` publient `port.config.ip-changed`.
+  - `enableIPv6/configureIPv6/removeIPv6Address` publient
+    `port.config.ipv6-added/removed`.
+  - `setSpeed/setDuplex/setMTU` publient leurs events de config
+    (filtrés sur changement effectif).
+  - `notifyLinkChange` publie `port.link.up` / `port.link.down`
+    (couvre `setUp`, `connectCable`, `disconnectCable`,
+    `_notifyLinkUp`, et la mise à `down` automatique en cas de
+    violation port-security shutdown).
+  - `checkPortSecurity` publie `port.security.violation` avec
+    `{ mac, mode, action }` quand la trame est rejetée. Mode
+    déterminé via `getViolationMode()`, action déterminée par
+    `verdict.shouldShutdown` ou `restrict` ou `protect → discarded`.
+  - `sendFrame` publie `port.frame.tx-requested` ou
+    `port.frame.tx-blocked` (raisons : `link-down`, `no-cable`).
+  - `receiveFrame` publie `port.frame.received` ou
+    `port.frame.dropped` (raisons : `link-down`,
+    `security-violation`).
+  - **Aucun** callback existant retiré — Phase 8 les nettoie.
+- `src/network/hardware/Cable.ts` (≈ 320 LoC) :
+  - Injection `setEventBus(bus)` et `setRng(fn)` (RNG injectable
+    pour seed déterministe en test, conformément au point C2 §3.3.3).
+  - `connect()` publie `cable.connected` puis `cable.negotiated`
+    (avec `speed`/`duplex` négociés) puis éventuellement
+    `cable.duplex-mismatch`.
+  - `disconnect()` publie `cable.disconnected`.
+  - `transmit()` publie successivement `cable.frame.dispatched`,
+    déclenche la livraison **synchrone** (Phase 6 la rendra
+    asynchrone via `Scheduler`), puis `cable.frame.delivered`. Sur
+    cable down / pas de peer / perte simulée, publie
+    `cable.frame.lost` avec `reason` discriminé.
+
+**Tests ajoutés** (`src/__tests__/unit/events/Port.events.test.ts`) :
+
+- 9 tests couvrant tx-blocked (link-down + no-cable), `port.link.*`
+  sur transitions, `port.config.ip-changed` sur configure/clear,
+  `port.config.mtu-changed` filtré, chaîne complète tx-requested →
+  cable.dispatched → port.received → cable.delivered avec ordre
+  vérifié, `cable.connected` + `cable.negotiated`, `cable.frame.lost`
+  avec rng seedée à 0, `cable.disconnected`.
+
+**Résultat** : **55/55 tests events verts** (9 nouveaux). La suite
+globale `npm run test:run` reste strictement à la baseline préexistante
+(578 échecs antérieurs, aucun ajouté).
+
+**Critères de sortie §10.4 atteints** :
+
+- ✅ Suite réseau verte (baseline préservée, +55 verts).
+- ✅ Un abonné `BusTracer` peut désormais enregistrer la trace complète
+  d'un envoi `Port.sendFrame` jusqu'à `Port.receiveFrame` côté pair.
+- ✅ Les callbacks `onFrame` et `onLinkChange` restent live, donc aucun
+  code legacy n'est cassé.
+- ✅ RNG injectable côté `Cable` ouvre la voie à des tests de perte de
+  paquets reproductibles (point C2 §3.3.3 résolu côté primitive).
 
 ### 12.9 Mot de la fin
 
