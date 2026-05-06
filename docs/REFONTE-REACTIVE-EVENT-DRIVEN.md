@@ -3046,7 +3046,8 @@ majeure.
 | 1 | Primitives (`EventBus`, `Scheduler`, `Signal`, `waitForEvent`, types) | ✅ | Voir §12.8.2 |
 | 2 | `Logger` adapter + `EquipmentRegistry` events | ✅ | Voir §12.8.3 |
 | 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ✅ | Voir §12.8.4 |
-| 4 | Scheduler partout dans les protocoles | ⏳ | – |
+| 4a | Scheduler dans `PacketQueue` et `NeighborResolver` | ✅ | Voir §12.8.5 |
+| 4b | Scheduler dans OSPF / RIP / DHCP / IPSec / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -3269,6 +3270,59 @@ globale `npm run test:run` reste strictement à la baseline préexistante
   code legacy n'est cassé.
 - ✅ RNG injectable côté `Cable` ouvre la voie à des tests de perte de
   paquets reproductibles (point C2 §3.3.3 résolu côté primitive).
+
+### 12.8.5 Phase 4a — Scheduler dans `PacketQueue` et `NeighborResolver` (livrée)
+
+**Objectif §10.5** appliqué aux deux composants core génériques (au
+sens §3.5.2 et §3.5.3). Les engines OSPF/RIP/DHCP/IPSec/NAT,
+beaucoup plus volumineux, sont traités en Phase 4b.
+
+**Fichiers modifiés** :
+
+- `src/network/core/PacketQueue.ts` (≈ 155 LoC) :
+  - Constructeur étendu avec un paramètre optionnel `scheduler?: IScheduler`
+    (default fallback sur `getDefaultScheduler()`, donc rétro-compatible).
+  - `setScheduler(scheduler)` permet l'injection runtime.
+  - Tous les `setTimeout` / `clearTimeout` natifs (4 sites) remplacés
+    par `scheduler.setTimeout` / `scheduler.clear`.
+  - Le type `timer` interne passe de `ReturnType<typeof setTimeout>` à
+    `TimerHandle` (alias scheduler).
+- `src/network/core/NeighborResolver.ts` (≈ 220 LoC) :
+  - Idem : 4ᵉ paramètre optionnel `scheduler?: IScheduler` au
+    constructeur, méthode `setScheduler(scheduler)`.
+  - Tous les `setTimeout` / `clearTimeout` (3 sites : timeout de
+    résolution, cancel sur learn, cancel sur clear) migrés.
+  - L'API publique (`resolve(...)` retourne toujours `Promise<MAC>`)
+    reste **strictement identique** ; seul le moteur des timers change.
+- `src/network/core/PacketQueue.ts` et `NeighborResolver.ts`
+  n'introduisent **aucune** émission bus à ce stade — c'est purement
+  une migration de scheduler. Les émissions `neighbor.*` viendront
+  avec Phase 5 (qui réutilisera `NeighborResolver` côté `EndHost`).
+
+**Tests ajoutés** (`src/__tests__/unit/events/`) :
+
+- `PacketQueue.scheduler.test.ts` (4 tests) : expiration via
+  `advance(ms)` déterministe, `flush()` annule les timers,
+  `clear()` libère tous les timers, éviction LRU à la capacité avec
+  libération du timer de l'entrée évincée.
+- `NeighborResolver.scheduler.test.ts` (5 tests) : cache hit
+  synchrone, résolution sur `learn()`, timeout via `advance()`, pas de
+  duplication des solicitations en flight, `clear()` rejette tous les
+  pendings et libère les timers.
+
+**Résultat** : **64/64 tests events verts** (9 nouveaux). La suite
+globale reste à la baseline préexistante (578 échecs, aucun ajouté).
+
+**Critères de sortie partiels §10.5** :
+
+- ✅ 0 occurrence `setInterval` / `setTimeout` natif dans
+  `src/network/core/PacketQueue.ts` et `NeighborResolver.ts` (vérifié
+  par grep).
+- ✅ Tests temporels passent avec `VirtualTimeScheduler` injecté.
+- ⏳ Migration équivalente requise pour `OSPFEngine`,
+  `OSPFv3Engine`, `RIPEngine`, `RouterRIPEngine`, `DHCPClient`,
+  `DHCPServer`, `IPSecEngine`, `NATEngine`, `Switch.macAgingTimer`
+  → traités en Phase 4b.
 
 ### 12.9 Mot de la fin
 
