@@ -61,9 +61,8 @@ import {
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
-import type { ISftpServer } from '../protocols/sftp/ISftpServer';
-import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '../protocols/sftp/LinuxSftpAdapter';
-import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
+import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -122,8 +121,36 @@ export abstract class LinuxMachine extends EndHost {
     this.registerCoreCommands();
     this.registerDeviceCommands();
 
-    // 5. TCP SFTP server on port 22
-    this.listenTcp(22, (conn) => registerSftpHandler(conn, this.getSftpServer()));
+    // 5. Initialise SSH server config files on first boot:
+    //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
+    //    Also seed /etc/motd and /etc/issue.net so SSH greeters and the
+    //    pre-auth Banner have realistic content.
+    this.initSshFiles();
+
+    // 6. TCP SSH server on port 22 — handles SSH auth + SFTP subsystem
+    //    in one place.  Replaces the legacy SFTP-only handler.
+    this.listenTcp(22, (conn) => {
+      this.getSshServerHandler().register(conn, '0.0.0.0');
+    });
+  }
+
+  /** Persist SSH server configuration + host key + MOTD on the VFS. */
+  private initSshFiles(): void {
+    // Instantiating the context as a side effect creates the files.
+    this.getSshServerContext();
+    const vfs = this.executor.vfs;
+    if (!vfs.exists('/etc/motd')) {
+      vfs.writeFile(
+        '/etc/motd',
+        `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`,
+        0,
+        0,
+        0o022,
+      );
+    }
+    if (!vfs.exists('/etc/issue.net')) {
+      vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
+    }
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
@@ -197,16 +224,27 @@ export abstract class LinuxMachine extends EndHost {
   }
 
   /**
-   * Expose this machine as an SFTP server.
-   * Called by SftpServerResolver when a remote client connects to this device's IP.
+   * Build a fresh ISshServerContext bound to this machine's VFS / users.
+   * Used by callers wanting to drive the new SSH stack against this device
+   * (tests, future cutover from the legacy SFTP-only handler).
    */
-  getSftpServer(): ISftpServer {
-    return {
-      vfs:         new LinuxSftpFSAdapter(this.executor.vfs),
-      userMgr:     new LinuxSftpUserAuthAdapter(this.executor.userMgr),
-      hostname:    this.profile.hostname,
-      socketTable: this.socketTable,
-    };
+  getSshServerContext(): LinuxSshServerContext {
+    return new LinuxSshServerContext(
+      this.executor.vfs,
+      this.executor.userMgr,
+      this.profile.hostname,
+      {},
+      this.executor,
+    );
+  }
+
+  /**
+   * Build a SshServerHandler ready to be hooked onto a TcpConnection.
+   * The legacy SFTP handler is left registered on port 22 for backward
+   * compatibility; a follow-up may swap it for this one.
+   */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   // ─── Terminal entry point ────────────────────────────────────────────

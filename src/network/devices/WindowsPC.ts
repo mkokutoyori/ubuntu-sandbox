@@ -17,9 +17,8 @@
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
-import type { ISftpServer } from '../protocols/sftp/ISftpServer';
-import { WindowsSftpFSAdapter, WindowsSftpUserAuthAdapter } from '../protocols/sftp/WindowsSftpAdapter';
-import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
+import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -96,21 +95,24 @@ export class WindowsPC extends EndHost {
     // NetBIOS Session Service (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
 
-    // TCP SFTP server on port 22
-    this.listenTcp(22, (conn) => registerSftpHandler(conn, this.getSftpServer()));
+    // Persist SSH server config + host key under C:\ProgramData\ssh\ on
+    // first boot so OpenSSH-for-Windows files are visible from the shell.
+    this.getSshServerContext();
+
+    // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
+    this.listenTcp(22, (conn) => {
+      this.getSshServerHandler().register(conn, '0.0.0.0');
+    });
   }
 
-  /**
-   * Expose this machine as an SFTP server.
-   * Uses OpenSSH-for-Windows path convention: /C:/Users/User/...
-   */
-  getSftpServer(): ISftpServer {
-    return {
-      vfs:         new WindowsSftpFSAdapter(this.fs),
-      userMgr:     new WindowsSftpUserAuthAdapter(this.userMgr),
-      hostname:    this.hostname,
-      socketTable: this.socketTable,
-    };
+  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  getSshServerContext(): WindowsSshServerContext {
+    return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname);
+  }
+
+  /** Build a SshServerHandler ready to be hooked onto a TcpConnection. */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   private createPorts(): void {
