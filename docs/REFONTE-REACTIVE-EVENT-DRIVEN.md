@@ -15,7 +15,7 @@
 5. [Analyse de la couche terminal](#5-analyse-de-la-couche-terminal)
 6. [Analyse du store Zustand et des composants React](#6-analyse-du-store-zustand-et-des-composants-react)
 7. [Analyse de la couche base de données (Oracle)](#7-analyse-de-la-couche-base-de-données-oracle)
-8. Architecture cible — bus d'événements, scheduler, état observable *(à venir)*
+8. [Architecture cible — bus d'événements, scheduler, état observable](#8-architecture-cible--bus-dévénements-scheduler-état-observable)
 9. Refactoring détaillé par classe *(à venir)*
 10. Plan de migration séquentiel *(à venir)*
 11. Risques, tests et métriques de succès *(à venir)*
@@ -1346,3 +1346,561 @@ Trois suites principales :
 ---
 
 *Section 7 close. Suivante : §8 — Architecture cible : event bus, scheduler, état observable.*
+
+---
+
+## 8. Architecture cible — bus d'événements, scheduler, état observable
+
+Cette section décrit la **forme cible** de l'architecture après refonte. Elle propose un noyau composé de trois primitives — `EventBus`, `Scheduler`, `Signal` — sur lesquelles toutes les autres couches se reconstruisent. Aucune dépendance externe (RxJS, XState, Redux, …) n'est introduite.
+
+### 8.1 Principe d'organisation
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                      React Components / Hooks                      │
+│   useDevices • useDevice • usePort • useCable • useArpTable        │
+│   useRoutingTable • useOspfNeighbors • useActivePackets • …        │
+└────────────────────────────────────────────────────────────────────┘
+                                  ▲
+                                  │ getSnapshot / subscribe (sync external store)
+                                  │
+┌────────────────────────────────────────────────────────────────────┐
+│           Projectors  (read-models / VM / SignalStore)             │
+│   DevicesProjection • PortsProjection • RoutesProjection •         │
+│   ActivePacketsProjection • TerminalSessionsProjection • …         │
+└────────────────────────────────────────────────────────────────────┘
+                                  ▲
+                                  │ bus.subscribe(topicPattern)
+                                  │
+┌──────────────┴───────────────────────────────────────────────┴─────┐
+│                          EventBus                                  │
+│  publish(event)  •  subscribe(pattern, handler)  •  unsubscribe()  │
+│  ordering: FIFO synchrone, dispatch en microtâche optionnel        │
+└──────────────┬───────────────────────────────────────────────┬─────┘
+               ▲                                               ▲
+               │ publish                                       │ publish
+┌──────────────┴────────────────┐               ┌──────────────┴──────────────┐
+│        Acteurs  (Actors)      │               │   Adapters / Effets         │
+│  Equipment • Port • Cable     │  publish      │  OracleFilesystemSync       │
+│  EndHost • Router • Switch    │   ─────►      │  LoggerAdapter (texte)      │
+│  OSPFEngine • DHCPClient • …  │               │  AnimationAdapter           │
+│  TerminalSession • OracleInst │               │  StorageSerializer          │
+└──────────────┬────────────────┘               └─────────────────────────────┘
+               │ uses
+               ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                        Scheduler                                   │
+│  setTimeout • setInterval • cancel • now() • advance(ms) for tests │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Les **acteurs** mutent leur propre état et publient. Les **projecteurs** consomment et calculent des read-models. Les **adapters** consomment et produisent des effets externes (filesystem, log texte, persistence, animation). Les **hooks React** consomment les projecteurs.
+
+### 8.2 `EventBus` — primitive #1
+
+#### 8.2.1 Forme du type d'événement
+
+```ts
+// src/events/types.ts
+export type DomainEvent =
+  // ─── Network L1/L2 ─────────────────────────────────────────────
+  | { topic: 'port.frame.tx-requested';   payload: { deviceId; portName; frame: EthernetFrame } }
+  | { topic: 'port.frame.tx-blocked';     payload: { deviceId; portName; reason: 'link-down' | 'no-cable' } }
+  | { topic: 'cable.frame.dispatched';    payload: { cableId; from: PortRef; to: PortRef; frame; propagationMs: number } }
+  | { topic: 'cable.frame.delivered';     payload: { cableId; from: PortRef; to: PortRef; frame } }
+  | { topic: 'cable.frame.lost';          payload: { cableId; reason: 'simulated-loss' } }
+  | { topic: 'port.frame.received';       payload: { deviceId; portName; frame } }
+  | { topic: 'port.frame.dropped';        payload: { deviceId; portName; reason } }
+  | { topic: 'port.link.up';              payload: { deviceId; portName } }
+  | { topic: 'port.link.down';            payload: { deviceId; portName } }
+  | { topic: 'port.config.ip-changed';    payload: { deviceId; portName; ip; mask } }
+  | { topic: 'port.config.ipv6-added';    payload: { deviceId; portName; ipv6; prefixLength; origin } }
+  | { topic: 'port.security.violation';   payload: { deviceId; portName; mac; mode; action } }
+  | { topic: 'cable.connected';           payload: { cableId; portA; portB; cableType } }
+  | { topic: 'cable.disconnected';        payload: { cableId } }
+  | { topic: 'cable.negotiated';          payload: { cableId; speed; duplex } }
+  | { topic: 'cable.duplex-mismatch';     payload: { cableId } }
+
+  // ─── Devices / Equipment ───────────────────────────────────────
+  | { topic: 'device.registered';         payload: { id; type; name } }
+  | { topic: 'device.deregistered';       payload: { id } }
+  | { topic: 'device.power-on';           payload: { id } }
+  | { topic: 'device.power-off';          payload: { id } }
+  | { topic: 'device.position-changed';   payload: { id; x; y } }
+  | { topic: 'device.renamed';            payload: { id; oldName; newName } }
+  | { topic: 'device.boot.started';       payload: { id } }
+  | { topic: 'device.boot.line';          payload: { id; line; lineType? } }
+  | { topic: 'device.boot.completed';     payload: { id } }
+
+  // ─── Host (L3/L4) ──────────────────────────────────────────────
+  | { topic: 'host.arp.entry-learned';    payload: { deviceId; ip; mac; iface } }
+  | { topic: 'host.arp.entry-expired';    payload: { deviceId; ip } }
+  | { topic: 'host.routing.route-added';  payload: { deviceId; route } }
+  | { topic: 'host.routing.route-removed';payload: { deviceId; route } }
+  | { topic: 'host.icmp.echo-sent';       payload: { deviceId; from; to; id; seq } }
+  | { topic: 'host.icmp.echo-reply';      payload: { deviceId; from; to; id; seq; ttl } }
+  | { topic: 'host.tcp.listener-started'; payload: { deviceId; port } }
+  | { topic: 'host.tcp.connection-established'; payload: { deviceId; localPort; remoteIp; remotePort } }
+  | { topic: 'socket.bound' | 'socket.connected' | 'socket.closed';   payload: { deviceId; protocol; localPort; … } }
+
+  // ─── Switch ────────────────────────────────────────────────────
+  | { topic: 'switch.mac.learned';        payload: { deviceId; mac; vlan; port } }
+  | { topic: 'switch.mac.aged';           payload: { deviceId; mac; vlan } }
+  | { topic: 'switch.vlan.created';       payload: { deviceId; vlanId; name? } }
+  | { topic: 'switch.stp.state-changed';  payload: { deviceId; portName; oldState; newState } }
+
+  // ─── Protocols ─────────────────────────────────────────────────
+  | { topic: 'ospf.neighbor.state-changed'; payload: { deviceId; neighborId; oldState; newState } }
+  | { topic: 'ospf.lsa.received';            payload: { deviceId; lsa: LSAHeader } }
+  | { topic: 'ospf.spf.run';                  payload: { deviceId; runtimeMs; routesAdded } }
+  | { topic: 'rip.update.sent' | 'rip.update.received'; payload: { deviceId; iface; routes } }
+  | { topic: 'dhcp.lease-requested' | 'dhcp.lease-granted' | 'dhcp.lease-expired'; payload: { … } }
+  | { topic: 'ipsec.sa.installed' | 'ipsec.sa.deleted'; payload: { … } }
+
+  // ─── Terminal ──────────────────────────────────────────────────
+  | { topic: 'terminal.session.opened'    | 'terminal.session.closed'; payload: { deviceId; sessionId } }
+  | { topic: 'terminal.session.line-added'; payload: { sessionId; line; lineType } }
+  | { topic: 'terminal.session.input-mode-changed'; payload: { sessionId; mode } }
+
+  // ─── Database ──────────────────────────────────────────────────
+  | { topic: 'oracle.instance.state-changed'; payload: { deviceId; oldState; newState } }
+  | { topic: 'oracle.session.connected';      payload: { deviceId; sessionId; schema } }
+  | { topic: 'oracle.transaction.committed';  payload: { … } }
+  | { topic: 'oracle.dml.executed';           payload: { … } }
+
+  // ─── Logging (rétro-compat) ────────────────────────────────────
+  | { topic: 'log';                       payload: { level; source; event; message; data? } };
+```
+
+Cet exemple n'est pas exhaustif ; le type complet sera **co-localisé avec chaque module** (un fichier `*.events.ts` par couche), puis agrégé dans un union global `DomainEvent` exporté par `src/events/index.ts`. Discriminé par `topic`, il garantit le typage à la publication et au filtrage.
+
+#### 8.2.2 API du bus
+
+```ts
+// src/events/EventBus.ts
+export interface IEventBus {
+  publish<E extends DomainEvent>(event: E): void;
+
+  subscribe<T extends DomainEvent['topic']>(
+    topic: T | T[] | RegExp,
+    handler: (e: Extract<DomainEvent, { topic: T }>) => void,
+  ): Unsubscribe;
+
+  /** Filtré par predicate sur le payload */
+  subscribeWhere<T extends DomainEvent['topic']>(
+    topic: T,
+    predicate: (e: Extract<DomainEvent, { topic: T }>) => boolean,
+    handler: (e: Extract<DomainEvent, { topic: T }>) => void,
+  ): Unsubscribe;
+
+  /** Désinscription massive (pour clearAll, tests) */
+  clear(): void;
+}
+
+export type Unsubscribe = () => void;
+```
+
+#### 8.2.3 Sémantique d'ordre
+
+- **Synchrone par défaut.** `publish` invoque les handlers dans l'ordre de souscription, dans la même call-stack. Préserve la prédictibilité actuelle.
+- **Réentrance autorisée mais bornée.** Un handler peut publier un autre événement ; ce dernier est *queueé* puis dispatché à la fin du dispatch courant (« sub-event queue »). Garantit que la pile ne s'effondre pas et que l'ordre causal reste lisible.
+- **Pas de promesses dans le bus lui-même.** Les handlers async écrivent leur logique async eux-mêmes (`(async () => { await … bus.publish(…) })()`).
+- **Pas de delivery garantie.** Si aucun abonné, l'événement est simplement perdu. Pour les besoins de débogage, un *adapter* `BusTracer` peut s'abonner à un wildcard `*` et journaliser.
+
+#### 8.2.4 Implémentation indicative
+
+```ts
+class EventBus implements IEventBus {
+  private handlers: Map<string, Array<(e: any) => void>> = new Map();
+  private queue: DomainEvent[] = [];
+  private dispatching = false;
+
+  publish(event: DomainEvent): void {
+    this.queue.push(event);
+    if (this.dispatching) return;
+    this.dispatching = true;
+    try {
+      while (this.queue.length) {
+        const e = this.queue.shift()!;
+        const list = this.handlers.get(e.topic) ?? [];
+        const wildcard = this.handlers.get('*') ?? [];
+        for (const h of [...list, ...wildcard]) {
+          try { h(e); }
+          catch (err) { console.error('[bus] handler error:', err); }
+        }
+      }
+    } finally { this.dispatching = false; }
+  }
+  // subscribe / subscribeWhere / clear : straightforward
+}
+```
+
+≈ 80 LoC tout compris.
+
+### 8.3 `Scheduler` — primitive #2
+
+#### 8.3.1 API
+
+```ts
+// src/events/Scheduler.ts
+export interface IScheduler {
+  /** Returns current simulated time in ms (real time in production, virtual time in tests) */
+  now(): number;
+
+  setTimeout(fn: () => void, delayMs: number): TimerHandle;
+  setInterval(fn: () => void, periodMs: number): TimerHandle;
+  clear(handle: TimerHandle): void;
+
+  /** Promise wrapper */
+  delay(ms: number): Promise<void>;
+
+  /** Test mode: advance virtual time by ms and run due timers */
+  advance(ms: number): void;
+
+  /** Test mode: clear all pending */
+  reset(): void;
+}
+```
+
+#### 8.3.2 Deux implémentations
+
+- **`RealTimeScheduler`** : production. `now() => performance.now()`, délègue à `globalThis.setTimeout`/`setInterval`.
+- **`VirtualTimeScheduler`** : tests. Heap de timers triés, `now()` est un compteur, `advance(ms)` déclenche les timers `due ≤ now+ms` dans l'ordre.
+
+Les tests choisissent leur scheduler via injection :
+
+```ts
+// avant
+vi.useFakeTimers();
+vi.advanceTimersByTime(40_000);
+
+// après
+const scheduler = new VirtualTimeScheduler();
+const ospf = new OSPFEngine({ scheduler, bus });
+scheduler.advance(40_000);
+```
+
+Bénéfice clé : **le scheduler virtuel propage le temps aux Promise via `delay()`**, ce que `vi.useFakeTimers` ne sait pas faire pour les `Promise` créées manuellement par les engines.
+
+#### 8.3.3 Singleton vs injection
+
+- Production : un singleton `defaultScheduler = new RealTimeScheduler()` exporté.
+- Code domaine : **toujours** prendre `IScheduler` en injection (constructeur). Fallback sur le singleton si non fourni.
+- Tests : créent leur propre `VirtualTimeScheduler` et l'injectent.
+
+### 8.4 `Signal` / `Projection` — primitive #3
+
+#### 8.4.1 Pourquoi un signal ?
+
+`useSyncExternalStore` exige `subscribe(listener) → unsubscribe` + `getSnapshot() → state`. C'est ce que fait déjà `TerminalSession`. On généralise :
+
+```ts
+// src/events/Signal.ts
+export interface Signal<T> {
+  get(): T;
+  subscribe(listener: () => void): Unsubscribe;
+}
+
+export class WritableSignal<T> implements Signal<T> {
+  constructor(private value: T) {}
+  private listeners = new Set<() => void>();
+  get(): T { return this.value; }
+  set(value: T): void {
+    if (Object.is(value, this.value)) return;
+    this.value = value;
+    for (const l of this.listeners) l();
+  }
+  subscribe(l: () => void): Unsubscribe {
+    this.listeners.add(l);
+    return () => this.listeners.delete(l);
+  }
+}
+
+/** Compute a derived signal (one-shot, cached) */
+export function derived<T>(deps: Signal<unknown>[], fn: () => T): Signal<T>;
+```
+
+≈ 60 LoC.
+
+#### 8.4.2 Projecteurs
+
+Un *projecteur* consomme le bus et entretient un ou plusieurs `WritableSignal`. Exemple — la liste des devices :
+
+```ts
+// src/projections/DevicesProjection.ts
+export class DevicesProjection {
+  readonly devices = new WritableSignal<Map<string, DeviceVM>>(new Map());
+
+  constructor(bus: IEventBus, registry: EquipmentRegistry) {
+    bus.subscribe('device.registered',     this.onRegister);
+    bus.subscribe('device.deregistered',   this.onDeregister);
+    bus.subscribe('device.power-on',       this.onPowerChange);
+    bus.subscribe('device.power-off',      this.onPowerChange);
+    bus.subscribe('device.position-changed', this.onPosition);
+    bus.subscribe('device.renamed',        this.onRenamed);
+    bus.subscribe('port.config.ip-changed',this.onPortIp);
+    bus.subscribe('port.link.up',          this.onPortLink);
+    bus.subscribe('port.link.down',        this.onPortLink);
+    // ...
+  }
+  // handlers : recalculent le DeviceVM concerné en immutable, puis this.devices.set(newMap)
+}
+```
+
+#### 8.4.3 Hooks React
+
+```ts
+// src/hooks/useSignal.ts
+export function useSignal<T>(signal: Signal<T>): T {
+  return useSyncExternalStore(signal.subscribe, signal.get);
+}
+
+// src/hooks/devices.ts
+export function useDevices(): DeviceVM[] {
+  const map = useSignal(projections.devices.devices);
+  return useMemo(() => Array.from(map.values()), [map]);
+}
+export function useDevice(id: string): DeviceVM | undefined {
+  return useSignal(projections.devices.devices).get(id);
+}
+```
+
+#### 8.4.4 Granularité
+
+Pour éviter les rerenders globaux, deux options :
+
+1. **Un signal par device** : `Map<id, Signal<DeviceVM>>`. Hook consomme uniquement le signal de l'ID demandé. Plus de rerenders quand un autre device change. Coût : plus de signaux à entretenir.
+2. **Un signal global + memoïsation** : option simple par défaut, `useDevice(id)` mémorise et compare l'objet reçu. React skip le rerender si même référence. C'est ce que la cible adopte au démarrage ; on monte en granularité si profilage le justifie.
+
+### 8.5 Helpers transverses
+
+#### 8.5.1 `waitForEvent`
+
+Pour remplacer toutes les Maps de pending callbacks :
+
+```ts
+// src/events/waitForEvent.ts
+export function waitForEvent<T extends DomainEvent['topic']>(
+  bus: IEventBus,
+  topic: T,
+  predicate: (e: Extract<DomainEvent, { topic: T }>['payload']) => boolean,
+  opts: { timeoutMs: number; scheduler: IScheduler },
+): Promise<Extract<DomainEvent, { topic: T }>['payload']> {
+  return new Promise((resolve, reject) => {
+    const timer = opts.scheduler.setTimeout(
+      () => { unsub(); reject(new Error(`waitForEvent(${topic}) timed out after ${opts.timeoutMs}ms`)); },
+      opts.timeoutMs,
+    );
+    const unsub = bus.subscribe(topic, e => {
+      if (predicate(e.payload)) {
+        opts.scheduler.clear(timer);
+        unsub();
+        resolve(e.payload);
+      }
+    });
+  });
+}
+```
+
+≈ 25 LoC. Remplace ~250 LoC dans `EndHost` et `Router`.
+
+#### 8.5.2 `BusAdapter` pour `Logger`
+
+Pour préserver l'API `Logger.info(...)` :
+
+```ts
+// src/network/core/Logger.ts (rewrite)
+export const Logger = {
+  info(source, event, message, data?)  { bus.publish({ topic: 'log', payload: { level: 'info', source, event, message, data } }); },
+  warn(...) { ... }, error(...) { ... }, debug(...) { ... },
+  // subscribe est conservé pour rétro-compatibilité, mais devient un sucre sur bus.subscribe('log', handler)
+  subscribe(handler, filter?) { … },
+};
+```
+
+90 sites d'appel inchangés.
+
+### 8.6 Pipeline L2 cible — exemple détaillé
+
+Diagramme du flux `Port.send → Cable → Port.receive` après refonte :
+
+```
+Equipment.send(portName, frame)
+  └─ port.sendFrame(frame)
+        ├─ Si !isUp ou !cable : bus.publish('port.frame.tx-blocked', {...}) ; return
+        ├─ counters.framesOut++
+        ├─ bus.publish('port.frame.tx-requested', {deviceId, portName, frame})
+        └─ cable.transmit(frame, port)
+             ├─ Si !isUp : bus.publish('cable.frame.lost', {reason:'cable-down'}) ; return
+             ├─ Si simulated loss : bus.publish('cable.frame.lost', {reason:'simulated-loss'}) ; return
+             ├─ targetPort = ...
+             ├─ propagationMs = computePropagation(...)
+             ├─ bus.publish('cable.frame.dispatched', {cableId, from, to, frame, propagationMs})
+             └─ scheduler.setTimeout(() => {
+                  bus.publish('cable.frame.delivered', {cableId, from, to, frame})
+                  targetPort.receiveFrame(frame)   ← émet 'port.frame.received'
+                }, propagationMs)
+```
+
+Et côté réception :
+
+```
+Port.receiveFrame(frame)
+  ├─ Si !isUp : bus.publish('port.frame.dropped', {...}) ; return
+  ├─ Si !portSecurityCheck : bus.publish('port.security.violation', {...}) ; return
+  ├─ counters.framesIn++
+  └─ bus.publish('port.frame.received', {deviceId, portName, frame})
+
+Equipment subscribed to 'port.frame.received' (filtré par deviceId)
+  └─ this.handleFrame(portName, frame)        ← inchangé fonctionnellement
+```
+
+Bénéfices :
+
+- **`PacketAnimation` débloqué.** Il s'abonne à `cable.frame.dispatched` + `cable.frame.delivered` et anime entre les deux.
+- **Capture / tcpdump simulé** : un module `PacketCapture` s'abonne à `port.frame.tx-requested` / `port.frame.received` filtré par device.
+- **Port mirroring** : un module `PortSpan` s'abonne et republie sur le port de destination.
+- **IDS éducatif** : abonné à `port.frame.received`, applique des règles, émet `ids.alert`.
+
+Tout cela **sans toucher** à `Equipment`, `Port`, `Cable`.
+
+### 8.7 Pipeline `pendingPings` cible — exemple
+
+Avant :
+
+```ts
+// EndHost.pingHost — ~30 LoC
+this.pendingPings.set(key, { resolve, reject, timer: setTimeout(...) });
+return new Promise((resolve, reject) => { ... });
+```
+
+Après :
+
+```ts
+async pingHost(target: IPAddress, opts: PingOptions): Promise<PingResult> {
+  const id = ++this.pingIdCounter;
+  const seq = 1;
+  await this.sendIcmpEcho(target, id, seq);
+  bus.publish({ topic: 'host.icmp.echo-sent', payload: { deviceId: this.id, to: target, id, seq } });
+
+  try {
+    const reply = await waitForEvent(bus, 'host.icmp.echo-reply',
+      e => e.deviceId === this.id && e.id === id && e.seq === seq && e.from.equals(target),
+      { timeoutMs: opts.timeoutMs ?? 1000, scheduler });
+    return { success: true, ttl: reply.ttl, /* … */ };
+  } catch (e) {
+    return { success: false, reason: 'timeout' };
+  }
+}
+```
+
+≈ 12 LoC, et plus de `pendingPings` Map ni de timer manuel. Idem pour ARP (via `NeighborResolver` interne avec scheduler), TCP handshake, traceroute hops.
+
+### 8.8 Modules nouveaux à créer
+
+| Module | LoC estimées | Rôle |
+|---|---:|---|
+| `src/events/EventBus.ts` | 100 | Bus central |
+| `src/events/Scheduler.ts` (Real + Virtual) | 200 | Scheduler avec mode test |
+| `src/events/Signal.ts` (Signal, WritableSignal, derived) | 80 | Primitives observables |
+| `src/events/waitForEvent.ts` | 30 | Helper pending → await |
+| `src/events/types.ts` | 250 | Union `DomainEvent` |
+| `src/events/index.ts` | 20 | Re-exports |
+| `src/projections/DevicesProjection.ts` | 200 | Read-model devices |
+| `src/projections/CablesProjection.ts` | 100 | Read-model cables |
+| `src/projections/ActivePacketsProjection.ts` | 120 | Read-model packets in-flight |
+| `src/projections/RoutesProjection.ts` | 100 | Read-model routing tables |
+| `src/projections/ArpProjection.ts` | 80 | Read-model ARP |
+| `src/projections/OspfProjection.ts` | 120 | Read-model OSPF (neighbors, LSDB summary) |
+| `src/projections/TerminalSessionsProjection.ts` | 80 | Read-model sessions |
+| `src/projections/index.ts` | 30 | Re-exports + `Projections` aggregator |
+| `src/hooks/useSignal.ts` | 30 | Hook générique |
+| `src/hooks/devices.ts`, `cables.ts`, `routes.ts`, `arp.ts`, `ospf.ts`, `packets.ts`, `terminal.ts` | 300 | Hooks par domaine |
+| `src/adapters/OracleFilesystemSync.ts` | 200 | Adapter Oracle ↔ FS |
+| `src/adapters/BusTracer.ts` | 60 | Adapter debug |
+| `src/adapters/PacketCapture.ts` | 150 | Adapter tcpdump-like (optionnel à l'étape 1) |
+
+**Total nouveau code** : ≈ 2 250 LoC. À comparer aux **400-600 LoC supprimées** dans `EndHost` et `Router` (Maps de pending), aux **~ 200 LoC de duplication ARP/NDP** éliminées via `NeighborResolver`, aux centaines de lignes de `linkChangeHandlers`/`frameHandler` boilerplate. Solde : la base **grossit légèrement** mais devient **modulaire et observable**.
+
+### 8.9 Politique de nommage des topics
+
+- **Format** : `domain.subdomain[.action]` en kebab-case.
+- **Verbes au passé pour les faits** : `arp.entry-learned`, `device.power-on` (ici une exception lexicale : `power-on` est le nom de l'action).
+- **Verbes -ed pour les transitions** : `port.link.up`, `cable.duplex-mismatch`. (Conserver les patterns lisibles plutôt qu'une convention rigide.)
+- **Singulier** pour les payloads d'une seule entité (`port.config.ip-changed`), pas `port.configs.ips-changed`.
+- **Versioning** : si un payload évolue de manière incompatible, le topic devient `domain.subdomain.action-v2` ; les handlers v1 cohabitent jusqu'à migration complète.
+
+### 8.10 Politique d'erreurs
+
+- Les handlers ne throw **jamais** vers le bus. Les exceptions sont attrapées par le bus, journalisées, et un événement `bus.handler-error` est publié pour permettre à un superviseur de réagir.
+- Une *kill-pill* (`bus.clear()`) permet aux tests de garantir l'isolation entre cas.
+
+### 8.11 Politique de tests
+
+- **Tests unitaires** : `EventBus`, `Scheduler` (real + virtual), `Signal`, `waitForEvent` reçoivent leurs propres suites couvrant les invariants (FIFO, réentrance, cancel, advance).
+- **Tests d'acteur** : chaque acteur (Port, Cable, Equipment, OSPFEngine, …) testé en isolation contre un `EventBus` test et un `VirtualTimeScheduler`. On vérifie publications attendues + transitions d'état.
+- **Tests d'intégration** : scénarios bout-en-bout (ping, OSPF converge, DHCP DORA) basés sur **trace-snapshot** de la séquence d'événements (objet hashable comparé entre runs).
+
+### 8.12 Cohabitation avec l'existant pendant la migration
+
+- Pendant les phases initiales, les **deux modèles coexistent** : les ports émettent à la fois leurs callbacks legacy (`onFrame`, `onLinkChange`) **et** les événements bus. Permet de migrer composant par composant sans tout casser.
+- Le `Logger` actuel devient le premier *consommateur* du bus pendant la phase de transition.
+- Une feature-flag `featureFlags.useEventBusForFrames` peut être basculée pour forcer le pipeline cible globalement.
+
+### 8.13 Diagramme final — un cycle de vie complet
+
+```
+Utilisateur cliquesur "Ping 10.0.0.2 from PC-A"
+   │
+   ▼
+TerminalView → session.handleKey('Enter')
+   │
+   ▼
+LinuxTerminalSession → device.executeCommand('ping 10.0.0.2')
+   │
+   ▼
+LinuxNetCommands.ping → host.pingHost(...)
+   │
+   ▼  (publication)
+bus.publish('host.icmp.echo-sent', {...})
+   │
+   ├────► Logger adapter         (texte 'icmp:echo-sent ...')
+   ├────► IcmpEchoStatsProjection (compteur live)
+   │
+   ▼  (envoi physique)
+host.sendIcmpEcho → port.sendFrame
+   │
+   ▼  (publication)
+bus.publish('port.frame.tx-requested', {...})
+   │
+   ▼
+cable.transmit → bus.publish('cable.frame.dispatched', { propagationMs: 0.5 })
+   │
+   ├────► PacketAnimation       (anime un point lumineux)
+   │
+   ▼  (scheduler.setTimeout 0.5ms)
+bus.publish('cable.frame.delivered', {...})
+bus.publish('port.frame.received', {...})
+   │
+   ├────► Equipment-B handler    (handleFrame → ICMP echo reply)
+   ▼
+... cycle inverse ...
+   │
+   ▼
+bus.publish('host.icmp.echo-reply', {...})
+   │
+   ├────► waitForEvent dans pingHost résout la Promise
+   ├────► IcmpEchoStatsProjection (succès, ttl)
+   │
+   ▼
+session.addLine('64 bytes from 10.0.0.2: icmp_seq=1 ttl=64 time=0.5 ms')
+   │
+   ▼
+session.notify() → useSyncExternalStore rerender → TerminalView
+```
+
+Toute la chaîne est **observable**, **testable**, **rejouable**.
+
+---
+
+*Section 8 close. Suivante : §9 — Refactoring détaillé par classe.*
