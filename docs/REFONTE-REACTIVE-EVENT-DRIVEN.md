@@ -17,7 +17,7 @@
 7. [Analyse de la couche base de données (Oracle)](#7-analyse-de-la-couche-base-de-données-oracle)
 8. [Architecture cible — bus d'événements, scheduler, état observable](#8-architecture-cible--bus-dévénements-scheduler-état-observable)
 9. [Refactoring détaillé par classe](#9-refactoring-détaillé-par-classe)
-10. Plan de migration séquentiel *(à venir)*
+10. [Plan de migration séquentiel](#10-plan-de-migration-séquentiel)
 11. Risques, tests et métriques de succès *(à venir)*
 12. Conclusion et annexes *(à venir)*
 
@@ -2349,3 +2349,280 @@ Pour la lisibilité, les classes sont regroupées par couche (réseau core, hard
 ---
 
 *Section 9 close. Suivante : §10 — Plan de migration séquentiel.*
+
+---
+
+## 10. Plan de migration séquentiel
+
+La migration suit un parcours en **8 phases**, chacune autonome (mergeable indépendamment) et **sans régression fonctionnelle** : la suite de tests `npm run test:run` doit passer à la fin de chaque phase. Une **feature flag** `featureFlags.eventBusForFrames` (et variantes par couche) permet, en cas de besoin, de faire cohabiter les deux modèles en runtime jusqu'à la phase de bascule.
+
+### 10.1 Vue d'ensemble
+
+| Phase | Titre | Estim. | Dépendances | Risque |
+|---|---|:---:|---|:---:|
+| 1 | Primitives (`EventBus`, `Scheduler`, `Signal`, `waitForEvent`, types) | S | – | Bas |
+| 2 | `Logger` adapter + `EquipmentRegistry` events | S | 1 | Bas |
+| 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | M | 1, 2 | Moyen |
+| 4 | Scheduler partout dans les protocoles (timers natifs → `IScheduler`) | M | 1 | Moyen |
+| 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` vers `waitForEvent` | L | 3, 4 | **Haut** |
+| 6 | Projections + hooks UI ; bascule du pipeline frames asynchrone | M | 3, 5 | Moyen |
+| 7 | Oracle : émissions + extraction `OracleFilesystemSync` | S | 1 | Bas |
+| 8 | Suppression du legacy (callbacks `onFrame`, `onLinkChange`, `instance: Equipment`, méthodes statiques) | M | toutes | Moyen |
+
+**Légende d'estimation** : S = 2-4 jours, M = 1-2 semaines, L = 2-3 semaines.
+
+### 10.2 Phase 1 — Primitives
+
+**But** : poser les fondations sans toucher au domaine.
+
+**Étapes** :
+
+1. Créer `src/events/EventBus.ts` (≈ 100 LoC) avec son test unitaire (FIFO, réentrance, unsubscribe, wildcard, gestion d'erreurs).
+2. Créer `src/events/Scheduler.ts` avec deux implémentations : `RealTimeScheduler`, `VirtualTimeScheduler`. Tests : `setTimeout`, `setInterval`, `cancel`, `advance`, `delay`.
+3. Créer `src/events/Signal.ts` (`Signal`, `WritableSignal`, `derived`). Tests d'égalité référentielle, notify only on change.
+4. Créer `src/events/waitForEvent.ts` + tests (succès, timeout, cancel par unsubscribe).
+5. Créer `src/events/types.ts` minimal (uniquement quelques topics initiaux : `log` et `device.*` ; le reste suit avec les phases).
+6. `src/events/index.ts` exporte tout. Mise à jour du chemin alias dans `vite.config.ts` (rien à ajouter — l'alias `@/` couvre déjà).
+
+**Critères de sortie** :
+
+- Suite de tests primitives 100 % verte.
+- `npm run lint` propre.
+- Aucune dépendance externe ajoutée à `package.json`.
+- Aucun fichier de domaine touché.
+
+**Commit suggéré** : `feat(events): add EventBus, Scheduler, Signal, waitForEvent primitives`.
+
+### 10.3 Phase 2 — Logger adapter + Registry events
+
+**But** : faire passer **tous** les logs existants par le bus, sans rompre leur API.
+
+**Étapes** :
+
+1. Réécrire `Logger` en adapter au-dessus du `EventBus`. Conserver l'API publique exacte.
+2. Créer `LogProjection` qui maintient le buffer historique (10 000 entrées capées) — équivalent du `logs[]` actuel.
+3. `EquipmentRegistry` accepte un `IEventBus` injecté ; émet `device.registered/deregistered/registry.cleared`.
+4. Ajout d'un test : faire `Logger.info(...)` → vérifier que le bus reçoit `{ topic: 'log', ... }`.
+5. Ajout d'un test : faire `Equipment` ctor → vérifier que `device.registered` est émis.
+
+**Critères de sortie** :
+
+- Tous les tests existants passent **sans modification** (l'API Logger est identique).
+- Si on branche un `BusTracer` wildcard, on observe la totalité des logs.
+
+**Risques** : faible. Régression possible sur `Logger.subscribe(filter)` si le mapping des filtres n'est pas équivalent — d'où le test ciblé.
+
+**Commit suggéré** : `feat(logger): route Logger through EventBus, emit registry events`.
+
+### 10.4 Phase 3 — Hardware : `Port`, `Cable` émettent
+
+**But** : ajouter les émissions `port.*` et `cable.*` **sans casser** le pipeline synchrone existant. Les callbacks `onFrame` et `onLinkChange` continuent de fonctionner ; ils sont **doublés** par les événements.
+
+**Étapes** :
+
+1. Étendre `src/events/types.ts` avec tous les topics `port.*`, `cable.*`.
+2. Modifier `Port` :
+   - Le constructeur accepte `{ bus?: IEventBus }` (fallback singleton).
+   - `sendFrame` publie `port.frame.tx-requested` ou `port.frame.tx-blocked` *en plus* de l'appel cable.
+   - `receiveFrame` publie `port.frame.received` *en plus* de l'appel à `frameHandler`.
+   - `setUp/configureIP/...` publient leurs événements respectifs.
+   - **`onFrame` et `onLinkChange` restent** pour cette phase.
+3. Modifier `Cable` :
+   - `transmit` publie `cable.frame.dispatched`. La livraison reste **synchrone** pour cette phase (pas encore de scheduler delay) → après l'appel à `targetPort.receiveFrame`, publier `cable.frame.delivered`.
+   - `connect/disconnect/negotiate` publient.
+4. Ajouter un test « miroir » : pour chaque `Logger.debug('port:send', …)`, vérifier que l'événement `port.frame.tx-requested` correspondant est aussi émis.
+5. **Aucune** modification de `Equipment` ni des consommateurs encore.
+
+**Critères de sortie** :
+
+- Suite réseau verte (97 fichiers).
+- `BusTracer` enregistre la trace complète d'un ping `PC-A → PC-B`.
+
+**Commit suggéré** : `feat(hardware): emit port and cable events in parallel to legacy callbacks`.
+
+### 10.5 Phase 4 — Scheduler partout dans les protocoles
+
+**But** : remplacer les `setTimeout/setInterval` natifs par `IScheduler` injecté, sans modifier la sémantique.
+
+**Étapes** :
+
+1. Pour chaque moteur de protocole (`OSPFEngine`, `OSPFv3Engine`, `RIPEngine`, `RouterRIPEngine`, `DHCPClient`, `DHCPServer`, `IPSecEngine`, `NATEngine`) :
+   - Constructeur accepte `{ scheduler?: IScheduler }` (fallback `defaultScheduler`).
+   - Tous les `setTimeout/setInterval` deviennent `scheduler.setTimeout/setInterval`. Les `clearTimeout/Interval` deviennent `scheduler.clear`.
+2. Idem pour `PacketQueue` et `NeighborResolver`.
+3. Idem pour `Switch.macAgingTimer` et les Map de pending dans `EndHost`/`Router` (ces dernières seront éliminées en phase 5, mais la transition vers `scheduler` les rend déjà testables).
+4. Mettre à jour les **tests existants** qui utilisaient `vi.useFakeTimers/advanceTimersByTime` pour qu'ils puissent injecter un `VirtualTimeScheduler` à la place. Les tests qui ne touchent pas au temps restent en `RealTimeScheduler` par défaut.
+
+**Critères de sortie** :
+
+- 0 occurrences `setInterval` ou `setTimeout` natifs dans `src/network/` (vérifié par `grep`).
+- Tous les tests passent.
+- Un test snapshot OSPF-converge devient déterministe (run identique entre exécutions).
+
+**Risques** : moyen. Les tests qui s'appuient sur `vi.advanceTimersByTime` doivent migrer ; certains testaient l'interaction de Promise + setTimeout — vérifier la compatibilité.
+
+**Commit suggéré** : `refactor(network): inject Scheduler in all protocol engines, remove native timers`.
+
+### 10.6 Phase 5 — Devices : `EndHost`, `Router` migrent leurs pendings
+
+**But** : éliminer toutes les Maps de callbacks pendantes au profit de `waitForEvent` ; brancher les engines sur les événements `port.frame.received` plutôt que sur des appels directs depuis `handleFrame`.
+
+**Étapes** :
+
+1. **Émissions complètes** depuis `EndHost` et `Router` :
+   - Tous les sites qui font `pendingPings.set(...)` publient désormais aussi `host.icmp.echo-sent` ; à la réception du echo-reply, publient `host.icmp.echo-reply` *avant* de résoudre le callback legacy.
+   - Idem pour ARP, NDP, traceroute, TCP handshake.
+2. Réécrire `pingHost`, `pingHost6`, `tcpConnect`, `traceroute` autour de `waitForEvent`. **Suppression** des Maps `pendingPings`, `pendingPing6s`, `pendingTcpHandshakes`, `pendingARPs` (côté `EndHost` et `Router`), `pendingTraceHops`.
+3. Substituer `NeighborResolver<IPAddress>` à l'implémentation ARP inline de `EndHost` et `Router`.
+4. Idem `NeighborResolver<IPv6Address>` pour NDP.
+5. Adapter les tests `arp-command.test.ts`, `host-ping.test.ts`, `tcp-handshake.test.ts`, etc. pour utiliser `VirtualTimeScheduler`.
+
+**Critères de sortie** :
+
+- 0 occurrence de `pendingARPs`, `pendingPings`, `pendingNDPs`, `pendingPing6s`, `pendingTraceHops`, `pendingTcpHandshakes` dans `src/network/devices/`.
+- Suppression nette de ~ 400-500 LoC.
+- Tous les tests verts.
+
+**Risques** : **haut**. C'est la phase la plus invasive. Mitigation : la coexistence des publications avec les callbacks legacy en phase 3 a déjà permis de valider la complétude de la trace d'événements. La conversion `pending → waitForEvent` reste mécanique.
+
+**Commit suggéré** : `refactor(devices): replace pendingXxx maps with waitForEvent + NeighborResolver`.
+
+### 10.7 Phase 6 — Projections, hooks UI, pipeline asynchrone
+
+**But** : (a) construire les projecteurs et hooks ; (b) basculer la livraison `Cable.transmit` en asynchrone ; (c) débloquer `PacketAnimation`.
+
+**Étapes** :
+
+1. Créer les projecteurs (8 modules — cf. §8.8).
+2. Créer les hooks (`useDevices`, `useDevice`, `usePort`, `useCable`, `useArpTable`, `useRoutingTable`, `useOspfNeighbors`, `useActivePackets`, `useTerminalSessions`).
+3. Migrer les composants UI un par un :
+   - **Phase 6a** : composants en lecture seule (`NetworkCanvas`, `NetworkDevice`, `ConnectionLine`).
+   - **Phase 6b** : `PropertiesPanel` (lecture + écriture).
+   - **Phase 6c** : `PacketAnimation` (utilise `useActivePackets`).
+4. **Bascule du pipeline asynchrone** :
+   - Modifier `Cable.transmit` : `targetPort.receiveFrame` est appelé via `scheduler.setTimeout(0)` (microtâche) en mode flag `eventBusForFrames`. En mode legacy, comportement actuel.
+   - Tester en mode flag activé : tous les tests réseau doivent rester verts (les tests synchrones d'aujourd'hui doivent appeler `scheduler.advance(0)` ou `await Promise.resolve()`).
+   - Si tout passe : passer le flag par défaut.
+5. Le `networkStore` cesse d'exposer `instance: Equipment`. Les composants n'y accèdent plus.
+
+**Critères de sortie** :
+
+- `PacketAnimation` fonctionne (paquets visibles).
+- Plus aucun composant React n'importe `@/network/equipment/Equipment`.
+- Tests UI (`__tests__/unit/gui/`) verts.
+
+**Risques** : moyen. Bascule sync → async peut révéler des suppositions implicites de l'ordre dans certains tests (en particulier des tests qui supposent que `pingHost` rend la main *avant* le rerender de la UI).
+
+**Commit suggéré** : `feat(ui): introduce projections + hooks; switch to async frame delivery`.
+
+### 10.8 Phase 7 — Oracle : émissions + `OracleFilesystemSync`
+
+**But** : rendre Oracle observable et extraire la logique de synchronisation FS.
+
+**Étapes** :
+
+1. `OracleInstance` émet `oracle.instance.*`.
+2. `OracleExecutor` émet `oracle.session.*`, `oracle.transaction.*`, `oracle.dml.*`, `oracle.ddl.*`, `oracle.error.*`.
+3. Créer `src/adapters/OracleFilesystemSync.ts` qui s'abonne et appelle les fonctions actuelles `updateSpfileOnDevice`, `syncAlertLogToDevice`, `syncDatafilesToDevice`, `syncOracleProcessesToDevice`. Supprimer les appels manuels disséminés.
+4. Adapter les 3 tests existants (`oracle-dbms-filesystem-coherence.test.ts`, `filesystem-database-layer.test.ts`, `oracle-linux-filesystem.test.ts`) : ils vérifient maintenant que les événements sont émis ET que l'adapter produit le même état FS.
+
+**Critères de sortie** :
+
+- Tests Oracle verts.
+- Aucun appel direct depuis `OracleInstance` vers `Equipment`/`LinuxFileSystem`.
+
+**Commit suggéré** : `feat(oracle): emit lifecycle events; extract OracleFilesystemSync adapter`.
+
+### 10.9 Phase 8 — Suppression du legacy
+
+**But** : effacer les patterns désormais inutiles. Cette phase est **purement soustractive**.
+
+**Étapes** :
+
+1. Supprimer `Port.onFrame`, `Port.frameHandler`, `_setCableNoNotify`, `_notifyLinkUp`, `Port.linkChangeHandlers`, `onLinkChange`. Les sites d'appel ont déjà migré aux phases 5 et 6.
+2. Supprimer les méthodes statiques `Equipment.getById`, `Equipment.getAllEquipment`, `Equipment.clearRegistry`. Remplacer les usages restants par `EquipmentRegistry.getInstance().getById/...`.
+3. Supprimer `instance: Equipment` de `NetworkDeviceUI` et de `Connection.cable`. Ajuster `topologySerializer` pour utiliser `EquipmentRegistry` directement.
+4. Retirer la feature flag `eventBusForFrames` et tout le code de bascule.
+5. Mettre à jour `CLAUDE.md` pour décrire la nouvelle architecture.
+
+**Critères de sortie** :
+
+- Suite complète verte.
+- Aucune référence à `frameHandler`, `linkChangeHandlers`, `_setCableNoNotify`, `_notifyLinkUp` (vérifié par grep).
+- Documentation à jour.
+
+**Commit suggéré** : `chore(legacy): remove deprecated callbacks and Equipment static methods`.
+
+### 10.10 Stratégie de coexistence et feature flags
+
+Pendant les phases 3 à 6, deux modes coexistent. Les feature flags suivants sont introduits dans `src/config/featureFlags.ts` :
+
+```ts
+export const featureFlags = {
+  /** Phase 6: deliver frames asynchronously via Scheduler */
+  asyncFrameDelivery: false,
+  /** Phase 6: source DeviceVM from projections instead of getDevices() */
+  useProjectionsForUI: false,
+  /** Phase 8: remove legacy onFrame/linkChange callbacks */
+  removeLegacyCallbacks: false,
+};
+```
+
+Les flags sont **internes** (pas exposés à l'utilisateur final) et basculés en code lors du merge de chaque phase. Permet aux PRs intermédiaires d'être mergeables et déployables.
+
+### 10.11 Stratégie de tests par phase
+
+| Phase | Type de tests | Méthode |
+|---|---|---|
+| 1 | Unitaires primitives | Nouveaux ; FIFO, advance, signal, waitForEvent. |
+| 2 | Tests Logger inchangés ; nouveaux tests d'émission registry. | API conservée. |
+| 3 | Tests « miroir » : pour chaque comportement existant, vérifier émission équivalente. | Adapter `BusTracer` dans le setup. |
+| 4 | Tous les tests sensibles au temps utilisent `VirtualTimeScheduler`. | `vi.useFakeTimers` retiré progressivement. |
+| 5 | Tests d'intégration ping/ARP/TCP réécrits autour de `waitForEvent`. | Snapshots de trace stables. |
+| 6 | Tests UI utilisent un mock `EventBus` + projections injectées. | `@testing-library/react`. |
+| 7 | Tests Oracle adaptés. | – |
+| 8 | Régression complète. | `npm run test:run` plein. |
+
+### 10.12 Découpage en pull-requests recommandées
+
+| PR | Phase | Taille (LoC) |
+|---|---|---:|
+| `events: primitives` | 1 | ~ 600 (incl. tests) |
+| `logger: adapter on EventBus` | 2 | ~ 200 |
+| `registry: emit lifecycle events` | 2 | ~ 100 |
+| `hardware: Port emits events` | 3a | ~ 400 |
+| `hardware: Cable emits events` | 3b | ~ 200 |
+| `protocols: scheduler injection (1/3 ospf+rip)` | 4a | ~ 800 |
+| `protocols: scheduler injection (2/3 dhcp+ipsec)` | 4b | ~ 800 |
+| `protocols: scheduler injection (3/3 nat+pq+nr)` | 4c | ~ 400 |
+| `endhost: pings via waitForEvent` | 5a | ~ 600 |
+| `endhost: arp/ndp via NeighborResolver` | 5b | ~ 400 |
+| `router: pending pings/trace via waitForEvent` | 5c | ~ 400 |
+| `ui: projections + hooks` | 6a | ~ 1 500 |
+| `ui: migrate read-only components` | 6b | ~ 600 |
+| `ui: migrate PropertiesPanel + intent handlers` | 6c | ~ 400 |
+| `ui: switch to async frame delivery, debloquer PacketAnimation` | 6d | ~ 300 |
+| `oracle: events + filesystem sync adapter` | 7 | ~ 400 |
+| `legacy: remove deprecated callbacks and statics` | 8 | ~ 200 (mostly deletions) |
+
+≈ 17 PRs au total. Permet une revue progressive et un rollback ciblé en cas de problème.
+
+### 10.13 Critères de réussite globale
+
+À l'issue de la phase 8, l'inventaire suivant doit être atteint :
+
+| Métrique | Avant | Après |
+|---|---:|---:|
+| `setTimeout` / `setInterval` natifs (réseau + terminal) | 91 | 0 |
+| Maps `pendingXxx` dans devices | 7 | 0 |
+| Implémentations distinctes du pattern observable | 4 | 1 (bus) + 1 (Signal) |
+| Composants React important `Equipment` | 5 | 0 |
+| LoC `EndHost.ts` | 2 325 | ≤ 1 750 |
+| LoC `Router.ts` | 1 545 | ≤ 1 250 |
+| `PacketAnimation` fonctionnel | non | oui |
+| Test snapshot OSPF converge déterministe | non | oui |
+| Replay de trace possible | non | oui |
+
+---
+
+*Section 10 close. Suivante : §11 — Risques, tests et métriques de succès.*
