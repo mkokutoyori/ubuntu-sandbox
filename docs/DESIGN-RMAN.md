@@ -1372,3 +1372,345 @@ Strategy Pattern : ajouter NFS, SMB, OSB = implementer IBackupDeviceStrategy
 
 ---
 
+## 6. Politique de retention — Strategy Pattern
+
+### 6.1 Contexte Oracle
+
+La politique de retention RMAN (`CONFIGURE RETENTION POLICY`) determine quels backups sont consideres comme **obsoletes** et peuvent etre supprimes. Oracle supporte deux strategies mutuellement exclusives :
+
+- `REDUNDANCY n` : garde au moins N copies completes de chaque datafile
+- `RECOVERY WINDOW OF n DAYS` : garantit la possibilite de restaurer jusqu'a N jours en arriere
+- `NONE` : ne supprime rien (conservation indefinie)
+
+Le choix de la strategie n'impacte aucune autre logique — c'est le cas d'ecole du **Strategy Pattern**.
+
+### 6.2 RmanConfig — objet de configuration immuable
+
+La configuration RMAN est un objet de valeur. Chaque `CONFIGURE` produit un nouvel objet.
+
+```typescript
+// src/database/oracle/rman/config/RmanConfig.ts
+
+export type RetentionPolicyType = 'REDUNDANCY' | 'RECOVERY_WINDOW' | 'NONE'
+export type DeviceType          = 'DISK' | 'SBT'
+export type BackupTypeConfig    = 'BACKUPSET' | 'COPY'
+
+export interface RmanConfig {
+  readonly retentionPolicyType:  RetentionPolicyType
+  readonly retentionValue:       number     // redondance N ou fenetre N jours
+  readonly defaultDeviceType:    DeviceType
+  readonly parallelism:          number
+  readonly backupType:           BackupTypeConfig
+  readonly pieceFormat:          string     // format CONFIGURE ... FORMAT
+  readonly archivelogFormat:     string
+  readonly controlfileAutobackup: boolean
+  readonly controlfileAutobackupFormat: string
+  readonly compressionAlgorithm: 'BASIC' | 'LOW' | 'MEDIUM' | 'HIGH' | 'NONE'
+  readonly encryptionEnabled:    boolean
+  readonly encryptionAlgorithm:  'AES128' | 'AES192' | 'AES256'
+  readonly maxsetsize:           number     // 0 = UNLIMITED
+  readonly archivelogDeletionPolicy: 'NONE' | 'APPLIED ON ALL STANDBY' | 'SHIPPED TO ALL STANDBY'
+  readonly datafileBackupCopies: number
+  readonly archivelogBackupCopies: number
+  readonly backupOptimization:   boolean
+  readonly channel1Format?:      string     // CONFIGURE CHANNEL 1 FORMAT
+}
+
+export const DEFAULT_RMAN_CONFIG: RmanConfig = Object.freeze({
+  retentionPolicyType:          'REDUNDANCY',
+  retentionValue:               1,
+  defaultDeviceType:            'DISK',
+  parallelism:                  1,
+  backupType:                   'BACKUPSET',
+  pieceFormat:                  '%F',
+  archivelogFormat:             '%F',
+  controlfileAutobackup:        true,
+  controlfileAutobackupFormat:  '%F',
+  compressionAlgorithm:         'NONE',
+  encryptionEnabled:            false,
+  encryptionAlgorithm:          'AES128',
+  maxsetsize:                   0,
+  archivelogDeletionPolicy:     'NONE',
+  datafileBackupCopies:         1,
+  archivelogBackupCopies:       1,
+  backupOptimization:           false,
+})
+
+/** Produit un nouveau RmanConfig avec les champs modifies (immuable) */
+export function withConfig(
+  base: RmanConfig,
+  overrides: Partial<RmanConfig>
+): RmanConfig {
+  return Object.freeze({ ...base, ...overrides })
+}
+```
+
+### 6.3 IRetentionPolicy — interface Strategy
+
+```typescript
+// src/database/oracle/rman/retention/IRetentionPolicy.ts
+
+import type { BackupSet } from '../catalog/types'
+import type { Scn } from '../values/Scn'
+
+export interface RetentionContext {
+  /** Tous les backup sets disponibles dans le catalog */
+  readonly allBackupSets: readonly BackupSet[]
+  /** SCN courant de la base */
+  readonly currentScn: Scn
+  /** Date courante (injectee pour testabilite) */
+  readonly now: Date
+  /** Dbids des datafiles (pour calculer la couverture par fichier) */
+  readonly datafileCount: number
+}
+
+/**
+ * Calcule quels BackupSets sont obsoletes selon la politique.
+ * Fonction pure : RetentionContext en entree, ensemble de cles obsoletes en sortie.
+ */
+export interface IRetentionPolicy {
+  readonly type: string
+  /** Retourne les keys des backup sets obsoletes selon cette politique */
+  computeObsolete(ctx: RetentionContext): ReadonlySet<number>
+  /** Description lisible pour SHOW ALL */
+  toConfigString(): string
+}
+```
+
+### 6.4 RedundancyPolicy — REDUNDANCY N
+
+```typescript
+// src/database/oracle/rman/retention/RedundancyPolicy.ts
+
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+import type { BackupSet } from '../catalog/types'
+
+/**
+ * Strategie REDUNDANCY N :
+ * Pour chaque datafile, garde les N backups les plus recents.
+ * Tout backup plus ancien que le Neme est obsolete.
+ *
+ * Algorithme Oracle : trie par completionTime desc,
+ * marque comme obsolete tout backup au-dela du N-eme rang.
+ */
+export class RedundancyPolicy implements IRetentionPolicy {
+  readonly type = 'REDUNDANCY'
+
+  constructor(private readonly n: number) {}
+
+  computeObsolete(ctx: RetentionContext): ReadonlySet<number> {
+    const obsolete = new Set<number>()
+
+    // Filtre les backups de type DATABASE/DATAFILE/TABLESPACE (pas ARCHIVELOG)
+    const databaseBackups = ctx.allBackupSets
+      .filter(bs =>
+        bs.status === 'AVAILABLE' &&
+        !bs.keepForever &&
+        (bs.backupObject === 'DATABASE' ||
+         bs.backupObject === 'DATAFILE' ||
+         bs.backupObject === 'TABLESPACE')
+      )
+      .sort((a, b) => b.completionTime.getTime() - a.completionTime.getTime())
+
+    // Si on a plus de N backups, les plus anciens sont obsoletes
+    const toKeep = databaseBackups.slice(0, this.n)
+    const toKeepKeys = new Set(toKeep.map(bs => bs.bsKey.value))
+
+    for (const bs of databaseBackups) {
+      if (!toKeepKeys.has(bs.bsKey.value)) {
+        obsolete.add(bs.bsKey.value)
+      }
+    }
+    return obsolete
+  }
+
+  toConfigString(): string {
+    return `CONFIGURE RETENTION POLICY TO REDUNDANCY ${this.n};`
+  }
+}
+```
+
+### 6.5 RecoveryWindowPolicy — RECOVERY WINDOW OF N DAYS
+
+```typescript
+// src/database/oracle/rman/retention/RecoveryWindowPolicy.ts
+
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+
+/**
+ * Strategie RECOVERY WINDOW OF N DAYS :
+ * Tout backup qui n'est plus necessaire pour garantir la restauration
+ * jusqu'a (now - N jours) est obsolete.
+ *
+ * Un backup est "necessaire" si :
+ *   1. C'est le backup le plus recent avant la fenetre de recovery
+ *   2. Ou il est dans la fenetre de recovery
+ */
+export class RecoveryWindowPolicy implements IRetentionPolicy {
+  readonly type = 'RECOVERY_WINDOW'
+
+  constructor(private readonly days: number) {}
+
+  computeObsolete(ctx: RetentionContext): ReadonlySet<number> {
+    const obsolete = new Set<number>()
+    const cutoff = new Date(ctx.now.getTime() - this.days * 86_400_000)
+
+    const databaseBackups = ctx.allBackupSets
+      .filter(bs =>
+        bs.status === 'AVAILABLE' &&
+        !bs.keepForever &&
+        (bs.backupObject === 'DATABASE' ||
+         bs.backupObject === 'DATAFILE' ||
+         bs.backupObject === 'TABLESPACE')
+      )
+      .sort((a, b) => b.completionTime.getTime() - a.completionTime.getTime())
+
+    // Trouve le backup le plus recent qui couvre la fenetre
+    let foundAnchor = false
+    for (const bs of databaseBackups) {
+      if (!foundAnchor && bs.completionTime <= cutoff) {
+        // Ce backup est l'ancre — il est necessaire, tous les suivants sont obsoletes
+        foundAnchor = true
+        continue
+      }
+      if (foundAnchor) {
+        obsolete.add(bs.bsKey.value)
+      }
+    }
+    return obsolete
+  }
+
+  toConfigString(): string {
+    return `CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF ${this.days} DAYS;`
+  }
+}
+```
+
+### 6.6 NonePolicy et RetentionPolicyFactory
+
+```typescript
+// src/database/oracle/rman/retention/NonePolicy.ts
+
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+
+/** NONE : aucun backup n'est jamais obsolete */
+export class NonePolicy implements IRetentionPolicy {
+  readonly type = 'NONE'
+  computeObsolete(_ctx: RetentionContext): ReadonlySet<number> {
+    return new Set()
+  }
+  toConfigString(): string {
+    return 'CONFIGURE RETENTION POLICY TO NONE;'
+  }
+}
+
+// src/database/oracle/rman/retention/RetentionPolicyFactory.ts
+
+import type { RmanConfig } from '../config/RmanConfig'
+import type { IRetentionPolicy } from './IRetentionPolicy'
+import { RedundancyPolicy }    from './RedundancyPolicy'
+import { RecoveryWindowPolicy } from './RecoveryWindowPolicy'
+import { NonePolicy }          from './NonePolicy'
+
+export function createRetentionPolicy(config: RmanConfig): IRetentionPolicy {
+  switch (config.retentionPolicyType) {
+    case 'REDUNDANCY':      return new RedundancyPolicy(config.retentionValue)
+    case 'RECOVERY_WINDOW': return new RecoveryWindowPolicy(config.retentionValue)
+    case 'NONE':            return new NonePolicy()
+  }
+}
+```
+
+### 6.7 RmanRetentionEngine — orchestration pure
+
+```typescript
+// src/database/oracle/rman/retention/RmanRetentionEngine.ts
+
+import type { IRmanCatalogReader } from '../catalog/IRmanCatalogRepository'
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+import type { BackupSet } from '../catalog/types'
+import type { Scn } from '../values/Scn'
+
+/**
+ * Moteur de retention — fonctions pures sans etat propre.
+ * Calcule les obsoletes, les expired, le rapport NEED BACKUP.
+ */
+export const RmanRetentionEngine = {
+
+  /** Retourne les BackupSets obsoletes selon la politique courante */
+  getObsolete(
+    catalog: IRmanCatalogReader,
+    policy: IRetentionPolicy,
+    currentScn: Scn,
+    now: Date,
+  ): readonly BackupSet[] {
+    const ctx: RetentionContext = {
+      allBackupSets: catalog.getAllBackupSets(),
+      currentScn,
+      now,
+      datafileCount: 4, // SYSTEM, SYSAUX, UNDOTBS, USERS
+    }
+    const obsoleteKeys = policy.computeObsolete(ctx)
+    return catalog.getAllBackupSets()
+      .filter(bs => obsoleteKeys.has(bs.bsKey.value))
+  },
+
+  /** Retourne les BackupSets marques EXPIRED (crosscheck a echoue) */
+  getExpired(catalog: IRmanCatalogReader): readonly BackupSet[] {
+    return catalog.getAllBackupSets().filter(bs => bs.status === 'EXPIRED')
+  },
+
+  /**
+   * REPORT NEED BACKUP : datafiles qui n'ont pas de backup recant
+   * selon la politique courante.
+   */
+  getFilesNeedingBackup(
+    catalog: IRmanCatalogReader,
+    policy: IRetentionPolicy,
+    currentScn: Scn,
+    now: Date,
+    datafiles: readonly { num: number; name: string; sizeBytes: number }[],
+  ): readonly { fileNum: number; backups: number; name: string }[] {
+    const allBs = catalog.getAllBackupSets()
+      .filter(bs => bs.status === 'AVAILABLE')
+
+    return datafiles
+      .map(df => {
+        const backupsForFile = allBs.filter(bs =>
+          bs.backupObject === 'DATABASE' ||
+          (bs.backupObject === 'DATAFILE' && bs.objectNames.includes(df.name)) ||
+          (bs.backupObject === 'TABLESPACE')
+        ).length
+
+        return { fileNum: df.num, backups: backupsForFile, name: df.name }
+      })
+      .filter(entry => {
+        if (policy.type === 'REDUNDANCY') return entry.backups === 0
+        return entry.backups === 0
+      })
+  },
+}
+```
+
+### 6.8 Diagramme Strategy de retention
+
+```
+IRetentionPolicy
+  +-- RedundancyPolicy(n)          CONFIGURE RETENTION POLICY TO REDUNDANCY N
+  +-- RecoveryWindowPolicy(days)   CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF N DAYS
+  +-- NonePolicy                   CONFIGURE RETENTION POLICY TO NONE
+
+RetentionPolicyFactory.createRetentionPolicy(config) --> IRetentionPolicy
+
+RmanRetentionEngine (module de fonctions pures)
+  getObsolete(catalog, policy, scn, now) --> BackupSet[]
+  getExpired(catalog)                    --> BackupSet[]
+  getFilesNeedingBackup(...)             --> FileNeedBackup[]
+
+Principe Open/Closed :
+  ajouter REDUNDANCY + RECOVERY WINDOW combine = nouvelle classe KeepWindowPolicy
+  zero modification dans RmanRetentionEngine ou dans les commandes
+```
+
+---
+
