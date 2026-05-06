@@ -1987,3 +1987,373 @@ export function parseRmanScript(source: string): ParsedLine[] {
 ```
 
 ---
+
+## 9. RmanSession — Reactive Facade + State Machine + Builder
+
+### 9.1 State Machine de la session
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │         RmanSessionState                 │
+                    │                                         │
+                    │   IDLE ──connect()──► CONNECTING         │
+                    │                           │             │
+                    │                    (success)            │
+                    │                           ▼             │
+                    │               CONNECTED ◄───────────────┤
+                    │                    │                    │
+                    │              run(job_cmd)               │
+                    │                    ▼                    │
+                    │             RUNNING_JOB                  │
+                    │                    │                    │
+                    │         JOB_COMPLETED / JOB_FAILED      │
+                    │                    ▼                    │
+                    │               CONNECTED ◄───────────────┘
+                    │                    │
+                    │              disconnect() / exit
+                    │                    ▼
+                    │            DISCONNECTED
+                    └─────────────────────────────────────────┘
+
+Transitions émises sur bus.sessionState$ à chaque changement.
+```
+
+### 9.2 RmanSessionOptions + Builder
+
+```typescript
+// src/terminal/subshells/rman/session/types.ts
+
+import type { IRetentionPolicy } from '../policy/IRetentionPolicy'
+import type { ChannelConfig }    from '../channel/types'
+import type { DbId }             from '../values/DbId'
+
+export interface RmanSessionOptions {
+  readonly dbId:            DbId
+  readonly channelConfigs:  readonly ChannelConfig[]
+  readonly retentionPolicy: IRetentionPolicy
+  readonly autobackupCf:    boolean
+  readonly debugMode:       boolean
+}
+
+export type RmanSessionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'RUNNING_JOB' | 'DISCONNECTED'
+```
+
+```typescript
+// src/terminal/subshells/rman/session/RmanSessionOptionsBuilder.ts
+
+import { DbId }               from '../values/DbId'
+import { DEFAULT_CHANNEL_CONFIGS } from '../channel/defaults'
+import { RedundancyPolicy }   from '../policy/RedundancyPolicy'
+import type { RmanSessionOptions } from './types'
+import type { IRetentionPolicy }   from '../policy/IRetentionPolicy'
+import type { ChannelConfig }      from '../channel/types'
+
+/**
+ * Builder pour RmanSessionOptions.
+ * Valeurs par défaut Oracle réalistes.
+ *
+ * Pattern : BUILDER (GoF) — construction fluide, valeurs par défaut explicites.
+ */
+export class RmanSessionOptionsBuilder {
+  private _dbId:            typeof DbId.DEFAULT    = DbId.DEFAULT
+  private _channelConfigs:  readonly ChannelConfig[] = DEFAULT_CHANNEL_CONFIGS
+  private _retentionPolicy: IRetentionPolicy        = new RedundancyPolicy(1)
+  private _autobackupCf     = true
+  private _debugMode        = false
+
+  withDbId(dbId: typeof DbId.DEFAULT): this {
+    this._dbId = dbId; return this
+  }
+
+  withChannelConfigs(configs: readonly ChannelConfig[]): this {
+    this._channelConfigs = configs; return this
+  }
+
+  withRetentionPolicy(policy: IRetentionPolicy): this {
+    this._retentionPolicy = policy; return this
+  }
+
+  withAutobackupControlfile(enabled: boolean): this {
+    this._autobackupCf = enabled; return this
+  }
+
+  withDebugMode(enabled: boolean): this {
+    this._debugMode = enabled; return this
+  }
+
+  build(): RmanSessionOptions {
+    return Object.freeze({
+      dbId:            this._dbId,
+      channelConfigs:  this._channelConfigs,
+      retentionPolicy: this._retentionPolicy,
+      autobackupCf:    this._autobackupCf,
+      debugMode:       this._debugMode,
+    })
+  }
+}
+```
+
+### 9.3 IRmanSession — interface publique de la Facade
+
+```typescript
+// src/terminal/subshells/rman/session/IRmanSession.ts
+
+import type { Result }          from '../core/Result'
+import type { RmanError }       from '../core/RmanError'
+import type { RmanObservable }  from '../reactive/RmanSubject'
+import type { RmanEvent }       from '../core/types'
+import type { RmanSessionState }from './types'
+
+/**
+ * Interface publique de la session RMAN.
+ * Exposée au SubShell et aux tests.
+ *
+ * Pattern : FACADE (GoF) — masque la complexité interne
+ *           (bus, engine, catalog, pool, dispatcher, policy).
+ */
+export interface IRmanSession {
+  /** Stream de tous les événements RMAN (pour abonnements externes). */
+  readonly events$: RmanObservable<RmanEvent>
+
+  /** État courant de la session (lecture seule). */
+  readonly state: RmanSessionState
+
+  /** Connecte au target database (transition IDLE → CONNECTING → CONNECTED). */
+  connect(target?: string): Result<void, RmanError>
+
+  /**
+   * Traite une ligne de texte RMAN.
+   * - Commandes synchrones (LIST, SHOW, REPORT) → retourne les lignes.
+   * - Commandes réactives (BACKUP, RESTORE) → retourne [] et émet sur events$.
+   * - EXIT/QUIT → retourne Result.err avec code spécial.
+   */
+  processLine(line: string): Result<string[], RmanError>
+
+  /** Bannière de démarrage RMAN (affichée une seule fois). */
+  getBanner(): string[]
+
+  /** Déconnecte proprement et libère toutes les ressources. */
+  dispose(): void
+}
+```
+
+### 9.4 RmanSession — Reactive Facade principale
+
+```typescript
+// src/terminal/subshells/rman/session/RmanSession.ts
+
+import { RmanEventBus }           from '../reactive/RmanEventBus'
+import { ReactiveChannelPool }    from '../channel/ReactiveChannelPool'
+import { InMemoryRmanCatalog }    from '../catalog/InMemoryRmanCatalog'
+import { RmanJobEngine }          from '../job/RmanJobEngine'
+import { RmanCommandDispatcher }  from '../commands/RmanCommandDispatcher'
+import { ok, err }                from '../core/Result'
+import { formatOracleDate }       from '../core/pureUtils'
+import type { Result }            from '../core/Result'
+import type { RmanError }         from '../core/RmanError'
+import type { IRmanSession }      from './IRmanSession'
+import type { RmanSessionOptions, RmanSessionState } from './types'
+import type { IRmanOracleContext } from '../integration/IRmanOracleContext'
+import type { RmanObservable }    from '../reactive/RmanSubject'
+import type { RmanEvent }         from '../core/types'
+
+/**
+ * Facade réactive de la session RMAN.
+ *
+ * Responsabilités :
+ *   1. Créer et câbler tous les sous-systèmes (bus, pool, catalog, engine)
+ *   2. Gérer la machine d'état (IDLE → CONNECTED → RUNNING_JOB → …)
+ *   3. Déléguer les commandes au dispatcher
+ *   4. Exposer events$ pour les abonnés externes (SubShell, Logger)
+ *
+ * Pattern : FACADE     — surface publique réduite (3 méthodes + 1 stream)
+ * Pattern : MEDIATOR   — orchestre bus, engine, catalog, pool, dispatcher
+ * Pattern : OBSERVER   — events$ est un stream en lecture seule
+ */
+export class RmanSession implements IRmanSession {
+  private readonly _bus:        RmanEventBus
+  private readonly _pool:       ReactiveChannelPool
+  private readonly _catalog:    InMemoryRmanCatalog
+  private readonly _engine:     RmanJobEngine
+  private readonly _dispatcher: RmanCommandDispatcher
+  private _state: RmanSessionState = 'IDLE'
+  private readonly _unsubs: Array<() => void> = []
+
+  readonly events$: RmanObservable<RmanEvent>
+
+  constructor(
+    private readonly _options: RmanSessionOptions,
+    private readonly _ctx:     IRmanOracleContext,
+  ) {
+    // Câblage des sous-systèmes
+    this._bus        = new RmanEventBus()
+    this._pool       = new ReactiveChannelPool(_options.channelConfigs)
+    this._catalog    = new InMemoryRmanCatalog()
+    this._engine     = new RmanJobEngine(this._bus, this._pool, this._catalog, _ctx)
+    this._dispatcher = new RmanCommandDispatcher()
+
+    this.events$ = this._bus.events$
+
+    // Câblage réactif
+    this._wireReactiveStreams()
+  }
+
+  get state(): RmanSessionState { return this._state }
+
+  connect(target?: string): Result<void, RmanError> {
+    if (this._state !== 'IDLE') return ok(undefined)
+    this._transition('CONNECTING')
+    // Simulation connexion toujours réussie
+    this._transition('CONNECTED')
+    this._bus.emit({ type: 'CONNECTED', dbId: String(this._options.dbId.value), dbName: this._options.dbId.name, connectedAt: Date.now() })
+    return ok(undefined)
+  }
+
+  processLine(line: string): Result<string[], RmanError> {
+    const trimmed = line.trim()
+    const upper   = trimmed.toUpperCase()
+
+    if (!trimmed) return ok([])
+
+    // EXIT / QUIT — code spécial reconnu par le SubShell
+    if (upper === 'EXIT' || upper === 'QUIT') {
+      this.dispose()
+      return ok(['Recovery Manager complete.'])
+    }
+
+    // CONNECT TARGET — commande spéciale de session
+    if (upper.startsWith('CONNECT TARGET')) {
+      return this.connect(trimmed)
+    }
+
+    // Vérification connexion pour les autres commandes
+    if (this._state !== 'CONNECTED' && this._state !== 'RUNNING_JOB') {
+      return err({ code: 'RMAN_03002', message: 'target database is not connected' })
+    }
+
+    // Délégation au dispatcher
+    const cmdCtx = {
+      bus:    this._bus,
+      engine: this._engine,
+      catalog: this._catalog,
+      ctx:    this._ctx,
+      policy: this._options.retentionPolicy,
+    }
+    return this._dispatcher.dispatch(trimmed, cmdCtx)
+  }
+
+  getBanner(): string[] {
+    return [
+      '',
+      `Recovery Manager: Release 19.0.0.0.0 - Production on ${formatOracleDate()}`,
+      '',
+      'Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.',
+      '',
+    ]
+  }
+
+  dispose(): void {
+    this._transition('DISCONNECTED')
+    this._bus.emit({ type: 'DISCONNECTED' })
+    this._unsubs.forEach(u => u())
+    this._pool.dispose()
+    this._catalog.dispose()
+    this._bus.dispose()
+  }
+
+  // ── Câblage réactif ────────────────────────────────────────────
+
+  /**
+   * Câble les streams réactifs internes.
+   *
+   * Règle : RmanSession est le seul composant qui s'abonne aux streams
+   * du bus pour les transitions d'état et le logging interne.
+   * Les abonnés externes (SubShell) s'abonnent à events$ directement.
+   */
+  private _wireReactiveStreams(): void {
+    // JOB_STARTED → transition CONNECTED → RUNNING_JOB
+    this._unsubs.push(
+      this._bus.jobStarted$.subscribe(() => {
+        if (this._state === 'CONNECTED') this._transition('RUNNING_JOB')
+      })
+    )
+
+    // JOB_COMPLETED → transition RUNNING_JOB → CONNECTED
+    this._unsubs.push(
+      this._bus.jobCompleted$.subscribe(() => {
+        if (this._state === 'RUNNING_JOB') this._transition('CONNECTED')
+      })
+    )
+
+    // JOB_FAILED → transition RUNNING_JOB → CONNECTED (avec log d'erreur)
+    this._unsubs.push(
+      this._bus.jobFailed$.subscribe(e => {
+        if (this._state === 'RUNNING_JOB') this._transition('CONNECTED')
+        // L'erreur est déjà disponible dans l'événement JOB_FAILED
+        // Le SubShell s'en charge via son abonnement à events$
+      })
+    )
+
+    // BACKUP_PIECE_CREATED → mise à jour catalogue (déjà dans RmanJobEngine,
+    // mais le bus permet des abonnés supplémentaires — ex: metrics, UI)
+    this._unsubs.push(
+      this._bus.pieceCreated$.subscribe(e => {
+        // Optionnel : notifier le store Zustand ici
+        // store.getState().updateBackupPiece(e.piece)
+      })
+    )
+
+    // Forwarding des events allocation/libération de canal vers le bus global
+    this._unsubs.push(
+      this._pool.allocations$.subscribe(e => this._bus.emit(e)),
+      this._pool.releases$.subscribe(e   => this._bus.emit(e)),
+      this._catalog.changes$.subscribe(e => this._bus.emit(e)),
+    )
+  }
+
+  private _transition(to: RmanSessionState): void {
+    const from = this._state
+    if (from === to) return
+    this._state = to
+    this._bus.emit({ type: 'SESSION_STATE_CHANGED', from, to })
+  }
+}
+```
+
+### 9.5 Factory statique — point d'entrée unique
+
+```typescript
+// src/terminal/subshells/rman/session/RmanSession.ts (suite)
+
+export namespace RmanSession {
+  /**
+   * Factory : crée une session avec les options par défaut.
+   * Supporte les arguments de ligne de commande (rman target /).
+   */
+  export function create(
+    args: string[],
+    ctx: IRmanOracleContext,
+    options?: Partial<RmanSessionOptions>,
+  ): { session: RmanSession; banner: string[] } {
+    const opts = new RmanSessionOptionsBuilder()
+      .withDbId(ctx.dbId)
+      .build()
+    const merged = { ...opts, ...options }
+
+    const session = new RmanSession(merged, ctx)
+    const banner  = session.getBanner()
+
+    // Connexion automatique si "target /" présent dans les args
+    const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET')
+    if (targetIdx !== -1) {
+      session.connect(args[targetIdx + 1] ?? '/')
+      banner.push(`connected to target database: ${ctx.dbId.name} (DBID=${ctx.dbId.value})`)
+      banner.push('')
+    }
+
+    return { session, banner }
+  }
+}
+```
+
+---
