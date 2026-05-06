@@ -19,7 +19,7 @@
 9. [Refactoring détaillé par classe](#9-refactoring-détaillé-par-classe)
 10. [Plan de migration séquentiel](#10-plan-de-migration-séquentiel)
 11. [Risques, tests et métriques de succès](#11-risques-tests-et-métriques-de-succès)
-12. Conclusion et annexes *(à venir)*
+12. [Conclusion et annexes](#12-conclusion-et-annexes)
 
 ---
 
@@ -2878,3 +2878,168 @@ Ces cinq leviers, combinés à une checklist de revue rigoureuse, ramènent les 
 ---
 
 *Section 11 close. Suivante : §12 — Conclusion et annexes.*
+
+---
+
+## 12. Conclusion et annexes
+
+### 12.1 Synthèse exécutive
+
+L'analyse détaillée des sections §2 à §7 a établi que **Ubuntu Sandbox** repose actuellement sur **quatre implémentations distinctes** du pattern observable, **104 timers natifs** disséminés, **sept Maps de callbacks pendantes** dans les seules classes `EndHost` et `Router`, et un **couplage direct** entre la UI React et les instances mutables du domaine. Cette architecture, élégante à petite échelle, a atteint ses limites structurelles à 50 000+ LoC : animation impossible, observabilité partielle, tests dépendants de l'horloge réelle, extensibilité protocolaire coûteuse.
+
+La cible décrite en §8 propose une **colonne vertébrale unique** composée de trois primitives — `EventBus`, `Scheduler`, `Signal` — sur lesquelles tout le reste se reconstruit. Le refactor par classe (§9) montre que la transformation est **mécanique** dans la majorité des cas : substituer des callbacks par des publications/souscriptions, injecter le scheduler à la place de `setTimeout` natif, remplacer les Maps de pending par `waitForEvent`. Les classes les plus volumineuses (`EndHost`, `Router`) **diminuent en LoC** grâce à l'extraction de la logique transverse vers le bus, tandis que la base globale grossit de l'ordre de **+600 LoC nets** — un coût raisonnable au regard des bénéfices.
+
+Le plan de migration en **8 phases** (§10) garantit une bascule sans big-bang, avec coexistence temporaire des deux modèles, feature flags, et préservation totale de la suite de tests existante. Les phases sont **mergeables indépendamment** et apportent chacune une valeur observable : phase 3 active la trace d'événements complète, phase 6 débloque `PacketAnimation`, phase 8 nettoie le legacy. Les risques (§11), dont les six principaux ont été identifiés et quantifiés, sont absorbés par cinq leviers — phasage, coexistence, snapshots, feature flags, checklists de revue.
+
+À l'issue de la refonte, le projet aura **gagné** :
+
+1. **Observabilité complète** — toute mutation du domaine est traçable, journalisable, rejouable.
+2. **Animation native** — `PacketAnimation` opérationnel, mode capture/tcpdump à coût marginal.
+3. **Tests déterministes** — `VirtualTimeScheduler` autorise des snapshots stables cross-runs.
+4. **Réactivité UI granulaire** — hooks ciblés `useDevice`, `useArpTable`, `useRoutingTable`, `useOspfNeighbors`, `useActivePackets`.
+5. **Extensibilité protocolaire** — un nouveau protocole = un acteur abonné/publieur, sans modification du noyau.
+6. **Découplage UI ↔ domaine** — la UI ne touche plus jamais d'instance mutable.
+7. **Préservation fonctionnelle** — aucune régression : l'ensemble des commandes Cisco/Huawei/Linux/Windows, OSPF, DHCP, IPSec, Oracle SQL\*Plus, éditeurs, reste opérationnel.
+
+### 12.2 Décisions architecturales clés (récapitulatif)
+
+| Décision | Justification |
+|---|---|
+| **Bus typé maison** (≈ 100 LoC) plutôt que RxJS, mitt, eventemitter3, … | Aucun coût de dépendance ; full-typage par discriminated union ; comportement contrôlé sur la réentrance. |
+| **Scheduler injecté** plutôt que `vi.useFakeTimers` global | Compatible Promise, applicable au runtime (pause/play/×N), permet le test de scénarios `async/await` natifs. |
+| **`Signal` léger** plutôt que MobX/Jotai/SolidJS | Compatible React 18 `useSyncExternalStore` ; pas de runtime supplémentaire. |
+| **Conservation de Zustand** | Convient parfaitement à l'état UI pur (sélection, zoom, drag) ; pas de raison de le remplacer. |
+| **Conservation de l'API publique des classes existantes** (`Logger.info`, `Port.configureIP`, `Cable.connect`, `Equipment.powerOn`) | Réduit la surface de migration et préserve les milliers de lignes de tests. |
+| **Coexistence callbacks + bus** pendant les phases 3-5 | Sécurise la transition ; double-écriture jetable, pas un héritage à long terme. |
+| **Pas de Web Worker** | La simulation reste mono-thread ; le bus apporte la composition, pas le parallélisme. |
+| **Émission synchrone par défaut, sub-event queue pour la réentrance** | Préserve la prédictibilité ; évite les explosions de pile. |
+
+### 12.3 Annexe A — Cartographie des fichiers impactés
+
+| Couche | Fichiers existants modifiés | Fichiers nouveaux |
+|---|---|---|
+| Primitives | – | `src/events/{EventBus,Scheduler,Signal,waitForEvent,types,index}.ts` |
+| Core | `Logger.ts`, `PacketQueue.ts`, `NeighborResolver.ts`, `TcpConnection.ts`, `SocketTable.ts`, `RoutingTable.ts` | – |
+| Hardware | `Port.ts`, `Cable.ts`, `PortSecurity.ts` | – |
+| Equipment | `Equipment.ts`, `EquipmentRegistry.ts` | – |
+| Devices | `EndHost.ts`, `Router.ts`, `Switch.ts`, `LinuxMachine.ts`, `WindowsPC.ts`, plus collaborateurs Linux/Windows mineurs | `src/network/devices/router/IPv4Forwarder.ts` |
+| Router engines | `RouterOSPFIntegration.ts`, `RouterRIPEngine.ts`, `NATEngine.ts`, `IPv6DataPlane.ts`, `ACLEngine.ts`s | – |
+| Protocoles | `OSPFEngine.ts`, `OSPFv3Engine.ts`, `RIPEngine.ts`, `DHCPClient.ts`, `DHCPServer.ts`, `IPSecEngine.ts` | – |
+| Terminal | `TerminalSession.ts`, `LinuxTerminalSession.ts`, `CLITerminalSession.ts`, `TerminalManager.ts`, sub-shells (légère) | – |
+| Store | `networkStore.ts`, `topologySerializer.ts` | – |
+| UI | tous les composants `network/` sauf `TerminalView.tsx`, `MinimizedTerminals.tsx` | – |
+| Database | `OracleInstance.ts`, `OracleExecutor.ts`, `database.ts` (terminal) | `src/adapters/OracleFilesystemSync.ts` |
+| Projecteurs | – | `src/projections/{Devices,Cables,ActivePackets,Routes,Arp,Ospf,TerminalSessions,index}.ts` |
+| Hooks | – | `src/hooks/{useSignal,devices,cables,routes,arp,ospf,packets,terminal}.ts` |
+| Adapters | – | `src/adapters/{BusTracer,PacketCapture}.ts` |
+| Tests primitives | – | `src/__tests__/unit/events/{EventBus,Scheduler,Signal,waitForEvent}.test.ts` |
+| Tests existants | adaptés (timers, ARP/NDP, pendings) | – |
+
+### 12.4 Annexe B — Liste exhaustive des topics initiaux
+
+**Couche L1/L2** : `port.frame.tx-requested`, `port.frame.tx-blocked`, `port.frame.received`, `port.frame.dropped`, `port.link.up`, `port.link.down`, `port.config.ip-changed`, `port.config.ipv6-added`, `port.config.ipv6-removed`, `port.config.mtu-changed`, `port.config.speed-changed`, `port.config.duplex-changed`, `port.security.violation`, `port.security.shutdown`, `port.security.mac-learned`, `port.counters.tick` ; `cable.connected`, `cable.disconnected`, `cable.negotiated`, `cable.duplex-mismatch`, `cable.frame.dispatched`, `cable.frame.delivered`, `cable.frame.lost`.
+
+**Equipment** : `device.registered`, `device.deregistered`, `device.power-on`, `device.power-off`, `device.position-changed`, `device.renamed`, `device.boot.started`, `device.boot.line`, `device.boot.completed`, `registry.cleared`.
+
+**Host (L3/L4)** : `host.arp.entry-learned`, `host.arp.entry-expired`, `host.routing.route-added`, `host.routing.route-removed`, `host.routing.route-changed`, `host.icmp.echo-sent`, `host.icmp.echo-reply`, `host.icmp.echo-timeout`, `host.tcp.listener-started`, `host.tcp.listener-stopped`, `host.tcp.connection-established`, `host.tcp.connection-closed`, `host.l3.packet-tx-requested` ; `socket.bound`, `socket.connected`, `socket.closed`, `socket.state-changed` ; `tcp.data.sent`, `tcp.data.received`, `tcp.connection-closed` ; `neighbor.learned`, `neighbor.expired`, `neighbor.cache-cleared`, `neighbor.solicitation-sent`, `neighbor.resolution-timeout`.
+
+**Switch** : `switch.mac.learned`, `switch.mac.aged`, `switch.vlan.created`, `switch.vlan.deleted`, `switch.port.vlan-suspended`, `switch.port.vlan-recreated`, `switch.stp.state-changed`.
+
+**Router** : `router.routing.route-added`, `router.routing.route-removed`, `router.routing.route-changed`, `router.acl.permit`, `router.acl.deny`, `router.acl.log`, `router.nat.translation-applied`, `router.nat.session-created`, `router.nat.session-closed`.
+
+**OSPF** : `ospf.neighbor.state-changed`, `ospf.lsa.received`, `ospf.lsa.flushed`, `ospf.lsa.installed`, `ospf.spf.run`, `ospf.dr-election`, `ospf.area.activated`, `ospf.routes-recomputed`, `ospf.packet.outgoing`.
+
+**RIP** : `rip.update.sent`, `rip.update.received`, `rip.route-added`, `rip.route-removed`.
+
+**DHCP** : `dhcp.lease-requested`, `dhcp.offer-received`, `dhcp.lease-granted`, `dhcp.lease-renewing`, `dhcp.lease-rebinding`, `dhcp.lease-expired`, `dhcp.arp-probe-requested`, `dhcp.arp-probe-result`, `dhcp.server.lease-allocated`, `dhcp.server.lease-released`, `dhcp.server.lease-expired`.
+
+**IPSec** : `ipsec.ike.exchange-started`, `ipsec.ike.exchange-completed`, `ipsec.sa.installed`, `ipsec.sa.deleted`, `ipsec.dpd.peer-down`, `ipsec.packet.encrypted-out`, `ipsec.packet.decrypted-in`.
+
+**Terminal** : `terminal.session.opened`, `terminal.session.closed`, `terminal.session.line-added`, `terminal.session.input-mode-changed`, `terminal.session.flow-started`, `terminal.session.flow-completed`, `terminal.session.subshell-entered`, `terminal.session.subshell-exited`, `terminal.session.close-requested`, `terminal.manager.session-opened`, `terminal.manager.session-closed`.
+
+**Database (Oracle)** : `oracle.database.created`, `oracle.database.removed`, `oracle.instance.state-changed`, `oracle.instance.background-process-started`, `oracle.instance.background-process-stopped`, `oracle.instance.alert-log-entry-added`, `oracle.instance.parameter-changed`, `oracle.instance.redo-log-switched`, `oracle.archive-log.created`, `oracle.session.connected`, `oracle.session.disconnected`, `oracle.transaction.started`, `oracle.transaction.committed`, `oracle.transaction.rolled-back`, `oracle.dml.executed`, `oracle.ddl.executed`, `oracle.error.raised`, `oracle.rman.backup-started`, `oracle.rman.backup-completed`, `oracle.rman.restore-started`, `oracle.rman.restore-completed`.
+
+**Topology** : `topology.import-started`, `topology.import-completed`, `topology.export-started`, `topology.export-completed`.
+
+**Logging & système** : `log`, `bus.handler-error`, `packetqueue.depth-changed`.
+
+**SFTP / autres sous-shells** : `sftp.transfer-started`, `sftp.transfer-completed`, `sftp.transfer-failed`.
+
+**Total** : ≈ 95 topics initiaux. Liste évolutive ; chaque ajout passe par revue de PR.
+
+### 12.5 Annexe C — Glossaire technique
+
+- **Acteur (Actor)** : objet qui détient un état interne, s'abonne à des événements pertinents, mute son état, et publie des événements en réaction.
+- **Adapter** : module qui consomme des événements pour produire un effet externe (filesystem, log texte, animation, sérialisation).
+- **DomainEvent** : type union TypeScript discriminé représentant tous les événements possibles dans le système.
+- **EventBus** : registre central qui dispatche les événements aux abonnés filtrés par topic.
+- **Feature flag** : booléen interne qui active/désactive un comportement, utilisé pour la migration progressive.
+- **Microtâche** : tâche planifiée pour s'exécuter à la fin du job courant de la boucle d'événements JavaScript ; utilisée pour la réentrance bornée du bus.
+- **Projection / Read-model / VM (View-Model)** : vue dérivée et immuable d'un état de domaine, calculée par un réducteur à partir du flux d'événements, consommée par la UI.
+- **Read-only domain access** : politique selon laquelle la UI ne peut lire le domaine qu'à travers des projections.
+- **Réentrance bornée** : un handler peut publier ; les sub-events sont mis en file et dispatchés à la fin du dispatch courant ; pas de récursion incontrôlée.
+- **Scheduler** : abstraction des timers — fournit `setTimeout`, `setInterval`, `clear`, `now`, `delay`, et un mode test `advance`.
+- **Signal / WritableSignal** : conteneur d'une valeur qui notifie ses lecteurs lors d'un changement, compatible `useSyncExternalStore`.
+- **Snapshot d'événements** : trace ordonnée des événements émis pendant un scénario, comparée bit-pour-bit pour détecter les régressions.
+- **Sub-event queue** : file FIFO des événements publiés *pendant* un dispatch, vidée après le dispatch courant.
+- **Topic** : chaîne hiérarchique en kebab-case identifiant une catégorie d'événements.
+- **VirtualTimeScheduler** : scheduler de tests avec une horloge virtuelle avancée manuellement par `advance(ms)`.
+- **`waitForEvent`** : helper qui transforme une attente d'événement en `Promise<payload>` avec timeout.
+
+### 12.6 Annexe D — Effort estimé
+
+| Phase | Effort dev (jours-personne) | Effort revue (jours-personne) |
+|---|:---:|:---:|
+| 1 | 3 | 1 |
+| 2 | 2 | 1 |
+| 3 | 6 | 2 |
+| 4 | 8 | 3 |
+| 5 | 12 | 4 |
+| 6 | 10 | 3 |
+| 7 | 3 | 1 |
+| 8 | 4 | 1 |
+| **Total** | **48 j-p** | **16 j-p** |
+
+≈ **64 jours-personne** au total. À une personne à plein temps, ≈ 13 semaines (~ 3 mois) avec marge. À deux personnes en collaboration (une développe pendant que l'autre revoit la phase précédente), ≈ 8 semaines.
+
+### 12.7 Annexe E — Hors-périmètre stricts (rappel)
+
+Cette refonte **n'inclut pas** :
+
+- Réécriture des parsers Cisco IOS, Huawei VRP, Linux bash, PowerShell, Oracle SQL.
+- Migration React → Solid/Svelte/Vue.
+- Réécriture du moteur Oracle (lexer/parser/exécuteur/catalog/storage).
+- Introduction de Web Workers ou de WASM.
+- Implémentation de protocoles supplémentaires (BGP, MPLS, mDNS, LLDP) — bien que la cible facilite leur ajout.
+- Persistance backend / mode multi-utilisateur.
+
+Ces sujets relèvent de chantiers ultérieurs qui pourront s'appuyer sur les fondations posées par la refonte.
+
+### 12.8 Annexe F — Historique du document
+
+| Section | Commit | Statut |
+|---|---|---|
+| 1. Introduction & objectifs | `f9ae3af` | ✅ |
+| 2. État actuel | `cdceb2a` | ✅ |
+| 3. Couche réseau | `9f89c44` | ✅ |
+| 4. Devices et protocoles | `59ad5f2` | ✅ |
+| 5. Couche terminal | `655dc2b` | ✅ |
+| 6. Store et UI React | `0eb08ef` | ✅ |
+| 7. Base de données Oracle | `9697552` | ✅ |
+| 8. Architecture cible | `1d6d908` | ✅ |
+| 9. Refactoring par classe | `146fdf5` | ✅ |
+| 10. Plan de migration | `d9a5396` | ✅ |
+| 11. Risques, tests, métriques | `3e7fb75` | ✅ |
+| 12. Conclusion et annexes | _ce commit_ | ✅ |
+
+Document rédigé séquentiellement, sans agent, section par section, sur la branche `claude/reactive-event-driven-refactor-8hVAE`.
+
+### 12.9 Mot de la fin
+
+La transformation décrite ici n'est pas une réécriture : c'est une **mise à plat** des canaux d'information qui circulaient déjà implicitement dans le projet, à travers ses callbacks, ses Maps de pending, ses subscribes locaux et son Logger. Le code existant **fonctionne**, et il fonctionne plutôt bien — la dette est dans la **dispersion** des mécanismes, pas dans leur correction. Unifier ces mécanismes autour d'un bus typé, d'un scheduler abstrait et de signaux observables ramène la complexité accidentelle à zéro, libère l'observabilité, et ouvre la voie à des fonctionnalités jusqu'ici hors d'atteinte (animation, capture, replay, plug-ins protocolaires).
+
+Le plan est exigeant mais maîtrisé : 8 phases, ~ 64 jours-personne, aucune réécriture de fonctionnalité métier, aucune dépendance externe nouvelle, et une suite de tests préservée à chaque étape. Le ratio bénéfice/risque est en faveur de la refonte ; le seul facteur réellement critique est la **discipline de phasage**, qui doit être tenue jusqu'à la phase 8 pour récolter le bénéfice complet.
+
+Bonne refonte.
+
+— *Fin du document.*
