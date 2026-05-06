@@ -2357,3 +2357,340 @@ export namespace RmanSession {
 ```
 
 ---
+
+## 10. Intégration : SubShell réactif + OracleContext + VFS
+
+### 10.1 IRmanOracleContext — Adapter interface
+
+```typescript
+// src/terminal/subshells/rman/integration/IRmanOracleContext.ts
+
+import type { DbId }  from '../values/DbId'
+import type { Result } from '../core/Result'
+import type { RmanError } from '../core/RmanError'
+
+export interface DatafileInfo {
+  readonly fileNo:     number
+  readonly path:       string
+  readonly sizeBytes:  number
+  readonly tablespace: string
+}
+
+export interface VfsAdapter {
+  writeFile(path: string, data: Uint8Array): Result<void, RmanError>
+  readFile(path:  string):                   Result<Uint8Array, RmanError>
+  fileExists(path: string):                  boolean
+  availableBytes():                          number
+}
+
+/**
+ * Interface Adapter entre RmanSession et l'infrastructure de la simulation.
+ *
+ * Pattern : ADAPTER (GoF) — traduit le VirtualFileSystem (orienté Linux)
+ *           et OracleInstance en surface orientée RMAN.
+ */
+export interface IRmanOracleContext {
+  readonly dbId:    DbId
+  readonly dbName:  string
+  readonly vfs:     VfsAdapter
+  getDatafiles():   readonly DatafileInfo[]
+  getSpfileParam(name: string): string | undefined
+}
+```
+
+### 10.2 LinuxRmanContext — Adapter concret
+
+```typescript
+// src/terminal/subshells/rman/integration/LinuxRmanContext.ts
+
+import { DbId }                 from '../values/DbId'
+import { ok, err }              from '../core/Result'
+import type { IRmanOracleContext, DatafileInfo, VfsAdapter } from './IRmanOracleContext'
+import type { VirtualFileSystem } from '@/terminal/filesystem'
+import type { OracleInstance }    from '@/database/oracle/OracleInstance'
+
+/**
+ * Adapter concret.
+ * Wraps VirtualFileSystem (VFS de Linux/Oracle) et OracleInstance
+ * pour exposer IRmanOracleContext.
+ */
+export class LinuxRmanContext implements IRmanOracleContext {
+  readonly dbId:   typeof DbId.DEFAULT
+  readonly dbName: string
+  readonly vfs:    VfsAdapter
+
+  constructor(
+    private readonly _vfs:      VirtualFileSystem,
+    private readonly _instance: OracleInstance,
+  ) {
+    this.dbId   = DbId.DEFAULT
+    this.dbName = 'ORCL'
+    this.vfs    = this._buildVfsAdapter()
+  }
+
+  getDatafiles(): readonly DatafileInfo[] {
+    return [
+      { fileNo: 1, path: '/u01/app/oracle/oradata/ORCL/system01.dbf',  sizeBytes: 838_860_800, tablespace: 'SYSTEM'   },
+      { fileNo: 2, path: '/u01/app/oracle/oradata/ORCL/sysaux01.dbf',  sizeBytes: 576_716_800, tablespace: 'SYSAUX'   },
+      { fileNo: 3, path: '/u01/app/oracle/oradata/ORCL/undotbs01.dbf', sizeBytes: 209_715_200, tablespace: 'UNDOTBS1' },
+      { fileNo: 4, path: '/u01/app/oracle/oradata/ORCL/users01.dbf',   sizeBytes: 104_857_600, tablespace: 'USERS'    },
+    ]
+  }
+
+  getSpfileParam(name: string): string | undefined {
+    const params: Record<string, string> = {
+      db_name:              'ORCL',
+      db_recovery_file_dest: '/u01/backup',
+      control_files:        '/u01/app/oracle/oradata/ORCL/control01.ctl',
+    }
+    return params[name.toLowerCase()]
+  }
+
+  private _buildVfsAdapter(): VfsAdapter {
+    return {
+      writeFile: (path, data) => {
+        try {
+          this._vfs.writeFile(path, data)
+          return ok(undefined)
+        } catch (e) {
+          return err({ code: 'VFS_WRITE_ERROR', message: String(e), path })
+        }
+      },
+      readFile: (path) => {
+        try {
+          const data = this._vfs.readFile(path)
+          return ok(data)
+        } catch (e) {
+          return err({ code: 'VFS_READ_ERROR', message: String(e), path })
+        }
+      },
+      fileExists:     (path) => this._vfs.fileExists(path),
+      availableBytes: ()     => this._vfs.availableBytes?.() ?? 10_737_418_240, // 10 GB défaut
+    }
+  }
+}
+```
+
+### 10.3 ReactiveRmanSubShell — abonné aux événements
+
+```typescript
+// src/terminal/subshells/rman/ReactiveRmanSubShell.ts
+
+import type { KeyEvent }      from '@/terminal/sessions/TerminalSession'
+import type { ISubShell, SubShellResult } from '../ISubShell'
+import type { IRmanSession }  from './session/IRmanSession'
+import type { RmanEvent }     from './core/types'
+import { RmanSession }        from './session/RmanSession'
+import { LinuxRmanContext }   from './integration/LinuxRmanContext'
+import type { VirtualFileSystem } from '@/terminal/filesystem'
+import type { OracleInstance }    from '@/database/oracle/OracleInstance'
+
+/**
+ * SubShell RMAN réactif.
+ *
+ * Remplace RmanSubShell.ts (stub synchrone).
+ *
+ * Différence majeure :
+ *   - L'ancien SubShell construisait lui-même les sorties RMAN.
+ *   - Ce SubShell s'abonne aux streams de RmanSession et
+ *     accumule les lignes émises dans _outputBuffer.
+ *   - processLine() vide le buffer et le retourne au TerminalSession.
+ *
+ * Pattern : OBSERVER — abonné à session.events$.
+ */
+export class ReactiveRmanSubShell implements ISubShell {
+  private readonly _session:      IRmanSession
+  private readonly _outputBuffer: string[] = []
+  private readonly _unsubs:       Array<() => void> = []
+  private _shouldExit = false
+
+  private constructor(session: IRmanSession) {
+    this._session = session
+    this._wireEvents()
+  }
+
+  static create(
+    args: string[],
+    vfs: VirtualFileSystem,
+    oracle: OracleInstance,
+  ): { subShell: ReactiveRmanSubShell; banner: string[] } {
+    const ctx = new LinuxRmanContext(vfs, oracle)
+    const { session, banner } = RmanSession.create(args, ctx)
+    const subShell = new ReactiveRmanSubShell(session)
+    return { subShell, banner }
+  }
+
+  getPrompt(): string { return 'RMAN> ' }
+
+  handleKey(e: KeyEvent): boolean {
+    if (e.key === 'd' && e.ctrlKey) { this._shouldExit = true; return true }
+    if (e.key === 'c' && e.ctrlKey) return true
+    return false
+  }
+
+  processLine(line: string): SubShellResult {
+    const trimmed = line.trim()
+    const upper   = trimmed.toUpperCase()
+
+    if (!trimmed) {
+      return { output: [], exit: false, prompt: 'RMAN> ' }
+    }
+
+    // Vider le buffer avant l'exécution (résidus d'events précédents)
+    this._outputBuffer.length = 0
+
+    // Exécuter via la session
+    const result = this._session.processLine(trimmed)
+
+    if (!result.ok) {
+      // Erreur de commande → afficher le stack RMAN
+      return {
+        output: this._formatRmanError(result.error),
+        exit:   false,
+        prompt: 'RMAN> ',
+      }
+    }
+
+    const exitNow = this._shouldExit
+      || upper === 'EXIT'
+      || upper === 'QUIT'
+
+    // Collecter : lignes synchrones (result.value) + lignes réactives (buffer)
+    const output = [...result.value, ...this._outputBuffer]
+    this._outputBuffer.length = 0
+
+    return { output, exit: exitNow, prompt: 'RMAN> ' }
+  }
+
+  dispose(): void {
+    this._unsubs.forEach(u => u())
+    this._session.dispose()
+  }
+
+  // ── Câblage réactif ────────────────────────────────────────────
+
+  /**
+   * Abonnement aux streams de la session.
+   * Chaque événement est converti en ligne(s) de texte Oracle.
+   */
+  private _wireEvents(): void {
+    // Progression → lignes intermédiaires RMAN
+    this._unsubs.push(
+      this._session.events$.subscribe(e => this._handleEvent(e))
+    )
+  }
+
+  private _handleEvent(e: RmanEvent): void {
+    switch (e.type) {
+      case 'JOB_STARTED':
+        this._push(`\nStarting ${e.operation.toLowerCase().replace(/_/g, ' ')} at ${this._nowStr()}`)
+        break
+
+      case 'PROGRESS_UPDATED':
+        this._push(e.message)
+        break
+
+      case 'BACKUP_PIECE_CREATED':
+        this._push(`piece handle=${e.piece.path} tag=${e.piece.tag.label}`)
+        break
+
+      case 'BACKUP_SET_COMPLETE':
+        this._push(`channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15`)
+        break
+
+      case 'JOB_COMPLETED':
+        this._push(`Finished ${e.operation.toLowerCase().replace(/_/g, ' ')} at ${this._nowStr()}`)
+        this._push('')
+        break
+
+      case 'JOB_FAILED':
+        this._push('')
+        this._push('RMAN-00571: ===========================================================')
+        this._push('RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============')
+        this._push('RMAN-00571: ===========================================================')
+        this._push(`RMAN-03014: ${e.error.message}`)
+        break
+
+      case 'CHANNEL_ALLOCATED':
+        this._push(`allocated channel: ${e.channelId}`)
+        this._push(`channel ${e.channelId}: SID=${e.sid} device type=${e.deviceType}`)
+        break
+
+      case 'RESTORE_DATAFILE_STARTED':
+        this._push(`channel ORA_DISK_1: restoring datafile ${String(e.fileNo).padStart(5, '0')} to ${e.to}`)
+        break
+
+      case 'RESTORE_DATAFILE_COMPLETED':
+        this._push(`channel ORA_DISK_1: restore complete, elapsed time: 00:00:25`)
+        break
+
+      case 'RECOVER_STARTED':
+        this._push('starting media recovery')
+        break
+
+      case 'RECOVER_COMPLETED':
+        this._push(`media recovery complete, elapsed time: 00:00:03`)
+        break
+
+      case 'CROSSCHECK_DONE':
+        this._push(`Crosschecked ${e.available + e.expired} objects`)
+        if (e.expired > 0) this._push(`${e.expired} piece(s) marked EXPIRED`)
+        break
+
+      case 'CONNECTED':
+        this._push(`connected to target database: ${e.dbName} (DBID=${e.dbId})`)
+        break
+
+      // Les autres events (CATALOG_UPDATED, SESSION_STATE_CHANGED, etc.)
+      // sont internes — pas de sortie visible
+    }
+  }
+
+  private _push(line: string): void { this._outputBuffer.push(line) }
+  private _nowStr(): string {
+    const now = new Date()
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${pad(now.getDate())}-${months[now.getMonth()]}-${now.getFullYear()} `
+         + `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  }
+
+  private _formatRmanError(e: import('./core/RmanError').RmanError): string[] {
+    return [
+      'RMAN-00571: ===========================================================',
+      'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+      'RMAN-00571: ===========================================================',
+      `RMAN-00558: error encountered while parsing input command`,
+      `RMAN-01009: syntax error: found: unknown command`,
+      `RMAN-01007: at line 1 column 1 file: standard input`,
+    ]
+  }
+}
+```
+
+### 10.4 Migration depuis RmanSubShell.ts
+
+```
+Ancien (synchrone) :
+  RmanSubShell.processLine(line) → string[]
+    └─ switch(upper) → appelle _backupOutput(), _listBackupOutput()… directement
+    └─ Construit les lignes de sortie inline
+    └─ Pas d'état, pas d'événements
+
+Nouveau (réactif) :
+  ReactiveRmanSubShell.processLine(line)
+    └─ session.processLine(line)          ← délègue à la Facade
+        └─ dispatcher.dispatch(line)      ← Command Pattern
+            └─ BackupCommand.execute()    ← émet sur bus
+                └─ engine.run(job)        ← émet PROGRESS_UPDATED, PIECE_CREATED, JOB_COMPLETED
+    └─ _handleEvent(e) pour chaque event  ← accumule dans _outputBuffer
+    └─ Retourne output = [synchrones + réactifs]
+
+Points clés de la migration :
+  ✓ L'interface ISubShell est inchangée — le TerminalSession ne voit pas la différence
+  ✓ getPrompt() / handleKey() identiques
+  ✓ processLine() retourne toujours SubShellResult
+  ✓ Le câblage réactif est interne à ReactiveRmanSubShell
+```
+
+---
