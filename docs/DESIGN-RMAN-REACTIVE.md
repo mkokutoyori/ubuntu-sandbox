@@ -1624,3 +1624,366 @@ function _make(operation: RmanOperation, steps: JobStep[]): RmanJob {
 ```
 
 ---
+
+## 8. Commandes RMAN — Command Pattern réactif (Open/Closed)
+
+### 8.1 IRmanCommand<T> — interface générique
+
+```typescript
+// src/terminal/subshells/rman/commands/types.ts
+
+import type { Result }      from '../core/Result'
+import type { RmanError }   from '../core/RmanError'
+import type { RmanEventBus }from '../reactive/RmanEventBus'
+import type { IRmanJobEngine } from '../job/IRmanJobEngine'
+import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository'
+import type { IRmanOracleContext }     from '../integration/IRmanOracleContext'
+import type { IRetentionPolicy }       from '../policy/IRetentionPolicy'
+
+/**
+ * Contexte partagé injecté dans chaque commande.
+ * Contient tous les services dont une commande peut avoir besoin.
+ */
+export interface RmanCommandContext {
+  readonly bus:       RmanEventBus
+  readonly engine:    IRmanJobEngine
+  readonly catalog:   IRmanCatalogRepository
+  readonly ctx:       IRmanOracleContext
+  readonly policy:    IRetentionPolicy
+}
+
+/**
+ * Interface générique d'une commande RMAN.
+ * T = type du résultat (string[] pour LIST/SHOW, void pour BACKUP/RESTORE).
+ *
+ * Les commandes qui lancent un job ne retournent rien :
+ * les résultats arrivent via les événements du bus.
+ *
+ * Pattern : COMMAND (GoF) — encapsule une opération, découple
+ *           déclencheur (RmanCommandDispatcher) et exécutant.
+ */
+export interface IRmanCommand<T = void> {
+  /** Nom lisible pour le logging. */
+  readonly name: string
+
+  /**
+   * Exécute la commande.
+   * - Commandes à résultat synchrone (LIST, SHOW, REPORT) : retourne Result<string[], E>
+   * - Commandes asynchrones (BACKUP, RESTORE) : retourne Result<void, E>,
+   *   les lignes de sortie arrivent via bus.progress$ et bus.jobCompleted$.
+   */
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<T, RmanError>
+}
+```
+
+### 8.2 RmanCommandDispatcher — registre Open/Closed
+
+```typescript
+// src/terminal/subshells/rman/commands/RmanCommandDispatcher.ts
+
+import type { IRmanCommand }       from './types'
+import type { RmanCommandContext }  from './types'
+import type { Result }             from '../core/Result'
+import type { RmanError }          from '../core/RmanError'
+import { ok, err }                 from '../core/Result'
+
+// Import de toutes les commandes concrètes
+import { BackupCommand }     from './BackupCommand'
+import { RestoreCommand }    from './RestoreCommand'
+import { RecoverCommand }    from './RecoverCommand'
+import { ListBackupCommand } from './ListBackupCommand'
+import { ReportCommand }     from './ReportCommand'
+import { CrosscheckCommand } from './CrosscheckCommand'
+import { DeleteCommand }     from './DeleteCommand'
+import { ShowCommand }       from './ShowCommand'
+import { ConnectCommand }    from './ConnectCommand'
+import { HelpCommand }       from './HelpCommand'
+
+type DispatchEntry = {
+  pattern: RegExp
+  command: IRmanCommand<unknown>
+}
+
+/**
+ * Registre de commandes RMAN.
+ *
+ * Pattern : COMMAND (GoF) — dispatcher = invoker.
+ * Pattern : OPEN/CLOSED — de nouvelles commandes s'ajoutent via
+ *           registerCommand() sans modifier le dispatcher.
+ *
+ * Résolution : première regex qui matche gagne (ordre d'enregistrement).
+ */
+export class RmanCommandDispatcher {
+  private readonly _entries: DispatchEntry[] = []
+
+  constructor() {
+    this._registerDefaults()
+  }
+
+  /** Enregistrement dynamique d'une commande supplémentaire. */
+  registerCommand(pattern: RegExp, command: IRmanCommand<unknown>): void {
+    this._entries.push({ pattern, command })
+  }
+
+  /**
+   * Dispatche une ligne de texte vers la commande correspondante.
+   * Retourne Result<string[], E> — pour les commandes à résultat
+   * synchrone (LIST, SHOW, REPORT), les lignes sont dans .value.
+   * Pour les commandes à résultat réactif (BACKUP, RESTORE),
+   * .value === [] et les lignes arrivent via le bus.
+   */
+  dispatch(line: string, cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    const upper    = line.trim().toUpperCase()
+    const trimmed  = line.trim()
+
+    for (const { pattern, command } of this._entries) {
+      const match = upper.match(pattern) ?? trimmed.match(pattern)
+      if (match) {
+        const result = command.execute(match.slice(1), cmdCtx)
+        if (!result.ok) return result as Result<string[], RmanError>
+        const value = result.value
+        return ok(Array.isArray(value) ? value as string[] : [])
+      }
+    }
+
+    return err({ code: 'RMAN_01009', message: `syntax error: found: unknown command: ${trimmed}` })
+  }
+
+  // ── Enregistrement des commandes par défaut ───────────────────
+
+  private _registerDefaults(): void {
+    const backup    = new BackupCommand()
+    const restore   = new RestoreCommand()
+    const recover   = new RecoverCommand()
+    const list      = new ListBackupCommand()
+    const report    = new ReportCommand()
+    const crosschk  = new CrosscheckCommand()
+    const del       = new DeleteCommand()
+    const show      = new ShowCommand()
+    const connect   = new ConnectCommand()
+    const help      = new HelpCommand()
+
+    this._entries.push(
+      { pattern: /^CONNECT TARGET(.*)$/i,       command: connect  },
+      { pattern: /^BACKUP DATABASE$/i,           command: backup   },
+      { pattern: /^BACKUP ARCHIVELOG ALL$/i,     command: backup   },
+      { pattern: /^BACKUP TABLESPACE (\S+)$/i,   command: backup   },
+      { pattern: /^RESTORE DATABASE$/i,          command: restore  },
+      { pattern: /^RECOVER DATABASE$/i,          command: recover  },
+      { pattern: /^LIST BACKUP SUMMARY$/i,       command: list     },
+      { pattern: /^LIST BACKUP$/i,               command: list     },
+      { pattern: /^REPORT SCHEMA$/i,             command: report   },
+      { pattern: /^REPORT NEED BACKUP$/i,        command: report   },
+      { pattern: /^CROSSCHECK BACKUP$/i,         command: crosschk },
+      { pattern: /^DELETE EXPIRED BACKUP$/i,     command: del      },
+      { pattern: /^DELETE OBSOLETE$/i,           command: del      },
+      { pattern: /^SHOW ALL$/i,                  command: show     },
+      { pattern: /^HELP$/i,                      command: help     },
+    )
+  }
+}
+```
+
+### 8.3 BackupCommand — commande réactive
+
+```typescript
+// src/terminal/subshells/rman/commands/BackupCommand.ts
+
+import { ok }                from '../core/Result'
+import type { Result }       from '../core/Result'
+import type { RmanError }    from '../core/RmanError'
+import type { IRmanCommand, RmanCommandContext } from './types'
+import { JobBuilder }        from '../job/JobBuilder'
+import { formatOracleDate }  from '../core/pureUtils'
+
+/**
+ * Commande BACKUP.
+ * Ne retourne aucune ligne synchrone (void).
+ * Toute la sortie est émise via bus.progress$ et bus.jobCompleted$.
+ *
+ * Sous-commandes supportées (résolues par pattern dans le dispatcher) :
+ *   BACKUP DATABASE
+ *   BACKUP ARCHIVELOG ALL
+ *   BACKUP TABLESPACE <name>
+ */
+export class BackupCommand implements IRmanCommand<void> {
+  readonly name = 'BACKUP'
+
+  execute(args: string[], { bus, engine }: RmanCommandContext): Result<void, RmanError> {
+    const what = this._parseWhat(args)
+    const ts   = formatOracleDate()
+
+    // Émettre "Starting backup at ..."
+    bus.emit({
+      type: 'PROGRESS_UPDATED', jobId: 'pre',
+      stepName: 'start', pct: 0,
+      message: `Starting backup at ${ts}`,
+    })
+
+    // Construire le job selon ce qu'on sauvegarde
+    const job = what === 'database'     ? JobBuilder.backupDatabase()
+              : what === 'archivelog'   ? JobBuilder.backupArchivelog()
+              : JobBuilder.backupTablespace(what)
+
+    // Lancer le job (asynchrone — résultats via bus)
+    return engine.run(job)
+  }
+
+  private _parseWhat(args: string[]): string {
+    const first = (args[0] ?? '').toUpperCase()
+    if (first === 'DATABASE')   return 'database'
+    if (first === 'ARCHIVELOG') return 'archivelog'
+    if (first === 'TABLESPACE') return args[1] ?? 'USERS'
+    return 'database'
+  }
+}
+```
+
+### 8.4 ListBackupCommand — commande synchrone avec résultat
+
+```typescript
+// src/terminal/subshells/rman/commands/ListBackupCommand.ts
+
+import { ok, err }           from '../core/Result'
+import type { Result }       from '../core/Result'
+import type { RmanError }    from '../core/RmanError'
+import type { IRmanCommand, RmanCommandContext } from './types'
+import { formatOracleDate, formatSize, formatElapsed } from '../core/pureUtils'
+
+/**
+ * Commande LIST BACKUP [SUMMARY].
+ * Retourne un Result<string[], RmanError> synchrone.
+ * Les lignes sont renvoyées directement au SubShell.
+ */
+export class ListBackupCommand implements IRmanCommand<string[]> {
+  readonly name = 'LIST BACKUP'
+
+  execute(args: string[], { catalog }: RmanCommandContext): Result<string[], RmanError> {
+    const snapshot = catalog.listAll()
+    if (!snapshot.ok) return snapshot
+
+    const isSummary = (args[0] ?? '').toUpperCase().includes('SUMMARY')
+    const { sets } = snapshot.value
+
+    if (sets.length === 0) {
+      return ok(['', 'List of Backups', '===============', 'no backup found in the repository', ''])
+    }
+
+    if (isSummary) return ok(this._summaryLines(sets))
+    return ok(this._detailLines(sets))
+  }
+
+  private _summaryLines(sets: readonly import('../catalog/types').BackupSet[]): string[] {
+    const lines: string[] = [
+      '', 'List of Backups', '===============',
+      'Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag',
+      '------- -- -- - ----------- ------------------- ------- ------- ---------- ---',
+    ]
+    for (const s of sets) {
+      const ts = formatOracleDate(new Date(s.completionTime))
+      lines.push(
+        `${String(s.bsKey).padEnd(7)} B  F  A DISK        ${ts}  1       1       NO         ${s.tag.label}`
+      )
+    }
+    lines.push('')
+    return lines
+  }
+
+  private _detailLines(sets: readonly import('../catalog/types').BackupSet[]): string[] {
+    const lines: string[] = ['', 'List of Backup Sets', '===================', '']
+    lines.push(
+      'BS Key  Type LV Size       Device Type Elapsed Time Completion Time',
+      '------- ---- -- ---------- ----------- ------------ ---------------',
+    )
+    for (const s of sets) {
+      const ts      = formatOracleDate(new Date(s.completionTime))
+      const elapsed = formatElapsed(s.completionTime - s.startTime)
+      const size    = formatSize(s.sizeBytes)
+      lines.push(`${String(s.bsKey).padEnd(7)} Full    ${size.padEnd(10)} DISK        ${elapsed}     ${ts}`)
+      for (const p of s.pieces) {
+        lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: NO  Tag: ${p.tag.label}`)
+        lines.push(`          Piece Name: ${p.path}`)
+      }
+      if (s.datafiles.length > 0) {
+        lines.push('  List of Datafiles in backup set ' + s.bsKey)
+        lines.push('  File LV Type Ckp SCN    Ckp Time        Name')
+        lines.push('  ---- -- ---- ---------- --------------- ----')
+        for (const df of s.datafiles) {
+          const dfTs = formatOracleDate(new Date(df.ckpTime))
+          lines.push(`  ${String(df.fileNo).padStart(4)}    Full ${String(df.ckpScn.value).padEnd(10)} ${dfTs}  ${df.path}`)
+        }
+      }
+    }
+    lines.push('')
+    return lines
+  }
+}
+```
+
+### 8.5 Autres commandes (résumé)
+
+| Classe | Pattern | Résultat | Comportement réactif |
+|---|---|---|---|
+| `RestoreCommand` | `RESTORE DATABASE` | `void` | Émet `RESTORE_DATAFILE_STARTED/COMPLETED` via job engine |
+| `RecoverCommand` | `RECOVER DATABASE` | `void` | Émet `RECOVER_STARTED/COMPLETED` |
+| `CrosscheckCommand` | `CROSSCHECK BACKUP` | `void` | Émet `CROSSCHECK_DONE` ; expire les pièces introuvables |
+| `DeleteCommand` | `DELETE EXPIRED/OBSOLETE` | `void` | Supprime du catalogue ; émet `CATALOG_UPDATED` |
+| `ShowCommand` | `SHOW ALL` | `string[]` | Synchrone ; lit la configuration de la session |
+| `ReportCommand` | `REPORT SCHEMA/NEED BACKUP` | `string[]` | Synchrone ; lit l'OracleContext |
+| `ConnectCommand` | `CONNECT TARGET ...` | `void` | Émet `SESSION_STATE_CHANGED` |
+| `HelpCommand` | `HELP` | `string[]` | Synchrone ; retourne la liste des commandes |
+
+### 8.6 RmanScriptParser — support blocs RUN {}
+
+```typescript
+// src/terminal/subshells/rman/commands/RmanScriptParser.ts
+
+/**
+ * Parse les scripts RMAN multi-lignes.
+ * Supporte les blocs RUN { ... } et les commentaires #.
+ * Émet SCRIPT_LINE_PARSED / SCRIPT_BLOCK_START / SCRIPT_BLOCK_END
+ * sur le bus pour chaque ligne reconnue.
+ *
+ * Pattern : ITERATOR — parcourt le script ligne par ligne.
+ * Pureté  : parse() est une fonction pure (string → ParsedLine[]).
+ */
+
+export type ParsedLine =
+  | { kind: 'command';     text: string; lineNo: number }
+  | { kind: 'block_start'; lineNo: number }
+  | { kind: 'block_end';   lineNo: number }
+  | { kind: 'comment';     lineNo: number }
+  | { kind: 'blank';       lineNo: number }
+
+export function parseRmanScript(source: string): ParsedLine[] {
+  const lines  = source.split('\n')
+  const result: ParsedLine[] = []
+  let depth = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw     = lines[i]
+    const trimmed = raw.trim()
+    const lineNo  = i + 1
+
+    if (!trimmed)                        { result.push({ kind: 'blank',       lineNo }); continue }
+    if (trimmed.startsWith('#'))         { result.push({ kind: 'comment',     lineNo }); continue }
+    if (trimmed.toUpperCase() === 'RUN' || trimmed === '{') {
+      depth++
+      result.push({ kind: 'block_start', lineNo })
+      continue
+    }
+    if (trimmed === '}') {
+      depth = Math.max(0, depth - 1)
+      result.push({ kind: 'block_end', lineNo })
+      continue
+    }
+    // Commande normale (retire le ";" terminal si présent)
+    const cmd = trimmed.endsWith(';') ? trimmed.slice(0, -1).trim() : trimmed
+    result.push({ kind: 'command', text: cmd, lineNo })
+  }
+
+  return result
+}
+```
+
+---
