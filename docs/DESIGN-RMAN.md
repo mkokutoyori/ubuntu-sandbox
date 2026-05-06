@@ -3089,3 +3089,240 @@ src/terminal/subshells/
 
 ---
 
+## 10. Flux complets et scenarios
+
+### 10.1 Flux 1 — BACKUP DATABASE (full)
+
+**Commande utilisateur** : `BACKUP DATABASE;`  
+**Pre-condition** : instance en `OPEN`, canal DISK_1 alloue automatiquement
+
+```
+Utilisateur          RmanSubShell    RmanSession       BackupCommand        LinuxRmanContext
+    |                    |               |                   |                    |
+    |--"BACKUP DATABASE;"|               |                   |                    |
+    |                    |--processLine->|                   |                    |
+    |                    |               |--parser.feed()    |                    |
+    |                    |               |  parsed.type='single'                  |
+    |                    |               |--_executeTokens() |                    |
+    |                    |               |--allocator        |                    |
+    |                    |               |  .createAutoPool()|                    |
+    |                    |               |--dispatcher       |                    |
+    |                    |               |  .dispatch()----->|                    |
+    |                    |               |                   |--ctx.oracleCtx     |
+    |                    |               |                   |  .getDatafiles()--->|
+    |                    |               |                   |<-DatafileInfo[4]---|
+    |                    |               |                   |                    |
+    |                    |               |                   |--pour chaque df:   |
+    |                    |               |                   |  channel.writePiece()
+    |                    |               |                   |  --> DiskDeviceStrategy.writePiece()
+    |                    |               |                   |  --> ctx.writeFile('/u01/.../piece.bkp')
+    |                    |               |                   |      --> VirtualFileSystem.writeFile()
+    |                    |               |                   |                    |
+    |                    |               |                   |--BackupSetFactory  |
+    |                    |               |                   |  .createBackupSet()|
+    |                    |               |                   |--catalog.addBackupSet()
+    |                    |               |                   |                    |
+    |                    |               |                   |--controlfile autobackup:
+    |                    |               |                   |  channel.writePiece('cf_autobackup.bkp')
+    |                    |               |                   |                    |
+    |                    |               |<---Result<RmanOutput>------------------|
+    |                    |               |--pool.releaseAll()|                    |
+    |                    |<--SubShellResult|                  |                    |
+    |<---affiche lignes---|               |                   |                    |
+
+Sortie terminale :
+  Starting backup at 05-MAY-2026 14:23:01
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=142 device type=DISK
+  channel ORA_DISK_1: starting full datafile backup set
+  channel ORA_DISK_1: specifying datafile(s) in backup set
+  channel ORA_DISK_1: backing up database
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/ORCL-1234567890-20260505-01.bkp
+    tag=TAG20260505T142301
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 05-MAY-2026 14:23:16
+
+  Starting Control File and SPFILE Autobackup at 05-MAY-2026 14:23:16
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/c-1234567890-20260505-00.bkp
+  Finished Control File and SPFILE Autobackup at 05-MAY-2026 14:23:17
+```
+
+### 10.2 Flux 2 — RESTORE DATABASE + RECOVER DATABASE (point-in-time)
+
+**Objectif** : restaurer jusqu'au SCN 1891000 (avant une erreur utilisateur)
+
+```
+# Etape 1 : fermer la base et la monter
+SQL> SHUTDOWN IMMEDIATE
+SQL> STARTUP MOUNT
+
+# Etape 2 : dans RMAN
+RMAN> RESTORE DATABASE UNTIL SCN 1891000;
+RMAN> RECOVER DATABASE UNTIL SCN 1891000;
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+```
+
+**Flux interne — RESTORE DATABASE UNTIL SCN 1891000** :
+
+```
+RestoreCommand.execute(tokens, ctx)
+  1. Verifie ctx.oracleCtx.getInstanceState() === 'MOUNT'  (sinon RMAN-03002)
+  2. Parse UNTIL SCN 1891000 --> targetScn = Scn.of(1891000)
+  3. catalog.findBackupSetsForScn(targetScn)
+     --> retourne les BackupSets dont ckpScn <= 1891000
+  4. Selectionne le BackupSet le plus recent < targetScn
+  5. Pour chaque piece du BackupSet :
+       channel.crosscheck(piece.handle)  --> 'AVAILABLE'
+       ctx.oracleCtx.writeFile(df.name, piece_content)
+       (simule la restauration du datafile depuis la piece)
+  6. Emet evenements : RESTORE_STARTED, FILE_RESTORED x4, RESTORE_COMPLETED
+  7. Retourne RmanOutput avec les lignes de log
+```
+
+**Flux interne — RECOVER DATABASE UNTIL SCN 1891000** :
+
+```
+RecoverCommand.execute(tokens, ctx)
+  1. Verifie ctx.oracleCtx.getInstanceState() === 'MOUNT'
+  2. Parse UNTIL SCN 1891000
+  3. Recupere le ckpScn du dernier backup restaure
+     (depuis catalog ou ctx.currentScn)
+  4. catalog.getArchivedLogsForRecovery(ckpScn, targetScn)
+     --> sequence 38, 39, 40, 41
+  5. Pour chaque archivelog en sequence :
+       verifie ctx.oracleCtx.fileExists(log.name)
+       emet ARCHIVELOG_APPLIED
+  6. ctx.oracleCtx.advanceScn(targetScn - currentScn)
+  7. Retourne RmanOutput :
+     "starting media recovery"
+     "archived log for thread 1 with sequence 38 is already on disk..."
+     ...
+     "media recovery complete, elapsed time: 00:00:03"
+```
+
+### 10.3 Flux 3 — Bloc RUN {} avec ALLOCATE CHANNEL explicite
+
+**Commande** :
+```
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '/u01/backup/%d_%s_%p.bkp';
+2>   BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'WEEKLY_FULL';
+2>   BACKUP ARCHIVELOG ALL DELETE INPUT;
+2>   RELEASE CHANNEL c1;
+2> }
+```
+
+**Flux interne** :
+
+```
+RmanSession.processLine("RUN {")
+  --> parser.feed("RUN {") --> ParsedScript { type: 'incomplete' }
+  --> retourne null (prompt '2>')
+
+processLine("  ALLOCATE CHANNEL c1 ...")
+  --> parser.feed() --> 'incomplete' (pas de ;)
+
+processLine("  BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'WEEKLY_FULL';")
+  --> parser.feed() --> accumule dans _runStatements
+
+processLine("  BACKUP ARCHIVELOG ALL DELETE INPUT;")
+  --> accumule dans _runStatements
+
+processLine("  RELEASE CHANNEL c1;")
+  --> accumule dans _runStatements
+
+processLine("}")
+  --> parser.feed("}") --> ParsedScript { type: 'run_block', statements: [...] }
+  --> _executeRunBlock(statements)
+      1. Cree UN pool partage pour tout le bloc
+      2. Execute ALLOCATE CHANNEL c1
+         --> pool.add(channelAllocator.createExplicitChannel('c1', 'DISK', fmt))
+      3. Execute BACKUP INCREMENTAL LEVEL 0
+         --> BackupCommand avec backupType='INCREMENTAL_0'
+         --> canal c1 du pool
+      4. Execute BACKUP ARCHIVELOG ALL DELETE INPUT
+         --> BackupCommand avec backupObject='ARCHIVELOG'
+         --> apres backup : supprime les archivelogs du VFS + catalog
+      5. Execute RELEASE CHANNEL c1
+         --> pool.getChannel('c1').release()
+      6. pool.releaseAll() a la fin du bloc
+```
+
+### 10.4 Flux 4 — CROSSCHECK + DELETE OBSOLETE
+
+```
+RMAN> CROSSCHECK BACKUP;
+  --> CrosscheckCommand.execute()
+      Pour chaque BackupSet dans catalog :
+        Pour chaque BackupPiece :
+          IBackupDeviceStrategy.pieceExists(piece.handle)
+          --> DiskDeviceStrategy: ctx.oracleCtx.fileExists()
+          Si false : catalog.updateBackupSetStatus(key, 'EXPIRED')
+                     emet CROSSCHECK_RESULT { available: false, handle: ... }
+
+  Sortie :
+    allocated channel: ORA_DISK_1
+    channel ORA_DISK_1: SID=142 device type=DISK
+    crosschecked backup piece: found to be 'AVAILABLE'   x3
+    crosschecked backup piece: found to be 'EXPIRED'     x1
+    Crosschecked 4 objects
+
+RMAN> DELETE NOPROMPT OBSOLETE;
+  --> DeleteCommand.execute()
+      1. createRetentionPolicy(config) --> RedundancyPolicy(1)
+      2. RmanRetentionEngine.getObsolete(catalog, policy, scn, now)
+         --> retourne les BackupSets obsoletes (garde seulement N=1)
+      3. Pour chaque BackupSet obsolete :
+           Pour chaque piece :
+             IBackupDeviceStrategy.deletePiece(handle)
+             --> ctx.oracleCtx.deleteFile(handle)
+           catalog.updateBackupSetStatus(key, 'DELETED')
+           emet DELETE_PERFORMED
+
+  Sortie :
+    RMAN retention policy will be applied to the command
+    RMAN retention policy is set to redundancy 1
+    using channel ORA_DISK_1
+    Deleting the following obsolete backups and copies:
+    Type                 Key    Completion Time    Filename/Handle
+    -------------------- ------ ------------------ --------------------
+    Backup Set           1      04-MAY-2026 10:00  /u01/.../piece_01.bkp
+    deleted backup piece: /u01/.../piece_01.bkp
+    Deleted 1 objects
+```
+
+### 10.5 Flux 5 — CONFIGURE et SHOW ALL
+
+```
+RMAN> CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
+  --> ConfigureCommand.execute()
+      Parse: RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS
+      ctx.updateConfig(c => withConfig(c, {
+        retentionPolicyType: 'RECOVERY_WINDOW',
+        retentionValue: 7
+      }))
+      Retourne : "new RMAN configuration parameters:"
+                 "CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;"
+
+RMAN> CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO BACKUPSET;
+  --> ctx.updateConfig(c => withConfig(c, { parallelism: 2, defaultDeviceType: 'DISK' }))
+      Retourne : "CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO BACKUPSET;"
+
+RMAN> SHOW ALL;
+  --> ShowCommand.execute()
+      Lit ctx.config (l'objet RmanConfig immuable courant)
+      Formate chaque parametre en CONFIGURE statement
+      Ajoute "# default" si valeur == DEFAULT_RMAN_CONFIG[param]
+
+  Sortie :
+    RMAN configuration parameters for database with db_unique_name ORCL are:
+    CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
+    CONFIGURE BACKUP OPTIMIZATION OFF; # default
+    CONFIGURE DEFAULT DEVICE TYPE TO DISK; # default
+    CONFIGURE CONTROLFILE AUTOBACKUP ON;
+    CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO BACKUPSET;
+    ...
+```
+
+---
+
