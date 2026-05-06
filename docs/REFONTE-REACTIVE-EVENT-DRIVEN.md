@@ -10,7 +10,7 @@
 
 1. [Introduction & objectifs de la refonte](#1-introduction--objectifs-de-la-refonte)
 2. [État actuel de l'architecture](#2-état-actuel-de-larchitecture)
-3. Analyse de la couche réseau — `Equipment` / `Port` / `Cable` *(à venir)*
+3. [Analyse de la couche réseau — `Equipment` / `Port` / `Cable`](#3-analyse-de-la-couche-réseau--equipment--port--cable)
 4. Analyse des `devices` concrets et des moteurs de protocoles *(à venir)*
 5. Analyse de la couche terminal *(à venir)*
 6. Analyse du store Zustand et des composants React *(à venir)*
@@ -257,3 +257,267 @@ Ces chiffres serviront de base de comparaison à la fin de la refonte (cf. §11)
 ---
 
 *Section 2 close. Suivante : §3 — Analyse de la couche réseau (`Equipment` / `Port` / `Cable`).*
+
+---
+
+## 3. Analyse de la couche réseau — `Equipment` / `Port` / `Cable`
+
+Cette section examine en profondeur les trois classes fondatrices de la simulation L1/L2 et les utilitaires `core/` qu'elles exploitent. Pour chaque classe : rôle actuel, état interne, points de couplage, et besoins en réactivité.
+
+### 3.1 `Equipment` (`src/network/equipment/Equipment.ts`, 194 LoC)
+
+#### 3.1.1 Rôle
+
+Classe abstraite, parente de tous les équipements simulés. Porte :
+
+- **Identité** : `id`, `name`, `hostname`, `deviceType`.
+- **Position canvas** : `x`, `y`.
+- **État d'alimentation** : `isPoweredOn`.
+- **Inventaire des ports** : `Map<string, Port>`.
+- **Surface terminal** (méthodes default à override) : `getCwd`, `getCompletions`, `getCurrentUser`, `executeCommand`, `readFileForEditor`, etc.
+
+Une seule méthode abstraite : `protected abstract handleFrame(portName, frame): void`. Toute la sémantique réseau d'un équipement passe par là.
+
+#### 3.1.2 Couplages problématiques
+
+| # | Symptôme | Détail |
+|---|---|---|
+| E1 | **Registre statique global** (légèrement masqué) | `EquipmentRegistry` est un singleton (`getInstance()`), exposé par les méthodes statiques `Equipment.getById`, `getAllEquipment`, `clearRegistry`. Toute initialisation de device s'enregistre automatiquement (`constructor` appelle `EquipmentRegistry.getInstance().register(this)`). En mode multi-topologie ou multi-onglet, ce singleton est un point de contention. |
+| E2 | **`addPort` câble un callback unique** | `port.onFrame((portName, frame) => this.handleFrame(portName, frame))` — réécrit le `frameHandler` du port (cf. `Port.frameHandler`, mécanisme M1 §2.2). Si on voulait observer les trames sur un port pour, p. ex., du *port mirroring* ou du tcpdump, il n'y a pas d'API. |
+| E3 | **Interface terminal mêlée** | 15 méthodes virtuelles relatives au terminal (`getCwd`, `executeCommand`, `readFileForEditor`, `userExists`, `canSudo`, …) sont déclarées sur la classe de base réseau. La réactivité ne les concerne pas directement, mais elles révèlent un *god object* qui mêle deux préoccupations (réseau + shell) — la migration les gardera mais les exposera via des *interfaces* séparées (`IShellHost`, `IFilesystemHost`). |
+| E4 | **Logging implicite à plusieurs endroits** | `powerOn/powerOff`, `addPort` (via les ports), `sendFrame` appellent `Logger` directement. Les abonnés extérieurs ne savent pas qu'un device a été allumé via un autre canal que le texte. |
+
+#### 3.1.3 Besoins en réactivité
+
+L'`Equipment` cible doit :
+
+1. Émettre `device.power-on` / `device.power-off` sur le bus avec payload `{ id, type, hostname }`.
+2. Émettre `device.created` / `device.removed` à l'enregistrement et à la déréférence.
+3. Émettre `device.position-changed` quand `setPosition` est appelée (déjà utilisé par la UI via mutation Zustand, mais pas observable en dehors).
+4. Émettre `device.renamed` / `device.hostname-changed`.
+5. **Ne plus** câbler de callback direct sur ses ports : les ports émettent leurs propres événements, et l'`Equipment` s'y *abonne*. Cela ouvre la porte à des observateurs concurrents (UI, capture, IDS simulé).
+6. Exposer un état observable typé `{ powered, ports[], position }` consommable par les hooks React (cf. §6).
+
+#### 3.1.4 Décisions de refonte (résumé)
+
+- **Conserver** la hiérarchie d'héritage : `Equipment` reste la racine.
+- **Conserver** `EquipmentRegistry` mais lui faire **émettre** `device.registered` / `device.deregistered`.
+- **Remplacer** `protected abstract handleFrame` par un *abonnement* au bus (filtré par `port.frame.received` dont la `portEquipmentId` matche le device). Pour préserver la lisibilité, garder une méthode `handleFrame` qui sera *invoquée par l'abonnement*, pas par les ports directement.
+- **Ajouter** l'injection optionnelle d'un `EventBus` et d'un `Scheduler` au constructeur, avec fallback sur les singletons globaux.
+
+### 3.2 `Port` (`src/network/hardware/Port.ts`, 487 LoC)
+
+#### 3.2.1 Rôle
+
+Représente une interface physique (Ethernet/serial/console/fiber) avec ses adresses (MAC, IPv4, IPv6 avec prefixe et origine), sa configuration L1 (vitesse, duplex, autoneg, MTU), ses compteurs RFC 2863, son module port-security, et son état link-up/down. Il est le **point d'entrée et de sortie de toute trame** de la simulation.
+
+#### 3.2.2 Surface réactive existante
+
+```ts
+private frameHandler: FrameHandler | null = null;       // M1 — un seul abonné
+private linkChangeHandlers: LinkChangeHandler[] = [];   // M2 — tableau sans unsubscribe
+```
+
+L'API publique :
+
+```ts
+onFrame(handler: FrameHandler): void;
+onLinkChange(handler: LinkChangeHandler): void;
+```
+
+Aucune des deux ne retourne une fonction d'unsubscription, et `onFrame` écrase l'unique slot.
+
+#### 3.2.3 Logique de transmission
+
+```
+Equipment.send(portName, frame)
+  └─ Port.sendFrame(frame)
+       ├─ if (!isUp) drops_out++ ; return false
+       ├─ if (!cable) drops_out++ ; return false
+       ├─ counters.framesOut++ ; Logger.debug
+       └─ cable.transmit(frame, this)              ──┐ retour synchrone
+                                                     │
+Cable.transmit(frame, fromPort)                      │
+  ├─ if (!isUp) ...  return false                    │
+  ├─ if (!portA || !portB) return false              │
+  ├─ if (Math.random() < lossRate) frame lost        │
+  ├─ targetPort = (fromPort===portA) ? portB : portA │
+  ├─ Logger.debug                                    │
+  ├─ targetPort.receiveFrame(frame)                ──┤ retour synchrone, descend dans
+  └─ stats.framesTransmitted++                       │  Equipment.handleFrame
+                                                   ──┘
+```
+
+Tout est **synchrone, dans la même call-stack**. La `propagationDelay` calculée par `Cable.getPropagationDelay()` n'est exposée que comme **métadonnée** ; elle n'introduit pas de délai réel.
+
+#### 3.2.4 Couplages problématiques
+
+| # | Symptôme | Détail |
+|---|---|---|
+| P1 | **`onFrame` mono-handler** | Un Port = un consommateur. Pas de mirror/SPAN, pas de capture, pas d'IDS, pas d'observateur de UI sans patch des classes. |
+| P2 | **`onLinkChange` non désinscriptible** | Le tableau s'étend à chaque `onLinkChange` ; quand un device est retiré et recréé, les handlers anciens persistent. Présage de fuites mémoire. |
+| P3 | **Hack `_setCableNoNotify` / `_notifyLinkUp`** | Pour éviter qu'OSPF se déclenche avant que les deux ports soient câblés (cf. commentaire ligne 392-403), `Cable.connect` doit casser l'encapsulation et utiliser des méthodes underscore-préfixées. C'est exactement le genre de friction qu'un bus avec ordering bien défini éliminerait. |
+| P4 | **Compteurs mutés en place** | `framesIn++`, `framesOut++` ; aucune émission d'événement « counter changed ». Pour afficher en live « PC-A: 12 frames in/sec », la UI doit poller. |
+| P5 | **PortSecurity callback inversé** | `checkPortSecurity` peut décider unilatéralement de mettre le port à `down` (`this.isUp = false`) puis appeler `notifyLinkChange('down')`. Bonne logique fonctionnelle, mais l'événement est émis depuis le chemin de réception, ce qui complique le raisonnement « qu'est-ce qui a déclenché un link-down ? ». |
+| P6 | **Scope IPv6 `withScopeId` muté en place** | `enableIPv6()` modifie l'adresse link-local pour y attacher le nom d'interface. Pas réactif ; les abonnés à la config IPv6 doivent reposer sur `Logger`. |
+
+#### 3.2.5 Besoins en réactivité
+
+Le `Port` cible doit publier sur le bus :
+
+- `port.frame.tx-requested` — Equipment a appelé `sendFrame`. Avant validation. (utile pour la capture).
+- `port.frame.tx-blocked` — link down ou pas de cable. Payload `{ reason }`.
+- `port.frame.in-flight` — la trame est confiée au cable, propagation en cours. Payload `{ frame, from, to, propagationMs }`.
+- `port.frame.received` — la trame est arrivée à ce port après propagation. Remplace `frameHandler`.
+- `port.frame.dropped` — port-security ou link-down à la réception.
+- `port.link.up` / `port.link.down` — remplacent `linkChangeHandlers`.
+- `port.config.ip-changed`, `port.config.ipv6-added`, `port.config.ipv6-removed`, `port.config.mtu-changed`, `port.config.speed-changed`, `port.config.duplex-changed`.
+- `port.security.violation` — payload `{ violatingMac, mode, action }`.
+- `port.counters.tick` — agrégé périodiquement (cf. scheduler).
+
+Tous publiés avec une *source* `{ deviceId, portName }` pour permettre les filtres.
+
+#### 3.2.6 Décisions de refonte (résumé)
+
+- **Supprimer** `frameHandler`, `linkChangeHandlers`, `_setCableNoNotify`, `_notifyLinkUp`.
+- **Faire émettre** au `Port` les événements ci-dessus via le bus injecté.
+- **Conserver** la classe `Port`, son API de configuration (`configureIP`, `enableIPv6`, …), son module `PortSecurity`, ses compteurs.
+- **Calcul de delivery** : déplacé dans `Cable` qui demande au `Scheduler` de programmer la livraison.
+
+### 3.3 `Cable` (`src/network/hardware/Cable.ts`, 266 LoC)
+
+#### 3.3.1 Rôle
+
+Représente le médium physique entre deux ports. Type (cat5e/cat6/cat6a/fiber/crossover/serial), longueur, vitesse max, délai de propagation, taux de perte simulé, négociation auto.
+
+#### 3.3.2 Logique actuelle
+
+```ts
+transmit(frame, fromPort) {
+  if (!this.isUp) return false;
+  if (!this.portA || !this.portB) return false;
+  if (Math.random() < this.packetLossRate) { stats.framesLost++; return false; }
+  const target = (fromPort === this.portA) ? this.portB : this.portA;
+  Logger.debug(...);
+  target.receiveFrame(frame);   // SYNC, dans la même call-stack
+  this.stats.framesTransmitted++;
+  return true;
+}
+```
+
+#### 3.3.3 Couplages problématiques
+
+| # | Symptôme | Détail |
+|---|---|---|
+| C1 | **Livraison synchrone** | Pas d'utilisation du `propagationDelay`. Animation impossible de manière propre. |
+| C2 | **Aléa direct sur `Math.random`** | Pas seedable, donc pas de tests reproductibles pour la simulation de perte de paquets. |
+| C3 | **Stats mutées sans événement** | Aucun signal pour la UI ou les tests sur "le câble vient de transmettre / perdre une frame". |
+| C4 | **Couplage Port ↔ Cable bidirectionnel** | `cable.connect(portA, portB)` mute les deux ports avec `_setCableNoNotify` puis émet `_notifyLinkUp`. Un bus permet d'inverser : `cable.connected` est émis, et chaque port s'y abonne pour mettre à jour son état observable. |
+| C5 | **Negotiate appelée en synchrone** | `negotiateLink()` appelle `port.negotiate(...)` qui mute deux champs privés. Pas d'événement `cable.negotiated { speed, duplex }`. |
+
+#### 3.3.4 Besoins en réactivité
+
+Le `Cable` cible doit :
+
+- Émettre `cable.connected` `{ portAId, portBId }`, `cable.disconnected`, `cable.negotiated`, `cable.duplex-mismatch`, `cable.frame.dispatched`, `cable.frame.lost`, `cable.frame.delivered`.
+- Programmer la livraison via `scheduler.setTimeout(() => emit('cable.frame.delivered', …), propagationMs)`.
+- Accepter une source d'aléa injectée (`rng()`) pour la simulation de perte.
+
+### 3.4 `EquipmentRegistry` (`src/network/equipment/EquipmentRegistry.ts`, 107 LoC)
+
+#### 3.4.1 Rôle et état actuel
+
+Singleton `EquipmentRegistry.getInstance()` ; `Map<id, Equipment>` ; CRUD + requêtes (`getByType`, `getPoweredOn`, `query(predicate)`). Le commentaire d'en-tête mentionne explicitement « *Fixes 1.3: Static global registry replaced with injectable singleton* », et la classe est déjà conçue pour être instanciable en test (`new EquipmentRegistry()`).
+
+#### 3.4.2 Faiblesses actuelles
+
+| # | Symptôme | Détail |
+|---|---|---|
+| R1 | **Singleton encore par défaut** | `EquipmentRegistry.getInstance()` est appelé directement depuis `Equipment` constructor. La compétition entre topologies parallèles n'est pas gérée. |
+| R2 | **Pas d'événements de cycle de vie** | `register/deregister` ne notifient personne. Le store Zustand connaît son propre `Map` parallèle (`deviceInstances`). Désynchronisation possible. |
+| R3 | **Méthodes statiques deprecated** | `Equipment.getById`, `getAllEquipment`, `clearRegistry` sont marquées `@deprecated` mais toujours utilisées (cf. tests, certaines commandes Cisco). |
+
+#### 3.4.3 Besoins en réactivité
+
+- Émettre `registry.device-registered`, `registry.device-deregistered`, `registry.cleared` sur le bus.
+- Exposer un *signal* `devices: Signal<Equipment[]>` pour la UI (alternative à l'observation par bus).
+- Décommissionner les méthodes statiques `Equipment.getById/getAllEquipment/clearRegistry` (callsites à purger en §9).
+
+### 3.5 `core/` — utilitaires de protocoles
+
+#### 3.5.1 `Logger` (123 LoC)
+
+Pub/sub texte. Chaque couche supérieure publie ses événements via `Logger.info/debug/warn/error`. Le filtrage côté `subscribe` accepte `source`, `event` (préfixe), `level`. **Cette classe préfigure le bus**. La refonte la généralise plutôt que la remplace : le `Logger` devient une vue spécialisée du bus, filtrée sur les événements de catégorie `*.log` ou émise depuis un *adapter* qui projette tous les événements en `NetworkLog`.
+
+| Conséquence | Détail |
+|---|---|
+| Simplification API | `Logger.info(src, evt, msg, data)` reste, mais sous le capot publie sur `eventBus` un événement `{ topic: 'log', level, source, event, message, data }`. |
+| Backward-compat | Tous les sites d'appel (≈ 90 dans la couche réseau) **n'ont pas à changer**. Migration sans douleur. |
+
+#### 3.5.2 `PacketQueue` (142 LoC)
+
+Queue générique pour paquets en attente de résolution ARP/NDP. Utilise `setTimeout` natif pour expirer chaque entrée. Méthodes : `enqueue`, `flush(address, sendFn)`, `purgeExpired`, `clear`.
+
+| Problème | Refonte |
+|---|---|
+| Timer natif par entrée | Remplacer `setTimeout` par `scheduler.setTimeout`. |
+| `flush` reçoit un `sendFn` callback | Conserver — cette callback est interne à l'EndHost et n'a pas besoin d'être un événement bus (boucle interne). |
+| Pas de signal sur la taille | Optionnel : émettre `packetqueue.depth-changed` pour métriques. |
+
+#### 3.5.3 `NeighborResolver` (204 LoC)
+
+Wrapper générique ARP/NDP. Cache `Map<address, NeighborEntry>`. `resolve(address, iface, sendSolicitation)` retourne une `Promise<MAC>` avec timeout par `setTimeout` natif. `learn` résout les pendings.
+
+| Problème | Refonte |
+|---|---|
+| `Promise` jetable | À conserver côté API publique (les callers s'attendent à `await arpResolver.resolve(...)`). En interne, le timer va sur `scheduler`. |
+| Pas d'événement `arp.cache.updated` | Émettre `neighbor.learned` `{ protocol, address, mac, iface }` et `neighbor.expired`. La UI peut afficher les caches en live. |
+| `clear()` rejette toutes les pendings | OK ; ajouter émission `neighbor.cache-cleared`. |
+
+#### 3.5.4 `TcpConnection` (97 LoC)
+
+Stream TCP simplifié. `dataHandlers: Array<(data: string) => void>`. `onData` retourne un unsubscribe. `receiveData` itère et appelle. C'est le pattern **M2 propre** — c'est-à-dire le seul tableau de handlers du projet qui rend une fonction d'unsubscription. Garder l'API publique, **adapter l'implémentation** pour publier sur le bus en complément (`tcp.data.received` `{ connId, data, len }`) afin que la UI puisse afficher le trafic.
+
+#### 3.5.5 `SocketTable` (212 LoC)
+
+Pas de réactivité — pure state machine de sockets. Refonte minimale : émettre `socket.bound`, `socket.connected`, `socket.closed` (utile pour `netstat`/`ss` live et pour la UI).
+
+#### 3.5.6 `RoutingTable` et autres
+
+Lecture rapide du fichier (cf. §4 pour analyse plus poussée — la table de routage est aussi mutée par OSPF/RIP). Émettre `routing.route-added`, `routing.route-removed`, `routing.route-changed` est la condition pour qu'un panneau « show ip route » s'affiche en live.
+
+### 3.6 Bilan de la couche réseau et invariants à préserver
+
+**À garder absolument** :
+
+- L'API publique `Port.configureIP`, `Port.enableIPv6`, `Cable.connect`, `Equipment.powerOn/Off` doit rester sources-compatible pour ne pas casser les milliers de lignes de tests.
+- Les types `EthernetFrame`, `IPv4Packet`, `IPv6Packet`, `ARPPacket`, `ICMPPacket`, `UDPPacket`, `TCPPacket` restent immuables et inchangés.
+- Le calcul de l'auto-négociation (`Cable.negotiateLink` + `Port.negotiate`) reste une fonction pure ; seuls ses *effets* (mutation de `negotiatedSpeed/Duplex`) deviennent des événements observables.
+
+**À refonder** :
+
+- `Port.frameHandler` (M1) → événement `port.frame.received` sur le bus.
+- `Port.linkChangeHandlers` (M2) → événements `port.link.up` / `port.link.down`.
+- `Cable.transmit` synchrone → cable schedule la livraison via `Scheduler`.
+- Compteurs mutés sans signal → snapshot périodique émis.
+- Méthodes underscore (`_setCableNoNotify`, `_notifyLinkUp`) → supprimées par bus avec ordering.
+- Méthodes statiques `Equipment.getById/getAllEquipment/clearRegistry` → supprimées.
+
+### 3.7 Tableau de synthèse des classes de la couche réseau
+
+| Classe | LoC | Pattern actuel | Pattern cible | Priorité refonte |
+|---|---:|---|---|---|
+| `Equipment` | 194 | Static registry + `addPort` câble callback | Acteur abonné au bus, registre observable | **Haute** |
+| `Port` | 487 | `frameHandler` mono + `linkChangeHandlers[]` + compteurs mutés | Émetteur de `port.*` events, état observable | **Haute** |
+| `Cable` | 266 | `transmit` synchrone, `Math.random` direct | `transmit` programme livraison, RNG injectée | **Haute** |
+| `EquipmentRegistry` | 107 | Singleton + Map | Instance injectée + signaux | Moyenne |
+| `Logger` | 123 | Pub/sub texte | Adapter sur bus, API conservée | **Faible** (déjà compatible) |
+| `PacketQueue` | 142 | Timers natifs | Timers via Scheduler | Moyenne |
+| `NeighborResolver` | 204 | Promise + setTimeout | Promise conservée, scheduler interne, événements `neighbor.*` | Moyenne |
+| `TcpConnection` | 97 | `dataHandlers[]` propre | API conservée + miroir bus | **Faible** |
+| `SocketTable` | 212 | Pas de réactivité | Émet `socket.*` | **Faible** |
+| `PortSecurity` | (non lu en détail) | Mute Port, log | Émet `port.security.violation` | Moyenne |
+
+---
+
+*Section 3 close. Suivante : §4 — Devices concrets et moteurs de protocoles.*
