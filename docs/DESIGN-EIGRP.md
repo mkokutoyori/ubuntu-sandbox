@@ -3185,3 +3185,630 @@ Streams RTP :
 ```
 
 ---
+
+## 10. Intégration Router.ts + CLI Cisco — Adapter Pattern + Command Pattern
+
+### 10.1 Objectif d'intégration
+
+`EigrpProcess` est une unité autonome et testable en isolation. Pour l'intégrer dans la simulation :
+
+| Besoin | Solution |
+|---|---|
+| Connecter `EigrpProcess` aux interfaces physiques du router | **Adapter** `RouterEigrpIntegration` |
+| Recevoir les paquets IPv4 proto=88 depuis `handleFrame()` | Dispatch dans `Router.processIPv4()` |
+| Exposer les commandes CLI Cisco IOS | `CiscoEigrpCommands` (Command Pattern) |
+| Envoyer des paquets EIGRP via le réseau | `IEigrpNetworkInterface` (Port abstraction) |
+| Observable → UI réactive (logs, topologie) | `EigrpEventBus.events$` publié au store Zustand |
+
+---
+
+### 10.2 IEigrpNetworkInterface — Adapter interface
+
+```typescript
+// src/network/eigrp/integration/IEigrpNetworkInterface.ts
+
+import type { EigrpPacket }          from '../packet/types'
+import type { EigrpNeighborKey }     from '../neighbor/types'
+import type { EigrpInterfaceMetric } from '../metric/types'
+
+/**
+ * Abstraction de l'interface réseau du point de vue d'EigrpProcess.
+ * Implémentée par RouterEigrpIntegration en production,
+ * par un mock en test.
+ */
+export interface IEigrpNetworkInterface {
+  /** Identifiant unique de l'interface (ex: "GigabitEthernet0/0") */
+  readonly ifName: string
+
+  /** Adresse IPv4 et masque de l'interface */
+  readonly ipAddress: string
+  readonly prefixLen:  number
+
+  /** Métriques EIGRP de l'interface (bande passante, délai, charge, fiabilité) */
+  getMetric(): EigrpInterfaceMetric
+
+  /**
+   * Envoie un paquet EIGRP vers une adresse de destination.
+   * Unicast si neighbor fourni, multicast 224.0.0.10 sinon.
+   */
+  sendPacket(packet: EigrpPacket, destination: string): void
+
+  /** Installe une route dans la FIB du routeur */
+  installRoute(prefix: string, prefixLen: number, nextHop: string, metric: number): void
+
+  /** Retire une route de la FIB du routeur */
+  withdrawRoute(prefix: string, prefixLen: number): void
+}
+```
+
+---
+
+### 10.3 RouterEigrpIntegration — Concrete Adapter
+
+```typescript
+// src/network/eigrp/integration/RouterEigrpIntegration.ts
+
+import type { IEigrpNetworkInterface } from './IEigrpNetworkInterface'
+import type { EigrpPacket }            from '../packet/types'
+import type { EigrpInterfaceMetric }   from '../metric/types'
+import type { RouterPort }             from '../../devices/RouterPort'   // interface interne Router.ts
+
+/**
+ * Adapter concret : fait le pont entre EigrpProcess et Router.ts.
+ *
+ * Pattern : ADAPTER (GoF) — traduit l'interface de Router.ts
+ *           (orientée Ethernet/IP) vers IEigrpNetworkInterface
+ *           (orientée EIGRP).
+ *
+ * Reactive : injecte les paquets reçus dans EigrpProcess via
+ *            eigrpProcess.injectPacket(), ce qui émet dans le bus.
+ */
+export class RouterEigrpIntegration implements IEigrpNetworkInterface {
+  readonly ifName:    string
+  readonly ipAddress: string
+  readonly prefixLen: number
+
+  private readonly _port: RouterPort
+
+  constructor(port: RouterPort) {
+    this._port     = port
+    this.ifName    = port.name
+    this.ipAddress = port.ipAddress ?? ''
+    this.prefixLen = port.prefixLen ?? 0
+  }
+
+  getMetric(): EigrpInterfaceMetric {
+    return {
+      bandwidth:   this._port.bandwidth   ?? 1_000_000, // kbps, défaut 1 Gbps
+      delay:       this._port.delay       ?? 10,        // µs
+      load:        this._port.load        ?? 1,
+      reliability: this._port.reliability ?? 255,
+      mtu:         this._port.mtu         ?? 1500,
+    }
+  }
+
+  sendPacket(packet: EigrpPacket, destination: string): void {
+    // Serialise + encapsule en IPv4 proto=88 + Ethernet
+    const rawIpv4 = this._encapsulateEigrp(packet, destination)
+    this._port.sendRaw(rawIpv4)
+  }
+
+  installRoute(prefix: string, prefixLen: number, nextHop: string, metric: number): void {
+    this._port.owner.routingTable.install({
+      prefix, prefixLen, nextHop,
+      metric,
+      protocol: 'eigrp',
+      adminDistance: 90,
+    })
+  }
+
+  withdrawRoute(prefix: string, prefixLen: number): void {
+    this._port.owner.routingTable.withdraw(prefix, prefixLen, 'eigrp')
+  }
+
+  // ─── private ────────────────────────────────────────────────────
+
+  private _encapsulateEigrp(packet: EigrpPacket, dst: string): Uint8Array {
+    const payload = EigrpPacketCodec.encode(packet)
+    // IPv4 header : proto=88, src=this.ipAddress, dst
+    const ipHeader = buildIPv4Header({
+      src:      this.ipAddress,
+      dst,
+      proto:    88,
+      ttl:      1,   // EIGRP multicast TTL=1
+      payload,
+    })
+    return concat(ipHeader, payload)
+  }
+}
+```
+
+---
+
+### 10.4 Dispatch proto=88 dans Router.ts
+
+```typescript
+// src/network/devices/CiscoRouter.ts  (extrait — méthode processIPv4)
+
+import { EigrpPacketCodec } from '../eigrp/packet/EigrpPacketCodec'
+
+class CiscoRouter extends Equipment {
+  private _eigrpProcesses = new Map<number, EigrpProcess>() // asn → process
+
+  // Appelé par handleFrame() après démultiplexage Ethernet → IP
+  protected processIPv4(packet: IPv4Packet, ingressPort: RouterPort): void {
+    switch (packet.protocol) {
+      // ...existing cases (OSPF=89, ICMP=1, TCP=6, UDP=17)...
+
+      case 88: {
+        // EIGRP — injecter dans le processus EIGRP correspondant
+        const decoded = EigrpPacketCodec.decode(packet.payload)
+        if (!decoded.ok) return
+
+        // Identifier le process par l'AS number présent dans l'entête EIGRP
+        const asn = decoded.value.header.autonomousSystem
+        const proc = this._eigrpProcesses.get(asn)
+        if (!proc) return
+
+        // Reactive : l'injection émet un EigrpEvent dans le bus,
+        // ce qui déclenche la chaîne réactive (hello$/updates$/…)
+        proc.injectPacket(decoded.value, ingressPort.ipAddress ?? '')
+        break
+      }
+
+      default:
+        this._forwardOrDrop(packet)
+    }
+  }
+
+  /**
+   * Démarre un process EIGRP pour un AS donné.
+   * Appelé par CiscoEigrpCommands lors de "router eigrp <asn>".
+   */
+  startEigrpProcess(asn: number, options: Partial<EigrpProcessOptions> = {}): EigrpProcess {
+    if (this._eigrpProcesses.has(asn)) return this._eigrpProcesses.get(asn)!
+
+    const interfaces = [...this._ports.values()].map(p => new RouterEigrpIntegration(p))
+    const proc = new EigrpProcess({
+      asNumber:     asn,
+      routerId:     this._routerId(),
+      interfaces,
+      kValues:      EigrpKValues.DEFAULT,
+      helloInterval: 5,
+      holdTime:     15,
+      ...options,
+    })
+
+    // Publier les events EIGRP vers le logger global (Observable → store)
+    proc.events$.subscribe(e => Logger.emit({ source: this.id, type: 'eigrp', payload: e }))
+
+    this._eigrpProcesses.set(asn, proc)
+    proc.start()
+    return proc
+  }
+
+  stopEigrpProcess(asn: number): void {
+    const proc = this._eigrpProcesses.get(asn)
+    if (!proc) return
+    proc.stop()
+    this._eigrpProcesses.delete(asn)
+  }
+}
+```
+
+---
+
+### 10.5 CiscoEigrpCommands — CLI Command Pattern (Open/Closed)
+
+```typescript
+// src/network/eigrp/integration/CiscoEigrpCommands.ts
+
+import type { IRouterShell } from '../../devices/shells/IRouterShell'
+import type { CiscoRouter }  from '../../devices/CiscoRouter'
+import { EigrpProcessOptionsBuilder } from '../process/EigrpProcessOptionsBuilder'
+
+/**
+ * Implémente les commandes IOS liées à EIGRP.
+ *
+ * Commandes couvertes :
+ *   router eigrp <asn>
+ *   network <prefix> [wildcard]
+ *   no network <prefix>
+ *   redistribute connected
+ *   no router eigrp <asn>
+ *   show ip eigrp neighbors [detail]
+ *   show ip eigrp topology [all-links]
+ *   show ip eigrp interfaces
+ *   show ip eigrp traffic
+ *   debug eigrp packets
+ *   no debug eigrp packets
+ *
+ * Pattern : COMMAND (GoF) — chaque handler est une fonction pure
+ *           (pas d'état mutable dans CiscoEigrpCommands).
+ * Pattern : OPEN/CLOSED — enregistrement dynamique dans la shell
+ *           via registerCommand(), sans modifier la shell.
+ */
+export class CiscoEigrpCommands {
+  private _currentAsn: number | null = null
+  private _debugEnabled = false
+
+  constructor(
+    private readonly _router: CiscoRouter,
+    private readonly _shell:  IRouterShell,
+  ) {}
+
+  /** Enregistre toutes les commandes dans la shell via son registre. */
+  register(): void {
+    this._shell.registerCommand(/^router eigrp (\d+)$/i,        (m) => this._cmdRouterEigrp(+m[1]))
+    this._shell.registerCommand(/^network (\S+)(?: (\S+))?$/i,   (m) => this._cmdNetwork(m[1], m[2]))
+    this._shell.registerCommand(/^no network (\S+)$/i,           (m) => this._cmdNoNetwork(m[1]))
+    this._shell.registerCommand(/^redistribute connected$/i,     ()  => this._cmdRedistributeConnected())
+    this._shell.registerCommand(/^no router eigrp (\d+)$/i,      (m) => this._cmdNoRouterEigrp(+m[1]))
+    this._shell.registerCommand(/^show ip eigrp neighbors?(.*)$/i,(m) => this._cmdShowNeighbors(m[1].trim()))
+    this._shell.registerCommand(/^show ip eigrp topology(.*)$/i,  (m) => this._cmdShowTopology(m[1].trim()))
+    this._shell.registerCommand(/^show ip eigrp interfaces?$/i,  ()  => this._cmdShowInterfaces())
+    this._shell.registerCommand(/^show ip eigrp traffic$/i,      ()  => this._cmdShowTraffic())
+    this._shell.registerCommand(/^debug eigrp packets$/i,        ()  => this._cmdDebugOn())
+    this._shell.registerCommand(/^no debug eigrp packets$/i,     ()  => this._cmdDebugOff())
+  }
+
+  // ─── Config commands ─────────────────────────────────────────────
+
+  private _cmdRouterEigrp(asn: number): string[] {
+    this._currentAsn = asn
+    const proc = this._router.startEigrpProcess(asn)
+    return [`Entering EIGRP router configuration mode for AS ${asn}.`]
+  }
+
+  private _cmdNoRouterEigrp(asn: number): string[] {
+    this._router.stopEigrpProcess(asn)
+    if (this._currentAsn === asn) this._currentAsn = null
+    return [`EIGRP process ${asn} removed.`]
+  }
+
+  private _cmdNetwork(prefix: string, wildcard?: string): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% EIGRP process not configured. Use "router eigrp <asn>" first.']
+    const prefixLen = wildcard ? wildcardToCidr(wildcard) : 32
+    proc.advertiseNetwork(prefix, prefixLen)
+    return []
+  }
+
+  private _cmdNoNetwork(prefix: string): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% No EIGRP process configured.']
+    proc.withdrawRedistributedRoute(prefix, 32)
+    return []
+  }
+
+  private _cmdRedistributeConnected(): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% No EIGRP process configured.']
+    // Injecte toutes les routes directement connectées dans EIGRP
+    for (const iface of this._router.getConnectedInterfaces()) {
+      proc.advertiseNetwork(iface.network, iface.prefixLen)
+    }
+    return ['Connected networks redistributed into EIGRP.']
+  }
+
+  // ─── Show commands ────────────────────────────────────────────────
+
+  private _cmdShowNeighbors(opt: string): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% No EIGRP process active.']
+    const neighbors = proc.getNeighbors()
+    if (neighbors.length === 0) return ['No EIGRP neighbors found.']
+
+    const detail = /detail/i.test(opt)
+    const header = [
+      `EIGRP-IPv4 Neighbors for AS(${this._currentAsn})`,
+      'H   Address          Interface       Hold Uptime   SRTT   RTO  Q Seq',
+      '                                     (sec)         (ms)       Cnt Num',
+    ]
+    const rows = neighbors.map((n, i) => {
+      const hold   = String(n.holdRemaining).padStart(4)
+      const uptime = formatUptime(n.uptimeMs)
+      const srtt   = String(n.srttMs).padStart(6)
+      const rto    = String(Math.min(n.srttMs * 6, 5000)).padStart(5)
+      const qCnt   = String(n.pendingAck).padStart(2)
+      const seqNum = String(n.lastSeqSent).padStart(4)
+      const line   = `${String(i).padStart(1)}   ${n.address.padEnd(16)} ${n.ifName.padEnd(15)} ${hold}  ${uptime}  ${srtt}  ${rto}  ${qCnt}  ${seqNum}`
+      if (!detail) return [line]
+      return [
+        line,
+        `   Version ${n.eigrpVersion}/${n.iosVersion}, Retrans: ${n.retransCount}, Retries: ${n.retries}`,
+      ]
+    })
+    return [...header, ...rows.flat()]
+  }
+
+  private _cmdShowTopology(opt: string): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% No EIGRP process active.']
+    const allLinks = /all-links/i.test(opt)
+    const entries  = proc.getTopologyTable()
+
+    const lines: string[] = [
+      `EIGRP-IPv4 Topology Table for AS(${this._currentAsn})/ID(${this._router.routerId})`,
+      'Codes: P - Passive, A - Active, U - Update, Q - Query, R - Reply,',
+      '       r - reply Status, s - sia Status',
+      '',
+    ]
+
+    for (const e of entries) {
+      if (!allLinks && e.dualState !== 'PASSIVE') continue
+      const stateCode = dualStateCode(e.dualState)
+      lines.push(`${stateCode} ${e.prefix.address}/${e.prefix.length}, 1 successors, FD is ${e.fd}`)
+      for (const rs of e.routeSources) {
+        const label = rs.isSuccessor ? 'via' : 'via'
+        lines.push(`        ${label} ${rs.neighborAddress} (${rs.fd}/${rs.ad}), ${rs.ifName}`)
+      }
+    }
+    return lines
+  }
+
+  private _cmdShowInterfaces(): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% No EIGRP process active.']
+    const lines = [
+      `EIGRP-IPv4 Interfaces for AS(${this._currentAsn})`,
+      `                              Xmit Queue   PeerQ        Mean   Pacing Time   Multicast    Pending`,
+      `Interface              Peers  Un/Reliable  Un/Reliable  SRTT   Un/Reliable   Flow Timer   Routes`,
+    ]
+    for (const iface of this._router.getEigrpInterfaces(this._currentAsn!)) {
+      const peers = proc.getNeighbors().filter(n => n.ifName === iface.name).length
+      lines.push(
+        `${iface.name.padEnd(22)} ${String(peers).padStart(5)}  0/0          0/0           0      0/0           0            0`
+      )
+    }
+    return lines
+  }
+
+  private _cmdShowTraffic(): string[] {
+    const proc = this._getProc()
+    if (!proc) return ['% No EIGRP process active.']
+    const stats = proc.getStats()
+    return [
+      `EIGRP-IPv4 Traffic Statistics for AS(${this._currentAsn})`,
+      `  Hellos sent/received:   ${stats.hellosSent}/${stats.hellosReceived}`,
+      `  Updates sent/received:  ${stats.updatesSent}/${stats.updatesReceived}`,
+      `  Queries sent/received:  ${stats.queriesSent}/${stats.queriesReceived}`,
+      `  Replies sent/received:  ${stats.repliesSent}/${stats.repliesReceived}`,
+      `  Acks sent/received:     ${stats.acksSent}/${stats.acksReceived}`,
+      `  SIA-Queries sent/received: ${stats.siaQueriesSent}/${stats.siaQueriesReceived}`,
+      `  SIA-Replies sent/received: ${stats.siaRepliesSent}/${stats.siaRepliesReceived}`,
+    ]
+  }
+
+  // ─── Debug commands ───────────────────────────────────────────────
+
+  private _cmdDebugOn(): string[] {
+    this._debugEnabled = true
+    const proc = this._getProc()
+    if (proc) {
+      // S'abonner au bus d'événements — reactive
+      proc.events$.subscribe(e => this._shell.printLine(`*EIGRP: ${JSON.stringify(e)}`))
+    }
+    return ['EIGRP packet debugging is on']
+  }
+
+  private _cmdDebugOff(): string[] {
+    this._debugEnabled = false
+    return ['EIGRP packet debugging is off']
+  }
+
+  // ─── helpers ─────────────────────────────────────────────────────
+
+  private _getProc() {
+    if (this._currentAsn === null) return null
+    return this._router.getEigrpProcess(this._currentAsn) ?? null
+  }
+}
+
+// ─── Pure utility functions ───────────────────────────────────────────────────
+
+function wildcardToCidr(wildcard: string): number {
+  const parts = wildcard.split('.').map(Number)
+  const mask  = parts.map(b => 255 - b)
+  return mask.reduce((acc, b) => acc + popcount(b), 0)
+}
+
+function popcount(n: number): number {
+  let c = 0
+  while (n) { c += n & 1; n >>= 1 }
+  return c
+}
+
+function formatUptime(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+function dualStateCode(state: string): string {
+  const map: Record<string, string> = {
+    PASSIVE: 'P', ACTIVE: 'A', SIA_ACTIVE: 'A',
+    UPDATE: 'U', QUERY: 'Q', REPLY: 'R',
+  }
+  return map[state] ?? 'P'
+}
+```
+
+---
+
+### 10.6 Flux de réception de paquet complet (séquence reactive)
+
+```
+handleFrame(frame: EthernetFrame)           // Equipment base
+  └─ demux Ethernet → IPv4
+      └─ processIPv4(packet, port)          // CiscoRouter
+          └─ case 88 (EIGRP):
+              EigrpPacketCodec.decode(payload) → Result<EigrpPacket>
+              proc.injectPacket(pkt, src)
+                └─ _bus.emit(EigrpEvent)    // EigrpEventBus.emit()
+                    │
+                    ├─ hello$     → EigrpNeighborStateMachine.processEvent()
+                    │                 → NEIGHBOR_UP / NEIGHBOR_DOWN
+                    │
+                    ├─ updates$   → EigrpDual.processUpdate()
+                    │                 → DualAction[]
+                    │                     ├─ INSTALL_ROUTE → iface.installRoute()
+                    │                     ├─ WITHDRAW_ROUTE → iface.withdrawRoute()
+                    │                     └─ SEND_UPDATE → rtp.sendReliable()
+                    │
+                    ├─ queries$   → EigrpDual.processQuery()
+                    │                 → DualAction[] (SEND_REPLY / SEND_QUERY)
+                    │
+                    └─ replies$   → EigrpDual.processReply()
+                                      → DualAction[] (INSTALL_ROUTE / SEND_UPDATE)
+```
+
+---
+
+### 10.7 Arbre des fichiers du module EIGRP
+
+```
+src/network/eigrp/
+├── index.ts                          # re-exports publics
+│
+├── packet/
+│   ├── types.ts                      # EigrpPacket, EigrpHeader, TLV union
+│   ├── EigrpPacketCodec.ts           # encode / decode (Result<T,E>)
+│   └── tlv/
+│       ├── InternalRouteTlv.ts
+│       ├── ExternalRouteTlv.ts
+│       └── ParametersTlv.ts
+│
+├── metric/
+│   ├── types.ts                      # EigrpInterfaceMetric, EigrpKValues, EigrpMetric (VO)
+│   └── EigrpMetricCalculator.ts      # computeEigrpMetric() — pure function
+│
+├── neighbor/
+│   ├── types.ts                      # EigrpNeighborKey (VO), EigrpNeighborEntry, EigrpNeighborState
+│   ├── EigrpNeighborTable.ts         # IEigrpNeighborTable, InMemoryNeighborTable
+│   └── EigrpNeighborStateMachine.ts  # NSM — pure state transitions
+│
+├── topology/
+│   ├── types.ts                      # EigrpPrefix (VO), TopologyEntry, RouteSource, DualState
+│   └── EigrpTopologyTable.ts         # IEigrpTopologyTable, InMemoryTopologyTable
+│
+├── dual/
+│   ├── types.ts                      # DualAction discriminated union
+│   ├── EigrpDual.ts                  # IEigrpDual, EigrpDual — pure DUAL logic
+│   ├── EigrpFib.ts                   # EigrpFibEntry, IEigrpFib, InMemoryFib
+│   └── pureUtils.ts                  # isFeasibleSuccessor, computeEigrpMetric
+│
+├── reactive/
+│   ├── EigrpSubject.ts               # EigrpSubject<T>, EigrpObservable<T>
+│   ├── operators.ts                  # filter, map, ofType, merge, bufferCount
+│   └── EigrpEventBus.ts             # EigrpEventBus + typed sub-streams
+│
+├── rtp/
+│   ├── types.ts                      # RtpEvent discriminated union
+│   ├── RtpSequenceTracker.ts         # per-neighbor sequence numbers
+│   └── RtpChannel.ts                 # IRtpChannel, RtpChannel — reliable transport
+│
+├── process/
+│   ├── types.ts                      # EigrpProcessOptions, EigrpStats
+│   ├── EigrpProcessOptionsBuilder.ts # Builder pattern
+│   ├── IEigrpProcess.ts              # interface publique
+│   └── EigrpProcess.ts               # Facade reactive principale
+│
+├── integration/
+│   ├── IEigrpNetworkInterface.ts     # Adapter interface
+│   ├── RouterEigrpIntegration.ts     # Adapter concret → Router.ts
+│   └── CiscoEigrpCommands.ts         # CLI Command Pattern
+│
+└── __tests__/
+    ├── metric.test.ts                # tests pures computeEigrpMetric
+    ├── dual.test.ts                  # tests pures DUAL (Feasibility Condition)
+    ├── neighborTable.test.ts         # tests InMemoryNeighborTable
+    ├── topologyTable.test.ts         # tests InMemoryTopologyTable
+    ├── reactive.test.ts              # tests EigrpSubject + Operators
+    ├── rtpChannel.test.ts            # tests RtpChannel (retransmit, backoff)
+    └── eigrpProcess.test.ts          # intégration EigrpProcess (mocks interfaces)
+```
+
+---
+
+### 10.8 Tests — stratégie reactive
+
+```typescript
+// src/network/eigrp/__tests__/reactive.test.ts
+
+import { describe, it, expect, vi } from 'vitest'
+import { EigrpSubject }  from '../reactive/EigrpSubject'
+import { Operators }     from '../reactive/operators'
+import { EigrpEventBus } from '../reactive/EigrpEventBus'
+
+describe('EigrpSubject', () => {
+  it('delivers values to all subscribers', () => {
+    const s = new EigrpSubject<number>()
+    const received: number[] = []
+    s.subscribe(v => received.push(v))
+    s.next(1); s.next(2); s.next(3)
+    expect(received).toEqual([1, 2, 3])
+  })
+
+  it('unsubscribe stops delivery', () => {
+    const s = new EigrpSubject<number>()
+    const received: number[] = []
+    const unsub = s.subscribe(v => received.push(v))
+    s.next(1)
+    unsub()
+    s.next(2)
+    expect(received).toEqual([1])
+  })
+
+  it('complete() stops all subscribers', () => {
+    const s = new EigrpSubject<number>()
+    const received: number[] = []
+    s.subscribe(v => received.push(v))
+    s.next(1)
+    s.complete()
+    s.next(2) // doit être ignoré
+    expect(received).toEqual([1])
+  })
+})
+
+describe('Operators.ofType', () => {
+  type EvtA = { type: 'A'; data: string }
+  type EvtB = { type: 'B'; count: number }
+  type Evt  = EvtA | EvtB
+
+  it('filters to typed sub-stream', () => {
+    const s = new EigrpSubject<Evt>()
+    const received: EvtA[] = []
+    const unsub = s
+      .pipe(Operators.ofType((e): e is EvtA => e.type === 'A'))
+      .subscribe(e => received.push(e))
+    s.next({ type: 'A', data: 'hello' })
+    s.next({ type: 'B', count: 42 })
+    s.next({ type: 'A', data: 'world' })
+    unsub()
+    expect(received).toHaveLength(2)
+    expect(received[0].data).toBe('hello')
+  })
+})
+
+describe('EigrpEventBus', () => {
+  it('hello$ receives only hello events', () => {
+    const bus   = new EigrpEventBus()
+    const hellos: unknown[] = []
+    const unsub = bus.hello$.subscribe(e => hellos.push(e))
+    bus.emit({ type: 'HELLO_RECEIVED', from: '10.0.0.1', ifName: 'Gi0/0',
+               holdTime: 15, asn: 1, routerId: '1.1.1.1', version: 2,
+               kValues: { k1:1, k2:0, k3:1, k4:0, k5:0 } })
+    bus.emit({ type: 'UPDATE_RECEIVED', from: '10.0.0.1', ifName: 'Gi0/0',
+               prefix: '192.168.1.0', prefixLen: 24, asn: 1,
+               metric: { composite: 28160, components: null as any },
+               seqNo: 1, flags: 0 })
+    unsub()
+    expect(hellos).toHaveLength(1)
+  })
+})
+```
+
+---
