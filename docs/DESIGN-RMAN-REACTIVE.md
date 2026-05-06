@@ -2694,3 +2694,214 @@ Points clés de la migration :
 ```
 
 ---
+
+## 11. Flux complets et scénarios — séquences événementielles
+
+### 11.1 Scénario : BACKUP DATABASE
+
+```
+Utilisateur tape : BACKUP DATABASE
+        │
+        ▼
+ReactiveRmanSubShell.processLine("BACKUP DATABASE")
+        │
+        ▼
+RmanSession.processLine("BACKUP DATABASE")
+        │
+        ▼
+RmanCommandDispatcher.dispatch("BACKUP DATABASE", cmdCtx)
+        │   match: /^BACKUP DATABASE$/i → BackupCommand
+        ▼
+BackupCommand.execute([], cmdCtx)
+        │   bus.emit(PROGRESS_UPDATED "Starting backup at...")
+        │   engine.run(job: BACKUP_DATABASE)
+        ▼
+RmanJobEngine.run(job)
+        │   bus.emit(JOB_STARTED)
+        │        └─► RmanSession._wireReactiveStreams():
+        │              state: CONNECTED → RUNNING_JOB
+        │              bus.emit(SESSION_STATE_CHANGED)
+        │
+        │   pool.allocate() → Result.ok(handle)
+        │        └─► ReactiveChannelPool._alloc$.next(CHANNEL_ALLOCATED)
+        │              └─► RmanSession: pool.allocations$.subscribe → bus.emit(CHANNEL_ALLOCATED)
+        │                     └─► ReactiveRmanSubShell._handleEvent:
+        │                           push("allocated channel: ORA_DISK_1")
+        │                           push("channel ORA_DISK_1: SID=142 device type=DISK")
+        │
+        │   [Parcours des steps :]
+        │   bus.emit(PROGRESS_UPDATED "allocated channel: ORA_DISK_1")
+        │        └─► SubShell: push(message)
+        │   bus.emit(PROGRESS_UPDATED "channel ORA_DISK_1: starting full datafile backup set")
+        │        └─► SubShell: push(message)
+        │   ... (autres steps)
+        │
+        │   _doBackup() :
+        │     ctx.vfs.writeFile(path, data) → ok
+        │     bus.emit(BACKUP_PIECE_STARTED)
+        │     bus.emit(BACKUP_PIECE_CREATED { piece })
+        │          └─► SubShell: push("piece handle=... tag=...")
+        │     catalog.recordBackupSet(set)
+        │          └─► InMemoryRmanCatalog._changes$.next(CATALOG_UPDATED INSERT)
+        │                └─► RmanSession: catalog.changes$.subscribe → bus.emit(CATALOG_UPDATED)
+        │     bus.emit(BACKUP_SET_COMPLETE)
+        │          └─► SubShell: push("channel ORA_DISK_1: backup set complete...")
+        │
+        │   pool.release(handle)
+        │        └─► ReactiveChannelPool._rel$.next(CHANNEL_RELEASED)
+        │
+        │   bus.emit(JOB_COMPLETED)
+        │        └─► RmanSession: state: RUNNING_JOB → CONNECTED
+        │        └─► SubShell: push("Finished backup at ...")
+        │
+        ▼
+Result.ok([]) ← retour synchrone (vide, tout était réactif)
+        │
+        ▼
+SubShell.processLine returns :
+  output: [
+    "Starting backup at 06-MAY-2026 14:30:22",
+    "allocated channel: ORA_DISK_1",
+    "channel ORA_DISK_1: SID=142 device type=DISK",
+    "channel ORA_DISK_1: starting full datafile backup set",
+    "channel ORA_DISK_1: specifying datafile(s) in backup set",
+    "channel ORA_DISK_1: backing up database",
+    "piece handle=/u01/backup/ORCL_a3f9bc12.bkp tag=TAG20260506T143022",
+    "channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15",
+    "Finished backup at 06-MAY-2026 14:30:37",
+    ""
+  ]
+  exit: false
+  prompt: "RMAN> "
+```
+
+---
+
+### 11.2 Scénario : RESTORE DATABASE + RECOVER DATABASE
+
+```
+Utilisateur tape : RESTORE DATABASE
+
+RmanSession.processLine()
+  → RestoreCommand.execute()
+  → engine.run(job: RESTORE_DATABASE)
+        │
+        ├─ bus.emit(JOB_STARTED)
+        ├─ pool.allocate() → CHANNEL_ALLOCATED event
+        ├─ Steps PROGRESS_UPDATED...
+        ├─ _doRestore():
+        │     Pour chaque datafile (1..4):
+        │       bus.emit(RESTORE_DATAFILE_STARTED {fileNo, to})
+        │            └─► SubShell: push("channel ORA_DISK_1: restoring datafile 00001 to ...")
+        │       bus.emit(RESTORE_DATAFILE_COMPLETED {fileNo})
+        │            └─► SubShell: push("channel ORA_DISK_1: restore complete...")
+        ├─ pool.release() → CHANNEL_RELEASED event
+        └─ bus.emit(JOB_COMPLETED)
+               └─► SubShell: push("Finished restore at ...")
+
+Output SubShell :
+  "Starting restore at 06-MAY-2026 14:35:00"
+  "allocated channel: ORA_DISK_1"
+  "channel ORA_DISK_1: SID=142 device type=DISK"
+  "channel ORA_DISK_1: starting datafile backup set restore"
+  "channel ORA_DISK_1: restoring datafile 00001 to /u01/.../system01.dbf"
+  "channel ORA_DISK_1: restoring datafile 00002 to /u01/.../sysaux01.dbf"
+  "channel ORA_DISK_1: restoring datafile 00003 to /u01/.../undotbs01.dbf"
+  "channel ORA_DISK_1: restoring datafile 00004 to /u01/.../users01.dbf"
+  "channel ORA_DISK_1: restore complete, elapsed time: 00:00:25"
+  "Finished restore at 06-MAY-2026 14:35:25"
+
+---
+
+Utilisateur tape : RECOVER DATABASE
+
+  → RecoverCommand → engine.run(job: RECOVER_DATABASE)
+        ├─ bus.emit(RECOVER_STARTED {fromScn})
+        │       └─► SubShell: push("starting media recovery")
+        └─ bus.emit(RECOVER_COMPLETED {toScn})
+               └─► SubShell: push("media recovery complete, elapsed time: 00:00:03")
+                             push("Finished recover at ...")
+```
+
+---
+
+### 11.3 Scénario : CROSSCHECK BACKUP
+
+```
+Utilisateur tape : CROSSCHECK BACKUP
+
+  → CrosscheckCommand → engine.run(job: CROSSCHECK)
+        ├─ pool.allocate() → CHANNEL_ALLOCATED
+        ├─ bus.emit(PROGRESS_UPDATED "allocated channel: ORA_DISK_1")
+        ├─ bus.emit(PROGRESS_UPDATED "crosschecked backup piece: found to be 'AVAILABLE'")
+        ├─ _doCrosscheck():
+        │     Pour chaque pièce du catalogue :
+        │       vfs.fileExists(piece.path) ?
+        │         → true  : available++
+        │         → false : catalog.expirePiece(key) → CATALOG_UPDATED(EXPIRE)
+        │                   expired++
+        └─ bus.emit(CROSSCHECK_DONE {available, expired})
+               └─► SubShell: push("Crosschecked N objects")
+
+Output si tout disponible :
+  "allocated channel: ORA_DISK_1"
+  "channel ORA_DISK_1: SID=142 device type=DISK"
+  "crosschecked backup piece: found to be 'AVAILABLE'"
+  "Crosschecked 1 objects"
+```
+
+---
+
+### 11.4 Scénario : commande LIST BACKUP SUMMARY (synchrone)
+
+```
+Utilisateur tape : LIST BACKUP SUMMARY
+
+  → ListBackupCommand.execute(["SUMMARY"], cmdCtx)
+        │   catalog.listAll() → CatalogSnapshot
+        │   _summaryLines(sets) → string[]
+        └─  Result.ok(string[])  ← synchrone, pas d'événements
+
+Output retourné directement par processLine() :
+  ""
+  "List of Backups"
+  "==============="
+  "Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag"
+  "------- -- -- - ----------- ------------------- ------- ------- ---------- ---"
+  "1       B  F  A DISK        06-MAY-2026 14:30:37  1       1       NO         TAG20260506T143022"
+  ""
+```
+
+---
+
+### 11.5 Abonnement externe pour debug (events$ → logger)
+
+```typescript
+// Exemple d'utilisation dans RmanSubShell ou dans un composant UI React
+
+const { session, banner } = RmanSession.create(['target', '/'], ctx)
+
+// Abonnement debug — toutes les opérations RMAN loggées
+const unsub = session.events$.subscribe(e => {
+  console.log(`[RMAN] ${e.type}`, e)
+})
+
+// Abonnement UI — mise à jour de la barre de progression
+const progressUnsub = session.events$
+  // Note: si on avait importé les Operators :
+  // .pipe(Operators.ofType((e): e is Extract<RmanEvent, {type:'PROGRESS_UPDATED'}> => e.type === 'PROGRESS_UPDATED'))
+  .subscribe(e => {
+    if (e.type === 'PROGRESS_UPDATED') {
+      store.getState().setRmanProgress(e.jobId, e.pct, e.message)
+    }
+  })
+
+// Nettoyage
+function cleanup() {
+  unsub()
+  progressUnsub()
+  session.dispose()
+}
+```
+
+---
