@@ -3812,3 +3812,228 @@ describe('EigrpEventBus', () => {
 ```
 
 ---
+
+## 11. Récapitulatif — Patterns, SOLID, Programmation Fonctionnelle et Réactive
+
+### 11.1 Tableau des design patterns appliqués
+
+| Pattern (GoF / Enterprise) | Classe(s) | Justification |
+|---|---|---|
+| **Value Object** | `EigrpAsNumber`, `EigrpRid`, `EigrpPrefix`, `EigrpMetric`, `EigrpNeighborKey`, `EigrpKValues` | Immutabilité (`Object.freeze`), égalité sémantique, pas de setters |
+| **Strategy** | `IRetentionPolicy` → `RedundancyPolicy`, `RecoveryWindowPolicy`, `NonePolicy` | Algorithme DUAL interchangeable ; politiques de rétention extensibles |
+| **Command** | `CiscoEigrpCommands` (handlers CLI enregistrés dans la shell) | Découplage déclencheur/exécutant, enregistrement dynamique |
+| **Observer / Subject** | `EigrpSubject<T>`, `EigrpEventBus` | Bus d'événements réactif interne sans dépendance RxJS |
+| **Facade** | `EigrpProcess`, `RmanSession` | Surface publique réduite, câblage interne caché |
+| **Adapter** | `RouterEigrpIntegration` | Traduit `RouterPort` → `IEigrpNetworkInterface` |
+| **Builder** | `EigrpProcessOptionsBuilder` | Construction fluide d'options complexes, valeurs par défaut |
+| **Repository** | `IEigrpNeighborTable`, `IEigrpTopologyTable`, `IEigrpFib` | Découplage stockage/logique métier, testabilité (mock) |
+| **Factory Method** | `EigrpPacketCodec.encode/decode` | Point unique de création/parsing des paquets |
+| **State Machine** | `EigrpNeighborState` (idle→pending→up→down), `DualState` (PASSIVE/ACTIVE/SIA) | Transitions explicites, impossibilité de transitions illégales |
+| **Null Object** | `EigrpKValues.DEFAULT` | Évite les null-checks sur les K-values |
+| **Pipe & Filter** | `EigrpObservable.pipe(op1).pipe(op2)…` | Composition d'opérateurs réactifs (filter, map, ofType) |
+
+---
+
+### 11.2 Principes SOLID respectés
+
+#### S — Single Responsibility Principle
+
+| Classe | Responsabilité unique |
+|---|---|
+| `EigrpMetricCalculator` | Calcul de la métrique composite uniquement |
+| `EigrpDual` | Logique DUAL (Feasibility Condition + transitions d'état) |
+| `EigrpNeighborStateMachine` | Transitions d'état voisin uniquement |
+| `RtpChannel` | Transport fiable (séquencement, ACK, retransmission) |
+| `EigrpPacketCodec` | Sérialisation/désérialisation des paquets |
+| `EigrpEventBus` | Routage des événements entre composants |
+| `CiscoEigrpCommands` | Parsing et dispatch des commandes CLI |
+| `RouterEigrpIntegration` | Adaptation Router.ts ↔ EigrpProcess |
+
+#### O — Open/Closed Principle
+
+- `CiscoEigrpCommands.register()` ajoute des commandes par enregistrement, sans modifier la shell existante.
+- `EigrpEventBus` : nouveaux types d'événements ajoutés sans modifier les abonnés existants (union discriminée extensible).
+- `EigrpDual` : traitement de nouveaux types TLV possible en ajoutant un cas dans `processUpdate()` sans toucher aux autres méthodes.
+
+#### L — Liskov Substitution Principle
+
+- `RouterEigrpIntegration` satisfait pleinement `IEigrpNetworkInterface` : le mock de test est substituable en production sans comportement inattendu.
+- Toutes les implémentations de `IEigrpNeighborTable` / `IEigrpTopologyTable` sont substituables (InMemory en prod, mock en test).
+
+#### I — Interface Segregation Principle
+
+- `IEigrpNetworkInterface` est minimal (6 méthodes) — pas de méthodes de routage général dans l'interface EIGRP.
+- `IEigrpDual` expose uniquement les méthodes appelées par `EigrpProcess` — les helpers internes (calcul FD) restent privés.
+- `IEigrpProcess` (interface publique) sépare les méthodes de contrôle (`start/stop`) des méthodes d'injection (`injectPacket`) et de lecture (`getNeighbors/getTopologyTable`).
+
+#### D — Dependency Inversion Principle
+
+- `EigrpProcess` dépend de `IEigrpNetworkInterface[]`, pas de `RouterPort[]` concrètes.
+- `EigrpDual` dépend de `IEigrpTopologyTable` et `IEigrpNeighborTable` (interfaces), pas d'implémentations.
+- `RtpChannel` dépend de `IEigrpNetworkInterface.sendPacket()` — pas d'import direct du réseau.
+
+---
+
+### 11.3 Programmation Fonctionnelle — garanties appliquées
+
+| Garantie | Où | Détail |
+|---|---|---|
+| **Pureté** | `computeEigrpMetric()` | Même entrée → même sortie, aucun side-effect |
+| **Pureté** | `isFeasibleSuccessor()` | Condition mathématique pure (AD < FD) |
+| **Pureté** | `EigrpNeighborStateMachine.processEvent()` | Retourne un nouvel état, ne mute pas |
+| **Pureté** | `EigrpDual.processUpdate/Query/Reply()` | Retourne `DualAction[]`, ne mute pas la topologie directement |
+| **Pureté** | Opérateurs (`filter`, `map`, `ofType`, `merge`, `bufferCount`) | Higher-order functions sans état mutable |
+| **Immutabilité** | Tous les Value Objects | `Object.freeze()` à la construction |
+| **Immutabilité** | `DualAction` union | `readonly` sur tous les champs |
+| **Result<T,E>** | `EigrpPacketCodec.decode()`, `EigrpDual.*()` | Pas d'exceptions lancées, erreurs typées |
+| **readonly arrays** | `EigrpDual` retourne `readonly DualAction[]` | Pas de mutation du tableau retourné |
+| **No null** | Value Objects via `of()` factories | `Result.err(...)` au lieu de `null` |
+
+---
+
+### 11.4 Programmation Réactive — architecture événementielle
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │          EigrpEventBus                   │
+                    │                                         │
+  injectPacket() ──>│  _events$: EigrpSubject<EigrpEvent>     │
+                    │      │                                   │
+                    │   pipe(ofType(HELLO_RECEIVED))           │
+                    │      │   ──────────> hello$              │
+                    │      │                                   │
+                    │   pipe(ofType(UPDATE_RECEIVED))          │
+                    │      │   ──────────> updates$            │
+                    │      │                                   │
+                    │   pipe(ofType(QUERY_RECEIVED))           │
+                    │      │   ──────────> queries$            │
+                    │      │                                   │
+                    │   pipe(ofType(REPLY_RECEIVED))           │
+                    │      │   ──────────> replies$            │
+                    │      │                                   │
+                    │   pipe(ofType(NEIGHBOR_DOWN))            │
+                    │      │   ──────────> neighborDown$       │
+                    │      │                                   │
+                    │   pipe(ofType(SIA_TIMER_EXPIRED))        │
+                    │         ──────────> siaTimer$            │
+                    │                                         │
+                    │  _actions$: EigrpSubject<DualAction>     │
+                    │      │   ──────────> actions$            │
+                    └─────────────────────────────────────────┘
+
+Avantages de l'architecture réactive :
+  ✓ Découplage total producteur/consommateur
+  ✓ Testabilité : chaque stream testé isolément
+  ✓ Composabilité : pipe(filter, map, ofType) sans modifier les sources
+  ✓ Backpressure naturelle : bufferCount() pour batching des updates
+  ✓ Pas de dépendance RxJS (EigrpSubject est ~120 lignes)
+  ✓ Lifecycle management : unsub() retourné par subscribe()
+```
+
+#### Comparaison avec OSPF (architecture push)
+
+| Aspect | OSPF (existant) | EIGRP (nouveau) |
+|---|---|---|
+| Dispatch des paquets | `switch/case` dans `handleFrame()` | Reactive streams typés |
+| Découplage composants | Appels directs entre classes | Observable/Subject |
+| Testabilité du flux | Mock difficile | Subscribe au stream en test |
+| Ajout d'un nouveau handler | Modifier `handleFrame()` | `bus.newEvent$.subscribe(...)` |
+| Debug en production | `console.log` dispersés | `proc.events$.subscribe(logger)` |
+
+---
+
+### 11.5 Défauts identifiés dans RmanSubShell.ts (stub existant)
+
+| # | Défaut | Classe cible | Priorité |
+|---|---|---|---|
+| DEF-EIGRP-01 | Aucun dispatch proto=88 dans `CiscoRouter` | `CiscoRouter.processIPv4()` | P1 |
+| DEF-EIGRP-02 | Pas de table de voisinage EIGRP | `EigrpNeighborTable` | P1 |
+| DEF-EIGRP-03 | Pas de table de topologie EIGRP | `EigrpTopologyTable` | P1 |
+| DEF-EIGRP-04 | Algorithme DUAL inexistant | `EigrpDual` | P1 |
+| DEF-EIGRP-05 | Pas de RTP (paquets non fiables) | `RtpChannel` | P1 |
+| DEF-EIGRP-06 | Pas de commandes CLI `router eigrp` | `CiscoEigrpCommands` | P2 |
+| DEF-EIGRP-07 | `show ip eigrp neighbors` absent | `CiscoEigrpCommands` | P2 |
+| DEF-EIGRP-08 | `show ip eigrp topology` absent | `CiscoEigrpCommands` | P2 |
+| DEF-EIGRP-09 | Métrique EIGRP non calculée | `EigrpMetricCalculator` | P2 |
+| DEF-EIGRP-10 | Pas de multicast 224.0.0.10 | `RouterEigrpIntegration.sendPacket()` | P2 |
+| DEF-EIGRP-11 | Hello timer / Hold timer absents | `EigrpProcess._startHelloTimer()` | P2 |
+| DEF-EIGRP-12 | SIA timer absent | `EigrpProcess._handleSiaTimeout()` | P3 |
+| DEF-EIGRP-13 | Pas de redistribution `connected` | `CiscoEigrpCommands._cmdRedistributeConnected()` | P3 |
+| DEF-EIGRP-14 | Codec TLV absent | `EigrpPacketCodec` | P1 |
+| DEF-EIGRP-15 | FIB non mise à jour après convergence | `EigrpFib` + `_executeAction()` | P1 |
+
+---
+
+### 11.6 Guide d'implémentation — ordre recommandé
+
+```
+Phase 1 — Fondations (testables en isolation)
+  ├─ 1. metric/types.ts + EigrpMetricCalculator.ts         [pur, testé en 5 min]
+  ├─ 2. packet/types.ts + EigrpPacketCodec.ts              [encode/decode TLV]
+  ├─ 3. neighbor/types.ts + EigrpNeighborTable.ts          [InMemory]
+  ├─ 4. topology/types.ts + EigrpTopologyTable.ts          [InMemory]
+  └─ 5. dual/EigrpDual.ts + pureUtils.ts                   [DUAL pur]
+
+Phase 2 — Infrastructure reactive
+  ├─ 6. reactive/EigrpSubject.ts + operators.ts            [Observable maison]
+  └─ 7. reactive/EigrpEventBus.ts                          [streams typés]
+
+Phase 3 — Transport
+  └─ 8. rtp/RtpChannel.ts + RtpSequenceTracker.ts          [reliable transport]
+
+Phase 4 — Facade et intégration
+  ├─ 9.  process/EigrpProcess.ts                           [câblage reactif]
+  ├─ 10. integration/RouterEigrpIntegration.ts             [Adapter]
+  ├─ 11. integration/CiscoEigrpCommands.ts                 [CLI]
+  └─ 12. CiscoRouter.ts : ajouter case 88 + startEigrpProcess()
+
+Phase 5 — Tests d'intégration
+  └─ 13. eigrpProcess.test.ts : topologie 3 routeurs, convergence DUAL
+```
+
+#### Invariants à maintenir
+
+1. **`EigrpDual` ne mute jamais directement la FIB** — il retourne des `DualAction[]`, `EigrpProcess._executeAction()` effectue les mutations.
+2. **`EigrpSubject.next()` est synchrone** — les handlers doivent être rapides ; pas d'`await` dans un subscriber.
+3. **Toute émission sur `_events$` se fait via `EigrpEventBus.emit()`** — jamais d'accès direct à `_events$` depuis l'extérieur.
+4. **`RtpChannel` n'appelle jamais `EigrpDual` directement** — il émet `MAX_RETRANS` sur son propre `events$`, `EigrpProcess` fait le pont.
+5. **Les Value Objects sont `Object.freeze`'d à la construction** — toute "modification" passe par une factory qui crée un nouvel objet.
+
+---
+
+### 11.7 Résumé visuel — dépendances entre modules
+
+```
+                   ┌─────────────────────────────────────────────┐
+                   │                 EigrpProcess                 │
+                   │               (Facade reactive)              │
+                   └────┬───────┬────────┬────────┬──────────────┘
+                        │       │        │        │
+               ┌────────▼─┐ ┌───▼───┐ ┌──▼────┐ ┌▼─────────────┐
+               │EigrpDual │ │  NSM  │ │  RTP  │ │ EigrpEventBus │
+               │(pure FP) │ │(pure) │ │channel│ │ (Observable)  │
+               └────┬─────┘ └───────┘ └──┬────┘ └──────────────┘
+                    │                     │
+          ┌─────────▼──────────┐   ┌──────▼──────────────────┐
+          │  IEigrpTopology    │   │  IEigrpNetworkInterface  │
+          │  IEigrpNeighbor    │   │  (Adapter interface)     │
+          │  IEigrpFib         │   └──────────────────────────┘
+          └────────────────────┘             │
+                                    ┌────────▼───────────┐
+                                    │ RouterEigrpInteg.  │
+                                    │ (Adapter concret)  │
+                                    └────────────────────┘
+                                             │
+                                    ┌────────▼───────────┐
+                                    │   CiscoRouter.ts   │
+                                    │   RouterPort       │
+                                    └────────────────────┘
+
+  Dépendances vers le haut uniquement — aucun cycle.
+  EigrpProcess est le seul consommateur de EigrpEventBus.
+  CiscoEigrpCommands dépend de EigrpProcess (via IEigrpProcess) et CiscoRouter.
+```
+
+---
+
+*Fin du document — EIGRP Technical Class Diagram v1.0*
