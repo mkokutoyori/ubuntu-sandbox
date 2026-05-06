@@ -13,7 +13,7 @@
 3. [Analyse de la couche réseau — `Equipment` / `Port` / `Cable`](#3-analyse-de-la-couche-réseau--equipment--port--cable)
 4. [Analyse des `devices` concrets et des moteurs de protocoles](#4-analyse-des-devices-concrets-et-des-moteurs-de-protocoles)
 5. [Analyse de la couche terminal](#5-analyse-de-la-couche-terminal)
-6. Analyse du store Zustand et des composants React *(à venir)*
+6. [Analyse du store Zustand et des composants React](#6-analyse-du-store-zustand-et-des-composants-react)
 7. Analyse de la couche base de données (Oracle) *(à venir)*
 8. Architecture cible — bus d'événements, scheduler, état observable *(à venir)*
 9. Refactoring détaillé par classe *(à venir)*
@@ -947,3 +947,232 @@ Aucun changement structurel. Possibilités à explorer en post-refonte :
 ---
 
 *Section 5 close. Suivante : §6 — Store Zustand et UI React.*
+
+---
+
+## 6. Analyse du store Zustand et des composants React
+
+L'objectif de la refonte côté UI : **découpler les composants React du modèle de domaine**. Aujourd'hui, ils accèdent directement aux instances `Equipment` (à travers la propriété `instance: Equipment` portée par `NetworkDeviceUI`) et à `Cable` (à travers `Connection.cable`). Cela rend chaque rerender dépendant du fait que le store ait pensé à muter une `Map`.
+
+### 6.1 Inventaire — store et composants
+
+| Fichier | LoC | Rôle |
+|---|---:|---|
+| `src/store/networkStore.ts` | 353 | Store Zustand global : `deviceInstances`, `connections`, `selectedDeviceId`, … |
+| `src/store/topologySerializer.ts` | (≈ 250) | Export/import JSON ; lit l'état des `Equipment` et `Cable` directement. |
+| `src/components/network/NetworkDesigner.tsx` | 361 | Page racine ; orchestration tiling, drag-drop, ouverture terminaux. |
+| `src/components/network/NetworkCanvas.tsx` | 279 | Canvas SVG, rendu des devices et connexions. |
+| `src/components/network/NetworkDevice.tsx` | 275 | Rendu d'un device (icône, nom, état). |
+| `src/components/network/ConnectionLine.tsx` | 166 | Rendu d'un câble (courbe Bézier). |
+| `src/components/network/PacketAnimation.tsx` | 168 | « Placeholder » pour animation de paquets — voir §6.4. |
+| `src/components/network/PropertiesPanel.tsx` | 410 | Panneau de propriétés (sélection, IP, ports, …). |
+| `src/components/network/TerminalModal.tsx` | 273 | Modal ou tile pour une session terminal. |
+| `src/components/network/MinimizedTerminals.tsx` | 168 | Bandeau des sessions minimisées. |
+| `src/components/network/DeviceIcon.tsx`, `DevicePalette.tsx`, `Toolbar.tsx`, `InterfaceSelectorPopover.tsx` | 91+91+95+238 | Présentation. |
+| `src/components/terminal/TerminalView.tsx` | 534 | Rendu d'une session (utilise `useSyncExternalStore`). |
+| Helpers logiques (`*-logic.ts`, `connection-helpers.ts`) | ≈ 380 | Pure-fonctions, pas de state — rien à refondre. |
+
+Total composants `network/` ≈ 3 100 LoC, plus 534 pour `TerminalView`.
+
+### 6.2 Store Zustand actuel — `networkStore.ts`
+
+#### 6.2.1 Schéma d'état
+
+```ts
+deviceInstances: Map<string, Equipment>;
+connections: Connection[];                     // contient un cable: Cable
+selectedDeviceId: string | null;
+selectedConnectionId: string | null;
+isConnecting: boolean;
+connectionSource: { deviceId, interfaceId, connectionType } | null;
+zoom: number; panX: number; panY: number;
+```
+
+`Connection` expose la `Cable` directement, et `NetworkDeviceUI` (le retour de `getDevices()`) expose `instance: Equipment`. Toute la UI peut donc appeler des méthodes de domaine arbitraires sur des objets mutables.
+
+#### 6.2.2 Mécanisme de notification
+
+Le seul levier de réactivité est :
+
+```ts
+set(state => ({ deviceInstances: new Map(state.deviceInstances) }));
+```
+
+— recopie superficielle de la `Map` à chaque mutation, dans `addDevice`, `updateDevice`, `moveDevice`. Zustand compare par référence et déclenche le rerender. Mais :
+
+- **Mutations internes invisibles.** Si OSPF apprend une route, si une trame arrive, si un port change d'état link-up/down sur réception de port-security violation, **rien ne déclenche `set`**. La UI a alors une vue figée.
+- **Recalcul O(N) à chaque `getDevices()`.** `deviceToUI` est appelé pour chaque équipement, qui à son tour itère ses ports et leurs adresses. Sur 30 devices avec 4 interfaces, c'est ~ 120 reconstructions par appel ; et `getDevices()` est appelé dans `NetworkDesigner`, `PropertiesPanel`, `NetworkCanvas`, `MinimizedTerminals`. Mémoization implicite par référence Map mais coût présent.
+- **Couplage fort `instance: Equipment`.** Empêche la sérialisation, complique les tests UI, expose la mutabilité.
+
+#### 6.2.3 Observations sur les actions
+
+| Action | Effet sur la `Map` | Effet sur les domaines |
+|---|---|---|
+| `addDevice` | recopie | crée un device, registre |
+| `removeDevice` | recopie | déconnecte câbles, retire du registre |
+| `updateDevice` | recopie | mute name/hostname/power/position |
+| `moveDevice` | recopie | mute position |
+| `addConnection` | pas de recopie ! | crée un `Cable`, le `connect` |
+| `removeConnection` | pas de recopie ! | `cable.disconnect()` |
+| `clearAll` | reset complet | efface registre + reset Logger |
+
+`addConnection` et `removeConnection` n'invalident pas `deviceInstances`. C'est **incohérent** : la création d'une connexion peut allumer des protocoles (OSPF auto-converge) qui mutent les routing tables — la UI n'en saura rien.
+
+### 6.3 Composants React — pattern d'accès au domaine
+
+#### 6.3.1 `NetworkDesigner.tsx` (361 LoC)
+
+```ts
+const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
+const devices = getDevices();   // appelé à chaque render
+```
+
+Le composant gère aussi : layout tiling, sessions minimisées, raccourcis Alt+H/V/G/S/M/J/K, ouverture terminaux. **3 `useEffect` distincts** pour : sync layout, raccourcis clavier global, sync `focusedIndex`. Pas de bus → la coordination se fait par React state local.
+
+#### 6.3.2 `PropertiesPanel.tsx` (410 LoC)
+
+Lit `selectedDeviceId`, retrouve le `NetworkDeviceUI` correspondant via `getDevices().find()`, affiche les interfaces et permet d'éditer les IPs. **Quand l'utilisateur saisit une IP**, le composant appelle `device.instance.configureInterface(...)` directement, puis `useNetworkStore.setState({ deviceInstances: new Map(...) })` pour forcer le rerender. Couplage fort, et fragile : oublier la recopie = UI figée.
+
+#### 6.3.3 `ConnectionLine.tsx` (166 LoC)
+
+Reçoit la `Connection` et lit `connection.cable.getIsUp()` ainsi que `connection.cable.hasDuplexMismatch()` pour la couleur du trait. Pas de subscription → si le cable change d'état après le câblage, le trait ne change pas.
+
+#### 6.3.4 `PacketAnimation.tsx` (168 LoC)
+
+Marquage explicite « placeholder » dans le commentaire d'en-tête. La structure `ActivePacket` est définie, des couleurs par type (`arp`, `icmp`, `broadcast`, `data`) sont prêtes, le code de courbe Bézier est implémenté. **Mais aucun mécanisme n'alimente la liste des `ActivePacket`** — il n'y a pas d'événement « paquet en transit » à observer. Cette section §6 et le pipeline L2 cible (cf. §3, §8) débloquent ce composant en même temps.
+
+#### 6.3.5 `TerminalView.tsx` (534 LoC)
+
+Consomme la session via `useSyncExternalStore(s.subscribe, s.getVersion)`. **Bonne pratique**, complètement compatible avec la cible. Pas de modification structurelle attendue.
+
+#### 6.3.6 `MinimizedTerminals.tsx` (168 LoC)
+
+Lit la liste des sessions depuis `TerminalManager` (qui a son propre `subscribe / getVersion`). Cohérent.
+
+### 6.4 Pourquoi `PacketAnimation` est cassé aujourd'hui
+
+Les conditions techniques pour animer un paquet sur un câble sont :
+
+1. **Connaître le moment où la trame entre dans le câble.** Aujourd'hui : `Cable.transmit` appelle `targetPort.receiveFrame` synchrone. Il faut un événement `cable.frame.dispatched`.
+2. **Connaître la durée de propagation.** Aujourd'hui : `Cable.getPropagationDelay()` retourne le bon nombre, mais il n'est jamais utilisé pour temporiser la livraison. Il faut programmer la livraison via le `Scheduler` à `now + propagationDelay` et émettre `cable.frame.delivered` à l'arrivée.
+3. **Animer le trajet entre les deux instants.** React anime entre `dispatched` et `delivered` via `useEffect` + `requestAnimationFrame` ou un `useMotionValue`.
+
+La refonte L2 décrite en §3 fournit (1) et (2). Le composant peut alors maintenir `ActivePacket[]` en s'abonnant via un nouveau hook `useActivePackets()`.
+
+### 6.5 Couplage UI ↔ domaine — mesures
+
+| Métrique | Valeur actuelle |
+|---|---|
+| Composants accédant à `Equipment.instance` directement | `PropertiesPanel`, `NetworkCanvas`, `NetworkDevice`, `MinimizedTerminals`, `NetworkDesigner` (5/12) |
+| Composants accédant à `Connection.cable` directement | `ConnectionLine`, `PacketAnimation` (mais inactif), `PropertiesPanel` (2-3/12) |
+| Composants utilisant `useSyncExternalStore` | `TerminalView`, `MinimizedTerminals` (par session manager) (2/12) |
+| Composants utilisant `useNetworkStore` (Zustand) | 6 sur 12 composants `network/` |
+| Granularité d'observation | « tout-ou-rien » — un changement d'état qui mute la `Map` rerender tout abonné de Zustand |
+
+### 6.6 Points d'inconfort liés au store
+
+| # | Symptôme | Conséquence |
+|---|---|---|
+| S1 | Mutations internes Equipment invisibles | UI figée pour ARP, OSPF, link-changes hors `set` du store. |
+| S2 | `instance: Equipment` exposée à React | Fuites de mutabilité, sérialisation difficile. |
+| S3 | `getDevices()` reconstruit à chaque appel | Coût constant à chaque render des composants principaux. |
+| S4 | `set(state => ({ deviceInstances: new Map(...) }))` impératif | Code répétitif, sujet aux oublis (cf. inconsistance addConnection). |
+| S5 | `Logger.reset()` et `resetCounters` dans `clearAll` | Couplage transverse direct. |
+| S6 | Aucun signal d'événements « UI-relevant » | Toasts (« cable disconnected », « duplex mismatch detected ») impossibles sans patcher le domaine. |
+| S7 | Pas de undo / redo | L'absence d'event-log unifié l'empêche structurellement. |
+
+### 6.7 Décisions de refonte côté UI
+
+#### 6.7.1 Read-models projetés
+
+Le store ne contient plus d'`Equipment.instance`. À la place, des **read-models** typés et immuables :
+
+```ts
+interface DeviceVM {
+  readonly id: string;
+  readonly type: DeviceType;
+  readonly name: string;
+  readonly hostname: string;
+  readonly position: { x: number; y: number };
+  readonly powered: boolean;
+  readonly interfaces: ReadonlyArray<PortVM>;
+}
+interface PortVM { /* ip, mac, isUp, mtu, speed, … */ }
+interface CableVM { /* cableType, length, isUp, mismatch, ... */ }
+```
+
+Ces VM sont calculés à partir d'événements bus par un *projector* (réducteur). La UI les consomme via hooks ciblés.
+
+#### 6.7.2 Hooks ciblés
+
+```ts
+useDevices(): DeviceVM[];
+useDevice(id: string): DeviceVM | undefined;
+usePort(deviceId: string, portName: string): PortVM | undefined;
+useCable(connectionId: string): CableVM | undefined;
+useArpTable(deviceId: string): ArpEntryVM[];
+useRoutingTable(deviceId: string): RouteVM[];
+useOspfNeighbors(deviceId: string): OspfNeighborVM[];
+useActivePackets(): ActivePacketVM[];   // débloque PacketAnimation
+useTerminalSessions(deviceId?: string): SessionVM[];
+```
+
+Chaque hook s'abonne aux événements pertinents et retourne une projection memoïsée.
+
+#### 6.7.3 Rôle résiduel de Zustand
+
+Zustand reste pour :
+
+- **État UI pur** : `selectedDeviceId`, `isConnecting`, `connectionSource`, `zoom`, `panX/Y`. Indépendant du domaine, géré comme aujourd'hui.
+- **Actions** : `addDevice`, `removeDevice`, … restent des thunks qui parlent au domaine ; mais elles **n'orchestrent plus la notification UI** (le bus s'en charge).
+
+#### 6.7.4 Sérialisation
+
+`topologySerializer.ts` continue de lire l'état du domaine via le `EquipmentRegistry`, mais via des accesseurs `getById(id)` typés et stables. À l'import, il publie `topology.import-started`, instancie les devices, leur publie les configurations, puis `topology.import-completed`. Cela permet à la UI d'afficher une barre de progression et aux protocoles de redémarrer correctement (les engines s'abonnent au `topology.import-completed` pour bootstrap).
+
+#### 6.7.5 Migration progressive
+
+Phase 1 : on **conserve** `getDevices()` et `instance: Equipment`, on ajoute en parallèle les hooks read-model alimentés par le bus. Les composants migrent un par un.
+
+Phase 2 : `instance: Equipment` est **rendue privée** (renommage), seuls `topologySerializer` et les actions du store y accèdent.
+
+Phase 3 : suppression de `instance` du `NetworkDeviceUI` ; `NetworkDeviceUI` devient égal à `DeviceVM`.
+
+### 6.8 Composants — actions et émissions
+
+| Composant | Lit | Écrit / agit | Migration |
+|---|---|---|---|
+| `NetworkDesigner` | `getDevices`, `connections`, sessions | `clearAll`, drag-drop init, layout | Substituer `useDevices()` ; conserver état UI tiling |
+| `NetworkCanvas` | `devices`, `connections`, zoom, pan | `selectDevice`, `selectConnection`, drag move | `useDevices()`, `useConnections()` |
+| `NetworkDevice` | un `DeviceVM` | drag, click, hover | Hook `useDevice(id)` |
+| `ConnectionLine` | `CableVM` (état link-up, duplex mismatch) | clic | `useCable(connId)` |
+| `PacketAnimation` | `ActivePacketVM[]` | n/a | `useActivePackets()` — débloque le composant |
+| `PropertiesPanel` | `DeviceVM`/`PortVM` ; commandes config | `configureIP`, etc. | Refactor : émet une *intention* (`device.configure-port-ip`) au bus, qui est traitée par un *command-handler* ; pas d'accès direct au domaine |
+| `TerminalModal` | session | clé/clic | Inchangé fonctionnellement |
+| `TerminalView` | session | clavier | Inchangé |
+| `MinimizedTerminals` | sessions | restore | Inchangé |
+| `Toolbar` | divers | actions globales (export/import/clear) | Conservé, parle au store |
+| `DevicePalette` | catalog | drag start | Inchangé |
+
+### 6.9 Tableau récapitulatif
+
+| Élément | LoC | Réactivité actuelle | Réactivité cible |
+|---|---:|---|---|
+| `networkStore` | 353 | Mutation Map manuelle | Conservé pour UI state ; domaine via bus |
+| `topologySerializer` | 250 | Direct registry | Émet `topology.*` ; consume bus |
+| `NetworkDesigner` | 361 | `getDevices()` polling | `useDevices()` bus |
+| `NetworkCanvas` | 279 | `getDevices()` polling | `useDevices()` + `useConnections()` |
+| `NetworkDevice` | 275 | accès direct `instance` | `useDevice(id)` |
+| `ConnectionLine` | 166 | accès direct `cable` | `useCable(connId)` |
+| `PacketAnimation` | 168 | placeholder, vide | `useActivePackets()` — fonctionnel |
+| `PropertiesPanel` | 410 | accès direct + setState manuel | hooks ciblés + intentions |
+| `TerminalModal` | 273 | Props session | Inchangé |
+| `TerminalView` | 534 | `useSyncExternalStore` ✓ | Inchangé |
+| `MinimizedTerminals` | 168 | manager `subscribe` ✓ | Inchangé |
+| Helpers `*-logic.ts` | ≈ 380 | Pure | Inchangé |
+
+**Bilan UI** : la refonte ne *remplace* pas Zustand, elle l'**adoucit** — Zustand garde l'état UI, le bus apporte l'observation du domaine. Les composants TerminalView et MinimizedTerminals sont déjà conformes au pattern cible et ne bougent pas.
+
+---
+
+*Section 6 close. Suivante : §7 — Couche base de données (Oracle).*
