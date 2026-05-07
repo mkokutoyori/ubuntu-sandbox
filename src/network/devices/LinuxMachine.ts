@@ -243,6 +243,9 @@ export abstract class LinuxMachine extends EndHost {
       this.profile.hostname,
       {},
       this.executor,
+      // Route incoming SSH exec commands through the full pipeline so
+      // `ip`, `arp`, `ping`, `systemctl`, etc. are available.
+      (line: string) => this.executeCommand(line),
     );
     this._sshLifecycleOff?.();
     this._sshLifecycleOff = this.executor.serviceMgr.onLifecycle((event, name) => {

@@ -133,15 +133,30 @@ export class SshServerHandler {
           // BRD SSH-05: non-interactive command execution. Also used by the
           // interactive shell sub-shell, which routes one exec per line.
           if (!userCtx) {
-            conn.write(JSON.stringify({ stdout: '', stderr: 'not authenticated', exitCode: 255 }));
+            conn.write(
+              JSON.stringify({
+                stdout: '',
+                stderr: 'not authenticated',
+                exitCode: 255,
+              }),
+            );
             return;
           }
           const command = (parsed.command as string | undefined) ?? '';
           const channelId = parsed.channelId as number | undefined;
-          const cwd = (channelId !== undefined && channels.get(channelId)?.cwd) || userCtx.homeDirectory;
+          const cwd =
+            (channelId !== undefined && channels.get(channelId)?.cwd) ||
+            userCtx.homeDirectory;
           const shell = this.ctx.getShell(userCtx, cwd);
-          const result = shell.execute(command);
-          conn.write(JSON.stringify(result));
+          // ILinuxShell.execute is async to support pipelines that must
+          // route through device-level command registries (network /
+          // service commands). The simulator's synchronous TCP delivery
+          // means the client's exec channel is already waiting for the
+          // response promise, so writing it from the .then() callback is
+          // delivered before await unblocks.
+          void shell
+            .execute(command)
+            .then((result) => conn.write(JSON.stringify(result)));
           break;
         }
 

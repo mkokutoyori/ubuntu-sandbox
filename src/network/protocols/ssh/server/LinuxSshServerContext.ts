@@ -69,6 +69,15 @@ export class LinuxSshServerContext implements ISshServerContext {
     private readonly hostname: string,
     config: Partial<SshServerConfig> = {},
     private readonly executor: LinuxCommandExecutor | null = null,
+    /**
+     * Optional callback running through the device's full command pipeline
+     * (network / service / bash). Used by LinuxMachine to route remote
+     * shells through `executeCommand`, which covers `ip`, `arp`, `ping`
+     * and the systemctl family in addition to the bash interpreter.
+     */
+    private readonly fullExecutor:
+      | ((line: string) => Promise<string>)
+      | null = null,
   ) {
     this.ensureEtcSshFiles();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -97,28 +106,40 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
-    // BRD SSH-05/SSH-04: when an executor is wired in, route each command
-    // through the real Linux interpreter. Otherwise fall back to an
-    // informative stub so unit tests of the server stay self-contained.
+    // BRD SSH-05/SSH-04: prefer the device-wide pipeline (`fullExecutor`)
+    // when available, since it covers network commands (ip, arp, ping)
+    // and systemctl in addition to the bash interpreter. Fall back to the
+    // executor's bash-only path, then to an informative stub.
     const executor = this.executor;
-    if (!executor) {
+    const full = this.fullExecutor;
+    if (full) {
       return {
-        execute: (line: string) => ({
-          stdout: `${line}: shell execution not wired (no executor)\n`,
-          stderr: '',
-          exitCode: 0,
-        }),
+        execute: async (line: string) => {
+          const stdout = await full(line);
+          const exitCode = /command not found|Permission denied/.test(stdout)
+            ? 1
+            : 0;
+          return { stdout, stderr: '', exitCode };
+        },
+      };
+    }
+    if (executor) {
+      return {
+        execute: async (line: string) => {
+          const stdout = executor.execute(line);
+          const exitCode = /command not found|Permission denied/.test(stdout)
+            ? 1
+            : 0;
+          return { stdout, stderr: '', exitCode };
+        },
       };
     }
     return {
-      execute: (line: string) => {
-        const stdout = executor.execute(line);
-        // The synchronous bash interpreter does not surface a separate stderr
-        // or exit code yet; treat presence of a leading "bash: …: command
-        // not found" or "Permission denied" segment as a non-zero exit.
-        const exitCode = /command not found|Permission denied/.test(stdout) ? 1 : 0;
-        return { stdout, stderr: '', exitCode };
-      },
+      execute: async (line: string) => ({
+        stdout: `${line}: shell execution not wired (no executor)\n`,
+        stderr: '',
+        exitCode: 0,
+      }),
     };
   }
 

@@ -190,6 +190,29 @@ export class SftpDfCommand implements ISftpCommand<SftpDiskUsage> {
   }
 }
 
+export class SftpPwdCommand implements ISftpCommand<{ cwd: string }> {
+  readonly op = 'pwd';
+  execute(_req: SftpRequestPayload, ctx: SftpCommandContext): Result<{ cwd: string }> {
+    return ok({ cwd: ctx.cwd });
+  }
+}
+
+export class SftpCdCommand implements ISftpCommand<{ cwd: string }> {
+  readonly op = 'cd';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<{ cwd: string }> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const target = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    if (!ctx.vfs.exists(target)) {
+      return err({ kind: 'IO_ERROR', message: `${target}: No such file or directory` });
+    }
+    if (ctx.vfs.getEntryType(target) !== 'directory') {
+      return err({ kind: 'IO_ERROR', message: `${target}: Not a directory` });
+    }
+    return ok({ cwd: target });
+  }
+}
+
 export class SftpStatCommand implements ISftpCommand<SftpFileAttrs> {
   readonly op = 'stat';
   execute(

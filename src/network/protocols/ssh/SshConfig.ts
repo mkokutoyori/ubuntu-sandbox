@@ -48,7 +48,9 @@ export class SshConfig {
   /**
    * Resolve the effective configuration for a target host name. Merges
    * matching `Host` blocks: most specific (exact name) wins over wildcard
-   * `*`, with later directives overriding earlier ones.
+   * `*`, with later directives overriding earlier ones. `undefined`
+   * properties from a less specific block are preserved (a later block
+   * cannot wipe a wildcard default by simply not declaring the directive).
    */
   resolve(targetHost: string): SshHostEntry {
     const matches = this.entries.filter((e) => matchesHost(e.host, targetHost));
@@ -56,10 +58,14 @@ export class SshConfig {
     matches.sort((a, b) =>
       a.host === '*' ? -1 : b.host === '*' ? 1 : 0,
     );
-    return matches.reduce<SshHostEntry>(
-      (acc, entry) => ({ ...acc, ...entry, host: targetHost }),
-      { host: targetHost },
-    );
+    const result: Record<string, unknown> = { host: targetHost };
+    for (const entry of matches) {
+      for (const [key, value] of Object.entries(entry)) {
+        if (value !== undefined) result[key] = value;
+      }
+    }
+    result.host = targetHost;
+    return result as SshHostEntry;
   }
 
   list(): readonly SshHostEntry[] {
