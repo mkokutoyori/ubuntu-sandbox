@@ -762,6 +762,81 @@ export class LinuxCommandExecutor {
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
       case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+
+      // Non-interactive fallbacks for commands the GUI normally routes to
+      // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
+      // SSH there is no TTY, so these commands behave like their batch
+      // counterparts: silent for editors, version banners for CLIs.
+      case 'nano':
+      case 'vi':
+      case 'vim': {
+        // `nano file` opens (or creates) the file in the editor. In batch
+        // mode we honour the "create if missing" behaviour so that
+        // subsequent SSH commands can write to it.
+        const target = args.find((a) => !a.startsWith('-'));
+        if (target) {
+          const abs = this.vfs.normalizePath(target, this.cwd);
+          if (!this.vfs.exists(abs)) {
+            this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
+      case 'clear':
+      case 'reset':
+        return { output: '', exitCode: 0 };
+      case 'sqlplus': {
+        if (args.includes('-V') || args.includes('-version')) {
+          return {
+            output:
+              'SQL*Plus: Release 19.0.0.0.0 - Production on ' +
+              new Date().toUTCString(),
+            exitCode: 0,
+          };
+        }
+        return {
+          output:
+            'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
+            'ERROR:\nORA-12162: TNS:net service name is incorrectly specified\n\n' +
+            'SP2-0157: unable to CONNECT to ORACLE after 3 attempts, exiting SQL*Plus',
+          exitCode: 1,
+        };
+      }
+      case 'rman':
+        return {
+          output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
+          exitCode: 0,
+        };
+      case 'lsnrctl': {
+        if (args[0] === 'version') {
+          return {
+            output:
+              'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+            exitCode: 0,
+          };
+        }
+        return {
+          output: 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+          exitCode: 0,
+        };
+      }
+      case 'tnsping': {
+        const target = args[0] || '';
+        return {
+          output:
+            `TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production\n` +
+            (target ? `TNS-03505: Failed to resolve name "${target}"` : ''),
+          exitCode: target ? 1 : 0,
+        };
+      }
+      case 'dbca':
+      case 'orapwd':
+      case 'adrci':
+        return {
+          output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
+          exitCode: 0,
+        };
+
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
       case 'readlink': return { output: args.filter(a => !a.startsWith('-'))[0] || '', exitCode: 0 };
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
