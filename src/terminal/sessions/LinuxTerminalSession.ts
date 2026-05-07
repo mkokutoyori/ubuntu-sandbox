@@ -69,6 +69,24 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Saved input before history navigation started. */
   private subShellSavedInput: string = '';
 
+  /**
+   * Stack of SSH "frames" — each entry remembers the local device and
+   * the saved cwd/user pair that were active before connecting to a
+   * remote machine. The terminal becomes the remote machine's terminal
+   * (BRD SSH-04: every command runs on the remote, editors open on the
+   * remote, tab completion uses the remote VFS) until the user types
+   * `exit` / `logout` or presses Ctrl+D.
+   */
+  private sshStack: Array<{
+    device: Equipment;
+    user: string;
+    path: string;
+    /** Closing callback (e.g. ssh session disconnect). */
+    onPop: () => void;
+    /** Display string used in "Connection to <X> closed." line. */
+    label: string;
+  }> = [];
+
   constructor(id: string, device: Equipment) {
     super(id, device);
     this.currentPath = device.getCwd() || '/home/user';
@@ -193,6 +211,12 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
+      // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout pops
+      // back to the previous device instead of closing the terminal.
+      if (this.sshStack.length > 0) {
+        this.popRemoteDevice();
+        return;
+      }
       const exitResult = this.device.handleExit();
       if (exitResult.inSu) {
         if (exitResult.output) this.addLine(exitResult.output);
@@ -782,12 +806,37 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // BRD SSH-04: interactive — open a remote shell sub-shell.
+    // BRD SSH-04: interactive — try to push the remote device onto the
+    // terminal stack so the user gets a true remote shell (editors,
+    // tab-completion, history). If the remote machine cannot be
+    // resolved (e.g. tests using a synthetic SshServerHandler), fall
+    // back to the legacy RemoteShellSubShell which forwards each line.
     const motd = this.tryReadRemoteMotd(session);
     for (const line of motd) this.addLine(line);
+    const lastLogin = this.tryReadLastLogin(session, user);
+    if (lastLogin) this.addLine(lastLogin);
+
+    const remoteDevice = findLinuxMachineByIp(host);
+    if (remoteDevice) {
+      this.pushRemoteDevice(remoteDevice, user, host, () => session.disconnect());
+      return;
+    }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
     this.notify();
+  }
+
+  /** Best-effort `lastlog`-style line via remote `cat /var/log/lastlog.json`. */
+  private tryReadLastLogin(session: SshSession, _user: string): string | null {
+    const channelResult = session.openExecChannel(
+      `last -i ${_user} 2>/dev/null | head -n 1`,
+    );
+    if (!isOk(channelResult)) return null;
+    const channel = channelResult.value;
+    void channel.execute();
+    const out = channel.stdout.replace(/\n$/, '');
+    channel.close();
+    return out || null;
   }
 
   /**
@@ -1358,6 +1407,92 @@ export class LinuxTerminalSession extends TerminalSession {
     this.inputMode = { type: 'normal' };
     this.notify();
   }
+
+  // ── SSH device push/pop (BRD SSH-04) ───────────────────────────
+
+  /**
+   * Switch the terminal to operate on a remote device. Saves the
+   * current device + cwd + user on a stack, swaps to the remote, runs
+   * `onConnected` (typically: print MOTD + Last login), and notifies.
+   *
+   * The terminal stays in normal bash mode — every subsequent command
+   * is dispatched against the remote `LinuxMachine.executeCommand`,
+   * editors open on the remote, tab completion uses the remote VFS.
+   */
+  pushRemoteDevice(
+    remote: Equipment,
+    user: string,
+    label: string,
+    onPop: () => void = () => undefined,
+  ): void {
+    this.sshStack.push({
+      device: this.device,
+      user: this.currentUser,
+      path: this.currentPath,
+      onPop,
+      label,
+    });
+    this.device = remote;
+    this.currentUser = user;
+    this.currentPath = remote.getCwd() || `/home/${user}`;
+    this.notify();
+  }
+
+  /**
+   * Restore the previous device. Prints "logout / Connection to <host>
+   * closed." and runs the saved `onPop` (e.g. SshSession.disconnect).
+   */
+  popRemoteDevice(): void {
+    const frame = this.sshStack.pop();
+    if (!frame) return;
+    try {
+      frame.onPop();
+    } catch {
+      /* ignore teardown errors */
+    }
+    this.addLine('logout');
+    this.addLine(`Connection to ${frame.label} closed.`);
+    this.device = frame.device;
+    this.currentUser = frame.user;
+    this.currentPath = frame.path;
+    this.notify();
+  }
+
+  /** True while the terminal is operating on a remote device. */
+  get isInsideSshSession(): boolean {
+    return this.sshStack.length > 0;
+  }
+}
+
+// ── IP → device resolver (BRD SSH-04) ───────────────────────────
+
+/**
+ * Look up the LinuxMachine whose any port is bound to the given IPv4.
+ * Used by `connectAndEnterSsh` to switch the terminal's `device` to the
+ * remote machine without touching the simulated SSH transport. Returns
+ * null when the target is not a Linux device managed by the sandbox.
+ */
+function findLinuxMachineByIp(targetIp: string): Equipment | null {
+  // Equipment.getAllEquipment is a static singleton registry filled when
+  // device classes get instantiated. We avoid importing LinuxMachine /
+  // EndHost types here to dodge a circular import; duck-typing is fine.
+  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
+    .getAllEquipment();
+  for (const eq of all) {
+    const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
+    if (!portsObj) continue;
+    for (const port of portsObj.values()) {
+      const ip = port.getIPAddress?.();
+      if (ip && ip.toString() === targetIp) {
+        // Only meaningful for Linux-flavoured devices that expose the
+        // executor pipeline; check duck-typed shape.
+        if (typeof (eq as unknown as { executeCommand?: unknown }).executeCommand === 'function') {
+          return eq;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 // ── ssh CLI argument parser ─────────────────────────────────────
