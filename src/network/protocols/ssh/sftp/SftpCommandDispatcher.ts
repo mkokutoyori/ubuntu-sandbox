@@ -11,6 +11,7 @@ import type {
   SftpRequestPayload,
 } from './ISftpCommand';
 import {
+  SftpCdCommand,
   SftpChmodCommand,
   SftpChownCommand,
   SftpDfCommand,
@@ -18,6 +19,7 @@ import {
   SftpLsCommand,
   SftpMkdirCommand,
   SftpPutCommand,
+  SftpPwdCommand,
   SftpRenameCommand,
   SftpRmCommand,
   SftpRmdirCommand,
@@ -51,6 +53,8 @@ export class SftpCommandDispatcher {
       new SftpStatCommand(),
       new SftpVersionCommand(),
       new SftpDfCommand(),
+      new SftpCdCommand(),
+      new SftpPwdCommand(),
     ]);
   }
 

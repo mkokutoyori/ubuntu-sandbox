@@ -133,15 +133,30 @@ export class SshServerHandler {
           // BRD SSH-05: non-interactive command execution. Also used by the
           // interactive shell sub-shell, which routes one exec per line.
           if (!userCtx) {
-            conn.write(JSON.stringify({ stdout: '', stderr: 'not authenticated', exitCode: 255 }));
+            conn.write(
+              JSON.stringify({
+                stdout: '',
+                stderr: 'not authenticated',
+                exitCode: 255,
+              }),
+            );
             return;
           }
           const command = (parsed.command as string | undefined) ?? '';
           const channelId = parsed.channelId as number | undefined;
-          const cwd = (channelId !== undefined && channels.get(channelId)?.cwd) || userCtx.homeDirectory;
+          const cwd =
+            (channelId !== undefined && channels.get(channelId)?.cwd) ||
+            userCtx.homeDirectory;
           const shell = this.ctx.getShell(userCtx, cwd);
-          const result = shell.execute(command);
-          conn.write(JSON.stringify(result));
+          // ILinuxShell.execute is async to support pipelines that must
+          // route through device-level command registries (network /
+          // service commands). The simulator's synchronous TCP delivery
+          // means the client's exec channel is already waiting for the
+          // response promise, so writing it from the .then() callback is
+          // delivered before await unblocks.
+          void shell
+            .execute(command)
+            .then((result) => conn.write(JSON.stringify(result)));
           break;
         }
 
@@ -233,13 +248,43 @@ export class SshServerHandler {
   }
 }
 
+/**
+ * BRD SFTP-07: normalise underlying errors into OpenSSH-style short
+ * messages. The client (`SftpSession`) wraps those into the full
+ * "Couldn't … : <msg>" / "remote open(\"<path>\"): <msg>" sentences.
+ */
 function errorToMessage(error: unknown): string {
-  if (typeof error === 'object' && error !== null) {
-    const e = error as { kind?: string; message?: string; path?: string };
-    if (e.kind === 'PERMISSION_DENIED' && e.path) {
-      return `Permission denied: ${e.path}`;
+  if (typeof error !== 'object' || error === null) return String(error);
+  const e = error as { kind?: string; message?: string; path?: string };
+
+  if (e.kind === 'PERMISSION_DENIED') return 'Permission denied';
+  if (e.kind === 'NOT_AUTHENTICATED') return 'not authenticated';
+  if (e.kind === 'INVALID_ARGUMENT') return e.message ?? 'invalid argument';
+  if (e.kind === 'UNKNOWN_OP') return 'Unknown SFTP op';
+
+  if (e.kind === 'IO_ERROR') {
+    const msg = (e.message ?? '').toLowerCase();
+    if (msg.includes('no such') || msg.includes('not found') || msg.includes('cannot read')) {
+      return 'No such file or directory';
     }
-    return e.message ?? e.kind ?? 'error';
+    if (msg.includes('parent') && msg.includes('does not exist')) {
+      return 'No such file or directory';
+    }
+    if (msg.includes('is a directory') || msg.includes('not a directory')) {
+      return 'Failure';
+    }
+    if (msg.includes('already exists') || msg.includes('file exists')) {
+      return 'File exists';
+    }
+    if (msg.includes('write failed') || msg.includes('permission')) {
+      return 'Permission denied';
+    }
+    if (msg.includes('rmdir failed') || msg.includes('rm failed')) {
+      return 'Failure';
+    }
+    if (msg.includes('rename')) return 'Failure';
+    return e.message ?? 'Failure';
   }
-  return String(error);
+
+  return e.message ?? e.kind ?? 'error';
 }

@@ -13,6 +13,9 @@ export * from './SshUserContext';
 export * from './SshPureUtils';
 export * from './SshConfig';
 export * from './SshAuthorizedKeys';
+export * from './SshKeygen';
+export * from './SshCopyId';
+export * from './Scp';
 
 export * from './auth/ISshAuthMethod';
 export * from './auth/PasswordAuthMethod';

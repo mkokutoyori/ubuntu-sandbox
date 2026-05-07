@@ -75,7 +75,7 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
     return {
-      execute(line: string) {
+      async execute(line: string) {
         return {
           stdout: `${line}: shell execution not yet wired\n`,
           stderr: '',

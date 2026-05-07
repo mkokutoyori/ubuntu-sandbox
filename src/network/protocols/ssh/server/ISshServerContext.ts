@@ -21,7 +21,7 @@ export interface SshServerConfig {
 }
 
 export interface ILinuxShell {
-  execute(line: string): { stdout: string; stderr: string; exitCode: number };
+  execute(line: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
 }
 
 export interface ISshServerContext {
