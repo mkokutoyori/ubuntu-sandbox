@@ -211,16 +211,22 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
-      // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout pops
-      // back to the previous device instead of closing the terminal.
-      if (this.sshStack.length > 0) {
-        this.popRemoteDevice();
-        return;
-      }
+      // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout
+      // unwinds in this order:
+      //   1. The active device's su stack (if any) — `exit` from
+      //      `root@remote` returns to `user@remote`, NOT to the local
+      //      terminal.
+      //   2. Once the device is at its root su level, the SSH stack
+      //      frame is popped, returning to the previous device.
+      //   3. If neither is active, the terminal closes.
       const exitResult = this.device.handleExit();
       if (exitResult.inSu) {
         if (exitResult.output) this.addLine(exitResult.output);
         this.syncDeviceState();
+        return;
+      }
+      if (this.sshStack.length > 0) {
+        this.popRemoteDevice();
         return;
       }
       // Signal close — the view/manager will handle it
@@ -1461,6 +1467,32 @@ export class LinuxTerminalSession extends TerminalSession {
   /** True while the terminal is operating on a remote device. */
   get isInsideSshSession(): boolean {
     return this.sshStack.length > 0;
+  }
+
+  /**
+   * Snapshot of the SSH stack for the UI layer. Returns one entry per
+   * pushed remote, oldest first; `current` is the active host name. The
+   * UI uses this to render an "SSH connected to <host>" banner so the
+   * user always sees they are not on their local machine even though
+   * the prompt and tab-completion now mirror the remote.
+   */
+  getSshContextInfo(): {
+    active: boolean;
+    chain: readonly { host: string; user: string }[];
+    current: string | null;
+  } {
+    const chain = this.sshStack.map((f) => {
+      const at = f.label.indexOf('@');
+      return at >= 0
+        ? { host: f.label.slice(at + 1), user: f.label.slice(0, at) }
+        : { host: f.label, user: f.user };
+    });
+    const current = chain.length > 0 ? chain[chain.length - 1].host : null;
+    return {
+      active: chain.length > 0,
+      chain,
+      current,
+    };
   }
 }
 
