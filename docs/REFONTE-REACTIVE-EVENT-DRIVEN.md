@@ -3050,6 +3050,7 @@ majeure.
 | 4b1 | Scheduler dans `Switch.macAgingTimer` | ✅ | Voir §12.8.6 |
 | 4b2-OSPF | OSPF v2 + v3 : timers, événements, signaux | ✅ | Voir §12.8.7 |
 | 4b2-OSPF.actors | OSPF : inversion réactive (acteurs souscrits au bus) | ✅ | Voir §12.8.8 |
+| 4b2-OSPF.deeper | OSPF : projections pures + LsaRefresh/NetworkLsa/RoutingTableSync actors | ✅ | Voir §12.8.9 |
 | 4b2-rest | RIP / DHCP / IPSec / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -3590,6 +3591,142 @@ protocolaire* : on peut maintenant brancher un nouvel acteur (par
 exemple, un `OspfTelemetryActor` qui exporte les transitions FSM
 vers Prometheus, ou un `OspfReplayActor` qui rejoue une trace) **sans
 toucher OSPFEngine.ts**.
+
+### 12.8.9 Phase 4b2-OSPF.deeper — projections pures + 3 acteurs supplémentaires (livrée)
+
+Pousse l'inversion réactive plus loin sur trois axes :
+
+1. **Projections pures** : la logique state→VM est extraite en
+   fonctions pures dans `observables.ts`, indépendamment testables.
+2. **2 nouveaux acteurs internes** (`LsaRefreshActor`,
+   `NetworkLsaActor`) qui prennent en charge le refresh périodique
+   des LSAs auto-originés et l'origination du Network-LSA quand le
+   moteur devient DR.
+3. **1 acteur d'intégration sortante** (`RoutingTableSyncActor`)
+   qui expose un hook `onRoutes(installer)` pour les consommateurs
+   externes (futur Router data-plane, télémétrie, replay).
+
+#### Projections pures — découplage state ↔ VM
+
+`src/network/ospf/observables.ts` (110 → 220 LoC) ajoute 5 fonctions
+pures :
+
+```ts
+projectNeighbors(interfaces: Iterable<OSPFInterface>): OspfNeighborVM[]
+projectInterfaces(interfaces: Iterable<OSPFInterface>): OspfInterfaceVM[]
+projectLsdbSummary(lsdb: LSDB): OspfLSDBSummaryVM
+projectRoutes(routes: ReadonlyArray<OSPFRouteEntry>, lastUpdatedAt: number): OspfRoutesVM
+projectRuntime(input: { running, spfRuns, lastSpfKind, lastSpfDurationMs, neighborChanges }): OspfRuntimeStatsVM
+lsaHeaderOf(lsa: LSA): LSAHeader  // helper
+```
+
+Le moteur ne fait plus que :
+
+```ts
+private rebuildNeighborSignal(): void {
+  this.signalStore.neighbors.set(projectNeighbors(this.interfaces.values()));
+}
+```
+
+— 4 lignes au lieu de 18, et la fonction `projectNeighbors` est
+testable sans instancier OSPFEngine. Les 5 méthodes
+`rebuildXxxSignal` du moteur passent de ≈ 95 LoC à ≈ 25 LoC cumulées.
+
+#### Topics ajoutés
+
+- **`ospf.lsa.refresh-due`** (nouveau) : émis par `tickLSAge` quand
+  un LSA self-originated atteint `LS_REFRESH_TIME`. Consommé par
+  `LsaRefreshActor`.
+- **`ospf.lsa.refreshed`** : déclaré en Phase 4b2-OSPF mais jamais
+  émis — désormais publié par `refreshOwnLSA` après le re-flood.
+- **`ospf.lsa.received`** : émis par `processLSUpdate` au début de la
+  boucle, **avant** l'install/flood. Permet aux observateurs
+  (capture tcpdump-like, IDS, replay) d'auditer chaque LSA reçue
+  sans instrumenter le moteur.
+
+#### Acteurs ajoutés (`src/network/ospf/actors/`)
+
+- `LsaRefreshActor.ts` (≈ 60 LoC). Souscrit à
+  `ospf.lsa.refresh-due`. Pour chaque event, lookup le full LSA via
+  `engine.lookupLSA(...)` et appelle `engine.refreshOwnLSA(area, lsa)`.
+  La policy de refresh (intervalle, coalescing, …) peut être changée
+  en remplaçant juste cet acteur.
+- `NetworkLsaActor.ts` (≈ 55 LoC). Souscrit à `ospf.dr-election`. Si
+  l'élection désigne ce moteur comme DR de l'interface, appelle
+  `engine.originateNetworkLSA(iface)`.
+- `RoutingTableSyncActor.ts` (≈ 80 LoC). Souscrit à
+  `ospf.routes-recomputed`. Multi-installer : plusieurs callbacks
+  peuvent être enregistrés via `onRoutes(installer)` et reçoivent
+  tous la même copie des routes. Erreurs d'installateurs isolées
+  (`try/catch`).
+  - Surface réactive sortante exposée par
+    `engine.routingTableSync.onRoutes(...)`. C'est le **point
+    d'intégration unique** pour la future intégration avec
+    `Router` (Phase 5/6) — plus besoin de `RouterOSPFIntegration`
+    pour propager les routes.
+
+#### Sites impératifs **supplémentaires** supprimés du moteur
+
+- `tickLSAge` : plus d'appel direct à `refreshOwnLSA` (2 sites
+  internes : aire + externe). Émet `ospf.lsa.refresh-due` à la
+  place ; `LsaRefreshActor` réagit.
+- `drElection` : plus d'appel direct à `originateNetworkLSA`. Émet
+  `ospf.dr-election` (déjà fait en Phase 4b2-OSPF.actors), et le
+  `NetworkLsaActor` filtre sur `dr === ipAddress`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/OSPF.deeperActors.test.ts` (**12 tests**,
+≈ 240 LoC) :
+
+- `LsaRefreshActor` :
+  - sur `LS_REFRESH_TIME`, l'actor déclenche le refresh (lsAge
+    revient à ~0) ;
+  - vérification de l'**ordre** : `ospf.lsa.refresh-due` arrive
+    AVANT `ospf.lsa.refreshed`.
+- `NetworkLsaActor` :
+  - origine Network-LSA quand on est élu DR ;
+  - **n'origine pas** Network-LSA quand le DR est un autre routeur
+    (filtre `dr === ipAddress`).
+- `RoutingTableSyncActor` :
+  - chaque installer reçoit les routes après chaque SPF ;
+  - support multi-installers concurrents ;
+  - **isolation des erreurs** : un installer qui throw n'empêche pas
+    les autres de fire ;
+  - **survie au `setEventBus()`** : les installers enregistrés sont
+    réattachés transparently sur le nouveau bus.
+- Snapshot causal : `installLSA → ospf.spf.run → ospf.routes-recomputed →
+  installer fired`, ordre vérifié.
+- Projections pures testées en isolation (sans engine) : `projectNeighbors([])`,
+  `projectLsdbSummary(empty)`, `lsaHeaderOf(lsa)`.
+
+#### Résultat
+
+- **100/100 tests events** verts (12 nouveaux). Avec les 357 OSPF :
+  **457/457 verts**.
+- Suite globale : baseline strictement préservée.
+- `OSPFEngine.ts` perd 5 méthodes `rebuildXxxSignal` privées qui
+  faisaient 95 LoC cumulées ; les remplace par 25 LoC déléguant aux
+  projections pures.
+- Le moteur compte maintenant **6 acteurs** vivants côté à côté :
+  `SignalRefreshActor`, `SpfActor`, `RouterLsaActor`,
+  `LsaRefreshActor`, `NetworkLsaActor`, `RoutingTableSyncActor`.
+
+#### Ce que cela débloque pour la suite
+
+- Phase 5 (devices) : le `Router` pourra s'intégrer avec OSPF en une
+  seule ligne :
+  ```ts
+  engine.routingTableSync.onRoutes((routes) => router.installOspfRoutes(routes));
+  ```
+  Plus besoin de `RouterOSPFIntegration` pour propager les routes —
+  c'est la moitié du fichier (≈ 850 LoC) qui peut potentiellement
+  disparaître.
+- Phase 6 (UI) : un composant `OspfRouteTable` consommera directement
+  `engine.observables.routes` via `useSyncExternalStore`, sans poller.
+- §11.2.5 (snapshot tests) : la trace causale d'une convergence est
+  maintenant capturable via `bus.subscribeAll(...)` et comparable
+  bit-pour-bit cross-runs.
 
 ### 12.9 Mot de la fin
 

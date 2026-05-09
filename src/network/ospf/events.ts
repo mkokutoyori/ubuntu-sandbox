@@ -75,6 +75,18 @@ export interface OspfLsaRefreshedPayload extends OspfRouterRef {
   lsa: LSAHeader;
 }
 
+/**
+ * Emitted by the LSA aging tick when a self-originated LSA reaches
+ * `LS_REFRESH_TIME`. Consumed by `LsaRefreshActor` which performs the
+ * actual refresh (bumps the seq, resets age, refloods). Splitting the
+ * "what happened" (LSA is refresh-due) from the "what we do about it"
+ * (refresh + reflood) keeps the policy pluggable.
+ */
+export interface OspfLsaRefreshDuePayload extends OspfRouterRef {
+  areaId: string;
+  lsa: LSAHeader;
+}
+
 // ── SPF ─────────────────────────────────────────────────────────────────
 
 export interface OspfSpfRunPayload extends OspfRouterRef {
@@ -112,6 +124,7 @@ export type OspfDomainEvent =
   | { topic: 'ospf.lsa.flushed'; payload: OspfLsaFlushedPayload }
   | { topic: 'ospf.lsa.received'; payload: OspfLsaReceivedPayload }
   | { topic: 'ospf.lsa.refreshed'; payload: OspfLsaRefreshedPayload }
+  | { topic: 'ospf.lsa.refresh-due'; payload: OspfLsaRefreshDuePayload }
   | { topic: 'ospf.spf.run'; payload: OspfSpfRunPayload }
   | { topic: 'ospf.routes-recomputed'; payload: OspfRoutesRecomputedPayload }
   | { topic: 'ospf.area.activated'; payload: OspfAreaActivatedPayload }

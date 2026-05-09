@@ -17,3 +17,9 @@
 export { SignalRefreshActor } from './SignalRefreshActor';
 export { SpfActor } from './SpfActor';
 export { RouterLsaActor } from './RouterLsaActor';
+export { LsaRefreshActor } from './LsaRefreshActor';
+export { NetworkLsaActor } from './NetworkLsaActor';
+export {
+  RoutingTableSyncActor,
+  type OspfRoutesInstaller,
+} from './RoutingTableSyncActor';
