@@ -1148,6 +1148,12 @@ export class IPSecEngine implements IProtocolEngine {
       ikeSA.dpdTimeouts = (ikeSA.dpdTimeouts || 0) + 1;
       ikeSA.lastDPDActivity = now;
 
+      // Reactive: announce the DPD probe attempt (telemetry, replay).
+      this.getBus().publish({
+        topic: 'ipsec.dpd.request-sent',
+        payload: { ...this.deviceRef(), peerIp: peerIP, attempt: ikeSA.dpdTimeouts },
+      });
+
       if (this.debugIsakmp) {
         Logger.info(this.router.id, 'debug:isakmp',
           `ISAKMP: DPD R-U-THERE timeout ${ikeSA.dpdTimeouts}/${this.dpdConfig.retries} for peer ${peerIP}`);
@@ -1157,7 +1163,13 @@ export class IPSecEngine implements IProtocolEngine {
         events.push(`DPD: peer ${peerIP} declared dead after ${ikeSA.dpdTimeouts} timeouts`);
         Logger.info(this.router.id, 'ipsec:dpd-dead',
           `${this.router.name}: DPD declared peer ${peerIP} dead — clearing SAs`);
-        this.clearSAsForPeer(peerIP);
+        // Reactive: announce peer-down BEFORE clearing SAs so consumers
+        // see the cause-effect chain on the bus.
+        this.getBus().publish({
+          topic: 'ipsec.dpd.peer-down',
+          payload: { ...this.deviceRef(), peerIp: peerIP, retries: ikeSA.dpdTimeouts },
+        });
+        this.clearSAsForPeer(peerIP, 'dpd');
       }
     }
 
@@ -2315,6 +2327,19 @@ export class IPSecEngine implements IProtocolEngine {
   processInboundESP(outerPkt: IPv4Packet): IPv4Packet | null {
     const esp = outerPkt.payload as ESPPacket;
     if (!esp || esp.type !== 'esp') return null;
+
+    // Observability: run the inbound FilterChain in shadow mode so
+    // every real ESP packet is recorded on the bus. The chain outcome
+    // does NOT affect the data path; that stays governed by the
+    // existing imperative checks below.
+    this.runInboundChain({
+      spi: esp.spi,
+      seqNum: esp.sequenceNumber,
+      payloadLen: outerPkt.totalLength ?? 0,
+      fromIp: typeof outerPkt.srcIP === 'string' ? outerPkt.srcIP : String(outerPkt.srcIP ?? ''),
+      toIp: typeof outerPkt.dstIP === 'string' ? outerPkt.dstIP : String(outerPkt.dstIP ?? ''),
+      mode: 'tunnel',
+    });
 
     const sa = this.spiToSA.get(esp.spi);
     if (!sa) {

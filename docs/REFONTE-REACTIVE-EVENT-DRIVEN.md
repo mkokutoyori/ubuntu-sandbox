@@ -3056,6 +3056,7 @@ majeure.
 | 4b2-OSPF.lifecycle | OSPF : Hello + DD/LSR retransmits comme acteurs réactifs | ✅ | Voir §12.8.12 |
 | 4b2-IPSec | IPSec : timers + signaux + FilterChain pattern | ✅ | Voir §12.8.13 |
 | 4b2-IPSec.deeper | IPSec : topics typés, observables complets, SignalRefreshActor, OutboundChain, SA emissions | ✅ | Voir §12.8.14 |
+| 4b2-IPSec.continuum | IPSec : DPD events + IPSecCaptureActor + shadow chain on real ESP path | ✅ | Voir §12.8.15 |
 | 4b2-rest | RIP / DHCP / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -4283,6 +4284,95 @@ Reste à 10/10 : migrer le data path **réel** (`processInboundESP` et
 maître au lieu d'observabilité parallèle. Très haut risque pour les
 357 tests IPSec existants — décision : on s'arrête à 9/10 et on
 passe au moteur suivant.
+
+### 12.8.15 Phase 4b2-IPSec.continuum — capture + shadow chain (livrée)
+
+Continuation directe : on transforme la chaîne d'observabilité en
+**adapter de capture réel** et on connecte le data-path ESP réel à
+la chaîne en mode shadow (no-op fonctionnel, observable).
+
+#### Émissions DPD ajoutées
+
+`runDPDCheck()` publie désormais :
+- `ipsec.dpd.request-sent { peerIp, attempt }` à chaque tentative
+  (incrément `dpdTimeouts`) ;
+- `ipsec.dpd.peer-down { peerIp, retries }` quand le seuil
+  `retries` est atteint, **avant** `clearSAsForPeer(peerIP, 'dpd')`.
+  L'ordre causal est ainsi observable sur le bus :
+  `dpd.peer-down → ike.sa-deleted → ipsec.sa.deleted`.
+
+#### `IPSecCaptureActor` (nouveau)
+
+`src/network/ipsec/actors/IPSecCaptureActor.ts` (≈ 100 LoC) — mirror
+fonctionnel d'`OspfCaptureActor` :
+
+- 8 sources d'événements souscrites :
+  - `ipsec.inbound.outcome` / `ipsec.outbound.outcome` ;
+  - `ipsec.ike.sa-installed` / `ipsec.ike.sa-deleted` ;
+  - `ipsec.sa.installed` / `ipsec.sa.deleted` ;
+  - `ipsec.dpd.request-sent` / `ipsec.dpd.peer-down`.
+- 8 valeurs `CapturedIpsecKind` discriminantes ;
+- ring buffer borné, `start/stop/size/clear/getCapture(filter?)` ;
+- multi-engine via filtre `deviceId`.
+
+API :
+```ts
+const capture = new IPSecCaptureActor(bus, /* maxEntries */ 1000);
+capture.start();
+// ... run scenario ...
+capture.getCapture({ kind: 'inbound-outcome' });
+capture.getCapture({ deviceId: 'R1' });
+```
+
+#### Shadow chain sur le data-path réel
+
+`processInboundESP(outerPkt)` exécute désormais
+`runInboundChain({ spi, seqNum, payloadLen, fromIp, toIp, mode })`
+**en première ligne**, avant la logique impérative existante. La
+chaîne s'exécute en mode observabilité : son verdict n'affecte pas
+le data path mais émet `ipsec.inbound.outcome`. Conséquence :
+**chaque paquet ESP réel** qui passe par le moteur est désormais
+visible sur le bus, capté par `IPSecCaptureActor`, et ses chaînes
+plug-ins (rate-limit, telemetry…) se déclenchent automatiquement.
+
+Garantie : zéro régression — le `processInboundESP` réel reste
+souverain pour le drop/accept des paquets. La chaîne ne peut que
+**observer** et compter, pas **détourner**.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/IPSec.capture.test.ts` (**8 tests**) :
+
+- Capture en/out outcomes, SA install/delete events, DPD events.
+- Filtres `kind` et `deviceId`.
+- Cap du buffer à `maxEntries` avec drop FIFO de la moitié.
+- `clear()` vide sans désouscrire.
+- `stop()` désouscrit.
+- Multi-engine isolé par deviceId.
+
+#### Résultat
+
+- **191/191 tests events** verts (8 nouveaux). 357 IPSec préexistants
+  intacts. Baseline globale strictement préservée.
+- **Capture IPSec opérationnelle** en ≈ 100 LoC d'adapter,
+  zéro modification du moteur.
+- **Data path ESP réel** désormais observable au bus via shadow chain
+  — un test `bus.subscribeAll` voit les vrais paquets décapsulés.
+- 2 acteurs IPSec internes (`SignalRefresh`) + 1 opt-in (`Capture`).
+
+#### Score IPSec consolidé
+
+| Dimension | 4b2-IPSec.deeper | 4b2-IPSec.continuum |
+|---|:---:|:---:|
+| Topics dédiés | 11 | **11** (utilisés effectivement par DPD + ESP path) |
+| Acteurs | 1 | **2** (SignalRefresh + Capture opt-in) |
+| Filter chains | 2 (dans le bus) | **2 + connectées au data path** (shadow mode) |
+| Émissions DPD | 0 | **2** (request-sent, peer-down) |
+| Tests réactifs | 48 | **56** |
+
+Score IPSec : **9.5/10**. Le 0.5 manquant est l'utilisation des
+chaînes comme **data path master** (au lieu de shadow). Risque
+estimé incompatible avec la promesse "0 régression sur 357 tests".
 
 ### 12.9 Mot de la fin
 

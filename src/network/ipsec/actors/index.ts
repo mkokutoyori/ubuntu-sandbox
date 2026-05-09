@@ -13,3 +13,9 @@
  */
 
 export { IPSecSignalRefreshActor } from './IPSecSignalRefreshActor';
+export {
+  IPSecCaptureActor,
+  type CapturedIpsecEntry,
+  type CapturedIpsecKind,
+  type IPSecCaptureFilter,
+} from './IPSecCaptureActor';
