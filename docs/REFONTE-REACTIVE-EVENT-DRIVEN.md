@@ -3060,6 +3060,7 @@ majeure.
 | 4b2-RIP | RIP : timers + topics + observables + acteur | ✅ | Voir §12.8.16 |
 | 4b2-DHCP | DHCP client : timers + 18 topics + observables + acteur | ✅ | Voir §12.8.17 |
 | 4b2-NAT | NAT : 6 topics + observables + acteur + emissions | ✅ | Voir §12.8.18 |
+| 4b2-deeper | DHCP server emissions + DHCPCaptureActor + NATCaptureActor | ✅ | Voir §12.8.19 |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -4595,6 +4596,73 @@ sessions+stats. Filtré par `deviceId`.
 - Baseline globale strictement préservée (578 préexistants).
 - 6 topics, 2 signaux, 1 acteur, 2 nouveaux counters.
 - 0 timer natif (NAT n'en utilise pas).
+
+### 12.8.19 Phase 4b2-deeper — DHCPServer émissions + Capture actors (livrée)
+
+Pousse DHCP et NAT au niveau des autres engines (OSPF, IPSec) en
+ajoutant les émissions côté serveur DHCP et les acteurs de capture
+opt-in pour les deux domaines.
+
+#### DHCPServer — émissions
+
+Les topics `dhcp.pool.lease-allocated` et `dhcp.pool.lease-released`
+étaient déclarés en Phase 4b2-DHCP mais jamais émis côté serveur.
+C'est désormais corrigé :
+
+- `start()` / `stop()` émettent `dhcp.engine.started/stopped` avec
+  `role: 'server'`.
+- Les **3 sites principaux** d'allocation (`allocateAddress` ligne
+  266, REQUEST normal ligne 446, REQUEST inside-pool ligne 546)
+  émettent `dhcp.pool.lease-allocated`.
+- `processRelease` (chemin legacy + RFC-compliant) émet
+  `dhcp.pool.lease-released` avec `reason: 'client-release'`.
+- `processDecline` émet `dhcp.pool.lease-released` avec
+  `reason: 'declined'`.
+- `server.observables.leases / .stats` exposés via
+  `DHCPServerSignalStore` + `makeReadonlyDHCPServerObservables`,
+  mis à jour à chaque mutation des bindings.
+- 3 nouveaux setters : `setEventBus`, `setDeviceId(id, hostname?)`,
+  `getDeviceId()`.
+
+#### DHCPCaptureActor (`src/network/dhcp/actors/`)
+
+Nouvel acteur opt-in (≈ 110 LoC) qui souscrit aux **18 topics
+DHCP** et maintient un ring buffer borné. 18 valeurs
+`CapturedDhcpKind` discriminantes. Filtres `deviceId`, `kind`,
+`iface`. Mêmes patterns que `OspfCaptureActor` / `IPSecCaptureActor`.
+
+#### NATCaptureActor (`src/network/devices/router/nat/actors/`)
+
+Mirror pour NAT (≈ 80 LoC) : souscrit aux 6 topics NAT, ring buffer,
+filtres `deviceId`, `kind`, `localIp`.
+
+#### Tests ajoutés
+
+- `src/__tests__/unit/events/DHCP.deeper.test.ts` (**8 tests**) :
+  - DHCPServer émet `dhcp.engine.started` (role: 'server').
+  - `dhcp.pool.lease-allocated` émis sur DORA réussi.
+  - `server.observables.leases` rafraîchi.
+  - `server.observables.stats.activeLeases` reflète les bindings.
+  - `DHCPCaptureActor` enregistre les événements client + serveur dans l'ordre.
+  - Filtres `deviceId`, `kind`, `iface`.
+  - `clear()` vide ; `stop()` désouscrit.
+- `src/__tests__/unit/events/NAT.capture.test.ts` (**4 tests**) :
+  - `NATCaptureActor` enregistre `session-created` à chaque
+    `translateOutbound`.
+  - Records `session-removed` + `stale-sweeped` sur purge.
+  - Filtre `localIp`.
+  - Buffer cap, clear, stop.
+
+#### Résultat
+
+- **234/234 tests events** verts (13 nouveaux ce commit).
+- Baseline globale strictement préservée (578 préexistants, 0 nouveau).
+- DHCP server : 4 sites d'émission (lease-allocated × 3,
+  lease-released × 2 paths).
+- 2 nouveaux acteurs opt-in (DHCPCapture, NATCapture).
+- Démontre que la primitive `EventBus` + nos topics typés permettent
+  d'ajouter une feature "tcpdump-like" pour n'importe quel domaine
+  en ~80–110 LoC d'adapter, **sans modification du moteur**.
 
 ### 12.9 Mot de la fin
 

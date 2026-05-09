@@ -123,8 +123,9 @@ describe('NATEngine — purgeStale emits removed events', () => {
     engine.translateOutbound(pkt, 'Gi0/1', 'Gi0/0');
 
     trace.length = 0;
-    // Force every session to be considered stale (timeout = 0).
-    engine.purgeStale(0);
+    // Force every session to be considered stale (negative timeout
+    // makes any non-negative `now - timestamp` exceed it).
+    engine.purgeStale(-1);
 
     expect(trace.find((e) => e.topic === 'nat.session.removed')).toBeDefined();
     expect(trace.find((e) => e.topic === 'nat.stale.sweeped')).toBeDefined();
