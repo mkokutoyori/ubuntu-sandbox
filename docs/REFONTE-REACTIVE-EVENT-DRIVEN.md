@@ -3058,7 +3058,8 @@ majeure.
 | 4b2-IPSec.deeper | IPSec : topics typés, observables complets, SignalRefreshActor, OutboundChain, SA emissions | ✅ | Voir §12.8.14 |
 | 4b2-IPSec.continuum | IPSec : DPD events + IPSecCaptureActor + shadow chain on real ESP path | ✅ | Voir §12.8.15 |
 | 4b2-RIP | RIP : timers + topics + observables + acteur | ✅ | Voir §12.8.16 |
-| 4b2-rest | DHCP / NAT | ⏳ | – |
+| 4b2-DHCP | DHCP client : timers + 18 topics + observables + acteur | ✅ | Voir §12.8.17 |
+| 4b2-NAT | NAT : reactive uplift | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -4443,6 +4444,85 @@ Compteurs internes (`updatesSent`, `updatesReceived`,
 - **202/202 tests events** verts (11 nouveaux RIP).
 - Baseline globale strictement préservée (578 préexistants).
 - 0 timer natif, 8 topics, 2 signaux, 1 acteur.
+
+### 12.8.17 Phase 4b2-DHCP — réactivité du client (livrée)
+
+DHCP client passe à **9/10**. Server-side reste à instrumenter dans
+une phase ultérieure (les pools / leases sont déjà observables via
+les méthodes existantes — l'enveloppe réactive autour est mineure).
+
+#### Topics ajoutés (`src/network/dhcp/events.ts`)
+
+**18 topics** typés couvrant client + serveur :
+
+- Engine: `dhcp.engine.started/stopped` (avec `role: 'client' | 'server'`).
+- Client FSM : `dhcp.client.state-changed { iface, oldState, newState, cause }`.
+- DORA : `dhcp.discover.sent`, `dhcp.offer.received`,
+  `dhcp.request.sent`, `dhcp.ack.received`, `dhcp.nak.received`.
+- Lease lifecycle : `dhcp.lease.granted`, `dhcp.lease.renewing`,
+  `dhcp.lease.rebinding`, `dhcp.lease.expired`,
+  `dhcp.lease.released`.
+- Conflit ARP : `dhcp.decline.sent`, `dhcp.address-conflict`.
+- Server pool (préparés, à émettre plus tard) :
+  `dhcp.pool.lease-allocated`, `dhcp.pool.lease-released`,
+  `dhcp.reservation.added`.
+
+#### Observables (`src/network/dhcp/observables.ts`)
+
+- `DHCPClientSignalStore` + `DHCPClientObservables` exposé via
+  `client.observables`.
+- `DHCPServerSignalStore` + `DHCPServerObservables` (préparés).
+- 2 view-models client : `DhcpClientIfaceVM`, `DhcpClientStatsVM`.
+- 2 fonctions de projection pure : `projectDhcpClientIfaces`,
+  `projectDhcpClientStats`.
+- Counters internes : `discoversSent`, `offersReceived`,
+  `requestsSent`, `acksReceived`, `naksReceived`, `leasesGranted`,
+  `leasesExpired`, `leasesReleased`, `conflicts`.
+
+#### Acteur
+
+`DHCPClientSignalRefreshActor` souscrit à 14 topics DHCP et
+rafraîchit `ifaces` + `stats`. Filtré par `deviceId`.
+
+#### Migration timers DHCPClient
+
+- `state.renewalTimer / rebindingTimer / expirationTimer` — type
+  passe de `ReturnType<typeof setTimeout>` à `symbol` (token TimerSet).
+- 3 sites `setTimeout` natifs migrés vers `this.timers.setTimeout`.
+- 3 sites `clearTimeout` migrés vers `this.timers.clear`.
+- `stop()` utilise `this.timers.clearAll()`.
+- **0 setTimeout/clearTimeout natif** restant dans `DHCPClient.ts`.
+
+#### Émissions DORA
+
+- `requestLease()` émet le pipeline complet `discover.sent →
+  offer.received → request.sent → ack.received → lease.granted`
+  dans l'ordre causal vérifiable au bus.
+- Chaque transition FSM (INIT → SELECTING → REQUESTING → BOUND, ou
+  → INIT sur NAK / DECLINE) émet `dhcp.client.state-changed`.
+- Les timers de lease émettent `lease.renewing` (T1),
+  `lease.rebinding` (T2), `lease.expired` (T3).
+- ARP conflict détecté → `dhcp.address-conflict` + `dhcp.decline.sent`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/DHCP.reactive.test.ts` (**12 tests**) :
+
+- Engine lifecycle events.
+- Observables surface (ifaces + stats).
+- DORA emission ordering verified bit-pour-bit.
+- Tous les state-changed events émis pendant un DORA.
+- Compteurs stats alimentés.
+- Lease renewal timer fires at T1.
+- Lease expiration émis quand le client n'a plus de serveur joignable.
+- `stop()` annule tous les timers per-lease.
+- Cross-engine deviceId filter (2 clients indépendants).
+
+#### Résultat
+
+- **214/214 tests events** verts (12 nouveaux DHCP).
+- Baseline globale strictement préservée (578 préexistants).
+- 0 timer natif, 18 topics, 2 signaux, 1 acteur, 9 counters.
 
 ### 12.9 Mot de la fin
 

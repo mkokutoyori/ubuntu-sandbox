@@ -272,12 +272,12 @@ export interface DHCPClientIfaceState {
   lastKnownLease: DHCPClientLease | null;
   /** DHCP event log for this interface */
   logs: string[];
-  /** Renewal timer handle */
-  renewalTimer: ReturnType<typeof setTimeout> | null;
-  /** Rebinding timer handle */
-  rebindingTimer: ReturnType<typeof setTimeout> | null;
-  /** Expiration timer handle */
-  expirationTimer: ReturnType<typeof setTimeout> | null;
+  /** Renewal timer handle (TimerSet token, Phase 4b2-DHCP). */
+  renewalTimer: symbol | null;
+  /** Rebinding timer handle (TimerSet token). */
+  rebindingTimer: symbol | null;
+  /** Expiration timer handle (TimerSet token). */
+  expirationTimer: symbol | null;
   /** Whether dhclient process is running */
   processRunning: boolean;
 }

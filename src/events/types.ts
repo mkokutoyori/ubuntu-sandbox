@@ -24,6 +24,7 @@ import type {
 import type { OspfDomainEvent } from '@/network/ospf/events';
 import type { IpsecDomainEvent } from '@/network/ipsec/events';
 import type { RipDomainEvent } from '@/network/rip/events';
+import type { DhcpDomainEvent } from '@/network/dhcp/events';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-cutting
@@ -229,7 +230,9 @@ export type DomainEvent =
   // IPSec (sub-union, see src/network/ipsec/events.ts)
   | IpsecDomainEvent
   // RIP (sub-union, see src/network/rip/events.ts)
-  | RipDomainEvent;
+  | RipDomainEvent
+  // DHCP (sub-union, see src/network/dhcp/events.ts)
+  | DhcpDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 
