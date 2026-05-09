@@ -3059,7 +3059,7 @@ majeure.
 | 4b2-IPSec.continuum | IPSec : DPD events + IPSecCaptureActor + shadow chain on real ESP path | ✅ | Voir §12.8.15 |
 | 4b2-RIP | RIP : timers + topics + observables + acteur | ✅ | Voir §12.8.16 |
 | 4b2-DHCP | DHCP client : timers + 18 topics + observables + acteur | ✅ | Voir §12.8.17 |
-| 4b2-NAT | NAT : reactive uplift | ⏳ | – |
+| 4b2-NAT | NAT : 6 topics + observables + acteur + emissions | ✅ | Voir §12.8.18 |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -4523,6 +4523,78 @@ rafraîchit `ifaces` + `stats`. Filtré par `deviceId`.
 - **214/214 tests events** verts (12 nouveaux DHCP).
 - Baseline globale strictement préservée (578 préexistants).
 - 0 timer natif, 18 topics, 2 signaux, 1 acteur, 9 counters.
+
+### 12.8.18 Phase 4b2-NAT — réactivité (livrée)
+
+NATEngine atteint **9/10**. Pas de timer natif à migrer (NAT n'utilise
+pas `setTimeout` — les expirations sont déclenchées par
+`purgeStale()` appelé côté router).
+
+#### Topics ajoutés (`src/network/devices/router/nat/events.ts`)
+
+**6 topics** typés :
+
+- `nat.engine.configured` — résumé inside/outside ifaces, static
+  entries, pools, dynamic rules.
+- `nat.session.created { protocol, localIp, localPort, globalIp,
+  globalPort, outsideIp, outsidePort, kind: 'static' | 'overload' |
+  'pool' }` — émis quand un nouveau mapping PAT/pool est alloué.
+- `nat.session.removed { ..., reason: 'expired' | 'manual' | 'flush' }`.
+- `nat.translation.applied { direction, beforeSrc/Dst, afterSrc/Dst,
+  cacheHit }` — préparé pour la couche de capture future.
+- `nat.tcp.state-changed { localIp, localPort, globalIp, globalPort,
+  oldState, newState }` — émis à chaque transition syn-seen →
+  established → fin-wait → time-wait sur PAT TCP.
+- `nat.stale.sweeped { sweepedCount, remainingSessions }` — résumé
+  après chaque cycle `purgeStale()`.
+
+#### Observables (`src/network/devices/router/nat/observables.ts`)
+
+- `NATSignalStore` privé + `NATObservables` exposé via
+  `engine.observables`.
+- 2 view-models : `NatSessionVM` (avec `age`), `NatStatsVM` (avec
+  TCP state distribution `tcpEstablished` / `tcpHalfOpen` /
+  `tcpClosing`).
+- 2 fonctions de projection pure : `projectNatSessions`,
+  `projectNatStats`.
+
+#### Acteur
+
+`NATSignalRefreshActor` souscrit à 6 topics NAT, refresh
+sessions+stats. Filtré par `deviceId`.
+
+#### Émissions instrumentées dans `NATEngine`
+
+- `translateOutbound` (overload PAT) — émet `nat.session.created`
+  avec `kind: 'overload'` à chaque allocation, `nat.tcp.state-changed`
+  à chaque transition TCP.
+- `translateOutbound` (pool) — émet `nat.session.created` avec
+  `kind: 'pool'`.
+- `purgeStale()` — émet `nat.session.removed` (raison `expired`)
+  par session expirée, puis `nat.stale.sweeped` une fois en fin de
+  cycle (uniquement si au moins une session a été retirée).
+- 2 nouveaux compteurs : `inboundTranslations`, `outboundTranslations`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/NAT.reactive.test.ts` (**7 tests**) :
+
+- Observables surface (sessions + stats).
+- `nat.session.created` émis sur translateOutbound + détails du
+  payload (localIp, outsideIp, kind).
+- Signal sessions mis à jour réactivement.
+- Stats counters (sessionCount, misses) suivent.
+- `purgeStale(0)` émet `nat.session.removed` + `nat.stale.sweeped`
+  + signal sessions vidé.
+- Pas de `stale.sweeped` quand rien à sweeper.
+- Cross-engine deviceId filter.
+
+#### Résultat
+
+- **221/221 tests events** verts (7 nouveaux NAT).
+- Baseline globale strictement préservée (578 préexistants).
+- 6 topics, 2 signaux, 1 acteur, 2 nouveaux counters.
+- 0 timer natif (NAT n'en utilise pas).
 
 ### 12.9 Mot de la fin
 
