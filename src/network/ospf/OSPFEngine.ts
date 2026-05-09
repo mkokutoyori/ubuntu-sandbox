@@ -52,6 +52,11 @@ import {
   computeOSPFLSAChecksum as _computeOSPFLSAChecksum,
   verifyOSPFLSAChecksum as _verifyOSPFLSAChecksum,
 } from './checksum';
+import {
+  SignalRefreshActor,
+  SpfActor,
+  RouterLsaActor,
+} from './actors';
 
 // Re-export so external callers (and the OSPFv3 engine) keep importing
 // the checksum helpers from `OSPFEngine`.
@@ -149,17 +154,56 @@ export class OSPFEngine implements IProtocolEngine {
   private readonly signalStore = new OspfSignalStore();
   /** Read-only observables (neighbors, interfaces, LSDB summary, routes, runtime). */
   readonly observables: OspfObservables = makeReadonlyObservables(this.signalStore);
+  /** Bus actors that drive the reactive side effects (signal refresh, SPF
+   *  scheduling, Router-LSA re-origination). Allocated in `start()` and
+   *  torn down in `shutdown()`. The engine itself only emits events; these
+   *  actors react. */
+  private signalRefreshActor: SignalRefreshActor | null = null;
+  private spfActor: SpfActor | null = null;
+  private routerLsaActor: RouterLsaActor | null = null;
 
   constructor(processId: number = 1) {
     this.config = createDefaultOSPFConfig(processId);
     this.lsdb = createEmptyLSDB();
+    // Wire reactive actors at construction so that even tests that
+    // exercise installLSA / tickLSAge / drElection without calling
+    // start() benefit from the reactive flow.
+    this.attachActors();
+  }
+
+  /**
+   * Allocate the actor instances (idempotent) and start their
+   * subscriptions. Called automatically in the constructor and after
+   * `setEventBus()` to re-bind onto the new bus.
+   */
+  private attachActors(): void {
+    if (this.signalRefreshActor) {
+      this.signalRefreshActor.stop();
+    }
+    if (this.spfActor) {
+      this.spfActor.stop();
+    }
+    if (this.routerLsaActor) {
+      this.routerLsaActor.stop();
+    }
+
+    const bus = this.getBus();
+    this.signalRefreshActor = new SignalRefreshActor(bus, this);
+    this.spfActor = new SpfActor(bus, this);
+    this.routerLsaActor = new RouterLsaActor(bus, this);
+    this.signalRefreshActor.start();
+    this.spfActor.start();
+    this.routerLsaActor.start();
   }
 
   // ─── Reactive injection ─────────────────────────────────────────────
 
-  /** Inject a custom bus (test-only / multi-topology). */
+  /** Inject a custom bus (test-only / multi-topology). The reactive
+   *  actors are re-attached to the new bus so the engine remains
+   *  fully reactive against whichever bus the caller picks. */
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
+    this.attachActors();
   }
 
   /** Inject a custom scheduler. Must be called before `start()` to ensure
@@ -190,6 +234,69 @@ export class OSPFEngine implements IProtocolEngine {
       processId: this.config.processId,
       deviceId: this.deviceId,
     };
+  }
+
+  // ─── Read-model refresh (driven by `SignalRefreshActor`) ──────────
+  // The methods below are public-but-internal: they are part of the
+  // contract between the engine and its bundled actors. They are
+  // prefixed with `_` to signal that user code should never call them
+  // directly — the reactive flow does it for you when an event is
+  // published.
+
+  /** [actor-API] Refresh the `neighbors` signal in isolation. */
+  _refreshNeighborSignal(): void {
+    this.rebuildNeighborSignal();
+  }
+
+  /** [actor-API] Refresh the `interfaces` signal in isolation. */
+  _refreshInterfaceSignal(): void {
+    this.rebuildInterfaceSignal();
+  }
+
+  /** [actor-API] Refresh both interface- and neighbor-derived signals. */
+  _refreshInterfaceNeighborSignals(): void {
+    this.rebuildInterfaceSignal();
+    this.rebuildNeighborSignal();
+  }
+
+  /** [actor-API] Refresh neighbors + interfaces + runtime in one pass. */
+  _refreshNeighborInterfaceRuntimeSignals(): void {
+    this.rebuildNeighborSignal();
+    this.rebuildInterfaceSignal();
+    this.updateRuntimeSignal();
+  }
+
+  /** [actor-API] Refresh the `lsdbSummary` signal. */
+  _refreshLSDBSignal(): void {
+    this.rebuildLSDBSignal();
+  }
+
+  /** [actor-API] Refresh the `routes` signal. */
+  _refreshRoutesSignal(): void {
+    this.rebuildRoutesSignal();
+  }
+
+  /** [actor-API] Refresh routes + runtime stats after an SPF run. */
+  _refreshRoutesAndRuntimeSignals(lastSpfDurationMs: number): void {
+    this.rebuildRoutesSignal();
+    this.updateRuntimeSignal({ lastSpfDurationMs });
+  }
+
+  /** [actor-API] Refresh the `runtime` signal. */
+  _refreshRuntimeSignal(): void {
+    this.updateRuntimeSignal();
+  }
+
+  /** Public read of the interface→area map, consumed by `RouterLsaActor`.
+   *  Falls back to the virtual-link table so VL synthetic interfaces
+   *  (whose `areaId` is logically the backbone) are correctly resolved. */
+  getInterfaceAreaId(ifaceName: string): string | undefined {
+    const phys = this.interfaces.get(ifaceName);
+    if (phys) return phys.areaId;
+    for (const [, vl] of this.virtualLinks) {
+      if (vl.iface.name === ifaceName) return vl.iface.areaId;
+    }
+    return undefined;
   }
 
   // ─── Read-model refresh (called after state mutations) ──────────────
@@ -296,8 +403,17 @@ export class OSPFEngine implements IProtocolEngine {
   start(): void {
     if (this.running) return;
     this.running = true;
+
+    // Actors were attached in the constructor (and re-attached on
+    // setEventBus). Make sure they are subscribed in case shutdown()
+    // tore them down.
+    this.signalRefreshActor?.start();
+    this.spfActor?.start();
+    this.routerLsaActor?.start();
+
     this.startLSAgeTimer();
-    // Announce activation of every configured area at startup.
+    // Announce activation of every configured area at startup. The
+    // SignalRefreshActor will see these and refresh the runtime signal.
     const bus = this.getBus();
     for (const [areaId] of this.config.areas) {
       bus.publish({
@@ -305,6 +421,8 @@ export class OSPFEngine implements IProtocolEngine {
         payload: { ...this.routerRef(), areaId },
       });
     }
+    // Initial runtime signal — the actor only fires after the first
+    // event, so we kick the read-model with a baseline value here.
     this.updateRuntimeSignal();
   }
 
@@ -766,6 +884,8 @@ export class OSPFEngine implements IProtocolEngine {
     const iface = this.interfaces.get(name);
     if (!iface) return;
 
+    const oldState = iface.state;
+
     if (iface.networkType === 'point-to-point') {
       iface.state = 'PointToPoint';
     } else {
@@ -782,9 +902,21 @@ export class OSPFEngine implements IProtocolEngine {
       this.startHelloTimer(iface);
     }
 
-    // Originate Router-LSA for this area
+    // Originate Router-LSA for this area. The signal refresh is driven
+    // by the `ospf.interface.state-changed` event below.
     this.originateRouterLSA(iface.areaId);
-    this.rebuildInterfaceSignal();
+
+    if (oldState !== iface.state) {
+      this.getBus().publish({
+        topic: 'ospf.interface.state-changed',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          oldState,
+          newState: iface.state,
+        },
+      });
+    }
   }
 
   private startHelloTimer(iface: OSPFInterface): void {
@@ -1087,7 +1219,11 @@ export class OSPFEngine implements IProtocolEngine {
         this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${oldState} to ${neighbor.state}, ${event}`);
       }
 
-      // Reactive notifications: bus event + signal refresh.
+      // Reactive flow: emit the FSM transition. The bundled actors take
+      // it from here:
+      //   - SignalRefreshActor refreshes neighbors / interfaces / runtime.
+      //   - RouterLsaActor re-originates the Router-LSA on Full ↔ X.
+      //   - SpfActor schedules an SPF run on Full ↔ X.
       this.getBus().publish({
         topic: 'ospf.neighbor.state-changed',
         payload: {
@@ -1099,15 +1235,6 @@ export class OSPFEngine implements IProtocolEngine {
           event,
         },
       });
-      this.rebuildNeighborSignal();
-      this.rebuildInterfaceSignal();
-      this.updateRuntimeSignal();
-
-      // Re-originate Router-LSA on adjacency changes
-      if (neighbor.state === 'Full' || oldState === 'Full') {
-        this.originateRouterLSA(iface.areaId);
-        this.scheduleSPF();
-      }
     }
   }
 
@@ -1318,7 +1445,8 @@ export class OSPFEngine implements IProtocolEngine {
       iface.state = 'DROther';
     }
 
-    // Reactive: announce the new DR/BDR pair when it changed.
+    // Reactive flow: just announce the new DR/BDR pair on change.
+    // The SignalRefreshActor refreshes interfaces + neighbors signals.
     if (iface.dr !== oldDr || iface.bdr !== oldBdr) {
       this.getBus().publish({
         topic: 'ospf.dr-election',
@@ -1329,8 +1457,6 @@ export class OSPFEngine implements IProtocolEngine {
           bdr: iface.bdr,
         },
       });
-      this.rebuildInterfaceSignal();
-      this.rebuildNeighborSignal();
     }
 
     // AdjOK event to all neighbors
@@ -1779,21 +1905,13 @@ export class OSPFEngine implements IProtocolEngine {
       areaDB.set(key, lsa);
     }
 
-    // Reactive: announce the install + refresh the LSDB signal.
+    // Reactive flow: just emit. The SignalRefreshActor refreshes
+    // `lsdbSummary` and the SpfActor decides whether to schedule SPF
+    // (full vs partial, gated on `spfRunning`).
     this.getBus().publish({
       topic: 'ospf.lsa.installed',
       payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa) },
     });
-    this.rebuildLSDBSignal();
-
-    // Schedule SPF: Type 1 (Router) and Type 2 (Network) LSAs change topology → full SPF.
-    // All other LSA types only affect route metrics/reachability → partial SPF.
-    // Guard: do not schedule recursively while SPF is already running (e.g. during ABR
-    // summary origination which is called from within runSPF).
-    if (!this.spfRunning) {
-      const isTopologyChange = lsa.lsType === 1 || lsa.lsType === 2;
-      this.scheduleSPF(isTopologyChange);
-    }
   }
 
   lookupLSA(areaId: string, lsType: LSAType, linkStateId: string, advertisingRouter: string): LSA | undefined {
@@ -2317,6 +2435,12 @@ export class OSPFEngine implements IProtocolEngine {
    * If a partial-SPF is pending and a full-SPF arrives, the pending run is upgraded to full.
    */
   scheduleSPF(isTopologyChange = true): void {
+    // Re-entry guard: when SPF is currently running (e.g. during ABR
+    // summary origination which calls installLSA, which the SpfActor
+    // would otherwise relay back here), simply ignore the request —
+    // the in-flight run already covers the change.
+    if (this.spfRunning) return;
+
     // Upgrade a pending partial to full if needed; never downgrade full → partial.
     if (isTopologyChange) this.spfNeedsFullRun = true;
 
@@ -2425,7 +2549,8 @@ export class OSPFEngine implements IProtocolEngine {
 
     this.spfRunning = false;
 
-    // Reactive: announce the SPF run + refresh the route signal.
+    // Reactive flow: emit ospf.spf.run + ospf.routes-recomputed. The
+    // SignalRefreshActor refreshes routes/runtime signals.
     const runtimeMs = Math.max(0, this.getScheduler().now() - startedAt);
     const bus = this.getBus();
     bus.publish({
@@ -2442,8 +2567,6 @@ export class OSPFEngine implements IProtocolEngine {
       topic: 'ospf.routes-recomputed',
       payload: { ...this.routerRef(), routes: [...this.ospfRoutes] },
     });
-    this.rebuildRoutesSignal();
-    this.updateRuntimeSignal({ lastSpfDurationMs: runtimeMs });
 
     return this.ospfRoutes;
   }
@@ -2497,8 +2620,6 @@ export class OSPFEngine implements IProtocolEngine {
       topic: 'ospf.routes-recomputed',
       payload: { ...this.routerRef(), routes: [...this.ospfRoutes] },
     });
-    this.rebuildRoutesSignal();
-    this.updateRuntimeSignal({ lastSpfDurationMs: runtimeMs });
   }
 
   /**
@@ -3289,6 +3410,9 @@ export class OSPFEngine implements IProtocolEngine {
     }
 
     if (flushed.length > 0) {
+      // Reactive flow: emit one ospf.lsa.flushed per evicted LSA. The
+      // SignalRefreshActor refreshes lsdbSummary; the SpfActor schedules
+      // a full SPF run.
       const bus = this.getBus();
       for (const { areaId, lsa } of flushed) {
         bus.publish({
@@ -3301,12 +3425,10 @@ export class OSPFEngine implements IProtocolEngine {
           },
         });
       }
-      this.rebuildLSDBSignal();
     }
-
-    if (changed) {
-      this.scheduleSPF();
-    }
+    // `changed` is implied by `flushed.length > 0`; the SpfActor reacts
+    // to the lsa.flushed events above so we don't need to call
+    // scheduleSPF() ourselves here.
   }
 
   /**
@@ -3325,6 +3447,12 @@ export class OSPFEngine implements IProtocolEngine {
 
   shutdown(): void {
     this.running = false;
+
+    // Tear down the reactive actors first so they don't react to the
+    // state mutations below (which are bookkeeping, not domain events).
+    this.signalRefreshActor?.stop();
+    this.spfActor?.stop();
+    this.routerLsaActor?.stop();
 
     // Cancel everything in one shot — TimerSet uses the per-handle
     // scheduler reference so no leak even if setScheduler() was called
@@ -3349,6 +3477,8 @@ export class OSPFEngine implements IProtocolEngine {
     this.lsArrivalTimes.clear();
     this.spfLastRunAt = 0;
     this.spfCurrentHold = this.spfThrottleHold;
+    // Bookkeeping reset — bypass the actors and refresh signals to
+    // their empty/disabled baseline.
     this.rebuildLSDBSignal();
     this.rebuildNeighborSignal();
     this.rebuildInterfaceSignal();

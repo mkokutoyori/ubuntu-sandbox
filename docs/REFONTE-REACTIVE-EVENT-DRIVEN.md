@@ -3049,6 +3049,7 @@ majeure.
 | 4a | Scheduler dans `PacketQueue` et `NeighborResolver` | ✅ | Voir §12.8.5 |
 | 4b1 | Scheduler dans `Switch.macAgingTimer` | ✅ | Voir §12.8.6 |
 | 4b2-OSPF | OSPF v2 + v3 : timers, événements, signaux | ✅ | Voir §12.8.7 |
+| 4b2-OSPF.actors | OSPF : inversion réactive (acteurs souscrits au bus) | ✅ | Voir §12.8.8 |
 | 4b2-rest | RIP / DHCP / IPSec / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -3477,6 +3478,118 @@ tests, ≈ 230 LoC) — couvre :
 4. **Capture / replay** : la combinaison `EventBus` + `VirtualTime
    Scheduler` rend possible le rejeu déterministe d'un scénario à
    condition initiale identique.
+
+### 12.8.8 Phase 4b2-OSPF.actors — inversion réactive complète (livrée)
+
+**Motivation** : la Phase 4b2-OSPF émettait les événements mais
+**personne ne s'y abonnait**. La logique restait impérative : à chaque
+mutation, le moteur appelait directement `rebuildXxxSignal()`,
+`scheduleSPF()` et `originateRouterLSA()`. Cette phase ferme la
+boucle : les effets de bord sont désormais **portés par des
+acteurs souscrits au bus**, le moteur n'est plus qu'un émetteur.
+
+**Fichiers ajoutés** (`src/network/ospf/actors/`, **4 nouveaux
+fichiers**) :
+
+- `actors/SignalRefreshActor.ts` (≈ 80 LoC). Souscrit à 7 topics
+  (`ospf.neighbor.state-changed`, `ospf.dr-election`,
+  `ospf.interface.state-changed`, `ospf.lsa.installed`,
+  `ospf.lsa.flushed`, `ospf.lsa.refreshed`, `ospf.spf.run`,
+  `ospf.routes-recomputed`, `ospf.area.activated`). Sur chaque
+  événement, rafraîchit le bon sous-ensemble de signaux
+  (`neighbors`, `interfaces`, `lsdbSummary`, `routes`, `runtime`).
+  L'identité (`routerId + processId`) est filtrée à chaque dispatch
+  pour permettre plusieurs moteurs sur un bus partagé.
+- `actors/SpfActor.ts` (≈ 65 LoC). Souscrit à 3 topics
+  (`ospf.lsa.installed`, `ospf.lsa.flushed`,
+  `ospf.neighbor.state-changed`). Encapsule la **politique** de
+  scheduling SPF :
+  - LSA Type 1/2 → `scheduleSPF(true)` (full)
+  - LSA autre → `scheduleSPF(false)` (partial)
+  - LSA flushed (maxage) → `scheduleSPF(true)`
+  - Neighbor crossing Full ↔ X → `scheduleSPF(true)`
+  Cette politique vivait avant en **3 sites distincts** (`installLSA`,
+  `tickLSAge`, `neighborEvent`) — elle est maintenant **centralisée**.
+- `actors/RouterLsaActor.ts` (≈ 55 LoC). Souscrit à
+  `ospf.neighbor.state-changed`. Sur transition Full ↔ X, appelle
+  `engine.originateRouterLSA(areaId)` où `areaId` est obtenu via
+  `engine.getInterfaceAreaId(iface)` (qui consulte aussi les
+  virtual links).
+- `actors/index.ts` — barrel.
+
+**Modifications à `OSPFEngine.ts`** :
+
+- Champs `signalRefreshActor`, `spfActor`, `routerLsaActor` privés.
+- Méthode privée `attachActors()` qui (ré-)alloue et démarre les
+  trois acteurs ; appelée au constructeur **et** à chaque
+  `setEventBus(bus)` pour rebondir sur le nouveau bus.
+- Sites impératifs **supprimés** :
+  - `installLSA` : plus de `rebuildLSDBSignal()` ni `scheduleSPF()`
+    ad-hoc — le SignalRefreshActor + le SpfActor s'en chargent.
+  - `tickLSAge` : plus de `rebuildLSDBSignal()` ni `scheduleSPF()`
+    en queue — un événement `ospf.lsa.flushed` par LSA évincé suffit.
+  - `neighborEvent` : plus de `rebuildXxxSignal()` ni
+    `originateRouterLSA()` ni `scheduleSPF()` — l'événement
+    `ospf.neighbor.state-changed` déclenche les trois acteurs.
+  - `drElection` : plus de `rebuildXxxSignal()` — l'événement
+    `ospf.dr-election` déclenche le SignalRefreshActor.
+  - `runSPF` / `runPartialSPF` : plus de `rebuildRoutesSignal()` —
+    `ospf.spf.run` + `ospf.routes-recomputed` déclenchent le refresh.
+  - `interfaceUp` : émet désormais `ospf.interface.state-changed` ;
+    plus de `rebuildInterfaceSignal()` inline.
+- `scheduleSPF()` reçoit le garde `if (this.spfRunning) return`
+  déplacé depuis `installLSA`. Le moteur reste idempotent face à des
+  appels redondants pendant un SPF en cours (utile lors des ABR
+  summaries).
+- `getInterfaceAreaId(name)` étendu pour résoudre aussi les VL
+  ifaces (qui vivent dans `virtualLinks`, pas dans `interfaces`) —
+  débloque `RouterLsaActor` dans les scénarios virtual-link.
+- 8 méthodes publiques préfixées `_refresh*` (la convention
+  documente "actor-only API") exposent les rebuilds aux acteurs.
+
+**Tests ajoutés** (`src/__tests__/unit/events/OSPF.actors.test.ts`,
+**10 tests**, ≈ 250 LoC) :
+
+- chaîne `installLSA` → `lsdbSummary` mise à jour ;
+- `installLSA(Type 1)` → SPF complet déclenché par le SpfActor ;
+- `installLSA(Type 5)` après un cycle full → SPF partiel ;
+- LSA évincé à MaxAge → SPF déclenché ;
+- abonnement à `routes` notifié sur SPF run ;
+- `setEventBus(otherBus)` rebascule les acteurs sur le nouveau bus ;
+- **filtrage cross-engine** : deux moteurs partageant le même bus,
+  l'un ne pollue jamais les signaux de l'autre ;
+- chaîne causale complète : `installLSA` → `ospf.spf.run` →
+  `ospf.routes-recomputed` dans **cet ordre** sur le bus ;
+- `shutdown()` désinscrit les acteurs (un événement publié après
+  arrêt ne refresh plus rien) ;
+- transition Full ↔ X → `RouterLsaActor` appelle
+  `originateRouterLSA(area)` (vérifié via spy).
+
+**Résultat** :
+
+- **88/88 tests events** verts (10 nouveaux pour la chaîne réactive).
+- **357/357 tests OSPF existants** verts **sans modification**.
+- Baseline globale strictement préservée (578 échecs préexistants).
+- **0 site impératif** où le moteur appellerait directement un
+  rebuild signal, un scheduleSPF ou un originateRouterLSA suite à un
+  événement déjà émis. Tous les effets de bord sont **dérivés du
+  bus**.
+
+**Ce que cela change qualitativement** :
+
+| Avant Phase 4b2-OSPF.actors | Après |
+|---|---|
+| `installLSA` mute la LSDB **et** rafraîchit le signal **et** appelle `scheduleSPF` | `installLSA` mute la LSDB et émet `ospf.lsa.installed`. C'est tout. |
+| Logique SPF dispersée dans 3 méthodes | Logique SPF centralisée dans `SpfActor` |
+| Re-origination Router-LSA dispersée dans `neighborEvent` | Re-origination dans `RouterLsaActor`, déclenchée par event |
+| Rafraîchissement signaux dispersé dans 6 sites | Rafraîchissement dans `SignalRefreshActor`, dispatché par topic |
+| Ajouter une nouvelle réaction = modifier le moteur | Ajouter une nouvelle réaction = nouvel acteur, **0 modification** du moteur |
+
+C'est précisément l'objectif **O6** de §1.3 — *plug-in API
+protocolaire* : on peut maintenant brancher un nouvel acteur (par
+exemple, un `OspfTelemetryActor` qui exporte les transitions FSM
+vers Prometheus, ou un `OspfReplayActor` qui rejoue une trace) **sans
+toucher OSPFEngine.ts**.
 
 ### 12.9 Mot de la fin
 
