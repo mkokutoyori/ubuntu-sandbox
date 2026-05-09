@@ -3053,6 +3053,7 @@ majeure.
 | 4b2-OSPF.deeper | OSPF : projections pures + LsaRefresh/NetworkLsa/RoutingTableSync actors | ✅ | Voir §12.8.9 |
 | 4b2-OSPF.packets | OSPF : packet egress/ingress sur le bus + OspfCaptureActor | ✅ | Voir §12.8.10 |
 | 4b2-OSPFv3 | OSPFv3 : parité réactive (acteurs, signaux, événements) | ✅ | Voir §12.8.11 |
+| 4b2-OSPF.lifecycle | OSPF : Hello + DD/LSR retransmits comme acteurs réactifs | ✅ | Voir §12.8.12 |
 | 4b2-rest | RIP / DHCP / IPSec (avec FilterChain) / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -3944,6 +3945,91 @@ même niveau qualitatif que v2.
 | Couverture émission v3 | 1/9 topics | **8/9** topics (manque `ospf.packet.outgoing` sur sendHello uniquement, fait via dispatchOutgoing) |
 | Read-models v3 | 0 | **4 signaux** + 4 projections pures |
 | Tests réactifs v3 | 0 | **14 tests** dédiés |
+
+### 12.8.12 Phase 4b2-OSPF.lifecycle — Hello + DD/LSR retransmits réactifs (livrée)
+
+Cette phase termine l'inversion réactive d'OSPFv2 sur les flux qui
+restaient procéduraux : l'envoi des Hello périodiques et les
+retransmissions DD/LSR. Le moteur passe de **7.5/10 à 9/10** sur
+l'audit de réactivité.
+
+#### Topics ajoutés
+
+- **`ospf.hello.send-requested { iface }`** — émis par le timer
+  Hello par interface au lieu d'appeler `sendHello` directement.
+- **`ospf.dd.retransmit-due { iface, neighborId }`** — émis par le
+  timer DD retransmit au lieu de réenvoyer directement.
+- **`ospf.lsr.retransmit-due { iface, neighborId }`** — idem pour
+  LSR.
+
+#### Acteurs ajoutés
+
+- **`HelloActor`** (`src/network/ospf/actors/HelloActor.ts`, ≈ 40 LoC)
+  - souscrit à `ospf.hello.send-requested` ;
+  - appelle `engine.sendHelloOnInterface(iface)` (nouvelle méthode
+    actor-API publique).
+- **`RetransmitActor`** (≈ 50 LoC)
+  - souscrit à `ospf.dd.retransmit-due` → appelle
+    `engine._executeDDRetransmit(iface, neighbor)` ;
+  - souscrit à `ospf.lsr.retransmit-due` → appelle
+    `engine.triggerLSRRetransmit(iface, neighbor)`.
+
+#### Modifications du moteur
+
+- `startHelloTimer(iface)` — au lieu d'appeler `sendHello` direct,
+  émet `ospf.hello.send-requested` (initial + à chaque tick).
+- `startDDRetransmitTimer(iface, neighbor)` — au lieu de réenvoyer +
+  re-armer, émet `ospf.dd.retransmit-due`. Le re-armement est fait
+  par `_executeDDRetransmit` (qui rappelle `startDDRetransmitTimer`).
+- `startLSRRetransmitTimer(iface, neighbor)` — émet
+  `ospf.lsr.retransmit-due` au lieu de réenvoyer directement.
+- 3 nouvelles méthodes actor-API :
+  - `sendHelloOnInterface(name)` (publique) ;
+  - `_executeDDRetransmit(name, neighborRid)` (publique-but-internal) ;
+  - `triggerLSRRetransmit(name, neighborRid)` (publique-but-internal).
+- `triggerDDRetransmit(name, neighborRid)` reste tel quel pour la
+  rétro-compat (entrée legacy "kick the master after DR election").
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/OSPF.lifecycle.test.ts` (**9 tests**) :
+
+- `HelloActor` :
+  - le timer émet `ospf.hello.send-requested` au lieu d'envoyer
+    direct (initial + tick périodique) ;
+  - un subscriber custom peut intercepter avant l'acteur ;
+  - **arrêter l'acteur stoppe l'envoi réel** mais le timer continue
+    d'émettre — démontre que policy de send et trigger sont
+    découplés ;
+  - `sendHelloOnInterface` est l'entry point actor-API testable.
+- `RetransmitActor` :
+  - le timer DD émet `ospf.dd.retransmit-due` après RxmtInterval ;
+  - l'acteur déclenche le resend (sendCallback appelé) ;
+  - **ordre causal vérifié** : `dd.retransmit-due` avant
+    `packet.outgoing` ;
+  - **arrêter l'acteur stoppe les retransmissions** ;
+  - le timer LSR émet `ospf.lsr.retransmit-due`.
+- Survie du `setEventBus(otherBus)` : le timer Hello et le HelloActor
+  rebondissent ensemble sur le nouveau bus.
+
+#### Résultat
+
+- **135/135 tests events** verts (9 nouveaux). 357/357 OSPF v2 +
+  tests v3 verts sans modification.
+- Baseline globale : 0 régression.
+- **9 acteurs OSPFv2** côte à côte : `SignalRefresh`, `Spf`,
+  `RouterLsa`, `LsaRefresh`, `NetworkLsa`, `RoutingTableSync`,
+  `Hello`, `Retransmit`, `OspfCapture` (opt-in).
+- **0 site impératif** d'envoi de paquet OSPF dans
+  `OSPFEngine.startXxxTimer` — chaque timer émet désormais un
+  événement consommé par un acteur.
+
+#### Score OSPFv2 : 9/10
+
+Atteint via les 7 phases consécutives. Restent à 10/10 : LSA
+flooding via FloodingActor (high effort, high risk) et FSM voisin en
+reducers purs (very high effort). Décision : on s'arrête à 9/10 pour
+OSPF et on bascule sur IPSec.
 
 ### 12.9 Mot de la fin
 

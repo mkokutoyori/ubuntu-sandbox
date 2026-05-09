@@ -126,6 +126,39 @@ export interface OspfPacketReceivedPayload extends OspfRouterRef {
   packet: OSPFPacket;
 }
 
+// ── Lifecycle events (Phase 4b2-OSPF.lifecycle) ────────────────────────
+
+/**
+ * Emitted by the per-interface Hello timer at every interval tick.
+ * Consumed by `HelloActor` which builds and dispatches the actual
+ * Hello packet. Splitting the tick from the send keeps the policy
+ * (e.g. authenticated Hello, padded Hello, suspended Hello for tests)
+ * pluggable without touching the engine.
+ */
+export interface OspfHelloSendRequestedPayload extends OspfRouterRef {
+  iface: string;
+}
+
+/**
+ * Emitted by the per-neighbor DD retransmit timer when the
+ * RxmtInterval elapses without a response. Consumed by
+ * `RetransmitActor` which calls `engine.triggerDDRetransmit(...)`.
+ */
+export interface OspfDdRetransmitDuePayload extends OspfRouterRef {
+  iface: string;
+  neighborId: string;
+}
+
+/**
+ * Emitted by the per-neighbor LSR retransmit timer when the
+ * RxmtInterval elapses without a corresponding LSU. Consumed by
+ * `RetransmitActor` which calls `engine.triggerLSRRetransmit(...)`.
+ */
+export interface OspfLsrRetransmitDuePayload extends OspfRouterRef {
+  iface: string;
+  neighborId: string;
+}
+
 // ── Topic union (added to DomainEvent in src/events/types.ts) ──────────
 
 export type OspfDomainEvent =
@@ -141,4 +174,7 @@ export type OspfDomainEvent =
   | { topic: 'ospf.routes-recomputed'; payload: OspfRoutesRecomputedPayload }
   | { topic: 'ospf.area.activated'; payload: OspfAreaActivatedPayload }
   | { topic: 'ospf.packet.outgoing'; payload: OspfPacketOutgoingPayload }
-  | { topic: 'ospf.packet.received'; payload: OspfPacketReceivedPayload };
+  | { topic: 'ospf.packet.received'; payload: OspfPacketReceivedPayload }
+  | { topic: 'ospf.hello.send-requested'; payload: OspfHelloSendRequestedPayload }
+  | { topic: 'ospf.dd.retransmit-due'; payload: OspfDdRetransmitDuePayload }
+  | { topic: 'ospf.lsr.retransmit-due'; payload: OspfLsrRetransmitDuePayload };

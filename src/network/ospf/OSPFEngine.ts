@@ -65,6 +65,8 @@ import {
   LsaRefreshActor,
   NetworkLsaActor,
   RoutingTableSyncActor,
+  HelloActor,
+  RetransmitActor,
 } from './actors';
 
 // Re-export so external callers (and the OSPFv3 engine) keep importing
@@ -172,6 +174,8 @@ export class OSPFEngine implements IProtocolEngine {
   private routerLsaActor: RouterLsaActor | null = null;
   private lsaRefreshActor: LsaRefreshActor | null = null;
   private networkLsaActor: NetworkLsaActor | null = null;
+  private helloActor: HelloActor | null = null;
+  private retransmitActor: RetransmitActor | null = null;
   /** Public outbound integration hook. Use `routingTableSync.onRoutes(...)`
    *  to subscribe an install callback that receives every recomputed
    *  routing table. Allocated by `attachActors()`. */
@@ -204,6 +208,8 @@ export class OSPFEngine implements IProtocolEngine {
     if (this.lsaRefreshActor) this.lsaRefreshActor.stop();
     if (this.networkLsaActor) this.networkLsaActor.stop();
     if (this.routingTableSync) this.routingTableSync.stop();
+    if (this.helloActor) this.helloActor.stop();
+    if (this.retransmitActor) this.retransmitActor.stop();
 
     const bus = this.getBus();
     this.signalRefreshActor = new SignalRefreshActor(bus, this);
@@ -212,6 +218,8 @@ export class OSPFEngine implements IProtocolEngine {
     this.lsaRefreshActor = new LsaRefreshActor(bus, this);
     this.networkLsaActor = new NetworkLsaActor(bus, this);
     this.routingTableSync = new RoutingTableSyncActor(bus, this);
+    this.helloActor = new HelloActor(bus, this);
+    this.retransmitActor = new RetransmitActor(bus, this);
 
     this.signalRefreshActor.start();
     this.spfActor.start();
@@ -219,6 +227,8 @@ export class OSPFEngine implements IProtocolEngine {
     this.lsaRefreshActor.start();
     this.networkLsaActor.start();
     this.routingTableSync.start();
+    this.helloActor.start();
+    this.retransmitActor.start();
 
     // Re-attach previously registered route installers.
     for (const installer of oldInstallers) {
@@ -391,6 +401,8 @@ export class OSPFEngine implements IProtocolEngine {
     this.lsaRefreshActor?.start();
     this.networkLsaActor?.start();
     this.routingTableSync?.start();
+    this.helloActor?.start();
+    this.retransmitActor?.start();
 
     this.startLSAgeTimer();
     // Announce activation of every configured area at startup. The
@@ -490,9 +502,48 @@ export class OSPFEngine implements IProtocolEngine {
     const iface = this.interfaces.get(ifaceName);
     if (!iface) return;
     const neighbor = iface.neighbors.get(neighborRid);
-    if (!neighbor || neighbor.state !== 'ExStart' || !neighbor.isMaster) return;
+    if (!neighbor) return;
+
+    // The legacy "kick the master after DR election" entry path still
+    // requires `isMaster` (it mirrors the explicit caller's intent).
+    // The reactive retransmit path uses `_executeDDRetransmit` below
+    // which handles both master and slave timer-driven retransmits.
+    if (neighbor.state !== 'ExStart' || !neighbor.isMaster) return;
     if (!neighbor.lastSentDD) return;
     this.dispatchOutgoing(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+  }
+
+  /**
+   * [actor-API] Resend the cached DD packet to a neighbor whose
+   * RxmtInterval just elapsed, then re-arm the retransmit timer.
+   * Called by `RetransmitActor` in response to `ospf.dd.retransmit-due`.
+   */
+  _executeDDRetransmit(ifaceName: string, neighborRid: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (!iface) return;
+    const neighbor = iface.neighbors.get(neighborRid);
+    if (!neighbor) return;
+    if (neighbor.state === 'ExStart' && neighbor.lastSentDD) {
+      this.dispatchOutgoing(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+      // Re-arm — the timer publishes the same event again at the next
+      // RxmtInterval, keeping the retransmit chain reactive.
+      this.startDDRetransmitTimer(iface, neighbor);
+    }
+  }
+
+  /**
+   * [actor-API] Resend the LS Request packet to a neighbor whose
+   * LSR RxmtInterval just elapsed.
+   * Called by `RetransmitActor` in response to `ospf.lsr.retransmit-due`.
+   */
+  triggerLSRRetransmit(ifaceName: string, neighborRid: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (!iface) return;
+    const neighbor = iface.neighbors.get(neighborRid);
+    if (!neighbor) return;
+    if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
+      this.sendLSRequest(iface, neighbor);
+    }
   }
 
   /**
@@ -937,12 +988,31 @@ export class OSPFEngine implements IProtocolEngine {
   private startHelloTimer(iface: OSPFInterface): void {
     if (iface.helloTimer) this.timers.clear(iface.helloTimer);
 
-    // Send initial hello immediately
-    this.sendHello(iface);
+    const requestSend = () => {
+      this.getBus().publish({
+        topic: 'ospf.hello.send-requested',
+        payload: { ...this.routerRef(), iface: iface.name },
+      });
+    };
 
-    iface.helloTimer = this.timers.setInterval(() => {
-      this.sendHello(iface);
-    }, iface.helloInterval * 1000);
+    // Initial hello: emit the send-requested event immediately so the
+    // bundled HelloActor (or any replacement) handles it.
+    requestSend();
+
+    iface.helloTimer = this.timers.setInterval(
+      requestSend,
+      iface.helloInterval * 1000,
+    );
+  }
+
+  /**
+   * [actor-API] Send a Hello on the named interface NOW.
+   * Called by `HelloActor` in response to `ospf.hello.send-requested`.
+   * Public-but-internal: user code should publish the event instead.
+   */
+  sendHelloOnInterface(ifaceName: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (iface) this.sendHello(iface);
   }
 
   // ─── Hello Protocol (RFC 2328 §9.5) ───────────────────────────
@@ -1288,11 +1358,17 @@ export class OSPFEngine implements IProtocolEngine {
     this.cancelDDRetransmitTimer(neighbor);
     neighbor.ddRetransmitTimer = this.timers.setTimeout(() => {
       neighbor.ddRetransmitTimer = null;
-      if (neighbor.state === 'ExStart' && neighbor.lastSentDD) {
-        // Retransmit the last DD packet
-        this.dispatchOutgoing(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
-        this.startDDRetransmitTimer(iface, neighbor);
-      }
+      // Reactive: emit the retransmit event; RetransmitActor performs
+      // the actual resend via triggerDDRetransmit, which itself
+      // re-arms the timer if appropriate.
+      this.getBus().publish({
+        topic: 'ospf.dd.retransmit-due',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          neighborId: neighbor.routerId,
+        },
+      });
     }, iface.retransmitInterval * 1000);
   }
 
@@ -1313,9 +1389,16 @@ export class OSPFEngine implements IProtocolEngine {
     this.cancelLSRRetransmitTimer(neighbor);
     neighbor.lsrRetransmitTimer = this.timers.setTimeout(() => {
       neighbor.lsrRetransmitTimer = null;
-      if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
-        this.sendLSRequest(iface, neighbor);
-      }
+      // Reactive: emit the retransmit event; RetransmitActor performs
+      // the actual resend via triggerLSRRetransmit.
+      this.getBus().publish({
+        topic: 'ospf.lsr.retransmit-due',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          neighborId: neighbor.routerId,
+        },
+      });
     }, iface.retransmitInterval * 1000);
   }
 
@@ -3512,6 +3595,8 @@ export class OSPFEngine implements IProtocolEngine {
     this.lsaRefreshActor?.stop();
     this.networkLsaActor?.stop();
     this.routingTableSync?.stop();
+    this.helloActor?.stop();
+    this.retransmitActor?.stop();
 
     // Cancel everything in one shot — TimerSet uses the per-handle
     // scheduler reference so no leak even if setScheduler() was called

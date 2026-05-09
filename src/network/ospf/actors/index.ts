@@ -29,3 +29,5 @@ export {
   type OspfCaptureFilter,
 } from './OspfCaptureActor';
 export { OSPFv3SignalRefreshActor } from './OSPFv3SignalRefreshActor';
+export { HelloActor } from './HelloActor';
+export { RetransmitActor } from './RetransmitActor';
