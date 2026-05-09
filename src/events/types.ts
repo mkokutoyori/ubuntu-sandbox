@@ -26,6 +26,7 @@ import type { IpsecDomainEvent } from '@/network/ipsec/events';
 import type { RipDomainEvent } from '@/network/rip/events';
 import type { DhcpDomainEvent } from '@/network/dhcp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
+import type { HostDomainEvent } from '@/network/devices/host/events';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-cutting
@@ -235,7 +236,9 @@ export type DomainEvent =
   // DHCP (sub-union, see src/network/dhcp/events.ts)
   | DhcpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
-  | NatDomainEvent;
+  | NatDomainEvent
+  // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)
+  | HostDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 

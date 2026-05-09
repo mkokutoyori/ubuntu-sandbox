@@ -3061,6 +3061,8 @@ majeure.
 | 4b2-DHCP | DHCP client : timers + 18 topics + observables + acteur | ✅ | Voir §12.8.17 |
 | 4b2-NAT | NAT : 6 topics + observables + acteur + emissions | ✅ | Voir §12.8.18 |
 | 4b2-deeper | DHCP server emissions + DHCPCaptureActor + NATCaptureActor | ✅ | Voir §12.8.19 |
+| 5.0–5.3 | Host : taxonomie d'événements + observables + scheduler + ARP shadow | ✅ | Voir §12.8.20 |
+| 5.4–5.6 | Host : pendingPings/pendingARPs/pendingTcpHandshakes → waitForEvent | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -4663,6 +4665,90 @@ filtres `deviceId`, `kind`, `localIp`.
 - Démontre que la primitive `EventBus` + nos topics typés permettent
   d'ajouter une feature "tcpdump-like" pour n'importe quel domaine
   en ~80–110 LoC d'adapter, **sans modification du moteur**.
+
+### 12.8.20 Phase 5.0–5.3 — host events + observables + scheduler (livrée)
+
+Première étape de la **Phase 5** : amener `EndHost` (et son
+descendant `LinuxPC`/`LinuxServer`/`WindowsPC`) sur les rails
+réactifs sans encore toucher aux Maps de callbacks pendantes.
+
+#### Topics ajoutés (`src/network/devices/host/events.ts`)
+
+**16 topics** typés couvrant L3/L4 du host :
+
+- ARP/NDP : `host.arp.entry-learned/expired/request-sent`,
+  `host.ndp.entry-learned/expired`.
+- Routing : `host.routing.route-added/removed`.
+- ICMPv4/v6 : `host.icmp.echo-sent/reply/timeout/unreachable`.
+- TCP : `host.tcp.listener-started/stopped`,
+  `host.tcp.connection-established/closed`.
+- L3 egress : `host.l3.packet-tx-requested`.
+
+Tous intégrés dans le `DomainEvent` global via `HostDomainEvent`.
+
+#### Observables (`src/network/devices/host/observables.ts`)
+
+- `HostSignalStore` privé + `HostObservables` exposé via
+  `pc.observables`.
+- 6 view-models : `HostArpEntryVM`, `HostNdpEntryVM`,
+  `HostRouteVM`, `HostTcpListenerVM`, `HostTcpConnectionVM`,
+  `HostStatsVM`.
+- 3 fonctions de projection pure :  `projectArpTable`,
+  `projectNdpTable`, `projectHostRoutes`.
+
+#### Acteurs (`src/network/devices/host/actors/`)
+
+- `HostSignalRefreshActor` (≈ 95 LoC) — souscrit à tous les
+  `host.*` topics, refresh les signaux concernés. Filtré par
+  `deviceId` via la signature `HostRefreshTarget` (évite la
+  dépendance circulaire vers `EndHost`).
+- `HostCaptureActor` (≈ 110 LoC) — opt-in tcpdump-style :
+  16 valeurs `CapturedHostKind`, ring buffer borné,
+  filtres `deviceId/kind/iface/ip` (incluant un matcher
+  multi-fields `fromIp`/`toIp`/`ip`).
+
+#### Modifications `EndHost.ts` (non-invasives)
+
+- `fwdQueue` : type `timer` passe de `setTimeout` natif à `symbol`
+  (token TimerSet). Migration des sites `setTimeout` /
+  `clearTimeout` → `this.hostTimers.setTimeout` /
+  `this.hostTimers.clear`. **0 timer natif** restant pour le
+  fwdQueue.
+- `setScheduler(scheduler)` injectable, `getScheduler()` avec
+  fallback singleton.
+- 14 méthodes actor-API : `_refreshArpSignal`, `_refreshNdpSignal`,
+  `_refreshRoutesSignal`, `_refreshTcpSignal`,
+  `_refreshHostStatsSignal`, plus 9 helpers `emit*`
+  (`emitArpLearned`, `emitArpRequestSent`,
+  `emitIcmpEchoSent/Reply/Timeout`, `emitTcpListenerStarted/Stopped`,
+  `emitTcpConnectionEstablished`, `emitRouteAdded/Removed`).
+- Première émission shadow : `addStaticARP` émet
+  `host.arp.entry-learned` avec `source: 'static'`. La gestion ARP
+  dynamique sur réception de réplique émet aussi
+  `host.arp.entry-learned` avec `source: 'reply'` ou `'request'`.
+- 4 counters (`icmpEchosSent/Received/Timeouts`, `arpRequestsSent`)
+  alimentent le signal stats via `_refreshHostStatsSignal`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/Host.reactive.test.ts` (**10 tests**) :
+
+- Surface des observables (6 signaux).
+- `addStaticARP` émet `host.arp.entry-learned` avec source=static.
+- Le signal `arp` reflète la nouvelle entrée.
+- `stats.arpCacheSize` suit l'ajout.
+- TimerSet câblé sur le scheduler injecté (vérification
+  indirecte `pendingCount() === 0`).
+- HostCaptureActor enregistre les events ARP, filtre par
+  `deviceId`/`ip`, `clear()`/`stop()`/cap fonctionnels.
+
+#### Résultat
+
+- **244/244 tests events** verts (10 nouveaux pour Host).
+- Baseline globale strictement préservée (578 préexistants, 0 nouveau).
+- Stratégie shadow garantie : émissions parallèles aux callbacks
+  legacy. Aucun `pendingXxx` Map n'a été supprimé. Phases 5.4–5.6
+  procéderont au remplacement progressif par `waitForEvent`.
 
 ### 12.9 Mot de la fin
 
