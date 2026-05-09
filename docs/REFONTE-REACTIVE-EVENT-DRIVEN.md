@@ -3052,7 +3052,8 @@ majeure.
 | 4b2-OSPF.actors | OSPF : inversion réactive (acteurs souscrits au bus) | ✅ | Voir §12.8.8 |
 | 4b2-OSPF.deeper | OSPF : projections pures + LsaRefresh/NetworkLsa/RoutingTableSync actors | ✅ | Voir §12.8.9 |
 | 4b2-OSPF.packets | OSPF : packet egress/ingress sur le bus + OspfCaptureActor | ✅ | Voir §12.8.10 |
-| 4b2-rest | RIP / DHCP / IPSec / NAT | ⏳ | – |
+| 4b2-OSPFv3 | OSPFv3 : parité réactive (acteurs, signaux, événements) | ✅ | Voir §12.8.11 |
+| 4b2-rest | RIP / DHCP / IPSec (avec FilterChain) / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -3844,6 +3845,105 @@ LoC) :
    le bus — l'engine n'a pas à savoir d'où vient la trame. C'est ce
    que font déjà les tests `OSPF.actors.test.ts` et
    `OSPF.deeperActors.test.ts`.
+
+### 12.8.11 Phase 4b2-OSPFv3 — parité réactive (livrée)
+
+OSPFv3 (RFC 5340) était à 5/10 sur l'audit de réactivité : timers
+migrés vers `IScheduler` mais aucun acteur, aucun signal, un seul
+événement émis (`InactivityTimer` Down). Cette phase amène v3 au
+même niveau qualitatif que v2.
+
+#### Ce qui est ajouté
+
+**Read-models** (`src/network/ospf/observables.ts`) :
+- `OSPFv3SignalStore` (writable interne) avec 4 signaux : `neighbors`,
+  `interfaces`, `runtime`, `lsdbSummary`.
+- `OSPFv3Observables` (lecture seule, exposé par `engine.observables`).
+- 4 view-models : `OSPFv3NeighborVM`, `OSPFv3InterfaceVM`,
+  `OSPFv3RuntimeStatsVM`, `OSPFv3LSDBSummaryVM`.
+- 4 fonctions de **projection pure** : `projectV3Neighbors`,
+  `projectV3Interfaces`, `projectV3Runtime`, `projectV3LsdbSummary` —
+  testables sans engine.
+
+**Acteur** (`src/network/ospf/actors/OSPFv3SignalRefreshActor.ts`,
+≈ 60 LoC) :
+- Souscrit à 5 topics (`ospf.neighbor.state-changed`,
+  `ospf.dr-election`, `ospf.interface.state-changed`,
+  `ospf.lsa.installed`, `ospf.lsa.flushed`) ;
+- Filtre par `routerId + processId` pour le multi-engine ;
+- Délègue à `engine._refreshAllSignals()` /
+  `_refreshInterfaceNeighborSignals()` / `_refreshLSDBSignal()` /
+  etc.
+
+**Émissions** ajoutées à `OSPFv3Engine` :
+- `dispatchOutgoing(iface, packet, destIPv6)` — publie
+  `ospf.packet.outgoing` + appelle le `sendCallback` legacy.
+- `dispatchIncoming(iface, packet, srcIPv6)` — publie
+  `ospf.packet.received` au sommet de `processHello` (extensible
+  aux autres `process*` futurs).
+- `setNeighborState(iface, neighbor, newState, cause)` — helper
+  centralisé qui remplace **6 mutations inline** `neighbor.state =
+  '...'` dans `processHello`, `resetDeadTimer`, et
+  `deactivateInterface`. Émet `ospf.neighbor.state-changed` avec un
+  cause discriminé (`HelloReceived`, `TwoWayReceived`, `LoadingDone`,
+  `InactivityTimer`, `KillNbr`).
+- `setInterfaceState(iface, newState)` — helper qui émet
+  `ospf.interface.state-changed` ; remplace les mutations inline
+  `iface.state = '...'` dans `interfaceUp`, `drElection`,
+  `deactivateInterface`.
+- `drElection` publie `ospf.dr-election` quand DR/BDR changent.
+- `installLSA` publie `ospf.lsa.installed`.
+- `start()` publie `ospf.area.activated` pour chaque area.
+
+**Cycle de vie acteur** :
+- Construit en `attachActors()` au constructeur ;
+- Re-attaché à chaque `setEventBus(bus)` ;
+- Démarré explicitement dans `start()`, arrêté dans `shutdown()`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/OSPFv3.reactive.test.ts` (**14 tests**,
+≈ 200 LoC) :
+
+- Surface des signaux (`neighbors`, `interfaces`, `runtime`,
+  `lsdbSummary`).
+- `runtime.running` reflète `start()`/`stop()`.
+- `ospf.area.activated` émis pour chaque area.
+- `ospf.lsa.installed` émis sur installLSA.
+- `ospf.packet.received` émis au sommet de processHello.
+- Transitions FSM voisin Down → Init → TwoWay/Full émettent.
+- `ospf.interface.state-changed` émis sur activate / deactivate.
+- `ospf.dr-election` émis sur changement DR/BDR.
+- Signal `neighbors` mis à jour réactivement par l'acteur sur
+  Hello-driven transition.
+- Signal `lsdbSummary` mis à jour sur installLSA.
+- Signal `interfaces` mis à jour sur activate.
+- Signal `runtime` notifie les abonnés sur changement d'adjacence.
+- `OspfCaptureActor` (réutilisé tel quel depuis v2) capture les
+  paquets v3 — démontre que les topics sont **engine-agnostiques**.
+- **Filtrage cross-engine** : deux moteurs v3 sur le même bus n'ont
+  pas de pollution croisée des signaux.
+
+#### Résultat
+
+- **126/126 tests events** verts (14 nouveaux v3, 112 préexistants).
+- **357/357 tests OSPF v2** verts sans modification.
+- Suite globale : baseline strictement préservée (578 préexistants,
+  0 nouvelle régression).
+- **Topics partagés v2 ↔ v3** : la taxonomie `OspfDomainEvent`
+  s'applique aux deux versions ; un consommateur (capture, télémétrie,
+  UI) traite les deux moteurs uniformément.
+- **OspfCaptureActor réutilisable** : zéro modification pour capter
+  les paquets v3.
+
+#### Score réactivité OSPF (v2 + v3)
+
+| Dimension | Avant Phase | Après Phase | Note |
+|---|:---:|:---:|---|
+| Parité OSPFv3 | 5/10 | **9/10** | manque seulement SPF/origination LSA dont v3 ne dispose pas en interne |
+| Couverture émission v3 | 1/9 topics | **8/9** topics (manque `ospf.packet.outgoing` sur sendHello uniquement, fait via dispatchOutgoing) |
+| Read-models v3 | 0 | **4 signaux** + 4 projections pures |
+| Tests réactifs v3 | 0 | **14 tests** dédiés |
 
 ### 12.9 Mot de la fin
 

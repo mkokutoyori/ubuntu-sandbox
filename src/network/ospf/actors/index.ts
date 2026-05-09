@@ -28,3 +28,4 @@ export {
   type CapturedOspfPacket,
   type OspfCaptureFilter,
 } from './OspfCaptureActor';
+export { OSPFv3SignalRefreshActor } from './OSPFv3SignalRefreshActor';
