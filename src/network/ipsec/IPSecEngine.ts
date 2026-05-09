@@ -29,9 +29,59 @@ import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
+import { WritableSignal, type Signal } from '@/events/Signal';
+import {
+  FilterChain,
+  type Filter,
+  type FilterChainOutcome,
+  Continue,
+  Accept,
+  Drop,
+  Reject,
+} from '../core/FilterChain';
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
+
+/**
+ * Pipeline context carried through the inbound IPSec FilterChain.
+ *
+ * Pluggable filters inspect / transform this context as a packet
+ * traverses anti-replay → authentication → decryption → policy.
+ * The fields are minimal on purpose: real processing still happens
+ * in `processInboundESP`; the chain provides the observability +
+ * extension surface.
+ */
+export interface IPSecInboundContext {
+  /** SPI of the inbound SA. */
+  readonly spi: number;
+  /** ESP / AH sequence number. */
+  readonly seqNum: number;
+  /** Payload size in bytes. */
+  readonly payloadLen: number;
+  /** Outer source IP. */
+  readonly fromIp: string;
+  /** Outer destination IP. */
+  readonly toIp: string;
+  /** SA mode if known at this stage. */
+  readonly mode?: 'tunnel' | 'transport';
+  /** Free-form tags for plug-in filters. */
+  readonly tags?: Record<string, unknown>;
+}
+
+/** Read-only view of IPSec runtime statistics. */
+export interface IPSecStatsVM {
+  readonly running: boolean;
+  readonly activeIkeSAs: number;
+  readonly activeIPSecSAs: number;
+  readonly fragGroupsInFlight: number;
+  readonly inboundProcessed: number;
+  readonly inboundDropped: number;
+  readonly inboundRejected: number;
+}
 
 /**
  * Generate a random SPI in the valid range [256, 0xFFFFFFFF].
@@ -332,7 +382,8 @@ export class IPSecEngine implements IProtocolEngine {
   private fragBuffer: Map<string, {
     fragments: FragmentEntry[];
     totalDataLength: number; // -1 until last fragment received
-    timer: ReturnType<typeof setTimeout>;
+    /** TimerSet token (Phase 4b2-IPSec migration). */
+    timer: symbol;
     created: number;
   }> = new Map();
 
@@ -343,24 +394,182 @@ export class IPSecEngine implements IProtocolEngine {
    */
   lastEncapICMP: { mtu: number; originalPkt: IPv4Packet } | null = null;
 
+  // ─── Reactive plumbing (Phase 4b2-IPSec) ───────────────────────────
+  /** Optional bus override. Falls back to the default singleton. */
+  private busOverride: IEventBus | null = null;
+  /** Optional scheduler override. Falls back to the default singleton. */
+  private schedulerOverride: IScheduler | null = null;
+  /** Owns every scheduler timer (fragment reassembly today, more later). */
+  private readonly timers = new TimerSet(() => this.getScheduler());
+  /** Read-only observable of IPSec runtime stats. */
+  private readonly _stats = new WritableSignal<IPSecStatsVM>({
+    running: false,
+    activeIkeSAs: 0,
+    activeIPSecSAs: 0,
+    fragGroupsInFlight: 0,
+    inboundProcessed: 0,
+    inboundDropped: 0,
+    inboundRejected: 0,
+  });
+  readonly stats: Signal<IPSecStatsVM> = this._stats;
+
+  /** Pluggable inbound packet pipeline (Phase 4b2-IPSec FilterChain). */
+  readonly inboundChain: FilterChain<IPSecInboundContext>;
+
+  /** Test-only / multi-topology bus injection. */
+  setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  /** Test-only scheduler injection. */
+  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+  private deviceRef() {
+    return { deviceId: this.router?.id, routerName: this.router?.getName?.() ?? '' };
+  }
+
   constructor(router: Router) {
     this.router = router;
+    this.inboundChain = new FilterChain<IPSecInboundContext>({
+      chainId: `ipsec.in:${this.router?.id ?? '?'}`,
+      // Lazy provider so `setEventBus(otherBus)` after construction
+      // is honoured for chain observability events.
+      busProvider: () => this.getBus(),
+      emitEvents: true,
+    });
+    this.installDefaultInboundFilters();
+  }
+
+  /**
+   * Default inbound filter sequence.
+   *
+   * The chain is **observability-only** by default: it traces every
+   * packet through pluggable steps without changing the existing
+   * data-path behaviour. Each step is a hook a plugin can replace,
+   * insert before/after, or remove entirely.
+   */
+  private installDefaultInboundFilters(): void {
+    this.inboundChain
+      .add(this.makeAntiReplayFilter())
+      .add(this.makeAuthenticationFilter())
+      .add(this.makeDecryptionFilter())
+      .add(this.makePolicyAuditFilter());
+  }
+
+  private makeAntiReplayFilter(): Filter<IPSecInboundContext> {
+    return {
+      name: 'anti-replay',
+      apply: (ctx) => {
+        if (ctx.seqNum <= 0) return Reject('REPLAY', `invalid seq ${ctx.seqNum}`);
+        // The real anti-replay check lives in processInboundESP for
+        // historical reasons; this filter is currently observability
+        // only. Plug-ins can replace it with a stricter implementation.
+        return Continue();
+      },
+    };
+  }
+
+  private makeAuthenticationFilter(): Filter<IPSecInboundContext> {
+    return {
+      name: 'authentication',
+      apply: (ctx) => {
+        // ICV verification is currently in processInboundESP; this
+        // filter is a hook for capture / metrics / experimental
+        // alternative auth schemes.
+        if (ctx.spi <= 0) return Reject('BAD_SPI', 'SPI must be > 0');
+        return Continue();
+      },
+    };
+  }
+
+  private makeDecryptionFilter(): Filter<IPSecInboundContext> {
+    return {
+      name: 'decryption',
+      apply: (ctx) => {
+        // Decryption itself remains in processInboundESP for now —
+        // this filter just checks the precondition.
+        if (ctx.payloadLen <= 0) return Drop('empty payload');
+        return Continue();
+      },
+    };
+  }
+
+  private makePolicyAuditFilter(): Filter<IPSecInboundContext> {
+    return {
+      name: 'policy-audit',
+      apply: (ctx) => Accept(ctx),
+    };
   }
 
   // ─── IProtocolEngine ──────────────────────────────────────────────
 
   start(): void {
     this.running = true;
+    this.refreshStats();
+    this.getBus().publish({
+      topic: 'log',
+      payload: {
+        level: 'info',
+        source: `ipsec:${this.router?.id ?? '?'}`,
+        event: 'engine.started',
+        message: `IPSec engine started`,
+      },
+    });
   }
 
   stop(): void {
     if (!this.running) return;
     this.running = false;
-    // Clear fragment reassembly timers
-    for (const [, frag] of this.fragBuffer) {
-      clearTimeout(frag.timer);
-    }
+    // Clear all scheduler-owned timers (fragment reassembly etc.).
+    this.timers.clearAll();
     this.fragBuffer.clear();
+    this.refreshStats();
+    this.getBus().publish({
+      topic: 'log',
+      payload: {
+        level: 'info',
+        source: `ipsec:${this.router?.id ?? '?'}`,
+        event: 'engine.stopped',
+        message: `IPSec engine stopped`,
+      },
+    });
+  }
+
+  // ─── Read-model refresh ────────────────────────────────────────────
+
+  private inboundProcessed = 0;
+  private inboundDropped = 0;
+  private inboundRejected = 0;
+
+  /** Refresh the runtime stats signal from internal counters. */
+  private refreshStats(): void {
+    // Defensive null-checks: this can be invoked from start() before
+    // every Map field has been assigned during a subclass constructor.
+    const ike = (this.ikeSADB?.size ?? 0) + (this.ikev2SADB?.size ?? 0);
+    const ipsec = this.ipsecSADB
+      ? Array.from(this.ipsecSADB.values()).reduce((s, arr) => s + arr.length, 0)
+      : 0;
+    this._stats.set({
+      running: this.running,
+      activeIkeSAs: ike,
+      activeIPSecSAs: ipsec,
+      fragGroupsInFlight: this.fragBuffer?.size ?? 0,
+      inboundProcessed: this.inboundProcessed,
+      inboundDropped: this.inboundDropped,
+      inboundRejected: this.inboundRejected,
+    });
+  }
+
+  /**
+   * Run the inbound filter chain on a packet context. Used by the
+   * data-plane wrapper / by tests / by plug-ins. Returns the chain
+   * outcome and updates the stats counters accordingly.
+   */
+  runInboundChain(ctx: IPSecInboundContext): FilterChainOutcome<IPSecInboundContext> {
+    const outcome = this.inboundChain.process(ctx);
+    if (outcome.verdict === 'accepted') this.inboundProcessed++;
+    else if (outcome.verdict === 'dropped') this.inboundDropped++;
+    else this.inboundRejected++;
+    this.refreshStats();
+    return outcome;
   }
 
   isRunning(): boolean {
@@ -1821,14 +2030,15 @@ export class IPSecEngine implements IProtocolEngine {
         const oldestKey = this.fragBuffer.keys().next().value;
         if (oldestKey !== undefined) {
           const oldest = this.fragBuffer.get(oldestKey);
-          if (oldest) clearTimeout(oldest.timer);
+          if (oldest) this.timers.clear(oldest.timer);
           this.fragBuffer.delete(oldestKey);
         }
       }
 
-      // Start reassembly timer
-      const timer = setTimeout(() => {
+      // Start reassembly timer (Phase 4b2-IPSec — via TimerSet).
+      const timer = this.timers.setTimeout(() => {
         this.fragBuffer.delete(key);
+        this.refreshStats();
         if (this.debugIpsec) {
           Logger.info(this.router.id, 'debug:ipsec',
             `IPSEC: fragment reassembly timeout for group ${key}`);
@@ -1869,8 +2079,9 @@ export class IPSecEngine implements IProtocolEngine {
     if (covered < group.totalDataLength) return null; // still incomplete
 
     // ── Reassembly complete ──
-    clearTimeout(group.timer);
+    this.timers.clear(group.timer);
     this.fragBuffer.delete(key);
+    this.refreshStats();
 
     // Use the first fragment's header (offset=0) as the reassembled packet header
     const firstFrag = sorted.find(f => f.offsetBytes === 0);
@@ -1899,9 +2110,10 @@ export class IPSecEngine implements IProtocolEngine {
    */
   clearFragmentBuffer(): void {
     for (const [, group] of this.fragBuffer) {
-      clearTimeout(group.timer);
+      this.timers.clear(group.timer);
     }
     this.fragBuffer.clear();
+    this.refreshStats();
   }
 
   // ══════════════════════════════════════════════════════════════════

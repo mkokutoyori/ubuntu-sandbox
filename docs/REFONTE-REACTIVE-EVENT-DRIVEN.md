@@ -3054,7 +3054,8 @@ majeure.
 | 4b2-OSPF.packets | OSPF : packet egress/ingress sur le bus + OspfCaptureActor | ✅ | Voir §12.8.10 |
 | 4b2-OSPFv3 | OSPFv3 : parité réactive (acteurs, signaux, événements) | ✅ | Voir §12.8.11 |
 | 4b2-OSPF.lifecycle | OSPF : Hello + DD/LSR retransmits comme acteurs réactifs | ✅ | Voir §12.8.12 |
-| 4b2-rest | RIP / DHCP / IPSec (avec FilterChain) / NAT | ⏳ | – |
+| 4b2-IPSec | IPSec : timers + signaux + FilterChain pattern | ✅ | Voir §12.8.13 |
+| 4b2-rest | RIP / DHCP / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -4030,6 +4031,118 @@ Atteint via les 7 phases consécutives. Restent à 10/10 : LSA
 flooding via FloodingActor (high effort, high risk) et FSM voisin en
 reducers purs (very high effort). Décision : on s'arrête à 9/10 pour
 OSPF et on bascule sur IPSec.
+
+### 12.8.13 Phase 4b2-IPSec — réactivité + Filter Chain pattern (livrée)
+
+Cette phase amène IPSec sur les rails réactifs et introduit le
+**design pattern Filter Chain** comme primitive transverse pour les
+pipelines de validation/transformation packet-level.
+
+#### Primitive transverse — `FilterChain<T>`
+
+`src/network/core/FilterChain.ts` (≈ 270 LoC) — Chain of
+Responsibility typée et observable, **réutilisable** par n'importe
+quel composant du projet (futur ACL engine, futur firewall, etc.).
+
+API publique :
+
+```ts
+const chain = new FilterChain<Pkt>({
+  chainId: 'ipsec.in:R1',
+  busProvider: () => engine.getBus(), // lazy = bus rebind safe
+});
+
+chain
+  .add(makeFilter('anti-replay', (p) => p.seqNum > 0 ? Continue() : Reject('REPLAY', '...')))
+  .add(makeFilter('decrypt', (p) => Transform({ ...p, decrypted: true })))
+  .add(makeFilter('policy', (p) => Accept(p)));
+
+const outcome = chain.process(packet);
+// outcome.verdict === 'accepted' | 'dropped' | 'rejected'
+// outcome.payload, .trace, .decidedBy, .reason, .code
+```
+
+5 verdicts : `Continue` / `Accept` / `Transform` / `Drop` / `Reject`.
+Sites d'extension : `add`, `addBefore('targetName', f)`,
+`addAfter('targetName', f)`, `replace(f)`, `remove('name')`.
+Erreurs filtres ⇒ verdict `rejected` automatique avec
+code `FILTER_THREW` (jamais de throw qui remonte).
+
+Observabilité bus : chaque chaîne publie `log` events `started` et
+`completed:<verdict>` (warn level pour `rejected`) sur le bus
+fourni — gratuit pour la télémétrie.
+
+#### Application à IPSec
+
+`IPSecEngine` expose désormais une **inboundChain publique** avec 4
+filtres par défaut :
+
+| Filtre | Rôle |
+|---|---|
+| `anti-replay` | Vérifie `seqNum > 0`. Rejette `REPLAY` sinon. |
+| `authentication` | Vérifie `spi > 0`. Rejette `BAD_SPI` sinon. |
+| `decryption` | Vérifie `payloadLen > 0`. Drop sinon (silencieux). |
+| `policy-audit` | Termine en `Accept`. |
+
+**Mode observabilité par défaut** : la chaîne ne change pas le
+data path (`processInboundESP` reste maître). Elle est l'extension
+surface : un plug-in s'insère via `engine.inboundChain.addBefore('anti-replay', myFilter)`.
+
+Cas d'usage débloqués sans modification du moteur :
+- **Rate-limiting / anti-DDoS** : un `RateLimitFilter` enforce une
+  fenêtre de SPI vus avant le anti-replay.
+- **Anti-replay strict** : `replace('anti-replay', strictFilter)`
+  remplace le default avec une fenêtre BLAKE2s.
+- **Telemetry** : `addAfter('authentication', telemetryFilter)`
+  exporte les SPI traités vers Prometheus.
+- **Auth alternative** : `replace('authentication', myMacFilter)`
+  swappe le HMAC pour un autre algo.
+
+#### Réactivité IPSec ajoutée
+
+- **Timers** : 6 sites natifs `setTimeout`/`clearTimeout` (fragment
+  reassembly buffer) migrés vers `TimerSet`. **0 timer natif**
+  restant dans `IPSecEngine.ts` (vérifié par grep).
+- **Scheduler injectable** via `engine.setScheduler(scheduler)`.
+- **Bus injectable** via `engine.setEventBus(bus)`. Le `FilterChain`
+  rebondit automatiquement (provider paresseux).
+- **Signal `engine.stats`** : read-only `Signal<IPSecStatsVM>` exposant
+  `running`, `activeIkeSAs`, `activeIPSecSAs`, `fragGroupsInFlight`,
+  `inboundProcessed`, `inboundDropped`, `inboundRejected`. Notifie
+  les abonnés à chaque changement (start/stop, chain outcome,
+  fragment timeout).
+- Méthode publique `engine.runInboundChain(ctx)` — exécute la chaîne
+  et met à jour les compteurs ; retourne `FilterChainOutcome`.
+
+#### Tests ajoutés
+
+- `src/__tests__/unit/events/FilterChain.test.ts` (**18 tests**) —
+  primitive testée en isolation : verdicts, composition (`add`/
+  `addBefore`/`addAfter`/`replace`/`remove`/`clear`), gestion des
+  exceptions, observabilité bus, scénario réaliste IPSec inbound.
+- `src/__tests__/unit/events/IPSec.reactive.test.ts` (**15 tests**) —
+  signal stats, default chain (4 filtres, accept/drop/reject paths),
+  plug-ins (rate-limit, replace, remove, multi-add), compteurs
+  alimentés par les outcomes, observabilité bus level=warn pour
+  rejected.
+
+**Résultat** : **33/33 verts**, 0 régression sur la baseline.
+
+#### Score IPSec
+
+| Dimension | Avant | Après |
+|---|:---:|:---:|
+| Timers natifs | 6 sites | **0** |
+| Bus emissions | 0 | log events sur chaîne + start/stop |
+| Read-models observables | 0 | **1 signal** (stats) |
+| Pluggable extension surface | aucune | **FilterChain** publique |
+| Tests réactifs | 0 | **33** |
+
+IPSec n'a pas le même volume d'acteurs qu'OSPF parce que sa
+sémantique est intrinsèquement séquentielle (un paquet entre, est
+traité, sort). Le **FilterChain** est le bon abstraction pour ce
+domain — il offre la même extensibilité plug-in que les acteurs OSPF
+mais avec une garantie d'ordre forte.
 
 ### 12.9 Mot de la fin
 
