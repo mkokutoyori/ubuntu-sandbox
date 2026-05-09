@@ -114,6 +114,18 @@ export interface OspfPacketOutgoingPayload extends OspfRouterRef {
   packet: OSPFPacket;
 }
 
+/**
+ * Mirror of `ospf.packet.outgoing` for ingress: emitted at the top of
+ * each `process*` entry point so that capture / replay / IDS-like
+ * subscribers see exactly what arrived on the wire, before any
+ * stateful processing.
+ */
+export interface OspfPacketReceivedPayload extends OspfRouterRef {
+  iface: string;
+  srcIp: string;
+  packet: OSPFPacket;
+}
+
 // ── Topic union (added to DomainEvent in src/events/types.ts) ──────────
 
 export type OspfDomainEvent =
@@ -128,4 +140,5 @@ export type OspfDomainEvent =
   | { topic: 'ospf.spf.run'; payload: OspfSpfRunPayload }
   | { topic: 'ospf.routes-recomputed'; payload: OspfRoutesRecomputedPayload }
   | { topic: 'ospf.area.activated'; payload: OspfAreaActivatedPayload }
-  | { topic: 'ospf.packet.outgoing'; payload: OspfPacketOutgoingPayload };
+  | { topic: 'ospf.packet.outgoing'; payload: OspfPacketOutgoingPayload }
+  | { topic: 'ospf.packet.received'; payload: OspfPacketReceivedPayload };

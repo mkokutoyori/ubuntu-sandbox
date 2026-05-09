@@ -447,6 +447,40 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   /**
+   * Internal egress helper. Publishes `ospf.packet.outgoing` on the bus
+   * (for capture / replay / data-plane subscribers) AND invokes the
+   * legacy `sendCallback` for backward compatibility. Engine code should
+   * call this instead of `this.sendCallback?.(...)` directly.
+   */
+  private dispatchOutgoing(
+    iface: string,
+    packet: OSPFPacket,
+    destIp: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'ospf.packet.outgoing',
+      payload: { ...this.routerRef(), iface, destIp, packet },
+    });
+    this.sendCallback?.(iface, packet, destIp);
+  }
+
+  /**
+   * Internal ingress helper. Publishes `ospf.packet.received` at the
+   * top of every `process*` entry so that observers can audit exactly
+   * what arrived on the wire, before any parsing or FSM transition.
+   */
+  private dispatchIncoming(
+    iface: string,
+    packet: OSPFPacket,
+    srcIp: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'ospf.packet.received',
+      payload: { ...this.routerRef(), iface, srcIp, packet },
+    });
+  }
+
+  /**
    * Re-deliver the stored lastSentDD for a master ExStart neighbor.
    * Called by the Router simulation after all drElections have run, to kick
    * off DD negotiation for pairs where the remote was still in Init/TwoWay
@@ -458,7 +492,7 @@ export class OSPFEngine implements IProtocolEngine {
     const neighbor = iface.neighbors.get(neighborRid);
     if (!neighbor || neighbor.state !== 'ExStart' || !neighbor.isMaster) return;
     if (!neighbor.lastSentDD) return;
-    this.sendCallback?.(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+    this.dispatchOutgoing(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
   }
 
   /**
@@ -856,7 +890,7 @@ export class OSPFEngine implements IProtocolEngine {
       neighbors: neighborIds,
     };
 
-    this.sendCallback(transitIfaceName, hello, destIP);
+    this.dispatchOutgoing(transitIfaceName, hello, destIP);
   }
 
   // ─── Interface State Machine ───────────────────────────────────
@@ -938,13 +972,14 @@ export class OSPFEngine implements IProtocolEngine {
       ? OSPF_ALL_SPF_ROUTERS.toString()
       : OSPF_ALL_SPF_ROUTERS.toString();
 
-    this.sendCallback(iface.name, hello, destIP);
+    this.dispatchOutgoing(iface.name, hello, destIP);
   }
 
   /**
    * Process an incoming Hello packet (RFC 2328 §10.5)
    */
   processHello(ifaceName: string, srcIP: string, hello: OSPFHelloPacket): void {
+    this.dispatchIncoming(ifaceName, hello, srcIP);
     // VL detection: backbone Hello on transit interface → process on VL synthetic iface
     const vlIface = this.resolveVLIface(ifaceName, hello.routerId, hello.areaId);
     const physIface = this.interfaces.get(ifaceName);
@@ -1255,7 +1290,7 @@ export class OSPFEngine implements IProtocolEngine {
       neighbor.ddRetransmitTimer = null;
       if (neighbor.state === 'ExStart' && neighbor.lastSentDD) {
         // Retransmit the last DD packet
-        this.sendCallback?.(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
+        this.dispatchOutgoing(iface.name, neighbor.lastSentDD, neighbor.ipAddress);
         this.startDDRetransmitTimer(iface, neighbor);
       }
     }, iface.retransmitInterval * 1000);
@@ -1312,7 +1347,7 @@ export class OSPFEngine implements IProtocolEngine {
       backupDesignatedRouter: iface.bdr,
       neighbors: Array.from(iface.neighbors.keys()),
     };
-    this.sendCallback(iface.name, hello, destIP);
+    this.dispatchOutgoing(iface.name, hello, destIP);
   }
 
   /**
@@ -1487,7 +1522,7 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Store for potential retransmission (RFC 2328 §10.6)
     neighbor.lastSentDD = dd;
-    this.sendCallback?.(iface.name, dd, neighbor.ipAddress);
+    this.dispatchOutgoing(iface.name, dd, neighbor.ipAddress);
 
     // Start retransmission timer in case no response arrives
     this.startDDRetransmitTimer(iface, neighbor);
@@ -1497,6 +1532,7 @@ export class OSPFEngine implements IProtocolEngine {
    * Process incoming Database Description packet (RFC 2328 §10.6).
    */
   processDD(ifaceName: string, srcIP: string, dd: OSPFDDPacket): void {
+    this.dispatchIncoming(ifaceName, dd, srcIP);
     const iface = this.resolveVLIface(ifaceName, dd.routerId, dd.areaId)
       ?? this.interfaces.get(ifaceName);
     if (!iface) return;
@@ -1602,7 +1638,7 @@ export class OSPFEngine implements IProtocolEngine {
       lsaHeaders: headers,
     };
 
-    this.sendCallback?.(iface.name, dd, neighbor.ipAddress);
+    this.dispatchOutgoing(iface.name, dd, neighbor.ipAddress);
   }
 
   // ─── LS Request / Update / Ack ─────────────────────────────────
@@ -1628,7 +1664,7 @@ export class OSPFEngine implements IProtocolEngine {
       requests,
     };
 
-    this.sendCallback?.(iface.name, lsr, neighbor.ipAddress);
+    this.dispatchOutgoing(iface.name, lsr, neighbor.ipAddress);
 
     // Start retransmission timer for LSR (RFC 2328 §10.9)
     this.startLSRRetransmitTimer(iface, neighbor);
@@ -1638,6 +1674,7 @@ export class OSPFEngine implements IProtocolEngine {
    * Process incoming LS Request
    */
   processLSRequest(ifaceName: string, srcIP: string, lsr: OSPFLSRequestPacket): void {
+    this.dispatchIncoming(ifaceName, lsr, srcIP);
     const iface = this.resolveVLIface(ifaceName, lsr.routerId, lsr.areaId)
       ?? this.interfaces.get(ifaceName);
     if (!iface) return;
@@ -1676,7 +1713,7 @@ export class OSPFEngine implements IProtocolEngine {
         numLSAs: batch.length,
         lsas: batch,
       };
-      this.sendCallback?.(iface.name, lsu, srcIP);
+      this.dispatchOutgoing(iface.name, lsu, srcIP);
       batch = [];
       batchBytes = lsuOverhead;
     };
@@ -1696,6 +1733,7 @@ export class OSPFEngine implements IProtocolEngine {
    * Process incoming LS Update (RFC 2328 §13)
    */
   processLSUpdate(ifaceName: string, srcIP: string, lsu: OSPFLSUpdatePacket): void {
+    this.dispatchIncoming(ifaceName, lsu, srcIP);
     const iface = this.resolveVLIface(ifaceName, lsu.routerId, lsu.areaId)
       ?? this.interfaces.get(ifaceName);
     if (!iface) return;
@@ -1795,7 +1833,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId: iface.areaId,
         lsaHeaders: ackedHeaders,
       };
-      this.sendCallback?.(iface.name, ack, srcIP);
+      this.dispatchOutgoing(iface.name, ack, srcIP);
     }
 
     // Check if loading is done for ALL Loading neighbors on this interface.
@@ -1824,6 +1862,7 @@ export class OSPFEngine implements IProtocolEngine {
    * Process incoming LS Acknowledgment
    */
   processLSAck(ifaceName: string, srcIP: string, ack: OSPFLSAckPacket): void {
+    this.dispatchIncoming(ifaceName, ack, srcIP);
     const iface = this.resolveVLIface(ifaceName, ack.routerId, ack.areaId)
       ?? this.interfaces.get(ifaceName);
     if (!iface) return;
@@ -2404,7 +2443,7 @@ export class OSPFEngine implements IProtocolEngine {
             ? OSPF_ALL_SPF_ROUTERS.toString()
             : neighbor.ipAddress;
 
-          this.sendCallback?.(iface.name, lsu, destIP);
+          this.dispatchOutgoing(iface.name, lsu, destIP);
           sentToAny = true;
         }
       }

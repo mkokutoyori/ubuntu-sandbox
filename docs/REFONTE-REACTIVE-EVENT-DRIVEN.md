@@ -3051,6 +3051,7 @@ majeure.
 | 4b2-OSPF | OSPF v2 + v3 : timers, événements, signaux | ✅ | Voir §12.8.7 |
 | 4b2-OSPF.actors | OSPF : inversion réactive (acteurs souscrits au bus) | ✅ | Voir §12.8.8 |
 | 4b2-OSPF.deeper | OSPF : projections pures + LsaRefresh/NetworkLsa/RoutingTableSync actors | ✅ | Voir §12.8.9 |
+| 4b2-OSPF.packets | OSPF : packet egress/ingress sur le bus + OspfCaptureActor | ✅ | Voir §12.8.10 |
 | 4b2-rest | RIP / DHCP / IPSec / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -3727,6 +3728,122 @@ testable sans instancier OSPFEngine. Les 5 méthodes
 - §11.2.5 (snapshot tests) : la trace causale d'une convergence est
   maintenant capturable via `bus.subscribeAll(...)` et comparable
   bit-pour-bit cross-runs.
+
+### 12.8.10 Phase 4b2-OSPF.packets — paquets OSPF sur le bus + capture actor (livrée)
+
+Cette phase achève l'inversion réactive en faisant **passer chaque
+paquet OSPF par le bus**. La couche transport (router data-plane,
+capture, replay) consomme désormais des **événements** au lieu d'une
+callback `sendCallback` ad-hoc.
+
+#### Topics ajoutés
+
+- **`ospf.packet.outgoing`** *(déclaré en Phase 4b2-OSPF mais jamais
+  émis ; désormais publié)*. Émis pour **chaque** paquet sortant (10
+  sites d'appel `sendCallback` couverts : Hello sur tous les chemins,
+  DD initial + retransmit, LSR, LSU sur flooding et reply, LSAck).
+- **`ospf.packet.received`** *(nouveau)*. Émis au tout début de
+  chaque `process*` (Hello, DD, LSR, LSU, LSAck), **avant** toute
+  mutation de FSM. Permet aux observateurs de voir exactement ce qui
+  est arrivé sur le câble.
+
+#### Helpers internes
+
+`OSPFEngine.dispatchOutgoing(iface, packet, destIp)` :
+- publie `ospf.packet.outgoing` sur le bus ;
+- invoque le `sendCallback` legacy s'il est défini.
+- Remplace les **10 sites d'appel** `this.sendCallback?.(...)` du
+  moteur par un seul point unifié.
+
+`OSPFEngine.dispatchIncoming(iface, packet, srcIp)` :
+- publie `ospf.packet.received` ;
+- ajouté en première ligne des **5 méthodes** `processHello`,
+  `processDD`, `processLSRequest`, `processLSUpdate`, `processLSAck`.
+
+Bénéfice : la propriété "tout paquet OSPF passe par le bus" est
+maintenant vérifiée par construction — il n'existe plus aucun chemin
+d'émission/réception qui contourne la publication d'événement.
+
+#### `OspfCaptureActor` — adapter tcpdump-like
+
+`src/network/ospf/actors/OspfCaptureActor.ts` (≈ 110 LoC) — un
+**adapter externe** qui démontre la valeur de l'inversion :
+
+```ts
+const capture = new OspfCaptureActor(bus, /* maxEntries */ 1000);
+capture.start();
+// ... engine runs ...
+capture.getCapture({ direction: 'in', packetType: 1 });
+```
+
+API :
+- `start()` / `stop()` — cycle de vie ;
+- `size()`, `clear()` — gestion du buffer ;
+- `getCapture(filter?)` — retourne une copie filtrable par
+  `routerId`, `iface`, `direction`, `packetType` ;
+- ring buffer borné (drop la moitié la plus ancienne à la saturation) ;
+- supporte le **multi-engine** sur un bus partagé (filtre par
+  `routerId`).
+
+Cet acteur **n'est pas branché par défaut** dans le moteur — c'est un
+consommateur opt-in. Il est conçu pour être instancié par :
+- une commande Cisco/Huawei `show ospf packets live` (UI) ;
+- un test §11.2.5 qui veut snapshotter une convergence ;
+- un module replay qui rejoue une trace sur un bus virtuel ;
+- un IDS éducatif qui valide les en-têtes OSPF.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/OSPF.packets.test.ts` (**12 tests**, ≈ 240
+LoC) :
+
+- émission `ospf.packet.received` au sommet de `processHello` ;
+- ordre causal : `received` arrive **avant** `neighbor.state-changed` ;
+- `dispatchOutgoing` invoque toujours le `sendCallback` legacy
+  (rétro-compat) ;
+- `OspfCaptureActor` :
+  - capture des deux directions dans l'ordre chronologique ;
+  - filtres `direction` / `packetType` / `routerId` ;
+  - cap du buffer à `maxEntries` ;
+  - `clear()` vide sans désouscrire ;
+  - `stop()` désouscrit (les événements suivants ne sont plus
+    capturés) ;
+- end-to-end : un échange Hello bilatéral est intégralement
+  enregistré.
+
+#### Résultat
+
+- **112/112 tests events** verts (12 nouveaux). Avec OSPF :
+  **469/469 verts**.
+- Suite globale : baseline strictement préservée (578 préexistants).
+- **Engine = pur émetteur** côté paquets : 0 site `this.sendCallback`
+  hors `dispatchOutgoing`. La propriété "100 % du trafic OSPF est
+  observable au bus" est vérifiable par grep.
+- 7 acteurs vivants côte à côte : `SignalRefreshActor`, `SpfActor`,
+  `RouterLsaActor`, `LsaRefreshActor`, `NetworkLsaActor`,
+  `RoutingTableSyncActor` (intégrés au moteur) +
+  `OspfCaptureActor` (opt-in adapter externe).
+
+#### Ce que cela débloque
+
+1. **Capture / replay déterministe** : un snapshot bit-pour-bit d'une
+   convergence OSPF se fait en 5 lignes :
+   ```ts
+   const cap = new OspfCaptureActor(bus); cap.start();
+   /* run scenario */
+   expect(cap.getCapture()).toMatchSnapshot();
+   ```
+2. **Plug-in API packet-level démontrée** : ajouter une feature
+   "Cisco-style `show ospf packets`" se fait sans modifier le moteur.
+3. **Multi-consommateur** : la couche router data-plane peut
+   s'abonner à `ospf.packet.outgoing` pour forger les trames Ethernet
+   réelles, **en parallèle** de la capture, sans que l'un n'interfère
+   avec l'autre.
+4. **Bus-driven simulation** : un test peut **piloter** le moteur en
+   publiant directement des `ospf.packet.received` synthétiques sur
+   le bus — l'engine n'a pas à savoir d'où vient la trame. C'est ce
+   que font déjà les tests `OSPF.actors.test.ts` et
+   `OSPF.deeperActors.test.ts`.
 
 ### 12.9 Mot de la fin
 

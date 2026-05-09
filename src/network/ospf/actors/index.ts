@@ -23,3 +23,8 @@ export {
   RoutingTableSyncActor,
   type OspfRoutesInstaller,
 } from './RoutingTableSyncActor';
+export {
+  OspfCaptureActor,
+  type CapturedOspfPacket,
+  type OspfCaptureFilter,
+} from './OspfCaptureActor';
