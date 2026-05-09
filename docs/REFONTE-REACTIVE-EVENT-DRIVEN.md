@@ -3057,7 +3057,8 @@ majeure.
 | 4b2-IPSec | IPSec : timers + signaux + FilterChain pattern | ✅ | Voir §12.8.13 |
 | 4b2-IPSec.deeper | IPSec : topics typés, observables complets, SignalRefreshActor, OutboundChain, SA emissions | ✅ | Voir §12.8.14 |
 | 4b2-IPSec.continuum | IPSec : DPD events + IPSecCaptureActor + shadow chain on real ESP path | ✅ | Voir §12.8.15 |
-| 4b2-rest | RIP / DHCP / NAT | ⏳ | – |
+| 4b2-RIP | RIP : timers + topics + observables + acteur | ✅ | Voir §12.8.16 |
+| 4b2-rest | DHCP / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -4373,6 +4374,75 @@ souverain pour le drop/accept des paquets. La chaîne ne peut que
 Score IPSec : **9.5/10**. Le 0.5 manquant est l'utilisation des
 chaînes comme **data path master** (au lieu de shadow). Risque
 estimé incompatible avec la promesse "0 régression sur 357 tests".
+
+### 12.8.16 Phase 4b2-RIP — réactivité (livrée)
+
+Mêmes patterns qu'OSPF/IPSec : RIP atteint **9/10** sur l'audit
+réactif en une seule phase compacte (RIPEngine ne fait que ~470 LoC).
+
+#### Topics ajoutés (`src/network/rip/events.ts`)
+
+8 topics typés :
+
+- `rip.engine.started` / `rip.engine.stopped`
+- `rip.route.added` / `rip.route.updated` / `rip.route.timed-out` /
+  `rip.route.removed`
+- `rip.update.sent` / `rip.update.received`
+
+Tous intégrés dans le `DomainEvent` global.
+
+#### Observables (`src/network/rip/observables.ts`)
+
+- `RIPSignalStore` privé + `RIPObservables` exposé.
+- 2 view-models : `RipRouteVM`, `RipRuntimeStatsVM`.
+- 2 fonctions de **projection pure** : `projectRipRoutes`,
+  `projectRipStats`.
+
+#### Acteur (`src/network/rip/actors/RIPSignalRefreshActor.ts`)
+
+Souscrit à 8 topics RIP, refresh `routes` + `stats` selon le topic.
+Filtré par `deviceId`.
+
+#### Émissions ajoutées dans `RIPEngine`
+
+- `start()` → `rip.engine.started` avec `updateIntervalMs`.
+- `stop()` → `rip.engine.stopped`.
+- `installRoute()` → `rip.route.added`.
+- Mise à jour de métrique meilleure → `rip.route.updated`.
+- `invalidateRoute()` → `rip.route.timed-out`.
+- `garbageCollect()` → `rip.route.removed { reason: 'gc' }`.
+- `sendUpdate()` (périodique) → `rip.update.sent { triggered: false }`.
+- `sendTriggeredUpdate()` → `rip.update.sent { triggered: true }`.
+- `processPacket()` Response → `rip.update.received`.
+
+Compteurs internes (`updatesSent`, `updatesReceived`,
+`routesAddedCount`, `routesRemovedCount`) alimentent les stats via
+`projectRipStats`.
+
+#### Migration timers
+
+- 3 sites (`updateTimer`, `state.timeoutTimer`, `state.gcTimer`)
+  migrés vers `TimerSet`.
+- **0 setTimeout/setInterval natif** dans `RIPEngine.ts`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/RIP.reactive.test.ts` (**11 tests**) :
+
+- Engine lifecycle events (`started`, `stopped`).
+- Observables surface (routes + stats).
+- `stats.running` reflète start/stop.
+- Periodic update timer fires via `VirtualTimeScheduler.advance`.
+- Shutting down stops the timer.
+- `processPacket` Response émet `rip.update.received`.
+- Cross-engine deviceId filter (2 engines indépendants).
+- Compteurs `updatesSent` / `updatesReceived` mis à jour.
+
+#### Résultat
+
+- **202/202 tests events** verts (11 nouveaux RIP).
+- Baseline globale strictement préservée (578 préexistants).
+- 0 timer natif, 8 topics, 2 signaux, 1 acteur.
 
 ### 12.9 Mot de la fin
 
