@@ -3055,6 +3055,7 @@ majeure.
 | 4b2-OSPFv3 | OSPFv3 : parité réactive (acteurs, signaux, événements) | ✅ | Voir §12.8.11 |
 | 4b2-OSPF.lifecycle | OSPF : Hello + DD/LSR retransmits comme acteurs réactifs | ✅ | Voir §12.8.12 |
 | 4b2-IPSec | IPSec : timers + signaux + FilterChain pattern | ✅ | Voir §12.8.13 |
+| 4b2-IPSec.deeper | IPSec : topics typés, observables complets, SignalRefreshActor, OutboundChain, SA emissions | ✅ | Voir §12.8.14 |
 | 4b2-rest | RIP / DHCP / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
@@ -4143,6 +4144,145 @@ sémantique est intrinsèquement séquentielle (un paquet entre, est
 traité, sort). Le **FilterChain** est le bon abstraction pour ce
 domain — il offre la même extensibilité plug-in que les acteurs OSPF
 mais avec une garantie d'ordre forte.
+
+### 12.8.14 Phase 4b2-IPSec.deeper — réactivité complète (livrée)
+
+Pousse IPSec de **~7/10** à **~9/10** sur l'audit de réactivité en
+ajoutant :
+- une taxonomie d'événements **typée et dédiée** (`IpsecDomainEvent`) ;
+- des **read-models complets** (ikeSAs, ipsecSAs, fragGroups, stats) au
+  lieu d'un seul signal stats agrégé ;
+- un **`IPSecSignalRefreshActor`** qui souscrit aux événements et
+  rafraîchit les signaux ;
+- une **chaîne outbound** symétrique de l'inbound (4 filtres par
+  défaut) ;
+- des **émissions SA install/delete** aux sites principaux du moteur.
+
+#### Topics ajoutés (`src/network/ipsec/events.ts`)
+
+11 topics typés avec payloads dédiés :
+
+| Topic | Quand | Payload |
+|---|---|---|
+| `ipsec.engine.started` | `engine.start()` | `{ deviceId, routerName }` |
+| `ipsec.engine.stopped` | `engine.stop()` | idem |
+| `ipsec.ike.sa-installed` | IKE Phase 1 SA installée | `{ peerIp, localIp, version, lifetimeSec, ... }` |
+| `ipsec.ike.sa-deleted` | `clearSAsForPeer()` | `{ peerIp, reason }` |
+| `ipsec.sa.installed` | IPSec child SA installée | `{ peerIp, spiInbound, spiOutbound, protocol, mode, encryption, integrity, ... }` |
+| `ipsec.sa.deleted` | child SA retirée | `{ peerIp, spiInbound, reason }` |
+| `ipsec.dpd.request-sent` | DPD R-U-THERE émis | `{ peerIp, attempt }` |
+| `ipsec.dpd.peer-down` | peer déclaré mort après N retries | `{ peerIp, retries }` |
+| `ipsec.fragment.timeout` | groupe de fragments expire | `{ groupKey, fragmentsSeen }` |
+| `ipsec.inbound.outcome` | chaîne inbound terminée | `{ spi, fromIp, outcome, reason, code, decidedBy }` |
+| `ipsec.outbound.outcome` | chaîne outbound terminée | `{ toIp, outcome, reason, code, decidedBy }` |
+
+Tous intégrés dans le `DomainEvent` global ; consumers s'abonnent
+avec full type safety.
+
+#### Read-models complets (`src/network/ipsec/observables.ts`)
+
+`IPSecSignalStore` privé + `IPSecObservables` exposé via
+`engine.observables` :
+
+```ts
+engine.observables.ikeSAs       // Signal<ReadonlyArray<IkeSaVM>>
+engine.observables.ipsecSAs     // Signal<ReadonlyArray<IpsecSaVM>>
+engine.observables.fragGroups   // Signal<ReadonlyArray<FragmentGroupVM>>
+engine.observables.stats        // Signal<IPSecRuntimeStatsVM>
+```
+
+5 fonctions de **projection pure** (`projectIkeSAs`, `projectIpsecSAs`,
+`projectFragmentGroups`, `projectIPSecStats`, et leurs view-models)
+indépendamment testables.
+
+`engine.stats` reste exposé en racine pour la rétro-compatibilité
+avec la Phase 4b2-IPSec précédente.
+
+#### Acteur (`src/network/ipsec/actors/IPSecSignalRefreshActor.ts`)
+
+Souscrit à 9 topics IPSec et délègue à 3 méthodes actor-API du moteur :
+- `_refreshAllSignals()` — refait toutes les projections après une
+  mutation de SA majeure ;
+- `_refreshFragGroupsAndStats()` — après un timeout fragment ;
+- `_refreshStatsSignal()` — après chaque outcome de chaîne (peu coûteux).
+
+Filtré par `deviceId` pour le multi-engine.
+
+#### OutboundFilterChain
+
+Mirror symétrique de l'inbound, 4 filtres par défaut :
+
+| Filter | Rôle |
+|---|---|
+| `spd-lookup` | Drop si `ctx.spdVerdict === 'discard'`. |
+| `sa-select` | Reject `NO_SA` si SPD demande protect mais aucun SPI matché. |
+| `fragmentation` | Drop si `payloadLen <= 0`. |
+| `encap-audit` | `Accept`. |
+
+Sites d'extension identiques (`addBefore`/`addAfter`/`replace`/
+`remove`). Démontré dans les tests : un `qos-classifier` plug-in
+inséré via `addAfter('spd-lookup', ...)` sans modifier le moteur.
+
+#### Émissions SA aux sites critiques
+
+- `clearSAsForPeer(peerIP, reason)` — désormais accepte un
+  paramètre `reason` (`'manual' | 'lifetime' | 'dpd' | 'replaced' |
+  'shutdown'`) et émet `ipsec.ike.sa-deleted` (pour v1 et v2) +
+  `ipsec.sa.deleted` (pour chaque child SA retirée).
+- IKE SA install (ligne 2716, branche IKEv1) — émet
+  `ipsec.ike.sa-installed` avec `peerIp/localIp/version/lifetimeSec`.
+- Child SA install (ligne 2870) — émet `ipsec.sa.installed` avec
+  `spiInbound/spiOutbound/protocol/mode/encryption/integrity/lifetime*`.
+
+#### Tests ajoutés
+
+`src/__tests__/unit/events/IPSec.deeper.test.ts` (**15 tests**) :
+
+- Engine lifecycle events (`engine.started`, `engine.stopped`).
+- Observables surface (4 signaux), refresh réactif sur SA install
+  via émission directe sur le bus.
+- `clearSAsForPeer` émet `ipsec.ike.sa-deleted` + `ipsec.sa.deleted`.
+- Compteurs stats alimentés par les outcomes inbound + outbound.
+- OutboundFilterChain (4 filtres par défaut, accept/drop/reject paths).
+- Plug-in QoS via `addAfter`.
+- Émission `ipsec.outbound.outcome` après chaque run.
+- Émission `ipsec.inbound.outcome` après chaque run inbound.
+- **Cross-engine isolation** : 2 moteurs sur le même bus avec
+  `deviceId` filtre, compteurs indépendants.
+
+#### Résultat
+
+- **183/183 tests events** verts (15 nouveaux). 0 régression sur la
+  baseline globale.
+- **0 timer natif** restant dans IPSec.
+- **Topics IPSec dédiés** intégrés à `DomainEvent`.
+- **4 signaux observables** (ikeSAs, ipsecSAs, fragGroups, stats) +
+  4 fonctions de projection pure.
+- **2 chaînes pluggables** (inbound + outbound) avec 8 filtres par
+  défaut au total.
+- **1 acteur** (`IPSecSignalRefreshActor`) qui pilote la
+  synchronisation signaux/bus.
+- Méthodes actor-API publiques : `_refreshAllSignals`,
+  `_refreshFragGroupsAndStats`, `_refreshStatsSignal`,
+  `runInboundChain`, `runOutboundChain`, `getDeviceId`.
+
+#### Score IPSec : 9/10
+
+| Dimension | Avant 4b2-IPSec.deeper | Après |
+|---|:---:|:---:|
+| Topics dédiés | – | **11** |
+| Read-models | 1 (stats) | **4** (ikeSAs, ipsecSAs, fragGroups, stats) |
+| Acteurs | 0 | **1** (SignalRefresh) |
+| Filter chains | 1 (inbound) | **2** (inbound + outbound) |
+| Cross-engine isolation | non testée | **vérifiée** par filtre `deviceId` |
+| Émissions SA install/delete | non | **oui** (3 sites principaux) |
+| Tests réactifs | 33 | **48** |
+
+Reste à 10/10 : migrer le data path **réel** (`processInboundESP` et
+`processOutboundIPv4`) à utiliser les FilterChains comme pipeline
+maître au lieu d'observabilité parallèle. Très haut risque pour les
+357 tests IPSec existants — décision : on s'arrête à 9/10 et on
+passe au moteur suivant.
 
 ### 12.9 Mot de la fin
 

@@ -32,7 +32,7 @@ import { IPSEC_CONSTANTS } from '../core/constants';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
-import { WritableSignal, type Signal } from '@/events/Signal';
+import { type Signal } from '@/events/Signal';
 import {
   FilterChain,
   type Filter,
@@ -42,6 +42,16 @@ import {
   Drop,
   Reject,
 } from '../core/FilterChain';
+import {
+  IPSecSignalStore,
+  makeReadonlyIPSecObservables,
+  projectIkeSAs,
+  projectIpsecSAs,
+  projectFragmentGroups,
+  projectIPSecStats,
+  type IPSecObservables,
+} from './observables';
+import { IPSecSignalRefreshActor } from './actors';
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
@@ -72,7 +82,8 @@ export interface IPSecInboundContext {
   readonly tags?: Record<string, unknown>;
 }
 
-/** Read-only view of IPSec runtime statistics. */
+/** Read-only view of IPSec runtime statistics (legacy alias — full
+ *  read-models live in `./observables.ts`). */
 export interface IPSecStatsVM {
   readonly running: boolean;
   readonly activeIkeSAs: number;
@@ -81,6 +92,34 @@ export interface IPSecStatsVM {
   readonly inboundProcessed: number;
   readonly inboundDropped: number;
   readonly inboundRejected: number;
+  readonly outboundProcessed?: number;
+  readonly outboundDropped?: number;
+  readonly outboundRejected?: number;
+}
+
+/**
+ * Pipeline context carried through the outbound IPSec FilterChain.
+ *
+ * Same role as `IPSecInboundContext` but for the egress direction:
+ * SPD lookup → SA select → fragmentation → encapsulation → routing.
+ * Default mode is observability-only; the real encapsulation logic
+ * stays in `processOutboundIPv4` for now.
+ */
+export interface IPSecOutboundContext {
+  /** Outer source IP (the local router). */
+  readonly fromIp: string;
+  /** Outer destination IP. */
+  readonly toIp: string;
+  /** Inner protocol number (TCP=6, UDP=17, ICMP=1, …). */
+  readonly innerProtocol?: number;
+  /** Decoded packet size in bytes (pre-encap). */
+  readonly payloadLen: number;
+  /** SPD verdict if known at this stage. */
+  readonly spdVerdict?: 'discard' | 'protect' | 'bypass';
+  /** Selected outbound SPI when an SA is matched. */
+  readonly outboundSpi?: number;
+  /** Free-form tags for plug-in filters. */
+  readonly tags?: Record<string, unknown>;
 }
 
 /**
@@ -401,29 +440,43 @@ export class IPSecEngine implements IProtocolEngine {
   private schedulerOverride: IScheduler | null = null;
   /** Owns every scheduler timer (fragment reassembly today, more later). */
   private readonly timers = new TimerSet(() => this.getScheduler());
-  /** Read-only observable of IPSec runtime stats. */
-  private readonly _stats = new WritableSignal<IPSecStatsVM>({
-    running: false,
-    activeIkeSAs: 0,
-    activeIPSecSAs: 0,
-    fragGroupsInFlight: 0,
-    inboundProcessed: 0,
-    inboundDropped: 0,
-    inboundRejected: 0,
-  });
-  readonly stats: Signal<IPSecStatsVM> = this._stats;
+  /** Engine-private writable signal store (deeper Phase 4b2-IPSec). */
+  private readonly signalStore = new IPSecSignalStore();
+  /** Read-only IPSec observables (ikeSAs, ipsecSAs, fragGroups, stats). */
+  readonly observables: IPSecObservables = makeReadonlyIPSecObservables(this.signalStore);
+  /** Convenience: stats signal exposed at engine root for backward compat. */
+  readonly stats: Signal<IPSecStatsVM> = this.signalStore.stats;
+  /** Bundled signal-refresh actor (Phase 4b2-IPSec.deeper). */
+  private signalRefreshActor: IPSecSignalRefreshActor | null = null;
 
   /** Pluggable inbound packet pipeline (Phase 4b2-IPSec FilterChain). */
   readonly inboundChain: FilterChain<IPSecInboundContext>;
+  /** Pluggable outbound packet pipeline. */
+  readonly outboundChain: FilterChain<IPSecOutboundContext>;
 
   /** Test-only / multi-topology bus injection. */
-  setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+    this.attachActors();
+  }
   /** Test-only scheduler injection. */
   setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
   private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+  /** Public read of the device id, used by `IPSecSignalRefreshActor`
+   *  to filter events from this engine instance only. */
+  getDeviceId(): string | undefined { return this.router?.id; }
   private deviceRef() {
-    return { deviceId: this.router?.id, routerName: this.router?.getName?.() ?? '' };
+    return {
+      deviceId: this.router?.id ?? '',
+      routerName: this.router?.getName?.() ?? '',
+    };
+  }
+
+  private attachActors(): void {
+    this.signalRefreshActor?.stop();
+    this.signalRefreshActor = new IPSecSignalRefreshActor(this.getBus(), this);
+    this.signalRefreshActor.start();
   }
 
   constructor(router: Router) {
@@ -435,7 +488,71 @@ export class IPSecEngine implements IProtocolEngine {
       busProvider: () => this.getBus(),
       emitEvents: true,
     });
+    this.outboundChain = new FilterChain<IPSecOutboundContext>({
+      chainId: `ipsec.out:${this.router?.id ?? '?'}`,
+      busProvider: () => this.getBus(),
+      emitEvents: true,
+    });
     this.installDefaultInboundFilters();
+    this.installDefaultOutboundFilters();
+    this.attachActors();
+  }
+
+  /**
+   * Default outbound filter sequence (observability mode).
+   *
+   * Mirrors the IPSec egress pipeline: SPD lookup → SA selection →
+   * fragmentation → encapsulation. Default behaviour is
+   * observability-only; plug-ins can transform / replace any step.
+   */
+  private installDefaultOutboundFilters(): void {
+    this.outboundChain
+      .add(this.makeSpdLookupFilter())
+      .add(this.makeSaSelectFilter())
+      .add(this.makeFragmentationFilter())
+      .add(this.makeEncapAuditFilter());
+  }
+
+  private makeSpdLookupFilter(): Filter<IPSecOutboundContext> {
+    return {
+      name: 'spd-lookup',
+      apply: (ctx) => {
+        if (ctx.spdVerdict === 'discard') return Drop('SPD discard');
+        return Continue();
+      },
+    };
+  }
+
+  private makeSaSelectFilter(): Filter<IPSecOutboundContext> {
+    return {
+      name: 'sa-select',
+      apply: (ctx) => {
+        // If the SPD said 'protect' but no SPI was selected → reject.
+        if (ctx.spdVerdict === 'protect' && !ctx.outboundSpi) {
+          return Reject('NO_SA', 'SPD requires protection but no SA matched');
+        }
+        return Continue();
+      },
+    };
+  }
+
+  private makeFragmentationFilter(): Filter<IPSecOutboundContext> {
+    return {
+      name: 'fragmentation',
+      apply: (ctx) => {
+        // Real fragmentation lives in encapsulate(); this filter is a
+        // hook for capture / metrics / PMTU experiments.
+        if (ctx.payloadLen <= 0) return Drop('empty payload');
+        return Continue();
+      },
+    };
+  }
+
+  private makeEncapAuditFilter(): Filter<IPSecOutboundContext> {
+    return {
+      name: 'encap-audit',
+      apply: (ctx) => Accept(ctx),
+    };
   }
 
   /**
@@ -503,15 +620,11 @@ export class IPSecEngine implements IProtocolEngine {
 
   start(): void {
     this.running = true;
+    this.signalRefreshActor?.start();
     this.refreshStats();
     this.getBus().publish({
-      topic: 'log',
-      payload: {
-        level: 'info',
-        source: `ipsec:${this.router?.id ?? '?'}`,
-        event: 'engine.started',
-        message: `IPSec engine started`,
-      },
+      topic: 'ipsec.engine.started',
+      payload: this.deviceRef(),
     });
   }
 
@@ -521,15 +634,11 @@ export class IPSecEngine implements IProtocolEngine {
     // Clear all scheduler-owned timers (fragment reassembly etc.).
     this.timers.clearAll();
     this.fragBuffer.clear();
+    this.signalRefreshActor?.stop();
     this.refreshStats();
     this.getBus().publish({
-      topic: 'log',
-      payload: {
-        level: 'info',
-        source: `ipsec:${this.router?.id ?? '?'}`,
-        event: 'engine.stopped',
-        message: `IPSec engine stopped`,
-      },
+      topic: 'ipsec.engine.stopped',
+      payload: this.deviceRef(),
     });
   }
 
@@ -538,37 +647,98 @@ export class IPSecEngine implements IProtocolEngine {
   private inboundProcessed = 0;
   private inboundDropped = 0;
   private inboundRejected = 0;
+  private outboundProcessed = 0;
+  private outboundDropped = 0;
+  private outboundRejected = 0;
 
-  /** Refresh the runtime stats signal from internal counters. */
-  private refreshStats(): void {
-    // Defensive null-checks: this can be invoked from start() before
-    // every Map field has been assigned during a subclass constructor.
-    const ike = (this.ikeSADB?.size ?? 0) + (this.ikev2SADB?.size ?? 0);
-    const ipsec = this.ipsecSADB
-      ? Array.from(this.ipsecSADB.values()).reduce((s, arr) => s + arr.length, 0)
-      : 0;
-    this._stats.set({
+  // ── Actor-API: read-model refresh helpers ──────────────────────────
+
+  /** [actor-API] Refresh the stats signal only. */
+  _refreshStatsSignal(): void {
+    if (!this.signalStore) { this.refreshStats(); return; }
+    this.signalStore.stats.set(projectIPSecStats({
       running: this.running,
-      activeIkeSAs: ike,
-      activeIPSecSAs: ipsec,
-      fragGroupsInFlight: this.fragBuffer?.size ?? 0,
+      ikeSADB: this.ikeSADB ?? new Map(),
+      ikev2SADB: this.ikev2SADB ?? new Map(),
+      ipsecSADB: this.ipsecSADB ?? new Map(),
+      fragBufferSize: this.fragBuffer?.size ?? 0,
       inboundProcessed: this.inboundProcessed,
       inboundDropped: this.inboundDropped,
       inboundRejected: this.inboundRejected,
-    });
+      outboundProcessed: this.outboundProcessed,
+      outboundDropped: this.outboundDropped,
+      outboundRejected: this.outboundRejected,
+    }));
+  }
+
+  /** [actor-API] Refresh ikeSAs + ipsecSAs + fragGroups + stats. */
+  _refreshAllSignals(): void {
+    if (!this.signalStore) { this.refreshStats(); return; }
+    this.signalStore.ikeSAs.set(projectIkeSAs(this.ikeSADB ?? new Map(), this.ikev2SADB ?? new Map()));
+    this.signalStore.ipsecSAs.set(projectIpsecSAs(this.ipsecSADB ?? new Map()));
+    this.signalStore.fragGroups.set(projectFragmentGroups(this.fragBuffer ?? new Map()));
+    this._refreshStatsSignal();
+  }
+
+  /** [actor-API] Refresh fragGroups + stats (after fragment timeout). */
+  _refreshFragGroupsAndStats(): void {
+    if (!this.signalStore) { this.refreshStats(); return; }
+    this.signalStore.fragGroups.set(projectFragmentGroups(this.fragBuffer ?? new Map()));
+    this._refreshStatsSignal();
+  }
+
+  /** Legacy refresh entry — kept for the `_stats` field which is also
+   *  exposed via `engine.stats`. Just delegates to _refreshStatsSignal. */
+  private refreshStats(): void {
+    this._refreshStatsSignal();
   }
 
   /**
-   * Run the inbound filter chain on a packet context. Used by the
-   * data-plane wrapper / by tests / by plug-ins. Returns the chain
-   * outcome and updates the stats counters accordingly.
+   * Run the inbound filter chain on a packet context. Updates the
+   * stats counters and emits `ipsec.inbound.outcome` (consumed by
+   * `IPSecSignalRefreshActor`).
    */
   runInboundChain(ctx: IPSecInboundContext): FilterChainOutcome<IPSecInboundContext> {
     const outcome = this.inboundChain.process(ctx);
     if (outcome.verdict === 'accepted') this.inboundProcessed++;
     else if (outcome.verdict === 'dropped') this.inboundDropped++;
     else this.inboundRejected++;
-    this.refreshStats();
+    this.getBus().publish({
+      topic: 'ipsec.inbound.outcome',
+      payload: {
+        ...this.deviceRef(),
+        spi: ctx.spi,
+        fromIp: ctx.fromIp,
+        outcome: outcome.verdict,
+        reason: outcome.reason,
+        code: outcome.code,
+        decidedBy: outcome.decidedBy,
+      },
+    });
+    return outcome;
+  }
+
+  /**
+   * Run the outbound filter chain on a packet context. Same shape as
+   * `runInboundChain` but for egress. Default behaviour is
+   * observability-only.
+   */
+  runOutboundChain(ctx: IPSecOutboundContext): FilterChainOutcome<IPSecOutboundContext> {
+    const outcome = this.outboundChain.process(ctx);
+    if (outcome.verdict === 'accepted') this.outboundProcessed++;
+    else if (outcome.verdict === 'dropped') this.outboundDropped++;
+    else this.outboundRejected++;
+    this.getBus().publish({
+      topic: 'ipsec.outbound.outcome',
+      payload: {
+        ...this.deviceRef(),
+        toIp: ctx.toIp,
+        outcome: outcome.verdict,
+        reason: outcome.reason,
+        code: outcome.code,
+        decidedBy: outcome.decidedBy,
+      },
+    });
     return outcome;
   }
 
@@ -1083,14 +1253,36 @@ export class IPSecEngine implements IProtocolEngine {
     }
   }
 
-  clearSAsForPeer(peerIP: string): void {
+  clearSAsForPeer(peerIP: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown' = 'manual'): void {
     const ikeSA = this.ikeSADB.get(peerIP);
-    if (ikeSA) { ikeSA.status = 'MM_NO_STATE'; this.ikeSADB.delete(peerIP); }
-    this.ikev2SADB.delete(peerIP);
+    if (ikeSA) {
+      ikeSA.status = 'MM_NO_STATE';
+      this.ikeSADB.delete(peerIP);
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-deleted',
+        payload: { ...this.deviceRef(), peerIp: peerIP, reason },
+      });
+    }
+    if (this.ikev2SADB.has(peerIP)) {
+      this.ikev2SADB.delete(peerIP);
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-deleted',
+        payload: { ...this.deviceRef(), peerIp: peerIP, reason },
+      });
+    }
 
     const sas = this.ipsecSADB.get(peerIP) || [];
     for (const sa of sas) {
       this.spiToSA.delete(sa.spiIn);
+      this.getBus().publish({
+        topic: 'ipsec.sa.deleted',
+        payload: {
+          ...this.deviceRef(),
+          peerIp: peerIP,
+          spiInbound: sa.spiIn,
+          reason,
+        },
+      });
     }
     this.ipsecSADB.delete(peerIP);
   }
@@ -2522,6 +2714,16 @@ export class IPSecEngine implements IProtocolEngine {
       }
     }
     this.ikeSADB.set(peerIP, ikeSA);
+    this.getBus().publish({
+      topic: 'ipsec.ike.sa-installed',
+      payload: {
+        ...this.deviceRef(),
+        peerIp: peerIP,
+        localIp: localIP,
+        version: 1,
+        lifetimeSec: negotiatedIKELifetime,
+      },
+    });
 
     const peerLocalIP = peerEngine.getLocalIP('') || peerIP;
     const peerIkeSA: IKE_SA = {
@@ -2667,6 +2869,22 @@ export class IPSecEngine implements IProtocolEngine {
     for (const oldSa of existing) this.spiToSA.delete(oldSa.spiIn);
     this.ipsecSADB.set(peerIP, [sa]);
     this.spiToSA.set(spiInitIn, sa);
+    this.getBus().publish({
+      topic: 'ipsec.sa.installed',
+      payload: {
+        ...this.deviceRef(),
+        peerIp: peerIP,
+        spiInbound: spiInitIn,
+        spiOutbound: sa.spiOut,
+        protocol: hasESP ? 'esp' : 'ah',
+        mode: saMode === 'Tunnel' ? 'tunnel' : 'transport',
+        encryption: String(sa.encryption ?? ''),
+        integrity: String(sa.authentication ?? ''),
+        lifetimeSec: lifetime,
+        lifetimeKB,
+      },
+    });
+
 
     // Responder SA (on peer engine)
     const peerLocalIP = peerEngine.getLocalIP(peerEntry?.aclName ? '' : '') || peerIP;

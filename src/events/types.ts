@@ -22,6 +22,7 @@ import type {
   PortViolationMode,
 } from '@/network/core/types';
 import type { OspfDomainEvent } from '@/network/ospf/events';
+import type { IpsecDomainEvent } from '@/network/ipsec/events';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-cutting
@@ -223,7 +224,9 @@ export type DomainEvent =
   | { topic: 'cable.frame.delivered'; payload: CableFrameDeliveredPayload }
   | { topic: 'cable.frame.lost'; payload: CableFrameLostPayload }
   // OSPF (sub-union, see src/network/ospf/events.ts)
-  | OspfDomainEvent;
+  | OspfDomainEvent
+  // IPSec (sub-union, see src/network/ipsec/events.ts)
+  | IpsecDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 
