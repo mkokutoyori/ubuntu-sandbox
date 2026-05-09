@@ -31,6 +31,9 @@ import {
   createDefaultOSPFConfig,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 
 // ─── OSPFv3 LSA Types ───────────────────────────────────────────────
 
@@ -71,9 +74,28 @@ export class OSPFv3Engine implements IProtocolEngine {
   private linkLSAs: Map<string, OSPFv3LinkLSA> = new Map();          // key: ifaceName
   private intraPrefixLSAs: Map<string, OSPFv3IntraAreaPrefixLSA> = new Map(); // key: areaId
 
-  /** SPF scheduling */
-  private spfTimer: ReturnType<typeof setTimeout> | null = null;
+  /** SPF scheduling — TimerSet token. */
+  private spfTimer: symbol | null = null;
   private spfPending = false;
+
+  // ─── Reactive plumbing (Phase 4b2) ────────────────────────────────
+  private busOverride: IEventBus | null = null;
+  private schedulerOverride: IScheduler | null = null;
+  private deviceId: string | undefined = undefined;
+  private readonly timers: TimerSet = new TimerSet(() => this.getScheduler());
+
+  setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  setDeviceId(id: string | undefined): void { this.deviceId = id; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+  private routerRef() {
+    return {
+      routerId: this.config.routerId,
+      processId: this.config.processId,
+      deviceId: this.deviceId,
+    };
+  }
 
   constructor(processId: number = 1) {
     this.config = createDefaultOSPFConfig(processId);
@@ -131,10 +153,8 @@ export class OSPFv3Engine implements IProtocolEngine {
     const iface = this.interfaces.get(ifName);
     if (iface) {
       iface.passive = true;
-      if (iface.helloTimer) {
-        clearInterval(iface.helloTimer);
-        iface.helloTimer = null;
-      }
+      this.timers.clear(iface.helloTimer);
+      iface.helloTimer = null;
     }
   }
 
@@ -242,14 +262,10 @@ export class OSPFv3Engine implements IProtocolEngine {
       neighbor.state = 'Down';
     }
 
-    if (iface.helloTimer) {
-      clearInterval(iface.helloTimer);
-      iface.helloTimer = null;
-    }
-    if (iface.waitTimer) {
-      clearTimeout(iface.waitTimer);
-      iface.waitTimer = null;
-    }
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
 
     iface.state = 'Down';
     const area = this.config.areas.get(iface.areaId);
@@ -288,7 +304,8 @@ export class OSPFv3Engine implements IProtocolEngine {
       iface.state = 'PointToPoint';
     } else {
       iface.state = 'Waiting';
-      iface.waitTimer = setTimeout(() => {
+      iface.waitTimer = this.timers.setTimeout(() => {
+        iface.waitTimer = null;
         this.drElection(iface);
       }, iface.deadInterval * 1000);
     }
@@ -299,11 +316,11 @@ export class OSPFv3Engine implements IProtocolEngine {
   }
 
   private startHelloTimer(iface: OSPFv3Interface): void {
-    if (iface.helloTimer) clearInterval(iface.helloTimer);
+    if (iface.helloTimer) this.timers.clear(iface.helloTimer);
 
     this.sendHello(iface);
 
-    iface.helloTimer = setInterval(() => {
+    iface.helloTimer = this.timers.setInterval(() => {
       this.sendHello(iface);
     }, iface.helloInterval * 1000);
   }
@@ -387,7 +404,7 @@ export class OSPFv3Engine implements IProtocolEngine {
     // DR/BDR handling
     if (iface.state === 'Waiting' && hello.backupDesignatedRouter === hello.routerId) {
       if (iface.waitTimer) {
-        clearTimeout(iface.waitTimer);
+        this.timers.clear(iface.waitTimer);
         iface.waitTimer = null;
       }
       this.drElection(iface);
@@ -426,17 +443,28 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   private resetDeadTimer(iface: OSPFv3Interface, neighbor: OSPFNeighbor): void {
     this.clearDeadTimer(neighbor);
-    neighbor.deadTimer = setTimeout(() => {
+    neighbor.deadTimer = this.timers.setTimeout(() => {
       const oldState = neighbor.state;
       neighbor.state = 'Down';
       iface.neighbors.delete(neighbor.routerId);
       this.logEvent(`OSPFv3: Neighbor ${neighbor.routerId} (${iface.name}): ${oldState} -> Down (InactivityTimer)`);
+      this.getBus().publish({
+        topic: 'ospf.neighbor.state-changed',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          neighborId: neighbor.routerId,
+          oldState,
+          newState: 'Down',
+          event: 'InactivityTimer',
+        },
+      });
     }, iface.deadInterval * 1000);
   }
 
   private clearDeadTimer(neighbor: OSPFNeighbor): void {
     if (neighbor.deadTimer) {
-      clearTimeout(neighbor.deadTimer);
+      this.timers.clear(neighbor.deadTimer);
       neighbor.deadTimer = null;
     }
   }
@@ -654,24 +682,19 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   shutdown(): void {
     this.running = false;
+    // TimerSet uses each timer's owning scheduler, so clearAll() is leak-free
+    // even if setScheduler() was called between allocations.
+    this.timers.clearAll();
     for (const [, iface] of this.interfaces) {
-      if (iface.helloTimer) {
-        clearInterval(iface.helloTimer);
-        iface.helloTimer = null;
-      }
-      if (iface.waitTimer) {
-        clearTimeout(iface.waitTimer);
-        iface.waitTimer = null;
-      }
+      iface.helloTimer = null;
+      iface.waitTimer = null;
       for (const [, neighbor] of iface.neighbors) {
-        this.clearDeadTimer(neighbor);
+        neighbor.deadTimer = null;
+        neighbor.ddRetransmitTimer = null;
+        neighbor.lsrRetransmitTimer = null;
       }
     }
-
-    if (this.spfTimer) {
-      clearTimeout(this.spfTimer);
-      this.spfTimer = null;
-    }
+    this.spfTimer = null;
 
     this.interfaces.clear();
     this.lsdb = createEmptyLSDB();

@@ -3048,7 +3048,8 @@ majeure.
 | 3 | Hardware : `Port`, `Cable` émettent (callbacks legacy conservés) | ✅ | Voir §12.8.4 |
 | 4a | Scheduler dans `PacketQueue` et `NeighborResolver` | ✅ | Voir §12.8.5 |
 | 4b1 | Scheduler dans `Switch.macAgingTimer` | ✅ | Voir §12.8.6 |
-| 4b2 | Scheduler dans OSPF / RIP / DHCP / IPSec / NAT | ⏳ | – |
+| 4b2-OSPF | OSPF v2 + v3 : timers, événements, signaux | ✅ | Voir §12.8.7 |
+| 4b2-rest | RIP / DHCP / IPSec / NAT | ⏳ | – |
 | 5 | Devices : `EndHost`, `Router` migrent leurs `pendingXxx` | ⏳ | – |
 | 6 | Projections + hooks UI ; pipeline frames asynchrone | ⏳ | – |
 | 7 | Oracle : émissions + `OracleFilesystemSync` | ⏳ | – |
@@ -3354,6 +3355,128 @@ qu'aucun timer ne fuit (`scheduler.pendingCount() === 0`).
 **Résultat** : **65/65 tests events verts**. Suite globale : baseline
 préservée. 0 occurrence de `setInterval` natif dans
 `src/network/devices/Switch.ts`.
+
+### 12.8.7 Phase 4b2-OSPF — OSPFv2 + OSPFv3 réactifs (livrée)
+
+**Objectif §10.5** appliqué aux deux moteurs OSPF (≈ 4 600 LoC
+cumulées). La migration exploite à fond la programmation réactive :
+événements typés sur le bus, scheduler injecté pour 100 % des timers,
+read-models exposés via `Signal` consommables par
+`useSyncExternalStore`. Le tout sans toucher à la logique RFC 2328 /
+RFC 5340 — la suite de **357 tests OSPF existants reste verte sans
+modification**.
+
+#### Réorganisation en fichiers plus petits
+
+`src/network/ospf/` est désormais composé de :
+
+- `OSPFEngine.ts` (≈ 3 300 LoC) — moteur principal, instrumenté.
+- `OSPFv3Engine.ts` (≈ 700 LoC) — moteur IPv6, instrumenté.
+- `types.ts` — types partagés (timers passés de
+  `ReturnType<typeof setTimeout>` à `symbol`, qui est le token opaque
+  des `TimerSet`).
+- `checksum.ts` (**nouveau**, ≈ 100 LoC) — Fletcher-16 LSA checksum
+  extrait du moteur. Pur, indépendamment testable, ré-exporté par
+  `OSPFEngine` pour rétro-compatibilité.
+- `events.ts` (**nouveau**, ≈ 105 LoC) — taxonomie réactive
+  (`OspfDomainEvent` union de 11 topics : neighbor.state-changed,
+  interface.state-changed, dr-election, lsa.installed/flushed/received/refreshed,
+  spf.run, routes-recomputed, area.activated, packet.outgoing).
+  Cette union est intégrée à `DomainEvent` (`src/events/types.ts`) via
+  un re-export, conservant le typage discriminé pour les abonnés bus.
+- `observables.ts` (**nouveau**, ≈ 110 LoC) — `OspfSignalStore`
+  (writable interne) + `OspfObservables` (lecture seule exposée).
+  View-models : `OspfNeighborVM`, `OspfInterfaceVM`,
+  `OspfLSDBSummaryVM`, `OspfRoutesVM`, `OspfRuntimeStatsVM`. Chaque
+  signal n'émet que sur changement de référence (`Object.is`).
+
+#### Helper transverse
+
+`src/events/TimerSet.ts` (**nouveau**, ≈ 75 LoC) — petit utilitaire
+réutilisable par tous les moteurs (OSPF, OSPFv3, et les futurs RIP /
+DHCP / IPSec / NAT) qui :
+
+1. capture le `IScheduler` actif **au moment de l'allocation** de
+   chaque timer ;
+2. garantit que `clear()` libère le handle sur ce **même** scheduler,
+   même si `setScheduler()` a basculé entre allocation et libération ;
+3. fournit `clearAll()` pour le `shutdown()` global du moteur,
+   éliminant ≈ 30 lignes de répétition `clearTimeout`/`clearInterval`
+   par moteur.
+
+#### Migration `OSPFEngine`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Timers natifs | 7 sites (`setInterval` LSAge, `setTimeout` SPF, `setInterval` Hello, `setTimeout` Wait, `setTimeout` Dead, `setTimeout` DDRetransmit, `setTimeout` LSRRetransmit) | 0 — tous via `this.timers` (`TimerSet`) qui délègue au scheduler injecté |
+| Émissions bus | 0 | 11 topics (`ospf.neighbor.state-changed`, `ospf.dr-election`, `ospf.lsa.installed`, `ospf.lsa.flushed` (reason: `maxage` ou `topology-change`), `ospf.spf.run` (kind: `full` ou `partial`, `runtimeMs`), `ospf.routes-recomputed`, `ospf.area.activated`, …) |
+| State observable | aucune (mutations silencieuses) | 5 signaux : `neighbors`, `interfaces`, `lsdbSummary`, `routes`, `runtime` |
+| Injection | `OSPFSendCallback` uniquement | `setEventBus()`, `setScheduler()`, `setDeviceId()`, `setSendCallback()` (existant) — défauts singleton |
+| Checksum | inline, ≈ 95 LoC | délégué à `checksum.ts` ; ré-exports stables |
+| `shutdown()` | 30 lignes de cleanup manuel par interface/voisin | `this.timers.clearAll()` + reset des champs |
+
+Les rafraîchissements de signaux (`rebuildNeighborSignal`,
+`rebuildLSDBSignal`, `rebuildRoutesSignal`, `updateRuntimeSignal`)
+sont déclenchés au plus près de la mutation de l'état domaine, pas par
+polling. La granularité naturelle est : un événement métier émis ⇒ un
+signal correspondant rafraîchi.
+
+#### Migration `OSPFv3Engine`
+
+Mêmes principes, mais sans signaux internes pour l'instant (le moteur
+IPv6 a une surface d'usage plus restreinte). Tous les timers natifs (5
+sites : Wait, Hello, Dead, plus deux cleanups) sont migrés vers
+`TimerSet`. La transition `Down` du voisin sur `InactivityTimer`
+publie `ospf.neighbor.state-changed` avec `event: 'InactivityTimer'`.
+
+#### Tests réactifs
+
+`src/__tests__/unit/events/OSPF.reactive.test.ts` (**nouveau**, 13
+tests, ≈ 230 LoC) — couvre :
+
+- 0 timer natif après `start()` (uniquement le tick LSA aging) ;
+- LSA aging déterministe via `scheduler.advance(N_000)` ;
+- émission `ospf.lsa.installed` à l'install d'un nouveau LSA ;
+- émission `ospf.lsa.flushed` (reason `maxage`) lors d'une purge ;
+- absence de flush quand un LSA self-originated atteint
+  `LS_REFRESH_TIME` (re-flood + reset d'âge à la place) ;
+- émissions `ospf.spf.run` (`kind: 'full'`) + `ospf.routes-recomputed` ;
+- émission `ospf.area.activated` pour chaque aire au démarrage ;
+- mise à jour du signal `runtime` (running, spfRuns, lastSpfKind) ;
+- mise à jour du signal `routes` après SPF ;
+- mise à jour du signal `lsdbSummary` après `installLSA` ;
+- `shutdown()` libère 100 % des timers (`pendingCount() === 0`) ;
+- émission `ospf.dr-election` avec le bon `iface`/`dr` ;
+- les abonnés au signal `runtime` sont notifiés à chaque SPF.
+
+#### Résultat
+
+- **78/78 tests events** (13 nouveaux Phase 4b2-OSPF).
+- **357/357 tests OSPF existants** verts sans modification.
+- **Suite globale** : baseline strictement préservée (578 échecs
+  préexistants, aucun introduit).
+- **0 occurrence** de `setTimeout` / `setInterval` natif dans
+  `OSPFEngine.ts` ou `OSPFv3Engine.ts` (vérifié par grep).
+- **API publique conservée** : `OSPFEngine.tickLSAge()`,
+  `runSPF()`, `installLSA()`, `setSendCallback()`, etc. inchangées —
+  les tests existants utilisant `vi.useFakeTimers` + `tickLSAge`
+  continuent de fonctionner via le `RealTimeScheduler` par défaut.
+
+#### Bénéfices immédiats
+
+1. **Tests OSPF déterministes** : un nouveau test peut substituer
+   `VirtualTimeScheduler` à `vi.useFakeTimers` et obtenir un trace
+   d'événements bit-pour-bit reproductible cross-runs.
+2. **UI live possible** : un futur composant `OspfNeighborTable`
+   peut consommer `engine.observables.neighbors` via
+   `useSyncExternalStore` sans aucun polling.
+3. **Plug-in API** : un module `BusTracer` abonné à `'*'` enregistre
+   maintenant la trace exacte d'une convergence OSPF (Hello → 2-Way
+   → Full → SPF run → routes recomputed) — base directe pour les
+   snapshots §11.2.5.
+4. **Capture / replay** : la combinaison `EventBus` + `VirtualTime
+   Scheduler` rend possible le rejeu déterministe d'un scénario à
+   condition initiale identique.
 
 ### 12.9 Mot de la fin
 

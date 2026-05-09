@@ -37,104 +37,32 @@ import {
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { OSPF_CONSTANTS } from '../core/constants';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
+import {
+  OspfSignalStore,
+  makeReadonlyObservables,
+  type OspfObservables,
+  type OspfNeighborVM,
+  type OspfInterfaceVM,
+  type OspfLSDBSummaryVM,
+} from './observables';
+import {
+  computeOSPFLSAChecksum as _computeOSPFLSAChecksum,
+  verifyOSPFLSAChecksum as _verifyOSPFLSAChecksum,
+} from './checksum';
+
+// Re-export so external callers (and the OSPFv3 engine) keep importing
+// the checksum helpers from `OSPFEngine`.
+export const computeOSPFLSAChecksum = _computeOSPFLSAChecksum;
+export const verifyOSPFLSAChecksum = _verifyOSPFLSAChecksum;
 
 // ─── LSA Checksum: Fletcher-16 (RFC 2328 Appendix C.1) ─────────────
-
-/**
- * Convert a dotted-decimal IP string to a 4-byte array.
- * Returns [0,0,0,0] for invalid input.
- */
-function ipToBytes(ip: string): number[] {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return [0, 0, 0, 0];
-  return parts.map(n => parseInt(n, 10) & 0xFF);
-}
-
-/**
- * Serialize an LSA to a byte array starting from offset 2 of the LSA header
- * (i.e. skipping the 2-byte lsAge field), with the checksum field zeroed.
- * This is the byte sequence over which Fletcher-16 is computed.
- */
-function serializeLSAForChecksum(lsa: LSA): number[] {
-  const bytes: number[] = [];
-
-  // --- LSA common header (from byte 2, skipping lsAge) ---
-  bytes.push(lsa.options & 0xFF);                             // options: 1 byte
-  bytes.push(lsa.lsType & 0xFF);                              // lsType: 1 byte
-  bytes.push(...ipToBytes(lsa.linkStateId));                  // linkStateId: 4 bytes
-  bytes.push(...ipToBytes(lsa.advertisingRouter));            // advertisingRouter: 4 bytes
-
-  const seq = lsa.lsSequenceNumber >>> 0;
-  bytes.push(
-    (seq >>> 24) & 0xFF, (seq >>> 16) & 0xFF,
-    (seq >>> 8)  & 0xFF,  seq         & 0xFF,
-  );                                                          // seqNumber: 4 bytes
-
-  bytes.push(0, 0);                                           // checksum: 2 bytes (zeroed)
-
-  const len = lsa.length ?? 24;
-  bytes.push((len >>> 8) & 0xFF, len & 0xFF);                 // length: 2 bytes
-
-  // --- LSA type-specific body ---
-  if (lsa.lsType === 1) {
-    const r = lsa as RouterLSA;
-    bytes.push(r.flags & 0xFF, 0);                            // flags + padding: 2 bytes
-    bytes.push((r.numLinks >>> 8) & 0xFF, r.numLinks & 0xFF); // numLinks: 2 bytes
-    for (const link of r.links) {
-      bytes.push(...ipToBytes(link.linkId));
-      bytes.push(...ipToBytes(link.linkData));
-      bytes.push(link.type & 0xFF, link.numTOS & 0xFF);
-      bytes.push((link.metric >>> 8) & 0xFF, link.metric & 0xFF);
-    }
-  } else if (lsa.lsType === 2) {
-    const n = lsa as NetworkLSA;
-    bytes.push(...ipToBytes(n.networkMask));
-    for (const r of n.attachedRouters) {
-      bytes.push(...ipToBytes(r));
-    }
-  } else if (lsa.lsType === 3 || lsa.lsType === 4) {
-    const s = lsa as SummaryLSA;
-    bytes.push(...ipToBytes(s.networkMask));
-    bytes.push(0); // padding
-    bytes.push((s.metric >>> 16) & 0xFF, (s.metric >>> 8) & 0xFF, s.metric & 0xFF);
-  } else if (lsa.lsType === 5 || lsa.lsType === 7) {
-    const e = lsa as ExternalLSA | NSSAExternalLSA;
-    bytes.push(...ipToBytes(e.networkMask));
-    bytes.push(e.metricType === 2 ? 0x80 : 0x00);
-    bytes.push((e.metric >>> 16) & 0xFF, (e.metric >>> 8) & 0xFF, e.metric & 0xFF);
-    bytes.push(...ipToBytes(e.forwardingAddress));
-    const tag = e.externalRouteTag >>> 0;
-    bytes.push((tag >>> 24) & 0xFF, (tag >>> 16) & 0xFF, (tag >>> 8) & 0xFF, tag & 0xFF);
-  }
-
-  return bytes;
-}
-
-/**
- * Compute the Fletcher-16 checksum of an LSA (RFC 2328 §12.4.7).
- * The lsAge field is excluded; the checksum field is treated as zero.
- * Returns the 16-bit checksum as (C0 << 8) | C1.
- */
-export function computeOSPFLSAChecksum(lsa: LSA): number {
-  const bytes = serializeLSAForChecksum(lsa);
-  let c0 = 0, c1 = 0;
-  for (const b of bytes) {
-    c0 = (c0 + b) % 255;
-    c1 = (c1 + c0) % 255;
-  }
-  const result = ((c0 & 0xFF) << 8) | (c1 & 0xFF);
-  // Avoid returning 0x0000 (treated as "unset") — remap to a sentinel
-  return result !== 0 ? result : 0xFFFF;
-}
-
-/**
- * Verify the stored checksum of an LSA matches the computed value.
- * An LSA with checksum 0 is always considered invalid (not yet computed).
- */
-export function verifyOSPFLSAChecksum(lsa: LSA): boolean {
-  if (lsa.checksum === 0) return false;
-  return lsa.checksum === computeOSPFLSAChecksum(lsa);
-}
+//
+// The checksum implementation lives in `./checksum.ts`. The helpers
+// kept here below are private utilities used by other parts of the
+// engine (none currently — kept for future use).
 
 // ─── Callback type for sending packets ─────────────────────────────
 
@@ -157,8 +85,8 @@ export class OSPFEngine implements IProtocolEngine {
   /** Current LSA sequence number */
   private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
 
-  /** LSA aging timer (fires every 1 second) */
-  private lsAgeTimer: ReturnType<typeof setInterval> | null = null;
+  /** LSA aging timer (fires every 1 second). TimerSet token. */
+  private lsAgeTimer: symbol | null = null;
 
   /** MinLSInterval: last flood timestamp (ms) per LSA key, for self-originated LSAs */
   private lastFloodTime: Map<string, number> = new Map();
@@ -176,8 +104,8 @@ export class OSPFEngine implements IProtocolEngine {
   private spfCurrentHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
   private spfLastRunAt = 0;            // timestamp (ms) when SPF last ran
 
-  /** SPF scheduling */
-  private spfTimer: ReturnType<typeof setTimeout> | null = null;
+  /** SPF scheduling — TimerSet token. */
+  private spfTimer: symbol | null = null;
   private spfPending = false;
 
   /** Partial SPF: cached SPF trees per area (skip Dijkstra when only leaves change) */
@@ -208,9 +136,159 @@ export class OSPFEngine implements IProtocolEngine {
     iface: OSPFInterface;
   }> = new Map();
 
+  // ─── Reactive plumbing (Phase 4b2) ──────────────────────────────────
+  /** Optional bus override. Falls back to the singleton when null. */
+  private busOverride: IEventBus | null = null;
+  /** Optional scheduler override. Falls back to the singleton when null. */
+  private schedulerOverride: IScheduler | null = null;
+  /** Optional device id, populated when the engine is attached to an Equipment. */
+  private deviceId: string | undefined = undefined;
+  /** Owns every scheduled timer so swapping schedulers can never leak one. */
+  private readonly timers: TimerSet = new TimerSet(() => this.getScheduler());
+  /** Engine-private writable signal store. Read-only view exposed via `observables`. */
+  private readonly signalStore = new OspfSignalStore();
+  /** Read-only observables (neighbors, interfaces, LSDB summary, routes, runtime). */
+  readonly observables: OspfObservables = makeReadonlyObservables(this.signalStore);
+
   constructor(processId: number = 1) {
     this.config = createDefaultOSPFConfig(processId);
     this.lsdb = createEmptyLSDB();
+  }
+
+  // ─── Reactive injection ─────────────────────────────────────────────
+
+  /** Inject a custom bus (test-only / multi-topology). */
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+  }
+
+  /** Inject a custom scheduler. Must be called before `start()` to ensure
+   *  every timer is allocated on the desired scheduler. Switching after
+   *  `start()` is supported but only affects timers allocated afterwards;
+   *  prior timers remain owned by the previous scheduler via `TimerSet`. */
+  setScheduler(scheduler: IScheduler | null): void {
+    this.schedulerOverride = scheduler;
+  }
+
+  /** Bind the engine to a device id so its events carry the deviceId. */
+  setDeviceId(id: string | undefined): void {
+    this.deviceId = id;
+  }
+
+  private getBus(): IEventBus {
+    return this.busOverride ?? getDefaultEventBus();
+  }
+
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
+
+  /** Common identity stamped on every `ospf.*` event. */
+  private routerRef() {
+    return {
+      routerId: this.config.routerId,
+      processId: this.config.processId,
+      deviceId: this.deviceId,
+    };
+  }
+
+  // ─── Read-model refresh (called after state mutations) ──────────────
+
+  private rebuildNeighborSignal(): void {
+    const out: OspfNeighborVM[] = [];
+    for (const [, iface] of this.interfaces) {
+      for (const [, n] of iface.neighbors) {
+        out.push({
+          iface: iface.name,
+          routerId: n.routerId,
+          state: n.state,
+          ipAddress: n.ipAddress,
+          priority: n.priority,
+          isMaster: n.isMaster,
+          isDR: n.routerId === iface.dr,
+          isBDR: n.routerId === iface.bdr,
+        });
+      }
+    }
+    this.signalStore.neighbors.set(out);
+  }
+
+  private rebuildInterfaceSignal(): void {
+    const out: OspfInterfaceVM[] = [];
+    for (const [, iface] of this.interfaces) {
+      let fullCount = 0;
+      for (const [, n] of iface.neighbors) {
+        if (n.state === 'Full') fullCount++;
+      }
+      out.push({
+        name: iface.name,
+        areaId: iface.areaId,
+        ipAddress: iface.ipAddress,
+        mask: iface.mask,
+        state: iface.state,
+        networkType: iface.networkType,
+        priority: iface.priority,
+        cost: iface.cost,
+        dr: iface.dr,
+        bdr: iface.bdr,
+        passive: iface.passive,
+        neighborCount: iface.neighbors.size,
+        fullNeighborCount: fullCount,
+      });
+    }
+    this.signalStore.interfaces.set(out);
+  }
+
+  private rebuildLSDBSignal(): void {
+    let total = 0;
+    const perArea = new Map<string, number>();
+    const headers: LSAHeader[] = [];
+    for (const [areaId, areaDB] of this.lsdb.areas) {
+      perArea.set(areaId, areaDB.size);
+      total += areaDB.size;
+      for (const [, lsa] of areaDB) headers.push(this.headerOf(lsa));
+    }
+    for (const [, lsa] of this.lsdb.external) {
+      total++;
+      headers.push(this.headerOf(lsa));
+    }
+    const summary: OspfLSDBSummaryVM = {
+      totalLSAs: total,
+      perAreaCounts: perArea,
+      externalCount: this.lsdb.external.size,
+      headers,
+    };
+    this.signalStore.lsdbSummary.set(summary);
+  }
+
+  private rebuildRoutesSignal(): void {
+    this.signalStore.routes.set({
+      routes: [...this.ospfRoutes],
+      lastUpdatedAt: this.spfLastRunAt,
+    });
+  }
+
+  private updateRuntimeSignal(extra?: { lastSpfDurationMs?: number }): void {
+    this.signalStore.runtime.set({
+      running: this.running,
+      spfRuns: this.spfRunCount,
+      lastSpfKind: this.lastSPFType,
+      lastSpfDurationMs: extra?.lastSpfDurationMs ?? this.signalStore.runtime.get().lastSpfDurationMs,
+      neighborChanges: this.neighborChangeCount,
+    });
+  }
+
+  private headerOf(lsa: LSA): LSAHeader {
+    return {
+      lsAge: lsa.lsAge,
+      options: lsa.options,
+      lsType: lsa.lsType,
+      linkStateId: lsa.linkStateId,
+      advertisingRouter: lsa.advertisingRouter,
+      lsSequenceNumber: lsa.lsSequenceNumber,
+      checksum: lsa.checksum,
+      length: lsa.length,
+    };
   }
 
   // ─── IProtocolEngine ─────────────────────────────────────────
@@ -219,6 +297,15 @@ export class OSPFEngine implements IProtocolEngine {
     if (this.running) return;
     this.running = true;
     this.startLSAgeTimer();
+    // Announce activation of every configured area at startup.
+    const bus = this.getBus();
+    for (const [areaId] of this.config.areas) {
+      bus.publish({
+        topic: 'ospf.area.activated',
+        payload: { ...this.routerRef(), areaId },
+      });
+    }
+    this.updateRuntimeSignal();
   }
 
   stop(): void {
@@ -446,10 +533,8 @@ export class OSPFEngine implements IProtocolEngine {
     if (iface) {
       iface.passive = true;
       // Stop hello timer on passive interfaces
-      if (iface.helloTimer) {
-        clearInterval(iface.helloTimer);
-        iface.helloTimer = null;
-      }
+      this.timers.clear(iface.helloTimer);
+      iface.helloTimer = null;
     }
   }
 
@@ -549,14 +634,10 @@ export class OSPFEngine implements IProtocolEngine {
     }
 
     // Stop timers
-    if (iface.helloTimer) {
-      clearInterval(iface.helloTimer);
-      iface.helloTimer = null;
-    }
-    if (iface.waitTimer) {
-      clearTimeout(iface.waitTimer);
-      iface.waitTimer = null;
-    }
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
 
     iface.state = 'Down';
 
@@ -690,7 +771,7 @@ export class OSPFEngine implements IProtocolEngine {
     } else {
       // Broadcast or NBMA: enter Waiting state for DR election
       iface.state = 'Waiting';
-      iface.waitTimer = setTimeout(() => {
+      iface.waitTimer = this.timers.setTimeout(() => {
         iface.waitTimer = null;
         this.drElection(iface);
       }, iface.deadInterval * 1000);
@@ -703,15 +784,16 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Originate Router-LSA for this area
     this.originateRouterLSA(iface.areaId);
+    this.rebuildInterfaceSignal();
   }
 
   private startHelloTimer(iface: OSPFInterface): void {
-    if (iface.helloTimer) clearInterval(iface.helloTimer);
+    if (iface.helloTimer) this.timers.clear(iface.helloTimer);
 
     // Send initial hello immediately
     this.sendHello(iface);
 
-    iface.helloTimer = setInterval(() => {
+    iface.helloTimer = this.timers.setInterval(() => {
       this.sendHello(iface);
     }, iface.helloInterval * 1000);
   }
@@ -811,12 +893,12 @@ export class OSPFEngine implements IProtocolEngine {
     if (iface.state === 'Waiting') {
       // BackupSeen case 1: neighbor declares itself BDR
       if (hello.backupDesignatedRouter === srcIP) {
-        if (iface.waitTimer) { clearTimeout(iface.waitTimer); iface.waitTimer = null; }
+        if (iface.waitTimer) { this.timers.clear(iface.waitTimer); iface.waitTimer = null; }
         this.drElection(iface);
       }
       // BackupSeen case 2: neighbor declares itself DR with no BDR
       else if (hello.designatedRouter === srcIP && hello.backupDesignatedRouter === '0.0.0.0') {
-        if (iface.waitTimer) { clearTimeout(iface.waitTimer); iface.waitTimer = null; }
+        if (iface.waitTimer) { this.timers.clear(iface.waitTimer); iface.waitTimer = null; }
         this.drElection(iface);
       }
     } else if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
@@ -1005,6 +1087,22 @@ export class OSPFEngine implements IProtocolEngine {
         this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${oldState} to ${neighbor.state}, ${event}`);
       }
 
+      // Reactive notifications: bus event + signal refresh.
+      this.getBus().publish({
+        topic: 'ospf.neighbor.state-changed',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          neighborId: neighbor.routerId,
+          oldState,
+          newState: neighbor.state,
+          event,
+        },
+      });
+      this.rebuildNeighborSignal();
+      this.rebuildInterfaceSignal();
+      this.updateRuntimeSignal();
+
       // Re-originate Router-LSA on adjacency changes
       if (neighbor.state === 'Full' || oldState === 'Full') {
         this.originateRouterLSA(iface.areaId);
@@ -1025,14 +1123,14 @@ export class OSPFEngine implements IProtocolEngine {
 
   private resetDeadTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     this.clearDeadTimer(neighbor);
-    neighbor.deadTimer = setTimeout(() => {
+    neighbor.deadTimer = this.timers.setTimeout(() => {
       this.neighborEvent(iface, neighbor, 'InactivityTimer');
     }, iface.deadInterval * 1000);
   }
 
   private clearDeadTimer(neighbor: OSPFNeighbor): void {
     if (neighbor.deadTimer) {
-      clearTimeout(neighbor.deadTimer);
+      this.timers.clear(neighbor.deadTimer);
       neighbor.deadTimer = null;
     }
   }
@@ -1045,7 +1143,7 @@ export class OSPFEngine implements IProtocolEngine {
     // Only set timer if neighbor is still in ExStart (exchange may have already completed)
     if (neighbor.state !== 'ExStart') return;
     this.cancelDDRetransmitTimer(neighbor);
-    neighbor.ddRetransmitTimer = setTimeout(() => {
+    neighbor.ddRetransmitTimer = this.timers.setTimeout(() => {
       neighbor.ddRetransmitTimer = null;
       if (neighbor.state === 'ExStart' && neighbor.lastSentDD) {
         // Retransmit the last DD packet
@@ -1057,7 +1155,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   private cancelDDRetransmitTimer(neighbor: OSPFNeighbor): void {
     if (neighbor.ddRetransmitTimer) {
-      clearTimeout(neighbor.ddRetransmitTimer);
+      this.timers.clear(neighbor.ddRetransmitTimer);
       neighbor.ddRetransmitTimer = null;
     }
   }
@@ -1070,7 +1168,7 @@ export class OSPFEngine implements IProtocolEngine {
     // Only set timer if neighbor is still in Loading (may have already completed synchronously)
     if (neighbor.state !== 'Loading') return;
     this.cancelLSRRetransmitTimer(neighbor);
-    neighbor.lsrRetransmitTimer = setTimeout(() => {
+    neighbor.lsrRetransmitTimer = this.timers.setTimeout(() => {
       neighbor.lsrRetransmitTimer = null;
       if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
         this.sendLSRequest(iface, neighbor);
@@ -1080,7 +1178,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   private cancelLSRRetransmitTimer(neighbor: OSPFNeighbor): void {
     if (neighbor.lsrRetransmitTimer) {
-      clearTimeout(neighbor.lsrRetransmitTimer);
+      this.timers.clear(neighbor.lsrRetransmitTimer);
       neighbor.lsrRetransmitTimer = null;
     }
   }
@@ -1206,6 +1304,8 @@ export class OSPFEngine implements IProtocolEngine {
       bdr = bdrPool2.length > 0 ? sortCandidates(bdrPool2)[0] : null;
     }
 
+    const oldDr = iface.dr;
+    const oldBdr = iface.bdr;
     iface.dr = dr?.ipAddress ?? '0.0.0.0';
     iface.bdr = bdr?.ipAddress ?? '0.0.0.0';
 
@@ -1216,6 +1316,21 @@ export class OSPFEngine implements IProtocolEngine {
       iface.state = 'Backup';
     } else {
       iface.state = 'DROther';
+    }
+
+    // Reactive: announce the new DR/BDR pair when it changed.
+    if (iface.dr !== oldDr || iface.bdr !== oldBdr) {
+      this.getBus().publish({
+        topic: 'ospf.dr-election',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          dr: iface.dr,
+          bdr: iface.bdr,
+        },
+      });
+      this.rebuildInterfaceSignal();
+      this.rebuildNeighborSignal();
     }
 
     // AdjOK event to all neighbors
@@ -1663,6 +1778,13 @@ export class OSPFEngine implements IProtocolEngine {
       }
       areaDB.set(key, lsa);
     }
+
+    // Reactive: announce the install + refresh the LSDB signal.
+    this.getBus().publish({
+      topic: 'ospf.lsa.installed',
+      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa) },
+    });
+    this.rebuildLSDBSignal();
 
     // Schedule SPF: Type 1 (Router) and Type 2 (Network) LSAs change topology → full SPF.
     // All other LSA types only affect route metrics/reachability → partial SPF.
@@ -2227,8 +2349,8 @@ export class OSPFEngine implements IProtocolEngine {
     }
 
     this.spfPending = true;
-    if (this.spfTimer) clearTimeout(this.spfTimer);
-    this.spfTimer = setTimeout(() => {
+    if (this.spfTimer) this.timers.clear(this.spfTimer);
+    this.spfTimer = this.timers.setTimeout(() => {
       this.spfPending = false;
       this.spfTimer = null;
       this.spfLastRunAt = Date.now();
@@ -2274,6 +2396,7 @@ export class OSPFEngine implements IProtocolEngine {
    * If this router is an ABR, also originates Type 3/4 Summary LSAs.
    */
   runSPF(): OSPFRouteEntry[] {
+    const startedAt = this.getScheduler().now();
     this.spfRunning = true;
     this.lastSPFType = 'full';
     this.spfRunCount++;
@@ -2301,6 +2424,27 @@ export class OSPFEngine implements IProtocolEngine {
     }
 
     this.spfRunning = false;
+
+    // Reactive: announce the SPF run + refresh the route signal.
+    const runtimeMs = Math.max(0, this.getScheduler().now() - startedAt);
+    const bus = this.getBus();
+    bus.publish({
+      topic: 'ospf.spf.run',
+      payload: {
+        ...this.routerRef(),
+        kind: 'full',
+        runtimeMs,
+        routesCount: this.ospfRoutes.length,
+        runIndex: this.spfRunCount,
+      },
+    });
+    bus.publish({
+      topic: 'ospf.routes-recomputed',
+      payload: { ...this.routerRef(), routes: [...this.ospfRoutes] },
+    });
+    this.rebuildRoutesSignal();
+    this.updateRuntimeSignal({ lastSpfDurationMs: runtimeMs });
+
     return this.ospfRoutes;
   }
 
@@ -2310,6 +2454,7 @@ export class OSPFEngine implements IProtocolEngine {
    * RFC 2328: equivalent to re-running §16.2–§16.4 without §16.1.
    */
   private runPartialSPF(): void {
+    const startedAt = this.getScheduler().now();
     this.spfRunning = true;
     this.lastSPFType = 'partial';
 
@@ -2335,6 +2480,25 @@ export class OSPFEngine implements IProtocolEngine {
 
     this.ospfRoutes = merged;
     this.spfRunning = false;
+
+    const runtimeMs = Math.max(0, this.getScheduler().now() - startedAt);
+    const bus = this.getBus();
+    bus.publish({
+      topic: 'ospf.spf.run',
+      payload: {
+        ...this.routerRef(),
+        kind: 'partial',
+        runtimeMs,
+        routesCount: this.ospfRoutes.length,
+        runIndex: this.spfRunCount,
+      },
+    });
+    bus.publish({
+      topic: 'ospf.routes-recomputed',
+      payload: { ...this.routerRef(), routes: [...this.ospfRoutes] },
+    });
+    this.rebuildRoutesSignal();
+    this.updateRuntimeSignal({ lastSpfDurationMs: runtimeMs });
   }
 
   /**
@@ -3060,13 +3224,13 @@ export class OSPFEngine implements IProtocolEngine {
    */
   startLSAgeTimer(): void {
     if (this.lsAgeTimer) return;
-    this.lsAgeTimer = setInterval(() => this.tickLSAge(), 1_000);
+    this.lsAgeTimer = this.timers.setInterval(() => this.tickLSAge(), 1_000);
   }
 
   /** Stop the LSA aging timer. */
   stopLSAgeTimer(): void {
     if (this.lsAgeTimer) {
-      clearInterval(this.lsAgeTimer);
+      this.timers.clear(this.lsAgeTimer);
       this.lsAgeTimer = null;
     }
   }
@@ -3081,13 +3245,14 @@ export class OSPFEngine implements IProtocolEngine {
    */
   tickLSAge(): void {
     let changed = false;
+    const flushed: { areaId: string; lsa: LSA }[] = [];
 
     for (const [areaId, areaDB] of this.lsdb.areas) {
-      const toDelete: string[] = [];
+      const toDelete: { key: string; lsa: LSA }[] = [];
       for (const [key, lsa] of areaDB) {
         lsa.lsAge += 1;
         if (lsa.lsAge >= OSPF_MAX_AGE) {
-          toDelete.push(key);
+          toDelete.push({ key, lsa });
           this.lsArrivalTimes.delete(key);
           changed = true;
         } else if (
@@ -3097,17 +3262,18 @@ export class OSPFEngine implements IProtocolEngine {
           this.refreshOwnLSA(areaId, lsa);
         }
       }
-      for (const key of toDelete) {
+      for (const { key, lsa } of toDelete) {
         areaDB.delete(key);
+        flushed.push({ areaId, lsa });
       }
     }
 
     // Age external LSAs
-    const toDeleteExt: string[] = [];
+    const toDeleteExt: { key: string; lsa: LSA }[] = [];
     for (const [key, lsa] of this.lsdb.external) {
       lsa.lsAge += 1;
       if (lsa.lsAge >= OSPF_MAX_AGE) {
-        toDeleteExt.push(key);
+        toDeleteExt.push({ key, lsa });
         this.lsArrivalTimes.delete(key);
         changed = true;
       } else if (
@@ -3117,8 +3283,25 @@ export class OSPFEngine implements IProtocolEngine {
         this.refreshOwnLSA(OSPF_BACKBONE_AREA, lsa);
       }
     }
-    for (const key of toDeleteExt) {
+    for (const { key, lsa } of toDeleteExt) {
       this.lsdb.external.delete(key);
+      flushed.push({ areaId: OSPF_BACKBONE_AREA, lsa });
+    }
+
+    if (flushed.length > 0) {
+      const bus = this.getBus();
+      for (const { areaId, lsa } of flushed) {
+        bus.publish({
+          topic: 'ospf.lsa.flushed',
+          payload: {
+            ...this.routerRef(),
+            areaId,
+            lsa: this.headerOf(lsa),
+            reason: 'maxage',
+          },
+        });
+      }
+      this.rebuildLSDBSignal();
     }
 
     if (changed) {
@@ -3143,28 +3326,20 @@ export class OSPFEngine implements IProtocolEngine {
   shutdown(): void {
     this.running = false;
 
-    // Stop LSA aging timer
-    this.stopLSAgeTimer();
-
-    // Stop all hello timers
+    // Cancel everything in one shot — TimerSet uses the per-handle
+    // scheduler reference so no leak even if setScheduler() was called
+    // mid-flight.
+    this.timers.clearAll();
+    this.lsAgeTimer = null;
+    this.spfTimer = null;
     for (const [, iface] of this.interfaces) {
-      if (iface.helloTimer) {
-        clearInterval(iface.helloTimer);
-        iface.helloTimer = null;
-      }
-      if (iface.waitTimer) {
-        clearTimeout(iface.waitTimer);
-        iface.waitTimer = null;
-      }
-      // Clear all neighbor dead timers
+      iface.helloTimer = null;
+      iface.waitTimer = null;
       for (const [, neighbor] of iface.neighbors) {
-        this.clearDeadTimer(neighbor);
+        neighbor.deadTimer = null;
+        neighbor.ddRetransmitTimer = null;
+        neighbor.lsrRetransmitTimer = null;
       }
-    }
-
-    if (this.spfTimer) {
-      clearTimeout(this.spfTimer);
-      this.spfTimer = null;
     }
 
     this.interfaces.clear();
@@ -3174,6 +3349,11 @@ export class OSPFEngine implements IProtocolEngine {
     this.lsArrivalTimes.clear();
     this.spfLastRunAt = 0;
     this.spfCurrentHold = this.spfThrottleHold;
+    this.rebuildLSDBSignal();
+    this.rebuildNeighborSignal();
+    this.rebuildInterfaceSignal();
+    this.rebuildRoutesSignal();
+    this.updateRuntimeSignal();
   }
 
   // ─── Utility ──────────────────────────────────────────────────

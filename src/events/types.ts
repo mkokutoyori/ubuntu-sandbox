@@ -21,6 +21,7 @@ import type {
   PortSpeed,
   PortViolationMode,
 } from '@/network/core/types';
+import type { OspfDomainEvent } from '@/network/ospf/events';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-cutting
@@ -220,7 +221,9 @@ export type DomainEvent =
   | { topic: 'cable.duplex-mismatch'; payload: CableDuplexMismatchPayload }
   | { topic: 'cable.frame.dispatched'; payload: CableFrameDispatchedPayload }
   | { topic: 'cable.frame.delivered'; payload: CableFrameDeliveredPayload }
-  | { topic: 'cable.frame.lost'; payload: CableFrameLostPayload };
+  | { topic: 'cable.frame.lost'; payload: CableFrameLostPayload }
+  // OSPF (sub-union, see src/network/ospf/events.ts)
+  | OspfDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 
