@@ -1124,6 +1124,15 @@ export abstract class EndHost extends Equipment {
           bytes: icmp.dataSize + 8, // ICMP header (8) + data
           fromIP: ipPkt.sourceIP.toString(),
         });
+        // Reactive: announce the reply.
+        this.emitIcmpEchoReply({
+          fromIp: ipPkt.sourceIP.toString(),
+          toIp: ipPkt.destinationIP.toString(),
+          id: icmp.id,
+          seq: icmp.sequence,
+          ttl: ipPkt.ttl,
+          rttMs: rtt,
+        });
       }
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
       const reason = icmp.icmpType === 'time-exceeded'
@@ -1275,6 +1284,16 @@ export abstract class EndHost extends Equipment {
    */
   public listenTcp(port: number, handler: (conn: TcpConnection) => void): void {
     this.tcpListeners.set(port, handler);
+    this.emitTcpListenerStarted('0.0.0.0', port);
+  }
+
+  /** Stop listening on a TCP port. Emits host.tcp.listener-stopped. */
+  public unlistenTcp(port: number): boolean {
+    const removed = this.tcpListeners.delete(port);
+    if (removed) {
+      this.emitTcpListenerStopped('0.0.0.0', port);
+    }
+    return removed;
   }
 
   /**
@@ -1412,6 +1431,13 @@ export abstract class EndHost extends Equipment {
       );
       serverConn.updateAck(seg.sequenceNumber, 1);
       this.tcpConnections.set(connKey, serverConn);
+      this.emitTcpConnectionEstablished({
+        localIp: serverIP.toString(),
+        localPort: dstPort,
+        remoteIp: srcIp,
+        remotePort: srcPort,
+        side: 'server',
+      });
 
       // Send SYN-ACK
       const r = this.resolveRoute(ipPkt.sourceIP);
@@ -1467,6 +1493,17 @@ export abstract class EndHost extends Equipment {
           this.sendTcpFrame(myIP, ipPkt.sourceIP, route, ackSeg);
         }
       }
+
+      // Reactive: handshake completed → emit
+      // host.tcp.connection-established (client side).
+      const localIp = this.ports.get(portName)?.getIPAddress()?.toString() ?? '';
+      this.emitTcpConnectionEstablished({
+        localIp,
+        localPort: dstPort,
+        remoteIp: srcIp,
+        remotePort: srcPort,
+        side: 'client',
+      });
 
       resolve();
       return;
@@ -1609,6 +1646,16 @@ export abstract class EndHost extends Equipment {
         icmp,
         icmpSize,
       );
+
+      // Reactive: announce the echo emission. Phase 5.5 will fold this
+      // into a `waitForEvent('host.icmp.echo-reply', ...)`.
+      this.emitIcmpEchoSent({
+        fromIp: myIP.toString(),
+        toIp: targetIP.toString(),
+        id, seq,
+        ttl: ttl ?? this.defaultTTL,
+        size: icmpSize,
+      });
 
       // Firewall: filter outgoing initiated packets
       const verdict = this.firewallFilter(portName, ipPkt, 'out');
