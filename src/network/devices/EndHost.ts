@@ -24,6 +24,7 @@ import { SocketTable } from '../core/SocketTable';
 import { TcpConnection } from '../core/TcpConnection';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
   HostSignalStore,
   makeReadonlyHostObservables,
@@ -69,12 +70,6 @@ export const ARP_REACHABLE_TIME_MS = 30_000;
 export function getNUDState(entry: ARPEntry): string {
   if (entry.type === 'static') return 'PERMANENT';
   return Date.now() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
-}
-
-interface PendingARP {
-  resolve: (mac: MACAddress) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
 }
 
 export interface PingResult {
@@ -162,11 +157,12 @@ export abstract class EndHost extends Equipment {
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
   protected arpTable: Map<string, ARPEntry> = new Map();
-  /** Pending ARP resolutions: IP string → callbacks[] */
-  protected pendingARPs: Map<string, PendingARP[]> = new Map();
   /** Queued forwarded packets waiting for ARP resolution. Timer is a
    *  TimerSet token (Phase 5 migration to IScheduler). */
   protected fwdQueue: Array<{ pkt: IPv4Packet; outPort: string; nextHopIP: string; timer: symbol }> = [];
+  /** In-flight ARP solicitations for forwarding — dedup signal for
+   *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
+  private inFlightFwdARPs: Set<string> = new Set();
   /** Pending ICMP echo replies: "srcIP-id-seq" → callback */
   protected pendingPings: Map<string, PendingPing> = new Map();
   /** Monotonically increasing ICMP echo identifier */
@@ -851,18 +847,10 @@ export abstract class EndHost extends Equipment {
         payload: reply,
       });
     } else if (arp.operation === 'reply') {
-      // ARP reply → resolve pending requests
-      const key = arp.senderIP.toString();
-      const pending = this.pendingARPs.get(key);
-      if (pending) {
-        for (const p of pending) {
-          clearTimeout(p.timer);
-          p.resolve(arp.senderMAC);
-        }
-        this.pendingARPs.delete(key);
-      }
-      // Flush queued forwarded packets waiting for this ARP resolution
-      this.flushFwdQueue(key, arp.senderMAC);
+      // ARP reply → resolveARP() now awaits host.arp.entry-learned via the
+      // reactive bus (see Phase 5.5). The receive handler only needs to flush
+      // queued forwarded packets that were waiting for this resolution.
+      this.flushFwdQueue(arp.senderIP.toString(), arp.senderMAC);
     }
   }
 
@@ -870,6 +858,7 @@ export abstract class EndHost extends Equipment {
   private flushFwdQueue(resolvedIP: string, resolvedMAC: MACAddress): void {
     const ready = this.fwdQueue.filter(q => q.nextHopIP === resolvedIP);
     this.fwdQueue = this.fwdQueue.filter(q => q.nextHopIP !== resolvedIP);
+    this.inFlightFwdARPs.delete(resolvedIP);
     for (const q of ready) {
       this.hostTimers.clear(q.timer);
       const outPort = this.ports.get(q.outPort);
@@ -1067,12 +1056,13 @@ export abstract class EndHost extends Equipment {
     const key = nextHopIP.toString();
     const timer = this.hostTimers.setTimeout(() => {
       this.fwdQueue = this.fwdQueue.filter(q => !(q.nextHopIP === key && q.outPort === outPort));
+      this.inFlightFwdARPs.delete(key);
     }, 2000);
     this.fwdQueue.push({ pkt, outPort, nextHopIP: key, timer });
 
-    // Send ARP request if not already pending
-    if (!this.pendingARPs.has(key)) {
-      this.pendingARPs.set(key, []);
+    // Send ARP request if not already in flight for this next hop.
+    if (!this.inFlightFwdARPs.has(key)) {
+      this.inFlightFwdARPs.add(key);
       const myIP = port.getIPAddress();
       if (!myIP) return;
       const arpReq: ARPPacket = {
@@ -1080,6 +1070,7 @@ export abstract class EndHost extends Equipment {
         senderMAC: port.getMAC(), senderIP: myIP,
         targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
       };
+      this.emitArpRequestSent(outPort, key);
       this.sendFrame(outPort, {
         srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
         etherType: ETHERTYPE_ARP, payload: arpReq,
@@ -1551,47 +1542,49 @@ export abstract class EndHost extends Equipment {
    * Resolve an IP address to a MAC address via ARP.
    * Returns cached result if available, otherwise sends ARP request and waits.
    */
-  protected resolveARP(portName: string, targetIP: IPAddress, timeoutMs: number = 2000): Promise<MACAddress> {
+  protected async resolveARP(portName: string, targetIP: IPAddress, timeoutMs: number = 2000): Promise<MACAddress> {
     const cached = this.arpTable.get(targetIP.toString());
-    if (cached) return Promise.resolve(cached.mac);
+    if (cached) return cached.mac;
 
     const port = this.ports.get(portName);
-    if (!port) return Promise.reject('Port not found');
+    if (!port) throw new Error('Port not found');
     const myIP = port.getIPAddress();
-    if (!myIP) return Promise.reject('No IP configured');
+    if (!myIP) throw new Error('No IP configured');
 
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const pending = this.pendingARPs.get(targetIP.toString());
-        if (pending) {
-          const idx = pending.findIndex(p => p.resolve === resolve);
-          if (idx !== -1) pending.splice(idx, 1);
-          if (pending.length === 0) this.pendingARPs.delete(targetIP.toString());
-        }
-        reject('ARP timeout');
-      }, timeoutMs);
+    const targetIpStr = targetIP.toString();
 
-      const key = targetIP.toString();
-      if (!this.pendingARPs.has(key)) this.pendingARPs.set(key, []);
-      this.pendingARPs.get(key)!.push({ resolve, reject, timer });
+    // Reactive wait: resolve when the bus reports a learn for this IP on this device.
+    const waitPromise = waitForEvent(
+      this.getBus(),
+      'host.arp.entry-learned',
+      (p) => p.deviceId === this.id && p.ip === targetIpStr,
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
 
-      // Send ARP broadcast
-      const arpReq: ARPPacket = {
-        type: 'arp',
-        operation: 'request',
-        senderMAC: port.getMAC(),
-        senderIP: myIP,
-        targetMAC: MACAddress.broadcast(),
-        targetIP,
-      };
-
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP,
-        payload: arpReq,
-      });
+    // Send ARP broadcast.
+    const arpReq: ARPPacket = {
+      type: 'arp',
+      operation: 'request',
+      senderMAC: port.getMAC(),
+      senderIP: myIP,
+      targetMAC: MACAddress.broadcast(),
+      targetIP,
+    };
+    this.emitArpRequestSent(portName, targetIpStr);
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP,
+      payload: arpReq,
     });
+
+    try {
+      const learned = await waitPromise;
+      return new MACAddress(learned.mac);
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) throw new Error('ARP timeout');
+      throw err;
+    }
   }
 
   // ─── Send Ping (ICMP Echo Request via IPv4) ───────────────────
