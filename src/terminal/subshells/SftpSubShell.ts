@@ -150,6 +150,9 @@ export class SftpSubShell implements ISubShell {
       case 'df':
         return done(this.session.df(args.positional[0], args.has('h')).split('\n'));
 
+      case 'clear':
+        return { output: [''], exit: false, prompt: 'sftp> ', clearScreen: true };
+
       default:
         return done(['Invalid command.']);
     }

@@ -11,6 +11,7 @@ import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
 import type { SshUserContext } from '../SshUserContext';
+export type { SshUserContext };
 
 export interface SshServerConfig {
   readonly listenPort: number;
@@ -33,6 +34,11 @@ export interface ISshServerContext {
   getMotd(): string;
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;
+  /**
+   * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).
+   * Returns null when the user does not exist on this system.
+   */
+  buildUserContext(username: string): SshUserContext | null;
 }
 
 export const DEFAULT_SSH_SERVER_CONFIG: SshServerConfig = Object.freeze({

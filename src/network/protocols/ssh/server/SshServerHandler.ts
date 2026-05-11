@@ -240,11 +240,13 @@ export class SshServerHandler {
       method: method ?? 'unknown',
       ip: clientIp,
     });
-    // Build a SshUserContext: in a real adapter this comes from the user manager.
-    return {
-      ok: true,
-      userCtx: new SshUserContext(user, 1000, 1000, [], `/home/${user}`),
-    };
+    // Resolve real uid/gid/home from the device's user database.
+    // Fall back to uid=1000 only when the adapter doesn't know the user yet
+    // (e.g. a test stub that never registers any users).
+    const userCtx =
+      this.ctx.buildUserContext(user) ??
+      new SshUserContext(user, 1000, 1000, [], `/home/${user}`);
+    return { ok: true, userCtx };
   }
 }
 
