@@ -34,10 +34,17 @@ interface OpenChannelInfo {
 export class SshServerHandler {
   private readonly dispatcher = SftpCommandDispatcher.defaults();
 
+  private readonly eventBus: ISshServerEventBus;
+
   constructor(
     private readonly ctx: ISshServerContext,
-    private readonly eventBus: ISshServerEventBus = new SshServerEventBus(),
-  ) {}
+    eventBus?: ISshServerEventBus,
+  ) {
+    // Prefer the bus the context owns (so reactive subscribers attached to
+    // the context — logger, throttler — see every event). Fall back to the
+    // explicit bus, or allocate a fresh one for self-contained tests.
+    this.eventBus = eventBus ?? ctx.events ?? new SshServerEventBus();
+  }
 
   get events(): ISshServerEventBus {
     return this.eventBus;
@@ -49,6 +56,23 @@ export class SshServerHandler {
       ip: clientIp,
       timestamp: Date.now(),
     });
+    // Reactive guard: throttled IPs are dropped at connect time. The bus
+    // already carries the auth_throttled event, so the logger has written
+    // an entry; here we just refuse the handshake.
+    if (this.ctx.isClientBlocked?.(clientIp)) {
+      conn.write(
+        JSON.stringify({ op: 'disconnect', reason: 'throttled' }),
+      );
+      conn.close();
+      this.eventBus.emit({
+        kind: 'client_disconnected',
+        user: '',
+        ip: clientIp,
+        reason: 'throttled',
+        timestamp: Date.now(),
+      });
+      return;
+    }
     this.handleConnection(conn, clientIp);
   }
 
@@ -148,15 +172,24 @@ export class SshServerHandler {
             (channelId !== undefined && channels.get(channelId)?.cwd) ||
             userCtx.homeDirectory;
           const shell = this.ctx.getShell(userCtx, cwd);
-          // ILinuxShell.execute is async to support pipelines that must
-          // route through device-level command registries (network /
-          // service commands). The simulator's synchronous TCP delivery
-          // means the client's exec channel is already waiting for the
-          // response promise, so writing it from the .then() callback is
-          // delivered before await unblocks.
-          void shell
-            .execute(command)
-            .then((result) => conn.write(JSON.stringify(result)));
+          // Real sshd treats every exec as a session: emit open/close so the
+          // syslogger produces `session opened`/`session closed` lines.
+          const sessionStart = Date.now();
+          this.eventBus.emit({
+            kind: 'channel_opened',
+            user: userCtx.username,
+            channelType: 'exec',
+          });
+          const userForClose = userCtx;
+          void shell.execute(command).then((result) => {
+            conn.write(JSON.stringify(result));
+            this.eventBus.emit({
+              kind: 'channel_closed',
+              user: userForClose.username,
+              channelType: 'exec',
+              durationMs: Date.now() - sessionStart,
+            });
+          });
           break;
         }
 
@@ -206,20 +239,77 @@ export class SshServerHandler {
     | { ok: true; userCtx: SshUserContext } {
     const method = payload.method as string | undefined;
     const user = (payload.user as string | undefined) ?? '';
+    const password = (payload.password as string | undefined) ?? '';
+
+    // Reactive throttler check: refuse before consulting auth.
+    if (this.ctx.isClientBlocked?.(clientIp)) {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        user,
+        reason: 'throttled',
+        ip: clientIp,
+        method,
+      });
+      return { ok: false };
+    }
+
+    // Root-login policy is a separate reason from a generic auth failure.
     if (user === 'root' && !this.ctx.config.permitRootLogin) {
       this.eventBus.emit({
         kind: 'auth_failure',
         user,
-        reason: 'root login disabled',
+        reason: 'root_login_disabled',
         ip: clientIp,
+        method,
       });
       return { ok: false };
     }
+
+    // OpenSSH emits a distinct "Invalid user" line when the principal does
+    // not exist on the system. We mirror that by checking buildUserContext
+    // before any credential validation.
+    const userExists = this.ctx.buildUserContext(user) !== null;
+    if (!userExists) {
+      this.eventBus.emit({
+        kind: 'auth_invalid_user',
+        user,
+        ip: clientIp,
+        timestamp: Date.now(),
+      });
+      // We still consult the auth context so the throttler counts the
+      // failure and the response timing matches a real bad password attempt.
+      // (Real sshd does the same for the same reason: side-channel hardening.)
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        user,
+        reason: 'invalid_user',
+        ip: clientIp,
+        method,
+      });
+      return { ok: false };
+    }
+
+    // PermitEmptyPasswords gate (cheaper than calling the user DB).
+    if (
+      method === 'password' &&
+      password.length === 0 &&
+      this.ctx.permitEmptyPasswords?.() === false
+    ) {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        user,
+        reason: 'empty_password_disabled',
+        ip: clientIp,
+        method,
+      });
+      return { ok: false };
+    }
+
     let success = false;
     if (method === 'password') {
       success =
         this.ctx.config.passwordAuthentication &&
-        this.ctx.auth.checkPassword(user, (payload.password as string) ?? '');
+        this.ctx.auth.checkPassword(user, password);
     } else if (method === 'publickey') {
       success =
         this.ctx.config.pubkeyAuthentication &&
@@ -229,8 +319,9 @@ export class SshServerHandler {
       this.eventBus.emit({
         kind: 'auth_failure',
         user,
-        reason: method ?? 'unknown',
+        reason: method === 'password' ? 'wrong_password' : 'wrong_key',
         ip: clientIp,
+        method,
       });
       return { ok: false };
     }
@@ -239,10 +330,8 @@ export class SshServerHandler {
       user,
       method: method ?? 'unknown',
       ip: clientIp,
+      timestamp: Date.now(),
     });
-    // Resolve real uid/gid/home from the device's user database.
-    // Fall back to uid=1000 only when the adapter doesn't know the user yet
-    // (e.g. a test stub that never registers any users).
     const userCtx =
       this.ctx.buildUserContext(user) ??
       new SshUserContext(user, 1000, 1000, [], `/home/${user}`);

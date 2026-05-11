@@ -11,6 +11,7 @@ import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
 import type { SshUserContext } from '../SshUserContext';
+import type { ISshServerEventBus } from './SshServerEvent';
 export type { SshUserContext };
 
 export interface SshServerConfig {
@@ -39,6 +40,22 @@ export interface ISshServerContext {
    * Returns null when the user does not exist on this system.
    */
   buildUserContext(username: string): SshUserContext | null;
+  /**
+   * Optional reactive event bus. When provided, SshServerHandler uses it
+   * instead of allocating its own, so reactive subscribers attached to the
+   * context (logger, throttler) see every event.
+   */
+  readonly events?: ISshServerEventBus;
+  /**
+   * Optional rate-limit gate. Returning true makes SshServerHandler refuse
+   * authentication attempts from the given IP without consulting `auth`.
+   */
+  isClientBlocked?(ip: string): boolean;
+  /**
+   * Optional empty-password gate. Used by the handler before delegating to
+   * `auth.checkPassword`. Defaults to "rejected" when not implemented.
+   */
+  permitEmptyPasswords?(): boolean;
 }
 
 export const DEFAULT_SSH_SERVER_CONFIG: SshServerConfig = Object.freeze({
