@@ -26,7 +26,7 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
-import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
+import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
 import {
   parseSshKeygenArgs,
@@ -811,9 +811,16 @@ export class LinuxTerminalSession extends TerminalSession {
       builder.addIdentityFile(id);
     }
 
-    let result: Awaited<ReturnType<typeof session.connect>>;
+    let result: Awaited<ReturnType<typeof session.connect>> | null = null;
+    let cancelled = false;
     try {
       result = await session.connect(builder.build());
+    } catch (err) {
+      if (err instanceof QueuedTerminalIOCancelled) {
+        cancelled = true;
+      } else {
+        throw err;
+      }
     } finally {
       // Always release the reactive IO once the connection phase is over,
       // regardless of success or failure.
@@ -824,8 +831,17 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
     }
 
-    if (!isOk(result)) {
-      const errKind = (result as { error: { kind: string } }).error.kind;
+    if (cancelled) {
+      this.addLine('^C', 'normal');
+      session.disconnect();
+      this.notify();
+      return;
+    }
+
+    if (!result || !isOk(result)) {
+      const errKind = result
+        ? (result as { error: { kind: string } }).error.kind
+        : 'UNKNOWN';
       const msg =
         errKind === 'CONNECTION_REFUSED'
           ? `ssh: connect to host ${host} port ${meta.port}: No route to host`
