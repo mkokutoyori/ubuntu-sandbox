@@ -129,7 +129,8 @@ export interface OSPFNeighbor {
   /** Neighbor's Backup Designated Router */
   neighborBDR: string;
   /** Dead timer handle */
-  deadTimer: ReturnType<typeof setTimeout> | null;
+  /** Dead timer token (TimerSet handle, opaque to callers). */
+  deadTimer: symbol | null;
   /** DD sequence number */
   ddSeqNumber: number;
   /** Is this neighbor the master in DD exchange? */
@@ -145,9 +146,9 @@ export interface OSPFNeighbor {
   /** Options field from Hello */
   options: number;
   /** DD retransmission timer handle (RFC 2328 §10.6) */
-  ddRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  ddRetransmitTimer: symbol | null;
   /** LSR retransmission timer handle (RFC 2328 §10.9) */
-  lsrRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  lsrRetransmitTimer: symbol | null;
   /** Last DD packet sent (for retransmission on timeout) */
   lastSentDD: OSPFDDPacket | null;
 }
@@ -199,9 +200,9 @@ export interface OSPFInterface {
   /** OSPF cost (metric) */
   cost: number;
   /** Hello timer handle */
-  helloTimer: ReturnType<typeof setInterval> | null;
+  helloTimer: symbol | null;
   /** Wait timer handle (for DR election) */
-  waitTimer: ReturnType<typeof setTimeout> | null;
+  waitTimer: symbol | null;
   /** Neighbors seen on this interface */
   neighbors: Map<string, OSPFNeighbor>;
   /** Is this interface passive (no hellos sent)? */
@@ -613,9 +614,9 @@ export interface OSPFv3Interface {
   /** Neighbors */
   neighbors: Map<string, OSPFNeighbor>;
   /** Hello timer */
-  helloTimer: ReturnType<typeof setInterval> | null;
+  helloTimer: symbol | null;
   /** Wait timer */
-  waitTimer: ReturnType<typeof setTimeout> | null;
+  waitTimer: symbol | null;
   /** Passive */
   passive: boolean;
 }

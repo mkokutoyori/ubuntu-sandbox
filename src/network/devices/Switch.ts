@@ -32,6 +32,11 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress } from '../core/types';
 import { Logger } from '../core/Logger';
 import {
+  getDefaultScheduler,
+  type IScheduler,
+  type TimerHandle,
+} from '@/events/Scheduler';
+import {
   DHCPSnoopingConfig,
   DHCPSnoopingBinding,
   createDefaultSnoopingConfig,
@@ -98,7 +103,9 @@ export abstract class Switch extends Equipment {
   // ─── MAC Table ──────────────────────────────────────────────────
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macAgingTime: number = 300; // seconds
-  private macAgingTimer: ReturnType<typeof setInterval> | null = null;
+  private macAgingTimer: TimerHandle | null = null;
+  private macAgingScheduler: IScheduler | null = null;
+  private schedulerOverride: IScheduler | null = null;
 
   // ─── VLAN Database ──────────────────────────────────────────────
   protected vlans: Map<number, VLANEntry> = new Map();
@@ -663,9 +670,28 @@ export abstract class Switch extends Equipment {
 
   // ─── MAC Aging Process ────────────────────────────────────────────
 
+  /** Test-only / multi-topology scheduler injection (Phase 4 of the
+   *  reactive refactor). When unset, the default scheduler singleton is
+   *  used so existing call sites are unaffected. Setting this after the
+   *  switch was constructed restarts the MAC-aging process on the new
+   *  scheduler so subsequent `clear()` calls land on the right one. */
+  setScheduler(scheduler: IScheduler | null): void {
+    if (this.schedulerOverride === scheduler) return;
+    const wasRunning = this.macAgingTimer !== null;
+    if (wasRunning) this.stopMACAgingProcess();
+    this.schedulerOverride = scheduler;
+    if (wasRunning) this.startMACAgingProcess();
+  }
+
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
+
   private startMACAgingProcess(): void {
-    if (this.macAgingTimer) return;
-    this.macAgingTimer = setInterval(() => {
+    if (this.macAgingTimer !== null) return;
+    const scheduler = this.getScheduler();
+    this.macAgingScheduler = scheduler;
+    this.macAgingTimer = scheduler.setInterval(() => {
       const now = Date.now();
       for (const [key, entry] of this.macTable) {
         if (entry.type === 'dynamic') {
@@ -681,9 +707,14 @@ export abstract class Switch extends Equipment {
   }
 
   private stopMACAgingProcess(): void {
-    if (this.macAgingTimer) {
-      clearInterval(this.macAgingTimer);
+    if (this.macAgingTimer !== null) {
+      // Use the scheduler that *scheduled* the timer, not the current
+      // override — they may differ if `setScheduler` was called after
+      // the timer was registered.
+      const scheduler = this.macAgingScheduler ?? this.getScheduler();
+      scheduler.clear(this.macAgingTimer);
       this.macAgingTimer = null;
+      this.macAgingScheduler = null;
     }
   }
 

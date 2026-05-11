@@ -10,6 +10,7 @@
 
 import type { Equipment } from './Equipment';
 import type { DeviceType } from '../core/types';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 /**
  * Injectable registry for Equipment instances.
@@ -32,6 +33,22 @@ export class EquipmentRegistry {
   private readonly devices: Map<string, Equipment> = new Map();
 
   /**
+   * Optional bus injection. When unset, lifecycle events are published on
+   * the default singleton bus (see `getDefaultEventBus()`).
+   * Phase 2 of the reactive refactor — cf. §10.3.
+   */
+  private busOverride: IEventBus | null = null;
+
+  /** Inject a custom bus for tests / multi-topology scenarios. */
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+  }
+
+  private getBus(): IEventBus {
+    return this.busOverride ?? getDefaultEventBus();
+  }
+
+  /**
    * Get the singleton instance (for production use).
    * Use `new EquipmentRegistry()` for test isolation.
    */
@@ -52,12 +69,29 @@ export class EquipmentRegistry {
 
   /** Register a device in the registry */
   register(device: Equipment): void {
-    this.devices.set(device.getId(), device);
+    const id = device.getId();
+    if (this.devices.has(id)) return;
+    this.devices.set(id, device);
+    this.getBus().publish({
+      topic: 'device.registered',
+      payload: {
+        id,
+        type: String(device.getDeviceType()),
+        name: device.getName(),
+      },
+    });
   }
 
   /** Deregister a device (e.g., on removal from topology) */
   deregister(id: string): boolean {
-    return this.devices.delete(id);
+    const removed = this.devices.delete(id);
+    if (removed) {
+      this.getBus().publish({
+        topic: 'device.deregistered',
+        payload: { id },
+      });
+    }
+    return removed;
   }
 
   /** Look up a device by ID */
@@ -101,6 +135,11 @@ export class EquipmentRegistry {
 
   /** Clear all registrations */
   clear(): void {
+    if (this.devices.size === 0) return;
     this.devices.clear();
+    this.getBus().publish({
+      topic: 'registry.cleared',
+      payload: {},
+    });
   }
 }

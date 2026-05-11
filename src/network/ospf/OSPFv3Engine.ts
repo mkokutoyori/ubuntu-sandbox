@@ -31,6 +31,21 @@ import {
   createDefaultOSPFConfig,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
+import {
+  OSPFv3SignalStore,
+  makeReadonlyV3Observables,
+  projectV3Neighbors,
+  projectV3Interfaces,
+  projectV3Runtime,
+  projectV3LsdbSummary,
+  lsaHeaderOf,
+  type OSPFv3Observables,
+} from './observables';
+import { OSPFv3SignalRefreshActor } from './actors';
+import type { OSPFNeighborState, OSPFInterfaceState, OSPFNeighborEvent } from './types';
 
 // ─── OSPFv3 LSA Types ───────────────────────────────────────────────
 
@@ -71,13 +86,154 @@ export class OSPFv3Engine implements IProtocolEngine {
   private linkLSAs: Map<string, OSPFv3LinkLSA> = new Map();          // key: ifaceName
   private intraPrefixLSAs: Map<string, OSPFv3IntraAreaPrefixLSA> = new Map(); // key: areaId
 
-  /** SPF scheduling */
-  private spfTimer: ReturnType<typeof setTimeout> | null = null;
+  /** SPF scheduling — TimerSet token. */
+  private spfTimer: symbol | null = null;
   private spfPending = false;
+
+  // ─── Reactive plumbing (Phase 4b2) ────────────────────────────────
+  private busOverride: IEventBus | null = null;
+  private schedulerOverride: IScheduler | null = null;
+  private deviceId: string | undefined = undefined;
+  private readonly timers: TimerSet = new TimerSet(() => this.getScheduler());
+
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+    this.attachActors();
+  }
+  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  setDeviceId(id: string | undefined): void { this.deviceId = id; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+  private routerRef() {
+    return {
+      routerId: this.config.routerId,
+      processId: this.config.processId,
+      deviceId: this.deviceId,
+    };
+  }
+
+  // ─── Reactive read-models (Phase 4b2-OSPFv3) ────────────────────────
+  private readonly signalStore = new OSPFv3SignalStore();
+  /** Read-only observables for v3 (neighbors, interfaces, runtime, lsdbSummary). */
+  readonly observables: OSPFv3Observables = makeReadonlyV3Observables(this.signalStore);
+  private signalRefreshActor: OSPFv3SignalRefreshActor | null = null;
 
   constructor(processId: number = 1) {
     this.config = createDefaultOSPFConfig(processId);
     this.lsdb = createEmptyLSDB();
+    this.attachActors();
+  }
+
+  private attachActors(): void {
+    this.signalRefreshActor?.stop();
+    this.signalRefreshActor = new OSPFv3SignalRefreshActor(this.getBus(), this);
+    this.signalRefreshActor.start();
+  }
+
+  // ─── Actor-API: signal refresh helpers ──────────────────────────────
+
+  /** [actor-API] Refresh every read-model signal. */
+  _refreshAllSignals(): void {
+    this.signalStore.neighbors.set(projectV3Neighbors(this.interfaces.values()));
+    this.signalStore.interfaces.set(projectV3Interfaces(this.interfaces.values()));
+    this.signalStore.runtime.set(projectV3Runtime({
+      running: this.running,
+      interfaces: this.interfaces.values(),
+    }));
+  }
+
+  /** [actor-API] Refresh interfaces + neighbors signals (DR change, etc.). */
+  _refreshInterfaceNeighborSignals(): void {
+    this.signalStore.interfaces.set(projectV3Interfaces(this.interfaces.values()));
+    this.signalStore.neighbors.set(projectV3Neighbors(this.interfaces.values()));
+  }
+
+  /** [actor-API] Refresh interfaces + runtime signals (interface state change). */
+  _refreshInterfaceRuntimeSignals(): void {
+    this.signalStore.interfaces.set(projectV3Interfaces(this.interfaces.values()));
+    this.signalStore.runtime.set(projectV3Runtime({
+      running: this.running,
+      interfaces: this.interfaces.values(),
+    }));
+  }
+
+  /** [actor-API] Refresh the lsdbSummary signal. */
+  _refreshLSDBSignal(): void {
+    this.signalStore.lsdbSummary.set(projectV3LsdbSummary(this.lsdb));
+  }
+
+  // ─── Reactive packet egress / ingress helpers ───────────────────────
+
+  /**
+   * Publish `ospf.packet.outgoing` AND invoke the legacy sendCallback.
+   * Engine code uses this instead of `this.sendCallback?.(...)` directly
+   * so every outgoing OSPFv3 packet is observable on the bus.
+   */
+  private dispatchOutgoing(iface: string, packet: OSPFPacketHeader, destIPv6: string): void {
+    this.getBus().publish({
+      topic: 'ospf.packet.outgoing',
+      payload: { ...this.routerRef(), iface, destIp: destIPv6, packet: packet as never },
+    });
+    this.sendCallback?.(iface, packet, destIPv6);
+  }
+
+  /**
+   * Publish `ospf.packet.received`. Called at the top of every
+   * `process*` entry point so capture / replay subscribers see the
+   * ingress before any state mutation.
+   */
+  private dispatchIncoming(iface: string, packet: OSPFPacketHeader, srcIPv6: string): void {
+    this.getBus().publish({
+      topic: 'ospf.packet.received',
+      payload: { ...this.routerRef(), iface, srcIp: srcIPv6, packet: packet as never },
+    });
+  }
+
+  /**
+   * Centralised neighbor state-change emitter. Replaces 6 inline
+   * `neighbor.state = ...` mutations scattered through processHello
+   * with a single call site that always emits the bus event.
+   */
+  private setNeighborState(
+    iface: OSPFv3Interface,
+    neighbor: OSPFNeighbor,
+    newState: OSPFNeighborState,
+    cause: OSPFNeighborEvent,
+  ): void {
+    const oldState = neighbor.state;
+    if (oldState === newState) return;
+    neighbor.state = newState;
+    this.logEvent(`OSPFv3: Neighbor ${neighbor.routerId} (${iface.name}): ${oldState} -> ${newState} (${cause})`);
+    this.getBus().publish({
+      topic: 'ospf.neighbor.state-changed',
+      payload: {
+        ...this.routerRef(),
+        iface: iface.name,
+        neighborId: neighbor.routerId,
+        oldState,
+        newState,
+        event: cause,
+      },
+    });
+  }
+
+  /** Centralised interface state-change emitter. */
+  private setInterfaceState(
+    iface: OSPFv3Interface,
+    newState: OSPFInterfaceState,
+  ): void {
+    const oldState = iface.state;
+    if (oldState === newState) return;
+    iface.state = newState;
+    this.getBus().publish({
+      topic: 'ospf.interface.state-changed',
+      payload: {
+        ...this.routerRef(),
+        iface: iface.name,
+        oldState,
+        newState,
+      },
+    });
   }
 
   // ─── IProtocolEngine ─────────────────────────────────────────
@@ -85,6 +241,17 @@ export class OSPFv3Engine implements IProtocolEngine {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.signalRefreshActor?.start();
+    // Announce activation of every configured area at startup.
+    const bus = this.getBus();
+    for (const [areaId] of this.config.areas) {
+      bus.publish({
+        topic: 'ospf.area.activated',
+        payload: { ...this.routerRef(), areaId },
+      });
+    }
+    this._refreshAllSignals();
+    this._refreshLSDBSignal();
   }
 
   stop(): void {
@@ -131,10 +298,8 @@ export class OSPFv3Engine implements IProtocolEngine {
     const iface = this.interfaces.get(ifName);
     if (iface) {
       iface.passive = true;
-      if (iface.helloTimer) {
-        clearInterval(iface.helloTimer);
-        iface.helloTimer = null;
-      }
+      this.timers.clear(iface.helloTimer);
+      iface.helloTimer = null;
     }
   }
 
@@ -236,22 +401,19 @@ export class OSPFv3Engine implements IProtocolEngine {
     const iface = this.interfaces.get(name);
     if (!iface) return;
 
-    // Kill all neighbors
+    // Kill all neighbors via the centralised emitter so each transition
+    // is observable on the bus.
     for (const [, neighbor] of iface.neighbors) {
       this.clearDeadTimer(neighbor);
-      neighbor.state = 'Down';
+      this.setNeighborState(iface, neighbor, 'Down', 'KillNbr');
     }
 
-    if (iface.helloTimer) {
-      clearInterval(iface.helloTimer);
-      iface.helloTimer = null;
-    }
-    if (iface.waitTimer) {
-      clearTimeout(iface.waitTimer);
-      iface.waitTimer = null;
-    }
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
 
-    iface.state = 'Down';
+    this.setInterfaceState(iface, 'Down');
     const area = this.config.areas.get(iface.areaId);
     if (area) {
       area.interfaces = area.interfaces.filter(i => i !== name);
@@ -285,10 +447,11 @@ export class OSPFv3Engine implements IProtocolEngine {
     if (!iface) return;
 
     if (iface.networkType === 'point-to-point') {
-      iface.state = 'PointToPoint';
+      this.setInterfaceState(iface, 'PointToPoint');
     } else {
-      iface.state = 'Waiting';
-      iface.waitTimer = setTimeout(() => {
+      this.setInterfaceState(iface, 'Waiting');
+      iface.waitTimer = this.timers.setTimeout(() => {
+        iface.waitTimer = null;
         this.drElection(iface);
       }, iface.deadInterval * 1000);
     }
@@ -299,11 +462,11 @@ export class OSPFv3Engine implements IProtocolEngine {
   }
 
   private startHelloTimer(iface: OSPFv3Interface): void {
-    if (iface.helloTimer) clearInterval(iface.helloTimer);
+    if (iface.helloTimer) this.timers.clear(iface.helloTimer);
 
     this.sendHello(iface);
 
-    iface.helloTimer = setInterval(() => {
+    iface.helloTimer = this.timers.setInterval(() => {
       this.sendHello(iface);
     }, iface.helloInterval * 1000);
   }
@@ -332,13 +495,14 @@ export class OSPFv3Engine implements IProtocolEngine {
     };
 
     // OSPFv3 uses ff02::5 (AllSPFRouters)
-    this.sendCallback(iface.name, hello, 'ff02::5');
+    this.dispatchOutgoing(iface.name, hello, 'ff02::5');
   }
 
   /**
    * Process an incoming OSPFv3 Hello packet.
    */
   processHello(ifaceName: string, srcIP: string, hello: OSPFv3HelloPacket): void {
+    this.dispatchIncoming(ifaceName, hello, srcIP);
     const iface = this.interfaces.get(ifaceName);
     if (!iface) return;
 
@@ -364,30 +528,26 @@ export class OSPFv3Engine implements IProtocolEngine {
     // HelloReceived
     this.resetDeadTimer(iface, neighbor);
     if (neighbor.state === 'Down') {
-      neighbor.state = 'Init';
-      this.logEvent(`OSPFv3: Neighbor ${neighborId} (${ifaceName}): Down -> Init (HelloReceived)`);
+      this.setNeighborState(iface, neighbor, 'Init', 'HelloReceived');
     }
 
     // TwoWay check
     const seesUs = hello.neighbors.includes(this.config.routerId);
     if (seesUs && neighbor.state === 'Init') {
       if (this.shouldFormAdjacency(iface, neighbor)) {
-        neighbor.state = 'ExStart';
-        this.logEvent(`OSPFv3: Neighbor ${neighborId} (${ifaceName}): Init -> ExStart (TwoWayReceived)`);
+        this.setNeighborState(iface, neighbor, 'ExStart', 'TwoWayReceived');
         // In a full implementation, start DD exchange
         // For simulation, fast-track to Full for neighbors that should form adjacency
-        neighbor.state = 'Full';
-        this.logEvent(`OSPFv3: Neighbor ${neighborId} (${ifaceName}): ExStart -> Full`);
+        this.setNeighborState(iface, neighbor, 'Full', 'LoadingDone');
       } else {
-        neighbor.state = 'TwoWay';
-        this.logEvent(`OSPFv3: Neighbor ${neighborId} (${ifaceName}): Init -> TwoWay (TwoWayReceived)`);
+        this.setNeighborState(iface, neighbor, 'TwoWay', 'TwoWayReceived');
       }
     }
 
     // DR/BDR handling
     if (iface.state === 'Waiting' && hello.backupDesignatedRouter === hello.routerId) {
       if (iface.waitTimer) {
-        clearTimeout(iface.waitTimer);
+        this.timers.clear(iface.waitTimer);
         iface.waitTimer = null;
       }
       this.drElection(iface);
@@ -426,17 +586,15 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   private resetDeadTimer(iface: OSPFv3Interface, neighbor: OSPFNeighbor): void {
     this.clearDeadTimer(neighbor);
-    neighbor.deadTimer = setTimeout(() => {
-      const oldState = neighbor.state;
-      neighbor.state = 'Down';
+    neighbor.deadTimer = this.timers.setTimeout(() => {
+      this.setNeighborState(iface, neighbor, 'Down', 'InactivityTimer');
       iface.neighbors.delete(neighbor.routerId);
-      this.logEvent(`OSPFv3: Neighbor ${neighbor.routerId} (${iface.name}): ${oldState} -> Down (InactivityTimer)`);
     }, iface.deadInterval * 1000);
   }
 
   private clearDeadTimer(neighbor: OSPFNeighbor): void {
     if (neighbor.deadTimer) {
-      clearTimeout(neighbor.deadTimer);
+      this.timers.clear(neighbor.deadTimer);
       neighbor.deadTimer = null;
     }
   }
@@ -454,11 +612,10 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   private drElection(iface: OSPFv3Interface): void {
     if (iface.networkType !== 'broadcast' && iface.networkType !== 'nbma') {
-      iface.state = 'PointToPoint';
+      this.setInterfaceState(iface, 'PointToPoint');
       return;
     }
 
-    // Simple election: highest priority wins, then highest Router ID
     interface Candidate {
       routerId: string;
       priority: number;
@@ -476,6 +633,8 @@ export class OSPFv3Engine implements IProtocolEngine {
 
     candidates.sort((a, b) => b.priority - a.priority || b.routerId.localeCompare(a.routerId));
 
+    const oldDr = iface.dr;
+    const oldBdr = iface.bdr;
     const dr = candidates[0]?.routerId ?? '0.0.0.0';
     const bdr = candidates[1]?.routerId ?? '0.0.0.0';
 
@@ -483,11 +642,25 @@ export class OSPFv3Engine implements IProtocolEngine {
     iface.bdr = bdr;
 
     if (dr === this.config.routerId) {
-      iface.state = 'DR';
+      this.setInterfaceState(iface, 'DR');
     } else if (bdr === this.config.routerId) {
-      iface.state = 'Backup';
+      this.setInterfaceState(iface, 'Backup');
     } else {
-      iface.state = 'DROther';
+      this.setInterfaceState(iface, 'DROther');
+    }
+
+    // Reactive: announce the elected DR/BDR pair on change. The
+    // SignalRefreshActor will refresh interfaces + neighbors signals.
+    if (dr !== oldDr || bdr !== oldBdr) {
+      this.getBus().publish({
+        topic: 'ospf.dr-election',
+        payload: {
+          ...this.routerRef(),
+          iface: iface.name,
+          dr,
+          bdr,
+        },
+      });
     }
   }
 
@@ -544,6 +717,12 @@ export class OSPFv3Engine implements IProtocolEngine {
       this.lsdb.areas.set(areaId, areaDB);
     }
     areaDB.set(key, lsa);
+
+    // Reactive: announce the install. SignalRefreshActor refreshes lsdbSummary.
+    this.getBus().publish({
+      topic: 'ospf.lsa.installed',
+      payload: { ...this.routerRef(), areaId, lsa: lsaHeaderOf(lsa) },
+    });
   }
 
   // ─── OSPFv3 Link-LSA (RFC 5340 §4.4.1) ───────────────────────
@@ -578,10 +757,8 @@ export class OSPFv3Engine implements IProtocolEngine {
 
     this.linkLSAs.set(ifaceName, lsa);
 
-    if (this.sendCallback && iface) {
-      // Flood Link-LSA on the link
-      // (In production would send via the interface to AllSPFRouters)
-    }
+    // Flooding Link-LSAs on the link is left to a future iteration
+    // (production would send via the interface to AllSPFRouters).
 
     return lsa;
   }
@@ -654,29 +831,33 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   shutdown(): void {
     this.running = false;
-    for (const [, iface] of this.interfaces) {
-      if (iface.helloTimer) {
-        clearInterval(iface.helloTimer);
-        iface.helloTimer = null;
-      }
-      if (iface.waitTimer) {
-        clearTimeout(iface.waitTimer);
-        iface.waitTimer = null;
-      }
-      for (const [, neighbor] of iface.neighbors) {
-        this.clearDeadTimer(neighbor);
-      }
-    }
 
-    if (this.spfTimer) {
-      clearTimeout(this.spfTimer);
-      this.spfTimer = null;
+    // Tear down the reactive actors first so they don't react to the
+    // bookkeeping mutations below.
+    this.signalRefreshActor?.stop();
+
+    // TimerSet uses each timer's owning scheduler, so clearAll() is leak-free
+    // even if setScheduler() was called between allocations.
+    this.timers.clearAll();
+    for (const [, iface] of this.interfaces) {
+      iface.helloTimer = null;
+      iface.waitTimer = null;
+      for (const [, neighbor] of iface.neighbors) {
+        neighbor.deadTimer = null;
+        neighbor.ddRetransmitTimer = null;
+        neighbor.lsrRetransmitTimer = null;
+      }
     }
+    this.spfTimer = null;
 
     this.interfaces.clear();
     this.lsdb = createEmptyLSDB();
     this.ospfRoutes = [];
     this.linkLSAs.clear();
     this.intraPrefixLSAs.clear();
+
+    // Reset signals to their empty/disabled baseline (bypass actors).
+    this._refreshAllSignals();
+    this._refreshLSDBSignal();
   }
 }

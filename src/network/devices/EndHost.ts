@@ -22,6 +22,17 @@ import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpConnection } from '../core/TcpConnection';
+import { TimerSet } from '@/events/TimerSet';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import {
+  HostSignalStore,
+  makeReadonlyHostObservables,
+  projectArpTable,
+  projectNdpTable,
+  projectHostRoutes,
+  type HostObservables,
+} from './host/observables';
+import { HostSignalRefreshActor } from './host/actors';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, TCPPacket,
@@ -153,8 +164,9 @@ export abstract class EndHost extends Equipment {
   protected arpTable: Map<string, ARPEntry> = new Map();
   /** Pending ARP resolutions: IP string → callbacks[] */
   protected pendingARPs: Map<string, PendingARP[]> = new Map();
-  /** Queued forwarded packets waiting for ARP resolution */
-  protected fwdQueue: Array<{ pkt: IPv4Packet; outPort: string; nextHopIP: string; timer: ReturnType<typeof setTimeout> }> = [];
+  /** Queued forwarded packets waiting for ARP resolution. Timer is a
+   *  TimerSet token (Phase 5 migration to IScheduler). */
+  protected fwdQueue: Array<{ pkt: IPv4Packet; outPort: string; nextHopIP: string; timer: symbol }> = [];
   /** Pending ICMP echo replies: "srcIP-id-seq" → callback */
   protected pendingPings: Map<string, PendingPing> = new Map();
   /** Monotonically increasing ICMP echo identifier */
@@ -202,8 +214,226 @@ export abstract class EndHost extends Equipment {
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
 
+  // ─── Reactive plumbing (Phase 5) ──────────────────────────────────
+  /** Owns scheduler-driven timers (fwdQueue, future Phase 5 migrations). */
+  protected readonly hostTimers = new TimerSet(() => this.getScheduler());
+  /** Engine-private writable signal store. */
+  private readonly hostSignalStore = new HostSignalStore();
+  /** Read-only observables (arp, ndp, routes, tcp, stats). */
+  readonly observables: HostObservables = makeReadonlyHostObservables(this.hostSignalStore);
+  /** Bundled signal-refresh actor. */
+  private hostSignalRefreshActor: HostSignalRefreshActor | null = null;
+
+  // Counters that feed the host stats signal.
+  private icmpEchosSent = 0;
+  private icmpEchosReceived = 0;
+  private icmpTimeouts = 0;
+  private arpRequestsSent = 0;
+
+  /** Optional scheduler override (Phase 5 — falls back to default). */
+  private hostScheduler: IScheduler | null = null;
+  setScheduler(scheduler: IScheduler | null): void {
+    this.hostScheduler = scheduler;
+  }
+  protected getScheduler(): IScheduler {
+    return this.hostScheduler ?? getDefaultScheduler();
+  }
+
+  /** Common host identity stamped on every `host.*` event. */
+  private hostRef() {
+    return { deviceId: this.id, hostname: this.hostname };
+  }
+
+  /** Attach (or rebind) the host signal-refresh actor to the current bus. */
+  protected attachHostActors(): void {
+    this.hostSignalRefreshActor?.stop();
+    this.hostSignalRefreshActor = new HostSignalRefreshActor(this.getBus(), {
+      getId: () => this.id,
+      _refreshArpSignal: () => this._refreshArpSignal(),
+      _refreshNdpSignal: () => this._refreshNdpSignal(),
+      _refreshRoutesSignal: () => this._refreshRoutesSignal(),
+      _refreshTcpSignal: () => this._refreshTcpSignal(),
+      _refreshHostStatsSignal: () => this._refreshHostStatsSignal(),
+    });
+    this.hostSignalRefreshActor.start();
+  }
+
+  // ─── Actor-API: signal refresh helpers ─────────────────────────────
+
+  /** [actor-API] Refresh the ARP signal from `this.arpTable`. */
+  _refreshArpSignal(): void {
+    const map = (this as unknown as { arpTable?: Map<string, { mac: { toString(): string }; iface: string; timestamp: number }> }).arpTable;
+    if (!map) return;
+    this.hostSignalStore.arp.set(projectArpTable(map));
+  }
+
+  /** [actor-API] Refresh the NDP signal from `this.ndpCache`. */
+  _refreshNdpSignal(): void {
+    const map = (this as unknown as { ndpCache?: Map<string, { mac: { toString(): string }; iface: string }> }).ndpCache;
+    if (!map) return;
+    this.hostSignalStore.ndp.set(projectNdpTable(map));
+  }
+
+  /** [actor-API] Refresh the routes signal from `this.routingTable`. */
+  _refreshRoutesSignal(): void {
+    const routes = (this as unknown as {
+      routingTable?: Iterable<{
+        destination: { toString(): string };
+        mask: { toString(): string };
+        gateway: { toString(): string } | null;
+        iface: string;
+        metric?: number;
+        type?: string;
+      }>;
+    }).routingTable;
+    if (!routes) return;
+    this.hostSignalStore.routes.set(projectHostRoutes(routes));
+  }
+
+  /** [actor-API] Refresh the TCP listeners + connections signals. */
+  _refreshTcpSignal(): void {
+    const listeners = (this as unknown as { tcpListeners?: Map<number, unknown> }).tcpListeners;
+    const connections = (this as unknown as { tcpConnections?: Map<string, { localPort: number; remoteIP: string; remotePort: number; localIP?: string; side?: 'client' | 'server' }> }).tcpConnections;
+
+    if (listeners) {
+      const out: { ip: string; port: number }[] = [];
+      for (const port of listeners.keys()) out.push({ ip: '0.0.0.0', port });
+      this.hostSignalStore.tcpListeners.set(out);
+    }
+    if (connections) {
+      const out: { localIp: string; localPort: number; remoteIp: string; remotePort: number; side: 'client' | 'server' }[] = [];
+      for (const [, c] of connections) {
+        out.push({
+          localIp: c.localIP ?? '0.0.0.0',
+          localPort: c.localPort,
+          remoteIp: c.remoteIP,
+          remotePort: c.remotePort,
+          side: c.side ?? 'client',
+        });
+      }
+      this.hostSignalStore.tcpConnections.set(out);
+    }
+  }
+
+  /** [actor-API] Refresh the aggregate stats signal. */
+  _refreshHostStatsSignal(): void {
+    const arpMap = (this as unknown as { arpTable?: Map<unknown, unknown> }).arpTable;
+    const ndpMap = (this as unknown as { ndpCache?: Map<unknown, unknown> }).ndpCache;
+    const routes = (this as unknown as { routingTable?: { length: number } }).routingTable;
+    const listeners = (this as unknown as { tcpListeners?: Map<unknown, unknown> }).tcpListeners;
+    const connections = (this as unknown as { tcpConnections?: Map<unknown, unknown> }).tcpConnections;
+    this.hostSignalStore.stats.set({
+      arpCacheSize: arpMap?.size ?? 0,
+      ndpCacheSize: ndpMap?.size ?? 0,
+      routeCount: routes?.length ?? 0,
+      tcpListeners: listeners?.size ?? 0,
+      tcpConnections: connections?.size ?? 0,
+      icmpEchosSent: this.icmpEchosSent,
+      icmpEchosReceived: this.icmpEchosReceived,
+      icmpTimeouts: this.icmpTimeouts,
+      arpRequestsSent: this.arpRequestsSent,
+    });
+  }
+
+  /** Bus emission helper for ICMP echo sent counter. */
+  protected emitIcmpEchoSent(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; ttl: number; size: number;
+  }): void {
+    this.icmpEchosSent++;
+    this.getBus().publish({
+      topic: 'host.icmp.echo-sent',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for ICMP echo reply received. */
+  protected emitIcmpEchoReply(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; ttl: number; rttMs: number;
+  }): void {
+    this.icmpEchosReceived++;
+    this.getBus().publish({
+      topic: 'host.icmp.echo-reply',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for ICMP echo timeout. */
+  protected emitIcmpEchoTimeout(payload: { toIp: string; id: number; seq: number }): void {
+    this.icmpTimeouts++;
+    this.getBus().publish({
+      topic: 'host.icmp.echo-timeout',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for ARP entry learned. */
+  protected emitArpLearned(payload: {
+    ip: string; mac: string; iface: string; source: 'reply' | 'gratuitous' | 'request' | 'static';
+  }): void {
+    this.getBus().publish({
+      topic: 'host.arp.entry-learned',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for ARP request sent. */
+  protected emitArpRequestSent(iface: string, targetIp: string): void {
+    this.arpRequestsSent++;
+    this.getBus().publish({
+      topic: 'host.arp.request-sent',
+      payload: { ...this.hostRef(), iface, targetIp },
+    });
+  }
+
+  /** Bus emission helper for TCP listener started. */
+  protected emitTcpListenerStarted(ip: string, port: number): void {
+    this.getBus().publish({
+      topic: 'host.tcp.listener-started',
+      payload: { ...this.hostRef(), ip, port },
+    });
+  }
+
+  /** Bus emission helper for TCP listener stopped. */
+  protected emitTcpListenerStopped(ip: string, port: number): void {
+    this.getBus().publish({
+      topic: 'host.tcp.listener-stopped',
+      payload: { ...this.hostRef(), ip, port },
+    });
+  }
+
+  /** Bus emission helper for TCP connection established. */
+  protected emitTcpConnectionEstablished(payload: {
+    localIp: string; localPort: number; remoteIp: string; remotePort: number;
+    side: 'client' | 'server';
+  }): void {
+    this.getBus().publish({
+      topic: 'host.tcp.connection-established',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for host.routing.route-added. */
+  protected emitRouteAdded(payload: {
+    destination: string; mask: string; gateway: string | null; iface: string;
+    metric: number; type: string;
+  }): void {
+    this.getBus().publish({
+      topic: 'host.routing.route-added',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for host.routing.route-removed. */
+  protected emitRouteRemoved(payload: { destination: string; mask: string; iface: string }): void {
+    this.getBus().publish({
+      topic: 'host.routing.route-removed',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
   constructor(type: any, name: string, x: number, y: number) {
     super(type, name, x, y);
+    this.attachHostActors();
     this.dhcpClient = new DHCPClient(
       (iface: string) => {
         const port = this.ports.get(iface);
@@ -500,6 +730,7 @@ export abstract class EndHost extends Equipment {
       timestamp: Date.now(),
       type: 'static',
     });
+    this.emitArpLearned({ ip, mac: mac.toString(), iface, source: 'static' });
   }
 
   /** Delete a single ARP entry by IP. Returns true if an entry was removed. */
@@ -589,6 +820,12 @@ export abstract class EndHost extends Equipment {
         timestamp: Date.now(),
         type: 'dynamic',
       });
+      this.emitArpLearned({
+        ip: arp.senderIP.toString(),
+        mac: arp.senderMAC.toString(),
+        iface: portName,
+        source: arp.opcode === 1 ? 'request' : 'reply',
+      });
     }
 
     const myIP = port.getIPAddress();
@@ -634,7 +871,7 @@ export abstract class EndHost extends Equipment {
     const ready = this.fwdQueue.filter(q => q.nextHopIP === resolvedIP);
     this.fwdQueue = this.fwdQueue.filter(q => q.nextHopIP !== resolvedIP);
     for (const q of ready) {
-      clearTimeout(q.timer);
+      this.hostTimers.clear(q.timer);
       const outPort = this.ports.get(q.outPort);
       if (outPort) {
         this.sendFrame(q.outPort, {
@@ -828,7 +1065,7 @@ export abstract class EndHost extends Equipment {
   /** Queue a forwarded packet and send an ARP request for the next hop. */
   private fwdQueueAndResolve(pkt: IPv4Packet, outPort: string, nextHopIP: IPAddress, port: Port): void {
     const key = nextHopIP.toString();
-    const timer = setTimeout(() => {
+    const timer = this.hostTimers.setTimeout(() => {
       this.fwdQueue = this.fwdQueue.filter(q => !(q.nextHopIP === key && q.outPort === outPort));
     }, 2000);
     this.fwdQueue.push({ pkt, outPort, nextHopIP: key, timer });
