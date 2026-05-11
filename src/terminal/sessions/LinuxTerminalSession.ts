@@ -25,6 +25,8 @@ import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
+import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
+import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
 import {
   parseSshKeygenArgs,
@@ -87,6 +89,13 @@ export class LinuxTerminalSession extends TerminalSession {
     label: string;
   }> = [];
 
+  /**
+   * Reactive SSH IO: holds the QueuedTerminalIO that bridges the async SSH
+   * connection layer (host-key prompts, password prompts) to the terminal's
+   * key-handling pipeline. Non-null only while an SSH connection is in progress.
+   */
+  private pendingSshIO: QueuedTerminalIO | null = null;
+
   constructor(id: string, device: Equipment) {
     super(id, device);
     this.currentPath = device.getCwd() || '/home/user';
@@ -135,6 +144,13 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    // Reactive SSH IO takes priority: the SSH layer is waiting for user input
+    // (password or host-key confirmation). inputMode is set by the IO adapter's
+    // beginPrompt(), so just returning it is enough — but we gate here first so
+    // handleKey() can route to handleSshIOKey() before any flow/sub-shell check.
+    if (this.pendingSshIO?.isWaitingForInput) {
+      return this.inputMode;
+    }
     if (this.activeSubShell) {
       return { type: 'interactive-text', promptText: this.activeSubShell.getPrompt() };
     }
@@ -148,6 +164,13 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    // Reactive SSH IO: the SSH layer is awaiting user input (password or
+    // host-key confirmation). Handle Enter/Ctrl+C here; everything else
+    // falls through to the view's input element (character typing).
+    if (this.pendingSshIO?.isWaitingForInput) {
+      return this.handleSshIOKey(e);
+    }
 
     // Sub-shell active (SQL*Plus, etc.) — route input there
     if (this.activeSubShell) {
@@ -164,6 +187,64 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.inputMode.type === 'editor') return false;
 
     return super.handleKey(e);
+  }
+
+  /**
+   * Key handler used while a reactive SSH IO prompt is active.
+   * Submits input on Enter, cancels on Ctrl+C, suppresses history navigation.
+   */
+  private handleSshIOKey(e: KeyEvent): boolean {
+    if (!this.pendingSshIO?.isWaitingForInput) return false;
+
+    if (e.key === 'Enter') {
+      const isPassword = this.inputMode.type === 'password';
+      const val = isPassword ? this._passwordBuf : this._inputBuf;
+      if (isPassword) this._passwordBuf = '';
+      else this._inputBuf = '';
+      // endPrompt() is called inside submitInput → resets inputMode + notify
+      this.pendingSshIO.submitInput(val);
+      return true;
+    }
+
+    // Suppress history navigation during SSH prompts
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') return true;
+
+    if (e.key === 'c' && e.ctrlKey) {
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      // cancel() resolves readInput with '' → SSH layer treats it as abort
+      this.pendingSshIO.cancel();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Build a QueuedTerminalIO wired to this session's addLine / inputMode.
+   * The SSH layer calls readInput() which suspends on a Promise; the terminal
+   * resolves it via handleSshIOKey → submitInput().
+   */
+  private createSshTerminalIO(): QueuedTerminalIO {
+    const io = new QueuedTerminalIO({
+      writeLine: (text, type) => this.addLine(text, type),
+      beginPrompt: (prompt, secret) => {
+        if (secret) {
+          this._passwordBuf = '';
+          this.inputMode = { type: 'password', promptText: prompt };
+        } else {
+          this._inputBuf = '';
+          this.inputMode = { type: 'interactive-text', promptText: prompt };
+        }
+        this.notify();
+      },
+      endPrompt: () => {
+        this.inputMode = { type: 'normal' };
+        this.notify();
+      },
+    });
+    this.pendingSshIO = io;
+    return io;
   }
 
   protected handleModeKey(_e: KeyEvent): boolean {
@@ -481,19 +562,8 @@ export class LinuxTerminalSession extends TerminalSession {
       this.connectAndEnterSftp(userAtHost, password);
       return;
     }
-    const sshMeta = ctx.metadata.get('enter_ssh') as string | undefined;
-    if (sshMeta) {
-      const meta = JSON.parse(sshMeta) as {
-        userAtHost: string;
-        port: number;
-        identityFiles: string[];
-        strict: 'yes' | 'no' | 'accept-new';
-        command: string | null;
-      };
-      const password = ctx.values.get('ssh_password') ?? '';
-      this.connectAndEnterSsh(meta, password);
-      return;
-    }
+    // enter_ssh is no longer set — enterSsh() now calls connectAndEnterSsh()
+    // directly using the reactive QueuedTerminalIO approach.
     const sshKeygenMeta = ctx.metadata.get('enter_ssh_keygen') as string | undefined;
     if (sshKeygenMeta) {
       const meta = JSON.parse(sshKeygenMeta) as { args: string[]; defaultFile: string };
@@ -674,40 +744,13 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
-
     // BRD SSH-06: merge ~/.ssh/config defaults under CLI overrides.
     const merged = this.mergeWithSshConfig(parsed);
-    const { userAtHost, port, identityFiles, strict, command } = merged;
-    const user = userAtHost.includes('@')
-      ? userAtHost.split('@')[0]
-      : this.currentUser;
-    const host = userAtHost.includes('@') ? userAtHost.split('@')[1] : userAtHost;
-    const displayTarget = `${user}@${host}`;
-
-    const steps: InteractiveStep[] = [
-      {
-        type: 'password',
-        prompt: `${displayTarget}'s password: `,
-        mask: 'hidden',
-        storeAs: 'ssh_password',
-      },
-      {
-        type: 'execute',
-        action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_ssh',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              port,
-              identityFiles,
-              strict,
-              command,
-            }),
-          );
-        },
-      },
-    ];
-    this.startFlowFromSteps(steps, `ssh ${userAtHost}`);
+    // Reactive approach: connect directly — password (and host-key confirmation)
+    // are prompted lazily by TerminalSshInteractionHandler via QueuedTerminalIO,
+    // only when the SSH layer actually needs them (e.g. public-key auth succeeds
+    // silently without ever asking for a password).
+    await this.connectAndEnterSsh(merged);
   }
 
   private async connectAndEnterSsh(
@@ -718,7 +761,6 @@ export class LinuxTerminalSession extends TerminalSession {
       strict: 'yes' | 'no' | 'accept-new';
       command: string | null;
     },
-    password: string,
   ): Promise<void> {
     const dev = this.device as unknown as {
       executor?: {
@@ -746,6 +788,10 @@ export class LinuxTerminalSession extends TerminalSession {
       ? meta.userAtHost.split('@')[1]
       : meta.userAtHost;
 
+    // Reactive IO: password and host-key prompts are shown on demand by
+    // TerminalSshInteractionHandler → QueuedTerminalIO → handleSshIOKey().
+    // Public-key auth that succeeds silently will never trigger a password prompt.
+    const io = this.createSshTerminalIO();
     const session = new SshSession({
       tcpConnector,
       vfs: localVfs as never,
@@ -753,20 +799,31 @@ export class LinuxTerminalSession extends TerminalSession {
       localUid: userEntry?.uid ?? 1000,
       localGid: userEntry?.gid ?? 1000,
       knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
+      interactionHandler: new TerminalSshInteractionHandler(io),
     });
 
     const builder = SshConnectOptionsBuilder.create()
       .host(host)
       .user(user)
       .port(meta.port)
-      .strictHostKeyChecking(meta.strict)
-      .password(password);
+      .strictHostKeyChecking(meta.strict);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
     }
 
-    const result = await session.connect(builder.build());
+    let result: Awaited<ReturnType<typeof session.connect>>;
+    try {
+      result = await session.connect(builder.build());
+    } finally {
+      // Always release the reactive IO once the connection phase is over,
+      // regardless of success or failure.
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+      this.notify();
+    }
+
     if (!isOk(result)) {
       const errKind = (result as { error: { kind: string } }).error.kind;
       const msg =
@@ -810,10 +867,10 @@ export class LinuxTerminalSession extends TerminalSession {
     // terminal stack so the user gets a true remote shell (editors,
     // tab-completion, history). If the remote machine cannot be
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
-    // back to the legacy RemoteShellSubShell which forwards each line.
-    const motd = this.tryReadRemoteMotd(session);
+    // back to RemoteShellSubShell which forwards each line as an exec.
+    const motd = await this.tryReadRemoteMotd(session);
     for (const line of motd) this.addLine(line);
-    const lastLogin = this.tryReadLastLogin(session, user);
+    const lastLogin = await this.tryReadLastLogin(session, user);
     if (lastLogin) this.addLine(lastLogin);
 
     const remoteDevice = findLinuxMachineByIp(host);
@@ -826,16 +883,16 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** Best-effort `lastlog`-style line via remote `cat /var/log/lastlog.json`. */
-  private tryReadLastLogin(session: SshSession, _user: string): string | null {
+  /** Best-effort `lastlog`-style line via a one-shot remote exec. */
+  private async tryReadLastLogin(session: SshSession, user: string): Promise<string | null> {
     const channelResult = session.openExecChannel(
-      `last -i ${_user} 2>/dev/null | head -n 1`,
+      `last -i ${user} 2>/dev/null | head -n 1`,
     );
     if (!isOk(channelResult)) return null;
     const channel = channelResult.value;
-    void channel.execute();
-    const out = channel.stdout.replace(/\n$/, '');
+    const result = await channel.execute();
     channel.close();
+    const out = result.stdout.replace(/\n$/, '');
     return out || null;
   }
 
@@ -1286,15 +1343,13 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /** Best-effort MOTD fetch via a one-shot remote `cat /etc/motd`. */
-  private tryReadRemoteMotd(session: SshSession): string[] {
+  private async tryReadRemoteMotd(session: SshSession): Promise<string[]> {
     const channelResult = session.openExecChannel('cat /etc/motd 2>/dev/null');
     if (!isOk(channelResult)) return [];
-    // Synchronous delivery: result is populated immediately by the simulator.
     const channel = channelResult.value;
-    void channel.execute();
-    const out = channel.stdout;
+    const result = await channel.execute();
     channel.close();
-    return out ? out.replace(/\n$/, '').split('\n') : [];
+    return result.stdout ? result.stdout.replace(/\n$/, '').split('\n') : [];
   }
 
   /**

@@ -3,8 +3,11 @@
  *
  * Wraps an authenticated SshSession into the ISubShell interface used by
  * LinuxTerminalSession. Each line typed by the user is dispatched through
- * an SshExecChannel; the output is rendered in the terminal and the prompt
- * reflects the remote user/host.
+ * an SshExecChannel.
+ *
+ * CWD is tracked client-side: after every `cd` the sub-shell runs `pwd` on
+ * the remote to get the canonical path, and every subsequent command is
+ * prefixed with `cd <cwd> &&` to restore context (exec channels are stateless).
  *
  * Reference: BRD-SSH-SFTP.md SSH-04.
  */
@@ -23,15 +26,16 @@ export class RemoteShellSubShell implements ISubShell {
     private readonly remoteHost: string,
     initialCwd: string = '~',
   ) {
-    this.cwd = initialCwd;
+    this.cwd = initialCwd === '~' ? `/home/${remoteUser}` : initialCwd;
   }
 
   getPrompt(): string {
-    const cwdShort = this.cwd === `/home/${this.remoteUser}` ? '~' : this.cwd;
+    const homeDir = `/home/${this.remoteUser}`;
+    const cwdShort = this.cwd === homeDir ? '~' : this.cwd;
     return `${this.remoteUser}@${this.remoteHost}:${cwdShort}$ `;
   }
 
-  /** Ctrl+D submits an empty 'exit' line. */
+  /** Ctrl+D exits the sub-shell. */
   handleKey(e: KeyEvent): boolean {
     return e.key === 'd' && e.ctrlKey;
   }
@@ -50,9 +54,22 @@ export class RemoteShellSubShell implements ISubShell {
 
     if (!trimmed) return done([''], this.getPrompt());
 
-    const channelResult = this.session.openExecChannel(trimmed);
+    // clear: signal the host terminal to wipe the screen (Ctrl+L also works)
+    if (trimmed === 'clear') {
+      return { output: [''], exit: false, prompt: this.getPrompt(), clearScreen: true };
+    }
+
+    // cd: execute with a trailing `&& pwd` so we can capture the new CWD
+    if (/^cd(\s|$)/.test(trimmed)) {
+      return this.handleCd(trimmed);
+    }
+
+    // All other commands are prefixed with the stored CWD so that stateless
+    // exec channels always run in the correct directory.
+    const exec = this.prefixCwd(trimmed);
+    const channelResult = this.session.openExecChannel(exec);
     if (!isOk(channelResult)) {
-      return done([`ssh: failed to open channel`], this.getPrompt());
+      return done(['ssh: failed to open channel'], this.getPrompt());
     }
     const channel = channelResult.value;
     const result = await channel.execute();
@@ -66,6 +83,46 @@ export class RemoteShellSubShell implements ISubShell {
 
   dispose(): void {
     this.session.disconnect();
+  }
+
+  // ─── private ────────────────────────────────────────────────────
+
+  /**
+   * Run `<cdCmd> && pwd` remotely. On success the last stdout line is the
+   * new canonical CWD; on failure the stderr is shown and CWD is unchanged.
+   */
+  private async handleCd(cdCmd: string): Promise<SubShellResult> {
+    const channelResult = this.session.openExecChannel(`${cdCmd} && pwd`);
+    if (!isOk(channelResult)) {
+      return done(['ssh: failed to open channel'], this.getPrompt());
+    }
+    const channel = channelResult.value;
+    const result = await channel.execute();
+    channel.close();
+
+    const succeeded = result.exitCode === 0 || (!result.stderr && result.stdout.trim().startsWith('/'));
+    if (succeeded) {
+      const lines = result.stdout.trim().split('\n');
+      const newCwd = lines[lines.length - 1];
+      if (newCwd && newCwd.startsWith('/')) this.cwd = newCwd;
+      return done([''], this.getPrompt());
+    }
+
+    const errLines = result.stderr
+      ? result.stderr.replace(/\n$/, '').split('\n')
+      : ['cd: no such file or directory'];
+    return done(errLines, this.getPrompt());
+  }
+
+  /**
+   * Prefix a command with `cd <cwd> 2>/dev/null && ` so it runs in the
+   * correct directory across stateless exec channels.
+   * Home directory needs no prefix (it's the shell default).
+   */
+  private prefixCwd(cmd: string): string {
+    const homeDir = `/home/${this.remoteUser}`;
+    if (this.cwd === homeDir) return cmd;
+    return `cd ${JSON.stringify(this.cwd)} 2>/dev/null && ${cmd}`;
   }
 }
 
