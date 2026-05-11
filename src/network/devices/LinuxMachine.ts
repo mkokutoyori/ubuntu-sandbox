@@ -130,7 +130,10 @@ export abstract class LinuxMachine extends EndHost {
     // 6. TCP SSH server on port 22 — handles SSH auth + SFTP subsystem
     //    in one place.  Replaces the legacy SFTP-only handler.
     this.listenTcp(22, (conn) => {
-      this.getSshServerHandler().register(conn, '0.0.0.0');
+      // Pass the real client IP so the syslogger / throttler / event-bus
+      // subscribers see the actual source — not the hardcoded 0.0.0.0
+      // bind address.
+      this.getSshServerHandler().register(conn, conn.remoteIp);
     });
   }
 

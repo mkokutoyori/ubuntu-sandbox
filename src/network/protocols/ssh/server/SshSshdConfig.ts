@@ -1,17 +1,53 @@
 /**
  * SshSshdConfig — pure parser/serializer for /etc/ssh/sshd_config.
  *
- * Covers the directives required by BRD SSH-07-R4/R5: PermitRootLogin,
- * PasswordAuthentication, PubkeyAuthentication, Port, AllowUsers, Banner.
+ * Covers the directives required by BRD SSH-07-R4/R5 plus the realism
+ * additions:
+ *   - Original: Port, MaxAuthTries, PermitRootLogin, PasswordAuthentication,
+ *               PubkeyAuthentication, AllowUsers, Banner.
+ *   - Added:    PermitEmptyPasswords, LoginGraceTime, ClientAliveInterval,
+ *               ClientAliveCountMax, MaxSessions, LogLevel, SyslogFacility,
+ *               KbdInteractiveAuthentication, X11Forwarding, AllowTcpForwarding,
+ *               DenyUsers, AllowGroups, DenyGroups.
  *
- * Reference: BRD-SSH-SFTP.md SSH-07.
+ * Reference: man 5 sshd_config — Ubuntu defaults.
  */
 
 import type { SshServerConfig } from './ISshServerContext';
 
+export type SshLogLevel =
+  | 'QUIET'
+  | 'FATAL'
+  | 'ERROR'
+  | 'INFO'
+  | 'VERBOSE'
+  | 'DEBUG'
+  | 'DEBUG1'
+  | 'DEBUG2'
+  | 'DEBUG3';
+
+export type TcpForwardingValue = 'yes' | 'no' | 'local' | 'remote' | 'all';
+
 export interface SshdConfig extends SshServerConfig {
   readonly allowUsers: readonly string[];
+  readonly denyUsers: readonly string[];
+  readonly allowGroups: readonly string[];
+  readonly denyGroups: readonly string[];
   readonly banner: string | null;
+  readonly permitEmptyPasswords: boolean;
+  /** Seconds the client has to authenticate. 0 disables the grace timer. */
+  readonly loginGraceTime: number;
+  /** Seconds between keepalive probes. 0 disables. */
+  readonly clientAliveInterval: number;
+  /** Unanswered probes before the connection is dropped. */
+  readonly clientAliveCountMax: number;
+  /** Max simultaneous sessions per network connection. */
+  readonly maxSessions: number;
+  readonly logLevel: SshLogLevel;
+  readonly syslogFacility: string;
+  readonly kbdInteractiveAuthentication: boolean;
+  readonly x11Forwarding: boolean;
+  readonly allowTcpForwarding: TcpForwardingValue;
 }
 
 export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
@@ -21,8 +57,29 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   passwordAuthentication: true,
   pubkeyAuthentication: true,
   allowUsers: Object.freeze([]),
+  denyUsers: Object.freeze([]),
+  allowGroups: Object.freeze([]),
+  denyGroups: Object.freeze([]),
   banner: null,
+  permitEmptyPasswords: false,
+  loginGraceTime: 120,
+  clientAliveInterval: 0,
+  clientAliveCountMax: 3,
+  maxSessions: 10,
+  logLevel: 'INFO' as SshLogLevel,
+  syslogFacility: 'AUTH',
+  kbdInteractiveAuthentication: false,
+  x11Forwarding: false,
+  allowTcpForwarding: 'yes' as TcpForwardingValue,
 });
+
+const LOG_LEVELS: readonly SshLogLevel[] = [
+  'QUIET', 'FATAL', 'ERROR', 'INFO', 'VERBOSE',
+  'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3',
+];
+const TCP_FWD_VALUES: readonly TcpForwardingValue[] = [
+  'yes', 'no', 'local', 'remote', 'all',
+];
 
 const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> = {
   port: (v) => ({ listenPort: Number.parseInt(v, 10) }),
@@ -30,8 +87,34 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   permitrootlogin: (v) => ({ permitRootLogin: parseBool(v) }),
   passwordauthentication: (v) => ({ passwordAuthentication: parseBool(v) }),
   pubkeyauthentication: (v) => ({ pubkeyAuthentication: parseBool(v) }),
-  allowusers: (v) => ({ allowUsers: v.split(/\s+/).filter(Boolean) }),
+  allowusers: (v) => ({ allowUsers: splitList(v) }),
+  denyusers: (v) => ({ denyUsers: splitList(v) }),
+  allowgroups: (v) => ({ allowGroups: splitList(v) }),
+  denygroups: (v) => ({ denyGroups: splitList(v) }),
   banner: (v) => ({ banner: v.trim() === 'none' ? null : v.trim() }),
+  permitemptypasswords: (v) => ({ permitEmptyPasswords: parseBool(v) }),
+  logingracetime: (v) => ({ loginGraceTime: parseSeconds(v) }),
+  clientaliveinterval: (v) => ({ clientAliveInterval: parseSeconds(v) }),
+  clientalivecountmax: (v) => ({ clientAliveCountMax: Number.parseInt(v, 10) }),
+  maxsessions: (v) => ({ maxSessions: Number.parseInt(v, 10) }),
+  loglevel: (v) => {
+    const upper = v.trim().toUpperCase();
+    if (LOG_LEVELS.includes(upper as SshLogLevel)) {
+      return { logLevel: upper as SshLogLevel };
+    }
+    return {};
+  },
+  syslogfacility: (v) => ({ syslogFacility: v.trim().toUpperCase() }),
+  kbdinteractiveauthentication: (v) => ({ kbdInteractiveAuthentication: parseBool(v) }),
+  x11forwarding: (v) => ({ x11Forwarding: parseBool(v) }),
+  allowtcpforwarding: (v) => {
+    const lower = v.trim().toLowerCase();
+    if (TCP_FWD_VALUES.includes(lower as TcpForwardingValue)) {
+      return { allowTcpForwarding: lower as TcpForwardingValue };
+    }
+    // OpenSSH treats yes/no booleans as the corresponding string.
+    return { allowTcpForwarding: parseBool(v) ? 'yes' : 'no' };
+  },
 };
 
 export function parseSshdConfig(content: string): SshdConfig {
@@ -52,14 +135,25 @@ export function parseSshdConfig(content: string): SshdConfig {
 export function serializeSshdConfig(cfg: SshdConfig): string {
   const lines = [
     `Port ${cfg.listenPort}`,
+    `LogLevel ${cfg.logLevel}`,
+    `SyslogFacility ${cfg.syslogFacility}`,
+    `LoginGraceTime ${cfg.loginGraceTime}`,
     `MaxAuthTries ${cfg.maxAuthTries}`,
+    `MaxSessions ${cfg.maxSessions}`,
     `PermitRootLogin ${cfg.permitRootLogin ? 'yes' : 'no'}`,
     `PasswordAuthentication ${cfg.passwordAuthentication ? 'yes' : 'no'}`,
     `PubkeyAuthentication ${cfg.pubkeyAuthentication ? 'yes' : 'no'}`,
+    `PermitEmptyPasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
+    `KbdInteractiveAuthentication ${cfg.kbdInteractiveAuthentication ? 'yes' : 'no'}`,
+    `ClientAliveInterval ${cfg.clientAliveInterval}`,
+    `ClientAliveCountMax ${cfg.clientAliveCountMax}`,
+    `X11Forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
+    `AllowTcpForwarding ${cfg.allowTcpForwarding}`,
   ];
-  if (cfg.allowUsers.length > 0) {
-    lines.push(`AllowUsers ${cfg.allowUsers.join(' ')}`);
-  }
+  if (cfg.allowUsers.length > 0) lines.push(`AllowUsers ${cfg.allowUsers.join(' ')}`);
+  if (cfg.denyUsers.length > 0) lines.push(`DenyUsers ${cfg.denyUsers.join(' ')}`);
+  if (cfg.allowGroups.length > 0) lines.push(`AllowGroups ${cfg.allowGroups.join(' ')}`);
+  if (cfg.denyGroups.length > 0) lines.push(`DenyGroups ${cfg.denyGroups.join(' ')}`);
   if (cfg.banner) lines.push(`Banner ${cfg.banner}`);
   return lines.join('\n') + '\n';
 }
@@ -67,4 +161,26 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
 function parseBool(value: string): boolean {
   const v = value.trim().toLowerCase();
   return v === 'yes' || v === 'true' || v === '1';
+}
+
+/**
+ * sshd_config time values: bare integer = seconds, suffix h/m/s also accepted
+ * (e.g. "2m" = 120). Returns 0 on parse failure.
+ */
+function parseSeconds(value: string): number {
+  const v = value.trim().toLowerCase();
+  const m = /^(\d+)([smhd]?)$/.exec(v);
+  if (!m) return Number.parseInt(v, 10) || 0;
+  const n = Number.parseInt(m[1], 10);
+  switch (m[2]) {
+    case 'h': return n * 3600;
+    case 'm': return n * 60;
+    case 'd': return n * 86400;
+    case 's':
+    default:  return n;
+  }
+}
+
+function splitList(value: string): readonly string[] {
+  return Object.freeze(value.split(/\s+/).filter(Boolean));
 }

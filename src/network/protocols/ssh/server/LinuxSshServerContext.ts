@@ -28,6 +28,12 @@ import {
   serializeSshdConfig,
   type SshdConfig,
 } from './SshSshdConfig';
+import {
+  SshServerEventBus,
+  type ISshServerEventBus,
+} from './SshServerEvent';
+import { SshSyslogger } from '../logging/SshSyslogger';
+import { SshAuthThrottler } from '../security/SshAuthThrottler';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -57,11 +63,27 @@ function matchesUserPattern(pattern: string, user: string): boolean {
   return re.test(user);
 }
 
+export interface LinuxSshServerContextOptions {
+  /** Pre-wired event bus. If omitted a fresh one is created. */
+  bus?: ISshServerEventBus;
+  /** Enable /var/log/auth.log production. Default: true. */
+  enableSyslog?: boolean;
+  /** Enable fail2ban-style auth throttling. Default: true. */
+  enableThrottler?: boolean;
+  /** Throttler tuning — only consulted when enableThrottler is true. */
+  throttlerThreshold?: number;
+  throttlerWindowMs?: number;
+  throttlerBlockMs?: number;
+}
+
 export class LinuxSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   readonly sshdConfig: SshdConfig;
+  readonly events: ISshServerEventBus;
+  private readonly throttler: SshAuthThrottler | null;
+  private readonly syslogger: SshSyslogger | null;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -78,6 +100,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     private readonly fullExecutor:
       | ((line: string) => Promise<string>)
       | null = null,
+    opts: LinuxSshServerContextOptions = {},
   ) {
     this.ensureEtcSshFiles();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -88,6 +111,39 @@ export class LinuxSshServerContext implements ISshServerContext {
       ...config,
     });
     this.auth = this.buildAuthContext();
+    this.events = opts.bus ?? new SshServerEventBus();
+
+    // Reactive subsystems: each one is independent and only needs the bus.
+    this.syslogger = (opts.enableSyslog ?? true)
+      ? new SshSyslogger(this.vfs, this.events, {
+          hostname: this.hostname,
+          port: this.sshdConfig.listenPort,
+        })
+      : null;
+
+    this.throttler = (opts.enableThrottler ?? true)
+      ? new SshAuthThrottler(this.events, {
+          threshold: opts.throttlerThreshold,
+          windowMs: opts.throttlerWindowMs,
+          blockMs: opts.throttlerBlockMs,
+        })
+      : null;
+  }
+
+  /** Tell SshServerHandler whether the source IP is currently rate-limited. */
+  isClientBlocked(ip: string): boolean {
+    return this.throttler?.isBlocked(ip) ?? false;
+  }
+
+  /** PermitEmptyPasswords gate consulted by SshServerHandler. */
+  permitEmptyPasswords(): boolean {
+    return this.sshdConfig.permitEmptyPasswords;
+  }
+
+  /** Detach reactive subscribers (logger, throttler) from the bus. */
+  shutdown(): void {
+    this.syslogger?.dispose();
+    this.throttler?.dispose();
   }
 
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
@@ -283,10 +339,37 @@ export class LinuxSshServerContext implements ISshServerContext {
     };
   }
 
+  /**
+   * Enforce sshd_config user-acceptance rules. Order mirrors real OpenSSH:
+   *   1. DenyUsers  — explicit reject wins.
+   *   2. AllowUsers — when set, only listed patterns may log in.
+   *   3. DenyGroups — reject if any of user's groups match.
+   *   4. AllowGroups — when set, at least one group must match.
+   *   5. PermitRootLogin — root is gated last.
+   */
   private userAllowed(user: string): boolean {
     if (user === 'root' && !this.config.permitRootLogin) return false;
-    const allow = this.sshdConfig.allowUsers;
-    if (allow.length === 0) return true;
-    return allow.some((pattern) => matchesUserPattern(pattern, user));
+
+    const { allowUsers, denyUsers, allowGroups, denyGroups } = this.sshdConfig;
+    if (denyUsers.some((p) => matchesUserPattern(p, user))) return false;
+    if (allowUsers.length > 0 && !allowUsers.some((p) => matchesUserPattern(p, user))) {
+      return false;
+    }
+
+    if (denyGroups.length > 0 || allowGroups.length > 0) {
+      const userGroups = this.userManager
+        .getUserGroups(user)
+        .map((g) => g.name);
+      if (denyGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))) {
+        return false;
+      }
+      if (
+        allowGroups.length > 0 &&
+        !allowGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))
+      ) {
+        return false;
+      }
+    }
+    return true;
   }
 }
