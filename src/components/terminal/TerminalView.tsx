@@ -283,6 +283,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               autoComplete="off"
               autoFocus
             />
+            {(inputMode as { promptText?: string }).promptText && (
+              <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
+                {(inputMode as { promptText?: string }).promptText}
+              </span>
+            )}
             <span className="animate-pulse" style={{ color: theme.textColor }}>&#9608;</span>
           </div>
         )}
@@ -316,6 +321,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
             <input
               ref={inputRef}
+              type="text"
               value={session.input}
               onChange={(e) => {
                 session.setInput(e.target.value);
