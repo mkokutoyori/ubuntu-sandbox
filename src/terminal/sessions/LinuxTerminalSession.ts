@@ -842,13 +842,17 @@ export class LinuxTerminalSession extends TerminalSession {
       const errKind = result
         ? (result as { error: { kind: string } }).error.kind
         : 'UNKNOWN';
-      const msg =
-        errKind === 'CONNECTION_REFUSED'
-          ? `ssh: connect to host ${host} port ${meta.port}: No route to host`
-          : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
-          ? 'Host key verification failed.'
-          : `${user}@${host}: Permission denied (publickey,password).`;
-      this.addLine(msg, 'error');
+      // AUTH_FAILED is already surfaced via showWarning() inside doAuthenticate();
+      // do not duplicate it. Other errors have no prior warning, so display them here.
+      if (errKind !== 'AUTH_FAILED') {
+        const msg =
+          errKind === 'CONNECTION_REFUSED'
+            ? `ssh: connect to host ${host} port ${meta.port}: No route to host`
+            : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
+            ? 'Host key verification failed.'
+            : `${user}@${host}: Permission denied (publickey,password).`;
+        this.addLine(msg, 'error');
+      }
       this.notify();
       return;
     }
