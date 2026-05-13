@@ -39,16 +39,36 @@ this._onRequestClose?.(); // 3. Otherwise close the terminal.
 
 **Symptôme reporté** : « le terminal devient complètement celui de l'autre machine », sans indication visuelle qu'on est en SSH.
 
-**État** : `pushRemoteDevice` swap correctement le device, et le prompt change (`user@host:~$`). Mais il manquait une API observable pour que les composants React puissent peindre une bannière du type « SSH connected to <host> ».
+**État** : `pushRemoteDevice` swap correctement le device, et le prompt change (`user@host:~$`). Mais il manquait une API observable pour que les composants React puissent peindre une bannière du type « SSH connected to `<host>` ».
 
-**Correctif** : nouveau getter `LinuxTerminalSession.getSshContextInfo()` :
-```ts
-{ active: boolean, chain: { host, user }[], current: string | null }
+**Correctif** :
+1. Nouveau getter `LinuxTerminalSession.getSshContextInfo()` :
+   ```ts
+   { active: boolean, chain: { host, user }[], current: string | null }
+   ```
+2. **`TerminalView.tsx`** consomme désormais ce getter et rend un bandeau bleu sky entre la barre d'info et le scrollback : « 🔒 SSH session — user@host › alice@host2 (type `exit` or `logout` to disconnect) ». Visible uniquement quand `active === true`.
+
+**Tests** : `RS14` (state) + `F1` (chaîne imbriquée).
+
+### 1.3 [FIX] Auth clé publique Windows désormais opérationnelle
+
+**Symptôme** : `WindowsSshServerContext.checkPublicKey` retournait `false` en dur. Conséquence : `ssh-copy-id` vers une cible Windows ne servait à rien, l'utilisateur devait toujours taper le mot de passe.
+
+**Correctif** : `checkPublicKey` lit `C:\Users\<user>\.ssh\authorized_keys` via `WindowsFileSystem.readFile`, parse chaque ligne `<algorithm> <material> [comment]`, et compare la `material`. `getAvailableMethods()` inclut désormais `'publickey'` quand `pubkeyAuthentication` est `true`.
+
+**Tests** : `F2` (clé matchée), `F3` (authorized_keys absent), `F4` (`PubkeyAuthentication=no` domine même avec clé matchée).
+
+### 1.4 [FIX] /var/log/auth.log reflète l'activité SSH
+
+**Symptôme** : `last`, `tail /var/log/auth.log`, `journalctl -u ssh` ne montraient pas les connexions SSH simulées (cf. §3.7 historique).
+
+**Correctif** : `LinuxSshServerContext.recordLogin` (déjà appelée à chaque auth réussie par `SshServerHandler`) écrit désormais une ligne syslog-style :
 ```
+<Mon DD HH:MM:SS> <hostname> sshd[1]: Accepted password for <user> from <ip> port 0 ssh2
+```
+Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` symétriquement. Le fichier est créé/append avec mode `0640` comme sur OpenSSH.
 
-**Test** : `RS14 — getSshContextInfo() reflects the current chain`.
-
-**Ce qui reste à faire côté UI** : un composant React qui consomme `getSshContextInfo()` et rend un bandeau coloré au-dessus de la zone de scroll. Ce composant n'est pas inclus dans cette PR (le scope est l'API).
+**Tests** : `F5` (Accepted line présente), `F6` (`tail` distant via SSH retrouve la ligne), `F7` (cumul sur 3 connexions consécutives).
 
 ---
 
@@ -111,9 +131,7 @@ this._onRequestClose?.(); // 3. Otherwise close the terminal.
 - `SshSession.disconnect()` ferme la `TcpConnection` mais pas de `SSH_MSG_DISCONNECT` envoyé.
 - Pas de gestion des EOF / SIGHUP / réseaux qui tombent — un câble débranché côté UI termine la session brutalement sans notification au client.
 
-### 2.8 Windows : pas d'auth par clé publique
-
-`WindowsSshServerContext.checkPublicKey` retourne toujours `false` (commentaire dans le code). Conséquence : `ssh-copy-id` vers une cible Windows ne servira à rien, l'utilisateur doit toujours taper le mot de passe.
+### 2.8 ~~Windows : pas d'auth par clé publique~~ → corrigé §1.3
 
 ### 2.9 ACLs Windows non honorées
 
@@ -174,9 +192,9 @@ Sur le subset documenté dans `SshSshdConfig` (`Port`, `PermitRootLogin`, `Passw
 
 `SshExecChannel` ne propage pas SIGINT (Ctrl+C local → SIGINT remote). Une commande lourde côté remote ne peut pas être interrompue depuis le client.
 
-### 3.7 Pas de logs côté `auth.log` / `wtmp`
+### 3.7 ~~`/var/log/auth.log`~~ → corrigé §1.4 ; `wtmp`/`btmp` toujours absents
 
-Le simulateur garde une `lastlog.json` minimaliste mais ne renseigne pas `/var/log/auth.log`, `wtmp`, `btmp`. `last`, `lastb`, `who`, `w` ne reflètent pas les connexions SSH.
+`lastlog.json` + `auth.log` sont désormais écrits côté serveur. `wtmp` / `btmp` (utilisés par `last` / `lastb` natifs) restent vides ; les commandes `last`/`lastb` du simulateur peuvent être enrichies dans un suivant.
 
 ### 3.8 Test NFR-02 : couverture réelle non mesurée
 
@@ -200,14 +218,15 @@ Le BRD demande 85-90% de couverture sur les modules clés. Aucun rapport de couv
 
 Ordre de priorité, du plus impactant au plus accessoire :
 
-1. **Bandeau UI SSH** — composant React qui consomme `getSshContextInfo()` (déjà câblé côté terminal session, manque la vue).
-2. **Auth clé publique Windows** — implémenter `WindowsAuthorizedKeys` symétrique de Linux.
-3. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur.
-4. **`sftp -b` mode batch** — utile pour les tutoriels CI-style.
-5. **Port forwarding `-L`** — pour les scénarios pédagogiques (tunnel HTTP).
-6. **Coverage report** — `vitest run --coverage` + seuil 85% pour les modules SSH cœur.
-7. **Hash `known_hosts`** — réalisme cosmétique, faible impact.
-8. **`/var/log/auth.log`** — meilleur réalisme du `last` / `who`.
+1. ~~Bandeau UI SSH~~ → corrigé §1.2
+2. ~~Auth clé publique Windows~~ → corrigé §1.3
+3. ~~`/var/log/auth.log`~~ → corrigé §1.4
+4. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur.
+5. **`sftp -b` mode batch** — utile pour les tutoriels CI-style.
+6. **Port forwarding `-L`** — pour les scénarios pédagogiques (tunnel HTTP).
+7. **Coverage report** — `vitest run --coverage` + seuil 85% pour les modules SSH cœur.
+8. **Hash `known_hosts`** — réalisme cosmétique, faible impact.
+9. **`wtmp`/`btmp`** — étendre la fidélité `last`/`lastb`.
 
 ---
 

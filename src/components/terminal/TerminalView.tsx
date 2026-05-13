@@ -216,6 +216,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         <InfoBar theme={theme} session={session} />
       )}
 
+      {/* ── SSH context banner (linux only — BRD SSH-04) ── */}
+      {sessionType === 'linux' && (
+        <SshContextBanner theme={theme} session={session as LinuxTerminalSession} />
+      )}
+
       {/* ── Windows CMD banner ── */}
       {sessionType === 'windows' && !(session as WindowsTerminalSession).bannerCleared
         && (session as WindowsTerminalSession).shellMode === 'cmd'
@@ -372,6 +377,44 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 };
 
 // ─── Sub-components ───────────────────────────────────────────────
+
+/**
+ * SSH context banner — shown only when the terminal has been pushed
+ * into a remote machine via `ssh user@host`. Renders the connection
+ * chain so the user sees clearly that the prompt + tab-completion now
+ * mirror the remote even though the local terminal is still the host
+ * window. BRD SSH-04 follow-up.
+ */
+const SshContextBanner: React.FC<{
+  theme: TerminalTheme;
+  session: LinuxTerminalSession;
+}> = ({ theme, session }) => {
+  const ctx = session.getSshContextInfo();
+  if (!ctx.active) return null;
+  const trail = ctx.chain
+    .map((f) => `${f.user}@${f.host}`)
+    .join(' › ');
+  return (
+    <div
+      className="flex items-center justify-between px-3 py-1 text-xs select-none shrink-0"
+      style={{
+        backgroundColor: '#0c4a6e', // sky-900
+        color: '#e0f2fe', // sky-100
+        borderBottom: `1px solid ${theme.infoBarBorder}`,
+        fontFamily: theme.fontFamily,
+      }}
+      data-testid="ssh-context-banner"
+    >
+      <span>
+        <span aria-hidden style={{ marginRight: '0.5em' }}>🔒</span>
+        SSH session — {trail}
+      </span>
+      <span style={{ fontSize: '10px', opacity: 0.7 }}>
+        type `exit` or `logout` to disconnect
+      </span>
+    </div>
+  );
+};
 
 /** Info bar at the top of the terminal */
 const InfoBar: React.FC<{ theme: TerminalTheme; session: TerminalSession }> = ({ theme, session }) => {

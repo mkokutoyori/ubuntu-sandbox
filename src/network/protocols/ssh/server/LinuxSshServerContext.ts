@@ -33,6 +33,21 @@ const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
 
 const LASTLOG_PATH = '/var/log/lastlog.json';
+const AUTH_LOG_PATH = '/var/log/auth.log';
+
+/** Emit a syslog-style timestamp `Mon DD HH:MM:SS`. */
+function formatSyslogTimestamp(d: Date): string {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  const month = months[d.getUTCMonth()];
+  const day = String(d.getUTCDate()).padStart(2, ' ');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
+  return `${month} ${day} ${hh}:${mm}:${ss}`;
+}
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
@@ -184,6 +199,31 @@ export class LinuxSshServerContext implements ISshServerContext {
       0,
       0o022,
     );
+    // Surface the event in /var/log/auth.log so commands like
+    // `tail /var/log/auth.log`, `last`, and `journalctl -u ssh`
+    // reflect the simulated SSH activity (analysis doc §3.7).
+    this.appendAuthLog(
+      `Accepted password for ${user} from ${fromIp} port 0 ssh2`,
+    );
+  }
+
+  /**
+   * Surface an authentication event in /var/log/auth.log using a syslog
+   * line shape close enough to OpenSSH's that `tail` / `grep` recipes
+   * from real systems work in the simulator.
+   */
+  recordAuthFailure(user: string, fromIp: string, reason: string): void {
+    this.appendAuthLog(
+      `Failed password for ${user || 'invalid user'} from ${fromIp} port 0 ssh2 (${reason})`,
+    );
+  }
+
+  private appendAuthLog(message: string): void {
+    const ts = formatSyslogTimestamp(new Date());
+    const line = `${ts} ${this.hostname} sshd[1]: ${message}\n`;
+    const existing = this.vfs.readFile(AUTH_LOG_PATH) ?? '';
+    this.vfs.writeFile(AUTH_LOG_PATH, existing + line, 0, 0, 0o022);
+    this.vfs.chmod(AUTH_LOG_PATH, 0o640);
   }
 
   /** Build an SshUserContext for the authenticated user from /etc/passwd. */
