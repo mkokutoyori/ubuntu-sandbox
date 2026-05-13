@@ -145,6 +145,46 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 **Tests** : `L1..L7` dans `ssh-lan-localforward.test.ts` (parser 3-part / 4-part / invalide, collecte multi-`-L`, `-o LocalForward=`, listener observable, `dispose` libère).
 
+### 1.12 [FEAT] Reverse port forwarding `-R`
+
+**Symptôme** : pas de tunnel inverse (`ssh -R remotePort:localHost:localPort`) — manquait pour les scénarios de bastion publiant un service local vers l'extérieur.
+
+**Correctif** :
+1. Nouveau `parseRemoteForwardSpec` symétrique à `parseLocalForwardSpec` (3 / 4 parts, ports > 0).
+2. `parseSshArgs` collecte `RemoteForward[]` depuis `-R` répétés et `-o RemoteForward=...`.
+3. Nouveau `SshRemoteForwarder` (`src/network/protocols/ssh/SshRemoteForwarder.ts`) : pose le listener sur le device **distant**, bridge via canal `exec` SSH lançant `nc localHost localPort` côté client.
+4. `LinuxTerminalSession.installRemoteForwards` instancie un forwarder par `-R` après authentification. Listener disposé à la fin de la session.
+
+**Tests** : `R1..R7` dans `ssh-lan-remoteforward.test.ts`.
+
+### 1.13 [FEAT] `ssh-agent` + `ssh-add` (cache de clés en mémoire)
+
+**Symptôme** : pas de cache de clés. Chaque `ssh` re-lit les fichiers d'identité du disque.
+
+**Correctif** :
+1. Nouvelle classe `SshAgent` (`src/network/protocols/ssh/SshAgent.ts`) : map `path → AgentKey { material, fingerprint, algorithm, bits, comment }`. `add(path, vfs)`, `remove`, `removeAll`, `addAll(home, vfs)` (parcours canonique ed25519 → rsa → ecdsa → dsa).
+2. `LinuxCommandExecutor` expose `sshAgent: SshAgent` (un par device).
+3. Nouveau `handleSshAdd(args)` dans `LinuxCommandExecutor` qui implémente :
+   - `ssh-add` (sans args) : charge les identités par défaut du `$HOME/.ssh/`.
+   - `ssh-add <path>` : charge un identité explicite.
+   - `ssh-add -l` : liste les fingerprints au format OpenSSH `<bits> SHA256:<token> <path> (<ALGO>)`.
+   - `ssh-add -L` : longue forme (matériel public).
+   - `ssh-add -d <path>` : supprime une identité.
+   - `ssh-add -D` : supprime toutes les identités.
+
+**Tests** : `A1..A9` dans `ssh-lan-agent.test.ts`.
+
+### 1.14 [FEAT] Agent forwarding `ssh -A`
+
+**Symptôme** : pas de moyen de relayer le ssh-agent local vers la machine distante.
+
+**Correctif** :
+1. `parseSshArgs` reconnaît `-A` et `-o ForwardAgent=yes|no` → `forwardAgent: boolean`.
+2. Nouvelle classe `SshAgentForwarding` (`src/network/protocols/ssh/SshAgentForwarding.ts`) : shadow-copie chaque `AgentKey` local dans l'agent distant, mémorise les chemins installés. `attach()` est idempotent, `detach()` ne retire que ce qu'il a posé (les clés pré-existantes côté distant survivent).
+3. `LinuxTerminalSession.installAgentForwarding` instancie le forwarding quand `meta.forwardAgent` est vrai et que le device distant est résolvable. `detach()` au teardown de la session.
+
+**Tests** : `FA1..FA6` dans `ssh-lan-forwardagent.test.ts`.
+
 ---
 
 ## 2. Faiblesses structurelles connues
@@ -298,7 +338,7 @@ Ordre de priorité, du plus impactant au plus accessoire :
 3. ~~`/var/log/auth.log`~~ → corrigé §1.4
 4. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur. **Reste à faire**.
 5. ~~`sftp -b` mode batch~~ → corrigé §1.7
-6. ~~Port forwarding `-L`~~ → corrigé §1.11 (scaffold listener + bridge via `nc`). Le forwarding réel `direct-tcpip` reste à wirer si besoin.
+6. ~~Port forwarding `-L`~~ → corrigé §1.11. ~~`-R`~~ → §1.12. ~~`-A` + `ssh-agent`/`ssh-add`~~ → §1.13 / §1.14. Reste `-D` (SOCKS dynamic) si besoin.
 7. ~~Coverage report~~ → corrigé §1.8
 8. ~~Hash `known_hosts`~~ → corrigé §1.6
 9. ~~`wtmp`/`btmp`~~ → corrigé §1.5
@@ -319,10 +359,10 @@ Ordre de priorité, du plus impactant au plus accessoire :
 
 ## 7. Inventaire final — état du module
 
-- **31 fichiers source** sous `src/network/protocols/ssh/` (ajout de `SshLocalForwarder.ts`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
-- **21 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **443 / 443** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7` header subshell, `J1..J7` ProxyJump, `L1..L7` LocalForward).
+- **34 fichiers source** sous `src/network/protocols/ssh/` (`SshLocalForwarder`, `SshRemoteForwarder`, `SshAgent`, `SshAgentForwarding`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
+- **24 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **465 / 465** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`).
 - **3 fichiers d'intégration côté terminal** : `LinuxTerminalSession`, `RemoteShellSubShell`, `SftpSubShell`
-- **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC`
-- **Reste du plan §5** : `ssh -t` shell PTY (P4) — port forwarding `-R` / `-D` peuvent reprendre le pattern de §1.11.
+- **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC` (+ `LinuxCommandExecutor` qui possède désormais un `SshAgent`)
+- **Reste du plan §5** : `ssh -t` shell PTY (P4) et dynamic forwarding `-D` (P6 facultatif).
 - **Couverture** : `npm run test:coverage` (provider v8, cible 85/85/85/75 sur `src/network/protocols/ssh/**`).
 - **BRD** : section 0 récap + statuts inline pour chaque exigence

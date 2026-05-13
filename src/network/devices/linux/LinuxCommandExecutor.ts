@@ -4,6 +4,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
@@ -31,6 +32,11 @@ const STDIN_COMMANDS = new Set([
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
+  /**
+   * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
+   * and surfaced to outgoing SSH connections that honour `ssh -A`.
+   */
+  readonly sshAgent: SshAgent = new SshAgent();
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
@@ -738,6 +744,8 @@ export class LinuxCommandExecutor {
         if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
         return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
       }
+      case 'ssh-add':
+        return this.handleSshAdd(args);
       case 'xargs': {
         if (!stdin) return { output: '', exitCode: 0 };
         const xCmd = args[0] || 'echo';
@@ -992,6 +1000,84 @@ export class LinuxCommandExecutor {
   }
 
   // ─── su handler ──────────────────────────────────────────────────
+
+  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
+    const home =
+      this.userMgr.currentUid === 0
+        ? '/root'
+        : `/home/${this.userMgr.currentUser}`;
+
+    // `-D` — delete all identities.
+    if (args.includes('-D')) {
+      this.sshAgent.removeAll();
+      return { output: 'All identities removed.', exitCode: 0 };
+    }
+
+    // `-d <path>` — delete a single identity (or default if none given).
+    const dIdx = args.indexOf('-d');
+    if (dIdx >= 0) {
+      const path =
+        args[dIdx + 1] && !args[dIdx + 1].startsWith('-')
+          ? args[dIdx + 1]
+          : `${home}/.ssh/id_ed25519`;
+      const removed = this.sshAgent.remove(path);
+      return removed
+        ? { output: `Identity removed: ${path}`, exitCode: 0 }
+        : { output: 'Could not remove identity: not loaded', exitCode: 1 };
+    }
+
+    // `-l` — short fingerprint listing.
+    if (args.includes('-l')) {
+      const keys = this.sshAgent.list();
+      if (keys.length === 0) {
+        return { output: 'The agent has no identities.', exitCode: 1 };
+      }
+      const lines = keys.map(
+        (k) => `${k.bits} ${k.fingerprint} ${k.path} (${k.algorithm})`,
+      );
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
+
+    // `-L` — long form (public-key material). Pedagogical stub.
+    if (args.includes('-L')) {
+      const keys = this.sshAgent.list();
+      if (keys.length === 0) {
+        return { output: 'The agent has no identities.', exitCode: 1 };
+      }
+      const lines = keys.map(
+        (k) => `ssh-${k.algorithm.toLowerCase()} ${k.material.replace(/\n/g, '')} ${k.comment}`,
+      );
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
+
+    // Default — load identities listed in args, or fall back to discovery.
+    const explicit = args.filter((a) => !a.startsWith('-'));
+    if (explicit.length > 0) {
+      const lines: string[] = [];
+      let anyFailed = false;
+      for (const path of explicit) {
+        if (this.sshAgent.add(path, this.vfs)) {
+          lines.push(`Identity added: ${path}`);
+        } else {
+          lines.push(`Could not open key file ${path}: No such file or directory`);
+          anyFailed = true;
+        }
+      }
+      return { output: lines.join('\n'), exitCode: anyFailed ? 1 : 0 };
+    }
+
+    const added = this.sshAgent.addAll(home, this.vfs);
+    if (added.length === 0) {
+      return {
+        output: `Could not open a connection to your authentication agent.`,
+        exitCode: 2,
+      };
+    }
+    return {
+      output: added.map((p) => `Identity added: ${p}`).join('\n'),
+      exitCode: 0,
+    };
+  }
 
   private handleSu(args: string[]): { output: string; exitCode: number } {
     let loginShell = false;

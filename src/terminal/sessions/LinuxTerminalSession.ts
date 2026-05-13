@@ -36,12 +36,15 @@ import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import { SshLocalForwarder } from '@/network/protocols/ssh/SshLocalForwarder';
+import { SshRemoteForwarder } from '@/network/protocols/ssh/SshRemoteForwarder';
+import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
   type LocalForward,
   type ParsedSshArgs,
   type ProxyHop,
+  type RemoteForward,
 } from './sshArgs';
 import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
@@ -895,6 +898,8 @@ export class LinuxTerminalSession extends TerminalSession {
       command: string | null;
       hashKnownHosts?: boolean;
       localForwards?: readonly LocalForward[];
+      remoteForwards?: readonly RemoteForward[];
+      forwardAgent?: boolean;
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -1033,12 +1038,26 @@ export class LinuxTerminalSession extends TerminalSession {
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
     const forwarders = this.installLocalForwards(session, host, meta);
+    // OpenSSH `-R`: needs the remote device — registered only when the
+    // SSH peer resolves to a local Equipment instance (the common case
+    // for the tutorial LAN).
+    const remoteDevice = findLinuxMachineByIp(host);
+    const remoteForwarders = remoteDevice
+      ? this.installRemoteForwards(session, host, remoteDevice, meta)
+      : [];
+    // OpenSSH `-A`: shadow-copy the local SshAgent into the remote one,
+    // so `ssh-add -l` on the remote (and any further `ssh` from there)
+    // sees the client's keys for the duration of the session.
+    const agentForwarding = remoteDevice
+      ? this.installAgentForwarding(remoteDevice, meta)
+      : null;
     const onSessionEnd = () => {
       for (const f of forwarders) f.dispose();
+      for (const f of remoteForwarders) f.dispose();
+      agentForwarding?.detach();
       session.disconnect();
     };
 
-    const remoteDevice = findLinuxMachineByIp(host);
     if (remoteDevice) {
       this.pushRemoteDevice(remoteDevice, user, host, onSessionEnd);
       return;
@@ -1140,6 +1159,8 @@ export class LinuxTerminalSession extends TerminalSession {
       hashKnownHosts: parsed.hashKnownHosts ?? entry.hashKnownHosts,
       jumpHosts: parsed.jumpHosts,
       localForwards: parsed.localForwards,
+      remoteForwards: parsed.remoteForwards,
+      forwardAgent: parsed.forwardAgent,
     };
   }
 
@@ -1724,6 +1745,66 @@ export class LinuxTerminalSession extends TerminalSession {
       out.push(forwarder);
     }
     return out;
+  }
+
+  /**
+   * Mirror of {@link installLocalForwards} for `-R`. Each entry opens
+   * a listener on the *remote* device for `remotePort`. Returns the
+   * list of registered forwarders so the caller can dispose them
+   * when the SSH session ends.
+   */
+  private installRemoteForwards(
+    session: SshSession,
+    sshHost: string,
+    remoteDeviceRaw: Equipment,
+    meta: { remoteForwards?: readonly RemoteForward[] },
+  ): SshRemoteForwarder[] {
+    const forwards = meta.remoteForwards ?? [];
+    if (forwards.length === 0) return [];
+    const remoteDevice = remoteDeviceRaw as unknown as
+      import('@/network/devices/EndHost').EndHost;
+    if (typeof (remoteDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+      return [];
+    }
+    const out: SshRemoteForwarder[] = [];
+    for (const fwd of forwards) {
+      const forwarder = new SshRemoteForwarder(remoteDevice, session, {
+        remotePort: fwd.remotePort,
+        localHost: fwd.localHost,
+        localPort: fwd.localPort,
+        sshHost,
+      });
+      forwarder.register();
+      this.addLine(
+        `Forwarding ${sshHost}:${fwd.remotePort} → ${fwd.localHost}:${fwd.localPort} (reverse)`,
+      );
+      out.push(forwarder);
+    }
+    return out;
+  }
+
+  /**
+   * Wire OpenSSH `-A` agent forwarding: copy the local device's
+   * SshAgent into the remote device's SshAgent. Both ends look up
+   * their agent via the executor (LinuxCommandExecutor exposes
+   * `sshAgent`). Returns null when forwarding is disabled or either
+   * end is not a fully-fledged LinuxPC.
+   */
+  private installAgentForwarding(
+    remoteDeviceRaw: Equipment,
+    meta: { forwardAgent?: boolean },
+  ): SshAgentForwarding | null {
+    if (!meta.forwardAgent) return null;
+    const localExec = (this.getLocalDevice() as unknown as {
+      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
+    }).executor;
+    const remoteExec = (remoteDeviceRaw as unknown as {
+      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
+    }).executor;
+    if (!localExec?.sshAgent || !remoteExec?.sshAgent) return null;
+    const fwd = new SshAgentForwarding(localExec.sshAgent, remoteExec.sshAgent);
+    fwd.attach();
+    return fwd;
   }
 
   pushSshChain(hops: readonly ProxyHop[]): boolean {

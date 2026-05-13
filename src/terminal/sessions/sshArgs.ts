@@ -29,6 +29,15 @@ export interface LocalForward {
   readonly remotePort: number;
 }
 
+export interface RemoteForward {
+  /** Port opened on the SSH server (remote end). */
+  readonly remotePort: number;
+  /** Host the local end resolves the connection to. */
+  readonly localHost: string;
+  /** Port at `localHost` (relative to the SSH client). */
+  readonly localPort: number;
+}
+
 export interface ParsedSshArgs {
   /** `user@host` or just `host`. */
   readonly userAtHost: string;
@@ -46,6 +55,14 @@ export interface ParsedSshArgs {
   readonly jumpHosts: readonly string[];
   /** Local port forwards from `-L`. */
   readonly localForwards: readonly LocalForward[];
+  /** Remote port forwards from `-R`. */
+  readonly remoteForwards: readonly RemoteForward[];
+  /**
+   * OpenSSH `-A` — forward the local ssh-agent connection so commands
+   * on the remote machine can authenticate further hops with the
+   * client's keys.
+   */
+  readonly forwardAgent: boolean;
 }
 
 export interface ProxyHop {
@@ -92,6 +109,24 @@ export function parseLocalForwardSpec(spec: string): LocalForward | null {
 }
 
 /**
+ * Parse a `-R` spec. Mirror of `parseLocalForwardSpec`:
+ *   remotePort:localHost:localPort
+ *   bindAddress:remotePort:localHost:localPort  (bindAddress ignored)
+ */
+export function parseRemoteForwardSpec(spec: string): RemoteForward | null {
+  const parts = spec.split(':').map((s) => s.trim());
+  const normalised = parts.length === 4 ? parts.slice(1) : parts;
+  if (normalised.length !== 3) return null;
+  const [rp, host, lp] = normalised;
+  const remotePort = Number.parseInt(rp, 10);
+  const localPort = Number.parseInt(lp, 10);
+  if (!Number.isFinite(remotePort) || remotePort <= 0) return null;
+  if (!Number.isFinite(localPort) || localPort <= 0) return null;
+  if (!host) return null;
+  return { remotePort, localHost: host, localPort };
+}
+
+/**
  * Parse `ssh [options] [user@]host [command...]`. Returns `null` only
  * when no host argument is present (matches OpenSSH usage-error path).
  */
@@ -102,6 +137,8 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
   let hashKnownHosts: boolean | undefined;
   const jumpHostsRaw: string[] = [];
   const localForwards: LocalForward[] = [];
+  const remoteForwards: RemoteForward[] = [];
+  let forwardAgent = false;
   let host: string | null = null;
   const commandTokens: string[] = [];
 
@@ -123,6 +160,11 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     } else if (arg === '-L' && i + 1 < args.length) {
       const fwd = parseLocalForwardSpec(args[++i]);
       if (fwd) localForwards.push(fwd);
+    } else if (arg === '-R' && i + 1 < args.length) {
+      const fwd = parseRemoteForwardSpec(args[++i]);
+      if (fwd) remoteForwards.push(fwd);
+    } else if (arg === '-A') {
+      forwardAgent = true;
     } else if (arg === '-o' && i + 1 < args.length) {
       const next = args[++i];
       const strictMatch = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(
@@ -148,6 +190,17 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
       if (lfMatch) {
         const fwd = parseLocalForwardSpec(lfMatch[1]);
         if (fwd) localForwards.push(fwd);
+        continue;
+      }
+      const rfMatch = /^RemoteForward=(.+)$/i.exec(next);
+      if (rfMatch) {
+        const fwd = parseRemoteForwardSpec(rfMatch[1]);
+        if (fwd) remoteForwards.push(fwd);
+        continue;
+      }
+      const faMatch = /^ForwardAgent=(yes|no|true|false)$/i.exec(next);
+      if (faMatch) {
+        forwardAgent = /^(yes|true)$/i.test(faMatch[1]);
       }
     } else if (!arg.startsWith('-')) {
       host = arg;
@@ -163,5 +216,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     hashKnownHosts,
     jumpHosts: Object.freeze([...jumpHostsRaw]),
     localForwards: Object.freeze([...localForwards]),
+    remoteForwards: Object.freeze([...remoteForwards]),
+    forwardAgent,
   };
 }
