@@ -482,9 +482,12 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
     if (sftpMeta) {
-      const { userAtHost } = JSON.parse(sftpMeta) as { userAtHost: string };
+      const { userAtHost, batchFile } = JSON.parse(sftpMeta) as {
+        userAtHost: string;
+        batchFile?: string | null;
+      };
       const password = ctx.values.get('sftp_password') ?? '';
-      this.connectAndEnterSftp(userAtHost, password);
+      this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
       return;
     }
     const sshMeta = ctx.metadata.get('enter_ssh') as string | undefined;
@@ -586,8 +589,18 @@ export class LinuxTerminalSession extends TerminalSession {
    * handled by the LinuxCommandExecutor fallback (returns a canned error for now).
    */
   private enterSftp(args: string[]): void {
-    // Find the host argument (first non-flag token)
-    const userAtHost = args.find(a => !a.startsWith('-')) ?? '';
+    // Strip flags we care about and find the host argument.
+    let batchFile: string | null = null;
+    const positional: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-b' && i + 1 < args.length) {
+        batchFile = args[++i];
+      } else if (!a.startsWith('-')) {
+        positional.push(a);
+      }
+    }
+    const userAtHost = positional[0] ?? '';
     if (!userAtHost) {
       this.addLine('usage: sftp [options] [user@]host[:path]', 'error');
       this.notify();
@@ -613,16 +626,26 @@ export class LinuxTerminalSession extends TerminalSession {
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set('enter_sftp', JSON.stringify({ userAtHost: displayTarget }));
+          ctx.metadata.set(
+            'enter_sftp',
+            JSON.stringify({ userAtHost: displayTarget, batchFile }),
+          );
         },
       },
     ];
     this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
   }
 
-  private async connectAndEnterSftp(userAtHost: string, password: string): Promise<void> {
+  private async connectAndEnterSftp(
+    userAtHost: string,
+    password: string,
+    batchFile: string | null = null,
+  ): Promise<void> {
     const dev = this.device as unknown as {
-      executor?: { vfs?: unknown; userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined } };
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
       tcpConnect?: (host: string, port: number) => Promise<unknown>;
     };
     const localVfs = dev.executor?.vfs;
@@ -657,9 +680,50 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     this.addLine(banner);
 
+    // BRD SFTP-13 / analysis doc P5: `sftp -b <file>` runs the batch then
+    // exits without installing the interactive sub-shell. Each line of the
+    // batch is echoed with the prompt (mirroring OpenSSH), output captured,
+    // and the session is disconnected at EOF. A leading `-` on a command
+    // suppresses failure (parity with OpenSSH).
+    if (batchFile) {
+      await this.runSftpBatch(session, localVfs, batchFile);
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
+
     this.activeSubShell = new SftpSubShell(session);
     this._inputBuf = '';
     this.notify();
+  }
+
+  private async runSftpBatch(
+    session: SftpSession,
+    vfs: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem,
+    batchPath: string,
+  ): Promise<void> {
+    const raw = vfs.readFile(batchPath);
+    if (raw === null) {
+      this.addLine(`Couldn't open batch file ${batchPath}`, 'error');
+      session.disconnect();
+      return;
+    }
+    const shell = new SftpSubShell(session);
+    const lines = raw.split('\n');
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const ignoreErrors = line.startsWith('-');
+      const cmd = ignoreErrors ? line.slice(1).trim() : line;
+      this.addLine(`${shell.getPrompt()}${cmd}`);
+      const result = shell.processLine(cmd);
+      for (const out of result.output) {
+        if (out) this.addLine(out);
+      }
+      if (result.exit) break;
+      if (!ignoreErrors && hasSftpError(result.output)) break;
+    }
+    session.disconnect();
   }
 
   // ── ssh entry point ─────────────────────────────────────────────
@@ -708,6 +772,7 @@ export class LinuxTerminalSession extends TerminalSession {
               identityFiles,
               strict,
               command,
+              hashKnownHosts: merged.hashKnownHosts ?? false,
             }),
           );
         },
@@ -723,6 +788,7 @@ export class LinuxTerminalSession extends TerminalSession {
       identityFiles: string[];
       strict: 'yes' | 'no' | 'accept-new';
       command: string | null;
+      hashKnownHosts?: boolean;
     },
     password: string,
   ): Promise<void> {
@@ -768,6 +834,7 @@ export class LinuxTerminalSession extends TerminalSession {
       .port(meta.port)
       .strictHostKeyChecking(meta.strict)
       .password(password);
+    if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
     }
@@ -884,6 +951,7 @@ export class LinuxTerminalSession extends TerminalSession {
     identityFiles: string[];
     strict: 'yes' | 'no' | 'accept-new';
     command: string | null;
+    hashKnownHosts?: boolean;
   }): typeof parsed {
     const dev = this.device as unknown as {
       executor?: {
@@ -927,6 +995,7 @@ export class LinuxTerminalSession extends TerminalSession {
       identityFiles: finalIdentityFiles,
       strict: finalStrict,
       command: parsed.command,
+      hashKnownHosts: parsed.hashKnownHosts ?? entry.hashKnownHosts,
     };
   }
 
@@ -1535,16 +1604,26 @@ interface ParsedSshArgs {
   identityFiles: string[];
   strict: 'yes' | 'no' | 'accept-new';
   command: string | null;
+  hashKnownHosts?: boolean;
 }
 
 /**
  * Parse `ssh [-p port] [-i identity] [-o option=value] user@host [cmd...]`.
  * Returns null if no host argument is found.
  */
+function hasSftpError(output: readonly string[]): boolean {
+  return output.some((line) =>
+    /Couldn't|No such file|Permission denied|Failure|invalid|command not found/i.test(
+      line,
+    ),
+  );
+}
+
 function parseSshArgs(args: string[]): ParsedSshArgs | null {
   let port = 22;
   const identityFiles: string[] = [];
   let strict: 'yes' | 'no' | 'accept-new' = 'accept-new';
+  let hashKnownHosts: boolean | undefined;
   let host: string | null = null;
   const commandTokens: string[] = [];
 
@@ -1562,6 +1641,8 @@ function parseSshArgs(args: string[]): ParsedSshArgs | null {
       const next = args[++i];
       const m = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(next);
       if (m) strict = m[1].toLowerCase() as ParsedSshArgs['strict'];
+      const h = /^HashKnownHosts=(yes|no|true|false)$/i.exec(next);
+      if (h) hashKnownHosts = /^(yes|true)$/i.test(h[1]);
     } else if (!arg.startsWith('-')) {
       host = arg;
     }
@@ -1573,5 +1654,6 @@ function parseSshArgs(args: string[]): ParsedSshArgs | null {
     identityFiles,
     strict,
     command: commandTokens.length > 0 ? commandTokens.join(' ') : null,
+    hashKnownHosts,
   };
 }

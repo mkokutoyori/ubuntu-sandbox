@@ -70,6 +70,45 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 **Tests** : `F5` (Accepted line présente), `F6` (`tail` distant via SSH retrouve la ligne), `F7` (cumul sur 3 connexions consécutives).
 
+### 1.5 [FIX] `wtmp` / `btmp` désormais peuplés
+
+**Symptôme** : `last` retournait une seule ligne synthétique (« still logged in ») et `lastb` n'existait pas.
+
+**Correctif** :
+1. `LinuxSshServerContext.recordLogin` append désormais un entry JSON à `/var/log/wtmp.json` (`{user, ip, at, type:'login', tty:'pts/0'}`).
+2. `recordAuthFailure` écrit symétriquement dans `/var/log/btmp.json` (mode `0o600` comme sur OpenSSH).
+3. `LinuxUserManager.last(args)` / nouvelle `lastb(args)` lisent ces fichiers, supportent le filtre par utilisateur et le `-N` numérique de OpenSSH, et formatent chaque ligne `user pts/0 ip date time still logged in` / `… - time (00:00)`. `last` conserve une ligne `still logged in` synthétique (parité avec le comportement précédent) + une `reboot system boot`.
+4. `cmdLast` / nouvelle `cmdLastb` câblées dans `LinuxCommandExecutor` et les allowlists VFS/binaries.
+
+**Tests** : `G1` (wtmp.json apparait après login), `G2` (`last user` liste les entrées via SSH), `G3` (btmp.json + `lastb` après échec d'auth).
+
+### 1.6 [FEAT] `HashKnownHosts` supporté
+
+**Symptôme** : `~/.ssh/known_hosts` ne stockait que des lignes en clair. La directive OpenSSH `HashKnownHosts yes` était ignorée.
+
+**Correctif** :
+1. Nouveaux helpers purs `hashKnownHostsToken(host[, salt])`, `isHashedKnownHostsToken`, `matchHashedHost` dans `SshPureUtils` produisant le format OpenSSH `|1|<salt>|<hash>`. Pas de crypto réelle (BRD C-02) : fonction de hash déterministe non-cryptographique, le format reste visuellement fidèle.
+2. `KnownHostsStore.with(host, key, {hashed})` choisit le token à persister ; `get`/`has`/`without` parcourent les tokens hashés et matchent via `matchHashedHost`.
+3. `SshKnownHosts.addHost(host, key, {hashed})` propage l'option ; `SshConnectOptions` expose `hashKnownHosts` ; `SshSession` lit l'option à `accept_and_save` / réponse `yes`.
+4. `SshConfig` parse `HashKnownHosts yes|no` ; `LinuxTerminalSession.mergeWithSshConfig` honore l'entrée et la directive CLI `-o HashKnownHosts=yes`.
+
+**Tests** : `G4` (token roundtrip), `G5` (store roundtrip), `G6` (config parse).
+
+### 1.7 [FEAT] `sftp -b <batchfile>` non-interactif
+
+**Symptôme** : aucun mode non-interactif pour scripter des transferts SFTP. Les tutoriels CI-style devaient passer par `scp` ou un sub-shell scripté à la main.
+
+**Correctif** :
+1. `LinuxTerminalSession.enterSftp` parse `-b <file>` et propage `batchFile` à `connectAndEnterSftp`.
+2. Nouvelle méthode privée `runSftpBatch(session, vfs, path)` : lit le fichier, ignore commentaires (`#`) et lignes vides, écho chaque commande précédée du prompt, exécute via une `SftpSubShell` jetable, et stoppe à la première erreur sauf si la ligne commence par `-` (parité OpenSSH). Disconnect en sortie.
+3. Helper `hasSftpError` détecte les messages OpenSSH classiques (« Couldn't … », « No such file », « Failure », « Permission denied »).
+
+**Tests** : `G7` (parser), `G8` (script multi-lignes), `G9` (comment ignoré + stop sur erreur).
+
+### 1.8 [TOOLING] Couverture vitest configurée
+
+`vite.config.ts` ajoute la configuration `coverage` (provider v8, rapport HTML/text/lcov, seuils 85/85/85/75 lignes/fonctions/statements/branches) ciblée sur `src/network/protocols/ssh/**`. `package.json` expose `npm run test:coverage`. `@vitest/coverage-v8` installé en devDep.
+
 ---
 
 ## 2. Faiblesses structurelles connues
@@ -162,9 +201,9 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 Pas de réutilisation de connexions (`ControlMaster auto` + `ControlPath`). Chaque `ssh user@host` ouvre une nouvelle session.
 
-### 3.3 `~/.ssh/known_hosts` per-host hashing
+### 3.3 ~~`~/.ssh/known_hosts` per-host hashing~~ → corrigé §1.6
 
-OpenSSH par défaut hache les hostnames (`HashKnownHosts yes`). Le simulateur stocke les noms en clair. Pas critique pour la valeur pédagogique.
+OpenSSH par défaut hache les hostnames (`HashKnownHosts yes`). Le simulateur stocke désormais le token `|1|<salt>|<hash>` quand l'option est positionnée (CLI `-o HashKnownHosts=yes` ou `HashKnownHosts yes` dans `~/.ssh/config`). Hash déterministe non-cryptographique (BRD C-02).
 
 ### 3.4 `sshd_config` directives non honorées
 
@@ -192,9 +231,9 @@ Sur le subset documenté dans `SshSshdConfig` (`Port`, `PermitRootLogin`, `Passw
 
 `SshExecChannel` ne propage pas SIGINT (Ctrl+C local → SIGINT remote). Une commande lourde côté remote ne peut pas être interrompue depuis le client.
 
-### 3.7 ~~`/var/log/auth.log`~~ → corrigé §1.4 ; `wtmp`/`btmp` toujours absents
+### 3.7 ~~`/var/log/auth.log`~~ → corrigé §1.4 ; ~~`wtmp`/`btmp`~~ → corrigé §1.5
 
-`lastlog.json` + `auth.log` sont désormais écrits côté serveur. `wtmp` / `btmp` (utilisés par `last` / `lastb` natifs) restent vides ; les commandes `last`/`lastb` du simulateur peuvent être enrichies dans un suivant.
+`lastlog.json` + `auth.log` + `wtmp.json` + `btmp.json` sont écrits côté serveur ; `last` et `lastb` lisent ces fichiers et émettent les lignes au format OpenSSH (filtre utilisateur, `-N` numérique). `btmp` reste mode `0o600` (parité OpenSSH), donc accessible uniquement via root ou directement par la VFS interne.
 
 ### 3.8 Test NFR-02 : couverture réelle non mesurée
 
@@ -221,12 +260,12 @@ Ordre de priorité, du plus impactant au plus accessoire :
 1. ~~Bandeau UI SSH~~ → corrigé §1.2
 2. ~~Auth clé publique Windows~~ → corrigé §1.3
 3. ~~`/var/log/auth.log`~~ → corrigé §1.4
-4. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur.
-5. **`sftp -b` mode batch** — utile pour les tutoriels CI-style.
-6. **Port forwarding `-L`** — pour les scénarios pédagogiques (tunnel HTTP).
-7. **Coverage report** — `vitest run --coverage` + seuil 85% pour les modules SSH cœur.
-8. **Hash `known_hosts`** — réalisme cosmétique, faible impact.
-9. **`wtmp`/`btmp`** — étendre la fidélité `last`/`lastb`.
+4. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur. **Reste à faire**.
+5. ~~`sftp -b` mode batch~~ → corrigé §1.7
+6. **Port forwarding `-L`** — pour les scénarios pédagogiques (tunnel HTTP). **Reste à faire**.
+7. ~~Coverage report~~ → corrigé §1.8
+8. ~~Hash `known_hosts`~~ → corrigé §1.6
+9. ~~`wtmp`/`btmp`~~ → corrigé §1.5
 
 ---
 
@@ -245,7 +284,9 @@ Ordre de priorité, du plus impactant au plus accessoire :
 ## 7. Inventaire final — état du module
 
 - **30 fichiers source** sous `src/network/protocols/ssh/`
-- **10 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **305 / 305** scénarios verts
+- **12 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **321 / 321** scénarios verts (dont `ssh-lan-fixes.test.ts` F1..F7 et `ssh-lan-gap.test.ts` G1..G9)
 - **3 fichiers d'intégration côté terminal** : `LinuxTerminalSession`, `RemoteShellSubShell`, `SftpSubShell`
 - **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC`
+- **Reste du plan §5** : `ssh -t` shell PTY (P4) et port forwarding `-L`/`-R`/`-D` (P6).
+- **Couverture** : `npm run test:coverage` (provider v8, cible 85/85/85/75 sur `src/network/protocols/ssh/**`).
 - **BRD** : section 0 récap + statuts inline pour chaque exigence

@@ -166,8 +166,12 @@ export function cmdW(ctx: ShellContext): string {
   return ctx.userMgr.w();
 }
 
-export function cmdLast(ctx: ShellContext): string {
-  return ctx.userMgr.last();
+export function cmdLast(ctx: ShellContext, args: string[]): string {
+  return ctx.userMgr.last(args);
+}
+
+export function cmdLastb(ctx: ShellContext, args: string[]): string {
+  return ctx.userMgr.lastb(args);
 }
 
 export function cmdGetent(ctx: ShellContext, args: string[]): string {

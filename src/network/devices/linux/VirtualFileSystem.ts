@@ -161,7 +161,7 @@ export class VirtualFileSystem {
     const binaries = ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
       'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'cd', 'bash', 'sh',
-      'id', 'whoami', 'groups', 'who', 'w', 'last', 'hostname', 'uname', 'tee', 'sleep',
+      'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'tee', 'sleep',
       'kill', 'locate', 'updatedb'];
     for (const bin of binaries) {
       this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);

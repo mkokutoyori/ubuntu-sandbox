@@ -219,7 +219,7 @@ export class SshSession implements ISshSession {
         return ok(undefined);
 
       case 'accept_and_save':
-        this.knownHosts.addHost(host, key);
+        this.knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
         this.deps.interactionHandler.showInfo(
           `Warning: Permanently added '${host}' (${key.algorithm}) to the list of known hosts.`,
         );
@@ -234,7 +234,7 @@ export class SshSession implements ISshSession {
           );
         switch (reply.kind) {
           case 'yes':
-            this.knownHosts.addHost(host, key);
+            this.knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
             return ok(undefined);
           case 'fingerprint':
             // SSH-01-R6: accept silently when the user types the exact

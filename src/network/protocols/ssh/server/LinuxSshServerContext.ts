@@ -34,6 +34,10 @@ const AUTHORIZED_KEYS_PATH = (home: string): string =>
 
 const LASTLOG_PATH = '/var/log/lastlog.json';
 const AUTH_LOG_PATH = '/var/log/auth.log';
+// `wtmp` and `btmp` are binary in real Linux. We store JSON in the simulator
+// (analysis doc §3.7) so `last` / `lastb` can render OpenSSH-style rows.
+const WTMP_PATH = '/var/log/wtmp.json';
+const BTMP_PATH = '/var/log/btmp.json';
 
 /** Emit a syslog-style timestamp `Mon DD HH:MM:SS`. */
 function formatSyslogTimestamp(d: Date): string {
@@ -57,6 +61,43 @@ interface LastLoginEntry {
   user: string;
   ip: string;
   at: number;
+}
+
+interface WtmpEntry {
+  user: string;
+  ip: string;
+  at: number;
+  type: 'login' | 'reboot';
+  tty: string;
+}
+
+interface BtmpEntry {
+  user: string;
+  ip: string;
+  at: number;
+  reason: string;
+  tty: string;
+}
+
+function appendJsonLog(
+  vfs: VirtualFileSystem,
+  path: string,
+  entry: unknown,
+  mode: number,
+): void {
+  const raw = vfs.readFile(path);
+  let arr: unknown[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  arr.push(entry);
+  vfs.writeFile(path, JSON.stringify(arr), 0, 0, 0o022);
+  vfs.chmod(path, mode);
 }
 
 function matchesUserPattern(pattern: string, user: string): boolean {
@@ -205,6 +246,13 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.appendAuthLog(
       `Accepted password for ${user} from ${fromIp} port 0 ssh2`,
     );
+    this.appendWtmp({
+      user,
+      ip: fromIp,
+      at: entry.at,
+      type: 'login',
+      tty: 'pts/0',
+    });
   }
 
   /**
@@ -216,6 +264,21 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.appendAuthLog(
       `Failed password for ${user || 'invalid user'} from ${fromIp} port 0 ssh2 (${reason})`,
     );
+    this.appendBtmp({
+      user: user || 'invalid user',
+      ip: fromIp,
+      at: Date.now(),
+      reason,
+      tty: 'ssh:notty',
+    });
+  }
+
+  private appendWtmp(entry: WtmpEntry): void {
+    appendJsonLog(this.vfs, WTMP_PATH, entry, 0o644);
+  }
+
+  private appendBtmp(entry: BtmpEntry): void {
+    appendJsonLog(this.vfs, BTMP_PATH, entry, 0o600);
   }
 
   private appendAuthLog(message: string): void {

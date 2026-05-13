@@ -17,6 +17,7 @@ export interface SshHostEntry {
   readonly port?: number;
   readonly identityFile?: string;
   readonly strictHostKeyChecking?: StrictHostKeyChecking;
+  readonly hashKnownHosts?: boolean;
 }
 
 export class SshConfig {
@@ -83,7 +84,16 @@ function buildEntry(host: string, raw: Record<string, string>): SshHostEntry {
     strictHostKeyChecking: raw.stricthostkeychecking as
       | StrictHostKeyChecking
       | undefined,
+    hashKnownHosts: parseYesNo(raw.hashknownhosts),
   });
+}
+
+function parseYesNo(v: string | undefined): boolean | undefined {
+  if (v === undefined) return undefined;
+  const lower = v.toLowerCase();
+  if (lower === 'yes' || lower === 'true' || lower === '1') return true;
+  if (lower === 'no' || lower === 'false' || lower === '0') return false;
+  return undefined;
 }
 
 /** Wildcard matching: `*` and `?` only, OpenSSH semantics. */

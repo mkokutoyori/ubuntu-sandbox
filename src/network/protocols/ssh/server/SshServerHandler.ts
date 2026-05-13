@@ -213,6 +213,7 @@ export class SshServerHandler {
         reason: 'root login disabled',
         ip: clientIp,
       });
+      this.ctx.recordAuthFailure?.(user, clientIp, 'root login disabled');
       return { ok: false };
     }
     let success = false;
@@ -232,6 +233,7 @@ export class SshServerHandler {
         reason: method ?? 'unknown',
         ip: clientIp,
       });
+      this.ctx.recordAuthFailure?.(user, clientIp, method ?? 'unknown');
       return { ok: false };
     }
     this.eventBus.emit({

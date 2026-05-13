@@ -33,6 +33,7 @@ export interface ISshServerContext {
   getMotd(): string;
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;
+  recordAuthFailure?(user: string, fromIp: string, reason: string): void;
 }
 
 export const DEFAULT_SSH_SERVER_CONFIG: SshServerConfig = Object.freeze({
