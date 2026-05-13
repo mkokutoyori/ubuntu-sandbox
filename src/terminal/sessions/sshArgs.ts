@@ -63,6 +63,13 @@ export interface ParsedSshArgs {
    * client's keys.
    */
   readonly forwardAgent: boolean;
+  /**
+   * OpenSSH `-t` / `-T` / `-tt`. `'yes'` requests a PTY; `'force'`
+   * insists even when stdin is not a TTY (`-tt`); `'no'` disables PTY
+   * allocation (`-T`). `undefined` leaves the server's default in
+   * effect — request a PTY only for interactive sessions.
+   */
+  readonly requestTty?: 'yes' | 'no' | 'force';
 }
 
 export interface ProxyHop {
@@ -139,6 +146,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
   const localForwards: LocalForward[] = [];
   const remoteForwards: RemoteForward[] = [];
   let forwardAgent = false;
+  let requestTty: 'yes' | 'no' | 'force' | undefined;
   let host: string | null = null;
   const commandTokens: string[] = [];
 
@@ -165,6 +173,13 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
       if (fwd) remoteForwards.push(fwd);
     } else if (arg === '-A') {
       forwardAgent = true;
+    } else if (arg === '-t') {
+      // -tt forces a TTY (real OpenSSH); a single -t is plain "yes".
+      requestTty = requestTty === 'yes' ? 'force' : 'yes';
+    } else if (arg === '-tt') {
+      requestTty = 'force';
+    } else if (arg === '-T') {
+      requestTty = 'no';
     } else if (arg === '-o' && i + 1 < args.length) {
       const next = args[++i];
       const strictMatch = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(
@@ -201,6 +216,14 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
       const faMatch = /^ForwardAgent=(yes|no|true|false)$/i.exec(next);
       if (faMatch) {
         forwardAgent = /^(yes|true)$/i.test(faMatch[1]);
+        continue;
+      }
+      const ttyMatch = /^RequestTTY=(yes|no|force|auto)$/i.exec(next);
+      if (ttyMatch) {
+        const v = ttyMatch[1].toLowerCase();
+        if (v === 'yes' || v === 'no' || v === 'force') {
+          requestTty = v as 'yes' | 'no' | 'force';
+        }
       }
     } else if (!arg.startsWith('-')) {
       host = arg;
@@ -218,5 +241,6 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     localForwards: Object.freeze([...localForwards]),
     remoteForwards: Object.freeze([...remoteForwards]),
     forwardAgent,
+    requestTty,
   };
 }

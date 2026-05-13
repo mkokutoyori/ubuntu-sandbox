@@ -900,6 +900,7 @@ export class LinuxTerminalSession extends TerminalSession {
       localForwards?: readonly LocalForward[];
       remoteForwards?: readonly RemoteForward[];
       forwardAgent?: boolean;
+      requestTty?: 'yes' | 'no' | 'force';
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -1000,6 +1001,13 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     if (meta.command) {
+      // OpenSSH parity: announce PTY allocation BEFORE running the command
+      // when the user explicitly asked for one (`-t` / `-tt`).
+      if (meta.requestTty === 'yes' || meta.requestTty === 'force') {
+        this.addLine(
+          'Pseudo-terminal will be allocated because a request was made.',
+        );
+      }
       // BRD SSH-05: non-interactive — run the command, print output, close.
       const channelResult = session.openExecChannel(meta.command);
       if (!isOk(channelResult)) {
@@ -1161,6 +1169,7 @@ export class LinuxTerminalSession extends TerminalSession {
       localForwards: parsed.localForwards,
       remoteForwards: parsed.remoteForwards,
       forwardAgent: parsed.forwardAgent,
+      requestTty: parsed.requestTty,
     };
   }
 

@@ -185,6 +185,26 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 **Tests** : `FA1..FA6` dans `ssh-lan-forwardagent.test.ts`.
 
+### 1.15 [FEAT] `ssh -t` + canal shell PTY persistant
+
+**Symptôme** : le canal `shell` (`ISshShellChannel`) n'était pas réellement câblé côté serveur. Chaque ligne d'un sous-shell distant passait par un canal `exec` jetable, perdant l'état entre commandes. Pas non plus de `-t` / `-T` / `-tt`.
+
+**Correctif** :
+1. **Parser** : `parseSshArgs` reconnaît `-t` (`requestTty='yes'`), `-tt` (`'force'`), `-T` (`'no'`), `-o RequestTTY=yes|no|force|auto`.
+2. **Options** : `SshConnectOptions.requestTty` + setter `SshConnectOptionsBuilder.requestTty()`.
+3. **Wire protocol simulateur** :
+   - `client → server  { op: 'shell_open',  channelId }`
+   - `server → client  { ok: true, channelId }`
+   - `client → server  { op: 'shell_input', channelId, data: '<line>' }`
+   - `server → client  { stdout, stderr, exitCode }`
+   - `client → server  { op: 'shell_close', channelId }`
+   - `client → server  { op: 'shell_resize', channelId, cols, rows }` (hook, observable côté bus)
+4. **Serveur** (`SshServerHandler`) : trois nouveaux ops `shell_open` / `shell_input` / `shell_close`. `shell_open` alloue une session shell persistante (référencée par `channelId`), dispatch `shell_input` à `ctx.getShell(userCtx, cwd).execute(line)`. Émet `channel_opened` (kind: 'shell') / `channel_closed` (avec durée). État `cwd` partagé via l'exécuteur du device (les commandes successives voient le même `cd`).
+5. **Client** (`SshShellChannel`) : envoie `shell_open` à l'ouverture, expose `runLine(line): Promise<ExecResult>`, route la réponse JSON vers `onData` ET la résout vers le promise du caller. `close()` envoie `shell_close`.
+6. **Notice OpenSSH** : `LinuxTerminalSession.connectAndEnterSsh` affiche `Pseudo-terminal will be allocated because a request was made.` quand `meta.command` est posé ET `meta.requestTty ∈ {'yes','force'}` — parité OpenSSH.
+
+**Tests** : `T1..T9` dans `ssh-lan-pty.test.ts` (parser, builder, `shell_open` round-trip, `shell_input` qui dispatch, `channel_closed` émis, notice `-t` inline).
+
 ---
 
 ## 2. Faiblesses structurelles connues
@@ -336,7 +356,7 @@ Ordre de priorité, du plus impactant au plus accessoire :
 1. ~~Bandeau UI SSH~~ → corrigé §1.2
 2. ~~Auth clé publique Windows~~ → corrigé §1.3
 3. ~~`/var/log/auth.log`~~ → corrigé §1.4
-4. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur. **Reste à faire**.
+4. ~~`ssh -t` + canal shell PTY~~ → corrigé §1.15. `top`/`htop`/`less` en streaming continu reste à wirer si besoin.
 5. ~~`sftp -b` mode batch~~ → corrigé §1.7
 6. ~~Port forwarding `-L`~~ → corrigé §1.11. ~~`-R`~~ → §1.12. ~~`-A` + `ssh-agent`/`ssh-add`~~ → §1.13 / §1.14. Reste `-D` (SOCKS dynamic) si besoin.
 7. ~~Coverage report~~ → corrigé §1.8
@@ -359,10 +379,10 @@ Ordre de priorité, du plus impactant au plus accessoire :
 
 ## 7. Inventaire final — état du module
 
-- **34 fichiers source** sous `src/network/protocols/ssh/` (`SshLocalForwarder`, `SshRemoteForwarder`, `SshAgent`, `SshAgentForwarding`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
-- **24 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **465 / 465** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`).
+- **34 fichiers source** sous `src/network/protocols/ssh/` (`SshLocalForwarder`, `SshRemoteForwarder`, `SshAgent`, `SshAgentForwarding`, refonte de `SshShellChannel` avec wire-protocol `shell_open` / `shell_input` / `shell_close`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
+- **25 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **474 / 474** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`, `T1..T9`).
 - **3 fichiers d'intégration côté terminal** : `LinuxTerminalSession`, `RemoteShellSubShell`, `SftpSubShell`
 - **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC` (+ `LinuxCommandExecutor` qui possède désormais un `SshAgent`)
-- **Reste du plan §5** : `ssh -t` shell PTY (P4) et dynamic forwarding `-D` (P6 facultatif).
+- **Reste du plan §5** : dynamic forwarding `-D` (SOCKS) — facultatif, pattern réutilisable de §1.11.
 - **Couverture** : `npm run test:coverage` (provider v8, cible 85/85/85/75 sur `src/network/protocols/ssh/**`).
 - **BRD** : section 0 récap + statuts inline pour chaque exigence

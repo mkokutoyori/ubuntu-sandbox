@@ -18,6 +18,12 @@ export interface SshConnectOptions {
   /** Mirrors OpenSSH `HashKnownHosts`. When `true`, new entries appended to
    *  `~/.ssh/known_hosts` use the `|1|<salt>|<hash>` shape. */
   readonly hashKnownHosts?: boolean;
+  /**
+   * OpenSSH `-t` / `-T` / `-tt`. `'yes'` requests a PTY, `'force'` insists
+   * even when stdin is not a TTY, `'no'` disables. `undefined` lets the
+   * server pick the default (PTY for interactive, none for exec).
+   */
+  readonly requestTty?: 'yes' | 'no' | 'force';
 }
 
 export class SshConnectOptionsBuilder {
@@ -29,6 +35,7 @@ export class SshConnectOptionsBuilder {
   private _timeoutMs = 30_000;
   private _password?: string;
   private _hashKnownHosts?: boolean;
+  private _requestTty?: 'yes' | 'no' | 'force';
 
   static create(): SshConnectOptionsBuilder {
     return new SshConnectOptionsBuilder();
@@ -74,6 +81,11 @@ export class SshConnectOptionsBuilder {
     return this;
   }
 
+  requestTty(mode: 'yes' | 'no' | 'force'): this {
+    this._requestTty = mode;
+    return this;
+  }
+
   build(): SshConnectOptions {
     if (!this._host) throw new Error('SshConnectOptions: host is required');
     if (!this._user) throw new Error('SshConnectOptions: user is required');
@@ -86,6 +98,7 @@ export class SshConnectOptionsBuilder {
       timeoutMs: this._timeoutMs,
       password: this._password,
       hashKnownHosts: this._hashKnownHosts,
+      requestTty: this._requestTty,
     });
   }
 }
