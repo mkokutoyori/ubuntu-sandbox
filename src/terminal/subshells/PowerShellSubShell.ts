@@ -158,9 +158,9 @@ export class PowerShellSubShell implements ISubShell {
 
   private isFallbackError(e: unknown): boolean {
     if (e instanceof PSParserError) return true;
-    if (e instanceof PSRuntimeError) {
-      return /not recognized/i.test(e.message);
-    }
+    if (e instanceof PSRuntimeError) return /not recognized/i.test(e.message);
+    // Cmdlets throw plain Error with "not recognized" to signal provider fallback
+    if (e instanceof Error) return /not recognized/i.test(e.message);
     return false;
   }
 

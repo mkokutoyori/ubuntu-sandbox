@@ -730,8 +730,8 @@ describe('21. Advanced Variable Scoping', () => {
   });
 
   it('$local: overwrites global in function', () => {
-    expect(runAndGet('$x = 1; function Test { $local:x = 2; return $local:x }; $r = Test; $x', 'r')).toBe(1);
-    // Après l'appel, $x global reste 1
+    // $local:x inside the function is a local copy; global $x stays 1
+    expect(runAndGet('$x = 1; function Test { $local:x = 2; return $local:x }; $r = Test; $x', 'x')).toBe(1);
   });
 
   it('Set-Variable with -Scope parameter', () => {
@@ -1429,7 +1429,7 @@ describe('35. Date and Time Cmdlets', () => {
   });
 
   it('New-TimeSpan -Days 1', () => {
-    expect(runAndGet('$r = New-TimeSpan -Days 1; $r.TotalDays', 'r')).toBe(1);
+    expect(runAndGet('$ts = New-TimeSpan -Days 1; $r = $ts.TotalDays', 'r')).toBe(1);
   });
 
   it('TimeSpan arithmetic addition', () => {
