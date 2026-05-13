@@ -74,12 +74,9 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
     this.io.writeLine(message, 'info');
   }
 
-  onConnected(info: SshConnectionInfo): void {
-    this.io.writeLine(
-      `Connected to ${info.host} as ${info.user} (session ${info.sessionId})`,
-      'info',
-    );
-  }
+  // Connection details are shown via MOTD and lastlog in the caller;
+  // printing a separate "Connected to…" line here would not match real OpenSSH.
+  onConnected(_info: SshConnectionInfo): void {}
 }
 
 /**

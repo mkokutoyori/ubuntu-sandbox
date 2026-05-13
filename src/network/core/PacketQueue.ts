@@ -8,6 +8,11 @@
  */
 
 import { ARP_TIMERS } from './constants';
+import {
+  getDefaultScheduler,
+  type IScheduler,
+  type TimerHandle,
+} from '@/events/Scheduler';
 
 /**
  * Queued packet entry with metadata for timeout management.
@@ -16,7 +21,7 @@ interface QueueEntry<TPacket, TAddress extends string> {
   packet: TPacket;
   outIface: string;
   nextHop: TAddress;
-  timer: ReturnType<typeof setTimeout>;
+  timer: TimerHandle;
   enqueuedAt: number;
 }
 
@@ -39,36 +44,57 @@ interface QueueEntry<TPacket, TAddress extends string> {
  */
 export class PacketQueue<TPacket, TAddress extends string> {
   private entries: QueueEntry<TPacket, TAddress>[] = [];
+  private schedulerOverride: IScheduler | null = null;
 
   /**
    * @param maxSize - Maximum queue depth (prevents memory exhaustion)
+   * @param scheduler - Optional scheduler override (Phase 4 of the
+   *   reactive refactor). When omitted, the default `RealTimeScheduler`
+   *   singleton is used. Tests should pass a `VirtualTimeScheduler` to
+   *   keep expirations deterministic.
    */
-  constructor(private readonly maxSize: number = ARP_TIMERS.MAX_QUEUE_SIZE) {}
+  constructor(
+    private readonly maxSize: number = ARP_TIMERS.MAX_QUEUE_SIZE,
+    scheduler?: IScheduler,
+  ) {
+    if (scheduler) this.schedulerOverride = scheduler;
+  }
+
+  /** Inject (or replace) the scheduler at runtime. */
+  setScheduler(scheduler: IScheduler | null): void {
+    this.schedulerOverride = scheduler;
+  }
+
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
 
   /**
    * Enqueue a packet waiting for address resolution.
    * If the queue is full, the oldest entry is evicted.
    */
   enqueue(packet: TPacket, outIface: string, nextHop: TAddress, timeoutMs: number): void {
+    const scheduler = this.getScheduler();
+
     // Evict oldest if at capacity
     if (this.entries.length >= this.maxSize) {
       const evicted = this.entries.shift();
       if (evicted) {
-        clearTimeout(evicted.timer);
+        scheduler.clear(evicted.timer);
       }
     }
-
-    const timer = setTimeout(() => {
-      this.removeByRef(entry);
-    }, timeoutMs);
 
     const entry: QueueEntry<TPacket, TAddress> = {
       packet,
       outIface,
       nextHop,
-      timer,
+      timer: 0 as TimerHandle,
       enqueuedAt: Date.now(),
     };
+
+    entry.timer = scheduler.setTimeout(() => {
+      this.removeByRef(entry);
+    }, timeoutMs);
 
     this.entries.push(entry);
   }
@@ -82,10 +108,11 @@ export class PacketQueue<TPacket, TAddress extends string> {
   flush(address: TAddress, sendFn: (packet: TPacket, outIface: string) => void): number {
     let count = 0;
     const remaining: QueueEntry<TPacket, TAddress>[] = [];
+    const scheduler = this.getScheduler();
 
     for (const entry of this.entries) {
       if (entry.nextHop === address) {
-        clearTimeout(entry.timer);
+        scheduler.clear(entry.timer);
         sendFn(entry.packet, entry.outIface);
         count++;
       } else {
@@ -105,8 +132,9 @@ export class PacketQueue<TPacket, TAddress extends string> {
     // Expiration is handled by individual timers, but this provides
     // a manual sweep for cleanup during power-off or shutdown.
     const before = this.entries.length;
+    const scheduler = this.getScheduler();
     for (const entry of this.entries) {
-      clearTimeout(entry.timer);
+      scheduler.clear(entry.timer);
     }
     this.entries = [];
     return before;
@@ -119,8 +147,9 @@ export class PacketQueue<TPacket, TAddress extends string> {
 
   /** Clear all queued packets (e.g., on device power-off) */
   clear(): void {
+    const scheduler = this.getScheduler();
     for (const entry of this.entries) {
-      clearTimeout(entry.timer);
+      scheduler.clear(entry.timer);
     }
     this.entries = [];
   }
@@ -135,7 +164,7 @@ export class PacketQueue<TPacket, TAddress extends string> {
   private removeByRef(entry: QueueEntry<TPacket, TAddress>): void {
     const index = this.entries.indexOf(entry);
     if (index >= 0) {
-      clearTimeout(entry.timer);
+      this.getScheduler().clear(entry.timer);
       this.entries.splice(index, 1);
     }
   }

@@ -28,8 +28,22 @@ export interface QueuedTerminalIOAdapter {
   endPrompt(): void;
 }
 
+/**
+ * Thrown by readInput when the IO has been cancelled (user pressed Ctrl+C
+ * during an SSH prompt). The SSH session catches it and surfaces a clean
+ * "connection aborted" error instead of looping retries with empty input.
+ */
+export class QueuedTerminalIOCancelled extends Error {
+  constructor() {
+    super('SSH prompt cancelled by user');
+    this.name = 'QueuedTerminalIOCancelled';
+  }
+}
+
 export class QueuedTerminalIO implements ITerminalIO {
   private pendingResolve: ((value: string) => void) | null = null;
+  private pendingReject: ((reason: Error) => void) | null = null;
+  private cancelled = false;
 
   constructor(private readonly adapter: QueuedTerminalIOAdapter) {}
 
@@ -38,28 +52,31 @@ export class QueuedTerminalIO implements ITerminalIO {
   }
 
   readInput(prompt: string, secret: boolean): Promise<string> {
+    if (this.cancelled) {
+      return Promise.reject(new QueuedTerminalIOCancelled());
+    }
     if (this.pendingResolve) {
-      // A previous prompt is still awaiting input — refuse to interleave.
       return Promise.reject(
         new Error('QueuedTerminalIO: a prompt is already pending'),
       );
     }
     this.adapter.beginPrompt(prompt, secret);
-    return new Promise<string>((resolve) => {
+    return new Promise<string>((resolve, reject) => {
       this.pendingResolve = resolve;
+      this.pendingReject = reject;
     });
   }
 
   /**
    * Called by the host terminal when the user submits the input line.
    * Resolves the Promise returned by the latest readInput() call.
-   * Returns true if a prompt was waiting; false otherwise (caller may then
-   * deliver the input through its normal command pipeline).
+   * Returns true if a prompt was waiting; false otherwise.
    */
   submitInput(value: string): boolean {
     const resolve = this.pendingResolve;
     if (!resolve) return false;
     this.pendingResolve = null;
+    this.pendingReject = null;
     this.adapter.endPrompt();
     resolve(value);
     return true;
@@ -71,14 +88,17 @@ export class QueuedTerminalIO implements ITerminalIO {
   }
 
   /**
-   * Cancel a pending prompt (e.g. user pressed Ctrl-C). Resolves the Promise
-   * with an empty string and lets the SSH layer treat it as an aborted entry.
+   * Mark the IO as cancelled. The current pending prompt (if any) is
+   * rejected with QueuedTerminalIOCancelled, and every subsequent readInput
+   * call will reject immediately — this propagates up through the SSH auth
+   * chain and aborts the connection cleanly.
    */
   cancel(): void {
-    if (!this.pendingResolve) return;
-    const resolve = this.pendingResolve;
+    this.cancelled = true;
+    const reject = this.pendingReject;
     this.pendingResolve = null;
+    this.pendingReject = null;
     this.adapter.endPrompt();
-    resolve('');
+    reject?.(new QueuedTerminalIOCancelled());
   }
 }

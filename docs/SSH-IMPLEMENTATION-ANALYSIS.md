@@ -79,6 +79,7 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 2. `recordAuthFailure` écrit symétriquement dans `/var/log/btmp.json` (mode `0o600` comme sur OpenSSH).
 3. `LinuxUserManager.last(args)` / nouvelle `lastb(args)` lisent ces fichiers, supportent le filtre par utilisateur et le `-N` numérique de OpenSSH, et formatent chaque ligne `user pts/0 ip date time still logged in` / `… - time (00:00)`. `last` conserve une ligne `still logged in` synthétique (parité avec le comportement précédent) + une `reboot system boot`.
 4. `cmdLast` / nouvelle `cmdLastb` câblées dans `LinuxCommandExecutor` et les allowlists VFS/binaries.
+5. **Post-merge avec `main`** : `/var/log/auth.log` est désormais produit par `SshSyslogger` (réactif, abonné au bus d'événements), donc `recordLogin` / `recordAuthFailure` ne se chargent plus que de `lastlog.json` + `wtmp.json` / `btmp.json` afin d'éviter les doublons de lignes syslog.
 
 **Tests** : `G1` (wtmp.json apparait après login), `G2` (`last user` liste les entrées via SSH), `G3` (btmp.json + `lastb` après échec d'auth).
 

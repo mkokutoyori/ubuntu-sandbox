@@ -18,6 +18,7 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { EquipmentRegistry } from './EquipmentRegistry';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export abstract class Equipment {
   /**
@@ -40,6 +41,9 @@ export abstract class Equipment {
   protected isPoweredOn: boolean = true;
   protected ports: Map<string, Port> = new Map();
 
+  /** Optional bus override (Phase 2 of the reactive refactor). */
+  private busOverride: IEventBus | null = null;
+
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
     this.deviceType = deviceType;
@@ -48,6 +52,15 @@ export abstract class Equipment {
     this.x = x;
     this.y = y;
     EquipmentRegistry.getInstance().register(this);
+  }
+
+  /** Inject a custom bus (test-only / multi-topology scenarios). */
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+  }
+
+  protected getBus(): IEventBus {
+    return this.busOverride ?? getDefaultEventBus();
   }
 
   // ─── Identity ───────────────────────────────────────────────────
@@ -115,26 +128,56 @@ export abstract class Equipment {
     return 'linux'; // Default to linux terminal for unknown types
   }
 
-  setName(name: string): void { this.name = name; }
+  setName(name: string): void {
+    const oldName = this.name;
+    if (oldName === name) return;
+    this.name = name;
+    this.getBus().publish({
+      topic: 'device.renamed',
+      payload: { id: this.id, oldName, newName: name },
+    });
+  }
   setHostname(hostname: string): void { this.hostname = hostname; }
 
   // ─── Position ──────────────────────────────────────────────────
 
   getPosition(): { x: number; y: number } { return { x: this.x, y: this.y }; }
-  setPosition(x: number, y: number): void { this.x = x; this.y = y; }
+  setPosition(x: number, y: number): void {
+    if (this.x === x && this.y === y) return;
+    this.x = x;
+    this.y = y;
+    this.getBus().publish({
+      topic: 'device.position-changed',
+      payload: { id: this.id, x, y },
+    });
+  }
 
   // ─── Power ─────────────────────────────────────────────────────
 
   getIsPoweredOn(): boolean { return this.isPoweredOn; }
 
   powerOn(): void {
+    const wasOn = this.isPoweredOn;
     this.isPoweredOn = true;
     Logger.info(this.id, 'equipment:power', `${this.name}: powered ON`);
+    if (!wasOn) {
+      this.getBus().publish({
+        topic: 'device.power-on',
+        payload: { id: this.id },
+      });
+    }
   }
 
   powerOff(): void {
+    const wasOn = this.isPoweredOn;
     this.isPoweredOn = false;
     Logger.info(this.id, 'equipment:power', `${this.name}: powered OFF`);
+    if (wasOn) {
+      this.getBus().publish({
+        topic: 'device.power-off',
+        payload: { id: this.id },
+      });
+    }
   }
 
   // ─── Ports ─────────────────────────────────────────────────────

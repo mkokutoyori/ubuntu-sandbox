@@ -28,30 +28,22 @@ import {
   serializeSshdConfig,
   type SshdConfig,
 } from './SshSshdConfig';
+import {
+  SshServerEventBus,
+  type ISshServerEventBus,
+} from './SshServerEvent';
+import { SshSyslogger } from '../logging/SshSyslogger';
+import { SshAuthThrottler } from '../security/SshAuthThrottler';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
 
 const LASTLOG_PATH = '/var/log/lastlog.json';
-const AUTH_LOG_PATH = '/var/log/auth.log';
 // `wtmp` and `btmp` are binary in real Linux. We store JSON in the simulator
 // (analysis doc §3.7) so `last` / `lastb` can render OpenSSH-style rows.
 const WTMP_PATH = '/var/log/wtmp.json';
 const BTMP_PATH = '/var/log/btmp.json';
 
-/** Emit a syslog-style timestamp `Mon DD HH:MM:SS`. */
-function formatSyslogTimestamp(d: Date): string {
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  const month = months[d.getUTCMonth()];
-  const day = String(d.getUTCDate()).padStart(2, ' ');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  const ss = String(d.getUTCSeconds()).padStart(2, '0');
-  return `${month} ${day} ${hh}:${mm}:${ss}`;
-}
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
@@ -113,11 +105,27 @@ function matchesUserPattern(pattern: string, user: string): boolean {
   return re.test(user);
 }
 
+export interface LinuxSshServerContextOptions {
+  /** Pre-wired event bus. If omitted a fresh one is created. */
+  bus?: ISshServerEventBus;
+  /** Enable /var/log/auth.log production. Default: true. */
+  enableSyslog?: boolean;
+  /** Enable fail2ban-style auth throttling. Default: true. */
+  enableThrottler?: boolean;
+  /** Throttler tuning — only consulted when enableThrottler is true. */
+  throttlerThreshold?: number;
+  throttlerWindowMs?: number;
+  throttlerBlockMs?: number;
+}
+
 export class LinuxSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   readonly sshdConfig: SshdConfig;
+  readonly events: ISshServerEventBus;
+  private readonly throttler: SshAuthThrottler | null;
+  private readonly syslogger: SshSyslogger | null;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -134,6 +142,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     private readonly fullExecutor:
       | ((line: string) => Promise<string>)
       | null = null,
+    opts: LinuxSshServerContextOptions = {},
   ) {
     this.ensureEtcSshFiles();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -144,6 +153,39 @@ export class LinuxSshServerContext implements ISshServerContext {
       ...config,
     });
     this.auth = this.buildAuthContext();
+    this.events = opts.bus ?? new SshServerEventBus();
+
+    // Reactive subsystems: each one is independent and only needs the bus.
+    this.syslogger = (opts.enableSyslog ?? true)
+      ? new SshSyslogger(this.vfs, this.events, {
+          hostname: this.hostname,
+          port: this.sshdConfig.listenPort,
+        })
+      : null;
+
+    this.throttler = (opts.enableThrottler ?? true)
+      ? new SshAuthThrottler(this.events, {
+          threshold: opts.throttlerThreshold,
+          windowMs: opts.throttlerWindowMs,
+          blockMs: opts.throttlerBlockMs,
+        })
+      : null;
+  }
+
+  /** Tell SshServerHandler whether the source IP is currently rate-limited. */
+  isClientBlocked(ip: string): boolean {
+    return this.throttler?.isBlocked(ip) ?? false;
+  }
+
+  /** PermitEmptyPasswords gate consulted by SshServerHandler. */
+  permitEmptyPasswords(): boolean {
+    return this.sshdConfig.permitEmptyPasswords;
+  }
+
+  /** Detach reactive subscribers (logger, throttler) from the bus. */
+  shutdown(): void {
+    this.syslogger?.dispose();
+    this.throttler?.dispose();
   }
 
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
@@ -240,12 +282,8 @@ export class LinuxSshServerContext implements ISshServerContext {
       0,
       0o022,
     );
-    // Surface the event in /var/log/auth.log so commands like
-    // `tail /var/log/auth.log`, `last`, and `journalctl -u ssh`
-    // reflect the simulated SSH activity (analysis doc §3.7).
-    this.appendAuthLog(
-      `Accepted password for ${user} from ${fromIp} port 0 ssh2`,
-    );
+    // /var/log/auth.log is produced reactively by SshSyslogger subscribed to
+    // the event bus (post-merge). We only own the lastlog + wtmp side here.
     this.appendWtmp({
       user,
       ip: fromIp,
@@ -256,14 +294,11 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   /**
-   * Surface an authentication event in /var/log/auth.log using a syslog
-   * line shape close enough to OpenSSH's that `tail` / `grep` recipes
-   * from real systems work in the simulator.
+   * Mirror an authentication failure into /var/log/btmp.json (mode 0o600).
+   * The matching /var/log/auth.log line is emitted by SshSyslogger via the
+   * `auth_failure` event.
    */
   recordAuthFailure(user: string, fromIp: string, reason: string): void {
-    this.appendAuthLog(
-      `Failed password for ${user || 'invalid user'} from ${fromIp} port 0 ssh2 (${reason})`,
-    );
     this.appendBtmp({
       user: user || 'invalid user',
       ip: fromIp,
@@ -279,14 +314,6 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   private appendBtmp(entry: BtmpEntry): void {
     appendJsonLog(this.vfs, BTMP_PATH, entry, 0o600);
-  }
-
-  private appendAuthLog(message: string): void {
-    const ts = formatSyslogTimestamp(new Date());
-    const line = `${ts} ${this.hostname} sshd[1]: ${message}\n`;
-    const existing = this.vfs.readFile(AUTH_LOG_PATH) ?? '';
-    this.vfs.writeFile(AUTH_LOG_PATH, existing + line, 0, 0, 0o022);
-    this.vfs.chmod(AUTH_LOG_PATH, 0o640);
   }
 
   /** Build an SshUserContext for the authenticated user from /etc/passwd. */
@@ -386,10 +413,37 @@ export class LinuxSshServerContext implements ISshServerContext {
     };
   }
 
+  /**
+   * Enforce sshd_config user-acceptance rules. Order mirrors real OpenSSH:
+   *   1. DenyUsers  — explicit reject wins.
+   *   2. AllowUsers — when set, only listed patterns may log in.
+   *   3. DenyGroups — reject if any of user's groups match.
+   *   4. AllowGroups — when set, at least one group must match.
+   *   5. PermitRootLogin — root is gated last.
+   */
   private userAllowed(user: string): boolean {
     if (user === 'root' && !this.config.permitRootLogin) return false;
-    const allow = this.sshdConfig.allowUsers;
-    if (allow.length === 0) return true;
-    return allow.some((pattern) => matchesUserPattern(pattern, user));
+
+    const { allowUsers, denyUsers, allowGroups, denyGroups } = this.sshdConfig;
+    if (denyUsers.some((p) => matchesUserPattern(p, user))) return false;
+    if (allowUsers.length > 0 && !allowUsers.some((p) => matchesUserPattern(p, user))) {
+      return false;
+    }
+
+    if (denyGroups.length > 0 || allowGroups.length > 0) {
+      const userGroups = this.userManager
+        .getUserGroups(user)
+        .map((g) => g.name);
+      if (denyGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))) {
+        return false;
+      }
+      if (
+        allowGroups.length > 0 &&
+        !allowGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))
+      ) {
+        return false;
+      }
+    }
+    return true;
   }
 }

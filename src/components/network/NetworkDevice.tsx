@@ -138,6 +138,7 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
     <>
       <div
         ref={deviceRef}
+        data-device-id={device.id}
         className={cn(
           "absolute flex flex-col items-center gap-1 cursor-pointer select-none",
           "transition-transform duration-75",

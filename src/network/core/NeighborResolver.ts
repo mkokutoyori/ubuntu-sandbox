@@ -13,6 +13,11 @@
 import type { MACAddress } from './types';
 import type { INeighborEntry } from './interfaces';
 import { ARP_TIMERS } from './constants';
+import {
+  getDefaultScheduler,
+  type IScheduler,
+  type TimerHandle,
+} from '@/events/Scheduler';
 
 /**
  * Pending resolution callback.
@@ -20,7 +25,7 @@ import { ARP_TIMERS } from './constants';
 interface PendingResolution {
   resolve: (mac: MACAddress) => void;
   reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: TimerHandle;
 }
 
 /**
@@ -54,17 +59,34 @@ export interface NeighborEntry extends INeighborEntry {
 export class NeighborResolver<TAddress extends string> {
   private cache: Map<string, NeighborEntry> = new Map();
   private pending: Map<string, PendingResolution[]> = new Map();
+  private schedulerOverride: IScheduler | null = null;
 
   /**
    * @param protocol - Protocol name for logging ('ARP' or 'NDP')
    * @param timeoutMs - Resolution timeout in ms
    * @param cacheTTLMs - Cache entry TTL in ms (0 = no expiration)
+   * @param scheduler - Optional `IScheduler` (Phase 4 of the reactive
+   *   refactor). Default fallback is the singleton `RealTimeScheduler`.
+   *   Pass a `VirtualTimeScheduler` in tests to make resolution
+   *   timeouts deterministic.
    */
   constructor(
     private readonly protocol: string,
     private readonly timeoutMs: number = ARP_TIMERS.REQUEST_TIMEOUT_MS,
     private readonly cacheTTLMs: number = ARP_TIMERS.CACHE_TTL_MS,
-  ) {}
+    scheduler?: IScheduler,
+  ) {
+    if (scheduler) this.schedulerOverride = scheduler;
+  }
+
+  /** Inject (or replace) the scheduler at runtime. */
+  setScheduler(scheduler: IScheduler | null): void {
+    this.schedulerOverride = scheduler;
+  }
+
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
 
   /**
    * Learn a neighbor mapping (called on incoming ARP reply or NDP NA).
@@ -81,7 +103,7 @@ export class NeighborResolver<TAddress extends string> {
     const pendingList = this.pending.get(address);
     if (pendingList) {
       for (const p of pendingList) {
-        clearTimeout(p.timer);
+        this.getScheduler().clear(p.timer);
         p.resolve(mac);
       }
       this.pending.delete(address);
@@ -122,8 +144,9 @@ export class NeighborResolver<TAddress extends string> {
       return Promise.resolve(cached.mac);
     }
 
+    const scheduler = this.getScheduler();
     return new Promise<MACAddress>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = scheduler.setTimeout(() => {
         // Remove this specific pending entry on timeout
         const list = this.pending.get(address);
         if (list) {
@@ -169,7 +192,7 @@ export class NeighborResolver<TAddress extends string> {
     // Reject all pending
     for (const [addr, list] of this.pending) {
       for (const p of list) {
-        clearTimeout(p.timer);
+        this.getScheduler().clear(p.timer);
         p.reject(`${this.protocol} cache cleared`);
       }
     }

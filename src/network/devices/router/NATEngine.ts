@@ -14,6 +14,15 @@
 
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import {
+  NATSignalStore,
+  makeReadonlyNATObservables,
+  projectNatSessions,
+  projectNatStats,
+  type NATObservables,
+} from './nat/observables';
+import { NATSignalRefreshActor } from './nat/actors';
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -122,6 +131,58 @@ export class NATEngine {
   private hitCount = 0;
   private missCount = 0;
   private expiredCount = 0;
+  // Direction counters (Phase 4b2-NAT)
+  private inboundTranslations = 0;
+  private outboundTranslations = 0;
+
+  // ─── Reactive plumbing (Phase 4b2-NAT) ────────────────────────────
+  private busOverride: IEventBus | null = null;
+  private deviceId: string = '';
+  private routerName: string = '';
+  private readonly signalStore = new NATSignalStore();
+  /** Read-only observables (sessions, stats). */
+  readonly observables: NATObservables = makeReadonlyNATObservables(this.signalStore);
+  private signalRefreshActor: NATSignalRefreshActor | null = null;
+
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+    this.attachActors();
+  }
+  setDeviceId(id: string, routerName?: string): void {
+    this.deviceId = id;
+    if (routerName !== undefined) this.routerName = routerName;
+  }
+  getDeviceId(): string { return this.deviceId; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private deviceRef() { return { deviceId: this.deviceId, routerName: this.routerName }; }
+
+  private attachActors(): void {
+    this.signalRefreshActor?.stop();
+    this.signalRefreshActor = new NATSignalRefreshActor(this.getBus(), this);
+    this.signalRefreshActor.start();
+  }
+
+  /** [actor-API] Refresh sessions + stats. */
+  _refreshAll(): void {
+    this.signalStore.sessions.set(projectNatSessions(this.sessions));
+    this._refreshStats();
+  }
+
+  /** [actor-API] Refresh stats only. */
+  _refreshStats(): void {
+    this.signalStore.stats.set(projectNatStats({
+      sessions: this.sessions,
+      hits: this.hitCount,
+      misses: this.missCount,
+      expired: this.expiredCount,
+      inboundTranslations: this.inboundTranslations,
+      outboundTranslations: this.outboundTranslations,
+    }));
+  }
+
+  constructor() {
+    this.attachActors();
+  }
 
   // ─── Configuration API ────────────────────────────────────────────
 
@@ -328,10 +389,34 @@ export class NATEngine {
           const revKey = makeKey(proto, globalIP, globalPort);
           this.reverseSessions.set(revKey, session);
           this.missCount++;
+          this.getBus().publish({
+            topic: 'nat.session.created',
+            payload: {
+              ...this.deviceRef(),
+              protocol: proto,
+              localIp: srcIP, localPort: srcPort,
+              globalIp: globalIP, globalPort,
+              outsideIp: dstIP, outsidePort: dstPort,
+              kind: 'overload',
+            },
+          });
         } else {
+          const oldTcp = session.tcpState;
           session.timestamp = Date.now();
           if (proto === IP_PROTO_TCP) updateTcpState(session, pkt, 'out');
           this.hitCount++;
+          if (oldTcp !== session.tcpState && session.tcpState !== undefined) {
+            this.getBus().publish({
+              topic: 'nat.tcp.state-changed',
+              payload: {
+                ...this.deviceRef(),
+                localIp: session.localIP, localPort: session.localPort,
+                globalIp: session.globalIP, globalPort: session.globalPort,
+                oldState: String(oldTcp ?? 'closed'),
+                newState: String(session.tcpState),
+              },
+            });
+          }
         }
 
         return rewriteSrcIP(pkt, session.globalIP, session.globalPort);
@@ -354,6 +439,17 @@ export class NATEngine {
           const revKey = makeKey(proto, pool.startIP, srcPort);
           this.reverseSessions.set(revKey, session);
           this.missCount++;
+          this.getBus().publish({
+            topic: 'nat.session.created',
+            payload: {
+              ...this.deviceRef(),
+              protocol: proto,
+              localIp: srcIP, localPort: srcPort,
+              globalIp: pool.startIP, globalPort: srcPort,
+              outsideIp: dstIP, outsidePort: dstPort,
+              kind: 'pool',
+            },
+          });
         } else {
           this.hitCount++;
         }
@@ -436,6 +532,7 @@ export class NATEngine {
    */
   purgeStale(overrideMs?: number): void {
     const now = Date.now();
+    let sweeped = 0;
     for (const [key, session] of this.sessions) {
       const timeout = overrideMs !== undefined
         ? overrideMs
@@ -445,7 +542,28 @@ export class NATEngine {
         this.sessions.delete(key);
         this.reverseSessions.delete(revKey);
         this.expiredCount++;
+        sweeped++;
+        this.getBus().publish({
+          topic: 'nat.session.removed',
+          payload: {
+            ...this.deviceRef(),
+            protocol: session.protocol,
+            localIp: session.localIP, localPort: session.localPort,
+            globalIp: session.globalIP, globalPort: session.globalPort,
+            reason: 'expired',
+          },
+        });
       }
+    }
+    if (sweeped > 0) {
+      this.getBus().publish({
+        topic: 'nat.stale.sweeped',
+        payload: {
+          ...this.deviceRef(),
+          sweepedCount: sweeped,
+          remainingSessions: this.sessions.size,
+        },
+      });
     }
   }
 

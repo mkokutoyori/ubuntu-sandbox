@@ -30,6 +30,13 @@ import {
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { DHCP_CONSTANTS } from '../core/constants';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import {
+  DHCPServerSignalStore,
+  makeReadonlyDHCPServerObservables,
+  type DHCPServerObservables,
+  type DhcpServerLeaseVM,
+} from './observables';
 
 /** Default pending offer timeout from centralized constants */
 const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
@@ -77,10 +84,62 @@ export class DHCPServer implements IProtocolEngine {
   /** Static bindings (manual reservations): poolName → bindings[] */
   private staticBindings: Map<string, DHCPStaticBinding[]> = new Map();
 
+  // ─── Reactive plumbing (Phase 4b2-DHCP server) ─────────────────────
+  private busOverride: IEventBus | null = null;
+  private deviceId: string = '';
+  private hostname: string = '';
+  private readonly serverSignalStore = new DHCPServerSignalStore();
+  /** Read-only observables (leases, stats). */
+  readonly observables: DHCPServerObservables = makeReadonlyDHCPServerObservables(this.serverSignalStore);
+
+  setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  setDeviceId(id: string, hostname?: string): void {
+    this.deviceId = id;
+    if (hostname !== undefined) this.hostname = hostname;
+  }
+  getDeviceId(): string { return this.deviceId; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private deviceRef() { return { deviceId: this.deviceId, hostname: this.hostname }; }
+
+  /** Refresh server-side observables (called after every binding mutation). */
+  private refreshServerSignals(): void {
+    const out: DhcpServerLeaseVM[] = [];
+    for (const [ip, b] of this.bindings) {
+      out.push({
+        pool: b.poolName,
+        clientMac: b.clientId,
+        ip,
+        grantedAt: b.leaseStart,
+        expiresAt: b.leaseExpiration,
+      });
+    }
+    this.serverSignalStore.leases.set(out);
+    this.serverSignalStore.stats.set({
+      running: this.enabled,
+      poolCount: this.pools.size,
+      activeLeases: this.bindings.size,
+      reservationsCount: Array.from(this.staticBindings.values()).reduce((s, arr) => s + arr.length, 0),
+    });
+  }
+
   // ─── IProtocolEngine ─────────────────────────────────────────────
 
-  start(): void { this.enabled = true; }
-  stop(): void { this.enabled = false; }
+  start(): void {
+    this.enabled = true;
+    this.refreshServerSignals();
+    this.getBus().publish({
+      topic: 'dhcp.engine.started',
+      payload: { ...this.deviceRef(), role: 'server' },
+    });
+  }
+  stop(): void {
+    this.enabled = false;
+    this.refreshServerSignals();
+    this.getBus().publish({
+      topic: 'dhcp.engine.stopped',
+      payload: { ...this.deviceRef(), role: 'server' },
+    });
+  }
   isRunning(): boolean { return this.enabled; }
 
   // ─── Service Control (legacy aliases) ──────────────────────────
@@ -264,6 +323,17 @@ export class DHCPServer implements IProtocolEngine {
       };
 
       this.bindings.set(ip, binding);
+      this.getBus().publish({
+        topic: 'dhcp.pool.lease-allocated',
+        payload: {
+          ...this.deviceRef(),
+          pool: pool.name,
+          clientMac: clientMAC,
+          ip,
+          leaseTimeSec: pool.leaseDuration,
+        },
+      });
+      this.refreshServerSignals();
       return binding;
     }
 
@@ -445,6 +515,17 @@ export class DHCPServer implements IProtocolEngine {
 
       this.bindings.set(params.requestedIP, binding);
       this.stats.acks++;
+      this.getBus().publish({
+        topic: 'dhcp.pool.lease-allocated',
+        payload: {
+          ...this.deviceRef(),
+          pool: pool.name,
+          clientMac: params.clientMAC,
+          ip: params.requestedIP,
+          leaseTimeSec: pool.leaseDuration,
+        },
+      });
+      this.refreshServerSignals();
 
       return {
         binding,
@@ -545,6 +626,17 @@ export class DHCPServer implements IProtocolEngine {
 
       this.bindings.set(params.requestedIP, binding);
       this.stats.acks++;
+      this.getBus().publish({
+        topic: 'dhcp.pool.lease-allocated',
+        payload: {
+          ...this.deviceRef(),
+          pool: pool.name,
+          clientMac: params.clientMAC,
+          ip: params.requestedIP,
+          leaseTimeSec: pool.leaseDuration,
+        },
+      });
+      this.refreshServerSignals();
 
       return {
         type: 'ACK',
@@ -579,6 +671,11 @@ export class DHCPServer implements IProtocolEngine {
       for (const [ip, binding] of this.bindings) {
         if (binding.clientId === paramsOrMAC) {
           this.bindings.delete(ip);
+          this.getBus().publish({
+            topic: 'dhcp.pool.lease-released',
+            payload: { ...this.deviceRef(), pool: binding.poolName, ip, reason: 'client-release' },
+          });
+          this.refreshServerSignals();
           return;
         }
       }
@@ -594,6 +691,11 @@ export class DHCPServer implements IProtocolEngine {
     if (binding.clientId !== params.clientMAC) return;
 
     this.bindings.delete(params.clientIP);
+    this.getBus().publish({
+      topic: 'dhcp.pool.lease-released',
+      payload: { ...this.deviceRef(), pool: binding.poolName, ip: params.clientIP, reason: 'client-release' },
+    });
+    this.refreshServerSignals();
   }
 
   /**
@@ -614,6 +716,11 @@ export class DHCPServer implements IProtocolEngine {
     const binding = this.bindings.get(params.declinedIP);
     if (binding && binding.clientId === params.clientMAC) {
       this.bindings.delete(params.declinedIP);
+      this.getBus().publish({
+        topic: 'dhcp.pool.lease-released',
+        payload: { ...this.deviceRef(), pool: binding.poolName, ip: params.declinedIP, reason: 'declined' },
+      });
+      this.refreshServerSignals();
     }
 
     // Remove any pending offer

@@ -19,6 +19,7 @@
 import { EthernetFrame } from '../core/types';
 import { Logger } from '../core/Logger';
 import { Port } from './Port';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export type CableType = 'cat5e' | 'cat6' | 'cat6a' | 'fiber-single' | 'fiber-multi' | 'crossover' | 'serial';
 
@@ -71,6 +72,20 @@ export class Cable {
   private readonly spec: CableSpec;
   private packetLossRate: number = 0;
   private stats: CableStats = { framesTransmitted: 0, framesLost: 0 };
+
+  /** Reactive bus override (Phase 3 — defaults to singleton). */
+  private busOverride: IEventBus | null = null;
+
+  /** Random source — injectable so tests can seed deterministic loss. */
+  private rng: () => number = Math.random;
+
+  setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  setRng(rng: () => number): void { this.rng = rng; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+
+  private portRefOf(port: Port) {
+    return { deviceId: port.getEquipmentId(), portName: port.getName() };
+  }
 
   constructor(id: string, options?: CableOptions) {
     this.id = id;
@@ -128,6 +143,35 @@ export class Cable {
 
     Logger.info(this.id, 'cable:connect',
       `Cable connected: ${portA.getEquipmentId()}.${portA.getName()} ↔ ${portB.getEquipmentId()}.${portB.getName()}`);
+
+    const bus = this.getBus();
+    bus.publish({
+      topic: 'cable.connected',
+      payload: {
+        cableId: this.id,
+        portA: this.portRefOf(portA),
+        portB: this.portRefOf(portB),
+        cableType: this.cableType,
+      },
+    });
+    bus.publish({
+      topic: 'cable.negotiated',
+      payload: {
+        cableId: this.id,
+        speed: portA.getNegotiatedSpeed(),
+        duplex: portA.getNegotiatedDuplex(),
+      },
+    });
+    if (this.hasDuplexMismatch()) {
+      bus.publish({
+        topic: 'cable.duplex-mismatch',
+        payload: {
+          cableId: this.id,
+          portA: this.portRefOf(portA),
+          portB: this.portRefOf(portB),
+        },
+      });
+    }
   }
 
   /**
@@ -140,6 +184,10 @@ export class Cable {
     Logger.info(this.id, 'cable:disconnect', `Cable ${this.id} disconnected`);
     this.portA = null;
     this.portB = null;
+    this.getBus().publish({
+      topic: 'cable.disconnected',
+      payload: { cableId: this.id },
+    });
   }
 
   // ─── Auto-negotiation ─────────────────────────────────────────
@@ -222,18 +270,30 @@ export class Cable {
   transmit(frame: EthernetFrame, fromPort: Port): boolean {
     if (!this.isUp) {
       Logger.warn(this.id, 'cable:blocked', `Cable ${this.id} is down, frame dropped`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'cable-down' },
+      });
       return false;
     }
 
     if (!this.portA || !this.portB) {
       Logger.warn(this.id, 'cable:blocked', `Cable ${this.id} not fully connected, frame dropped`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'no-peer' },
+      });
       return false;
     }
 
     // Simulate packet loss
-    if (this.packetLossRate > 0 && Math.random() < this.packetLossRate) {
+    if (this.packetLossRate > 0 && this.rng() < this.packetLossRate) {
       this.stats.framesLost++;
       Logger.debug(this.id, 'cable:loss', `Cable ${this.id}: frame lost (simulated)`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'simulated-loss' },
+      });
       return false;
     }
 
@@ -243,8 +303,32 @@ export class Cable {
       `${fromPort.getEquipmentId()}.${fromPort.getName()} → ${targetPort.getEquipmentId()}.${targetPort.getName()}`,
       { srcMAC: frame.srcMAC.toString(), dstMAC: frame.dstMAC.toString() });
 
+    const bus = this.getBus();
+    const propagationMs = this.getPropagationDelay();
+    const fromRef = this.portRefOf(fromPort);
+    const toRef = this.portRefOf(targetPort);
+
+    bus.publish({
+      topic: 'cable.frame.dispatched',
+      payload: {
+        cableId: this.id,
+        from: fromRef,
+        to: toRef,
+        frame,
+        propagationMs,
+      },
+    });
+
+    // Phase 3: delivery stays synchronous to preserve current call-stack
+    // semantics for tests. Phase 6 will migrate to scheduler-driven async
+    // delivery (`scheduler.setTimeout(deliver, propagationMs)`).
     targetPort.receiveFrame(frame);
     this.stats.framesTransmitted++;
+
+    bus.publish({
+      topic: 'cable.frame.delivered',
+      payload: { cableId: this.id, from: fromRef, to: toRef, frame },
+    });
     return true;
   }
 
