@@ -62,6 +62,54 @@ export function formatKnownHostsEntry(host: string, key: SshHostKey): string {
   return `${host} ${key.algorithm} ${key.publicKey}`;
 }
 
+/**
+ * Produce an OpenSSH-style `|1|<salt>|<hash>` host token for the
+ * `HashKnownHosts yes` mode. Real OpenSSH uses HMAC-SHA1 over the host name
+ * with a random per-entry salt. The simulator has no crypto (BRD C-02), so
+ * we use a deterministic non-cryptographic hash that still round-trips
+ * through `matchHashedHost`. The shape (`|1|…|…`) is faithful so that the
+ * file is visually indistinguishable from an OpenSSH `known_hosts`.
+ */
+export function hashKnownHostsToken(host: string, salt?: string): string {
+  const effectiveSalt = salt ?? deriveSalt(host);
+  const hash = simulatedHmac(effectiveSalt, host);
+  return `|1|${effectiveSalt}|${hash}`;
+}
+
+export function isHashedKnownHostsToken(host: string): boolean {
+  return host.startsWith('|1|');
+}
+
+export function matchHashedHost(hashedToken: string, candidate: string): boolean {
+  if (!isHashedKnownHostsToken(hashedToken)) return hashedToken === candidate;
+  const parts = hashedToken.split('|');
+  if (parts.length < 4) return false;
+  const salt = parts[2];
+  return hashKnownHostsToken(candidate, salt) === hashedToken;
+}
+
+function deriveSalt(host: string): string {
+  return base64UrlSafe(`salt:${host}`).slice(0, 20);
+}
+
+function simulatedHmac(salt: string, host: string): string {
+  let h = 0x811c9dc5;
+  const mat = `${salt}|${host}`;
+  for (let i = 0; i < mat.length; i++) {
+    h ^= mat.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  const hex = h.toString(16).padStart(8, '0');
+  return base64UrlSafe(`hmac:${hex}:${host}:${salt}`).slice(0, 28);
+}
+
+function base64UrlSafe(input: string): string {
+  const b64 = typeof btoa === 'function'
+    ? btoa(unescape(encodeURIComponent(input)))
+    : Buffer.from(input, 'utf-8').toString('base64');
+  return b64.replace(/=+$/, '');
+}
+
 export function parseSshConfigBlock(block: string): SshHostConfig {
   const cfg: Record<string, string> = {};
   for (const raw of block.split('\n')) {

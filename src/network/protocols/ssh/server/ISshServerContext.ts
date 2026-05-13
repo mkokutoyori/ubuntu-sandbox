@@ -36,6 +36,12 @@ export interface ISshServerContext {
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;
   /**
+   * Optional auth-failure hook used by SshServerHandler when the handshake or
+   * password/pubkey check is rejected (analysis doc §1.4/§1.5). Implementations
+   * append to /var/log/auth.log and /var/log/btmp.json.
+   */
+  recordAuthFailure?(user: string, fromIp: string, reason: string): void;
+  /**
    * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).
    * Returns null when the user does not exist on this system.
    */

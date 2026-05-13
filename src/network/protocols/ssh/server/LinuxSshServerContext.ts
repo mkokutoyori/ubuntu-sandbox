@@ -39,6 +39,11 @@ const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
 
 const LASTLOG_PATH = '/var/log/lastlog.json';
+// `wtmp` and `btmp` are binary in real Linux. We store JSON in the simulator
+// (analysis doc §3.7) so `last` / `lastb` can render OpenSSH-style rows.
+const WTMP_PATH = '/var/log/wtmp.json';
+const BTMP_PATH = '/var/log/btmp.json';
+
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
@@ -48,6 +53,43 @@ interface LastLoginEntry {
   user: string;
   ip: string;
   at: number;
+}
+
+interface WtmpEntry {
+  user: string;
+  ip: string;
+  at: number;
+  type: 'login' | 'reboot';
+  tty: string;
+}
+
+interface BtmpEntry {
+  user: string;
+  ip: string;
+  at: number;
+  reason: string;
+  tty: string;
+}
+
+function appendJsonLog(
+  vfs: VirtualFileSystem,
+  path: string,
+  entry: unknown,
+  mode: number,
+): void {
+  const raw = vfs.readFile(path);
+  let arr: unknown[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      arr = [];
+    }
+  }
+  arr.push(entry);
+  vfs.writeFile(path, JSON.stringify(arr), 0, 0, 0o022);
+  vfs.chmod(path, mode);
 }
 
 function matchesUserPattern(pattern: string, user: string): boolean {
@@ -240,6 +282,38 @@ export class LinuxSshServerContext implements ISshServerContext {
       0,
       0o022,
     );
+    // /var/log/auth.log is produced reactively by SshSyslogger subscribed to
+    // the event bus (post-merge). We only own the lastlog + wtmp side here.
+    this.appendWtmp({
+      user,
+      ip: fromIp,
+      at: entry.at,
+      type: 'login',
+      tty: 'pts/0',
+    });
+  }
+
+  /**
+   * Mirror an authentication failure into /var/log/btmp.json (mode 0o600).
+   * The matching /var/log/auth.log line is emitted by SshSyslogger via the
+   * `auth_failure` event.
+   */
+  recordAuthFailure(user: string, fromIp: string, reason: string): void {
+    this.appendBtmp({
+      user: user || 'invalid user',
+      ip: fromIp,
+      at: Date.now(),
+      reason,
+      tty: 'ssh:notty',
+    });
+  }
+
+  private appendWtmp(entry: WtmpEntry): void {
+    appendJsonLog(this.vfs, WTMP_PATH, entry, 0o644);
+  }
+
+  private appendBtmp(entry: BtmpEntry): void {
+    appendJsonLog(this.vfs, BTMP_PATH, entry, 0o600);
   }
 
   /** Build an SshUserContext for the authenticated user from /etc/passwd. */

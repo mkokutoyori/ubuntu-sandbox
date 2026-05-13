@@ -177,6 +177,63 @@ describe('SSH LAN — remote-shell experience (BRD SSH-04)', () => {
     const direct = (await lan.pc2.executeCommand('whoami')).trim();
     expect(out.join('\n')).toContain(direct);
   });
+
+  // RS13 — su+SSH exit ordering (review feedback fix)
+  it('RS13 — `exit` from `root@remote` returns to `user@remote`, not to local', async () => {
+    term.pushRemoteDevice(lan.pc2, 'user', PC2_IP, () => undefined);
+    expect(term.device).toBe(lan.pc2);
+
+    // Enter a remote `su` shell. The default test user is root in this
+    // simulator (uid=0), so `su <user>` is the realistic equivalent of
+    // the BRD's "sudo su" trace. We push a su frame manually through
+    // the executor to keep the test free from password prompts.
+    const remoteExec = (lan.pc2 as unknown as { executor: { suStack: unknown[] } })
+      .executor;
+    (remoteExec.suStack as Array<{
+      user: string; uid: number; gid: number; cwd: string; umask: number;
+    }>).push({
+      user: 'user',
+      uid: 1000,
+      gid: 1000,
+      cwd: '/home/user',
+      umask: 0o022,
+    });
+
+    // First exit: should unwind ONE su level on the remote, not pop SSH.
+    await pressEnterWith(term, 'exit');
+    expect(term.device).toBe(lan.pc2);
+    expect(term.isInsideSshSession).toBe(true);
+
+    // Second exit: device is at root su level → SSH frame pops.
+    await pressEnterWith(term, 'exit');
+    expect(term.device).toBe(lan.pc1);
+    expect(term.isInsideSshSession).toBe(false);
+  });
+
+  // RS14 — UI context indicator
+  it('RS14 — getSshContextInfo() reflects the current chain', () => {
+    expect(term.getSshContextInfo()).toEqual({
+      active: false,
+      chain: [],
+      current: null,
+    });
+
+    term.pushRemoteDevice(lan.pc2, 'user', PC2_IP, () => undefined);
+    let info = term.getSshContextInfo();
+    expect(info.active).toBe(true);
+    expect(info.current).toBe(PC2_IP);
+    expect(info.chain).toEqual([{ host: PC2_IP, user: 'user' }]);
+
+    term.pushRemoteDevice(lan.pc3, 'user', PC3_IP, () => undefined);
+    info = term.getSshContextInfo();
+    expect(info.current).toBe(PC3_IP);
+    expect(info.chain.map((f) => f.host)).toEqual([PC2_IP, PC3_IP]);
+
+    term.popRemoteDevice();
+    expect(term.getSshContextInfo().current).toBe(PC2_IP);
+    term.popRemoteDevice();
+    expect(term.getSshContextInfo().active).toBe(false);
+  });
 });
 
 // ── helpers ─────────────────────────────────────────────────────

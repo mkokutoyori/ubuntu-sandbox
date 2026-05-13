@@ -12,7 +12,7 @@ import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdR
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -497,6 +497,7 @@ export class LinuxCommandExecutor {
       case 'who': return { output: cmdWho(c), exitCode: 0 };
       case 'w': return { output: cmdW(c), exitCode: 0 };
       case 'last': return { output: cmdLast(c, args), exitCode: 0 };
+      case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'getent': {
         if (args[0] === 'hosts') return this.handleGetentHosts(args.slice(1));
         return { output: cmdGetent(c, args), exitCode: 0 };
@@ -1438,7 +1439,7 @@ export class LinuxCommandExecutor {
       'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
       'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
       // Users and groups
-      'id', 'whoami', 'groups', 'who', 'w', 'last', 'hostname', 'uname', 'sleep', 'kill',
+      'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
       'useradd', 'usermod', 'userdel', 'passwd', 'chpasswd', 'chage',
       'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',

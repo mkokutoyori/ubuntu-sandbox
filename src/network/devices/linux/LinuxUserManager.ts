@@ -497,16 +497,95 @@ export class LinuxUserManager {
     ].join('\n');
   }
 
-  last(): string {
+  last(args: string[] = []): string {
+    return this.renderUtmpLog('/var/log/wtmp.json', 'wtmp', args, true);
+  }
+
+  lastb(args: string[] = []): string {
+    return this.renderUtmpLog('/var/log/btmp.json', 'btmp', args, false);
+  }
+
+  /**
+   * Render `last` / `lastb` output from a JSON-encoded utmp log.
+   *
+   * The synthetic line for the currently-logged-in user (matching the previous
+   * `last` behaviour) is preserved for wtmp only — the simulator boots with
+   * an empty log otherwise. Real OpenSSH prepends a `reboot` row; we keep
+   * that for parity.
+   */
+  private renderUtmpLog(
+    path: string,
+    label: 'wtmp' | 'btmp',
+    args: string[],
+    includeSyntheticHead: boolean,
+  ): string {
+    const userFilter = args.find((a) => !a.startsWith('-'));
+    const numFlag = args.find((a) => /^-\d+$/.test(a) || a === '-n');
+    const limit = numFlag
+      ? numFlag === '-n'
+        ? parseInt(args[args.indexOf(numFlag) + 1] ?? '0', 10)
+        : Math.abs(parseInt(numFlag, 10))
+      : 0;
+
+    const raw = this.vfs.readFile(path);
+    let entries: Array<{
+      user: string;
+      ip: string;
+      at: number;
+      type?: string;
+      reason?: string;
+      tty?: string;
+    }> = [];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) entries = parsed as typeof entries;
+      } catch {
+        entries = [];
+      }
+    }
+
+    let rows = entries
+      .slice()
+      .reverse()
+      .filter((e) => !userFilter || e.user === userFilter);
+    if (limit > 0) rows = rows.slice(0, limit);
+
+    const lines: string[] = [];
     const now = new Date();
-    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const timeStr = now.toTimeString().slice(0, 5);
-    return [
-      `${this.currentUser.padEnd(8)} pts/0        -                ${dateStr} ${timeStr}   still logged in`,
-      `reboot   system boot  5.4.0-generic    ${dateStr} ${timeStr}   still running`,
-      '',
-      'wtmp begins ' + dateStr,
-    ].join('\n');
+    const headDate = formatLastDate(now);
+    const headTime = now.toTimeString().slice(0, 5);
+
+    if (includeSyntheticHead && !userFilter) {
+      lines.push(
+        `${this.currentUser.padEnd(8)} pts/0        -                ${headDate} ${headTime}   still logged in`,
+      );
+      lines.push(
+        `reboot   system boot  5.4.0-generic    ${headDate} ${headTime}   still running`,
+      );
+    }
+
+    for (const e of rows) {
+      const d = new Date(e.at);
+      const date = formatLastDate(d);
+      const time = d.toTimeString().slice(0, 5);
+      const user = e.user.padEnd(8);
+      const tty = (e.tty ?? 'pts/0').padEnd(12);
+      const from = (e.ip ?? '').padEnd(16);
+      if (label === 'btmp') {
+        lines.push(
+          `${user} ${tty} ${from} ${date} ${time} - ${time} (00:00)`,
+        );
+      } else {
+        lines.push(
+          `${user} ${tty} ${from} ${date} ${time}   still logged in`,
+        );
+      }
+    }
+
+    lines.push('');
+    lines.push(`${label} begins ${headDate}`);
+    return lines.join('\n');
   }
 
   // ─── Filesystem sync ──────────────────────────────────────────────
@@ -534,4 +613,12 @@ export class LinuxUserManager {
     }
     this.vfs.writeFile('/etc/group', groupLines.join('\n') + '\n', 0, 0, 0o022);
   }
+}
+
+function formatLastDate(d: Date): string {
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
 }
