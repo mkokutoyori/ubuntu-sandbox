@@ -292,16 +292,22 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
-      // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout pops
-      // back to the previous device instead of closing the terminal.
-      if (this.sshStack.length > 0) {
-        this.popRemoteDevice();
-        return;
-      }
+      // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout
+      // unwinds in this order:
+      //   1. The active device's su stack (if any) — `exit` from
+      //      `root@remote` returns to `user@remote`, NOT to the local
+      //      terminal.
+      //   2. Once the device is at its root su level, the SSH stack
+      //      frame is popped, returning to the previous device.
+      //   3. If neither is active, the terminal closes.
       const exitResult = this.device.handleExit();
       if (exitResult.inSu) {
         if (exitResult.output) this.addLine(exitResult.output);
         this.syncDeviceState();
+        return;
+      }
+      if (this.sshStack.length > 0) {
+        this.popRemoteDevice();
         return;
       }
       // Signal close — the view/manager will handle it
@@ -557,9 +563,12 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
     if (sftpMeta) {
-      const { userAtHost } = JSON.parse(sftpMeta) as { userAtHost: string };
+      const { userAtHost, batchFile } = JSON.parse(sftpMeta) as {
+        userAtHost: string;
+        batchFile?: string | null;
+      };
       const password = ctx.values.get('sftp_password') ?? '';
-      this.connectAndEnterSftp(userAtHost, password);
+      this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
       return;
     }
     // enter_ssh is no longer set — enterSsh() now calls connectAndEnterSsh()
@@ -650,8 +659,18 @@ export class LinuxTerminalSession extends TerminalSession {
    * handled by the LinuxCommandExecutor fallback (returns a canned error for now).
    */
   private enterSftp(args: string[]): void {
-    // Find the host argument (first non-flag token)
-    const userAtHost = args.find(a => !a.startsWith('-')) ?? '';
+    // Strip flags we care about and find the host argument.
+    let batchFile: string | null = null;
+    const positional: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-b' && i + 1 < args.length) {
+        batchFile = args[++i];
+      } else if (!a.startsWith('-')) {
+        positional.push(a);
+      }
+    }
+    const userAtHost = positional[0] ?? '';
     if (!userAtHost) {
       this.addLine('usage: sftp [options] [user@]host[:path]', 'error');
       this.notify();
@@ -677,16 +696,26 @@ export class LinuxTerminalSession extends TerminalSession {
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set('enter_sftp', JSON.stringify({ userAtHost: displayTarget }));
+          ctx.metadata.set(
+            'enter_sftp',
+            JSON.stringify({ userAtHost: displayTarget, batchFile }),
+          );
         },
       },
     ];
     this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
   }
 
-  private async connectAndEnterSftp(userAtHost: string, password: string): Promise<void> {
+  private async connectAndEnterSftp(
+    userAtHost: string,
+    password: string,
+    batchFile: string | null = null,
+  ): Promise<void> {
     const dev = this.device as unknown as {
-      executor?: { vfs?: unknown; userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined } };
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
       tcpConnect?: (host: string, port: number) => Promise<unknown>;
     };
     const localVfs = dev.executor?.vfs;
@@ -721,9 +750,50 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     this.addLine(banner);
 
+    // BRD SFTP-13 / analysis doc P5: `sftp -b <file>` runs the batch then
+    // exits without installing the interactive sub-shell. Each line of the
+    // batch is echoed with the prompt (mirroring OpenSSH), output captured,
+    // and the session is disconnected at EOF. A leading `-` on a command
+    // suppresses failure (parity with OpenSSH).
+    if (batchFile) {
+      await this.runSftpBatch(session, localVfs, batchFile);
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
+
     this.activeSubShell = new SftpSubShell(session);
     this._inputBuf = '';
     this.notify();
+  }
+
+  private async runSftpBatch(
+    session: SftpSession,
+    vfs: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem,
+    batchPath: string,
+  ): Promise<void> {
+    const raw = vfs.readFile(batchPath);
+    if (raw === null) {
+      this.addLine(`Couldn't open batch file ${batchPath}`, 'error');
+      session.disconnect();
+      return;
+    }
+    const shell = new SftpSubShell(session);
+    const lines = raw.split('\n');
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const ignoreErrors = line.startsWith('-');
+      const cmd = ignoreErrors ? line.slice(1).trim() : line;
+      this.addLine(`${shell.getPrompt()}${cmd}`);
+      const result = shell.processLine(cmd);
+      for (const out of result.output) {
+        if (out) this.addLine(out);
+      }
+      if (result.exit) break;
+      if (!ignoreErrors && hasSftpError(result.output)) break;
+    }
+    session.disconnect();
   }
 
   // ── ssh entry point ─────────────────────────────────────────────
@@ -749,7 +819,8 @@ export class LinuxTerminalSession extends TerminalSession {
     // Reactive approach: connect directly — password (and host-key confirmation)
     // are prompted lazily by TerminalSshInteractionHandler via QueuedTerminalIO,
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
-    // silently without ever asking for a password).
+    // silently without ever asking for a password). `merged` carries
+    // `hashKnownHosts` from CLI `-o` / ~/.ssh/config (analysis doc §1.6).
     await this.connectAndEnterSsh(merged);
   }
 
@@ -760,6 +831,7 @@ export class LinuxTerminalSession extends TerminalSession {
       identityFiles: string[];
       strict: 'yes' | 'no' | 'accept-new';
       command: string | null;
+      hashKnownHosts?: boolean;
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -807,6 +879,8 @@ export class LinuxTerminalSession extends TerminalSession {
       .user(user)
       .port(meta.port)
       .strictHostKeyChecking(meta.strict);
+    // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
+    if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
     }
@@ -955,6 +1029,7 @@ export class LinuxTerminalSession extends TerminalSession {
     identityFiles: string[];
     strict: 'yes' | 'no' | 'accept-new';
     command: string | null;
+    hashKnownHosts?: boolean;
   }): typeof parsed {
     const dev = this.device as unknown as {
       executor?: {
@@ -998,6 +1073,7 @@ export class LinuxTerminalSession extends TerminalSession {
       identityFiles: finalIdentityFiles,
       strict: finalStrict,
       command: parsed.command,
+      hashKnownHosts: parsed.hashKnownHosts ?? entry.hashKnownHosts,
     };
   }
 
@@ -1537,6 +1613,32 @@ export class LinuxTerminalSession extends TerminalSession {
   get isInsideSshSession(): boolean {
     return this.sshStack.length > 0;
   }
+
+  /**
+   * Snapshot of the SSH stack for the UI layer. Returns one entry per
+   * pushed remote, oldest first; `current` is the active host name. The
+   * UI uses this to render an "SSH connected to <host>" banner so the
+   * user always sees they are not on their local machine even though
+   * the prompt and tab-completion now mirror the remote.
+   */
+  getSshContextInfo(): {
+    active: boolean;
+    chain: readonly { host: string; user: string }[];
+    current: string | null;
+  } {
+    const chain = this.sshStack.map((f) => {
+      const at = f.label.indexOf('@');
+      return at >= 0
+        ? { host: f.label.slice(at + 1), user: f.label.slice(0, at) }
+        : { host: f.label, user: f.user };
+    });
+    const current = chain.length > 0 ? chain[chain.length - 1].host : null;
+    return {
+      active: chain.length > 0,
+      chain,
+      current,
+    };
+  }
 }
 
 // ── IP → device resolver (BRD SSH-04) ───────────────────────────
@@ -1578,16 +1680,26 @@ interface ParsedSshArgs {
   identityFiles: string[];
   strict: 'yes' | 'no' | 'accept-new';
   command: string | null;
+  hashKnownHosts?: boolean;
 }
 
 /**
  * Parse `ssh [-p port] [-i identity] [-o option=value] user@host [cmd...]`.
  * Returns null if no host argument is found.
  */
+function hasSftpError(output: readonly string[]): boolean {
+  return output.some((line) =>
+    /Couldn't|No such file|Permission denied|Failure|invalid|command not found/i.test(
+      line,
+    ),
+  );
+}
+
 function parseSshArgs(args: string[]): ParsedSshArgs | null {
   let port = 22;
   const identityFiles: string[] = [];
   let strict: 'yes' | 'no' | 'accept-new' = 'accept-new';
+  let hashKnownHosts: boolean | undefined;
   let host: string | null = null;
   const commandTokens: string[] = [];
 
@@ -1605,6 +1717,8 @@ function parseSshArgs(args: string[]): ParsedSshArgs | null {
       const next = args[++i];
       const m = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(next);
       if (m) strict = m[1].toLowerCase() as ParsedSshArgs['strict'];
+      const h = /^HashKnownHosts=(yes|no|true|false)$/i.exec(next);
+      if (h) hashKnownHosts = /^(yes|true)$/i.test(h[1]);
     } else if (!arg.startsWith('-')) {
       host = arg;
     }
@@ -1616,5 +1730,6 @@ function parseSshArgs(args: string[]): ParsedSshArgs | null {
     identityFiles,
     strict,
     command: commandTokens.length > 0 ? commandTokens.join(' ') : null,
+    hashKnownHosts,
   };
 }

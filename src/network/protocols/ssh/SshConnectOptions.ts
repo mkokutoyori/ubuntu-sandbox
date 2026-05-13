@@ -15,6 +15,9 @@ export interface SshConnectOptions {
   readonly strictHostKeyChecking: StrictHostKeyChecking;
   readonly timeoutMs: number;
   readonly password?: string;
+  /** Mirrors OpenSSH `HashKnownHosts`. When `true`, new entries appended to
+   *  `~/.ssh/known_hosts` use the `|1|<salt>|<hash>` shape. */
+  readonly hashKnownHosts?: boolean;
 }
 
 export class SshConnectOptionsBuilder {
@@ -25,6 +28,7 @@ export class SshConnectOptionsBuilder {
   private _strict: StrictHostKeyChecking = 'yes';
   private _timeoutMs = 30_000;
   private _password?: string;
+  private _hashKnownHosts?: boolean;
 
   static create(): SshConnectOptionsBuilder {
     return new SshConnectOptionsBuilder();
@@ -65,6 +69,11 @@ export class SshConnectOptionsBuilder {
     return this;
   }
 
+  hashKnownHosts(yes: boolean): this {
+    this._hashKnownHosts = yes;
+    return this;
+  }
+
   build(): SshConnectOptions {
     if (!this._host) throw new Error('SshConnectOptions: host is required');
     if (!this._user) throw new Error('SshConnectOptions: user is required');
@@ -76,6 +85,7 @@ export class SshConnectOptionsBuilder {
       strictHostKeyChecking: this._strict,
       timeoutMs: this._timeoutMs,
       password: this._password,
+      hashKnownHosts: this._hashKnownHosts,
     });
   }
 }

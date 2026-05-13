@@ -36,8 +36,8 @@ export class SshKnownHosts {
     this.vfs.chmod(this.path, DEFAULT_MODE);
   }
 
-  addHost(host: string, key: SshHostKey): void {
-    const store = this.load().with(host, key);
+  addHost(host: string, key: SshHostKey, opts: { hashed?: boolean } = {}): void {
+    const store = this.load().with(host, key, opts);
     this.save(store);
   }
 }

@@ -159,12 +159,32 @@ export class WindowsSshServerContext implements ISshServerContext {
         if (!this.config.passwordAuthentication) return false;
         return this.userManager.checkPassword(user, password);
       },
-      // Public-key auth on Windows simulator: not modeled by WindowsUserManager
-      // yet, so deny by default. Adding support is OCP: implement here.
-      checkPublicKey: () => false,
+      // BRD SSH-03-R6: public-key authentication on Windows OpenSSH stores
+      // authorized_keys per-user under C:\Users\<user>\.ssh\. Each line is
+      // `<algorithm> <material> [<comment>]`. We accept a successful match
+      // when both algorithm and material agree.
+      checkPublicKey: (user, publicKey) => {
+        if (!this.userAllowed(user)) return false;
+        if (!this.config.pubkeyAuthentication) return false;
+        if (!this.userManager.getUser(user)) return false;
+        const path = `C:\\Users\\${user}\\.ssh\\authorized_keys`;
+        const result = this.wfs.readFile(path);
+        if (!result.ok || !result.content) return false;
+        return result.content
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('#'))
+          .some((line) => {
+            const parts = line.split(/\s+/);
+            return parts.length >= 2 && parts[1] === publicKey;
+          });
+      },
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
-        return this.config.passwordAuthentication ? ['password'] : [];
+        const methods: AuthMethodType[] = [];
+        if (this.config.pubkeyAuthentication) methods.push('publickey');
+        if (this.config.passwordAuthentication) methods.push('password');
+        return methods;
       },
     };
   }
