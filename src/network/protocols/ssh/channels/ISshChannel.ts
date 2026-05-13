@@ -27,6 +27,12 @@ export interface ISshShellChannel extends ISshChannel {
   resize(cols: number, rows: number): void;
   send(data: string): void;
   onData(handler: (data: string) => void): () => void;
+  /**
+   * Dispatch a single line of shell input to the server's persistent
+   * shell session for this channel. Resolves with the captured output.
+   * Server-side state (cwd, env) is preserved between calls.
+   */
+  runLine(line: string): Promise<ExecResult>;
 }
 
 export interface ISshExecChannel extends ISshChannel {

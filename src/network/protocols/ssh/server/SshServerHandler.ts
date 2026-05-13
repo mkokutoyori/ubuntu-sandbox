@@ -193,6 +193,74 @@ export class SshServerHandler {
           break;
         }
 
+        case 'shell_open': {
+          // Analysis doc §5 P4 — allocate a persistent shell session.
+          if (!userCtx) {
+            conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
+            return;
+          }
+          const channelId = parsed.channelId as number;
+          const cwd =
+            channels.get(channelId)?.cwd ?? userCtx.homeDirectory;
+          channels.set(channelId, {
+            type: 'shell',
+            userCtx,
+            cwd,
+            openedAt: Date.now(),
+          });
+          this.eventBus.emit({
+            kind: 'channel_opened',
+            user: userCtx.username,
+            channelType: 'shell',
+          });
+          conn.write(JSON.stringify({ ok: true, channelId }));
+          break;
+        }
+
+        case 'shell_input': {
+          if (!userCtx) {
+            conn.write(
+              JSON.stringify({
+                stdout: '',
+                stderr: 'not authenticated',
+                exitCode: 255,
+              }),
+            );
+            return;
+          }
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          const cwd = info?.cwd ?? userCtx.homeDirectory;
+          const line = (parsed.data as string | undefined) ?? '';
+          const shell = this.ctx.getShell(userCtx, cwd);
+          void shell.execute(line).then((result) => {
+            conn.write(JSON.stringify(result));
+          });
+          break;
+        }
+
+        case 'shell_close': {
+          const channelId = parsed.channelId as number;
+          const info = channels.get(channelId);
+          if (info && userCtx) {
+            this.eventBus.emit({
+              kind: 'channel_closed',
+              user: userCtx.username,
+              channelType: info.type,
+              durationMs: Date.now() - info.openedAt,
+            });
+          }
+          channels.delete(channelId);
+          conn.write(JSON.stringify({ ok: true, channelId }));
+          break;
+        }
+
+        case 'shell_resize': {
+          // Cosmetic — we don't model a real PTY but emit a hook event
+          // so subscribers (syslogger, tests) can see resize traffic.
+          break;
+        }
+
         default: {
           // Treat as SFTP command if user is authenticated.
           if (!userCtx) {

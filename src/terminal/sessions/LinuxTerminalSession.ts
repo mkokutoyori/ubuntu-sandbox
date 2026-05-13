@@ -35,6 +35,17 @@ import {
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
+import { SshLocalForwarder } from '@/network/protocols/ssh/SshLocalForwarder';
+import { SshRemoteForwarder } from '@/network/protocols/ssh/SshRemoteForwarder';
+import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
+import {
+  parseSshArgs,
+  parseProxyJumpSpec,
+  type LocalForward,
+  type ParsedSshArgs,
+  type ProxyHop,
+  type RemoteForward,
+} from './sshArgs';
 import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -133,8 +144,46 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   getInfoBarContent() {
-    const p = this.getPromptParts();
-    return { left: `${p.user}@${p.hostname}: ${p.path}` };
+    // The InfoBar identifies the local terminal modal — it must NOT change
+    // when the user `ssh`-pushes onto a remote. The colored bash prompt
+    // rendered for every command line still shows the remote host (see
+    // `getPromptParts`), which is the right place to surface that.
+    const local = this.getLocalDevice();
+    const hostname = local.getHostname() || 'localhost';
+    const homeDir =
+      this.localUser === 'root' ? '/root' : `/home/${this.localUser}`;
+    let path = this.localPath;
+    if (path === homeDir) path = '~';
+    else if (path.startsWith(homeDir + '/')) {
+      path = '~' + path.slice(homeDir.length);
+    }
+    return { left: `${this.localUser}@${hostname}: ${path}` };
+  }
+
+  /**
+   * Device the terminal modal is rooted on, i.e. the local host the user
+   * opened the terminal from. Distinct from `this.device`, which points
+   * at the *currently active* device — that may be a remote when SSH
+   * frames are pushed on the stack.
+   */
+  getLocalDevice(): Equipment {
+    return this.sshStack.length === 0
+      ? this.device
+      : this.sshStack[0].device;
+  }
+
+  /** User on the local device (bottom of the SSH stack). */
+  private get localUser(): string {
+    return this.sshStack.length === 0
+      ? this.currentUser
+      : this.sshStack[0].user;
+  }
+
+  /** Path on the local device (bottom of the SSH stack). */
+  private get localPath(): string {
+    return this.sshStack.length === 0
+      ? this.currentPath
+      : this.sshStack[0].path;
   }
 
   async init(): Promise<void> {
@@ -816,6 +865,22 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     // BRD SSH-06: merge ~/.ssh/config defaults under CLI overrides.
     const merged = this.mergeWithSshConfig(parsed);
+    // OpenSSH `-J host1[,host2,...]` (ProxyJump): walk each hop before
+    // opening the final connection. Each hop is pushed onto the SSH
+    // stack so `exit` unwinds one hop at a time, matching real ssh -J.
+    if (merged.jumpHosts && merged.jumpHosts.length > 0) {
+      const hops = merged.jumpHosts.flatMap((h) => [
+        ...parseProxyJumpSpec(h),
+      ]);
+      if (!this.pushSshChain(hops)) {
+        this.addLine(
+          `ssh: could not resolve one or more jump hosts: ${merged.jumpHosts.join(', ')}`,
+          'error',
+        );
+        this.notify();
+        return;
+      }
+    }
     // Reactive approach: connect directly — password (and host-key confirmation)
     // are prompted lazily by TerminalSshInteractionHandler via QueuedTerminalIO,
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
@@ -828,10 +893,14 @@ export class LinuxTerminalSession extends TerminalSession {
     meta: {
       userAtHost: string;
       port: number;
-      identityFiles: string[];
+      identityFiles: readonly string[];
       strict: 'yes' | 'no' | 'accept-new';
       command: string | null;
       hashKnownHosts?: boolean;
+      localForwards?: readonly LocalForward[];
+      remoteForwards?: readonly RemoteForward[];
+      forwardAgent?: boolean;
+      requestTty?: 'yes' | 'no' | 'force';
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -932,6 +1001,13 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     if (meta.command) {
+      // OpenSSH parity: announce PTY allocation BEFORE running the command
+      // when the user explicitly asked for one (`-t` / `-tt`).
+      if (meta.requestTty === 'yes' || meta.requestTty === 'force') {
+        this.addLine(
+          'Pseudo-terminal will be allocated because a request was made.',
+        );
+      }
       // BRD SSH-05: non-interactive — run the command, print output, close.
       const channelResult = session.openExecChannel(meta.command);
       if (!isOk(channelResult)) {
@@ -967,9 +1043,31 @@ export class LinuxTerminalSession extends TerminalSession {
     const lastLogin = await this.tryReadLastLogin(session, user);
     if (lastLogin) this.addLine(lastLogin);
 
+    // OpenSSH `-L`: register local-port forwarders on the local device,
+    // each tunnelling new connections through this SSH session.
+    const forwarders = this.installLocalForwards(session, host, meta);
+    // OpenSSH `-R`: needs the remote device — registered only when the
+    // SSH peer resolves to a local Equipment instance (the common case
+    // for the tutorial LAN).
     const remoteDevice = findLinuxMachineByIp(host);
+    const remoteForwarders = remoteDevice
+      ? this.installRemoteForwards(session, host, remoteDevice, meta)
+      : [];
+    // OpenSSH `-A`: shadow-copy the local SshAgent into the remote one,
+    // so `ssh-add -l` on the remote (and any further `ssh` from there)
+    // sees the client's keys for the duration of the session.
+    const agentForwarding = remoteDevice
+      ? this.installAgentForwarding(remoteDevice, meta)
+      : null;
+    const onSessionEnd = () => {
+      for (const f of forwarders) f.dispose();
+      for (const f of remoteForwarders) f.dispose();
+      agentForwarding?.detach();
+      session.disconnect();
+    };
+
     if (remoteDevice) {
-      this.pushRemoteDevice(remoteDevice, user, host, () => session.disconnect());
+      this.pushRemoteDevice(remoteDevice, user, host, onSessionEnd);
       return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
@@ -1023,14 +1121,7 @@ export class LinuxTerminalSession extends TerminalSession {
    * on top, and rewrite the final userAtHost when the config maps an alias
    * to a different HostName / User. CLI flags win over the file.
    */
-  private mergeWithSshConfig(parsed: {
-    userAtHost: string;
-    port: number;
-    identityFiles: string[];
-    strict: 'yes' | 'no' | 'accept-new';
-    command: string | null;
-    hashKnownHosts?: boolean;
-  }): typeof parsed {
+  private mergeWithSshConfig(parsed: ParsedSshArgs): ParsedSshArgs {
     const dev = this.device as unknown as {
       executor?: {
         vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
@@ -1074,6 +1165,11 @@ export class LinuxTerminalSession extends TerminalSession {
       strict: finalStrict,
       command: parsed.command,
       hashKnownHosts: parsed.hashKnownHosts ?? entry.hashKnownHosts,
+      jumpHosts: parsed.jumpHosts,
+      localForwards: parsed.localForwards,
+      remoteForwards: parsed.remoteForwards,
+      forwardAgent: parsed.forwardAgent,
+      requestTty: parsed.requestTty,
     };
   }
 
@@ -1615,6 +1711,131 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
+   * OpenSSH `ssh -J <hops>` ProxyJump support. Pushes one SSH stack
+   * frame per hop in order, resolving each `host` to a local Equipment
+   * via the SSH-LAN registry. Returns `false` (and rolls back) if any
+   * hop fails to resolve.
+   *
+   * For the simulator, "connecting" to a LAN-local device is the same
+   * as pushing it on the stack — the underlying SSH session is what
+   * `connectAndEnterSsh` opens afterwards for the final hop. Each hop
+   * defaults its user to the previous hop's user when omitted.
+   */
+  /**
+   * Register `-L localPort:remoteHost:remotePort` forwarders on the local
+   * device for every entry in `meta.localForwards`. Returns the list of
+   * registered forwarders so the caller can dispose them when the SSH
+   * session ends.
+   */
+  private installLocalForwards(
+    session: SshSession,
+    sshHost: string,
+    meta: { localForwards?: readonly LocalForward[] },
+  ): SshLocalForwarder[] {
+    const forwards = meta.localForwards ?? [];
+    if (forwards.length === 0) return [];
+    const localDevice = this.getLocalDevice() as unknown as
+      import('@/network/devices/EndHost').EndHost;
+    if (typeof (localDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+      return [];
+    }
+    const out: SshLocalForwarder[] = [];
+    for (const fwd of forwards) {
+      const forwarder = new SshLocalForwarder(localDevice, session, {
+        localPort: fwd.localPort,
+        remoteHost: fwd.remoteHost,
+        remotePort: fwd.remotePort,
+        sshHost,
+      });
+      forwarder.register();
+      this.addLine(
+        `Forwarding TCP ${fwd.localPort} → ${fwd.remoteHost}:${fwd.remotePort} via ${sshHost}`,
+      );
+      out.push(forwarder);
+    }
+    return out;
+  }
+
+  /**
+   * Mirror of {@link installLocalForwards} for `-R`. Each entry opens
+   * a listener on the *remote* device for `remotePort`. Returns the
+   * list of registered forwarders so the caller can dispose them
+   * when the SSH session ends.
+   */
+  private installRemoteForwards(
+    session: SshSession,
+    sshHost: string,
+    remoteDeviceRaw: Equipment,
+    meta: { remoteForwards?: readonly RemoteForward[] },
+  ): SshRemoteForwarder[] {
+    const forwards = meta.remoteForwards ?? [];
+    if (forwards.length === 0) return [];
+    const remoteDevice = remoteDeviceRaw as unknown as
+      import('@/network/devices/EndHost').EndHost;
+    if (typeof (remoteDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+      return [];
+    }
+    const out: SshRemoteForwarder[] = [];
+    for (const fwd of forwards) {
+      const forwarder = new SshRemoteForwarder(remoteDevice, session, {
+        remotePort: fwd.remotePort,
+        localHost: fwd.localHost,
+        localPort: fwd.localPort,
+        sshHost,
+      });
+      forwarder.register();
+      this.addLine(
+        `Forwarding ${sshHost}:${fwd.remotePort} → ${fwd.localHost}:${fwd.localPort} (reverse)`,
+      );
+      out.push(forwarder);
+    }
+    return out;
+  }
+
+  /**
+   * Wire OpenSSH `-A` agent forwarding: copy the local device's
+   * SshAgent into the remote device's SshAgent. Both ends look up
+   * their agent via the executor (LinuxCommandExecutor exposes
+   * `sshAgent`). Returns null when forwarding is disabled or either
+   * end is not a fully-fledged LinuxPC.
+   */
+  private installAgentForwarding(
+    remoteDeviceRaw: Equipment,
+    meta: { forwardAgent?: boolean },
+  ): SshAgentForwarding | null {
+    if (!meta.forwardAgent) return null;
+    const localExec = (this.getLocalDevice() as unknown as {
+      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
+    }).executor;
+    const remoteExec = (remoteDeviceRaw as unknown as {
+      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
+    }).executor;
+    if (!localExec?.sshAgent || !remoteExec?.sshAgent) return null;
+    const fwd = new SshAgentForwarding(localExec.sshAgent, remoteExec.sshAgent);
+    fwd.attach();
+    return fwd;
+  }
+
+  pushSshChain(hops: readonly ProxyHop[]): boolean {
+    const pushed: number[] = [];
+    let inheritedUser = this.currentUser;
+    for (const hop of hops) {
+      const remote = findLinuxMachineByIp(hop.host);
+      if (!remote) {
+        // Roll back any successful hops so the stack is unchanged.
+        for (let i = 0; i < pushed.length; i++) this.popRemoteDevice();
+        return false;
+      }
+      const user = hop.user ?? inheritedUser;
+      const label = `${user}@${hop.host}`;
+      this.pushRemoteDevice(remote, user, label, () => undefined);
+      pushed.push(1);
+      inheritedUser = user;
+    }
+    return true;
+  }
+
+  /**
    * Snapshot of the SSH stack for the UI layer. Returns one entry per
    * pushed remote, oldest first; `current` is the active host name. The
    * UI uses this to render an "SSH connected to <host>" banner so the
@@ -1674,62 +1895,10 @@ function findLinuxMachineByIp(targetIp: string): Equipment | null {
 
 // ── ssh CLI argument parser ─────────────────────────────────────
 
-interface ParsedSshArgs {
-  userAtHost: string;
-  port: number;
-  identityFiles: string[];
-  strict: 'yes' | 'no' | 'accept-new';
-  command: string | null;
-  hashKnownHosts?: boolean;
-}
-
-/**
- * Parse `ssh [-p port] [-i identity] [-o option=value] user@host [cmd...]`.
- * Returns null if no host argument is found.
- */
 function hasSftpError(output: readonly string[]): boolean {
   return output.some((line) =>
     /Couldn't|No such file|Permission denied|Failure|invalid|command not found/i.test(
       line,
     ),
   );
-}
-
-function parseSshArgs(args: string[]): ParsedSshArgs | null {
-  let port = 22;
-  const identityFiles: string[] = [];
-  let strict: 'yes' | 'no' | 'accept-new' = 'accept-new';
-  let hashKnownHosts: boolean | undefined;
-  let host: string | null = null;
-  const commandTokens: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (host) {
-      commandTokens.push(arg);
-      continue;
-    }
-    if (arg === '-p' && i + 1 < args.length) {
-      port = Number.parseInt(args[++i], 10) || 22;
-    } else if (arg === '-i' && i + 1 < args.length) {
-      identityFiles.push(args[++i]);
-    } else if (arg === '-o' && i + 1 < args.length) {
-      const next = args[++i];
-      const m = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(next);
-      if (m) strict = m[1].toLowerCase() as ParsedSshArgs['strict'];
-      const h = /^HashKnownHosts=(yes|no|true|false)$/i.exec(next);
-      if (h) hashKnownHosts = /^(yes|true)$/i.test(h[1]);
-    } else if (!arg.startsWith('-')) {
-      host = arg;
-    }
-  }
-  if (!host) return null;
-  return {
-    userAtHost: host,
-    port,
-    identityFiles,
-    strict,
-    command: commandTokens.length > 0 ? commandTokens.join(' ') : null,
-    hashKnownHosts,
-  };
 }

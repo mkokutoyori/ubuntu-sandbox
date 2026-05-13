@@ -110,6 +110,101 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 `vite.config.ts` ajoute la configuration `coverage` (provider v8, rapport HTML/text/lcov, seuils 85/85/85/75 lignes/fonctions/statements/branches) ciblée sur `src/network/protocols/ssh/**`. `package.json` expose `npm run test:coverage`. `@vitest/coverage-v8` installé en devDep.
 
+### 1.9 [FIX UX] L'InfoBar du terminal reste sur la machine locale en SSH
+
+**Symptôme reporté** : « quand on entre en ssh, le header de terminal devient celui de la machine hote ». L'utilisateur perd le repère visuel qu'il est sur **son** terminal local.
+
+**Correctif** :
+1. Nouveau getter `LinuxTerminalSession.getLocalDevice()` qui retourne le device au fond de la pile SSH (= la machine locale d'origine). Les deux nouveaux accesseurs privés `localUser` / `localPath` exposent les valeurs sauvegardées à la première poussée.
+2. `getInfoBarContent()` lit désormais ces accesseurs au lieu de `this.device` / `this.currentUser` / `this.currentPath`. Le bandeau (au-dessus du scrollback) reste donc figé sur l'identité locale.
+3. Le prompt bash inline rendu pour chaque commande continue d'utiliser `getPromptParts()` (qui reflète le device courant) — c'est le bon endroit pour signaler la machine cible. La bannière sky-blue (`SshContextBanner`) reste l'indication principale qu'on est en SSH.
+
+**Tests** : `H1..H7` dans `ssh-lan-subshell-header.test.ts` (header local sous SSH, sous chaînes nested, après pop, `getLocalDevice` est stable, prompt reflète bien le remote).
+
+### 1.10 [FEAT] ProxyJump (`ssh -J`)
+
+**Symptôme** : `ssh -J jumpHost target` n'était pas reconnu — pourtant un classique des tutoriels (bastion → cible interne).
+
+**Correctif** :
+1. Nouveau module pur `src/terminal/sessions/sshArgs.ts` exposant `parseSshArgs`, `parseProxyJumpSpec`, `parseLocalForwardSpec` + types `ParsedSshArgs` / `ProxyHop` / `LocalForward`. Le parseur in-line de `LinuxTerminalSession` est supprimé au profit de ce module testable.
+2. `parseSshArgs` reconnaît `-J host1[,host2,...]` et `-o ProxyJump=...`. `parseProxyJumpSpec` éclate la liste en `{ user, host }[]`.
+3. Nouvelle méthode publique `LinuxTerminalSession.pushSshChain(hops)` : pour chaque hop, résout via `findLinuxMachineByIp` et `pushRemoteDevice`. Rollback automatique en cas d'échec de résolution. Chaque hop hérite du user du précédent quand l'utilisateur n'est pas spécifié.
+4. `enterSsh` appelle `pushSshChain` avant d'ouvrir la connexion finale, ce qui empile une frame SSH par hop. `exit` / `logout` unwind donc un saut à la fois (parité OpenSSH).
+
+**Tests** : `J1..J7` dans `ssh-lan-proxyjump.test.ts` — parser (hop unique, comma-list, `-o`, vide), `parseProxyJumpSpec` round-trip, push de chaîne, `exit` qui unwind hop-by-hop.
+
+### 1.11 [FEAT] Port forwarding `-L`
+
+**Symptôme** : pas de tunnel TCP via SSH (`ssh -L localPort:remoteHost:remotePort`).
+
+**Correctif** :
+1. `parseLocalForwardSpec` accepte les deux formes OpenSSH (`8080:host:80` et `bind:8080:host:80`), rejette les ports ≤ 0.
+2. `parseSshArgs` collecte une liste de `LocalForward` à partir de `-L` répétés et `-o LocalForward=...`.
+3. Nouveau `SshLocalForwarder` (`src/network/protocols/ssh/SshLocalForwarder.ts`) : pose un listener TCP sur le `localPort` du device local, et bridge chaque connexion entrante via un canal `exec` SSH lançant `nc remoteHost remotePort` côté serveur. `dispose()` retire le listener.
+4. `LinuxTerminalSession.installLocalForwards` instantie un forwarder par entrée `-L` après que `connectAndEnterSsh` ait authentifié la session. Chaque listener est disposé quand la session SSH se ferme.
+
+**Tests** : `L1..L7` dans `ssh-lan-localforward.test.ts` (parser 3-part / 4-part / invalide, collecte multi-`-L`, `-o LocalForward=`, listener observable, `dispose` libère).
+
+### 1.12 [FEAT] Reverse port forwarding `-R`
+
+**Symptôme** : pas de tunnel inverse (`ssh -R remotePort:localHost:localPort`) — manquait pour les scénarios de bastion publiant un service local vers l'extérieur.
+
+**Correctif** :
+1. Nouveau `parseRemoteForwardSpec` symétrique à `parseLocalForwardSpec` (3 / 4 parts, ports > 0).
+2. `parseSshArgs` collecte `RemoteForward[]` depuis `-R` répétés et `-o RemoteForward=...`.
+3. Nouveau `SshRemoteForwarder` (`src/network/protocols/ssh/SshRemoteForwarder.ts`) : pose le listener sur le device **distant**, bridge via canal `exec` SSH lançant `nc localHost localPort` côté client.
+4. `LinuxTerminalSession.installRemoteForwards` instancie un forwarder par `-R` après authentification. Listener disposé à la fin de la session.
+
+**Tests** : `R1..R7` dans `ssh-lan-remoteforward.test.ts`.
+
+### 1.13 [FEAT] `ssh-agent` + `ssh-add` (cache de clés en mémoire)
+
+**Symptôme** : pas de cache de clés. Chaque `ssh` re-lit les fichiers d'identité du disque.
+
+**Correctif** :
+1. Nouvelle classe `SshAgent` (`src/network/protocols/ssh/SshAgent.ts`) : map `path → AgentKey { material, fingerprint, algorithm, bits, comment }`. `add(path, vfs)`, `remove`, `removeAll`, `addAll(home, vfs)` (parcours canonique ed25519 → rsa → ecdsa → dsa).
+2. `LinuxCommandExecutor` expose `sshAgent: SshAgent` (un par device).
+3. Nouveau `handleSshAdd(args)` dans `LinuxCommandExecutor` qui implémente :
+   - `ssh-add` (sans args) : charge les identités par défaut du `$HOME/.ssh/`.
+   - `ssh-add <path>` : charge un identité explicite.
+   - `ssh-add -l` : liste les fingerprints au format OpenSSH `<bits> SHA256:<token> <path> (<ALGO>)`.
+   - `ssh-add -L` : longue forme (matériel public).
+   - `ssh-add -d <path>` : supprime une identité.
+   - `ssh-add -D` : supprime toutes les identités.
+
+**Tests** : `A1..A9` dans `ssh-lan-agent.test.ts`.
+
+### 1.14 [FEAT] Agent forwarding `ssh -A`
+
+**Symptôme** : pas de moyen de relayer le ssh-agent local vers la machine distante.
+
+**Correctif** :
+1. `parseSshArgs` reconnaît `-A` et `-o ForwardAgent=yes|no` → `forwardAgent: boolean`.
+2. Nouvelle classe `SshAgentForwarding` (`src/network/protocols/ssh/SshAgentForwarding.ts`) : shadow-copie chaque `AgentKey` local dans l'agent distant, mémorise les chemins installés. `attach()` est idempotent, `detach()` ne retire que ce qu'il a posé (les clés pré-existantes côté distant survivent).
+3. `LinuxTerminalSession.installAgentForwarding` instancie le forwarding quand `meta.forwardAgent` est vrai et que le device distant est résolvable. `detach()` au teardown de la session.
+
+**Tests** : `FA1..FA6` dans `ssh-lan-forwardagent.test.ts`.
+
+### 1.15 [FEAT] `ssh -t` + canal shell PTY persistant
+
+**Symptôme** : le canal `shell` (`ISshShellChannel`) n'était pas réellement câblé côté serveur. Chaque ligne d'un sous-shell distant passait par un canal `exec` jetable, perdant l'état entre commandes. Pas non plus de `-t` / `-T` / `-tt`.
+
+**Correctif** :
+1. **Parser** : `parseSshArgs` reconnaît `-t` (`requestTty='yes'`), `-tt` (`'force'`), `-T` (`'no'`), `-o RequestTTY=yes|no|force|auto`.
+2. **Options** : `SshConnectOptions.requestTty` + setter `SshConnectOptionsBuilder.requestTty()`.
+3. **Wire protocol simulateur** :
+   - `client → server  { op: 'shell_open',  channelId }`
+   - `server → client  { ok: true, channelId }`
+   - `client → server  { op: 'shell_input', channelId, data: '<line>' }`
+   - `server → client  { stdout, stderr, exitCode }`
+   - `client → server  { op: 'shell_close', channelId }`
+   - `client → server  { op: 'shell_resize', channelId, cols, rows }` (hook, observable côté bus)
+4. **Serveur** (`SshServerHandler`) : trois nouveaux ops `shell_open` / `shell_input` / `shell_close`. `shell_open` alloue une session shell persistante (référencée par `channelId`), dispatch `shell_input` à `ctx.getShell(userCtx, cwd).execute(line)`. Émet `channel_opened` (kind: 'shell') / `channel_closed` (avec durée). État `cwd` partagé via l'exécuteur du device (les commandes successives voient le même `cd`).
+5. **Client** (`SshShellChannel`) : envoie `shell_open` à l'ouverture, expose `runLine(line): Promise<ExecResult>`, route la réponse JSON vers `onData` ET la résout vers le promise du caller. `close()` envoie `shell_close`.
+6. **Notice OpenSSH** : `LinuxTerminalSession.connectAndEnterSsh` affiche `Pseudo-terminal will be allocated because a request was made.` quand `meta.command` est posé ET `meta.requestTty ∈ {'yes','force'}` — parité OpenSSH.
+
+**Tests** : `T1..T9` dans `ssh-lan-pty.test.ts` (parser, builder, `shell_open` round-trip, `shell_input` qui dispatch, `channel_closed` émis, notice `-t` inline).
+
 ---
 
 ## 2. Faiblesses structurelles connues
@@ -261,9 +356,9 @@ Ordre de priorité, du plus impactant au plus accessoire :
 1. ~~Bandeau UI SSH~~ → corrigé §1.2
 2. ~~Auth clé publique Windows~~ → corrigé §1.3
 3. ~~`/var/log/auth.log`~~ → corrigé §1.4
-4. **`ssh -t` + canal shell PTY** — pour permettre `top`, `htop`, `less` en interactif. Implique d'ajouter un `op:'shell_input'` côté serveur. **Reste à faire**.
+4. ~~`ssh -t` + canal shell PTY~~ → corrigé §1.15. `top`/`htop`/`less` en streaming continu reste à wirer si besoin.
 5. ~~`sftp -b` mode batch~~ → corrigé §1.7
-6. **Port forwarding `-L`** — pour les scénarios pédagogiques (tunnel HTTP). **Reste à faire**.
+6. ~~Port forwarding `-L`~~ → corrigé §1.11. ~~`-R`~~ → §1.12. ~~`-A` + `ssh-agent`/`ssh-add`~~ → §1.13 / §1.14. Reste `-D` (SOCKS dynamic) si besoin.
 7. ~~Coverage report~~ → corrigé §1.8
 8. ~~Hash `known_hosts`~~ → corrigé §1.6
 9. ~~`wtmp`/`btmp`~~ → corrigé §1.5
@@ -284,10 +379,10 @@ Ordre de priorité, du plus impactant au plus accessoire :
 
 ## 7. Inventaire final — état du module
 
-- **30 fichiers source** sous `src/network/protocols/ssh/`
-- **12 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **321 / 321** scénarios verts (dont `ssh-lan-fixes.test.ts` F1..F7 et `ssh-lan-gap.test.ts` G1..G9)
+- **34 fichiers source** sous `src/network/protocols/ssh/` (`SshLocalForwarder`, `SshRemoteForwarder`, `SshAgent`, `SshAgentForwarding`, refonte de `SshShellChannel` avec wire-protocol `shell_open` / `shell_input` / `shell_close`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
+- **25 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **474 / 474** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`, `T1..T9`).
 - **3 fichiers d'intégration côté terminal** : `LinuxTerminalSession`, `RemoteShellSubShell`, `SftpSubShell`
-- **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC`
-- **Reste du plan §5** : `ssh -t` shell PTY (P4) et port forwarding `-L`/`-R`/`-D` (P6).
+- **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC` (+ `LinuxCommandExecutor` qui possède désormais un `SshAgent`)
+- **Reste du plan §5** : dynamic forwarding `-D` (SOCKS) — facultatif, pattern réutilisable de §1.11.
 - **Couverture** : `npm run test:coverage` (provider v8, cible 85/85/85/75 sur `src/network/protocols/ssh/**`).
 - **BRD** : section 0 récap + statuts inline pour chaque exigence
