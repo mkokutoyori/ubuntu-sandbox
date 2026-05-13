@@ -59,6 +59,8 @@ export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
+import { NATEngine } from './router/NATEngine';
+export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
@@ -186,6 +188,9 @@ export abstract class Router extends Equipment {
   // ── IPSec Engine ─────────────────────────────────────────────
   private ipsecEngine: IPSecEngine | null = null;
 
+  // ── NAT Engine ───────────────────────────────────────────────
+  private natEngine = new NATEngine();
+
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
 
@@ -221,6 +226,14 @@ export abstract class Router extends Equipment {
       getIPv6AccessLists: () => (this as any).ipv6AccessLists,
     });
     this.shell = this.createShell();
+    this.natEngine.setACLMatchFn((aclId, srcIP) => {
+      const pkt = { type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any;
+      return this.aclEngine.evaluateACLByName(String(aclId), pkt) !== 'deny';
+    });
+    this.natEngine.setInterfaceIPFn((iface) => {
+      const port = this.ports.get(iface);
+      return port?.getIPAddress()?.toString() ?? null;
+    });
     this.createPorts();
     this._setupPortMonitoring();
   }
@@ -382,7 +395,14 @@ export abstract class Router extends Equipment {
       const isVirtual = /^(Tunnel|Loopback)/i.test(route.iface);
       if (!isVirtual) {
         const port = this.ports.get(route.iface);
-        if (port && !port.isConnected()) continue;
+        if (port && !port.isConnected()) {
+          // Interface went down — clear any IPSec SAs using this interface
+          // (mirrors IOS: "line protocol down" triggers SA teardown)
+          if (this.ipsecEngine) {
+            this.ipsecEngine.clearSAsForInterface(route.iface);
+          }
+          continue;
+        }
       }
 
       const netInt = route.network.toUint32();
@@ -579,6 +599,10 @@ export abstract class Router extends Equipment {
         `${this.name}: totalLength ${ipPkt.totalLength} < header ${ipPkt.ihl * 4}, dropping`);
       return;
     }
+
+    // NAT PREROUTING (DNAT): rewrite destination before routing decision
+    const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
+    if (natInbound) ipPkt = natInbound;
 
     // Phase C: Forwarding Decision
 
@@ -844,6 +868,17 @@ export abstract class Router extends Equipment {
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
 
+    // Phase E.2a: ICMP Redirect (RFC 1812 §5.2.7.2)
+    // Send redirect when egress == ingress and source is on-link — host can reach next-hop directly.
+    if (route.iface === inPort && route.nextHop) {
+      const inPortObj = this.ports.get(inPort);
+      const inPortIP = inPortObj?.getIPAddress();
+      const inPortMask = inPortObj?.getSubnetMask();
+      if (inPortIP && inPortMask && ipPkt.sourceIP.isInSameSubnet(inPortIP, inPortMask)) {
+        this.sendICMPRedirect(inPort, ipPkt, route.nextHop);
+      }
+    }
+
     // Phase E.2b: Outbound ACL check
     const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');
     if (outboundACL !== null) {
@@ -854,6 +889,10 @@ export abstract class Router extends Equipment {
         return;
       }
     }
+
+    // NAT POSTROUTING (SNAT/PAT): rewrite source before sending
+    const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort);
+    if (natOutbound) fwdPkt = natOutbound;
 
     // Phase E.2c: SPD outbound check (RFC 4301 §4.4.1) + IPSec encryption
     if (this.ipsecEngine) {
@@ -979,6 +1018,51 @@ export abstract class Router extends Equipment {
       });
     } else {
       this.queueAndResolve(errorIP, route.iface, nextHopIP, outPort);
+    }
+  }
+
+  /**
+   * Send ICMP Redirect (Type 5, Code 1 — Redirect for Host) back to the source.
+   * Tells the originating host to send future packets directly to `redirectGW`.
+   * RFC 792; RFC 1812 §5.2.7.
+   */
+  private sendICMPRedirect(inPort: string, offendingPkt: IPv4Packet, redirectGW: IPAddress): void {
+    const inPortObj = this.ports.get(inPort);
+    if (!inPortObj) return;
+    const myIP = inPortObj.getIPAddress();
+    if (!myIP) return;
+
+    const redirectICMP: ICMPPacket = {
+      type: 'icmp',
+      icmpType: 'redirect',
+      code: 1, // Redirect for Host
+      id: 0, sequence: 0, dataSize: 0,
+      gateway: redirectGW,
+      originalPacket: offendingPkt,
+    };
+
+    const redirectIP = createIPv4Packet(
+      myIP, offendingPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
+      redirectICMP, 8,
+    );
+
+    this.counters.icmpOutMsgs++;
+
+    const route = this.lookupRoute(offendingPkt.sourceIP);
+    if (!route) return;
+
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return;
+
+    const nextHopIP = route.nextHop || offendingPkt.sourceIP;
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(route.iface, {
+        srcMAC: outPort.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: redirectIP,
+      });
+    } else {
+      this.queueAndResolve(redirectIP, route.iface, nextHopIP, outPort);
     }
   }
 
@@ -1377,6 +1461,9 @@ export abstract class Router extends Equipment {
       });
     });
   }
+
+  /** @internal Used by CLI shells for NAT configuration */
+  _getNATEngine(): NATEngine { return this.natEngine; }
 
   /** @internal Lazily create + return the IPSec engine for this router */
   _getOrCreateIPSecEngine(): IPSecEngine {

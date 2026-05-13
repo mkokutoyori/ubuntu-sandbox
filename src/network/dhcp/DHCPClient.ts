@@ -28,6 +28,17 @@ import {
   createDefaultClientState,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
+import {
+  DHCPClientSignalStore,
+  makeReadonlyDHCPClientObservables,
+  projectDhcpClientIfaces,
+  projectDhcpClientStats,
+  type DHCPClientObservables,
+} from './observables';
+import { DHCPClientSignalRefreshActor } from './actors';
 
 /** Reference to a connected DHCP server (for simulated DORA) */
 interface ServerRef {
@@ -69,6 +80,82 @@ export class DHCPClient implements IProtocolEngine {
 
   private running = false;
 
+  // ─── Reactive plumbing (Phase 4b2-DHCP) ────────────────────────────
+  private busOverride: IEventBus | null = null;
+  private schedulerOverride: IScheduler | null = null;
+  private readonly timers = new TimerSet(() => this.getScheduler());
+  private readonly signalStore = new DHCPClientSignalStore();
+  /** Read-only observables (ifaces, stats). */
+  readonly observables: DHCPClientObservables = makeReadonlyDHCPClientObservables(this.signalStore);
+  private signalRefreshActor: DHCPClientSignalRefreshActor | null = null;
+  /** Optional device id stamped on every event. Set via setDeviceId(). */
+  private deviceId: string = '';
+  private hostname: string = '';
+
+  // Counters feeding projectDhcpClientStats.
+  private discoversSent = 0;
+  private offersReceived = 0;
+  private requestsSent = 0;
+  private acksReceived = 0;
+  private naksReceived = 0;
+  private leasesGranted = 0;
+  private leasesExpired = 0;
+  private leasesReleased = 0;
+  private conflicts = 0;
+
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+    this.attachActors();
+  }
+  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  /** Bind the client to a host device so events carry deviceId. */
+  setDeviceId(id: string, hostname?: string): void {
+    this.deviceId = id;
+    if (hostname !== undefined) this.hostname = hostname;
+  }
+  getDeviceId(): string { return this.deviceId; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+  private deviceRef() { return { deviceId: this.deviceId, hostname: this.hostname }; }
+
+  private attachActors(): void {
+    this.signalRefreshActor?.stop();
+    this.signalRefreshActor = new DHCPClientSignalRefreshActor(this.getBus(), this);
+    this.signalRefreshActor.start();
+  }
+
+  /** [actor-API] Refresh ifaces + stats. */
+  _refreshAll(): void {
+    this.signalStore.ifaces.set(projectDhcpClientIfaces(this.ifaceStates));
+    this._refreshStats();
+  }
+
+  /** [actor-API] Refresh stats only. */
+  _refreshStats(): void {
+    this.signalStore.stats.set(projectDhcpClientStats({
+      running: this.running,
+      ifaceStates: this.ifaceStates,
+      discoversSent: this.discoversSent,
+      offersReceived: this.offersReceived,
+      requestsSent: this.requestsSent,
+      acksReceived: this.acksReceived,
+      naksReceived: this.naksReceived,
+      leasesGranted: this.leasesGranted,
+      leasesExpired: this.leasesExpired,
+      leasesReleased: this.leasesReleased,
+      conflicts: this.conflicts,
+    }));
+  }
+
+  /** Internal: emit a state-change event on the bus. */
+  private emitStateChange(iface: string, oldState: string, newState: string, cause: string): void {
+    if (oldState === newState) return;
+    this.getBus().publish({
+      topic: 'dhcp.client.state-changed',
+      payload: { ...this.deviceRef(), iface, oldState, newState, cause },
+    });
+  }
+
   constructor(
     getMACForIface: (iface: string) => string,
     configureIP: (iface: string, ip: string, mask: string, gateway: string | null) => void,
@@ -77,16 +164,37 @@ export class DHCPClient implements IProtocolEngine {
     this.getMACForIface = getMACForIface;
     this.configureIP = configureIP;
     this.clearIP = clearIP;
+    this.attachActors();
   }
 
   // ─── IProtocolEngine ────────────────────────────────────────────────
 
-  start(): void { this.running = true; }
+  start(): void {
+    this.running = true;
+    this.signalRefreshActor?.start();
+    this.getBus().publish({
+      topic: 'dhcp.engine.started',
+      payload: { ...this.deviceRef(), role: 'client' },
+    });
+    this._refreshAll();
+  }
 
   stop(): void {
     this.running = false;
+    this.timers.clearAll();
+    for (const [, st] of this.ifaceStates) {
+      st.renewalTimer = null;
+      st.rebindingTimer = null;
+      st.expirationTimer = null;
+    }
     this.ifaceStates.clear();
     this.connectedServers = [];
+    this.signalRefreshActor?.stop();
+    this.getBus().publish({
+      topic: 'dhcp.engine.stopped',
+      payload: { ...this.deviceRef(), role: 'client' },
+    });
+    this._refreshAll();
   }
 
   isRunning(): boolean { return this.running; }
@@ -197,8 +305,15 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     // SELECTING: Send DISCOVER to all servers, pick first OFFER
+    this.emitStateChange(iface, 'INIT', 'SELECTING', 'DISCOVER');
     state.state = 'SELECTING';
     let offer: (DHCPOfferResult & { serverRef: ServerRef }) | null = null;
+
+    this.discoversSent++;
+    this.getBus().publish({
+      topic: 'dhcp.discover.sent',
+      payload: { ...this.deviceRef(), iface, xid: state.xid },
+    });
 
     for (const ref of this.connectedServers) {
       const result = ref.server.processDiscover({
@@ -214,6 +329,17 @@ export class DHCPClient implements IProtocolEngine {
           continue;
         }
         offer = { ...result, serverRef: ref };
+        this.offersReceived++;
+        this.getBus().publish({
+          topic: 'dhcp.offer.received',
+          payload: {
+            ...this.deviceRef(),
+            iface,
+            serverIp: result.serverIdentifier,
+            offeredIp: result.ip,
+            leaseTimeSec: result.pool.leaseDuration,
+          },
+        });
         break;
       }
     }
@@ -234,7 +360,19 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`DHCPOFFER of ${offer.ip} from ${offer.serverIdentifier}`);
 
     // REQUESTING: Send REQUEST with Option 50 (Requested IP) and Option 54 (Server Identifier)
+    this.emitStateChange(iface, 'SELECTING', 'REQUESTING', 'OFFER');
     state.state = 'REQUESTING';
+    this.requestsSent++;
+    this.getBus().publish({
+      topic: 'dhcp.request.sent',
+      payload: {
+        ...this.deviceRef(),
+        iface,
+        serverIp: offer.serverIdentifier,
+        requestedIp: offer.ip,
+        xid: state.xid,
+      },
+    });
     const ackResult = offer.serverRef.server.processRequest({
       clientMAC: mac,
       xid: state.xid,
@@ -245,6 +383,12 @@ export class DHCPClient implements IProtocolEngine {
 
     if (!ackResult) {
       // NAK
+      this.naksReceived++;
+      this.getBus().publish({
+        topic: 'dhcp.nak.received',
+        payload: { ...this.deviceRef(), iface, serverIp: offer.serverIdentifier },
+      });
+      this.emitStateChange(iface, 'REQUESTING', 'INIT', 'NAK');
       state.state = 'INIT';
       state.logs.push(`DHCPNAK from ${offer.serverIdentifier} - restarting`);
       if (verbose) {
@@ -254,6 +398,7 @@ export class DHCPClient implements IProtocolEngine {
       }
       return lines.join('\n');
     }
+    this.acksReceived++;
 
     // XID validation on ACK
     if (ackResult.xid !== state.xid) {
@@ -266,12 +411,28 @@ export class DHCPClient implements IProtocolEngine {
     if (this.checkAddressConflict && this.checkAddressConflict(iface, ackResult.binding.ipAddress)) {
       // Conflict detected — send DHCPDECLINE
       state.logs.push(`ARP probe conflict detected for ${ackResult.binding.ipAddress} - sending DHCPDECLINE`);
+      this.conflicts++;
+      this.getBus().publish({
+        topic: 'dhcp.address-conflict',
+        payload: { ...this.deviceRef(), iface, ip: ackResult.binding.ipAddress },
+      });
+      this.getBus().publish({
+        topic: 'dhcp.decline.sent',
+        payload: {
+          ...this.deviceRef(),
+          iface,
+          serverIp: offer.serverIdentifier,
+          ip: ackResult.binding.ipAddress,
+          reason: 'arp-conflict',
+        },
+      });
       offer.serverRef.server.processDecline({
         clientMAC: mac,
         declinedIP: ackResult.binding.ipAddress,
         serverIdentifier: offer.serverIdentifier,
         clientIdentifier,
       });
+      this.emitStateChange(iface, 'REQUESTING', 'INIT', 'DECLINE');
       state.state = 'INIT';
       if (verbose) {
         lines.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67`);
@@ -282,6 +443,7 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     // BOUND: Got ACK — read T1/T2 from server options or use defaults
+    this.emitStateChange(iface, 'REQUESTING', 'BOUND', 'ACK');
     state.state = 'BOUND';
     const pool = offer.pool;
     const leaseDuration = pool.leaseDuration;
@@ -321,6 +483,34 @@ export class DHCPClient implements IProtocolEngine {
 
     // Configure the interface
     this.configureIP(iface, ackResult.binding.ipAddress, pool.mask!, pool.defaultRouter);
+
+    // Reactive notifications
+    this.leasesGranted++;
+    this.getBus().publish({
+      topic: 'dhcp.ack.received',
+      payload: {
+        ...this.deviceRef(),
+        iface,
+        serverIp: ackResult.serverIdentifier,
+        assignedIp: ackResult.binding.ipAddress,
+        mask: String(pool.mask ?? ''),
+        gateway: pool.defaultRouter,
+        leaseTimeSec: leaseDuration,
+        t1Sec: renewalTime,
+        t2Sec: rebindingTime,
+      },
+    });
+    this.getBus().publish({
+      topic: 'dhcp.lease.granted',
+      payload: {
+        ...this.deviceRef(),
+        iface,
+        ip: ackResult.binding.ipAddress,
+        mask: String(pool.mask ?? ''),
+        gateway: pool.defaultRouter,
+        leaseTimeSec: leaseDuration,
+      },
+    });
 
     // Set up lease timers
     this.setupLeaseTimers(iface, state);
@@ -620,9 +810,15 @@ export class DHCPClient implements IProtocolEngine {
     const clientIdentifier = this.buildClientIdentifier(mac);
 
     // T1: Renewal (unicast to original server)
-    state.renewalTimer = setTimeout(() => {
+    state.renewalTimer = this.timers.setTimeout(() => {
       if (state.state === 'BOUND') {
+        const oldS = state.state as string;
         state.state = 'RENEWING';
+        this.emitStateChange(iface, oldS, 'RENEWING', 'T1');
+        this.getBus().publish({
+          topic: 'dhcp.lease.renewing',
+          payload: { ...this.deviceRef(), iface, ip: lease.ipAddress },
+        });
         state.logs.push('RENEWING - T1 expired, sending DHCPREQUEST to server');
         state.logs.push(`DHCPREQUEST for ${lease.ipAddress} to ${lease.serverIdentifier}`);
 
@@ -637,7 +833,9 @@ export class DHCPClient implements IProtocolEngine {
               clientIdentifier,
             });
             if (ackResult && ackResult.xid === state.xid) {
+              const oldS2 = state.state as string;
               state.state = 'BOUND';
+              this.emitStateChange(iface, oldS2, 'BOUND', 'ACK-renew');
               lease.leaseStart = ackResult.binding.leaseStart;
               lease.expiration = ackResult.binding.leaseExpiration;
               lease.leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
@@ -654,9 +852,15 @@ export class DHCPClient implements IProtocolEngine {
     }, lease.renewalTime * 1000);
 
     // T2: Rebinding (broadcast to any server)
-    state.rebindingTimer = setTimeout(() => {
+    state.rebindingTimer = this.timers.setTimeout(() => {
       if (state.state === 'RENEWING' || state.state === 'BOUND') {
+        const oldS = state.state as string;
         state.state = 'REBINDING';
+        this.emitStateChange(iface, oldS, 'REBINDING', 'T2');
+        this.getBus().publish({
+          topic: 'dhcp.lease.rebinding',
+          payload: { ...this.deviceRef(), iface, ip: lease.ipAddress },
+        });
         state.logs.push('REBINDING - T2 expired, broadcast DHCPREQUEST');
         state.logs.push(`DHCPREQUEST for ${lease.ipAddress} broadcast`);
 
@@ -669,7 +873,9 @@ export class DHCPClient implements IProtocolEngine {
             clientIdentifier,
           });
           if (ackResult && ackResult.xid === state.xid) {
+            const oldS2 = state.state as string;
             state.state = 'BOUND';
+            this.emitStateChange(iface, oldS2, 'BOUND', 'ACK-rebind');
             lease.leaseStart = ackResult.binding.leaseStart;
             lease.expiration = ackResult.binding.leaseExpiration;
             if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
@@ -683,18 +889,26 @@ export class DHCPClient implements IProtocolEngine {
     }, lease.rebindingTime * 1000);
 
     // Expiration
-    state.expirationTimer = setTimeout(() => {
+    state.expirationTimer = this.timers.setTimeout(() => {
+      const oldS = state.state as string;
+      const expiredIp = state.lease?.ipAddress ?? '';
       state.state = 'INIT';
       state.lease = null;
       state.processRunning = false;
       state.logs.push('Lease expired - returning to INIT');
       this.clearIP(iface);
+      this.leasesExpired++;
+      this.emitStateChange(iface, oldS, 'INIT', 'expired');
+      this.getBus().publish({
+        topic: 'dhcp.lease.expired',
+        payload: { ...this.deviceRef(), iface, ip: expiredIp },
+      });
     }, lease.leaseDuration * 1000);
   }
 
   private clearTimers(state: DHCPClientIfaceState): void {
-    if (state.renewalTimer) { clearTimeout(state.renewalTimer); state.renewalTimer = null; }
-    if (state.rebindingTimer) { clearTimeout(state.rebindingTimer); state.rebindingTimer = null; }
-    if (state.expirationTimer) { clearTimeout(state.expirationTimer); state.expirationTimer = null; }
+    if (state.renewalTimer) { this.timers.clear(state.renewalTimer); state.renewalTimer = null; }
+    if (state.rebindingTimer) { this.timers.clear(state.rebindingTimer); state.rebindingTimer = null; }
+    if (state.expirationTimer) { this.timers.clear(state.expirationTimer); state.expirationTimer = null; }
   }
 }

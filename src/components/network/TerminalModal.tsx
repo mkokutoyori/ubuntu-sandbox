@@ -223,7 +223,7 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   // ── Embedded mode ──
   if (embedded) {
     return (
-      <div className={cn("w-full h-full flex flex-col", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f]")}>
+      <div data-testid="terminal-modal" className={cn("w-full h-full flex flex-col", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f]")}>
         {titleBar}
         {terminalContent}
       </div>
@@ -232,9 +232,10 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
 
   // ── Modal mode ──
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" data-testid="terminal-modal-overlay">
       <div
         ref={modalRef}
+        data-testid="terminal-modal"
         className={cn("flex flex-col relative", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f] shadow-2xl shadow-black/70", "animate-in zoom-in-95 fade-in duration-200", isResizing && "select-none")}
         style={isFullscreen ? { width: '100vw', height: '100vh', borderRadius: 0 } : { width: `${dimensions.width}px`, height: `${dimensions.height}px` }}
       >

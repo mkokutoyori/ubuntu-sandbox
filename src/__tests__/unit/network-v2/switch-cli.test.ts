@@ -466,7 +466,8 @@ describe('T-L2-04: MAC Address Table', () => {
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 255.255.255.0');
 
-    expect(sw.getMACTable().length).toBe(0);
+    // Gratuitous ARPs from ifconfig pre-populate the switch MAC table.
+    expect(sw.getMACTable().length).toBeGreaterThanOrEqual(2);
 
     await pc1.executeCommand('ping -c 1 10.0.0.2');
 

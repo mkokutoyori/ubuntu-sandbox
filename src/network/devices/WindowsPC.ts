@@ -17,6 +17,8 @@
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
+import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -65,8 +67,6 @@ export class WindowsPC extends EndHost {
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
   private dnsSuffix: string = '';
-  /** In-memory hosts table (mirrors C:\Windows\System32\drivers\etc\hosts) */
-  private hostsTable: Map<string, string> = new Map();
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
   /** Service manager (service lifecycle, dependencies) */
@@ -82,6 +82,37 @@ export class WindowsPC extends EndHost {
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.initEnv();
+    this.initDefaultSockets();
+  }
+
+  private initDefaultSockets(): void {
+    // OpenSSH Server — SFTP transport
+    this.socketTable.bind('tcp', '0.0.0.0', 22, 1088, 'sshd.exe');
+    // RDP — Remote Desktop Protocol (TermService)
+    this.socketTable.bind('tcp', '0.0.0.0', 3389, 1096, 'svchost.exe');
+    // SMB — file sharing / domain traffic (LanmanServer)
+    this.socketTable.bind('tcp', '0.0.0.0', 445, 4, 'System');
+    // NetBIOS Session Service (LanmanServer)
+    this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
+
+    // Persist SSH server config + host key under C:\ProgramData\ssh\ on
+    // first boot so OpenSSH-for-Windows files are visible from the shell.
+    this.getSshServerContext();
+
+    // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
+    this.listenTcp(22, (conn) => {
+      this.getSshServerHandler().register(conn, '0.0.0.0');
+    });
+  }
+
+  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  getSshServerContext(): WindowsSshServerContext {
+    return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname);
+  }
+
+  /** Build a SshServerHandler ready to be hooked onto a TcpConnection. */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   private createPorts(): void {
@@ -109,17 +140,30 @@ export class WindowsPC extends EndHost {
     this.env.set('NUMBER_OF_PROCESSORS', '4');
   }
 
-  // ─── Hosts table ──────────────────────────────────────────────
+  private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
+
+  // ─── Hosts file ──────────────────────────────────────────────
 
   addHostsEntry(ip: string, hostname: string): void {
-    this.hostsTable.set(hostname.toLowerCase(), ip);
+    this.fs.appendFile(WindowsPC.HOSTS_FILE, `${ip}       ${hostname}\n`);
   }
 
   resolveHostname(name: string): IPAddress | null {
     try { return new IPAddress(name); } catch { /* not an IP */ }
-    const ip = this.hostsTable.get(name.toLowerCase());
-    if (ip) {
-      try { return new IPAddress(ip); } catch { /* skip */ }
+    const result = this.fs.readFile(WindowsPC.HOSTS_FILE);
+    if (result.ok && result.content) {
+      for (const line of result.content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const parts = trimmed.split(/[\s\t]+/);
+        if (parts.length >= 2) {
+          const ip = parts[0];
+          const hostnames = parts.slice(1).filter(h => !h.startsWith('#'));
+          if (hostnames.some(h => h.toLowerCase() === name.toLowerCase())) {
+            try { return new IPAddress(ip); } catch { /* skip invalid */ }
+          }
+        }
+      }
     }
     return null;
   }
@@ -140,6 +184,10 @@ export class WindowsPC extends EndHost {
 
     trimmed = trimmed.trim();
     if (!trimmed) return '';
+
+    // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
+    trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();
+
     // Handle piped commands (but not inside redirects)
     if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
@@ -185,7 +233,7 @@ export class WindowsPC extends EndHost {
       case 'sc':
       case 'sc.exe': return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
-      case 'netstat': return cmdNetstat(fileCtx);
+      case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable);
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args);
       case 'findstr': return cmdFindstr(fileCtx, args);
@@ -485,6 +533,12 @@ export class WindowsPC extends EndHost {
 
       // Hostname resolution
       resolveHostname: (name: string) => this.resolveHostname(name),
+
+      // Service state query
+      isServiceRunning: (name: string) => {
+        const svc = this.svcMgr.getService(name);
+        return svc ? svc.state === 'Running' : false;
+      },
     };
   }
 

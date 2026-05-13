@@ -32,6 +32,11 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress } from '../core/types';
 import { Logger } from '../core/Logger';
 import {
+  getDefaultScheduler,
+  type IScheduler,
+  type TimerHandle,
+} from '@/events/Scheduler';
+import {
   DHCPSnoopingConfig,
   DHCPSnoopingBinding,
   createDefaultSnoopingConfig,
@@ -98,7 +103,9 @@ export abstract class Switch extends Equipment {
   // ─── MAC Table ──────────────────────────────────────────────────
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macAgingTime: number = 300; // seconds
-  private macAgingTimer: ReturnType<typeof setInterval> | null = null;
+  private macAgingTimer: TimerHandle | null = null;
+  private macAgingScheduler: IScheduler | null = null;
+  private schedulerOverride: IScheduler | null = null;
 
   // ─── VLAN Database ──────────────────────────────────────────────
   protected vlans: Map<number, VLANEntry> = new Map();
@@ -186,6 +193,16 @@ export abstract class Switch extends Equipment {
       this.stpStates.set(portName, initialSTP);
       // Port VLAN state
       this.portVlanStates.set(portName, 'active');
+
+      // Auto-advance STP on link-up (simulates RSTP rapid transition)
+      port.onLinkChange((state) => {
+        if (state === 'up') {
+          const stp = this.stpStates.get(portName);
+          if (stp === 'listening' || stp === 'learning') {
+            this.stpStates.set(portName, 'forwarding');
+          }
+        }
+      });
     }
   }
 
@@ -346,6 +363,61 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = vlans;
+    return true;
+  }
+
+  addTrunkAllowedVlan(portName: string, vlanId: number): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    cfg.trunkAllowedVlans.add(vlanId);
+    return true;
+  }
+
+  addTrunkAllowedVlans(portName: string, vlans: Set<number>): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    for (const v of vlans) cfg.trunkAllowedVlans.add(v);
+    return true;
+  }
+
+  removeTrunkAllowedVlan(portName: string, vlanId: number): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    cfg.trunkAllowedVlans.delete(vlanId);
+    return true;
+  }
+
+  removeTrunkAllowedVlans(portName: string, vlans: Set<number>): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    for (const v of vlans) cfg.trunkAllowedVlans.delete(v);
+    return true;
+  }
+
+  setTrunkAllowedVlansAll(portName: string): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    const all = new Set<number>();
+    for (let i = 1; i <= 4094; i++) all.add(i);
+    cfg.trunkAllowedVlans = all;
+    return true;
+  }
+
+  setTrunkAllowedVlansNone(portName: string): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    cfg.trunkAllowedVlans = new Set();
+    return true;
+  }
+
+  setTrunkAllowedVlansExcept(portName: string, vlans: Set<number>): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    const all = new Set<number>();
+    for (let i = 1; i <= 4094; i++) {
+      if (!vlans.has(i)) all.add(i);
+    }
+    cfg.trunkAllowedVlans = all;
     return true;
   }
 
@@ -565,7 +637,11 @@ export abstract class Switch extends Equipment {
       // Access port: strip tag
       this.sendFrame(portName, this.stripTag(frame));
     } else {
-      // Trunk port
+      // Trunk port: check if VLAN is allowed before sending
+      if (!cfg.trunkAllowedVlans.has(vlan)) {
+        Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${vlan} not allowed on trunk ${portName} (egress)`);
+        return;
+      }
       if (vlan === cfg.trunkNativeVlan) {
         this.sendFrame(portName, this.stripTag(frame));
       } else {
@@ -594,9 +670,28 @@ export abstract class Switch extends Equipment {
 
   // ─── MAC Aging Process ────────────────────────────────────────────
 
+  /** Test-only / multi-topology scheduler injection (Phase 4 of the
+   *  reactive refactor). When unset, the default scheduler singleton is
+   *  used so existing call sites are unaffected. Setting this after the
+   *  switch was constructed restarts the MAC-aging process on the new
+   *  scheduler so subsequent `clear()` calls land on the right one. */
+  setScheduler(scheduler: IScheduler | null): void {
+    if (this.schedulerOverride === scheduler) return;
+    const wasRunning = this.macAgingTimer !== null;
+    if (wasRunning) this.stopMACAgingProcess();
+    this.schedulerOverride = scheduler;
+    if (wasRunning) this.startMACAgingProcess();
+  }
+
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
+
   private startMACAgingProcess(): void {
-    if (this.macAgingTimer) return;
-    this.macAgingTimer = setInterval(() => {
+    if (this.macAgingTimer !== null) return;
+    const scheduler = this.getScheduler();
+    this.macAgingScheduler = scheduler;
+    this.macAgingTimer = scheduler.setInterval(() => {
       const now = Date.now();
       for (const [key, entry] of this.macTable) {
         if (entry.type === 'dynamic') {
@@ -612,9 +707,14 @@ export abstract class Switch extends Equipment {
   }
 
   private stopMACAgingProcess(): void {
-    if (this.macAgingTimer) {
-      clearInterval(this.macAgingTimer);
+    if (this.macAgingTimer !== null) {
+      // Use the scheduler that *scheduled* the timer, not the current
+      // override — they may differ if `setScheduler` was called after
+      // the timer was registered.
+      const scheduler = this.macAgingScheduler ?? this.getScheduler();
+      scheduler.clear(this.macAgingTimer);
       this.macAgingTimer = null;
+      this.macAgingScheduler = null;
     }
   }
 

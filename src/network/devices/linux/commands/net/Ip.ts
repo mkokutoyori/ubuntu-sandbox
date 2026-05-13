@@ -16,7 +16,8 @@ import {
   type IpNeighborEntry,
   type IpXfrmContext,
 } from '../../LinuxIpCommand';
-import { IPAddress, SubnetMask } from '../../../../core/types';
+import { IPAddress, SubnetMask, MACAddress } from '../../../../core/types';
+import { getNUDState } from '../../../EndHost';
 
 function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext {
   return {
@@ -121,10 +122,38 @@ function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext 
           ip,
           mac: entry.mac.toString(),
           iface: entry.iface,
-          state: 'REACHABLE',
+          state: getNUDState(entry),
         });
       }
       return entries;
+    },
+    addNeighbor(ip: string, mac: string, ifName: string): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return 'RTNETLINK answers: No such device';
+      try {
+        const macAddr = new MACAddress(mac);
+        net.addStaticARP(ip, macAddr, ifName);
+        return '';
+      } catch {
+        return 'RTNETLINK answers: Invalid argument';
+      }
+    },
+    deleteNeighbor(ip: string, ifName: string): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return 'RTNETLINK answers: No such device';
+      const removed = net.deleteARP(ip);
+      if (!removed) return 'RTNETLINK answers: No such file or directory';
+      return '';
+    },
+    flushNeighbors(ifName?: string): string {
+      if (ifName) {
+        for (const [ip, entry] of net.getArpTable()) {
+          if (entry.iface === ifName) net.deleteARP(ip);
+        }
+      } else {
+        net.clearARPTable();
+      }
+      return '';
     },
     setInterfaceUp(ifName: string): string {
       const port = net.getPorts().get(ifName);

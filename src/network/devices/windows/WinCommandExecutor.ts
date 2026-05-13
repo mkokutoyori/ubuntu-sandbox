@@ -122,4 +122,7 @@ export interface WinCommandContext {
 
   // Hostname resolution
   resolveHostname(name: string): IPAddress | null;
+
+  // Service state query (for netsh dhcpclient show state, etc.)
+  isServiceRunning(name: string): boolean;
 }

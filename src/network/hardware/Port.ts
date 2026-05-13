@@ -24,6 +24,7 @@ import {
 import { Logger } from '../core/Logger';
 import { PortSecurity } from './PortSecurity';
 import type { Cable } from './Cable';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export type FrameHandler = (portName: string, frame: EthernetFrame) => void;
 export type LinkChangeHandler = (state: 'up' | 'down') => void;
@@ -81,10 +82,32 @@ export class Port {
   // ─── Link state observers ───────────────────────────────────────
   private linkChangeHandlers: LinkChangeHandler[] = [];
 
+  // ─── Reactive bus (Phase 3) ─────────────────────────────────────
+  /**
+   * Optional bus override — defaults to the singleton bus. Events are
+   * published in parallel to the legacy callbacks (`onFrame`,
+   * `onLinkChange`) for the duration of the migration; phase 8 removes
+   * those callbacks.
+   */
+  private busOverride: IEventBus | null = null;
+
   constructor(name: string, type: ConnectionType = 'ethernet', mac?: MACAddress) {
     this.name = name;
     this.type = type;
     this.mac = mac || MACAddress.generate();
+  }
+
+  /** Test-only / multi-topology bus injection. */
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+  }
+
+  private getBus(): IEventBus {
+    return this.busOverride ?? getDefaultEventBus();
+  }
+
+  private portRef() {
+    return { deviceId: this.equipmentId, portName: this.name };
   }
 
   // ─── Identity ───────────────────────────────────────────────────
@@ -108,11 +131,20 @@ export class Port {
     this.ipAddress = ip;
     this.subnetMask = mask;
     Logger.info(this.equipmentId, 'port:ip-config', `${this.name}: IP set to ${ip}/${mask.toCIDR()}`);
+    this.getBus().publish({
+      topic: 'port.config.ip-changed',
+      payload: { ...this.portRef(), ip, mask },
+    });
   }
 
   clearIP(): void {
+    if (this.ipAddress === null && this.subnetMask === null) return;
     this.ipAddress = null;
     this.subnetMask = null;
+    this.getBus().publish({
+      topic: 'port.config.ip-changed',
+      payload: { ...this.portRef(), ip: null, mask: null },
+    });
   }
 
   // ─── IPv6 Configuration ────────────────────────────────────────
@@ -122,14 +154,24 @@ export class Port {
     this.ipv6Enabled = true;
 
     const linkLocal = IPv6Address.fromMAC(this.mac);
+    const scoped = linkLocal.withScopeId(this.name);
     this.ipv6Addresses.push({
-      address: linkLocal.withScopeId(this.name),
+      address: scoped,
       prefixLength: 64,
       origin: 'link-local',
     });
 
     Logger.info(this.equipmentId, 'port:ipv6-enabled',
       `${this.name}: IPv6 enabled, link-local ${linkLocal}`);
+    this.getBus().publish({
+      topic: 'port.config.ipv6-added',
+      payload: {
+        ...this.portRef(),
+        address: scoped,
+        prefixLength: 64,
+        origin: 'link-local',
+      },
+    });
   }
 
   disableIPv6(): void {
@@ -162,6 +204,15 @@ export class Port {
 
     Logger.info(this.equipmentId, 'port:ipv6-config',
       `${this.name}: IPv6 address ${address}/${prefixLength} configured`);
+    this.getBus().publish({
+      topic: 'port.config.ipv6-added',
+      payload: {
+        ...this.portRef(),
+        address: addrWithScope,
+        prefixLength,
+        origin: 'static',
+      },
+    });
   }
 
   addSLAACAddress(prefix: IPv6Address, prefixLength: number): IPv6Address {
@@ -195,7 +246,14 @@ export class Port {
   removeIPv6Address(address: IPv6Address): boolean {
     const before = this.ipv6Addresses.length;
     this.ipv6Addresses = this.ipv6Addresses.filter(e => !e.address.equals(address));
-    return this.ipv6Addresses.length < before;
+    const removed = this.ipv6Addresses.length < before;
+    if (removed) {
+      this.getBus().publish({
+        topic: 'port.config.ipv6-removed',
+        payload: { ...this.portRef(), address },
+      });
+    }
+    return removed;
   }
 
   getIPv6Addresses(): IPv6AddressEntry[] {
@@ -232,15 +290,29 @@ export class Port {
         `Invalid port speed: ${speed} Mbps. Valid speeds: ${VALID_PORT_SPEEDS.join(', ')}`
       );
     }
+    const previous = this.speed;
     this.speed = speed as PortSpeed;
     Logger.info(this.equipmentId, 'port:speed', `${this.name}: speed set to ${speed} Mbps`);
+    if (previous !== this.speed) {
+      this.getBus().publish({
+        topic: 'port.config.speed-changed',
+        payload: { ...this.portRef(), speed: this.speed },
+      });
+    }
   }
 
   getDuplex(): PortDuplex { return this.duplex; }
 
   setDuplex(duplex: PortDuplex): void {
+    const previous = this.duplex;
     this.duplex = duplex;
     Logger.info(this.equipmentId, 'port:duplex', `${this.name}: duplex set to ${duplex}`);
+    if (previous !== duplex) {
+      this.getBus().publish({
+        topic: 'port.config.duplex-changed',
+        payload: { ...this.portRef(), duplex },
+      });
+    }
   }
 
   // ─── Auto-negotiation (IEEE 802.3u) ──────────────────────────────
@@ -294,8 +366,15 @@ export class Port {
     if (mtu > 9216) {
       throw new Error(`Invalid MTU: ${mtu}. Maximum is 9216 (jumbo frame).`);  // MTU.MAX
     }
+    const previous = this.mtu;
     this.mtu = mtu;
     Logger.info(this.equipmentId, 'port:mtu', `${this.name}: MTU set to ${mtu}`);
+    if (previous !== mtu) {
+      this.getBus().publish({
+        topic: 'port.config.mtu-changed',
+        payload: { ...this.portRef(), mtu },
+      });
+    }
   }
 
   // ─── Port Security (delegated to PortSecurity) ─────────────────────
@@ -332,6 +411,20 @@ export class Port {
     if (verdict.shouldShutdown) {
       this.isUp = false;
       this.notifyLinkChange('down');
+    }
+    if (!verdict.allowed) {
+      const action: 'discarded' | 'shutdown' | 'restricted' = verdict.shouldShutdown
+        ? 'shutdown'
+        : (this.security.getViolationMode() === 'restrict' ? 'restricted' : 'discarded');
+      this.getBus().publish({
+        topic: 'port.security.violation',
+        payload: {
+          ...this.portRef(),
+          mac: srcMAC,
+          mode: this.security.getViolationMode(),
+          action,
+        },
+      });
     }
     return verdict.allowed;
   }
@@ -373,6 +466,11 @@ export class Port {
     for (const handler of this.linkChangeHandlers) {
       handler(state);
     }
+    this.getBus().publish(
+      state === 'up'
+        ? { topic: 'port.link.up', payload: this.portRef() }
+        : { topic: 'port.link.down', payload: this.portRef() },
+    );
   }
 
   // ─── Cable Connection ──────────────────────────────────────────
@@ -422,12 +520,20 @@ export class Port {
     if (!this.isUp) {
       this.counters.dropsOut++;
       Logger.warn(this.equipmentId, 'port:send-blocked', `${this.name}: port is down, frame dropped`);
+      this.getBus().publish({
+        topic: 'port.frame.tx-blocked',
+        payload: { ...this.portRef(), reason: 'link-down' },
+      });
       return false;
     }
 
     if (!this.cable) {
       this.counters.dropsOut++;
       Logger.warn(this.equipmentId, 'port:send-blocked', `${this.name}: no cable connected, frame dropped`);
+      this.getBus().publish({
+        topic: 'port.frame.tx-blocked',
+        payload: { ...this.portRef(), reason: 'no-cable' },
+      });
       return false;
     }
 
@@ -435,6 +541,10 @@ export class Port {
     Logger.debug(this.equipmentId, 'port:send',
       `${this.name}: sending frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });
+    this.getBus().publish({
+      topic: 'port.frame.tx-requested',
+      payload: { ...this.portRef(), frame },
+    });
 
     return this.cable.transmit(frame, this);
   }
@@ -443,12 +553,20 @@ export class Port {
     if (!this.isUp) {
       this.counters.dropsIn++;
       Logger.warn(this.equipmentId, 'port:recv-blocked', `${this.name}: port is down, frame dropped`);
+      this.getBus().publish({
+        topic: 'port.frame.dropped',
+        payload: { ...this.portRef(), reason: 'link-down', srcMac: frame.srcMAC },
+      });
       return;
     }
 
     // Port security check
     if (!this.checkPortSecurity(frame.srcMAC)) {
       this.counters.dropsIn++;
+      this.getBus().publish({
+        topic: 'port.frame.dropped',
+        payload: { ...this.portRef(), reason: 'security-violation', srcMac: frame.srcMAC },
+      });
       return;
     }
 
@@ -456,6 +574,10 @@ export class Port {
     Logger.debug(this.equipmentId, 'port:recv',
       `${this.name}: received frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });
+    this.getBus().publish({
+      topic: 'port.frame.received',
+      payload: { ...this.portRef(), frame },
+    });
 
     if (this.frameHandler) {
       this.frameHandler(this.name, frame);

@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
 import { Port } from '../hardware/Port';
 import {
   IPAddress,
@@ -61,6 +61,8 @@ import {
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
+import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -108,6 +110,8 @@ export abstract class LinuxMachine extends EndHost {
     this.executor = new LinuxCommandExecutor(profile.isServer);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
+    this.initDefaultSockets(profile.isServer);
+    this.executor.setSocketTable(this.socketTable);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
@@ -116,6 +120,40 @@ export abstract class LinuxMachine extends EndHost {
     this.commands = new LinuxCommandRegistry();
     this.registerCoreCommands();
     this.registerDeviceCommands();
+
+    // 5. Initialise SSH server config files on first boot:
+    //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
+    //    Also seed /etc/motd and /etc/issue.net so SSH greeters and the
+    //    pre-auth Banner have realistic content.
+    this.initSshFiles();
+
+    // 6. TCP SSH server on port 22 — handles SSH auth + SFTP subsystem
+    //    in one place.  Replaces the legacy SFTP-only handler.
+    this.listenTcp(22, (conn) => {
+      // Pass the real client IP so the syslogger / throttler / event-bus
+      // subscribers see the actual source — not the hardcoded 0.0.0.0
+      // bind address.
+      this.getSshServerHandler().register(conn, conn.remoteIp);
+    });
+  }
+
+  /** Persist SSH server configuration + host key + MOTD on the VFS. */
+  private initSshFiles(): void {
+    // Instantiating the context as a side effect creates the files.
+    this.getSshServerContext();
+    const vfs = this.executor.vfs;
+    if (!vfs.exists('/etc/motd')) {
+      vfs.writeFile(
+        '/etc/motd',
+        `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`,
+        0,
+        0,
+        0o022,
+      );
+    }
+    if (!vfs.exists('/etc/issue.net')) {
+      vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
+    }
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
@@ -130,6 +168,25 @@ export abstract class LinuxMachine extends EndHost {
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
       0, 0, 0o022);
+  }
+
+  // ─── Default OS sockets ──────────────────────────────────────────────
+
+  /**
+   * Pre-populate the socket table with services that are always running
+   * on a freshly booted Linux machine.  The PIDs match the static values
+   * used by ps/netstat output so the two are coherent.
+   */
+  private initDefaultSockets(isServer: boolean): void {
+    // sshd — listens on all interfaces (every Linux machine has SSH)
+    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
+    // systemd-resolved — DNS stub resolver bound to loopback only
+    this.socketTable.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolved');
+
+    if (isServer) {
+      // Oracle TNS listener — only on server profiles
+      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr');
+    }
   }
 
   // ─── Ports ───────────────────────────────────────────────────────────
@@ -167,6 +224,49 @@ export abstract class LinuxMachine extends EndHost {
       profile: this.profile,
       fmt: this.fmt,
     };
+  }
+
+  /** Cached SSH server context — replaced on `systemctl restart sshd`. */
+  private _sshContext: LinuxSshServerContext | null = null;
+  /** Unsubscribe hook for the service-manager lifecycle listener. */
+  private _sshLifecycleOff: (() => void) | null = null;
+
+  /**
+   * Return the cached `LinuxSshServerContext`, creating it on first use.
+   * Subscribes to the service manager so that `systemctl restart sshd`
+   * (or `reload`) reloads /etc/ssh/sshd_config and refreshes the context.
+   *
+   * BRD SSH-07-R6.
+   */
+  getSshServerContext(): LinuxSshServerContext {
+    if (this._sshContext) return this._sshContext;
+    this._sshContext = new LinuxSshServerContext(
+      this.executor.vfs,
+      this.executor.userMgr,
+      this.profile.hostname,
+      {},
+      this.executor,
+      // Route incoming SSH exec commands through the full pipeline so
+      // `ip`, `arp`, `ping`, `systemctl`, etc. are available.
+      (line: string) => this.executeCommand(line),
+    );
+    this._sshLifecycleOff?.();
+    this._sshLifecycleOff = this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'ssh' && name !== 'sshd') return;
+      if (event === 'restart' || event === 'reload') {
+        this._sshContext = this._sshContext?.reloadConfig() ?? null;
+      }
+    });
+    return this._sshContext;
+  }
+
+  /**
+   * Build a SshServerHandler ready to be hooked onto a TcpConnection.
+   * The handler captures the current cached context, so config reloads
+   * triggered by `systemctl restart sshd` apply to subsequent connections.
+   */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   // ─── Terminal entry point ────────────────────────────────────────────
@@ -489,10 +589,38 @@ export abstract class LinuxMachine extends EndHost {
             ip,
             mac: entry.mac.toString(),
             iface: entry.iface,
-            state: 'REACHABLE',
+            state: getNUDState(entry),
           });
         }
         return entries;
+      },
+      addNeighbor(ip: string, mac: string, ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `RTNETLINK answers: No such device`;
+        try {
+          const macAddr = new MACAddress(mac);
+          self.addStaticARP(ip, macAddr, ifName);
+          return '';
+        } catch {
+          return 'RTNETLINK answers: Invalid argument';
+        }
+      },
+      deleteNeighbor(ip: string, ifName: string): string {
+        const port = self.ports.get(ifName);
+        if (!port) return `RTNETLINK answers: No such device`;
+        const removed = self.deleteARP(ip);
+        if (!removed) return 'RTNETLINK answers: No such file or directory';
+        return '';
+      },
+      flushNeighbors(ifName?: string): string {
+        if (ifName) {
+          for (const [ip, entry] of self.arpTable) {
+            if (entry.iface === ifName) self.arpTable.delete(ip);
+          }
+        } else {
+          self.clearARPTable();
+        }
+        return '';
       },
       setInterfaceUp(ifName: string): string {
         const port = self.ports.get(ifName);
@@ -558,6 +686,9 @@ export abstract class LinuxMachine extends EndHost {
       },
       deleteARP(ip: string): boolean {
         return self.deleteARP(ip);
+      },
+      clearARPTable(): void {
+        self.clearARPTable();
       },
       pingSequence(
         target: IPAddress,

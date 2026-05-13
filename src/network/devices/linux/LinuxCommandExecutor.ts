@@ -17,6 +17,7 @@ import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
+import type { SocketTable } from '../../core/SocketTable';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
@@ -37,6 +38,7 @@ export class LinuxCommandExecutor {
   readonly processMgr: LinuxProcessManager;
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
+  private socketTable: SocketTable | null = null;
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
@@ -97,6 +99,11 @@ export class LinuxCommandExecutor {
   /** Set the network context for ip command support */
   setIpNetworkContext(ctx: IpNetworkContext): void {
     this.ipNetworkCtx = ctx;
+  }
+
+  /** Wire the device's socket table so netstat/ss output is dynamic */
+  setSocketTable(table: SocketTable): void {
+    this.socketTable = table;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -653,8 +660,8 @@ export class LinuxCommandExecutor {
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer), exitCode: 0 };
-      case 'ss': return { output: cmdSs(args, this.isServer), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable), exitCode: 0 };
+      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       // @deprecated — The following stubs (ping, traceroute, nslookup, dig,
@@ -720,6 +727,11 @@ export class LinuxCommandExecutor {
       case 'scp':
       case 'rsync':
         return { output: '', exitCode: 0 };
+      case 'sftp': {
+        const host = args.filter(a => !a.startsWith('-'))[0];
+        if (!host) return { output: 'usage: sftp [options] [user@]host[:path]', exitCode: 1 };
+        return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
+      }
       case 'ssh': {
         const host = args.filter(a => !a.startsWith('-'))[0];
         if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
@@ -750,6 +762,81 @@ export class LinuxCommandExecutor {
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
       case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+
+      // Non-interactive fallbacks for commands the GUI normally routes to
+      // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
+      // SSH there is no TTY, so these commands behave like their batch
+      // counterparts: silent for editors, version banners for CLIs.
+      case 'nano':
+      case 'vi':
+      case 'vim': {
+        // `nano file` opens (or creates) the file in the editor. In batch
+        // mode we honour the "create if missing" behaviour so that
+        // subsequent SSH commands can write to it.
+        const target = args.find((a) => !a.startsWith('-'));
+        if (target) {
+          const abs = this.vfs.normalizePath(target, this.cwd);
+          if (!this.vfs.exists(abs)) {
+            this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
+      case 'clear':
+      case 'reset':
+        return { output: '', exitCode: 0 };
+      case 'sqlplus': {
+        if (args.includes('-V') || args.includes('-version')) {
+          return {
+            output:
+              'SQL*Plus: Release 19.0.0.0.0 - Production on ' +
+              new Date().toUTCString(),
+            exitCode: 0,
+          };
+        }
+        return {
+          output:
+            'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
+            'ERROR:\nORA-12162: TNS:net service name is incorrectly specified\n\n' +
+            'SP2-0157: unable to CONNECT to ORACLE after 3 attempts, exiting SQL*Plus',
+          exitCode: 1,
+        };
+      }
+      case 'rman':
+        return {
+          output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
+          exitCode: 0,
+        };
+      case 'lsnrctl': {
+        if (args[0] === 'version') {
+          return {
+            output:
+              'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+            exitCode: 0,
+          };
+        }
+        return {
+          output: 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+          exitCode: 0,
+        };
+      }
+      case 'tnsping': {
+        const target = args[0] || '';
+        return {
+          output:
+            `TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production\n` +
+            (target ? `TNS-03505: Failed to resolve name "${target}"` : ''),
+          exitCode: target ? 1 : 0,
+        };
+      }
+      case 'dbca':
+      case 'orapwd':
+      case 'adrci':
+        return {
+          output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
+          exitCode: 0,
+        };
+
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
       case 'readlink': return { output: args.filter(a => !a.startsWith('-'))[0] || '', exitCode: 0 };
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };

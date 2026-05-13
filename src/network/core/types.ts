@@ -632,7 +632,7 @@ export interface IPv4Packet {
   /** Destination IP address. */
   destinationIP: IPAddress;
   /** Upper-layer payload (ICMP, UDP datagram, TCP segment, etc.). */
-  payload: ICMPPacket | UDPPacket | unknown;
+  payload: ICMPPacket | UDPPacket | TCPPacket | unknown;
 }
 
 // ─── IPv4 Checksum (RFC 791 §3.1) ──────────────────────────────────
@@ -770,6 +770,7 @@ export type ICMPType =
   | 'echo-request'            // Type 8
   | 'echo-reply'              // Type 0
   | 'destination-unreachable'  // Type 3
+  | 'redirect'                 // Type 5
   | 'time-exceeded';           // Type 11
 
 export interface ICMPPacket {
@@ -798,6 +799,43 @@ export interface ICMPPacket {
    * the original packet header (SPI, protocol, etc.).
    */
   originalPacket?: IPv4Packet;
+  /**
+   * Redirect Gateway — included in ICMP Type 5 (Redirect) per RFC 792.
+   * The host should send future packets for the destination to this address.
+   */
+  gateway?: IPAddress;
+}
+
+// ─── L4: TCP Segment (RFC 793) ───────────────────────────────────────────────
+
+/** TCP control flags (RFC 793 §3.1). */
+export interface TCPFlags {
+  syn: boolean;
+  ack: boolean;
+  fin: boolean;
+  rst: boolean;
+  psh: boolean;
+  urg: boolean;
+}
+
+export interface TCPPacket {
+  type: 'tcp';
+  /** Source port (16-bit). */
+  sourcePort: number;
+  /** Destination port (16-bit). */
+  destinationPort: number;
+  /** Sequence number (32-bit). */
+  sequenceNumber: number;
+  /** Acknowledgement number (32-bit, valid when ACK flag set). */
+  acknowledgementNumber: number;
+  /** Control flags. */
+  flags: TCPFlags;
+  /** Receive window size (16-bit). */
+  windowSize: number;
+  /** TCP checksum (16-bit). */
+  checksum: number;
+  /** Upper-layer payload. */
+  payload: unknown;
 }
 
 // ─── L4: UDP Datagram (RFC 768) ──────────────────────────────────────

@@ -300,12 +300,14 @@ describe('Ping through Switch (equipment-driven communication)', () => {
     await pc1.executeCommand('ifconfig eth0 192.168.1.10');
     await pc2.executeCommand('ifconfig eth0 192.168.1.20');
 
-    // Before ping, MAC table should be empty
-    expect(sw.getMACTable().length).toBe(0);
+    // Gratuitous ARPs from ifconfig cause the switch to pre-learn MACs.
+    // After both IPs are configured, the switch already knows both ports.
+    const beforePing = sw.getMACTable();
+    expect(beforePing.length).toBeGreaterThanOrEqual(2);
 
     await pc1.executeCommand('ping -c 1 192.168.1.20');
 
-    // After ping, switch should have learned both MACs
+    // MAC table still has both entries after ping.
     const macTable = sw.getMACTable();
     expect(macTable.length).toBeGreaterThanOrEqual(2);
   });

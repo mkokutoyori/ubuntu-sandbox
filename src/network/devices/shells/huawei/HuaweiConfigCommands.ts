@@ -114,6 +114,11 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
+  if (args[0] === 'dhcp' && args[1] === 'enable') {
+    router._getDHCPServerInternal().disable();
+    return '';
+  }
+
   // undo ip route-static <network> <mask> <next-hop>
   if (args[0] === 'ip' && args.length >= 5 && args[1] === 'route-static') {
     try {
@@ -138,14 +143,18 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     }
   }
 
-  // undo arp static <ip>
-  if (args[0] === 'arp' && args.length >= 3 && args[1] === 'static') {
-    const arpTable = router._getArpTableInternal();
-    if (arpTable.has(args[2])) {
-      arpTable.delete(args[2]);
-      return '';
+  // undo arp [static] <ip>
+  if (args[0] === 'arp') {
+    let ip: string;
+    if (args[1] === 'static' && args.length >= 3) {
+      ip = args[2];
+    } else if (args.length >= 2) {
+      ip = args[1];
+    } else {
+      return 'Error: Incomplete command.';
     }
-    return 'Error: ARP entry not found.';
+    router._deleteARP(ip);
+    return '';
   }
 
   // undo shutdown (in interface mode)
@@ -235,13 +244,25 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return cmdUndo(getRouter(), ctx, args);
   });
 
-  trie.registerGreedy('rip', 'Configure RIP routing', (args) => {
+  trie.registerGreedy('rip', 'Enter RIP view or configure RIP', (args) => {
+    if (!getRouter().isRIPEnabled()) {
+      getRouter().enableRIP();
+    }
+    if (args.length >= 1 && !isNaN(parseInt(args[0], 10))) {
+      ctx.setMode('rip' as any);
+      return '';
+    }
     return cmdRip(getRouter(), args);
   });
 
   trie.registerGreedy('arp static', 'Configure static ARP entry', (args) => {
     if (args.length < 2) return 'Error: Incomplete command.';
     return cmdArpStatic(getRouter(), args[0], args[1]);
+  });
+
+  // ip routing — Huawei equivalent of Cisco's "ip routing" (routing is enabled by default)
+  trie.register('ip routing', 'Enable IP routing', () => {
+    return '';
   });
 
   // IPv6 global enable
@@ -276,6 +297,24 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
  */
 export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
+
+  trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const raw = args.join('');
+    let portName = resolveHuaweiInterfaceName(getRouter(), raw);
+    if (!portName) {
+      const vMatch = raw.match(/^(loopback|tunnel)([\d]+)$/i);
+      if (vMatch) {
+        const typeMap: Record<string, string> = { 'loopback': 'LoopBack', 'tunnel': 'Tunnel' };
+        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        getRouter()._createVirtualInterface(fullName);
+        portName = fullName;
+      }
+      if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    }
+    ctx.setSelectedInterface(portName);
+    return '';
+  });
 
   trie.registerGreedy('ip address', 'Configure IP address', (args) => {
     return cmdIpAddress(getRouter(), ctx, args);
@@ -319,7 +358,43 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
+  trie.registerGreedy('ip helper-address', 'Set DHCP relay helper address', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
+    getRouter()._getDHCPServerInternal().addHelperAddress(ctx.getSelectedInterface()!, args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ip forward-protocol udp', 'Forward UDP port on interface', (_args) => {
+    return '';
+  });
+
   trie.register('dhcp snooping enable', 'Enable DHCP snooping on interface', () => '');
+
+  // Tunnel interface commands
+  trie.registerGreedy('source', 'Set tunnel source address', (args) => {
+    if (args.length < 1 || !ctx.getSelectedInterface()) return 'Error: Incomplete command.';
+    const ifName = ctx.getSelectedInterface()!;
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelSource = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+
+  trie.registerGreedy('destination', 'Set tunnel destination address', (args) => {
+    if (args.length < 1 || !ctx.getSelectedInterface()) return 'Error: Incomplete command.';
+    const ifName = ctx.getSelectedInterface()!;
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelDest = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+
+  trie.registerGreedy('tunnel-protocol', 'Set tunnel protocol', (_args) => {
+    return '';
+  });
 
   // IPv6 interface commands
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {

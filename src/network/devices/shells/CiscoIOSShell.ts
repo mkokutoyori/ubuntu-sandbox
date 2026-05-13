@@ -63,6 +63,10 @@ import {
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import { registerIPSecShowCommands } from './cisco/CiscoIPSecShowCommands';
+import {
+  buildNATConfigCommands, buildNATInterfaceCommands,
+  registerNATPrivilegedCommands, registerNATShowCommands,
+} from './cisco/CiscoNATCommands';
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   // ─── Router-specific state ───────────────────────────────────────
@@ -246,6 +250,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.registerShowCommands(this.privilegedTrie);
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
+    registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
     this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
@@ -258,6 +263,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigIfCommands(this.configIfTrie, this);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
+    // NAT
+    buildNATConfigCommands(this.configTrie, this);
+    buildNATInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigRouterCommands(this.configRouterTrie, this);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
@@ -308,6 +316,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     // IPSec show commands
     registerIPSecShowCommands(trie, getRouter);
+
+    // NAT show commands
+    registerNATShowCommands(trie, getRouter);
 
     // show running-config interface <name>
     trie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {

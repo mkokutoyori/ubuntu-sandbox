@@ -21,6 +21,17 @@ import {
 } from '../core/types';
 import { RIP_TIMERS, ADMINISTRATIVE_DISTANCE } from '../core/constants';
 import { Logger } from '../core/Logger';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
+import {
+  RIPSignalStore,
+  makeReadonlyRIPObservables,
+  projectRipRoutes,
+  projectRipStats,
+  type RIPObservables,
+} from './observables';
+import { RIPSignalRefreshActor } from './actors';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -42,8 +53,9 @@ export interface RIPRouteState {
   learnedFrom: string;
   learnedOnIface: string;
   garbageCollect: boolean;
-  timeoutTimer: ReturnType<typeof setTimeout> | null;
-  gcTimer: ReturnType<typeof setTimeout> | null;
+  /** TimerSet token (Phase 4b2-RIP migration). */
+  timeoutTimer: symbol | null;
+  gcTimer: symbol | null;
 }
 
 /** RIP configuration */
@@ -116,8 +128,63 @@ function createDefaultConfig(): RIPConfig {
 export class RIPEngine implements IProtocolEngine {
   private config: RIPConfig;
   private routes: Map<string, RIPRouteState> = new Map();
-  private updateTimer: ReturnType<typeof setInterval> | null = null;
+  private updateTimer: symbol | null = null;
   private running: boolean = false;
+
+  // ── Reactive plumbing (Phase 4b2-RIP) ───────────────────────────────
+  private busOverride: IEventBus | null = null;
+  private schedulerOverride: IScheduler | null = null;
+  private readonly timers = new TimerSet(() => this.getScheduler());
+  private readonly signalStore = new RIPSignalStore();
+  /** Read-only observables (routes, stats). */
+  readonly observables: RIPObservables = makeReadonlyRIPObservables(this.signalStore);
+  private signalRefreshActor: RIPSignalRefreshActor | null = null;
+
+  // Counters that feed projectRipStats.
+  private updatesSent = 0;
+  private updatesReceived = 0;
+  private routesAddedCount = 0;
+  private routesRemovedCount = 0;
+
+  setEventBus(bus: IEventBus | null): void {
+    this.busOverride = bus;
+    this.attachActors();
+  }
+  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+  /** Public — used by `RIPSignalRefreshActor` to filter events. */
+  getDeviceId(): string { return this.equipmentId; }
+
+  private deviceRef() {
+    return { deviceId: this.equipmentId, hostname: this.hostname };
+  }
+
+  private attachActors(): void {
+    this.signalRefreshActor?.stop();
+    this.signalRefreshActor = new RIPSignalRefreshActor(this.getBus(), this);
+    this.signalRefreshActor.start();
+  }
+
+  // ── Actor-API: signal refresh helpers ──────────────────────────────
+
+  /** [actor-API] Refresh routes + stats. */
+  _refreshAllSignals(): void {
+    this.signalStore.routes.set(projectRipRoutes(this.routes));
+    this._refreshStatsSignal();
+  }
+
+  /** [actor-API] Refresh stats only. */
+  _refreshStatsSignal(): void {
+    this.signalStore.stats.set(projectRipStats({
+      running: this.running,
+      routes: this.routes,
+      updatesSent: this.updatesSent,
+      updatesReceived: this.updatesReceived,
+      routesAdded: this.routesAddedCount,
+      routesRemoved: this.routesRemovedCount,
+    }));
+  }
 
   constructor(
     private readonly equipmentId: string,
@@ -129,6 +196,7 @@ export class RIPEngine implements IProtocolEngine {
     if (config) {
       Object.assign(this.config, config);
     }
+    this.attachActors();
   }
 
   // ─── IProtocolEngine ──────────────────────────────────────────────
@@ -136,31 +204,43 @@ export class RIPEngine implements IProtocolEngine {
   start(): void {
     this.running = true;
 
-    this.updateTimer = setInterval(() => {
+    this.updateTimer = this.timers.setInterval(() => {
       this.sendPeriodicUpdate();
     }, this.config.updateInterval);
 
+    this.signalRefreshActor?.start();
     this.sendRequest();
 
     Logger.info(this.equipmentId, 'rip:enabled',
       `${this.hostname}: RIPv2 enabled, update interval ${this.config.updateInterval}ms`);
+
+    this.getBus().publish({
+      topic: 'rip.engine.started',
+      payload: { ...this.deviceRef(), updateIntervalMs: this.config.updateInterval },
+    });
+    this._refreshAllSignals();
   }
 
   stop(): void {
     this.running = false;
 
-    if (this.updateTimer) {
-      clearInterval(this.updateTimer);
-      this.updateTimer = null;
-    }
-
+    // TimerSet.clearAll() releases every per-route timer in one call.
+    this.timers.clearAll();
+    this.updateTimer = null;
     for (const [, state] of this.routes) {
-      if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
-      if (state.gcTimer) clearTimeout(state.gcTimer);
+      state.timeoutTimer = null;
+      state.gcTimer = null;
     }
     this.routes.clear();
+    this.signalRefreshActor?.stop();
 
     Logger.info(this.equipmentId, 'rip:disabled', `${this.hostname}: RIPv2 disabled`);
+
+    this.getBus().publish({
+      topic: 'rip.engine.stopped',
+      payload: this.deviceRef(),
+    });
+    this._refreshAllSignals();
   }
 
   isRunning(): boolean {
@@ -204,6 +284,16 @@ export class RIPEngine implements IProtocolEngine {
     }
 
     if (ripPkt.command === 2) {
+      this.updatesReceived++;
+      this.getBus().publish({
+        topic: 'rip.update.received',
+        payload: {
+          ...this.deviceRef(),
+          iface: inPort,
+          fromIp: srcIP.toString(),
+          routeCount: ripPkt.entries.length,
+        },
+      });
       for (const entry of ripPkt.entries) {
         this.processRouteEntry(inPort, srcIP, entry);
       }
@@ -279,11 +369,23 @@ export class RIPEngine implements IProtocolEngine {
       const response: RIPPacket = { type: 'rip', command: 2, version: 2, entries: chunk };
       this.sendPacket(outIface, response);
     }
+    this.updatesSent++;
+    this.getBus().publish({
+      topic: 'rip.update.sent',
+      payload: {
+        ...this.deviceRef(),
+        iface: outIface,
+        routeCount: entries.length,
+        destIp: '224.0.0.9',
+        triggered: false,
+      },
+    });
   }
 
   private sendTriggeredUpdate(changedRoute: RIPRouteEntry_RIB): void {
     if (!this.running) return;
 
+    let totalEntries = 0;
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
 
@@ -291,6 +393,7 @@ export class RIPEngine implements IProtocolEngine {
         if (this.config.poisonedReverse) {
           const entry = this.routeToRIPEntry(changedRoute, RIP_METRIC_INFINITY);
           this.sendPacket(portName, { type: 'rip', command: 2, version: 2, entries: [entry] });
+          totalEntries++;
         }
         continue;
       }
@@ -298,6 +401,20 @@ export class RIPEngine implements IProtocolEngine {
       const metric = Math.min(changedRoute.metric + 1, RIP_METRIC_INFINITY);
       const entry = this.routeToRIPEntry(changedRoute, metric);
       this.sendPacket(portName, { type: 'rip', command: 2, version: 2, entries: [entry] });
+      totalEntries++;
+    }
+    if (totalEntries > 0) {
+      this.updatesSent++;
+      this.getBus().publish({
+        topic: 'rip.update.sent',
+        payload: {
+          ...this.deviceRef(),
+          iface: '*',
+          routeCount: totalEntries,
+          destIp: '224.0.0.9',
+          triggered: true,
+        },
+      });
     }
   }
 
@@ -381,8 +498,20 @@ export class RIPEngine implements IProtocolEngine {
       }
     } else {
       if (newMetric < existing.route.metric) {
-        if (existing.timeoutTimer) clearTimeout(existing.timeoutTimer);
-        if (existing.gcTimer) clearTimeout(existing.gcTimer);
+        if (existing.timeoutTimer) this.timers.clear(existing.timeoutTimer);
+        if (existing.gcTimer) this.timers.clear(existing.gcTimer);
+        this.getBus().publish({
+          topic: 'rip.route.updated',
+          payload: {
+            ...this.deviceRef(),
+            network: entry.ipAddress.toString(),
+            mask: entry.subnetMask.toString(),
+            oldMetric: existing.route.metric,
+            newMetric,
+            nextHop: srcIP.toString(),
+            iface: inPort,
+          },
+        });
         this.callbacks.removeRoute(entry.ipAddress, entry.subnetMask);
         this.installRoute(key, entry, newMetric, srcIP, inPort);
       }
@@ -413,9 +542,23 @@ export class RIPEngine implements IProtocolEngine {
     };
     this.routes.set(key, state);
     this.resetTimeout(key, state);
+    this.routesAddedCount++;
 
     Logger.info(this.equipmentId, 'rip:route-learned',
       `${this.hostname}: RIP learned ${key} via ${srcIP} metric ${metric}`);
+
+    this.getBus().publish({
+      topic: 'rip.route.added',
+      payload: {
+        ...this.deviceRef(),
+        network: entry.ipAddress.toString(),
+        mask: entry.subnetMask.toString(),
+        nextHop: srcIP.toString(),
+        iface: inPort,
+        metric,
+        learnedFrom: srcIP.toString(),
+      },
+    });
   }
 
   private invalidateRoute(key: string, state: RIPRouteState): void {
@@ -424,43 +567,63 @@ export class RIPEngine implements IProtocolEngine {
     state.lastUpdate = Date.now();
 
     if (state.timeoutTimer) {
-      clearTimeout(state.timeoutTimer);
+      this.timers.clear(state.timeoutTimer);
       state.timeoutTimer = null;
     }
 
     this.callbacks.updateRoute(state.route.network, state.route.mask, state.route);
     this.sendTriggeredUpdate(state.route);
 
-    state.gcTimer = setTimeout(() => {
+    state.gcTimer = this.timers.setTimeout(() => {
       this.garbageCollect(key);
     }, this.config.gcTimeout);
 
     Logger.info(this.equipmentId, 'rip:route-invalidated',
       `${this.hostname}: RIP route ${key} invalidated (metric=16)`);
+
+    this.getBus().publish({
+      topic: 'rip.route.timed-out',
+      payload: {
+        ...this.deviceRef(),
+        network: state.route.network.toString(),
+        mask: state.route.mask.toString(),
+      },
+    });
   }
 
   private garbageCollect(key: string): void {
     const state = this.routes.get(key);
     if (!state) return;
 
-    if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
-    if (state.gcTimer) clearTimeout(state.gcTimer);
+    if (state.timeoutTimer) this.timers.clear(state.timeoutTimer);
+    if (state.gcTimer) this.timers.clear(state.gcTimer);
 
     this.routes.delete(key);
     this.callbacks.removeRoute(state.route.network, state.route.mask);
+    this.routesRemovedCount++;
 
     Logger.info(this.equipmentId, 'rip:route-gc',
       `${this.hostname}: RIP route ${key} garbage-collected`);
+
+    this.getBus().publish({
+      topic: 'rip.route.removed',
+      payload: {
+        ...this.deviceRef(),
+        network: state.route.network.toString(),
+        mask: state.route.mask.toString(),
+        reason: 'gc',
+      },
+    });
   }
 
   private resetTimeout(key: string, state: RIPRouteState): void {
-    if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
+    if (state.timeoutTimer) this.timers.clear(state.timeoutTimer);
     if (state.gcTimer) {
-      clearTimeout(state.gcTimer);
+      this.timers.clear(state.gcTimer);
       state.gcTimer = null;
     }
 
-    state.timeoutTimer = setTimeout(() => {
+    state.timeoutTimer = this.timers.setTimeout(() => {
       this.invalidateRoute(key, state);
     }, this.config.routeTimeout);
   }

@@ -162,7 +162,12 @@ export class DeviceOfflineError extends Error {
 
 export abstract class TerminalSession {
   readonly id: string;
-  readonly device: Equipment;
+  /**
+   * Active device. Mutable so an SSH session can temporarily swap the
+   * remote machine in (`LinuxTerminalSession.pushRemoteDevice`) and pop
+   * back to the local one when the session ends.
+   */
+  device: Equipment;
 
   // ── Observable state ──
   lines: OutputLine[] = [];

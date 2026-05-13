@@ -417,10 +417,13 @@ describe('ARP', () => {
     await configureHostsStatic(topology.hosts);
   });
 
-  it('devrait afficher une table ARP vide avant tout trafic', async () => {
+  it('devrait populer la table ARP via ARP gratuits lors de la configuration', async () => {
+    // Gratuitous ARPs sent by hosts during IP configuration populate neighbors' caches.
     const pc = topology.hosts.lan1[0] as LinuxPC;
     const arpTable = await pc.executeCommand('arp -n');
-    expect(arpTable.trim()).toBe('');
+    // pc1 was configured first; later hosts on LAN1 sent gratuitous ARPs it received.
+    expect(arpTable).toContain('192.168.1.2');
+    expect(arpTable).toContain('192.168.1.3');
   });
 
   it('devrait remplir la table ARP après un ping', async () => {

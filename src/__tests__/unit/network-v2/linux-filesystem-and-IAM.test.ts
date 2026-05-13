@@ -1149,8 +1149,8 @@ done
 # Case statement
 fruit="apple"
 case \$fruit in
-  apple) echo "It's an apple";;
-  banana) echo "It's a banana";;
+  apple) echo "Fruit is apple";;
+  banana) echo "Fruit is banana";;
   *) echo "Unknown fruit";;
 esac
 `;
@@ -1164,7 +1164,7 @@ esac
       expect(output).toContain('Iteration 5');
       expect(output).toContain('While loop: 1');
       expect(output).toContain('While loop: 3');
-      expect(output).toContain("It's an apple");
+      expect(output).toContain("Fruit is apple");
       
       // Nettoyage
       await pc.executeCommand('rm control.sh');

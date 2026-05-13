@@ -176,7 +176,19 @@ function ipconfigAll(ctx: WinCommandContext): string {
           if (dhcpState?.lease) {
             lines.push(`   DHCP Server . . . . . . . . . . . : ${dhcpState.lease.serverIdentifier}`);
             if (dhcpState.lease.dnsServers && dhcpState.lease.dnsServers.length > 0) {
-              lines.push(`   DNS Servers . . . . . . . . . . . : ${dhcpState.lease.dnsServers.join(', ')}`);
+              lines.push(`   DNS Servers . . . . . . . . . . . : ${dhcpState.lease.dnsServers[0]}`);
+              for (let di = 1; di < dhcpState.lease.dnsServers.length; di++) {
+                lines.push(`                                         ${dhcpState.lease.dnsServers[di]}`);
+              }
+            }
+          }
+        } else {
+          // Static DNS servers configured via netsh
+          const staticDns = ctx.getDnsServers(name);
+          if (staticDns.length > 0) {
+            lines.push(`   DNS Servers . . . . . . . . . . . : ${staticDns[0]}`);
+            for (let di = 1; di < staticDns.length; di++) {
+              lines.push(`                                         ${staticDns[di]}`);
             }
           }
         }

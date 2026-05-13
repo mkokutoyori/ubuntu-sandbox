@@ -70,6 +70,9 @@ export function registerIPSecShowCommands(
   trie.register('show crypto ikev2 profile', 'Display IKEv2 profiles', () =>
     eng()?.showCryptoIKEv2Profile() ?? 'IPSec not configured.');
 
+  trie.register('show crypto ikev2 keyring', 'Display IKEv2 keyrings', () =>
+    eng()?.showCryptoIKEv2Keyring() ?? 'IPSec not configured.');
+
   trie.register('show crypto isakmp key', 'Display ISAKMP pre-shared keys', () =>
     eng()?.showCryptoISAKMPKey() ?? 'IPSec not configured.');
 }

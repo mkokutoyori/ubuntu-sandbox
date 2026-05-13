@@ -1,0 +1,741 @@
+/**
+ * sftp-wan.test.ts — WAN topology integration tests for the SFTP protocol.
+ *
+ * Physical topology (fully cabled):
+ *
+ *   Site A  192.168.10.0/24                  Site B  10.0.20.0/24
+ *   ─────────────────────────                ──────────────────────────────
+ *   linuxClient   192.168.10.10              linuxFileServer  10.0.20.10
+ *   linuxClient2  192.168.10.11              windowsFileServer 10.0.20.20
+ *        │                                          │
+ *      SW-A                                       SW-B
+ *        │ GE0/0                         GE0/0 │
+ *      RouterA ─── GE0/1 ──── GE0/1 ─── RouterB
+ *               10.0.0.1/30   10.0.0.2/30
+ *
+ * Transport: real TCP over the physical network stack.
+ *   connect() calls device.tcpConnect() which sends SYN frames through the
+ *   cable/switch/router chain.  All frame delivery is synchronous so the
+ *   handshake completes within two microtask checkpoints.
+ *
+ * Routing (static):
+ *   RouterA: 10.0.20.0/24 → 10.0.0.2      RouterB: 192.168.10.0/24 → 10.0.0.1
+ *   linuxClient / linuxClient2 : GW = 192.168.10.1
+ *   linuxFileServer / windowsFileServer   : GW = 10.0.20.1
+ *
+ * Credential summary (defaults):
+ *   linuxFileServer   — user: root          / password: admin  (isServer profile)
+ *   windowsFileServer — user: User          / password: user
+ *                     — user: Administrator / password: admin
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { SftpSession } from '@/network/protocols/sftp/SftpSession';
+import type { TcpConnector } from '@/network/core/TcpConnection';
+import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import { Equipment } from '@/network/equipment/Equipment';
+import { IPAddress, SubnetMask } from '@/network/core/types';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+
+// ─── Address plan ─────────────────────────────────────────────────────────────
+
+const CLIENT_IP   = '192.168.10.10';
+const CLIENT2_IP  = '192.168.10.11';
+const LINUX_SRV   = '10.0.20.10';
+const WIN_SRV     = '10.0.20.20';
+const GW_A        = '192.168.10.1';   // RouterA LAN-A interface
+const GW_B        = '10.0.20.1';      // RouterB LAN-B interface
+const WAN_A       = '10.0.0.1';       // RouterA WAN interface
+const WAN_B       = '10.0.0.2';       // RouterB WAN interface
+const MASK_24     = '255.255.255.0';
+const MASK_30     = '255.255.255.252';
+
+// ─── Topology builder ─────────────────────────────────────────────────────────
+
+function buildWanTopology() {
+  // ── Hosts ──────────────────────────────────────────────────────────────────
+  const linuxClient  = new LinuxPC('linux-pc', 'ClientA',     0, 0);
+  const linuxClient2 = new LinuxPC('linux-pc', 'ClientA2',    0, 0);
+  const linuxServer  = new LinuxServer('linux-server', 'FileServer', 0, 0);
+  const winServer    = new WindowsPC('windows-server', 'WinFileServer', 0, 0);
+
+  // ── Switches ───────────────────────────────────────────────────────────────
+  const swA = new CiscoSwitch('switch-cisco', 'SW-A', 26);
+  const swB = new CiscoSwitch('switch-cisco', 'SW-B', 26);
+
+  // ── Routers ────────────────────────────────────────────────────────────────
+  const routerA = new CiscoRouter('RouterA');
+  const routerB = new CiscoRouter('RouterB');
+
+  // ── Cables — Site A ────────────────────────────────────────────────────────
+  new Cable('c-clientA-swA').connect(
+    linuxClient.getPort('eth0')!,  swA.getPort('FastEthernet0/1')!);
+  new Cable('c-clientA2-swA').connect(
+    linuxClient2.getPort('eth0')!, swA.getPort('FastEthernet0/2')!);
+  new Cable('c-routerA-swA').connect(
+    routerA.getPort('GigabitEthernet0/0')!, swA.getPort('GigabitEthernet0/0')!);
+
+  // ── Cables — WAN link ──────────────────────────────────────────────────────
+  new Cable('c-wan').connect(
+    routerA.getPort('GigabitEthernet0/1')!,
+    routerB.getPort('GigabitEthernet0/1')!);
+
+  // ── Cables — Site B ────────────────────────────────────────────────────────
+  new Cable('c-linuxSrv-swB').connect(
+    linuxServer.getPort('eth0')!,  swB.getPort('FastEthernet0/1')!);
+  new Cable('c-winSrv-swB').connect(
+    winServer.getPort('eth0')!,    swB.getPort('FastEthernet0/2')!);
+  new Cable('c-routerB-swB').connect(
+    routerB.getPort('GigabitEthernet0/0')!, swB.getPort('GigabitEthernet0/0')!);
+
+  // ── Router interfaces ──────────────────────────────────────────────────────
+  routerA.configureInterface('GigabitEthernet0/0', new IPAddress(GW_A),  new SubnetMask(MASK_24));
+  routerA.configureInterface('GigabitEthernet0/1', new IPAddress(WAN_A), new SubnetMask(MASK_30));
+  routerB.configureInterface('GigabitEthernet0/0', new IPAddress(GW_B),  new SubnetMask(MASK_24));
+  routerB.configureInterface('GigabitEthernet0/1', new IPAddress(WAN_B), new SubnetMask(MASK_30));
+
+  // ── Static routes on routers ───────────────────────────────────────────────
+  routerA.addStaticRoute(
+    new IPAddress('10.0.20.0'), new SubnetMask(MASK_24), new IPAddress(WAN_B));
+  routerB.addStaticRoute(
+    new IPAddress('192.168.10.0'), new SubnetMask(MASK_24), new IPAddress(WAN_A));
+
+  // ── Host IP + default gateway ─────────────────────────────────────────────
+  linuxClient.configureInterface('eth0',  new IPAddress(CLIENT_IP),  new SubnetMask(MASK_24));
+  linuxClient.setDefaultGateway(new IPAddress(GW_A));
+
+  linuxClient2.configureInterface('eth0', new IPAddress(CLIENT2_IP), new SubnetMask(MASK_24));
+  linuxClient2.setDefaultGateway(new IPAddress(GW_A));
+
+  linuxServer.configureInterface('eth0',  new IPAddress(LINUX_SRV),  new SubnetMask(MASK_24));
+  linuxServer.setDefaultGateway(new IPAddress(GW_B));
+
+  winServer.configureInterface('eth0',    new IPAddress(WIN_SRV),    new SubnetMask(MASK_24));
+  winServer.setDefaultGateway(new IPAddress(GW_B));
+
+  return { linuxClient, linuxClient2, linuxServer, winServer, routerA, routerB, swA, swB };
+}
+
+// ─── Session factory ──────────────────────────────────────────────────────────
+
+/** Build an SftpSession backed by a real TCP connector from a LinuxPC device. */
+function makeSession(device: LinuxPC): SftpSession {
+  const vfs       = (device as any).executor.vfs as VirtualFileSystem;
+  const cwd       = (device as any).executor.cwd as string ?? '/home/user';
+  const user      = (device as any).executor.userMgr.currentUser as string ?? 'user';
+  const connector: TcpConnector = (host, port) => (device as any).tcpConnect(host, port);
+  return new SftpSession(vfs, connector, cwd, user);
+}
+
+// ─── Shared setup ─────────────────────────────────────────────────────────────
+
+let topo: ReturnType<typeof buildWanTopology>;
+
+beforeEach(() => {
+  resetDeviceCounters();
+  topo = buildWanTopology();
+});
+
+// ─── WAN-01: Physical topology & reachability ────────────────────────────────
+
+describe('WAN-01: Physical topology & reachability', () => {
+  it('TCP connects to Linux file server across WAN', async () => {
+    const session = makeSession(topo.linuxClient);
+    expect(await session.connect(`root@${LINUX_SRV}`, 'admin')).toBe('');
+    expect(session.isConnected()).toBe(true);
+  });
+
+  it('TCP connects to Windows file server across WAN', async () => {
+    const session = makeSession(topo.linuxClient);
+    expect(await session.connect(`User@${WIN_SRV}`, 'user')).toBe('');
+    expect(session.isConnected()).toBe(true);
+  });
+
+  it('TCP connects to same-subnet device without needing default gateway', async () => {
+    // linuxClient2 (192.168.10.11) is directly connected to linuxClient's subnet
+    const session = makeSession(topo.linuxClient);
+    // linuxClient2 is a LinuxMachine with SFTP on port 22
+    expect(await session.connect(`root@${CLIENT2_IP}`, 'admin')).toBe('');
+    expect(session.isConnected()).toBe(true);
+  });
+
+  it('TCP connect returns No route to host for unknown IP (no SFTP server)', async () => {
+    // 10.99.99.99 — routable via default GW but no device owns that address;
+    // the SYN is never answered.  Use a host-only IP that resolveRoute() rejects
+    // to avoid a 2s timeout: create an isolated client with no default gateway.
+    resetDeviceCounters();
+    const isolated = new LinuxPC('linux-pc', 'Isolated', 0, 0);
+    isolated.configureInterface('eth0', new IPAddress(CLIENT_IP), new SubnetMask(MASK_24));
+    // No setDefaultGateway — resolveRoute('10.0.20.10') returns null immediately
+
+    const session = makeSession(isolated);
+    const err = await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(err).toContain('No route to host');
+  });
+
+  it('TCP connect blocked without default gateway (Site B unreachable)', async () => {
+    resetDeviceCounters();
+    const isolated = new LinuxPC('linux-pc', 'Isolated2', 0, 0);
+    isolated.configureInterface('eth0', new IPAddress(CLIENT_IP), new SubnetMask(MASK_24));
+    // Deliberately: no setDefaultGateway()
+
+    const session = makeSession(isolated);
+    expect(await session.connect(`root@${LINUX_SRV}`, 'admin')).toContain('No route to host');
+    expect(await session.connect(`User@${WIN_SRV}`,   'user')).toContain('No route to host');
+  });
+
+  it('eight devices are registered in the Equipment registry', () => {
+    expect(Equipment.getAllEquipment().length).toBe(8);
+  });
+
+  it('clients have a default gateway', () => {
+    expect(topo.linuxClient.getDefaultGateway()?.toString()).toBe(GW_A);
+    expect(topo.linuxClient2.getDefaultGateway()?.toString()).toBe(GW_A);
+  });
+
+  it('servers have a default gateway', () => {
+    expect(topo.linuxServer.getDefaultGateway()?.toString()).toBe(GW_B);
+    expect(topo.winServer.getDefaultGateway()?.toString()).toBe(GW_B);
+  });
+});
+
+// ─── WAN-02: Linux client → Linux file server ────────────────────────────────
+
+describe('WAN-02: Linux client → Linux file server', () => {
+  let session: SftpSession;
+
+  beforeEach(() => {
+    session = makeSession(topo.linuxClient);
+  });
+
+  it('connects successfully with root/admin', async () => {
+    expect(await session.connect(`root@${LINUX_SRV}`, 'admin')).toBe('');
+    expect(session.isConnected()).toBe(true);
+  });
+
+  it('connect rejects wrong password', async () => {
+    expect(await session.connect(`root@${LINUX_SRV}`, 'badpass')).toContain('Permission denied');
+    expect(session.isConnected()).toBe(false);
+  });
+
+  it('connect rejects nonexistent user', async () => {
+    expect(await session.connect(`ghost@${LINUX_SRV}`, 'admin')).toContain('Permission denied');
+  });
+
+  it('pwd shows /root after connect', async () => {
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.pwd()).toContain('/root');
+  });
+
+  it('put uploads a file to the Linux server', async () => {
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/upload.txt', 'hello from client', 1000, 1000, 0o022);
+
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.put('/home/user/upload.txt')).toContain('upload.txt');
+
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    expect(serverVfs.readFile('/root/upload.txt')).toBe('hello from client');
+  });
+
+  it('get downloads a file from the Linux server', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.writeFile('/root/report.txt', 'server report', 0, 0, 0o022);
+
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.get('report.txt')).toContain('report.txt');
+
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    expect(clientVfs.readFile('/home/user/report.txt')).toBe('server report');
+  });
+
+  it('cd changes remote working directory', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.mkdirp('/root/projects', 0o755, 0, 0);
+
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.cd('projects')).toBe('');
+    expect(session.pwd()).toContain('/root/projects');
+  });
+
+  it('mkdir creates a directory on the Linux server', async () => {
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.mkdir('newdir')).toBe('');
+
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    expect(serverVfs.resolveInode('/root/newdir')?.type).toBe('directory');
+  });
+
+  it('rm deletes a file on the Linux server', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.writeFile('/root/tmp.txt', 'data', 0, 0, 0o022);
+
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.rm('tmp.txt')).toBe('');
+    expect(serverVfs.resolveInode('/root/tmp.txt')).toBeNull();
+  });
+
+  it('rmdir removes an empty directory on the Linux server', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.mkdirp('/root/emptydir', 0o755, 0, 0);
+
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.rmdir('emptydir')).toBe('');
+    expect(serverVfs.resolveInode('/root/emptydir')).toBeNull();
+  });
+
+  it('rename renames a file on the Linux server', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.writeFile('/root/original.txt', 'data', 0, 0, 0o022);
+
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.rename('original.txt', 'renamed.txt')).toBe('');
+    expect(serverVfs.resolveInode('/root/renamed.txt')).not.toBeNull();
+    expect(serverVfs.resolveInode('/root/original.txt')).toBeNull();
+  });
+
+  it('disconnect closes the session', async () => {
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    session.disconnect();
+    expect(session.isConnected()).toBe(false);
+  });
+
+  it('operations on disconnected session return Not connected', () => {
+    expect(session.ls([])).toBe('Not connected.');
+    expect(session.get('x')).toBe('Not connected.');
+  });
+});
+
+// ─── WAN-03: Linux client → Windows file server ──────────────────────────────
+
+describe('WAN-03: Linux client → Windows file server', () => {
+  let session: SftpSession;
+
+  beforeEach(() => {
+    session = makeSession(topo.linuxClient);
+  });
+
+  it('connects to Windows server with User/user', async () => {
+    expect(await session.connect(`User@${WIN_SRV}`, 'user')).toBe('');
+    expect(session.isConnected()).toBe(true);
+  });
+
+  it('connects to Windows server with Administrator/admin', async () => {
+    expect(await session.connect(`Administrator@${WIN_SRV}`, 'admin')).toBe('');
+  });
+
+  it('connect rejects wrong password on Windows server', async () => {
+    expect(await session.connect(`User@${WIN_SRV}`, 'badpass')).toContain('Permission denied');
+  });
+
+  it('pwd shows Windows SFTP home path /C:/Users/User', async () => {
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.pwd()).toContain('/C:/Users/User');
+  });
+
+  it('Administrator home is /C:/Users/Administrator', async () => {
+    await session.connect(`Administrator@${WIN_SRV}`, 'admin');
+    expect(session.pwd()).toContain('/C:/Users/Administrator');
+  });
+
+  it('ls lists Windows home directory (Desktop, Documents, …)', async () => {
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    const out = session.ls([]);
+    expect(out).toContain('Desktop');
+    expect(out).toContain('Documents');
+  });
+
+  it('put uploads a file to the Windows server', async () => {
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/transfer.txt', 'hello windows', 1000, 1000, 0o022);
+
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.put('/home/user/transfer.txt')).toContain('transfer.txt');
+
+    const winVfs = (topo.winServer as any).fs;
+    expect(winVfs.readFile('C:\\Users\\User\\transfer.txt').content).toBe('hello windows');
+  });
+
+  it('get downloads a file from the Windows server', async () => {
+    const winVfs = (topo.winServer as any).fs;
+    winVfs.createFile('C:\\Users\\User\\report.csv', 'col1,col2\n1,2\n');
+
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.get('report.csv')).toContain('report.csv');
+
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    expect(clientVfs.readFile('/home/user/report.csv')).toBe('col1,col2\n1,2\n');
+  });
+
+  it('cd to Documents on Windows server', async () => {
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.cd('Documents')).toBe('');
+    expect(session.pwd()).toContain('/C:/Users/User/Documents');
+  });
+
+  it('mkdir creates a directory on the Windows server', async () => {
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.mkdir('SharedFiles')).toBe('');
+
+    const winVfs = (topo.winServer as any).fs;
+    expect(winVfs.isDirectory('C:\\Users\\User\\SharedFiles')).toBe(true);
+  });
+
+  it('rm deletes a file on the Windows server', async () => {
+    const winVfs = (topo.winServer as any).fs;
+    winVfs.createFile('C:\\Users\\User\\temp.txt', 'temp');
+
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.rm('temp.txt')).toBe('');
+    expect(winVfs.exists('C:\\Users\\User\\temp.txt')).toBe(false);
+  });
+
+  it('rename renames a file on the Windows server', async () => {
+    const winVfs = (topo.winServer as any).fs;
+    winVfs.createFile('C:\\Users\\User\\old.txt', 'content');
+
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.rename('old.txt', 'new.txt')).toBe('');
+    expect(winVfs.exists('C:\\Users\\User\\new.txt')).toBe(true);
+    expect(winVfs.exists('C:\\Users\\User\\old.txt')).toBe(false);
+  });
+});
+
+// ─── WAN-04: Routing blocks unreachable destinations ─────────────────────────
+
+describe('WAN-04: Routing blocks unreachable destinations', () => {
+  it('host without default gateway cannot reach remote subnet', async () => {
+    resetDeviceCounters();
+    const isolated = new LinuxPC('linux-pc', 'NoGW', 0, 0);
+    isolated.configureInterface('eth0', new IPAddress(CLIENT_IP), new SubnetMask(MASK_24));
+    // no setDefaultGateway
+
+    const s = makeSession(isolated);
+    expect(await s.connect(`root@${LINUX_SRV}`, 'admin')).toContain('No route to host');
+    expect(await s.connect(`User@${WIN_SRV}`,   'user')).toContain('No route to host');
+  });
+
+  it('client CAN reach its own subnet without a gateway', () => {
+    const route = (topo.linuxClient as any).resolveRoute(new IPAddress(CLIENT2_IP));
+    expect(route).not.toBeNull();
+  });
+
+  it('wrong password blocks even when routing is good (Linux server)', async () => {
+    const s = makeSession(topo.linuxClient);
+    expect(await s.connect(`root@${LINUX_SRV}`, 'WRONG')).toContain('Permission denied');
+  });
+
+  it('wrong password blocks even when routing is good (Windows server)', async () => {
+    const s = makeSession(topo.linuxClient);
+    expect(await s.connect(`User@${WIN_SRV}`, 'WRONG')).toContain('Permission denied');
+  });
+
+  it('unreachable subnet returns No route to host immediately', async () => {
+    // Create isolated client (no default GW) — resolveRoute returns null for remote IPs
+    resetDeviceCounters();
+    const noGW = new LinuxPC('linux-pc', 'NoGW2', 0, 0);
+    noGW.configureInterface('eth0', new IPAddress(CLIENT_IP), new SubnetMask(MASK_24));
+
+    const s = makeSession(noGW);
+    expect(await s.connect(`root@10.99.99.99`, 'admin')).toContain('No route to host');
+  });
+});
+
+// ─── WAN-05: Concurrent sessions ─────────────────────────────────────────────
+
+describe('WAN-05: Concurrent sessions', () => {
+  it('two clients simultaneously connected to Linux server', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient2);
+
+    expect(await s1.connect(`root@${LINUX_SRV}`, 'admin')).toBe('');
+    expect(await s2.connect(`root@${LINUX_SRV}`, 'admin')).toBe('');
+    expect(s1.isConnected()).toBe(true);
+    expect(s2.isConnected()).toBe(true);
+  });
+
+  it('two clients simultaneously connected to Windows server', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient2);
+
+    expect(await s1.connect(`User@${WIN_SRV}`, 'user')).toBe('');
+    expect(await s2.connect(`User@${WIN_SRV}`, 'user')).toBe('');
+    expect(s1.isConnected()).toBe(true);
+    expect(s2.isConnected()).toBe(true);
+  });
+
+  it('client1 writes to Linux server, client2 reads the same file', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient2);
+
+    const vfs1 = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs1.writeFile('/home/user/shared.txt', 'shared content', 1000, 1000, 0o022);
+
+    await s1.connect(`root@${LINUX_SRV}`, 'admin');
+    s1.put('/home/user/shared.txt');
+    s1.disconnect();
+
+    await s2.connect(`root@${LINUX_SRV}`, 'admin');
+    s2.get('shared.txt');
+
+    const vfs2 = (topo.linuxClient2 as any).executor.vfs as VirtualFileSystem;
+    expect(vfs2.readFile('/home/user/shared.txt')).toBe('shared content');
+  });
+
+  it('disconnecting one session does not affect the other', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient2);
+
+    await s1.connect(`root@${LINUX_SRV}`, 'admin');
+    await s2.connect(`root@${LINUX_SRV}`, 'admin');
+
+    s1.disconnect();
+    expect(s1.isConnected()).toBe(false);
+    expect(s2.isConnected()).toBe(true);
+  });
+
+  it('client1 writes to Windows server, client2 reads the same file', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient2);
+
+    const vfs1 = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs1.writeFile('/home/user/msg.txt', 'windows message', 1000, 1000, 0o022);
+
+    await s1.connect(`User@${WIN_SRV}`, 'user');
+    s1.put('/home/user/msg.txt');
+
+    await s2.connect(`User@${WIN_SRV}`, 'user');
+    s2.get('msg.txt');
+
+    const vfs2 = (topo.linuxClient2 as any).executor.vfs as VirtualFileSystem;
+    expect(vfs2.readFile('/home/user/msg.txt')).toBe('windows message');
+  });
+});
+
+// ─── WAN-06: Cross-server file exchange ──────────────────────────────────────
+
+describe('WAN-06: Cross-server file exchange', () => {
+  it('upload to Linux server, download by second client', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient2);
+
+    const vfs1 = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs1.writeFile('/home/user/backup.tar', 'backup-data', 1000, 1000, 0o022);
+
+    await s1.connect(`root@${LINUX_SRV}`, 'admin');
+    s1.put('/home/user/backup.tar');
+    s1.disconnect();
+
+    await s2.connect(`root@${LINUX_SRV}`, 'admin');
+    s2.get('backup.tar');
+    const vfs2 = (topo.linuxClient2 as any).executor.vfs as VirtualFileSystem;
+    expect(vfs2.readFile('/home/user/backup.tar')).toBe('backup-data');
+  });
+
+  it('upload same file to both servers (Linux + Windows)', async () => {
+    const s1 = makeSession(topo.linuxClient);
+    const s2 = makeSession(topo.linuxClient);
+
+    const vfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs.writeFile('/home/user/config.cfg', '[section]\nkey=val\n', 1000, 1000, 0o022);
+
+    await s1.connect(`root@${LINUX_SRV}`, 'admin');
+    s1.put('/home/user/config.cfg');
+    s1.disconnect();
+
+    await s2.connect(`User@${WIN_SRV}`, 'user');
+    s2.put('/home/user/config.cfg');
+    s2.disconnect();
+
+    const linuxVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    expect(linuxVfs.readFile('/root/config.cfg')).toBe('[section]\nkey=val\n');
+    const winVfs = (topo.winServer as any).fs;
+    expect(winVfs.readFile('C:\\Users\\User\\config.cfg').content).toBe('[section]\nkey=val\n');
+  });
+
+  it('lls / lcd allow local navigation while connected to remote server', async () => {
+    const vfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs.mkdirp('/home/user/localdir', 0o755, 1000, 1000);
+    vfs.writeFile('/home/user/localdir/note.txt', 'local note', 1000, 1000, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.lcd('localdir')).toBe('');
+    expect(session.lpwd()).toContain('/home/user/localdir');
+    expect(session.lls([])).toContain('note.txt');
+  });
+
+  it('get with explicit local path writes to given path', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.writeFile('/root/archive.zip', 'zip-content', 0, 0, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    session.get('/root/archive.zip', '/home/user/downloads/archive.zip');
+
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    expect(clientVfs.readFile('/home/user/downloads/archive.zip')).toBe('zip-content');
+  });
+
+  it('put with explicit remote path writes to given remote path', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.mkdirp('/root/uploads', 0o755, 0, 0);
+
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/payload.txt', 'payload', 1000, 1000, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    session.put('/home/user/payload.txt', '/root/uploads/payload.txt');
+    expect(serverVfs.readFile('/root/uploads/payload.txt')).toBe('payload');
+  });
+
+  it('connect after disconnect re-establishes the session', async () => {
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    session.disconnect();
+    expect(await session.connect(`root@${LINUX_SRV}`, 'admin')).toBe('');
+    expect(session.isConnected()).toBe(true);
+  });
+});
+
+// ─── WAN-07: Server-side directory operations ─────────────────────────────────
+
+describe('WAN-07: Server-side directory operations', () => {
+  it('mkdir then cd then put — Linux server', async () => {
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/data.txt', 'dataset', 1000, 1000, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    session.mkdir('datasets');
+    session.cd('datasets');
+    session.put('/home/user/data.txt');
+
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    expect(serverVfs.readFile('/root/datasets/data.txt')).toBe('dataset');
+  });
+
+  it('rmdir refuses to remove non-empty directory — Linux server', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.mkdirp('/root/nonempty', 0o755, 0, 0);
+    serverVfs.writeFile('/root/nonempty/file.txt', 'data', 0, 0, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.rmdir('nonempty')).toContain("Couldn't remove directory");
+  });
+
+  it('rename file to different directory — Linux server', async () => {
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    serverVfs.mkdirp('/root/archive', 0o755, 0, 0);
+    serverVfs.writeFile('/root/todo.txt', 'tasks', 0, 0, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    session.rename('/root/todo.txt', '/root/archive/done.txt');
+
+    expect(serverVfs.resolveInode('/root/archive/done.txt')).not.toBeNull();
+    expect(serverVfs.resolveInode('/root/todo.txt')).toBeNull();
+  });
+
+  it('mkdir then rmdir — Windows server', async () => {
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    session.mkdir('TempDir');
+    const winVfs = (topo.winServer as any).fs;
+    expect(winVfs.isDirectory('C:\\Users\\User\\TempDir')).toBe(true);
+    expect(session.rmdir('TempDir')).toBe('');
+    expect(winVfs.isDirectory('C:\\Users\\User\\TempDir')).toBe(false);
+  });
+
+  it('rm on nonexistent file returns error — Linux server', async () => {
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    expect(session.rm('ghost.txt')).toContain('No such file or directory');
+  });
+
+  it('get nonexistent file returns error — Windows server', async () => {
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.get('missing.exe')).toContain('not found');
+  });
+});
+
+// ─── WAN-08: Transfer integrity ──────────────────────────────────────────────
+
+describe('WAN-08: Transfer integrity', () => {
+  it('transfer output contains filename, 100%, and byte count', async () => {
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/hello.txt', '12345', 1000, 1000, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    const result = session.put('/home/user/hello.txt');
+    expect(result).toContain('hello.txt');
+    expect(result).toContain('100%');
+    expect(result).toContain('5');
+  });
+
+  it('empty file transfers to Linux server without error', async () => {
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/empty.txt', '', 1000, 1000, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`root@${LINUX_SRV}`, 'admin');
+    const result = session.put('/home/user/empty.txt');
+    expect(result).toContain('empty.txt');
+
+    const serverVfs = (topo.linuxServer as any).executor.vfs as VirtualFileSystem;
+    expect(serverVfs.readFile('/root/empty.txt')).toBe('');
+  });
+
+  it('empty file transfers to Windows server without error', async () => {
+    const clientVfs = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    clientVfs.writeFile('/home/user/empty.dat', '', 1000, 1000, 0o022);
+
+    const session = makeSession(topo.linuxClient);
+    await session.connect(`User@${WIN_SRV}`, 'user');
+    expect(session.put('/home/user/empty.dat')).toContain('empty.dat');
+  });
+
+  it('multiline content preserved through Linux server round-trip', async () => {
+    const content = 'line1\nline2\nline3\n';
+    const vfs1 = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs1.writeFile('/home/user/multi.txt', content, 1000, 1000, 0o022);
+
+    const s1 = makeSession(topo.linuxClient);
+    await s1.connect(`root@${LINUX_SRV}`, 'admin');
+    s1.put('/home/user/multi.txt');
+    s1.disconnect();
+
+    const s2 = makeSession(topo.linuxClient2);
+    await s2.connect(`root@${LINUX_SRV}`, 'admin');
+    s2.get('multi.txt');
+    const vfs2 = (topo.linuxClient2 as any).executor.vfs as VirtualFileSystem;
+    expect(vfs2.readFile('/home/user/multi.txt')).toBe(content);
+  });
+
+  it('multiline content preserved through Windows server round-trip', async () => {
+    const content = 'alpha\nbeta\ngamma\n';
+    const vfs1 = (topo.linuxClient as any).executor.vfs as VirtualFileSystem;
+    vfs1.writeFile('/home/user/lines.txt', content, 1000, 1000, 0o022);
+
+    const s1 = makeSession(topo.linuxClient);
+    await s1.connect(`User@${WIN_SRV}`, 'user');
+    s1.put('/home/user/lines.txt');
+    s1.disconnect();
+
+    const s2 = makeSession(topo.linuxClient2);
+    await s2.connect(`User@${WIN_SRV}`, 'user');
+    s2.get('lines.txt');
+    const vfs2 = (topo.linuxClient2 as any).executor.vfs as VirtualFileSystem;
+    expect(vfs2.readFile('/home/user/lines.txt')).toBe(content);
+  });
+});
