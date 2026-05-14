@@ -42,6 +42,22 @@ import {
   InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, NewPSDriveCmdlet, GetPSDriveCmdlet,
 } from './MiscCmdlets';
+import {
+  GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
+  RestartServiceCmdlet, SuspendServiceCmdlet, ResumeServiceCmdlet,
+  SetServiceCmdlet, NewServiceCmdlet, RemoveServiceCmdlet,
+} from './ServiceCmdlets';
+import {
+  GetProcessCmdlet, StopProcessCmdlet, StartProcessCmdlet,
+} from './ProcessCmdlets';
+import {
+  GetLocalUserCmdlet, NewLocalUserCmdlet, SetLocalUserCmdlet,
+  RemoveLocalUserCmdlet, EnableLocalUserCmdlet, DisableLocalUserCmdlet,
+  RenameLocalUserCmdlet,
+  GetLocalGroupCmdlet, NewLocalGroupCmdlet, RemoveLocalGroupCmdlet,
+  AddLocalGroupMemberCmdlet, RemoveLocalGroupMemberCmdlet,
+  GetLocalGroupMemberCmdlet,
+} from './UserCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -130,4 +146,35 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewPSDriveCmdlet());
   registry.register(new GetPSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
+
+  // ── Services (provider-backed) ────────────────────────────────────────────
+  registry.register(new GetServiceCmdlet());
+  registry.register(new StartServiceCmdlet());
+  registry.register(new StopServiceCmdlet());
+  registry.register(new RestartServiceCmdlet());
+  registry.register(new SuspendServiceCmdlet());
+  registry.register(new ResumeServiceCmdlet());
+  registry.register(new SetServiceCmdlet());
+  registry.register(new NewServiceCmdlet());
+  registry.register(new RemoveServiceCmdlet());
+
+  // ── Processes (provider-backed) ───────────────────────────────────────────
+  registry.register(new GetProcessCmdlet());
+  registry.register(new StopProcessCmdlet());
+  registry.register(new StartProcessCmdlet());
+
+  // ── Local users / groups (provider-backed) ────────────────────────────────
+  registry.register(new GetLocalUserCmdlet());
+  registry.register(new NewLocalUserCmdlet());
+  registry.register(new SetLocalUserCmdlet());
+  registry.register(new RemoveLocalUserCmdlet());
+  registry.register(new EnableLocalUserCmdlet());
+  registry.register(new DisableLocalUserCmdlet());
+  registry.register(new RenameLocalUserCmdlet());
+  registry.register(new GetLocalGroupCmdlet());
+  registry.register(new NewLocalGroupCmdlet());
+  registry.register(new RemoveLocalGroupCmdlet());
+  registry.register(new AddLocalGroupMemberCmdlet());
+  registry.register(new RemoveLocalGroupMemberCmdlet());
+  registry.register(new GetLocalGroupMemberCmdlet());
 }
