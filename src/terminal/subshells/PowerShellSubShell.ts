@@ -56,6 +56,7 @@ export class PowerShellSubShell implements ISubShell {
             dynamicFirewallRules: this.psExecutor.dynamicFirewallRules,
             networkProfiles:      this.psExecutor.networkProfiles,
           },
+          vpn: { vpnConnections: this.psExecutor.vpnConnections },
         }))
       : new PSInterpreter();
   }

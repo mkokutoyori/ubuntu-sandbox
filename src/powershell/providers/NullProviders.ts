@@ -18,4 +18,5 @@ export const NULL_PROVIDERS: PSProviders = {
   processes:  null,
   users:      null,
   eventLog:   null,
+  vpn:        null,
 };

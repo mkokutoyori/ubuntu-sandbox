@@ -146,6 +146,10 @@ export interface IFileSystemProvider {
   isDirectory(path: string): boolean;
   /** Get ACL info for a path. */
   getAcl(path: string): { owner: string; acl: Array<{ principal: string; type: string; permissions: string[] }> } | null;
+  /** Set the owner of a path. Returns true on success. */
+  setOwner(path: string, owner: string): boolean;
+  /** Add an ACE (Access Control Entry) to a path. Returns true on success. */
+  addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean;
 }
 
 export interface IRegistryProvider {
@@ -239,6 +243,22 @@ export interface IUserProvider {
   isAdmin(userName: string): boolean;
 }
 
+export interface VpnConnectionInfo {
+  name: string;
+  serverAddress: string;
+  tunnelType: string;
+  encryptionLevel: string;
+  authMethod: string;
+}
+
+export interface IVpnProvider {
+  listConnections(nameFilter?: string): VpnConnectionInfo[];
+  getConnection(name: string): VpnConnectionInfo | null;
+  addConnection(conn: VpnConnectionInfo): void;
+  setConnection(name: string, opts: Partial<Omit<VpnConnectionInfo, 'name'>>): string;
+  removeConnection(name: string): string;
+}
+
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
@@ -265,4 +285,5 @@ export interface PSProviders {
   readonly processes:  IProcessProvider    | null;
   readonly users:      IUserProvider       | null;
   readonly eventLog:   IEventLogProvider   | null;
+  readonly vpn:        IVpnProvider        | null;
 }

@@ -20,8 +20,10 @@ import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
+  IVpnProvider,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
+  VpnConnectionInfo,
 } from '@/powershell/providers/PSProviders';
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
@@ -112,6 +114,12 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
       owner: e.owner,
       acl: e.acl.map(a => ({ principal: a.principal, type: a.type, permissions: [...a.permissions] })),
     };
+  }
+  setOwner(path: string, owner: string): boolean {
+    return this.fs().setOwner(this.abs(path), owner);
+  }
+  addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean {
+    return this.fs().addACE(this.abs(path), { ...ace });
   }
 
   private abs(p: string): string {
@@ -615,6 +623,40 @@ function notImpl(name: string): Error {
   return new Error(`${name} is not recognized as a network provider operation`);
 }
 
+// ── VPN adapter (state still on the legacy executor) ─────────────────────
+
+interface VpnState {
+  readonly vpnConnections: Map<string, VpnConnectionInfo>;
+}
+
+class WindowsVpnAdapter implements IVpnProvider {
+  constructor(private readonly state: VpnState) {}
+
+  listConnections(nameFilter?: string): VpnConnectionInfo[] {
+    const all = Array.from(this.state.vpnConnections.values());
+    return nameFilter
+      ? all.filter(v => v.name.toLowerCase() === nameFilter.toLowerCase())
+      : all;
+  }
+  getConnection(name: string): VpnConnectionInfo | null {
+    return this.state.vpnConnections.get(name.toLowerCase()) ?? null;
+  }
+  addConnection(conn: VpnConnectionInfo): void {
+    this.state.vpnConnections.set(conn.name.toLowerCase(), conn);
+  }
+  setConnection(name: string, opts: Partial<Omit<VpnConnectionInfo, 'name'>>): string {
+    const cur = this.state.vpnConnections.get(name.toLowerCase());
+    if (!cur) return `Cannot find VPN connection '${name}'.`;
+    this.state.vpnConnections.set(name.toLowerCase(), { ...cur, ...opts });
+    return '';
+  }
+  removeConnection(name: string): string {
+    return this.state.vpnConnections.delete(name.toLowerCase())
+      ? ''
+      : `Cannot find VPN connection '${name}'.`;
+  }
+}
+
 // ── Public factory ─────────────────────────────────────────────────────────
 
 /**
@@ -631,6 +673,7 @@ export function createWindowsPSProviders(
     registry?: PSRegistryProvider;
     eventLog?: PSEventLogProvider;
     network?:  NetworkStateRefs;
+    vpn?:      VpnState;
   },
 ): PSProviders {
   const reg = shared?.registry ?? new PSRegistryProvider();
@@ -642,6 +685,7 @@ export function createWindowsPSProviders(
     dynamicFirewallRules: new Map(),
     networkProfiles:      new Map(),
   };
+  const vpn = shared?.vpn ?? { vpnConnections: new Map() };
   return {
     filesystem: new WindowsFileSystemAdapter(pc),
     services:   new WindowsServiceAdapter(pc),
@@ -650,5 +694,6 @@ export function createWindowsPSProviders(
     registry:   new WindowsRegistryAdapter(reg),
     eventLog:   new WindowsEventLogAdapter(log),
     network:    new WindowsNetworkAdapter(pc, net),
+    vpn:        new WindowsVpnAdapter(vpn),
   };
 }

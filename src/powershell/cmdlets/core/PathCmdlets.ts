@@ -7,6 +7,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function isRegistryPath(path: string): boolean {
@@ -373,5 +374,100 @@ export class RemoveItemPropertyCmdlet implements ICmdlet {
     }
     requireRegistryProvider(path);
     return null;
+  }
+}
+
+// ─── Get-Item / Set-Item ────────────────────────────────────────────────────
+// Read / overwrite a filesystem entry. Registry paths fall through to the
+// existing item-property cmdlets.
+
+export class GetItemCmdlet implements ICmdlet {
+  readonly name = 'get-item';
+  readonly aliases = ['gi'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError('Get-Item requires -Path'); return null; }
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.getItem(path);
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    if (!fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
+    const isDir = fs.isDirectory(path);
+    const baseName = path.replace(/\\$/, '').split(/[\\/]/).pop() ?? path;
+    return {
+      Name:          baseName,
+      FullName:      path,
+      PSIsContainer: isDir,
+      Mode:          isDir ? 'd----' : '-a---',
+      Length:        isDir ? 0 : (fs.readFile(path) || '').length,
+    } as Record<string, PSValue>;
+  }
+}
+
+export class SetItemCmdlet implements ICmdlet {
+  readonly name = 'set-item';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? '');
+    if (!path) { ctx.emitError('Set-Item requires -Path'); return null; }
+    if (isRegistryPath(path)) {
+      // Defer to legacy executor (which has rich registry-Set-Item behaviour).
+      throw new PSRuntimeError('Set-Item on registry paths is not recognized in this provider context');
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    fs.writeFile(path, value);
+    return null;
+  }
+}
+
+// ─── Get-Acl / Set-Acl ──────────────────────────────────────────────────────
+
+export class GetAclCmdlet implements ICmdlet {
+  readonly name = 'get-acl';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const fs = ctx.providers.filesystem;
+    if (!fs || !path) { ctx.emitError("Get-Acl : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
+    if (!fs.exists(path)) { ctx.emitError(`Get-Acl : Cannot find path '${path}' because it does not exist.`); return null; }
+    const acl = fs.getAcl(path);
+    if (!acl) {
+      ctx.emitError(`Get-Acl : Cannot retrieve ACL for '${path}'.`);
+      return null;
+    }
+    // Match the columns Format-List would render for a real ACL.
+    return {
+      Path:  path,
+      Owner: acl.owner,
+      Group: 'BUILTIN\\Administrators',
+      Access: acl.acl.map(a => ({
+        FileSystemRights:  a.permissions.join(', '),
+        AccessControlType: a.type === 'allow' ? 'Allow' : 'Deny',
+        IdentityReference: a.principal,
+        IsInherited:       false,
+      })) as PSValue,
+    } as Record<string, PSValue>;
+  }
+}
+
+export class SetAclCmdlet implements ICmdlet {
+  readonly name = 'set-acl';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    // Real Set-Acl takes a SecurityDescriptor argument — too complex to
+    // simulate without parsing the full PSObject. We forward to the legacy
+    // executor, which has a dedicated handler.
+    throw new PSRuntimeError('Set-Acl is not recognized in this provider context');
   }
 }

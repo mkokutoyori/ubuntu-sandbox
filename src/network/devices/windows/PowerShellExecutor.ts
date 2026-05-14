@@ -181,8 +181,8 @@ export class PowerShellExecutor {
   private wlanProfiles: Set<string> = new Set();
   /** Network connection profiles: ifIndex → category. Public for sharing. */
   readonly networkProfiles: Map<number, string> = new Map();
-  /** VPN connections: lowercase name → connection info */
-  private vpnConnections: Map<string, {
+  /** VPN connections: lowercase name → connection info. Public for sharing. */
+  readonly vpnConnections: Map<string, {
     name: string; serverAddress: string; tunnelType: string;
     encryptionLevel: string; authMethod: string;
   }> = new Map();

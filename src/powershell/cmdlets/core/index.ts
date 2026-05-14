@@ -35,6 +35,7 @@ import {
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
   OutFileCmdlet as OutFilePathCmdlet,
   GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet,
+  GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
@@ -74,6 +75,10 @@ import {
   EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
   GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
 } from './NetworkCmdlets';
+import {
+  AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
+  SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
+} from './VpnCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -147,6 +152,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetItemPropertyCmdlet());
   registry.register(new SetItemPropertyCmdlet());
   registry.register(new RemoveItemPropertyCmdlet());
+  registry.register(new GetItemCmdlet());
+  registry.register(new SetItemCmdlet());
+  registry.register(new GetAclCmdlet());
+  registry.register(new SetAclCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
@@ -227,4 +236,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new DisableNetFirewallRuleCmdlet());
   registry.register(new GetNetConnectionProfileCmdlet());
   registry.register(new SetNetConnectionProfileCmdlet());
+
+  // ── VPN (provider-backed) ─────────────────────────────────────────────────
+  registry.register(new AddVpnConnectionCmdlet());
+  registry.register(new GetVpnConnectionCmdlet());
+  registry.register(new SetVpnConnectionCmdlet());
+  registry.register(new RemoveVpnConnectionCmdlet());
 }
