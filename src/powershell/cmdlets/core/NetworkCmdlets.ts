@@ -293,6 +293,87 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
   }
 }
 
+// ── Set-NetIPAddress / Set-NetRoute ───────────────────────────────────────
+
+export class SetNetIPAddressCmdlet implements ICmdlet {
+  readonly name = 'set-netipaddress';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const ip = psValueToString(ctx.named['ipaddress'] ?? ctx.positional[0] ?? '');
+    if (!ip) { ctx.emitError('Set-NetIPAddress requires -IPAddress'); return null; }
+    const opts: { prefixLength?: number } = {};
+    if (ctx.named['prefixlength'] !== undefined) opts.prefixLength = Number(ctx.named['prefixlength']);
+    const msg = net.setIPAddress(ip, opts);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+export class SetNetRouteCmdlet implements ICmdlet {
+  readonly name = 'set-netroute';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const dest = psValueToString(ctx.named['destinationprefix'] ?? ctx.positional[0] ?? '');
+    if (!dest) { ctx.emitError('Set-NetRoute requires -DestinationPrefix'); return null; }
+    const opts: { nextHop?: string; routeMetric?: number; ifAlias?: string } = {};
+    if (ctx.named['nexthop']        !== undefined) opts.nextHop      = psValueToString(ctx.named['nexthop']);
+    if (ctx.named['routemetric']    !== undefined) opts.routeMetric  = Number(ctx.named['routemetric']);
+    if (ctx.named['interfacealias'] !== undefined) opts.ifAlias      = psValueToString(ctx.named['interfacealias']);
+    const msg = net.setRoute(dest, opts);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+// ── Restart-NetAdapter (cycle adapter status) ────────────────────────────
+
+export class RestartNetAdapterCmdlet implements ICmdlet {
+  readonly name = 'restart-netadapter';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Restart-NetAdapter requires -Name'); return null; }
+    net.setAdapterStatus(name, 'Down');
+    net.setAdapterStatus(name, 'Up');
+    return null;
+  }
+}
+
+// ── Test-NetConnection (TCP-port-aware sibling of Test-Connection) ────────
+
+export class TestNetConnectionCmdlet implements ICmdlet {
+  readonly name = 'test-netconnection';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const target = psValueToString(
+      ctx.named['computername'] ?? ctx.named['targetname'] ?? ctx.positional[0] ?? '',
+    );
+    if (!target) { ctx.emitError('Test-NetConnection requires -ComputerName'); return null; }
+    const port = ctx.named['port']
+      ? Number(ctx.named['port'])
+      : (ctx.named['commontcpport'] ? psValueToString(ctx.named['commontcpport']) : null);
+    const reachable = net.testConnection(target);
+    return {
+      ComputerName:        target,
+      RemoteAddress:       target,
+      RemotePort:          port ?? 0,
+      InterfaceAlias:      'eth0',
+      SourceAddress:       net.getDefaultGateway() ?? '0.0.0.0',
+      PingSucceeded:       reachable,
+      PingReplyDetails:    { RoundtripTime: reachable ? 1 : 0 },
+      TcpTestSucceeded:    !!port && reachable,
+    } as Record<string, PSValue>;
+  }
+}
+
 // ── Enable / Disable / Rename-NetAdapter ──────────────────────────────────
 
 export class EnableNetAdapterCmdlet implements ICmdlet {

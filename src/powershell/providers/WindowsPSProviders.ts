@@ -20,10 +20,10 @@ import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
-  IVpnProvider,
+  IVpnProvider, IScheduledTaskProvider, IDiskProvider,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
-  VpnConnectionInfo,
+  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
@@ -374,20 +374,20 @@ class WindowsEventLogAdapter implements IEventLogProvider {
   constructor(private readonly log: PSEventLogProvider) {}
 
   listLogs() {
-    // PSEventLogProvider only exposes a formatted-string view; parse it back.
-    const formatted = this.log.getEventLogList();
-    const result: Array<{ logName: string; entries: number; maxSizeKB: number }> = [];
-    for (const line of formatted.split('\n')) {
-      const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S.*)$/);
-      if (!m) continue;
-      result.push({ logName: m[4].trim(), entries: parseInt(m[2], 10), maxSizeKB: parseInt(m[3], 10) });
-    }
-    return result;
+    return this.log.getAllLogsStructured();
   }
-  getEntries(): EventLogEntryInfo[] {
-    // Structured entries aren't trivially recoverable from the formatted string.
-    // Cmdlets that need details should fall back through PowerShellExecutor for now.
-    return [];
+  getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[] {
+    const raw = this.log.getEntriesStructured(logName, opts ?? {});
+    if (!raw) return [];
+    return raw.map(e => ({
+      index: e.index,
+      timeGenerated: e.timeGenerated,
+      entryType: e.entryType,
+      source: e.source,
+      eventId: e.eventId,
+      category: e.category,
+      message: e.message,
+    }));
   }
   writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string): void {
     this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message);
@@ -530,6 +530,28 @@ class WindowsNetworkAdapter implements INetworkProvider {
   removeRoute(dest: string): void {
     this.state.extraRoutes.delete(dest);
   }
+  setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string {
+    const cur = this.state.extraRoutes.get(dest);
+    if (!cur) {
+      // Upsert (matches the legacy executor) using whatever was provided.
+      this.state.extraRoutes.set(dest, {
+        ifAlias: opts.ifAlias ?? '',
+        nextHop: opts.nextHop ?? '0.0.0.0',
+        metric:  opts.routeMetric ?? 256,
+      });
+      return '';
+    }
+    if (opts.ifAlias     !== undefined) cur.ifAlias = opts.ifAlias;
+    if (opts.nextHop     !== undefined) cur.nextHop = opts.nextHop;
+    if (opts.routeMetric !== undefined) cur.metric  = opts.routeMetric;
+    return '';
+  }
+  setIPAddress(ip: string, opts: { prefixLength?: number }): string {
+    const cur = this.state.extraIPs.get(ip.toLowerCase());
+    if (!cur) return `Cannot find IP ${ip}.`;
+    if (opts.prefixLength !== undefined) cur.prefixLength = opts.prefixLength;
+    return '';
+  }
 
   // ─ DNS ──────────────────────────────────────────────────────────────────
 
@@ -657,6 +679,56 @@ class WindowsVpnAdapter implements IVpnProvider {
   }
 }
 
+// ── Scheduled tasks (simple in-memory, seeded with built-ins) ─────────────
+
+interface ScheduledTaskState {
+  readonly tasks: Map<string, ScheduledTaskInfo>;
+}
+
+const SEEDED_TASKS: ScheduledTaskInfo[] = [
+  { taskName: 'GoogleUpdateTaskUser',                taskPath: '\\',                            state: 'Ready' },
+  { taskName: 'OneDrive Standalone Update Task',     taskPath: '\\',                            state: 'Ready' },
+  { taskName: '.NET Framework NGEN v4.0.30319',      taskPath: '\\Microsoft\\Windows\\.NET',    state: 'Ready' },
+  { taskName: 'SimTestTask',                          taskPath: '\\',                            state: 'Ready' },
+];
+
+class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
+  constructor(private readonly state: ScheduledTaskState) {}
+
+  listTasks(nameFilter?: string): ScheduledTaskInfo[] {
+    const all = Array.from(this.state.tasks.values());
+    return nameFilter
+      ? all.filter(t => t.taskName.toLowerCase().includes(nameFilter.toLowerCase()))
+      : all;
+  }
+  registerTask(task: ScheduledTaskInfo): string {
+    this.state.tasks.set(task.taskName.toLowerCase(), task);
+    return `\\${task.taskName}`;
+  }
+  unregisterTask(name: string): string {
+    return this.state.tasks.delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
+  }
+}
+
+// ── Disks / volumes (read-only seeded data) ───────────────────────────────
+
+class WindowsDiskAdapter implements IDiskProvider {
+  constructor(private readonly pc: WindowsPC) {}
+  listDisks(): DiskInfo[] {
+    return [
+      { number: 0, friendlyName: 'Virtual HD',     size: 100 * 1024 ** 3, partitionStyle: 'GPT', operationalStatus: 'Online' },
+      { number: 1, friendlyName: 'Data Disk',      size:  50 * 1024 ** 3, partitionStyle: 'GPT', operationalStatus: 'Online' },
+    ];
+  }
+  listVolumes(): VolumeInfo[] {
+    void this.pc; // future: hook into device drives if/when modelled
+    return [
+      { driveLetter: 'C', fileSystemLabel: 'System',     fileSystem: 'NTFS', sizeRemaining: 60 * 1024 ** 3, size: 100 * 1024 ** 3, driveType: 'Fixed' },
+      { driveLetter: 'D', fileSystemLabel: 'Data',        fileSystem: 'NTFS', sizeRemaining: 30 * 1024 ** 3, size:  50 * 1024 ** 3, driveType: 'Fixed' },
+    ];
+  }
+}
+
 // ── Public factory ─────────────────────────────────────────────────────────
 
 /**
@@ -670,10 +742,11 @@ class WindowsVpnAdapter implements IVpnProvider {
 export function createWindowsPSProviders(
   pc: WindowsPC,
   shared?: {
-    registry?: PSRegistryProvider;
-    eventLog?: PSEventLogProvider;
-    network?:  NetworkStateRefs;
-    vpn?:      VpnState;
+    registry?:       PSRegistryProvider;
+    eventLog?:       PSEventLogProvider;
+    network?:        NetworkStateRefs;
+    vpn?:            VpnState;
+    scheduledTasks?: ScheduledTaskState;
   },
 ): PSProviders {
   const reg = shared?.registry ?? new PSRegistryProvider();
@@ -686,14 +759,19 @@ export function createWindowsPSProviders(
     networkProfiles:      new Map(),
   };
   const vpn = shared?.vpn ?? { vpnConnections: new Map() };
+  const tasks = shared?.scheduledTasks ?? {
+    tasks: new Map(SEEDED_TASKS.map(t => [t.taskName.toLowerCase(), t])),
+  };
   return {
-    filesystem: new WindowsFileSystemAdapter(pc),
-    services:   new WindowsServiceAdapter(pc),
-    processes:  new WindowsProcessAdapter(pc),
-    users:      new WindowsUserAdapter(pc),
-    registry:   new WindowsRegistryAdapter(reg),
-    eventLog:   new WindowsEventLogAdapter(log),
-    network:    new WindowsNetworkAdapter(pc, net),
-    vpn:        new WindowsVpnAdapter(vpn),
+    filesystem:     new WindowsFileSystemAdapter(pc),
+    services:       new WindowsServiceAdapter(pc),
+    processes:      new WindowsProcessAdapter(pc),
+    users:          new WindowsUserAdapter(pc),
+    registry:       new WindowsRegistryAdapter(reg),
+    eventLog:       new WindowsEventLogAdapter(log),
+    network:        new WindowsNetworkAdapter(pc, net),
+    vpn:            new WindowsVpnAdapter(vpn),
+    scheduledTasks: new WindowsScheduledTaskAdapter(tasks),
+    disks:          new WindowsDiskAdapter(pc),
   };
 }

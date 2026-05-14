@@ -193,6 +193,10 @@ export interface INetworkProvider {
   getRoutes(ifAlias?: string): RouteInfo[];
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
   removeRoute(dest: string, ifAlias?: string): void;
+  /** Modify properties of an existing route — usually nextHop or metric. */
+  setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string;
+  /** Modify properties of an existing IP — usually prefixLength. */
+  setIPAddress(ip: string, opts: { prefixLength?: number }): string;
   getDnsServers(ifAlias: string): string[];
   setDnsServers(ifAlias: string, servers: string[]): void;
   getDefaultGateway(): string | null;
@@ -243,6 +247,38 @@ export interface IUserProvider {
   isAdmin(userName: string): boolean;
 }
 
+export interface ScheduledTaskInfo {
+  taskName: string;
+  taskPath: string;
+  state: 'Ready' | 'Running' | 'Disabled';
+}
+
+export interface IScheduledTaskProvider {
+  listTasks(nameFilter?: string): ScheduledTaskInfo[];
+  registerTask(task: ScheduledTaskInfo): string;
+  unregisterTask(name: string): string;
+}
+
+export interface DiskInfo {
+  number: number;
+  friendlyName: string;
+  size: number;       // bytes
+  partitionStyle: string;
+  operationalStatus: string;
+}
+export interface VolumeInfo {
+  driveLetter: string;
+  fileSystemLabel: string;
+  fileSystem: string;
+  sizeRemaining: number;
+  size: number;
+  driveType: string;
+}
+export interface IDiskProvider {
+  listDisks(): DiskInfo[];
+  listVolumes(): VolumeInfo[];
+}
+
 export interface VpnConnectionInfo {
   name: string;
   serverAddress: string;
@@ -278,12 +314,14 @@ export interface IEventLogProvider {
  *   if (!ctx.providers.filesystem) throw new PSRuntimeError('No filesystem available');
  */
 export interface PSProviders {
-  readonly filesystem: IFileSystemProvider | null;
-  readonly registry:   IRegistryProvider   | null;
-  readonly services:   IServiceProvider    | null;
-  readonly network:    INetworkProvider    | null;
-  readonly processes:  IProcessProvider    | null;
-  readonly users:      IUserProvider       | null;
-  readonly eventLog:   IEventLogProvider   | null;
-  readonly vpn:        IVpnProvider        | null;
+  readonly filesystem:     IFileSystemProvider     | null;
+  readonly registry:       IRegistryProvider       | null;
+  readonly services:       IServiceProvider        | null;
+  readonly network:        INetworkProvider        | null;
+  readonly processes:      IProcessProvider        | null;
+  readonly users:          IUserProvider           | null;
+  readonly eventLog:       IEventLogProvider       | null;
+  readonly vpn:            IVpnProvider            | null;
+  readonly scheduledTasks: IScheduledTaskProvider  | null;
+  readonly disks:          IDiskProvider           | null;
 }

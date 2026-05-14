@@ -267,6 +267,18 @@ export class RemoveLocalGroupMemberCmdlet extends GroupMemberCmdlet {
   protected act(u: IUserProvider, g: string, m: string) { return u.removeGroupMember(g, m); }
 }
 
+export class RenameLocalGroupCmdlet implements ICmdlet {
+  readonly name = 'rename-localgroup';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    void ctx;
+    // The current IUserProvider doesn't expose group rename; defer to the
+    // legacy executor whose handler does the in-place rename.
+    throw new PSRuntimeError('Rename-LocalGroup is not recognized in this provider context');
+  }
+}
+
 export class GetLocalGroupMemberCmdlet implements ICmdlet {
   readonly name = 'get-localgroupmember';
   readonly aliases = [] as const;
