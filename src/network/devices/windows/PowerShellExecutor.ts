@@ -107,6 +107,19 @@ export interface PSDeviceContext {
   getServiceManager(): WindowsServiceManager;
   /** Get the process manager for process management cmdlets */
   getProcessManager(): WindowsProcessManager;
+  /**
+   * Phase 4 relocation: state holders that used to live as private fields
+   * on PowerShellExecutor now live on the device. The executor reads/writes
+   * through these references; the interpreter providers do too.
+   */
+  readonly extraIPs:             Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }>;
+  readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
+  readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
+  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+  readonly networkProfiles:      Map<number, string>;
+  readonly vpnConnections:       Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }>;
+  readonly registry:             PSRegistryProvider;
+  readonly eventLog:             PSEventLogProvider;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -135,10 +148,10 @@ export class PowerShellExecutor {
   private cwd: string;
   private device: PSDeviceContext;
   private commandHistory: string[];
-  /** Registry hive — exposed so PowerShellSubShell can share it with the interpreter's provider. */
-  readonly registry: PSRegistryProvider;
-  /** Event log — exposed for the same reason as `registry`. */
-  readonly eventLog: PSEventLogProvider;
+  /** Registry hive — relocated to the device (Phase 4). */
+  get registry(): PSRegistryProvider { return (this.device as unknown as { registry: PSRegistryProvider }).registry; }
+  /** Event log — relocated to the device. */
+  get eventLog(): PSEventLogProvider { return (this.device as unknown as { eventLog: PSEventLogProvider }).eventLog; }
   /** Session variables: $name → string value */
   private sessionVars: Map<string, string> = new Map();
   /** Session environment overrides (Set-Item Env:X) */
@@ -149,11 +162,12 @@ export class PowerShellExecutor {
   private errorList: string[] = [];
   /** Defined functions: name → { params, body } */
   private sessionFunctions: Map<string, { params: string[]; body: string }> = new Map();
-  /** Additional IP addresses: ip → { ifAlias, prefixLength, origin, skipAsSource, gateway }.
-   *  Public so WindowsPSProviders can share the same map and stay coherent. */
-  readonly extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
-  /** Extra routes: destPrefix → { ifAlias, nextHop, metric }. Public for the same reason as extraIPs. */
-  readonly extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  /** Additional IP addresses — now lives on the device (Phase 4 relocation).
+   *  Kept as a public getter for the rest of this file (which references
+   *  this.extraIPs in dozens of places) and for WindowsPSProviders. */
+  get extraIPs() { return (this.device as unknown as { extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> }).extraIPs; }
+  /** Extra routes — relocated to the device. */
+  get extraRoutes() { return (this.device as unknown as { extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> }).extraRoutes; }
   /** Location stack for Push-Location/Pop-Location */
   private locationStack: Map<string, string[]> = new Map();
   /** Array variables: $name → string[] */
@@ -164,35 +178,26 @@ export class PowerShellExecutor {
   private breakSignal = false;
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
-  /** Adapter state overrides: key = display name lowercase → { status, displayName }.
-   *  Public so WindowsPSProviders can mutate the same map. */
-  readonly adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
-  /** Dynamic firewall rules added via New-NetFirewallRule. Public for sharing. */
-  readonly dynamicFirewallRules: Map<string, {
-    name: string; displayName: string; enabled: boolean;
-    action: string; direction: string; protocol: string;
-    localPort: string; remotePort: string; description: string;
-  }> = new Map();
+  /** Adapter overrides — relocated to the device. */
+  get adapterOverrides() { return (this.device as unknown as { adapterOverrides: Map<string, { status?: string; displayName?: string }> }).adapterOverrides; }
+  /** Dynamic firewall rules — relocated to the device. */
+  get dynamicFirewallRules() { return (this.device as unknown as { dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> }).dynamicFirewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
   private winhttpProxy: string = '';
   /** WLAN: currently connected SSID (empty = disconnected) */
   private wlanConnectedSSID: string = '';
   /** WLAN: known profiles (SSIDs) */
   private wlanProfiles: Set<string> = new Set();
-  /** Network connection profiles: ifIndex → category. Public for sharing. */
-  readonly networkProfiles: Map<number, string> = new Map();
-  /** VPN connections: lowercase name → connection info. Public for sharing. */
-  readonly vpnConnections: Map<string, {
-    name: string; serverAddress: string; tunnelType: string;
-    encryptionLevel: string; authMethod: string;
-  }> = new Map();
+  /** Network connection profiles — relocated to the device. */
+  get networkProfiles() { return (this.device as unknown as { networkProfiles: Map<number, string> }).networkProfiles; }
+  /** VPN connections — relocated to the device. */
+  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> }).vpnConnections; }
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
     this.device = device;
     this.commandHistory = [];
-    this.registry = new PSRegistryProvider();
-    this.eventLog = new PSEventLogProvider();
+    // registry / eventLog now live on the device — no per-executor instances.
   }
 
   getCwd(): string { return this.cwd; }

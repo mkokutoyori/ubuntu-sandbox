@@ -51,23 +51,23 @@ export class PowerShellSubShell implements ISubShell {
   private constructor(device: Equipment) {
     this.device = device;
     this.psExecutor = new PowerShellExecutor(device as any);
-    // Device-backed providers let the interpreter read/write the same
-    // simulated state as the legacy executor (filesystem, services, …).
-    // We hand the executor's own registry/event-log instances to the
-    // providers so changes made via either path stay in sync.
-    // Non-Windows devices keep the default NULL_PROVIDERS.
+    // The interpreter and the legacy executor look at the same per-device
+    // state (Phase 4 relocation): registry / event-log / network maps /
+    // VPN connections all live on the WindowsPC itself, not on the
+    // executor. createWindowsPSProviders picks them up directly from the
+    // device. Non-Windows devices keep the default NULL_PROVIDERS.
     this.interp = device instanceof WindowsPC
       ? new PSInterpreter(createWindowsPSProviders(device, {
-          registry: this.psExecutor.registry,
-          eventLog: this.psExecutor.eventLog,
+          registry: device.registry,
+          eventLog: device.eventLog,
           network: {
-            extraIPs:             this.psExecutor.extraIPs,
-            extraRoutes:          this.psExecutor.extraRoutes,
-            adapterOverrides:     this.psExecutor.adapterOverrides,
-            dynamicFirewallRules: this.psExecutor.dynamicFirewallRules,
-            networkProfiles:      this.psExecutor.networkProfiles,
+            extraIPs:             device.extraIPs,
+            extraRoutes:          device.extraRoutes,
+            adapterOverrides:     device.adapterOverrides,
+            dynamicFirewallRules: device.dynamicFirewallRules,
+            networkProfiles:      device.networkProfiles,
           },
-          vpn: { vpnConnections: this.psExecutor.vpnConnections },
+          vpn: { vpnConnections: device.vpnConnections },
         }))
       : new PSInterpreter();
   }
