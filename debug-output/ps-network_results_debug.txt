@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network
-Generated: 2026-05-14T09:30:05.832Z
+Generated: 2026-05-14T09:34:26.816Z
 host=WIN-NET-DBG (windows-pc)
 Total commands: 75
 ============================================================
@@ -29,78 +29,24 @@ PS [2/75]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -Au
 
 PS [3/75]> Get-NetAdapter | Sort-Object Name
   
-  Name                 : Ethernet
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 2
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-01
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Ethernet 2
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 3
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-02
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Ethernet 3
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 4
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-03
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Ethernet 4
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 5
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-04
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Wi-Fi
-  InterfaceDescription : Intel(R) Wireless-AC 9560 160MHz
-  ifIndex              : 6
-  Status               : Up
-  MacAddress           : 02-00-00-FF-FF-01
-  LinkSpeed            : 54 Mbps
+  Name        InterfaceDescription              Status  MacAddress         LinkSpeed
+  ----------  --------------------------------  ------  -----------------  ---------
+  Ethernet    Intel(R) Ethernet Connection      Up      02-00-00-00-00-01  1 Gbps   
+  Ethernet 2  Intel(R) Ethernet Connection      Up      02-00-00-00-00-02  1 Gbps   
+  Ethernet 3  Intel(R) Ethernet Connection      Up      02-00-00-00-00-03  1 Gbps   
+  Ethernet 4  Intel(R) Ethernet Connection      Up      02-00-00-00-00-04  1 Gbps   
+  Wi-Fi       Intel(R) Wireless-AC 9560 160MHz  Up      02-00-00-FF-FF-01  54 Mbps  
   
 
 PS [4/75]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" }
   
-  Name                 : Ethernet
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 2
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-01
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Ethernet 2
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 3
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-02
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Ethernet 3
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 4
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-03
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Ethernet 4
-  InterfaceDescription : Intel(R) Ethernet Connection
-  ifIndex              : 5
-  Status               : Up
-  MacAddress           : 02-00-00-00-00-04
-  LinkSpeed            : 1 Gbps
-  
-  Name                 : Wi-Fi
-  InterfaceDescription : Intel(R) Wireless-AC 9560 160MHz
-  ifIndex              : 6
-  Status               : Up
-  MacAddress           : 02-00-00-FF-FF-01
-  LinkSpeed            : 54 Mbps
+  Name        InterfaceDescription              Status  MacAddress         LinkSpeed
+  ----------  --------------------------------  ------  -----------------  ---------
+  Ethernet    Intel(R) Ethernet Connection      Up      02-00-00-00-00-01  1 Gbps   
+  Ethernet 2  Intel(R) Ethernet Connection      Up      02-00-00-00-00-02  1 Gbps   
+  Ethernet 3  Intel(R) Ethernet Connection      Up      02-00-00-00-00-03  1 Gbps   
+  Ethernet 4  Intel(R) Ethernet Connection      Up      02-00-00-00-00-04  1 Gbps   
+  Wi-Fi       Intel(R) Wireless-AC 9560 160MHz  Up      02-00-00-FF-FF-01  54 Mbps  
   
 
 PS [5/75]> Get-NetAdapter | Where-Object { $_.Status -ne "Up" }
@@ -355,220 +301,39 @@ PS [11/75]> Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue
 
 PS [12/75]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" }
   
-  IPAddress      : 192.168.1.100
-  InterfaceIndex : 2
-  InterfaceAlias : Ethernet
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.101
-  InterfaceIndex : 3
-  InterfaceAlias : Ethernet 2
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.102
-  InterfaceIndex : 4
-  InterfaceAlias : Ethernet 3
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.103
-  InterfaceIndex : 5
-  InterfaceAlias : Ethernet 4
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 127.0.0.1
-  InterfaceIndex : 1
-  InterfaceAlias : Loopback Pseudo-Interface 1
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 8
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
+  IPAddress      InterfaceAlias               AddressFamily  PrefixLength
+  -------------  ---------------------------  -------------  ------------
+  192.168.1.100  Ethernet                     IPv4                     24
+  192.168.1.101  Ethernet 2                   IPv4                     24
+  192.168.1.102  Ethernet 3                   IPv4                     24
+  192.168.1.103  Ethernet 4                   IPv4                     24
+  127.0.0.1      Loopback Pseudo-Interface 1  IPv4                      8
   
 
 PS [13/75]> Get-NetIPAddress | Where-Object { $_.IPAddress -like "192.*" }
   
-  IPAddress      : 192.168.1.100
-  InterfaceIndex : 2
-  InterfaceAlias : Ethernet
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.101
-  InterfaceIndex : 3
-  InterfaceAlias : Ethernet 2
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.102
-  InterfaceIndex : 4
-  InterfaceAlias : Ethernet 3
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.103
-  InterfaceIndex : 5
-  InterfaceAlias : Ethernet 4
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
+  IPAddress      InterfaceAlias  AddressFamily  PrefixLength
+  -------------  --------------  -------------  ------------
+  192.168.1.100  Ethernet        IPv4                     24
+  192.168.1.101  Ethernet 2      IPv4                     24
+  192.168.1.102  Ethernet 3      IPv4                     24
+  192.168.1.103  Ethernet 4      IPv4                     24
   
 
 PS [14/75]> Get-NetIPAddress | Sort-Object IPAddress
   
-  IPAddress      : ::1
-  InterfaceIndex : 1
-  InterfaceAlias : Loopback Pseudo-Interface 1
-  AddressFamily  : IPv6
-  Type           : Unicast
-  PrefixLength   : 128
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 127.0.0.1
-  InterfaceIndex : 1
-  InterfaceAlias : Loopback Pseudo-Interface 1
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 8
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.100
-  InterfaceIndex : 2
-  InterfaceAlias : Ethernet
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.101
-  InterfaceIndex : 3
-  InterfaceAlias : Ethernet 2
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.102
-  InterfaceIndex : 4
-  InterfaceAlias : Ethernet 3
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : 192.168.1.103
-  InterfaceIndex : 5
-  InterfaceAlias : Ethernet 4
-  AddressFamily  : IPv4
-  Type           : Unicast
-  PrefixLength   : 24
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : WellKnown
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : fe80::0200:00ff:fe00:0001
-  InterfaceIndex : 2
-  InterfaceAlias : Ethernet
-  AddressFamily  : IPv6
-  Type           : Unicast
-  PrefixLength   : 64
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : Link
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : fe80::0200:00ff:fe00:0002
-  InterfaceIndex : 3
-  InterfaceAlias : Ethernet 2
-  AddressFamily  : IPv6
-  Type           : Unicast
-  PrefixLength   : 64
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : Link
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : fe80::0200:00ff:fe00:0003
-  InterfaceIndex : 4
-  InterfaceAlias : Ethernet 3
-  AddressFamily  : IPv6
-  Type           : Unicast
-  PrefixLength   : 64
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : Link
-  AddressState   : Preferred
-  SkipAsSource   : false
-  
-  IPAddress      : fe80::0200:00ff:fe00:0004
-  InterfaceIndex : 5
-  InterfaceAlias : Ethernet 4
-  AddressFamily  : IPv6
-  Type           : Unicast
-  PrefixLength   : 64
-  PrefixOrigin   : WellKnown
-  SuffixOrigin   : Link
-  AddressState   : Preferred
-  SkipAsSource   : false
+  IPAddress                  InterfaceAlias               AddressFamily  PrefixLength
+  -------------------------  ---------------------------  -------------  ------------
+  ::1                        Loopback Pseudo-Interface 1  IPv6                    128
+  127.0.0.1                  Loopback Pseudo-Interface 1  IPv4                      8
+  192.168.1.100              Ethernet                     IPv4                     24
+  192.168.1.101              Ethernet 2                   IPv4                     24
+  192.168.1.102              Ethernet 3                   IPv4                     24
+  192.168.1.103              Ethernet 4                   IPv4                     24
+  fe80::0200:00ff:fe00:0001  Ethernet                     IPv6                     64
+  fe80::0200:00ff:fe00:0002  Ethernet 2                   IPv6                     64
+  fe80::0200:00ff:fe00:0003  Ethernet 3                   IPv6                     64
+  fe80::0200:00ff:fe00:0004  Ethernet 4                   IPv6                     64
   
 
 PS [15/75]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
@@ -956,36 +721,25 @@ PS [53/75]> Get-DnsClientCache -ErrorAction SilentlyContinue
 
 --- [54] § complex pipelines ---
 PS [54/75]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | ForEach-Object { Get-NetIPAddress -InterfaceAlias $_.Name -ErrorAction SilentlyContinue }
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'name'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'interfacedescription'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'ifindex'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'status'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'macaddress'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'linkspeed'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'name'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'interfacedescription'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'ifindex'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'status'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'macaddress'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'linkspeed'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'name'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'interfacedescription'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'ifindex'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'status'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'macaddress'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'linkspeed'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'name'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'interfacedescription'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'ifindex'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'status'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'macaddress'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'linkspeed'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'name'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'interfacedescription'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'ifindex'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'status'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'macaddress'. Verify the value of the property and retry.
-  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'linkspeed'. Verify the value of the property and retry.
+  Get-NetIPAddress : Invalid IP address: 'InterfaceDescription'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'true'. Verify the value of the property and retry.
+  Get-NetIPAddress : Invalid IP address: 'Intel(R)'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: '2'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: '3'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: '4'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: 'Intel(R)'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
 
 PS [55/75]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
   

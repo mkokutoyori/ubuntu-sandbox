@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-users-groups
-Generated: 2026-05-14T09:30:04.969Z
+Generated: 2026-05-14T09:34:27.766Z
 host=WIN-USR-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -248,25 +248,25 @@ PS [35/102]> Get-LocalUser | Where-Object { $_.Description }
 
 PS [36/102]> Get-LocalUser | Select-Object Name, Description, Enabled | Sort-Object Name
   
-  Name            Description                                               Enabled
-  --------------  --------------------------------------------------------  -------
-  Administrator   Built-in account for administering the computer/domain    True   
-  alice                                                                     True   
-  bob                                                                       True   
-  carol           QA tester                                                 True   
-  dave                                                                      True   
-  DefaultAccount  A user account managed by the system.                     False  
-  erin                                                                      True   
-  frank                                                                     True   
-  grace                                                                     True   
-  Guest           Built-in account for guest access to the computer/domain  False  
-  heidi                                                                     True   
-  ivan                                                                      True   
-  judy                                                                      True   
-  powerUser1                                                                True   
-  powerUser2                                                                True   
-  powerUser3      with desc                                                 True   
-  User                                                                      True   
+  Name            Enabled  Description                                             
+  --------------  -------  --------------------------------------------------------
+  Administrator   True     Built-in account for administering the computer/domain  
+  alice           True                                                             
+  bob             True                                                             
+  carol           True     QA tester                                               
+  dave            True                                                             
+  DefaultAccount  False    A user account managed by the system.                   
+  erin            True                                                             
+  frank           True                                                             
+  grace           True                                                             
+  Guest           False    Built-in account for guest access to the computer/domain
+  heidi           True                                                             
+  ivan            True                                                             
+  judy            True                                                             
+  powerUser1      True                                                             
+  powerUser2      True                                                             
+  powerUser3      True     with desc                                               
+  User            True                                                             
   
 
 PS [37/102]> Get-LocalUser -Name "ghost-user" -ErrorAction SilentlyContinue

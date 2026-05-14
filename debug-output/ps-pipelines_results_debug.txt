@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-pipelines
-Generated: 2026-05-14T09:30:04.577Z
+Generated: 2026-05-14T09:34:27.303Z
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
 ============================================================
@@ -591,22 +591,22 @@ PS [34/111]> @("banana","apple","cherry","apple") | Sort-Object -Unique
 
 PS [35/111]> Get-Process | Sort-Object Name | Select-Object -First 5 Name, Id
   
-  Name     Id  
-  -------  ----
-  cmd      5120
-  conhost  5132
-  csrss     472
-  csrss     560
-  dwm      1024
+  Name  Id  
+  ----  ----
+        5120
+        5132
+         472
+         560
+        1024
   
 
 PS [36/111]> Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 3 Name, CPU
   
-  Name      CPU
-  --------  ---
-  conhost      
-  cmd          
-  explorer     
+  Name  CPU
+  ----  ---
+           
+           
+           
   
 
 PS [37/111]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 5
@@ -825,16 +825,12 @@ PS [71/111]> "abc" -replace "b","B"
   aBc
 
 PS [72/111]> "alpha,beta,gamma" -split ","
-  alpha,beta,gamma" -split ",
+  alpha
+  beta
+  gamma
 
 PS [73/111]> @("a","b","c") -join "-"
-  @("a","b","c") : The term '@("a","b","c")' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @("a","b","c") -join "-"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@("a","b","c"):String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  @("a","b","c")
 
 
 --- [74] § splatting & functions ---
@@ -965,196 +961,38 @@ PS [90/111]> if ($false) { "yes" } elseif ($true) { "elif" } else { "no" }
 --- [91] § composed real-world ---
 PS [91/111]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 -Property Name, Id, @{ N="MB"; E={ [int]($_.WS/1MB) } } | Format-Table -AutoSize
   
-  Name               Id    @{ N="MB"; E={ [int]($_.WS/1MB) } }
-  -----------------  ----  -----------------------------------
-  conhost            5132                                     
-  cmd                5120                                     
-  explorer           2848                                     
-  LanmanWorkstation  2400                                     
-  LanmanServer       2200                                     
+  Name  Id    @{ N="MB"; E={ [int]($_.WS/1MB) } }
+  ----  ----  -----------------------------------
+        5132                                     
+        5120                                     
+        2848                                     
+        2400                                     
+        2200                                     
   
 
 PS [92/111]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | ForEach-Object { "[RUN] $($_.Name)" }
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Afd.Name
-  [RUN] DisplayName         : Ancillary Function Driver for Winsock.Name
-  [RUN] ServiceType         : KERNEL_DRIVER.Name
-  [RUN] StartType           : System.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : false.Name
-  [RUN] DependentServices   : Dhcp.Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : AudioSrv.Name
-  [RUN] DisplayName         : Windows Audio.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : CryptSvc.Name
-  [RUN] DisplayName         : Cryptographic Services.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Dhcp.Name
-  [RUN] DisplayName         : DHCP Client.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : Afd,Tcpip.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Dnscache.Name
-  [RUN] DisplayName         : DNS Client.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : Tcpip.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : EventLog.Name
-  [RUN] DisplayName         : Windows Event Log.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : LanmanServer.Name
-  [RUN] DisplayName         : Server.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : true.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : SamSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : LanmanWorkstation.Name
-  [RUN] DisplayName         : Workstation.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : mpssvc.Name
-  [RUN] DisplayName         : Windows Defender Firewall.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : NetBT.Name
-  [RUN] DisplayName         : NetBT.Name
-  [RUN] ServiceType         : KERNEL_DRIVER.Name
-  [RUN] StartType           : System.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : false.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : Tcpip.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : RpcEptMapper.Name
-  [RUN] DisplayName         : RPC Endpoint Mapper.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : RpcSs.Name
-  [RUN] DisplayName         : Remote Procedure Call (RPC.Name)
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : SamSs,mpssvc,CryptSvc,Winmgmt,WinRM,Spooler,Schedule,AudioSrv.Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : SamSs.Name
-  [RUN] DisplayName         : Security Accounts Manager.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : LanmanServer.Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Schedule.Name
-  [RUN] DisplayName         : Task Scheduler.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Spooler.Name
-  [RUN] DisplayName         : Print Spooler.Name
-  [RUN] ServiceType         : WIN32_OWN_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : true.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Tcpip.Name
-  [RUN] DisplayName         : TCP/IP Protocol Driver.Name
-  [RUN] ServiceType         : KERNEL_DRIVER.Name
-  [RUN] StartType           : Boot.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : false.Name
-  [RUN] DependentServices   : Dhcp,Dnscache,NetBT.Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Themes.Name
-  [RUN] DisplayName         : Themes.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : W32Time.Name
-  [RUN] DisplayName         : Windows Time.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : winlogon.Name
-  [RUN] DisplayName         : Windows Logon Application.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : .Name
-  [RUN] Status              : Running.Name
-  [RUN] Name                : Winmgmt.Name
-  [RUN] DisplayName         : Windows Management Instrumentation.Name
-  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
-  [RUN] StartType           : Automatic.Name
-  [RUN] CanPauseAndContinue : false.Name
-  [RUN] CanShutdown         : true.Name
-  [RUN] DependentServices   : .Name
-  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status   Name               DisplayName                          .Name
+  [RUN] -------  -----------------  -------------------------------------.Name
+  [RUN] Running  Afd                Ancillary Function Driver for Winsock.Name
+  [RUN] Running  AudioSrv           Windows Audio                        .Name
+  [RUN] Running  CryptSvc           Cryptographic Services               .Name
+  [RUN] Running  Dhcp               DHCP Client                          .Name
+  [RUN] Running  Dnscache           DNS Client                           .Name
+  [RUN] Running  EventLog           Windows Event Log                    .Name
+  [RUN] Running  LanmanServer       Server                               .Name
+  [RUN] Running  LanmanWorkstation  Workstation                          .Name
+  [RUN] Running  mpssvc             Windows Defender Firewall            .Name
+  [RUN] Running  NetBT              NetBT                                .Name
+  [RUN] Running  RpcEptMapper       RPC Endpoint Mapper                  .Name
+  [RUN] Running  RpcSs              Remote Procedure Call (RPC          .Name)
+  [RUN] Running  SamSs              Security Accounts Manager            .Name
+  [RUN] Running  Schedule           Task Scheduler                       .Name
+  [RUN] Running  Spooler            Print Spooler                        .Name
+  [RUN] Running  Tcpip              TCP/IP Protocol Driver               .Name
+  [RUN] Running  Themes             Themes                               .Name
+  [RUN] Running  W32Time            Windows Time                         .Name
+  [RUN] Running  winlogon           Windows Logon Application            .Name
+  [RUN] Running  Winmgmt            Windows Management Instrumentation   .Name
 
 PS [93/111]> New-Item -Path C:\PipeTest -ItemType Directory -Force | Out-Null; 1..10 | ForEach-Object { Set-Content -Path "C:\PipeTest\f$_.txt" -Value "row $_" }; Get-ChildItem C:\PipeTest | Measure-Object Length -Sum
   Count    : 10
@@ -1187,7 +1025,7 @@ PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$
   
   [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=-a----                5/14/2026   9                                                  
   -----------------------------------------------------------------------------------------------------------  --------  -------------------------------------------------------  ------------------------------------------------------------------------------------------------------------
-  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  30 AM              5 f9.txt.Name; L=-a----                5/14/2026   9:30 AM              5 f9.txt.Length }
+  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  34 AM              5 f9.txt.Name; L=-a----                5/14/2026   9:34 AM              5 f9.txt.Length }
   
 
 PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure-Object | Select-Object Count

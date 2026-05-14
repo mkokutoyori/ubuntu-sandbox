@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-registry-env
-Generated: 2026-05-14T09:30:06.416Z
+Generated: 2026-05-14T09:34:28.506Z
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
 ============================================================
@@ -294,7 +294,7 @@ PS [48/117]> $env:Path -split ";" | Select-Object -First 3
   
 
 PS [49/117]> ($env:Path -split ";").Count
-  1
+  4
 
 PS [50/117]> Set-Item -Path Env:DEBUG_SIM -Value "1"
 <empty>
@@ -615,11 +615,11 @@ PS [103/117]> [DateTime]::Now
 --- [104] § formatting ---
 PS [104/117]> Get-Process | Select-Object -First 3 | Format-Table
   
-  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id   SI  ProcessName          Name               
-  -------  ------  -----  -----  ------  ---  --  -------------------  -------------------
-        0       4      0     16       0    0   0  System Idle Process  System Idle Process
-      100       4      0    288     0.5    4   0  System               System             
-       48       4      4   8192       0  108   0  Registry             Registry           
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id   ProcessName        
+  -------  ------  -----  -----  ------  ---  -------------------
+        0       4      0     16       0    0  System Idle Process
+      100       4      0    288     0.5    4  System             
+       48       4      4   8192       0  108  Registry           
   
 
 PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
@@ -630,9 +630,7 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   WS(K)       : 16
   CPU(s)      : 0
   Id          : 0
-  SI          : 0
   ProcessName : System Idle Process
-  Name        : System Idle Process
   
   Handles     : 100
   NPM(K)      : 4
@@ -640,9 +638,7 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   WS(K)       : 288
   CPU(s)      : 0.5
   Id          : 4
-  SI          : 0
   ProcessName : System
-  Name        : System
   
   Handles     : 48
   NPM(K)      : 4
@@ -650,132 +646,58 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   WS(K)       : 8192
   CPU(s)      : 0
   Id          : 108
-  SI          : 0
   ProcessName : Registry
-  Name        : Registry
   
 
 PS [106/117]> Get-Process | Select-Object -First 3 | Format-List Name, Id, CPU
   
-  Name : System Idle Process
+  Name : 
   Id   : 0
   CPU  : 
   
-  Name : System
+  Name : 
   Id   : 4
   CPU  : 
   
-  Name : Registry
+  Name : 
   Id   : 108
   CPU  : 
   
 
 PS [107/117]> Get-Process | Select-Object -First 3 | Format-Table Name, Id, CPU -AutoSize
   
-  Name                 Id   CPU
-  -------------------  ---  ---
-  System Idle Process    0     
-  System                 4     
-  Registry             108     
+  Name  Id   CPU
+  ----  ---  ---
+          0     
+          4     
+        108     
   
 
 PS [108/117]> Get-Process | Select-Object -First 3 | Out-String
   
-  Handles     : 0
-  NPM(K)      : 4
-  PM(K)       : 0
-  WS(K)       : 16
-  CPU(s)      : 0
-  Id          : 0
-  SI          : 0
-  ProcessName : System Idle Process
-  Name        : System Idle Process
-  
-  Handles     : 100
-  NPM(K)      : 4
-  PM(K)       : 0
-  WS(K)       : 288
-  CPU(s)      : 0.5
-  Id          : 4
-  SI          : 0
-  ProcessName : System
-  Name        : System
-  
-  Handles     : 48
-  NPM(K)      : 4
-  PM(K)       : 4
-  WS(K)       : 8192
-  CPU(s)      : 0
-  Id          : 108
-  SI          : 0
-  ProcessName : Registry
-  Name        : Registry
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id   ProcessName        
+  -------  ------  -----  -----  ------  ---  -------------------
+        0       4      0     16       0    0  System Idle Process
+      100       4      0    288     0.5    4  System             
+       48       4      4   8192       0  108  Registry           
   
 
 PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
   
-  Handles     : 0
-  NPM(K)      : 4
-  PM(K)       : 0
-  WS(K)       : 16
-  CPU(s)      : 0
-  Id          : 0
-  SI          : 0
-  ProcessName : System Idle Process
-  Name        : System Idle Process
-  
-  Handles     : 100
-  NPM(K)      : 4
-  PM(K)       : 0
-  WS(K)       : 288
-  CPU(s)      : 0.5
-  Id          : 4
-  SI          : 0
-  ProcessName : System
-  Name        : System
-  
-  Handles     : 48
-  NPM(K)      : 4
-  PM(K)       : 4
-  WS(K)       : 8192
-  CPU(s)      : 0
-  Id          : 108
-  SI          : 0
-  ProcessName : Registry
-  Name        : Registry
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id   ProcessName        
+  -------  ------  -----  -----  ------  ---  -------------------
+        0       4      0     16       0    0  System Idle Process
+      100       4      0    288     0.5    4  System             
+       48       4      4   8192       0  108  Registry           
   
 
 PS [110/117]> Get-Process | Select-Object -First 3 | ConvertTo-Csv
   
-  Handles     : 0
-  NPM(K)      : 4
-  PM(K)       : 0
-  WS(K)       : 16
-  CPU(s)      : 0
-  Id          : 0
-  SI          : 0
-  ProcessName : System Idle Process
-  Name        : System Idle Process
-  
-  Handles     : 100
-  NPM(K)      : 4
-  PM(K)       : 0
-  WS(K)       : 288
-  CPU(s)      : 0.5
-  Id          : 4
-  SI          : 0
-  ProcessName : System
-  Name        : System
-  
-  Handles     : 48
-  NPM(K)      : 4
-  PM(K)       : 4
-  WS(K)       : 8192
-  CPU(s)      : 0
-  Id          : 108
-  SI          : 0
-  ProcessName : Registry
-  Name        : Registry
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id   ProcessName        
+  -------  ------  -----  -----  ------  ---  -------------------
+        0       4      0     16       0    0  System Idle Process
+      100       4      0    288     0.5    4  System             
+       48       4      4   8192       0  108  Registry           
   
 
 PS [111/117]> Get-Process | Select-Object -First 3 -Property Name, Id | ConvertTo-Json

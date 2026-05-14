@@ -745,6 +745,14 @@ export class PowerShellExecutor {
     if (/^\$false$/i.test(e)) return 'False';
     if (/^\$null$/i.test(e)) return '';
 
+    // $env:VARNAME — environment variable lookup (also valid in expression
+    // position, e.g. `$env:Path -split ";"`).
+    const envExprMatch = e.match(/^\$env:([\w.()-]+)$/i);
+    if (envExprMatch) {
+      return this.sessionEnv.get(envExprMatch[1].toUpperCase()) ??
+        this.resolveEnvVar(envExprMatch[1]) ?? '';
+    }
+
     // Already a number
     if (/^-?\d+(\.\d+)?$/.test(e)) return e;
 
@@ -906,7 +914,8 @@ export class PowerShellExecutor {
   /** Try to parse and evaluate a binary PS operator expression */
   private tryEvalBinaryOp(e: string): string | null {
     const ops = ['-and', '-or', '-eq', '-ne', '-ge', '-le', '-gt', '-lt',
-                 '-like', '-notlike', '-match', '-notmatch', '-replace', '-contains', '-in'];
+                 '-like', '-notlike', '-match', '-notmatch', '-replace',
+                 '-split', '-join', '-contains', '-in'];
     // Scan right-to-left to find the last top-level operator (handles left-to-right eval)
     for (const op of ops) {
       const pattern = new RegExp(`^(.+?)\\s+${op.replace('-', '\\-')}\\s+(.+)$`, 'is');
@@ -976,6 +985,18 @@ export class PowerShellExecutor {
           ? [rhs.slice(0, comma).trim().replace(/^["']|["']$/g, ''), rhs.slice(comma + 1).trim().replace(/^["']|["']$/g, '')]
           : [rhs.replace(/^["']|["']$/g, ''), ''];
         try { return lhs.replace(new RegExp(pat, 'gi'), repl); } catch { return lhs; }
+      }
+      case '-split': {
+        // rhs is the separator (regex by default in real PS; we treat it
+        // as a literal string for simplicity). Drop surrounding quotes.
+        const sep = rhs.replace(/^["']|["']$/g, '');
+        if (!sep) return lhs;
+        return lhs.split(sep).join('\n');
+      }
+      case '-join': {
+        const sep = rhs.replace(/^["']|["']$/g, '');
+        // lhs is the array-as-string (newline-joined). Re-join with sep.
+        return lhs.split('\n').filter((x) => x !== '').join(sep);
       }
       case '-contains': return lhs.toLowerCase().includes(rhs.toLowerCase()) ? 'True' : 'False';
       case '-in': return rhs.toLowerCase().includes(lhs.toLowerCase()) ? 'True' : 'False';
