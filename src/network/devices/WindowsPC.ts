@@ -30,6 +30,7 @@ import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
+import { cmdGetmac } from './windows/WinGetmac';
 import { cmdTracert } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
@@ -272,6 +273,7 @@ export class WindowsPC extends EndHost {
       case 'netsh':    return cmdNetsh(netCtx, args);
       case 'ping':     return cmdPing(netCtx, args);
       case 'arp':      return cmdArp(netCtx, args);
+      case 'getmac':   return cmdGetmac(netCtx, args);
       case 'tracert':
       case 'traceroute': return cmdTracert(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
@@ -378,7 +380,7 @@ export class WindowsPC extends EndHost {
       // Command completion
       const prefix = (parts[0] || '').toLowerCase();
       const commands = [
-        'help', 'ipconfig', 'netsh', 'ping', 'arp', 'tracert', 'route',
+        'help', 'ipconfig', 'netsh', 'ping', 'arp', 'getmac', 'tracert', 'route',
         'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
         'netstat', 'dir', 'cd', 'mkdir', 'md', 'rmdir', 'rd', 'type',
         'copy', 'move', 'ren', 'rename', 'del', 'erase', 'echo', 'set',

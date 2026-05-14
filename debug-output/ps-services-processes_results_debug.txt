@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-services-processes
-Generated: 2026-05-14T08:55:03.978Z
+Generated: 2026-05-14T09:26:28.003Z
 host=SRV-SVC-DBG (windows-server)
 Total commands: 104
 ============================================================
@@ -36,30 +36,30 @@ PS [1/104]> Get-Service
 
 PS [2/104]> Get-Service | Format-Table Name, Status, StartType -AutoSize
   
-  Name             
-  -----------------
-  Tcpip            
-  Afd              
-  Dhcp             
-  Dnscache         
-  NetBT            
-  RpcSs            
-  RpcEptMapper     
-  SamSs            
-  LanmanServer     
-  LanmanWorkstation
-  mpssvc           
-  EventLog         
-  W32Time          
-  CryptSvc         
-  Winmgmt          
-  WinRM            
-  bthserv          
-  winlogon         
-  Spooler          
-  Schedule         
-  AudioSrv         
-  Themes           
+  Name               Status   StartType
+  -----------------  -------  ---------
+  Tcpip              Running  Boot     
+  Afd                Running  System   
+  Dhcp               Running  Automatic
+  Dnscache           Running  Automatic
+  NetBT              Running  System   
+  RpcSs              Running  Automatic
+  RpcEptMapper       Running  Automatic
+  SamSs              Running  Automatic
+  LanmanServer       Running  Automatic
+  LanmanWorkstation  Running  Automatic
+  mpssvc             Running  Automatic
+  EventLog           Running  Automatic
+  W32Time            Running  Automatic
+  CryptSvc           Running  Automatic
+  Winmgmt            Running  Automatic
+  WinRM              Stopped  Manual   
+  bthserv            Stopped  Manual   
+  winlogon           Running  Automatic
+  Spooler            Running  Automatic
+  Schedule           Running  Automatic
+  AudioSrv           Running  Automatic
+  Themes             Running  Automatic
   
 
 PS [3/104]> Get-Service | Sort-Object Name
@@ -941,10 +941,10 @@ PS [11/104]> (Get-Service | Where-Object { $_.Status -eq "Running" }).Count
 
 PS [12/104]> Get-Service | Group-Object Status | Format-Table Name, Count -AutoSize
   
-  Name   
-  -------
-  Running
-  Stopped
+  Name     Count
+  -------  -----
+  Running     20
+  Stopped      2
   
 
 PS [13/104]> Get-Service | Group-Object StartType | Sort-Object Count -Descending
@@ -1164,46 +1164,46 @@ PS [43/104]> Get-Process
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-      247      10        3       5533       0.00   5140   0 spoolsv
+      166       9        2      12071       0.00   5140   0 spoolsv
 
 PS [44/104]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
   
-  Id  
-  ----
-     0
-     4
-   108
-   340
-   472
-   548
-   560
-   596
-   620
-   636
-   784
-   836
-   912
-   964
-  1024
-  1048
-  1100
-  1168
-  1400
-  1560
-  2200
-  2400
-  2848
-  5120
-  5132
-  5140
+  Id    ProcessName          CPU
+  ----  -------------------  ---
+     0  System Idle Process     
+     4  System                  
+   108  Registry                
+   340  smss                    
+   472  csrss                   
+   548  wininit                 
+   560  csrss                   
+   596  winlogon                
+   620  services                
+   636  lsass                   
+   784  svchost                 
+   836  svchost                 
+   912  svchost                 
+   964  svchost                 
+  1024  dwm                     
+  1048  svchost                 
+  1100  svchost                 
+  1168  svchost                 
+  1400  taskhostw               
+  1560  RuntimeBroker           
+  2200  LanmanServer            
+  2400  LanmanWorkstation       
+  2848  explorer                
+  5120  cmd                     
+  5132  conhost                 
+  5140  spoolsv                 
   
 
 PS [45/104]> Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
   
-  Handles     : 247
-  NPM(K)      : 10
-  PM(K)       : 3
-  WS(K)       : 5533
+  Handles     : 166
+  NPM(K)      : 9
+  PM(K)       : 2
+  WS(K)       : 12071
   CPU(s)      : 0
   Id          : 5140
   SI          : 0
@@ -1367,7 +1367,7 @@ PS [49/104]> Get-Process explorer -ErrorAction SilentlyContinue
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-      247      10        3       5533       0.00   5140   0 spoolsv
+      166       9        2      12071       0.00   5140   0 spoolsv
 
 PS [50/104]> Get-Process -Name svchost -ErrorAction SilentlyContinue
   
@@ -1399,7 +1399,7 @@ PS [53/104]> Get-Process | Select-Object Id, ProcessName, Handles, WS, CPU | Sor
   
   Id          : 5140
   ProcessName : spoolsv
-  Handles     : 247
+  Handles     : 166
   WS          : 
   CPU         : 
   
@@ -1470,13 +1470,35 @@ PS [55/104]> Get-Process | Measure-Object -Property WS -Sum -Average -Max
   Property : WS
 
 PS [56/104]> ps
-  ps : The term 'ps' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + ps
-  + ~~
-      + CategoryInfo          : ObjectNotFound: (ps:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+        0       4        0         16       0.00      0   0 System Idle Process
+      100       4        0        288       0.50      4   0 System
+       48       4        4       8192       0.00    108   0 Registry
+       56       4        1       2048       0.00    340   0 smss
+      590       4        4       9216       2.10    472   0 csrss
+      152       4        3       7168       0.00    548   0 wininit
+      468       4        5      10240       1.20    560   1 csrss
+      256       4        6      13312       0.10    596   1 winlogon
+      680       4        7      14336       1.50    620   0 services
+      820       4       10      20480       3.20    636   0 lsass
+      400      12       12      18432       0.60    784   0 svchost
+      400      12       12      18432       0.60    836   0 svchost
+      400      12       12      18432       0.60    912   0 svchost
+      450      14       14      21504       0.90    964   0 svchost
+      980      18       44      132000       8.40   1024   1 dwm
+      400      12       12      18432       0.60   1048   0 svchost
+      400      12       12      18432       0.60   1100   0 svchost
+      350      10       10      15360       0.30   1168   0 svchost
+      210       8        5      12800       0.20   1400   1 taskhostw
+      340      14       12      28000       0.80   1560   1 RuntimeBroker
+      320      10        6      14000       0.30   2200   0 LanmanServer
+      280       8        4      10000       0.20   2400   0 LanmanWorkstation
+     2100      65       64      145000      12.30   2848   1 explorer
+       48       3        3       5200       0.10   5120   1 cmd
+      180      10       10      18400       0.30   5132   1 conhost
+      166       9        2      12071       0.00   5140   0 spoolsv
 
 PS [57/104]> gps
   
@@ -1507,45 +1529,30 @@ PS [57/104]> gps
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-      247      10        3       5533       0.00   5140   0 spoolsv
+      166       9        2      12071       0.00   5140   0 spoolsv
 
 
 --- [58] § process lifecycle ---
 PS [58/104]> Start-Process notepad.exe
-  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Start-Process notepad.exe
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
-  again.
-      + CategoryInfo          : ObjectNotFound: (notepad:String) [Get-Process], ProcessCommandException
-      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+       85      11        2       5866       0.00   5144   1 notepad
 
 PS [60/104]> Start-Process -FilePath calc.exe
-  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Start-Process -FilePath calc.exe
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
-  Get-Process : Cannot find a process with the name "calc". Verify the process name and call the cmdlet
-  again.
-      + CategoryInfo          : ObjectNotFound: (calc:String) [Get-Process], ProcessCommandException
-      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+      188      12        2      17051       0.00   5148   1 calc
 
 PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
-  Stop-Process : Cannot find a process with the name "notepad". Verify the process name and call the
-  cmdlet again.
-      + CategoryInfo          : ObjectNotFound: (notepad:String) [Stop-Process], ProcessCommandException
-      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.StopProcessCommand
+<empty>
 
 PS [63/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
   Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
@@ -1554,43 +1561,24 @@ PS [63/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
       + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
 
 PS [64/104]> Stop-Process -Name calc -ErrorAction SilentlyContinue
-  Stop-Process : Cannot find a process with the name "calc". Verify the process name and call the
-  cmdlet again.
-      + CategoryInfo          : ObjectNotFound: (calc:String) [Stop-Process], ProcessCommandException
-      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.StopProcessCommand
+<empty>
 
 PS [65/104]> Start-Process notepad.exe
-  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Start-Process notepad.exe
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [66/104]> Start-Process notepad.exe
-  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Start-Process notepad.exe
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [67/104]> Start-Process notepad.exe
-  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Start-Process notepad.exe
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [68/104]> Get-Process -Name notepad
-  Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
-  again.
-      + CategoryInfo          : ObjectNotFound: (notepad:String) [Get-Process], ProcessCommandException
-      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+      141      10        6      14839       0.00   5152   1 notepad
+      179       6        9       4358       0.00   5156   1 notepad
+       86       6        8      11571       0.00   5160   1 notepad
 
 PS [69/104]> Get-Process -Name notepad | Stop-Process
 <null>
@@ -1605,13 +1593,13 @@ PS [70/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
 --- [71] § complex pipelines ---
 PS [71/104]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | Select-Object -First 5 | Format-Table Name, Status, DisplayName
   
-  Name    
-  --------
-  Afd     
-  AudioSrv
-  CryptSvc
-  Dhcp    
-  Dnscache
+  Name      Status   DisplayName                          
+  --------  -------  -------------------------------------
+  Afd       Running  Ancillary Function Driver for Winsock
+  AudioSrv  Running  Windows Audio                        
+  CryptSvc  Running  Cryptographic Services               
+  Dhcp      Running  DHCP Client                          
+  Dnscache  Running  DNS Client                           
   
 
 PS [72/104]> Get-Service | Group-Object StartType | ForEach-Object { "$($_.Name): $($_.Count)" }
@@ -1647,40 +1635,40 @@ PS [75/104]> Get-Process | Sort-Object ProcessName | Select-Object -Unique Proce
 
 PS [76/104]> Get-Service | Where-Object { $_.Name -match "^(W|S)" } | Format-Table Name, Status -AutoSize
   
-  Name    
-  --------
-  SamSs   
-  W32Time 
-  Winmgmt 
-  WinRM   
-  winlogon
-  Spooler 
-  Schedule
+  Name      Status 
+  --------  -------
+  SamSs     Running
+  W32Time   Running
+  Winmgmt   Running
+  WinRM     Stopped
+  winlogon  Running
+  Spooler   Running
+  Schedule  Running
   
 
 PS [77/104]> "Spooler","bthserv","wuauserv" | ForEach-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } | Format-Table Name, Status, StartType -AutoSize
   
-  Name                     
-  -------------------------
-  Spooler                  
-  : Running                
-  : Spooler                
-  e : Print Spooler        
-  : Automatic              
-  e : WIN32_OWN_PROCESS    
-  : true                   
-  Name                     
-  ----                     
-  bthserv                  
-  : Stopped                
-  : bthserv                
-  e : Bluetooth Support Ser
-  : Automatic              
-  e : WIN32_SHARE_PROCESS  
-  : false                  
-  e : Cannot find any servi
-  goryInfo          : Objec
-  yQualifiedErrorId : NoSer
+  Name                       Status      StartType
+  -------------------------  ----------  ---------
+  Spooler                    Running              
+  : Running                  Status               
+  : Spooler                  Name                 
+  e : Print Spooler          DisplayNam           
+  : Automatic                StartType            
+  e : WIN32_OWN_PROCESS      ServiceTyp           
+  : true                     CanStop              
+  Name                       Status               
+  ----                       ------               
+  bthserv                    Stopped              
+  : Stopped                  Status               
+  : bthserv                  Name                 
+  e : Bluetooth Support Ser  DisplayNam           
+  : Automatic                StartType            
+  e : WIN32_SHARE_PROCESS    ServiceTyp           
+  : false                    CanStop              
+  e : Cannot find any servi  Get-Servic           
+  goryInfo          : Objec  + Cate               
+  yQualifiedErrorId : NoSer  + Full               
   
 
 PS [78/104]> Get-Service | ForEach-Object { [pscustomobject]@{ N=$_.Name; S=$_.Status } } | Sort-Object N | Select-Object -First 5
@@ -1707,55 +1695,55 @@ PS [80/104]> Get-EventLog -LogName System -Newest 5 -ErrorAction SilentlyContinu
   
      Index Time          EntryType   Source                 InstanceID Message
      ----- ----          ---------   ------                 ---------- -------
-     1009 05/14 06:55 Information EventLog                     6005 The Event log service was started.
-     1008 05/14 02:55 Warning     Microsoft-Windows-Powe          1 The system has returned from a low power...
-     1007 05/13 20:55 Information Microsoft-Windows-Kern          1 The system uptime is 86400 seconds.
-     1006 05/13 08:55 Information Microsoft-Windows-Winl       7001 User Logon Notification for Customer Exp...
-     1005 05/12 08:55 Error       Disk                            7 The device, \Device\Harddisk0\DR0, has a...
+     1009 05/14 07:26 Information EventLog                     6005 The Event log service was started.
+     1008 05/14 03:26 Warning     Microsoft-Windows-Powe          1 The system has returned from a low power...
+     1007 05/13 21:26 Information Microsoft-Windows-Kern          1 The system uptime is 86400 seconds.
+     1006 05/13 09:26 Information Microsoft-Windows-Winl       7001 User Logon Notification for Customer Exp...
+     1005 05/12 09:26 Error       Disk                            7 The device, \Device\Harddisk0\DR0, has a...
   
 
 PS [81/104]> Get-EventLog -LogName Application -Newest 5 -ErrorAction SilentlyContinue
   
      Index Time          EntryType   Source                 InstanceID Message
      ----- ----          ---------   ------                 ---------- -------
-     1015 05/13 08:55 Information .NET Runtime                 1026 .NET Runtime version 4.0.30319 — Applica...
-     1014 05/11 08:55 Error       Application Hang             1002 The program svchost.exe stopped interact...
-     1013 05/09 08:55 Information SecurityCenter                  1 The Windows Security Center Service has ...
-     1012 05/07 08:55 Warning     Application Error            1000 Faulting application name: explorer.exe.
-     1011 05/04 08:55 Information MsiInstaller                11707 Product: Microsoft Visual C++ Redistribu...
+     1015 05/13 09:26 Information .NET Runtime                 1026 .NET Runtime version 4.0.30319 — Applica...
+     1014 05/11 09:26 Error       Application Hang             1002 The program svchost.exe stopped interact...
+     1013 05/09 09:26 Information SecurityCenter                  1 The Windows Security Center Service has ...
+     1012 05/07 09:26 Warning     Application Error            1000 Faulting application name: explorer.exe.
+     1011 05/04 09:26 Information MsiInstaller                11707 Product: Microsoft Visual C++ Redistribu...
   
 
 PS [82/104]> Get-EventLog -LogName Security -Newest 5 -ErrorAction SilentlyContinue
   
      Index Time          EntryType   Source                 InstanceID Message
      ----- ----          ---------   ------                 ---------- -------
-     1020 05/14 08:55 SuccessAudi Microsoft-Windows-Secu       4672 Special privileges assigned to new logon...
-     1019 05/14 08:55 SuccessAudi Microsoft-Windows-Secu       4648 A logon was attempted using explicit cre...
-     1018 05/13 08:55 FailureAudi Microsoft-Windows-Secu       4625 An account failed to log on.
-     1017 05/13 08:55 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
-     1016 05/13 08:55 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
+     1020 05/14 09:26 SuccessAudi Microsoft-Windows-Secu       4672 Special privileges assigned to new logon...
+     1019 05/14 09:26 SuccessAudi Microsoft-Windows-Secu       4648 A logon was attempted using explicit cre...
+     1018 05/13 09:26 FailureAudi Microsoft-Windows-Secu       4625 An account failed to log on.
+     1017 05/13 09:26 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
+     1016 05/13 09:26 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
   
 
 PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyContinue
   
   TimeCreated                     Id LevelDisplayName Message
   -----------                     -- ---------------- -------
-  2026-05-14 06:55:03             6005 Information      The Event log service was star...
-  2026-05-14 02:55:03                1 Warning          The system has returned from a...
-  2026-05-13 20:55:03                1 Information      The system uptime is 86400 sec...
-  2026-05-13 08:55:03             7001 Information      User Logon Notification for Cu...
-  2026-05-12 08:55:03                7 Error            The device, \Device\Harddisk0\...
+  2026-05-14 07:26:28             6005 Information      The Event log service was star...
+  2026-05-14 03:26:28                1 Warning          The system has returned from a...
+  2026-05-13 21:26:28                1 Information      The system uptime is 86400 sec...
+  2026-05-13 09:26:28             7001 Information      User Logon Notification for Cu...
+  2026-05-12 09:26:28                7 Error            The device, \Device\Harddisk0\...
   
 
 PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction SilentlyContinue
   
   TimeCreated                     Id LevelDisplayName Message
   -----------                     -- ---------------- -------
-  2026-05-13 08:55:03             1026 Information      .NET Runtime version 4.0.30319...
-  2026-05-11 08:55:03             1002 Error            The program svchost.exe stoppe...
-  2026-05-09 08:55:03                1 Information      The Windows Security Center Se...
-  2026-05-07 08:55:03             1000 Warning          Faulting application name: exp...
-  2026-05-04 08:55:03             11707 Information      Product: Microsoft Visual C++ ...
+  2026-05-13 09:26:28             1026 Information      .NET Runtime version 4.0.30319...
+  2026-05-11 09:26:28             1002 Error            The program svchost.exe stoppe...
+  2026-05-09 09:26:28                1 Information      The Windows Security Center Se...
+  2026-05-07 09:26:28             1000 Warning          Faulting application name: exp...
+  2026-05-04 09:26:28             11707 Information      Product: Microsoft Visual C++ ...
   
 
 PS [85/104]> Get-WinEvent -ListLog * -ErrorAction SilentlyContinue | Select-Object -First 5
@@ -1782,12 +1770,12 @@ PS [86/104]> Get-ScheduledTask -ErrorAction SilentlyContinue
 
 PS [87/104]> Get-ScheduledTask | Format-Table TaskName, State -AutoSize
   
-  TaskName                       
-  -------------------------------
-  GoogleUpdateTaskUser           
-  OneDrive Standalone Update Task
-  .NET Framework NGEN v4.0.30319 
-  SimTestTask                    
+  TaskName                         State
+  -------------------------------  -----
+  GoogleUpdateTaskUser             Ready
+  OneDrive Standalone Update Task  Ready
+  .NET Framework NGEN v4.0.30319   Ready
+  SimTestTask                      Ready
   
 
 PS [88/104]> Get-ScheduledTask | Where-Object { $_.State -eq "Ready" }
@@ -1837,8 +1825,8 @@ PS [96/104]> Get-Service | Group-Object Status | Sort-Object Name
 
 PS [97/104]> Get-Process | Measure-Object -Property Handles -Sum -Average
   Count    : 26
-  Average  : 410.5769230769231
-  Sum      : 10675
+  Average  : 407.46153846153845
+  Sum      : 10594
   Property : Handles
 
 PS [98/104]> Get-Service -Name Spooler | Format-List *

@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network
-Generated: 2026-05-14T08:55:04.828Z
+Generated: 2026-05-14T09:26:29.184Z
 host=WIN-NET-DBG (windows-pc)
 Total commands: 75
 ============================================================
@@ -18,13 +18,13 @@ PS [1/75]> Get-NetAdapter
 
 PS [2/75]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -AutoSize
   
-  Name      
-  ----------
-  Ethernet  
-  Ethernet 2
-  Ethernet 3
-  Ethernet 4
-  Wi-Fi     
+  Name        Status  MacAddress         LinkSpeed
+  ----------  ------  -----------------  ---------
+  Ethernet    Up      02-00-00-00-00-01  1 Gbps   
+  Ethernet 2  Up      02-00-00-00-00-02  1 Gbps   
+  Ethernet 3  Up      02-00-00-00-00-03  1 Gbps   
+  Ethernet 4  Up      02-00-00-00-00-04  1 Gbps   
+  Wi-Fi       Up      02-00-00-FF-FF-01  54 Mbps  
   
 
 PS [3/75]> Get-NetAdapter | Sort-Object Name
@@ -227,18 +227,18 @@ PS [8/75]> Get-NetIPAddress
 
 PS [9/75]> Get-NetIPAddress | Format-Table InterfaceAlias, IPAddress, AddressFamily, PrefixLength -AutoSize
   
-  InterfaceAlias             
-  ---------------------------
-  Ethernet                   
-  Ethernet                   
-  Ethernet 2                 
-  Ethernet 2                 
-  Ethernet 3                 
-  Ethernet 3                 
-  Ethernet 4                 
-  Ethernet 4                 
-  Loopback Pseudo-Interface 1
-  Loopback Pseudo-Interface 1
+  InterfaceAlias               IPAddress                  AddressFamily  PrefixLength
+  ---------------------------  -------------------------  -------------  ------------
+  Ethernet                     192.168.1.100              IPv4                     24
+  Ethernet                     fe80::0200:00ff:fe00:0001  IPv6                     64
+  Ethernet 2                   192.168.1.101              IPv4                     24
+  Ethernet 2                   fe80::0200:00ff:fe00:0002  IPv6                     64
+  Ethernet 3                   192.168.1.102              IPv4                     24
+  Ethernet 3                   fe80::0200:00ff:fe00:0003  IPv6                     64
+  Ethernet 4                   192.168.1.103              IPv4                     24
+  Ethernet 4                   fe80::0200:00ff:fe00:0004  IPv6                     64
+  Loopback Pseudo-Interface 1  127.0.0.1                  IPv4                      8
+  Loopback Pseudo-Interface 1  ::1                        IPv6                    128
   
 
 PS [10/75]> Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue
@@ -789,13 +789,12 @@ PS [29/75]> hostname
   WIN-NET-DBG
 
 PS [30/75]> getmac
-  getmac : The term 'getmac' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + getmac
-  + ~~~~~~
-      + CategoryInfo          : ObjectNotFound: (getmac:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Physical Address  Transport Name    
+  ================= ==================
+  02-00-00-00-00-01 Media disconnected
+  02-00-00-00-00-02 Media disconnected
+  02-00-00-00-00-03 Media disconnected
+  02-00-00-00-00-04 Media disconnected
 
 
 --- [31] § connectivity ---
@@ -997,10 +996,10 @@ PS [54/75]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | ForEach-Objec
 
 PS [55/75]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
   
-  Name
-  ----
-  IPv4
-  IPv6
+  Name  Count
+  ----  -----
+  IPv4      5
+  IPv6      5
   
 
 PS [56/75]> Get-NetAdapter | Sort-Object Name | Select-Object Name, Status, MacAddress | Format-Table -AutoSize
@@ -1038,13 +1037,21 @@ PS [59/75]> Get-NetAdapter | ForEach-Object { "$($_.Name) -> $($_.Status)" }
 
 PS [60/75]> Get-NetAdapter | Where-Object { $_.Name -match "Ethernet" } | Format-List Name, Status, MacAddress
   
-  Name : Ethernet
+  Name       : Ethernet
+  Status     : Up
+  MacAddress : 02-00-00-00-00-01
   
-  Name : Ethernet 2
+  Name       : Ethernet 2
+  Status     : Up
+  MacAddress : 02-00-00-00-00-02
   
-  Name : Ethernet 3
+  Name       : Ethernet 3
+  Status     : Up
+  MacAddress : 02-00-00-00-00-03
   
-  Name : Ethernet 4
+  Name       : Ethernet 4
+  Status     : Up
+  MacAddress : 02-00-00-00-00-04
   
 
 PS [61/75]> Get-NetRoute -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 5
@@ -1167,17 +1174,17 @@ PS [71/75]> Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyConti
 --- [72] § summary ---
 PS [72/75]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize
   
-  Name
-  ----
-  Up  
+  Name  Count
+  ----  -----
+  Up        5
   
 
 PS [73/75]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
   
-  Name
-  ----
-  IPv4
-  IPv6
+  Name  Count
+  ----  -----
+  IPv4      5
+  IPv6      5
   
 
 PS [74/75]> (Get-NetAdapter).Count

@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-users-groups-server
-Generated: 2026-05-14T08:55:05.368Z
+Generated: 2026-05-14T09:26:28.877Z
 host=SRV-USR-DBG (windows-server)
 Total commands: 17
 ============================================================
@@ -54,18 +54,18 @@ PS [7/17]> Add-LocalGroupMember -Group Deployers -Member svc-monitor
 
 PS [8/17]> Get-LocalGroupMember -Group Deployers | Format-Table Name, ObjectClass -AutoSize
   
-  Name       
-  -----------
-  svc-deploy 
-  svc-monitor
+  Name         ObjectClass
+  -----------  -----------
+  svc-deploy   User       
+  svc-monitor  User       
   
 
 PS [9/17]> Get-LocalUser | Where-Object { $_.Name -like "svc-*" } | Format-Table Name, Description
   
-  Name       
-  -----------
-  svc-deploy 
-  svc-monitor
+  Name         Description               
+  -----------  --------------------------
+  svc-deploy   Deployment service account
+  svc-monitor  Monitoring service account
   
 
 PS [10/17]> Set-LocalUser -Name svc-monitor -Description "Read-only monitoring agent"

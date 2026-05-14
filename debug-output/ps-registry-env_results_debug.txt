@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-registry-env
-Generated: 2026-05-14T08:55:04.695Z
+Generated: 2026-05-14T09:26:30.177Z
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
 ============================================================
@@ -205,14 +205,13 @@ PS [34/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "BuildNumber" 
   Get-ItemProperty : Property 'BuildNumber' does not exist at path 'HKCU:\Software\DebugSim'.
 
 PS [35/117]> Remove-ItemProperty -Path HKCU:\Software\DebugSim -Name "Enabled" -ErrorAction SilentlyContinue
-  Remove-ItemProperty : Property '"Enabled"' does not exist at path 'HKCU:\Software\DebugSim'.
+<empty>
 
 PS [36/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
   
   Version             : 1.0.0
   Build               : 42
   InstallPath         : C:\DebugSim
-  Enabled             : 1
   
 
 PS [37/117]> Clear-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -ErrorAction SilentlyContinue
@@ -316,10 +315,10 @@ PS [55/117]> $env:DEBUG_LABEL
   second
 
 PS [56/117]> Remove-Item Env:DEBUG_LABEL
-  Remove-Item : Cannot find path 'Env:DEBUG_LABEL' because it does not exist.
+<empty>
 
 PS [57/117]> $env:DEBUG_LABEL
-  second
+<empty>
 
 PS [58/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", "process-scope", "Process")
 <empty>
@@ -659,19 +658,25 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
 PS [106/117]> Get-Process | Select-Object -First 3 | Format-List Name, Id, CPU
   
   Name : System Idle Process
+  Id   : 0
+  CPU  : 
   
   Name : System
+  Id   : 4
+  CPU  : 
   
   Name : Registry
+  Id   : 108
+  CPU  : 
   
 
 PS [107/117]> Get-Process | Select-Object -First 3 | Format-Table Name, Id, CPU -AutoSize
   
-  Name               
-  -------------------
-  System Idle Process
-  System             
-  Registry           
+  Name                 Id   CPU
+  -------------------  ---  ---
+  System Idle Process    0     
+  System                 4     
+  Registry             108     
   
 
 PS [108/117]> Get-Process | Select-Object -First 3 | Out-String
@@ -806,7 +811,7 @@ PS [115/117]> Test-Path HKCU:\Software\DebugSim
   False
 
 PS [116/117]> Remove-Item Env:DEBUG_SIM -ErrorAction SilentlyContinue
-  Remove-Item : Cannot find path 'Env:DEBUG_SIM' because it does not exist.
+<empty>
 
 PS [117/117]> $env:DEBUG_SIM
-  1
+<empty>

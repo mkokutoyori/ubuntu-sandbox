@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-users-groups
-Generated: 2026-05-14T08:55:05.314Z
+Generated: 2026-05-14T09:26:28.820Z
 host=WIN-USR-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -18,12 +18,12 @@ PS [1/102]> Get-LocalUser
 
 PS [2/102]> Get-LocalUser | Format-Table Name, Enabled, Description -AutoSize
   
-  Name          
-  --------------
-  Administrator 
-  Guest         
-  DefaultAccount
-  User          
+  Name            Enabled  Description                                             
+  --------------  -------  --------------------------------------------------------
+  Administrator   True     Built-in account for administering the computer/domain  
+  Guest           False    Built-in account for guest access to the computer/domain
+  DefaultAccount  False    A user account managed by the system.                   
+  User            True                                                             
   
 
 PS [3/102]> Get-LocalUser | Sort-Object Name
@@ -77,15 +77,15 @@ PS [8/102]> Get-LocalGroup
 
 PS [9/102]> Get-LocalGroup | Format-Table Name, Description -AutoSize
   
-  Name                           
-  -------------------------------
-  Administrators                 
-  Users                          
-  Guests                         
-  Power Users                    
-  Remote Desktop Users           
-  Network Configuration Operators
-  Event Log Readers              
+  Name                             Description                                                                                   
+  -------------------------------  ----------------------------------------------------------------------------------------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
+  Users                            Users are prevented from making accidental or intentional system-wide changes                 
+  Guests                           Guests have the same access as members of the Users group by default                          
+  Power Users                      Power Users are included for backwards compatibility                                          
+  Remote Desktop Users             Members are granted the right to logon remotely                                               
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers                Members of this group can read event logs from local machine                                  
   
 
 PS [10/102]> Get-LocalGroup | Sort-Object Name
@@ -507,10 +507,10 @@ PS [81/102]> Get-LocalUser | Where-Object { $_.Enabled } | Sort-Object Name | Se
 
 PS [82/102]> Get-LocalUser | Group-Object Enabled | Format-Table Name, Count -AutoSize
   
-  Name 
-  -----
-  True 
-  False
+  Name   Count
+  -----  -----
+  True      14
+  False      2
   
 
 PS [83/102]> Get-LocalUser | ForEach-Object { "$($_.Name): $($_.Description)" }

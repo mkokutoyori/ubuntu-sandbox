@@ -568,8 +568,11 @@ export function formatTable(objects: PSObject[], args: string): string {
       i--;
     } else if (t === '-autosize') {
       // AutoSize is the default behavior
-    } else if (!t.startsWith('-') && !properties) {
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      // Bare property names accumulate across multiple tokens
+      // (e.g. `Format-Table Name, Description` → ["Name,", "Description"]).
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
@@ -635,8 +638,9 @@ export function formatList(objects: PSObject[], args: string): string {
         i++;
       }
       i--;
-    } else if (!t.startsWith('-') && !properties) {
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 

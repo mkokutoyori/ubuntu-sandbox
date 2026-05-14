@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network-server
-Generated: 2026-05-14T08:55:04.886Z
+Generated: 2026-05-14T09:26:29.231Z
 host=SRV-NET-DBG (windows-server)
 Total commands: 28
 ============================================================
@@ -312,13 +312,12 @@ PS [19/28]> hostname
   SRV-NET-DBG
 
 PS [20/28]> getmac
-  getmac : The term 'getmac' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + getmac
-  + ~~~~~~
-      + CategoryInfo          : ObjectNotFound: (getmac:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Physical Address  Transport Name    
+  ================= ==================
+  02-00-00-00-00-05 Media disconnected
+  02-00-00-00-00-06 Media disconnected
+  02-00-00-00-00-07 Media disconnected
+  02-00-00-00-00-08 Media disconnected
 
 PS [21/28]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object Name, MacAddress
   
@@ -355,10 +354,10 @@ PS [23/28]> Get-NetAdapter | Sort-Object Name | Select-Object Name, Status
 
 PS [24/28]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
   
-  Name
-  ----
-  IPv4
-  IPv6
+  Name  Count
+  ----  -----
+  IPv4      5
+  IPv6      5
   
 
 PS [25/28]> Get-NetRoute -ErrorAction SilentlyContinue | Select-Object -First 5

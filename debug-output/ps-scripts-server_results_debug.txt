@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-scripts-server
-Generated: 2026-05-14T08:55:04.035Z
+Generated: 2026-05-14T09:26:30.100Z
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
 ============================================================
@@ -20,21 +20,21 @@ PS [4/23]> Get-Content C:\ServerScripts\role.ps1
   `"Hostname
 
 PS [5/23]> & C:\ServerScripts\role.ps1
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  `"Hostname : The term '`"Hostname' is not recognized as the name of a cmdlet, function, script file, or operable
   program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
   At line:1 char:1
-  + & C:\ServerScripts\role.ps1
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+  + `"Hostname
+  + ~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (`"Hostname:String) [], CommandNotFoundException
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [6/23]> . C:\ServerScripts\role.ps1
-  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  `"Hostname : The term '`"Hostname' is not recognized as the name of a cmdlet, function, script file, or operable
   program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
   At line:1 char:1
-  + . C:\ServerScripts\role.ps1
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+  + `"Hostname
+  + ~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (`"Hostname:String) [], CommandNotFoundException
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
@@ -44,13 +44,12 @@ PS [8/23]> Get-Content C:\ServerScripts\svcaudit.ps1
   Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name):
 
 PS [9/23]> & C:\ServerScripts\svcaudit.ps1
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + & C:\ServerScripts\svcaudit.ps1
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Value
+  -----
+       
+       
+  
 
 PS [10/23]> Set-Content -Path C:\ServerScripts\users.ps1 -Value "param([string]`$Prefix = `"srv`")`n1..2 | ForEach-Object {`n  `$u = `"`$Prefix-acct`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created `$u`"`n}`n"
 <empty>
@@ -59,13 +58,11 @@ PS [11/23]> Get-Content C:\ServerScripts\users.ps1
   param([string]`$Prefix = `"srv`")`n1..2 | ForEach-Object {`n  `$u = `"`$Prefix-acct`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created
 
 PS [12/23]> & C:\ServerScripts\users.ps1 -Prefix srv
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + & C:\ServerScripts\users.ps1 -Prefix srv
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Value
+  -----
+       
+  
 
 PS [13/23]> Get-LocalUser | Where-Object { $_.Name -like "srv-*" }
 <null>
@@ -81,12 +78,12 @@ PS [16/23]> Get-Content C:\ServerScripts\report.ps1
   `"==
 
 PS [17/23]> & C:\ServerScripts\report.ps1
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  `"== : The term '`"==' is not recognized as the name of a cmdlet, function, script file, or operable
   program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
   At line:1 char:1
-  + & C:\ServerScripts\report.ps1
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+  + `"==
+  + ~~~~
+      + CategoryInfo          : ObjectNotFound: (`"==:String) [], CommandNotFoundException
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [18/23]> Set-Content -Path C:\ServerScripts\inline.ps1 -Value "& { 1..5 | ForEach-Object { `"[`$_]`" } }`n"
@@ -96,20 +93,20 @@ PS [19/23]> & C:\ServerScripts\inline.ps1
   & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
   program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
   At line:1 char:1
-  + & C:\ServerScripts\inline.ps1
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  + & { 1..5 | ForEach-Object { `"[`$_]`" } }`n
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [20/23]> Get-ChildItem C:\ServerScripts | Format-Table Name, Length -AutoSize
   
-  Name           
-  ---------------
-  43 inline.ps1  
-  4 report.ps1   
-  10 role.ps1    
-  68 svcaudit.ps1
-  194 users.ps1  
+  Name             Length
+  ---------------  ------
+  43 inline.ps1          
+  4 report.ps1           
+  10 role.ps1            
+  68 svcaudit.ps1        
+  194 users.ps1          
   
 
 PS [21/23]> (Get-ChildItem C:\ServerScripts).Count
