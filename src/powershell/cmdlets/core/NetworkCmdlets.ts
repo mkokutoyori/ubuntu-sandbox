@@ -212,6 +212,338 @@ export class GetNetTCPConnectionCmdlet implements ICmdlet {
   }
 }
 
+// ── New / Remove-NetIPAddress ─────────────────────────────────────────────
+
+export class NewNetIPAddressCmdlet implements ICmdlet {
+  readonly name = 'new-netipaddress';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const ip          = psValueToString(ctx.named['ipaddress']  ?? '');
+    const ifAlias     = psValueToString(ctx.named['interfacealias'] ?? '');
+    const prefix      = Number(ctx.named['prefixlength'] ?? 24);
+    const gatewayRaw  = ctx.named['defaultgateway'];
+    if (!ip || !ifAlias) {
+      ctx.emitError('New-NetIPAddress requires -IPAddress and -InterfaceAlias');
+      return null;
+    }
+    try {
+      net.addIPAddress(ip, prefix, ifAlias, {
+        gateway: gatewayRaw ? psValueToString(gatewayRaw) : undefined,
+      });
+    } catch (e) {
+      ctx.emitError(e instanceof Error ? e.message : String(e));
+      return null;
+    }
+    return null;
+  }
+}
+
+export class RemoveNetIPAddressCmdlet implements ICmdlet {
+  readonly name = 'remove-netipaddress';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const ip      = psValueToString(ctx.named['ipaddress'] ?? ctx.positional[0] ?? '');
+    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
+    if (!ip) { ctx.emitError('Remove-NetIPAddress requires -IPAddress'); return null; }
+    try {
+      net.removeIPAddress(ip, ifAlias);
+    } catch (e) {
+      ctx.emitError(e instanceof Error ? e.message : String(e));
+    }
+    return null;
+  }
+}
+
+// ── New / Remove-NetRoute ─────────────────────────────────────────────────
+
+export class NewNetRouteCmdlet implements ICmdlet {
+  readonly name = 'new-netroute';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const dest    = psValueToString(ctx.named['destinationprefix'] ?? '');
+    const ifAlias = psValueToString(ctx.named['interfacealias'] ?? '');
+    const nextHop = psValueToString(ctx.named['nexthop'] ?? '');
+    const metric  = Number(ctx.named['routemetric'] ?? 256);
+    if (!dest || !ifAlias || !nextHop) {
+      ctx.emitError('New-NetRoute requires -DestinationPrefix, -InterfaceAlias, -NextHop');
+      return null;
+    }
+    net.addRoute(dest, ifAlias, nextHop, metric);
+    return null;
+  }
+}
+
+export class RemoveNetRouteCmdlet implements ICmdlet {
+  readonly name = 'remove-netroute';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const dest = psValueToString(ctx.named['destinationprefix'] ?? ctx.positional[0] ?? '');
+    if (!dest) { ctx.emitError('Remove-NetRoute requires -DestinationPrefix'); return null; }
+    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
+    net.removeRoute(dest, ifAlias);
+    return null;
+  }
+}
+
+// ── Enable / Disable / Rename-NetAdapter ──────────────────────────────────
+
+export class EnableNetAdapterCmdlet implements ICmdlet {
+  readonly name = 'enable-netadapter';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Enable-NetAdapter requires -Name'); return null; }
+    net.setAdapterStatus(name, 'Up');
+    return null;
+  }
+}
+
+export class DisableNetAdapterCmdlet implements ICmdlet {
+  readonly name = 'disable-netadapter';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Disable-NetAdapter requires -Name'); return null; }
+    net.setAdapterStatus(name, 'Down');
+    return null;
+  }
+}
+
+export class RenameNetAdapterCmdlet implements ICmdlet {
+  readonly name = 'rename-netadapter';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name    = psValueToString(ctx.named['name']    ?? ctx.positional[0] ?? '');
+    const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
+    if (!name || !newName) {
+      ctx.emitError('Rename-NetAdapter requires -Name and -NewName');
+      return null;
+    }
+    net.renameAdapter(name, newName);
+    return null;
+  }
+}
+
+// ── Get / Set-DnsClientServerAddress + Clear-DnsClientCache ────────────────
+
+export class GetDnsClientServerAddressCmdlet implements ICmdlet {
+  readonly name = 'get-dnsclientserveraddress';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const ifAlias = ctx.named['interfacealias']
+      ? psValueToString(ctx.named['interfacealias'])
+      : undefined;
+    const adapters = net.getAdapters();
+    const filtered = ifAlias
+      ? adapters.filter(a => a.name.toLowerCase() === ifAlias.toLowerCase())
+      : adapters;
+    return filtered.map(a => ({
+      InterfaceAlias: a.name,
+      InterfaceIndex: a.ifIndex,
+      AddressFamily:  'IPv4',
+      ServerAddresses: net.getDnsServers(a.name),
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class SetDnsClientServerAddressCmdlet implements ICmdlet {
+  readonly name = 'set-dnsclientserveraddress';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const ifAlias = psValueToString(ctx.named['interfacealias'] ?? ctx.positional[0] ?? '');
+    const raw     = ctx.named['serveraddresses'];
+    if (!ifAlias) { ctx.emitError('Set-DnsClientServerAddress requires -InterfaceAlias'); return null; }
+    if (raw === undefined || raw === null) {
+      ctx.emitError('Set-DnsClientServerAddress requires -ServerAddresses');
+      return null;
+    }
+    const servers = (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+    net.setDnsServers(ifAlias, servers);
+    return null;
+  }
+}
+
+export class ClearDnsClientCacheCmdlet implements ICmdlet {
+  readonly name = 'clear-dnsclientcache';
+  readonly aliases = [] as const;
+
+  execute(): PSValue {
+    // No DNS cache simulated — silent no-op, matches real PowerShell when
+    // there are no entries to clear.
+    return null;
+  }
+}
+
+// ── Get / New / Set / Enable / Disable / Remove-NetFirewallRule ────────────
+
+export class GetNetFirewallRuleCmdlet implements ICmdlet {
+  readonly name = 'get-netfirewallrule';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const rules = net.getFirewallRules();
+    if (rules.length === 0) {
+      // Built-in static rules live in the legacy executor — fall through.
+      throw new PSRuntimeError('Get-NetFirewallRule is not recognized in this provider context');
+    }
+    return rules.map(r => ({
+      Name: r.name,
+      DisplayName: r.displayName,
+      Enabled: r.enabled,
+      Action: r.action,
+      Direction: r.direction,
+      Protocol: r.protocol,
+      LocalPort: r.localPort,
+      RemotePort: r.remotePort,
+      Description: r.description,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class NewNetFirewallRuleCmdlet implements ICmdlet {
+  readonly name = 'new-netfirewallrule';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const displayName = psValueToString(ctx.named['displayname'] ?? '');
+    const name        = psValueToString(ctx.named['name']        ?? displayName);
+    const action      = psValueToString(ctx.named['action']      ?? 'Allow');
+    const direction   = psValueToString(ctx.named['direction']   ?? 'Inbound');
+    if (!displayName) {
+      ctx.emitError('New-NetFirewallRule requires -DisplayName');
+      return null;
+    }
+    net.addFirewallRule({
+      name,
+      displayName,
+      enabled: ctx.named['enabled'] === undefined ? true : ctx.named['enabled'] === true,
+      action,
+      direction,
+      protocol:    ctx.named['protocol']    ? psValueToString(ctx.named['protocol'])    : undefined,
+      localPort:   ctx.named['localport']   ? psValueToString(ctx.named['localport'])   : undefined,
+      remotePort:  ctx.named['remoteport']  ? psValueToString(ctx.named['remoteport'])  : undefined,
+      description: ctx.named['description'] ? psValueToString(ctx.named['description']) : undefined,
+    });
+    return null;
+  }
+}
+
+abstract class FirewallToggleCmdlet implements ICmdlet {
+  abstract readonly name: string;
+  abstract readonly aliases: readonly string[];
+  protected abstract enabled: boolean;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError(`${this.name} requires -DisplayName or -Name`); return null; }
+    const msg = net.setFirewallRule(name, { enabled: this.enabled });
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+export class EnableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
+  readonly name = 'enable-netfirewallrule';
+  readonly aliases = [] as const;
+  protected enabled = true;
+}
+export class DisableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
+  readonly name = 'disable-netfirewallrule';
+  readonly aliases = [] as const;
+  protected enabled = false;
+}
+
+export class SetNetFirewallRuleCmdlet implements ICmdlet {
+  readonly name = 'set-netfirewallrule';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Set-NetFirewallRule requires -DisplayName or -Name'); return null; }
+    const opts: { enabled?: boolean; action?: string } = {};
+    if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
+    if (ctx.named['action']  !== undefined) opts.action  = psValueToString(ctx.named['action']);
+    const msg = net.setFirewallRule(name, opts);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
+  readonly name = 'remove-netfirewallrule';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Remove-NetFirewallRule requires -DisplayName or -Name'); return null; }
+    const msg = net.removeFirewallRule(name);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+// ── Get / Set-NetConnectionProfile ────────────────────────────────────────
+
+export class GetNetConnectionProfileCmdlet implements ICmdlet {
+  readonly name = 'get-netconnectionprofile';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const adapters = net.getAdapters();
+    return adapters.map(a => ({
+      Name:                    a.name,
+      InterfaceAlias:          a.name,
+      InterfaceIndex:          a.ifIndex,
+      NetworkCategory:         net.getNetworkProfile(a.ifIndex),
+      IPv4Connectivity:        'Internet',
+      IPv6Connectivity:        'NoTraffic',
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class SetNetConnectionProfileCmdlet implements ICmdlet {
+  readonly name = 'set-netconnectionprofile';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const ifAlias  = psValueToString(ctx.named['interfacealias'] ?? '');
+    const category = psValueToString(ctx.named['networkcategory'] ?? '');
+    if (!ifAlias || !category) {
+      ctx.emitError('Set-NetConnectionProfile requires -InterfaceAlias and -NetworkCategory');
+      return null;
+    }
+    const adapter = net.getAdapter(ifAlias);
+    if (!adapter) { ctx.emitError(`Interface ${ifAlias} not found`); return null; }
+    net.setNetworkProfile(adapter.ifIndex, category);
+    return null;
+  }
+}
+
 // ── hostname / whoami (native-command shims) ──────────────────────────────
 // These are CMD-style tools, not real cmdlets — but PowerShell happily runs
 // them by name. Keeping them in the interpreter avoids the bypass list and

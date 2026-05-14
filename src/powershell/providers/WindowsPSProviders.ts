@@ -389,82 +389,224 @@ class WindowsEventLogAdapter implements IEventLogProvider {
   limitLog(logName: string): void { this.log.limitEventLog(logName); }
 }
 
-// ── Network adapter (partial — surfaces what's exposed today) ──────────────
+// ── Network adapter ────────────────────────────────────────────────────────
+//
+// Most operational state for IP / route / firewall / adapter overrides /
+// connection profiles still lives on the legacy PowerShellExecutor
+// (`extraIPs`, `extraRoutes`, `adapterOverrides`, `dynamicFirewallRules`,
+// `networkProfiles`, …). Until that state is relocated onto WindowsPC we
+// share the executor's maps directly so the interpreter and the executor
+// fallback path see the same world.
+
+interface NetworkStateRefs {
+  readonly extraIPs:             Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }>;
+  readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
+  readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
+  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+  readonly networkProfiles:      Map<number, string>;
+}
 
 class WindowsNetworkAdapter implements INetworkProvider {
-  constructor(private readonly pc: WindowsPC) {}
+  constructor(
+    private readonly pc: WindowsPC,
+    private readonly state: NetworkStateRefs,
+  ) {}
+
+  // ─ Hostname / adapters / IP enumeration ─────────────────────────────────
 
   getHostname(): string {
-    // WindowsPC stores hostname as `name` on the base Equipment class.
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string } }> }).getPorts();
-    return ports.map((p, idx) => ({
-      name: p.name,
-      displayName: p.name,
-      ifIndex: idx + 1,
-      status: 'Up',
-      macAddress: p.getMAC().toString(),
-      linkSpeed: '1 Gbps',
-    }));
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean }> }).getPorts();
+    return ports.map((p, idx) => {
+      const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
+      return {
+        name: ov.displayName ?? p.name,
+        displayName: ov.displayName ?? p.name,
+        ifIndex: idx + 1,
+        status: ov.status ?? (p.getIsUp() ? 'Up' : 'Disabled'),
+        macAddress: p.getMAC().toString(),
+        linkSpeed: '1 Gbps',
+      };
+    });
   }
   getAdapter(name: string): NetworkAdapterInfo | null {
-    return this.getAdapters().find(a => a.name.toLowerCase() === name.toLowerCase()) ?? null;
+    const lc = name.toLowerCase();
+    return this.getAdapters().find(a => a.name.toLowerCase() === lc) ?? null;
   }
   getIPAddresses(ifAlias?: string): IPAddressInfo[] {
+    const out: IPAddressInfo[] = [];
     const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getIPAddress: () => unknown }> }).getPorts();
     const filtered = ifAlias
       ? ports.filter(p => p.name.toLowerCase() === ifAlias.toLowerCase())
       : ports;
-    const out: IPAddressInfo[] = [];
     filtered.forEach((p, idx) => {
       const raw = p.getIPAddress();
-      if (!raw) return;
-      const ip = String((raw as { toString: () => string }).toString());
+      if (raw) {
+        const ip = String((raw as { toString: () => string }).toString());
+        out.push({
+          ipAddress: ip,
+          prefixLength: 24,
+          ifAlias: p.name,
+          ifIndex: idx + 1,
+          prefixOrigin: 'Manual',
+          suffixOrigin: 'Manual',
+          addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
+        });
+      }
+    });
+    // Layer extra IPs (added via New-NetIPAddress)
+    for (const [ip, meta] of this.state.extraIPs) {
+      if (ifAlias && meta.ifAlias.toLowerCase() !== ifAlias.toLowerCase()) continue;
+      const ifIndex = ports.findIndex(p => p.name.toLowerCase() === meta.ifAlias.toLowerCase()) + 1;
       out.push({
         ipAddress: ip,
-        prefixLength: 24,
-        ifAlias: p.name,
-        ifIndex: idx + 1,
-        prefixOrigin: 'Manual',
-        suffixOrigin: 'Manual',
-        addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
+        prefixLength: meta.prefixLength,
+        ifAlias: meta.ifAlias,
+        ifIndex,
+        prefixOrigin: meta.prefixOrigin,
+        suffixOrigin: meta.suffixOrigin,
+        addressFamily: meta.addressFamily,
+        gateway: meta.gateway,
       });
-    });
+    }
     return out;
   }
-  addIPAddress(): void                          { throw notImpl('addIPAddress'); }
-  removeIPAddress(): void                       { throw notImpl('removeIPAddress'); }
-  getRoutes(): RouteInfo[]                      { return []; }
-  addRoute(): void                              { throw notImpl('addRoute'); }
-  removeRoute(): void                           { throw notImpl('removeRoute'); }
+
+  // ─ IP add / remove ──────────────────────────────────────────────────────
+
+  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void {
+    const key = ip.toLowerCase();
+    if (this.state.extraIPs.has(key)) {
+      throw new Error(`IP address ${ip} already exists.`);
+    }
+    this.state.extraIPs.set(key, {
+      ifAlias,
+      prefixLength,
+      prefixOrigin: 'Manual',
+      suffixOrigin: 'Manual',
+      skipAsSource: false,
+      gateway: opts?.gateway,
+      addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
+    });
+    if (opts?.gateway) {
+      const dest = ip.includes(':') ? '::/0' : '0.0.0.0/0';
+      this.state.extraRoutes.set(dest, { ifAlias, nextHop: opts.gateway, metric: 256 });
+    }
+  }
+  removeIPAddress(ip: string): void {
+    if (ip === '127.0.0.1' || ip === '::1') {
+      throw new Error('Cannot remove loopback address.');
+    }
+    this.state.extraIPs.delete(ip.toLowerCase());
+  }
+
+  // ─ Routes ───────────────────────────────────────────────────────────────
+
+  getRoutes(): RouteInfo[] {
+    const out: RouteInfo[] = [];
+    for (const [dest, meta] of this.state.extraRoutes) {
+      out.push({
+        destinationPrefix: dest,
+        ifAlias: meta.ifAlias,
+        nextHop: meta.nextHop,
+        routeMetric: meta.metric,
+      });
+    }
+    return out;
+  }
+  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void {
+    this.state.extraRoutes.set(dest, { ifAlias, nextHop, metric });
+  }
+  removeRoute(dest: string): void {
+    this.state.extraRoutes.delete(dest);
+  }
+
+  // ─ DNS ──────────────────────────────────────────────────────────────────
+
   getDnsServers(ifAlias: string): string[] {
     const m = this.pc as unknown as { getDnsServers?: (n: string) => string[] };
     return m.getDnsServers ? m.getDnsServers(ifAlias) : [];
   }
-  setDnsServers(): void                         { throw notImpl('setDnsServers'); }
+  setDnsServers(ifAlias: string, servers: string[]): void {
+    const m = this.pc as unknown as { setDnsServers?: (n: string, s: string[]) => void };
+    if (m.setDnsServers) m.setDnsServers(ifAlias, servers);
+  }
   getDefaultGateway(): string | null {
     const m = this.pc as unknown as { getDefaultGateway?: () => string | null };
     return m.getDefaultGateway ? m.getDefaultGateway() : null;
   }
-  isDHCPConfigured(): boolean                   { return false; }
-  testConnection(): boolean                     { return true; }
-  resolveDns(): string[]                        { return []; }
-  getTcpConnections()                            { return []; }
-  getFirewallRules()                            { return []; }
-  addFirewallRule(): void                       { throw notImpl('addFirewallRule'); }
-  setFirewallRule(): string                     { throw notImpl('setFirewallRule'); }
-  removeFirewallRule(): string                  { throw notImpl('removeFirewallRule'); }
-  setAdapterStatus(): void                      { throw notImpl('setAdapterStatus'); }
-  renameAdapter(): void                         { throw notImpl('renameAdapter'); }
-  getNetworkProfile(): string                   { throw notImpl('getNetworkProfile'); }
-  setNetworkProfile(): void                     { throw notImpl('setNetworkProfile'); }
-  getWlanSSID(): string                         { return ''; }
-  getWlanProfiles(): string[]                   { return []; }
-  getWinhttpProxy(): string                     { return ''; }
-  setWinhttpProxy(): void                       { throw notImpl('setWinhttpProxy'); }
-  async executeCmdCommand(): Promise<string>    { throw notImpl('executeCmdCommand'); }
+  isDHCPConfigured(): boolean { return false; }
+  testConnection(): boolean   { return true; }
+  resolveDns(): string[]      { return []; }
+  getTcpConnections()         { return []; }
+
+  // ─ Firewall ─────────────────────────────────────────────────────────────
+
+  getFirewallRules() {
+    return Array.from(this.state.dynamicFirewallRules.values()).map(r => ({ ...r }));
+  }
+  addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void {
+    const displayName = rule.displayName ?? rule.name;
+    const key = displayName.toLowerCase();
+    this.state.dynamicFirewallRules.set(key, {
+      name: rule.name,
+      displayName,
+      enabled: rule.enabled ?? true,
+      action: rule.action,
+      direction: rule.direction,
+      protocol: rule.protocol ?? 'TCP',
+      localPort: rule.localPort ?? 'Any',
+      remotePort: rule.remotePort ?? 'Any',
+      description: rule.description ?? '',
+    });
+  }
+  setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string {
+    const key = name.toLowerCase();
+    const rule = this.state.dynamicFirewallRules.get(key);
+    if (!rule) return `No firewall rule named '${name}'.`;
+    if (opts.enabled !== undefined) rule.enabled = opts.enabled;
+    if (opts.action  !== undefined) rule.action  = opts.action;
+    return '';
+  }
+  removeFirewallRule(name: string): string {
+    const key = name.toLowerCase();
+    return this.state.dynamicFirewallRules.delete(key) ? '' : `No firewall rule named '${name}'.`;
+  }
+
+  // ─ Adapter actions ──────────────────────────────────────────────────────
+
+  setAdapterStatus(name: string, status: 'Up' | 'Down'): void {
+    const key = name.toLowerCase();
+    const ov  = this.state.adapterOverrides.get(key) ?? {};
+    ov.status = status === 'Down' ? 'Disabled' : 'Up';
+    this.state.adapterOverrides.set(key, ov);
+  }
+  renameAdapter(name: string, newName: string): void {
+    const key = name.toLowerCase();
+    const ov  = this.state.adapterOverrides.get(key) ?? {};
+    ov.displayName = newName;
+    this.state.adapterOverrides.set(key, ov);
+    this.state.adapterOverrides.set(newName.toLowerCase(), ov);
+  }
+
+  // ─ Network connection profile ──────────────────────────────────────────
+
+  getNetworkProfile(ifIndex: number): string {
+    return this.state.networkProfiles.get(ifIndex) ?? 'DomainAuthenticated';
+  }
+  setNetworkProfile(ifIndex: number, category: string): void {
+    this.state.networkProfiles.set(ifIndex, category);
+  }
+
+  // ─ WLAN / proxy / native cmd execution — still legacy-only ─────────────
+
+  getWlanSSID(): string         { return ''; }
+  getWlanProfiles(): string[]   { return []; }
+  getWinhttpProxy(): string     { return ''; }
+  setWinhttpProxy(): void       { throw notImpl('setWinhttpProxy'); }
+  async executeCmdCommand(): Promise<string> { throw notImpl('executeCmdCommand'); }
 }
 
 function notImpl(name: string): Error {
@@ -477,16 +619,29 @@ function notImpl(name: string): Error {
 
 /**
  * Build a PSProviders bag backed by a real WindowsPC device. Optional
- * `registry` / `eventLog` arguments let callers share the same in-memory
- * registry and event-log instances with the legacy PowerShellExecutor, so
- * changes made through the interpreter are visible to fallback paths.
+ * `shared.registry` / `eventLog` / `network` arguments let callers share
+ * the same in-memory state with the legacy PowerShellExecutor, so changes
+ * made through the interpreter are visible to fallback paths and vice
+ * versa. When `shared.network` is omitted the adapter falls back to its
+ * own (empty) maps — useful for standalone tests.
  */
 export function createWindowsPSProviders(
   pc: WindowsPC,
-  shared?: { registry?: PSRegistryProvider; eventLog?: PSEventLogProvider },
+  shared?: {
+    registry?: PSRegistryProvider;
+    eventLog?: PSEventLogProvider;
+    network?:  NetworkStateRefs;
+  },
 ): PSProviders {
   const reg = shared?.registry ?? new PSRegistryProvider();
   const log = shared?.eventLog ?? new PSEventLogProvider();
+  const net = shared?.network ?? {
+    extraIPs:             new Map(),
+    extraRoutes:          new Map(),
+    adapterOverrides:     new Map(),
+    dynamicFirewallRules: new Map(),
+    networkProfiles:      new Map(),
+  };
   return {
     filesystem: new WindowsFileSystemAdapter(pc),
     services:   new WindowsServiceAdapter(pc),
@@ -494,6 +649,6 @@ export function createWindowsPSProviders(
     users:      new WindowsUserAdapter(pc),
     registry:   new WindowsRegistryAdapter(reg),
     eventLog:   new WindowsEventLogAdapter(log),
-    network:    new WindowsNetworkAdapter(pc),
+    network:    new WindowsNetworkAdapter(pc, net),
   };
 }

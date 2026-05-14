@@ -64,6 +64,15 @@ import {
   TestConnectionCmdlet, ResolveDnsNameCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
   GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
+  NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
+  NewNetRouteCmdlet, RemoveNetRouteCmdlet,
+  EnableNetAdapterCmdlet, DisableNetAdapterCmdlet, RenameNetAdapterCmdlet,
+  GetDnsClientServerAddressCmdlet, SetDnsClientServerAddressCmdlet,
+  ClearDnsClientCacheCmdlet,
+  GetNetFirewallRuleCmdlet, NewNetFirewallRuleCmdlet,
+  SetNetFirewallRuleCmdlet, RemoveNetFirewallRuleCmdlet,
+  EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
+  GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
 } from './NetworkCmdlets';
 
 /**
@@ -198,4 +207,24 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetNetTCPConnectionCmdlet());
   registry.register(new HostnameCmdlet());
   registry.register(new WhoamiCmdlet());
+
+  // ── Network mutations & profiles (provider-backed) ────────────────────────
+  registry.register(new NewNetIPAddressCmdlet());
+  registry.register(new RemoveNetIPAddressCmdlet());
+  registry.register(new NewNetRouteCmdlet());
+  registry.register(new RemoveNetRouteCmdlet());
+  registry.register(new EnableNetAdapterCmdlet());
+  registry.register(new DisableNetAdapterCmdlet());
+  registry.register(new RenameNetAdapterCmdlet());
+  registry.register(new GetDnsClientServerAddressCmdlet());
+  registry.register(new SetDnsClientServerAddressCmdlet());
+  registry.register(new ClearDnsClientCacheCmdlet());
+  registry.register(new GetNetFirewallRuleCmdlet());
+  registry.register(new NewNetFirewallRuleCmdlet());
+  registry.register(new SetNetFirewallRuleCmdlet());
+  registry.register(new RemoveNetFirewallRuleCmdlet());
+  registry.register(new EnableNetFirewallRuleCmdlet());
+  registry.register(new DisableNetFirewallRuleCmdlet());
+  registry.register(new GetNetConnectionProfileCmdlet());
+  registry.register(new SetNetConnectionProfileCmdlet());
 }

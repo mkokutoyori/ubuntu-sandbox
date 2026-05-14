@@ -49,6 +49,13 @@ export class PowerShellSubShell implements ISubShell {
       ? new PSInterpreter(createWindowsPSProviders(device, {
           registry: this.psExecutor.registry,
           eventLog: this.psExecutor.eventLog,
+          network: {
+            extraIPs:             this.psExecutor.extraIPs,
+            extraRoutes:          this.psExecutor.extraRoutes,
+            adapterOverrides:     this.psExecutor.adapterOverrides,
+            dynamicFirewallRules: this.psExecutor.dynamicFirewallRules,
+            networkProfiles:      this.psExecutor.networkProfiles,
+          },
         }))
       : new PSInterpreter();
   }
