@@ -687,9 +687,43 @@ export class PowerShellExecutor {
   }
 
   /** Expand $() subexpressions and $var references inside a double-quoted string */
+  /**
+   * Strip surrounding quotes from a raw argument and apply the
+   * appropriate string-expansion semantics:
+   *  - "…"  → expandDoubleQuotedString (var interp + backtick escapes)
+   *  - '…'  → literal (only doubled-quote `''` → `'`)
+   *  - else → returned verbatim.
+   */
+  private unquoteAndExpand(raw: string): string {
+    if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+      return this.expandDoubleQuotedString(raw.slice(1, -1));
+    }
+    if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+      return raw.slice(1, -1).replace(/''/g, "'");
+    }
+    return raw;
+  }
+
   private expandDoubleQuotedString(inner: string): string {
-    // Expand $($var) or $(expr) subexpressions
-    let result = inner.replace(/\$\(([^)]*)\)/g, (_match, sub) => {
+    // PowerShell uses backtick (`) as the escape character inside
+    // double-quoted strings. Some sequences (`$ and `") interact with
+    // the substitution machinery, so we process them in two passes:
+    //
+    //   pass 1 — escape protectors:
+    //     `$ → \x00D  (literal dollar — do not substitute as a var)
+    //     `" → \x00Q  (literal quote)
+    //     ``  → \x00B (literal backtick)
+    //   pass 2 — variable substitution / sub-expressions (as before)
+    //   pass 3 — un-protect + translate the remaining whitespace escapes
+    //     `n → "\n", `r → "\r", `t → "\t", `0 → "\0"
+    const DOLLAR = '\x00D', QUOTE = '\x00Q', BACK = '\x00B';
+    let result = inner
+      .replace(/``/g, BACK)
+      .replace(/`\$/g, DOLLAR)
+      .replace(/`"/g, QUOTE);
+
+    // Expand $($var) or $(expr) subexpressions.
+    result = result.replace(/\$\(([^)]*)\)/g, (_match, sub) => {
       const substituted = sub.replace(/\$(\w+)/g, (_m: string, n: string) => {
         const lo = n.toLowerCase();
         if (lo === 'true') return 'True';
@@ -698,7 +732,8 @@ export class PowerShellExecutor {
       });
       return this.tryEvalExpr(substituted) ?? substituted;
     });
-    // Expand remaining $var references
+
+    // Expand remaining $var references.
     result = result.replace(/\$(\w+)/g, (_match, n) => {
       const lo = n.toLowerCase();
       if (lo === 'true') return 'True';
@@ -706,6 +741,17 @@ export class PowerShellExecutor {
       if (lo === 'null') return '';
       return this.sessionVars.get(lo) ?? _match;
     });
+
+    // Translate the whitespace escape sequences and restore protected chars.
+    result = result
+      .replace(/`n/g, '\n')
+      .replace(/`r/g, '\r')
+      .replace(/`t/g, '\t')
+      .replace(/`0/g, '\0')
+      .replace(new RegExp(DOLLAR, 'g'), '$')
+      .replace(new RegExp(QUOTE, 'g'), '"')
+      .replace(new RegExp(BACK, 'g'), '`');
+
     return result;
   }
 
@@ -1265,7 +1311,11 @@ export class PowerShellExecutor {
     return cmdline.replace(/\$\((\$\w+)\)/g, (_, inner) => {
       const name = inner.slice(1).toLowerCase();
       return this.sessionVars.get(name) ?? inner;
-    }).replace(/\$(\w+)/g, (match, name) => {
+    }).replace(/(`?)\$(\w+)/g, (match, escape, name) => {
+      // ` before $ escapes it (PS double-quoted-string semantics). Keep
+      // the literal `$Name so expandDoubleQuotedString can convert it
+      // back later.
+      if (escape === '`') return match;
       const lower = name.toLowerCase();
       // Don't substitute reserved variables — handled by executeSingle
       if (['psversiontable','host','pwd','true','false','null','pid','_'].includes(lower)) return match;
@@ -1790,6 +1840,12 @@ export class PowerShellExecutor {
     let cur = '', inSingle = false, inDouble = false;
     for (let i = 0; i < cmdline.length; i++) {
       const ch = cmdline[i];
+      // Backtick escape inside a double-quoted string keeps the next
+      // char (typically `"` to embed a literal quote, or `n / `t / `$).
+      if (inDouble && ch === '`' && i + 1 < cmdline.length) {
+        cur += ch + cmdline[++i];
+        continue;
+      }
       if (ch === "'" && !inDouble) { inSingle = !inSingle; cur += ch; continue; }
       if (ch === '"' && !inSingle) { inDouble = !inDouble; cur += ch; continue; }
       if ((ch === ' ' || ch === '\t') && !inSingle && !inDouble) {
@@ -2158,7 +2214,15 @@ export class PowerShellExecutor {
 
     // Write-Host / Write-Output / echo
     if (cmdLower === 'write-host' || cmdLower === 'write-output' || cmdLower === 'echo') {
-      return args.join(' ').replace(/^["']|["']$/g, '');
+      const joined = args.join(' ');
+      // Expand double-quoted backtick escapes / $var when applicable.
+      if (joined.startsWith('"') && joined.endsWith('"')) {
+        return this.expandDoubleQuotedString(joined.slice(1, -1));
+      }
+      if (joined.startsWith("'") && joined.endsWith("'")) {
+        return joined.slice(1, -1).replace(/''/g, "'");
+      }
+      return joined;
     }
 
     // Clear-Host / cls / clear
@@ -2904,16 +2968,20 @@ export class PowerShellExecutor {
       else if (a === '-nonewline') { noNewline = true; }
       else if (a === '-value' && args[i + 1]) {
         const raw = args[++i];
-        const stripped = raw.replace(/^["']|["']$/g, '');
-        const items = this.tryParseArrayLiteral(stripped);
-        value = items ? items.join(noNewline ? '' : '\n') : stripped;
+        const items = this.tryParseArrayLiteral(raw);
+        if (items) {
+          // Items in the array literal still need backtick expansion.
+          const expanded = items.map((it) => this.unquoteAndExpand(it));
+          value = expanded.join(noNewline ? '' : '\n');
+        } else {
+          value = this.unquoteAndExpand(raw);
+        }
       }
       else if (!args[i].startsWith('-')) {
         const raw = args[i];
-        // Try array parse BEFORE stripping quotes (to handle "a","b" correctly)
         const items = this.tryParseArrayLiteral(raw);
-        if (items) { positionals.push(...items); }
-        else { positionals.push(raw.replace(/^["']|["']$/g, '')); }
+        if (items) { positionals.push(...items.map((it) => this.unquoteAndExpand(it))); }
+        else { positionals.push(this.unquoteAndExpand(raw)); }
       }
     }
     // Positional: first is path, rest are values joined by newlines or empty string

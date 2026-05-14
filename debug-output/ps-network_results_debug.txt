@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network
-Generated: 2026-05-14T09:34:26.816Z
+Generated: 2026-05-14T09:37:28.844Z
 host=WIN-NET-DBG (windows-pc)
 Total commands: 75
 ============================================================

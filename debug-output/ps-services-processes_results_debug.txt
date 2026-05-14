@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-services-processes
-Generated: 2026-05-14T09:34:26.672Z
+Generated: 2026-05-14T09:37:29.147Z
 host=SRV-SVC-DBG (windows-server)
 Total commands: 104
 ============================================================
@@ -417,7 +417,7 @@ PS [43/104]> Get-Process
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-       53      10        8      10251       0.00   5140   0 spoolsv
+       80       8        8      18390       0.00   5140   0 spoolsv
 
 PS [44/104]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
   
@@ -455,7 +455,7 @@ PS [45/104]> Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
   
   Handles  NPM(K)  PM(K)  WS(K)   CPU(s)  Id    ProcessName      
   -------  ------  -----  ------  ------  ----  -----------------
-       53      10      8   10251       0  5140  spoolsv          
+       80       8      8   18390       0  5140  spoolsv          
       180      10     10   18400     0.3  5132  conhost          
        48       3      3    5200     0.1  5120  cmd              
      2100      65     64  145000    12.3  2848  explorer         
@@ -518,7 +518,7 @@ PS [49/104]> Get-Process explorer -ErrorAction SilentlyContinue
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-       53      10        8      10251       0.00   5140   0 spoolsv
+       80       8        8      18390       0.00   5140   0 spoolsv
 
 PS [50/104]> Get-Process -Name svchost -ErrorAction SilentlyContinue
   
@@ -550,7 +550,7 @@ PS [53/104]> Get-Process | Select-Object Id, ProcessName, Handles, WS, CPU | Sor
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName      
   -------  ------  -----  -----  ------  ----  -----------------
-       53                                5140  spoolsv          
+       80                                5140  spoolsv          
       180                                5132  conhost          
        48                                5120  cmd              
      2100                                2848  explorer         
@@ -602,7 +602,7 @@ PS [56/104]> ps
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-       53      10        8      10251       0.00   5140   0 spoolsv
+       80       8        8      18390       0.00   5140   0 spoolsv
 
 PS [57/104]> gps
   
@@ -633,7 +633,7 @@ PS [57/104]> gps
      2100      65       64      145000      12.30   2848   1 explorer
        48       3        3       5200       0.10   5120   1 cmd
       180      10       10      18400       0.30   5132   1 conhost
-       53      10        8      10251       0.00   5140   0 spoolsv
+       80       8        8      18390       0.00   5140   0 spoolsv
 
 
 --- [58] § process lifecycle ---
@@ -644,7 +644,7 @@ PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
   
   Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
   -------  ------    -----      -----     ------     --  -- -----------
-      129       5        4      10680       0.00   5144   1 notepad
+      146      13        7      19989       0.00   5144   1 notepad
 
 PS [60/104]> Start-Process -FilePath calc.exe
 <empty>
@@ -653,7 +653,7 @@ PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
   
   Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
   -------  ------    -----      -----     ------     --  -- -----------
-       75      13        7      12222       0.00   5148   1 calc
+       91      11        4      14272       0.00   5148   1 calc
 
 PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
 <empty>
@@ -680,9 +680,9 @@ PS [68/104]> Get-Process -Name notepad
   
   Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
   -------  ------    -----      -----     ------     --  -- -----------
-       74       7        9      16388       0.00   5152   1 notepad
-      138       7        7      11225       0.00   5156   1 notepad
-      158      12        9       9840       0.00   5160   1 notepad
+       96       5        6       9882       0.00   5152   1 notepad
+      193       6        9      10163       0.00   5156   1 notepad
+      172      12        2       4437       0.00   5160   1 notepad
 
 PS [69/104]> Get-Process -Name notepad | Stop-Process
 <null>
@@ -799,55 +799,55 @@ PS [80/104]> Get-EventLog -LogName System -Newest 5 -ErrorAction SilentlyContinu
   
      Index Time          EntryType   Source                 InstanceID Message
      ----- ----          ---------   ------                 ---------- -------
-     1009 05/14 07:34 Information EventLog                     6005 The Event log service was started.
-     1008 05/14 03:34 Warning     Microsoft-Windows-Powe          1 The system has returned from a low power...
-     1007 05/13 21:34 Information Microsoft-Windows-Kern          1 The system uptime is 86400 seconds.
-     1006 05/13 09:34 Information Microsoft-Windows-Winl       7001 User Logon Notification for Customer Exp...
-     1005 05/12 09:34 Error       Disk                            7 The device, \Device\Harddisk0\DR0, has a...
+     1009 05/14 07:37 Information EventLog                     6005 The Event log service was started.
+     1008 05/14 03:37 Warning     Microsoft-Windows-Powe          1 The system has returned from a low power...
+     1007 05/13 21:37 Information Microsoft-Windows-Kern          1 The system uptime is 86400 seconds.
+     1006 05/13 09:37 Information Microsoft-Windows-Winl       7001 User Logon Notification for Customer Exp...
+     1005 05/12 09:37 Error       Disk                            7 The device, \Device\Harddisk0\DR0, has a...
   
 
 PS [81/104]> Get-EventLog -LogName Application -Newest 5 -ErrorAction SilentlyContinue
   
      Index Time          EntryType   Source                 InstanceID Message
      ----- ----          ---------   ------                 ---------- -------
-     1015 05/13 09:34 Information .NET Runtime                 1026 .NET Runtime version 4.0.30319 — Applica...
-     1014 05/11 09:34 Error       Application Hang             1002 The program svchost.exe stopped interact...
-     1013 05/09 09:34 Information SecurityCenter                  1 The Windows Security Center Service has ...
-     1012 05/07 09:34 Warning     Application Error            1000 Faulting application name: explorer.exe.
-     1011 05/04 09:34 Information MsiInstaller                11707 Product: Microsoft Visual C++ Redistribu...
+     1015 05/13 09:37 Information .NET Runtime                 1026 .NET Runtime version 4.0.30319 — Applica...
+     1014 05/11 09:37 Error       Application Hang             1002 The program svchost.exe stopped interact...
+     1013 05/09 09:37 Information SecurityCenter                  1 The Windows Security Center Service has ...
+     1012 05/07 09:37 Warning     Application Error            1000 Faulting application name: explorer.exe.
+     1011 05/04 09:37 Information MsiInstaller                11707 Product: Microsoft Visual C++ Redistribu...
   
 
 PS [82/104]> Get-EventLog -LogName Security -Newest 5 -ErrorAction SilentlyContinue
   
      Index Time          EntryType   Source                 InstanceID Message
      ----- ----          ---------   ------                 ---------- -------
-     1020 05/14 09:34 SuccessAudi Microsoft-Windows-Secu       4672 Special privileges assigned to new logon...
-     1019 05/14 09:34 SuccessAudi Microsoft-Windows-Secu       4648 A logon was attempted using explicit cre...
-     1018 05/13 09:34 FailureAudi Microsoft-Windows-Secu       4625 An account failed to log on.
-     1017 05/13 09:34 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
-     1016 05/13 09:34 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
+     1020 05/14 09:37 SuccessAudi Microsoft-Windows-Secu       4672 Special privileges assigned to new logon...
+     1019 05/14 09:37 SuccessAudi Microsoft-Windows-Secu       4648 A logon was attempted using explicit cre...
+     1018 05/13 09:37 FailureAudi Microsoft-Windows-Secu       4625 An account failed to log on.
+     1017 05/13 09:37 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
+     1016 05/13 09:37 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
   
 
 PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyContinue
   
   TimeCreated                     Id LevelDisplayName Message
   -----------                     -- ---------------- -------
-  2026-05-14 07:34:26             6005 Information      The Event log service was star...
-  2026-05-14 03:34:26                1 Warning          The system has returned from a...
-  2026-05-13 21:34:26                1 Information      The system uptime is 86400 sec...
-  2026-05-13 09:34:26             7001 Information      User Logon Notification for Cu...
-  2026-05-12 09:34:26                7 Error            The device, \Device\Harddisk0\...
+  2026-05-14 07:37:29             6005 Information      The Event log service was star...
+  2026-05-14 03:37:29                1 Warning          The system has returned from a...
+  2026-05-13 21:37:29                1 Information      The system uptime is 86400 sec...
+  2026-05-13 09:37:29             7001 Information      User Logon Notification for Cu...
+  2026-05-12 09:37:29                7 Error            The device, \Device\Harddisk0\...
   
 
 PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction SilentlyContinue
   
   TimeCreated                     Id LevelDisplayName Message
   -----------                     -- ---------------- -------
-  2026-05-13 09:34:26             1026 Information      .NET Runtime version 4.0.30319...
-  2026-05-11 09:34:26             1002 Error            The program svchost.exe stoppe...
-  2026-05-09 09:34:26                1 Information      The Windows Security Center Se...
-  2026-05-07 09:34:26             1000 Warning          Faulting application name: exp...
-  2026-05-04 09:34:26             11707 Information      Product: Microsoft Visual C++ ...
+  2026-05-13 09:37:29             1026 Information      .NET Runtime version 4.0.30319...
+  2026-05-11 09:37:29             1002 Error            The program svchost.exe stoppe...
+  2026-05-09 09:37:29                1 Information      The Windows Security Center Se...
+  2026-05-07 09:37:29             1000 Warning          Faulting application name: exp...
+  2026-05-04 09:37:29             11707 Information      Product: Microsoft Visual C++ ...
   
 
 PS [85/104]> Get-WinEvent -ListLog * -ErrorAction SilentlyContinue | Select-Object -First 5
@@ -929,8 +929,8 @@ PS [96/104]> Get-Service | Group-Object Status | Sort-Object Name
 
 PS [97/104]> Get-Process | Measure-Object -Property Handles -Sum -Average
   Count    : 26
-  Average  : 403.11538461538464
-  Sum      : 10481
+  Average  : 404.15384615384613
+  Sum      : 10508
   Property : Handles
 
 PS [98/104]> Get-Service -Name Spooler | Format-List *

@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-pipelines
-Generated: 2026-05-14T09:34:27.303Z
+Generated: 2026-05-14T09:37:29.450Z
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
 ============================================================
@@ -741,7 +741,7 @@ PS [51/111]> Get-Content (Join-Path $env:TEMP "doesnotexist") -ErrorAction Silen
   Property : 
 
 PS [52/111]> "line1`nline2`nline3" -split "`n" | Measure-Object
-  Count    : 1
+  Count    : 3
   Property : 
 
 PS [53/111]> "red","green","blue" | Measure-Object -Character
@@ -1025,7 +1025,7 @@ PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$
   
   [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=-a----                5/14/2026   9                                                  
   -----------------------------------------------------------------------------------------------------------  --------  -------------------------------------------------------  ------------------------------------------------------------------------------------------------------------
-  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  34 AM              5 f9.txt.Name; L=-a----                5/14/2026   9:34 AM              5 f9.txt.Length }
+  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  37 AM              5 f9.txt.Name; L=-a----                5/14/2026   9:37 AM              5 f9.txt.Length }
   
 
 PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure-Object | Select-Object Count
