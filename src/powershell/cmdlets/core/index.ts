@@ -34,6 +34,7 @@ import {
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
   OutFileCmdlet as OutFilePathCmdlet,
+  GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
@@ -128,6 +129,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new RemoveItemCmdlet());
   registry.register(new CopyItemCmdlet());
   registry.register(new MoveItemCmdlet());
+  registry.register(new GetItemPropertyCmdlet());
+  registry.register(new SetItemPropertyCmdlet());
+  registry.register(new RemoveItemPropertyCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());

@@ -309,3 +309,69 @@ export class OutFileCmdlet implements ICmdlet {
     return null;
   }
 }
+
+// ─── Get-ItemProperty / Set-ItemProperty / Remove-ItemProperty ──────────────
+// Currently registry-only — the legacy executor handles the (rare) filesystem
+// equivalents (file attributes), so we throw "not recognized" there to fall
+// back transparently.
+
+/**
+ * Re-join positional path fragments back into a single registry path. The
+ * lexer splits `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion` into
+ * two tokens at the space, so the cmdlet receives them as separate
+ * positional arguments — we glue them back together with a space.
+ */
+function joinPathPositionals(ctx: CmdletContext): string {
+  if (ctx.named['path']) return psValueToString(ctx.named['path']);
+  return ctx.positional.map(psValueToString).join(' ').trim();
+}
+
+export class GetItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'get-itemproperty';
+  readonly aliases = ['gp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = joinPathPositionals(ctx);
+    const name = ctx.named['name'] ? psValueToString(ctx.named['name']) : undefined;
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.getItemProperty(path, name);
+    }
+    requireRegistryProvider(path); // throws "not recognized" — fallback to executor for FS attrs
+    return null;
+  }
+}
+
+export class SetItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'set-itemproperty';
+  readonly aliases = ['sp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const name  = psValueToString(ctx.named['name']  ?? ctx.positional[1] ?? '');
+    const raw   = ctx.named['value'] ?? ctx.positional[2];
+    const value = typeof raw === 'number' ? raw : psValueToString(raw ?? '');
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.setItemProperty(path, name, value);
+    }
+    requireRegistryProvider(path);
+    return null;
+  }
+}
+
+export class RemoveItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'remove-itemproperty';
+  readonly aliases = ['rp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.removeItemProperty(path, name);
+    }
+    requireRegistryProvider(path);
+    return null;
+  }
+}
