@@ -141,3 +141,102 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
     } as Record<string, PSValue>)) as PSValue;
   }
 }
+
+// ── Get-NetIPConfiguration ────────────────────────────────────────────────
+// Composite: rolls adapter + IP + DNS + gateway into one row per adapter
+// (matches what real PS prints when invoked without arguments).
+
+export class GetNetIPConfigurationCmdlet implements ICmdlet {
+  readonly name = 'get-netipconfiguration';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const adapters = net.getAdapters();
+    const gateway = net.getDefaultGateway() ?? '';
+    return adapters.map(a => {
+      const ips = net.getIPAddresses(a.name);
+      const v4  = ips.find(ip => ip.addressFamily === 'IPv4');
+      return {
+        InterfaceAlias:       a.name,
+        InterfaceDescription: a.displayName,
+        InterfaceIndex:       a.ifIndex,
+        IPv4Address:          v4 ? v4.ipAddress : '',
+        IPv6Address:          ips.find(ip => ip.addressFamily === 'IPv6')?.ipAddress ?? '',
+        IPv4DefaultGateway:   gateway,
+        DNSServer:            net.getDnsServers(a.name).join(', '),
+        NetAdapter:           { Status: a.status } as Record<string, PSValue>,
+      } as Record<string, PSValue>;
+    }) as PSValue;
+  }
+}
+
+// ── Get-NetRoute / Get-NetTCPConnection (read-only) ──────────────────────
+// The provider currently returns [] for both — fall back to the legacy
+// executor (it has the formatted-table output) when there's nothing
+// structured to emit, so users still see the header columns.
+
+export class GetNetRouteCmdlet implements ICmdlet {
+  readonly name = 'get-netroute';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const routes = net.getRoutes();
+    if (routes.length === 0) throw new PSRuntimeError('Get-NetRoute is not recognized in this provider context');
+    return routes.map(r => ({
+      DestinationPrefix: r.destinationPrefix,
+      InterfaceAlias:    r.ifAlias,
+      NextHop:           r.nextHop,
+      RouteMetric:       r.routeMetric,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class GetNetTCPConnectionCmdlet implements ICmdlet {
+  readonly name = 'get-nettcpconnection';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const conns = net.getTcpConnections();
+    if (conns.length === 0) throw new PSRuntimeError('Get-NetTCPConnection is not recognized in this provider context');
+    return conns.map(c => ({
+      LocalAddress:   c.localAddress,
+      LocalPort:      c.localPort,
+      RemoteAddress:  c.remoteAddress,
+      RemotePort:     c.remotePort,
+      State:          c.state,
+      OwningProcess:  c.pid,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+// ── hostname / whoami (native-command shims) ──────────────────────────────
+// These are CMD-style tools, not real cmdlets — but PowerShell happily runs
+// them by name. Keeping them in the interpreter avoids the bypass list and
+// keeps state coherent (the executor would otherwise own the source of
+// truth for `whoami` admin context).
+
+export class HostnameCmdlet implements ICmdlet {
+  readonly name = 'hostname';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    return requireNetwork(ctx).getHostname();
+  }
+}
+
+export class WhoamiCmdlet implements ICmdlet {
+  readonly name = 'whoami';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    if (!ctx.providers.network) throw new PSRuntimeError('whoami is not recognized in this context');
+    const host = ctx.providers.network.getHostname();
+    // The simulator stores the current user on env via $env:USERNAME — use
+    // it if available so output stays consistent with `$env:USERNAME`.
+    const user = ctx.env.get('env:username') ?? ctx.runtime.executeForValue('$env:USERNAME') ?? 'user';
+    return `${host}\\${user}`.toLowerCase();
+  }
+}

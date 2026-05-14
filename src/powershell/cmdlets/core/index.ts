@@ -62,6 +62,8 @@ import {
 import {
   GetNetAdapterCmdlet, GetNetIPAddressCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet,
+  GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
+  GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
 } from './NetworkCmdlets';
 
 /**
@@ -191,4 +193,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetNetIPAddressCmdlet());
   registry.register(new TestConnectionCmdlet());
   registry.register(new ResolveDnsNameCmdlet());
+  registry.register(new GetNetIPConfigurationCmdlet());
+  registry.register(new GetNetRouteCmdlet());
+  registry.register(new GetNetTCPConnectionCmdlet());
+  registry.register(new HostnameCmdlet());
+  registry.register(new WhoamiCmdlet());
 }
