@@ -1,0 +1,635 @@
+============================================================
+PowerShell debug transcript — ps-scripts
+Generated: 2026-05-14T08:55:03.981Z
+host=WIN-SCR-DBG (windows-pc)
+Total commands: 77
+============================================================
+
+
+--- [1] § prepare scripts dir ---
+PS [1/77]> New-Item -Path C:\Scripts -ItemType Directory -Force
+<empty>
+
+PS [2/77]> Test-Path C:\Scripts
+  True
+
+PS [3/77]> Get-ChildItem C:\Scripts
+<empty>
+
+
+--- [4] § hello.ps1 ---
+PS [4/77]> Set-Content -Path C:\Scripts\hello.ps1 -Value "`$name = if (`$args.Count -gt 0) { `$args[0] } else { `"world`" }`nWrite-Output `"Hello, `$name!`"`n"
+<empty>
+
+PS [5/77]> Test-Path C:\Scripts\hello.ps1
+  True
+
+PS [6/77]> Get-Content C:\Scripts\hello.ps1
+  `$name = if (`$args.Count -gt 0) { `$args[0] } else { `"world`" }`nWrite-Output `"Hello,
+
+PS [7/77]> . C:\Scripts\hello.ps1
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\hello.ps1
+  + ~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [8/77]> & C:\Scripts\hello.ps1 PowerShell
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\hello.ps1 PowerShell
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [9/77]> powershell -File C:\Scripts\hello.ps1 -ErrorAction SilentlyContinue
+  powershell : The term 'powershell' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + powershell -File C:\Scripts\hello.ps1 -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (powershell:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [10] § sum.ps1 ---
+PS [10/77]> Set-Content -Path C:\Scripts\sum.ps1 -Value "param([int[]]`$Numbers = (1..10))`n`$total = 0`nforeach (`$n in `$Numbers) { `$total += `$n }`n`"Total = `$total`"`n"
+<empty>
+
+PS [11/77]> Get-Content C:\Scripts\sum.ps1
+  param([int[]]`$Numbers = (1..10))`n`$total = 0`nforeach (`$n in `$Numbers) { `$total += `$n }`n`"Total
+
+PS [12/77]> & C:\Scripts\sum.ps1
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1
+  + ~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [13/77]> & C:\Scripts\sum.ps1 -Numbers 5,10,15,20
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers 5,10,15,20
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [14/77]> & C:\Scripts\sum.ps1 -Numbers (1..100)
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers (1..100)
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [15] § users.ps1 ---
+PS [15/77]> Set-Content -Path C:\Scripts\users.ps1 -Value "param([string]`$Prefix = `"auto`")`n1..3 | ForEach-Object {`n  `$u = `"`$Prefix-user`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created `$u`"`n}`n"
+<empty>
+
+PS [16/77]> Get-Content C:\Scripts\users.ps1
+  param([string]`$Prefix = `"auto`")`n1..3 | ForEach-Object {`n  `$u = `"`$Prefix-user`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created
+
+PS [17/77]> & C:\Scripts\users.ps1 -Prefix dbg
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\users.ps1 -Prefix dbg
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [18/77]> Get-LocalUser | Where-Object { $_.Name -like "dbg-*" }
+<null>
+
+PS [19/77]> & C:\Scripts\users.ps1 -Prefix qa
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\users.ps1 -Prefix qa
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [20/77]> Get-LocalUser | Where-Object { $_.Name -like "qa-*" }
+<null>
+
+PS [21/77]> "dbg-user1","dbg-user2","dbg-user3","qa-user1","qa-user2","qa-user3" | ForEach-Object { Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue }
+  Remove-LocalUser : User 'dbg-user1' was not found.
+  Remove-LocalUser : User 'dbg-user2' was not found.
+  Remove-LocalUser : User 'dbg-user3' was not found.
+  Remove-LocalUser : User 'qa-user1' was not found.
+  Remove-LocalUser : User 'qa-user2' was not found.
+  Remove-LocalUser : User 'qa-user3' was not found.
+
+
+--- [22] § files.ps1 ---
+PS [22/77]> Set-Content -Path C:\Scripts\files.ps1 -Value "param([string]`$Dir = `"C:\BulkOut`", [int]`$Count = 5)`nNew-Item -Path `$Dir -ItemType Directory -Force | Out-Null`n1..`$Count | ForEach-Object {`n  Set-Content -Path (Join-Path `$Dir `"item`$_.txt`") -Value `"row `$_`"`n}`nGet-ChildItem `$Dir | Measure-Object | Select-Object -ExpandProperty Count`n"
+<empty>
+
+PS [23/77]> Get-Content C:\Scripts\files.ps1
+  param([string]`$Dir = `"C:\BulkOut`", [int]`$Count = 5)`nNew-Item -Path `$Dir -ItemType Directory -Force | Out-Null`n1..`$Count | ForEach-Object {`n  Set-Content -Path (Join-Path `$Dir `"item`$_.txt`") -Value `"row
+
+PS [24/77]> & C:\Scripts\files.ps1
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\files.ps1
+  + ~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [25/77]> Get-ChildItem C:\BulkOut
+  Get-ChildItem : Cannot find path 'C:\BulkOut' because it does not exist.
+  At line:1 char:1
+      + CategoryInfo          : ObjectNotFound: (C:\BulkOut:String) [Get-ChildItem], ItemNotFoundException
+
+PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
+  Count    : 1
+  Sum      : 0
+  Property : Length
+
+PS [27/77]> & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
+  
+  Get-ChildItem                                              At line 
+  ---------------------------------------------------------  --------
+  Cannot find path 'C:\BulkOut2' because it does not exist.  1 char:1
+  
+
+PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
+  1
+
+
+--- [30] § fn.ps1 (functions) ---
+PS [30/77]> Set-Content -Path C:\Scripts\fn.ps1 -Value "function Get-Greeting {`n  param([string]`$Who = `"world`", [string]`$Lang = `"en`")`n  switch (`$Lang) {`n    `"fr`" { `"Bonjour, `$Who!`" }`n    `"es`" { `"Hola, `$Who!`" }`n    default { `"Hello, `$Who!`" }`n  }`n}`nGet-Greeting -Who Alice -Lang fr`nGet-Greeting -Who Bob -Lang es`nGet-Greeting -Who Carol`n"
+<empty>
+
+PS [31/77]> Get-Content C:\Scripts\fn.ps1
+  function Get-Greeting {`n  param([string]`$Who = `"world`", [string]`$Lang = `"en`")`n  switch (`$Lang) {`n    `"fr`" { `"Bonjour,
+
+PS [32/77]> . C:\Scripts\fn.ps1
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [33/77]> Get-Greeting -Who "Eve"
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Eve"
+  + ~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [34/77]> Get-Greeting -Who "Frank" -Lang fr
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Frank" -Lang fr
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [35/77]> Get-Greeting -Who "Grace" -Lang es
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Grace" -Lang es
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [36] § pipeline.ps1 ---
+PS [36/77]> Set-Content -Path C:\Scripts\pipeline.ps1 -Value "param([string]`$Path = `"C:\BulkOut`")`nGet-ChildItem `$Path -ErrorAction SilentlyContinue |`n  Where-Object { -not `$_.PSIsContainer } |`n  Sort-Object Length -Descending |`n  Select-Object -First 3 -Property Name, Length`n"
+<empty>
+
+PS [37/77]> Get-Content C:\Scripts\pipeline.ps1
+  param([string]`$Path = `"C:\BulkOut`")`nGet-ChildItem `$Path -ErrorAction SilentlyContinue |`n  Where-Object { -not `$_.PSIsContainer } |`n  Sort-Object Length -Descending |`n  Select-Object -First 3 -Property Name, Length`n
+
+PS [38/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut2
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\pipeline.ps1 -Path C:\BulkOut2
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [39/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\pipeline.ps1 -Path C:\BulkOut
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [40] § try.ps1 ---
+PS [40/77]> Set-Content -Path C:\Scripts\try.ps1 -Value "try {`n  Get-Item C:\ghost-file -ErrorAction Stop`n} catch {`n  `"caught: `$(`$_.Exception.Message)`"`n} finally {`n  `"done`"`n}`n"
+<empty>
+
+PS [41/77]> Get-Content C:\Scripts\try.ps1
+  try {`n  Get-Item C:\ghost-file -ErrorAction Stop`n} catch {`n  `"caught:
+
+PS [42/77]> & C:\Scripts\try.ps1
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\try.ps1
+  + ~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [43] § inline scriptblocks ---
+PS [43/77]> & { Write-Output "inline-1"; Write-Output "inline-2" }
+  inline-1
+  inline-2
+
+PS [44/77]> & { param($n) 1..$n } 5
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & { param($n) 1..$n } 5
+  + ~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [45/77]> $sb = { param($x) $x * $x }; & $sb 7
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & { : The term '{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + { param($x) $x * $x }
+  + ~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ({:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException 7
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [46/77]> $sb2 = { param($a,$b) $a + $b }; & $sb2 10 20
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & { param($a $b) $a + $b } 10 20
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [47/77]> & { Get-Process | Select-Object -First 2 Name }
+  
+  Name               
+  -------------------
+  System Idle Process
+  System             
+  
+
+PS [48/77]> & { Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 2 Name, Status }
+  
+  Name   Status 
+  -----  -------
+  Tcpip  Running
+  Afd    Running
+  
+
+
+--- [49] § multi-script composition ---
+PS [49/77]> . C:\Scripts\fn.ps1; "Alpha","Beta","Gamma" | ForEach-Object { Get-Greeting -Who $_ -Lang fr }
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who Alpha -Lang fr
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who Beta -Lang fr
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who Gamma -Lang fr
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [50/77]> . C:\Scripts\fn.ps1; 1..3 | ForEach-Object { Get-Greeting -Who "Bot$_" }
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Bot1"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Bot2"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Bot3"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [51/77]> & C:\Scripts\sum.ps1 -Numbers (1..1000)
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers (1..1000)
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [52/77]> & C:\Scripts\sum.ps1 -Numbers ((1..10) | Where-Object { $_ % 2 -eq 0 })
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers ((1..10) | Where-Object { $_ % 2 -eq 0 })
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [53] § state probes ---
+PS [53/77]> Get-ChildItem C:\Scripts | Format-Table Name, Length -AutoSize
+  
+  Name            
+  ----------------
+  214 files.ps1   
+  130 fn.ps1      
+  88 hello.ps1    
+  224 pipeline.ps1
+  102 sum.ps1     
+  73 try.ps1      
+  195 users.ps1   
+  
+
+PS [54/77]> (Get-ChildItem C:\Scripts).Count
+  7
+
+PS [55/77]> Get-ChildItem C:\Scripts | Sort-Object Name | Select-Object -ExpandProperty Name
+  102 sum.ps1
+  130 fn.ps1
+  195 users.ps1
+  214 files.ps1
+  224 pipeline.ps1
+  73 try.ps1
+  88 hello.ps1
+
+PS [56/77]> Get-ChildItem C:\Scripts | ForEach-Object { "$($_.Name) -> $($_.Length) bytes" }
+  
+      Directory: C:\Scripts
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  ------                5/14/2026   8:55 AM            214 files.ps1
+  ------                5/14/2026   8:55 AM            130 fn.ps1
+  ------                5/14/2026   8:55 AM             88 hello.ps1
+  ------                5/14/2026   8:55 AM            224 pipeline.ps1
+  ------                5/14/2026   8:55 AM            102 sum.ps1
+  ------                5/14/2026   8:55 AM             73 try.ps1
+  ------                5/14/2026   8:55 AM            195 users.ps1
+
+PS [57/77]> Get-ChildItem C:\BulkOut2 | Measure-Object Length -Sum -Average -Max -Min
+  Count    : 1
+  Average  : 0
+  Sum      : 0
+  Property : Length
+
+PS [58/77]> Get-ChildItem C:\BulkOut2 | ForEach-Object { Get-Content $_.FullName } | Measure-Object
+  Count    : 1
+  Property : 
+
+
+--- [59] § error paths ---
+PS [59/77]> & C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [60/77]> . C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [61/77]> try { & C:\Scripts\missing.ps1 } catch { "missing-caught: $($_.Exception.Message)" }
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\missing.ps1
+  + ~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [62] § extra invocations ---
+PS [62/77]> & C:\Scripts\hello.ps1
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\hello.ps1
+  + ~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [63/77]> & C:\Scripts\hello.ps1 alice
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\hello.ps1 alice
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [64/77]> & C:\Scripts\hello.ps1 bob
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\hello.ps1 bob
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [65/77]> & C:\Scripts\sum.ps1 -Numbers 10,20
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers 10,20
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [66/77]> & C:\Scripts\sum.ps1 -Numbers 1,2,3
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers 1,2,3
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [67/77]> & C:\Scripts\sum.ps1 -Numbers ((1..50) | Where-Object { $_ % 3 -eq 0 })
+  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + & C:\Scripts\sum.ps1 -Numbers ((1..50) | Where-Object { $_ % 3 -eq 0 })
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [68/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "World"
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "World"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [69/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Monde" -Lang fr
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Monde" -Lang fr
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [70/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Mundo" -Lang es
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who "Mundo" -Lang es
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Who $_ }
+  . : The term '.' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + . C:\Scripts\fn.ps1
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (.:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who a
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who b
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Greeting -Who c
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
+  Count    : 1
+  Sum      : 
+  Property : 
+
+PS [73/77]> & { "x","y","z" } | Measure-Object
+  Count    : 1
+  Property : 
+
+
+--- [74] § cleanup ---
+PS [74/77]> Remove-Item C:\BulkOut -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item : Cannot find path 'C:\BulkOut' because it does not exist.
+
+PS [75/77]> Remove-Item C:\BulkOut2 -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item : Cannot find path 'C:\BulkOut2' because it does not exist.
+
+PS [76/77]> Remove-Item C:\Scripts -Recurse -Force
+<empty>
+
+PS [77/77]> Test-Path C:\Scripts
+  False

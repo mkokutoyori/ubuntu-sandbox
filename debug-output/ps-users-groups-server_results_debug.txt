@@ -1,0 +1,93 @@
+============================================================
+PowerShell debug transcript — ps-users-groups-server
+Generated: 2026-05-14T08:55:05.368Z
+host=SRV-USR-DBG (windows-server)
+Total commands: 17
+============================================================
+
+
+--- [1] § baseline (server) ---
+PS [1/17]> Get-LocalUser
+  
+  Name                    Enabled   Description
+  ----                    -------   -----------
+  Administrator           True      Built-in account for administering the computer/domain
+  Guest                   False     Built-in account for guest access to the computer/domain
+  DefaultAccount          False     A user account managed by the system.
+  User                    True      
+
+PS [2/17]> Get-LocalGroup
+  
+  Name                                Description
+  ----                                -----------
+  Administrators                      Administrators have complete and unrestricted access to the computer/domain
+  Users                               Users are prevented from making accidental or intentional system-wide changes
+  Guests                              Guests have the same access as members of the Users group by default
+  Power Users                         Power Users are included for backwards compatibility
+  Remote Desktop Users                Members are granted the right to logon remotely
+  Network Configuration Operators     Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers                   Members of this group can read event logs from local machine
+
+PS [3/17]> New-LocalUser -Name svc-deploy -NoPassword -Description "Deployment service account"
+  
+  Name                    Enabled   Description
+  ----                    -------   -----------
+  svc-deploy              True      Deployment service account
+
+PS [4/17]> New-LocalUser -Name svc-monitor -NoPassword -Description "Monitoring service account"
+  
+  Name                    Enabled   Description
+  ----                    -------   -----------
+  svc-monitor             True      Monitoring service account
+
+PS [5/17]> New-LocalGroup -Name Deployers -Description "CI/CD"
+  
+  Name                                Description
+  ----                                -----------
+  Deployers                           CI/CD
+
+PS [6/17]> Add-LocalGroupMember -Group Deployers -Member svc-deploy
+<empty>
+
+PS [7/17]> Add-LocalGroupMember -Group Deployers -Member svc-monitor
+<empty>
+
+PS [8/17]> Get-LocalGroupMember -Group Deployers | Format-Table Name, ObjectClass -AutoSize
+  
+  Name       
+  -----------
+  svc-deploy 
+  svc-monitor
+  
+
+PS [9/17]> Get-LocalUser | Where-Object { $_.Name -like "svc-*" } | Format-Table Name, Description
+  
+  Name       
+  -----------
+  svc-deploy 
+  svc-monitor
+  
+
+PS [10/17]> Set-LocalUser -Name svc-monitor -Description "Read-only monitoring agent"
+<empty>
+
+PS [11/17]> (Get-LocalUser -Name svc-monitor).Description
+  Read-only monitoring agent
+
+PS [12/17]> Remove-LocalGroupMember -Group Deployers -Member svc-monitor
+<empty>
+
+PS [13/17]> Remove-LocalUser -Name svc-monitor
+<empty>
+
+PS [14/17]> Remove-LocalUser -Name svc-deploy
+<empty>
+
+PS [15/17]> Remove-LocalGroup -Name Deployers
+<empty>
+
+PS [16/17]> $env:COMPUTERNAME
+  SRV-USR-DBG
+
+PS [17/17]> whoami
+  srv-usr-dbg\administrator

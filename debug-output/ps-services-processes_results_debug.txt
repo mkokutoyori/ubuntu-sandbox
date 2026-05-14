@@ -1,0 +1,1995 @@
+============================================================
+PowerShell debug transcript — ps-services-processes
+Generated: 2026-05-14T08:55:03.978Z
+host=SRV-SVC-DBG (windows-server)
+Total commands: 104
+============================================================
+
+
+--- [1] § service enumeration ---
+PS [1/104]> Get-Service
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   Tcpip                    TCP/IP Protocol Driver
+  Running   Afd                      Ancillary Function Driver for Winsock
+  Running   Dhcp                     DHCP Client
+  Running   Dnscache                 DNS Client
+  Running   NetBT                    NetBT
+  Running   RpcSs                    Remote Procedure Call (RPC)
+  Running   RpcEptMapper             RPC Endpoint Mapper
+  Running   SamSs                    Security Accounts Manager
+  Running   LanmanServer             Server
+  Running   LanmanWorkstation        Workstation
+  Running   mpssvc                   Windows Defender Firewall
+  Running   EventLog                 Windows Event Log
+  Running   W32Time                  Windows Time
+  Running   CryptSvc                 Cryptographic Services
+  Running   Winmgmt                  Windows Management Instrumentation
+  Stopped   WinRM                    Windows Remote Management (WS-Manag...
+  Stopped   bthserv                  Bluetooth Support Service
+  Running   winlogon                 Windows Logon Application
+  Running   Spooler                  Print Spooler
+  Running   Schedule                 Task Scheduler
+  Running   AudioSrv                 Windows Audio
+  Running   Themes                   Themes
+
+PS [2/104]> Get-Service | Format-Table Name, Status, StartType -AutoSize
+  
+  Name             
+  -----------------
+  Tcpip            
+  Afd              
+  Dhcp             
+  Dnscache         
+  NetBT            
+  RpcSs            
+  RpcEptMapper     
+  SamSs            
+  LanmanServer     
+  LanmanWorkstation
+  mpssvc           
+  EventLog         
+  W32Time          
+  CryptSvc         
+  Winmgmt          
+  WinRM            
+  bthserv          
+  winlogon         
+  Spooler          
+  Schedule         
+  AudioSrv         
+  Themes           
+  
+
+PS [3/104]> Get-Service | Sort-Object Name
+  
+  Status              : Running
+  Name                : Afd
+  DisplayName         : Ancillary Function Driver for Winsock
+  ServiceType         : KERNEL_DRIVER
+  StartType           : System
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : Dhcp
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : AudioSrv
+  DisplayName         : Windows Audio
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Stopped
+  Name                : bthserv
+  DisplayName         : Bluetooth Support Service
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : CryptSvc
+  DisplayName         : Cryptographic Services
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Dhcp
+  DisplayName         : DHCP Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Afd,Tcpip
+  
+  Status              : Running
+  Name                : Dnscache
+  DisplayName         : DNS Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : EventLog
+  DisplayName         : Windows Event Log
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : LanmanServer
+  DisplayName         : Server
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : SamSs
+  
+  Status              : Running
+  Name                : LanmanWorkstation
+  DisplayName         : Workstation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : mpssvc
+  DisplayName         : Windows Defender Firewall
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : NetBT
+  DisplayName         : NetBT
+  ServiceType         : KERNEL_DRIVER
+  StartType           : System
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : RpcEptMapper
+  DisplayName         : RPC Endpoint Mapper
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : RpcSs
+  DisplayName         : Remote Procedure Call (RPC)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : SamSs,mpssvc,CryptSvc,Winmgmt,WinRM,Spooler,Schedule,AudioSrv
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : SamSs
+  DisplayName         : Security Accounts Manager
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : LanmanServer
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Schedule
+  DisplayName         : Task Scheduler
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Spooler
+  DisplayName         : Print Spooler
+  ServiceType         : WIN32_OWN_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Tcpip
+  DisplayName         : TCP/IP Protocol Driver
+  ServiceType         : KERNEL_DRIVER
+  StartType           : Boot
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : Dhcp,Dnscache,NetBT
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Themes
+  DisplayName         : Themes
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : W32Time
+  DisplayName         : Windows Time
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : winlogon
+  DisplayName         : Windows Logon Application
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Winmgmt
+  DisplayName         : Windows Management Instrumentation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Stopped
+  Name                : WinRM
+  DisplayName         : Windows Remote Management (WS-Management)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+
+PS [4/104]> Get-Service | Sort-Object Status
+  
+  Status              : Running
+  Name                : Tcpip
+  DisplayName         : TCP/IP Protocol Driver
+  ServiceType         : KERNEL_DRIVER
+  StartType           : Boot
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : Dhcp,Dnscache,NetBT
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Afd
+  DisplayName         : Ancillary Function Driver for Winsock
+  ServiceType         : KERNEL_DRIVER
+  StartType           : System
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : Dhcp
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Dhcp
+  DisplayName         : DHCP Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Afd,Tcpip
+  
+  Status              : Running
+  Name                : Dnscache
+  DisplayName         : DNS Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : NetBT
+  DisplayName         : NetBT
+  ServiceType         : KERNEL_DRIVER
+  StartType           : System
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : RpcSs
+  DisplayName         : Remote Procedure Call (RPC)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : SamSs,mpssvc,CryptSvc,Winmgmt,WinRM,Spooler,Schedule,AudioSrv
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : RpcEptMapper
+  DisplayName         : RPC Endpoint Mapper
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : SamSs
+  DisplayName         : Security Accounts Manager
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : LanmanServer
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : LanmanServer
+  DisplayName         : Server
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : SamSs
+  
+  Status              : Running
+  Name                : LanmanWorkstation
+  DisplayName         : Workstation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : mpssvc
+  DisplayName         : Windows Defender Firewall
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : EventLog
+  DisplayName         : Windows Event Log
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : W32Time
+  DisplayName         : Windows Time
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : CryptSvc
+  DisplayName         : Cryptographic Services
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Winmgmt
+  DisplayName         : Windows Management Instrumentation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : winlogon
+  DisplayName         : Windows Logon Application
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Spooler
+  DisplayName         : Print Spooler
+  ServiceType         : WIN32_OWN_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Schedule
+  DisplayName         : Task Scheduler
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : AudioSrv
+  DisplayName         : Windows Audio
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Themes
+  DisplayName         : Themes
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Stopped
+  Name                : WinRM
+  DisplayName         : Windows Remote Management (WS-Management)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Stopped
+  Name                : bthserv
+  DisplayName         : Bluetooth Support Service
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+
+PS [5/104]> Get-Service | Where-Object { $_.Status -eq "Running" }
+  
+  Status              : Running
+  Name                : Tcpip
+  DisplayName         : TCP/IP Protocol Driver
+  ServiceType         : KERNEL_DRIVER
+  StartType           : Boot
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : Dhcp,Dnscache,NetBT
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Afd
+  DisplayName         : Ancillary Function Driver for Winsock
+  ServiceType         : KERNEL_DRIVER
+  StartType           : System
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : Dhcp
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Dhcp
+  DisplayName         : DHCP Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Afd,Tcpip
+  
+  Status              : Running
+  Name                : Dnscache
+  DisplayName         : DNS Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : NetBT
+  DisplayName         : NetBT
+  ServiceType         : KERNEL_DRIVER
+  StartType           : System
+  CanPauseAndContinue : false
+  CanShutdown         : false
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : RpcSs
+  DisplayName         : Remote Procedure Call (RPC)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : SamSs,mpssvc,CryptSvc,Winmgmt,WinRM,Spooler,Schedule,AudioSrv
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : RpcEptMapper
+  DisplayName         : RPC Endpoint Mapper
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : SamSs
+  DisplayName         : Security Accounts Manager
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : LanmanServer
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : LanmanServer
+  DisplayName         : Server
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : SamSs
+  
+  Status              : Running
+  Name                : LanmanWorkstation
+  DisplayName         : Workstation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : mpssvc
+  DisplayName         : Windows Defender Firewall
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : EventLog
+  DisplayName         : Windows Event Log
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : W32Time
+  DisplayName         : Windows Time
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : CryptSvc
+  DisplayName         : Cryptographic Services
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Winmgmt
+  DisplayName         : Windows Management Instrumentation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : winlogon
+  DisplayName         : Windows Logon Application
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Spooler
+  DisplayName         : Print Spooler
+  ServiceType         : WIN32_OWN_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Schedule
+  DisplayName         : Task Scheduler
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : AudioSrv
+  DisplayName         : Windows Audio
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Themes
+  DisplayName         : Themes
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+
+PS [6/104]> Get-Service | Where-Object { $_.Status -eq "Stopped" }
+  
+  Status              : Stopped
+  Name                : WinRM
+  DisplayName         : Windows Remote Management (WS-Management)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Stopped
+  Name                : bthserv
+  DisplayName         : Bluetooth Support Service
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+
+PS [7/104]> Get-Service | Where-Object { $_.StartType -eq "Automatic" }
+  
+  Status              : Running
+  Name                : Dhcp
+  DisplayName         : DHCP Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Afd,Tcpip
+  
+  Status              : Running
+  Name                : Dnscache
+  DisplayName         : DNS Client
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : Tcpip
+  
+  Status              : Running
+  Name                : RpcSs
+  DisplayName         : Remote Procedure Call (RPC)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : SamSs,mpssvc,CryptSvc,Winmgmt,WinRM,Spooler,Schedule,AudioSrv
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : RpcEptMapper
+  DisplayName         : RPC Endpoint Mapper
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : SamSs
+  DisplayName         : Security Accounts Manager
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : LanmanServer
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : LanmanServer
+  DisplayName         : Server
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : SamSs
+  
+  Status              : Running
+  Name                : LanmanWorkstation
+  DisplayName         : Workstation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : mpssvc
+  DisplayName         : Windows Defender Firewall
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : EventLog
+  DisplayName         : Windows Event Log
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : W32Time
+  DisplayName         : Windows Time
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : CryptSvc
+  DisplayName         : Cryptographic Services
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Winmgmt
+  DisplayName         : Windows Management Instrumentation
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : winlogon
+  DisplayName         : Windows Logon Application
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+  Status              : Running
+  Name                : Spooler
+  DisplayName         : Print Spooler
+  ServiceType         : WIN32_OWN_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Schedule
+  DisplayName         : Task Scheduler
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : AudioSrv
+  DisplayName         : Windows Audio
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Running
+  Name                : Themes
+  DisplayName         : Themes
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+
+PS [8/104]> Get-Service | Where-Object { $_.StartType -eq "Manual" }
+  
+  Status              : Stopped
+  Name                : WinRM
+  DisplayName         : Windows Remote Management (WS-Management)
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+  Status              : Stopped
+  Name                : bthserv
+  DisplayName         : Bluetooth Support Service
+  ServiceType         : WIN32_SHARE_PROCESS
+  StartType           : Manual
+  CanPauseAndContinue : false
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : 
+  
+
+PS [9/104]> Get-Service | Where-Object { $_.StartType -eq "Disabled" }
+<null>
+
+PS [10/104]> (Get-Service).Count
+  22
+
+PS [11/104]> (Get-Service | Where-Object { $_.Status -eq "Running" }).Count
+  20
+
+PS [12/104]> Get-Service | Group-Object Status | Format-Table Name, Count -AutoSize
+  
+  Name   
+  -------
+  Running
+  Stopped
+  
+
+PS [13/104]> Get-Service | Group-Object StartType | Sort-Object Count -Descending
+  
+  Count  Name       Group     
+  -----  ---------  ----------
+     17  Automatic  {17 items}
+      2  Manual     {2 items} 
+      2  System     {2 items} 
+      1  Boot       {1 items} 
+  
+
+PS [14/104]> Get-Service -Name Spooler
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   Spooler                  Print Spooler
+  Status      : Running
+  Name        : Spooler
+  DisplayName : Print Spooler
+  StartType   : Automatic
+  ServiceType : WIN32_OWN_PROCESS
+  CanStop     : true
+
+PS [15/104]> Get-Service Spooler
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   Tcpip                    TCP/IP Protocol Driver
+  Running   Afd                      Ancillary Function Driver for Winsock
+  Running   Dhcp                     DHCP Client
+  Running   Dnscache                 DNS Client
+  Running   NetBT                    NetBT
+  Running   RpcSs                    Remote Procedure Call (RPC)
+  Running   RpcEptMapper             RPC Endpoint Mapper
+  Running   SamSs                    Security Accounts Manager
+  Running   LanmanServer             Server
+  Running   LanmanWorkstation        Workstation
+  Running   mpssvc                   Windows Defender Firewall
+  Running   EventLog                 Windows Event Log
+  Running   W32Time                  Windows Time
+  Running   CryptSvc                 Cryptographic Services
+  Running   Winmgmt                  Windows Management Instrumentation
+  Stopped   WinRM                    Windows Remote Management (WS-Manag...
+  Stopped   bthserv                  Bluetooth Support Service
+  Running   winlogon                 Windows Logon Application
+  Running   Spooler                  Print Spooler
+  Running   Schedule                 Task Scheduler
+  Running   AudioSrv                 Windows Audio
+  Running   Themes                   Themes
+
+PS [16/104]> gsv Spooler
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   Tcpip                    TCP/IP Protocol Driver
+  Running   Afd                      Ancillary Function Driver for Winsock
+  Running   Dhcp                     DHCP Client
+  Running   Dnscache                 DNS Client
+  Running   NetBT                    NetBT
+  Running   RpcSs                    Remote Procedure Call (RPC)
+  Running   RpcEptMapper             RPC Endpoint Mapper
+  Running   SamSs                    Security Accounts Manager
+  Running   LanmanServer             Server
+  Running   LanmanWorkstation        Workstation
+  Running   mpssvc                   Windows Defender Firewall
+  Running   EventLog                 Windows Event Log
+  Running   W32Time                  Windows Time
+  Running   CryptSvc                 Cryptographic Services
+  Running   Winmgmt                  Windows Management Instrumentation
+  Stopped   WinRM                    Windows Remote Management (WS-Manag...
+  Stopped   bthserv                  Bluetooth Support Service
+  Running   winlogon                 Windows Logon Application
+  Running   Spooler                  Print Spooler
+  Running   Schedule                 Task Scheduler
+  Running   AudioSrv                 Windows Audio
+  Running   Themes                   Themes
+
+PS [17/104]> Get-Service -DisplayName "Print Spooler"
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   Spooler                  Print Spooler
+
+PS [18/104]> Get-Service -Name "S*"
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   SamSs                    Security Accounts Manager
+  Running   Spooler                  Print Spooler
+  Running   Schedule                 Task Scheduler
+
+PS [19/104]> Get-Service -Name "*log*"
+  
+  Status    Name                     DisplayName
+  ------    ----                     -----------
+  Running   EventLog                 Windows Event Log
+  Running   winlogon                 Windows Logon Application
+
+PS [20/104]> Get-Service | Select-Object -First 5 Name, Status
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
+
+PS [21/104]> Get-Service | Select-Object -Last 5 Name, Status
+  
+  Name      Status 
+  --------  -------
+  winlogon  Running
+  Spooler   Running
+  Schedule  Running
+  AudioSrv  Running
+  Themes    Running
+  
+
+PS [22/104]> (Get-Service -Name Spooler).Status
+  Running
+
+PS [23/104]> (Get-Service -Name Spooler).StartType
+  Automatic
+
+PS [24/104]> (Get-Service -Name Spooler).DisplayName
+  Print Spooler
+
+
+--- [25] § state changes ---
+PS [25/104]> Stop-Service -Name Spooler -ErrorAction SilentlyContinue
+<empty>
+
+PS [26/104]> (Get-Service -Name Spooler).Status
+  Stopped
+
+PS [27/104]> Start-Service -Name Spooler
+<empty>
+
+PS [28/104]> (Get-Service -Name Spooler).Status
+  Running
+
+PS [29/104]> Restart-Service -Name Spooler
+<empty>
+
+PS [30/104]> (Get-Service -Name Spooler).Status
+  Running
+
+PS [31/104]> Stop-Service -Name bthserv -ErrorAction SilentlyContinue
+  Stop-Service : Service 'Bluetooth Support Service (bthserv)' cannot be stopped due to the following error: The service has not been started.
+      + CategoryInfo          : OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Stop-Service], ServiceCommandException
+      + FullyQualifiedErrorId : CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand
+
+PS [32/104]> Start-Service -Name bthserv
+<empty>
+
+PS [33/104]> (Get-Service -Name bthserv).Status
+  Running
+
+PS [34/104]> Stop-Service -Name bthserv
+<empty>
+
+PS [35/104]> (Get-Service -Name bthserv).Status
+  Stopped
+
+PS [36/104]> Set-Service -Name bthserv -StartupType Manual
+<empty>
+
+PS [37/104]> (Get-Service -Name bthserv).StartType
+  Manual
+
+PS [38/104]> Set-Service -Name bthserv -StartupType Disabled
+<empty>
+
+PS [39/104]> (Get-Service -Name bthserv).StartType
+  Disabled
+
+PS [40/104]> Set-Service -Name bthserv -StartupType Automatic
+<empty>
+
+PS [41/104]> (Get-Service -Name bthserv).StartType
+  Automatic
+
+PS [42/104]> Stop-Service -Name winlogon -ErrorAction SilentlyContinue
+  Stop-Service : Cannot stop winlogon: This is a critical system service.
+
+
+--- [43] § process enumeration ---
+PS [43/104]> Get-Process
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+        0       4        0         16       0.00      0   0 System Idle Process
+      100       4        0        288       0.50      4   0 System
+       48       4        4       8192       0.00    108   0 Registry
+       56       4        1       2048       0.00    340   0 smss
+      590       4        4       9216       2.10    472   0 csrss
+      152       4        3       7168       0.00    548   0 wininit
+      468       4        5      10240       1.20    560   1 csrss
+      256       4        6      13312       0.10    596   1 winlogon
+      680       4        7      14336       1.50    620   0 services
+      820       4       10      20480       3.20    636   0 lsass
+      400      12       12      18432       0.60    784   0 svchost
+      400      12       12      18432       0.60    836   0 svchost
+      400      12       12      18432       0.60    912   0 svchost
+      450      14       14      21504       0.90    964   0 svchost
+      980      18       44      132000       8.40   1024   1 dwm
+      400      12       12      18432       0.60   1048   0 svchost
+      400      12       12      18432       0.60   1100   0 svchost
+      350      10       10      15360       0.30   1168   0 svchost
+      210       8        5      12800       0.20   1400   1 taskhostw
+      340      14       12      28000       0.80   1560   1 RuntimeBroker
+      320      10        6      14000       0.30   2200   0 LanmanServer
+      280       8        4      10000       0.20   2400   0 LanmanWorkstation
+     2100      65       64      145000      12.30   2848   1 explorer
+       48       3        3       5200       0.10   5120   1 cmd
+      180      10       10      18400       0.30   5132   1 conhost
+      247      10        3       5533       0.00   5140   0 spoolsv
+
+PS [44/104]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
+  
+  Id  
+  ----
+     0
+     4
+   108
+   340
+   472
+   548
+   560
+   596
+   620
+   636
+   784
+   836
+   912
+   964
+  1024
+  1048
+  1100
+  1168
+  1400
+  1560
+  2200
+  2400
+  2848
+  5120
+  5132
+  5140
+  
+
+PS [45/104]> Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
+  
+  Handles     : 247
+  NPM(K)      : 10
+  PM(K)       : 3
+  WS(K)       : 5533
+  CPU(s)      : 0
+  Id          : 5140
+  SI          : 0
+  ProcessName : spoolsv
+  Name        : spoolsv
+  
+  Handles     : 180
+  NPM(K)      : 10
+  PM(K)       : 10
+  WS(K)       : 18400
+  CPU(s)      : 0.3
+  Id          : 5132
+  SI          : 1
+  ProcessName : conhost
+  Name        : conhost
+  
+  Handles     : 48
+  NPM(K)      : 3
+  PM(K)       : 3
+  WS(K)       : 5200
+  CPU(s)      : 0.1
+  Id          : 5120
+  SI          : 1
+  ProcessName : cmd
+  Name        : cmd
+  
+  Handles     : 2100
+  NPM(K)      : 65
+  PM(K)       : 64
+  WS(K)       : 145000
+  CPU(s)      : 12.3
+  Id          : 2848
+  SI          : 1
+  ProcessName : explorer
+  Name        : explorer
+  
+  Handles     : 280
+  NPM(K)      : 8
+  PM(K)       : 4
+  WS(K)       : 10000
+  CPU(s)      : 0.2
+  Id          : 2400
+  SI          : 0
+  ProcessName : LanmanWorkstation
+  Name        : LanmanWorkstation
+  
+
+PS [46/104]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 Name, Id, WS
+  
+  Name               Id    WS
+  -----------------  ----  --
+  spoolsv            5140    
+  conhost            5132    
+  cmd                5120    
+  explorer           2848    
+  LanmanWorkstation  2400    
+  
+
+PS [47/104]> Get-Process | Where-Object { $_.CPU -gt 0 }
+<null>
+
+PS [48/104]> Get-Process | Where-Object { $_.ProcessName -like "svc*" }
+  
+  Handles     : 400
+  NPM(K)      : 12
+  PM(K)       : 12
+  WS(K)       : 18432
+  CPU(s)      : 0.6
+  Id          : 784
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+  Handles     : 400
+  NPM(K)      : 12
+  PM(K)       : 12
+  WS(K)       : 18432
+  CPU(s)      : 0.6
+  Id          : 836
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+  Handles     : 400
+  NPM(K)      : 12
+  PM(K)       : 12
+  WS(K)       : 18432
+  CPU(s)      : 0.6
+  Id          : 912
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+  Handles     : 450
+  NPM(K)      : 14
+  PM(K)       : 14
+  WS(K)       : 21504
+  CPU(s)      : 0.8999999999999999
+  Id          : 964
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+  Handles     : 400
+  NPM(K)      : 12
+  PM(K)       : 12
+  WS(K)       : 18432
+  CPU(s)      : 0.6
+  Id          : 1048
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+  Handles     : 400
+  NPM(K)      : 12
+  PM(K)       : 12
+  WS(K)       : 18432
+  CPU(s)      : 0.6
+  Id          : 1100
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+  Handles     : 350
+  NPM(K)      : 10
+  PM(K)       : 10
+  WS(K)       : 15360
+  CPU(s)      : 0.3
+  Id          : 1168
+  SI          : 0
+  ProcessName : svchost
+  Name        : svchost
+  
+
+PS [49/104]> Get-Process explorer -ErrorAction SilentlyContinue
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+        0       4        0         16       0.00      0   0 System Idle Process
+      100       4        0        288       0.50      4   0 System
+       48       4        4       8192       0.00    108   0 Registry
+       56       4        1       2048       0.00    340   0 smss
+      590       4        4       9216       2.10    472   0 csrss
+      152       4        3       7168       0.00    548   0 wininit
+      468       4        5      10240       1.20    560   1 csrss
+      256       4        6      13312       0.10    596   1 winlogon
+      680       4        7      14336       1.50    620   0 services
+      820       4       10      20480       3.20    636   0 lsass
+      400      12       12      18432       0.60    784   0 svchost
+      400      12       12      18432       0.60    836   0 svchost
+      400      12       12      18432       0.60    912   0 svchost
+      450      14       14      21504       0.90    964   0 svchost
+      980      18       44      132000       8.40   1024   1 dwm
+      400      12       12      18432       0.60   1048   0 svchost
+      400      12       12      18432       0.60   1100   0 svchost
+      350      10       10      15360       0.30   1168   0 svchost
+      210       8        5      12800       0.20   1400   1 taskhostw
+      340      14       12      28000       0.80   1560   1 RuntimeBroker
+      320      10        6      14000       0.30   2200   0 LanmanServer
+      280       8        4      10000       0.20   2400   0 LanmanWorkstation
+     2100      65       64      145000      12.30   2848   1 explorer
+       48       3        3       5200       0.10   5120   1 cmd
+      180      10       10      18400       0.30   5132   1 conhost
+      247      10        3       5533       0.00   5140   0 spoolsv
+
+PS [50/104]> Get-Process -Name svchost -ErrorAction SilentlyContinue
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+      400      12       12      18432       0.60    784   0 svchost
+      400      12       12      18432       0.60    836   0 svchost
+      400      12       12      18432       0.60    912   0 svchost
+      450      14       14      21504       0.90    964   0 svchost
+      400      12       12      18432       0.60   1048   0 svchost
+      400      12       12      18432       0.60   1100   0 svchost
+      350      10       10      15360       0.30   1168   0 svchost
+
+PS [51/104]> (Get-Process).Count
+  26
+
+PS [52/104]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 5
+  
+  Count  Name     Group    
+  -----  -------  ---------
+      7  svchost  {7 items}
+      2  csrss    {2 items}
+      1  spoolsv  {1 items}
+      1  conhost  {1 items}
+      1  cmd      {1 items}
+  
+
+PS [53/104]> Get-Process | Select-Object Id, ProcessName, Handles, WS, CPU | Sort-Object CPU -Descending | Select-Object -First 10
+  
+  Id          : 5140
+  ProcessName : spoolsv
+  Handles     : 247
+  WS          : 
+  CPU         : 
+  
+  Id          : 5132
+  ProcessName : conhost
+  Handles     : 180
+  WS          : 
+  CPU         : 
+  
+  Id          : 5120
+  ProcessName : cmd
+  Handles     : 48
+  WS          : 
+  CPU         : 
+  
+  Id          : 2848
+  ProcessName : explorer
+  Handles     : 2100
+  WS          : 
+  CPU         : 
+  
+  Id          : 2400
+  ProcessName : LanmanWorkstation
+  Handles     : 280
+  WS          : 
+  CPU         : 
+  
+  Id          : 2200
+  ProcessName : LanmanServer
+  Handles     : 320
+  WS          : 
+  CPU         : 
+  
+  Id          : 1560
+  ProcessName : RuntimeBroker
+  Handles     : 340
+  WS          : 
+  CPU         : 
+  
+  Id          : 1400
+  ProcessName : taskhostw
+  Handles     : 210
+  WS          : 
+  CPU         : 
+  
+  Id          : 1168
+  ProcessName : svchost
+  Handles     : 350
+  WS          : 
+  CPU         : 
+  
+  Id          : 1100
+  ProcessName : svchost
+  Handles     : 400
+  WS          : 
+  CPU         : 
+  
+
+PS [54/104]> Get-Process | Measure-Object -Property CPU -Sum
+  Count    : 26
+  Sum      : 0
+  Property : CPU
+
+PS [55/104]> Get-Process | Measure-Object -Property WS -Sum -Average -Max
+  Count    : 26
+  Average  : 0
+  Sum      : 0
+  Property : WS
+
+PS [56/104]> ps
+  ps : The term 'ps' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + ps
+  + ~~
+      + CategoryInfo          : ObjectNotFound: (ps:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [57/104]> gps
+  
+  Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
+  -------  ------    -----      -----     ------     --  -- -----------
+        0       4        0         16       0.00      0   0 System Idle Process
+      100       4        0        288       0.50      4   0 System
+       48       4        4       8192       0.00    108   0 Registry
+       56       4        1       2048       0.00    340   0 smss
+      590       4        4       9216       2.10    472   0 csrss
+      152       4        3       7168       0.00    548   0 wininit
+      468       4        5      10240       1.20    560   1 csrss
+      256       4        6      13312       0.10    596   1 winlogon
+      680       4        7      14336       1.50    620   0 services
+      820       4       10      20480       3.20    636   0 lsass
+      400      12       12      18432       0.60    784   0 svchost
+      400      12       12      18432       0.60    836   0 svchost
+      400      12       12      18432       0.60    912   0 svchost
+      450      14       14      21504       0.90    964   0 svchost
+      980      18       44      132000       8.40   1024   1 dwm
+      400      12       12      18432       0.60   1048   0 svchost
+      400      12       12      18432       0.60   1100   0 svchost
+      350      10       10      15360       0.30   1168   0 svchost
+      210       8        5      12800       0.20   1400   1 taskhostw
+      340      14       12      28000       0.80   1560   1 RuntimeBroker
+      320      10        6      14000       0.30   2200   0 LanmanServer
+      280       8        4      10000       0.20   2400   0 LanmanWorkstation
+     2100      65       64      145000      12.30   2848   1 explorer
+       48       3        3       5200       0.10   5120   1 cmd
+      180      10       10      18400       0.30   5132   1 conhost
+      247      10        3       5533       0.00   5140   0 spoolsv
+
+
+--- [58] § process lifecycle ---
+PS [58/104]> Start-Process notepad.exe
+  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Start-Process notepad.exe
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
+  Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
+  again.
+      + CategoryInfo          : ObjectNotFound: (notepad:String) [Get-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+
+PS [60/104]> Start-Process -FilePath calc.exe
+  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Start-Process -FilePath calc.exe
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
+  Get-Process : Cannot find a process with the name "calc". Verify the process name and call the cmdlet
+  again.
+      + CategoryInfo          : ObjectNotFound: (calc:String) [Get-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+
+PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
+  Stop-Process : Cannot find a process with the name "notepad". Verify the process name and call the
+  cmdlet again.
+      + CategoryInfo          : ObjectNotFound: (notepad:String) [Stop-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.StopProcessCommand
+
+PS [63/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
+  Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
+  again.
+      + CategoryInfo          : ObjectNotFound: (notepad:String) [Get-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+
+PS [64/104]> Stop-Process -Name calc -ErrorAction SilentlyContinue
+  Stop-Process : Cannot find a process with the name "calc". Verify the process name and call the
+  cmdlet again.
+      + CategoryInfo          : ObjectNotFound: (calc:String) [Stop-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.StopProcessCommand
+
+PS [65/104]> Start-Process notepad.exe
+  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Start-Process notepad.exe
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [66/104]> Start-Process notepad.exe
+  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Start-Process notepad.exe
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [67/104]> Start-Process notepad.exe
+  Start-Process : The term 'Start-Process' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Start-Process notepad.exe
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Start-Process:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [68/104]> Get-Process -Name notepad
+  Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
+  again.
+      + CategoryInfo          : ObjectNotFound: (notepad:String) [Get-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+
+PS [69/104]> Get-Process -Name notepad | Stop-Process
+<null>
+
+PS [70/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
+  Get-Process : Cannot find a process with the name "notepad". Verify the process name and call the cmdlet
+  again.
+      + CategoryInfo          : ObjectNotFound: (notepad:String) [Get-Process], ProcessCommandException
+      + FullyQualifiedErrorId : NoProcessFoundForGivenName,Microsoft.PowerShell.Commands.GetProcessCommand
+
+
+--- [71] § complex pipelines ---
+PS [71/104]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | Select-Object -First 5 | Format-Table Name, Status, DisplayName
+  
+  Name    
+  --------
+  Afd     
+  AudioSrv
+  CryptSvc
+  Dhcp    
+  Dnscache
+  
+
+PS [72/104]> Get-Service | Group-Object StartType | ForEach-Object { "$($_.Name): $($_.Count)" }
+  Count  Name       Group     .Name: Count  Name       Group     .Count
+  -----  ---------  ----------.Name: -----  ---------  ----------.Count
+      1  Boot       {1 items} .Name:     1  Boot       {1 items} .Count
+      2  System     {2 items} .Name:     2  System     {2 items} .Count
+     18  Automatic  {18 items}.Name:    18  Automatic  {18 items}.Count
+      1  Manual     {1 items} .Name:     1  Manual     {1 items} .Count
+
+PS [73/104]> Get-Service | Where-Object { $_.Status -eq "Running" -and $_.StartType -eq "Automatic" } | Measure-Object
+  Count    : 0
+  Property : 
+
+PS [74/104]> Get-Process | Where-Object { $_.WS -gt 0 } | Sort-Object WS -Descending | Select-Object -First 3 | Format-List Name, Id, WS, CPU
+<null>
+
+PS [75/104]> Get-Process | Sort-Object ProcessName | Select-Object -Unique ProcessName | Select-Object -First 10
+  
+  ProcessName      
+  -----------------
+  cmd              
+  conhost          
+  csrss            
+  dwm              
+  explorer         
+  LanmanServer     
+  LanmanWorkstation
+  lsass            
+  Registry         
+  RuntimeBroker    
+  
+
+PS [76/104]> Get-Service | Where-Object { $_.Name -match "^(W|S)" } | Format-Table Name, Status -AutoSize
+  
+  Name    
+  --------
+  SamSs   
+  W32Time 
+  Winmgmt 
+  WinRM   
+  winlogon
+  Spooler 
+  Schedule
+  
+
+PS [77/104]> "Spooler","bthserv","wuauserv" | ForEach-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } | Format-Table Name, Status, StartType -AutoSize
+  
+  Name                     
+  -------------------------
+  Spooler                  
+  : Running                
+  : Spooler                
+  e : Print Spooler        
+  : Automatic              
+  e : WIN32_OWN_PROCESS    
+  : true                   
+  Name                     
+  ----                     
+  bthserv                  
+  : Stopped                
+  : bthserv                
+  e : Bluetooth Support Ser
+  : Automatic              
+  e : WIN32_SHARE_PROCESS  
+  : false                  
+  e : Cannot find any servi
+  goryInfo          : Objec
+  yQualifiedErrorId : NoSer
+  
+
+PS [78/104]> Get-Service | ForEach-Object { [pscustomobject]@{ N=$_.Name; S=$_.Status } } | Sort-Object N | Select-Object -First 5
+  
+  [pscustomobject]@{                                                                                           At line 
+  -----------------------------------------------------------------------------------------------------------  --------
+  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1
+  
+
+
+--- [79] § event logs ---
+PS [79/104]> Get-EventLog -List -ErrorAction SilentlyContinue
+  
+    Max(K) Retain OverflowAction        Entries Log
+    ------ ------ --------------        ------- ---
+    20480      0 OverwriteOlder             10 System
+    20480      0 OverwriteOlder              6 Application
+   131072      0 OverwriteOlder              5 Security
+     1028      0 OverwriteAsNeeded           0 Setup
+    20480      0 OverwriteOlder              0 ForwardedEvents
+  
+
+PS [80/104]> Get-EventLog -LogName System -Newest 5 -ErrorAction SilentlyContinue
+  
+     Index Time          EntryType   Source                 InstanceID Message
+     ----- ----          ---------   ------                 ---------- -------
+     1009 05/14 06:55 Information EventLog                     6005 The Event log service was started.
+     1008 05/14 02:55 Warning     Microsoft-Windows-Powe          1 The system has returned from a low power...
+     1007 05/13 20:55 Information Microsoft-Windows-Kern          1 The system uptime is 86400 seconds.
+     1006 05/13 08:55 Information Microsoft-Windows-Winl       7001 User Logon Notification for Customer Exp...
+     1005 05/12 08:55 Error       Disk                            7 The device, \Device\Harddisk0\DR0, has a...
+  
+
+PS [81/104]> Get-EventLog -LogName Application -Newest 5 -ErrorAction SilentlyContinue
+  
+     Index Time          EntryType   Source                 InstanceID Message
+     ----- ----          ---------   ------                 ---------- -------
+     1015 05/13 08:55 Information .NET Runtime                 1026 .NET Runtime version 4.0.30319 — Applica...
+     1014 05/11 08:55 Error       Application Hang             1002 The program svchost.exe stopped interact...
+     1013 05/09 08:55 Information SecurityCenter                  1 The Windows Security Center Service has ...
+     1012 05/07 08:55 Warning     Application Error            1000 Faulting application name: explorer.exe.
+     1011 05/04 08:55 Information MsiInstaller                11707 Product: Microsoft Visual C++ Redistribu...
+  
+
+PS [82/104]> Get-EventLog -LogName Security -Newest 5 -ErrorAction SilentlyContinue
+  
+     Index Time          EntryType   Source                 InstanceID Message
+     ----- ----          ---------   ------                 ---------- -------
+     1020 05/14 08:55 SuccessAudi Microsoft-Windows-Secu       4672 Special privileges assigned to new logon...
+     1019 05/14 08:55 SuccessAudi Microsoft-Windows-Secu       4648 A logon was attempted using explicit cre...
+     1018 05/13 08:55 FailureAudi Microsoft-Windows-Secu       4625 An account failed to log on.
+     1017 05/13 08:55 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
+     1016 05/13 08:55 SuccessAudi Microsoft-Windows-Secu       4624 An account was successfully logged on.
+  
+
+PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyContinue
+  
+  TimeCreated                     Id LevelDisplayName Message
+  -----------                     -- ---------------- -------
+  2026-05-14 06:55:03             6005 Information      The Event log service was star...
+  2026-05-14 02:55:03                1 Warning          The system has returned from a...
+  2026-05-13 20:55:03                1 Information      The system uptime is 86400 sec...
+  2026-05-13 08:55:03             7001 Information      User Logon Notification for Cu...
+  2026-05-12 08:55:03                7 Error            The device, \Device\Harddisk0\...
+  
+
+PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction SilentlyContinue
+  
+  TimeCreated                     Id LevelDisplayName Message
+  -----------                     -- ---------------- -------
+  2026-05-13 08:55:03             1026 Information      .NET Runtime version 4.0.30319...
+  2026-05-11 08:55:03             1002 Error            The program svchost.exe stoppe...
+  2026-05-09 08:55:03                1 Information      The Windows Security Center Se...
+  2026-05-07 08:55:03             1000 Warning          Faulting application name: exp...
+  2026-05-04 08:55:03             11707 Information      Product: Microsoft Visual C++ ...
+  
+
+PS [85/104]> Get-WinEvent -ListLog * -ErrorAction SilentlyContinue | Select-Object -First 5
+  
+  LogName          RecordCount
+  ---------------  -----------
+  System                    10
+  Application                6
+  Security                   5
+  Setup                      0
+  ForwardedEvents            0
+  
+
+
+--- [86] § scheduled tasks ---
+PS [86/104]> Get-ScheduledTask -ErrorAction SilentlyContinue
+  
+  TaskPath                          TaskName                        State    
+  --------                          --------                        -----    
+  \                                 GoogleUpdateTaskUser            Ready
+  \                                 OneDrive Standalone Update Task Ready
+  \Microsoft\Windows\.NET           .NET Framework NGEN v4.0.30319  Ready
+  \                                 SimTestTask                     Ready
+
+PS [87/104]> Get-ScheduledTask | Format-Table TaskName, State -AutoSize
+  
+  TaskName                       
+  -------------------------------
+  GoogleUpdateTaskUser           
+  OneDrive Standalone Update Task
+  .NET Framework NGEN v4.0.30319 
+  SimTestTask                    
+  
+
+PS [88/104]> Get-ScheduledTask | Where-Object { $_.State -eq "Ready" }
+  
+  TaskPath                 TaskName                         State
+  -----------------------  -------------------------------  -----
+  \                        GoogleUpdateTaskUser             Ready
+  \                        OneDrive Standalone Update Task  Ready
+  \Microsoft\Windows\.NET  .NET Framework NGEN v4.0.30319   Ready
+  \                        SimTestTask                      Ready
+  
+
+PS [89/104]> (Get-ScheduledTask | Measure-Object).Count
+  1
+
+PS [90/104]> Register-ScheduledTask -TaskName "DebugTask1" -Action (New-ScheduledTaskAction -Execute "calc.exe") -Trigger (New-ScheduledTaskTrigger -Daily -At "09:00") -Force
+  
+  \DebugTask1
+  
+
+PS [91/104]> Register-ScheduledTask -TaskName "DebugTask2" -Action (New-ScheduledTaskAction -Execute "notepad.exe") -Trigger (New-ScheduledTaskTrigger -Daily -At "10:30") -Force
+  
+  \DebugTask2
+  
+
+PS [92/104]> Get-ScheduledTask | Where-Object { $_.TaskName -like "DebugTask*" }
+<null>
+
+PS [93/104]> Unregister-ScheduledTask -TaskName DebugTask1 -Confirm:$false
+<empty>
+
+PS [94/104]> Unregister-ScheduledTask -TaskName DebugTask2 -Confirm:$false
+<empty>
+
+PS [95/104]> Get-ScheduledTask | Where-Object { $_.TaskName -like "DebugTask*" }
+<null>
+
+
+--- [96] § summary ---
+PS [96/104]> Get-Service | Group-Object Status | Sort-Object Name
+  
+  Count  Name     Group     
+  -----  -------  ----------
+     20  Running  {20 items}
+      2  Stopped  {2 items} 
+  
+
+PS [97/104]> Get-Process | Measure-Object -Property Handles -Sum -Average
+  Count    : 26
+  Average  : 410.5769230769231
+  Sum      : 10675
+  Property : Handles
+
+PS [98/104]> Get-Service -Name Spooler | Format-List *
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+  * : 
+  
+
+PS [99/104]> Stop-Service -Name bthserv -ErrorAction SilentlyContinue
+  Stop-Service : Service 'Bluetooth Support Service (bthserv)' cannot be stopped due to the following error: The service has not been started.
+      + CategoryInfo          : OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Stop-Service], ServiceCommandException
+      + FullyQualifiedErrorId : CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand
+
+
+--- [100] § extra probes ---
+PS [100/104]> Get-Service | Where-Object { $_.DisplayName -match "Print" }
+  
+  Status              : Running
+  Name                : Spooler
+  DisplayName         : Print Spooler
+  ServiceType         : WIN32_OWN_PROCESS
+  StartType           : Automatic
+  CanPauseAndContinue : true
+  CanShutdown         : true
+  DependentServices   : 
+  ServicesDependedOn  : RpcSs
+  
+
+PS [101/104]> Get-Service | Sort-Object DisplayName | Select-Object -First 5 DisplayName, Name, Status
+  
+  DisplayName                            Name      Status 
+  -------------------------------------  --------  -------
+  Ancillary Function Driver for Winsock  Afd       Running
+  Bluetooth Support Service              bthserv   Stopped
+  Cryptographic Services                 CryptSvc  Running
+  DHCP Client                            Dhcp      Running
+  DNS Client                             Dnscache  Running
+  
+
+PS [102/104]> Get-Process | Where-Object { $_.Name -like "s*" } | Select-Object Name, Id -First 5
+  
+  Name                 Id 
+  -------------------  ---
+  System Idle Process    0
+  System                 4
+  smss                 340
+  services             620
+  svchost              784
+  
+
+PS [103/104]> Get-Process | Sort-Object Id | Select-Object -First 5
+  
+  Handles     : 0
+  NPM(K)      : 4
+  PM(K)       : 0
+  WS(K)       : 16
+  CPU(s)      : 0
+  Id          : 0
+  SI          : 0
+  ProcessName : System Idle Process
+  Name        : System Idle Process
+  
+  Handles     : 100
+  NPM(K)      : 4
+  PM(K)       : 0
+  WS(K)       : 288
+  CPU(s)      : 0.5
+  Id          : 4
+  SI          : 0
+  ProcessName : System
+  Name        : System
+  
+  Handles     : 48
+  NPM(K)      : 4
+  PM(K)       : 4
+  WS(K)       : 8192
+  CPU(s)      : 0
+  Id          : 108
+  SI          : 0
+  ProcessName : Registry
+  Name        : Registry
+  
+  Handles     : 56
+  NPM(K)      : 4
+  PM(K)       : 1
+  WS(K)       : 2048
+  CPU(s)      : 0
+  Id          : 340
+  SI          : 0
+  ProcessName : smss
+  Name        : smss
+  
+  Handles     : 590
+  NPM(K)      : 4
+  PM(K)       : 4
+  WS(K)       : 9216
+  CPU(s)      : 2.1
+  Id          : 472
+  SI          : 0
+  ProcessName : csrss
+  Name        : csrss
+  
+
+PS [104/104]> Get-Process | Where-Object { $_.Handles -gt 100 } | Select-Object Name, Id, Handles -First 5
+  
+  Name      Id   Handles
+  --------  ---  -------
+  csrss     472      590
+  wininit   548      152
+  csrss     560      468
+  winlogon  596      256
+  services  620      680
+  

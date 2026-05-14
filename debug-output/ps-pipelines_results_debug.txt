@@ -1,0 +1,1277 @@
+============================================================
+PowerShell debug transcript — ps-pipelines
+Generated: 2026-05-14T08:55:04.806Z
+host=WIN-PIPE-DBG (windows-pc)
+Total commands: 111
+============================================================
+
+
+--- [1] § ranges & arithmetic ---
+PS [1/111]> 1..5
+  1
+
+PS [2/111]> 1..10 | Measure-Object -Sum
+  Count    : 10
+  Sum      : 
+  Property : 
+
+PS [3/111]> 1..10 | Measure-Object -Sum -Average -Min -Max
+  Count    : 10
+  Average  : 
+  Sum      : 
+  Property : 
+
+PS [4/111]> 1..100 | Where-Object { $_ % 2 -eq 0 } | Measure-Object -Sum
+  Count    : 100
+  Sum      : 
+  Property : 
+
+PS [5/111]> 1..50 | Where-Object { $_ % 3 -eq 0 -and $_ % 5 -eq 0 }
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  6   
+  7   
+  8   
+  9   
+  10  
+  11  
+  12  
+  13  
+  14  
+  15  
+  16  
+  17  
+  18  
+  19  
+  20  
+  21  
+  22  
+  23  
+  24  
+  25  
+  26  
+  27  
+  28  
+  29  
+  30  
+  31  
+  32  
+  33  
+  34  
+  35  
+  36  
+  37  
+  38  
+  39  
+  40  
+  41  
+  42  
+  43  
+  44  
+  45  
+  46  
+  47  
+  48  
+  49  
+  50  
+  
+
+PS [6/111]> 1..20 | ForEach-Object { $_ * $_ }
+  1 : The term '1' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 1 * 1
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (1:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  2 : The term '2' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 2 * 2
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (2:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  3 : The term '3' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 3 * 3
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (3:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  4 : The term '4' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 4 * 4
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (4:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  5 : The term '5' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 5 * 5
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (5:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  6 : The term '6' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 6 * 6
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (6:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  7 : The term '7' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 7 * 7
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (7:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  8 : The term '8' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 8 * 8
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (8:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  9 : The term '9' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 9 * 9
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (9:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  10 : The term '10' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 10 * 10
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (10:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  11 : The term '11' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 11 * 11
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (11:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  12 : The term '12' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 12 * 12
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (12:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  13 : The term '13' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 13 * 13
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (13:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  14 : The term '14' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 14 * 14
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (14:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  15 : The term '15' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 15 * 15
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (15:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  16 : The term '16' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 16 * 16
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (16:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  17 : The term '17' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 17 * 17
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (17:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  18 : The term '18' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 18 * 18
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (18:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  19 : The term '19' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 19 * 19
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (19:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  20 : The term '20' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 20 * 20
+  + ~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (20:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [7/111]> (1..10 | ForEach-Object { $_ * 2 })
+  1..10 : The term '1..10' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 1..10 | ForEach-Object { $_ * 2 }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (1..10:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [8/111]> 1..10 | Where-Object { $_ -gt 3 } | Where-Object { $_ -lt 8 }
+  
+  Line
+  ----
+     1
+     2
+     3
+     4
+     5
+     6
+     7
+     8
+     9
+    10
+  
+
+PS [9/111]> 1..10 | Sort-Object -Descending
+  
+  Line
+  ----
+  9   
+  8   
+  7   
+  6   
+  5   
+  4   
+  3   
+  2   
+  10  
+  1   
+  
+
+PS [10/111]> 5..1
+  5
+
+PS [11/111]> (1..1000 | Measure-Object -Sum).Sum
+<empty>
+
+PS [12/111]> @(1,2,3) + @(4,5,6)
+  @(1,2,3) : The term '@(1,2,3)' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @(1,2,3) + @(4,5,6)
+  + ~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@(1,2,3):String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [13/111]> @(1,2,3,2,1) | Sort-Object -Unique
+  
+  Line
+  ----
+  @(1 
+  1)  
+  2   
+  2   
+  3   
+  
+
+PS [14/111]> @(3,1,4,1,5,9,2,6,5,3,5) | Sort-Object | Get-Unique
+  
+  Line
+  ----
+  @(3 
+     1
+     1
+     2
+     3
+     4
+     5
+     5
+  5)  
+     6
+     9
+  
+
+
+--- [15] § ForEach-Object closures ---
+PS [15/111]> 1..3 | ForEach-Object { "[$_]" }
+  [1]
+  [2]
+  [3]
+
+PS [16/111]> 1..3 | ForEach-Object -Begin { $sum=0 } -Process { $sum+=$_ } -End { $sum }
+  
+  Value
+  -----
+       
+       
+       
+  
+
+PS [17/111]> "a","b","c" | ForEach-Object { $_.ToUpper() }
+  a.ToUpper() : The term 'a.ToUpper()' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + a.ToUpper()
+  + ~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (a.ToUpper():String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  b.ToUpper() : The term 'b.ToUpper()' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + b.ToUpper()
+  + ~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (b.ToUpper():String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  c.ToUpper() : The term 'c.ToUpper()' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + c.ToUpper()
+  + ~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (c.ToUpper():String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [18/111]> "abc","de","fghij" | ForEach-Object { $_.Length }
+  
+  Value
+  -----
+       
+       
+       
+  
+
+PS [19/111]> "abc","de","fghij" | ForEach-Object { [pscustomobject]@{ S=$_; L=$_.Length } }
+  [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + [pscustomobject]@{ S=abc; L=abc.Length }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + [pscustomobject]@{ S=de; L=de.Length }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + [pscustomobject]@{ S=fghij; L=fghij.Length }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [20/111]> 1..5 | ForEach-Object { @{ n=$_; sq=$_*$_ } }
+  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @{ n=1; sq=1*1 }
+  + ~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @{ n=2; sq=2*2 }
+  + ~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @{ n=3; sq=3*3 }
+  + ~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @{ n=4; sq=4*4 }
+  + ~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @{ n=5; sq=5*5 }
+  + ~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [21/111]> @(@{ k="a"; v=1 }, @{ k="b"; v=2 }) | ForEach-Object { "$($_.k)=$($_.v)" }
+  @(@{ : The term '@(@{' is not recognized as the name of a cmdlet, function, script file, or operable.k=@(@{ : The term '@(@{' is not recognized as the name of a cmdlet, function, script file, or operable.v
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again..k=program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again..v
+  At line:1 char:1.k=At line:1 char:1.v
+  + @(@{ k="a"; v=1 }, @{ k="b"; v=2 }.k)=+ @(@{ k="a"; v=1 }, @{ k="b"; v=2 }.v)
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.k=+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.v
+      + CategoryInfo          : ObjectNotFound: (@(@{:String [], CommandNotFoundException.k)=    + CategoryInfo          : ObjectNotFound: (@(@{:String [], CommandNotFoundException.v)
+      + FullyQualifiedErrorId : CommandNotFoundException.k=    + FullyQualifiedErrorId : CommandNotFoundException.v
+
+PS [22/111]> 1..3 | ForEach-Object { if ($_ -eq 2) { return }; $_ }
+  if : The term 'if' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + if (1 -eq 2) { return }; 1
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (if:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  if : The term 'if' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + if (2 -eq 2) { return }; 2
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (if:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  if : The term 'if' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + if (3 -eq 2) { return }; 3
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (if:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [23/111]> "x","y","z" | ForEach-Object { "$_-$_" }
+  x-x
+  y-y
+  z-z
+
+
+--- [24] § Where-Object ---
+PS [24/111]> 1..10 | Where-Object { $_ -gt 5 }
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  6   
+  7   
+  8   
+  9   
+  10  
+  
+
+PS [25/111]> 1..10 | Where-Object { $_ -lt 5 -or $_ -gt 8 }
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  6   
+  7   
+  8   
+  9   
+  10  
+  
+
+PS [26/111]> 1..10 | ? { $_ % 2 -eq 0 }
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  6   
+  7   
+  8   
+  9   
+  10  
+  
+
+PS [27/111]> "alpha","beta","gamma","delta" | Where-Object { $_ -like "*a" }
+  
+  Line 
+  -----
+  alpha
+  beta 
+  gamma
+  delta
+  
+
+PS [28/111]> "alpha","beta","gamma","delta" | Where-Object { $_ -match "^[ab]" }
+  
+  Line 
+  -----
+  alpha
+  beta 
+  gamma
+  delta
+  
+
+PS [29/111]> "alpha","beta","gamma","delta" | Where-Object { $_ -notmatch "^[ab]" }
+  
+  Line 
+  -----
+  alpha
+  beta 
+  gamma
+  delta
+  
+
+PS [30/111]> 1..10 | Where-Object { $_ -in @(2,4,6,8) }
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  6   
+  7   
+  8   
+  9   
+  10  
+  
+
+PS [31/111]> @("a","b","c","d") | Where-Object { $_ -in @("b","d") }
+  
+  Line
+  ----
+  @(a 
+  b   
+  c   
+  d)  
+  
+
+
+--- [32] § Sort / Group ---
+PS [32/111]> @("banana","apple","cherry") | Sort-Object
+  
+  Line    
+  --------
+  @(banana
+  apple   
+  cherry) 
+  
+
+PS [33/111]> @("banana","apple","cherry") | Sort-Object -Descending
+  
+  Line    
+  --------
+  cherry) 
+  apple   
+  @(banana
+  
+
+PS [34/111]> @("banana","apple","cherry","apple") | Sort-Object -Unique
+  
+  Line    
+  --------
+  @(banana
+  apple   
+  apple)  
+  cherry  
+  
+
+PS [35/111]> Get-Process | Sort-Object Name | Select-Object -First 5 Name, Id
+  
+  Name     Id  
+  -------  ----
+  cmd      5120
+  conhost  5132
+  csrss     472
+  csrss     560
+  dwm      1024
+  
+
+PS [36/111]> Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 3 Name, CPU
+  
+  Name      CPU
+  --------  ---
+  conhost      
+  cmd          
+  explorer     
+  
+
+PS [37/111]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 5
+  
+  Count  Name      Group    
+  -----  --------  ---------
+      7  svchost   {7 items}
+      2  csrss     {2 items}
+      1  conhost   {1 items}
+      1  cmd       {1 items}
+      1  explorer  {1 items}
+  
+
+PS [38/111]> 1..20 | Group-Object { $_ % 3 } | Format-Table Name, Count -AutoSize
+  
+  Name
+  ----
+      
+  
+
+PS [39/111]> "alpha","beta","gamma","delta","epsilon" | Group-Object Length
+  
+  Count  Name  Group    
+  -----  ----  ---------
+      5        {5 items}
+  
+
+PS [40/111]> Get-Service | Group-Object Status | ForEach-Object { "$($_.Name): $($_.Count)" }
+  Count  Name     Group     .Name: Count  Name     Group     .Count
+  -----  -------  ----------.Name: -----  -------  ----------.Count
+     20  Running  {20 items}.Name:    20  Running  {20 items}.Count
+      2  Stopped  {2 items} .Name:     2  Stopped  {2 items} .Count
+
+
+--- [41] § Select-Object ---
+PS [41/111]> Get-Process | Select-Object -First 3 Name, Id
+  
+  Name                 Id 
+  -------------------  ---
+  System Idle Process    0
+  System                 4
+  Registry             108
+  
+
+PS [42/111]> Get-Process | Select-Object -First 3 -Property Name, Id, @{ Name="kbWS"; Expression={ [int]($_.WS/1024) } }
+  
+  Name                 Id   @{ Name="kbWS"; Expression={ [int]($_.WS/1024) } }
+  -------------------  ---  --------------------------------------------------
+  System Idle Process    0                                                    
+  System                 4                                                    
+  Registry             108                                                    
+  
+
+PS [43/111]> Get-Process | Select-Object -First 5 -Property Name, @{ N="UpperName"; E={ $_.Name.ToUpper() } }
+  
+  Name                 @{ N="UpperName"; E={ $_.Name.ToUpper() } }
+  -------------------  -------------------------------------------
+  System Idle Process                                             
+  System                                                          
+  Registry                                                        
+  smss                                                            
+  csrss                                                           
+  
+
+PS [44/111]> 1..3 | Select-Object @{ N="Doubled"; E={ $_ * 2 } }
+  
+  @{ N="Doubled"; E={ $_ * 2 } }
+  ------------------------------
+                                
+                                
+                                
+  
+
+PS [45/111]> Get-Service | Select-Object Name, Status -First 5
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
+
+PS [46/111]> Get-Service | Select-Object Name, Status -Last 5
+  
+  Name      Status 
+  --------  -------
+  winlogon  Running
+  Spooler   Running
+  Schedule  Running
+  AudioSrv  Running
+  Themes    Running
+  
+
+PS [47/111]> Get-Service | Select-Object -Unique Status
+  
+  Status 
+  -------
+  Running
+  Stopped
+  
+
+PS [48/111]> Get-Process | Select-Object -ExpandProperty Name | Sort-Object | Get-Unique | Select-Object -First 5
+  
+  Line   
+  -------
+  cmd    
+  conhost
+  csrss  
+  csrss  
+  dwm    
+  
+
+PS [49/111]> "a","b","c" | Select-Object @{ N="L"; E={ $_ } }, @{ N="U"; E={ $_.ToUpper() } }
+  
+  @{ N="L"; E={ $_ } }  @{ N="U"; E={ $_.ToUpper() } }
+  --------------------  ------------------------------
+                                                      
+                                                      
+                                                      
+  
+
+
+--- [50] § Measure-Object on strings ---
+PS [50/111]> "hello world" | Measure-Object -Word -Character -Line
+  Count    : 1
+  Property : 
+
+PS [51/111]> Get-Content (Join-Path $env:TEMP "doesnotexist") -ErrorAction SilentlyContinue | Measure-Object
+  Count    : 1
+  Property : 
+
+PS [52/111]> "line1`nline2`nline3" -split "`n" | Measure-Object
+  Count    : 1
+  Property : 
+
+PS [53/111]> "red","green","blue" | Measure-Object -Character
+  Count    : 3
+  Property : 
+
+PS [54/111]> "x","y","z","x","y" | Group-Object | Measure-Object -Property Count -Sum
+  Count    : 3
+  Sum      : 5
+  Property : Count
+
+
+--- [55] § operators ---
+PS [55/111]> "PowerShell" -like "*Shell"
+  True
+
+PS [56/111]> "PowerShell" -like "powershell"
+  True
+
+PS [57/111]> "PowerShell" -clike "powershell"
+  PowerShell" -clike "powershell
+
+PS [58/111]> "PowerShell" -match "^[Pp]ower"
+  True
+
+PS [59/111]> "abc-123-xyz" -match "(\w+)-(\d+)-(\w+)"
+  True
+
+PS [60/111]> $Matches
+  {"0":"abc-123-xyz","1":"abc","2":"123","3":"xyz"} : The term '{"0":"abc-123-xyz","1":"abc","2":"123","3":"xyz"}' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + {"0":"abc-123-xyz","1":"abc","2":"123","3":"xyz"}
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ({"0":"abc-123-xyz","1":"abc","2":"123","3":"xyz"}:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [61/111]> "a","b","c","d" -contains "b"
+  True
+
+PS [62/111]> "b" -in @("a","b","c")
+  True
+
+PS [63/111]> 5 -gt 3
+  True
+
+PS [64/111]> 5 -ge 5
+  True
+
+PS [65/111]> 5 -lt 3
+  False
+
+PS [66/111]> $null -eq $null
+  True
+
+PS [67/111]> "" -eq $null
+  True
+
+PS [68/111]> @() -eq $null
+  False
+
+PS [69/111]> 5 -is [int]
+  5 : The term '5' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 5 -is [int]
+  + ~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (5:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [70/111]> "a" -is [string]
+  "a" : The term '"a"' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + "a" -is [string]
+  + ~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ("a":String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [71/111]> "abc" -replace "b","B"
+  aBc
+
+PS [72/111]> "alpha,beta,gamma" -split ","
+  alpha,beta,gamma" -split ",
+
+PS [73/111]> @("a","b","c") -join "-"
+  @("a","b","c") : The term '@("a","b","c")' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + @("a","b","c") -join "-"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (@("a","b","c"):String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [74] § splatting & functions ---
+PS [74/111]> $p = @{ Path = "C:\Splat"; ItemType = "Directory"; Force = $true }; New-Item @p
+<empty>
+
+PS [75/111]> Test-Path C:\Splat
+  False
+
+PS [76/111]> Remove-Item C:\Splat -Force
+  Remove-Item : Cannot find path 'C:\Splat' because it does not exist.
+
+PS [77/111]> function Add-Two { param($a,$b) $a + $b }; Add-Two 3 4
+  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + function Add-Two { param($a,$b) $a + $b }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  Add-Two : The term 'Add-Two' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Add-Two 3 4
+  + ~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Add-Two:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [78/111]> function Multiply { param($x,$y) $x * $y }; Multiply -x 5 -y 6
+  30
+
+PS [79/111]> function Repeat { param($Text, [int]$Count=3) for ($i=0;$i -lt $Count;$i++) { $Text } }; Repeat -Text "hi" -Count 3
+<empty>
+
+PS [80/111]> function Sum { param([int[]]$Nums) $Nums | Measure-Object -Sum | Select-Object -ExpandProperty Sum }; Sum -Nums 1,2,3,4,5
+<empty>
+
+PS [81/111]> filter Double { $_ * 2 }; 1..5 | Double
+  filter : The term 'filter' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + filter Double { $_ * 2 }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (filter:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  
+
+PS [82/111]> filter Even { if ($_ % 2 -eq 0) { $_ } }; 1..10 | Even
+  filter : The term 'filter' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + filter Even { if ($_ % 2 -eq 0) { $_ } }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (filter:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  4   
+  5   
+  6   
+  7   
+  8   
+  9   
+  10  
+  
+
+
+--- [83] § control flow ---
+PS [83/111]> for ($i=1; $i -le 5; $i++) { "i=$i" }
+  i=1
+  i=2
+  i=3
+  i=4
+  i=5
+
+PS [84/111]> $j = 0; while ($j -lt 3) { "j=$j"; $j++ }
+  j=0
+  j=1
+  j=2
+
+PS [85/111]> $k = 5; do { "k=$k"; $k-- } while ($k -gt 0)
+  k=5
+  k=4
+  k=3
+  k=2
+  k=1
+
+PS [86/111]> foreach ($n in 1..3) { "n=$n" }
+  n=1
+
+PS [87/111]> switch (3) { 1 { "one" } 2 { "two" } 3 { "three" } default { "other" } }
+  switch : The term 'switch' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + switch (3) { 1 { "one" } 2 { "two" } 3 { "three" } default { "other" } }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (switch:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [88/111]> switch -Regex ("foo123") { "^foo" { "matched-foo" } "\d+$" { "matched-digits" } }
+  switch : The term 'switch' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + switch -Regex ("foo123") { "^foo" { "matched-foo" } "\d+$" { "matched-digits" } }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (switch:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [89/111]> if ($true) { "yes" } else { "no" }
+  yes
+
+PS [90/111]> if ($false) { "yes" } elseif ($true) { "elif" } else { "no" }
+  elif
+
+
+--- [91] § composed real-world ---
+PS [91/111]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 -Property Name, Id, @{ N="MB"; E={ [int]($_.WS/1MB) } } | Format-Table -AutoSize
+  
+  Name               Id    @{ N="MB"; E={ [int]($_.WS/1MB) } }
+  -----------------  ----  -----------------------------------
+  conhost            5132                                     
+  cmd                5120                                     
+  explorer           2848                                     
+  LanmanWorkstation  2400                                     
+  LanmanServer       2200                                     
+  
+
+PS [92/111]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | ForEach-Object { "[RUN] $($_.Name)" }
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Afd.Name
+  [RUN] DisplayName         : Ancillary Function Driver for Winsock.Name
+  [RUN] ServiceType         : KERNEL_DRIVER.Name
+  [RUN] StartType           : System.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : false.Name
+  [RUN] DependentServices   : Dhcp.Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : AudioSrv.Name
+  [RUN] DisplayName         : Windows Audio.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : CryptSvc.Name
+  [RUN] DisplayName         : Cryptographic Services.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Dhcp.Name
+  [RUN] DisplayName         : DHCP Client.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : Afd,Tcpip.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Dnscache.Name
+  [RUN] DisplayName         : DNS Client.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : Tcpip.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : EventLog.Name
+  [RUN] DisplayName         : Windows Event Log.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : LanmanServer.Name
+  [RUN] DisplayName         : Server.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : true.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : SamSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : LanmanWorkstation.Name
+  [RUN] DisplayName         : Workstation.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : mpssvc.Name
+  [RUN] DisplayName         : Windows Defender Firewall.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : NetBT.Name
+  [RUN] DisplayName         : NetBT.Name
+  [RUN] ServiceType         : KERNEL_DRIVER.Name
+  [RUN] StartType           : System.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : false.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : Tcpip.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : RpcEptMapper.Name
+  [RUN] DisplayName         : RPC Endpoint Mapper.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : RpcSs.Name
+  [RUN] DisplayName         : Remote Procedure Call (RPC.Name)
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : SamSs,mpssvc,CryptSvc,Winmgmt,WinRM,Spooler,Schedule,AudioSrv.Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : SamSs.Name
+  [RUN] DisplayName         : Security Accounts Manager.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : LanmanServer.Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Schedule.Name
+  [RUN] DisplayName         : Task Scheduler.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Spooler.Name
+  [RUN] DisplayName         : Print Spooler.Name
+  [RUN] ServiceType         : WIN32_OWN_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : true.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Tcpip.Name
+  [RUN] DisplayName         : TCP/IP Protocol Driver.Name
+  [RUN] ServiceType         : KERNEL_DRIVER.Name
+  [RUN] StartType           : Boot.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : false.Name
+  [RUN] DependentServices   : Dhcp,Dnscache,NetBT.Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Themes.Name
+  [RUN] DisplayName         : Themes.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : W32Time.Name
+  [RUN] DisplayName         : Windows Time.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : winlogon.Name
+  [RUN] DisplayName         : Windows Logon Application.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : .Name
+  [RUN] Status              : Running.Name
+  [RUN] Name                : Winmgmt.Name
+  [RUN] DisplayName         : Windows Management Instrumentation.Name
+  [RUN] ServiceType         : WIN32_SHARE_PROCESS.Name
+  [RUN] StartType           : Automatic.Name
+  [RUN] CanPauseAndContinue : false.Name
+  [RUN] CanShutdown         : true.Name
+  [RUN] DependentServices   : .Name
+  [RUN] ServicesDependedOn  : RpcSs.Name
+
+PS [93/111]> New-Item -Path C:\PipeTest -ItemType Directory -Force | Out-Null; 1..10 | ForEach-Object { Set-Content -Path "C:\PipeTest\f$_.txt" -Value "row $_" }; Get-ChildItem C:\PipeTest | Measure-Object Length -Sum
+  Count    : 10
+  Sum      : 0
+  Property : Length
+
+PS [94/111]> Get-ChildItem C:\PipeTest | Sort-Object Length -Descending | Select-Object -First 3 Name, Length
+  
+  Name      Length
+  --------  ------
+  5 f9.txt        
+  5 f8.txt        
+  5 f7.txt        
+  
+
+PS [95/111]> Get-ChildItem C:\PipeTest | ForEach-Object { (Get-Content $_.FullName) } | Sort-Object | Get-Unique
+  
+  Get-Content                                            
+  -------------------------------------------------------
+  Cannot find path '5/14/2026' because it does not exist.
+  
+
+PS [96/111]> Get-ChildItem C:\PipeTest -Recurse | Where-Object { $_.Length -gt 0 } | Measure-Object Length -Sum -Average
+  Count    : 0
+  Average  : 0
+  Sum      : 0
+  Property : Length
+
+PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$_.Name; L=$_.Length } } | Sort-Object L -Descending | Select-Object -First 3
+  
+  [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=------                5/14/2026   8                                                  
+  -----------------------------------------------------------------------------------------------------------  --------  -------------------------------------------------------  ------------------------------------------------------------------------------------------------------------
+  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  55 AM              5 f9.txt.Name; L=------                5/14/2026   8:55 AM              5 f9.txt.Length }
+  
+
+PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure-Object | Select-Object Count
+  
+  Count
+  -----
+     10
+  
+
+PS [99/111]> $allFiles.Count
+  $allFiles.Count : The term '$allFiles.Count' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + $allFiles.Count
+  + ~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ($allFiles.Count:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [100/111]> Remove-Item C:\PipeTest -Recurse -Force
+<empty>
+
+
+--- [101] § error handling ---
+PS [101/111]> try { Get-Item C:\NoSuchFile -ErrorAction Stop } catch { "caught: $($_.Exception.Message)" }
+  caught: Cannot find path 'C:\NoSuchFile' because it does not exist.
+
+PS [102/111]> try { 1/0 } catch { "div0: $($_.Exception.Message)" }
+  1/0 : The term '1/0' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + 1/0
+  + ~~~
+      + CategoryInfo          : ObjectNotFound: (1/0:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [103/111]> $ErrorActionPreference = "Continue"; Get-Item C:\NoSuchFile2 -ErrorAction SilentlyContinue; "after"
+  Get-Item : Cannot find path 'C:\NoSuchFile2' because it does not exist.
+  after
+
+PS [104/111]> $Error.Count
+  $Error.Count : The term '$Error.Count' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + $Error.Count
+  + ~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ($Error.Count:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [105/111]> $Error | Select-Object -First 3 | ForEach-Object { $_.Exception.Message }
+<null>
+
+
+--- [106] § output redirection ---
+PS [106/111]> Get-Process | Select-Object -First 3 | Out-Null
+<null>
+
+PS [107/111]> Get-Process | Select-Object -First 3 Name | Out-String
+  
+  Name               
+  -------------------
+  System Idle Process
+  System             
+  Registry           
+  
+
+PS [108/111]> "hello" | Out-String -Stream
+  
+  Line 
+  -----
+  hello
+  
+
+PS [109/111]> Write-Output "stream-1"; Write-Output "stream-2"
+  stream-1
+  stream-2
+
+PS [110/111]> Write-Warning "be careful"
+  WARNING: be careful
+
+PS [111/111]> 1..3 | Write-Output
+  
+  Line
+  ----
+  1   
+  2   
+  3   
+  

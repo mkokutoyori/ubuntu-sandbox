@@ -1,0 +1,394 @@
+============================================================
+PowerShell debug transcript — ps-network-server
+Generated: 2026-05-14T08:55:04.886Z
+host=SRV-NET-DBG (windows-server)
+Total commands: 28
+============================================================
+
+
+--- [1] § server ---
+PS [1/28]> $env:COMPUTERNAME
+  SRV-NET-DBG
+
+PS [2/28]> Get-NetAdapter
+  Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed
+  ----                      --------------------                    ------- ------       ----------         ---------
+  Ethernet                  Intel(R) Ethernet Connection                  2 Up           02-00-00-00-00-05  1 Gbps
+  Ethernet 2                Intel(R) Ethernet Connection                  3 Up           02-00-00-00-00-06  1 Gbps
+  Ethernet 3                Intel(R) Ethernet Connection                  4 Up           02-00-00-00-00-07  1 Gbps
+  Ethernet 4                Intel(R) Ethernet Connection                  5 Up           02-00-00-00-00-08  1 Gbps
+  Wi-Fi                     Intel(R) Wireless-AC 9560 160MHz              6 Up           02-00-00-FF-FF-01  54 Mbps
+
+PS [3/28]> Get-NetIPAddress
+  IPAddress         : 192.168.1.100
+  InterfaceIndex    : 2
+  InterfaceAlias    : Ethernet
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0005
+  InterfaceIndex    : 2
+  InterfaceAlias    : Ethernet
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.101
+  InterfaceIndex    : 3
+  InterfaceAlias    : Ethernet 2
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0006
+  InterfaceIndex    : 3
+  InterfaceAlias    : Ethernet 2
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.102
+  InterfaceIndex    : 4
+  InterfaceAlias    : Ethernet 3
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0007
+  InterfaceIndex    : 4
+  InterfaceAlias    : Ethernet 3
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.103
+  InterfaceIndex    : 5
+  InterfaceAlias    : Ethernet 4
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0008
+  InterfaceIndex    : 5
+  InterfaceAlias    : Ethernet 4
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 127.0.0.1
+  InterfaceIndex    : 1
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 8
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : ::1
+  InterfaceIndex    : 1
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 128
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+
+PS [4/28]> Test-Connection 127.0.0.1 -Count 1 -ErrorAction SilentlyContinue
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  SRV-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
+
+PS [5/28]> Test-Connection 127.0.0.1 -Count 2 -ErrorAction SilentlyContinue
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  SRV-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
+
+PS [6/28]> Test-Connection localhost -Count 1 -ErrorAction SilentlyContinue
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  SRV-NET-DBG      localhost         127.0.0.1        32       1        Success
+
+PS [7/28]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  localhost                                      A      86400 Answer     127.0.0.1
+  
+
+PS [8/28]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  localhost                                      A      86400 Answer     127.0.0.1
+  
+
+PS [9/28]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
+  
+  Name   : example.com
+  Type   : A
+  TTL    : 3600
+  Section: Answer
+  IPAddress: 192.168.1.1
+  
+
+PS [10/28]> ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+PS [11/28]> ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : SRV-NET-DBG
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-05
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-06
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-07
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-08
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+PS [12/28]> ipconfig /displaydns
+  Windows IP Configuration
+  
+    Record Name . . . . . : (no entries)
+
+PS [13/28]> netstat
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+PS [14/28]> netstat -a
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+PS [15/28]> netstat -ano
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+PS [16/28]> arp -a
+  No ARP Entries Found.
+
+PS [17/28]> route print
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+PS [18/28]> route print -4
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+PS [19/28]> hostname
+  SRV-NET-DBG
+
+PS [20/28]> getmac
+  getmac : The term 'getmac' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + getmac
+  + ~~~~~~
+      + CategoryInfo          : ObjectNotFound: (getmac:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [21/28]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object Name, MacAddress
+  
+  Name        MacAddress       
+  ----------  -----------------
+  Ethernet    02-00-00-00-00-05
+  Ethernet 2  02-00-00-00-00-06
+  Ethernet 3  02-00-00-00-00-07
+  Ethernet 4  02-00-00-00-00-08
+  Wi-Fi       02-00-00-FF-FF-01
+  
+
+PS [22/28]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object InterfaceAlias, IPAddress
+  
+  InterfaceAlias               IPAddress    
+  ---------------------------  -------------
+  Ethernet                     192.168.1.100
+  Ethernet 2                   192.168.1.101
+  Ethernet 3                   192.168.1.102
+  Ethernet 4                   192.168.1.103
+  Loopback Pseudo-Interface 1  127.0.0.1    
+  
+
+PS [23/28]> Get-NetAdapter | Sort-Object Name | Select-Object Name, Status
+  
+  Name        Status
+  ----------  ------
+  Ethernet    Up    
+  Ethernet 2  Up    
+  Ethernet 3  Up    
+  Ethernet 4  Up    
+  Wi-Fi       Up    
+  
+
+PS [24/28]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
+  
+  Name
+  ----
+  IPv4
+  IPv6
+  
+
+PS [25/28]> Get-NetRoute -ErrorAction SilentlyContinue | Select-Object -First 5
+  
+  DestinationPrefix : 0.0.0.0/0
+  NextHop           : 0.0.0.0
+  RouteMetric       : 0
+  InterfaceAlias    : Ethernet
+  InterfaceIndex    : 2
+  AddressFamily     : IPv4
+  
+  DestinationPrefix : 127.0.0.0/8
+  NextHop           : 0.0.0.0
+  RouteMetric       : 306
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  InterfaceIndex    : 3
+  AddressFamily     : IPv4
+  
+
+PS [26/28]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
+  
+  InterfaceAlias               ServerAddresses
+  --------------               ---------------
+  Ethernet                     
+  Ethernet 2                   
+  Ethernet 3                   
+  Ethernet 4                   
+
+PS [27/28]> (Get-NetAdapter).Count
+  5
+
+PS [28/28]> (Get-NetIPAddress).Count
+  10
