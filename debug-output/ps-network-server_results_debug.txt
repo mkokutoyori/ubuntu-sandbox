@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network-server
-Generated: 2026-05-14T14:38:49.265Z
+Generated: 2026-05-14T14:57:17.943Z
 host=SRV-NET-DBG (windows-server)
 Total commands: 28
 ============================================================
@@ -131,22 +131,41 @@ PS [3/28]> Get-NetIPAddress
   SkipAsSource      : False
 
 PS [4/28]> Test-Connection 127.0.0.1 -Count 1 -ErrorAction SilentlyContinue
-<empty>
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  SRV-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
 
 PS [5/28]> Test-Connection 127.0.0.1 -Count 2 -ErrorAction SilentlyContinue
-<empty>
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  SRV-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
+  SRV-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
 
 PS [6/28]> Test-Connection localhost -Count 1 -ErrorAction SilentlyContinue
-<empty>
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  SRV-NET-DBG      localhost         127.0.0.1        32       1        Success
 
 PS [7/28]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
-<empty>
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  localhost                                      A      86400 Answer     127.0.0.1
+  
 
 PS [8/28]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
-<empty>
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  1.0.0.127.in-addr.arpa                         PTR    3600  Answer     localhost
+  
 
 PS [9/28]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
-<empty>
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
+  
 
 PS [10/28]> ipconfig
   Windows IP Configuration
@@ -341,13 +360,33 @@ PS [24/28]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, C
   
 
 PS [25/28]> Get-NetRoute -ErrorAction SilentlyContinue | Select-Object -First 5
-<empty>
+  
+  DestinationPrefix : 0.0.0.0/0
+  NextHop           : 0.0.0.0
+  RouteMetric       : 0
+  InterfaceAlias    : Ethernet
+  InterfaceIndex    : 2
+  AddressFamily     : IPv4
+  
+  DestinationPrefix : 127.0.0.0/8
+  NextHop           : 0.0.0.0
+  RouteMetric       : 306
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  InterfaceIndex    : 3
+  AddressFamily     : IPv4
+  
 
 PS [26/28]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
-<empty>
+  
+  InterfaceAlias               ServerAddresses
+  --------------               ---------------
+  Ethernet                     
+  Ethernet 2                   
+  Ethernet 3                   
+  Ethernet 4                   
 
 PS [27/28]> (Get-NetAdapter).Count
-<empty>
+  5
 
 PS [28/28]> (Get-NetIPAddress).Count
-<empty>
+  10

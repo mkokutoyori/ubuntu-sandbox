@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-users-groups
-Generated: 2026-05-14T14:38:47.143Z
+Generated: 2026-05-14T14:57:17.263Z
 host=WIN-USR-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -55,7 +55,7 @@ PS [5/102]> Get-LocalUser | Where-Object { -not $_.Enabled }
   
 
 PS [6/102]> (Get-LocalUser).Count
-<empty>
+  4
 
 PS [7/102]> Get-LocalUser | Select-Object -ExpandProperty Name
   Administrator
@@ -102,7 +102,7 @@ PS [10/102]> Get-LocalGroup | Sort-Object Name
   
 
 PS [11/102]> (Get-LocalGroup).Count
-<empty>
+  7
 
 PS [12/102]> Get-LocalGroupMember -Group Administrators
   
@@ -199,10 +199,10 @@ PS [26/102]> $pw = ConvertTo-SecureString "P@ssw0rd3" -AsPlainText -Force; New-L
   powerUser3              True      with desc
 
 PS [27/102]> $pw = ConvertTo-SecureString "1" -AsPlainText -Force; New-LocalUser -Name "weakPw" -Password $pw -ErrorAction SilentlyContinue
-<empty>
+  New-LocalUser : The password does not meet the password policy requirements. Check the minimum password length, password complexity, and password history requirements.
 
 PS [28/102]> New-LocalUser -Name alice -NoPassword -ErrorAction SilentlyContinue
-<empty>
+  New-LocalUser : User 'alice' already exists.
 
 
 --- [29] § inspect users ---
@@ -270,7 +270,7 @@ PS [36/102]> Get-LocalUser | Select-Object Name, Description, Enabled | Sort-Obj
   
 
 PS [37/102]> Get-LocalUser -Name "ghost-user" -ErrorAction SilentlyContinue
-<empty>
+  Get-LocalUser : User not found. 'ghost-user' was not found.
 
 
 --- [38] § mutate users ---
@@ -302,7 +302,7 @@ PS [45/102]> Get-LocalUser -Name david
   david                   True      
 
 PS [46/102]> Get-LocalUser -Name dave -ErrorAction SilentlyContinue
-<empty>
+  Get-LocalUser : User not found. 'dave' was not found.
 
 
 --- [47] § create groups ---
@@ -343,7 +343,7 @@ PS [52/102]> New-LocalGroup -Name Contractors
   Contractors                         
 
 PS [53/102]> New-LocalGroup -Name Developers -ErrorAction SilentlyContinue
-<empty>
+  New-LocalGroup : The specified group already exists.
 
 PS [54/102]> Get-LocalGroup | Where-Object { $_.Description }
   
@@ -406,10 +406,10 @@ PS [63/102]> Add-LocalGroupMember -Group Interns -Member judy
 <empty>
 
 PS [64/102]> Add-LocalGroupMember -Group Developers -Member ghost-user -ErrorAction SilentlyContinue
-<empty>
+  Add-LocalGroupMember : Cannot find user 'ghost-user'. The specified user was not found.
 
 PS [65/102]> Add-LocalGroupMember -Group Developers -Member alice -ErrorAction SilentlyContinue
-<empty>
+  Add-LocalGroupMember : The specified account 'alice' is already a member of the group.
 
 PS [66/102]> Get-LocalGroupMember -Group Developers
   
@@ -490,7 +490,7 @@ PS [79/102]> Remove-LocalGroup -Name Interns
 <empty>
 
 PS [80/102]> Get-LocalGroup -Name Interns -ErrorAction SilentlyContinue
-<empty>
+  Get-LocalGroup : Group not found. 'Interns' was not found.
 
 
 --- [81] § complex pipelines ---
@@ -680,7 +680,13 @@ PS [90/102]> Get-LocalUser | Where-Object { $_.Description -like "*team*" -or $_
 
 --- [91] § bulk creation script ---
 PS [91/102]> function New-DevUser { param($Name) New-LocalUser -Name $Name -NoPassword; Add-LocalGroupMember -Group Developers -Member $Name }
-<empty>
+  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + function New-DevUser { param($Name) New-LocalUser -Name $Name -NoPassword; Add-LocalGroupMember -Group Developers -Member $Name }
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [92/102]> "kate","leo","mary","nina","oscar" | ForEach-Object { New-DevUser -Name $_ }
   New-DevUser : The term 'New-DevUser' is not recognized as the name of a cmdlet, function, script file, or operable
@@ -744,10 +750,10 @@ PS [95/102]> Get-LocalGroupMember -Group Developers
 
 --- [96] § cleanup ---
 PS [96/102]> "alice","bob","carol","david","erin","frank","grace","heidi","ivan","powerUser1","powerUser2","powerUser3" | ForEach-Object { Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue }
-<empty>
+<null>
 
 PS [97/102]> "Developers","QA","Ops","Security","Contractors" | ForEach-Object { Remove-LocalGroup -Name $_ -ErrorAction SilentlyContinue }
-<empty>
+<null>
 
 PS [98/102]> Get-LocalUser
   
@@ -757,18 +763,6 @@ PS [98/102]> Get-LocalUser
   Guest                   False     Built-in account for guest access to the computer/domain
   DefaultAccount          False     A user account managed by the system.
   User                    True      
-  alice                   True      lead dev
-  bob                     True      
-  carol                   True      QA tester
-  erin                    True      
-  frank                   True      
-  grace                   True      
-  heidi                   True      
-  ivan                    True      
-  powerUser1              True      
-  powerUser2              True      
-  powerUser3              True      with desc
-  david                   True      
 
 PS [99/102]> Get-LocalGroup
   
@@ -781,11 +775,6 @@ PS [99/102]> Get-LocalGroup
   Remote Desktop Users                Members are granted the right to logon remotely
   Network Configuration Operators     Members can have some administrative privileges to manage configuration of networking features
   Event Log Readers                   Members of this group can read event logs from local machine
-  Developers                          Dev team
-  QA                                  QA team
-  Ops                                 
-  Security                            
-  Contractors                         
 
 
 --- [100] § whoami on PC ---

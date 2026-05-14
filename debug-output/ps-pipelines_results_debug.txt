@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-pipelines
-Generated: 2026-05-14T09:37:29.450Z
+Generated: 2026-05-14T14:57:17.263Z
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
 ============================================================
@@ -83,155 +83,38 @@ PS [5/111]> 1..50 | Where-Object { $_ % 3 -eq 0 -and $_ % 5 -eq 0 }
   
 
 PS [6/111]> 1..20 | ForEach-Object { $_ * $_ }
-  1 : The term '1' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 1 * 1
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (1:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  2 : The term '2' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 2 * 2
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (2:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  3 : The term '3' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 3 * 3
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (3:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  4 : The term '4' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 4 * 4
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (4:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  5 : The term '5' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 5 * 5
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (5:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  6 : The term '6' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 6 * 6
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (6:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  7 : The term '7' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 7 * 7
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (7:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  8 : The term '8' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 8 * 8
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (8:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  9 : The term '9' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 9 * 9
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (9:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  10 : The term '10' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 10 * 10
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (10:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  11 : The term '11' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 11 * 11
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (11:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  12 : The term '12' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 12 * 12
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (12:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  13 : The term '13' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 13 * 13
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (13:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  14 : The term '14' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 14 * 14
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (14:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  15 : The term '15' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 15 * 15
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (15:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  16 : The term '16' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 16 * 16
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (16:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  17 : The term '17' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 17 * 17
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (17:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  18 : The term '18' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 18 * 18
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (18:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  19 : The term '19' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 19 * 19
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (19:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  20 : The term '20' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 20 * 20
-  + ~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (20:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  1
+  4
+  9
+  16
+  25
+  36
+  49
+  64
+  81
+  100
+  121
+  144
+  169
+  196
+  225
+  256
+  289
+  324
+  361
+  400
 
 PS [7/111]> (1..10 | ForEach-Object { $_ * 2 })
-  1..10 : The term '1..10' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 1..10 | ForEach-Object { $_ * 2 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (1..10:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  2
+  4
+  6
+  8
+  10
+  12
+  14
+  16
+  18
+  20
 
 PS [8/111]> 1..10 | Where-Object { $_ -gt 3 } | Where-Object { $_ -lt 8 }
   
@@ -325,27 +208,9 @@ PS [16/111]> 1..3 | ForEach-Object -Begin { $sum=0 } -Process { $sum+=$_ } -End 
   
 
 PS [17/111]> "a","b","c" | ForEach-Object { $_.ToUpper() }
-  a.ToUpper() : The term 'a.ToUpper()' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + a.ToUpper()
-  + ~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (a.ToUpper():String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  b.ToUpper() : The term 'b.ToUpper()' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + b.ToUpper()
-  + ~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (b.ToUpper():String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  c.ToUpper() : The term 'c.ToUpper()' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + c.ToUpper()
-  + ~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (c.ToUpper():String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  A
+  B
+  C
 
 PS [18/111]> "abc","de","fghij" | ForEach-Object { $_.Length }
   
@@ -1023,9 +888,9 @@ PS [96/111]> Get-ChildItem C:\PipeTest -Recurse | Where-Object { $_.Length -gt 0
 
 PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$_.Name; L=$_.Length } } | Sort-Object L -Descending | Select-Object -First 3
   
-  [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=-a----                5/14/2026   9                                                  
+  [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=-a----                5/14/2026   2                                                  
   -----------------------------------------------------------------------------------------------------------  --------  -------------------------------------------------------  ------------------------------------------------------------------------------------------------------------
-  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  37 AM              5 f9.txt.Name; L=-a----                5/14/2026   9:37 AM              5 f9.txt.Length }
+  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  57 PM              5 f9.txt.Name; L=-a----                5/14/2026   2:57 PM              5 f9.txt.Length }
   
 
 PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure-Object | Select-Object Count

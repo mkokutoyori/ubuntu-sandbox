@@ -9,9 +9,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
-import { PSInterpreter, PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
-import { PSParserError } from '@/powershell/parser/PSParserError';
+import type { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../debug-output');
 
@@ -23,39 +21,12 @@ export interface DebugCommand {
 
 export type DebugCommandInput = string | DebugCommand;
 
-/**
- * Same dispatch flow as PowerShellSubShell: try PSInterpreter first, and only
- * fall back to the legacy string-based PowerShellExecutor when the interpreter
- * either can't parse the input or signals "not recognized". Keeps debug
- * transcripts representative of what end users actually see in the terminal.
- */
-function buildDispatcher(ps: PowerShellExecutor): (cmd: string) => Promise<string | null> {
-  const interp = new PSInterpreter();
-  interp.envVarHook = (name: string) => ps.resolveEnvVar(name);
-  interp.testPathHook = (p: string) => ps.testPathRaw(p);
-  const isFallback = (e: unknown): boolean => {
-    if (e instanceof PSParserError) return true;
-    if (e instanceof PSRuntimeError) return /not recognized/i.test(e.message);
-    if (e instanceof Error) return /not recognized/i.test(e.message);
-    return false;
-  };
-  return async (cmd: string) => {
-    try {
-      return interp.executeInteractive(cmd);
-    } catch (e) {
-      if (isFallback(e)) return ps.execute(cmd);
-      return e instanceof Error ? e.message : String(e);
-    }
-  };
-}
-
 export async function runAndDump(
   label: string,
   commands: readonly DebugCommandInput[],
   ps: PowerShellExecutor,
   extraHeader?: string,
 ): Promise<void> {
-  const dispatch = buildDispatcher(ps);
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const lines: string[] = [];
   lines.push('============================================================');
@@ -78,7 +49,7 @@ export async function runAndDump(
     lines.push(`PS [${index}/${commands.length}]> ${norm.cmd}`);
     let out: string | null = null;
     try {
-      out = await dispatch(norm.cmd);
+      out = await ps.execute(norm.cmd);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       lines.push(`<JS EXCEPTION> ${msg}`);
