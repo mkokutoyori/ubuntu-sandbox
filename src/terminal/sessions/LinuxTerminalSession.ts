@@ -37,10 +37,12 @@ import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import { SshLocalForwarder } from '@/network/protocols/ssh/SshLocalForwarder';
 import { SshRemoteForwarder } from '@/network/protocols/ssh/SshRemoteForwarder';
+import { SshDynamicForwarder } from '@/network/protocols/ssh/SshDynamicForwarder';
 import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
+  type DynamicForward,
   type LocalForward,
   type ParsedSshArgs,
   type ProxyHop,
@@ -899,6 +901,7 @@ export class LinuxTerminalSession extends TerminalSession {
       hashKnownHosts?: boolean;
       localForwards?: readonly LocalForward[];
       remoteForwards?: readonly RemoteForward[];
+      dynamicForwards?: readonly DynamicForward[];
       forwardAgent?: boolean;
       requestTty?: 'yes' | 'no' | 'force';
     },
@@ -1046,6 +1049,9 @@ export class LinuxTerminalSession extends TerminalSession {
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
     const forwarders = this.installLocalForwards(session, host, meta);
+    // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
+    // `-L` (always on the local device).
+    const dynamicForwarders = this.installDynamicForwards(session, host, meta);
     // OpenSSH `-R`: needs the remote device — registered only when the
     // SSH peer resolves to a local Equipment instance (the common case
     // for the tutorial LAN).
@@ -1061,6 +1067,7 @@ export class LinuxTerminalSession extends TerminalSession {
       : null;
     const onSessionEnd = () => {
       for (const f of forwarders) f.dispose();
+      for (const f of dynamicForwarders) f.dispose();
       for (const f of remoteForwarders) f.dispose();
       agentForwarding?.detach();
       session.disconnect();
@@ -1168,6 +1175,7 @@ export class LinuxTerminalSession extends TerminalSession {
       jumpHosts: parsed.jumpHosts,
       localForwards: parsed.localForwards,
       remoteForwards: parsed.remoteForwards,
+      dynamicForwards: parsed.dynamicForwards,
       forwardAgent: parsed.forwardAgent,
       requestTty: parsed.requestTty,
     };
@@ -1750,6 +1758,38 @@ export class LinuxTerminalSession extends TerminalSession {
       forwarder.register();
       this.addLine(
         `Forwarding TCP ${fwd.localPort} → ${fwd.remoteHost}:${fwd.remotePort} via ${sshHost}`,
+      );
+      out.push(forwarder);
+    }
+    return out;
+  }
+
+  /**
+   * Register `-D socksPort` SOCKS proxies on the local device. Each one
+   * accepts SOCKS5 CONNECT requests and bridges through the SSH session.
+   */
+  private installDynamicForwards(
+    session: SshSession,
+    sshHost: string,
+    meta: { dynamicForwards?: readonly DynamicForward[] },
+  ): SshDynamicForwarder[] {
+    const forwards = meta.dynamicForwards ?? [];
+    if (forwards.length === 0) return [];
+    const localDevice = this.getLocalDevice() as unknown as
+      import('@/network/devices/EndHost').EndHost;
+    if (typeof (localDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+      return [];
+    }
+    const out: SshDynamicForwarder[] = [];
+    for (const fwd of forwards) {
+      const forwarder = new SshDynamicForwarder(localDevice, session, {
+        socksPort: fwd.socksPort,
+        bindAddress: fwd.bindAddress,
+        sshHost,
+      });
+      forwarder.register();
+      this.addLine(
+        `SOCKS proxy listening on ${fwd.bindAddress ?? '*'}:${fwd.socksPort} via ${sshHost}`,
       );
       out.push(forwarder);
     }
