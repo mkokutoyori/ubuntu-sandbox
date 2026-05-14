@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-pipelines
-Generated: 2026-05-14T14:57:17.263Z
+Generated: 2026-05-14T19:08:45.011Z
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
 ============================================================
@@ -888,9 +888,9 @@ PS [96/111]> Get-ChildItem C:\PipeTest -Recurse | Where-Object { $_.Length -gt 0
 
 PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$_.Name; L=$_.Length } } | Sort-Object L -Descending | Select-Object -First 3
   
-  [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=-a----                5/14/2026   2                                                  
+  [pscustomobject]@{                                                                                           At line   + [pscustomobject]@{ N=    Directory                     + [pscustomobject]@{ N=-a----                5/14/2026   7                                                  
   -----------------------------------------------------------------------------------------------------------  --------  -------------------------------------------------------  ------------------------------------------------------------------------------------------------------------
-  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  57 PM              5 f9.txt.Name; L=-a----                5/14/2026   2:57 PM              5 f9.txt.Length }
+  The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1  C:\PipeTest.Name; L=    Directory: C:\PipeTest.Length }  08 PM              5 f9.txt.Name; L=-a----                5/14/2026   7:08 PM              5 f9.txt.Length }
   
 
 PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure-Object | Select-Object Count

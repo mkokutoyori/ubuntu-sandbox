@@ -16,6 +16,8 @@ import { PowerShellExecutor, PS_BANNER } from '@/network/devices/windows/PowerSh
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
 import { PSParserError } from '@/powershell/parser/PSParserError';
+import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
+import { WindowsPC } from '@/network/devices/WindowsPC';
 
 /**
  * Tokens that clearly mark a line as needing device-bound execution; the
@@ -38,7 +40,17 @@ export class PowerShellSubShell implements ISubShell {
   private constructor(device: Equipment) {
     this.device = device;
     this.psExecutor = new PowerShellExecutor(device as any);
-    this.interp = new PSInterpreter();
+    // Device-backed providers let the interpreter read/write the same
+    // simulated state as the legacy executor (filesystem, services, …).
+    // We hand the executor's own registry/event-log instances to the
+    // providers so changes made via either path stay in sync.
+    // Non-Windows devices keep the default NULL_PROVIDERS.
+    this.interp = device instanceof WindowsPC
+      ? new PSInterpreter(createWindowsPSProviders(device, {
+          registry: this.psExecutor.registry,
+          eventLog: this.psExecutor.eventLog,
+        }))
+      : new PSInterpreter();
   }
 
   /**

@@ -468,13 +468,9 @@ export class PSLexer {
     // -= assignment
     if (next === '=') { this.advance(); return psToken(PSTokenType.MINUS_ASSIGN, '-=', start); }
 
-    // -- decrement or end-of-params marker
+    // -- is always the decrement operator in PowerShell (no GNU-style end-of-params).
     if (next === '-') {
       this.advance();
-      // If followed by another char (not word), it's DECREMENT
-      if (!this.eof() && (this.ch() === ' ' || this.ch() === '\t' || this.ch() === '\n' || this.ch() === ';')) {
-        return psToken(PSTokenType.PARAMETER, '-', start); // end-of-params
-      }
       return psToken(PSTokenType.DECREMENT, '--', start);
     }
 

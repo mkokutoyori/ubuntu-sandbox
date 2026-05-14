@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-scripts
-Generated: 2026-05-14T14:57:17.264Z
+Generated: 2026-05-14T19:08:45.576Z
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
 ============================================================
@@ -622,13 +622,13 @@ PS [56/77]> Get-ChildItem C:\Scripts | ForEach-Object { "$($_.Name) -> $($_.Leng
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/14/2026   2:57 PM            281 files.ps1
-  -a----                5/14/2026   2:57 PM            279 fn.ps1
-  -a----                5/14/2026   2:57 PM             90 hello.ps1
-  -a----                5/14/2026   2:57 PM            214 pipeline.ps1
-  -a----                5/14/2026   2:57 PM            103 sum.ps1
-  -a----                5/14/2026   2:57 PM            118 try.ps1
-  -a----                5/14/2026   2:57 PM            188 users.ps1
+  -a----                5/14/2026   7:08 PM            281 files.ps1
+  -a----                5/14/2026   7:08 PM            279 fn.ps1
+  -a----                5/14/2026   7:08 PM             90 hello.ps1
+  -a----                5/14/2026   7:08 PM            214 pipeline.ps1
+  -a----                5/14/2026   7:08 PM            103 sum.ps1
+  -a----                5/14/2026   7:08 PM            118 try.ps1
+  -a----                5/14/2026   7:08 PM            188 users.ps1
 
 PS [57/77]> Get-ChildItem C:\BulkOut2 | Measure-Object Length -Sum -Average -Max -Min
   Count    : 0

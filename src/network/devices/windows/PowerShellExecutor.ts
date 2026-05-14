@@ -135,8 +135,10 @@ export class PowerShellExecutor {
   private cwd: string;
   private device: PSDeviceContext;
   private commandHistory: string[];
-  private registry: PSRegistryProvider;
-  private eventLog: PSEventLogProvider;
+  /** Registry hive — exposed so PowerShellSubShell can share it with the interpreter's provider. */
+  readonly registry: PSRegistryProvider;
+  /** Event log — exposed for the same reason as `registry`. */
+  readonly eventLog: PSEventLogProvider;
   /** Session variables: $name → string value */
   private sessionVars: Map<string, string> = new Map();
   /** Session environment overrides (Set-Item Env:X) */

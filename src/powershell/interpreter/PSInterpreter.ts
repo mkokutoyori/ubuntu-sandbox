@@ -2,7 +2,8 @@
  * PSInterpreter — Thin facade over PSRuntime.
  *
  * Preserves the exact public API used by tests and PowerShellSubShell:
- *   - new PSInterpreter()
+ *   - new PSInterpreter()              — standalone, no device (NULL_PROVIDERS)
+ *   - new PSInterpreter(providers)     — device-backed (WindowsPSProviders)
  *   - interp.execute(code): string
  *   - interp.executeInteractive(code): string
  *   - interp.getVariable(name): PSValue
@@ -10,13 +11,14 @@
  *   - interp.testPathHook
  *   - interp.envVarHook
  *
- * Internally delegates to PSRuntime with core cmdlets registered
- * and null providers (no Windows device attached).
+ * Internally delegates to PSRuntime. Providers are optional so the
+ * standalone interpreter (no Windows device) keeps working unchanged.
  */
 
 import { PSRuntime, PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { CmdletRegistry }            from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS }            from '@/powershell/providers/NullProviders';
+import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
 
@@ -39,8 +41,8 @@ function getSharedRegistry(): CmdletRegistry {
 export class PSInterpreter {
   private readonly runtime: PSRuntime;
 
-  constructor() {
-    this.runtime = new PSRuntime(getSharedRegistry(), NULL_PROVIDERS);
+  constructor(providers: PSProviders = NULL_PROVIDERS) {
+    this.runtime = new PSRuntime(getSharedRegistry(), providers);
     // Register a stub script for dot-sourcing tests
     this.runtime.registerScript('script.ps1', '$someVarFromScript = "dotSourced"');
   }

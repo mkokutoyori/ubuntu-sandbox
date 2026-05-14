@@ -212,6 +212,31 @@ export class PSRuntime {
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
 
+  /** AST cache: same source code → reuse the parsed program. */
+  private readonly astCache = new Map<string, PSProgram>();
+  /** Hard upper bound on the AST cache; LRU-ish eviction once we cross it. */
+  private static readonly AST_CACHE_LIMIT = 256;
+
+  /** Parse + cache. Identical source strings re-use the same PSProgram. */
+  private parseCached(code: string): PSProgram {
+    const hit = this.astCache.get(code);
+    if (hit) {
+      // Refresh recency by re-inserting at the end of the iteration order.
+      this.astCache.delete(code);
+      this.astCache.set(code, hit);
+      return hit;
+    }
+    const tokens = this.lexer.tokenize(code);
+    const ast    = this.parser.parse(tokens);
+    if (this.astCache.size >= PSRuntime.AST_CACHE_LIMIT) {
+      // Drop the oldest entry (first key in iteration order).
+      const oldest = this.astCache.keys().next().value;
+      if (oldest !== undefined) this.astCache.delete(oldest);
+    }
+    this.astCache.set(code, ast);
+    return ast;
+  }
+
   /** User-defined functions survive between execute() calls. */
   private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean }>();
 
@@ -268,8 +293,7 @@ export class PSRuntime {
   /** Execute a PowerShell script. Pipeline output is collected and returned as a string. */
   execute(code: string): string {
     this.outputLines = [];
-    const tokens = this.lexer.tokenize(code);
-    const ast    = this.parser.parse(tokens);
+    const ast = this.parseCached(code);
     this.execTopLevel(ast.body.statements, this.global);
     return this.outputLines.join('\n');
   }
@@ -328,8 +352,7 @@ export class PSRuntime {
    */
   executeInteractive(code: string): string {
     this.outputLines = [];
-    const tokens = this.lexer.tokenize(code);
-    const ast    = this.parser.parse(tokens);
+    const ast = this.parseCached(code);
     // Reuse execTopLevel so trap handlers work in interactive mode too
     this.execTopLevelInteractive(ast.body.statements, this.global);
     return this.outputLines.join('\n');
@@ -681,8 +704,7 @@ export class PSRuntime {
 
   private expandDoubleQuotedString(raw: string, env: PSEnvironment): string {
     return expandString(raw, env, (code) => {
-      const tokens = this.lexer.tokenize(code);
-      const ast    = this.parser.parse(tokens);
+      const ast = this.parseCached(code);
       return this.execProgram(ast, env);
     });
   }
@@ -1341,8 +1363,7 @@ export class PSRuntime {
         const scriptContent = this.scriptRegistry.get(tname)
           ?? this.scriptRegistry.get(tname.replace(/^.*[/\\]/, '')); // try basename
         if (scriptContent) {
-          const tokens = this.lexer.tokenize(scriptContent);
-          const ast    = this.parser.parse(tokens);
+          const ast = this.parseCached(scriptContent);
           return this.execStatementList(ast.body, env);
         }
         // No registered script — silently return null (file not found in simulator)

@@ -115,7 +115,12 @@ export class GetChildItemCmdlet implements ICmdlet {
     const filter  = ctx.named['filter']  ? psValueToString(ctx.named['filter'])  : null;
     const recurse = ctx.named['recurse'] === true || ctx.named['recurse'] === 'true';
 
-    if (!ctx.providers.registry) requireRegistryProvider(path);
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      // Returns a formatted listing string; the cmdlet layer wraps strings
+      // transparently so callers see a familiar Get-ChildItem output.
+      return ctx.providers.registry.getChildItem(path);
+    }
 
     const fs = ctx.providers.filesystem;
     if (!fs) {
@@ -212,7 +217,11 @@ export class NewItemCmdlet implements ICmdlet {
     const itemType = psValueToString(ctx.named['itemtype'] ?? ctx.named['type'] ?? 'File').toLowerCase();
     const value    = ctx.named['value'] !== undefined ? psValueToString(ctx.named['value']) : null;
 
-    if (!ctx.providers.registry) requireRegistryProvider(path);
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      const force = ctx.named['force'] === true;
+      return ctx.providers.registry.newItem(path, force);
+    }
 
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -236,7 +245,10 @@ export class RemoveItemCmdlet implements ICmdlet {
     const path    = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const recurse = ctx.named['recurse'] === true;
 
-    if (!ctx.providers.registry) requireRegistryProvider(path);
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.removeItem(path, recurse);
+    }
 
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
