@@ -20,15 +20,26 @@ import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProvid
 import { WindowsPC } from '@/network/devices/WindowsPC';
 
 /**
- * Tokens that clearly mark a line as needing device-bound execution; the
- * interpreter should not even try to parse these — its parser would fail
- * because they contain paths / switches that are not valid PS expressions.
+ * Tokens that bypass the interpreter and go straight to the legacy
+ * PowerShellExecutor.
+ *
+ * Today this list only contains true native-CLI commands (ipconfig, ping,
+ * netsh, …). They aren't PowerShell cmdlets — they're command-line tools
+ * the executor simulates with rich, async output. Migrating them into the
+ * interpreter would require making the synchronous tree-walker async, so
+ * they stay routed through the executor for now.
+ *
+ * PS-cmdlet aliases (ls / dir / cd / pwd / cat / type / cp / mv / rm /
+ * del / ren / mkdir / rmdir / hostname / whoami) used to live here too
+ * but are now first-class ICmdlets registered in the interpreter's core
+ * registry — `Set-Location` aliases `cd`, `Get-ChildItem` aliases
+ * `ls`/`dir`, `Get-Location` aliases `pwd`, `Rename-Item` aliases `ren`,
+ * the new `MkdirCmdlet` covers `mkdir`/`md`, etc. The runtime resolves
+ * them directly without touching the executor.
  */
 const DEVICE_ONLY_COMMANDS = new Set([
   'ipconfig', 'ping', 'tracert', 'netsh', 'arp', 'route',
-  'hostname', 'systeminfo', 'ver', 'whoami', 'net',
-  'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'cp', 'mv',
-  'rm', 'del', 'ren', 'mkdir', 'rmdir',
+  'systeminfo', 'ver', 'net',
 ]);
 
 export class PowerShellSubShell implements ISubShell {

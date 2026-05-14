@@ -290,6 +290,46 @@ export class MoveItemCmdlet implements ICmdlet {
   }
 }
 
+// ─── Rename-Item ─────────────────────────────────────────────────────────
+// Same provider call as Move-Item but with a sibling-name new path.
+
+export class RenameItemCmdlet implements ICmdlet {
+  readonly name = 'rename-item';
+  readonly aliases = ['ren', 'rni'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const src     = psValueToString(ctx.named['path']    ?? ctx.positional[0] ?? '');
+    const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
+    if (!src || !newName) {
+      ctx.emitError('Rename-Item requires -Path and -NewName');
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    // -NewName is a sibling name; build the destination from the parent dir.
+    const parent = src.replace(/[\\/][^\\/]*$/, '') || '.';
+    const dest = parent === '.' ? newName : `${parent}\\${newName}`;
+    fs.move(src, dest);
+    return null;
+  }
+}
+
+// ─── mkdir / md (function-style alias for `New-Item -ItemType Directory`) ─
+
+export class MkdirCmdlet implements ICmdlet {
+  readonly name = 'mkdir';
+  readonly aliases = ['md'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError('mkdir requires a path'); return null; }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    fs.createDir(path);
+    return { Name: path, FullName: path, ItemType: 'directory' } as Record<string, PSValue>;
+  }
+}
+
 // ─── Out-File ─────────────────────────────────────────────────────────────
 
 export class OutFileCmdlet implements ICmdlet {

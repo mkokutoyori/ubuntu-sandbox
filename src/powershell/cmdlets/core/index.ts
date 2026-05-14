@@ -36,13 +36,15 @@ import {
   OutFileCmdlet as OutFilePathCmdlet,
   GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet,
   GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
+  RenameItemCmdlet, MkdirCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
   ConvertToSecureStringCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
-  SetLocationCmdlet, NewPSDriveCmdlet, GetPSDriveCmdlet,
+  SetLocationCmdlet, GetLocationCmdlet,
+  NewPSDriveCmdlet, GetPSDriveCmdlet,
 } from './MiscCmdlets';
 import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
@@ -168,6 +170,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetItemCmdlet());
   registry.register(new GetAclCmdlet());
   registry.register(new SetAclCmdlet());
+  registry.register(new RenameItemCmdlet());
+  registry.register(new MkdirCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
@@ -183,6 +187,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ReceiveJobCmdlet());
   registry.register(new WaitJobCmdlet());
   registry.register(new SetLocationCmdlet());
+  registry.register(new GetLocationCmdlet());
   registry.register(new NewPSDriveCmdlet());
   registry.register(new GetPSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
