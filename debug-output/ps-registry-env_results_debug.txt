@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-registry-env
-Generated: 2026-05-14T09:37:30.225Z
+Generated: 2026-05-14T14:38:50.025Z
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
 ============================================================
@@ -8,19 +8,13 @@ Total commands: 117
 
 --- [1] § registry navigation ---
 PS [1/117]> Get-PSDrive | Where-Object { $_.Provider -like "*Registry*" }
-  
-  Name      : HKCU
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Registry
-  Root      : HKEY_CURRENT_USER
-  
-  Name      : HKLM
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Registry
-  Root      : HKEY_LOCAL_MACHINE
-  
+  C  C:\
+  D  D:\
+  Env  
+  Variable  
+  Function  
+  HKLM  HKLM:\
+  HKCU  HKCU:\
 
 PS [2/117]> Test-Path HKCU:\
   True
@@ -32,36 +26,16 @@ PS [4/117]> Test-Path HKCU:\Software
   True
 
 PS [5/117]> Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
-  
-  Name       Property
-  ---------  --------
-  Microsoft          
-  
+<empty>
 
 PS [6/117]> Get-ChildItem HKLM:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
-  
-  Name         Property
-  -----------  --------
-  Microsoft            
-  Classes              
-  Policies             
-  WOW6432Node          
-  
+<empty>
 
 PS [7/117]> Get-ChildItem HKCU:\Software\Microsoft -ErrorAction SilentlyContinue | Select-Object -First 5
-  
-  Name     Property
-  -------  --------
-  Windows          
-  
+<empty>
 
 PS [8/117]> Get-Item HKCU:\Software -ErrorAction SilentlyContinue
-  
-      Hive: HKCU:\
-  
-  Name                           Property
-  ----                           --------
-  Software                       (1 subkeys, 0 values) [HKCU:\Software]
+<empty>
 
 PS [9/117]> (Get-Item HKCU:\Software).Name
   Software
@@ -193,16 +167,10 @@ PS [32/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI | Format
 
 --- [33] § rename & delete values ---
 PS [33/117]> Rename-ItemProperty -Path HKCU:\Software\DebugSim -Name "Build" -NewName "BuildNumber" -ErrorAction SilentlyContinue
-  Rename-ItemProperty : The term 'Rename-ItemProperty' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Rename-ItemProperty -Path HKCU:\Software\DebugSim -Name "Build" -NewName "BuildNumber" -ErrorAction SilentlyContinue
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Rename-ItemProperty:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [34/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "BuildNumber" -ErrorAction SilentlyContinue
-  Get-ItemProperty : Property 'BuildNumber' does not exist at path 'HKCU:\Software\DebugSim'.
+<empty>
 
 PS [35/117]> Remove-ItemProperty -Path HKCU:\Software\DebugSim -Name "Enabled" -ErrorAction SilentlyContinue
 <empty>
@@ -212,16 +180,11 @@ PS [36/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
   Version             : 1.0.0
   Build               : 42
   InstallPath         : C:\DebugSim
+  Enabled             : 1
   
 
 PS [37/117]> Clear-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -ErrorAction SilentlyContinue
-  Clear-ItemProperty : The term 'Clear-ItemProperty' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Clear-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -ErrorAction SilentlyContinue
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Clear-ItemProperty:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [38/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).InstallPath
   C:\DebugSim
@@ -229,47 +192,16 @@ PS [38/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).InstallPath
 
 --- [39] § environment variables ---
 PS [39/117]> Get-ChildItem Env:
-  
-  Name                           Value
-  ----                           -----
-  Path                           C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
-  SystemRoot                     C:\Windows
-  TEMP                           C:\Users\Administrator\AppData\Local\Temp
-  USERNAME                       Administrator
-  COMPUTERNAME                   WIN-REG-DBG
-  OS                             Windows_NT
-  PROCESSOR_ARCHITECTURE         AMD64
-  USERPROFILE                    C:\Users\Administrator
-  APPDATA                        C:\Users\Administrator\AppData\Roaming
-  LOCALAPPDATA                   C:\Users\Administrator\AppData\Local
-  PROGRAMFILES                   C:\Program Files
-  WINDIR                         C:\Windows
-  SYSTEMDRIVE                    C:
+  ERROR: Cannot find path 'Env:' because it does not exist.
 
 PS [40/117]> Get-ChildItem Env: | Sort-Object Name | Select-Object -First 5
-  
-  Name          Value                                                                                             
-  ------------  --------------------------------------------------------------------------------------------------
-  APPDATA       C:\Users\Administrator\AppData\Roaming                                                            
-  COMPUTERNAME  WIN-REG-DBG                                                                                       
-  LOCALAPPDATA  C:\Users\Administrator\AppData\Local                                                              
-  OS            Windows_NT                                                                                        
-  Path          C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
-  
+  ERROR: Cannot find path 'Env:' because it does not exist.
 
 PS [41/117]> Get-ChildItem Env: | Sort-Object Name | Select-Object -Last 5
-  
-  Name         Value                                    
-  -----------  -----------------------------------------
-  SystemRoot   C:\Windows                               
-  TEMP         C:\Users\Administrator\AppData\Local\Temp
-  USERNAME     Administrator                            
-  USERPROFILE  C:\Users\Administrator                   
-  WINDIR       C:\Windows                               
-  
+  ERROR: Cannot find path 'Env:' because it does not exist.
 
 PS [42/117]> (Get-ChildItem Env:).Count
-  13
+  ERROR: Cannot find path 'Env:' because it does not exist.
 
 PS [43/117]> $env:Path
   C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
@@ -287,11 +219,9 @@ PS [47/117]> $env:TEMP
   C:\Users\Administrator\AppData\Local\Temp
 
 PS [48/117]> $env:Path -split ";" | Select-Object -First 3
-  
-  C                                                                                               
-  ------------------------------------------------------------------------------------------------
-  \Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
-  
+  C:\Windows\System32
+  C:\Windows
+  C:\Windows\System32\Wbem
 
 PS [49/117]> ($env:Path -split ";").Count
   4
@@ -318,25 +248,25 @@ PS [56/117]> Remove-Item Env:DEBUG_LABEL
 <empty>
 
 PS [57/117]> $env:DEBUG_LABEL
-<empty>
+  second
 
 PS [58/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", "process-scope", "Process")
 <empty>
 
 PS [59/117]> [System.Environment]::GetEnvironmentVariable("DBG_PROC", "Process")
-  process-scope
+<empty>
 
 PS [60/117]> [System.Environment]::SetEnvironmentVariable("DBG_USR", "user-scope", "User")
 <empty>
 
 PS [61/117]> [System.Environment]::GetEnvironmentVariable("DBG_USR", "User")
-  user-scope
+<empty>
 
 PS [62/117]> [System.Environment]::SetEnvironmentVariable("DBG_MCH", "machine-scope", "Machine")
 <empty>
 
 PS [63/117]> [System.Environment]::GetEnvironmentVariable("DBG_MCH", "Machine")
-  machine-scope
+<empty>
 
 PS [64/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", $null, "Process")
 <empty>
@@ -353,100 +283,46 @@ PS [67/117]> $x = 42; $x
   42
 
 PS [68/117]> $y = "hello world"; $y
-  hello : The term 'hello' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + hello world
-  + ~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (hello:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  hello world
 
 PS [69/117]> $nums = 1..10; $nums
   1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
 
 PS [70/117]> $nums.Length
-  1.Length : The term '1.Length' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + 1.Length
-  + ~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (1.Length:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  10
 
 PS [71/117]> $nums | Measure-Object -Sum -Average -Min -Max
-  Count    : 1
-  Average  : 
-  Sum      : 
-  Property : 
+  Count=10; Sum=55; Average=5.5; Minimum=1; Maximum=10; Property=
 
 PS [72/117]> $hash = @{ a = 1; b = 2; c = 3 }; $hash
-  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ a = 1; b = 2; c = 3 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  a=1; b=2; c=3
 
 PS [73/117]> $hash.a
-  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ a = 1; b = 2; c = 3 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException.a
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  1
 
 PS [74/117]> $hash.Keys
-  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ a = 1; b = 2; c = 3 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException.Keys
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  a
+  b
+  c
 
 PS [75/117]> $hash.Values
-  @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ : The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + @{ a = 1; b = 2; c = 3 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException.Values
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  1
+  2
+  3
 
 PS [76/117]> $arr = @("alpha","beta","gamma"); $arr
-  alpha : The term 'alpha' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + alpha beta gamma
-  + ~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (alpha:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  alpha
+  beta
+  gamma
 
 PS [77/117]> $arr[0]
   alpha
@@ -458,88 +334,34 @@ PS [79/117]> $arr.Length
   3
 
 PS [80/117]> Get-Variable -Name x -ErrorAction SilentlyContinue
-  Get-Variable : The term 'Get-Variable' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Variable -Name x -ErrorAction SilentlyContinue
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Variable:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Name=x; Value=42
 
 PS [81/117]> Get-Variable | Where-Object { $_.Name -like "x*" }
-<null>
-
-PS [82/117]> (Get-Variable).Count
-  1
-
-PS [83/117]> Set-Variable -Name z -Value 99
-  Set-Variable : The term 'Set-Variable' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Set-Variable -Name z -Value 99
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Set-Variable:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-
-PS [84/117]> $z
 <empty>
 
+PS [82/117]> (Get-Variable).Count
+<empty>
+
+PS [83/117]> Set-Variable -Name z -Value 99
+<empty>
+
+PS [84/117]> $z
+  99
+
 PS [85/117]> Remove-Variable -Name z -ErrorAction SilentlyContinue
-  Remove-Variable : The term 'Remove-Variable' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Remove-Variable -Name z -ErrorAction SilentlyContinue
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Remove-Variable:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [86/117]> $z
 <empty>
 
 PS [87/117]> $obj = [pscustomobject]@{ Name="alice"; Age=30 }; $obj
-  [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [pscustomobject]@{ Name="alice"; Age=30 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Name=alice; Age=30
 
 PS [88/117]> $obj.Name
-  [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [pscustomobject]@{ Name="alice"; Age=30 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  alice
 
 PS [89/117]> $obj.Age
-  [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [pscustomobject]@{ : The term '[pscustomobject]@{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [pscustomobject]@{ Name="alice"; Age=30 }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException.Age
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([pscustomobject]@{:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  30
 
 
 --- [90] § casting ---
@@ -556,13 +378,7 @@ PS [93/117]> [string]42
   42
 
 PS [94/117]> [datetime]"2024-01-15"
-  [datetime]"2024-01-15" : The term '[datetime]"2024-01-15"' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [datetime]"2024-01-15"
-  + ~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([datetime]"2024-01-15":String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [95/117]> "abc".ToUpper()
   ABC
@@ -582,34 +398,16 @@ PS [99/117]> [Math]::Pow(2,10)
   1024
 
 PS [100/117]> [Math]::PI
-  [Math]::PI : The term '[Math]::PI' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [Math]::PI
-  + ~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([Math]::PI:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  3.141592653589793
 
 PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  [Guid]::NewGuid() : The term '[Guid]::NewGuid()' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [Guid]::NewGuid()
-  + ~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([Guid]::NewGuid():String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  9f26c678-7521-4a10-90b4-754263f575e3
 
 PS [103/117]> [DateTime]::Now
-  [DateTime]::Now : The term '[DateTime]::Now' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + [DateTime]::Now
-  + ~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ([DateTime]::Now:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 
 --- [104] § formatting ---
@@ -710,19 +508,13 @@ PS [111/117]> Get-Process | Select-Object -First 3 -Property Name, Id | ConvertT
   
 
 PS [112/117]> "hello", "world" | Out-String
-  
-  Line 
-  -----
-  hello
-  world
-  
+  hello world
 
 PS [113/117]> @{ a=1; b=2 } | ConvertTo-Json
-  
-  @{                                                                                           At line 
-  -------------------------------------------------------------------------------------------  --------
-  The term '@{' is not recognized as the name of a cmdlet, function, script file, or operable  1 char:1
-  
+  {
+    "a": 1,
+    "b": 2
+  }
 
 
 --- [114] § cleanup ---
@@ -730,10 +522,10 @@ PS [114/117]> Remove-Item HKCU:\Software\DebugSim -Recurse -ErrorAction Silently
 <empty>
 
 PS [115/117]> Test-Path HKCU:\Software\DebugSim
-  False
+  True
 
 PS [116/117]> Remove-Item Env:DEBUG_SIM -ErrorAction SilentlyContinue
 <empty>
 
 PS [117/117]> $env:DEBUG_SIM
-<empty>
+  1

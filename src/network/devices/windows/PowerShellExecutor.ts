@@ -1330,6 +1330,16 @@ export class PowerShellExecutor {
   // ─── Pipeline handling ──────────────────────────────────────────
 
   private async executePipeline(cmdline: string): Promise<string | null> {
+    // Unwrap a single outer pair of parentheses: `(expr | filter)` is the
+    // sub-expression form — we evaluate the inner pipeline normally and
+    // return its output to the host.
+    const t = cmdline.trim();
+    if (t.startsWith('(') && t.endsWith(')')) {
+      const block = this.extractBalancedBlock(t, 0, '(');
+      if (block && block.end === t.length - 1) {
+        return this.executePipeline(block.content.trim());
+      }
+    }
     const parts = this.splitPipeline(cmdline);
     if (parts.length < 2) return this.executeSingle(cmdline);
 
@@ -1380,6 +1390,29 @@ export class PowerShellExecutor {
           const results: string[] = [];
           for (const obj of objs) {
             let cmd = scriptBody;
+            const itemValue = () => {
+              const nameKey = Object.keys(obj).find(k => k.toLowerCase() === 'name');
+              if (nameKey) return String(obj[nameKey] ?? '');
+              const firstKey = Object.keys(obj)[0];
+              return firstKey ? String(obj[firstKey] ?? '') : '';
+            };
+            // Special case: scriptBody is exactly `$_.METHOD(args)` — evaluate
+            // as a method call on the current item value.
+            const methodOnlyMatch = scriptBody.match(/^\$_\.(\w+)\(([^)]*)\)$/);
+            if (methodOnlyMatch) {
+              const val = itemValue().replace(/"/g, '`"');
+              const evaled = this.tryEvalExpr(`"${val}".${methodOnlyMatch[1]}(${methodOnlyMatch[2]})`);
+              if (evaled !== null) {
+                results.push(evaled);
+                continue;
+              }
+            }
+            // Replace $_.METHOD(args) → evaluate as method call on the current item's value
+            cmd = cmd.replace(/\$_\.(\w+)\(([^)]*)\)/g, (full, method, methodArgs) => {
+              const val = itemValue().replace(/"/g, '`"');
+              const evaled = this.tryEvalExpr(`"${val}".${method}(${methodArgs})`);
+              return evaled !== null ? evaled : full;
+            });
             // Replace $_.PropName ONLY when the property actually exists on the object
             // (otherwise $_.txt would incorrectly eat ".txt" as a property name)
             cmd = cmd.replace(/\$_\.(\w+)/g, (full, prop) => {
@@ -1387,13 +1420,11 @@ export class PowerShellExecutor {
               return key !== undefined ? String(obj[key] ?? '') : full;
             });
             // Replace bare $_ (or $_ immediately before non-word chars like . " etc.)
-            cmd = cmd.replace(/\$_(?=\W|$)/g, () => {
-              const nameKey = Object.keys(obj).find(k => k.toLowerCase() === 'name');
-              if (nameKey) return String(obj[nameKey] ?? '');
-              const firstKey = Object.keys(obj)[0];
-              return firstKey ? String(obj[firstKey] ?? '') : '';
-            });
-            const result = await this.executeSingle(cmd.trim());
+            cmd = cmd.replace(/\$_(?=\W|$)/g, () => itemValue());
+            const trimmedCmd = cmd.trim();
+            // Try arithmetic / expression evaluator first; fall back to command dispatch
+            const exprVal = this.tryEvalExpr(trimmedCmd);
+            const result = exprVal !== null ? exprVal : await this.executeSingle(trimmedCmd);
             if (result !== null && result !== '') results.push(result);
           }
           currentOutput = results.join('\n');
@@ -1406,7 +1437,9 @@ export class PowerShellExecutor {
           const cmd = scriptBody
             .replace(/\$\(\$_\)/g, item)
             .replace(/\$_(?=\W|$)/g, item);
-          const result = await this.executeSingle(cmd.trim());
+          const trimmedCmd = cmd.trim();
+          const exprVal = this.tryEvalExpr(trimmedCmd);
+          const result = exprVal !== null ? exprVal : await this.executeSingle(trimmedCmd);
           if (result !== null && result !== '') results.push(result);
         }
         currentOutput = results.join('\n');

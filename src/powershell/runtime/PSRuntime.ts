@@ -564,16 +564,14 @@ export class PSRuntime {
   // ── ScriptBlock execution ──────────────────────────────────────────────────
 
   execScriptBlock(block: PSScriptBlock, env: PSEnvironment): PSValue {
-    try {
-      if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
-      if (block.processBlock) this.execStatementList(block.processBlock, env);
-      if (block.endBlock)     this.execStatementList(block.endBlock,     env);
-      if (block.body)         return this.execStatementList(block.body,  env);
-      return null;
-    } catch (e) {
-      if (e instanceof ReturnSignal) return e.value;
-      throw e;
-    }
+    // Note: ReturnSignal must propagate up so that `return` inside an if/while
+    // /try inside a function/scriptblock exits the *enclosing* function, not
+    // just the inner block. Only invokeScriptBlock (the call boundary) catches.
+    if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
+    if (block.processBlock) this.execStatementList(block.processBlock, env);
+    if (block.endBlock)     this.execStatementList(block.endBlock,     env);
+    if (block.body)         return this.execStatementList(block.body,  env);
+    return null;
   }
 
   invokeScriptBlock(
@@ -623,7 +621,12 @@ export class PSRuntime {
     // $args contains positional args not consumed by declared parameters
     childEnv.set('args', remainingArgs);
 
-    return this.execScriptBlock(block, childEnv);
+    try {
+      return this.execScriptBlock(block, childEnv);
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2096,9 +2099,9 @@ export class PSRuntime {
       case '-notcontains': return !(Array.isArray(left) ? left : []).some(e => this.psEq(e, right, false));
       case '-in':   return (Array.isArray(right) ? right : []).some(e => this.psEq(e, left, false));
       case '-notin':return !(Array.isArray(right) ? right : []).some(e => this.psEq(e, left, false));
-      case '-is':    return this.psIs(left, `[${right}]`);
-      case '-isnot': return !this.psIs(left, `[${right}]`);
-      case '-as':    return this.psCast(left, String(right));
+      case '-is':    return this.psIs(left, String(right));
+      case '-isnot': return !this.psIs(left, String(right));
+      case '-as':    return this.psCast(left, String(right).replace(/^\[|\]$/g, ''));
       case '-replace': {
         const args = Array.isArray(right) ? right : [right];
         const repl2 = args[1] ?? '';

@@ -1232,6 +1232,21 @@ export class PSParser {
         // then parsePostfixExpression handles the :: operator.
         return this.parsePostfixExpression();
       }
+      // If `[type]` is a bare value (right operand of `-is`/`-as`, end of
+      // expression, before a pipe, etc.) there is no operand to cast — emit
+      // it as a TypeLiteral so the parent operator gets the right shape.
+      const next = this.peekAt(1);
+      if (!next || next.type === PSTokenType.EOF
+          || next.type === PSTokenType.NEWLINE
+          || next.type === PSTokenType.SEMICOLON
+          || next.type === PSTokenType.PIPE
+          || next.type === PSTokenType.RPAREN
+          || next.type === PSTokenType.RBRACE
+          || next.type === PSTokenType.RBRACKET
+          || next.type === PSTokenType.COMMA
+          || next.type === PSTokenType.PARAMETER) {
+        return this.parsePostfixExpression();
+      }
       const typeName = this.advance().value;
       const operand = this.parseUnaryExpression();
       return makeCast(typeName, operand, pos);

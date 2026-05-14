@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-filesystem
-Generated: 2026-05-14T09:37:28.850Z
+Generated: 2026-05-14T14:38:48.193Z
 host=WIN-FS-DBG (windows-pc)
 Total commands: 130
 ============================================================
@@ -29,117 +29,37 @@ PS [3/130]> gl
   
 
 PS [4/130]> Get-PSDrive
-  
-  Name           Used (GB)     Free (GB) Provider      Root
-  ----           ---------     --------- --------      ----
-  Alias                                  Alias
-  C                  42.30        157.70 FileSystem    C:\
-  Cert                                   Certificate   \
-  D                                      FileSystem    D:\
-  Env                                    Environment
-  Function                               Function
-  HKCU                                   Registry      HKEY_CURRENT_USER
-  HKLM                                   Registry      HKEY_LOCAL_MACHINE
-  Variable                               Variable
-  WSMan                                  WSMan
-  
+  C  C:\
+  D  D:\
+  Env  
+  Variable  
+  Function  
+  HKLM  HKLM:\
+  HKCU  HKCU:\
 
 PS [5/130]> Get-PSDrive | Where-Object { $_.Provider -like "*FileSystem*" }
-  
-  Name      : C
-  Used (GB) : 42.3
-  Free (GB) : 157.7
-  Provider  : FileSystem
-  Root      : C:\
-  
-  Name      : D
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : FileSystem
-  Root      : D:\
-  
+  C  C:\
+  D  D:\
+  Env  
+  Variable  
+  Function  
+  HKLM  HKLM:\
+  HKCU  HKCU:\
 
 PS [6/130]> Get-PSDrive | Sort-Object Name
-  
-  Name      : Alias
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Alias
-  Root      : 
-  
-  Name      : C
-  Used (GB) : 42.3
-  Free (GB) : 157.7
-  Provider  : FileSystem
-  Root      : C:\
-  
-  Name      : Cert
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Certificate
-  Root      : \
-  
-  Name      : D
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : FileSystem
-  Root      : D:\
-  
-  Name      : Env
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Environment
-  Root      : 
-  
-  Name      : Function
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Function
-  Root      : 
-  
-  Name      : HKCU
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Registry
-  Root      : HKEY_CURRENT_USER
-  
-  Name      : HKLM
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Registry
-  Root      : HKEY_LOCAL_MACHINE
-  
-  Name      : Variable
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : Variable
-  Root      : 
-  
-  Name      : WSMan
-  Used (GB) : 
-  Free (GB) : 
-  Provider  : WSMan
-  Root      : 
-  
+  C  C:\
+  D  D:\
+  Env  
+  Variable  
+  Function  
+  HKLM  HKLM:\
+  HKCU  HKCU:\
 
 PS [7/130]> Get-PSDrive C
-  
-  Name           Used (GB)     Free (GB) Provider      Root
-  ----           ---------     --------- --------      ----
-  Alias                                  Alias
-  C                  42.30        157.70 FileSystem    C:\
-  Cert                                   Certificate   \
-  D                                      FileSystem    D:\
-  Env                                    Environment
-  Function                               Function
-  HKCU                                   Registry      HKEY_CURRENT_USER
-  HKLM                                   Registry      HKEY_LOCAL_MACHINE
-  Variable                               Variable
-  WSMan                                  WSMan
-  
+  C  C:\
 
 PS [8/130]> (Get-Location).Path
-  C:\Users\User
+<empty>
 
 PS [9/130]> Set-Location C:\
 <empty>
@@ -148,7 +68,7 @@ PS [10/130]> Get-Location
   
   Path
   ----
-  C:\
+  C:\Users\User
   
 
 PS [11/130]> Push-Location C:\
@@ -169,16 +89,16 @@ PS [15/130]> cd \
 
 --- [16] § New-Item & mkdir ---
 PS [16/130]> New-Item -Path C:\Debug -ItemType Directory
-<empty>
+  Name=C:\Debug; FullName=C:\Debug; ItemType=directory
 
 PS [17/130]> New-Item -Path C:\Debug\sub1 -ItemType Directory
-<empty>
+  Name=C:\Debug\sub1; FullName=C:\Debug\sub1; ItemType=directory
 
 PS [18/130]> New-Item -Path C:\Debug\sub2 -ItemType Directory
-<empty>
+  Name=C:\Debug\sub2; FullName=C:\Debug\sub2; ItemType=directory
 
 PS [19/130]> New-Item -Path C:\Debug\sub1\nested -ItemType Directory -Force
-<empty>
+  Name=C:\Debug\sub1\nested; FullName=C:\Debug\sub1\nested; ItemType=directory
 
 PS [20/130]> mkdir C:\Debug\mkdir-test
 <empty>
@@ -187,28 +107,28 @@ PS [21/130]> md C:\Debug\md-test
 <empty>
 
 PS [22/130]> ni -Path C:\Debug\ni-test -ItemType Directory
-<empty>
+  Name=C:\Debug\ni-test; FullName=C:\Debug\ni-test; ItemType=directory
 
 PS [23/130]> New-Item -Path C:\Debug\hello.txt -ItemType File -Value "hello world"
-<empty>
+  Name=C:\Debug\hello.txt; FullName=C:\Debug\hello.txt; ItemType=file
 
 PS [24/130]> New-Item -Path C:\Debug\empty.txt -ItemType File
-<empty>
+  Name=C:\Debug\empty.txt; FullName=C:\Debug\empty.txt; ItemType=file
 
 PS [25/130]> New-Item -Path C:\Debug\dup -ItemType Directory
-<empty>
+  Name=C:\Debug\dup; FullName=C:\Debug\dup; ItemType=directory
 
 PS [26/130]> New-Item -Path C:\Debug\dup -ItemType Directory
-  New-Item : An item with the specified name C:\Debug\dup already exists.
+  Name=C:\Debug\dup; FullName=C:\Debug\dup; ItemType=directory
 
 PS [27/130]> New-Item -Path C:\Debug\dup -ItemType Directory -Force
-<empty>
+  Name=C:\Debug\dup; FullName=C:\Debug\dup; ItemType=directory
 
 PS [28/130]> ni C:\Debug\sub1\inner.txt -ItemType File -Value "inner contents"
-<empty>
+  Name=C:\Debug\sub1\inner.txt; FullName=C:\Debug\sub1\inner.txt; ItemType=file
 
 PS [29/130]> New-Item -Path C:\Debug\with space\file.txt -ItemType File -Force
-<empty>
+  Name=C:\Debug\with; FullName=C:\Debug\with; ItemType=file
 
 
 --- [30] § Test-Path / Resolve-Path / Join-Path ---
@@ -222,31 +142,19 @@ PS [32/130]> Test-Path C:\Debug\does-not-exist
   False
 
 PS [33/130]> Test-Path -Path C:\Debug -PathType Container
-  False
+  True
 
 PS [34/130]> Test-Path -Path C:\Debug\hello.txt -PathType Leaf
-  False
+  True
 
 PS [35/130]> Resolve-Path C:\Debug\hello.txt
-  
-  Path
-  ----
-  C:\Debug\hello.txt
-  
+  Path=c:\debug\hello.txt; ProviderPath=c:\debug\hello.txt
 
 PS [36/130]> Resolve-Path C:\Debug\.\hello.txt
-  
-  Path
-  ----
-  C:\Debug\hello.txt
-  
+  Path=c:\debug\.\hello.txt; ProviderPath=c:\debug\.\hello.txt
 
 PS [37/130]> Resolve-Path C:\Debug\sub1\..\hello.txt
-  
-  Path
-  ----
-  C:\Debug\hello.txt
-  
+  Path=c:\debug\sub1\..\hello.txt; ProviderPath=c:\debug\sub1\..\hello.txt
 
 PS [38/130]> Join-Path C:\Debug sub1
   C:\Debug\sub1
@@ -267,7 +175,7 @@ PS [43/130]> Split-Path C:\Debug\hello.txt -Parent
   C:\Debug
 
 PS [44/130]> Split-Path C:\Debug\hello.txt -Extension
-  C:\Debug
+  .txt
 
 
 --- [45] § Set/Add/Get/Clear-Content ---
@@ -281,105 +189,58 @@ PS [47/130]> Add-Content -Path C:\Debug\log.txt -Value "third line"
 <empty>
 
 PS [48/130]> Get-Content C:\Debug\log.txt
-  first linesecond line
+  first line
+  second line
   third line
-  
 
 PS [49/130]> Get-Content C:\Debug\log.txt -TotalCount 2
-  first linesecond line
+  first line
+  second line
   third line
 
 PS [50/130]> Get-Content C:\Debug\log.txt -Tail 1
-<empty>
+  first line
+  second line
+  third line
 
 PS [51/130]> Get-Content C:\Debug\log.txt | Measure-Object -Line
-  Count    : 2
-  Property : 
+  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
 
 PS [52/130]> Get-Content C:\Debug\log.txt | Measure-Object -Word
-  Count    : 2
-  Property : 
+  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
 
 PS [53/130]> Get-Content C:\Debug\log.txt | Measure-Object -Character
-  Count    : 2
-  Property : 
+  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
 
 PS [54/130]> "a","b","c","d","e" | Set-Content C:\Debug\letters.txt
 <empty>
 
 PS [55/130]> Get-Content C:\Debug\letters.txt
-  a
-  b
-  c
-  d
-  e
+  a b c d e
 
 PS [56/130]> Get-Content C:\Debug\letters.txt | Sort-Object -Descending
-  
-  Line
-  ----
-  e   
-  d   
-  c   
-  b   
-  a   
-  
+  a b c d e
 
 PS [57/130]> Clear-Content C:\Debug\letters.txt
-<empty>
+  Clear-Content : Cannot find path 'C:\Debug\letters.txt' because it does not exist.
 
 PS [58/130]> Get-Content C:\Debug\letters.txt
-<empty>
+  a b c d e
 
 PS [59/130]> 1..10 | Set-Content C:\Debug\nums.txt
 <empty>
 
 PS [60/130]> Get-Content C:\Debug\nums.txt
-  1
-  2
-  3
-  4
-  5
-  6
-  7
-  8
-  9
-  10
+  1 2 3 4 5 6 7 8 9 10
 
 PS [61/130]> Get-Content C:\Debug\nums.txt | Where-Object { [int]$_ -gt 5 }
-  
-  Line
-  ----
-  1   
-  2   
-  3   
-  4   
-  5   
-  6   
-  7   
-  8   
-  9   
-  10  
-  
+<empty>
 
 PS [62/130]> Get-Content C:\Debug\nums.txt | Where-Object { [int]$_ % 2 -eq 0 }
-  
-  Line
-  ----
-  1   
-  2   
-  3   
-  4   
-  5   
-  6   
-  7   
-  8   
-  9   
-  10  
-  
+<empty>
 
 PS [63/130]> (Get-Content C:\Debug\nums.txt | Measure-Object -Sum).Sum
-<empty>
+  0
 
 
 --- [64] § Copy/Move/Rename/Remove ---
@@ -393,7 +254,7 @@ PS [66/130]> copy C:\Debug\hello.txt C:\Debug\hello-copy2.txt
 <empty>
 
 PS [67/130]> Copy-Item C:\Debug\sub1 C:\Debug\sub1-copy -Recurse
-<empty>
+  File not found: C:\Debug\sub1
 
 PS [68/130]> Move-Item C:\Debug\hello-cp.txt C:\Debug\moved.txt
 <empty>
@@ -402,10 +263,10 @@ PS [69/130]> mv C:\Debug\moved.txt C:\Debug\moved-again.txt
 <empty>
 
 PS [70/130]> Rename-Item C:\Debug\moved-again.txt renamed.txt
-<empty>
+  Rename-Item : The system cannot find the file specified.
 
 PS [71/130]> ren C:\Debug\renamed.txt renamed2.txt
-<empty>
+  Rename-Item : The system cannot find the file specified.
 
 PS [72/130]> Remove-Item C:\Debug\renamed2.txt
 <empty>
@@ -422,299 +283,121 @@ PS [75/130]> Remove-Item C:\Debug\sub1-copy -Recurse -Force
 
 --- [76] § Get-ChildItem / dir / ls / gci ---
 PS [76/130]> Get-ChildItem C:\
-  
-      Directory: C:\
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                Debug
-  d-----                5/14/2026   9:37 AM                Program Files
-  d-----                5/14/2026   9:37 AM                Program Files (x86)
-  d-----                5/14/2026   9:37 AM                ProgramData
-  d-----                5/14/2026   9:37 AM                Users
-  d---s-                5/14/2026   9:37 AM                Windows
-  -a----                5/14/2026   9:37 AM              9 numbers.txt
-  -a----                5/14/2026   9:37 AM              9 nums.txt
+  Name=debug; FullName=C:\\debug; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
 
 PS [77/130]> dir C:\
-  
-      Directory: C:\
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                Debug
-  d-----                5/14/2026   9:37 AM                Program Files
-  d-----                5/14/2026   9:37 AM                Program Files (x86)
-  d-----                5/14/2026   9:37 AM                ProgramData
-  d-----                5/14/2026   9:37 AM                Users
-  d---s-                5/14/2026   9:37 AM                Windows
-  -a----                5/14/2026   9:37 AM              9 numbers.txt
-  -a----                5/14/2026   9:37 AM              9 nums.txt
+  Name=debug; FullName=C:\\debug; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
 
 PS [78/130]> ls C:\Debug
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                dup
-  d-----                5/14/2026   9:37 AM                md-test
-  d-----                5/14/2026   9:37 AM                mkdir-test
-  d-----                5/14/2026   9:37 AM                ni-test
-  d-----                5/14/2026   9:37 AM                sub1
-  d-----                5/14/2026   9:37 AM                sub2
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
-  -a----                5/14/2026   9:37 AM              0 with
+  Name=hello.txt; FullName=C:\Debug\hello.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=empty.txt; FullName=C:\Debug\empty.txt; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub1; FullName=C:\Debug\sub1; Length=14; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=with; FullName=C:\Debug\with; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=log.txt; FullName=C:\Debug\log.txt; Length=33; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=letters.txt; FullName=C:\Debug\letters.txt; Length=9; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=nums.txt; FullName=C:\Debug\nums.txt; Length=20; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=moved-again.txt; FullName=C:\Debug\moved-again.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub2; FullName=C:\Debug\sub2; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=ni-test; FullName=C:\Debug\ni-test; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=dup; FullName=C:\Debug\dup; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
 
 PS [79/130]> gci C:\Debug
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                dup
-  d-----                5/14/2026   9:37 AM                md-test
-  d-----                5/14/2026   9:37 AM                mkdir-test
-  d-----                5/14/2026   9:37 AM                ni-test
-  d-----                5/14/2026   9:37 AM                sub1
-  d-----                5/14/2026   9:37 AM                sub2
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
-  -a----                5/14/2026   9:37 AM              0 with
+  Name=hello.txt; FullName=C:\Debug\hello.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=empty.txt; FullName=C:\Debug\empty.txt; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub1; FullName=C:\Debug\sub1; Length=14; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=with; FullName=C:\Debug\with; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=log.txt; FullName=C:\Debug\log.txt; Length=33; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=letters.txt; FullName=C:\Debug\letters.txt; Length=9; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=nums.txt; FullName=C:\Debug\nums.txt; Length=20; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=moved-again.txt; FullName=C:\Debug\moved-again.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub2; FullName=C:\Debug\sub2; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=ni-test; FullName=C:\Debug\ni-test; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=dup; FullName=C:\Debug\dup; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
 
 PS [80/130]> Get-ChildItem C:\Debug -Recurse
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                dup
-  d-----                5/14/2026   9:37 AM                md-test
-  d-----                5/14/2026   9:37 AM                mkdir-test
-  d-----                5/14/2026   9:37 AM                ni-test
-  d-----                5/14/2026   9:37 AM                sub1
-  d-----                5/14/2026   9:37 AM                sub2
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
-  -a----                5/14/2026   9:37 AM              0 with
-  
-      Directory: C:\Debug\sub1
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                nested
-  -a----                5/14/2026   9:37 AM             14 inner.txt
+  Maximum call stack size exceeded
 
 PS [81/130]> Get-ChildItem C:\Debug -Recurse -File
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
-  -a----                5/14/2026   9:37 AM              0 with
-  
-      Directory: C:\Debug\sub1
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   9:37 AM             14 inner.txt
+  Maximum call stack size exceeded
 
 PS [82/130]> Get-ChildItem C:\Debug -Recurse -Directory
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                dup
-  d-----                5/14/2026   9:37 AM                md-test
-  d-----                5/14/2026   9:37 AM                mkdir-test
-  d-----                5/14/2026   9:37 AM                ni-test
-  d-----                5/14/2026   9:37 AM                sub1
-  d-----                5/14/2026   9:37 AM                sub2
-  
-      Directory: C:\Debug\sub1
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                nested
+  Maximum call stack size exceeded
 
 PS [83/130]> Get-ChildItem C:\Debug -Filter *.txt
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
+<empty>
 
 PS [84/130]> Get-ChildItem C:\Debug -Include *.txt -Recurse
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
-  
-      Directory: C:\Debug\sub1
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   9:37 AM             14 inner.txt
+<empty>
 
 PS [85/130]> Get-ChildItem C:\Debug -Force
-  
-      Directory: C:\Debug
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  d-----                5/14/2026   9:37 AM                dup
-  d-----                5/14/2026   9:37 AM                md-test
-  d-----                5/14/2026   9:37 AM                mkdir-test
-  d-----                5/14/2026   9:37 AM                ni-test
-  d-----                5/14/2026   9:37 AM                sub1
-  d-----                5/14/2026   9:37 AM                sub2
-  -a----                5/14/2026   9:37 AM              0 empty.txt
-  -a----                5/14/2026   9:37 AM             11 hello.txt
-  -a----                5/14/2026   9:37 AM              0 letters.txt
-  -a----                5/14/2026   9:37 AM             33 log.txt
-  -a----                5/14/2026   9:37 AM             20 nums.txt
-  -a----                5/14/2026   9:37 AM              0 with
+  Name=hello.txt; FullName=C:\Debug\hello.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=empty.txt; FullName=C:\Debug\empty.txt; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub1; FullName=C:\Debug\sub1; Length=14; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=with; FullName=C:\Debug\with; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=log.txt; FullName=C:\Debug\log.txt; Length=33; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=letters.txt; FullName=C:\Debug\letters.txt; Length=9; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=nums.txt; FullName=C:\Debug\nums.txt; Length=20; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=moved-again.txt; FullName=C:\Debug\moved-again.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub2; FullName=C:\Debug\sub2; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=ni-test; FullName=C:\Debug\ni-test; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=dup; FullName=C:\Debug\dup; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
 
 PS [86/130]> Get-ChildItem C:\Debug | Sort-Object Length
-  
-  Mode    LastWriteTime        Length  Name         
-  ------  -------------------  ------  -------------
-  d-----  5/14/2026   9:37 AM          dup          
-  d-----  5/14/2026   9:37 AM          md-test      
-  d-----  5/14/2026   9:37 AM          mkdir-test   
-  d-----  5/14/2026   9:37 AM          ni-test      
-  d-----  5/14/2026   9:37 AM          sub1         
-  d-----  5/14/2026   9:37 AM          sub2         
-  -a----  5/14/2026   9:37 AM          0 empty.txt  
-  -a----  5/14/2026   9:37 AM          11 hello.txt 
-  -a----  5/14/2026   9:37 AM          0 letters.txt
-  -a----  5/14/2026   9:37 AM          33 log.txt   
-  -a----  5/14/2026   9:37 AM          20 nums.txt  
-  -a----  5/14/2026   9:37 AM          0 with       
-  
+  Name=empty.txt; FullName=C:\Debug\empty.txt; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=with; FullName=C:\Debug\with; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub2; FullName=C:\Debug\sub2; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=ni-test; FullName=C:\Debug\ni-test; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=dup; FullName=C:\Debug\dup; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=letters.txt; FullName=C:\Debug\letters.txt; Length=9; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=hello.txt; FullName=C:\Debug\hello.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=moved-again.txt; FullName=C:\Debug\moved-again.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub1; FullName=C:\Debug\sub1; Length=14; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=nums.txt; FullName=C:\Debug\nums.txt; Length=20; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=log.txt; FullName=C:\Debug\log.txt; Length=33; Mode=-a---; PSIsContainer=False; LastWriteTime=
 
 PS [87/130]> Get-ChildItem C:\Debug | Sort-Object LastWriteTime -Descending
-  
-  Mode    LastWriteTime        Length  Name         
-  ------  -------------------  ------  -------------
-  -a----  5/14/2026   9:37 AM          0 with       
-  -a----  5/14/2026   9:37 AM          20 nums.txt  
-  -a----  5/14/2026   9:37 AM          33 log.txt   
-  -a----  5/14/2026   9:37 AM          0 letters.txt
-  -a----  5/14/2026   9:37 AM          11 hello.txt 
-  -a----  5/14/2026   9:37 AM          0 empty.txt  
-  d-----  5/14/2026   9:37 AM          sub2         
-  d-----  5/14/2026   9:37 AM          sub1         
-  d-----  5/14/2026   9:37 AM          ni-test      
-  d-----  5/14/2026   9:37 AM          mkdir-test   
-  d-----  5/14/2026   9:37 AM          md-test      
-  d-----  5/14/2026   9:37 AM          dup          
-  
+  Name=sub2; FullName=C:\Debug\sub2; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=ni-test; FullName=C:\Debug\ni-test; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=dup; FullName=C:\Debug\dup; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=hello.txt; FullName=C:\Debug\hello.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=empty.txt; FullName=C:\Debug\empty.txt; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=sub1; FullName=C:\Debug\sub1; Length=14; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=with; FullName=C:\Debug\with; Length=0; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=log.txt; FullName=C:\Debug\log.txt; Length=33; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=letters.txt; FullName=C:\Debug\letters.txt; Length=9; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=nums.txt; FullName=C:\Debug\nums.txt; Length=20; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=moved-again.txt; FullName=C:\Debug\moved-again.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
 
 PS [88/130]> Get-ChildItem C:\Debug | Where-Object { $_.PSIsContainer }
-  
-  Mode    LastWriteTime        Length  Name         
-  ------  -------------------  ------  -------------
-  d-----  5/14/2026   9:37 AM          dup          
-  d-----  5/14/2026   9:37 AM          md-test      
-  d-----  5/14/2026   9:37 AM          mkdir-test   
-  d-----  5/14/2026   9:37 AM          ni-test      
-  d-----  5/14/2026   9:37 AM          sub1         
-  d-----  5/14/2026   9:37 AM          sub2         
-  -a----  5/14/2026   9:37 AM          0 empty.txt  
-  -a----  5/14/2026   9:37 AM          11 hello.txt 
-  -a----  5/14/2026   9:37 AM          0 letters.txt
-  -a----  5/14/2026   9:37 AM          33 log.txt   
-  -a----  5/14/2026   9:37 AM          20 nums.txt  
-  -a----  5/14/2026   9:37 AM          0 with       
-  
+  Name=sub2; FullName=C:\Debug\sub2; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=ni-test; FullName=C:\Debug\ni-test; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
+  Name=dup; FullName=C:\Debug\dup; Length=0; Mode=d----; PSIsContainer=True; LastWriteTime=
 
 PS [89/130]> Get-ChildItem C:\Debug | Where-Object { -not $_.PSIsContainer }
   
-  Mode    LastWriteTime        Length  Name         
-  ------  -------------------  ------  -------------
-  d-----  5/14/2026   9:37 AM          dup          
-  d-----  5/14/2026   9:37 AM          md-test      
-  d-----  5/14/2026   9:37 AM          mkdir-test   
-  d-----  5/14/2026   9:37 AM          ni-test      
-  d-----  5/14/2026   9:37 AM          sub1         
-  d-----  5/14/2026   9:37 AM          sub2         
-  -a----  5/14/2026   9:37 AM          0 empty.txt  
-  -a----  5/14/2026   9:37 AM          11 hello.txt 
-  -a----  5/14/2026   9:37 AM          0 letters.txt
-  -a----  5/14/2026   9:37 AM          33 log.txt   
-  -a----  5/14/2026   9:37 AM          20 nums.txt  
-  -a----  5/14/2026   9:37 AM          0 with       
+  Mode    LastWriteTime        Length  Name      
+  ------  -------------------  ------  ----------
+  d-----  5/14/2026   2:38 PM          md-test   
+  d-----  5/14/2026   2:38 PM          mkdir-test
   
 
 PS [90/130]> Get-ChildItem C:\Debug | Select-Object Name, Length, Mode
   
-  Name           Length  Mode  
-  -------------  ------  ------
-  dup                    d-----
-  md-test                d-----
-  mkdir-test             d-----
-  ni-test                d-----
-  sub1                   d-----
-  sub2                   d-----
-  0 empty.txt            -a----
-  11 hello.txt           -a----
-  0 letters.txt          -a----
-  33 log.txt             -a----
-  20 nums.txt            -a----
-  0 with                 -a----
+  Name        Length  Mode  
+  ----------  ------  ------
+  md-test             d-----
+  mkdir-test          d-----
   
 
 PS [91/130]> Get-ChildItem C:\Debug | Format-Table Name, Length -AutoSize
   
-  Name           Length
-  -------------  ------
-  dup                  
-  md-test              
-  mkdir-test           
-  ni-test              
-  sub1                 
-  sub2                 
-  0 empty.txt          
-  11 hello.txt         
-  0 letters.txt        
-  33 log.txt           
-  20 nums.txt          
-  0 with               
+  Name        Length
+  ----------  ------
+  md-test           
+  mkdir-test        
   
 
 PS [92/130]> Get-ChildItem C:\Debug | Format-List Name, FullName, Length
-  
-  Name     : dup
-  FullName : 
-  Length   : 
   
   Name     : md-test
   FullName : 
@@ -724,213 +407,87 @@ PS [92/130]> Get-ChildItem C:\Debug | Format-List Name, FullName, Length
   FullName : 
   Length   : 
   
-  Name     : ni-test
-  FullName : 
-  Length   : 
-  
-  Name     : sub1
-  FullName : 
-  Length   : 
-  
-  Name     : sub2
-  FullName : 
-  Length   : 
-  
-  Name     : 0 empty.txt
-  FullName : 
-  Length   : 
-  
-  Name     : 11 hello.txt
-  FullName : 
-  Length   : 
-  
-  Name     : 0 letters.txt
-  FullName : 
-  Length   : 
-  
-  Name     : 33 log.txt
-  FullName : 
-  Length   : 
-  
-  Name     : 20 nums.txt
-  FullName : 
-  Length   : 
-  
-  Name     : 0 with
-  FullName : 
-  Length   : 
-  
 
 PS [93/130]> (Get-ChildItem C:\Debug).Count
-  12
+  11
 
 PS [94/130]> (Get-ChildItem C:\Debug -File).Count
-  6
+  11
 
 PS [95/130]> (Get-ChildItem C:\Debug -Directory).Count
-  6
+  11
 
 PS [96/130]> Get-ChildItem C:\Debug | Measure-Object -Property Length -Sum -Average -Max -Min
-  Count    : 12
-  Average  : 0
-  Sum      : 0
-  Property : Length
+  Count=11; Sum=98; Average=8.909090909090908; Minimum=0; Maximum=33; Property=Length
 
 
 --- [97] § complex pipelines ---
 PS [97/130]> Get-ChildItem C:\Debug -Recurse -File | Where-Object { $_.Length -gt 0 } | Sort-Object Length -Descending | Select-Object -First 3 Name, Length
-<null>
+  Maximum call stack size exceeded
 
 PS [98/130]> Get-ChildItem C:\Debug -Recurse -File | Group-Object Extension | Sort-Object Count -Descending
-  
-  Count  Name  Group     
-  -----  ----  ----------
-     10        {10 items}
-  
+  Maximum call stack size exceeded
 
 PS [99/130]> Get-ChildItem C:\Debug -Recurse -File | ForEach-Object { "$($_.Name) = $($_.Length) bytes" }
-      Directory: C:\Debug.Name =     Directory: C:\Debug.Length bytes
-  Mode                 LastWriteTime         Length Name.Name = Mode                 LastWriteTime         Length Name.Length bytes
-  ----                 -------------         ------ ----.Name = ----                 -------------         ------ ----.Length bytes
-  -a----                5/14/2026   9:37 AM              0 empty.txt.Name = -a----                5/14/2026   9:37 AM              0 empty.txt.Length bytes
-  -a----                5/14/2026   9:37 AM             11 hello.txt.Name = -a----                5/14/2026   9:37 AM             11 hello.txt.Length bytes
-  -a----                5/14/2026   9:37 AM              0 letters.txt.Name = -a----                5/14/2026   9:37 AM              0 letters.txt.Length bytes
-  -a----                5/14/2026   9:37 AM             33 log.txt.Name = -a----                5/14/2026   9:37 AM             33 log.txt.Length bytes
-  -a----                5/14/2026   9:37 AM             20 nums.txt.Name = -a----                5/14/2026   9:37 AM             20 nums.txt.Length bytes
-  -a----                5/14/2026   9:37 AM              0 with.Name = -a----                5/14/2026   9:37 AM              0 with.Length bytes
-      Directory: C:\Debug\sub1.Name =     Directory: C:\Debug\sub1.Length bytes
-  Mode                 LastWriteTime         Length Name.Name = Mode                 LastWriteTime         Length Name.Length bytes
-  ----                 -------------         ------ ----.Name = ----                 -------------         ------ ----.Length bytes
-  -a----                5/14/2026   9:37 AM             14 inner.txt.Name = -a----                5/14/2026   9:37 AM             14 inner.txt.Length bytes
+  Maximum call stack size exceeded
 
 PS [100/130]> Get-ChildItem C:\Debug -Recurse -File | Measure-Object Length -Sum | Select-Object Count, Sum
-  
-  Count  Sum
-  -----  ---
-     10    0
-  
+  Maximum call stack size exceeded
 
 PS [101/130]> Get-ChildItem C:\Debug | Where-Object { $_.Name -like "*.txt" } | Sort-Object Name | Select-Object -ExpandProperty Name
-  0 empty.txt
-  0 letters.txt
-  11 hello.txt
-  20 nums.txt
-  33 log.txt
+  empty.txt
+  hello.txt
+  letters.txt
+  log.txt
+  moved-again.txt
+  nums.txt
 
 PS [102/130]> 1..5 | ForEach-Object { New-Item -Path "C:\Debug\bulk-$_.txt" -ItemType File -Value "row $_" -Force }
-<null>
+  Name=C:\Debug\bulk-1.txt; FullName=C:\Debug\bulk-1.txt; ItemType=file
+  Name=C:\Debug\bulk-2.txt; FullName=C:\Debug\bulk-2.txt; ItemType=file
+  Name=C:\Debug\bulk-3.txt; FullName=C:\Debug\bulk-3.txt; ItemType=file
+  Name=C:\Debug\bulk-4.txt; FullName=C:\Debug\bulk-4.txt; ItemType=file
+  Name=C:\Debug\bulk-5.txt; FullName=C:\Debug\bulk-5.txt; ItemType=file
 
 PS [103/130]> Get-ChildItem C:\Debug -Filter "bulk-*.txt" | Sort-Object Name | ForEach-Object { (Get-Content $_.FullName) }
-  Get-Content : Cannot find path 'Mode' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
+  row 1
+  row 2
+  row 3
+  row 4
+  row 5
 
 PS [104/130]> Get-ChildItem C:\Debug -Filter "bulk-*.txt" | Sort-Object Name | Select-Object -First 3 | Remove-Item
-  
-  Mode    LastWriteTime        Length  Name        
-  ------  -------------------  ------  ------------
-  -a----  5/14/2026   9:37 AM          5 bulk-1.txt
-  -a----  5/14/2026   9:37 AM          5 bulk-2.txt
-  -a----  5/14/2026   9:37 AM          5 bulk-3.txt
-  
+<empty>
 
 PS [105/130]> Get-ChildItem C:\Debug -Filter "bulk-*.txt" | ForEach-Object { $_.Name }
-  Directory: : The term 'Directory:' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Directory: C:\Debug.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Directory::String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Mode : The term 'Mode' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Mode                 LastWriteTime         Length Name.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Mode:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  ---- : The term '----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + ----                 -------------         ------ ----.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  -a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -a----                5/14/2026   9:37 AM              5 bulk-1.txt.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (-a----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  -a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -a----                5/14/2026   9:37 AM              5 bulk-2.txt.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (-a----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  -a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -a----                5/14/2026   9:37 AM              5 bulk-3.txt.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (-a----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  -a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -a----                5/14/2026   9:37 AM              5 bulk-4.txt.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (-a----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  -a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -a----                5/14/2026   9:37 AM              5 bulk-5.txt.Name
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (-a----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  bulk-1.txt
+  bulk-2.txt
+  bulk-3.txt
+  bulk-4.txt
+  bulk-5.txt
 
 PS [106/130]> "alpha","beta","gamma","delta" | ForEach-Object { New-Item -Path "C:\Debug\greek-$_.txt" -ItemType File -Value $_ -Force } | Out-Null
-<null>
+<empty>
 
 PS [107/130]> Get-ChildItem C:\Debug -Filter "greek-*.txt" | ForEach-Object { Get-Content $_.FullName }
-  Get-Content : Cannot find path 'Directory:' because it does not exist.
-  Get-Content : Cannot find path 'Mode' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
-  Get-Content : Cannot find path '5/14/2026' because it does not exist.
+  alpha
+  beta
+  gamma
+  delta
 
 PS [108/130]> (Get-ChildItem C:\Debug -Filter "greek-*.txt" | ForEach-Object { Get-Content $_.FullName }) -join ","
-  (Get-ChildItem : The term '(Get-ChildItem' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + (Get-ChildItem C:\Debug -Filter "greek-*.txt" | ForEach-Object { Get-Content $_.FullName }) -join ","
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ((Get-ChildItem:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  alpha
+  beta
+  gamma
+  delta
 
 PS [109/130]> Get-ChildItem C:\Debug -Recurse -File | Where-Object { $_.Extension -eq ".txt" -and $_.Name -ne "log.txt" } | Sort-Object FullName
-<null>
+  Maximum call stack size exceeded
 
 
 --- [110] § Get-Acl / Set-Acl ---
 PS [110/130]> Get-Acl C:\Debug\hello.txt
-  
-      Path   : Microsoft.PowerShell.Core\FileSystem::C:\Debug\hello.txt
-      Owner  : BUILTIN\Administrators
-      Group  : BUILTIN\Administrators
-  
-  FileSystemRights  AccessControlType IdentityReference       IsInherited InheritanceFlags PropagationFlags
-  ----------------  ----------------- -----------------       ----------- ---------------- ----------------
-  FullControl       Allow             BUILTIN\Administrators  False       ContainerInherit None
-  ReadAndExecute    Allow             BUILTIN\Users           False       ContainerInherit None
-  FullControl       Allow             NT AUTHORITY\SYSTEM     False       ContainerInherit None
+  Get-Acl : Cannot find path 'C:\Debug\hello.txt' because it does not exist.
 
 PS [111/130]> Get-Acl C:\Debug
   
@@ -955,26 +512,7 @@ PS [112/130]> Get-Acl C:\Debug | Select-Object Owner, Group
 
 PS [113/130]> Get-Acl C:\Debug\hello.txt | Format-List
   
-  FileSystemRights  : FullControl
-  AccessControlType : Allow
-  IdentityReference : BUILTIN\Administrators
-  IsInherited       : false
-  InheritanceFlags  : ContainerInherit
-  PropagationFlags  : None
-  
-  FileSystemRights  : ReadAndExecute
-  AccessControlType : Allow
-  IdentityReference : BUILTIN\Users
-  IsInherited       : false
-  InheritanceFlags  : ContainerInherit
-  PropagationFlags  : None
-  
-  FileSystemRights  : FullControl
-  AccessControlType : Allow
-  IdentityReference : NT AUTHORITY\SYSTEM
-  IsInherited       : false
-  InheritanceFlags  : ContainerInherit
-  PropagationFlags  : None
+  Get-Acl : Cannot find path 'C:\Debug\hello.txt' because it does not exist.
   
 
 PS [114/130]> (Get-Acl C:\Debug\hello.txt).Access
@@ -984,25 +522,18 @@ PS [115/130]> (Get-Acl C:\Debug\hello.txt).Access | Format-Table IdentityReferen
 <null>
 
 PS [116/130]> New-Item -Path C:\Debug\acl-target.txt -ItemType File -Value "guarded" -Force
-<empty>
+  Name=C:\Debug\acl-target.txt; FullName=C:\Debug\acl-target.txt; ItemType=file
 
 PS [117/130]> $acl = Get-Acl C:\Debug\acl-target.txt; $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Users","Write","Deny"); $acl.SetAccessRule($rule); Set-Acl -Path C:\Debug\acl-target.txt -AclObject $acl
 <empty>
 
 PS [118/130]> Get-Acl C:\Debug\acl-target.txt
-  
-      Path   : Microsoft.PowerShell.Core\FileSystem::C:\Debug\acl-target.txt
-      Owner  : BUILTIN\Administrators
-      Group  : BUILTIN\Administrators
-  
-  FileSystemRights  AccessControlType IdentityReference       IsInherited InheritanceFlags PropagationFlags
-  ----------------  ----------------- -----------------       ----------- ---------------- ----------------
-  Write             Deny              Users                   False       ContainerInherit None
+  Get-Acl : Cannot find path 'C:\Debug\acl-target.txt' because it does not exist.
 
 
 --- [119] § cross-drive operations ---
 PS [119/130]> New-Item -Path D:\Backup -ItemType Directory -Force
-<empty>
+  Name=D:\Backup; FullName=D:\Backup; ItemType=directory
 
 PS [120/130]> Set-Content -Path D:\Backup\notes.txt -Value "D drive note"
 <empty>
@@ -1011,13 +542,8 @@ PS [121/130]> Copy-Item C:\Debug\hello.txt D:\Backup\hello-on-d.txt
 <empty>
 
 PS [122/130]> Get-ChildItem D:\Backup
-  
-      Directory: D:\Backup
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   9:37 AM             11 hello-on-d.txt
-  -a----                5/14/2026   9:37 AM             12 notes.txt
+  Name=notes.txt; FullName=D:\Backup\notes.txt; Length=12; Mode=-a---; PSIsContainer=False; LastWriteTime=
+  Name=hello-on-d.txt; FullName=D:\Backup\hello-on-d.txt; Length=11; Mode=-a---; PSIsContainer=False; LastWriteTime=
 
 PS [123/130]> Get-Content D:\Backup\hello-on-d.txt
   hello world
@@ -1031,49 +557,13 @@ PS [125/130]> Test-Path D:\Backup
 
 --- [126] § final snapshot ---
 PS [126/130]> Get-ChildItem C:\Debug -Recurse | Format-Table Mode, LastWriteTime, Length, Name -AutoSize
-  
-  Mode               LastWriteTime        Length  Name             
-  -----------------  -------------------  ------  -----------------
-  d-----             5/14/2026   9:37 AM          dup              
-  d-----             5/14/2026   9:37 AM          md-test          
-  d-----             5/14/2026   9:37 AM          mkdir-test       
-  d-----             5/14/2026   9:37 AM          ni-test          
-  d-----             5/14/2026   9:37 AM          sub1             
-  d-----             5/14/2026   9:37 AM          sub2             
-  -a----             5/14/2026   9:37 AM          7 acl-target.txt 
-  -a----             5/14/2026   9:37 AM          5 bulk-1.txt     
-  -a----             5/14/2026   9:37 AM          5 bulk-2.txt     
-  -a----             5/14/2026   9:37 AM          5 bulk-3.txt     
-  -a----             5/14/2026   9:37 AM          5 bulk-4.txt     
-  -a----             5/14/2026   9:37 AM          5 bulk-5.txt     
-  -a----             5/14/2026   9:37 AM          0 empty.txt      
-  -a----             5/14/2026   9:37 AM          5 greek-alpha.txt
-  -a----             5/14/2026   9:37 AM          4 greek-beta.txt 
-  -a----             5/14/2026   9:37 AM          5 greek-delta.txt
-  -a----             5/14/2026   9:37 AM          5 greek-gamma.txt
-  -a----             5/14/2026   9:37 AM          11 hello.txt     
-  -a----             5/14/2026   9:37 AM          0 letters.txt    
-  -a----             5/14/2026   9:37 AM          33 log.txt       
-  -a----             5/14/2026   9:37 AM          20 nums.txt      
-  -a----             5/14/2026   9:37 AM          0 with           
-  Directory: C:\Deb  ug\sub1                                       
-  Mode               LastWriteTime        Length  Name             
-  ----               -------------        ------  ----             
-  d-----             5/14/2026   9:37 AM          nested           
-  -a----             5/14/2026   9:37 AM          14 inner.txt     
-  
+  Maximum call stack size exceeded
 
 PS [127/130]> Get-ChildItem C:\Debug -Recurse -File | Measure-Object -Property Length -Sum
-  Count    : 20
-  Sum      : 0
-  Property : Length
+  Maximum call stack size exceeded
 
 PS [128/130]> Get-ChildItem C:\Debug -Recurse | Group-Object { $_.PSIsContainer } | Select-Object Name, Count
-  
-  Name  Count
-  ----  -----
-           27
-  
+  Maximum call stack size exceeded
 
 PS [129/130]> Remove-Item C:\Debug -Recurse -Force
 <empty>
