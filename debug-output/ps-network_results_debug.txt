@@ -1,0 +1,941 @@
+============================================================
+PowerShell debug transcript — ps-network
+Generated: 2026-05-14T09:37:28.844Z
+host=WIN-NET-DBG (windows-pc)
+Total commands: 75
+============================================================
+
+
+--- [1] § adapters & IP ---
+PS [1/75]> Get-NetAdapter
+  Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed
+  ----                      --------------------                    ------- ------       ----------         ---------
+  Ethernet                  Intel(R) Ethernet Connection                  2 Up           02-00-00-00-00-01  1 Gbps
+  Ethernet 2                Intel(R) Ethernet Connection                  3 Up           02-00-00-00-00-02  1 Gbps
+  Ethernet 3                Intel(R) Ethernet Connection                  4 Up           02-00-00-00-00-03  1 Gbps
+  Ethernet 4                Intel(R) Ethernet Connection                  5 Up           02-00-00-00-00-04  1 Gbps
+  Wi-Fi                     Intel(R) Wireless-AC 9560 160MHz              6 Up           02-00-00-FF-FF-01  54 Mbps
+
+PS [2/75]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -AutoSize
+  
+  Name        Status  MacAddress         LinkSpeed
+  ----------  ------  -----------------  ---------
+  Ethernet    Up      02-00-00-00-00-01  1 Gbps   
+  Ethernet 2  Up      02-00-00-00-00-02  1 Gbps   
+  Ethernet 3  Up      02-00-00-00-00-03  1 Gbps   
+  Ethernet 4  Up      02-00-00-00-00-04  1 Gbps   
+  Wi-Fi       Up      02-00-00-FF-FF-01  54 Mbps  
+  
+
+PS [3/75]> Get-NetAdapter | Sort-Object Name
+  
+  Name        InterfaceDescription              Status  MacAddress         LinkSpeed
+  ----------  --------------------------------  ------  -----------------  ---------
+  Ethernet    Intel(R) Ethernet Connection      Up      02-00-00-00-00-01  1 Gbps   
+  Ethernet 2  Intel(R) Ethernet Connection      Up      02-00-00-00-00-02  1 Gbps   
+  Ethernet 3  Intel(R) Ethernet Connection      Up      02-00-00-00-00-03  1 Gbps   
+  Ethernet 4  Intel(R) Ethernet Connection      Up      02-00-00-00-00-04  1 Gbps   
+  Wi-Fi       Intel(R) Wireless-AC 9560 160MHz  Up      02-00-00-FF-FF-01  54 Mbps  
+  
+
+PS [4/75]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" }
+  
+  Name        InterfaceDescription              Status  MacAddress         LinkSpeed
+  ----------  --------------------------------  ------  -----------------  ---------
+  Ethernet    Intel(R) Ethernet Connection      Up      02-00-00-00-00-01  1 Gbps   
+  Ethernet 2  Intel(R) Ethernet Connection      Up      02-00-00-00-00-02  1 Gbps   
+  Ethernet 3  Intel(R) Ethernet Connection      Up      02-00-00-00-00-03  1 Gbps   
+  Ethernet 4  Intel(R) Ethernet Connection      Up      02-00-00-00-00-04  1 Gbps   
+  Wi-Fi       Intel(R) Wireless-AC 9560 160MHz  Up      02-00-00-FF-FF-01  54 Mbps  
+  
+
+PS [5/75]> Get-NetAdapter | Where-Object { $_.Status -ne "Up" }
+<null>
+
+PS [6/75]> (Get-NetAdapter).Count
+  5
+
+PS [7/75]> Get-NetAdapter | Select-Object -First 1 | Format-List *
+  
+  * : 
+  
+
+PS [8/75]> Get-NetIPAddress
+  IPAddress         : 192.168.1.100
+  InterfaceIndex    : 2
+  InterfaceAlias    : Ethernet
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0001
+  InterfaceIndex    : 2
+  InterfaceAlias    : Ethernet
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.101
+  InterfaceIndex    : 3
+  InterfaceAlias    : Ethernet 2
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0002
+  InterfaceIndex    : 3
+  InterfaceAlias    : Ethernet 2
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.102
+  InterfaceIndex    : 4
+  InterfaceAlias    : Ethernet 3
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0003
+  InterfaceIndex    : 4
+  InterfaceAlias    : Ethernet 3
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.103
+  InterfaceIndex    : 5
+  InterfaceAlias    : Ethernet 4
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0004
+  InterfaceIndex    : 5
+  InterfaceAlias    : Ethernet 4
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 127.0.0.1
+  InterfaceIndex    : 1
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 8
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : ::1
+  InterfaceIndex    : 1
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 128
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+
+PS [9/75]> Get-NetIPAddress | Format-Table InterfaceAlias, IPAddress, AddressFamily, PrefixLength -AutoSize
+  
+  InterfaceAlias               IPAddress                  AddressFamily  PrefixLength
+  ---------------------------  -------------------------  -------------  ------------
+  Ethernet                     192.168.1.100              IPv4                     24
+  Ethernet                     fe80::0200:00ff:fe00:0001  IPv6                     64
+  Ethernet 2                   192.168.1.101              IPv4                     24
+  Ethernet 2                   fe80::0200:00ff:fe00:0002  IPv6                     64
+  Ethernet 3                   192.168.1.102              IPv4                     24
+  Ethernet 3                   fe80::0200:00ff:fe00:0003  IPv6                     64
+  Ethernet 4                   192.168.1.103              IPv4                     24
+  Ethernet 4                   fe80::0200:00ff:fe00:0004  IPv6                     64
+  Loopback Pseudo-Interface 1  127.0.0.1                  IPv4                      8
+  Loopback Pseudo-Interface 1  ::1                        IPv6                    128
+  
+
+PS [10/75]> Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue
+  IPAddress         : 192.168.1.100
+  InterfaceIndex    : 2
+  InterfaceAlias    : Ethernet
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.101
+  InterfaceIndex    : 3
+  InterfaceAlias    : Ethernet 2
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.102
+  InterfaceIndex    : 4
+  InterfaceAlias    : Ethernet 3
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 192.168.1.103
+  InterfaceIndex    : 5
+  InterfaceAlias    : Ethernet 4
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 24
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : 127.0.0.1
+  InterfaceIndex    : 1
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  AddressFamily     : IPv4
+  Type              : Unicast
+  PrefixLength      : 8
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+
+PS [11/75]> Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue
+  IPAddress         : fe80::0200:00ff:fe00:0001
+  InterfaceIndex    : 2
+  InterfaceAlias    : Ethernet
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0002
+  InterfaceIndex    : 3
+  InterfaceAlias    : Ethernet 2
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0003
+  InterfaceIndex    : 4
+  InterfaceAlias    : Ethernet 3
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : fe80::0200:00ff:fe00:0004
+  InterfaceIndex    : 5
+  InterfaceAlias    : Ethernet 4
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 64
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : Link
+  AddressState      : Preferred
+  SkipAsSource      : False
+  
+  IPAddress         : ::1
+  InterfaceIndex    : 1
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  AddressFamily     : IPv6
+  Type              : Unicast
+  PrefixLength      : 128
+  PrefixOrigin      : WellKnown
+  SuffixOrigin      : WellKnown
+  AddressState      : Preferred
+  SkipAsSource      : False
+
+PS [12/75]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" }
+  
+  IPAddress      InterfaceAlias               AddressFamily  PrefixLength
+  -------------  ---------------------------  -------------  ------------
+  192.168.1.100  Ethernet                     IPv4                     24
+  192.168.1.101  Ethernet 2                   IPv4                     24
+  192.168.1.102  Ethernet 3                   IPv4                     24
+  192.168.1.103  Ethernet 4                   IPv4                     24
+  127.0.0.1      Loopback Pseudo-Interface 1  IPv4                      8
+  
+
+PS [13/75]> Get-NetIPAddress | Where-Object { $_.IPAddress -like "192.*" }
+  
+  IPAddress      InterfaceAlias  AddressFamily  PrefixLength
+  -------------  --------------  -------------  ------------
+  192.168.1.100  Ethernet        IPv4                     24
+  192.168.1.101  Ethernet 2      IPv4                     24
+  192.168.1.102  Ethernet 3      IPv4                     24
+  192.168.1.103  Ethernet 4      IPv4                     24
+  
+
+PS [14/75]> Get-NetIPAddress | Sort-Object IPAddress
+  
+  IPAddress                  InterfaceAlias               AddressFamily  PrefixLength
+  -------------------------  ---------------------------  -------------  ------------
+  ::1                        Loopback Pseudo-Interface 1  IPv6                    128
+  127.0.0.1                  Loopback Pseudo-Interface 1  IPv4                      8
+  192.168.1.100              Ethernet                     IPv4                     24
+  192.168.1.101              Ethernet 2                   IPv4                     24
+  192.168.1.102              Ethernet 3                   IPv4                     24
+  192.168.1.103              Ethernet 4                   IPv4                     24
+  fe80::0200:00ff:fe00:0001  Ethernet                     IPv6                     64
+  fe80::0200:00ff:fe00:0002  Ethernet 2                   IPv6                     64
+  fe80::0200:00ff:fe00:0003  Ethernet 3                   IPv6                     64
+  fe80::0200:00ff:fe00:0004  Ethernet 4                   IPv6                     64
+  
+
+PS [15/75]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
+  InterfaceAlias       : Ethernet
+  InterfaceIndex       : 1
+  IPv4Address          : Not configured
+  IPv4DefaultGateway   : 
+  DNSServer            : 
+  
+  InterfaceAlias       : Ethernet 2
+  InterfaceIndex       : 2
+  IPv4Address          : Not configured
+  IPv4DefaultGateway   : 
+  DNSServer            : 
+  
+  InterfaceAlias       : Ethernet 3
+  InterfaceIndex       : 3
+  IPv4Address          : Not configured
+  IPv4DefaultGateway   : 
+  DNSServer            : 
+  
+  InterfaceAlias       : Ethernet 4
+  InterfaceIndex       : 4
+  IPv4Address          : Not configured
+  IPv4DefaultGateway   : 
+  DNSServer            : 
+
+PS [16/75]> Get-NetRoute -ErrorAction SilentlyContinue
+  DestinationPrefix : 0.0.0.0/0
+  NextHop           : 0.0.0.0
+  RouteMetric       : 0
+  InterfaceAlias    : Ethernet
+  InterfaceIndex    : 2
+  AddressFamily     : IPv4
+  
+  DestinationPrefix : 127.0.0.0/8
+  NextHop           : 0.0.0.0
+  RouteMetric       : 306
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  InterfaceIndex    : 3
+  AddressFamily     : IPv4
+
+PS [17/75]> Get-NetRoute | Sort-Object DestinationPrefix -ErrorAction SilentlyContinue
+  
+  DestinationPrefix : 0.0.0.0/0
+  NextHop           : 0.0.0.0
+  RouteMetric       : 0
+  InterfaceAlias    : Ethernet
+  InterfaceIndex    : 2
+  AddressFamily     : IPv4
+  
+  DestinationPrefix : 127.0.0.0/8
+  NextHop           : 0.0.0.0
+  RouteMetric       : 306
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  InterfaceIndex    : 3
+  AddressFamily     : IPv4
+  
+
+PS [18/75]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
+  
+  InterfaceAlias               ServerAddresses
+  --------------               ---------------
+  Ethernet                     
+  Ethernet 2                   
+  Ethernet 3                   
+  Ethernet 4                   
+
+
+--- [19] § legacy aliases ---
+PS [19/75]> ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+PS [20/75]> ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : WIN-NET-DBG
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-01
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-02
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-03
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-04
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+PS [21/75]> ipconfig /displaydns
+  Windows IP Configuration
+  
+    Record Name . . . . . : (no entries)
+
+PS [22/75]> netstat
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+PS [23/75]> netstat -a
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+PS [24/75]> netstat -n
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+PS [25/75]> netstat -ano
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+PS [26/75]> arp -a
+  No ARP Entries Found.
+
+PS [27/75]> route print
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 01 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 02 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 03 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 04 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+PS [28/75]> route print -4
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 01 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 02 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 03 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 04 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+PS [29/75]> hostname
+  WIN-NET-DBG
+
+PS [30/75]> getmac
+  Physical Address  Transport Name    
+  ================= ==================
+  02-00-00-00-00-01 Media disconnected
+  02-00-00-00-00-02 Media disconnected
+  02-00-00-00-00-03 Media disconnected
+  02-00-00-00-00-04 Media disconnected
+
+
+--- [31] § connectivity ---
+PS [31/75]> Test-Connection localhost -Count 1 -ErrorAction SilentlyContinue
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  WIN-NET-DBG      localhost         127.0.0.1        32       1        Success
+
+PS [32/75]> Test-Connection 127.0.0.1 -Count 1 -ErrorAction SilentlyContinue
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  WIN-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
+
+PS [33/75]> Test-Connection localhost -Count 2 -ErrorAction SilentlyContinue
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  WIN-NET-DBG      localhost         127.0.0.1        32       1        Success
+  WIN-NET-DBG      localhost         127.0.0.1        32       1        Success
+
+PS [34/75]> Test-Connection 8.8.8.8 -Count 1 -ErrorAction SilentlyContinue
+  Test-Connection : Testing connection to computer '8.8.8.8' failed: host unreachable.
+      + CategoryInfo          : ResourceUnavailable: (8.8.8.8:String) [Test-Connection], PingException
+      + FullyQualifiedErrorId : TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand
+
+PS [35/75]> Test-Connection nonexistent.invalid -Count 1 -ErrorAction SilentlyContinue
+  Test-Connection : Testing connection to computer 'nonexistent.invalid' failed: host unreachable.
+      + CategoryInfo          : ResourceUnavailable: (nonexistent.invalid:String) [Test-Connection], PingException
+      + FullyQualifiedErrorId : TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand
+
+PS [36/75]> Test-NetConnection localhost -ErrorAction SilentlyContinue
+  
+  ComputerName           : localhost
+  RemoteAddress          : 127.0.0.1
+  InterfaceAlias         : Ethernet
+  SourceAddress          : 127.0.0.1
+  PingSucceeded          : True
+  PingReplyDetails (RTT) : 0 ms
+
+PS [37/75]> Test-NetConnection 127.0.0.1 -Port 80 -ErrorAction SilentlyContinue
+  
+  ComputerName           : 127.0.0.1
+  RemoteAddress          : 127.0.0.1
+  RemotePort             : 80
+  InterfaceAlias         : Ethernet
+  SourceAddress          : 127.0.0.1
+  PingSucceeded          : True
+  PingReplyDetails (RTT) : 0 ms
+  TcpTestSucceeded       : True
+
+PS [38/75]> ping localhost
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
+
+PS [39/75]> ping 127.0.0.1
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
+
+PS [40/75]> ping -n 1 127.0.0.1
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+
+PS [41/75]> ping -n 4 127.0.0.1
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
+
+PS [42/75]> tracert localhost
+  Unable to resolve target system name localhost.
+
+PS [43/75]> tracert 127.0.0.1
+  Unable to resolve target system name 127.0.0.1.
+
+
+--- [44] § DNS ---
+PS [44/75]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  localhost                                      A      86400 Answer     127.0.0.1
+  
+
+PS [45/75]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  1.0.0.127.in-addr.arpa                         PTR    3600  Answer     localhost
+  
+
+PS [46/75]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
+  
+
+PS [47/75]> Resolve-DnsName example.com -Type A -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
+  
+
+PS [48/75]> Resolve-DnsName example.com -Type AAAA -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
+  
+
+PS [49/75]> Resolve-DnsName example.com -Type MX -ErrorAction SilentlyContinue
+  
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
+  
+
+PS [50/75]> nslookup localhost
+  ** server can't find localhost: REFUSED
+
+PS [51/75]> nslookup 127.0.0.1
+  ** server can't find 127.0.0.1: REFUSED
+
+PS [52/75]> Clear-DnsClientCache -ErrorAction SilentlyContinue
+<empty>
+
+PS [53/75]> Get-DnsClientCache -ErrorAction SilentlyContinue
+  Get-DnsClientCache : The term 'Get-DnsClientCache' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-DnsClientCache -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-DnsClientCache:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [54] § complex pipelines ---
+PS [54/75]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | ForEach-Object { Get-NetIPAddress -InterfaceAlias $_.Name -ErrorAction SilentlyContinue }
+  Get-NetIPAddress : Invalid IP address: 'InterfaceDescription'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to 'true'. Verify the value of the property and retry.
+  Get-NetIPAddress : Invalid IP address: 'Intel(R)'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: '2'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: '3'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: '4'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+  Get-NetIPAddress : Invalid IP address: 'Intel(R)'.
+  At line:1 char:1
+      + CategoryInfo          : InvalidArgument
+
+PS [55/75]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
+  
+  Name  Count
+  ----  -----
+  IPv4      5
+  IPv6      5
+  
+
+PS [56/75]> Get-NetAdapter | Sort-Object Name | Select-Object Name, Status, MacAddress | Format-Table -AutoSize
+  
+  Name        Status  MacAddress       
+  ----------  ------  -----------------
+  Ethernet    Up      02-00-00-00-00-01
+  Ethernet 2  Up      02-00-00-00-00-02
+  Ethernet 3  Up      02-00-00-00-00-03
+  Ethernet 4  Up      02-00-00-00-00-04
+  Wi-Fi       Up      02-00-00-FF-FF-01
+  
+
+PS [57/75]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object IPAddress, InterfaceAlias, PrefixLength | Format-Table -AutoSize
+  
+  IPAddress      InterfaceAlias               PrefixLength
+  -------------  ---------------------------  ------------
+  192.168.1.100  Ethernet                               24
+  192.168.1.101  Ethernet 2                             24
+  192.168.1.102  Ethernet 3                             24
+  192.168.1.103  Ethernet 4                             24
+  127.0.0.1      Loopback Pseudo-Interface 1             8
+  
+
+PS [58/75]> "127.0.0.1","localhost" | ForEach-Object { Test-Connection $_ -Count 1 -ErrorAction SilentlyContinue }
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  WIN-NET-DBG      127.0.0.1         127.0.0.1        32       1        Success
+  Source           Destination       IPV4Address      Bytes    Time(ms) Status
+  ------           -----------       -----------      -----    -------- ------
+  WIN-NET-DBG      localhost         127.0.0.1        32       1        Success
+
+PS [59/75]> Get-NetAdapter | ForEach-Object { "$($_.Name) -> $($_.Status)" }
+  Get-NetAdapter : No MSFT_NetAdapter objects found with property 'Name' equal to '|'.
+
+PS [60/75]> Get-NetAdapter | Where-Object { $_.Name -match "Ethernet" } | Format-List Name, Status, MacAddress
+  
+  Name       : Ethernet
+  Status     : Up
+  MacAddress : 02-00-00-00-00-01
+  
+  Name       : Ethernet 2
+  Status     : Up
+  MacAddress : 02-00-00-00-00-02
+  
+  Name       : Ethernet 3
+  Status     : Up
+  MacAddress : 02-00-00-00-00-03
+  
+  Name       : Ethernet 4
+  Status     : Up
+  MacAddress : 02-00-00-00-00-04
+  
+
+PS [61/75]> Get-NetRoute -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 5
+  
+  DestinationPrefix : 0.0.0.0/0
+  NextHop           : 0.0.0.0
+  RouteMetric       : 0
+  InterfaceAlias    : Ethernet
+  InterfaceIndex    : 2
+  AddressFamily     : IPv4
+  
+  DestinationPrefix : 127.0.0.0/8
+  NextHop           : 0.0.0.0
+  RouteMetric       : 306
+  InterfaceAlias    : Loopback Pseudo-Interface 1
+  InterfaceIndex    : 3
+  AddressFamily     : IPv4
+  
+
+
+--- [62] § firewall (best-effort) ---
+PS [62/75]> Get-NetFirewallRule -ErrorAction SilentlyContinue | Select-Object -First 3
+  
+  Name        : CoreNet-DHCP-In
+  DisplayName : DHCP (UDP-In)
+  Enabled     : true
+  Action      : Allow
+  Direction   : Inbound
+  
+  Name        : CoreNet-DHCP-Out
+  DisplayName : DHCP (UDP-Out)
+  Enabled     : true
+  Action      : Allow
+  Direction   : Outbound
+  
+  Name        : CoreNet-DNS-Out
+  DisplayName : DNS (UDP-Out)
+  Enabled     : true
+  Action      : Allow
+  Direction   : Outbound
+  
+
+PS [63/75]> Get-NetFirewallProfile -ErrorAction SilentlyContinue
+  Get-NetFirewallProfile : The term 'Get-NetFirewallProfile' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-NetFirewallProfile -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-NetFirewallProfile:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [64/75]> New-NetFirewallRule -DisplayName "DebugRule" -Direction Inbound -Action Allow -LocalPort 8080 -Protocol TCP -ErrorAction SilentlyContinue
+  Name                  : DebugRule
+  DisplayName           : DebugRule
+  Description           : 
+  Direction             : Inbound
+  Action                : Allow
+  Enabled               : True
+  Protocol              : TCP
+  LocalPort             : 8080
+  RemotePort            : 
+
+PS [65/75]> Get-NetFirewallRule -DisplayName "DebugRule" -ErrorAction SilentlyContinue
+  
+  Name                  DisplayName                  Enabled Action Direction
+  ----                  -----------                  ------- ------ ---------
+  DebugRule             DebugRule                    True    Allow  Inbound
+
+PS [66/75]> Remove-NetFirewallRule -DisplayName "DebugRule" -ErrorAction SilentlyContinue
+<empty>
+
+
+--- [67] § shares (best-effort) ---
+PS [67/75]> Get-SmbShare -ErrorAction SilentlyContinue
+  Get-SmbShare : The term 'Get-SmbShare' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-SmbShare -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-SmbShare:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [68/75]> Get-SmbConnection -ErrorAction SilentlyContinue
+  Get-SmbConnection : The term 'Get-SmbConnection' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-SmbConnection -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-SmbConnection:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [69/75]> New-SmbShare -Name "DebugShare" -Path "C:\" -ReadAccess Everyone -ErrorAction SilentlyContinue
+  New-SmbShare : The term 'New-SmbShare' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + New-SmbShare -Name "DebugShare" -Path "C:\" -ReadAccess Everyone -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (New-SmbShare:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [70/75]> Get-SmbShare -Name "DebugShare" -ErrorAction SilentlyContinue
+  Get-SmbShare : The term 'Get-SmbShare' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-SmbShare -Name "DebugShare" -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-SmbShare:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [71/75]> Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyContinue
+  Remove-SmbShare : The term 'Remove-SmbShare' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyContinue
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Remove-SmbShare:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+
+--- [72] § summary ---
+PS [72/75]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize
+  
+  Name  Count
+  ----  -----
+  Up        5
+  
+
+PS [73/75]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
+  
+  Name  Count
+  ----  -----
+  IPv4      5
+  IPv6      5
+  
+
+PS [74/75]> (Get-NetAdapter).Count
+  5
+
+PS [75/75]> $env:COMPUTERNAME
+  WIN-NET-DBG

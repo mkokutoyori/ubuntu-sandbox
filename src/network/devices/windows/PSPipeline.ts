@@ -568,8 +568,11 @@ export function formatTable(objects: PSObject[], args: string): string {
       i--;
     } else if (t === '-autosize') {
       // AutoSize is the default behavior
-    } else if (!t.startsWith('-') && !properties) {
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      // Bare property names accumulate across multiple tokens
+      // (e.g. `Format-Table Name, Description` → ["Name,", "Description"]).
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
@@ -635,8 +638,9 @@ export function formatList(objects: PSObject[], args: string): string {
         i++;
       }
       i--;
-    } else if (!t.startsWith('-') && !properties) {
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
@@ -657,12 +661,51 @@ export function formatList(objects: PSObject[], args: string): string {
 /**
  * Default formatter: use Format-Table for 4 or fewer properties,
  * Format-List for more (matches real PS behavior).
+ *
+ * Well-known shapes (Service, Process, FileInfo, NetIPAddress, ...) keep
+ * the columns real PowerShell shows by default even when the underlying
+ * object has many more properties — driven in real PS by
+ * `Format.ps1xml`; we approximate here with a static lookup.
  */
 export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
-  const propCount = Object.keys(objects[0]).length;
-  if (propCount <= 4) return formatTable(objects, '');
+  const keys = Object.keys(objects[0]);
+  const defaultCols = pickDefaultColumns(keys);
+  if (defaultCols) {
+    return formatTable(objects, defaultCols.join(', '));
+  }
+  if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+/**
+ * If the object shape matches a well-known type (Service / Process /
+ * NetAdapter / NetIPAddress / DirectoryEntry), return the canonical
+ * default columns. Otherwise null.
+ */
+function pickDefaultColumns(keys: string[]): string[] | null {
+  const lower = new Set(keys.map((k) => k.toLowerCase()));
+  // Service object: Status / Name / DisplayName
+  if (lower.has('status') && lower.has('name') && lower.has('displayname')) {
+    return ['Status', 'Name', 'DisplayName'];
+  }
+  // Process object: Handles, NPM(K), PM(K), WS(K), CPU(s), Id, ProcessName
+  if (lower.has('handles') && lower.has('id') && lower.has('processname')) {
+    return ['Handles', 'NPM(K)', 'PM(K)', 'WS(K)', 'CPU(s)', 'Id', 'ProcessName'];
+  }
+  // NetAdapter: Name, InterfaceDescription, Status, MacAddress
+  if (lower.has('macaddress') && lower.has('status') && lower.has('name') && lower.has('interfacedescription')) {
+    return ['Name', 'InterfaceDescription', 'Status', 'MacAddress', 'LinkSpeed'];
+  }
+  // NetIPAddress: IPAddress, InterfaceAlias, AddressFamily, PrefixLength
+  if (lower.has('ipaddress') && lower.has('interfacealias') && lower.has('addressfamily')) {
+    return ['IPAddress', 'InterfaceAlias', 'AddressFamily', 'PrefixLength'];
+  }
+  // LocalUser: Name, Enabled, Description
+  if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {
+    return ['Name', 'Enabled', 'Description'];
+  }
+  return null;
 }
 
 /**

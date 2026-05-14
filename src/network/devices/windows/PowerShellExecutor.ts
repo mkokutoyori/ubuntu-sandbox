@@ -21,7 +21,7 @@ import {
   parseTable, parseKeyValueBlocks,
   type PSObject, type PipelineInput,
 } from './PSPipeline';
-import { psGetProcess, psStopProcess, buildDynamicProcessObjects } from './PSProcessCmdlets';
+import { psGetProcess, psStopProcess, psStartProcess, buildDynamicProcessObjects } from './PSProcessCmdlets';
 import {
   psGetService, psStartService, psStopService, psRestartService,
   psSetService, psSuspendService, psResumeService,
@@ -254,6 +254,23 @@ export class PowerShellExecutor {
     const scriptBlockMatch = trimmed.match(/^&\s*\{([\s\S]*)\}$/);
     if (scriptBlockMatch) {
       return this.execute(scriptBlockMatch[1].trim());
+    }
+
+    // Script file invocation: & <path.ps1> [args]  or  . <path.ps1> [args]
+    //
+    // The match is permissive: anything ending in `.ps1` with optional
+    // trailing arguments is read from the simulated filesystem and the
+    // contents are dispatched through `execute`. Named arguments
+    // (`-Foo bar`) are pre-assigned to `$Foo` so `param($Foo)` blocks see
+    // their value.
+    const scriptInvokeMatch = trimmed.match(
+      /^(\.|&)\s+("[^"]+\.ps1"|'[^']+\.ps1'|\S+\.ps1)(\s+.*)?$/i,
+    );
+    if (scriptInvokeMatch) {
+      return this.invokeScriptFile(
+        scriptInvokeMatch[2].replace(/^["']|["']$/g, ''),
+        (scriptInvokeMatch[3] ?? '').trim(),
+      );
     }
 
     // ── Early returns that must run BEFORE substituteVars ────────────
@@ -670,9 +687,43 @@ export class PowerShellExecutor {
   }
 
   /** Expand $() subexpressions and $var references inside a double-quoted string */
+  /**
+   * Strip surrounding quotes from a raw argument and apply the
+   * appropriate string-expansion semantics:
+   *  - "…"  → expandDoubleQuotedString (var interp + backtick escapes)
+   *  - '…'  → literal (only doubled-quote `''` → `'`)
+   *  - else → returned verbatim.
+   */
+  private unquoteAndExpand(raw: string): string {
+    if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+      return this.expandDoubleQuotedString(raw.slice(1, -1));
+    }
+    if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+      return raw.slice(1, -1).replace(/''/g, "'");
+    }
+    return raw;
+  }
+
   private expandDoubleQuotedString(inner: string): string {
-    // Expand $($var) or $(expr) subexpressions
-    let result = inner.replace(/\$\(([^)]*)\)/g, (_match, sub) => {
+    // PowerShell uses backtick (`) as the escape character inside
+    // double-quoted strings. Some sequences (`$ and `") interact with
+    // the substitution machinery, so we process them in two passes:
+    //
+    //   pass 1 — escape protectors:
+    //     `$ → \x00D  (literal dollar — do not substitute as a var)
+    //     `" → \x00Q  (literal quote)
+    //     ``  → \x00B (literal backtick)
+    //   pass 2 — variable substitution / sub-expressions (as before)
+    //   pass 3 — un-protect + translate the remaining whitespace escapes
+    //     `n → "\n", `r → "\r", `t → "\t", `0 → "\0"
+    const DOLLAR = '\x00D', QUOTE = '\x00Q', BACK = '\x00B';
+    let result = inner
+      .replace(/``/g, BACK)
+      .replace(/`\$/g, DOLLAR)
+      .replace(/`"/g, QUOTE);
+
+    // Expand $($var) or $(expr) subexpressions.
+    result = result.replace(/\$\(([^)]*)\)/g, (_match, sub) => {
       const substituted = sub.replace(/\$(\w+)/g, (_m: string, n: string) => {
         const lo = n.toLowerCase();
         if (lo === 'true') return 'True';
@@ -681,7 +732,8 @@ export class PowerShellExecutor {
       });
       return this.tryEvalExpr(substituted) ?? substituted;
     });
-    // Expand remaining $var references
+
+    // Expand remaining $var references.
     result = result.replace(/\$(\w+)/g, (_match, n) => {
       const lo = n.toLowerCase();
       if (lo === 'true') return 'True';
@@ -689,6 +741,17 @@ export class PowerShellExecutor {
       if (lo === 'null') return '';
       return this.sessionVars.get(lo) ?? _match;
     });
+
+    // Translate the whitespace escape sequences and restore protected chars.
+    result = result
+      .replace(/`n/g, '\n')
+      .replace(/`r/g, '\r')
+      .replace(/`t/g, '\t')
+      .replace(/`0/g, '\0')
+      .replace(new RegExp(DOLLAR, 'g'), '$')
+      .replace(new RegExp(QUOTE, 'g'), '"')
+      .replace(new RegExp(BACK, 'g'), '`');
+
     return result;
   }
 
@@ -727,6 +790,14 @@ export class PowerShellExecutor {
     if (/^\$true$/i.test(e)) return 'True';
     if (/^\$false$/i.test(e)) return 'False';
     if (/^\$null$/i.test(e)) return '';
+
+    // $env:VARNAME — environment variable lookup (also valid in expression
+    // position, e.g. `$env:Path -split ";"`).
+    const envExprMatch = e.match(/^\$env:([\w.()-]+)$/i);
+    if (envExprMatch) {
+      return this.sessionEnv.get(envExprMatch[1].toUpperCase()) ??
+        this.resolveEnvVar(envExprMatch[1]) ?? '';
+    }
 
     // Already a number
     if (/^-?\d+(\.\d+)?$/.test(e)) return e;
@@ -889,7 +960,8 @@ export class PowerShellExecutor {
   /** Try to parse and evaluate a binary PS operator expression */
   private tryEvalBinaryOp(e: string): string | null {
     const ops = ['-and', '-or', '-eq', '-ne', '-ge', '-le', '-gt', '-lt',
-                 '-like', '-notlike', '-match', '-notmatch', '-replace', '-contains', '-in'];
+                 '-like', '-notlike', '-match', '-notmatch', '-replace',
+                 '-split', '-join', '-contains', '-in'];
     // Scan right-to-left to find the last top-level operator (handles left-to-right eval)
     for (const op of ops) {
       const pattern = new RegExp(`^(.+?)\\s+${op.replace('-', '\\-')}\\s+(.+)$`, 'is');
@@ -959,6 +1031,18 @@ export class PowerShellExecutor {
           ? [rhs.slice(0, comma).trim().replace(/^["']|["']$/g, ''), rhs.slice(comma + 1).trim().replace(/^["']|["']$/g, '')]
           : [rhs.replace(/^["']|["']$/g, ''), ''];
         try { return lhs.replace(new RegExp(pat, 'gi'), repl); } catch { return lhs; }
+      }
+      case '-split': {
+        // rhs is the separator (regex by default in real PS; we treat it
+        // as a literal string for simplicity). Drop surrounding quotes.
+        const sep = rhs.replace(/^["']|["']$/g, '');
+        if (!sep) return lhs;
+        return lhs.split(sep).join('\n');
+      }
+      case '-join': {
+        const sep = rhs.replace(/^["']|["']$/g, '');
+        // lhs is the array-as-string (newline-joined). Re-join with sep.
+        return lhs.split('\n').filter((x) => x !== '').join(sep);
       }
       case '-contains': return lhs.toLowerCase().includes(rhs.toLowerCase()) ? 'True' : 'False';
       case '-in': return rhs.toLowerCase().includes(lhs.toLowerCase()) ? 'True' : 'False';
@@ -1227,7 +1311,11 @@ export class PowerShellExecutor {
     return cmdline.replace(/\$\((\$\w+)\)/g, (_, inner) => {
       const name = inner.slice(1).toLowerCase();
       return this.sessionVars.get(name) ?? inner;
-    }).replace(/\$(\w+)/g, (match, name) => {
+    }).replace(/(`?)\$(\w+)/g, (match, escape, name) => {
+      // ` before $ escapes it (PS double-quoted-string semantics). Keep
+      // the literal `$Name so expandDoubleQuotedString can convert it
+      // back later.
+      if (escape === '`') return match;
       const lower = name.toLowerCase();
       // Don't substitute reserved variables — handled by executeSingle
       if (['psversiontable','host','pwd','true','false','null','pid','_'].includes(lower)) return match;
@@ -1706,7 +1794,8 @@ export class PowerShellExecutor {
     // Return structured data for known cmdlets
     switch (cmdLower) {
       case 'get-process':
-      case 'gps': {
+      case 'gps':
+      case 'ps': {
         const gpArgs = this.tokenize(trimmedCmd).slice(1);
         const gpParams = this.parsePSArgs(gpArgs);
         const gpName = gpParams.get('name') ?? gpParams.get('_positional');
@@ -1751,6 +1840,12 @@ export class PowerShellExecutor {
     let cur = '', inSingle = false, inDouble = false;
     for (let i = 0; i < cmdline.length; i++) {
       const ch = cmdline[i];
+      // Backtick escape inside a double-quoted string keeps the next
+      // char (typically `"` to embed a literal quote, or `n / `t / `$).
+      if (inDouble && ch === '`' && i + 1 < cmdline.length) {
+        cur += ch + cmdline[++i];
+        continue;
+      }
       if (ch === "'" && !inDouble) { inSingle = !inSingle; cur += ch; continue; }
       if (ch === '"' && !inSingle) { inDouble = !inDouble; cur += ch; continue; }
       if ((ch === ' ' || ch === '\t') && !inSingle && !inDouble) {
@@ -2119,7 +2214,15 @@ export class PowerShellExecutor {
 
     // Write-Host / Write-Output / echo
     if (cmdLower === 'write-host' || cmdLower === 'write-output' || cmdLower === 'echo') {
-      return args.join(' ').replace(/^["']|["']$/g, '');
+      const joined = args.join(' ');
+      // Expand double-quoted backtick escapes / $var when applicable.
+      if (joined.startsWith('"') && joined.endsWith('"')) {
+        return this.expandDoubleQuotedString(joined.slice(1, -1));
+      }
+      if (joined.startsWith("'") && joined.endsWith("'")) {
+        return joined.slice(1, -1).replace(/''/g, "'");
+      }
+      return joined;
     }
 
     // Clear-Host / cls / clear
@@ -2141,13 +2244,18 @@ export class PowerShellExecutor {
     }
 
     // Get-Process / gps / ps
-    if (cmdLower === 'get-process' || cmdLower === 'gps') {
+    if (cmdLower === 'get-process' || cmdLower === 'gps' || cmdLower === 'ps') {
       return psGetProcess(this.buildPSProcessCtx(), args);
     }
 
     // Stop-Process / spps / kill
     if (cmdLower === 'stop-process' || cmdLower === 'spps' || cmdLower === 'kill') {
       return psStopProcess(this.buildPSProcessCtx(), args);
+    }
+
+    // Start-Process / saps / start
+    if (cmdLower === 'start-process' || cmdLower === 'saps') {
+      return psStartProcess(this.buildPSProcessCtx(), args);
     }
 
     // Get-Help / man / help
@@ -2358,11 +2466,11 @@ export class PowerShellExecutor {
 
     // Resolve-DnsName
     if (cmdLower === 'resolve-dnsname') {
-      const target = args.find(a => !a.startsWith('-')) ?? '';
-      if (target.toLowerCase() === 'localhost' || target === '127.0.0.1') {
-        return `\nName                                           Type   TTL   Section    IPAddress\n----                                           ----   ---   -------    ---------\nlocalhost                                      A      86400 Answer     127.0.0.1\n`;
-      }
-      return `\nName   : ${target}\nType   : A\nTTL    : 3600\nSection: Answer\nIPAddress: 192.168.1.1\n`;
+      const target = (args.find((a) => !a.startsWith('-')) ?? '').replace(
+        /^["']|["']$/g,
+        '',
+      );
+      return this.renderResolveDnsName(target);
     }
 
     // Get-Disk
@@ -2860,16 +2968,20 @@ export class PowerShellExecutor {
       else if (a === '-nonewline') { noNewline = true; }
       else if (a === '-value' && args[i + 1]) {
         const raw = args[++i];
-        const stripped = raw.replace(/^["']|["']$/g, '');
-        const items = this.tryParseArrayLiteral(stripped);
-        value = items ? items.join(noNewline ? '' : '\n') : stripped;
+        const items = this.tryParseArrayLiteral(raw);
+        if (items) {
+          // Items in the array literal still need backtick expansion.
+          const expanded = items.map((it) => this.unquoteAndExpand(it));
+          value = expanded.join(noNewline ? '' : '\n');
+        } else {
+          value = this.unquoteAndExpand(raw);
+        }
       }
       else if (!args[i].startsWith('-')) {
         const raw = args[i];
-        // Try array parse BEFORE stripping quotes (to handle "a","b" correctly)
         const items = this.tryParseArrayLiteral(raw);
-        if (items) { positionals.push(...items); }
-        else { positionals.push(raw.replace(/^["']|["']$/g, '')); }
+        if (items) { positionals.push(...items.map((it) => this.unquoteAndExpand(it))); }
+        else { positionals.push(this.unquoteAndExpand(raw)); }
       }
     }
     // Positional: first is path, rest are values joined by newlines or empty string
@@ -2951,8 +3063,9 @@ export class PowerShellExecutor {
   private handleRemoveItemProperty(args: string[]): string {
     let path = '', name = '';
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { path = args[++i]; }
-      else if (args[i] === '-Name' && args[i + 1]) { name = args[++i]; }
+      const a = args[i].toLowerCase();
+      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
+      else if (a === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
     }
     if (!path) return "Remove-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
     if (!isRegistryPath(path)) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
@@ -3175,6 +3288,12 @@ export class PowerShellExecutor {
       else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
     }
     if (!path) return '';
+    // Env: drive — drop the variable from session overrides.
+    if (path.toLowerCase().startsWith('env:')) {
+      const varName = path.slice(4).replace(/^\\/, '').toUpperCase();
+      this.sessionEnv.delete(varName);
+      return '';
+    }
     if (isRegistryPath(path)) return this.registry.removeItem(path, recurse);
     const fs = this.device.getFileSystem();
     const absPath = fs.normalizePath(path, this.cwd);
@@ -3440,30 +3559,37 @@ export class PowerShellExecutor {
   // ─── Connection Handlers ──────────────────────────────────────────
 
   private async handleTestConnection(args: string[]): Promise<string> {
-    let target = '', count = '4';
+    let target = '', countStr = '4';
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-ComputerName' && args[i + 1]) { target = args[++i]; }
-      else if (args[i] === '-Count' && args[i + 1]) { count = args[++i]; }
+      else if (args[i] === '-Count' && args[i + 1]) { countStr = args[++i]; }
       else if (!args[i].startsWith('-')) { target = args[i]; }
     }
     if (!target) return "Test-Connection : Parameter 'ComputerName' is required.";
+    const count = Math.max(1, parseInt(countStr, 10) || 4);
 
     // Execute the underlying ping to get results
     const pingOutput = await this.device.executeCmdCommand(`ping -n ${count} ${target}`);
 
     // Transform CMD ping output to PS Test-Connection table format
-    return this.formatTestConnection(pingOutput, target);
+    return this.formatTestConnection(pingOutput, target, count);
   }
 
-  private formatTestConnection(pingOutput: string, target: string): string {
+  private formatTestConnection(
+    pingOutput: string,
+    target: string,
+    count: number,
+  ): string {
     const lines: string[] = [];
     const source = String(this.device.getHostname());
 
     // Parse Reply lines from CMD ping output
     const replyLines = pingOutput.split('\n').filter(l => l.trim().startsWith('Reply from'));
-    const timeoutLines = pingOutput.split('\n').filter(l => l.trim() === 'Request timed out.');
 
-    const isLocalhost = target === 'localhost' || target === '127.0.0.1' || target.toLowerCase() === this.device.getHostname().toLowerCase();
+    const isLocalhost =
+      target === 'localhost' ||
+      target === '127.0.0.1' ||
+      target.toLowerCase() === this.device.getHostname().toLowerCase();
 
     if (replyLines.length === 0 && !isLocalhost) {
       return `Test-Connection : Testing connection to computer '${target}' failed: host unreachable.\n    + CategoryInfo          : ResourceUnavailable: (${target}:String) [Test-Connection], PingException\n    + FullyQualifiedErrorId : TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand`;
@@ -3472,9 +3598,15 @@ export class PowerShellExecutor {
     lines.push('Source           Destination       IPV4Address      Bytes    Time(ms) Status');
     lines.push('------           -----------       -----------      -----    -------- ------');
 
-    const effectiveReplies = isLocalhost && replyLines.length === 0
-      ? ['Reply from 127.0.0.1: bytes=32 time<1ms TTL=128']
-      : replyLines;
+    // Localhost path: simulated network can't actually ping itself, so
+    // synthesize `count` rows matching real PowerShell behaviour.
+    const effectiveReplies =
+      isLocalhost && replyLines.length === 0
+        ? Array.from(
+            { length: count },
+            () => 'Reply from 127.0.0.1: bytes=32 time<1ms TTL=128',
+          )
+        : replyLines;
 
     for (const line of effectiveReplies) {
       const ipMatch = line.match(/Reply from ([\d.]+)/);
@@ -5774,6 +5906,183 @@ export class PowerShellExecutor {
     if (!newName) return "Rename-LocalGroup : The -NewName parameter is required.";
     const error = this.device.getUserManager().renameGroup(name, newName);
     return error || '';
+  }
+
+  /**
+   * Render a uniform DNS lookup table. An IPv4 input flips to a reverse
+   * (`PTR`) record at `<reversed>.in-addr.arpa`; anything else is
+   * answered with a forward (`A`) record pointing at a stable fake
+   * address (mirrors what previous releases of the simulator did).
+   */
+  private renderResolveDnsName(target: string): string {
+    const isIPv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(target);
+    const header =
+      'Name                                           Type   TTL   Section    IPAddress\n' +
+      '----                                           ----   ---   -------    ---------';
+    let row: string;
+    if (isIPv4) {
+      const reversed = target.split('.').reverse().join('.');
+      const ptrName = `${reversed}.in-addr.arpa`;
+      const hostName = target === '127.0.0.1' ? 'localhost' : `host-${target.replace(/\./g, '-')}`;
+      row =
+        ptrName.padEnd(47) +
+        'PTR    ' +
+        '3600  ' +
+        'Answer     ' +
+        hostName;
+    } else {
+      const ip = target.toLowerCase() === 'localhost' ? '127.0.0.1' : '192.168.1.1';
+      row =
+        target.padEnd(47) +
+        'A      ' +
+        (target.toLowerCase() === 'localhost' ? '86400' : '3600 ') +
+        ' Answer     ' +
+        ip;
+    }
+    return `\n${header}\n${row}\n`;
+  }
+
+  /**
+   * Execute a `.ps1` file from the simulated filesystem.
+   *
+   * Resolves the path, reads its contents, then dispatches each
+   * statement (split on `;` and newlines) through `execute`. Named
+   * arguments on the call site are pre-installed into `sessionVars`
+   * so that `param($Foo)` blocks see their values; positional
+   * arguments are exposed via the standard `$args` array.
+   *
+   * The `param(...)` block at the top of the file is stripped before
+   * execution so it doesn't get re-evaluated as a free expression.
+   */
+  private async invokeScriptFile(
+    scriptPath: string,
+    argString: string,
+  ): Promise<string> {
+    const fs = this.device.getFileSystem();
+    const abs = fs.normalizePath(scriptPath, this.cwd);
+    const entry = fs.resolve(abs);
+    if (!entry || entry.type !== 'file') {
+      return (
+        `& : The term '${scriptPath}' is not recognized as the name of a ` +
+        `cmdlet, function, script file, or operable program. Check the ` +
+        `spelling of the name, or if a path was included, verify that the ` +
+        `path is correct and try again.`
+      );
+    }
+    const body = entry.content;
+
+    // Parse the script's `param(...)` block (if any) so we know which
+    // names are formal parameters. Strip it from the executable body.
+    // Splitting on the top-level commas only is good enough for our
+    // simulator — type accelerators like `[int[]]` don't contain `,`.
+    const paramMatch = body.match(/^\s*param\s*\(([\s\S]*?)\)\s*/i);
+    const paramNames: string[] = [];
+    const paramDefaults = new Map<string, string>();
+    let runnable = body;
+    if (paramMatch) {
+      const inside = paramMatch[1];
+      // Track parenthesis depth so `= (1..10)` defaults survive comma
+      // splitting.
+      const items: string[] = [];
+      let buf = '';
+      let depth = 0;
+      for (const ch of inside) {
+        if (ch === '(' || ch === '[' || ch === '{') depth++;
+        else if (ch === ')' || ch === ']' || ch === '}') depth--;
+        if (ch === ',' && depth === 0) {
+          items.push(buf);
+          buf = '';
+        } else {
+          buf += ch;
+        }
+      }
+      if (buf.trim()) items.push(buf);
+      for (const raw of items) {
+        const m = raw.match(/\$(\w+)\s*(?:=\s*([\s\S]+))?$/);
+        if (!m) continue;
+        const name = m[1].toLowerCase();
+        paramNames.push(name);
+        if (m[2] !== undefined) paramDefaults.set(name, m[2].trim());
+      }
+      runnable = body.slice(paramMatch[0].length);
+    }
+
+    // Tokenize the call-site arguments.
+    const tokens = this.tokenize(argString);
+    const positional: string[] = [];
+    const named = new Map<string, string>();
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (tok.startsWith('-') && tok.length > 1) {
+        const key = tok.slice(1).toLowerCase();
+        if (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) {
+          named.set(key, tokens[++i]);
+        } else {
+          named.set(key, 'true');
+        }
+      } else {
+        positional.push(tok);
+      }
+    }
+
+    // Snapshot current sessionVars so we can restore on `&` (non-dot)
+    // invocation. We always restore — the cost is cheap and it keeps the
+    // simulator consistent with PS's child-scope semantics.
+    const savedVars = new Map(this.sessionVars);
+    const savedObjects = new Map(this.sessionObjects);
+
+    // Bind declared parameters: caller-supplied value wins, otherwise
+    // use the default expression from the param block.
+    for (const name of paramNames) {
+      const v = named.get(name);
+      if (v !== undefined) {
+        const resolved = await this.resolveScriptArg(v);
+        this.sessionVars.set(name, resolved);
+      } else if (paramDefaults.has(name)) {
+        const resolved = await this.resolveScriptArg(paramDefaults.get(name)!);
+        this.sessionVars.set(name, resolved);
+      }
+    }
+    for (const [k, v] of named) {
+      if (!paramNames.includes(k)) {
+        const resolved = await this.resolveScriptArg(v);
+        this.sessionVars.set(k, resolved);
+      }
+    }
+    this.sessionVars.set(
+      'args',
+      positional.map((p) => p.replace(/^["']|["']$/g, '')).join(' '),
+    );
+
+    try {
+      const out = await this.execute(runnable);
+      return out ?? '';
+    } finally {
+      // Restore previous variable scope (mimic & subshell semantics).
+      // Dot-sourcing technically keeps them, but our simulator treats
+      // every script call as creating a fresh scope.
+      this.sessionVars = savedVars;
+      this.sessionObjects = savedObjects;
+    }
+  }
+
+  /**
+   * Resolve a raw argument value passed to a script — handles
+   * `(1..10)` ranges and bare integers. Strings are returned verbatim
+   * (with surrounding quotes stripped).
+   */
+  private async resolveScriptArg(raw: string): Promise<string> {
+    const t = raw.trim().replace(/^["']|["']$/g, '');
+    const rangeMatch = t.match(/^\((\d+)\.\.(\d+)\)$/);
+    if (rangeMatch) {
+      const a = parseInt(rangeMatch[1], 10);
+      const b = parseInt(rangeMatch[2], 10);
+      const arr: number[] = [];
+      const step = a <= b ? 1 : -1;
+      for (let n = a; step > 0 ? n <= b : n >= b; n += step) arr.push(n);
+      return arr.join(',');
+    }
+    return t;
   }
 
   private async executeFallback(cmdline: string): Promise<string> {

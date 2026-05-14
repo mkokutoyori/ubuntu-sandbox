@@ -273,6 +273,9 @@ export class WindowsFileSystem {
 
   private createEntry(name: string, type: WinFileType): WinFSEntry {
     const now = new Date();
+    // Mimic real Windows: newly created files get the archive bit set.
+    const attributes = new Set<string>();
+    if (type === 'file') attributes.add('archive');
     return {
       name,
       type,
@@ -281,7 +284,7 @@ export class WindowsFileSystem {
       size: 0,
       mtime: now,
       ctime: now,
-      attributes: new Set(),
+      attributes,
       owner: 'BUILTIN\\Administrators',
       acl: [],
     };
@@ -507,6 +510,8 @@ export class WindowsFileSystem {
       entry.content += content;
       entry.size = entry.content.length;
       entry.mtime = new Date();
+      // Modification re-asserts the archive bit (Windows semantics).
+      entry.attributes.add('archive');
       return { ok: true };
     }
     // File doesn't exist yet → create it

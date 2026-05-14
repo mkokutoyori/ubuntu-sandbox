@@ -38,6 +38,13 @@ export interface RemoteForward {
   readonly localPort: number;
 }
 
+export interface DynamicForward {
+  /** Local port the SOCKS proxy listens on. */
+  readonly socksPort: number;
+  /** Optional bind address (defaults to all interfaces in real OpenSSH). */
+  readonly bindAddress: string | null;
+}
+
 export interface ParsedSshArgs {
   /** `user@host` or just `host`. */
   readonly userAtHost: string;
@@ -57,6 +64,8 @@ export interface ParsedSshArgs {
   readonly localForwards: readonly LocalForward[];
   /** Remote port forwards from `-R`. */
   readonly remoteForwards: readonly RemoteForward[];
+  /** Dynamic (SOCKS) forwards from `-D`. */
+  readonly dynamicForwards: readonly DynamicForward[];
   /**
    * OpenSSH `-A` — forward the local ssh-agent connection so commands
    * on the remote machine can authenticate further hops with the
@@ -116,6 +125,30 @@ export function parseLocalForwardSpec(spec: string): LocalForward | null {
 }
 
 /**
+ * Parse a `-D` spec. OpenSSH accepts either `port` or `bindAddress:port`.
+ * Returns null on malformed input.
+ */
+export function parseDynamicForwardSpec(
+  spec: string,
+): DynamicForward | null {
+  if (!spec) return null;
+  const parts = spec.split(':').map((s) => s.trim());
+  if (parts.length === 1) {
+    const port = Number.parseInt(parts[0], 10);
+    if (!Number.isFinite(port) || port <= 0) return null;
+    return { socksPort: port, bindAddress: null };
+  }
+  if (parts.length === 2) {
+    const [bind, p] = parts;
+    if (!bind) return null;
+    const port = Number.parseInt(p, 10);
+    if (!Number.isFinite(port) || port <= 0) return null;
+    return { socksPort: port, bindAddress: bind };
+  }
+  return null;
+}
+
+/**
  * Parse a `-R` spec. Mirror of `parseLocalForwardSpec`:
  *   remotePort:localHost:localPort
  *   bindAddress:remotePort:localHost:localPort  (bindAddress ignored)
@@ -145,6 +178,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
   const jumpHostsRaw: string[] = [];
   const localForwards: LocalForward[] = [];
   const remoteForwards: RemoteForward[] = [];
+  const dynamicForwards: DynamicForward[] = [];
   let forwardAgent = false;
   let requestTty: 'yes' | 'no' | 'force' | undefined;
   let host: string | null = null;
@@ -171,6 +205,9 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     } else if (arg === '-R' && i + 1 < args.length) {
       const fwd = parseRemoteForwardSpec(args[++i]);
       if (fwd) remoteForwards.push(fwd);
+    } else if (arg === '-D' && i + 1 < args.length) {
+      const fwd = parseDynamicForwardSpec(args[++i]);
+      if (fwd) dynamicForwards.push(fwd);
     } else if (arg === '-A') {
       forwardAgent = true;
     } else if (arg === '-t') {
@@ -213,6 +250,12 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
         if (fwd) remoteForwards.push(fwd);
         continue;
       }
+      const dfMatch = /^DynamicForward=(.+)$/i.exec(next);
+      if (dfMatch) {
+        const fwd = parseDynamicForwardSpec(dfMatch[1]);
+        if (fwd) dynamicForwards.push(fwd);
+        continue;
+      }
       const faMatch = /^ForwardAgent=(yes|no|true|false)$/i.exec(next);
       if (faMatch) {
         forwardAgent = /^(yes|true)$/i.test(faMatch[1]);
@@ -240,6 +283,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     jumpHosts: Object.freeze([...jumpHostsRaw]),
     localForwards: Object.freeze([...localForwards]),
     remoteForwards: Object.freeze([...remoteForwards]),
+    dynamicForwards: Object.freeze([...dynamicForwards]),
     forwardAgent,
     requestTty,
   };

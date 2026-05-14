@@ -205,6 +205,22 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 **Tests** : `T1..T9` dans `ssh-lan-pty.test.ts` (parser, builder, `shell_open` round-trip, `shell_input` qui dispatch, `channel_closed` émis, notice `-t` inline).
 
+### 1.16 [FEAT] Dynamic forwarding `ssh -D` (SOCKS proxy)
+
+**Symptôme** : pas de proxy SOCKS via SSH. Manquait pour les scénarios "tunneler tout le trafic d'un navigateur via une session SSH".
+
+**Correctif** :
+1. **Parser** : `parseDynamicForwardSpec` accepte `port` ou `bindAddress:port` (rejette tout le reste). `parseSshArgs` collecte `-D` répétés et `-o DynamicForward=...` dans `dynamicForwards: DynamicForward[]`.
+2. **`SshDynamicForwarder`** (`src/network/protocols/ssh/SshDynamicForwarder.ts`) : pose un listener TCP sur `socksPort` du device local, exécute un handshake SOCKS5 minimal :
+   - Greeting `0x05 NM METHODS` → reply `0x05 0x00` (no-auth, RFC 1928).
+   - `CONNECT` request avec `atyp ∈ {1: IPv4, 3: domain, 4: IPv6}` → extrait `host:port`, reply `0x05 0x00 0x00 0x01 0x00.0x00.0x00.0x00 0x00.0x00` (succès, bound to 0.0.0.0:0).
+   - Bridge via un canal `exec` SSH lançant `nc host port` côté serveur.
+3. **Wire-up** : `LinuxTerminalSession.installDynamicForwards` instancie un forwarder par `-D` après authentification ; tous sont disposés à la fermeture de session.
+
+UDP ASSOCIATE / BIND non implémentés (rares en tutorial).
+
+**Tests** : `D1..D9` dans `ssh-lan-dynamicforward.test.ts` (parser 1 / 2 / invalide ; collecte multi-`-D` ; `-o DynamicForward=` ; listener observable / dispose ; SOCKS5 greeting ; SOCKS5 CONNECT extrait `host:port`).
+
 ---
 
 ## 2. Faiblesses structurelles connues
@@ -358,7 +374,7 @@ Ordre de priorité, du plus impactant au plus accessoire :
 3. ~~`/var/log/auth.log`~~ → corrigé §1.4
 4. ~~`ssh -t` + canal shell PTY~~ → corrigé §1.15. `top`/`htop`/`less` en streaming continu reste à wirer si besoin.
 5. ~~`sftp -b` mode batch~~ → corrigé §1.7
-6. ~~Port forwarding `-L`~~ → corrigé §1.11. ~~`-R`~~ → §1.12. ~~`-A` + `ssh-agent`/`ssh-add`~~ → §1.13 / §1.14. Reste `-D` (SOCKS dynamic) si besoin.
+6. ~~Port forwarding `-L`~~ → §1.11. ~~`-R`~~ → §1.12. ~~`-A` + `ssh-agent`/`ssh-add`~~ → §1.13 / §1.14. ~~`-D` (SOCKS dynamic)~~ → §1.16.
 7. ~~Coverage report~~ → corrigé §1.8
 8. ~~Hash `known_hosts`~~ → corrigé §1.6
 9. ~~`wtmp`/`btmp`~~ → corrigé §1.5
@@ -379,10 +395,10 @@ Ordre de priorité, du plus impactant au plus accessoire :
 
 ## 7. Inventaire final — état du module
 
-- **34 fichiers source** sous `src/network/protocols/ssh/` (`SshLocalForwarder`, `SshRemoteForwarder`, `SshAgent`, `SshAgentForwarding`, refonte de `SshShellChannel` avec wire-protocol `shell_open` / `shell_input` / `shell_close`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
-- **25 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **474 / 474** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`, `T1..T9`).
+- **35 fichiers source** sous `src/network/protocols/ssh/` (`SshLocalForwarder`, `SshRemoteForwarder`, `SshDynamicForwarder`, `SshAgent`, `SshAgentForwarding`, refonte de `SshShellChannel` avec wire-protocol `shell_open` / `shell_input` / `shell_close`) + `src/terminal/sessions/sshArgs.ts` pour le parseur partagé.
+- **26 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **483 / 483** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`, `T1..T9`, `D1..D9`).
 - **3 fichiers d'intégration côté terminal** : `LinuxTerminalSession`, `RemoteShellSubShell`, `SftpSubShell`
 - **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC` (+ `LinuxCommandExecutor` qui possède désormais un `SshAgent`)
-- **Reste du plan §5** : dynamic forwarding `-D` (SOCKS) — facultatif, pattern réutilisable de §1.11.
+- **Reste du plan §5** : tous les items P1..P9 ainsi que les ajouts post-gap (§1.10..§1.16) sont corrigés. Le module SSH couvre désormais : auth password/pubkey/known_hosts, exec/shell/SFTP, ProxyJump (`-J`), forwarding `-L`/`-R`/`-D`, ssh-agent + `ssh-add`, agent forwarding (`-A`), PTY (`-t` / `-tt` / `-T`), Hash known_hosts, wtmp/btmp, syslog reactive, fail2ban-style throttler, `sftp -b` batch.
 - **Couverture** : `npm run test:coverage` (provider v8, cible 85/85/85/75 sur `src/network/protocols/ssh/**`).
 - **BRD** : section 0 récap + statuts inline pour chaque exigence

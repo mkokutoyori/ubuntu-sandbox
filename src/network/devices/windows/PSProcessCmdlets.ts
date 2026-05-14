@@ -118,6 +118,78 @@ export function psStopProcess(ctx: PSProcessContext, args: string[]): string {
   return "Stop-Process : Cannot bind parameter. Specify -Name or -Id.";
 }
 
+// ─── Start-Process ───────────────────────────────────────────────
+
+export function psStartProcess(ctx: PSProcessContext, args: string[]): string {
+  const params = parsePSArgs(args);
+  // -FilePath / -Path, then first bare positional.
+  let filePath = params.get('filepath') ?? params.get('path') ?? '';
+  if (!filePath) {
+    // parsePSArgs ignores bare positionals — pick the first non-flag token,
+    // skipping any value that follows a flag.
+    for (let i = 0; i < args.length; i++) {
+      const t = args[i];
+      if (t.startsWith('-')) {
+        // Skip the flag (and its value if it looks like one).
+        if (i + 1 < args.length && !args[i + 1].startsWith('-')) i++;
+        continue;
+      }
+      filePath = t;
+      break;
+    }
+  }
+  if (!filePath) {
+    return "Start-Process : Cannot bind argument to parameter 'FilePath' because it is null or empty.";
+  }
+  filePath = filePath.replace(/^["']|["']$/g, '');
+
+  // Derive a usable image name from a bare filename or path:
+  //   notepad.exe     → notepad.exe
+  //   C:\\Win\\calc.exe → calc.exe
+  const leaf = filePath.split(/[\\/]/).pop() || filePath;
+  const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
+
+  const passThru = params.has('passthru');
+  const wait = params.has('wait');
+
+  // Parent the new process to the simulated explorer.exe (UI session).
+  const parent = ctx.processManager.getAllProcesses().find(
+    (p) => p.name.toLowerCase() === 'explorer.exe',
+  );
+  const ppid = parent?.pid ?? 1;
+
+  const spawned = ctx.processManager.spawnProcess(
+    imageName,
+    ppid,
+    ctx.currentUser,
+    { session: 'Console', sessionId: 1 },
+  );
+
+  if (wait) {
+    // In real PS, -Wait blocks until the process exits. Simulate by
+    // returning immediately with no output (foreground processes here
+    // don't actually run code).
+    return '';
+  }
+  if (passThru) {
+    // Mimic the Process object format real PS prints with -PassThru.
+    return (
+      '\n' +
+      'Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName\n' +
+      '-------  ------    -----      -----     ------     --  -- -----------\n' +
+      `${String(spawned.handles).padStart(7)}  ` +
+      `${String(spawned.npmK).padStart(6)}    ` +
+      `${String(Math.floor(spawned.pmK / 1024)).padStart(5)}      ` +
+      `${String(Math.floor(spawned.wsK)).padStart(5)}     ` +
+      `${spawned.cpuSec.toFixed(2).padStart(6)}   ` +
+      `${String(spawned.pid).padStart(4)}   ` +
+      `${spawned.sessionId} ` +
+      spawned.name.replace(/\.exe$/i, '')
+    );
+  }
+  return '';
+}
+
 // ─── Build PSObject[] for pipeline support ───────────────────────
 
 export function buildDynamicProcessObjects(ctx: PSProcessContext): Array<Record<string, unknown>> {
