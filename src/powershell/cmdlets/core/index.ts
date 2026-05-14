@@ -59,6 +59,10 @@ import {
   AddLocalGroupMemberCmdlet, RemoveLocalGroupMemberCmdlet,
   GetLocalGroupMemberCmdlet,
 } from './UserCmdlets';
+import {
+  GetNetAdapterCmdlet, GetNetIPAddressCmdlet,
+  TestConnectionCmdlet, ResolveDnsNameCmdlet,
+} from './NetworkCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -181,4 +185,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new AddLocalGroupMemberCmdlet());
   registry.register(new RemoveLocalGroupMemberCmdlet());
   registry.register(new GetLocalGroupMemberCmdlet());
+
+  // ── Network (provider-backed, partial — see INetworkProvider) ─────────────
+  registry.register(new GetNetAdapterCmdlet());
+  registry.register(new GetNetIPAddressCmdlet());
+  registry.register(new TestConnectionCmdlet());
+  registry.register(new ResolveDnsNameCmdlet());
 }
