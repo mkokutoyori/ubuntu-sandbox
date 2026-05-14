@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-registry-env
-Generated: 2026-05-14T09:26:30.177Z
+Generated: 2026-05-14T09:30:06.416Z
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
 ============================================================

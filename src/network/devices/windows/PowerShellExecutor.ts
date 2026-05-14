@@ -2381,11 +2381,11 @@ export class PowerShellExecutor {
 
     // Resolve-DnsName
     if (cmdLower === 'resolve-dnsname') {
-      const target = args.find(a => !a.startsWith('-')) ?? '';
-      if (target.toLowerCase() === 'localhost' || target === '127.0.0.1') {
-        return `\nName                                           Type   TTL   Section    IPAddress\n----                                           ----   ---   -------    ---------\nlocalhost                                      A      86400 Answer     127.0.0.1\n`;
-      }
-      return `\nName   : ${target}\nType   : A\nTTL    : 3600\nSection: Answer\nIPAddress: 192.168.1.1\n`;
+      const target = (args.find((a) => !a.startsWith('-')) ?? '').replace(
+        /^["']|["']$/g,
+        '',
+      );
+      return this.renderResolveDnsName(target);
     }
 
     // Get-Disk
@@ -3470,30 +3470,37 @@ export class PowerShellExecutor {
   // ─── Connection Handlers ──────────────────────────────────────────
 
   private async handleTestConnection(args: string[]): Promise<string> {
-    let target = '', count = '4';
+    let target = '', countStr = '4';
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-ComputerName' && args[i + 1]) { target = args[++i]; }
-      else if (args[i] === '-Count' && args[i + 1]) { count = args[++i]; }
+      else if (args[i] === '-Count' && args[i + 1]) { countStr = args[++i]; }
       else if (!args[i].startsWith('-')) { target = args[i]; }
     }
     if (!target) return "Test-Connection : Parameter 'ComputerName' is required.";
+    const count = Math.max(1, parseInt(countStr, 10) || 4);
 
     // Execute the underlying ping to get results
     const pingOutput = await this.device.executeCmdCommand(`ping -n ${count} ${target}`);
 
     // Transform CMD ping output to PS Test-Connection table format
-    return this.formatTestConnection(pingOutput, target);
+    return this.formatTestConnection(pingOutput, target, count);
   }
 
-  private formatTestConnection(pingOutput: string, target: string): string {
+  private formatTestConnection(
+    pingOutput: string,
+    target: string,
+    count: number,
+  ): string {
     const lines: string[] = [];
     const source = String(this.device.getHostname());
 
     // Parse Reply lines from CMD ping output
     const replyLines = pingOutput.split('\n').filter(l => l.trim().startsWith('Reply from'));
-    const timeoutLines = pingOutput.split('\n').filter(l => l.trim() === 'Request timed out.');
 
-    const isLocalhost = target === 'localhost' || target === '127.0.0.1' || target.toLowerCase() === this.device.getHostname().toLowerCase();
+    const isLocalhost =
+      target === 'localhost' ||
+      target === '127.0.0.1' ||
+      target.toLowerCase() === this.device.getHostname().toLowerCase();
 
     if (replyLines.length === 0 && !isLocalhost) {
       return `Test-Connection : Testing connection to computer '${target}' failed: host unreachable.\n    + CategoryInfo          : ResourceUnavailable: (${target}:String) [Test-Connection], PingException\n    + FullyQualifiedErrorId : TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand`;
@@ -3502,9 +3509,15 @@ export class PowerShellExecutor {
     lines.push('Source           Destination       IPV4Address      Bytes    Time(ms) Status');
     lines.push('------           -----------       -----------      -----    -------- ------');
 
-    const effectiveReplies = isLocalhost && replyLines.length === 0
-      ? ['Reply from 127.0.0.1: bytes=32 time<1ms TTL=128']
-      : replyLines;
+    // Localhost path: simulated network can't actually ping itself, so
+    // synthesize `count` rows matching real PowerShell behaviour.
+    const effectiveReplies =
+      isLocalhost && replyLines.length === 0
+        ? Array.from(
+            { length: count },
+            () => 'Reply from 127.0.0.1: bytes=32 time<1ms TTL=128',
+          )
+        : replyLines;
 
     for (const line of effectiveReplies) {
       const ipMatch = line.match(/Reply from ([\d.]+)/);
@@ -5804,6 +5817,40 @@ export class PowerShellExecutor {
     if (!newName) return "Rename-LocalGroup : The -NewName parameter is required.";
     const error = this.device.getUserManager().renameGroup(name, newName);
     return error || '';
+  }
+
+  /**
+   * Render a uniform DNS lookup table. An IPv4 input flips to a reverse
+   * (`PTR`) record at `<reversed>.in-addr.arpa`; anything else is
+   * answered with a forward (`A`) record pointing at a stable fake
+   * address (mirrors what previous releases of the simulator did).
+   */
+  private renderResolveDnsName(target: string): string {
+    const isIPv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(target);
+    const header =
+      'Name                                           Type   TTL   Section    IPAddress\n' +
+      '----                                           ----   ---   -------    ---------';
+    let row: string;
+    if (isIPv4) {
+      const reversed = target.split('.').reverse().join('.');
+      const ptrName = `${reversed}.in-addr.arpa`;
+      const hostName = target === '127.0.0.1' ? 'localhost' : `host-${target.replace(/\./g, '-')}`;
+      row =
+        ptrName.padEnd(47) +
+        'PTR    ' +
+        '3600  ' +
+        'Answer     ' +
+        hostName;
+    } else {
+      const ip = target.toLowerCase() === 'localhost' ? '127.0.0.1' : '192.168.1.1';
+      row =
+        target.padEnd(47) +
+        'A      ' +
+        (target.toLowerCase() === 'localhost' ? '86400' : '3600 ') +
+        ' Answer     ' +
+        ip;
+    }
+    return `\n${header}\n${row}\n`;
   }
 
   /**

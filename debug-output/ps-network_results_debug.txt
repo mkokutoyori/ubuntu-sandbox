@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network
-Generated: 2026-05-14T09:26:29.184Z
+Generated: 2026-05-14T09:30:05.832Z
 host=WIN-NET-DBG (windows-pc)
 Total commands: 75
 ============================================================
@@ -812,6 +812,7 @@ PS [33/75]> Test-Connection localhost -Count 2 -ErrorAction SilentlyContinue
   Source           Destination       IPV4Address      Bytes    Time(ms) Status
   ------           -----------       -----------      -----    -------- ------
   WIN-NET-DBG      localhost         127.0.0.1        32       1        Success
+  WIN-NET-DBG      localhost         127.0.0.1        32       1        Success
 
 PS [34/75]> Test-Connection 8.8.8.8 -Count 1 -ErrorAction SilentlyContinue
   Test-Connection : Testing connection to computer '8.8.8.8' failed: host unreachable.
@@ -903,43 +904,35 @@ PS [45/75]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
   
   Name                                           Type   TTL   Section    IPAddress
   ----                                           ----   ---   -------    ---------
-  localhost                                      A      86400 Answer     127.0.0.1
+  1.0.0.127.in-addr.arpa                         PTR    3600  Answer     localhost
   
 
 PS [46/75]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
   
-  Name   : example.com
-  Type   : A
-  TTL    : 3600
-  Section: Answer
-  IPAddress: 192.168.1.1
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
   
 
 PS [47/75]> Resolve-DnsName example.com -Type A -ErrorAction SilentlyContinue
   
-  Name   : example.com
-  Type   : A
-  TTL    : 3600
-  Section: Answer
-  IPAddress: 192.168.1.1
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
   
 
 PS [48/75]> Resolve-DnsName example.com -Type AAAA -ErrorAction SilentlyContinue
   
-  Name   : example.com
-  Type   : A
-  TTL    : 3600
-  Section: Answer
-  IPAddress: 192.168.1.1
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
   
 
 PS [49/75]> Resolve-DnsName example.com -Type MX -ErrorAction SilentlyContinue
   
-  Name   : example.com
-  Type   : A
-  TTL    : 3600
-  Section: Answer
-  IPAddress: 192.168.1.1
+  Name                                           Type   TTL   Section    IPAddress
+  ----                                           ----   ---   -------    ---------
+  example.com                                    A      3600  Answer     192.168.1.1
   
 
 PS [50/75]> nslookup localhost
