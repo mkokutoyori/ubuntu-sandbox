@@ -23,6 +23,7 @@ import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnv
 import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
+import { formatDefault } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -217,6 +218,28 @@ export class PSRuntime {
   /** Hard upper bound on the AST cache; LRU-ish eviction once we cross it. */
   private static readonly AST_CACHE_LIMIT = 256;
 
+  /**
+   * Render a top-level statement result into outputLines. Arrays of plain
+   * PSObjects go through the table formatter (formatDefault) so they
+   * display in canonical Format-Table layout instead of the
+   * `Key=Value; ...` hashtable form psValueToString produces.
+   */
+  private renderValue(result: PSValue): void {
+    if (Array.isArray(result)) {
+      // Array of plain objects (all elements are non-null records with at
+      // least one string-keyed field) → table format.
+      const arr = result as PSValue[];
+      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v))) {
+        const formatted = formatDefault(arr as Array<Record<string, unknown>>);
+        if (formatted) this.outputLines.push(formatted);
+        return;
+      }
+      for (const item of arr) this.outputLines.push(psValueToString(item));
+      return;
+    }
+    this.outputLines.push(psValueToString(result));
+  }
+
   /** Parse + cache. Identical source strings re-use the same PSProgram. */
   private parseCached(code: string): PSProgram {
     const hit = this.astCache.get(code);
@@ -314,11 +337,7 @@ export class PSRuntime {
       if (!emitted && result !== null && result !== undefined
           && stmt.type !== 'AssignmentStatement'
           && stmt.type !== 'FunctionDefinition') {
-        if (Array.isArray(result)) {
-          for (const item of result as PSValue[]) this.outputLines.push(psValueToString(item));
-        } else {
-          this.outputLines.push(psValueToString(result));
-        }
+        this.renderValue(result);
       }
     };
 
@@ -371,11 +390,7 @@ export class PSRuntime {
       const result = this.execStatement(stmt, env);
       const didOutput = this.outputLines.length > wasEmpty;
       if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
-        if (Array.isArray(result)) {
-          for (const item of result) this.outputLines.push(psValueToString(item));
-        } else {
-          this.outputLines.push(psValueToString(result));
-        }
+        this.renderValue(result);
       }
     };
 
