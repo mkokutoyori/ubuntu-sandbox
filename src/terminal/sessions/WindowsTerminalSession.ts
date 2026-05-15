@@ -18,7 +18,7 @@ import {
 } from './TerminalSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
-import { PS_CMDLETS_LIST } from '@/network/devices/windows/PowerShellExecutor';
+import { PS_CMDLETS_LIST } from '@/network/devices/windows/PSConstants';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { CmdSubShell } from '@/terminal/subshells/CmdSubShell';

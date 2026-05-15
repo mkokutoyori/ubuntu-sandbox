@@ -12,7 +12,8 @@
 import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
-import { PowerShellExecutor, PS_BANNER } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
 import { PSParserError } from '@/powershell/parser/PSParserError';
