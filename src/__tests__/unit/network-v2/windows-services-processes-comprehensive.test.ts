@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
