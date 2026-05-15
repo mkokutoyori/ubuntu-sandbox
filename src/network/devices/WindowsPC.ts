@@ -675,6 +675,7 @@ export class WindowsPC extends EndHost {
   getFileSystem(): WindowsFileSystem { return this.fs; }
   getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
+  setCwd(path: string): void { this.cwd = path; }
   getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
     const cfg = this.dnsConfig.get(ifName);

@@ -157,6 +157,17 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') return value;
+  if (value instanceof Date) {
+    // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM"
+    const m  = value.getMonth() + 1;
+    const d  = value.getDate();
+    const y  = value.getFullYear();
+    const h24 = value.getHours();
+    const min = value.getMinutes();
+    const tt  = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
+  }
   if (Array.isArray(value)) return value.map(psValueToString).join(' ');
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, PSValue>);

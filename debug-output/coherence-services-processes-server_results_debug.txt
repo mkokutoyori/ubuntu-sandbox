@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-server
-Generated: 2026-05-15T11:10:12.238Z
+Generated: 2026-05-15T11:27:30.015Z
 host=SRV-SP-DBG (windows-server)
 Total commands: 102
 ============================================================
@@ -880,7 +880,7 @@ CMD [39/102]> tasklist
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0     18,471 K
+  spoolsv.exe                   5136 Services                   0      6,703 K
 
 CMD [40/102]> tasklist /v
   
@@ -911,7 +911,7 @@ CMD [40/102]> tasklist /v
   explorer.exe                  2848 Console                    1    145,000 K Running         SRV-SP-DBG\Administrator            0:00:12 Windows Explorer
   cmd.exe                       5120 Console                    1      5,200 K Running         SRV-SP-DBG\Administrator            0:00:00 Command Prompt
   conhost.exe                   5132 Console                    1     18,400 K Running         SRV-SP-DBG\Administrator            0:00:00 Console Window Host
-  spoolsv.exe                   5136 Services                   0     18,471 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   5136 Services                   0      6,703 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
 
 CMD [41/102]> tasklist /fo csv /nh
   "System Idle Process","0","Services","0","16 K"
@@ -939,7 +939,7 @@ CMD [41/102]> tasklist /fo csv /nh
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","18,471 K"
+  "spoolsv.exe","5136","Services","0","6,703 K"
 
 PS  [42/102]> Get-Process
   
@@ -970,7 +970,7 @@ PS  [42/102]> Get-Process
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-       85      13      4   18471                   0  5136  spoolsv            
+      133       9      2    6703                   0  5136  spoolsv            
   
 
 PS  [43/102]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
@@ -1037,7 +1037,7 @@ PS  [45/102]> ps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-       85      13      4   18471                   0  5136  spoolsv            
+      133       9      2    6703                   0  5136  spoolsv            
   
 
 PS  [46/102]> gps
@@ -1069,7 +1069,7 @@ PS  [46/102]> gps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-       85      13      4   18471                   0  5136  spoolsv            
+      133       9      2    6703                   0  5136  spoolsv            
   
 
 
@@ -1153,7 +1153,7 @@ CMD [60/102]> tasklist | find /c "exe"
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0     18,471 K
+  spoolsv.exe                   5136 Services                   0      6,703 K
 
 PS  [61/102]> (Get-Process).Count
   26
@@ -1256,7 +1256,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : Fri May 15 2026 09:10:12 GMT+0000 (Coordinated Universal Time)
+  TimeCreated  : 5/15/2026 9:27 AM
   Message      : The Event log service was started.
   RecordId     : 1030
   
@@ -1264,7 +1264,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : Fri May 15 2026 05:10:12 GMT+0000 (Coordinated Universal Time)
+  TimeCreated  : 5/15/2026 5:27 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1029
   
@@ -1272,7 +1272,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : Thu May 14 2026 23:10:12 GMT+0000 (Coordinated Universal Time)
+  TimeCreated  : 5/14/2026 11:27 PM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1028
   
@@ -1610,7 +1610,7 @@ CMD [96/102]> tasklist | find /c "."
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0     18,471 K
+  spoolsv.exe                   5136 Services                   0      6,703 K
 
 PS  [97/102]> Get-Process | Measure-Object | Select-Object Count
   
@@ -1693,4 +1693,4 @@ CMD [102/102]> tasklist /fo csv /nh | find /c ","
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","18,471 K"
+  "spoolsv.exe","5136","Services","0","6,703 K"

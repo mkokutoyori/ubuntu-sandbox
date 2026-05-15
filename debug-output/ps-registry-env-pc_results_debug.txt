@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-registry-env-pc
-Generated: 2026-05-15T11:10:15.478Z
+Generated: 2026-05-15T11:27:47.868Z
 Engine: powershell
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
@@ -401,7 +401,7 @@ PS [93/117]> [string]42
   42
 
 PS [94/117]> [datetime]"2024-01-15"
-<empty>
+  1/15/2024 12:00 AM
 
 PS [95/117]> "abc".ToUpper()
   ABC
@@ -427,10 +427,10 @@ PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  0539ef8f-1ce2-491f-a237-a5f6f337c6b5
+  e81653d0-4d54-4781-9911-8dc9f1258d98
 
 PS [103/117]> [DateTime]::Now
-<empty>
+  5/15/2026 11:27 AM
 
 
 --- [104] § formatting ---
