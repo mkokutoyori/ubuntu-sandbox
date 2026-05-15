@@ -14,11 +14,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -27,10 +26,13 @@ beforeEach(() => {
 });
 
 describe('debug — PowerShell pipelines & operators', () => {
-  it('runs pipeline-heavy commands and writes the transcript', async () => {
+  it('runs pipeline-heavy commands on PC + Server', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN-PIPE-DBG');
+    const srv = new WindowsPC('windows-server', 'SRV-PIPE-DBG');
     pc.setCurrentUser('Administrator');
-    const ps = new PowerShellExecutor(pc);
+    srv.setCurrentUser('Administrator');
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     const commands: DebugCommandInput[] = [
       // ── 1. ranges / arithmetic / arrays ───────────────────────────
@@ -174,8 +176,10 @@ describe('debug — PowerShell pipelines & operators', () => {
       '1..3 | Write-Output',
     ];
 
-    await runAndDump('ps-pipelines', commands, ps,
+    await runAndDump('ps-pipelines-pc', commands, psPc,
       'host=WIN-PIPE-DBG (windows-pc)');
+    await runAndDump('ps-pipelines-server', commands, psSrv,
+      'host=SRV-PIPE-DBG (windows-server)');
     expect(commands.length).toBeGreaterThanOrEqual(100);
-  }, 180_000);
+  }, 240_000);
 });

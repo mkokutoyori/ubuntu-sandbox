@@ -1,0 +1,850 @@
+============================================================
+Coherence debug transcript — coherence-filesystem-server
+Generated: 2026-05-15T11:10:13.054Z
+host=SRV-FSC-DBG (windows-server)
+Total commands: 124
+============================================================
+
+
+--- [1] § baseline listing ---
+CMD [1/124]> cd C:\
+<empty>
+
+CMD [2/124]> dir C:\
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          $Recycle.Bin
+  05/15/2026  11:10 AM    <DIR>          PerfLogs
+  05/15/2026  11:10 AM    <DIR>          Program Files
+  05/15/2026  11:10 AM    <DIR>          Program Files (x86)
+  05/15/2026  11:10 AM    <DIR>          ProgramData
+  05/15/2026  11:10 AM    <DIR>          System Volume Information
+  05/15/2026  11:10 AM    <DIR>          Users
+  05/15/2026  11:10 AM    <DIR>          Windows
+  05/15/2026  11:10 AM              9 numbers.txt
+  05/15/2026  11:10 AM              9 nums.txt
+                 2 File(s) 18 bytes
+                 10 Dir(s)  53,687,091,200 bytes free
+
+PS  [3/124]> Set-Location C:\
+  this.pc.setCwd is not a function
+
+PS  [4/124]> Get-ChildItem C:\
+  
+  Mode    LastWriteTime                                                   Length  Name                     
+  ------  --------------------------------------------------------------  ------  -------------------------
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  $Recycle.Bin             
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  PerfLogs                 
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Program Files            
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Program Files (x86)      
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  ProgramData              
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  System Volume Information
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Users                    
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Windows                  
+  -a----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       9  numbers.txt              
+  -a----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       9  nums.txt                 
+  
+
+PS  [5/124]> ls C:\
+  
+  Mode    LastWriteTime                                                   Length  Name                     
+  ------  --------------------------------------------------------------  ------  -------------------------
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  $Recycle.Bin             
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  PerfLogs                 
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Program Files            
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Program Files (x86)      
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  ProgramData              
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  System Volume Information
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Users                    
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Windows                  
+  -a----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       9  numbers.txt              
+  -a----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       9  nums.txt                 
+  
+
+PS  [6/124]> dir C:\
+  
+  Mode    LastWriteTime                                                   Length  Name                     
+  ------  --------------------------------------------------------------  ------  -------------------------
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  $Recycle.Bin             
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  PerfLogs                 
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Program Files            
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Program Files (x86)      
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  ProgramData              
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  System Volume Information
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Users                    
+  d-----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       0  Windows                  
+  -a----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       9  numbers.txt              
+  -a----  Fri May 15 2026 11:10:12 GMT+0000 (Coordinated Universal Time)       9  nums.txt                 
+  
+
+CMD [7/124]> cd
+  C:\
+
+PS  [8/124]> Get-Location
+  Path=C:\; ProviderPath=C:\; Provider=FileSystem
+
+PS  [9/124]> pwd
+  Path=C:\; ProviderPath=C:\; Provider=FileSystem
+
+CMD [10/124]> echo %CD%
+  C:\
+
+
+--- [11] § mkdir (cmd) → read (ps) ---
+CMD [11/124]> mkdir C:\CohFs
+<empty>
+
+CMD [12/124]> dir C:\ | findstr CohFs
+  05/15/2026  11:10 AM    <DIR>          CohFs
+
+PS  [13/124]> Test-Path C:\CohFs
+  True
+
+PS  [14/124]> Get-Item C:\CohFs | Format-List Name, FullName, Mode
+  
+  Name     : CohFs
+  FullName : 
+  Mode     : d-----
+  
+  Name     : 
+  FullName : 
+  Mode     : FullName      : C:\Co
+  
+  Name     : 
+  FullName : 
+  Mode     : Name          : CohFs
+  
+  Name     : 
+  FullName : 
+  Mode     : Length        : 0
+  
+  Name     : 
+  FullName : 
+  Mode     : Mode          : d----
+  
+  Name     : 
+  FullName : 
+  Mode     : Attributes    : Direc
+  
+  Name     : 
+  FullName : 
+  Mode     : IsReadOnly    : False
+  
+  Name     : 
+  FullName : 
+  Mode     : LastWriteTime :  5/15
+  
+  Name     : 
+  FullName : 
+  Mode     : PSIsContainer : True
+  
+
+PS  [15/124]> (Get-Item C:\CohFs).PSIsContainer
+  True
+
+CMD [16/124]> mkdir C:\CohFs\sub1
+<empty>
+
+CMD [17/124]> mkdir C:\CohFs\sub2
+<empty>
+
+CMD [18/124]> mkdir C:\CohFs\sub1\nested
+<empty>
+
+PS  [19/124]> Get-ChildItem C:\CohFs
+  
+  Mode    LastWriteTime                                                   Length  Name
+  ------  --------------------------------------------------------------  ------  ----
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub1
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub2
+  
+
+PS  [20/124]> (Get-ChildItem C:\CohFs -Recurse -Directory).Count
+  3
+
+
+--- [21] § New-Item (ps) → read (cmd) ---
+PS  [21/124]> New-Item -Path C:\CohFs\fromPS -ItemType Directory
+  Name=C:\CohFs\fromPS; FullName=C:\CohFs\fromPS; ItemType=directory
+
+PS  [22/124]> New-Item -Path C:\CohFs\fromPS\inner -ItemType Directory
+  Name=C:\CohFs\fromPS\inner; FullName=C:\CohFs\fromPS\inner; ItemType=directory
+
+CMD [23/124]> dir C:\CohFs
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\CohFs
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          fromPS
+  05/15/2026  11:10 AM    <DIR>          sub1
+  05/15/2026  11:10 AM    <DIR>          sub2
+                 0 File(s) 0 bytes
+                 5 Dir(s)  53,687,091,200 bytes free
+
+CMD [24/124]> dir C:\CohFs\fromPS
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\CohFs\fromPS
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          inner
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+
+CMD [25/124]> cd C:\CohFs\fromPS && cd
+  The system cannot find the path specified.
+
+
+--- [26] § create file (cmd) → read (ps) ---
+CMD [26/124]> echo hello from cmd > C:\CohFs\fromCmd.txt
+<empty>
+
+CMD [27/124]> type C:\CohFs\fromCmd.txt
+  hello from cmd
+  
+
+PS  [28/124]> Test-Path C:\CohFs\fromCmd.txt
+  True
+
+PS  [29/124]> Get-Content C:\CohFs\fromCmd.txt
+  hello from cmd
+  
+
+PS  [30/124]> cat C:\CohFs\fromCmd.txt
+  hello from cmd
+  
+
+PS  [31/124]> (Get-Item C:\CohFs\fromCmd.txt).Length
+  15
+
+
+--- [32] § create file (ps) → read (cmd) ---
+PS  [32/124]> Set-Content -Path C:\CohFs\fromPs.txt -Value "hello from ps"
+<empty>
+
+CMD [33/124]> type C:\CohFs\fromPs.txt
+  hello from ps
+
+CMD [34/124]> dir C:\CohFs\fromPs.txt
+  File Not Found
+
+CMD [35/124]> more C:\CohFs\fromPs.txt
+  hello from ps
+
+
+--- [36] § append (cmd) → read (ps) ---
+CMD [36/124]> echo line-2-from-cmd >> C:\CohFs\log.txt
+<empty>
+
+CMD [37/124]> echo line-3-from-cmd >> C:\CohFs\log.txt
+<empty>
+
+PS  [38/124]> Get-Content C:\CohFs\log.txt
+  line-2-from-cmd
+  line-3-from-cmd
+  
+
+PS  [39/124]> (Get-Content C:\CohFs\log.txt).Count
+<empty>
+
+
+--- [40] § append (ps) → read (cmd) ---
+PS  [40/124]> Add-Content -Path C:\CohFs\log.txt -Value "line-4-from-ps"
+<empty>
+
+PS  [41/124]> Add-Content -Path C:\CohFs\log.txt -Value "line-5-from-ps"
+<empty>
+
+CMD [42/124]> type C:\CohFs\log.txt
+  line-2-from-cmd
+  line-3-from-cmd
+  line-4-from-psline-5-from-ps
+
+CMD [43/124]> find /c "line-" C:\CohFs\log.txt
+  ---------- C:\COHFS\LOG.TXT
+  ---------- C:\COHFS\LOG.TXT: 3
+
+
+--- [44] § copy (cmd) → list (ps) ---
+CMD [44/124]> copy C:\CohFs\fromCmd.txt C:\CohFs\copyByCmd.txt
+          1 file(s) copied.
+
+PS  [45/124]> Test-Path C:\CohFs\copyByCmd.txt
+  True
+
+PS  [46/124]> Get-Content C:\CohFs\copyByCmd.txt
+  hello from cmd
+  
+
+
+--- [47] § Copy-Item (ps) → list (cmd) ---
+PS  [47/124]> Copy-Item C:\CohFs\fromPs.txt C:\CohFs\copyByPs.txt
+<empty>
+
+CMD [48/124]> dir C:\CohFs\copyByPs.txt
+  File Not Found
+
+CMD [49/124]> type C:\CohFs\copyByPs.txt
+  hello from ps
+
+
+--- [50] § move (cmd) → check (ps) ---
+CMD [50/124]> move C:\CohFs\copyByCmd.txt C:\CohFs\movedByCmd.txt
+          1 file(s) moved.
+
+PS  [51/124]> Test-Path C:\CohFs\copyByCmd.txt
+  False
+
+PS  [52/124]> Test-Path C:\CohFs\movedByCmd.txt
+  True
+
+CMD [53/124]> ren C:\CohFs\movedByCmd.txt renamedByCmd.txt
+<empty>
+
+PS  [54/124]> Test-Path C:\CohFs\renamedByCmd.txt
+  True
+
+
+--- [55] § Move-Item (ps) → check (cmd) ---
+PS  [55/124]> Move-Item C:\CohFs\copyByPs.txt C:\CohFs\movedByPs.txt
+<empty>
+
+CMD [56/124]> dir C:\CohFs\movedByPs.txt
+  File Not Found
+
+PS  [57/124]> Rename-Item C:\CohFs\movedByPs.txt renamedByPs.txt
+<empty>
+
+CMD [58/124]> dir C:\CohFs\renamedByPs.txt
+  File Not Found
+
+
+--- [59] § delete (cmd) → check (ps) ---
+CMD [59/124]> del C:\CohFs\renamedByCmd.txt
+<empty>
+
+PS  [60/124]> Test-Path C:\CohFs\renamedByCmd.txt
+  False
+
+
+--- [61] § Remove-Item (ps) → check (cmd) ---
+PS  [61/124]> Remove-Item C:\CohFs\renamedByPs.txt
+<empty>
+
+CMD [62/124]> dir C:\CohFs\renamedByPs.txt
+  File Not Found
+
+
+--- [63] § listing equivalences ---
+CMD [63/124]> dir C:\CohFs
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\CohFs
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          fromPS
+  05/15/2026  11:10 AM    <DIR>          sub1
+  05/15/2026  11:10 AM    <DIR>          sub2
+  05/15/2026  11:10 AM             15 fromCmd.txt
+  05/15/2026  11:10 AM             13 fromPs.txt
+  05/15/2026  11:10 AM             60 log.txt
+                 3 File(s) 88 bytes
+                 5 Dir(s)  53,687,091,200 bytes free
+
+CMD [64/124]> dir C:\CohFs /b
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\CohFs
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          fromPS
+  05/15/2026  11:10 AM    <DIR>          sub1
+  05/15/2026  11:10 AM    <DIR>          sub2
+  05/15/2026  11:10 AM             15 fromCmd.txt
+  05/15/2026  11:10 AM             13 fromPs.txt
+  05/15/2026  11:10 AM             60 log.txt
+                 3 File(s) 88 bytes
+                 5 Dir(s)  53,687,091,200 bytes free
+
+CMD [65/124]> dir C:\CohFs /s
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\CohFs
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          fromPS
+  05/15/2026  11:10 AM    <DIR>          sub1
+  05/15/2026  11:10 AM    <DIR>          sub2
+  05/15/2026  11:10 AM             15 fromCmd.txt
+  05/15/2026  11:10 AM             13 fromPs.txt
+  05/15/2026  11:10 AM             60 log.txt
+                 3 File(s) 88 bytes
+                 5 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\fromPS
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          inner
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\fromPS\inner
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\sub1
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          nested
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\sub1\nested
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\sub2
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+       Total Files Listed:
+                 3 File(s) 88 bytes
+                 17 Dir(s)  53,687,091,200 bytes free
+
+CMD [66/124]> dir C:\CohFs /a
+  File Not Found
+
+CMD [67/124]> dir C:\CohFs /od
+  File Not Found
+
+CMD [68/124]> dir C:\CohFs *.txt
+  File Not Found
+
+PS  [69/124]> Get-ChildItem C:\CohFs
+  
+  Mode    LastWriteTime                                                   Length  Name       
+  ------  --------------------------------------------------------------  ------  -----------
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  fromPS     
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub1       
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub2       
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      15  fromCmd.txt
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      13  fromPs.txt 
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      60  log.txt    
+  
+
+PS  [70/124]> Get-ChildItem C:\CohFs -Name
+  
+  Mode    LastWriteTime                                                   Length  Name       
+  ------  --------------------------------------------------------------  ------  -----------
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  fromPS     
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub1       
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub2       
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      15  fromCmd.txt
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      13  fromPs.txt 
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      60  log.txt    
+  
+
+PS  [71/124]> Get-ChildItem C:\CohFs -Recurse
+  
+  Mode    LastWriteTime                                                   Length  Name       
+  ------  --------------------------------------------------------------  ------  -----------
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  fromPS     
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub1       
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub2       
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      15  fromCmd.txt
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      13  fromPs.txt 
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      60  log.txt    
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  inner      
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  nested     
+  
+
+PS  [72/124]> Get-ChildItem C:\CohFs -File
+  
+  Mode    LastWriteTime                                                   Length  Name       
+  ------  --------------------------------------------------------------  ------  -----------
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  fromPS     
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub1       
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub2       
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      15  fromCmd.txt
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      13  fromPs.txt 
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      60  log.txt    
+  
+
+PS  [73/124]> Get-ChildItem C:\CohFs -Directory
+  
+  Mode    LastWriteTime                                                   Length  Name       
+  ------  --------------------------------------------------------------  ------  -----------
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  fromPS     
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub1       
+  d-----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)       0  sub2       
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      15  fromCmd.txt
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      13  fromPs.txt 
+  -a----  Fri May 15 2026 11:10:13 GMT+0000 (Coordinated Universal Time)      60  log.txt    
+  
+
+PS  [74/124]> Get-ChildItem C:\CohFs -Filter *.txt
+  
+      Directory: C:\CohFs
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  -a----                5/15/2026  11:10 AM             15 fromCmd.txt
+  -a----                5/15/2026  11:10 AM             13 fromPs.txt
+  -a----                5/15/2026  11:10 AM             60 log.txt
+
+PS  [75/124]> (Get-ChildItem C:\CohFs).Count
+  6
+
+
+--- [76] § content equivalences ---
+CMD [76/124]> echo first > C:\CohFs\multi.txt
+<empty>
+
+CMD [77/124]> echo second >> C:\CohFs\multi.txt
+<empty>
+
+CMD [78/124]> echo third  >> C:\CohFs\multi.txt
+<empty>
+
+CMD [79/124]> type C:\CohFs\multi.txt
+  first
+  second
+  third
+  
+
+CMD [80/124]> more C:\CohFs\multi.txt
+  first
+  second
+  third
+  
+
+PS  [81/124]> Get-Content C:\CohFs\multi.txt
+  first
+  second
+  third
+  
+
+PS  [82/124]> Get-Content C:\CohFs\multi.txt -TotalCount 2
+  first
+  second
+
+PS  [83/124]> Get-Content C:\CohFs\multi.txt -Tail 1
+  third
+
+PS  [84/124]> type C:\CohFs\multi.txt
+  first
+  second
+  third
+  
+
+
+--- [85] § cwd coherence ---
+CMD [85/124]> cd C:\CohFs
+<empty>
+
+CMD [86/124]> cd
+  C:\CohFs
+
+PS  [87/124]> Get-Location
+  Path=C:\CohFs; ProviderPath=C:\CohFs; Provider=FileSystem
+
+PS  [88/124]> Set-Location C:\CohFs\sub1
+  this.pc.setCwd is not a function
+
+PS  [89/124]> pwd
+  Path=C:\CohFs; ProviderPath=C:\CohFs; Provider=FileSystem
+
+CMD [90/124]> cd
+  C:\CohFs
+
+CMD [91/124]> cd ..
+<empty>
+
+PS  [92/124]> Get-Location
+  Path=C:\; ProviderPath=C:\; Provider=FileSystem
+
+CMD [93/124]> cd \
+<empty>
+
+PS  [94/124]> (Get-Location).Path
+  C:\
+
+
+--- [95] § attributes ---
+CMD [95/124]> echo data > C:\CohFs\attr.txt
+<empty>
+
+CMD [96/124]> attrib C:\CohFs\attr.txt
+  A             C:\CohFs\attr.txt
+
+CMD [97/124]> attrib +R C:\CohFs\attr.txt
+<empty>
+
+PS  [98/124]> (Get-Item C:\CohFs\attr.txt).Attributes
+<empty>
+
+PS  [99/124]> (Get-Item C:\CohFs\attr.txt).IsReadOnly
+<empty>
+
+CMD [100/124]> attrib -R C:\CohFs\attr.txt
+<empty>
+
+PS  [101/124]> (Get-Item C:\CohFs\attr.txt).IsReadOnly
+<empty>
+
+
+--- [102] § drives & volumes ---
+CMD [102/124]> vol C:
+  'vol' is not recognized as an internal or external command,
+  operable program or batch file.
+
+CMD [103/124]> wmic logicaldisk get name
+  'wmic' is not recognized as an internal or external command,
+  operable program or batch file.
+
+PS  [104/124]> Get-PSDrive
+  C  C:\
+  D  D:\
+  Env  
+  Variable  
+  Function  
+  HKLM  HKLM:\
+  HKCU  HKCU:\
+
+PS  [105/124]> Get-PSDrive C
+  C  C:\
+
+PS  [106/124]> Get-Volume -ErrorAction SilentlyContinue
+  
+  DriveLetter     : C
+  FileSystemLabel : System
+  FileSystem      : NTFS
+  SizeRemaining   : 64424509440
+  Size            : 107374182400
+  DriveType       : Fixed
+  
+  DriveLetter     : D
+  FileSystemLabel : Data
+  FileSystem      : NTFS
+  SizeRemaining   : 32212254720
+  Size            : 53687091200
+  DriveType       : Fixed
+  
+
+PS  [107/124]> Get-Disk -ErrorAction SilentlyContinue
+  
+  Number            : 0
+  FriendlyName      : Virtual HD
+  Size              : 107374182400
+  PartitionStyle    : GPT
+  OperationalStatus : Online
+  
+  Number            : 1
+  FriendlyName      : Data Disk
+  Size              : 53687091200
+  PartitionStyle    : GPT
+  OperationalStatus : Online
+  
+
+
+--- [108] § discovery ---
+PS  [108/124]> Get-Command -Noun Item -ErrorAction SilentlyContinue | Select-Object -First 5 Name
+  
+  Name          
+  --------------
+  Write-Host    
+  Write-Output  
+  Write-Error   
+  Write-Warning 
+  ForEach-Object
+  
+
+PS  [109/124]> gcm Get-ChildItem
+<empty>
+
+PS  [110/124]> Get-Alias ls
+  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Alias ls
+  + ~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS  [111/124]> Get-Alias dir
+  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Alias dir
+  + ~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS  [112/124]> Get-Alias type
+  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Alias type
+  + ~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS  [113/124]> Get-Alias cd
+  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + Get-Alias cd
+  + ~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS  [114/124]> Get-Help Get-ChildItem -ErrorAction SilentlyContinue
+  NAME
+      Name=$Recycle.Bin; FullName=.\$Recycle.Bin; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=CohFs; FullName=.\CohFs; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=PerfLogs; FullName=.\PerfLogs; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Program Files; FullName=.\Program Files; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Program Files (x86); FullName=.\Program Files (x86); Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=ProgramData; FullName=.\ProgramData; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=System Volume Information; FullName=.\System Volume Information; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Users; FullName=.\Users; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Windows; FullName=.\Windows; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=numbers.txt; FullName=.\numbers.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime= Name=nums.txt; FullName=.\nums.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime=
+  
+  SYNTAX
+      Name=$Recycle.Bin; FullName=.\$Recycle.Bin; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=CohFs; FullName=.\CohFs; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=PerfLogs; FullName=.\PerfLogs; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Program Files; FullName=.\Program Files; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Program Files (x86); FullName=.\Program Files (x86); Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=ProgramData; FullName=.\ProgramData; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=System Volume Information; FullName=.\System Volume Information; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Users; FullName=.\Users; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Windows; FullName=.\Windows; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=numbers.txt; FullName=.\numbers.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime= Name=nums.txt; FullName=.\nums.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime= [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the Name=$Recycle.Bin; FullName=.\$Recycle.Bin; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=CohFs; FullName=.\CohFs; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=PerfLogs; FullName=.\PerfLogs; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Program Files; FullName=.\Program Files; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Program Files (x86); FullName=.\Program Files (x86); Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=ProgramData; FullName=.\ProgramData; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=System Volume Information; FullName=.\System Volume Information; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Users; FullName=.\Users; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=Windows; FullName=.\Windows; Length=0; Mode=d-----; PSIsContainer=True; LastWriteTime= Name=numbers.txt; FullName=.\numbers.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime= Name=nums.txt; FullName=.\nums.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime= cmdlet.
+
+PS  [115/124]> Get-Member -InputObject (Get-Item C:\CohFs) -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType
+  
+  Name  MemberType
+  ----  ----------
+                  
+  
+
+CMD [116/124]> help dir
+  This command is not supported by the help utility.  Try "dir /?".
+
+CMD [117/124]> help copy
+  This command is not supported by the help utility.  Try "copy /?".
+
+CMD [118/124]> where cmd
+  INFO: Could not find files for the given pattern(s).
+
+
+--- [119] § final state ---
+CMD [119/124]> dir C:\CohFs /s
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\CohFs
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          fromPS
+  05/15/2026  11:10 AM    <DIR>          sub1
+  05/15/2026  11:10 AM    <DIR>          sub2
+  05/15/2026  11:10 AM              5 attr.txt
+  05/15/2026  11:10 AM             15 fromCmd.txt
+  05/15/2026  11:10 AM             13 fromPs.txt
+  05/15/2026  11:10 AM             60 log.txt
+  05/15/2026  11:10 AM             19 multi.txt
+                 5 File(s) 112 bytes
+                 5 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\fromPS
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          inner
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\fromPS\inner
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\sub1
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+  05/15/2026  11:10 AM    <DIR>          nested
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\sub1\nested
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\CohFs\sub2
+  
+  05/15/2026  11:10 AM    <DIR>          .
+  05/15/2026  11:10 AM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+       Total Files Listed:
+                 5 File(s) 112 bytes
+                 17 Dir(s)  53,687,091,200 bytes free
+
+PS  [120/124]> Get-ChildItem C:\CohFs -Recurse | Format-Table Mode, Length, Name -AutoSize
+  
+  Mode               Length  Name          
+  -----------------  ------  --------------
+  d-----                     fromPS        
+  d-----                     sub1          
+  d-----                     sub2          
+  -a----                     5 attr.txt    
+  -a----                     15 fromCmd.txt
+  -a----                     13 fromPs.txt 
+  -a----                     60 log.txt    
+  -a----                     19 multi.txt  
+  Directory: C:\Coh                        
+  Mode               Length  Name          
+  ----               ------  ----          
+  d-----                     inner         
+  Directory: C:\Coh                        
+  Mode               Length  Name          
+  ----               ------  ----          
+  d-----                     nested        
+  
+
+PS  [121/124]> Get-ChildItem C:\CohFs -Recurse -File | Measure-Object -Property Length -Sum
+  Count=10; Sum=112; Average=; Minimum=; Maximum=; Property=Length
+
+
+--- [122] § cleanup ---
+CMD [122/124]> rmdir /s /q C:\CohFs
+<empty>
+
+PS  [123/124]> Test-Path C:\CohFs
+  False
+
+CMD [124/124]> dir C:\CohFs
+  File Not Found

@@ -1,8 +1,8 @@
 ============================================================
-Shell debug transcript — ps-users-groups-server
-Generated: 2026-05-15T11:10:14.817Z
+Shell debug transcript — ps-users-groups-pc
+Generated: 2026-05-15T11:10:14.746Z
 Engine: powershell
-host=SRV-USR-DBG (windows-server)
+host=WIN-USR-DBG (windows-pc)
 Total commands: 102
 ============================================================
 
@@ -614,10 +614,10 @@ PS [99/102]> Get-LocalGroup
 
 --- [100] § whoami on PC ---
 PS [100/102]> whoami
-  srv-usr-dbg\administrator
+  win-usr-dbg\administrator
 
 PS [101/102]> $env:USERNAME
   Administrator
 
 PS [102/102]> $env:COMPUTERNAME
-  SRV-USR-DBG
+  WIN-USR-DBG

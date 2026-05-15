@@ -1,6 +1,7 @@
 ============================================================
-PowerShell debug transcript — ps-scripts
-Generated: 2026-05-14T19:08:45.576Z
+Shell debug transcript — ps-scripts-pc
+Generated: 2026-05-15T11:10:12.157Z
+Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
 ============================================================
@@ -8,7 +9,7 @@ Total commands: 77
 
 --- [1] § prepare scripts dir ---
 PS [1/77]> New-Item -Path C:\Scripts -ItemType Directory -Force
-<empty>
+  Name=C:\Scripts; FullName=C:\Scripts; ItemType=directory
 
 PS [2/77]> Test-Path C:\Scripts
   True
@@ -30,13 +31,7 @@ PS [6/77]> Get-Content C:\Scripts\hello.ps1
   
 
 PS [7/77]> . C:\Scripts\hello.ps1
-  Hello, if : The term 'if' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + if (.Count -gt 0) { [0] } else { "world" }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (if:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException!
+<empty>
 
 PS [8/77]> & C:\Scripts\hello.ps1 PowerShell
   Hello, if : The term 'if' is not recognized as the name of a cmdlet, function, script file, or operable
@@ -48,13 +43,7 @@ PS [8/77]> & C:\Scripts\hello.ps1 PowerShell
       + FullyQualifiedErrorId : CommandNotFoundException!
 
 PS [9/77]> powershell -File C:\Scripts\hello.ps1 -ErrorAction SilentlyContinue
-  powershell : The term 'powershell' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + powershell -File C:\Scripts\hello.ps1 -ErrorAction SilentlyContinue
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (powershell:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 
 --- [10] § sum.ps1 ---
@@ -148,7 +137,7 @@ PS [17/77]> & C:\Scripts\users.ps1 -Prefix dbg
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [18/77]> Get-LocalUser | Where-Object { $_.Name -like "dbg-*" }
-<null>
+<empty>
 
 PS [19/77]> & C:\Scripts\users.ps1 -Prefix qa
   $u : The term '$u' is not recognized as the name of a cmdlet, function, script file, or operable
@@ -180,15 +169,10 @@ PS [19/77]> & C:\Scripts\users.ps1 -Prefix qa
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [20/77]> Get-LocalUser | Where-Object { $_.Name -like "qa-*" }
-<null>
+<empty>
 
 PS [21/77]> "dbg-user1","dbg-user2","dbg-user3","qa-user1","qa-user2","qa-user3" | ForEach-Object { Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue }
-  Remove-LocalUser : User 'dbg-user1' was not found.
-  Remove-LocalUser : User 'dbg-user2' was not found.
-  Remove-LocalUser : User 'dbg-user3' was not found.
-  Remove-LocalUser : User 'qa-user1' was not found.
-  Remove-LocalUser : User 'qa-user2' was not found.
-  Remove-LocalUser : User 'qa-user3' was not found.
+<empty>
 
 
 --- [22] § files.ps1 ---
@@ -211,15 +195,13 @@ PS [25/77]> Get-ChildItem C:\BulkOut
 <empty>
 
 PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
-  Count    : 0
-  Sum      : 0
-  Property : Length
+  Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=Length
 
 PS [27/77]> & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
   0
 
 PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
-<null>
+<empty>
 
 PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
   0
@@ -244,41 +226,7 @@ PS [31/77]> Get-Content C:\Scripts\fn.ps1
   
 
 PS [32/77]> . C:\Scripts\fn.ps1
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+<empty>
 
 PS [33/77]> Get-Greeting -Who "Eve"
   Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
@@ -395,57 +343,26 @@ PS [42/77]> & C:\Scripts\try.ps1
 
 --- [43] § inline scriptblocks ---
 PS [43/77]> & { Write-Output "inline-1"; Write-Output "inline-2" }
-  inline-1
-  inline-2
+  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Write-Output; position=offset=4; line=1; column=5; parameters=; arguments=type=LiteralExpression; value=inline-1; raw=inline-1; kind=expandable; position=offset=17; line=1; column=18; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5 type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Write-Output; position=offset=29; line=1; column=30; parameters=; arguments=type=LiteralExpression; value=inline-2; raw=inline-2; kind=expandable; position=offset=42; line=1; column=43; position=offset=29; line=1; column=30; position=offset=29; line=1; column=30; redirections=; position=offset=29; line=1; column=30; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
 
 PS [44/77]> & { param($n) 1..$n } 5
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + & { param($n) 1..$n } 5
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  1
+  2
+  3
+  4
+  5
 
 PS [45/77]> $sb = { param($x) $x * $x }; & $sb 7
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + & { : The term '{' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + { param($x) $x * $x }
-  + ~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ({:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException 7
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  49
 
 PS [46/77]> $sb2 = { param($a,$b) $a + $b }; & $sb2 10 20
-  & : The term '&' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + & { param($a $b) $a + $b } 10 20
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (&:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  30
 
 PS [47/77]> & { Get-Process | Select-Object -First 2 Name }
-  
-  Name               
-  -------------------
-  System Idle Process
-  System             
-  
+  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Process; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=18; line=1; column=19; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=39; line=1; column=40; position=offset=32; line=1; column=33; arguments=type=CommandExpression; name=Name; position=offset=41; line=1; column=42; position=offset=18; line=1; column=19; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
 
 PS [48/77]> & { Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 2 Name, Status }
-  
-  Name   Status 
-  -----  -------
-  Tcpip  Running
-  Afd    Running
-  
+  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Service; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Where-Object; position=offset=18; line=1; column=19; parameters=; arguments=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=BinaryExpression; operator=-eq; left=type=MemberExpression; object=type=VariableExpression; name=_; scope=; varName=_; position=offset=33; line=1; column=34; member=Status; computed=False; position=offset=35; line=1; column=36; right=type=LiteralExpression; value=Running; raw=Running; kind=expandable; position=offset=47; line=1; column=48; position=offset=35; line=1; column=36; parameters=; arguments=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; redirections=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; position=offset=31; line=1; column=32; position=offset=18; line=1; column=19 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=61; line=1; column=62; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=82; line=1; column=83; position=offset=75; line=1; column=76; arguments=type=ArrayExpression; elements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Name; position=offset=84; line=1; column=85; parameters=; arguments=; position=offset=84; line=1; column=85; position=offset=84; line=1; column=85; redirections=; position=offset=84; line=1; column=85 type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Status; position=offset=90; line=1; column=91; parameters=; arguments=; position=offset=90; line=1; column=91; position=offset=90; line=1; column=91; redirections=; position=offset=90; line=1; column=91; position=offset=84; line=1; column=85; position=offset=61; line=1; column=62; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
 
 
 --- [49] § multi-script composition ---
@@ -608,48 +525,39 @@ PS [54/77]> (Get-ChildItem C:\Scripts).Count
   7
 
 PS [55/77]> Get-ChildItem C:\Scripts | Sort-Object Name | Select-Object -ExpandProperty Name
-  103 sum.ps1
-  118 try.ps1
-  188 users.ps1
-  214 pipeline.ps1
-  279 fn.ps1
-  281 files.ps1
-  90 hello.ps1
+  files.ps1
+  fn.ps1
+  hello.ps1
+  pipeline.ps1
+  sum.ps1
+  try.ps1
+  users.ps1
 
 PS [56/77]> Get-ChildItem C:\Scripts | ForEach-Object { "$($_.Name) -> $($_.Length) bytes" }
-  
-      Directory: C:\Scripts
-  
-  Mode                 LastWriteTime         Length Name
-  ----                 -------------         ------ ----
-  -a----                5/14/2026   7:08 PM            281 files.ps1
-  -a----                5/14/2026   7:08 PM            279 fn.ps1
-  -a----                5/14/2026   7:08 PM             90 hello.ps1
-  -a----                5/14/2026   7:08 PM            214 pipeline.ps1
-  -a----                5/14/2026   7:08 PM            103 sum.ps1
-  -a----                5/14/2026   7:08 PM            118 try.ps1
-  -a----                5/14/2026   7:08 PM            188 users.ps1
+  files.ps1 -> 281 bytes
+  fn.ps1 -> 279 bytes
+  hello.ps1 -> 90 bytes
+  pipeline.ps1 -> 214 bytes
+  sum.ps1 -> 103 bytes
+  try.ps1 -> 118 bytes
+  users.ps1 -> 188 bytes
 
 PS [57/77]> Get-ChildItem C:\BulkOut2 | Measure-Object Length -Sum -Average -Max -Min
-  Count    : 0
-  Average  : 0
-  Sum      : 0
-  Property : Length
+  Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=Length
 
 PS [58/77]> Get-ChildItem C:\BulkOut2 | ForEach-Object { Get-Content $_.FullName } | Measure-Object
-  Count    : 0
-  Property : 
+  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
 
 
 --- [59] § error paths ---
 PS [59/77]> & C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
-  & : The term 'C:\Scripts\does-not-exist.ps1' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+<empty>
 
 PS [60/77]> . C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
-  & : The term 'C:\Scripts\does-not-exist.ps1' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+<empty>
 
 PS [61/77]> try { & C:\Scripts\missing.ps1 } catch { "missing-caught: $($_.Exception.Message)" }
-  & : The term 'C:\Scripts\missing.ps1' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  missing-caught: 
 
 
 --- [62] § extra invocations ---
@@ -907,13 +815,10 @@ PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Wh
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
-  Count    : 1
-  Sum      : 
-  Property : 
+  Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=
 
 PS [73/77]> & { "x","y","z" } | Measure-Object
-  Count    : 1
-  Property : 
+  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
 
 
 --- [74] § cleanup ---

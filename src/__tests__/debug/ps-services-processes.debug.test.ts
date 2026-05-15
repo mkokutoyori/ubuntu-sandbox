@@ -9,11 +9,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -22,10 +21,13 @@ beforeEach(() => {
 });
 
 describe('debug — PowerShell services & processes', () => {
-  it('runs service/process cmdlets and writes the transcript', async () => {
+  it('runs service/process cmdlets on PC + Server', async () => {
+    const pc = new WindowsPC('windows-pc', 'WIN-SVC-DBG');
     const srv = new WindowsPC('windows-server', 'SRV-SVC-DBG');
+    pc.setCurrentUser('Administrator');
     srv.setCurrentUser('Administrator');
-    const ps = new PowerShellExecutor(srv);
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     const commands: DebugCommandInput[] = [
       // ── 1. service enumeration ────────────────────────────────────
@@ -152,8 +154,10 @@ describe('debug — PowerShell services & processes', () => {
       'Get-Process | Where-Object { $_.Handles -gt 100 } | Select-Object Name, Id, Handles -First 5',
     ];
 
-    await runAndDump('ps-services-processes', commands, ps,
+    await runAndDump('ps-services-processes-pc', commands, psPc,
+      'host=WIN-SVC-DBG (windows-pc)');
+    await runAndDump('ps-services-processes-server', commands, psSrv,
       'host=SRV-SVC-DBG (windows-server)');
     expect(commands.length).toBeGreaterThanOrEqual(100);
-  }, 120_000);
+  }, 240_000);
 });

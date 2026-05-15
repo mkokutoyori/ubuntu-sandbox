@@ -11,11 +11,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -24,10 +23,13 @@ beforeEach(() => {
 });
 
 describe('debug — PowerShell filesystem', () => {
-  it('runs filesystem cmdlets and writes the transcript', async () => {
+  it('runs filesystem cmdlets on PC + Server and writes the transcripts', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN-FS-DBG');
+    const srv = new WindowsPC('windows-server', 'SRV-FS-DBG');
     pc.setCurrentUser('Administrator');
-    const ps = new PowerShellExecutor(pc);
+    srv.setCurrentUser('Administrator');
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     const commands: DebugCommandInput[] = [
       // ── Section 1 — location & introspection ──────────────────────
@@ -182,7 +184,8 @@ describe('debug — PowerShell filesystem', () => {
       'Test-Path C:\\Debug',
     ];
 
-    await runAndDump('ps-filesystem', commands, ps, 'host=WIN-FS-DBG (windows-pc)');
+    await runAndDump('ps-filesystem-pc', commands, psPc, 'host=WIN-FS-DBG (windows-pc)');
+    await runAndDump('ps-filesystem-server', commands, psSrv, 'host=SRV-FS-DBG (windows-server)');
     expect(commands.length).toBeGreaterThanOrEqual(100);
-  }, 120_000);
+  }, 180_000);
 });

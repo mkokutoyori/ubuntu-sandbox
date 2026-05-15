@@ -1,0 +1,141 @@
+============================================================
+Shell debug transcript — ps-scripts-server-extras
+Generated: 2026-05-15T11:10:12.261Z
+Engine: powershell
+host=SRV-SCR-DBG (windows-server)
+Total commands: 23
+============================================================
+
+
+--- [1] § server (windows-server) ---
+PS [1/23]> New-Item -Path C:\ServerScripts -ItemType Directory -Force
+  Name=C:\ServerScripts; FullName=C:\ServerScripts; ItemType=directory
+
+PS [2/23]> Test-Path C:\ServerScripts
+  True
+
+PS [3/23]> Set-Content -Path C:\ServerScripts\role.ps1 -Value "`"Hostname = `$env:COMPUTERNAME`"`n`"User = `$env:USERNAME`"`n`"Date = `$(Get-Date)`"`n"
+<empty>
+
+PS [4/23]> Get-Content C:\ServerScripts\role.ps1
+  "Hostname = $env:COMPUTERNAME"
+  "User = $env:USERNAME"
+  "Date = $(Get-Date)"
+  
+
+PS [5/23]> & C:\ServerScripts\role.ps1
+  Hostname = $env:COMPUTERNAME
+  User = $env:USERNAME
+  Date = Get-Date
+
+PS [6/23]> . C:\ServerScripts\role.ps1
+<empty>
+
+PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
+<empty>
+
+PS [8/23]> Get-Content C:\ServerScripts\svcaudit.ps1
+  Get-Service | Group-Object Status | ForEach-Object { "$($_.Name): $($_.Count)" }
+  Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 5 Name, Status
+  
+
+PS [9/23]> & C:\ServerScripts\svcaudit.ps1
+  Count  Name     Group     .Name: Count  Name     Group     .Count
+  -----  -------  ----------.Name: -----  -------  ----------.Count
+     20  Running  {20 items}.Name:    20  Running  {20 items}.Count
+      2  Stopped  {2 items} .Name:     2  Stopped  {2 items} .Count
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
+
+PS [10/23]> Set-Content -Path C:\ServerScripts\users.ps1 -Value "param([string]`$Prefix = `"srv`")`n1..2 | ForEach-Object {`n  `$u = `"`$Prefix-acct`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created `$u`"`n}`n"
+<empty>
+
+PS [11/23]> Get-Content C:\ServerScripts\users.ps1
+  param([string]$Prefix = "srv")
+  1..2 | ForEach-Object {
+    $u = "$Prefix-acct$_"
+    New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
+    Write-Output "created $u"
+  }
+  
+
+PS [12/23]> & C:\ServerScripts\users.ps1 -Prefix srv
+  $u : The term '$u' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + $u = "srv-acct1"
+    New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
+    Write-Output "created $u"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ($u:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  $u : The term '$u' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + $u = "srv-acct2"
+    New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
+    Write-Output "created $u"
+  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      + CategoryInfo          : ObjectNotFound: ($u:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+
+PS [13/23]> Get-LocalUser | Where-Object { $_.Name -like "srv-*" }
+<empty>
+
+PS [14/23]> "srv-acct1","srv-acct2" | ForEach-Object { Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue }
+<empty>
+
+PS [15/23]> Set-Content -Path C:\ServerScripts\report.ps1 -Value "`"== System report ==`"`n`"Hostname: `$env:COMPUTERNAME`"`n`"User: `$env:USERNAME`"`n`"Services running: `$((Get-Service | Where-Object { `$_.Status -eq 'Running' }).Count)`"`n`"Processes: `$((Get-Process).Count)`"`n"
+<empty>
+
+PS [16/23]> Get-Content C:\ServerScripts\report.ps1
+  "== System report =="
+  "Hostname: $env:COMPUTERNAME"
+  "User: $env:USERNAME"
+  "Services running: $((Get-Service | Where-Object { $_.Status -eq 'Running' }).Count)"
+  "Processes: $((Get-Process).Count)"
+  
+
+PS [17/23]> & C:\ServerScripts\report.ps1
+  == System report ==
+  Hostname: $env:COMPUTERNAME
+  User: $env:USERNAME
+  Services running: (Get-Service | Where-Object { $_.Status -eq 'Running' }.Count)
+  Processes: (Get-Process.Count)
+
+PS [18/23]> Set-Content -Path C:\ServerScripts\inline.ps1 -Value "& { 1..5 | ForEach-Object { `"[`$_]`" } }`n"
+<empty>
+
+PS [19/23]> & C:\ServerScripts\inline.ps1
+  [1]
+  [2]
+  [3]
+  [4]
+  [5]
+
+PS [20/23]> Get-ChildItem C:\ServerScripts | Format-Table Name, Length -AutoSize
+  
+  Name              Length
+  ----------------  ------
+  39 inline.ps1           
+  196 report.ps1          
+  75 role.ps1             
+  174 svcaudit.ps1        
+  187 users.ps1           
+  
+
+PS [21/23]> (Get-ChildItem C:\ServerScripts).Count
+  5
+
+PS [22/23]> Remove-Item C:\ServerScripts -Recurse -Force
+<empty>
+
+PS [23/23]> Test-Path C:\ServerScripts
+  False
