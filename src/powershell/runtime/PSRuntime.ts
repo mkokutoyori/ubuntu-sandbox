@@ -1729,7 +1729,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
-    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues);
+    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont);
     let result: PSValue;
     try {
       result = cmdlet.execute(ctx);
@@ -1773,6 +1773,7 @@ export class PSRuntime {
     pipeInput: PSValue,
     env: PSEnvironment,
     emittedValues: PSValue[],
+    silentlyContinue: boolean = false,
   ): CmdletContext {
     const self = this;
 
@@ -1801,7 +1802,10 @@ export class PSRuntime {
       emit: (val: PSValue) => emittedValues.push(val),
 
       emitError: (msg: string) => {
-        self.outputLines.push(`ERROR: ${msg}`);
+        // Always record the error object (so $Error and -ErrorVariable
+        // see it). Suppress the visible "ERROR:" line when the caller
+        // used -ErrorAction SilentlyContinue / Ignore.
+        if (!silentlyContinue) self.outputLines.push(`ERROR: ${msg}`);
         self.errorObjects.push({
           Exception: { Message: msg },
           CategoryInfo: { Category: 'NotSpecified' },
