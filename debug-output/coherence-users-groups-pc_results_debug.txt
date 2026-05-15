@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-pc
-Generated: 2026-05-15T16:24:59.252Z
+Generated: 2026-05-15T16:30:46.398Z
 host=WIN-USR-COH (windows-pc)
 Total commands: 105
 ============================================================
@@ -671,8 +671,9 @@ CMD [96/105]> help net
   This command is not supported by the help utility.  Try "net /?".
 
 CMD [97/105]> net help user
-  'net' is not recognized as an internal or external command,
-  operable program or batch file.
+  The syntax of this command is:
+  
+  NET USER [...]
 
 
 --- [98] § cleanup ---

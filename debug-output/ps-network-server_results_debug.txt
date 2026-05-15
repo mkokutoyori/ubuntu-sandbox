@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-server
-Generated: 2026-05-15T16:24:57.754Z
+Generated: 2026-05-15T16:30:42.226Z
 Engine: powershell
 host=SRV-NET-DBG (windows-server)
 Total commands: 101
@@ -727,34 +727,34 @@ PS [88/101]> whoami /user
   srv-net-dbg\administrator         S-1-5-21-3623811015-3361044348-30300820-500
 
 PS [89/101]> net config workstation
-  'net' is not recognized as an internal or external command,
-  operable program or batch file.
+  The syntax of this command is:
+  
+  NET CONFIG [...]
 
 PS [90/101]> net statistics workstation
-  'net' is not recognized as an internal or external command,
-  operable program or batch file.
+  The syntax of this command is:
+  
+  NET STATISTICS [...]
 
 PS [91/101]> net view
-  'net' is not recognized as an internal or external command,
-  operable program or batch file.
+  The syntax of this command is:
+  
+  NET VIEW [...]
 
 PS [92/101]> nbtstat -n
-  nbtstat : The term 'nbtstat' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + nbtstat -n
-  + ~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (nbtstat:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+      Node IpAddress: [0.0.0.0] Scope Id: []
+  
+                         NetBIOS Local Name Table
+  
+         Name               Type         Status
+      ---------------------------------------------
+      SRV-NET-DBG      <00>  UNIQUE      Registered
+      WORKGROUP        <00>  GROUP       Registered
+  
 
 PS [93/101]> nbtstat -r
-  nbtstat : The term 'nbtstat' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + nbtstat -r
-  + ~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (nbtstat:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]
 
 PS [94/101]> pathping localhost -ErrorAction SilentlyContinue
 <empty>
@@ -782,7 +782,7 @@ PS [99/101]> hostname
   SRV-NET-DBG
 
 PS [100/101]> Get-Date
-  5/15/2026 4:24 PM
+  5/15/2026 4:30 PM
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
 <empty>

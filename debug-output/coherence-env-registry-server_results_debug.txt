@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-server
-Generated: 2026-05-15T16:24:59.900Z
+Generated: 2026-05-15T16:30:48.395Z
 host=SRV-ENV-DBG (windows-server)
 Total commands: 103
 ============================================================
@@ -162,8 +162,7 @@ CMD [43/103]> set PATH | findstr AddedByPs
 
 --- [44] § setx (persistent best-effort) ---
 CMD [44/103]> setx DBG_PERSIST_CMD "persist-from-cmd"
-  'setx' is not recognized as an internal or external command,
-  operable program or batch file.
+  SUCCESS: Specified value was saved.
 
 PS  [45/103]> [Environment]::GetEnvironmentVariable("DBG_PERSIST_CMD","User")
 <empty>
@@ -172,8 +171,9 @@ PS  [46/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS","persist-fr
 <empty>
 
 CMD [47/103]> reg query "HKCU\Environment" /v DBG_PERSIST_PS
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Environment
+  
 
 PS  [48/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_CMD",$null,"User")
 <empty>
@@ -184,8 +184,9 @@ PS  [49/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS",$null,"User
 
 --- [50] § baseline registry ---
 CMD [50/103]> reg query HKCU\Software
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software
+  
 
 PS  [51/103]> Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
   
@@ -202,33 +203,33 @@ PS  [53/103]> Test-Path HKLM:\Software
   True
 
 CMD [54/103]> reg query HKLM\Software
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKLM\Software
+  
 
 
 --- [55] § reg add (cmd) → read (ps) ---
 CMD [55/103]> reg add HKCU\Software\CohReg /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 CMD [56/103]> reg query HKCU\Software\CohReg
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 PS  [57/103]> Test-Path HKCU:\Software\CohReg
   False
 
 CMD [58/103]> reg add HKCU\Software\CohReg /v Version /t REG_SZ /d "1.0.0" /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 CMD [59/103]> reg add HKCU\Software\CohReg /v Build /t REG_DWORD /d 42 /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 CMD [60/103]> reg query HKCU\Software\CohReg
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 PS  [61/103]> Get-ItemProperty -Path HKCU:\Software\CohReg
   Get-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
@@ -248,16 +249,19 @@ PS  [65/103]> Set-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -Valu
   Set-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
 
 CMD [66/103]> reg query HKCU\Software\CohReg /v InstallPath
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 CMD [67/103]> reg query HKCU\Software\CohReg /v Enabled
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 CMD [68/103]> reg query HKCU\Software\CohReg
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 
 --- [69] § nested keys ---
@@ -275,19 +279,20 @@ PS  [70/103]> Set-ItemProperty -Path HKCU:\Software\CohReg\Sub -Name "Lang" -Val
 <empty>
 
 CMD [71/103]> reg query HKCU\Software\CohReg\Sub /v Lang
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg\Sub
+  
 
 CMD [72/103]> reg add HKCU\Software\CohReg\Sub /v Theme /t REG_SZ /d "dark" /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 PS  [73/103]> (Get-ItemProperty HKCU:\Software\CohReg\Sub).Theme
 <empty>
 
 CMD [74/103]> reg query HKCU\Software\CohReg /s
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 PS  [75/103]> Get-ChildItem HKCU:\Software\CohReg -Recurse
   
@@ -300,15 +305,13 @@ PS  [75/103]> Get-ChildItem HKCU:\Software\CohReg -Recurse
 
 --- [76] § reg delete (cmd) → read (ps) ---
 CMD [76/103]> reg delete HKCU\Software\CohReg /v Build /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 PS  [77/103]> (Get-ItemProperty HKCU:\Software\CohReg).Build
 <empty>
 
 CMD [78/103]> reg delete HKCU\Software\CohReg\Sub /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 PS  [79/103]> Test-Path HKCU:\Software\CohReg\Sub
   True
@@ -319,21 +322,22 @@ PS  [80/103]> Remove-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -E
   Remove-ItemProperty : Property 'Enabled' does not exist at path 'HKCU:\Software\CohReg'.
 
 CMD [81/103]> reg query HKCU\Software\CohReg /v Enabled
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 PS  [82/103]> Clear-ItemProperty -Path HKCU:\Software\CohReg -Name "InstallPath" -ErrorAction SilentlyContinue
 <empty>
 
 CMD [83/103]> reg query HKCU\Software\CohReg /v InstallPath
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 
 --- [84] § HKLM coherence ---
 CMD [84/103]> reg add HKLM\Software\CohReg /v Site /t REG_SZ /d "main" /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 PS  [85/103]> (Get-ItemProperty HKLM:\Software\CohReg).Site
 <empty>
@@ -342,12 +346,12 @@ PS  [86/103]> Set-ItemProperty -Path HKLM:\Software\CohReg -Name "Tier" -Value "
   Set-ItemProperty : Cannot find path 'HKLM:\Software\CohReg' because it does not exist.
 
 CMD [87/103]> reg query HKLM\Software\CohReg
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKLM\Software\CohReg
+  
 
 CMD [88/103]> reg delete HKLM\Software\CohReg /f
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  The operation completed successfully.
 
 PS  [89/103]> Test-Path HKLM:\Software\CohReg
   False
@@ -494,8 +498,9 @@ PS  [101/103]> Remove-Item HKCU:\Software\CohReg -Recurse -ErrorAction SilentlyC
 <empty>
 
 CMD [102/103]> reg query HKCU\Software\CohReg
-  'reg' is not recognized as an internal or external command,
-  operable program or batch file.
+  
+  HKCU\Software\CohReg
+  
 
 CMD [103/103]> set DBG_PERSIST_CMD=
 <empty>
