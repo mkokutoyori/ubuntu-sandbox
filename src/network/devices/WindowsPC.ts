@@ -603,6 +603,34 @@ export class WindowsPC extends EndHost {
 
   // ─── systeminfo ────────────────────────────────────────────────
 
+  /**
+   * Run a synchronous native CLI command (ipconfig / netsh / arp / route /
+   * getmac / systeminfo / ver / net) directly. Used by the interpreter's
+   * native-command cmdlets so they can deliver real output without going
+   * through the async PowerShellExecutor pipeline.
+   *
+   * Returns null when the command is async (ping / tracert) or unknown —
+   * callers fall back to executeCmdCommand() in that case.
+   */
+  runSyncNativeCommand(cmd: string, args: string[]): string | null {
+    const lower = cmd.toLowerCase();
+    if (lower === 'systeminfo') return this.cmdSysteminfo();
+    if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    const netCtx = this.buildNetContext();
+    switch (lower) {
+      case 'ipconfig': return cmdIpconfig(netCtx, args);
+      case 'netsh':    return cmdNetsh(netCtx, args);
+      case 'arp':      return cmdArp(netCtx, args);
+      case 'getmac':   return cmdGetmac(netCtx, args);
+      case 'route':    return cmdRoute(netCtx, args);
+      case 'nslookup': return this.cmdNslookup(args);
+      // 'net' is multi-subcommand; its handler lives in executeCmdCommand
+      // and dispatches to net user / net localgroup / net start / net stop.
+      // ping / tracert are async — no sync path.
+      default: return null;
+    }
+  }
+
   private cmdSysteminfo(): string {
     const lines: string[] = [];
     lines.push(`Host Name:                 ${this.hostname}`);

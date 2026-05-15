@@ -88,6 +88,10 @@ import {
   NewEventLogCmdlet, LimitEventLogCmdlet, GetWinEventCmdlet,
 } from './EventLogCmdlets';
 import {
+  IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet,
+  GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
+} from './NativeShimCmdlets';
+import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
   UnregisterScheduledTaskCmdlet, NewScheduledTaskTriggerCmdlet,
   NewScheduledTaskActionCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
@@ -282,4 +286,16 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDiskCmdlet());
   registry.register(new GetVolumeCmdlet());
   registry.register(new GetCimInstanceCmdlet());
+
+  // ── Native CLI shims (sync subset) ────────────────────────────────────────
+  // ping / tracert stay in the legacy executor — they're async and the
+  // PSRuntime tree-walker is sync.
+  registry.register(IpconfigCmdlet);
+  registry.register(NetshCmdlet);
+  registry.register(ArpCmdlet);
+  registry.register(RouteCmdlet);
+  registry.register(GetmacCmdlet);
+  registry.register(SysteminfoCmdlet);
+  registry.register(VerCmdlet);
+  registry.register(NslookupCmdlet);
 }

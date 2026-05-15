@@ -21,25 +21,25 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 
 /**
  * Tokens that bypass the interpreter and go straight to the legacy
- * PowerShellExecutor.
+ * PowerShellExecutor. After Phase 4b only the genuinely async or
+ * multi-subcommand native CLI tools remain:
+ *   - `ping` / `tracert` — their handlers (cmdPing / cmdTracert) are async.
+ *     Migrating them into ICmdlets would require an async tree-walker.
+ *   - `net` — multi-subcommand router (`net user`, `net localgroup`,
+ *     `net start`, `net stop`) that mutates state through different
+ *     contexts; the executor's dispatch is more convenient than rebuilding
+ *     it in an ICmdlet.
  *
- * Today this list only contains true native-CLI commands (ipconfig, ping,
- * netsh, …). They aren't PowerShell cmdlets — they're command-line tools
- * the executor simulates with rich, async output. Migrating them into the
- * interpreter would require making the synchronous tree-walker async, so
- * they stay routed through the executor for now.
+ * Every other native (ipconfig / netsh / arp / route / getmac / systeminfo
+ * / ver / nslookup) is now a real ICmdlet wired to
+ * INetworkProvider.runSyncNativeCommand().
  *
  * PS-cmdlet aliases (ls / dir / cd / pwd / cat / type / cp / mv / rm /
- * del / ren / mkdir / rmdir / hostname / whoami) used to live here too
- * but are now first-class ICmdlets registered in the interpreter's core
- * registry — `Set-Location` aliases `cd`, `Get-ChildItem` aliases
- * `ls`/`dir`, `Get-Location` aliases `pwd`, `Rename-Item` aliases `ren`,
- * the new `MkdirCmdlet` covers `mkdir`/`md`, etc. The runtime resolves
- * them directly without touching the executor.
+ * del / ren / mkdir / rmdir / hostname / whoami) are also first-class
+ * ICmdlets in the interpreter's core registry.
  */
 const DEVICE_ONLY_COMMANDS = new Set([
-  'ipconfig', 'ping', 'tracert', 'netsh', 'arp', 'route',
-  'systeminfo', 'ver', 'net',
+  'ping', 'tracert', 'net',
 ]);
 
 export class PowerShellSubShell implements ISubShell {

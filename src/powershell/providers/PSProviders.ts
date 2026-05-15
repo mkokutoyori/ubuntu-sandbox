@@ -225,6 +225,13 @@ export interface INetworkProvider {
   setWinhttpProxy(proxy: string): void;
   /** Execute a CMD-level native command (ping, ipconfig, tracert, etc.) */
   executeCmdCommand(cmd: string): Promise<string>;
+  /**
+   * Synchronous variant for native commands whose underlying handler is
+   * sync (ipconfig / netsh / arp / route / getmac / systeminfo / ver /
+   * nslookup). Returns null when the command is async or unknown — callers
+   * should fall back to executeCmdCommand or skip the call.
+   */
+  runSyncNativeCommand(cmd: string, args: string[]): string | null;
 }
 
 export interface IUserProvider {
