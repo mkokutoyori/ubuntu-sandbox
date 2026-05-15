@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-pc
-Generated: 2026-05-15T11:27:30.070Z
+Generated: 2026-05-15T16:06:51.877Z
 Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
@@ -359,10 +359,10 @@ PS [46/77]> $sb2 = { param($a,$b) $a + $b }; & $sb2 10 20
   30
 
 PS [47/77]> & { Get-Process | Select-Object -First 2 Name }
-  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Process; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=18; line=1; column=19; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=39; line=1; column=40; position=offset=32; line=1; column=33; arguments=type=CommandExpression; name=Name; position=offset=41; line=1; column=42; position=offset=18; line=1; column=19; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
+  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Process; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=18; line=1; column=19; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=39; line=1; column=40; position=offset=32; line=1; column=33; arguments=type=LiteralExpression; value=Name; raw=Name; kind=string; position=offset=41; line=1; column=42; position=offset=18; line=1; column=19; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
 
 PS [48/77]> & { Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 2 Name, Status }
-  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Service; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Where-Object; position=offset=18; line=1; column=19; parameters=; arguments=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=BinaryExpression; operator=-eq; left=type=MemberExpression; object=type=VariableExpression; name=_; scope=; varName=_; position=offset=33; line=1; column=34; member=Status; computed=False; position=offset=35; line=1; column=36; right=type=LiteralExpression; value=Running; raw=Running; kind=expandable; position=offset=47; line=1; column=48; position=offset=35; line=1; column=36; parameters=; arguments=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; redirections=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; position=offset=31; line=1; column=32; position=offset=18; line=1; column=19 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=61; line=1; column=62; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=82; line=1; column=83; position=offset=75; line=1; column=76; arguments=type=ArrayExpression; elements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Name; position=offset=84; line=1; column=85; parameters=; arguments=; position=offset=84; line=1; column=85; position=offset=84; line=1; column=85; redirections=; position=offset=84; line=1; column=85 type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Status; position=offset=90; line=1; column=91; parameters=; arguments=; position=offset=90; line=1; column=91; position=offset=90; line=1; column=91; redirections=; position=offset=90; line=1; column=91; position=offset=84; line=1; column=85; position=offset=61; line=1; column=62; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
+  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Service; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Where-Object; position=offset=18; line=1; column=19; parameters=; arguments=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=BinaryExpression; operator=-eq; left=type=MemberExpression; object=type=VariableExpression; name=_; scope=; varName=_; position=offset=33; line=1; column=34; member=Status; computed=False; position=offset=35; line=1; column=36; right=type=LiteralExpression; value=Running; raw=Running; kind=expandable; position=offset=47; line=1; column=48; position=offset=35; line=1; column=36; parameters=; arguments=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; redirections=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; position=offset=31; line=1; column=32; position=offset=18; line=1; column=19 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=61; line=1; column=62; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=82; line=1; column=83; position=offset=75; line=1; column=76; arguments=type=ArrayExpression; elements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=LiteralExpression; value=Name; raw=Name; kind=string; position=offset=84; line=1; column=85; parameters=; arguments=; position=offset=84; line=1; column=85; position=offset=84; line=1; column=85; redirections=; position=offset=84; line=1; column=85 type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=LiteralExpression; value=Status; raw=Status; kind=string; position=offset=90; line=1; column=91; parameters=; arguments=; position=offset=90; line=1; column=91; position=offset=90; line=1; column=91; redirections=; position=offset=90; line=1; column=91; position=offset=84; line=1; column=85; position=offset=61; line=1; column=62; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
 
 
 --- [49] § multi-script composition ---
@@ -509,17 +509,15 @@ PS [52/77]> & C:\Scripts\sum.ps1 -Numbers ((1..10) | Where-Object { $_ % 2 -eq 0
 
 --- [53] § state probes ---
 PS [53/77]> Get-ChildItem C:\Scripts | Format-Table Name, Length -AutoSize
-  
-  Name              Length
-  ----------------  ------
-  281 files.ps1           
-  279 fn.ps1              
-  90 hello.ps1            
-  214 pipeline.ps1        
-  103 sum.ps1             
-  118 try.ps1             
-  188 users.ps1           
-  
+  Name            Length         
+  --------------- ---------------
+  files.ps1       281            
+  fn.ps1          279            
+  hello.ps1       90             
+  pipeline.ps1    214            
+  sum.ps1         103            
+  try.ps1         118            
+  users.ps1       188            
 
 PS [54/77]> (Get-ChildItem C:\Scripts).Count
   7

@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-pc
-Generated: 2026-05-15T11:27:29.916Z
+Generated: 2026-05-15T16:06:59.457Z
 host=WIN-SP-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -485,32 +485,30 @@ PS  [4/102]> Get-Service
   
 
 PS  [5/102]> Get-Service | Format-Table Name, Status, StartType -AutoSize
-  
-  Name               Status   StartType
-  -----------------  -------  ---------
-  Tcpip              Running  Boot     
-  Afd                Running  System   
-  Dhcp               Running  Automatic
-  Dnscache           Running  Automatic
-  NetBT              Running  System   
-  RpcSs              Running  Automatic
-  RpcEptMapper       Running  Automatic
-  SamSs              Running  Automatic
-  LanmanServer       Running  Automatic
-  LanmanWorkstation  Running  Automatic
-  mpssvc             Running  Automatic
-  EventLog           Running  Automatic
-  W32Time            Running  Automatic
-  CryptSvc           Running  Automatic
-  Winmgmt            Running  Automatic
-  WinRM              Stopped  Manual   
-  bthserv            Stopped  Manual   
-  winlogon           Running  Automatic
-  Spooler            Running  Automatic
-  Schedule           Running  Automatic
-  AudioSrv           Running  Automatic
-  Themes             Running  Automatic
-  
+  Name            Status          StartType      
+  --------------- --------------- ---------------
+  Tcpip           Running         Boot           
+  Afd             Running         System         
+  Dhcp            Running         Automatic      
+  Dnscache        Running         Automatic      
+  NetBT           Running         System         
+  RpcSs           Running         Automatic      
+  RpcEptMapper    Running         Automatic      
+  SamSs           Running         Automatic      
+  LanmanServer    Running         Automatic      
+  LanmanWorkstation Running         Automatic      
+  mpssvc          Running         Automatic      
+  EventLog        Running         Automatic      
+  W32Time         Running         Automatic      
+  CryptSvc        Running         Automatic      
+  Winmgmt         Running         Automatic      
+  WinRM           Stopped         Manual         
+  bthserv         Stopped         Manual         
+  winlogon        Running         Automatic      
+  Spooler         Running         Automatic      
+  Schedule        Running         Automatic      
+  AudioSrv        Running         Automatic      
+  Themes          Running         Automatic      
 
 PS  [6/102]> (Get-Service).Count
   22
@@ -567,95 +565,9 @@ PS  [13/102]> (Get-Service -Name Spooler).Status
   Stopped
 
 PS  [14/102]> Get-Service Spooler | Format-List Name, Status, StartType
-  
-  Name      : Tcpip
-  Status    : Running
-  StartType : Boot
-  
-  Name      : Afd
-  Status    : Running
-  StartType : System
-  
-  Name      : Dhcp
-  Status    : Running
+  Name : Spooler
+  Status : Stopped
   StartType : Automatic
-  
-  Name      : Dnscache
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : NetBT
-  Status    : Running
-  StartType : System
-  
-  Name      : RpcSs
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : RpcEptMapper
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : SamSs
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : LanmanServer
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : LanmanWorkstation
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : mpssvc
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : EventLog
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : W32Time
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : CryptSvc
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : Winmgmt
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : WinRM
-  Status    : Stopped
-  StartType : Manual
-  
-  Name      : bthserv
-  Status    : Stopped
-  StartType : Manual
-  
-  Name      : winlogon
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : Spooler
-  Status    : Stopped
-  StartType : Automatic
-  
-  Name      : Schedule
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : AudioSrv
-  Status    : Running
-  StartType : Automatic
-  
-  Name      : Themes
-  Status    : Running
-  StartType : Automatic
-  
 
 
 --- [15] § Start-Service (ps) → sc query (cmd) ---
@@ -776,60 +688,18 @@ CMD [34/102]> sc query | findstr SERVICE_NAME
   SERVICE_NAME: Themes
 
 PS  [35/102]> Get-Service -Name "S*" | Format-Table Name, Status
-  
-  Name               Status 
-  -----------------  -------
-  Tcpip              Running
-  Afd                Running
-  Dhcp               Running
-  Dnscache           Running
-  NetBT              Running
-  RpcSs              Running
-  RpcEptMapper       Running
-  SamSs              Running
-  LanmanServer       Running
-  LanmanWorkstation  Running
-  mpssvc             Running
-  EventLog           Running
-  W32Time            Running
-  CryptSvc           Running
-  Winmgmt            Running
-  WinRM              Stopped
-  bthserv            Stopped
-  winlogon           Running
-  Spooler            Stopped
-  Schedule           Running
-  AudioSrv           Running
-  Themes             Running
-  
+  Name            Status         
+  --------------- ---------------
+  SamSs           Running        
+  LanmanServer    Running        
+  Spooler         Stopped        
+  Schedule        Running        
 
 PS  [36/102]> Get-Service -Name "*log*" | Format-Table Name, Status
-  
-  Name               Status 
-  -----------------  -------
-  Tcpip              Running
-  Afd                Running
-  Dhcp               Running
-  Dnscache           Running
-  NetBT              Running
-  RpcSs              Running
-  RpcEptMapper       Running
-  SamSs              Running
-  LanmanServer       Running
-  LanmanWorkstation  Running
-  mpssvc             Running
-  EventLog           Running
-  W32Time            Running
-  CryptSvc           Running
-  Winmgmt            Running
-  WinRM              Stopped
-  bthserv            Stopped
-  winlogon           Running
-  Spooler            Stopped
-  Schedule           Running
-  AudioSrv           Running
-  Themes             Running
-  
+  Name            Status         
+  --------------- ---------------
+  EventLog        Running        
+  winlogon        Running        
 
 CMD [37/102]> sc query bthserv
   
@@ -880,7 +750,7 @@ CMD [39/102]> tasklist
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0      7,003 K
+  spoolsv.exe                   5136 Services                   0     12,963 K
 
 CMD [40/102]> tasklist /v
   
@@ -911,7 +781,7 @@ CMD [40/102]> tasklist /v
   explorer.exe                  2848 Console                    1    145,000 K Running         WIN-SP-DBG\Administrator            0:00:12 Windows Explorer
   cmd.exe                       5120 Console                    1      5,200 K Running         WIN-SP-DBG\Administrator            0:00:00 Command Prompt
   conhost.exe                   5132 Console                    1     18,400 K Running         WIN-SP-DBG\Administrator            0:00:00 Console Window Host
-  spoolsv.exe                   5136 Services                   0      7,003 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   5136 Services                   0     12,963 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
 
 CMD [41/102]> tasklist /fo csv /nh
   "System Idle Process","0","Services","0","16 K"
@@ -939,7 +809,7 @@ CMD [41/102]> tasklist /fo csv /nh
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","7,003 K"
+  "spoolsv.exe","5136","Services","0","12,963 K"
 
 PS  [42/102]> Get-Process
   
@@ -970,40 +840,38 @@ PS  [42/102]> Get-Process
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-       70       5      6    7003                   0  5136  spoolsv            
+      157       7      6   12963                   0  5136  spoolsv            
   
 
 PS  [43/102]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
-  
-  Id    ProcessName          CPU
-  ----  -------------------  ---
-     0  System Idle Process     
-     4  System                  
-   108  Registry                
-   340  smss                    
-   472  csrss                   
-   548  wininit                 
-   560  csrss                   
-   596  winlogon                
-   620  services                
-   636  lsass                   
-   784  svchost                 
-   836  svchost                 
-   912  svchost                 
-   964  svchost                 
-  1024  dwm                     
-  1048  svchost                 
-  1100  svchost                 
-  1168  svchost                 
-  1400  taskhostw               
-  1560  RuntimeBroker           
-  2200  LanmanServer            
-  2400  LanmanWorkstation       
-  2848  explorer                
-  5120  cmd                     
-  5132  conhost                 
-  5136  spoolsv                 
-  
+  Id              ProcessName     CPU            
+  --------------- --------------- ---------------
+  0               System Idle Process 0              
+  4               System          0.5            
+  108             Registry        0              
+  340             smss            0              
+  472             csrss           2.1            
+  548             wininit         0              
+  560             csrss           1.2            
+  596             winlogon        0.1            
+  620             services        1.5            
+  636             lsass           3.2            
+  784             svchost         0.6            
+  836             svchost         0.6            
+  912             svchost         0.6            
+  964             svchost         0.8999999999999999
+  1024            dwm             8.4            
+  1048            svchost         0.6            
+  1100            svchost         0.6            
+  1168            svchost         0.3            
+  1400            taskhostw       0.2            
+  1560            RuntimeBroker   0.8            
+  2200            LanmanServer    0.3            
+  2400            LanmanWorkstation 0.2            
+  2848            explorer        12.3           
+  5120            cmd             0.1            
+  5132            conhost         0.3            
+  5136            spoolsv         0              
 
 PS  [44/102]> (Get-Process).Count
   26
@@ -1037,7 +905,7 @@ PS  [45/102]> ps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-       70       5      6    7003                   0  5136  spoolsv            
+      157       7      6   12963                   0  5136  spoolsv            
   
 
 PS  [46/102]> gps
@@ -1069,7 +937,7 @@ PS  [46/102]> gps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-       70       5      6    7003                   0  5136  spoolsv            
+      157       7      6   12963                   0  5136  spoolsv            
   
 
 
@@ -1153,7 +1021,7 @@ CMD [60/102]> tasklist | find /c "exe"
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0      7,003 K
+  spoolsv.exe                   5136 Services                   0     12,963 K
 
 PS  [61/102]> (Get-Process).Count
   26
@@ -1179,7 +1047,7 @@ PS  [64/102]> Start-Process notepad.exe
 <empty>
 
 PS  [65/102]> Get-Process -Name notepad | Select-Object -First 1 Id, Name
-<empty>
+  ERROR: Cannot find a process with the name "notepad".
 
 CMD [66/102]> tasklist /fi "imagename eq notepad.exe" /fo csv /nh
   INFO: No tasks are running which match the specified criteria.
@@ -1198,12 +1066,12 @@ CMD [69/102]> schtasks /query
 
 PS  [70/102]> Get-ScheduledTask -ErrorAction SilentlyContinue | Select-Object -First 5 TaskName, State
   
-  TaskName                         State
-  -------------------------------  -----
-  GoogleUpdateTaskUser             Ready
-  OneDrive Standalone Update Task  Ready
-  .NET Framework NGEN v4.0.30319   Ready
-  SimTestTask                      Ready
+  
+  
+  
+  
+  
+  
   
 
 PS  [71/102]> Register-ScheduledTask -TaskName "CohTask" -Action (New-ScheduledTaskAction -Execute "calc.exe") -Trigger (New-ScheduledTaskTrigger -Daily -At "09:00") -Force
@@ -1256,7 +1124,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/15/2026 9:27 AM
+  TimeCreated  : 5/15/2026 2:06 PM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -1264,7 +1132,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/15/2026 5:27 AM
+  TimeCreated  : 5/15/2026 10:06 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -1272,7 +1140,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/14/2026 11:27 PM
+  TimeCreated  : 5/15/2026 4:06 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -1333,51 +1201,41 @@ PS  [85/102]> gcm Get-Process
 <empty>
 
 PS  [86/102]> gcm Stop-Service
-  ERROR: Cannot bind stop-service: missing -Name
+<empty>
 
 PS  [87/102]> Get-Alias gsv
-  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Alias gsv
-  + ~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Name  Definition   CommandType
+  ----  -----------  -----------
+  gsv   get-service  Alias      
+  
 
 PS  [88/102]> Get-Alias ps
-  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Alias ps
-  + ~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Name  Definition   CommandType
+  ----  -----------  -----------
+  ps    get-process  Alias      
+  
 
 PS  [89/102]> Get-Alias kill
-  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Alias kill
-  + ~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Name  Definition    CommandType
+  ----  ------------  -----------
+  kill  stop-process  Alias      
+  
 
 PS  [90/102]> Get-Help Get-Service -ErrorAction SilentlyContinue
   NAME
-      Status=Running; Name=Tcpip; DisplayName=TCP/IP Protocol Driver; Description=TCP/IP Protocol Driver; ServiceType=KERNEL_DRIVER; StartType=Boot; BinaryPath=C:\Windows\System32\svchost.exe -k tcpip; Account=; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=Afd; DisplayName=Ancillary Function Driver for Winsock; Description=Winsock helper; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k afd; Account=; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=Dhcp; DisplayName=DHCP Client; Description=Registers and updates IP addresses and DNS records; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dhcp; Account=NT Authority\LocalService; DependentServices=Afd Tcpip; ServicesDependedOn=Afd Tcpip; CanPauseAndContinue=False Status=Running; Name=Dnscache; DisplayName=DNS Client; Description=Caches DNS names and registers the full computer name; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dnscache; Account=NT AUTHORITY\NetworkService; DependentServices=Tcpip; ServicesDependedOn=Tcpip; CanPauseAndContinue=False Status=Running; Name=NetBT; DisplayName=NetBT; Description=NetBIOS over TCP/IP; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k netbt; Account=; DependentServices=Tcpip; ServicesDependedOn=Tcpip; CanPauseAndContinue=False Status=Running; Name=RpcSs; DisplayName=Remote Procedure Call (RPC); Description=The RPCSS service is the Service Control Manager for COM and DCOM servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpcss; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=RpcEptMapper; DisplayName=RPC Endpoint Mapper; Description=Resolves RPC interfaces identifiers to transport endpoints; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpceptmapper; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=SamSs; DisplayName=Security Accounts Manager; Description=Stores security information for local user accounts; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k samss; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=LanmanServer; DisplayName=Server; Description=Supports file, print, and named-pipe sharing over the network; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanserver; Account=NT AUTHORITY\SYSTEM; DependentServices=SamSs; ServicesDependedOn=SamSs; CanPauseAndContinue=True Status=Running; Name=LanmanWorkstation; DisplayName=Workstation; Description=Creates and maintains client network connections to remote servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanworkstation; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=mpssvc; DisplayName=Windows Defender Firewall; Description=Helps protect your computer by preventing unauthorized users from gaining access; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k mpssvc; Account=NT AUTHORITY\LocalService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=EventLog; DisplayName=Windows Event Log; Description=Manages events and event logs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k eventlog; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=W32Time; DisplayName=Windows Time; Description=Maintains date and time synchronization on all clients and servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k w32time; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=CryptSvc; DisplayName=Cryptographic Services; Description=Provides cryptographic key management services; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k cryptsvc; Account=NT AUTHORITY\NetworkService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=Winmgmt; DisplayName=Windows Management Instrumentation; Description=Provides a common interface and object model for WMI; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winmgmt; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Stopped; Name=WinRM; DisplayName=Windows Remote Management (WS-Management); Description=Windows Remote Management (WinRM) service; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k winrm; Account=NT AUTHORITY\NetworkService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Stopped; Name=bthserv; DisplayName=Bluetooth Support Service; Description=Supports Bluetooth HID devices and Audio; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k bthserv; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=winlogon; DisplayName=Windows Logon Application; Description=Manages user logon and logoff; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winlogon; Account=NT AUTHORITY\SYSTEM; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Stopped; Name=Spooler; DisplayName=Print Spooler; Description=Loads files to memory for later printing; ServiceType=WIN32_OWN_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\spoolsv.exe; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=True Status=Running; Name=Schedule; DisplayName=Task Scheduler; Description=Enables a user to configure and schedule automated tasks; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k schedule; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=AudioSrv; DisplayName=Windows Audio; Description=Manages audio for Windows-based programs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k audiosrv; Account=NT AUTHORITY\LocalService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=Themes; DisplayName=Themes; Description=Provides user experience theme management; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k themes; Account=NT AUTHORITY\SYSTEM; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False
+      Get-Service
   
   SYNTAX
-      Status=Running; Name=Tcpip; DisplayName=TCP/IP Protocol Driver; Description=TCP/IP Protocol Driver; ServiceType=KERNEL_DRIVER; StartType=Boot; BinaryPath=C:\Windows\System32\svchost.exe -k tcpip; Account=; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=Afd; DisplayName=Ancillary Function Driver for Winsock; Description=Winsock helper; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k afd; Account=; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=Dhcp; DisplayName=DHCP Client; Description=Registers and updates IP addresses and DNS records; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dhcp; Account=NT Authority\LocalService; DependentServices=Afd Tcpip; ServicesDependedOn=Afd Tcpip; CanPauseAndContinue=False Status=Running; Name=Dnscache; DisplayName=DNS Client; Description=Caches DNS names and registers the full computer name; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dnscache; Account=NT AUTHORITY\NetworkService; DependentServices=Tcpip; ServicesDependedOn=Tcpip; CanPauseAndContinue=False Status=Running; Name=NetBT; DisplayName=NetBT; Description=NetBIOS over TCP/IP; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k netbt; Account=; DependentServices=Tcpip; ServicesDependedOn=Tcpip; CanPauseAndContinue=False Status=Running; Name=RpcSs; DisplayName=Remote Procedure Call (RPC); Description=The RPCSS service is the Service Control Manager for COM and DCOM servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpcss; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=RpcEptMapper; DisplayName=RPC Endpoint Mapper; Description=Resolves RPC interfaces identifiers to transport endpoints; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpceptmapper; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=SamSs; DisplayName=Security Accounts Manager; Description=Stores security information for local user accounts; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k samss; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=LanmanServer; DisplayName=Server; Description=Supports file, print, and named-pipe sharing over the network; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanserver; Account=NT AUTHORITY\SYSTEM; DependentServices=SamSs; ServicesDependedOn=SamSs; CanPauseAndContinue=True Status=Running; Name=LanmanWorkstation; DisplayName=Workstation; Description=Creates and maintains client network connections to remote servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanworkstation; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=mpssvc; DisplayName=Windows Defender Firewall; Description=Helps protect your computer by preventing unauthorized users from gaining access; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k mpssvc; Account=NT AUTHORITY\LocalService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=EventLog; DisplayName=Windows Event Log; Description=Manages events and event logs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k eventlog; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=W32Time; DisplayName=Windows Time; Description=Maintains date and time synchronization on all clients and servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k w32time; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=CryptSvc; DisplayName=Cryptographic Services; Description=Provides cryptographic key management services; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k cryptsvc; Account=NT AUTHORITY\NetworkService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=Winmgmt; DisplayName=Windows Management Instrumentation; Description=Provides a common interface and object model for WMI; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winmgmt; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Stopped; Name=WinRM; DisplayName=Windows Remote Management (WS-Management); Description=Windows Remote Management (WinRM) service; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k winrm; Account=NT AUTHORITY\NetworkService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Stopped; Name=bthserv; DisplayName=Bluetooth Support Service; Description=Supports Bluetooth HID devices and Audio; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k bthserv; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=winlogon; DisplayName=Windows Logon Application; Description=Manages user logon and logoff; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winlogon; Account=NT AUTHORITY\SYSTEM; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Stopped; Name=Spooler; DisplayName=Print Spooler; Description=Loads files to memory for later printing; ServiceType=WIN32_OWN_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\spoolsv.exe; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=True Status=Running; Name=Schedule; DisplayName=Task Scheduler; Description=Enables a user to configure and schedule automated tasks; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k schedule; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=AudioSrv; DisplayName=Windows Audio; Description=Manages audio for Windows-based programs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k audiosrv; Account=NT AUTHORITY\LocalService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=Themes; DisplayName=Themes; Description=Provides user experience theme management; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k themes; Account=NT AUTHORITY\SYSTEM; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False [<CommonParameters>]
+      Get-Service [<CommonParameters>]
   
   DESCRIPTION
-      Displays help for the Status=Running; Name=Tcpip; DisplayName=TCP/IP Protocol Driver; Description=TCP/IP Protocol Driver; ServiceType=KERNEL_DRIVER; StartType=Boot; BinaryPath=C:\Windows\System32\svchost.exe -k tcpip; Account=; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=Afd; DisplayName=Ancillary Function Driver for Winsock; Description=Winsock helper; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k afd; Account=; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=Dhcp; DisplayName=DHCP Client; Description=Registers and updates IP addresses and DNS records; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dhcp; Account=NT Authority\LocalService; DependentServices=Afd Tcpip; ServicesDependedOn=Afd Tcpip; CanPauseAndContinue=False Status=Running; Name=Dnscache; DisplayName=DNS Client; Description=Caches DNS names and registers the full computer name; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dnscache; Account=NT AUTHORITY\NetworkService; DependentServices=Tcpip; ServicesDependedOn=Tcpip; CanPauseAndContinue=False Status=Running; Name=NetBT; DisplayName=NetBT; Description=NetBIOS over TCP/IP; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k netbt; Account=; DependentServices=Tcpip; ServicesDependedOn=Tcpip; CanPauseAndContinue=False Status=Running; Name=RpcSs; DisplayName=Remote Procedure Call (RPC); Description=The RPCSS service is the Service Control Manager for COM and DCOM servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpcss; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=RpcEptMapper; DisplayName=RPC Endpoint Mapper; Description=Resolves RPC interfaces identifiers to transport endpoints; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpceptmapper; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=SamSs; DisplayName=Security Accounts Manager; Description=Stores security information for local user accounts; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k samss; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=LanmanServer; DisplayName=Server; Description=Supports file, print, and named-pipe sharing over the network; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanserver; Account=NT AUTHORITY\SYSTEM; DependentServices=SamSs; ServicesDependedOn=SamSs; CanPauseAndContinue=True Status=Running; Name=LanmanWorkstation; DisplayName=Workstation; Description=Creates and maintains client network connections to remote servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanworkstation; Account=NT AUTHORITY\NetworkService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=mpssvc; DisplayName=Windows Defender Firewall; Description=Helps protect your computer by preventing unauthorized users from gaining access; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k mpssvc; Account=NT AUTHORITY\LocalService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=EventLog; DisplayName=Windows Event Log; Description=Manages events and event logs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k eventlog; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=W32Time; DisplayName=Windows Time; Description=Maintains date and time synchronization on all clients and servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k w32time; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=CryptSvc; DisplayName=Cryptographic Services; Description=Provides cryptographic key management services; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k cryptsvc; Account=NT AUTHORITY\NetworkService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=Winmgmt; DisplayName=Windows Management Instrumentation; Description=Provides a common interface and object model for WMI; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winmgmt; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Stopped; Name=WinRM; DisplayName=Windows Remote Management (WS-Management); Description=Windows Remote Management (WinRM) service; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k winrm; Account=NT AUTHORITY\NetworkService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Stopped; Name=bthserv; DisplayName=Bluetooth Support Service; Description=Supports Bluetooth HID devices and Audio; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k bthserv; Account=NT AUTHORITY\LocalService; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Running; Name=winlogon; DisplayName=Windows Logon Application; Description=Manages user logon and logoff; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winlogon; Account=NT AUTHORITY\SYSTEM; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False Status=Stopped; Name=Spooler; DisplayName=Print Spooler; Description=Loads files to memory for later printing; ServiceType=WIN32_OWN_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\spoolsv.exe; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=True Status=Running; Name=Schedule; DisplayName=Task Scheduler; Description=Enables a user to configure and schedule automated tasks; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k schedule; Account=NT AUTHORITY\SYSTEM; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=AudioSrv; DisplayName=Windows Audio; Description=Manages audio for Windows-based programs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k audiosrv; Account=NT AUTHORITY\LocalService; DependentServices=RpcSs; ServicesDependedOn=RpcSs; CanPauseAndContinue=False Status=Running; Name=Themes; DisplayName=Themes; Description=Provides user experience theme management; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k themes; Account=NT AUTHORITY\SYSTEM; DependentServices=; ServicesDependedOn=; CanPauseAndContinue=False cmdlet.
+      Displays help for the Get-Service cmdlet.
 
 PS  [91/102]> Get-Member -InputObject (Get-Service | Select-Object -First 1) -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType
-  
-  Name  MemberType
-  ----  ----------
-                  
-  
+<empty>
 
 CMD [92/102]> help sc
   This command is not supported by the help utility.  Try "sc /?".
@@ -1610,7 +1468,7 @@ CMD [96/102]> tasklist | find /c "."
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0      7,003 K
+  spoolsv.exe                   5136 Services                   0     12,963 K
 
 PS  [97/102]> Get-Process | Measure-Object | Select-Object Count
   
@@ -1620,12 +1478,10 @@ PS  [97/102]> Get-Process | Measure-Object | Select-Object Count
   
 
 PS  [98/102]> Get-Service | Group-Object Status | Format-Table Name, Count -AutoSize
-  
-  Name     Count
-  -------  -----
-  Running     19
-  Stopped      3
-  
+  Name            Count          
+  --------------- ---------------
+  Running         19             
+  Stopped         3              
 
 PS  [99/102]> Get-Service | Group-Object StartType | Sort-Object Count -Descending
   
@@ -1660,11 +1516,11 @@ CMD [100/102]> sc query | findstr STATE | find /c "RUNNING"
 
 PS  [101/102]> Get-Process | Sort-Object WS -Descending | Select-Object -First 3 Name, Id, WS
   
-  Name  Id    WS
-  ----  ----  --
-        5136    
-        5132    
-        5120    
+  
+  
+  
+  
+  
   
 
 CMD [102/102]> tasklist /fo csv /nh | find /c ","
@@ -1693,4 +1549,4 @@ CMD [102/102]> tasklist /fo csv /nh | find /c ","
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","7,003 K"
+  "spoolsv.exe","5136","Services","0","12,963 K"

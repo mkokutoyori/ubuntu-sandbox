@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-server
-Generated: 2026-05-15T11:27:35.146Z
+Generated: 2026-05-15T16:07:01.033Z
 Engine: powershell
 host=SRV-USR-DBG (windows-server)
 Total commands: 102
@@ -19,14 +19,12 @@ PS [1/102]> Get-LocalUser
   
 
 PS [2/102]> Get-LocalUser | Format-Table Name, Enabled, Description -AutoSize
-  
-  Name            Enabled  Description                                             
-  --------------  -------  --------------------------------------------------------
-  Administrator   True     Built-in account for administering the computer/domain  
-  Guest           False    Built-in account for guest access to the computer/domain
-  DefaultAccount  False    A user account managed by the system.                   
-  User            True                                                             
-  
+  Name            Enabled         Description    
+  --------------- --------------- ---------------
+  Administrator   True            Built-in account for administering the computer/domain
+  Guest           False           Built-in account for guest access to the computer/domain
+  DefaultAccount  False           A user account managed by the system.
+  User            True                           
 
 PS [3/102]> Get-LocalUser | Sort-Object Name
   
@@ -79,17 +77,15 @@ PS [8/102]> Get-LocalGroup
   
 
 PS [9/102]> Get-LocalGroup | Format-Table Name, Description -AutoSize
-  
-  Name                             Description                                                                                   
-  -------------------------------  ----------------------------------------------------------------------------------------------
-  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
-  Users                            Users are prevented from making accidental or intentional system-wide changes                 
-  Guests                           Guests have the same access as members of the Users group by default                          
-  Power Users                      Power Users are included for backwards compatibility                                          
-  Remote Desktop Users             Members are granted the right to logon remotely                                               
-  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
-  Event Log Readers                Members of this group can read event logs from local machine                                  
-  
+  Name            Description    
+  --------------- ---------------
+  Administrators  Administrators have complete and unrestricted access to the computer/domain
+  Users           Users are prevented from making accidental or intentional system-wide changes
+  Guests          Guests have the same access as members of the Users group by default
+  Power Users     Power Users are included for backwards compatibility
+  Remote Desktop Users Members are granted the right to logon remotely
+  Network Configuration Operators Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers Members of this group can read event logs from local machine
 
 PS [10/102]> Get-LocalGroup | Sort-Object Name
   
@@ -109,16 +105,16 @@ PS [11/102]> (Get-LocalGroup).Count
 
 PS [12/102]> Get-LocalGroupMember -Group Administrators
   
-  Name           Enabled  Description                                           
-  -------------  -------  ------------------------------------------------------
-  Administrator  True     Built-in account for administering the computer/domain
+  ObjectClass  Name           PrincipalSource  SID                                        
+  -----------  -------------  ---------------  -------------------------------------------
+  User         Administrator  Local            S-1-5-21-3623811015-3361044348-30300820-500
   
 
 PS [13/102]> Get-LocalGroupMember -Group Users
   
-  Name  Enabled  Description
-  ----  -------  -----------
-  User  True                
+  ObjectClass  Name  PrincipalSource  SID                                         
+  -----------  ----  ---------------  --------------------------------------------
+  User         User  Local            S-1-5-21-3623811015-3361044348-30300820-1001
   
 
 
@@ -217,26 +213,26 @@ PS [35/102]> Get-LocalUser | Where-Object { $_.Description }
 
 PS [36/102]> Get-LocalUser | Select-Object Name, Description, Enabled | Sort-Object Name
   
-  Name            Enabled  Description                                             
-  --------------  -------  --------------------------------------------------------
-  Administrator   True     Built-in account for administering the computer/domain  
-  alice           True                                                             
-  bob             True                                                             
-  carol           True     QA tester                                               
-  dave            True                                                             
-  DefaultAccount  False    A user account managed by the system.                   
-  erin            True                                                             
-  frank           True                                                             
-  grace           True                                                             
-  Guest           False    Built-in account for guest access to the computer/domain
-  heidi           True                                                             
-  ivan            True                                                             
-  judy            True                                                             
-  powerUser1      True                                                             
-  powerUser2      True                                                             
-  powerUser3      True     with desc                                               
-  User            True                                                             
-  weakPw          True                                                             
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [37/102]> Get-LocalUser -Name "ghost-user" -ErrorAction SilentlyContinue
@@ -364,28 +360,28 @@ PS [65/102]> Add-LocalGroupMember -Group Developers -Member alice -ErrorAction S
 
 PS [66/102]> Get-LocalGroupMember -Group Developers
   
-  Name        Enabled  Description
-  ----------  -------  -----------
-  alice       True     lead dev   
-  bob         True                
-  powerUser1  True                
+  ObjectClass  Name        PrincipalSource  SID                                         
+  -----------  ----------  ---------------  --------------------------------------------
+  User         alice       Local            S-1-5-21-3623811015-3361044348-30300820-1002
+  User         bob         Local            S-1-5-21-3623811015-3361044348-30300820-1003
+  User         powerUser1  Local            S-1-5-21-3623811015-3361044348-30300820-1012
   
 
 PS [67/102]> Get-LocalGroupMember -Group QA
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  carol  True     QA tester  
-  erin   True                
-  frank  True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         carol  Local            S-1-5-21-3623811015-3361044348-30300820-1004
+  User         erin   Local            S-1-5-21-3623811015-3361044348-30300820-1006
+  User         frank  Local            S-1-5-21-3623811015-3361044348-30300820-1007
   
 
 PS [68/102]> Get-LocalGroupMember -Group Security
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  heidi  True                
-  ivan   True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         heidi  Local            S-1-5-21-3623811015-3361044348-30300820-1009
+  User         ivan   Local            S-1-5-21-3623811015-3361044348-30300820-1010
   
 
 PS [69/102]> (Get-LocalGroupMember -Group Developers).Count
@@ -398,11 +394,11 @@ PS [70/102]> Get-LocalGroupMember -Group Developers | Select-Object -ExpandPrope
 
 PS [71/102]> Get-LocalGroupMember -Group Developers | Sort-Object Name
   
-  Name        Enabled  Description
-  ----------  -------  -----------
-  alice       True     lead dev   
-  bob         True                
-  powerUser1  True                
+  ObjectClass  Name        PrincipalSource  SID                                         
+  -----------  ----------  ---------------  --------------------------------------------
+  User         alice       Local            S-1-5-21-3623811015-3361044348-30300820-1002
+  User         bob         Local            S-1-5-21-3623811015-3361044348-30300820-1003
+  User         powerUser1  Local            S-1-5-21-3623811015-3361044348-30300820-1012
   
 
 
@@ -412,10 +408,10 @@ PS [72/102]> Remove-LocalGroupMember -Group Developers -Member powerUser1
 
 PS [73/102]> Get-LocalGroupMember -Group Developers
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  alice  True     lead dev   
-  bob    True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         alice  Local            S-1-5-21-3623811015-3361044348-30300820-1002
+  User         bob    Local            S-1-5-21-3623811015-3361044348-30300820-1003
   
 
 PS [74/102]> Remove-LocalGroupMember -Group QA -Member erin
@@ -423,22 +419,17 @@ PS [74/102]> Remove-LocalGroupMember -Group QA -Member erin
 
 PS [75/102]> Get-LocalGroupMember -Group QA
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  carol  True     QA tester  
-  frank  True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         carol  Local            S-1-5-21-3623811015-3361044348-30300820-1004
+  User         frank  Local            S-1-5-21-3623811015-3361044348-30300820-1007
   
 
 PS [76/102]> Remove-LocalGroupMember -Group Security -Member heidi, ivan
-  Remove-LocalGroupMember : The specified member was not found.
+<empty>
 
 PS [77/102]> Get-LocalGroupMember -Group Security
-  
-  Name   Enabled  Description
-  -----  -------  -----------
-  heidi  True                
-  ivan   True                
-  
+<empty>
 
 PS [78/102]> Remove-LocalUser -Name judy
 <empty>
@@ -463,12 +454,10 @@ PS [81/102]> Get-LocalUser | Where-Object { $_.Enabled } | Sort-Object Name | Se
   
 
 PS [82/102]> Get-LocalUser | Group-Object Enabled | Format-Table Name, Count -AutoSize
-  
-  Name   Count
-  -----  -----
-  True      15
-  False      2
-  
+  Name            Count          
+  --------------- ---------------
+  True            15             
+  False           2              
 
 PS [83/102]> Get-LocalUser | ForEach-Object { "$($_.Name): $($_.Description)" }
   Administrator: Built-in account for administering the computer/domain
@@ -537,8 +526,6 @@ PS [89/102]> Get-LocalGroup | ForEach-Object { $g = $_.Name; Get-LocalGroupMembe
   QA <- carol
   QA <- frank
   Ops <- grace
-  Security <- heidi
-  Security <- ivan
 
 PS [90/102]> Get-LocalUser | Where-Object { $_.Description -like "*team*" -or $_.Description -like "*dev*" }
   
@@ -557,15 +544,15 @@ PS [92/102]> "kate","leo","mary","nina","oscar" | ForEach-Object { New-DevUser -
 
 PS [93/102]> Get-LocalGroupMember -Group Developers | Sort-Object Name
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  alice  True     lead dev   
-  bob    True                
-  kate   True                
-  leo    True                
-  mary   True                
-  nina   True                
-  oscar  True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         alice  Local            S-1-5-21-3623811015-3361044348-30300820-1002
+  User         bob    Local            S-1-5-21-3623811015-3361044348-30300820-1003
+  User         kate   Local            S-1-5-21-3623811015-3361044348-30300820-1022
+  User         leo    Local            S-1-5-21-3623811015-3361044348-30300820-1023
+  User         mary   Local            S-1-5-21-3623811015-3361044348-30300820-1024
+  User         nina   Local            S-1-5-21-3623811015-3361044348-30300820-1025
+  User         oscar  Local            S-1-5-21-3623811015-3361044348-30300820-1026
   
 
 PS [94/102]> "kate","leo","mary","nina","oscar" | ForEach-Object { Remove-LocalGroupMember -Group Developers -Member $_; Remove-LocalUser -Name $_ }
@@ -573,10 +560,10 @@ PS [94/102]> "kate","leo","mary","nina","oscar" | ForEach-Object { Remove-LocalG
 
 PS [95/102]> Get-LocalGroupMember -Group Developers
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  alice  True     lead dev   
-  bob    True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         alice  Local            S-1-5-21-3623811015-3361044348-30300820-1002
+  User         bob    Local            S-1-5-21-3623811015-3361044348-30300820-1003
   
 
 

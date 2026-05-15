@@ -423,16 +423,46 @@ export class PSParser {
    */
   private parseCommandArgument(): PSExpression {
     const pos = this.pos_();
-    const first = this.parsePostfixExpression();
+    const first = this.parseCommandArgumentAtom();
     if (!this.check(PSTokenType.COMMA)) return first;
     // Comma-separated list → ArrayExpression
     const elements: PSStatement[] = [this.exprToStatement(first)];
     while (this.check(PSTokenType.COMMA)) {
       this.advance();
       if (this.isAtEnd() || this.isTerminator() || this.check(PSTokenType.PIPE)) break;
-      elements.push(this.exprToStatement(this.parsePostfixExpression()));
+      elements.push(this.exprToStatement(this.parseCommandArgumentAtom()));
     }
     return makeArrayExpr(elements, pos);
+  }
+
+  /**
+   * In command-argument position, a bare WORD token is a string literal
+   * ("bareword"), not a nested command invocation. Real PowerShell parses
+   * `Get-Alias ls` with `ls` as the string "ls" — even though `ls` is a
+   * registered alias, it doesn't get executed here.
+   *
+   * Anything that needs to be an expression (variable, sub-expression,
+   * array, quoted string, number, type-literal, …) goes through the normal
+   * postfix path.
+   */
+  private parseCommandArgumentAtom(): PSExpression {
+    const tok = this.peek();
+    if (tok.type === PSTokenType.WORD) {
+      const next = this.peekAt(1);
+      const nt   = next?.type;
+      const postfixFollows =
+        nt === PSTokenType.DOT ||
+        nt === PSTokenType.LBRACKET ||
+        nt === PSTokenType.LPAREN ||
+        nt === PSTokenType.INCREMENT ||
+        nt === PSTokenType.DECREMENT;
+      if (!postfixFollows) {
+        const pos = this.pos_();
+        this.advance();
+        return makeLiteral(tok.value, tok.value, 'string', pos);
+      }
+    }
+    return this.parsePostfixExpression();
   }
 
   // ─── Redirections ──────────────────────────────────────────────────────────

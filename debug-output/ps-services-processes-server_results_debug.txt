@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-server
-Generated: 2026-05-15T11:27:26.659Z
+Generated: 2026-05-15T16:06:58.796Z
 Engine: powershell
 host=SRV-SVC-DBG (windows-server)
 Total commands: 104
@@ -37,32 +37,30 @@ PS [1/104]> Get-Service
   
 
 PS [2/104]> Get-Service | Format-Table Name, Status, StartType -AutoSize
-  
-  Name               Status   StartType
-  -----------------  -------  ---------
-  Tcpip              Running  Boot     
-  Afd                Running  System   
-  Dhcp               Running  Automatic
-  Dnscache           Running  Automatic
-  NetBT              Running  System   
-  RpcSs              Running  Automatic
-  RpcEptMapper       Running  Automatic
-  SamSs              Running  Automatic
-  LanmanServer       Running  Automatic
-  LanmanWorkstation  Running  Automatic
-  mpssvc             Running  Automatic
-  EventLog           Running  Automatic
-  W32Time            Running  Automatic
-  CryptSvc           Running  Automatic
-  Winmgmt            Running  Automatic
-  WinRM              Stopped  Manual   
-  bthserv            Stopped  Manual   
-  winlogon           Running  Automatic
-  Spooler            Running  Automatic
-  Schedule           Running  Automatic
-  AudioSrv           Running  Automatic
-  Themes             Running  Automatic
-  
+  Name            Status          StartType      
+  --------------- --------------- ---------------
+  Tcpip           Running         Boot           
+  Afd             Running         System         
+  Dhcp            Running         Automatic      
+  Dnscache        Running         Automatic      
+  NetBT           Running         System         
+  RpcSs           Running         Automatic      
+  RpcEptMapper    Running         Automatic      
+  SamSs           Running         Automatic      
+  LanmanServer    Running         Automatic      
+  LanmanWorkstation Running         Automatic      
+  mpssvc          Running         Automatic      
+  EventLog        Running         Automatic      
+  W32Time         Running         Automatic      
+  CryptSvc        Running         Automatic      
+  Winmgmt         Running         Automatic      
+  WinRM           Stopped         Manual         
+  bthserv         Stopped         Manual         
+  winlogon        Running         Automatic      
+  Spooler         Running         Automatic      
+  Schedule        Running         Automatic      
+  AudioSrv        Running         Automatic      
+  Themes          Running         Automatic      
 
 PS [3/104]> Get-Service | Sort-Object Name
   
@@ -195,12 +193,10 @@ PS [11/104]> (Get-Service | Where-Object { $_.Status -eq "Running" }).Count
   20
 
 PS [12/104]> Get-Service | Group-Object Status | Format-Table Name, Count -AutoSize
-  
-  Name     Count
-  -------  -----
-  Running     20
-  Stopped      2
-  
+  Name            Count          
+  --------------- ---------------
+  Running         20             
+  Stopped         2              
 
 PS [13/104]> Get-Service | Group-Object StartType | Sort-Object Count -Descending
   
@@ -281,24 +277,24 @@ PS [19/104]> Get-Service -Name "*log*"
 
 PS [20/104]> Get-Service | Select-Object -First 5 Name, Status
   
-  Name      Status 
-  --------  -------
-  Tcpip     Running
-  Afd       Running
-  Dhcp      Running
-  Dnscache  Running
-  NetBT     Running
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [21/104]> Get-Service | Select-Object -Last 5 Name, Status
   
-  Name      Status 
-  --------  -------
-  winlogon  Running
-  Spooler   Running
-  Schedule  Running
-  AudioSrv  Running
-  Themes    Running
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [22/104]> (Get-Service -Name Spooler).Status
@@ -401,61 +397,84 @@ PS [43/104]> Get-Process
   
 
 PS [44/104]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
-  
-  Id    ProcessName          CPU
-  ----  -------------------  ---
-     0  System Idle Process     
-     4  System                  
-   108  Registry                
-   340  smss                    
-   472  csrss                   
-   548  wininit                 
-   560  csrss                   
-   596  winlogon                
-   620  services                
-   636  lsass                   
-   784  svchost                 
-   836  svchost                 
-   912  svchost                 
-   964  svchost                 
-  1024  dwm                     
-  1048  svchost                 
-  1100  svchost                 
-  1168  svchost                 
-  1400  taskhostw               
-  1560  RuntimeBroker           
-  1800  spoolsv                 
-  2200  LanmanServer            
-  2400  LanmanWorkstation       
-  2848  explorer                
-  5120  cmd                     
-  5132  conhost                 
-  
+  Id              ProcessName     CPU            
+  --------------- --------------- ---------------
+  0               System Idle Process 0              
+  4               System          0.5            
+  108             Registry        0              
+  340             smss            0              
+  472             csrss           2.1            
+  548             wininit         0              
+  560             csrss           1.2            
+  596             winlogon        0.1            
+  620             services        1.5            
+  636             lsass           3.2            
+  784             svchost         0.6            
+  836             svchost         0.6            
+  912             svchost         0.6            
+  964             svchost         0.8999999999999999
+  1024            dwm             8.4            
+  1048            svchost         0.6            
+  1100            svchost         0.6            
+  1168            svchost         0.3            
+  1400            taskhostw       0.2            
+  1560            RuntimeBroker   0.8            
+  1800            spoolsv         0.5            
+  2200            LanmanServer    0.3            
+  2400            LanmanWorkstation 0.2            
+  2848            explorer        12.3           
+  5120            cmd             0.1            
+  5132            conhost         0.3            
 
 PS [45/104]> Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
   
-  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id   ProcessName        
-  -------  ------  -----  -----  ------  ---  -------------------
-        0       4      0     16       0    0  System Idle Process
-      100       4      0    288     0.5    4  System             
-       48       4      4   8192       0  108  Registry           
-       56       4      1   2048       0  340  smss               
-      590       4      4   9216     2.1  472  csrss              
+  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)  Id    ProcessName
+  -------  ------  -----  ------  ------  ----  -----------
+     2100      65     64  145000    12.3  2848  explorer   
+      980      18     44  132000     8.4  1024  dwm        
+      820       4     10   20480     3.2   636  lsass      
+      590       4      4    9216     2.1   472  csrss      
+      680       4      7   14336     1.5   620  services   
   
 
 PS [46/104]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 Name, Id, WS
   
-  Name  Id    WS
-  ----  ----  --
-        5132    
-        5120    
-        2848    
-        2400    
-        2200    
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [47/104]> Get-Process | Where-Object { $_.CPU -gt 0 }
-<empty>
+  
+  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)              Id    ProcessName      
+  -------  ------  -----  ------  ------------------  ----  -----------------
+      100       4      0     288                 0.5     4  System           
+      590       4      4    9216                 2.1   472  csrss            
+      468       4      5   10240                 1.2   560  csrss            
+      256       4      6   13312                 0.1   596  winlogon         
+      680       4      7   14336                 1.5   620  services         
+      820       4     10   20480                 3.2   636  lsass            
+      400      12     12   18432                 0.6   784  svchost          
+      400      12     12   18432                 0.6   836  svchost          
+      400      12     12   18432                 0.6   912  svchost          
+      450      14     14   21504  0.8999999999999999   964  svchost          
+      980      18     44  132000                 8.4  1024  dwm              
+      400      12     12   18432                 0.6  1048  svchost          
+      400      12     12   18432                 0.6  1100  svchost          
+      350      10     10   15360                 0.3  1168  svchost          
+      210       8      5   12800                 0.2  1400  taskhostw        
+      340      14     12   28000                 0.8  1560  RuntimeBroker    
+      420      12      8   18000                 0.5  1800  spoolsv          
+      320      10      6   14000                 0.3  2200  LanmanServer     
+      280       8      4   10000                 0.2  2400  LanmanWorkstation
+     2100      65     64  145000                12.3  2848  explorer         
+       48       3      3    5200                 0.1  5120  cmd              
+      180      10     10   18400                 0.3  5132  conhost          
+  
 
 PS [48/104]> Get-Process | Where-Object { $_.ProcessName -like "svc*" }
   
@@ -506,22 +525,22 @@ PS [52/104]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descend
 
 PS [53/104]> Get-Process | Select-Object Id, ProcessName, Handles, WS, CPU | Sort-Object CPU -Descending | Select-Object -First 10
   
-  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName      
-  -------  ------  -----  -----  ------  ----  -----------------
-      180                                5132  conhost          
-       48                                5120  cmd              
-     2100                                2848  explorer         
-      280                                2400  LanmanWorkstation
-      320                                2200  LanmanServer     
-      420                                1800  spoolsv          
-      340                                1560  RuntimeBroker    
-      210                                1400  taskhostw        
-      350                                1168  svchost          
-      400                                1100  svchost          
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [54/104]> Get-Process | Measure-Object -Property CPU -Sum
-  Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=CPU
+  Count=26; Sum=35.900000000000006; Average=; Minimum=; Maximum=; Property=CPU
 
 PS [55/104]> Get-Process | Measure-Object -Property WS -Sum -Average -Max
   Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=WS
@@ -634,15 +653,13 @@ PS [70/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
 
 --- [71] § complex pipelines ---
 PS [71/104]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | Select-Object -First 5 | Format-Table Name, Status, DisplayName
-  
-  Name      Status   DisplayName                          
-  --------  -------  -------------------------------------
-  Afd       Running  Ancillary Function Driver for Winsock
-  AudioSrv  Running  Windows Audio                        
-  CryptSvc  Running  Cryptographic Services               
-  Dhcp      Running  DHCP Client                          
-  Dnscache  Running  DNS Client                           
-  
+  Name            Status          DisplayName    
+  --------------- --------------- ---------------
+  Afd             Running         Ancillary Function Driver for Winsock
+  AudioSrv        Running         Windows Audio  
+  CryptSvc        Running         Cryptographic Services
+  Dhcp            Running         DHCP Client    
+  Dnscache        Running         DNS Client     
 
 PS [72/104]> Get-Service | Group-Object StartType | ForEach-Object { "$($_.Name): $($_.Count)" }
   Boot: 3
@@ -673,42 +690,18 @@ PS [75/104]> Get-Process | Sort-Object ProcessName | Select-Object -Unique Proce
   
 
 PS [76/104]> Get-Service | Where-Object { $_.Name -match "^(W|S)" } | Format-Table Name, Status -AutoSize
-  
-  Name      Status 
-  --------  -------
-  SamSs     Running
-  W32Time   Running
-  Winmgmt   Running
-  WinRM     Stopped
-  winlogon  Running
-  Spooler   Running
-  Schedule  Running
-  
+  Name            Status         
+  --------------- ---------------
+  SamSs           Running        
+  W32Time         Running        
+  Winmgmt         Running        
+  WinRM           Stopped        
+  winlogon        Running        
+  Spooler         Running        
+  Schedule        Running        
 
 PS [77/104]> "Spooler","bthserv","wuauserv" | ForEach-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } | Format-Table Name, Status, StartType -AutoSize
-  
-  Name                       Status      StartType
-  -------------------------  ----------  ---------
-  Spooler                    Running              
-  : Running                  Status               
-  : Spooler                  Name                 
-  e : Print Spooler          DisplayNam           
-  : Automatic                StartType            
-  e : WIN32_OWN_PROCESS      ServiceTyp           
-  : true                     CanStop              
-  Name                       Status               
-  ----                       ------               
-  bthserv                    Stopped              
-  : Stopped                  Status               
-  : bthserv                  Name                 
-  e : Bluetooth Support Ser  DisplayNam           
-  : Manual                   StartType            
-  e : WIN32_SHARE_PROCESS    ServiceTyp           
-  : false                    CanStop              
-  e : Cannot find any servi  Get-Servic           
-  goryInfo          : Objec  + Cate               
-  yQualifiedErrorId : NoSer  + Full               
-  
+  ERROR: Cannot find any service with service name 'wuauserv'.
 
 PS [78/104]> Get-Service | ForEach-Object { [pscustomobject]@{ N=$_.Name; S=$_.Status } } | Sort-Object N | Select-Object -First 5
   
@@ -749,7 +742,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/15/2026 9:27 AM
+  TimeCreated  : 5/15/2026 2:06 PM
   Message      : The Event log service was started.
   RecordId     : 1030
   
@@ -757,7 +750,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/15/2026 5:27 AM
+  TimeCreated  : 5/15/2026 10:06 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1029
   
@@ -765,7 +758,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/14/2026 11:27 PM
+  TimeCreated  : 5/15/2026 4:06 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1028
   
@@ -773,7 +766,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/14/2026 11:27 AM
+  TimeCreated  : 5/14/2026 4:06 PM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1027
   
@@ -781,7 +774,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/13/2026 11:27 AM
+  TimeCreated  : 5/13/2026 4:06 PM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1026
   
@@ -792,7 +785,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/14/2026 11:27 AM
+  TimeCreated  : 5/14/2026 4:06 PM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1036
   
@@ -800,7 +793,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/12/2026 11:27 AM
+  TimeCreated  : 5/12/2026 4:06 PM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1035
   
@@ -808,7 +801,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/10/2026 11:27 AM
+  TimeCreated  : 5/10/2026 4:06 PM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1034
   
@@ -816,7 +809,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/8/2026 11:27 AM
+  TimeCreated  : 5/8/2026 4:06 PM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1033
   
@@ -824,7 +817,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/5/2026 11:27 AM
+  TimeCreated  : 5/5/2026 4:06 PM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1032
   
@@ -853,14 +846,12 @@ PS [86/104]> Get-ScheduledTask -ErrorAction SilentlyContinue
   
 
 PS [87/104]> Get-ScheduledTask | Format-Table TaskName, State -AutoSize
-  
-  TaskName                         State
-  -------------------------------  -----
-  GoogleUpdateTaskUser             Ready
-  OneDrive Standalone Update Task  Ready
-  .NET Framework NGEN v4.0.30319   Ready
-  SimTestTask                      Ready
-  
+  TaskName        State          
+  --------------- ---------------
+  GoogleUpdateTaskUser Ready          
+  OneDrive Standalone Update Task Ready          
+  .NET Framework NGEN v4.0.30319 Ready          
+  SimTestTask     Ready          
 
 PS [88/104]> Get-ScheduledTask | Where-Object { $_.State -eq "Ready" }
   
@@ -972,24 +963,24 @@ PS [100/104]> Get-Service | Where-Object { $_.DisplayName -match "Print" }
 
 PS [101/104]> Get-Service | Sort-Object DisplayName | Select-Object -First 5 DisplayName, Name, Status
   
-  Status   Name      DisplayName                          
-  -------  --------  -------------------------------------
-  Running  Afd       Ancillary Function Driver for Winsock
-  Stopped  bthserv   Bluetooth Support Service            
-  Running  CryptSvc  Cryptographic Services               
-  Running  Dhcp      DHCP Client                          
-  Running  Dnscache  DNS Client                           
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [102/104]> Get-Process | Where-Object { $_.Name -like "s*" } | Select-Object Name, Id -First 5
   
-  Name  Id 
-  ----  ---
-          0
-          4
-        340
-        620
-        784
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [103/104]> Get-Process | Sort-Object Id | Select-Object -First 5
@@ -1005,11 +996,11 @@ PS [103/104]> Get-Process | Sort-Object Id | Select-Object -First 5
 
 PS [104/104]> Get-Process | Where-Object { $_.Handles -gt 100 } | Select-Object Name, Id, Handles -First 5
   
-  Name  Id   Handles
-  ----  ---  -------
-        472      590
-        548      152
-        560      468
-        596      256
-        620      680
+  
+  
+  
+  
+  
+  
+  
   

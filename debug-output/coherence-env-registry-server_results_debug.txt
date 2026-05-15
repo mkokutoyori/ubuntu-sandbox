@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-server
-Generated: 2026-05-15T11:27:45.035Z
+Generated: 2026-05-15T16:07:04.330Z
 host=SRV-ENV-DBG (windows-server)
 Total commands: 103
 ============================================================
@@ -366,42 +366,89 @@ PS  [90/103]> Get-Command -Noun ItemProperty -ErrorAction SilentlyContinue | Sel
   
 
 PS  [91/103]> gcm Get-ItemProperty
-  
-  Name               CommandType  Source
-  -----------------  -----------  ------
-  Write-Host         Cmdlet             
-  Write-Output       Cmdlet             
-  Write-Error        Cmdlet             
-  Write-Warning      Cmdlet             
-  ForEach-Object     Cmdlet             
-  Where-Object       Cmdlet             
-  Select-Object      Cmdlet             
-  Sort-Object        Cmdlet             
-  Measure-Object     Cmdlet             
-  Group-Object       Cmdlet             
-  Format-Table       Cmdlet             
-  Format-List        Cmdlet             
-  ConvertTo-Json     Cmdlet             
-  ConvertFrom-Json   Cmdlet             
-  Get-Date           Cmdlet             
-  Set-Variable       Cmdlet             
-  Get-Variable       Cmdlet             
-  Remove-Variable    Cmdlet             
-  Invoke-Expression  Cmdlet             
-  Test-Path          Cmdlet             
-  
+<empty>
 
 PS  [92/103]> gcm Set-Item
-  ERROR: Set-Item requires -Path
+<empty>
 
 PS  [93/103]> Get-Alias %
-  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Alias %
-  + ~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Name     Definition           CommandType
+  -------  -------------------  -----------
+  ?        where-object         Alias      
+  %        foreach-object       Alias      
+  ac       add-content          Alias      
+  cat      get-content          Alias      
+  cd       set-location         Alias      
+  chdir    set-location         Alias      
+  clear    clear-host           Alias      
+  cls      clear-host           Alias      
+  clv      clear-variable       Alias      
+  compare  compare-object       Alias      
+  copy     copy-item            Alias      
+  cp       copy-item            Alias      
+  cpi      copy-item            Alias      
+  del      remove-item          Alias      
+  diff     compare-object       Alias      
+  dir      get-childitem        Alias      
+  echo     write-output         Alias      
+  erase    remove-item          Alias      
+  fl       format-list          Alias      
+  foreach  foreach-object       Alias      
+  ft       format-table         Alias      
+  fw       format-wide          Alias      
+  gal      get-alias            Alias      
+  gc       get-content          Alias      
+  gci      get-childitem        Alias      
+  gcm      get-command          Alias      
+  gi       get-item             Alias      
+  gl       get-location         Alias      
+  gm       get-member           Alias      
+  gp       get-itemproperty     Alias      
+  gps      get-process          Alias      
+  group    group-object         Alias      
+  gsv      get-service          Alias      
+  gu       get-unique           Alias      
+  gv       get-variable         Alias      
+  help     get-help             Alias      
+  icm      invoke-command       Alias      
+  iex      invoke-expression    Alias      
+  ipmo     import-module        Alias      
+  kill     stop-process         Alias      
+  ls       get-childitem        Alias      
+  md       mkdir                Alias      
+  measure  measure-object       Alias      
+  mi       move-item            Alias      
+  move     move-item            Alias      
+  mv       move-item            Alias      
+  ni       new-item             Alias      
+  nv       new-variable         Alias      
+  ps       get-process          Alias      
+  pwd      get-location         Alias      
+  rd       remove-item          Alias      
+  ren      rename-item          Alias      
+  ri       remove-item          Alias      
+  rm       remove-item          Alias      
+  rmdir    remove-item          Alias      
+  rni      rename-item          Alias      
+  rp       remove-itemproperty  Alias      
+  rv       remove-variable      Alias      
+  saps     start-process        Alias      
+  sasv     start-service        Alias      
+  sc       set-content          Alias      
+  select   select-object        Alias      
+  sl       set-location         Alias      
+  sleep    start-sleep          Alias      
+  sls      select-string        Alias      
+  sort     sort-object          Alias      
+  sp       set-itemproperty     Alias      
+  spps     stop-process         Alias      
+  spsv     stop-service         Alias      
+  sv       set-variable         Alias      
+  tee      tee-object           Alias      
+  type     get-content          Alias      
+  where    where-object         Alias      
+  
 
 PS  [94/103]> Get-Variable PSVersionTable
   Name=PSVersionTable; Value=PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
@@ -410,20 +457,26 @@ PS  [95/103]> $PSVersionTable
   PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
 
 PS  [96/103]> Get-Help Set-ItemProperty -ErrorAction SilentlyContinue
-  TOPIC
-      PowerShell Help System
+  NAME
+      Set-ItemProperty
   
-  SHORT DESCRIPTION
-      Use Get-Help <cmdlet> for cmdlet help.
+  SYNTAX
+      Set-ItemProperty [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the Set-ItemProperty cmdlet.
 
 PS  [97/103]> Get-PSProvider
-  Get-PSProvider : The term 'Get-PSProvider' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-PSProvider
-  + ~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-PSProvider:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  
+  Name         Capabilities                        Drives    
+  -----------  ----------------------------------  ----------
+  Alias        ShouldProcess                       Alias     
+  Environment  ShouldProcess                       Env       
+  FileSystem   Filter, ShouldProcess, Credentials  C, D      
+  Function     ShouldProcess                       Function  
+  Registry     ShouldProcess, Transactions         HKLM, HKCU
+  Variable     ShouldProcess                       Variable  
+  
 
 CMD [98/103]> ver
   

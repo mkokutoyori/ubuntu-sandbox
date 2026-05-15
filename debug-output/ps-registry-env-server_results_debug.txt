@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-registry-env-server
-Generated: 2026-05-15T11:27:47.931Z
+Generated: 2026-05-15T16:07:05.772Z
 Engine: powershell
 host=SRV-REG-DBG (windows-server)
 Total commands: 117
@@ -427,19 +427,19 @@ PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  57c24aa9-40e9-4605-a52f-f23670437ff5
+  691ad601-251c-4851-8a24-98f23a62a587
 
 PS [103/117]> [DateTime]::Now
-  5/15/2026 11:27 AM
+  5/15/2026 4:07 PM
 
 
 --- [104] § formatting ---
 PS [104/117]> Get-Process | Select-Object -First 3 | Format-Table
-  Handles         NPM(K)          PM(K)           WS(K)           CPU(s)          Id              SI              ProcessName     Name            Status          Owner          
-  --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- ---------------
-  0               4               0               16              0               0               0               System Idle Process System Idle Process Running         NT AUTHORITY\SYSTEM
-  100             4               0               288             0.5             4               0               System          System          Running         NT AUTHORITY\SYSTEM
-  48              4               4               8192            0               108             0               Registry        Registry        Running         NT AUTHORITY\SYSTEM
+  Handles         NPM(K)          PM(K)           WS(K)           CPU(s)          CPU             Id              SI              ProcessName     Name            Status          Owner          
+  --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- ---------------
+  0               4               0               16              0               0               0               0               System Idle Process System Idle Process Running         NT AUTHORITY\SYSTEM
+  100             4               0               288             0.5             0.5             4               0               System          System          Running         NT AUTHORITY\SYSTEM
+  48              4               4               8192            0               0               108             0               Registry        Registry        Running         NT AUTHORITY\SYSTEM
 
 PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   Handles : 0
@@ -447,6 +447,7 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   PM(K) : 0
   WS(K) : 16
   CPU(s) : 0
+  CPU : 0
   Id : 0
   SI : 0
   ProcessName : System Idle Process
@@ -459,6 +460,7 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   PM(K) : 0
   WS(K) : 288
   CPU(s) : 0.5
+  CPU : 0.5
   Id : 4
   SI : 0
   ProcessName : System
@@ -471,6 +473,7 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   PM(K) : 4
   WS(K) : 8192
   CPU(s) : 0
+  CPU : 0
   Id : 108
   SI : 0
   ProcessName : Registry
@@ -479,31 +482,27 @@ PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
   Owner : NT AUTHORITY\SYSTEM
 
 PS [106/117]> Get-Process | Select-Object -First 3 | Format-List Name, Id, CPU
+  Name : System Idle Process
+  Id : 0
+  CPU : 0
   
-  Name : 
-  Id   : 0
-  CPU  : 
+  Name : System
+  Id : 4
+  CPU : 0.5
   
-  Name : 
-  Id   : 4
-  CPU  : 
-  
-  Name : 
-  Id   : 108
-  CPU  : 
-  
+  Name : Registry
+  Id : 108
+  CPU : 0
 
 PS [107/117]> Get-Process | Select-Object -First 3 | Format-Table Name, Id, CPU -AutoSize
-  
-  Name  Id   CPU
-  ----  ---  ---
-          0     
-          4     
-        108     
-  
+  Name            Id              CPU            
+  --------------- --------------- ---------------
+  System Idle Process 0               0              
+  System          4               0.5            
+  Registry        108             0              
 
 PS [108/117]> Get-Process | Select-Object -First 3 | Out-String
-  Handles=0; NPM(K)=4; PM(K)=0; WS(K)=16; CPU(s)=0; Id=0; SI=0; ProcessName=System Idle Process; Name=System Idle Process; Status=Running; Owner=NT AUTHORITY\SYSTEM Handles=100; NPM(K)=4; PM(K)=0; WS(K)=288; CPU(s)=0.5; Id=4; SI=0; ProcessName=System; Name=System; Status=Running; Owner=NT AUTHORITY\SYSTEM Handles=48; NPM(K)=4; PM(K)=4; WS(K)=8192; CPU(s)=0; Id=108; SI=0; ProcessName=Registry; Name=Registry; Status=Running; Owner=NT AUTHORITY\SYSTEM
+  Handles=0; NPM(K)=4; PM(K)=0; WS(K)=16; CPU(s)=0; CPU=0; Id=0; SI=0; ProcessName=System Idle Process; Name=System Idle Process; Status=Running; Owner=NT AUTHORITY\SYSTEM Handles=100; NPM(K)=4; PM(K)=0; WS(K)=288; CPU(s)=0.5; CPU=0.5; Id=4; SI=0; ProcessName=System; Name=System; Status=Running; Owner=NT AUTHORITY\SYSTEM Handles=48; NPM(K)=4; PM(K)=4; WS(K)=8192; CPU(s)=0; CPU=0; Id=108; SI=0; ProcessName=Registry; Name=Registry; Status=Running; Owner=NT AUTHORITY\SYSTEM
 
 PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
   [
@@ -513,6 +512,7 @@ PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
       "PM(K)": 0,
       "WS(K)": 16,
       "CPU(s)": 0,
+      "CPU": 0,
       "Id": 0,
       "SI": 0,
       "ProcessName": "System Idle Process",
@@ -526,6 +526,7 @@ PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
       "PM(K)": 0,
       "WS(K)": 288,
       "CPU(s)": 0.5,
+      "CPU": 0.5,
       "Id": 4,
       "SI": 0,
       "ProcessName": "System",
@@ -539,6 +540,7 @@ PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
       "PM(K)": 4,
       "WS(K)": 8192,
       "CPU(s)": 0,
+      "CPU": 0,
       "Id": 108,
       "SI": 0,
       "ProcessName": "Registry",
@@ -550,19 +552,26 @@ PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
 
 PS [110/117]> Get-Process | Select-Object -First 3 | ConvertTo-Csv
   #TYPE Hashtable
-  "Handles","NPM(K)","PM(K)","WS(K)","CPU(s)","Id","SI","ProcessName","Name","Status","Owner"
-  "0","4","0","16","0","0","0","System Idle Process","System Idle Process","Running","NT AUTHORITY\SYSTEM"
-  "100","4","0","288","0.5","4","0","System","System","Running","NT AUTHORITY\SYSTEM"
-  "48","4","4","8192","0","108","0","Registry","Registry","Running","NT AUTHORITY\SYSTEM"
+  "Handles","NPM(K)","PM(K)","WS(K)","CPU(s)","CPU","Id","SI","ProcessName","Name","Status","Owner"
+  "0","4","0","16","0","0","0","0","System Idle Process","System Idle Process","Running","NT AUTHORITY\SYSTEM"
+  "100","4","0","288","0.5","0.5","4","0","System","System","Running","NT AUTHORITY\SYSTEM"
+  "48","4","4","8192","0","0","108","0","Registry","Registry","Running","NT AUTHORITY\SYSTEM"
 
 PS [111/117]> Get-Process | Select-Object -First 3 -Property Name, Id | ConvertTo-Json
-  
-  Name                 Id 
-  -------------------  ---
-  System Idle Process    0
-  System                 4
-  Registry             108
-  
+  [
+    {
+      "Name": "System Idle Process",
+      "Id": 0
+    },
+    {
+      "Name": "System",
+      "Id": 4
+    },
+    {
+      "Name": "Registry",
+      "Id": 108
+    }
+  ]
 
 PS [112/117]> "hello", "world" | Out-String
   hello world

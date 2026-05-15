@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-network-server
-Generated: 2026-05-15T11:27:37.845Z
+Generated: 2026-05-15T16:06:59.512Z
 host=SRV-NET-COH (windows-server)
 Total commands: 102
 ============================================================
@@ -95,23 +95,18 @@ CMD [7/102]> ipconfig /all
   
 
 PS  [8/102]> Get-NetIPAddress
-<empty>
+  
+  IPAddress  InterfaceAlias               AddressFamily  PrefixLength
+  ---------  ---------------------------  -------------  ------------
+  127.0.0.1  Loopback Pseudo-Interface 1  IPv4                      8
+  ::1        Loopback Pseudo-Interface 1  IPv6                    128
+  
 
 PS  [9/102]> Get-NetIPAddress | Format-Table InterfaceAlias, IPAddress, AddressFamily, PrefixLength -AutoSize
-  
-  InterfaceAlias               IPAddress                  AddressFamily  PrefixLength
-  ---------------------------  -------------------------  -------------  ------------
-  Ethernet                     192.168.1.100              IPv4                     24
-  Ethernet                     fe80::0200:00ff:fe00:0005  IPv6                     64
-  Ethernet 2                   192.168.1.101              IPv4                     24
-  Ethernet 2                   fe80::0200:00ff:fe00:0006  IPv6                     64
-  Ethernet 3                   192.168.1.102              IPv4                     24
-  Ethernet 3                   fe80::0200:00ff:fe00:0007  IPv6                     64
-  Ethernet 4                   192.168.1.103              IPv4                     24
-  Ethernet 4                   fe80::0200:00ff:fe00:0008  IPv6                     64
-  Loopback Pseudo-Interface 1  127.0.0.1                  IPv4                      8
-  Loopback Pseudo-Interface 1  ::1                        IPv6                    128
-  
+  InterfaceAlias  IPAddress       AddressFamily   PrefixLength   
+  --------------- --------------- --------------- ---------------
+  Loopback Pseudo-Interface 1 127.0.0.1       IPv4            8              
+  Loopback Pseudo-Interface 1 ::1             IPv6            128            
 
 PS  [10/102]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   
@@ -257,15 +252,12 @@ PS  [17/102]> Get-NetAdapter
   
 
 PS  [18/102]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -AutoSize
-  
-  Name        Status  MacAddress         LinkSpeed
-  ----------  ------  -----------------  ---------
-  Ethernet    Up      02-00-00-00-00-05  1 Gbps   
-  Ethernet 2  Up      02-00-00-00-00-06  1 Gbps   
-  Ethernet 3  Up      02-00-00-00-00-07  1 Gbps   
-  Ethernet 4  Up      02-00-00-00-00-08  1 Gbps   
-  Wi-Fi       Up      02-00-00-FF-FF-01  54 Mbps  
-  
+  Name            Status          MacAddress      LinkSpeed      
+  --------------- --------------- --------------- ---------------
+  eth0            Up              02:00:00:00:00:05 1 Gbps         
+  eth1            Up              02:00:00:00:00:06 1 Gbps         
+  eth2            Up              02:00:00:00:00:07 1 Gbps         
+  eth3            Up              02:00:00:00:00:08 1 Gbps         
 
 PS  [19/102]> (Get-NetAdapter).Count
   4
@@ -292,13 +284,12 @@ CMD [21/102]> netsh interface show interface
 
 PS  [22/102]> Get-NetAdapter | Select-Object Name, Status, MacAddress
   
-  Name        Status  MacAddress       
-  ----------  ------  -----------------
-  Ethernet    Up      02-00-00-00-00-05
-  Ethernet 2  Up      02-00-00-00-00-06
-  Ethernet 3  Up      02-00-00-00-00-07
-  Ethernet 4  Up      02-00-00-00-00-08
-  Wi-Fi       Up      02-00-00-FF-FF-01
+  
+  
+  
+  
+  
+  
   
 
 CMD [23/102]> netsh interface ipv4 show addresses
@@ -324,7 +315,12 @@ CMD [23/102]> netsh interface ipv4 show addresses
   
 
 PS  [24/102]> Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue
-<empty>
+  
+  IPAddress  InterfaceAlias               AddressFamily  PrefixLength
+  ---------  ---------------------------  -------------  ------------
+  127.0.0.1  Loopback Pseudo-Interface 1  IPv4                      8
+  ::1        Loopback Pseudo-Interface 1  IPv6                    128
+  
 
 CMD [25/102]> netsh interface ipv4 show config
   Configuration for interface "Ethernet 0"
@@ -873,26 +869,26 @@ PS  [86/102]> Get-Command -Noun NetIPAddress -ErrorAction SilentlyContinue | Sel
   
 
 PS  [87/102]> gcm Test-Connection
-  ERROR: Test-Connection requires -ComputerName or a positional target
+<empty>
 
 PS  [88/102]> gcm Resolve-DnsName
-  ERROR: Resolve-DnsName requires -Name
+<empty>
 
 PS  [89/102]> Get-Alias ipconfig -ErrorAction SilentlyContinue
-<empty>
+  ERROR: Get-Alias : Cannot find alias because alias with name 'ipconfig' does not exist.
 
 PS  [90/102]> Get-Alias ping -ErrorAction SilentlyContinue
-<empty>
+  ERROR: Get-Alias : Cannot find alias because alias with name 'ping' does not exist.
 
 PS  [91/102]> Get-Help Get-NetAdapter -ErrorAction SilentlyContinue
   NAME
-      Name=eth0; InterfaceDescription=eth0; ifIndex=1; Status=Up; MacAddress=02:00:00:00:00:05; LinkSpeed=1 Gbps Name=eth1; InterfaceDescription=eth1; ifIndex=2; Status=Up; MacAddress=02:00:00:00:00:06; LinkSpeed=1 Gbps Name=eth2; InterfaceDescription=eth2; ifIndex=3; Status=Up; MacAddress=02:00:00:00:00:07; LinkSpeed=1 Gbps Name=eth3; InterfaceDescription=eth3; ifIndex=4; Status=Up; MacAddress=02:00:00:00:00:08; LinkSpeed=1 Gbps
+      Get-NetAdapter
   
   SYNTAX
-      Name=eth0; InterfaceDescription=eth0; ifIndex=1; Status=Up; MacAddress=02:00:00:00:00:05; LinkSpeed=1 Gbps Name=eth1; InterfaceDescription=eth1; ifIndex=2; Status=Up; MacAddress=02:00:00:00:00:06; LinkSpeed=1 Gbps Name=eth2; InterfaceDescription=eth2; ifIndex=3; Status=Up; MacAddress=02:00:00:00:00:07; LinkSpeed=1 Gbps Name=eth3; InterfaceDescription=eth3; ifIndex=4; Status=Up; MacAddress=02:00:00:00:00:08; LinkSpeed=1 Gbps [<CommonParameters>]
+      Get-NetAdapter [<CommonParameters>]
   
   DESCRIPTION
-      Displays help for the Name=eth0; InterfaceDescription=eth0; ifIndex=1; Status=Up; MacAddress=02:00:00:00:00:05; LinkSpeed=1 Gbps Name=eth1; InterfaceDescription=eth1; ifIndex=2; Status=Up; MacAddress=02:00:00:00:00:06; LinkSpeed=1 Gbps Name=eth2; InterfaceDescription=eth2; ifIndex=3; Status=Up; MacAddress=02:00:00:00:00:07; LinkSpeed=1 Gbps Name=eth3; InterfaceDescription=eth3; ifIndex=4; Status=Up; MacAddress=02:00:00:00:00:08; LinkSpeed=1 Gbps cmdlet.
+      Displays help for the Get-NetAdapter cmdlet.
 
 CMD [92/102]> help ipconfig
   This command is not supported by the help utility.  Try "ipconfig /?".
@@ -910,13 +906,10 @@ CMD [95/102]> ipconfig | findstr IPv4
 
 PS  [96/102]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object IPAddress, InterfaceAlias
   
-  IPAddress      InterfaceAlias             
-  -------------  ---------------------------
-  192.168.99.10  Ethernet                   
-  192.168.1.101  Ethernet 2                 
-  192.168.1.102  Ethernet 3                 
-  192.168.1.103  Ethernet 4                 
-  127.0.0.1      Loopback Pseudo-Interface 1
+  
+  
+  
+  
   
 
 CMD [97/102]> netstat -an | find /c ":"
@@ -933,19 +926,15 @@ PS  [98/102]> (Get-NetTCPConnection -ErrorAction SilentlyContinue).Count
   1
 
 PS  [99/102]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize
-  
-  Name  Count
-  ----  -----
-  Up        5
-  
+  Name            Count          
+  --------------- ---------------
+  Up              4              
 
 PS  [100/102]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
-  
-  Name  Count
-  ----  -----
-  IPv4      5
-  IPv6      5
-  
+  Name            Count          
+  --------------- ---------------
+  IPv4            2              
+  IPv6            1              
 
 CMD [101/102]> getmac | findstr -i :
 <empty>

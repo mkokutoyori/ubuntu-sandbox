@@ -288,6 +288,11 @@ export class GetLocalGroupMemberCmdlet implements ICmdlet {
     const group = psValueToString(ctx.named['group'] ?? ctx.positional[0] ?? '');
     if (!group) { ctx.emitError('Get-LocalGroupMember requires -Group'); return null; }
     const members = users.getGroupMembers(group);
-    return members.map(userToPSObject) as PSValue;
+    return members.map(u => ({
+      ObjectClass:     'User',
+      Name:            u.name,
+      PrincipalSource: 'Local',
+      SID:             u.sid,
+    })) as PSValue;
   }
 }

@@ -24,7 +24,13 @@ function toArray(val: PSValue): PSValue[] {
 function stringArgs(pos: PSValue[], named: Record<string, PSValue>, key: string): string[] {
   const src = named[key] ?? (pos.length > 0 ? pos : null);
   if (!src) return [];
-  return (Array.isArray(src) ? src : [src]).map(v => psValueToString(v));
+  const flat: PSValue[] = [];
+  const walk = (v: PSValue) => {
+    if (Array.isArray(v)) for (const e of v) walk(e);
+    else if (v !== null && v !== undefined) flat.push(v);
+  };
+  walk(src as PSValue);
+  return flat.map(v => psValueToString(v));
 }
 
 // ─── Where-Object ──────────────────────────────────────────────────────────
@@ -351,9 +357,8 @@ export class FormatTableCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
     if (items.length === 0) return '';
-    const props = ctx.named['property']
-      ? toArray(ctx.named['property']).map(p => psValueToString(p))
-      : null;
+    const rawProps = stringArgs(ctx.positional, ctx.named, 'property');
+    const props = rawProps.length ? rawProps : null;
     const sample = items[0];
     const keys = props ?? (
       sample && typeof sample === 'object' && !Array.isArray(sample)
@@ -381,11 +386,16 @@ export class FormatListCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
+    const propFilter = stringArgs(ctx.positional, ctx.named, 'property');
     return items.map(item => {
       if (item && typeof item === 'object' && !Array.isArray(item)) {
-        return Object.entries(item as Record<string, PSValue>)
-          .map(([k, v]) => `${k} : ${psValueToString(v)}`)
-          .join('\n');
+        const src = item as Record<string, PSValue>;
+        const keys = Object.keys(src);
+        const lcMap = new Map(keys.map(k => [k.toLowerCase(), k]));
+        const picked = propFilter.length
+          ? propFilter.map(p => [p, src[lcMap.get(p.toLowerCase()) ?? p] ?? ''] as [string, PSValue])
+          : keys.map(k => [k, src[k]] as [string, PSValue]);
+        return picked.map(([k, v]) => `${k} : ${psValueToString(v)}`).join('\n');
       }
       return psValueToString(item);
     }).join('\n\n');

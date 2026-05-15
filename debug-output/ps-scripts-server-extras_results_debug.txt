@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server-extras
-Generated: 2026-05-15T11:27:30.176Z
+Generated: 2026-05-15T16:06:51.960Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
@@ -121,15 +121,13 @@ PS [19/23]> & C:\ServerScripts\inline.ps1
   [5]
 
 PS [20/23]> Get-ChildItem C:\ServerScripts | Format-Table Name, Length -AutoSize
-  
-  Name              Length
-  ----------------  ------
-  39 inline.ps1           
-  196 report.ps1          
-  75 role.ps1             
-  174 svcaudit.ps1        
-  187 users.ps1           
-  
+  Name            Length         
+  --------------- ---------------
+  inline.ps1      39             
+  report.ps1      196            
+  role.ps1        75             
+  svcaudit.ps1    174            
+  users.ps1       187            
 
 PS [21/23]> (Get-ChildItem C:\ServerScripts).Count
   5

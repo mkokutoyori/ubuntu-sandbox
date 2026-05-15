@@ -445,6 +445,27 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   getIPAddresses(ifAlias?: string): IPAddressInfo[] {
     const out: IPAddressInfo[] = [];
+    // Loopback is always present in real Windows.
+    if (!ifAlias || ifAlias.toLowerCase() === 'loopback pseudo-interface 1') {
+      out.push({
+        ipAddress: '127.0.0.1',
+        prefixLength: 8,
+        ifAlias: 'Loopback Pseudo-Interface 1',
+        ifIndex: 1,
+        prefixOrigin: 'WellKnown',
+        suffixOrigin: 'WellKnown',
+        addressFamily: 'IPv4',
+      });
+      out.push({
+        ipAddress: '::1',
+        prefixLength: 128,
+        ifAlias: 'Loopback Pseudo-Interface 1',
+        ifIndex: 1,
+        prefixOrigin: 'WellKnown',
+        suffixOrigin: 'WellKnown',
+        addressFamily: 'IPv6',
+      });
+    }
     const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getIPAddress: () => unknown }> }).getPorts();
     const filtered = ifAlias
       ? ports.filter(p => p.name.toLowerCase() === ifAlias.toLowerCase())

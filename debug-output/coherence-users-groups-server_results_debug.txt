@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-server
-Generated: 2026-05-15T11:27:36.419Z
+Generated: 2026-05-15T16:07:01.729Z
 host=SRV-USR-COH (windows-server)
 Total commands: 105
 ============================================================
@@ -128,9 +128,9 @@ CMD [15/105]> net localgroup Administrators
 
 PS  [16/105]> Get-LocalGroupMember -Group Administrators
   
-  Name           Enabled  Description                                           
-  -------------  -------  ------------------------------------------------------
-  Administrator  True     Built-in account for administering the computer/domain
+  ObjectClass  Name           PrincipalSource  SID                                        
+  -----------  -------------  ---------------  -------------------------------------------
+  User         Administrator  Local            S-1-5-21-3623811015-3361044348-30300820-500
   
 
 
@@ -400,10 +400,10 @@ CMD [59/105]> net localgroup Developers
 
 PS  [60/105]> Get-LocalGroupMember -Group Developers
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  alice  True     lead dev   
-  bob    True     Set from PS
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         alice  Local            S-1-5-21-3623811015-3361044348-30300820-1002
+  User         bob    Local            S-1-5-21-3623811015-3361044348-30300820-1003
   
 
 PS  [61/105]> Get-LocalGroupMember -Group Developers | Select-Object -ExpandProperty Name
@@ -454,9 +454,9 @@ CMD [68/105]> net localgroup Developers bob /delete
 
 PS  [69/105]> Get-LocalGroupMember -Group Developers
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  alice  True     lead dev   
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         alice  Local            S-1-5-21-3623811015-3361044348-30300820-1002
   
 
 CMD [70/105]> net localgroup QA dave /delete
@@ -464,9 +464,9 @@ CMD [70/105]> net localgroup QA dave /delete
 
 PS  [71/105]> Get-LocalGroupMember -Group QA
   
-  Name   Enabled  Description
-  -----  -------  -----------
-  carol  True                
+  ObjectClass  Name   PrincipalSource  SID                                         
+  -----------  -----  ---------------  --------------------------------------------
+  User         carol  Local            S-1-5-21-3623811015-3361044348-30300820-1004
   
 
 
@@ -649,29 +649,23 @@ PS  [91/105]> Get-Command -Noun LocalGroup -ErrorAction SilentlyContinue | Selec
   
 
 PS  [92/105]> gcm New-LocalUser
-  ERROR: New-LocalUser requires -Name
+<empty>
 
 PS  [93/105]> gcm Add-LocalGroupMember
-  ERROR: add-localgroupmember requires -Group and -Member
+<empty>
 
 PS  [94/105]> Get-Alias whoami
-  Get-Alias : The term 'Get-Alias' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Alias whoami
-  + ~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Alias:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  ERROR: Get-Alias : Cannot find alias because alias with name 'whoami' does not exist.
 
 PS  [95/105]> Get-Help Get-LocalUser -ErrorAction SilentlyContinue
   NAME
-      Name=Administrator; FullName=; Description=Built-in account for administering the computer/domain; SID=S-1-5-21-3623811015-3361044348-30300820-500; Enabled=True; PasswordRequired=True; LastLogon= Name=Guest; FullName=; Description=Built-in account for guest access to the computer/domain; SID=S-1-5-21-3623811015-3361044348-30300820-501; Enabled=False; PasswordRequired=False; LastLogon= Name=DefaultAccount; FullName=; Description=A user account managed by the system.; SID=S-1-5-21-3623811015-3361044348-30300820-503; Enabled=False; PasswordRequired=False; LastLogon= Name=User; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1001; Enabled=True; PasswordRequired=True; LastLogon=5/15/2026 11:27 AM Name=alice; FullName=Alice CMD; Description=lead dev; SID=S-1-5-21-3623811015-3361044348-30300820-1002; Enabled=True; PasswordRequired=True; LastLogon= Name=bob; FullName=Robert PS-Set; Description=Set from PS; SID=S-1-5-21-3623811015-3361044348-30300820-1003; Enabled=True; PasswordRequired=True; LastLogon= Name=carol; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1004; Enabled=True; PasswordRequired=True; LastLogon= Name=erin; FullName=; Description=From PS; SID=S-1-5-21-3623811015-3361044348-30300820-1006; Enabled=True; PasswordRequired=True; LastLogon=
+      Get-LocalUser
   
   SYNTAX
-      Name=Administrator; FullName=; Description=Built-in account for administering the computer/domain; SID=S-1-5-21-3623811015-3361044348-30300820-500; Enabled=True; PasswordRequired=True; LastLogon= Name=Guest; FullName=; Description=Built-in account for guest access to the computer/domain; SID=S-1-5-21-3623811015-3361044348-30300820-501; Enabled=False; PasswordRequired=False; LastLogon= Name=DefaultAccount; FullName=; Description=A user account managed by the system.; SID=S-1-5-21-3623811015-3361044348-30300820-503; Enabled=False; PasswordRequired=False; LastLogon= Name=User; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1001; Enabled=True; PasswordRequired=True; LastLogon=5/15/2026 11:27 AM Name=alice; FullName=Alice CMD; Description=lead dev; SID=S-1-5-21-3623811015-3361044348-30300820-1002; Enabled=True; PasswordRequired=True; LastLogon= Name=bob; FullName=Robert PS-Set; Description=Set from PS; SID=S-1-5-21-3623811015-3361044348-30300820-1003; Enabled=True; PasswordRequired=True; LastLogon= Name=carol; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1004; Enabled=True; PasswordRequired=True; LastLogon= Name=erin; FullName=; Description=From PS; SID=S-1-5-21-3623811015-3361044348-30300820-1006; Enabled=True; PasswordRequired=True; LastLogon= [<CommonParameters>]
+      Get-LocalUser [<CommonParameters>]
   
   DESCRIPTION
-      Displays help for the Name=Administrator; FullName=; Description=Built-in account for administering the computer/domain; SID=S-1-5-21-3623811015-3361044348-30300820-500; Enabled=True; PasswordRequired=True; LastLogon= Name=Guest; FullName=; Description=Built-in account for guest access to the computer/domain; SID=S-1-5-21-3623811015-3361044348-30300820-501; Enabled=False; PasswordRequired=False; LastLogon= Name=DefaultAccount; FullName=; Description=A user account managed by the system.; SID=S-1-5-21-3623811015-3361044348-30300820-503; Enabled=False; PasswordRequired=False; LastLogon= Name=User; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1001; Enabled=True; PasswordRequired=True; LastLogon=5/15/2026 11:27 AM Name=alice; FullName=Alice CMD; Description=lead dev; SID=S-1-5-21-3623811015-3361044348-30300820-1002; Enabled=True; PasswordRequired=True; LastLogon= Name=bob; FullName=Robert PS-Set; Description=Set from PS; SID=S-1-5-21-3623811015-3361044348-30300820-1003; Enabled=True; PasswordRequired=True; LastLogon= Name=carol; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1004; Enabled=True; PasswordRequired=True; LastLogon= Name=erin; FullName=; Description=From PS; SID=S-1-5-21-3623811015-3361044348-30300820-1006; Enabled=True; PasswordRequired=True; LastLogon= cmdlet.
+      Displays help for the Get-LocalUser cmdlet.
 
 CMD [96/105]> help net
   This command is not supported by the help utility.  Try "net /?".
