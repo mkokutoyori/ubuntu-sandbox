@@ -160,16 +160,19 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   /**
-   * Route a single command through the interpreter when possible, otherwise
-   * delegate to the legacy PowerShellExecutor (native cmdlets, device I/O).
+   * Route a single command through the interpreter (the primary engine after
+   * Phase 4). Async native CLI tools (ping / tracert / net) still go to
+   * PowerShellExecutor because the tree-walker is sync. Other interpreter
+   * errors that look like "not recognized" also fall through to the executor
+   * as a safety net during the migration tail — once every test path runs
+   * cleanly through the interpreter this branch can be removed.
    */
   private async dispatchCommand(line: string): Promise<string | null> {
     if (this.shouldBypassInterpreter(line)) {
       return this.psExecutor.execute(line);
     }
     try {
-      const out = this.interp.executeInteractive(line);
-      return out;
+      return this.interp.executeInteractive(line);
     } catch (e) {
       if (this.isFallbackError(e)) {
         return this.psExecutor.execute(line);
