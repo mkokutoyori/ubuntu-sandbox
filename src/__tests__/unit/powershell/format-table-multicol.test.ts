@@ -18,8 +18,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -30,18 +30,22 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function createPS(): PowerShellExecutor {
+function createShell(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN-FMT');
   pc.setCurrentUser('Administrator');
-  return new PowerShellExecutor(pc);
+  return PowerShellSubShell.create(pc).subShell;
+}
+async function run(sh: PowerShellSubShell, line: string): Promise<string> {
+  const r = await sh.processLine(line);
+  return r.output.join('\n');
 }
 
 describe('Format-Table — multi-column positional parsing', () => {
   it('renders both columns when given `Name, Description` (positional)', async () => {
-    const ps = createPS();
-    await ps.execute('New-LocalUser -Name fmtuser1 -NoPassword -Description "first"');
-    await ps.execute('New-LocalUser -Name fmtuser2 -NoPassword -Description "second"');
-    const out = await ps.execute(
+    const sh = createShell();
+    await run(sh, 'New-LocalUser -Name fmtuser1 -NoPassword -Description "first"');
+    await run(sh, 'New-LocalUser -Name fmtuser2 -NoPassword -Description "second"');
+    const out = await run(sh,
       'Get-LocalUser | Where-Object { $_.Name -like "fmtuser*" } | Format-Table Name, Description',
     );
     expect(out).toContain('Name');
@@ -52,8 +56,8 @@ describe('Format-Table — multi-column positional parsing', () => {
   });
 
   it('renders three columns when given `Name, Status, StartType`', async () => {
-    const ps = createPS();
-    const out = await ps.execute(
+    
+    const out = await run(createShell(), 
       'Get-Service | Select-Object -First 3 | Format-Table Name, Status, StartType',
     );
     expect(out).toContain('Name');
@@ -62,11 +66,11 @@ describe('Format-Table — multi-column positional parsing', () => {
   });
 
   it('handles `Name, ObjectClass -AutoSize` (positional + switch)', async () => {
-    const ps = createPS();
-    await ps.execute('New-LocalUser -Name svc-deploy -NoPassword');
-    await ps.execute('New-LocalGroup -Name Deployers');
-    await ps.execute('Add-LocalGroupMember -Group Deployers -Member svc-deploy');
-    const out = await ps.execute(
+    const sh = createShell();
+    await run(sh, 'New-LocalUser -Name svc-deploy -NoPassword');
+    await run(sh, 'New-LocalGroup -Name Deployers');
+    await run(sh, 'Add-LocalGroupMember -Group Deployers -Member svc-deploy');
+    const out = await run(sh,
       'Get-LocalGroupMember -Group Deployers | Format-Table Name, ObjectClass -AutoSize',
     );
     expect(out).toContain('Name');
@@ -75,8 +79,8 @@ describe('Format-Table — multi-column positional parsing', () => {
   });
 
   it('Group-Object | Format-Table Name, Count -AutoSize renders both columns', async () => {
-    const ps = createPS();
-    const out = await ps.execute(
+    
+    const out = await run(createShell(), 
       'Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize',
     );
     expect(out).toContain('Name');
@@ -87,8 +91,8 @@ describe('Format-Table — multi-column positional parsing', () => {
   });
 
   it('explicit -Property still works (regression guard)', async () => {
-    const ps = createPS();
-    const out = await ps.execute(
+    
+    const out = await run(createShell(), 
       'Get-Service | Select-Object -First 2 | Format-Table -Property Name, Status',
     );
     expect(out).toContain('Name');
@@ -98,8 +102,8 @@ describe('Format-Table — multi-column positional parsing', () => {
 
 describe('Format-List — multi-column positional parsing', () => {
   it('renders all three keys when given `Name, Id, CPU`', async () => {
-    const ps = createPS();
-    const out = await ps.execute(
+    
+    const out = await run(createShell(), 
       'Get-Process | Select-Object -First 1 | Format-List Name, Id, CPU',
     );
     expect(out).toContain('Name');

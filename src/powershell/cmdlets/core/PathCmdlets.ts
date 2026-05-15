@@ -139,7 +139,9 @@ export class GetChildItemCmdlet implements ICmdlet {
         Name: e.name,
         FullName: `${dir}\\${e.name}`,
         Length: e.size,
-        Mode: e.isDirectory ? 'd----' : '-a---',
+        // Real PS uses a 6-char `darhsl` mode column. Plain files have the
+// archive bit on (-a----); plain directories show only d (d-----).
+Mode: e.isDirectory ? 'd-----' : '-a----',
         PSIsContainer: e.isDirectory,
         LastWriteTime: e.mtime,
       } as Record<string, PSValue>));
@@ -444,7 +446,7 @@ export class GetItemCmdlet implements ICmdlet {
       Name:          baseName,
       FullName:      path,
       PSIsContainer: isDir,
-      Mode:          isDir ? 'd----' : '-a---',
+      Mode:          isDir ? 'd-----' : '-a----',
       Length:        isDir ? 0 : (fs.readFile(path) || '').length,
     } as Record<string, PSValue>;
   }

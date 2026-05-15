@@ -131,7 +131,29 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
     const net = requireNetwork(ctx);
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     if (!name) { ctx.emitError('Resolve-DnsName requires -Name'); return null; }
-    const ips = net.resolveDns(name);
+
+    // IPv4 → reverse PTR.
+    const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(name);
+    if (ipv4) {
+      const [, a, b, c, d] = ipv4;
+      const ptrName = `${d}.${c}.${b}.${a}.in-addr.arpa`;
+      const host = (a === '127') ? 'localhost' : `host-${a}-${b}-${c}-${d}.local`;
+      return [{
+        Name: ptrName,
+        Type: 'PTR',
+        TTL: 300,
+        Section: 'Answer',
+        NameHost: host,
+      } as Record<string, PSValue>] as PSValue;
+    }
+
+    // Built-in forward lookups for common simulator names.
+    const builtinIPs = new Map<string, string>([
+      ['localhost', '127.0.0.1'],
+      ['example.com', '93.184.216.34'],
+    ]);
+    const builtin = builtinIPs.get(name.toLowerCase());
+    const ips = builtin ? [builtin] : net.resolveDns(name);
     if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
     return ips.map(ip => ({
       Name: name,

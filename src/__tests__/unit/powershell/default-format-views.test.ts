@@ -18,8 +18,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -30,16 +30,20 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function createPS(): PowerShellExecutor {
+function createShell(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN-FMT');
   pc.setCurrentUser('Administrator');
-  return new PowerShellExecutor(pc);
+  return PowerShellSubShell.create(pc).subShell;
+}
+async function run(sh: PowerShellSubShell, line: string): Promise<string> {
+  const r = await sh.processLine(line);
+  return r.output.join('\n');
 }
 
 describe('default-view: Service', () => {
   it('Get-Service | Sort-Object Name keeps the 3-column table', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Get-Service | Sort-Object Name');
+    
+    const out = await run(createShell(), 'Get-Service | Sort-Object Name');
     const header = out.split('\n').find((l) => l.includes('Status') && l.includes('Name') && l.includes('DisplayName'));
     expect(header).toBeDefined();
     // Should NOT emit the list-style block.
@@ -48,16 +52,16 @@ describe('default-view: Service', () => {
   });
 
   it('Get-Service | Where-Object {...} keeps the 3-column view', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Get-Service | Where-Object { $_.Status -eq "Running" }');
+    
+    const out = await run(createShell(), 'Get-Service | Where-Object { $_.Status -eq "Running" }');
     expect(out).not.toMatch(/ServiceType\s+:/);
   });
 });
 
 describe('default-view: NetAdapter', () => {
   it('Get-NetAdapter | Sort-Object Name keeps Name/Status/MacAddress columns', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Get-NetAdapter | Sort-Object Name');
+    
+    const out = await run(createShell(), 'Get-NetAdapter | Sort-Object Name');
     expect(out).toContain('Name');
     expect(out).toContain('Status');
     expect(out).toContain('MacAddress');
@@ -66,8 +70,8 @@ describe('default-view: NetAdapter', () => {
 
 describe('default-view: LocalUser', () => {
   it('Get-LocalUser keeps Name/Enabled/Description (no overflow to list)', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Get-LocalUser | Sort-Object Name');
+    
+    const out = await run(createShell(), 'Get-LocalUser | Sort-Object Name');
     expect(out).toContain('Name');
     expect(out).toContain('Enabled');
     expect(out).toContain('Description');

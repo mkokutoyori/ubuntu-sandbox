@@ -14,8 +14,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -26,14 +26,17 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function createPS(): PowerShellExecutor {
-  return new PowerShellExecutor(new WindowsPC('windows-pc', 'WIN-FE'));
+function createShell(): PowerShellSubShell {
+  return PowerShellSubShell.create(new WindowsPC('windows-pc', 'WIN-FE')).subShell;
+}
+async function run(sh: PowerShellSubShell, line: string): Promise<string> {
+  const r = await sh.processLine(line);
+  return r.output.join('\n');
 }
 
 describe('ForEach-Object scriptblock — arithmetic on $_', () => {
   it('1..5 | % { $_ * $_ } produces 1 4 9 16 25', async () => {
-    const ps = createPS();
-    const out = await ps.execute('1..5 | ForEach-Object { $_ * $_ }');
+    const out = await run(createShell(), '1..5 | ForEach-Object { $_ * $_ }');
     expect(out).toContain('1');
     expect(out).toContain('4');
     expect(out).toContain('9');
@@ -43,8 +46,7 @@ describe('ForEach-Object scriptblock — arithmetic on $_', () => {
   });
 
   it('1..3 | % { $_ + 10 } produces 11 12 13', async () => {
-    const ps = createPS();
-    const out = await ps.execute('1..3 | ForEach-Object { $_ + 10 }');
+    const out = await run(createShell(), '1..3 | ForEach-Object { $_ + 10 }');
     const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
     expect(lines).toContain('11');
     expect(lines).toContain('12');
@@ -52,8 +54,7 @@ describe('ForEach-Object scriptblock — arithmetic on $_', () => {
   });
 
   it('parenthesized pipeline (1..3 | % { $_ * 2 })', async () => {
-    const ps = createPS();
-    const out = await ps.execute('(1..3 | ForEach-Object { $_ * 2 })');
+    const out = await run(createShell(), '(1..3 | ForEach-Object { $_ * 2 })');
     const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
     expect(lines).toContain('2');
     expect(lines).toContain('4');
@@ -62,8 +63,7 @@ describe('ForEach-Object scriptblock — arithmetic on $_', () => {
   });
 
   it('"a","b","c" | % { $_.ToUpper() } returns uppercased values', async () => {
-    const ps = createPS();
-    const out = await ps.execute('"a","b","c" | ForEach-Object { $_.ToUpper() }');
+    const out = await run(createShell(), '"a","b","c" | ForEach-Object { $_.ToUpper() }');
     const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
     expect(lines).toContain('A');
     expect(lines).toContain('B');
@@ -72,8 +72,7 @@ describe('ForEach-Object scriptblock — arithmetic on $_', () => {
   });
 
   it('1..4 | % { $_ * 2 + 1 } honours precedence', async () => {
-    const ps = createPS();
-    const out = await ps.execute('1..4 | ForEach-Object { $_ * 2 + 1 }');
+    const out = await run(createShell(), '1..4 | ForEach-Object { $_ * 2 + 1 }');
     const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
     expect(lines).toContain('3');
     expect(lines).toContain('5');
