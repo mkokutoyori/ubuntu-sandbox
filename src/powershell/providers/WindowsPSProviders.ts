@@ -20,7 +20,7 @@ import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
-  IVpnProvider, IScheduledTaskProvider, IDiskProvider,
+  IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -787,6 +787,76 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
 
 // ── Disks / volumes (read-only seeded data) ───────────────────────────────
 
+class WindowsEnvironmentAdapter implements IEnvironmentProvider {
+  /** Well-known Windows env vars that always exist on a real machine.
+   *  We compute them from the device's hostname / current user so the
+   *  values stay consistent when the user switches with runas. */
+  constructor(private readonly pc: WindowsPC) {}
+
+  private wellKnown(): Map<string, string> {
+    const out = new Map<string, string>();
+    const user = (this.pc as unknown as { getCurrentUser?: () => string }).getCurrentUser?.()
+              ?? 'User';
+    const host = (this.pc as unknown as { hostname?: string; getHostname?: () => string })
+      .getHostname?.() ?? (this.pc as unknown as { hostname?: string }).hostname ?? 'WIN-PC';
+    out.set('USERNAME',             user);
+    out.set('COMPUTERNAME',         host);
+    out.set('USERPROFILE',          `C:\\Users\\${user}`);
+    out.set('SYSTEMROOT',           'C:\\Windows');
+    out.set('WINDIR',               'C:\\Windows');
+    out.set('TEMP',                 `C:\\Users\\${user}\\AppData\\Local\\Temp`);
+    out.set('TMP',                  `C:\\Users\\${user}\\AppData\\Local\\Temp`);
+    out.set('PATH',                 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem');
+    out.set('HOMEDRIVE',            'C:');
+    out.set('HOMEPATH',             `\\Users\\${user}`);
+    out.set('PROCESSOR_ARCHITECTURE', 'AMD64');
+    out.set('OS',                   'Windows_NT');
+    out.set('COMSPEC',              'C:\\Windows\\System32\\cmd.exe');
+    out.set('APPDATA',              `C:\\Users\\${user}\\AppData\\Roaming`);
+    out.set('LOCALAPPDATA',         `C:\\Users\\${user}\\AppData\\Local`);
+    out.set('PROGRAMFILES',         'C:\\Program Files');
+    out.set('PROGRAMFILES(X86)',    'C:\\Program Files (x86)');
+    out.set('PROGRAMDATA',          'C:\\ProgramData');
+    out.set('PATHEXT',              '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1');
+    out.set('NUMBER_OF_PROCESSORS', '4');
+    out.set('USERDOMAIN',           'WORKGROUP');
+    out.set('LOGONSERVER',          `\\\\${host}`);
+    out.set('SESSIONNAME',          'Console');
+    out.set('SYSTEMDRIVE',          'C:');
+    out.set('PUBLIC',               'C:\\Users\\Public');
+    out.set('ALLUSERSPROFILE',      'C:\\ProgramData');
+    return out;
+  }
+
+  list(): Array<{ Name: string; Value: string }> {
+    const merged = this.wellKnown();
+    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
+    if (deviceEnv) for (const [k, v] of deviceEnv) merged.set(k.toUpperCase(), v);
+    return Array.from(merged.entries(), ([Name, Value]) => ({ Name, Value }));
+  }
+
+  get(name: string): string | undefined {
+    const u = name.toUpperCase();
+    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
+    if (deviceEnv) {
+      for (const [k, v] of deviceEnv) if (k.toUpperCase() === u) return v;
+    }
+    return this.wellKnown().get(u);
+  }
+
+  set(name: string, value: string): void {
+    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
+    if (deviceEnv) deviceEnv.set(name, value);
+  }
+
+  remove(name: string): void {
+    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
+    if (!deviceEnv) return;
+    const u = name.toUpperCase();
+    for (const k of [...deviceEnv.keys()]) if (k.toUpperCase() === u) deviceEnv.delete(k);
+  }
+}
+
 class WindowsDiskAdapter implements IDiskProvider {
   constructor(private readonly pc: WindowsPC) {}
   listDisks(): DiskInfo[] {
@@ -848,5 +918,6 @@ export function createWindowsPSProviders(
     vpn:            new WindowsVpnAdapter(vpn),
     scheduledTasks: new WindowsScheduledTaskAdapter(tasks),
     disks:          new WindowsDiskAdapter(pc),
+    environment:    new WindowsEnvironmentAdapter(pc),
   };
 }

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-pc
-Generated: 2026-05-15T16:30:43.978Z
+Generated: 2026-05-15T16:52:32.121Z
 Engine: powershell
 host=WIN-SVC-DBG (windows-pc)
 Total commands: 104
@@ -615,22 +615,22 @@ PS [58/104]> Start-Process notepad.exe
 <empty>
 
 PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 PS [60/104]> Start-Process -FilePath calc.exe
 <empty>
 
 PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "calc".
+<empty>
 
 PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: The process "notepad" was not found.
+<empty>
 
 PS [63/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 PS [64/104]> Stop-Process -Name calc -ErrorAction SilentlyContinue
-  ERROR: The process "calc" was not found.
+<empty>
 
 PS [65/104]> Start-Process notepad.exe
 <empty>
@@ -648,7 +648,7 @@ PS [69/104]> Get-Process -Name notepad | Stop-Process
   ERROR: Cannot find a process with the name "notepad".
 
 PS [70/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 
 --- [71] § complex pipelines ---
@@ -701,7 +701,10 @@ PS [76/104]> Get-Service | Where-Object { $_.Name -match "^(W|S)" } | Format-Tab
   Schedule        Running        
 
 PS [77/104]> "Spooler","bthserv","wuauserv" | ForEach-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } | Format-Table Name, Status, StartType -AutoSize
-  ERROR: Cannot find any service with service name 'wuauserv'.
+  Name            Status          StartType      
+  --------------- --------------- ---------------
+  Spooler         Running         Automatic      
+  bthserv         Stopped         Manual         
 
 PS [78/104]> Get-Service | ForEach-Object { [pscustomobject]@{ N=$_.Name; S=$_.Status } } | Sort-Object N | Select-Object -First 5
   
@@ -742,7 +745,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/15/2026 2:30 PM
+  TimeCreated  : 5/15/2026 2:52 PM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -750,7 +753,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/15/2026 10:30 AM
+  TimeCreated  : 5/15/2026 10:52 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -758,7 +761,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 4:30 AM
+  TimeCreated  : 5/15/2026 4:52 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -766,7 +769,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/14/2026 4:30 PM
+  TimeCreated  : 5/14/2026 4:52 PM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1006
   
@@ -774,7 +777,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/13/2026 4:30 PM
+  TimeCreated  : 5/13/2026 4:52 PM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1005
   
@@ -785,7 +788,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/14/2026 4:30 PM
+  TimeCreated  : 5/14/2026 4:52 PM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1015
   
@@ -793,7 +796,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/12/2026 4:30 PM
+  TimeCreated  : 5/12/2026 4:52 PM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1014
   
@@ -801,7 +804,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/10/2026 4:30 PM
+  TimeCreated  : 5/10/2026 4:52 PM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1013
   
@@ -809,7 +812,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/8/2026 4:30 PM
+  TimeCreated  : 5/8/2026 4:52 PM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1012
   
@@ -817,7 +820,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/5/2026 4:30 PM
+  TimeCreated  : 5/5/2026 4:52 PM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1011
   

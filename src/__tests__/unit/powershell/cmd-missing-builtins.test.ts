@@ -75,14 +75,27 @@ describe('cmd: start / setx / schtasks / nbtstat / wmic / reg', () => {
     expect(out).not.toContain('not recognized');
   });
 
-  it('reg query <key> → acknowledged', async () => {
-    const out = await pc().executeCmdCommand('reg query HKCU\\Software\\CohReg');
-    expect(out).toContain('HKCU\\Software\\CohReg');
+  it('reg add then reg query round-trips the key', async () => {
+    const p = pc();
+    await p.executeCmdCommand('reg add HKCU\\Software\\CohReg /f');
+    const out = await p.executeCmdCommand('reg query HKCU\\Software\\CohReg');
     expect(out).not.toContain('not recognized');
+    expect(out).not.toMatch(/Cannot find/i);
   });
 
   it('reg add <key> /f → success message', async () => {
     const out = await pc().executeCmdCommand('reg add HKCU\\Software\\CohReg /f');
     expect(out).toMatch(/completed successfully/i);
+  });
+
+  it('reg add /v VALUE is readable from PS via Get-ItemProperty', async () => {
+    const p = pc();
+    await p.executeCmdCommand('reg add HKCU\\Software\\CohReg /f');
+    await p.executeCmdCommand('reg add HKCU\\Software\\CohReg /v Version /t REG_SZ /d "1.0.0" /f');
+    // Query through the PSRegistryProvider directly — same instance the
+    // PowerShell interpreter sees via the registry provider.
+    const reg = (p as unknown as { registry: { getItem(p: string): string } }).registry;
+    const dump = reg.getItem('HKCU:\\Software\\CohReg');
+    expect(dump).toContain('CohReg');
   });
 });

@@ -68,8 +68,17 @@ describe('1. File System – Directories & Files', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await run(ps, 'New-Item -Path C:\\dup -ItemType Directory');
-    const result = await run(ps, 'New-Item -Path C:\\dup -ItemType Directory -ErrorAction SilentlyContinue');
+    const result = await run(ps, 'New-Item -Path C:\\dup -ItemType Directory');
     expect(result).toContain('already exists');
+  });
+
+  it('New-Item -ErrorAction SilentlyContinue suppresses the error message', async () => {
+    const pc = createPC();
+    const ps = createPS(pc);
+    await run(ps, 'New-Item -Path C:\\dup2 -ItemType Directory');
+    const result = await run(ps, 'New-Item -Path C:\\dup2 -ItemType Directory -ErrorAction SilentlyContinue');
+    expect(result).not.toMatch(/already exists/i);
+    expect(result).not.toMatch(/^ERROR:/i);
   });
 
   // 1.2 Get-Content / Set-Content / Add-Content
@@ -245,7 +254,7 @@ describe('2. Local User Management', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await run(ps, 'New-LocalUser -Name "DupUser" -NoPassword');
-    const result = await run(ps, 'New-LocalUser -Name "DupUser" -NoPassword -ErrorAction SilentlyContinue');
+    const result = await run(ps, 'New-LocalUser -Name "DupUser" -NoPassword');
     expect(result).toContain('already exists');
   });
 

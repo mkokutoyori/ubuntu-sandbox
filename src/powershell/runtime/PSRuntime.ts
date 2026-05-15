@@ -515,10 +515,18 @@ export class PSRuntime {
     const scope = target.scope;
 
     const writeVar = (name: string, val: PSValue) => {
+      if (scope === 'env') {
+        this.providers.environment?.set(name, psValueToString(val));
+        return;
+      }
       if (scope === 'global' || scope === 'script') env.setGlobal(name, val);
       else env.set(name, val);
     };
     const updateVar = (name: string, val: PSValue) => {
+      if (scope === 'env') {
+        this.providers.environment?.set(name, psValueToString(val));
+        return;
+      }
       if (scope === 'global' || scope === 'script') env.setGlobal(name, val);
       else env.update(name, val);
     };
@@ -738,6 +746,9 @@ export class PSRuntime {
       return val === undefined ? null : val;
     }
     if (node.scope === 'env') {
+      // Prefer the environment provider when one is wired (device-backed).
+      const fromProvider = this.providers.environment?.get(name);
+      if (fromProvider !== undefined) return fromProvider;
       if (this.envVarHook) {
         const v = this.envVarHook(name);
         if (v !== null) return v;
@@ -1729,7 +1740,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
-    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues);
+    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont);
     let result: PSValue;
     try {
       result = cmdlet.execute(ctx);
@@ -1773,6 +1784,7 @@ export class PSRuntime {
     pipeInput: PSValue,
     env: PSEnvironment,
     emittedValues: PSValue[],
+    silentlyContinue: boolean = false,
   ): CmdletContext {
     const self = this;
 
@@ -1788,6 +1800,7 @@ export class PSRuntime {
         self.dispatchCmdlet(name, pos, namedP, pipe, env2),
       listCmdlets: () =>
         self.registry.cmdlets().map(c => ({ name: c.name, aliases: c.aliases })),
+      listEnvVars: () => self.providers.environment?.list() ?? [],
     };
 
     return {
@@ -1801,7 +1814,10 @@ export class PSRuntime {
       emit: (val: PSValue) => emittedValues.push(val),
 
       emitError: (msg: string) => {
-        self.outputLines.push(`ERROR: ${msg}`);
+        // Always record the error object (so $Error and -ErrorVariable
+        // see it). Suppress the visible "ERROR:" line when the caller
+        // used -ErrorAction SilentlyContinue / Ignore.
+        if (!silentlyContinue) self.outputLines.push(`ERROR: ${msg}`);
         self.errorObjects.push({
           Exception: { Message: msg },
           CategoryInfo: { Category: 'NotSpecified' },

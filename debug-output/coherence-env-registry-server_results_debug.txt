@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-server
-Generated: 2026-05-15T16:30:48.395Z
+Generated: 2026-05-15T16:52:39.300Z
 host=SRV-ENV-DBG (windows-server)
 Total commands: 103
 ============================================================
@@ -44,7 +44,7 @@ CMD [7/103]> echo %USERPROFILE%
   C:\Users\Administrator
 
 PS  [8/103]> $env:PATH
-  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
+  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
 
 PS  [9/103]> $env:USERNAME
   Administrator
@@ -56,16 +56,29 @@ PS  [11/103]> $env:SystemRoot
   C:\Windows
 
 PS  [12/103]> $env:TEMP
-  C:\Users\Administrator\AppData\Local\Temp
+  C:\Users\User\AppData\Local\Temp
 
 PS  [13/103]> $env:USERPROFILE
   C:\Users\Administrator
 
 PS  [14/103]> Get-ChildItem Env: | Sort-Object Name | Select-Object -First 10
-  ERROR: Cannot find path 'Env:' because it does not exist.
+  
+  Name                  Value                        
+  --------------------  -----------------------------
+  ALLUSERSPROFILE       C:\ProgramData               
+  APPDATA               C:\Users\user\AppData\Roaming
+  COMPUTERNAME          SRV-ENV-DBG                  
+  COMSPEC               C:\Windows\System32\cmd.exe  
+  HOMEDRIVE             C:                           
+  HOMEPATH              \Users\Administrator         
+  LOCALAPPDATA          C:\Users\user\AppData\Local  
+  LOGONSERVER           \\SRV-ENV-DBG                
+  NUMBER_OF_PROCESSORS  4                            
+  OS                    Windows_NT                   
+  
 
 PS  [15/103]> (Get-ChildItem Env:).Count
-  ERROR: Cannot find path 'Env:' because it does not exist.
+  26
 
 
 --- [16] § identity coherence ---
@@ -99,16 +112,16 @@ CMD [24/103]> echo %DBG_FROM_CMD%
   hello
 
 PS  [25/103]> $env:DBG_FROM_CMD
-<empty>
+  hello
 
 PS  [26/103]> Get-Item Env:DBG_FROM_CMD
-  ERROR: Cannot find path 'Env:DBG_FROM_CMD' because it does not exist.
+  Name=DBG_FROM_CMD; Value=hello
 
 CMD [27/103]> set DBG_FROM_CMD=updated
 <empty>
 
 PS  [28/103]> $env:DBG_FROM_CMD
-<empty>
+  updated
 
 CMD [29/103]> set DBG_FROM_CMD=
 <empty>
@@ -134,13 +147,13 @@ PS  [35/103]> $env:DBG_FROM_PS = "world2"
 <empty>
 
 CMD [36/103]> echo %DBG_FROM_PS%
-  %DBG_FROM_PS%
+  world2
 
 PS  [37/103]> Remove-Item Env:DBG_FROM_PS
 <empty>
 
 CMD [38/103]> echo %DBG_FROM_PS%
-  %DBG_FROM_PS%
+  world2
 
 
 --- [39] § PATH manipulation ---
@@ -148,7 +161,7 @@ CMD [39/103]> set PATH=%PATH%;C:\AddedByCmd
 <empty>
 
 PS  [40/103]> $env:Path -split ";" | Where-Object { $_ -like "*AddedByCmd*" }
-<empty>
+  C:\AddedByCmd
 
 PS  [41/103]> $env:Path += ";C:\AddedByPs"
 <empty>
@@ -157,7 +170,7 @@ CMD [42/103]> echo %PATH%
   C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\AddedByCmd
 
 CMD [43/103]> set PATH | findstr AddedByPs
-<empty>
+  Path=0;C:\AddedByPs
 
 
 --- [44] § setx (persistent best-effort) ---
@@ -185,8 +198,11 @@ PS  [49/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS",$null,"User
 --- [50] § baseline registry ---
 CMD [50/103]> reg query HKCU\Software
   
-  HKCU\Software
+      Hive: HKCU:\Software
   
+  Name                           Property
+  ----                           --------
+  Microsoft                      
 
 PS  [51/103]> Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
   
@@ -204,8 +220,14 @@ PS  [53/103]> Test-Path HKLM:\Software
 
 CMD [54/103]> reg query HKLM\Software
   
-  HKLM\Software
+      Hive: HKLM:\Software
   
+  Name                           Property
+  ----                           --------
+  Microsoft                      
+  Classes                        
+  Policies                       
+  WOW6432Node                    
 
 
 --- [55] § reg add (cmd) → read (ps) ---
@@ -218,7 +240,7 @@ CMD [56/103]> reg query HKCU\Software\CohReg
   
 
 PS  [57/103]> Test-Path HKCU:\Software\CohReg
-  False
+  True
 
 CMD [58/103]> reg add HKCU\Software\CohReg /v Version /t REG_SZ /d "1.0.0" /f
   The operation completed successfully.
@@ -232,7 +254,10 @@ CMD [60/103]> reg query HKCU\Software\CohReg
   
 
 PS  [61/103]> Get-ItemProperty -Path HKCU:\Software\CohReg
-  Get-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
+  
+  Version             : 1.0.0
+  Build               : 42
+  
 
 PS  [62/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Version
 <empty>
@@ -243,10 +268,10 @@ PS  [63/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Build
 
 --- [64] § Set-ItemProperty (ps) → read (cmd) ---
 PS  [64/103]> Set-ItemProperty -Path HKCU:\Software\CohReg -Name "InstallPath" -Value "C:\CohReg"
-  Set-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
+<empty>
 
 PS  [65/103]> Set-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -Value 1 -Type DWord
-  Set-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
+<empty>
 
 CMD [66/103]> reg query HKCU\Software\CohReg /v InstallPath
   
@@ -291,8 +316,11 @@ PS  [73/103]> (Get-ItemProperty HKCU:\Software\CohReg\Sub).Theme
 
 CMD [74/103]> reg query HKCU\Software\CohReg /s
   
-  HKCU\Software\CohReg
+      Hive: HKCU:\Software\CohReg
   
+  Name                           Property
+  ----                           --------
+  Sub                            Lang, Theme
 
 PS  [75/103]> Get-ChildItem HKCU:\Software\CohReg -Recurse
   
@@ -300,7 +328,7 @@ PS  [75/103]> Get-ChildItem HKCU:\Software\CohReg -Recurse
   
   Name                           Property
   ----                           --------
-  Sub                            Lang
+  Sub                            Lang, Theme
 
 
 --- [76] § reg delete (cmd) → read (ps) ---
@@ -314,12 +342,12 @@ CMD [78/103]> reg delete HKCU\Software\CohReg\Sub /f
   The operation completed successfully.
 
 PS  [79/103]> Test-Path HKCU:\Software\CohReg\Sub
-  True
+  False
 
 
 --- [80] § Remove-ItemProperty (ps) → read (cmd) ---
 PS  [80/103]> Remove-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -ErrorAction SilentlyContinue
-  Remove-ItemProperty : Property 'Enabled' does not exist at path 'HKCU:\Software\CohReg'.
+<empty>
 
 CMD [81/103]> reg query HKCU\Software\CohReg /v Enabled
   
@@ -343,7 +371,7 @@ PS  [85/103]> (Get-ItemProperty HKLM:\Software\CohReg).Site
 <empty>
 
 PS  [86/103]> Set-ItemProperty -Path HKLM:\Software\CohReg -Name "Tier" -Value "prod"
-  Set-ItemProperty : Cannot find path 'HKLM:\Software\CohReg' because it does not exist.
+<empty>
 
 CMD [87/103]> reg query HKLM\Software\CohReg
   
@@ -498,9 +526,7 @@ PS  [101/103]> Remove-Item HKCU:\Software\CohReg -Recurse -ErrorAction SilentlyC
 <empty>
 
 CMD [102/103]> reg query HKCU\Software\CohReg
-  
-  HKCU\Software\CohReg
-  
+  ERROR: The system was unable to find the specified registry key or value.
 
 CMD [103/103]> set DBG_PERSIST_CMD=
 <empty>

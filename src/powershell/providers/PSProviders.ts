@@ -281,6 +281,17 @@ export interface VolumeInfo {
   size: number;
   driveType: string;
 }
+export interface IEnvironmentProvider {
+  /** Returns every environment variable visible on the device. */
+  list(): Array<{ Name: string; Value: string }>;
+  /** Reads one variable (case-insensitive on Windows). */
+  get(name: string): string | undefined;
+  /** Persists a variable on the device so cmd subshells see it too. */
+  set(name: string, value: string): void;
+  /** Removes a variable. */
+  remove(name: string): void;
+}
+
 export interface IDiskProvider {
   listDisks(): DiskInfo[];
   listVolumes(): VolumeInfo[];
@@ -331,4 +342,5 @@ export interface PSProviders {
   readonly vpn:            IVpnProvider            | null;
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;
+  readonly environment:    IEnvironmentProvider    | null;
 }

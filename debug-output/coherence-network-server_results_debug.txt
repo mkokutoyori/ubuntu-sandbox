@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-network-server
-Generated: 2026-05-15T16:30:38.638Z
+Generated: 2026-05-15T16:52:33.054Z
 host=SRV-NET-COH (windows-server)
 Total commands: 102
 ============================================================
@@ -638,7 +638,7 @@ PS  [57/102]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
   
 
 PS  [58/102]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
-  ERROR: 127 : DNS name does not exist
+<empty>
 
 PS  [59/102]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
   
@@ -875,10 +875,10 @@ PS  [88/102]> gcm Resolve-DnsName
 <empty>
 
 PS  [89/102]> Get-Alias ipconfig -ErrorAction SilentlyContinue
-  ERROR: Get-Alias : Cannot find alias because alias with name 'ipconfig' does not exist.
+<empty>
 
 PS  [90/102]> Get-Alias ping -ErrorAction SilentlyContinue
-  ERROR: Get-Alias : Cannot find alias because alias with name 'ping' does not exist.
+<empty>
 
 PS  [91/102]> Get-Help Get-NetAdapter -ErrorAction SilentlyContinue
   NAME

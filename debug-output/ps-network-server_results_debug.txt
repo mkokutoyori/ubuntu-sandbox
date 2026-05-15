@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-server
-Generated: 2026-05-15T16:30:42.226Z
+Generated: 2026-05-15T16:52:33.576Z
 Engine: powershell
 host=SRV-NET-DBG (windows-server)
 Total commands: 101
@@ -453,7 +453,7 @@ PS [44/101]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
   
 
 PS [45/101]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
-  ERROR: 127 : DNS name does not exist
+<empty>
 
 PS [46/101]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
   
@@ -635,10 +635,10 @@ PS [75/101]> gcm Test-Connection -ErrorAction SilentlyContinue
 <empty>
 
 PS [76/101]> Get-Alias ipconfig -ErrorAction SilentlyContinue
-  ERROR: Get-Alias : Cannot find alias because alias with name 'ipconfig' does not exist.
+<empty>
 
 PS [77/101]> Get-Alias ping -ErrorAction SilentlyContinue
-  ERROR: Get-Alias : Cannot find alias because alias with name 'ping' does not exist.
+<empty>
 
 PS [78/101]> Get-Help Get-NetAdapter -ErrorAction SilentlyContinue
   NAME
@@ -782,7 +782,7 @@ PS [99/101]> hostname
   SRV-NET-DBG
 
 PS [100/101]> Get-Date
-  5/15/2026 4:30 PM
+  5/15/2026 4:52 PM
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
 <empty>
