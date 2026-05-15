@@ -165,17 +165,23 @@ export class PowerShellSubShell implements ISubShell {
    */
   private async dispatchCommand(line: string): Promise<string | null> {
     if (this.shouldBypassInterpreter(line)) {
+      PowerShellSubShell.fallbackHits++;
       return this.psExecutor.execute(line);
     }
     try {
       return this.interp.executeInteractive(line);
     } catch (e) {
       if (this.isFallbackError(e)) {
+        PowerShellSubShell.fallbackHits++;
         return this.psExecutor.execute(line);
       }
       return this.formatInterpreterError(e);
     }
   }
+
+  // Debug counter — useful when assessing how much production code still
+  // reaches PowerShellExecutor. Exposed as a static so tests can read it.
+  static fallbackHits = 0;
 
   /**
    * Heuristic: skip the interpreter entirely for commands that are clearly
