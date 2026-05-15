@@ -227,6 +227,17 @@ export class SetLocationCmdlet implements ICmdlet {
   }
 }
 
+export class GetLocationCmdlet implements ICmdlet {
+  readonly name = 'get-location';
+  readonly aliases = ['pwd', 'gl'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const fs = ctx.providers.filesystem;
+    const cwd = fs ? fs.getCwd() : 'C:\\';
+    return { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
+  }
+}
+
 // ─── New-PSDrive ──────────────────────────────────────────────────────────
 
 export class NewPSDriveCmdlet implements ICmdlet {

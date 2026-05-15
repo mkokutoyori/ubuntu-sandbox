@@ -34,14 +34,70 @@ import {
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
   OutFileCmdlet as OutFilePathCmdlet,
+  GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet,
+  GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
+  RenameItemCmdlet, MkdirCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
   ConvertToSecureStringCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
-  SetLocationCmdlet, NewPSDriveCmdlet, GetPSDriveCmdlet,
+  SetLocationCmdlet, GetLocationCmdlet,
+  NewPSDriveCmdlet, GetPSDriveCmdlet,
 } from './MiscCmdlets';
+import {
+  GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
+  RestartServiceCmdlet, SuspendServiceCmdlet, ResumeServiceCmdlet,
+  SetServiceCmdlet, NewServiceCmdlet, RemoveServiceCmdlet,
+} from './ServiceCmdlets';
+import {
+  GetProcessCmdlet, StopProcessCmdlet, StartProcessCmdlet,
+} from './ProcessCmdlets';
+import {
+  GetLocalUserCmdlet, NewLocalUserCmdlet, SetLocalUserCmdlet,
+  RemoveLocalUserCmdlet, EnableLocalUserCmdlet, DisableLocalUserCmdlet,
+  RenameLocalUserCmdlet,
+  GetLocalGroupCmdlet, NewLocalGroupCmdlet, RemoveLocalGroupCmdlet,
+  AddLocalGroupMemberCmdlet, RemoveLocalGroupMemberCmdlet,
+  GetLocalGroupMemberCmdlet, RenameLocalGroupCmdlet,
+} from './UserCmdlets';
+import {
+  GetNetAdapterCmdlet, GetNetIPAddressCmdlet,
+  TestConnectionCmdlet, ResolveDnsNameCmdlet,
+  GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
+  GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
+  NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
+  NewNetRouteCmdlet, RemoveNetRouteCmdlet,
+  EnableNetAdapterCmdlet, DisableNetAdapterCmdlet, RenameNetAdapterCmdlet,
+  GetDnsClientServerAddressCmdlet, SetDnsClientServerAddressCmdlet,
+  ClearDnsClientCacheCmdlet,
+  GetNetFirewallRuleCmdlet, NewNetFirewallRuleCmdlet,
+  SetNetFirewallRuleCmdlet, RemoveNetFirewallRuleCmdlet,
+  EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
+  GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
+  SetNetIPAddressCmdlet, SetNetRouteCmdlet,
+  RestartNetAdapterCmdlet, TestNetConnectionCmdlet,
+} from './NetworkCmdlets';
+import {
+  AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
+  SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
+} from './VpnCmdlets';
+import {
+  GetEventLogCmdlet, WriteEventLogCmdlet, ClearEventLogCmdlet,
+  NewEventLogCmdlet, LimitEventLogCmdlet, GetWinEventCmdlet,
+} from './EventLogCmdlets';
+import {
+  IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet,
+  GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
+  NetCmdlet,
+} from './NativeShimCmdlets';
+import {
+  GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
+  UnregisterScheduledTaskCmdlet, NewScheduledTaskTriggerCmdlet,
+  NewScheduledTaskActionCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
+  GetCimInstanceCmdlet,
+} from './SystemMgmtCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -112,6 +168,15 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new RemoveItemCmdlet());
   registry.register(new CopyItemCmdlet());
   registry.register(new MoveItemCmdlet());
+  registry.register(new GetItemPropertyCmdlet());
+  registry.register(new SetItemPropertyCmdlet());
+  registry.register(new RemoveItemPropertyCmdlet());
+  registry.register(new GetItemCmdlet());
+  registry.register(new SetItemCmdlet());
+  registry.register(new GetAclCmdlet());
+  registry.register(new SetAclCmdlet());
+  registry.register(new RenameItemCmdlet());
+  registry.register(new MkdirCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
@@ -127,7 +192,112 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ReceiveJobCmdlet());
   registry.register(new WaitJobCmdlet());
   registry.register(new SetLocationCmdlet());
+  registry.register(new GetLocationCmdlet());
   registry.register(new NewPSDriveCmdlet());
   registry.register(new GetPSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
+
+  // ── Services (provider-backed) ────────────────────────────────────────────
+  registry.register(new GetServiceCmdlet());
+  registry.register(new StartServiceCmdlet());
+  registry.register(new StopServiceCmdlet());
+  registry.register(new RestartServiceCmdlet());
+  registry.register(new SuspendServiceCmdlet());
+  registry.register(new ResumeServiceCmdlet());
+  registry.register(new SetServiceCmdlet());
+  registry.register(new NewServiceCmdlet());
+  registry.register(new RemoveServiceCmdlet());
+
+  // ── Processes (provider-backed) ───────────────────────────────────────────
+  registry.register(new GetProcessCmdlet());
+  registry.register(new StopProcessCmdlet());
+  registry.register(new StartProcessCmdlet());
+
+  // ── Local users / groups (provider-backed) ────────────────────────────────
+  registry.register(new GetLocalUserCmdlet());
+  registry.register(new NewLocalUserCmdlet());
+  registry.register(new SetLocalUserCmdlet());
+  registry.register(new RemoveLocalUserCmdlet());
+  registry.register(new EnableLocalUserCmdlet());
+  registry.register(new DisableLocalUserCmdlet());
+  registry.register(new RenameLocalUserCmdlet());
+  registry.register(new GetLocalGroupCmdlet());
+  registry.register(new NewLocalGroupCmdlet());
+  registry.register(new RemoveLocalGroupCmdlet());
+  registry.register(new AddLocalGroupMemberCmdlet());
+  registry.register(new RemoveLocalGroupMemberCmdlet());
+  registry.register(new GetLocalGroupMemberCmdlet());
+  registry.register(new RenameLocalGroupCmdlet());
+
+  // ── Network (provider-backed, partial — see INetworkProvider) ─────────────
+  registry.register(new GetNetAdapterCmdlet());
+  registry.register(new GetNetIPAddressCmdlet());
+  registry.register(new TestConnectionCmdlet());
+  registry.register(new ResolveDnsNameCmdlet());
+  registry.register(new GetNetIPConfigurationCmdlet());
+  registry.register(new GetNetRouteCmdlet());
+  registry.register(new GetNetTCPConnectionCmdlet());
+  registry.register(new HostnameCmdlet());
+  registry.register(new WhoamiCmdlet());
+
+  // ── Network mutations & profiles (provider-backed) ────────────────────────
+  registry.register(new NewNetIPAddressCmdlet());
+  registry.register(new RemoveNetIPAddressCmdlet());
+  registry.register(new NewNetRouteCmdlet());
+  registry.register(new RemoveNetRouteCmdlet());
+  registry.register(new EnableNetAdapterCmdlet());
+  registry.register(new DisableNetAdapterCmdlet());
+  registry.register(new RenameNetAdapterCmdlet());
+  registry.register(new GetDnsClientServerAddressCmdlet());
+  registry.register(new SetDnsClientServerAddressCmdlet());
+  registry.register(new ClearDnsClientCacheCmdlet());
+  registry.register(new GetNetFirewallRuleCmdlet());
+  registry.register(new NewNetFirewallRuleCmdlet());
+  registry.register(new SetNetFirewallRuleCmdlet());
+  registry.register(new RemoveNetFirewallRuleCmdlet());
+  registry.register(new EnableNetFirewallRuleCmdlet());
+  registry.register(new DisableNetFirewallRuleCmdlet());
+  registry.register(new GetNetConnectionProfileCmdlet());
+  registry.register(new SetNetConnectionProfileCmdlet());
+  registry.register(new SetNetIPAddressCmdlet());
+  registry.register(new SetNetRouteCmdlet());
+  registry.register(new RestartNetAdapterCmdlet());
+  registry.register(new TestNetConnectionCmdlet());
+
+  // ── VPN (provider-backed) ─────────────────────────────────────────────────
+  registry.register(new AddVpnConnectionCmdlet());
+  registry.register(new GetVpnConnectionCmdlet());
+  registry.register(new SetVpnConnectionCmdlet());
+  registry.register(new RemoveVpnConnectionCmdlet());
+
+  // ── Event log (provider-backed) ───────────────────────────────────────────
+  registry.register(new GetEventLogCmdlet());
+  registry.register(new WriteEventLogCmdlet());
+  registry.register(new ClearEventLogCmdlet());
+  registry.register(new NewEventLogCmdlet());
+  registry.register(new LimitEventLogCmdlet());
+  registry.register(new GetWinEventCmdlet());
+
+  // ── Scheduled tasks / disks / CIM (provider-backed) ───────────────────────
+  registry.register(new GetScheduledTaskCmdlet());
+  registry.register(new RegisterScheduledTaskCmdlet());
+  registry.register(new UnregisterScheduledTaskCmdlet());
+  registry.register(new NewScheduledTaskTriggerCmdlet());
+  registry.register(new NewScheduledTaskActionCmdlet());
+  registry.register(new GetDiskCmdlet());
+  registry.register(new GetVolumeCmdlet());
+  registry.register(new GetCimInstanceCmdlet());
+
+  // ── Native CLI shims (sync subset) ────────────────────────────────────────
+  // ping / tracert stay in the legacy executor — they're async and the
+  // PSRuntime tree-walker is sync.
+  registry.register(IpconfigCmdlet);
+  registry.register(NetshCmdlet);
+  registry.register(ArpCmdlet);
+  registry.register(RouteCmdlet);
+  registry.register(GetmacCmdlet);
+  registry.register(SysteminfoCmdlet);
+  registry.register(VerCmdlet);
+  registry.register(NslookupCmdlet);
+  registry.register(NetCmdlet);
 }

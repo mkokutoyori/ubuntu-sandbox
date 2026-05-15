@@ -146,6 +146,10 @@ export interface IFileSystemProvider {
   isDirectory(path: string): boolean;
   /** Get ACL info for a path. */
   getAcl(path: string): { owner: string; acl: Array<{ principal: string; type: string; permissions: string[] }> } | null;
+  /** Set the owner of a path. Returns true on success. */
+  setOwner(path: string, owner: string): boolean;
+  /** Add an ACE (Access Control Entry) to a path. Returns true on success. */
+  addAce(path: string, ace: { principal: string; type: 'allow' | 'deny'; permissions: string[] }): boolean;
 }
 
 export interface IRegistryProvider {
@@ -189,6 +193,10 @@ export interface INetworkProvider {
   getRoutes(ifAlias?: string): RouteInfo[];
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
   removeRoute(dest: string, ifAlias?: string): void;
+  /** Modify properties of an existing route — usually nextHop or metric. */
+  setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string;
+  /** Modify properties of an existing IP — usually prefixLength. */
+  setIPAddress(ip: string, opts: { prefixLength?: number }): string;
   getDnsServers(ifAlias: string): string[];
   setDnsServers(ifAlias: string, servers: string[]): void;
   getDefaultGateway(): string | null;
@@ -217,6 +225,13 @@ export interface INetworkProvider {
   setWinhttpProxy(proxy: string): void;
   /** Execute a CMD-level native command (ping, ipconfig, tracert, etc.) */
   executeCmdCommand(cmd: string): Promise<string>;
+  /**
+   * Synchronous variant for native commands whose underlying handler is
+   * sync (ipconfig / netsh / arp / route / getmac / systeminfo / ver /
+   * nslookup). Returns null when the command is async or unknown — callers
+   * should fall back to executeCmdCommand or skip the call.
+   */
+  runSyncNativeCommand(cmd: string, args: string[]): string | null;
 }
 
 export interface IUserProvider {
@@ -239,6 +254,54 @@ export interface IUserProvider {
   isAdmin(userName: string): boolean;
 }
 
+export interface ScheduledTaskInfo {
+  taskName: string;
+  taskPath: string;
+  state: 'Ready' | 'Running' | 'Disabled';
+}
+
+export interface IScheduledTaskProvider {
+  listTasks(nameFilter?: string): ScheduledTaskInfo[];
+  registerTask(task: ScheduledTaskInfo): string;
+  unregisterTask(name: string): string;
+}
+
+export interface DiskInfo {
+  number: number;
+  friendlyName: string;
+  size: number;       // bytes
+  partitionStyle: string;
+  operationalStatus: string;
+}
+export interface VolumeInfo {
+  driveLetter: string;
+  fileSystemLabel: string;
+  fileSystem: string;
+  sizeRemaining: number;
+  size: number;
+  driveType: string;
+}
+export interface IDiskProvider {
+  listDisks(): DiskInfo[];
+  listVolumes(): VolumeInfo[];
+}
+
+export interface VpnConnectionInfo {
+  name: string;
+  serverAddress: string;
+  tunnelType: string;
+  encryptionLevel: string;
+  authMethod: string;
+}
+
+export interface IVpnProvider {
+  listConnections(nameFilter?: string): VpnConnectionInfo[];
+  getConnection(name: string): VpnConnectionInfo | null;
+  addConnection(conn: VpnConnectionInfo): void;
+  setConnection(name: string, opts: Partial<Omit<VpnConnectionInfo, 'name'>>): string;
+  removeConnection(name: string): string;
+}
+
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
@@ -258,11 +321,14 @@ export interface IEventLogProvider {
  *   if (!ctx.providers.filesystem) throw new PSRuntimeError('No filesystem available');
  */
 export interface PSProviders {
-  readonly filesystem: IFileSystemProvider | null;
-  readonly registry:   IRegistryProvider   | null;
-  readonly services:   IServiceProvider    | null;
-  readonly network:    INetworkProvider    | null;
-  readonly processes:  IProcessProvider    | null;
-  readonly users:      IUserProvider       | null;
-  readonly eventLog:   IEventLogProvider   | null;
+  readonly filesystem:     IFileSystemProvider     | null;
+  readonly registry:       IRegistryProvider       | null;
+  readonly services:       IServiceProvider        | null;
+  readonly network:        INetworkProvider        | null;
+  readonly processes:      IProcessProvider        | null;
+  readonly users:          IUserProvider           | null;
+  readonly eventLog:       IEventLogProvider       | null;
+  readonly vpn:            IVpnProvider            | null;
+  readonly scheduledTasks: IScheduledTaskProvider  | null;
+  readonly disks:          IDiskProvider           | null;
 }

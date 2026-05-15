@@ -14,8 +14,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -26,52 +26,49 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function createPS(): PowerShellExecutor {
-  const ps = new PowerShellExecutor(new WindowsPC('windows-pc', 'WIN-ESC'));
-  return ps;
+function createShell(): PowerShellSubShell {
+  return PowerShellSubShell.create(new WindowsPC('windows-pc', 'WIN-ESC')).subShell;
+}
+async function run(sh: PowerShellSubShell, line: string): Promise<string> {
+  const r = await sh.processLine(line);
+  return r.output.join('\n');
 }
 
 describe('backtick escapes — Write-Output', () => {
   it('`n produces a newline', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Write-Output "line1`nline2"');
+    const out = await run(createShell(), 'Write-Output "line1`nline2"');
     expect(out).toContain('line1\nline2');
   });
 
   it('`t produces a tab', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Write-Output "a`tb"');
+    const out = await run(createShell(), 'Write-Output "a`tb"');
     expect(out).toContain('a\tb');
   });
 
   it('`$ keeps a literal dollar sign without expansion', async () => {
-    const ps = createPS();
-    await ps.execute('$x = 99');
-    const out = await ps.execute('Write-Output "literal `$x has value $x"');
+    const sh = createShell();
+    await run(sh, '$x = 99');
+    const out = await run(sh, 'Write-Output "literal `$x has value $x"');
     expect(out).toContain('literal $x has value 99');
   });
 
   it('`" produces a literal double quote', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Write-Output "say `"hi`""');
+    const out = await run(createShell(), 'Write-Output "say `"hi`""');
     expect(out).toContain('say "hi"');
   });
 
   it('`` is a literal backtick', async () => {
-    const ps = createPS();
-    const out = await ps.execute('Write-Output "back``tick"');
+    const out = await run(createShell(), 'Write-Output "back``tick"');
     expect(out).toContain('back`tick');
   });
 });
 
 describe('backtick escapes — Set-Content round-trip', () => {
   it('Set-Content + Get-Content preserves a multi-line value', async () => {
-    const ps = createPS();
-    await ps.execute('New-Item -Path C:\\esc -ItemType Directory -Force');
-    await ps.execute(
-      'Set-Content -Path C:\\esc\\multi.txt -Value "alpha`nbeta`ngamma"',
-    );
-    const out = await ps.execute('Get-Content C:\\esc\\multi.txt');
+    const sh = createShell();
+    await run(sh, 'New-Item -Path C:\\esc -ItemType Directory -Force');
+    await run(sh, 'Set-Content -Path C:\\esc\\multi.txt -Value "alpha`nbeta`ngamma"');
+    const out = await run(sh, 'Get-Content C:\\esc\\multi.txt');
     expect(out).toContain('alpha');
     expect(out).toContain('beta');
     expect(out).toContain('gamma');

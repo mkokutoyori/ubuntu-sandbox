@@ -25,6 +25,8 @@ import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
+import { PSRegistryProvider } from './windows/PSRegistryProvider';
+import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
@@ -74,6 +76,29 @@ export class WindowsPC extends EndHost {
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
   private procMgr: WindowsProcessManager;
+
+  // ── Per-device transitional state (Phase 4 relocation) ──────────────────
+  // These maps + provider instances used to live as private fields on
+  // PowerShellExecutor. Moving them to the device makes them visible to
+  // any consumer (the interpreter, future Get-* cmdlets, the executor's
+  // own handlers via shared references) without going through the
+  // executor as the source of truth.
+  /** Additional IP addresses (added via New-NetIPAddress). */
+  readonly extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
+  /** Extra routes (added via New-NetRoute). */
+  readonly extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  /** Adapter overrides: status / display name. */
+  readonly adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
+  /** Dynamic firewall rules (added via New-NetFirewallRule). */
+  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> = new Map();
+  /** Network connection profiles: ifIndex → category. */
+  readonly networkProfiles: Map<number, string> = new Map();
+  /** VPN connections: lowercase name → details. */
+  readonly vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> = new Map();
+  /** In-memory registry hive (HKLM / HKCU). */
+  readonly registry: PSRegistryProvider = new PSRegistryProvider();
+  /** Event-log store. */
+  readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -577,6 +602,44 @@ export class WindowsPC extends EndHost {
   }
 
   // ─── systeminfo ────────────────────────────────────────────────
+
+  /**
+   * Run a synchronous native CLI command (ipconfig / netsh / arp / route /
+   * getmac / systeminfo / ver / net) directly. Used by the interpreter's
+   * native-command cmdlets so they can deliver real output without going
+   * through the async PowerShellExecutor pipeline.
+   *
+   * Returns null when the command is async (ping / tracert) or unknown —
+   * callers fall back to executeCmdCommand() in that case.
+   */
+  runSyncNativeCommand(cmd: string, args: string[]): string | null {
+    const lower = cmd.toLowerCase();
+    if (lower === 'systeminfo') return this.cmdSysteminfo();
+    if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    // `net` is a multi-subcommand router — all its subhandlers are sync
+    // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
+    if (lower === 'net' && args.length > 0) {
+      const subCmd = args[0].toLowerCase();
+      const subArgs = args.slice(1);
+      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr };
+      if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
+      if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
+      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
+      if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
+    }
+    const netCtx = this.buildNetContext();
+    switch (lower) {
+      case 'ipconfig': return cmdIpconfig(netCtx, args);
+      case 'netsh':    return cmdNetsh(netCtx, args);
+      case 'arp':      return cmdArp(netCtx, args);
+      case 'getmac':   return cmdGetmac(netCtx, args);
+      case 'route':    return cmdRoute(netCtx, args);
+      case 'nslookup': return this.cmdNslookup(args);
+      // ping / tracert are async — no sync path.
+      default: return null;
+    }
+  }
 
   private cmdSysteminfo(): string {
     const lines: string[] = [];

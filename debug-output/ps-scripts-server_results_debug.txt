@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-scripts-server
-Generated: 2026-05-14T14:08:57.782Z
+Generated: 2026-05-14T19:08:45.629Z
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
 ============================================================

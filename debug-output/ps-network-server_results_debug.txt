@@ -1,6 +1,6 @@
 ============================================================
 PowerShell debug transcript — ps-network-server
-Generated: 2026-05-14T09:37:28.892Z
+Generated: 2026-05-14T19:08:45.633Z
 host=SRV-NET-DBG (windows-server)
 Total commands: 28
 ============================================================

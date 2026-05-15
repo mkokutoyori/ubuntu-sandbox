@@ -44,37 +44,8 @@ WSManStackVersion              3.0
 PSRemotingProtocolVersion      2.3
 SerializationVersion           1.1.0.1`.trim();
 
-export const PS_BANNER = `Windows PowerShell
-Copyright (C) Microsoft Corporation. All rights reserved.
-
-Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
-`;
-
-export const PS_CMDLETS_LIST = [
-  'Get-ChildItem', 'Set-Location', 'Get-Location', 'Get-Content', 'Set-Content',
-  'New-Item', 'Remove-Item', 'Copy-Item', 'Move-Item', 'Rename-Item',
-  'Write-Host', 'Write-Output', 'Clear-Host', 'Get-Process', 'Get-Help',
-  'Get-Command', 'Get-NetIPConfiguration', 'Get-NetIPAddress', 'Get-NetAdapter',
-  'Test-Connection', 'Get-Date', 'Get-History', 'Get-ExecutionPolicy',
-  'Set-ExecutionPolicy', 'Get-Service', 'Get-CimInstance', 'Resolve-DnsName',
-  'Select-String', 'Measure-Object', 'Sort-Object', 'Select-Object',
-  'Format-Table', 'Format-List', 'Where-Object', 'ForEach-Object',
-  // User/Group/ACL management
-  'Get-LocalUser', 'New-LocalUser', 'Set-LocalUser', 'Remove-LocalUser',
-  'Enable-LocalUser', 'Disable-LocalUser',
-  'Get-LocalGroup', 'New-LocalGroup', 'Remove-LocalGroup',
-  'Add-LocalGroupMember', 'Remove-LocalGroupMember', 'Get-LocalGroupMember',
-  'Get-Acl',
-  // Service/Process management
-  'Start-Service', 'Stop-Service', 'Restart-Service', 'Set-Service',
-  'Suspend-Service', 'Resume-Service', 'New-Service', 'Remove-Service',
-  'Stop-Process',
-  // Aliases
-  'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'echo', 'cls', 'clear',
-  'cp', 'mv', 'rm', 'del', 'ren', 'mkdir', 'rmdir',
-  'ipconfig', 'ping', 'netsh', 'tracert', 'arp', 'route',
-  'hostname', 'systeminfo', 'ver', 'exit', 'cmd',
-];
+// Re-export for backwards compatibility — the canonical home is now PSConstants.
+export { PS_BANNER, PS_CMDLETS_LIST } from './PSConstants';
 
 // ─── Interface for device abstraction ─────────────────────────────
 
@@ -107,6 +78,19 @@ export interface PSDeviceContext {
   getServiceManager(): WindowsServiceManager;
   /** Get the process manager for process management cmdlets */
   getProcessManager(): WindowsProcessManager;
+  /**
+   * Phase 4 relocation: state holders that used to live as private fields
+   * on PowerShellExecutor now live on the device. The executor reads/writes
+   * through these references; the interpreter providers do too.
+   */
+  readonly extraIPs:             Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }>;
+  readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
+  readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
+  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+  readonly networkProfiles:      Map<number, string>;
+  readonly vpnConnections:       Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }>;
+  readonly registry:             PSRegistryProvider;
+  readonly eventLog:             PSEventLogProvider;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -135,8 +119,10 @@ export class PowerShellExecutor {
   private cwd: string;
   private device: PSDeviceContext;
   private commandHistory: string[];
-  private registry: PSRegistryProvider;
-  private eventLog: PSEventLogProvider;
+  /** Registry hive — relocated to the device (Phase 4). */
+  get registry(): PSRegistryProvider { return (this.device as unknown as { registry: PSRegistryProvider }).registry; }
+  /** Event log — relocated to the device. */
+  get eventLog(): PSEventLogProvider { return (this.device as unknown as { eventLog: PSEventLogProvider }).eventLog; }
   /** Session variables: $name → string value */
   private sessionVars: Map<string, string> = new Map();
   /** Session environment overrides (Set-Item Env:X) */
@@ -147,10 +133,12 @@ export class PowerShellExecutor {
   private errorList: string[] = [];
   /** Defined functions: name → { params, body } */
   private sessionFunctions: Map<string, { params: string[]; body: string }> = new Map();
-  /** Additional IP addresses: ip → { ifAlias, prefixLength, origin, skipAsSource, gateway } */
-  private extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
-  /** Extra routes: destPrefix → { ifAlias, nextHop, metric } */
-  private extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  /** Additional IP addresses — now lives on the device (Phase 4 relocation).
+   *  Kept as a public getter for the rest of this file (which references
+   *  this.extraIPs in dozens of places) and for WindowsPSProviders. */
+  get extraIPs() { return (this.device as unknown as { extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> }).extraIPs; }
+  /** Extra routes — relocated to the device. */
+  get extraRoutes() { return (this.device as unknown as { extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> }).extraRoutes; }
   /** Location stack for Push-Location/Pop-Location */
   private locationStack: Map<string, string[]> = new Map();
   /** Array variables: $name → string[] */
@@ -161,34 +149,26 @@ export class PowerShellExecutor {
   private breakSignal = false;
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
-  /** Adapter state overrides: key = display name lowercase → { status, displayName } */
-  private adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
-  /** Dynamic firewall rules added via New-NetFirewallRule */
-  private dynamicFirewallRules: Map<string, {
-    name: string; displayName: string; enabled: boolean;
-    action: string; direction: string; protocol: string;
-    localPort: string; remotePort: string; description: string;
-  }> = new Map();
+  /** Adapter overrides — relocated to the device. */
+  get adapterOverrides() { return (this.device as unknown as { adapterOverrides: Map<string, { status?: string; displayName?: string }> }).adapterOverrides; }
+  /** Dynamic firewall rules — relocated to the device. */
+  get dynamicFirewallRules() { return (this.device as unknown as { dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> }).dynamicFirewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
   private winhttpProxy: string = '';
   /** WLAN: currently connected SSID (empty = disconnected) */
   private wlanConnectedSSID: string = '';
   /** WLAN: known profiles (SSIDs) */
   private wlanProfiles: Set<string> = new Set();
-  /** Network connection profiles: ifIndex → category */
-  private networkProfiles: Map<number, string> = new Map();
-  /** VPN connections: lowercase name → connection info */
-  private vpnConnections: Map<string, {
-    name: string; serverAddress: string; tunnelType: string;
-    encryptionLevel: string; authMethod: string;
-  }> = new Map();
+  /** Network connection profiles — relocated to the device. */
+  get networkProfiles() { return (this.device as unknown as { networkProfiles: Map<number, string> }).networkProfiles; }
+  /** VPN connections — relocated to the device. */
+  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> }).vpnConnections; }
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
     this.device = device;
     this.commandHistory = [];
-    this.registry = new PSRegistryProvider();
-    this.eventLog = new PSEventLogProvider();
+    // registry / eventLog now live on the device — no per-executor instances.
   }
 
   getCwd(): string { return this.cwd; }
@@ -1330,6 +1310,16 @@ export class PowerShellExecutor {
   // ─── Pipeline handling ──────────────────────────────────────────
 
   private async executePipeline(cmdline: string): Promise<string | null> {
+    // Unwrap a single outer pair of parentheses: `(expr | filter)` is the
+    // sub-expression form — we evaluate the inner pipeline normally and
+    // return its output to the host.
+    const t = cmdline.trim();
+    if (t.startsWith('(') && t.endsWith(')')) {
+      const block = this.extractBalancedBlock(t, 0, '(');
+      if (block && block.end === t.length - 1) {
+        return this.executePipeline(block.content.trim());
+      }
+    }
     const parts = this.splitPipeline(cmdline);
     if (parts.length < 2) return this.executeSingle(cmdline);
 
@@ -1380,6 +1370,29 @@ export class PowerShellExecutor {
           const results: string[] = [];
           for (const obj of objs) {
             let cmd = scriptBody;
+            const itemValue = () => {
+              const nameKey = Object.keys(obj).find(k => k.toLowerCase() === 'name');
+              if (nameKey) return String(obj[nameKey] ?? '');
+              const firstKey = Object.keys(obj)[0];
+              return firstKey ? String(obj[firstKey] ?? '') : '';
+            };
+            // Special case: scriptBody is exactly `$_.METHOD(args)` — evaluate
+            // as a method call on the current item value.
+            const methodOnlyMatch = scriptBody.match(/^\$_\.(\w+)\(([^)]*)\)$/);
+            if (methodOnlyMatch) {
+              const val = itemValue().replace(/"/g, '`"');
+              const evaled = this.tryEvalExpr(`"${val}".${methodOnlyMatch[1]}(${methodOnlyMatch[2]})`);
+              if (evaled !== null) {
+                results.push(evaled);
+                continue;
+              }
+            }
+            // Replace $_.METHOD(args) → evaluate as method call on the current item's value
+            cmd = cmd.replace(/\$_\.(\w+)\(([^)]*)\)/g, (full, method, methodArgs) => {
+              const val = itemValue().replace(/"/g, '`"');
+              const evaled = this.tryEvalExpr(`"${val}".${method}(${methodArgs})`);
+              return evaled !== null ? evaled : full;
+            });
             // Replace $_.PropName ONLY when the property actually exists on the object
             // (otherwise $_.txt would incorrectly eat ".txt" as a property name)
             cmd = cmd.replace(/\$_\.(\w+)/g, (full, prop) => {
@@ -1387,13 +1400,11 @@ export class PowerShellExecutor {
               return key !== undefined ? String(obj[key] ?? '') : full;
             });
             // Replace bare $_ (or $_ immediately before non-word chars like . " etc.)
-            cmd = cmd.replace(/\$_(?=\W|$)/g, () => {
-              const nameKey = Object.keys(obj).find(k => k.toLowerCase() === 'name');
-              if (nameKey) return String(obj[nameKey] ?? '');
-              const firstKey = Object.keys(obj)[0];
-              return firstKey ? String(obj[firstKey] ?? '') : '';
-            });
-            const result = await this.executeSingle(cmd.trim());
+            cmd = cmd.replace(/\$_(?=\W|$)/g, () => itemValue());
+            const trimmedCmd = cmd.trim();
+            // Try arithmetic / expression evaluator first; fall back to command dispatch
+            const exprVal = this.tryEvalExpr(trimmedCmd);
+            const result = exprVal !== null ? exprVal : await this.executeSingle(trimmedCmd);
             if (result !== null && result !== '') results.push(result);
           }
           currentOutput = results.join('\n');
@@ -1406,7 +1417,9 @@ export class PowerShellExecutor {
           const cmd = scriptBody
             .replace(/\$\(\$_\)/g, item)
             .replace(/\$_(?=\W|$)/g, item);
-          const result = await this.executeSingle(cmd.trim());
+          const trimmedCmd = cmd.trim();
+          const exprVal = this.tryEvalExpr(trimmedCmd);
+          const result = exprVal !== null ? exprVal : await this.executeSingle(trimmedCmd);
           if (result !== null && result !== '') results.push(result);
         }
         currentOutput = results.join('\n');

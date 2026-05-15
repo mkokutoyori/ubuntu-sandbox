@@ -7,6 +7,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function isRegistryPath(path: string): boolean {
@@ -115,7 +116,12 @@ export class GetChildItemCmdlet implements ICmdlet {
     const filter  = ctx.named['filter']  ? psValueToString(ctx.named['filter'])  : null;
     const recurse = ctx.named['recurse'] === true || ctx.named['recurse'] === 'true';
 
-    if (!ctx.providers.registry) requireRegistryProvider(path);
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      // Returns a formatted listing string; the cmdlet layer wraps strings
+      // transparently so callers see a familiar Get-ChildItem output.
+      return ctx.providers.registry.getChildItem(path);
+    }
 
     const fs = ctx.providers.filesystem;
     if (!fs) {
@@ -133,7 +139,9 @@ export class GetChildItemCmdlet implements ICmdlet {
         Name: e.name,
         FullName: `${dir}\\${e.name}`,
         Length: e.size,
-        Mode: e.isDirectory ? 'd----' : '-a---',
+        // Real PS uses a 6-char `darhsl` mode column. Plain files have the
+// archive bit on (-a----); plain directories show only d (d-----).
+Mode: e.isDirectory ? 'd-----' : '-a----',
         PSIsContainer: e.isDirectory,
         LastWriteTime: e.mtime,
       } as Record<string, PSValue>));
@@ -164,8 +172,20 @@ export class GetContentCmdlet implements ICmdlet {
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    try { return fs.readFile(path); }
+    let content: string;
+    try { content = fs.readFile(path); }
     catch { return null; }
+    const tail       = ctx.named['tail']       !== undefined ? Number(ctx.named['tail'])       : undefined;
+    const totalCount = ctx.named['totalcount'] !== undefined ? Number(ctx.named['totalcount']) : undefined;
+    if (tail !== undefined || totalCount !== undefined) {
+      const lines = content.split(/\r?\n/);
+      // Trailing empty token from final newline — drop so slicing matches user
+      // intent (`-Tail 2` on "1\n2\n3\n4\n5\n" returns ["4","5"]).
+      if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+      if (tail !== undefined)       return lines.slice(Math.max(0, lines.length - tail)) as unknown as PSValue;
+      if (totalCount !== undefined) return lines.slice(0, totalCount) as unknown as PSValue;
+    }
+    return content;
   }
 }
 
@@ -212,13 +232,26 @@ export class NewItemCmdlet implements ICmdlet {
     const itemType = psValueToString(ctx.named['itemtype'] ?? ctx.named['type'] ?? 'File').toLowerCase();
     const value    = ctx.named['value'] !== undefined ? psValueToString(ctx.named['value']) : null;
 
-    if (!ctx.providers.registry) requireRegistryProvider(path);
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      const force = ctx.named['force'] === true;
+      return ctx.providers.registry.newItem(path, force);
+    }
 
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
+    const force = ctx.named['force'] === true;
     if (itemType === 'directory' || itemType === 'dir') {
+      if (fs.exists(path) && !force) {
+        ctx.emitError(`New-Item : An item with the specified name '${path}' already exists.`);
+        return null;
+      }
       fs.createDir(path);
     } else {
+      if (fs.exists(path) && !force) {
+        ctx.emitError(`New-Item : The file '${path}' already exists.`);
+        return null;
+      }
       fs.createFile(path);
       if (value !== null) fs.writeFile(path, value);
     }
@@ -236,7 +269,10 @@ export class RemoveItemCmdlet implements ICmdlet {
     const path    = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const recurse = ctx.named['recurse'] === true;
 
-    if (!ctx.providers.registry) requireRegistryProvider(path);
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.removeItem(path, recurse);
+    }
 
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -277,6 +313,46 @@ export class MoveItemCmdlet implements ICmdlet {
   }
 }
 
+// ─── Rename-Item ─────────────────────────────────────────────────────────
+// Same provider call as Move-Item but with a sibling-name new path.
+
+export class RenameItemCmdlet implements ICmdlet {
+  readonly name = 'rename-item';
+  readonly aliases = ['ren', 'rni'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const src     = psValueToString(ctx.named['path']    ?? ctx.positional[0] ?? '');
+    const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
+    if (!src || !newName) {
+      ctx.emitError('Rename-Item requires -Path and -NewName');
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    // -NewName is a sibling name; build the destination from the parent dir.
+    const parent = src.replace(/[\\/][^\\/]*$/, '') || '.';
+    const dest = parent === '.' ? newName : `${parent}\\${newName}`;
+    fs.move(src, dest);
+    return null;
+  }
+}
+
+// ─── mkdir / md (function-style alias for `New-Item -ItemType Directory`) ─
+
+export class MkdirCmdlet implements ICmdlet {
+  readonly name = 'mkdir';
+  readonly aliases = ['md'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError('mkdir requires a path'); return null; }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    fs.createDir(path);
+    return { Name: path, FullName: path, ItemType: 'directory' } as Record<string, PSValue>;
+  }
+}
+
 // ─── Out-File ─────────────────────────────────────────────────────────────
 
 export class OutFileCmdlet implements ICmdlet {
@@ -295,5 +371,166 @@ export class OutFileCmdlet implements ICmdlet {
     if (append) fs.appendFile(filePath, content);
     else        fs.writeFile(filePath,  content);
     return null;
+  }
+}
+
+// ─── Get-ItemProperty / Set-ItemProperty / Remove-ItemProperty ──────────────
+// Currently registry-only — the legacy executor handles the (rare) filesystem
+// equivalents (file attributes), so we throw "not recognized" there to fall
+// back transparently.
+
+/**
+ * Re-join positional path fragments back into a single registry path. The
+ * lexer splits `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion` into
+ * two tokens at the space, so the cmdlet receives them as separate
+ * positional arguments — we glue them back together with a space.
+ */
+function joinPathPositionals(ctx: CmdletContext): string {
+  if (ctx.named['path']) return psValueToString(ctx.named['path']);
+  return ctx.positional.map(psValueToString).join(' ').trim();
+}
+
+export class GetItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'get-itemproperty';
+  readonly aliases = ['gp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = joinPathPositionals(ctx);
+    const name = ctx.named['name'] ? psValueToString(ctx.named['name']) : undefined;
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.getItemProperty(path, name);
+    }
+    requireRegistryProvider(path); // throws "not recognized" — fallback to executor for FS attrs
+    return null;
+  }
+}
+
+export class SetItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'set-itemproperty';
+  readonly aliases = ['sp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const name  = psValueToString(ctx.named['name']  ?? ctx.positional[1] ?? '');
+    const raw   = ctx.named['value'] ?? ctx.positional[2];
+    const value = typeof raw === 'number' ? raw : psValueToString(raw ?? '');
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.setItemProperty(path, name, value);
+    }
+    requireRegistryProvider(path);
+    return null;
+  }
+}
+
+export class RemoveItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'remove-itemproperty';
+  readonly aliases = ['rp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.removeItemProperty(path, name);
+    }
+    requireRegistryProvider(path);
+    return null;
+  }
+}
+
+// ─── Get-Item / Set-Item ────────────────────────────────────────────────────
+// Read / overwrite a filesystem entry. Registry paths fall through to the
+// existing item-property cmdlets.
+
+export class GetItemCmdlet implements ICmdlet {
+  readonly name = 'get-item';
+  readonly aliases = ['gi'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError('Get-Item requires -Path'); return null; }
+    if (isRegistryPath(path)) {
+      if (!ctx.providers.registry) requireRegistryProvider(path);
+      return ctx.providers.registry.getItem(path);
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    if (!fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
+    const isDir = fs.isDirectory(path);
+    const baseName = path.replace(/\\$/, '').split(/[\\/]/).pop() ?? path;
+    return {
+      Name:          baseName,
+      FullName:      path,
+      PSIsContainer: isDir,
+      Mode:          isDir ? 'd-----' : '-a----',
+      Length:        isDir ? 0 : (fs.readFile(path) || '').length,
+    } as Record<string, PSValue>;
+  }
+}
+
+export class SetItemCmdlet implements ICmdlet {
+  readonly name = 'set-item';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? '');
+    if (!path) { ctx.emitError('Set-Item requires -Path'); return null; }
+    if (isRegistryPath(path)) {
+      // Defer to legacy executor (which has rich registry-Set-Item behaviour).
+      throw new PSRuntimeError('Set-Item on registry paths is not recognized in this provider context');
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    fs.writeFile(path, value);
+    return null;
+  }
+}
+
+// ─── Get-Acl / Set-Acl ──────────────────────────────────────────────────────
+
+export class GetAclCmdlet implements ICmdlet {
+  readonly name = 'get-acl';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const fs = ctx.providers.filesystem;
+    if (!fs || !path) { ctx.emitError("Get-Acl : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
+    if (!fs.exists(path)) { ctx.emitError(`Get-Acl : Cannot find path '${path}' because it does not exist.`); return null; }
+    const acl = fs.getAcl(path);
+    if (!acl) {
+      ctx.emitError(`Get-Acl : Cannot retrieve ACL for '${path}'.`);
+      return null;
+    }
+    // Match the columns Format-List would render for a real ACL.
+    return {
+      Path:  path,
+      Owner: acl.owner,
+      Group: 'BUILTIN\\Administrators',
+      Access: acl.acl.map(a => ({
+        FileSystemRights:  a.permissions.join(', '),
+        AccessControlType: a.type === 'allow' ? 'Allow' : 'Deny',
+        IdentityReference: a.principal,
+        IsInherited:       false,
+      })) as PSValue,
+    } as Record<string, PSValue>;
+  }
+}
+
+export class SetAclCmdlet implements ICmdlet {
+  readonly name = 'set-acl';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    // Real Set-Acl takes a SecurityDescriptor argument — too complex to
+    // simulate without parsing the full PSObject. We forward to the legacy
+    // executor, which has a dedicated handler.
+    throw new PSRuntimeError('Set-Acl is not recognized in this provider context');
   }
 }

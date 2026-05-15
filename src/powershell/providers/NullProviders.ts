@@ -11,11 +11,14 @@ import type { PSProviders } from './PSProviders';
 import { SimulatedFileSystem } from './SimulatedFileSystem';
 
 export const NULL_PROVIDERS: PSProviders = {
-  filesystem: new SimulatedFileSystem(),
-  registry:   null,
-  services:   null,
-  network:    null,
-  processes:  null,
-  users:      null,
-  eventLog:   null,
+  filesystem:     new SimulatedFileSystem(),
+  registry:       null,
+  services:       null,
+  network:        null,
+  processes:      null,
+  users:          null,
+  eventLog:       null,
+  vpn:            null,
+  scheduledTasks: null,
+  disks:          null,
 };

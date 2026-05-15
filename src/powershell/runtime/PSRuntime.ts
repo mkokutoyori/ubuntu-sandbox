@@ -23,6 +23,7 @@ import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnv
 import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
+import { formatDefault } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -212,6 +213,53 @@ export class PSRuntime {
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
 
+  /** AST cache: same source code → reuse the parsed program. */
+  private readonly astCache = new Map<string, PSProgram>();
+  /** Hard upper bound on the AST cache; LRU-ish eviction once we cross it. */
+  private static readonly AST_CACHE_LIMIT = 256;
+
+  /**
+   * Render a top-level statement result into outputLines. Arrays of plain
+   * PSObjects go through the table formatter (formatDefault) so they
+   * display in canonical Format-Table layout instead of the
+   * `Key=Value; ...` hashtable form psValueToString produces.
+   */
+  private renderValue(result: PSValue): void {
+    if (Array.isArray(result)) {
+      // Array of plain objects (all elements are non-null records with at
+      // least one string-keyed field) → table format.
+      const arr = result as PSValue[];
+      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v))) {
+        const formatted = formatDefault(arr as Array<Record<string, unknown>>);
+        if (formatted) this.outputLines.push(formatted);
+        return;
+      }
+      for (const item of arr) this.outputLines.push(psValueToString(item));
+      return;
+    }
+    this.outputLines.push(psValueToString(result));
+  }
+
+  /** Parse + cache. Identical source strings re-use the same PSProgram. */
+  private parseCached(code: string): PSProgram {
+    const hit = this.astCache.get(code);
+    if (hit) {
+      // Refresh recency by re-inserting at the end of the iteration order.
+      this.astCache.delete(code);
+      this.astCache.set(code, hit);
+      return hit;
+    }
+    const tokens = this.lexer.tokenize(code);
+    const ast    = this.parser.parse(tokens);
+    if (this.astCache.size >= PSRuntime.AST_CACHE_LIMIT) {
+      // Drop the oldest entry (first key in iteration order).
+      const oldest = this.astCache.keys().next().value;
+      if (oldest !== undefined) this.astCache.delete(oldest);
+    }
+    this.astCache.set(code, ast);
+    return ast;
+  }
+
   /** User-defined functions survive between execute() calls. */
   private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean }>();
 
@@ -268,8 +316,7 @@ export class PSRuntime {
   /** Execute a PowerShell script. Pipeline output is collected and returned as a string. */
   execute(code: string): string {
     this.outputLines = [];
-    const tokens = this.lexer.tokenize(code);
-    const ast    = this.parser.parse(tokens);
+    const ast = this.parseCached(code);
     this.execTopLevel(ast.body.statements, this.global);
     return this.outputLines.join('\n');
   }
@@ -290,11 +337,7 @@ export class PSRuntime {
       if (!emitted && result !== null && result !== undefined
           && stmt.type !== 'AssignmentStatement'
           && stmt.type !== 'FunctionDefinition') {
-        if (Array.isArray(result)) {
-          for (const item of result as PSValue[]) this.outputLines.push(psValueToString(item));
-        } else {
-          this.outputLines.push(psValueToString(result));
-        }
+        this.renderValue(result);
       }
     };
 
@@ -328,8 +371,7 @@ export class PSRuntime {
    */
   executeInteractive(code: string): string {
     this.outputLines = [];
-    const tokens = this.lexer.tokenize(code);
-    const ast    = this.parser.parse(tokens);
+    const ast = this.parseCached(code);
     // Reuse execTopLevel so trap handlers work in interactive mode too
     this.execTopLevelInteractive(ast.body.statements, this.global);
     return this.outputLines.join('\n');
@@ -348,11 +390,7 @@ export class PSRuntime {
       const result = this.execStatement(stmt, env);
       const didOutput = this.outputLines.length > wasEmpty;
       if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
-        if (Array.isArray(result)) {
-          for (const item of result) this.outputLines.push(psValueToString(item));
-        } else {
-          this.outputLines.push(psValueToString(result));
-        }
+        this.renderValue(result);
       }
     };
 
@@ -564,16 +602,14 @@ export class PSRuntime {
   // ── ScriptBlock execution ──────────────────────────────────────────────────
 
   execScriptBlock(block: PSScriptBlock, env: PSEnvironment): PSValue {
-    try {
-      if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
-      if (block.processBlock) this.execStatementList(block.processBlock, env);
-      if (block.endBlock)     this.execStatementList(block.endBlock,     env);
-      if (block.body)         return this.execStatementList(block.body,  env);
-      return null;
-    } catch (e) {
-      if (e instanceof ReturnSignal) return e.value;
-      throw e;
-    }
+    // Note: ReturnSignal must propagate up so that `return` inside an if/while
+    // /try inside a function/scriptblock exits the *enclosing* function, not
+    // just the inner block. Only invokeScriptBlock (the call boundary) catches.
+    if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
+    if (block.processBlock) this.execStatementList(block.processBlock, env);
+    if (block.endBlock)     this.execStatementList(block.endBlock,     env);
+    if (block.body)         return this.execStatementList(block.body,  env);
+    return null;
   }
 
   invokeScriptBlock(
@@ -623,7 +659,12 @@ export class PSRuntime {
     // $args contains positional args not consumed by declared parameters
     childEnv.set('args', remainingArgs);
 
-    return this.execScriptBlock(block, childEnv);
+    try {
+      return this.execScriptBlock(block, childEnv);
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -678,8 +719,7 @@ export class PSRuntime {
 
   private expandDoubleQuotedString(raw: string, env: PSEnvironment): string {
     return expandString(raw, env, (code) => {
-      const tokens = this.lexer.tokenize(code);
-      const ast    = this.parser.parse(tokens);
+      const ast = this.parseCached(code);
       return this.execProgram(ast, env);
     });
   }
@@ -1338,8 +1378,7 @@ export class PSRuntime {
         const scriptContent = this.scriptRegistry.get(tname)
           ?? this.scriptRegistry.get(tname.replace(/^.*[/\\]/, '')); // try basename
         if (scriptContent) {
-          const tokens = this.lexer.tokenize(scriptContent);
-          const ast    = this.parser.parse(tokens);
+          const ast = this.parseCached(scriptContent);
           return this.execStatementList(ast.body, env);
         }
         // No registered script — silently return null (file not found in simulator)
@@ -2096,9 +2135,9 @@ export class PSRuntime {
       case '-notcontains': return !(Array.isArray(left) ? left : []).some(e => this.psEq(e, right, false));
       case '-in':   return (Array.isArray(right) ? right : []).some(e => this.psEq(e, left, false));
       case '-notin':return !(Array.isArray(right) ? right : []).some(e => this.psEq(e, left, false));
-      case '-is':    return this.psIs(left, `[${right}]`);
-      case '-isnot': return !this.psIs(left, `[${right}]`);
-      case '-as':    return this.psCast(left, String(right));
+      case '-is':    return this.psIs(left, String(right));
+      case '-isnot': return !this.psIs(left, String(right));
+      case '-as':    return this.psCast(left, String(right).replace(/^\[|\]$/g, ''));
       case '-replace': {
         const args = Array.isArray(right) ? right : [right];
         const repl2 = args[1] ?? '';

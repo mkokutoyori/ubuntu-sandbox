@@ -12,21 +12,31 @@
 import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
-import { PowerShellExecutor, PS_BANNER } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
 import { PSParserError } from '@/powershell/parser/PSParserError';
+import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
+import { WindowsPC } from '@/network/devices/WindowsPC';
 
 /**
- * Tokens that clearly mark a line as needing device-bound execution; the
- * interpreter should not even try to parse these — its parser would fail
- * because they contain paths / switches that are not valid PS expressions.
+ * Tokens that bypass the interpreter and go straight to the legacy
+ * PowerShellExecutor. After Phase 4 only `ping` / `tracert` remain —
+ * their handlers (cmdPing / cmdTracert) are async and the PSRuntime
+ * tree-walker is sync, so making them real ICmdlets is gated on an
+ * async-runtime conversion.
+ *
+ * Every other native (ipconfig / netsh / arp / route / getmac /
+ * systeminfo / ver / nslookup / net) is a real ICmdlet wired to
+ * INetworkProvider.runSyncNativeCommand().
+ *
+ * PS-cmdlet aliases (ls / dir / cd / pwd / cat / type / cp / mv / rm /
+ * del / ren / mkdir / rmdir / hostname / whoami) are also first-class
+ * ICmdlets in the interpreter's core registry.
  */
 const DEVICE_ONLY_COMMANDS = new Set([
-  'ipconfig', 'ping', 'tracert', 'netsh', 'arp', 'route',
-  'hostname', 'systeminfo', 'ver', 'whoami', 'net',
-  'ls', 'dir', 'cd', 'pwd', 'cat', 'type', 'cp', 'mv',
-  'rm', 'del', 'ren', 'mkdir', 'rmdir',
+  'ping', 'tracert',
 ]);
 
 export class PowerShellSubShell implements ISubShell {
@@ -38,7 +48,25 @@ export class PowerShellSubShell implements ISubShell {
   private constructor(device: Equipment) {
     this.device = device;
     this.psExecutor = new PowerShellExecutor(device as any);
-    this.interp = new PSInterpreter();
+    // The interpreter and the legacy executor look at the same per-device
+    // state (Phase 4 relocation): registry / event-log / network maps /
+    // VPN connections all live on the WindowsPC itself, not on the
+    // executor. createWindowsPSProviders picks them up directly from the
+    // device. Non-Windows devices keep the default NULL_PROVIDERS.
+    this.interp = device instanceof WindowsPC
+      ? new PSInterpreter(createWindowsPSProviders(device, {
+          registry: device.registry,
+          eventLog: device.eventLog,
+          network: {
+            extraIPs:             device.extraIPs,
+            extraRoutes:          device.extraRoutes,
+            adapterOverrides:     device.adapterOverrides,
+            dynamicFirewallRules: device.dynamicFirewallRules,
+            networkProfiles:      device.networkProfiles,
+          },
+          vpn: { vpnConnections: device.vpnConnections },
+        }))
+      : new PSInterpreter();
   }
 
   /**
@@ -128,23 +156,32 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   /**
-   * Route a single command through the interpreter when possible, otherwise
-   * delegate to the legacy PowerShellExecutor (native cmdlets, device I/O).
+   * Route a single command through the interpreter (the primary engine after
+   * Phase 4). Async native CLI tools (ping / tracert / net) still go to
+   * PowerShellExecutor because the tree-walker is sync. Other interpreter
+   * errors that look like "not recognized" also fall through to the executor
+   * as a safety net during the migration tail — once every test path runs
+   * cleanly through the interpreter this branch can be removed.
    */
   private async dispatchCommand(line: string): Promise<string | null> {
     if (this.shouldBypassInterpreter(line)) {
+      PowerShellSubShell.fallbackHits++;
       return this.psExecutor.execute(line);
     }
     try {
-      const out = this.interp.executeInteractive(line);
-      return out;
+      return this.interp.executeInteractive(line);
     } catch (e) {
       if (this.isFallbackError(e)) {
+        PowerShellSubShell.fallbackHits++;
         return this.psExecutor.execute(line);
       }
       return this.formatInterpreterError(e);
     }
   }
+
+  // Debug counter — useful when assessing how much production code still
+  // reaches PowerShellExecutor. Exposed as a static so tests can read it.
+  static fallbackHits = 0;
 
   /**
    * Heuristic: skip the interpreter entirely for commands that are clearly
