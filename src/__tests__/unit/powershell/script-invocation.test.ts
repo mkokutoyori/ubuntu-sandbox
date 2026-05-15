@@ -58,15 +58,25 @@ describe('& <script.ps1> — call operator', () => {
 });
 
 describe('. <script.ps1> — dot-source', () => {
-  // Interpreter dot-sourcing reads from a script registry rather than
-  // disk; the legacy executor read the file content. Tracking the gap.
-  it.skip('runs the script body', async () => {
+  it('runs the script body', async () => {
     const sh = createShell();
     await run(sh, 'New-Item -Path C:\\Sc -ItemType Directory -Force');
     await run(sh, 'Set-Content -Path C:\\Sc\\say.ps1 -Value \'"dot-sourced"\'');
     const out = await run(sh, '. C:\\Sc\\say.ps1');
     expect(out).toContain('dot-sourced');
     expect(out).not.toContain('not recognized');
+  });
+
+  it('registers a function declared in the script into the caller scope', async () => {
+    const sh = createShell();
+    await run(sh, 'New-Item -Path C:\\Sc -ItemType Directory -Force');
+    const body = 'function Get-Greeting { param([string]$Who = "world") "Hello, $Who!" }';
+    await run(sh,
+      `Set-Content -Path C:\\Sc\\fn.ps1 -Value '${body.replace(/'/g, "''")}'`,
+    );
+    await run(sh, '. C:\\Sc\\fn.ps1');
+    const out = await run(sh, 'Get-Greeting -Who Alice');
+    expect(out).toContain('Hello, Alice!');
   });
 });
 

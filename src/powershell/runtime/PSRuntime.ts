@@ -1375,8 +1375,14 @@ export class PSRuntime {
       const tname = psValueToString(target ?? '').toLowerCase();
       // Dot-source a registered script file
       if (dotSource) {
-        const scriptContent = this.scriptRegistry.get(tname)
+        let scriptContent = this.scriptRegistry.get(tname)
           ?? this.scriptRegistry.get(tname.replace(/^.*[/\\]/, '')); // try basename
+        // Fall back to the device filesystem so `. C:\Scripts\fn.ps1` works
+        // for files created via Set-Content / New-Item.
+        if (!scriptContent && this.providers.filesystem) {
+          try { scriptContent = this.providers.filesystem.readFile(psValueToString(target ?? '')); }
+          catch { /* no such file */ }
+        }
         if (scriptContent) {
           const ast = this.parseCached(scriptContent);
           return this.execStatementList(ast.body, env);
@@ -1387,6 +1393,26 @@ export class PSRuntime {
       const tfn = this.functions.get(tname);
       if (tfn) {
         return this.callUserFunction(tfn, named, positional, env, pipeInput);
+      }
+      // `& C:\path\to\script.ps1 args...` — invoke a script file as if it
+      // were a function. Param block / pipeline behave like a normal call.
+      if (/\.ps1$/i.test(tname) && this.providers.filesystem) {
+        let scriptContent: string | undefined;
+        try { scriptContent = this.providers.filesystem.readFile(psValueToString(target ?? '')); }
+        catch { scriptContent = undefined; }
+        if (scriptContent) {
+          const ast = this.parseCached(scriptContent);
+          const block: PSScriptBlock = {
+            type: 'ScriptBlock',
+            paramBlock: null,
+            beginBlock: null,
+            processBlock: null,
+            endBlock: null,
+            body: ast.body,
+            position: ast.position,
+          } as PSScriptBlock;
+          return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+        }
       }
       return this.dispatchCmdlet(tname, positional, named, pipeInput, env);
     }

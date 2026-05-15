@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-pc
-Generated: 2026-05-15T16:06:51.877Z
+Generated: 2026-05-15T16:11:52.132Z
 Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
@@ -31,7 +31,7 @@ PS [6/77]> Get-Content C:\Scripts\hello.ps1
   
 
 PS [7/77]> . C:\Scripts\hello.ps1
-<empty>
+  Hello, world!
 
 PS [8/77]> & C:\Scripts\hello.ps1 PowerShell
   Hello, if : The term 'if' is not recognized as the name of a cmdlet, function, script file, or operable
@@ -226,34 +226,16 @@ PS [31/77]> Get-Content C:\Scripts\fn.ps1
   
 
 PS [32/77]> . C:\Scripts\fn.ps1
-<empty>
+  Hello, Carol!
 
 PS [33/77]> Get-Greeting -Who "Eve"
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Eve"
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Eve!
 
 PS [34/77]> Get-Greeting -Who "Frank" -Lang fr
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Frank" -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Bonjour, Frank!
 
 PS [35/77]> Get-Greeting -Who "Grace" -Lang es
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Grace" -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hola, Grace!
 
 
 --- [36] § pipeline.ps1 ---
@@ -367,120 +349,16 @@ PS [48/77]> & { Get-Service | Where-Object { $_.Status -eq "Running" } | Select-
 
 --- [49] § multi-script composition ---
 PS [49/77]> . C:\Scripts\fn.ps1; "Alpha","Beta","Gamma" | ForEach-Object { Get-Greeting -Who $_ -Lang fr }
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alpha -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Beta -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Gamma -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Carol!
+  Bonjour, Alpha!
+  Bonjour, Beta!
+  Bonjour, Gamma!
 
 PS [50/77]> . C:\Scripts\fn.ps1; 1..3 | ForEach-Object { Get-Greeting -Who "Bot$_" }
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Bot1"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Bot2"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Bot3"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Carol!
+  Hello, Bot1!
+  Hello, Bot2!
+  Hello, Bot3!
 
 PS [51/77]> & C:\Scripts\sum.ps1 -Numbers (1..1000)
   ) : The term ')' is not recognized as the name of a cmdlet, function, script file, or operable
@@ -623,194 +501,22 @@ PS [67/77]> & C:\Scripts\sum.ps1 -Numbers ((1..50) | Where-Object { $_ % 3 -eq 0
       + FullyQualifiedErrorId : CommandNotFoundException
 
 PS [68/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "World"
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "World"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Carol!
+  Hello, World!
 
 PS [69/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Monde" -Lang fr
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Monde" -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Carol!
+  Bonjour, Monde!
 
 PS [70/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Mundo" -Lang es
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who "Mundo" -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Carol!
+  Hola, Mundo!
 
 PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Who $_ }
-  function : The term 'function' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + function Get-Greeting {
-    param([string]$Who = "world", [string]$Lang = "en")
-    switch ($Lang) {
-      "fr" { "Bonjour, $Who!" }
-      "es" { "Hola, $Who!" }
-      default { "Hello, $Who!" }
-    }
-  }
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (function:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Alice -Lang fr
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Bob -Lang es
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who Carol
-  + ~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who a
-  + ~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who b
-  + ~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  Get-Greeting : The term 'Get-Greeting' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + Get-Greeting -Who c
-  + ~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: (Get-Greeting:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  Hello, Carol!
+  Hello, a!
+  Hello, b!
+  Hello, c!
 
 PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
   Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=
