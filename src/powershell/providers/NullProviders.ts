@@ -21,4 +21,5 @@ export const NULL_PROVIDERS: PSProviders = {
   vpn:            null,
   scheduledTasks: null,
   disks:          null,
+  environment:    null,
 };

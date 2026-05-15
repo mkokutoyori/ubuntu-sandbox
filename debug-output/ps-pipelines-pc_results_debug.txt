@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-15T16:30:45.021Z
+Generated: 2026-05-15T16:52:34.623Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -619,7 +619,6 @@ PS [102/111]> try { 1/0 } catch { "div0: $($_.Exception.Message)" }
   Infinity
 
 PS [103/111]> $ErrorActionPreference = "Continue"; Get-Item C:\NoSuchFile2 -ErrorAction SilentlyContinue; "after"
-  ERROR: Cannot find path 'C:\NoSuchFile2' because it does not exist.
   after
 
 PS [104/111]> $Error.Count

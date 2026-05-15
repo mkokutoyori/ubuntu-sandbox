@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-server
-Generated: 2026-05-15T16:30:44.310Z
+Generated: 2026-05-15T16:52:35.985Z
 Engine: powershell
 host=SRV-USR-DBG (windows-server)
 Total commands: 102
@@ -162,7 +162,7 @@ PS [27/102]> $pw = ConvertTo-SecureString "1" -AsPlainText -Force; New-LocalUser
   Name=weakPw; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1015; Enabled=True; PasswordRequired=True; LastLogon=
 
 PS [28/102]> New-LocalUser -Name alice -NoPassword -ErrorAction SilentlyContinue
-  ERROR: The account already exists.
+  Name=alice; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1002; Enabled=True; PasswordRequired=True; LastLogon=
 
 
 --- [29] § inspect users ---
@@ -234,7 +234,7 @@ PS [36/102]> Get-LocalUser | Select-Object Name, Description, Enabled | Sort-Obj
   
 
 PS [37/102]> Get-LocalUser -Name "ghost-user" -ErrorAction SilentlyContinue
-  ERROR: User ghost-user was not found.
+<empty>
 
 
 --- [38] § mutate users ---
@@ -267,7 +267,7 @@ PS [45/102]> Get-LocalUser -Name david
   
 
 PS [46/102]> Get-LocalUser -Name dave -ErrorAction SilentlyContinue
-  ERROR: User dave was not found.
+<empty>
 
 
 --- [47] § create groups ---
@@ -290,7 +290,7 @@ PS [52/102]> New-LocalGroup -Name Contractors
   Name=Contractors; Description=; SID=S-1-5-32-2021; Members=
 
 PS [53/102]> New-LocalGroup -Name Developers -ErrorAction SilentlyContinue
-  ERROR: The specified group already exists.
+  Name=Developers; Description=Dev team; SID=S-1-5-32-2016; Members=
 
 PS [54/102]> Get-LocalGroup | Where-Object { $_.Description }
   
@@ -351,7 +351,7 @@ PS [63/102]> Add-LocalGroupMember -Group Interns -Member judy
 <empty>
 
 PS [64/102]> Add-LocalGroupMember -Group Developers -Member ghost-user -ErrorAction SilentlyContinue
-  ERROR: Principal 'ghost-user' was not found.
+<empty>
 
 PS [65/102]> Add-LocalGroupMember -Group Developers -Member alice -ErrorAction SilentlyContinue
 <empty>
@@ -436,7 +436,7 @@ PS [79/102]> Remove-LocalGroup -Name Interns
 <empty>
 
 PS [80/102]> Get-LocalGroup -Name Interns -ErrorAction SilentlyContinue
-  ERROR: Group Interns was not found.
+<empty>
 
 
 --- [81] § complex pipelines ---

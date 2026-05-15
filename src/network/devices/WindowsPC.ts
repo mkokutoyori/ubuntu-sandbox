@@ -64,6 +64,14 @@ export class WindowsPC extends EndHost {
   private cwd: string = 'C:\\Users\\User';
   /** Environment variables */
   private env: Map<string, string> = new Map();
+  /** Exposes the env map so subshells (PS / cmd) share the same source.
+   *  Reads are case-insensitive on Windows. */
+  getEnvVars(): Map<string, string> { return this.env; }
+  getEnvVar(name: string): string | undefined {
+    const u = name.toUpperCase();
+    for (const [k, v] of this.env) if (k.toUpperCase() === u) return v;
+    return undefined;
+  }
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
   /** DHCP client trace flag */
@@ -835,25 +843,49 @@ export class WindowsPC extends EndHost {
     return '';
   }
 
-  /** `reg query | add | delete` — minimal stub that acknowledges the
-   *  command. The simulator's registry is exposed via PowerShell's
-   *  Registry provider; this cmd wrapper just keeps scripts from
-   *  hard-crashing when they shell out to `reg.exe`. */
+  /** `reg query | add | delete` — bridges cmd.exe's reg.exe to the
+   *  PowerShell registry provider so changes made from cmd are visible
+   *  from `Get-ItemProperty HKCU:\…` in PS (and vice versa). */
   private cmdReg(args: string[]): string {
     if (args.length === 0) {
       return 'ERROR: Invalid syntax. Type "REG /?" for usage.';
     }
     const action = args[0].toLowerCase();
-    const key = args[1] ?? '';
+    const rawKey = args[1] ?? '';
+    // `reg.exe` uses unprefixed HKCU\..., PS provider expects HKCU:\...
+    const psKey = rawKey.replace(/^(HKCU|HKLM|HKCR|HKU|HKCC)\\/i, '$1:\\');
     if (action === 'query') {
-      // Acknowledge — produce an empty-but-valid query result. Real
-      // tools may parse the header; we keep the shape.
-      return `\n${key}\n`;
+      if (!this.registry.testPath(psKey)) {
+        return 'ERROR: The system was unable to find the specified registry key or value.';
+      }
+      const text = this.registry.getChildItem(psKey);
+      return text && !/Cannot find path/i.test(text)
+        ? text
+        : `\n${rawKey}\n`;
     }
-    if (action === 'add' || action === 'delete' || action === 'copy'
-        || action === 'save' || action === 'restore' || action === 'load'
-        || action === 'unload' || action === 'compare' || action === 'export'
-        || action === 'import' || action === 'flags') {
+    if (action === 'add') {
+      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
+      const tIdx = args.findIndex(a => a.toLowerCase() === '/t');
+      const dIdx = args.findIndex(a => a.toLowerCase() === '/d');
+      this.registry.newItem(psKey, true);
+      if (vIdx >= 0) {
+        const valueName = args[vIdx + 1];
+        const data: string | number = dIdx >= 0
+          ? args[dIdx + 1].replace(/^"(.*)"$/, '$1')
+          : '';
+        const typ = tIdx >= 0 ? args[tIdx + 1].toUpperCase() : 'REG_SZ';
+        const coerced: string | number = typ === 'REG_DWORD' ? Number(data) : data;
+        this.registry.setItemProperty(psKey, valueName, coerced);
+      }
+      return 'The operation completed successfully.';
+    }
+    if (action === 'delete') {
+      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
+      if (vIdx >= 0) {
+        this.registry.removeItemProperty(psKey, args[vIdx + 1]);
+      } else {
+        this.registry.removeItem(psKey, true);
+      }
       return 'The operation completed successfully.';
     }
     return 'ERROR: Invalid syntax.';

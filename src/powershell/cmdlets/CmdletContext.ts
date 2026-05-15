@@ -45,6 +45,8 @@ export interface IRuntimeRef {
    * Get-Alias to enumerate the registry without leaking the implementation.
    */
   listCmdlets(): readonly { name: string; aliases: readonly string[] }[];
+  /** Enumerate the host's environment variables (for `Get-ChildItem Env:`). */
+  listEnvVars(): Array<{ Name: string; Value: string }>;
 }
 
 export interface CmdletContext {

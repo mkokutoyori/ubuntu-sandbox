@@ -111,7 +111,7 @@ export class StopProcessCmdlet implements ICmdlet {
         const pid = (item as Record<string, PSValue>)?.['Id'] ?? (item as Record<string, PSValue>)?.['id'];
         if (pid !== undefined) {
           const msg = procs.killProcess(Number(pid), force);
-          if (msg) ctx.emit(msg);
+          if (msg) emitMsg(ctx, msg);
         }
       }
       return null;
@@ -121,7 +121,7 @@ export class StopProcessCmdlet implements ICmdlet {
       const ids = Array.isArray(id) ? id : [id];
       for (const v of ids) {
         const msg = procs.killProcess(Number(v), force);
-        if (msg) ctx.emit(msg);
+        if (msg) emitMsg(ctx, msg);
       }
       return null;
     }
@@ -129,7 +129,7 @@ export class StopProcessCmdlet implements ICmdlet {
       const names = Array.isArray(name) ? name : [name];
       for (const n of names) {
         const msg = procs.killProcess(psValueToString(n), force);
-        if (msg) ctx.emit(msg);
+        if (msg) emitMsg(ctx, msg);
       }
       return null;
     }
@@ -141,9 +141,19 @@ export class StopProcessCmdlet implements ICmdlet {
       const msg = Number.isFinite(asNum) && String(asNum) === String(arg)
         ? procs.killProcess(asNum, force)
         : procs.killProcess(psValueToString(arg), force);
-      if (msg) ctx.emit(msg);
+      if (msg) emitMsg(ctx, msg);
     }
     return null;
+  }
+}
+
+/** Route ERROR-prefixed messages through emitError (so -EA SilentlyContinue
+ *  suppresses them) and other messages through emit. */
+function emitMsg(ctx: CmdletContext, msg: string): void {
+  if (/^ERROR:\s*/i.test(msg)) {
+    ctx.emitError(msg.replace(/^ERROR:\s*/i, ''));
+  } else {
+    ctx.emit(msg);
   }
 }
 

@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-server
-Generated: 2026-05-15T16:30:45.716Z
+Generated: 2026-05-15T16:52:35.321Z
 host=SRV-SP-DBG (windows-server)
 Total commands: 102
 ============================================================
@@ -750,7 +750,7 @@ CMD [39/102]> tasklist
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0     19,552 K
+  spoolsv.exe                   5136 Services                   0     10,017 K
 
 CMD [40/102]> tasklist /v
   
@@ -781,7 +781,7 @@ CMD [40/102]> tasklist /v
   explorer.exe                  2848 Console                    1    145,000 K Running         SRV-SP-DBG\Administrator            0:00:12 Windows Explorer
   cmd.exe                       5120 Console                    1      5,200 K Running         SRV-SP-DBG\Administrator            0:00:00 Command Prompt
   conhost.exe                   5132 Console                    1     18,400 K Running         SRV-SP-DBG\Administrator            0:00:00 Console Window Host
-  spoolsv.exe                   5136 Services                   0     19,552 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   5136 Services                   0     10,017 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
 
 CMD [41/102]> tasklist /fo csv /nh
   "System Idle Process","0","Services","0","16 K"
@@ -809,7 +809,7 @@ CMD [41/102]> tasklist /fo csv /nh
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","19,552 K"
+  "spoolsv.exe","5136","Services","0","10,017 K"
 
 PS  [42/102]> Get-Process
   
@@ -840,7 +840,7 @@ PS  [42/102]> Get-Process
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-      220       7      3   19552                   0  5136  spoolsv            
+      243       8      4   10017                   0  5136  spoolsv            
   
 
 PS  [43/102]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
@@ -905,7 +905,7 @@ PS  [45/102]> ps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-      220       7      3   19552                   0  5136  spoolsv            
+      243       8      4   10017                   0  5136  spoolsv            
   
 
 PS  [46/102]> gps
@@ -937,7 +937,7 @@ PS  [46/102]> gps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-      220       7      3   19552                   0  5136  spoolsv            
+      243       8      4   10017                   0  5136  spoolsv            
   
 
 
@@ -949,13 +949,13 @@ CMD [48/102]> tasklist /fi "imagename eq notepad.exe"
   INFO: No tasks are running which match the specified criteria.
 
 PS  [49/102]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 CMD [50/102]> start calc.exe
 <empty>
 
 PS  [51/102]> Get-Process -Name calc -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "calc".
+<empty>
 
 
 --- [52] § Start-Process (ps) → tasklist (cmd) ---
@@ -980,10 +980,10 @@ CMD [56/102]> taskkill /im notepad.exe /f
   ERROR: The process "notepad.exe" was not found.
 
 PS  [57/102]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 PS  [58/102]> Stop-Process -Name calc -ErrorAction SilentlyContinue
-  ERROR: The process "calc" was not found.
+<empty>
 
 CMD [59/102]> tasklist /fi "imagename eq calc.exe"
   INFO: No tasks are running which match the specified criteria.
@@ -1019,7 +1019,7 @@ CMD [60/102]> tasklist | find /c "exe"
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0     19,552 K
+  spoolsv.exe                   5136 Services                   0     10,017 K
 
 PS  [61/102]> (Get-Process).Count
   26
@@ -1054,7 +1054,7 @@ CMD [67/102]> taskkill /im notepad.exe /f
   ERROR: The process "notepad.exe" was not found.
 
 PS  [68/102]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 
 --- [69] § scheduled tasks ---
@@ -1123,7 +1123,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/15/2026 2:30 PM
+  TimeCreated  : 5/15/2026 2:52 PM
   Message      : The Event log service was started.
   RecordId     : 1030
   
@@ -1131,7 +1131,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/15/2026 10:30 AM
+  TimeCreated  : 5/15/2026 10:52 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1029
   
@@ -1139,7 +1139,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 4:30 AM
+  TimeCreated  : 5/15/2026 4:52 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1028
   
@@ -1467,7 +1467,7 @@ CMD [96/102]> tasklist | find /c "."
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0     19,552 K
+  spoolsv.exe                   5136 Services                   0     10,017 K
 
 PS  [97/102]> Get-Process | Measure-Object | Select-Object Count
   
@@ -1548,4 +1548,4 @@ CMD [102/102]> tasklist /fo csv /nh | find /c ","
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","19,552 K"
+  "spoolsv.exe","5136","Services","0","10,017 K"

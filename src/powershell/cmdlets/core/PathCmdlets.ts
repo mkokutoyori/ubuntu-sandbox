@@ -123,6 +123,13 @@ export class GetChildItemCmdlet implements ICmdlet {
       return ctx.providers.registry.getChildItem(path);
     }
 
+    // Env: drive — list every host env var as a {Name, Value} object so
+    // `Get-ChildItem Env: | Sort-Object Name | Select-Object -First 10`
+    // works the same as it does in real PowerShell.
+    if (/^env:\\?$/i.test(path) || /^env:/i.test(path)) {
+      return ctx.runtime.listEnvVars() as PSValue;
+    }
+
     const fs = ctx.providers.filesystem;
     if (!fs) {
       if (path !== '.') ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
@@ -458,6 +465,18 @@ export class GetItemCmdlet implements ICmdlet {
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       return ctx.providers.registry.getItem(path);
+    }
+    // Env:VAR — return a {Name, Value} object for the env variable.
+    const envMatch = /^env:(.+)$/i.exec(path);
+    if (envMatch) {
+      const name = envMatch[1];
+      const all  = ctx.runtime.listEnvVars();
+      const hit  = all.find(e => e.Name.toLowerCase() === name.toLowerCase());
+      if (!hit) {
+        ctx.emitError(`Cannot find path 'Env:${name}' because it does not exist.`);
+        return null;
+      }
+      return { Name: hit.Name, Value: hit.Value } as Record<string, PSValue>;
     }
     const fs = ctx.providers.filesystem;
     if (!fs) return null;

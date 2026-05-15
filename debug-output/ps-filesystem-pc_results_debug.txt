@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-filesystem-pc
-Generated: 2026-05-15T16:30:42.737Z
+Generated: 2026-05-15T16:52:27.609Z
 Engine: powershell
 host=WIN-FS-DBG (windows-pc)
 Total commands: 130
@@ -265,130 +265,130 @@ PS [76/130]> Get-ChildItem C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/15/2026 4:30 PM          $Recycle.Bin             
-  d-----  5/15/2026 4:30 PM          Debug                    
-  d-----  5/15/2026 4:30 PM          PerfLogs                 
-  d-----  5/15/2026 4:30 PM          Program Files            
-  d-----  5/15/2026 4:30 PM          Program Files (x86)      
-  d-----  5/15/2026 4:30 PM          ProgramData              
-  d-----  5/15/2026 4:30 PM          System Volume Information
-  d-----  5/15/2026 4:30 PM          Users                    
-  d-----  5/15/2026 4:30 PM          Windows                  
-  -a----  5/15/2026 4:30 PM       9  numbers.txt              
-  -a----  5/15/2026 4:30 PM       9  nums.txt                 
+  d-----  5/15/2026 4:52 PM          $Recycle.Bin             
+  d-----  5/15/2026 4:52 PM          Debug                    
+  d-----  5/15/2026 4:52 PM          PerfLogs                 
+  d-----  5/15/2026 4:52 PM          Program Files            
+  d-----  5/15/2026 4:52 PM          Program Files (x86)      
+  d-----  5/15/2026 4:52 PM          ProgramData              
+  d-----  5/15/2026 4:52 PM          System Volume Information
+  d-----  5/15/2026 4:52 PM          Users                    
+  d-----  5/15/2026 4:52 PM          Windows                  
+  -a----  5/15/2026 4:52 PM       9  numbers.txt              
+  -a----  5/15/2026 4:52 PM       9  nums.txt                 
   
 
 PS [77/130]> dir C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/15/2026 4:30 PM          $Recycle.Bin             
-  d-----  5/15/2026 4:30 PM          Debug                    
-  d-----  5/15/2026 4:30 PM          PerfLogs                 
-  d-----  5/15/2026 4:30 PM          Program Files            
-  d-----  5/15/2026 4:30 PM          Program Files (x86)      
-  d-----  5/15/2026 4:30 PM          ProgramData              
-  d-----  5/15/2026 4:30 PM          System Volume Information
-  d-----  5/15/2026 4:30 PM          Users                    
-  d-----  5/15/2026 4:30 PM          Windows                  
-  -a----  5/15/2026 4:30 PM       9  numbers.txt              
-  -a----  5/15/2026 4:30 PM       9  nums.txt                 
+  d-----  5/15/2026 4:52 PM          $Recycle.Bin             
+  d-----  5/15/2026 4:52 PM          Debug                    
+  d-----  5/15/2026 4:52 PM          PerfLogs                 
+  d-----  5/15/2026 4:52 PM          Program Files            
+  d-----  5/15/2026 4:52 PM          Program Files (x86)      
+  d-----  5/15/2026 4:52 PM          ProgramData              
+  d-----  5/15/2026 4:52 PM          System Volume Information
+  d-----  5/15/2026 4:52 PM          Users                    
+  d-----  5/15/2026 4:52 PM          Windows                  
+  -a----  5/15/2026 4:52 PM       9  numbers.txt              
+  -a----  5/15/2026 4:52 PM       9  nums.txt                 
   
 
 PS [78/130]> ls C:\Debug
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
   
 
 PS [79/130]> gci C:\Debug
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
   
 
 PS [80/130]> Get-ChildItem C:\Debug -Recurse
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
-  d-----  5/15/2026 4:30 PM          nested     
-  -a----  5/15/2026 4:30 PM      14  inner.txt  
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
+  d-----  5/15/2026 4:52 PM          nested     
+  -a----  5/15/2026 4:52 PM      14  inner.txt  
   
 
 PS [81/130]> Get-ChildItem C:\Debug -Recurse -File
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
-  d-----  5/15/2026 4:30 PM          nested     
-  -a----  5/15/2026 4:30 PM      14  inner.txt  
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
+  d-----  5/15/2026 4:52 PM          nested     
+  -a----  5/15/2026 4:52 PM      14  inner.txt  
   
 
 PS [82/130]> Get-ChildItem C:\Debug -Recurse -Directory
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
-  d-----  5/15/2026 4:30 PM          nested     
-  -a----  5/15/2026 4:30 PM      14  inner.txt  
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
+  d-----  5/15/2026 4:52 PM          nested     
+  -a----  5/15/2026 4:52 PM      14  inner.txt  
   
 
 PS [83/130]> Get-ChildItem C:\Debug -Filter *.txt
@@ -397,11 +397,11 @@ PS [83/130]> Get-ChildItem C:\Debug -Filter *.txt
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/15/2026   4:30 PM              0 empty.txt
-  -a----                5/15/2026   4:30 PM             11 hello.txt
-  -a----                5/15/2026   4:30 PM              0 letters.txt
-  -a----                5/15/2026   4:30 PM             31 log.txt
-  -a----                5/15/2026   4:30 PM             20 nums.txt
+  -a----                5/15/2026   4:52 PM              0 empty.txt
+  -a----                5/15/2026   4:52 PM             11 hello.txt
+  -a----                5/15/2026   4:52 PM              0 letters.txt
+  -a----                5/15/2026   4:52 PM             31 log.txt
+  -a----                5/15/2026   4:52 PM             20 nums.txt
 
 PS [84/130]> Get-ChildItem C:\Debug -Include *.txt -Recurse
   
@@ -409,94 +409,94 @@ PS [84/130]> Get-ChildItem C:\Debug -Include *.txt -Recurse
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/15/2026   4:30 PM              0 empty.txt
-  -a----                5/15/2026   4:30 PM             11 hello.txt
-  -a----                5/15/2026   4:30 PM              0 letters.txt
-  -a----                5/15/2026   4:30 PM             31 log.txt
-  -a----                5/15/2026   4:30 PM             20 nums.txt
+  -a----                5/15/2026   4:52 PM              0 empty.txt
+  -a----                5/15/2026   4:52 PM             11 hello.txt
+  -a----                5/15/2026   4:52 PM              0 letters.txt
+  -a----                5/15/2026   4:52 PM             31 log.txt
+  -a----                5/15/2026   4:52 PM             20 nums.txt
   
       Directory: C:\Debug\sub1
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/15/2026   4:30 PM             14 inner.txt
+  -a----                5/15/2026   4:52 PM             14 inner.txt
 
 PS [85/130]> Get-ChildItem C:\Debug -Force
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
   
 
 PS [86/130]> Get-ChildItem C:\Debug | Sort-Object Length
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub1       
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM       0  with       
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM      31  log.txt    
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  d-----  5/15/2026 4:52 PM          sub2       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM       0  with       
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM      31  log.txt    
   
 
 PS [87/130]> Get-ChildItem C:\Debug | Sort-Object LastWriteTime -Descending
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  d-----  5/15/2026 4:30 PM          sub1       
-  -a----  5/15/2026 4:30 PM       0  with       
-  d-----  5/15/2026 4:30 PM          dup        
-  d-----  5/15/2026 4:30 PM          md-test    
-  d-----  5/15/2026 4:30 PM          mkdir-test 
-  d-----  5/15/2026 4:30 PM          ni-test    
-  d-----  5/15/2026 4:30 PM          sub2       
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM       0  with       
+  d-----  5/15/2026 4:52 PM          dup        
+  d-----  5/15/2026 4:52 PM          md-test    
+  d-----  5/15/2026 4:52 PM          mkdir-test 
+  d-----  5/15/2026 4:52 PM          ni-test    
+  d-----  5/15/2026 4:52 PM          sub1       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  d-----  5/15/2026 4:52 PM          sub2       
   
 
 PS [88/130]> Get-ChildItem C:\Debug | Where-Object { $_.PSIsContainer }
   
   Mode    LastWriteTime      Length  Name      
   ------  -----------------  ------  ----------
-  d-----  5/15/2026 4:30 PM          dup       
-  d-----  5/15/2026 4:30 PM          md-test   
-  d-----  5/15/2026 4:30 PM          mkdir-test
-  d-----  5/15/2026 4:30 PM          ni-test   
-  d-----  5/15/2026 4:30 PM          sub1      
-  d-----  5/15/2026 4:30 PM          sub2      
+  d-----  5/15/2026 4:52 PM          dup       
+  d-----  5/15/2026 4:52 PM          md-test   
+  d-----  5/15/2026 4:52 PM          mkdir-test
+  d-----  5/15/2026 4:52 PM          ni-test   
+  d-----  5/15/2026 4:52 PM          sub1      
+  d-----  5/15/2026 4:52 PM          sub2      
   
 
 PS [89/130]> Get-ChildItem C:\Debug | Where-Object { -not $_.PSIsContainer }
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  -a----  5/15/2026 4:30 PM       0  empty.txt  
-  -a----  5/15/2026 4:30 PM      11  hello.txt  
-  -a----  5/15/2026 4:30 PM       0  letters.txt
-  -a----  5/15/2026 4:30 PM      31  log.txt    
-  -a----  5/15/2026 4:30 PM      20  nums.txt   
-  -a----  5/15/2026 4:30 PM       0  with       
+  -a----  5/15/2026 4:52 PM       0  empty.txt  
+  -a----  5/15/2026 4:52 PM      11  hello.txt  
+  -a----  5/15/2026 4:52 PM       0  letters.txt
+  -a----  5/15/2026 4:52 PM      31  log.txt    
+  -a----  5/15/2026 4:52 PM      20  nums.txt   
+  -a----  5/15/2026 4:52 PM       0  with       
   
 
 PS [90/130]> Get-ChildItem C:\Debug | Select-Object Name, Length, Mode
@@ -739,8 +739,8 @@ PS [122/130]> Get-ChildItem D:\Backup
   
   Mode    LastWriteTime      Length  Name          
   ------  -----------------  ------  --------------
-  -a----  5/15/2026 4:30 PM      11  hello-on-d.txt
-  -a----  5/15/2026 4:30 PM      12  notes.txt     
+  -a----  5/15/2026 4:52 PM      11  hello-on-d.txt
+  -a----  5/15/2026 4:52 PM      12  notes.txt     
   
 
 PS [123/130]> Get-Content D:\Backup\hello-on-d.txt
@@ -757,30 +757,30 @@ PS [125/130]> Test-Path D:\Backup
 PS [126/130]> Get-ChildItem C:\Debug -Recurse | Format-Table Mode, LastWriteTime, Length, Name -AutoSize
   Mode            LastWriteTime   Length          Name           
   --------------- --------------- --------------- ---------------
-  d-----          5/15/2026 4:30 PM                 dup            
-  d-----          5/15/2026 4:30 PM                 md-test        
-  d-----          5/15/2026 4:30 PM                 mkdir-test     
-  d-----          5/15/2026 4:30 PM                 ni-test        
-  d-----          5/15/2026 4:30 PM                 sub1           
-  d-----          5/15/2026 4:30 PM                 sub2           
-  -a----          5/15/2026 4:30 PM 7               acl-target.txt 
-  -a----          5/15/2026 4:30 PM 5               bulk-1.txt     
-  -a----          5/15/2026 4:30 PM 5               bulk-2.txt     
-  -a----          5/15/2026 4:30 PM 5               bulk-3.txt     
-  -a----          5/15/2026 4:30 PM 5               bulk-4.txt     
-  -a----          5/15/2026 4:30 PM 5               bulk-5.txt     
-  -a----          5/15/2026 4:30 PM 0               empty.txt      
-  -a----          5/15/2026 4:30 PM 5               greek-alpha.txt
-  -a----          5/15/2026 4:30 PM 4               greek-beta.txt 
-  -a----          5/15/2026 4:30 PM 5               greek-delta.txt
-  -a----          5/15/2026 4:30 PM 5               greek-gamma.txt
-  -a----          5/15/2026 4:30 PM 11              hello.txt      
-  -a----          5/15/2026 4:30 PM 0               letters.txt    
-  -a----          5/15/2026 4:30 PM 31              log.txt        
-  -a----          5/15/2026 4:30 PM 20              nums.txt       
-  -a----          5/15/2026 4:30 PM 0               with           
-  d-----          5/15/2026 4:30 PM                 nested         
-  -a----          5/15/2026 4:30 PM 14              inner.txt      
+  d-----          5/15/2026 4:52 PM                 dup            
+  d-----          5/15/2026 4:52 PM                 md-test        
+  d-----          5/15/2026 4:52 PM                 mkdir-test     
+  d-----          5/15/2026 4:52 PM                 ni-test        
+  d-----          5/15/2026 4:52 PM                 sub1           
+  d-----          5/15/2026 4:52 PM                 sub2           
+  -a----          5/15/2026 4:52 PM 7               acl-target.txt 
+  -a----          5/15/2026 4:52 PM 5               bulk-1.txt     
+  -a----          5/15/2026 4:52 PM 5               bulk-2.txt     
+  -a----          5/15/2026 4:52 PM 5               bulk-3.txt     
+  -a----          5/15/2026 4:52 PM 5               bulk-4.txt     
+  -a----          5/15/2026 4:52 PM 5               bulk-5.txt     
+  -a----          5/15/2026 4:52 PM 0               empty.txt      
+  -a----          5/15/2026 4:52 PM 5               greek-alpha.txt
+  -a----          5/15/2026 4:52 PM 4               greek-beta.txt 
+  -a----          5/15/2026 4:52 PM 5               greek-delta.txt
+  -a----          5/15/2026 4:52 PM 5               greek-gamma.txt
+  -a----          5/15/2026 4:52 PM 11              hello.txt      
+  -a----          5/15/2026 4:52 PM 0               letters.txt    
+  -a----          5/15/2026 4:52 PM 31              log.txt        
+  -a----          5/15/2026 4:52 PM 20              nums.txt       
+  -a----          5/15/2026 4:52 PM 0               with           
+  d-----          5/15/2026 4:52 PM                 nested         
+  -a----          5/15/2026 4:52 PM 14              inner.txt      
 
 PS [127/130]> Get-ChildItem C:\Debug -Recurse -File | Measure-Object -Property Length -Sum
   Count=24; Sum=127; Average=; Minimum=; Maximum=; Property=Length

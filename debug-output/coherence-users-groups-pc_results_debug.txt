@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-pc
-Generated: 2026-05-15T16:30:46.398Z
+Generated: 2026-05-15T16:52:36.539Z
 host=WIN-USR-COH (windows-pc)
 Total commands: 105
 ============================================================
@@ -503,13 +503,13 @@ CMD [76/105]> net user frank /delete
   The command completed successfully.
 
 PS  [77/105]> Get-LocalUser -Name frank -ErrorAction SilentlyContinue
-  ERROR: User frank was not found.
+<empty>
 
 CMD [78/105]> net localgroup Security /delete
   The command completed successfully.
 
 PS  [79/105]> Get-LocalGroup -Name Security -ErrorAction SilentlyContinue
-  ERROR: Group Security was not found.
+<empty>
 
 
 --- [80] § delete (ps) → check (cmd) ---

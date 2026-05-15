@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-registry-env-pc
-Generated: 2026-05-15T16:30:47.710Z
+Generated: 2026-05-15T16:52:37.498Z
 Engine: powershell
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
@@ -215,19 +215,64 @@ PS [38/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).InstallPath
 
 --- [39] § environment variables ---
 PS [39/117]> Get-ChildItem Env:
-  ERROR: Cannot find path 'Env:' because it does not exist.
+  
+  Name                    Value                                                  
+  ----------------------  -------------------------------------------------------
+  USERNAME                Administrator                                          
+  COMPUTERNAME            WIN-REG-DBG                                            
+  USERPROFILE             C:\Users\Administrator                                 
+  SYSTEMROOT              C:\Windows                                             
+  WINDIR                  C:\Windows                                             
+  TEMP                    C:\Users\User\AppData\Local\Temp                       
+  TMP                     C:\Users\User\AppData\Local\Temp                       
+  PATH                    C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  HOMEDRIVE               C:                                                     
+  HOMEPATH                \Users\Administrator                                   
+  PROCESSOR_ARCHITECTURE  AMD64                                                  
+  OS                      Windows_NT                                             
+  COMSPEC                 C:\Windows\System32\cmd.exe                            
+  APPDATA                 C:\Users\user\AppData\Roaming                          
+  LOCALAPPDATA            C:\Users\user\AppData\Local                            
+  PROGRAMFILES            C:\Program Files                                       
+  PROGRAMFILES(X86)       C:\Program Files (x86)                                 
+  PROGRAMDATA             C:\ProgramData                                         
+  PATHEXT                 .COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC                 
+  NUMBER_OF_PROCESSORS    4                                                      
+  USERDOMAIN              WORKGROUP                                              
+  LOGONSERVER             \\WIN-REG-DBG                                          
+  SESSIONNAME             Console                                                
+  SYSTEMDRIVE             C:                                                     
+  PUBLIC                  C:\Users\Public                                        
+  ALLUSERSPROFILE         C:\ProgramData                                         
+  
 
 PS [40/117]> Get-ChildItem Env: | Sort-Object Name | Select-Object -First 5
-  ERROR: Cannot find path 'Env:' because it does not exist.
+  
+  Name             Value                        
+  ---------------  -----------------------------
+  ALLUSERSPROFILE  C:\ProgramData               
+  APPDATA          C:\Users\user\AppData\Roaming
+  COMPUTERNAME     WIN-REG-DBG                  
+  COMSPEC          C:\Windows\System32\cmd.exe  
+  HOMEDRIVE        C:                           
+  
 
 PS [41/117]> Get-ChildItem Env: | Sort-Object Name | Select-Object -Last 5
-  ERROR: Cannot find path 'Env:' because it does not exist.
+  
+  Name         Value                           
+  -----------  --------------------------------
+  TMP          C:\Users\User\AppData\Local\Temp
+  USERDOMAIN   WORKGROUP                       
+  USERNAME     Administrator                   
+  USERPROFILE  C:\Users\Administrator          
+  WINDIR       C:\Windows                      
+  
 
 PS [42/117]> (Get-ChildItem Env:).Count
-  ERROR: Cannot find path 'Env:' because it does not exist.
+  26
 
 PS [43/117]> $env:Path
-  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
+  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
 
 PS [44/117]> $env:SystemRoot
   C:\Windows
@@ -239,7 +284,7 @@ PS [46/117]> $env:COMPUTERNAME
   WIN-REG-DBG
 
 PS [47/117]> $env:TEMP
-  C:\Users\Administrator\AppData\Local\Temp
+  C:\Users\User\AppData\Local\Temp
 
 PS [48/117]> $env:Path -split ";" | Select-Object -First 3
   C:\Windows\System32
@@ -247,7 +292,7 @@ PS [48/117]> $env:Path -split ";" | Select-Object -First 3
   C:\Windows\System32\Wbem
 
 PS [49/117]> ($env:Path -split ";").Count
-  4
+  3
 
 PS [50/117]> Set-Item -Path Env:DEBUG_SIM -Value "1"
 <empty>
@@ -427,10 +472,10 @@ PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  1ad9948a-9b14-4247-9be7-03dafd9ac8e7
+  6f1600a6-e8cf-4989-ad76-ce45d13a1394
 
 PS [103/117]> [DateTime]::Now
-  5/15/2026 4:30 PM
+  5/15/2026 4:52 PM
 
 
 --- [104] § formatting ---
