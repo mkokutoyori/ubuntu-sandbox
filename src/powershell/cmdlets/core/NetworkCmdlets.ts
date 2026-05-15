@@ -104,16 +104,17 @@ export class TestConnectionCmdlet implements ICmdlet {
     }
     const reachable = net.testConnection(target);
     if (ctx.named['quiet'] === true) return reachable;
-    // Mimic the column layout of real Test-Connection (subset).
+    // Mimic the column layout of real Test-Connection (subset). Status
+    // is the last column so a trailing-`Success` regex picks up each row.
     const out: PSValue[] = [];
     for (let i = 1; i <= count; i++) {
       out.push({
         Source: 'localhost',
         Destination: target,
-        IPV4Address: '0.0.0.0',
-        IPV6Address: '',
+        IPV4Address: target.includes(':') ? '' : (target === 'localhost' ? '127.0.0.1' : target),
         Bytes: 32,
-        Time: reachable ? 1 : 0,
+        'Time(ms)': reachable ? 1 : 0,
+        Status: reachable ? 'Success' : 'Failure',
       } as Record<string, PSValue>);
     }
     return out as PSValue;
