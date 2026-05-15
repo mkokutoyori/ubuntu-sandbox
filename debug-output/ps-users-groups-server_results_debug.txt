@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-server
-Generated: 2026-05-15T16:11:54.166Z
+Generated: 2026-05-15T16:24:59.000Z
 Engine: powershell
 host=SRV-USR-DBG (windows-server)
 Total commands: 102
@@ -48,10 +48,8 @@ PS [5/102]> Get-LocalUser | Where-Object { -not $_.Enabled }
   
   Name            Enabled  Description                                             
   --------------  -------  --------------------------------------------------------
-  Administrator   True     Built-in account for administering the computer/domain  
   Guest           False    Built-in account for guest access to the computer/domain
   DefaultAccount  False    A user account managed by the system.                   
-  User            True                                                             
   
 
 PS [6/102]> (Get-LocalUser).Count

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server-extras
-Generated: 2026-05-15T16:11:52.210Z
+Generated: 2026-05-15T16:24:57.409Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
@@ -24,12 +24,10 @@ PS [4/23]> Get-Content C:\ServerScripts\role.ps1
   
 
 PS [5/23]> & C:\ServerScripts\role.ps1
-  Hostname = $env:COMPUTERNAME
-  User = $env:USERNAME
-  Date = Get-Date
+  Date = 5/15/2026 4:24 PM
 
 PS [6/23]> . C:\ServerScripts\role.ps1
-  Date = 5/15/2026 4:11 PM
+  Date = 5/15/2026 4:24 PM
 
 PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
 <empty>
@@ -40,18 +38,14 @@ PS [8/23]> Get-Content C:\ServerScripts\svcaudit.ps1
   
 
 PS [9/23]> & C:\ServerScripts\svcaudit.ps1
-  Count  Name     Group     .Name: Count  Name     Group     .Count
-  -----  -------  ----------.Name: -----  -------  ----------.Count
-     20  Running  {20 items}.Name:    20  Running  {20 items}.Count
-      2  Stopped  {2 items} .Name:     2  Stopped  {2 items} .Count
   
-  Name      Status 
-  --------  -------
-  Tcpip     Running
-  Afd       Running
-  Dhcp      Running
-  Dnscache  Running
-  NetBT     Running
+  
+  
+  
+  
+  
+  
+  
   
 
 PS [10/23]> Set-Content -Path C:\ServerScripts\users.ps1 -Value "param([string]`$Prefix = `"srv`")`n1..2 | ForEach-Object {`n  `$u = `"`$Prefix-acct`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created `$u`"`n}`n"
@@ -67,27 +61,16 @@ PS [11/23]> Get-Content C:\ServerScripts\users.ps1
   
 
 PS [12/23]> & C:\ServerScripts\users.ps1 -Prefix srv
-  $u : The term '$u' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + $u = "srv-acct1"
-    New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
-    Write-Output "created $u"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ($u:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  $u : The term '$u' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + $u = "srv-acct2"
-    New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
-    Write-Output "created $u"
-  + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      + CategoryInfo          : ObjectNotFound: ($u:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
+  created srv-acct1
+  created srv-acct2
 
 PS [13/23]> Get-LocalUser | Where-Object { $_.Name -like "srv-*" }
-<empty>
+  
+  Name       Enabled  Description
+  ---------  -------  -----------
+  srv-acct1  True                
+  srv-acct2  True                
+  
 
 PS [14/23]> "srv-acct1","srv-acct2" | ForEach-Object { Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue }
 <empty>
@@ -104,21 +87,13 @@ PS [16/23]> Get-Content C:\ServerScripts\report.ps1
   
 
 PS [17/23]> & C:\ServerScripts\report.ps1
-  == System report ==
-  Hostname: $env:COMPUTERNAME
-  User: $env:USERNAME
-  Services running: (Get-Service | Where-Object { $_.Status -eq 'Running' }.Count)
-  Processes: (Get-Process.Count)
+  Processes: 26
 
 PS [18/23]> Set-Content -Path C:\ServerScripts\inline.ps1 -Value "& { 1..5 | ForEach-Object { `"[`$_]`" } }`n"
 <empty>
 
 PS [19/23]> & C:\ServerScripts\inline.ps1
-  [1]
-  [2]
-  [3]
-  [4]
-  [5]
+  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=RangeExpression; start=type=LiteralExpression; value=1; raw=1; kind=number; position=offset=4; line=1; column=5; end=type=LiteralExpression; value=5; raw=5; kind=number; position=offset=7; line=1; column=8; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=ForEach-Object; position=offset=11; line=1; column=12; parameters=; arguments=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=LiteralExpression; value=[$_]; raw=[$_]; kind=expandable; position=offset=28; line=1; column=29; parameters=; arguments=; position=offset=28; line=1; column=29; position=offset=28; line=1; column=29; redirections=; position=offset=28; line=1; column=29; position=offset=28; line=1; column=29; position=offset=26; line=1; column=27; position=offset=11; line=1; column=12; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
 
 PS [20/23]> Get-ChildItem C:\ServerScripts | Format-Table Name, Length -AutoSize
   Name            Length         
