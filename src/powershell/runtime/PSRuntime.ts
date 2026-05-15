@@ -1724,6 +1724,8 @@ export class PSRuntime {
         self.invokeScriptBlock(block, namedV, posV, env2, $under),
       callCmdlet: (name, pos, namedP, pipe, env2) =>
         self.dispatchCmdlet(name, pos, namedP, pipe, env2),
+      listCmdlets: () =>
+        self.registry.cmdlets().map(c => ({ name: c.name, aliases: c.aliases })),
     };
 
     return {

@@ -61,3 +61,5 @@ export const SysteminfoCmdlet = new NativeShim('systeminfo');
 export const VerCmdlet       = new NativeShim('ver');
 export const NslookupCmdlet  = new NativeShim('nslookup');
 export const NetCmdlet       = new NativeShim('net');
+export const VolCmdlet       = new NativeShim('vol');
+export const ChcpCmdlet      = new NativeShim('chcp');

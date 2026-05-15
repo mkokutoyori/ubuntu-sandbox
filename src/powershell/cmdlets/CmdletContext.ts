@@ -40,6 +40,11 @@ export interface IRuntimeRef {
     pipeInput: PSValue,
     env: PSEnvironment,
   ): PSValue;
+  /**
+   * List every (canonical) registered cmdlet — used by Get-Command and
+   * Get-Alias to enumerate the registry without leaking the implementation.
+   */
+  listCmdlets(): readonly { name: string; aliases: readonly string[] }[];
 }
 
 export interface CmdletContext {

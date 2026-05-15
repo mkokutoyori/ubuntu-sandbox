@@ -276,6 +276,10 @@ export class WindowsPC extends EndHost {
       case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
       case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
       case 'runas':   return this.cmdRunas(args);
+      case 'vol':     return this.cmdVol(args);
+      case 'chcp':    return this.cmdChcp(args);
+      case 'date':    return this.cmdDate(args);
+      case 'time':    return this.cmdTime(args);
     }
 
     // net user / net localgroup / net start / net stop
@@ -616,6 +620,11 @@ export class WindowsPC extends EndHost {
     const lower = cmd.toLowerCase();
     if (lower === 'systeminfo') return this.cmdSysteminfo();
     if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    if (lower === 'hostname') return this.hostname;
+    if (lower === 'vol')  return this.cmdVol(args);
+    if (lower === 'chcp') return this.cmdChcp(args);
+    if (lower === 'date') return this.cmdDate(args);
+    if (lower === 'time') return this.cmdTime(args);
     // `net` is a multi-subcommand router — all its subhandlers are sync
     // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
     if (lower === 'net' && args.length > 0) {
@@ -684,6 +693,56 @@ export class WindowsPC extends EndHost {
 
   setDnsServers(ifName: string, servers: string[]): void {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  /**
+   * vol — print volume label + serial.  Real cmd output:
+   *   Volume in drive C has no label.
+   *   Volume Serial Number is XXXX-XXXX
+   */
+  private cmdVol(args: string[]): string {
+    const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
+    const letter = arg.charAt(0) || 'C';
+    // Deterministic serial so transcripts diff cleanly across runs of the same host.
+    let h = 0;
+    for (const c of this.hostname + ':' + letter) h = ((h * 31) + c.charCodeAt(0)) & 0xffffffff;
+    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    const serial = `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    return [
+      ` Volume in drive ${letter} has no label.`,
+      ` Volume Serial Number is ${serial}`,
+    ].join('\n');
+  }
+
+  /** chcp — print/set active code page.  Defaults to 65001 (UTF-8). */
+  private cmdChcp(args: string[]): string {
+    if (args.length === 0) return 'Active code page: 65001';
+    const cp = parseInt(args[0], 10);
+    if (isNaN(cp)) return 'Invalid code page';
+    return `Active code page: ${cp}`;
+  }
+
+  /** date /t — print today's date in MM/DD/YYYY (en-US). */
+  private cmdDate(args: string[]): string {
+    const wantOnly = args.includes('/t') || args.includes('/T');
+    void wantOnly;
+    const d = new Date();
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dow = days[d.getDay()];
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dow} ${mm}/${dd}/${yyyy}`;
+  }
+
+  /** time /t — print current time in h:mm AM/PM (en-US). */
+  private cmdTime(_args: string[]): string {
+    const d = new Date();
+    const h24 = d.getHours();
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const tt = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${min} ${tt}`;
   }
 
   /** nslookup command implementation for Windows */
