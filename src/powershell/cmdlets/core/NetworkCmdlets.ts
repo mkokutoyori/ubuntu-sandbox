@@ -181,9 +181,7 @@ export class GetNetRouteCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const net = requireNetwork(ctx);
-    const routes = net.getRoutes();
-    if (routes.length === 0) throw new PSRuntimeError('Get-NetRoute is not recognized in this provider context');
+    const routes = requireNetwork(ctx).getRoutes();
     return routes.map(r => ({
       DestinationPrefix: r.destinationPrefix,
       InterfaceAlias:    r.ifAlias,
@@ -198,9 +196,16 @@ export class GetNetTCPConnectionCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const net = requireNetwork(ctx);
-    const conns = net.getTcpConnections();
-    if (conns.length === 0) throw new PSRuntimeError('Get-NetTCPConnection is not recognized in this provider context');
+    // Always emit at least a representative loopback row so the cmdlet
+    // produces non-empty output (real Windows always has Local LISTEN
+    // sockets). Avoids the historical throw-and-fallback dance.
+    const seeded = [{
+      localAddress: '0.0.0.0', localPort: 135,
+      remoteAddress: '0.0.0.0', remotePort: 0,
+      state: 'Listen', pid: 4,
+    }];
+    const real = requireNetwork(ctx).getTcpConnections();
+    const conns = real.length ? real : seeded;
     return conns.map(c => ({
       LocalAddress:   c.localAddress,
       LocalPort:      c.localPort,
@@ -480,12 +485,7 @@ export class GetNetFirewallRuleCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const net = requireNetwork(ctx);
-    const rules = net.getFirewallRules();
-    if (rules.length === 0) {
-      // Built-in static rules live in the legacy executor — fall through.
-      throw new PSRuntimeError('Get-NetFirewallRule is not recognized in this provider context');
-    }
+    const rules = requireNetwork(ctx).getFirewallRules();
     return rules.map(r => ({
       Name: r.name,
       DisplayName: r.displayName,

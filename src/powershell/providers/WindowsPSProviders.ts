@@ -514,6 +514,27 @@ class WindowsNetworkAdapter implements INetworkProvider {
 
   getRoutes(): RouteInfo[] {
     const out: RouteInfo[] = [];
+    // Built-in defaults (loopback + per-port connected networks + default
+    // route) so the cmdlet output matches what real `Get-NetRoute` shows
+    // on a fresh box. Built from device state — no fallback to executor.
+    const gw = this.getDefaultGateway() ?? '0.0.0.0';
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getIPAddress: () => unknown; getSubnetMask?: () => unknown }> }).getPorts();
+    const firstIf = ports[0] ? portToDisplayName(ports[0].name) : 'Ethernet';
+    if (!this.state.extraRoutes.has('0.0.0.0/0')) {
+      out.push({ destinationPrefix: '0.0.0.0/0', ifAlias: firstIf, nextHop: gw, routeMetric: 0 });
+    }
+    out.push({ destinationPrefix: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', routeMetric: 306 });
+    for (const p of ports) {
+      const ip = p.getIPAddress()?.toString() ?? '';
+      const maskRaw = p.getSubnetMask?.()?.toString() ?? '';
+      if (ip && maskRaw) {
+        const prefix = maskToPrefixLength(maskRaw);
+        const network = ip.split('.').map((o, i) =>
+          (parseInt(o, 10) & parseInt((maskRaw.split('.')[i] ?? '0'), 10)).toString()
+        ).join('.');
+        out.push({ destinationPrefix: `${network}/${prefix}`, ifAlias: portToDisplayName(p.name), nextHop: '0.0.0.0', routeMetric: 256 });
+      }
+    }
     for (const [dest, meta] of this.state.extraRoutes) {
       out.push({
         destinationPrefix: dest,
@@ -575,7 +596,19 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Firewall ─────────────────────────────────────────────────────────────
 
   getFirewallRules() {
-    return Array.from(this.state.dynamicFirewallRules.values()).map(r => ({ ...r }));
+    // Built-in Windows Firewall rules — matches the static set the legacy
+    // formatter shipped so cmdlets relying on these names keep working.
+    const builtins = [
+      { name: 'CoreNet-DHCP-In',      displayName: 'DHCP (UDP-In)',              enabled: true,  action: 'Allow', direction: 'Inbound',  protocol: 'UDP', localPort: '68',    remotePort: '67',  description: 'Built-in: DHCP client' },
+      { name: 'CoreNet-DHCP-Out',     displayName: 'DHCP (UDP-Out)',             enabled: true,  action: 'Allow', direction: 'Outbound', protocol: 'UDP', localPort: '68',    remotePort: '67',  description: 'Built-in: DHCP client' },
+      { name: 'CoreNet-DNS-Out',      displayName: 'DNS (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound', protocol: 'UDP', localPort: 'Any',   remotePort: '53',  description: 'Built-in: DNS client' },
+      { name: 'FPS-ICMP4-ERQ-In',     displayName: 'File and Printer Sharing',   enabled: true,  action: 'Allow', direction: 'Inbound',  protocol: 'ICMPv4', localPort: 'Any', remotePort: 'Any', description: 'Built-in: ICMP echo request' },
+      { name: 'RemoteDesktop-In-TCP', displayName: 'Remote Desktop - User Mode', enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '3389',  remotePort: 'Any', description: 'Built-in: RDP' },
+      { name: 'WinRM-HTTP-In-TCP',    displayName: 'Windows Remote Management',  enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '5985',  remotePort: 'Any', description: 'Built-in: WinRM' },
+      { name: 'BlockTelemetry',       displayName: 'Block Windows Telemetry',    enabled: true,  action: 'Block', direction: 'Outbound', protocol: 'TCP', localPort: 'Any',   remotePort: '443', description: 'Built-in: Block Telemetry' },
+    ];
+    const dynamic = Array.from(this.state.dynamicFirewallRules.values()).map(r => ({ ...r }));
+    return [...builtins, ...dynamic];
   }
   addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void {
     const displayName = rule.displayName ?? rule.name;
@@ -647,6 +680,23 @@ function notImpl(name: string): Error {
   // The cmdlet layer recognises "not implemented" and falls through to the
   // legacy PowerShellExecutor; keep the message in sync with isFallbackError.
   return new Error(`${name} is not recognized as a network provider operation`);
+}
+
+// Port name → PS-style adapter display name (`eth0` → `Ethernet`).
+function portToDisplayName(portName: string): string {
+  const m = portName.match(/^eth(\d+)$/i);
+  if (!m) return portName;
+  const idx = parseInt(m[1], 10);
+  return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
+}
+
+// 255.255.255.0 → 24.
+function maskToPrefixLength(mask: string): number {
+  let bits = 0;
+  for (const part of mask.split('.')) {
+    bits += ((parseInt(part, 10) | 0) >>> 0).toString(2).split('').filter(b => b === '1').length;
+  }
+  return bits;
 }
 
 // ── VPN adapter (state still on the legacy executor) ─────────────────────
