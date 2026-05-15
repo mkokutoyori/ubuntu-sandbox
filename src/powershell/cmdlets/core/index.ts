@@ -45,6 +45,7 @@ import {
   InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet,
+  GetAliasCmdlet, GetPSProviderCmdlet,
 } from './MiscCmdlets';
 import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
@@ -90,7 +91,7 @@ import {
 import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet,
   GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
-  NetCmdlet,
+  NetCmdlet, VolCmdlet, ChcpCmdlet,
 } from './NativeShimCmdlets';
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
@@ -196,6 +197,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewPSDriveCmdlet());
   registry.register(new GetPSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
+  registry.register(new GetAliasCmdlet());
+  registry.register(new GetPSProviderCmdlet());
 
   // ── Services (provider-backed) ────────────────────────────────────────────
   registry.register(new GetServiceCmdlet());
@@ -300,4 +303,6 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(VerCmdlet);
   registry.register(NslookupCmdlet);
   registry.register(NetCmdlet);
+  registry.register(VolCmdlet);
+  registry.register(ChcpCmdlet);
 }

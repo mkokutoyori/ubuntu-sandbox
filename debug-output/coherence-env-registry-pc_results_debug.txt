@@ -1,0 +1,506 @@
+============================================================
+Coherence debug transcript — coherence-env-registry-pc
+Generated: 2026-05-15T16:30:48.367Z
+host=WIN-ENV-DBG (windows-pc)
+Total commands: 103
+============================================================
+
+
+--- [1] § baseline env ---
+CMD [1/103]> set
+  COMPUTERNAME=WIN-ENV-DBG
+  COMSPEC=C:\Windows\System32\cmd.exe
+  HOMEDRIVE=C:
+  HOMEPATH=\Users\Administrator
+  NUMBER_OF_PROCESSORS=4
+  OS=Windows_NT
+  PATH=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC
+  PROCESSOR_ARCHITECTURE=AMD64
+  SYSTEMDRIVE=C:
+  SYSTEMROOT=C:\Windows
+  TEMP=C:\Users\User\AppData\Local\Temp
+  TMP=C:\Users\User\AppData\Local\Temp
+  USERNAME=Administrator
+  USERPROFILE=C:\Users\Administrator
+  WINDIR=C:\Windows
+
+CMD [2/103]> echo %PATH%
+  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+
+CMD [3/103]> echo %USERNAME%
+  Administrator
+
+CMD [4/103]> echo %COMPUTERNAME%
+  WIN-ENV-DBG
+
+CMD [5/103]> echo %SystemRoot%
+  C:\Windows
+
+CMD [6/103]> echo %TEMP%
+  C:\Users\User\AppData\Local\Temp
+
+CMD [7/103]> echo %USERPROFILE%
+  C:\Users\Administrator
+
+PS  [8/103]> $env:PATH
+  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0
+
+PS  [9/103]> $env:USERNAME
+  Administrator
+
+PS  [10/103]> $env:COMPUTERNAME
+  WIN-ENV-DBG
+
+PS  [11/103]> $env:SystemRoot
+  C:\Windows
+
+PS  [12/103]> $env:TEMP
+  C:\Users\Administrator\AppData\Local\Temp
+
+PS  [13/103]> $env:USERPROFILE
+  C:\Users\Administrator
+
+PS  [14/103]> Get-ChildItem Env: | Sort-Object Name | Select-Object -First 10
+  ERROR: Cannot find path 'Env:' because it does not exist.
+
+PS  [15/103]> (Get-ChildItem Env:).Count
+  ERROR: Cannot find path 'Env:' because it does not exist.
+
+
+--- [16] § identity coherence ---
+CMD [16/103]> whoami
+  win-env-dbg\administrator
+
+PS  [17/103]> whoami
+  win-env-dbg\administrator
+
+PS  [18/103]> [Environment]::UserName
+<empty>
+
+CMD [19/103]> hostname
+  WIN-ENV-DBG
+
+PS  [20/103]> hostname
+  WIN-ENV-DBG
+
+PS  [21/103]> [Environment]::MachineName
+<empty>
+
+
+--- [22] § set (cmd) → read (ps) ---
+CMD [22/103]> set DBG_FROM_CMD=hello
+<empty>
+
+CMD [23/103]> set DBG_FROM_CMD
+  DBG_FROM_CMD=hello
+
+CMD [24/103]> echo %DBG_FROM_CMD%
+  hello
+
+PS  [25/103]> $env:DBG_FROM_CMD
+<empty>
+
+PS  [26/103]> Get-Item Env:DBG_FROM_CMD
+  ERROR: Cannot find path 'Env:DBG_FROM_CMD' because it does not exist.
+
+CMD [27/103]> set DBG_FROM_CMD=updated
+<empty>
+
+PS  [28/103]> $env:DBG_FROM_CMD
+<empty>
+
+CMD [29/103]> set DBG_FROM_CMD=
+<empty>
+
+PS  [30/103]> $env:DBG_FROM_CMD
+<empty>
+
+
+--- [31] § Set-Item Env: (ps) → read (cmd) ---
+PS  [31/103]> Set-Item -Path Env:DBG_FROM_PS -Value "world"
+<empty>
+
+PS  [32/103]> $env:DBG_FROM_PS
+<empty>
+
+CMD [33/103]> echo %DBG_FROM_PS%
+  %DBG_FROM_PS%
+
+CMD [34/103]> set DBG_FROM_PS
+  Environment variable DBG_FROM_PS not defined
+
+PS  [35/103]> $env:DBG_FROM_PS = "world2"
+<empty>
+
+CMD [36/103]> echo %DBG_FROM_PS%
+  %DBG_FROM_PS%
+
+PS  [37/103]> Remove-Item Env:DBG_FROM_PS
+<empty>
+
+CMD [38/103]> echo %DBG_FROM_PS%
+  %DBG_FROM_PS%
+
+
+--- [39] § PATH manipulation ---
+CMD [39/103]> set PATH=%PATH%;C:\AddedByCmd
+<empty>
+
+PS  [40/103]> $env:Path -split ";" | Where-Object { $_ -like "*AddedByCmd*" }
+<empty>
+
+PS  [41/103]> $env:Path += ";C:\AddedByPs"
+<empty>
+
+CMD [42/103]> echo %PATH%
+  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\AddedByCmd
+
+CMD [43/103]> set PATH | findstr AddedByPs
+<empty>
+
+
+--- [44] § setx (persistent best-effort) ---
+CMD [44/103]> setx DBG_PERSIST_CMD "persist-from-cmd"
+  SUCCESS: Specified value was saved.
+
+PS  [45/103]> [Environment]::GetEnvironmentVariable("DBG_PERSIST_CMD","User")
+<empty>
+
+PS  [46/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS","persist-from-ps","User")
+<empty>
+
+CMD [47/103]> reg query "HKCU\Environment" /v DBG_PERSIST_PS
+  
+  HKCU\Environment
+  
+
+PS  [48/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_CMD",$null,"User")
+<empty>
+
+PS  [49/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS",$null,"User")
+<empty>
+
+
+--- [50] § baseline registry ---
+CMD [50/103]> reg query HKCU\Software
+  
+  HKCU\Software
+  
+
+PS  [51/103]> Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
+  
+      Hive: HKCU:\Software
+  
+  Name                           Property
+  ----                           --------
+  Microsoft                      
+
+PS  [52/103]> Test-Path HKCU:\Software
+  True
+
+PS  [53/103]> Test-Path HKLM:\Software
+  True
+
+CMD [54/103]> reg query HKLM\Software
+  
+  HKLM\Software
+  
+
+
+--- [55] § reg add (cmd) → read (ps) ---
+CMD [55/103]> reg add HKCU\Software\CohReg /f
+  The operation completed successfully.
+
+CMD [56/103]> reg query HKCU\Software\CohReg
+  
+  HKCU\Software\CohReg
+  
+
+PS  [57/103]> Test-Path HKCU:\Software\CohReg
+  False
+
+CMD [58/103]> reg add HKCU\Software\CohReg /v Version /t REG_SZ /d "1.0.0" /f
+  The operation completed successfully.
+
+CMD [59/103]> reg add HKCU\Software\CohReg /v Build /t REG_DWORD /d 42 /f
+  The operation completed successfully.
+
+CMD [60/103]> reg query HKCU\Software\CohReg
+  
+  HKCU\Software\CohReg
+  
+
+PS  [61/103]> Get-ItemProperty -Path HKCU:\Software\CohReg
+  Get-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
+
+PS  [62/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Version
+<empty>
+
+PS  [63/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Build
+<empty>
+
+
+--- [64] § Set-ItemProperty (ps) → read (cmd) ---
+PS  [64/103]> Set-ItemProperty -Path HKCU:\Software\CohReg -Name "InstallPath" -Value "C:\CohReg"
+  Set-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
+
+PS  [65/103]> Set-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -Value 1 -Type DWord
+  Set-ItemProperty : Cannot find path 'HKCU:\Software\CohReg' because it does not exist.
+
+CMD [66/103]> reg query HKCU\Software\CohReg /v InstallPath
+  
+  HKCU\Software\CohReg
+  
+
+CMD [67/103]> reg query HKCU\Software\CohReg /v Enabled
+  
+  HKCU\Software\CohReg
+  
+
+CMD [68/103]> reg query HKCU\Software\CohReg
+  
+  HKCU\Software\CohReg
+  
+
+
+--- [69] § nested keys ---
+PS  [69/103]> New-Item -Path HKCU:\Software\CohReg\Sub -Force
+  
+  
+      Hive: HKCU:\Software\CohReg
+  
+  Name                           Property
+  ----                           --------
+  Sub                           
+  
+
+PS  [70/103]> Set-ItemProperty -Path HKCU:\Software\CohReg\Sub -Name "Lang" -Value "fr-FR"
+<empty>
+
+CMD [71/103]> reg query HKCU\Software\CohReg\Sub /v Lang
+  
+  HKCU\Software\CohReg\Sub
+  
+
+CMD [72/103]> reg add HKCU\Software\CohReg\Sub /v Theme /t REG_SZ /d "dark" /f
+  The operation completed successfully.
+
+PS  [73/103]> (Get-ItemProperty HKCU:\Software\CohReg\Sub).Theme
+<empty>
+
+CMD [74/103]> reg query HKCU\Software\CohReg /s
+  
+  HKCU\Software\CohReg
+  
+
+PS  [75/103]> Get-ChildItem HKCU:\Software\CohReg -Recurse
+  
+      Hive: HKCU:\Software\CohReg
+  
+  Name                           Property
+  ----                           --------
+  Sub                            Lang
+
+
+--- [76] § reg delete (cmd) → read (ps) ---
+CMD [76/103]> reg delete HKCU\Software\CohReg /v Build /f
+  The operation completed successfully.
+
+PS  [77/103]> (Get-ItemProperty HKCU:\Software\CohReg).Build
+<empty>
+
+CMD [78/103]> reg delete HKCU\Software\CohReg\Sub /f
+  The operation completed successfully.
+
+PS  [79/103]> Test-Path HKCU:\Software\CohReg\Sub
+  True
+
+
+--- [80] § Remove-ItemProperty (ps) → read (cmd) ---
+PS  [80/103]> Remove-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -ErrorAction SilentlyContinue
+  Remove-ItemProperty : Property 'Enabled' does not exist at path 'HKCU:\Software\CohReg'.
+
+CMD [81/103]> reg query HKCU\Software\CohReg /v Enabled
+  
+  HKCU\Software\CohReg
+  
+
+PS  [82/103]> Clear-ItemProperty -Path HKCU:\Software\CohReg -Name "InstallPath" -ErrorAction SilentlyContinue
+<empty>
+
+CMD [83/103]> reg query HKCU\Software\CohReg /v InstallPath
+  
+  HKCU\Software\CohReg
+  
+
+
+--- [84] § HKLM coherence ---
+CMD [84/103]> reg add HKLM\Software\CohReg /v Site /t REG_SZ /d "main" /f
+  The operation completed successfully.
+
+PS  [85/103]> (Get-ItemProperty HKLM:\Software\CohReg).Site
+<empty>
+
+PS  [86/103]> Set-ItemProperty -Path HKLM:\Software\CohReg -Name "Tier" -Value "prod"
+  Set-ItemProperty : Cannot find path 'HKLM:\Software\CohReg' because it does not exist.
+
+CMD [87/103]> reg query HKLM\Software\CohReg
+  
+  HKLM\Software\CohReg
+  
+
+CMD [88/103]> reg delete HKLM\Software\CohReg /f
+  The operation completed successfully.
+
+PS  [89/103]> Test-Path HKLM:\Software\CohReg
+  False
+
+
+--- [90] § discovery ---
+PS  [90/103]> Get-Command -Noun ItemProperty -ErrorAction SilentlyContinue | Select-Object -First 5 Name
+  
+  Name          
+  --------------
+  Write-Host    
+  Write-Output  
+  Write-Error   
+  Write-Warning 
+  ForEach-Object
+  
+
+PS  [91/103]> gcm Get-ItemProperty
+<empty>
+
+PS  [92/103]> gcm Set-Item
+<empty>
+
+PS  [93/103]> Get-Alias %
+  
+  Name     Definition           CommandType
+  -------  -------------------  -----------
+  ?        where-object         Alias      
+  %        foreach-object       Alias      
+  ac       add-content          Alias      
+  cat      get-content          Alias      
+  cd       set-location         Alias      
+  chdir    set-location         Alias      
+  clear    clear-host           Alias      
+  cls      clear-host           Alias      
+  clv      clear-variable       Alias      
+  compare  compare-object       Alias      
+  copy     copy-item            Alias      
+  cp       copy-item            Alias      
+  cpi      copy-item            Alias      
+  del      remove-item          Alias      
+  diff     compare-object       Alias      
+  dir      get-childitem        Alias      
+  echo     write-output         Alias      
+  erase    remove-item          Alias      
+  fl       format-list          Alias      
+  foreach  foreach-object       Alias      
+  ft       format-table         Alias      
+  fw       format-wide          Alias      
+  gal      get-alias            Alias      
+  gc       get-content          Alias      
+  gci      get-childitem        Alias      
+  gcm      get-command          Alias      
+  gi       get-item             Alias      
+  gl       get-location         Alias      
+  gm       get-member           Alias      
+  gp       get-itemproperty     Alias      
+  gps      get-process          Alias      
+  group    group-object         Alias      
+  gsv      get-service          Alias      
+  gu       get-unique           Alias      
+  gv       get-variable         Alias      
+  help     get-help             Alias      
+  icm      invoke-command       Alias      
+  iex      invoke-expression    Alias      
+  ipmo     import-module        Alias      
+  kill     stop-process         Alias      
+  ls       get-childitem        Alias      
+  md       mkdir                Alias      
+  measure  measure-object       Alias      
+  mi       move-item            Alias      
+  move     move-item            Alias      
+  mv       move-item            Alias      
+  ni       new-item             Alias      
+  nv       new-variable         Alias      
+  ps       get-process          Alias      
+  pwd      get-location         Alias      
+  rd       remove-item          Alias      
+  ren      rename-item          Alias      
+  ri       remove-item          Alias      
+  rm       remove-item          Alias      
+  rmdir    remove-item          Alias      
+  rni      rename-item          Alias      
+  rp       remove-itemproperty  Alias      
+  rv       remove-variable      Alias      
+  saps     start-process        Alias      
+  sasv     start-service        Alias      
+  sc       set-content          Alias      
+  select   select-object        Alias      
+  sl       set-location         Alias      
+  sleep    start-sleep          Alias      
+  sls      select-string        Alias      
+  sort     sort-object          Alias      
+  sp       set-itemproperty     Alias      
+  spps     stop-process         Alias      
+  spsv     stop-service         Alias      
+  sv       set-variable         Alias      
+  tee      tee-object           Alias      
+  type     get-content          Alias      
+  where    where-object         Alias      
+  
+
+PS  [94/103]> Get-Variable PSVersionTable
+  Name=PSVersionTable; Value=PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
+
+PS  [95/103]> $PSVersionTable
+  PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
+
+PS  [96/103]> Get-Help Set-ItemProperty -ErrorAction SilentlyContinue
+  NAME
+      Set-ItemProperty
+  
+  SYNTAX
+      Set-ItemProperty [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the Set-ItemProperty cmdlet.
+
+PS  [97/103]> Get-PSProvider
+  
+  Name         Capabilities                        Drives    
+  -----------  ----------------------------------  ----------
+  Alias        ShouldProcess                       Alias     
+  Environment  ShouldProcess                       Env       
+  FileSystem   Filter, ShouldProcess, Credentials  C, D      
+  Function     ShouldProcess                       Function  
+  Registry     ShouldProcess, Transactions         HKLM, HKCU
+  Variable     ShouldProcess                       Variable  
+  
+
+CMD [98/103]> ver
+  
+  Microsoft Windows [Version 10.0.22631.6649]
+
+CMD [99/103]> help reg
+  This command is not supported by the help utility.  Try "reg /?".
+
+CMD [100/103]> help set
+  This command is not supported by the help utility.  Try "set /?".
+
+
+--- [101] § cleanup ---
+PS  [101/103]> Remove-Item HKCU:\Software\CohReg -Recurse -ErrorAction SilentlyContinue
+<empty>
+
+CMD [102/103]> reg query HKCU\Software\CohReg
+  
+  HKCU\Software\CohReg
+  
+
+CMD [103/103]> set DBG_PERSIST_CMD=
+<empty>

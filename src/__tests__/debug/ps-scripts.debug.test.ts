@@ -13,11 +13,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -31,8 +30,8 @@ describe('debug — PowerShell .ps1 scripts', () => {
     const srv = new WindowsPC('windows-server', 'SRV-SCR-DBG');
     pc.setCurrentUser('Administrator');
     srv.setCurrentUser('Administrator');
-    const psPc = new PowerShellExecutor(pc);
-    const psSrv = new PowerShellExecutor(srv);
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     // Two scripts authored as raw strings (PowerShell-friendly).  We use
     // `\`` line-joining sparingly; multi-line scripts go through a single
@@ -209,10 +208,15 @@ describe('debug — PowerShell .ps1 scripts', () => {
       'Test-Path C:\\Scripts',
     ];
 
-    await runAndDump('ps-scripts', commands, psPc,
+    await runAndDump('ps-scripts-pc', commands, psPc,
       'host=WIN-SCR-DBG (windows-pc)');
+    // Re-run the SAME long list on the server.  The transcript will
+    // diverge wherever the engine treats `windows-server` differently
+    // (default services, accounts, build number, etc.).
+    await runAndDump('ps-scripts-server', commands, psSrv,
+      'host=SRV-SCR-DBG (windows-server)');
 
-    // ── secondary pass on Windows Server: write & run several scripts ──
+    // ── extra server-only pass: scripts authored on C:\\ServerScripts ──
     const srvCommands: DebugCommandInput[] = [
       { section: 'server (windows-server)', cmd: 'New-Item -Path C:\\ServerScripts -ItemType Directory -Force' },
       'Test-Path C:\\ServerScripts',
@@ -265,11 +269,11 @@ describe('debug — PowerShell .ps1 scripts', () => {
       'Remove-Item C:\\ServerScripts -Recurse -Force',
       'Test-Path C:\\ServerScripts',
     ];
-    await runAndDump('ps-scripts-server', srvCommands, psSrv,
+    await runAndDump('ps-scripts-server-extras', srvCommands, psSrv,
       'host=SRV-SCR-DBG (windows-server)');
 
     expect(commands.length + srvCommands.length).toBeGreaterThanOrEqual(100);
-  }, 180_000);
+  }, 300_000);
 });
 
 /**

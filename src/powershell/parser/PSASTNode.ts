@@ -29,6 +29,7 @@ export interface ASTBase {
 export interface PSProgram extends ASTBase {
   type: 'Program';
   body: PSStatementList;
+  paramBlock?: PSParamBlock | null;
 }
 
 // ─── Statement List ───────────────────────────────────────────────────────────

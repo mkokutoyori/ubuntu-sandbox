@@ -1375,10 +1375,30 @@ export class PSRuntime {
       const tname = psValueToString(target ?? '').toLowerCase();
       // Dot-source a registered script file
       if (dotSource) {
-        const scriptContent = this.scriptRegistry.get(tname)
+        let scriptContent = this.scriptRegistry.get(tname)
           ?? this.scriptRegistry.get(tname.replace(/^.*[/\\]/, '')); // try basename
+        // Fall back to the device filesystem so `. C:\Scripts\fn.ps1` works
+        // for files created via Set-Content / New-Item.
+        if (!scriptContent && this.providers.filesystem) {
+          try { scriptContent = this.providers.filesystem.readFile(psValueToString(target ?? '')); }
+          catch { /* no such file */ }
+        }
         if (scriptContent) {
           const ast = this.parseCached(scriptContent);
+          // Dot-source binds param() in the caller scope (no child env) so
+          // `. script.ps1 -X foo` leaves $X visible to subsequent statements.
+          if (ast.paramBlock) {
+            const remaining = [...positional];
+            for (const p of ast.paramBlock.parameters) {
+              const pname = (p.name as { varName?: string; name?: string }).varName
+                         ?? (p.name as { name?: string }).name ?? '';
+              const pkey = pname.toLowerCase();
+              if (named[pkey] !== undefined) env.set(pname, named[pkey]);
+              else if (remaining.length > 0) env.set(pname, remaining.shift()!);
+              else if (p.defaultValue) env.set(pname, this.evalExpr(p.defaultValue, env));
+              else env.set(pname, null);
+            }
+          }
           return this.execStatementList(ast.body, env);
         }
         // No registered script — silently return null (file not found in simulator)
@@ -1388,12 +1408,54 @@ export class PSRuntime {
       if (tfn) {
         return this.callUserFunction(tfn, named, positional, env, pipeInput);
       }
+      // `& C:\path\to\script.ps1 args...` — invoke a script file as if it
+      // were a function. Param block / pipeline behave like a normal call.
+      if (/\.ps1$/i.test(tname) && this.providers.filesystem) {
+        let scriptContent: string | undefined;
+        try { scriptContent = this.providers.filesystem.readFile(psValueToString(target ?? '')); }
+        catch { scriptContent = undefined; }
+        if (scriptContent) {
+          const ast = this.parseCached(scriptContent);
+          const block: PSScriptBlock = {
+            type: 'ScriptBlock',
+            paramBlock: ast.paramBlock ?? null,
+            beginBlock: null,
+            processBlock: null,
+            endBlock: null,
+            body: ast.body,
+            position: ast.position,
+          } as PSScriptBlock;
+          return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+        }
+      }
       return this.dispatchCmdlet(tname, positional, named, pipeInput, env);
     }
 
     // User-defined function
     const fn = this.functions.get(lname);
     if (fn) return this.callUserFunction(fn, named, positional, env, pipeInput);
+
+    // Script-file invocation: `C:\foo\bar.ps1 -X y` (with or without a leading
+    // `&`, since parseCommandName silently consumes the ampersand). Loads the
+    // file from the device filesystem and invokes it like a function.
+    if (/\.ps1$/i.test(lname) && this.providers.filesystem) {
+      let scriptContent: string | undefined;
+      try { scriptContent = this.providers.filesystem.readFile(rawName); }
+      catch { scriptContent = undefined; }
+      if (scriptContent) {
+        const ast = this.parseCached(scriptContent);
+        const block: PSScriptBlock = {
+          type: 'ScriptBlock',
+          paramBlock: ast.paramBlock ?? null,
+          beginBlock: null,
+          processBlock: null,
+          endBlock: null,
+          body: ast.body,
+          position: ast.position,
+        } as PSScriptBlock;
+        return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+      }
+    }
 
     // Registry dispatch
     return this.dispatchCmdlet(lname, positional, named, pipeInput, env);
@@ -1724,6 +1786,8 @@ export class PSRuntime {
         self.invokeScriptBlock(block, namedV, posV, env2, $under),
       callCmdlet: (name, pos, namedP, pipe, env2) =>
         self.dispatchCmdlet(name, pos, namedP, pipe, env2),
+      listCmdlets: () =>
+        self.registry.cmdlets().map(c => ({ name: c.name, aliases: c.aliases })),
     };
 
     return {

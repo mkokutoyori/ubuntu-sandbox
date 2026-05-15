@@ -276,10 +276,23 @@ export class WindowsPC extends EndHost {
       case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
       case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
       case 'runas':   return this.cmdRunas(args);
+      case 'vol':     return this.cmdVol(args);
+      case 'chcp':    return this.cmdChcp(args);
+      case 'date':    return this.cmdDate(args);
+      case 'time':    return this.cmdTime(args);
+      case 'start':   return this.cmdStart(args);
+      case 'setx':    return this.cmdSetx(args);
+      case 'schtasks': return this.cmdSchtasks(args);
+      case 'nbtstat': return this.cmdNbtstat(args);
+      case 'wmic':    return this.cmdWmic(args);
+      case 'reg':     return this.cmdReg(args);
     }
 
-    // net user / net localgroup / net start / net stop
-    if (cmd === 'net' && args.length > 0) {
+    // net user / net localgroup / net start / net stop / net help
+    if (cmd === 'net') {
+      if (args.length === 0) {
+        return 'The syntax of this command is:\n\nNET\n    [ ACCOUNTS | COMPUTER | CONFIG | CONTINUE | FILE | GROUP | HELP |\n      HELPMSG | LOCALGROUP | PAUSE | SESSION | SHARE | START |\n      STATISTICS | STOP | TIME | USE | USER | VIEW ]';
+      }
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
       const netCtx2 = { hostname: this.hostname, userManager: this.userMgr };
@@ -288,6 +301,14 @@ export class WindowsPC extends EndHost {
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
+      if (subCmd === 'help' || subCmd === '/?' || subCmd === '-?') {
+        const topic = (subArgs[0] ?? '').toLowerCase();
+        if (!topic) {
+          return 'The following commands are available:\n\nNET ACCOUNTS         NET HELPMSG       NET STATISTICS\nNET COMPUTER         NET LOCALGROUP    NET STOP\nNET CONFIG           NET PAUSE         NET TIME\nNET CONTINUE         NET SESSION       NET USE\nNET FILE             NET SHARE         NET USER\nNET GROUP            NET START         NET VIEW\nNET HELP             NET HELPMSG       NET HELP SERVICES';
+        }
+        return `The syntax of this command is:\n\nNET ${topic.toUpperCase()} [...]`;
+      }
+      return `The syntax of this command is:\n\nNET ${subCmd.toUpperCase()} [...]`;
     }
 
     // Network commands (use network context)
@@ -616,6 +637,11 @@ export class WindowsPC extends EndHost {
     const lower = cmd.toLowerCase();
     if (lower === 'systeminfo') return this.cmdSysteminfo();
     if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    if (lower === 'hostname') return this.hostname;
+    if (lower === 'vol')  return this.cmdVol(args);
+    if (lower === 'chcp') return this.cmdChcp(args);
+    if (lower === 'date') return this.cmdDate(args);
+    if (lower === 'time') return this.cmdTime(args);
     // `net` is a multi-subcommand router — all its subhandlers are sync
     // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
     if (lower === 'net' && args.length > 0) {
@@ -675,6 +701,7 @@ export class WindowsPC extends EndHost {
   getFileSystem(): WindowsFileSystem { return this.fs; }
   getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
+  setCwd(path: string): void { this.cwd = path; }
   getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
     const cfg = this.dnsConfig.get(ifName);
@@ -683,6 +710,153 @@ export class WindowsPC extends EndHost {
 
   setDnsServers(ifName: string, servers: string[]): void {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  /**
+   * vol — print volume label + serial.  Real cmd output:
+   *   Volume in drive C has no label.
+   *   Volume Serial Number is XXXX-XXXX
+   */
+  private cmdVol(args: string[]): string {
+    const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
+    const letter = arg.charAt(0) || 'C';
+    // Deterministic serial so transcripts diff cleanly across runs of the same host.
+    let h = 0;
+    for (const c of this.hostname + ':' + letter) h = ((h * 31) + c.charCodeAt(0)) & 0xffffffff;
+    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    const serial = `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    return [
+      ` Volume in drive ${letter} has no label.`,
+      ` Volume Serial Number is ${serial}`,
+    ].join('\n');
+  }
+
+  /** chcp — print/set active code page.  Defaults to 65001 (UTF-8). */
+  private cmdChcp(args: string[]): string {
+    if (args.length === 0) return 'Active code page: 65001';
+    const cp = parseInt(args[0], 10);
+    if (isNaN(cp)) return 'Invalid code page';
+    return `Active code page: ${cp}`;
+  }
+
+  /** date /t — print today's date in MM/DD/YYYY (en-US). */
+  private cmdDate(args: string[]): string {
+    const wantOnly = args.includes('/t') || args.includes('/T');
+    void wantOnly;
+    const d = new Date();
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dow = days[d.getDay()];
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dow} ${mm}/${dd}/${yyyy}`;
+  }
+
+  /** time /t — print current time in h:mm AM/PM (en-US). */
+  private cmdTime(_args: string[]): string {
+    const d = new Date();
+    const h24 = d.getHours();
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const tt = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${min} ${tt}`;
+  }
+
+  /** `start <program>` — simulator stub: returns silently (real cmd
+   *  detaches a new process and returns immediately). */
+  private cmdStart(_args: string[]): string {
+    return '';
+  }
+
+  /** `setx VAR VALUE [/M]` — persists an environment variable. */
+  private cmdSetx(args: string[]): string {
+    const machine = args.some(a => a.toUpperCase() === '/M');
+    const filtered = args.filter(a => a.toUpperCase() !== '/M');
+    if (filtered.length < 2) {
+      return 'ERROR: Invalid syntax. Type "SETX /?" for usage.';
+    }
+    const name = filtered[0];
+    const value = filtered.slice(1).join(' ').replace(/^"(.*)"$/, '$1');
+    this.env.set(name, value);
+    return machine
+      ? `SUCCESS: Specified value was saved.`
+      : `SUCCESS: Specified value was saved.`;
+  }
+
+  /** `schtasks /query [/tn NAME]` — minimal stub: empty task list. */
+  private cmdSchtasks(args: string[]): string {
+    const action = args[0]?.toLowerCase();
+    if (action === '/query') {
+      return [
+        'Folder: \\',
+        'TaskName                                 Next Run Time          Status',
+        '======================================== ====================== ===============',
+      ].join('\n');
+    }
+    if (action === '/create' || action === '/delete' || action === '/run' || action === '/end') {
+      return 'SUCCESS: The scheduled task was created/modified successfully.';
+    }
+    return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
+  }
+
+  /** `nbtstat -n / -a / -A` — returns a minimal local NetBIOS name table. */
+  private cmdNbtstat(args: string[]): string {
+    const flag = args[0]?.toLowerCase();
+    if (flag === '-n') {
+      return [
+        '',
+        '    Node IpAddress: [0.0.0.0] Scope Id: []',
+        '',
+        '                       NetBIOS Local Name Table',
+        '',
+        '       Name               Type         Status',
+        '    ---------------------------------------------',
+        `    ${this.hostname.toUpperCase().padEnd(16)} <00>  UNIQUE      Registered`,
+        `    WORKGROUP        <00>  GROUP       Registered`,
+        '',
+      ].join('\n');
+    }
+    return 'NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]';
+  }
+
+  /** `wmic logicaldisk get name` / minimal WMI stub. */
+  private cmdWmic(args: string[]): string {
+    if (args.length === 0) return 'wmic:root\\cli>';
+    const joined = args.join(' ').toLowerCase();
+    if (joined.includes('logicaldisk') && joined.includes('get name')) {
+      return 'Name  \nC:    ';
+    }
+    if (joined.includes('os get caption')) {
+      return 'Caption                              \nMicrosoft Windows 10 Enterprise      ';
+    }
+    if (joined.includes('cpu get name')) {
+      return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
+    }
+    return '';
+  }
+
+  /** `reg query | add | delete` — minimal stub that acknowledges the
+   *  command. The simulator's registry is exposed via PowerShell's
+   *  Registry provider; this cmd wrapper just keeps scripts from
+   *  hard-crashing when they shell out to `reg.exe`. */
+  private cmdReg(args: string[]): string {
+    if (args.length === 0) {
+      return 'ERROR: Invalid syntax. Type "REG /?" for usage.';
+    }
+    const action = args[0].toLowerCase();
+    const key = args[1] ?? '';
+    if (action === 'query') {
+      // Acknowledge — produce an empty-but-valid query result. Real
+      // tools may parse the header; we keep the shape.
+      return `\n${key}\n`;
+    }
+    if (action === 'add' || action === 'delete' || action === 'copy'
+        || action === 'save' || action === 'restore' || action === 'load'
+        || action === 'unload' || action === 'compare' || action === 'export'
+        || action === 'import' || action === 'flags') {
+      return 'The operation completed successfully.';
+    }
+    return 'ERROR: Invalid syntax.';
   }
 
   /** nslookup command implementation for Windows */

@@ -544,6 +544,33 @@ export function selectString(objects: PSObject[], args: string): PSObject[] {
 // ─── Formatters ──────────────────────────────────────────────────
 
 /**
+ * Render a single property value the way real PowerShell does for the
+ * default `Out-Default` / `Format-Table` / `Format-List` pipeline:
+ *   - Date  → en-US short date + short time, e.g. "5/15/2026 11:10 AM"
+ *   - bool  → "True" / "False"
+ *   - null / undefined → "" (empty cell)
+ *   - everything else → String(value)
+ */
+export function renderPSCellValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  if (value instanceof Date) {
+    // PowerShell short date + short time, en-US culture.
+    // Example: "5/15/2026 11:10 AM"
+    const m  = value.getMonth() + 1;
+    const d  = value.getDate();
+    const y  = value.getFullYear();
+    const h24 = value.getHours();
+    const min = value.getMinutes();
+    const tt  = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
+  }
+  return String(value);
+}
+
+/**
  * Format-Table: format PSObject[] as an aligned table with headers.
  *
  * Supports:
@@ -579,6 +606,19 @@ export function formatTable(objects: PSObject[], args: string): string {
   // Determine columns
   const columns = properties || Object.keys(objects[0]);
 
+  // Cell-render helper that suppresses Length on directory rows
+  // (matches PS native FormatPS1XML behaviour for FileSystem).
+  const cellValue = (obj: PSObject, col: string): { raw: unknown; text: string } => {
+    const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
+    const raw = obj[key];
+    if (col.toLowerCase() === 'length') {
+      const modeKey = Object.keys(obj).find(k => k.toLowerCase() === 'mode');
+      const mode = modeKey ? String(obj[modeKey] ?? '') : '';
+      if (mode.startsWith('d')) return { raw: null, text: '' };
+    }
+    return { raw, text: renderPSCellValue(raw) };
+  };
+
   // Calculate column widths
   const widths: Record<string, number> = {};
   for (const col of columns) {
@@ -586,9 +626,8 @@ export function formatTable(objects: PSObject[], args: string): string {
   }
   for (const obj of objects) {
     for (const col of columns) {
-      const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
-      const val = String(obj[key] ?? '');
-      widths[col] = Math.max(widths[col], val.length);
+      const { text } = cellValue(obj, col);
+      widths[col] = Math.max(widths[col], text.length);
     }
   }
 
@@ -602,12 +641,10 @@ export function formatTable(objects: PSObject[], args: string): string {
 
   for (const obj of objects) {
     const row = columns.map(col => {
-      const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
-      const raw = obj[key];
-      const val = raw === true ? 'True' : raw === false ? 'False' : String(raw ?? '');
-      // Right-align numbers
-      if (typeof raw === 'number') return val.padStart(widths[col]);
-      return val.padEnd(widths[col]);
+      const { raw, text } = cellValue(obj, col);
+      // Right-align numbers and Date values (PS convention)
+      if (typeof raw === 'number' || raw instanceof Date) return text.padStart(widths[col]);
+      return text.padEnd(widths[col]);
     }).join('  ');
     lines.push(row);
   }
@@ -650,7 +687,7 @@ export function formatList(objects: PSObject[], args: string): string {
     const maxKeyLen = Math.max(...keys.map(k => k.length));
     const pairs = keys.map(k => {
       const key = Object.keys(obj).find(ok => ok.toLowerCase() === k.toLowerCase()) || k;
-      return `${k.padEnd(maxKeyLen)} : ${String(obj[key] ?? '')}`;
+      return `${k.padEnd(maxKeyLen)} : ${renderPSCellValue(obj[key])}`;
     });
     blocks.push(pairs.join('\n'));
   }

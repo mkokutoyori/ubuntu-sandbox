@@ -8,11 +8,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -26,8 +25,8 @@ describe('debug — PowerShell local accounts & groups', () => {
     const srv = new WindowsPC('windows-server', 'SRV-USR-DBG');
     pc.setCurrentUser('Administrator');
     srv.setCurrentUser('Administrator');
-    const psPc = new PowerShellExecutor(pc);
-    const psSrv = new PowerShellExecutor(srv);
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     const commands: DebugCommandInput[] = [
       // ── 1. baseline enumeration ───────────────────────────────────
@@ -161,31 +160,11 @@ describe('debug — PowerShell local accounts & groups', () => {
       '$env:COMPUTERNAME',
     ];
 
-    await runAndDump('ps-users-groups', commands, psPc, 'host=WIN-USR-DBG (windows-pc)');
-
-    // ── secondary pass on the Windows Server ───────────────────────
-    const srvCommands: DebugCommandInput[] = [
-      { section: 'baseline (server)', cmd: 'Get-LocalUser' },
-      'Get-LocalGroup',
-      'New-LocalUser -Name svc-deploy -NoPassword -Description "Deployment service account"',
-      'New-LocalUser -Name svc-monitor -NoPassword -Description "Monitoring service account"',
-      'New-LocalGroup -Name Deployers -Description "CI/CD"',
-      'Add-LocalGroupMember -Group Deployers -Member svc-deploy',
-      'Add-LocalGroupMember -Group Deployers -Member svc-monitor',
-      'Get-LocalGroupMember -Group Deployers | Format-Table Name, ObjectClass -AutoSize',
-      'Get-LocalUser | Where-Object { $_.Name -like "svc-*" } | Format-Table Name, Description',
-      'Set-LocalUser -Name svc-monitor -Description "Read-only monitoring agent"',
-      '(Get-LocalUser -Name svc-monitor).Description',
-      'Remove-LocalGroupMember -Group Deployers -Member svc-monitor',
-      'Remove-LocalUser -Name svc-monitor',
-      'Remove-LocalUser -Name svc-deploy',
-      'Remove-LocalGroup -Name Deployers',
-      '$env:COMPUTERNAME',
-      'whoami',
-    ];
-    await runAndDump('ps-users-groups-server', srvCommands, psSrv,
+    await runAndDump('ps-users-groups-pc', commands, psPc,
+      'host=WIN-USR-DBG (windows-pc)');
+    await runAndDump('ps-users-groups-server', commands, psSrv,
       'host=SRV-USR-DBG (windows-server)');
 
-    expect(commands.length + srvCommands.length).toBeGreaterThanOrEqual(100);
-  }, 120_000);
+    expect(commands.length).toBeGreaterThanOrEqual(100);
+  }, 240_000);
 });

@@ -30,6 +30,7 @@ function toPSObject(p: ProcessInfo): Record<string, PSValue> {
     'PM(K)':        Math.floor(p.pmK / 1024),
     'WS(K)':        Math.floor(p.wsK),
     'CPU(s)':       p.cpuSec,
+    CPU:            p.cpuSec,
     Id:             p.pid,
     SI:             p.sessionId,
     ProcessName:    baseName,

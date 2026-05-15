@@ -7,11 +7,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -20,10 +19,13 @@ beforeEach(() => {
 });
 
 describe('debug — PowerShell registry & env', () => {
-  it('runs registry/env/variable cmdlets and writes the transcript', async () => {
+  it('runs registry/env/variable cmdlets on PC + Server', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN-REG-DBG');
+    const srv = new WindowsPC('windows-server', 'SRV-REG-DBG');
     pc.setCurrentUser('Administrator');
-    const ps = new PowerShellExecutor(pc);
+    srv.setCurrentUser('Administrator');
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     const commands: DebugCommandInput[] = [
       // ── 1. registry navigation ────────────────────────────────────
@@ -166,8 +168,10 @@ describe('debug — PowerShell registry & env', () => {
       '$env:DEBUG_SIM',
     ];
 
-    await runAndDump('ps-registry-env', commands, ps,
+    await runAndDump('ps-registry-env-pc', commands, psPc,
       'host=WIN-REG-DBG (windows-pc)');
+    await runAndDump('ps-registry-env-server', commands, psSrv,
+      'host=SRV-REG-DBG (windows-server)');
     expect(commands.length).toBeGreaterThanOrEqual(100);
-  }, 120_000);
+  }, 180_000);
 });

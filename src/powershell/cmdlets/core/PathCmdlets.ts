@@ -138,10 +138,14 @@ export class GetChildItemCmdlet implements ICmdlet {
       const out: PSValue[] = entries.map(e => ({
         Name: e.name,
         FullName: `${dir}\\${e.name}`,
-        Length: e.size,
+        // Real PowerShell's DirectoryInfo has no `Length` — Format-Table
+        // renders an empty cell.  Setting it to null reproduces that
+        // visually; downstream `Where-Object { $_.Length -gt 0 }` keeps
+        // working because PS coerces null → 0.
+        Length: e.isDirectory ? null : e.size,
         // Real PS uses a 6-char `darhsl` mode column. Plain files have the
-// archive bit on (-a----); plain directories show only d (d-----).
-Mode: e.isDirectory ? 'd-----' : '-a----',
+        // archive bit on (-a----); plain directories show only d (d-----).
+        Mode: e.isDirectory ? 'd-----' : '-a----',
         PSIsContainer: e.isDirectory,
         LastWriteTime: e.mtime,
       } as Record<string, PSValue>));

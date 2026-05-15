@@ -1,8 +1,8 @@
 ============================================================
-Shell debug transcript — ps-network-server
-Generated: 2026-05-15T16:30:42.226Z
+Shell debug transcript — ps-network-pc
+Generated: 2026-05-15T16:30:42.168Z
 Engine: powershell
-host=SRV-NET-DBG (windows-server)
+host=WIN-NET-DBG (windows-pc)
 Total commands: 101
 ============================================================
 
@@ -12,38 +12,38 @@ PS [1/101]> Get-NetAdapter
   
   Name  InterfaceDescription  Status  MacAddress         LinkSpeed
   ----  --------------------  ------  -----------------  ---------
-  eth0  eth0                  Up      02:00:00:00:00:05  1 Gbps   
-  eth1  eth1                  Up      02:00:00:00:00:06  1 Gbps   
-  eth2  eth2                  Up      02:00:00:00:00:07  1 Gbps   
-  eth3  eth3                  Up      02:00:00:00:00:08  1 Gbps   
+  eth0  eth0                  Up      02:00:00:00:00:01  1 Gbps   
+  eth1  eth1                  Up      02:00:00:00:00:02  1 Gbps   
+  eth2  eth2                  Up      02:00:00:00:00:03  1 Gbps   
+  eth3  eth3                  Up      02:00:00:00:00:04  1 Gbps   
   
 
 PS [2/101]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -AutoSize
   Name            Status          MacAddress      LinkSpeed      
   --------------- --------------- --------------- ---------------
-  eth0            Up              02:00:00:00:00:05 1 Gbps         
-  eth1            Up              02:00:00:00:00:06 1 Gbps         
-  eth2            Up              02:00:00:00:00:07 1 Gbps         
-  eth3            Up              02:00:00:00:00:08 1 Gbps         
+  eth0            Up              02:00:00:00:00:01 1 Gbps         
+  eth1            Up              02:00:00:00:00:02 1 Gbps         
+  eth2            Up              02:00:00:00:00:03 1 Gbps         
+  eth3            Up              02:00:00:00:00:04 1 Gbps         
 
 PS [3/101]> Get-NetAdapter | Sort-Object Name
   
   Name  InterfaceDescription  Status  MacAddress         LinkSpeed
   ----  --------------------  ------  -----------------  ---------
-  eth0  eth0                  Up      02:00:00:00:00:05  1 Gbps   
-  eth1  eth1                  Up      02:00:00:00:00:06  1 Gbps   
-  eth2  eth2                  Up      02:00:00:00:00:07  1 Gbps   
-  eth3  eth3                  Up      02:00:00:00:00:08  1 Gbps   
+  eth0  eth0                  Up      02:00:00:00:00:01  1 Gbps   
+  eth1  eth1                  Up      02:00:00:00:00:02  1 Gbps   
+  eth2  eth2                  Up      02:00:00:00:00:03  1 Gbps   
+  eth3  eth3                  Up      02:00:00:00:00:04  1 Gbps   
   
 
 PS [4/101]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" }
   
   Name  InterfaceDescription  Status  MacAddress         LinkSpeed
   ----  --------------------  ------  -----------------  ---------
-  eth0  eth0                  Up      02:00:00:00:00:05  1 Gbps   
-  eth1  eth1                  Up      02:00:00:00:00:06  1 Gbps   
-  eth2  eth2                  Up      02:00:00:00:00:07  1 Gbps   
-  eth3  eth3                  Up      02:00:00:00:00:08  1 Gbps   
+  eth0  eth0                  Up      02:00:00:00:00:01  1 Gbps   
+  eth1  eth1                  Up      02:00:00:00:00:02  1 Gbps   
+  eth2  eth2                  Up      02:00:00:00:00:03  1 Gbps   
+  eth3  eth3                  Up      02:00:00:00:00:04  1 Gbps   
   
 
 PS [5/101]> Get-NetAdapter | Where-Object { $_.Status -ne "Up" }
@@ -199,7 +199,7 @@ PS [19/101]> ipconfig
 PS [20/101]> ipconfig /all
   Windows IP Configuration
   
-     Host Name . . . . . . . . . . . . : SRV-NET-DBG
+     Host Name . . . . . . . . . . . . : WIN-NET-DBG
      Primary Dns Suffix  . . . . . . . : 
      Node Type . . . . . . . . . . . . : Hybrid
      IP Routing Enabled. . . . . . . . : No
@@ -210,7 +210,7 @@ PS [20/101]> ipconfig /all
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
-     Physical Address. . . . . . . . . : 02-00-00-00-00-05
+     Physical Address. . . . . . . . . : 02-00-00-00-00-01
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
@@ -219,7 +219,7 @@ PS [20/101]> ipconfig /all
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
-     Physical Address. . . . . . . . . : 02-00-00-00-00-06
+     Physical Address. . . . . . . . . : 02-00-00-00-00-02
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
@@ -228,7 +228,7 @@ PS [20/101]> ipconfig /all
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
-     Physical Address. . . . . . . . . : 02-00-00-00-00-07
+     Physical Address. . . . . . . . . : 02-00-00-00-00-03
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
@@ -237,7 +237,7 @@ PS [20/101]> ipconfig /all
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
-     Physical Address. . . . . . . . . : 02-00-00-00-00-08
+     Physical Address. . . . . . . . . : 02-00-00-00-00-04
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
@@ -285,10 +285,10 @@ PS [26/101]> arp -a
 PS [27/101]> route print
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...02 00 00 00 00 01 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 02 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 03 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 04 ......Intel(R) Ethernet Connection #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -303,10 +303,10 @@ PS [27/101]> route print
 PS [28/101]> route print -4
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...02 00 00 00 00 01 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 02 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 03 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 04 ......Intel(R) Ethernet Connection #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -319,15 +319,15 @@ PS [28/101]> route print -4
     None
 
 PS [29/101]> hostname
-  SRV-NET-DBG
+  WIN-NET-DBG
 
 PS [30/101]> getmac
   Physical Address  Transport Name    
   ================= ==================
-  02-00-00-00-00-05 Media disconnected
-  02-00-00-00-00-06 Media disconnected
-  02-00-00-00-00-07 Media disconnected
-  02-00-00-00-00-08 Media disconnected
+  02-00-00-00-00-01 Media disconnected
+  02-00-00-00-00-02 Media disconnected
+  02-00-00-00-00-03 Media disconnected
+  02-00-00-00-00-04 Media disconnected
 
 
 --- [31] § connectivity ---
@@ -688,7 +688,7 @@ PS [84/101]> Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction Sile
 
 --- [85] § native command coverage ---
 PS [85/101]> systeminfo
-  Host Name:                 SRV-NET-DBG
+  Host Name:                 WIN-NET-DBG
   OS Name:                   Microsoft Windows 10 Pro
   OS Version:                10.0.22631 N/A Build 22631
   OS Manufacturer:           Microsoft Corporation
@@ -715,7 +715,7 @@ PS [86/101]> ver
   
 
 PS [87/101]> whoami
-  srv-net-dbg\administrator
+  win-net-dbg\administrator
 
 PS [88/101]> whoami /user
   
@@ -724,7 +724,7 @@ PS [88/101]> whoami /user
   
   User Name                        SID
   ================================= ===============================================
-  srv-net-dbg\administrator         S-1-5-21-3623811015-3361044348-30300820-500
+  win-net-dbg\administrator         S-1-5-21-3623811015-3361044348-30300820-500
 
 PS [89/101]> net config workstation
   The syntax of this command is:
@@ -749,7 +749,7 @@ PS [92/101]> nbtstat -n
   
          Name               Type         Status
       ---------------------------------------------
-      SRV-NET-DBG      <00>  UNIQUE      Registered
+      WIN-NET-DBG      <00>  UNIQUE      Registered
       WORKGROUP        <00>  GROUP       Registered
   
 
@@ -776,10 +776,10 @@ PS [97/101]> (Get-NetAdapter).Count
   4
 
 PS [98/101]> $env:COMPUTERNAME
-  SRV-NET-DBG
+  WIN-NET-DBG
 
 PS [99/101]> hostname
-  SRV-NET-DBG
+  WIN-NET-DBG
 
 PS [100/101]> Get-Date
   5/15/2026 4:30 PM

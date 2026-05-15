@@ -1,0 +1,2488 @@
+============================================================
+Coherence debug transcript — coherence-cmd-commands-server
+Generated: 2026-05-15T16:30:39.388Z
+host=SRV-CMD-COH (windows-server)
+Total commands: 200
+============================================================
+
+
+--- [1] § echo / output ---
+CMD [1/200]> echo hello world
+  hello world
+
+PS  [2/200]> echo hello world
+  hello
+
+CMD [3/200]> echo %COMPUTERNAME%
+  SRV-CMD-COH
+
+PS  [4/200]> echo %COMPUTERNAME%
+<empty>
+
+CMD [5/200]> echo %USERNAME%
+  Administrator
+
+PS  [6/200]> echo %USERNAME%
+<empty>
+
+CMD [7/200]> echo %CD%
+  C:\Users\User
+
+PS  [8/200]> echo %CD%
+<empty>
+
+
+--- [9] § ver / version ---
+CMD [9/200]> ver
+  
+  Microsoft Windows [Version 10.0.22631.6649]
+
+PS  [10/200]> ver
+  
+  Microsoft Windows [Version 10.0.19041.4412]
+  
+
+CMD [11/200]> hostname
+  SRV-CMD-COH
+
+PS  [12/200]> hostname
+  SRV-CMD-COH
+
+CMD [13/200]> whoami
+  srv-cmd-coh\administrator
+
+PS  [14/200]> whoami
+  srv-cmd-coh\administrator
+
+CMD [15/200]> whoami /user
+  
+  USER INFORMATION
+  ----------------
+  
+  User Name                        SID
+  ================================= ===============================================
+  srv-cmd-coh\administrator         S-1-5-21-3623811015-3361044348-30300820-500
+
+PS  [16/200]> whoami /user
+  
+  USER INFORMATION
+  ----------------
+  
+  User Name                        SID
+  ================================= ===============================================
+  srv-cmd-coh\administrator         S-1-5-21-3623811015-3361044348-30300820-500
+
+CMD [17/200]> date /t
+  Fri 05/15/2026
+
+PS  [18/200]> date /t
+  Fri 05/15/2026
+
+CMD [19/200]> time /t
+  4:30 PM
+
+PS  [20/200]> time /t
+  4:30 PM
+
+
+--- [21] § filesystem builtins ---
+CMD [21/200]> cd C:\
+<empty>
+
+PS  [22/200]> cd C:\
+<empty>
+
+CMD [23/200]> cd
+  C:\
+
+PS  [24/200]> cd
+<empty>
+
+CMD [25/200]> dir C:\
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          $Recycle.Bin
+  05/15/2026  04:30 PM    <DIR>          PerfLogs
+  05/15/2026  04:30 PM    <DIR>          Program Files
+  05/15/2026  04:30 PM    <DIR>          Program Files (x86)
+  05/15/2026  04:30 PM    <DIR>          ProgramData
+  05/15/2026  04:30 PM    <DIR>          System Volume Information
+  05/15/2026  04:30 PM    <DIR>          Users
+  05/15/2026  04:30 PM    <DIR>          Windows
+  05/15/2026  04:30 PM              9 numbers.txt
+  05/15/2026  04:30 PM              9 nums.txt
+                 2 File(s) 18 bytes
+                 10 Dir(s)  53,687,091,200 bytes free
+
+PS  [26/200]> dir C:\
+  
+  Mode    LastWriteTime      Length  Name                     
+  ------  -----------------  ------  -------------------------
+  d-----  5/15/2026 4:30 PM          $Recycle.Bin             
+  d-----  5/15/2026 4:30 PM          PerfLogs                 
+  d-----  5/15/2026 4:30 PM          Program Files            
+  d-----  5/15/2026 4:30 PM          Program Files (x86)      
+  d-----  5/15/2026 4:30 PM          ProgramData              
+  d-----  5/15/2026 4:30 PM          System Volume Information
+  d-----  5/15/2026 4:30 PM          Users                    
+  d-----  5/15/2026 4:30 PM          Windows                  
+  -a----  5/15/2026 4:30 PM       9  numbers.txt              
+  -a----  5/15/2026 4:30 PM       9  nums.txt                 
+  
+
+CMD [27/200]> dir C:\ /b
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          $Recycle.Bin
+  05/15/2026  04:30 PM    <DIR>          PerfLogs
+  05/15/2026  04:30 PM    <DIR>          Program Files
+  05/15/2026  04:30 PM    <DIR>          Program Files (x86)
+  05/15/2026  04:30 PM    <DIR>          ProgramData
+  05/15/2026  04:30 PM    <DIR>          System Volume Information
+  05/15/2026  04:30 PM    <DIR>          Users
+  05/15/2026  04:30 PM    <DIR>          Windows
+  05/15/2026  04:30 PM              9 numbers.txt
+  05/15/2026  04:30 PM              9 nums.txt
+                 2 File(s) 18 bytes
+                 10 Dir(s)  53,687,091,200 bytes free
+
+PS  [28/200]> dir C:\ /b
+  
+      Directory: C:\
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  d-----                5/15/2026   4:30 PM                Program Files
+  d-----                5/15/2026   4:30 PM                Program Files (x86)
+  d-----                5/15/2026   4:30 PM                ProgramData
+  d-----                5/15/2026   4:30 PM                Users
+  d---s-                5/15/2026   4:30 PM                Windows
+  -a----                5/15/2026   4:30 PM              9 numbers.txt
+  -a----                5/15/2026   4:30 PM              9 nums.txt
+
+CMD [29/200]> dir C:\ /s /b
+   Volume in drive C has no label.
+   Volume Serial Number is A4E2-1B3F
+  
+   Directory of C:\
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          $Recycle.Bin
+  05/15/2026  04:30 PM    <DIR>          PerfLogs
+  05/15/2026  04:30 PM    <DIR>          Program Files
+  05/15/2026  04:30 PM    <DIR>          Program Files (x86)
+  05/15/2026  04:30 PM    <DIR>          ProgramData
+  05/15/2026  04:30 PM    <DIR>          System Volume Information
+  05/15/2026  04:30 PM    <DIR>          Users
+  05/15/2026  04:30 PM    <DIR>          Windows
+  05/15/2026  04:30 PM              9 numbers.txt
+  05/15/2026  04:30 PM              9 nums.txt
+                 2 File(s) 18 bytes
+                 10 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\$Recycle.Bin
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\PerfLogs
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Common Files
+  05/15/2026  04:30 PM    <DIR>          Internet Explorer
+  05/15/2026  04:30 PM    <DIR>          Windows Defender
+  05/15/2026  04:30 PM    <DIR>          Windows NT
+  05/15/2026  04:30 PM            174 desktop.ini
+                 1 File(s) 174 bytes
+                 6 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files\Common Files
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files\Internet Explorer
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files\Windows Defender
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files\Windows NT
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files (x86)
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Common Files
+  05/15/2026  04:30 PM    <DIR>          Internet Explorer
+  05/15/2026  04:30 PM            174 desktop.ini
+                 1 File(s) 174 bytes
+                 4 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files (x86)\Common Files
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Program Files (x86)\Internet Explorer
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\ProgramData
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          ssh
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\ProgramData\ssh
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM            114 ssh_host_ed25519_key
+  05/15/2026  04:30 PM             56 ssh_host_ed25519_key.pub
+  05/15/2026  04:30 PM            302 sshd_config
+                 3 File(s) 472 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\System Volume Information
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Default
+  05/15/2026  04:30 PM    <DIR>          Public
+  05/15/2026  04:30 PM    <DIR>          User
+                 0 File(s) 0 bytes
+                 5 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\Default
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\Public
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          AppData
+  05/15/2026  04:30 PM    <DIR>          Contacts
+  05/15/2026  04:30 PM    <DIR>          Desktop
+  05/15/2026  04:30 PM    <DIR>          Documents
+  05/15/2026  04:30 PM    <DIR>          Downloads
+  05/15/2026  04:30 PM    <DIR>          Favorites
+  05/15/2026  04:30 PM    <DIR>          Links
+  05/15/2026  04:30 PM    <DIR>          Music
+  05/15/2026  04:30 PM    <DIR>          OneDrive
+  05/15/2026  04:30 PM    <DIR>          Pictures
+  05/15/2026  04:30 PM    <DIR>          Saved Games
+  05/15/2026  04:30 PM    <DIR>          Searches
+  05/15/2026  04:30 PM    <DIR>          Videos
+  05/15/2026  04:30 PM      3,145,728 NTUSER.DAT
+  05/15/2026  04:30 PM        524,288 ntuser.dat.LOG1
+  05/15/2026  04:30 PM             20 ntuser.ini
+                 3 File(s) 3,670,036 bytes
+                 15 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\AppData
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Local
+  05/15/2026  04:30 PM    <DIR>          Roaming
+                 0 File(s) 0 bytes
+                 4 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\AppData\Local
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Microsoft
+  05/15/2026  04:30 PM    <DIR>          Temp
+                 0 File(s) 0 bytes
+                 4 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\AppData\Local\Microsoft
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\AppData\Local\Temp
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\AppData\Roaming
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Microsoft
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\AppData\Roaming\Microsoft
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Contacts
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Desktop
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM            282 desktop.ini
+                 1 File(s) 282 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Documents
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM            282 desktop.ini
+                 1 File(s) 282 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Downloads
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Favorites
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Links
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Music
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\OneDrive
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Documents
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\OneDrive\Documents
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Pictures
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Saved Games
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Searches
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Users\User\Videos
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Boot
+  05/15/2026  04:30 PM    <DIR>          Cursors
+  05/15/2026  04:30 PM    <DIR>          Fonts
+  05/15/2026  04:30 PM    <DIR>          Globalization
+  05/15/2026  04:30 PM    <DIR>          Help
+  05/15/2026  04:30 PM    <DIR>          INF
+  05/15/2026  04:30 PM    <DIR>          Logs
+  05/15/2026  04:30 PM    <DIR>          Microsoft.NET
+  05/15/2026  04:30 PM    <DIR>          Panther
+  05/15/2026  04:30 PM    <DIR>          Prefetch
+  05/15/2026  04:30 PM    <DIR>          System32
+  05/15/2026  04:30 PM    <DIR>          SysWOW64
+  05/15/2026  04:30 PM    <DIR>          Temp
+  05/15/2026  04:30 PM    <DIR>          WinSxS
+  05/15/2026  04:30 PM      4,883,944 explorer.exe
+  05/15/2026  04:30 PM        201,216 notepad.exe
+  05/15/2026  04:30 PM        360,448 regedit.exe
+  05/15/2026  04:30 PM             92 win.ini
+  05/15/2026  04:30 PM         10,752 write.exe
+                 5 File(s) 5,456,452 bytes
+                 16 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Boot
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Cursors
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Fonts
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Globalization
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Help
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\INF
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Logs
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Microsoft.NET
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          Framework64
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Microsoft.NET\Framework64
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Panther
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Prefetch
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          config
+  05/15/2026  04:30 PM    <DIR>          drivers
+  05/15/2026  04:30 PM    <DIR>          oobe
+  05/15/2026  04:30 PM    <DIR>          Tasks
+  05/15/2026  04:30 PM    <DIR>          wbem
+  05/15/2026  04:30 PM    <DIR>          WindowsPowerShell
+  05/15/2026  04:30 PM        696,320 advapi32.dll
+  05/15/2026  04:30 PM         15,872 attrib.exe
+  05/15/2026  04:30 PM         26,112 calc.exe
+  05/15/2026  04:30 PM        289,792 cmd.exe
+  05/15/2026  04:30 PM        862,208 conhost.exe
+  05/15/2026  04:30 PM          6,144 csrss.exe
+  05/15/2026  04:30 PM         20,480 ctfmon.exe
+  05/15/2026  04:30 PM        280,064 dism.exe
+  05/15/2026  04:30 PM         92,672 dwm.exe
+  05/15/2026  04:30 PM      4,883,944 explorer.exe
+  05/15/2026  04:30 PM         32,256 findstr.exe
+  05/15/2026  04:30 PM         45,056 fontdrvhost.exe
+  05/15/2026  04:30 PM        483,328 gdi32.dll
+  05/15/2026  04:30 PM         11,264 hostname.exe
+  05/15/2026  04:30 PM         26,624 ipconfig.exe
+  05/15/2026  04:30 PM      1,248,768 kernel32.dll
+  05/15/2026  04:30 PM         58,880 lsass.exe
+  05/15/2026  04:30 PM        147,968 mmc.exe
+  05/15/2026  04:30 PM          6,656 mspaint.exe
+  05/15/2026  04:30 PM        822,272 msvcrt.dll
+  05/15/2026  04:30 PM         62,464 net.exe
+  05/15/2026  04:30 PM        196,608 net1.exe
+  05/15/2026  04:30 PM         96,768 netsh.exe
+  05/15/2026  04:30 PM        201,216 notepad.exe
+  05/15/2026  04:30 PM         80,896 nslookup.exe
+  05/15/2026  04:30 PM      2,027,520 ntdll.dll
+  05/15/2026  04:30 PM      1,503,232 ole32.dll
+  05/15/2026  04:30 PM         22,528 ping.exe
+  05/15/2026  04:30 PM        360,448 regedit.exe
+  05/15/2026  04:30 PM        126,464 RuntimeBroker.exe
+  05/15/2026  04:30 PM         73,728 sc.exe
+  05/15/2026  04:30 PM         72,192 services.exe
+  05/15/2026  04:30 PM         19,456 sfc.exe
+  05/15/2026  04:30 PM     23,224,832 shell32.dll
+  05/15/2026  04:30 PM         28,672 shutdown.exe
+  05/15/2026  04:30 PM         81,920 sihost.exe
+  05/15/2026  04:30 PM        107,008 smss.exe
+  05/15/2026  04:30 PM         69,632 spoolsv.exe
+  05/15/2026  04:30 PM         51,768 svchost.exe
+  05/15/2026  04:30 PM         82,944 taskhostw.exe
+  05/15/2026  04:30 PM         80,384 taskkill.exe
+  05/15/2026  04:30 PM         79,872 tasklist.exe
+  05/15/2026  04:30 PM        368,128 taskmgr.exe
+  05/15/2026  04:30 PM         13,312 tracert.exe
+  05/15/2026  04:30 PM      1,671,168 user32.dll
+  05/15/2026  04:30 PM         22,016 where.exe
+  05/15/2026  04:30 PM         39,936 wininit.exe
+  05/15/2026  04:30 PM        620,544 winlogon.exe
+  05/15/2026  04:30 PM         51,712 xcopy.exe
+                 49 File(s) 41,494,048 bytes
+                 8 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\config
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM        262,144 SAM
+  05/15/2026  04:30 PM        262,144 SECURITY
+  05/15/2026  04:30 PM    104,857,600 SOFTWARE
+  05/15/2026  04:30 PM     26,214,400 SYSTEM
+                 4 File(s) 131,596,288 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\drivers
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          etc
+  05/15/2026  04:30 PM        562,176 afd.sys
+  05/15/2026  04:30 PM        299,008 netbt.sys
+  05/15/2026  04:30 PM      2,437,120 tcpip.sys
+                 3 File(s) 3,298,304 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\drivers\etc
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM            824 hosts
+  05/15/2026  04:30 PM            407 networks
+  05/15/2026  04:30 PM          1,795 protocol
+  05/15/2026  04:30 PM         17,463 services
+                 4 File(s) 20,489 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\oobe
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\Tasks
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\wbem
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM         47,104 wmic.exe
+                 1 File(s) 47,104 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\WindowsPowerShell
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM    <DIR>          v1.0
+                 0 File(s) 0 bytes
+                 3 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\System32\WindowsPowerShell\v1.0
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+  05/15/2026  04:30 PM        452,608 powershell.exe
+                 1 File(s) 452,608 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\SysWOW64
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\Temp
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+   Directory of C:\Windows\WinSxS
+  
+  05/15/2026  04:30 PM    <DIR>          .
+  05/15/2026  04:30 PM    <DIR>          ..
+                 0 File(s) 0 bytes
+                 2 Dir(s)  53,687,091,200 bytes free
+  
+       Total Files Listed:
+                 79 File(s) 186,036,731 bytes
+                 182 Dir(s)  53,687,091,200 bytes free
+
+PS  [30/200]> dir C:\ /s /b
+  
+      Directory: C:\
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  d-----                5/15/2026   4:30 PM                Program Files
+  d-----                5/15/2026   4:30 PM                Program Files (x86)
+  d-----                5/15/2026   4:30 PM                ProgramData
+  d-----                5/15/2026   4:30 PM                Users
+  d---s-                5/15/2026   4:30 PM                Windows
+  -a----                5/15/2026   4:30 PM              9 numbers.txt
+  -a----                5/15/2026   4:30 PM              9 nums.txt
+
+CMD [31/200]> dir C:\ /a
+  File Not Found
+
+PS  [32/200]> dir C:\ /a
+  
+      Directory: C:\
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  d-----                5/15/2026   4:30 PM                Program Files
+  d-----                5/15/2026   4:30 PM                Program Files (x86)
+  d-----                5/15/2026   4:30 PM                ProgramData
+  d-----                5/15/2026   4:30 PM                Users
+  d---s-                5/15/2026   4:30 PM                Windows
+  -a----                5/15/2026   4:30 PM              9 numbers.txt
+  -a----                5/15/2026   4:30 PM              9 nums.txt
+
+CMD [33/200]> dir C:\ /o:n
+  File Not Found
+
+PS  [34/200]> dir C:\ /o:n
+  
+      Directory: C:\
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  d-----                5/15/2026   4:30 PM                Program Files
+  d-----                5/15/2026   4:30 PM                Program Files (x86)
+  d-----                5/15/2026   4:30 PM                ProgramData
+  d-----                5/15/2026   4:30 PM                Users
+  d---s-                5/15/2026   4:30 PM                Windows
+  -a----                5/15/2026   4:30 PM              9 numbers.txt
+  -a----                5/15/2026   4:30 PM              9 nums.txt
+
+CMD [35/200]> dir C:\ *.sys
+  File Not Found
+
+PS  [36/200]> dir C:\ *.sys
+  
+      Directory: C:\
+  
+  Mode                 LastWriteTime         Length Name
+  ----                 -------------         ------ ----
+  d-----                5/15/2026   4:30 PM                Program Files
+  d-----                5/15/2026   4:30 PM                Program Files (x86)
+  d-----                5/15/2026   4:30 PM                ProgramData
+  d-----                5/15/2026   4:30 PM                Users
+  d---s-                5/15/2026   4:30 PM                Windows
+  -a----                5/15/2026   4:30 PM              9 numbers.txt
+  -a----                5/15/2026   4:30 PM              9 nums.txt
+
+
+--- [37] § create / inspect ---
+CMD [37/200]> mkdir C:\CmdCoh
+<empty>
+
+PS  [38/200]> mkdir C:\CmdCoh
+  Name=C:\CmdCoh; FullName=C:\CmdCoh; ItemType=directory
+
+CMD [39/200]> md C:\CmdCoh\sub
+<empty>
+
+PS  [40/200]> md C:\CmdCoh\sub
+  Name=C:\CmdCoh\sub; FullName=C:\CmdCoh\sub; ItemType=directory
+
+CMD [41/200]> cd C:\CmdCoh
+<empty>
+
+PS  [42/200]> cd C:\CmdCoh
+<empty>
+
+CMD [43/200]> cd
+  C:\CmdCoh
+
+PS  [44/200]> cd
+<empty>
+
+CMD [45/200]> echo line-one > C:\CmdCoh\file.txt
+<empty>
+
+PS  [46/200]> echo line-one > C:\CmdCoh\file2.txt
+  line-one
+
+
+--- [47] § read content ---
+CMD [47/200]> type C:\CmdCoh\file.txt
+  line-one
+  
+
+PS  [48/200]> type C:\CmdCoh\file.txt
+  line-one
+  
+
+CMD [49/200]> type C:\CmdCoh\file2.txt
+  line-one
+
+PS  [50/200]> type C:\CmdCoh\file2.txt
+  line-one
+
+CMD [51/200]> more C:\CmdCoh\file.txt
+  line-one
+  
+
+PS  [52/200]> more C:\CmdCoh\file.txt
+  line-one
+  
+
+CMD [53/200]> copy C:\CmdCoh\file.txt C:\CmdCoh\copy.txt
+          1 file(s) copied.
+
+PS  [54/200]> copy C:\CmdCoh\file.txt C:\CmdCoh\copy.txt
+<empty>
+
+CMD [55/200]> move C:\CmdCoh\copy.txt C:\CmdCoh\moved.txt
+          1 file(s) moved.
+
+PS  [56/200]> move C:\CmdCoh\copy.txt C:\CmdCoh\moved.txt
+  The system cannot find the file specified.
+
+CMD [57/200]> ren C:\CmdCoh\moved.txt renamed.txt
+<empty>
+
+PS  [58/200]> ren C:\CmdCoh\moved.txt renamed.txt
+  The system cannot find the file specified.
+
+CMD [59/200]> del C:\CmdCoh\renamed.txt
+<empty>
+
+PS  [60/200]> del C:\CmdCoh\renamed.txt
+  The system cannot find the file specified.
+
+CMD [61/200]> rmdir C:\CmdCoh\sub
+<empty>
+
+PS  [62/200]> rmdir C:\CmdCoh\sub
+  The system cannot find the file specified.
+
+
+--- [63] § environment ---
+CMD [63/200]> set
+  COMPUTERNAME=SRV-CMD-COH
+  COMSPEC=C:\Windows\System32\cmd.exe
+  HOMEDRIVE=C:
+  HOMEPATH=\Users\Administrator
+  NUMBER_OF_PROCESSORS=4
+  OS=Windows_NT
+  PATH=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC
+  PROCESSOR_ARCHITECTURE=AMD64
+  SYSTEMDRIVE=C:
+  SYSTEMROOT=C:\Windows
+  TEMP=C:\Users\User\AppData\Local\Temp
+  TMP=C:\Users\User\AppData\Local\Temp
+  USERNAME=Administrator
+  USERPROFILE=C:\Users\Administrator
+  WINDIR=C:\Windows
+
+PS  [64/200]> set
+  COMPUTERNAME=SRV-CMD-COH
+  COMSPEC=C:\Windows\System32\cmd.exe
+  HOMEDRIVE=C:
+  HOMEPATH=\Users\Administrator
+  NUMBER_OF_PROCESSORS=4
+  OS=Windows_NT
+  PATH=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC
+  PROCESSOR_ARCHITECTURE=AMD64
+  SYSTEMDRIVE=C:
+  SYSTEMROOT=C:\Windows
+  TEMP=C:\Users\User\AppData\Local\Temp
+  TMP=C:\Users\User\AppData\Local\Temp
+  USERNAME=Administrator
+  USERPROFILE=C:\Users\Administrator
+  WINDIR=C:\Windows
+
+CMD [65/200]> set PATH
+  PATH=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC
+
+PS  [66/200]> set PATH
+  PATH=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC
+
+CMD [67/200]> set MIRROR_KEY=cmd-value
+<empty>
+
+PS  [68/200]> set MIRROR_KEY=ps-value
+<empty>
+
+CMD [69/200]> echo %MIRROR_KEY%
+  ps-value
+
+PS  [70/200]> echo %MIRROR_KEY%
+<empty>
+
+CMD [71/200]> set MIRROR_KEY=
+<empty>
+
+PS  [72/200]> set MIRROR_KEY=
+<empty>
+
+
+--- [73] § processes ---
+CMD [73/200]> tasklist
+  
+  Image Name                     PID Session Name        Session#    Mem Usage
+  ========================= ======== ================ =========== ============
+  System Idle Process              0 Services                   0         16 K
+  System                           4 Services                   0        288 K
+  Registry                       108 Services                   0      8,192 K
+  smss.exe                       340 Services                   0      2,048 K
+  csrss.exe                      472 Services                   0      9,216 K
+  wininit.exe                    548 Services                   0      7,168 K
+  csrss.exe                      560 Console                    1     10,240 K
+  winlogon.exe                   596 Console                    1     13,312 K
+  services.exe                   620 Services                   0     14,336 K
+  lsass.exe                      636 Services                   0     20,480 K
+  svchost.exe                    784 Services                   0     18,432 K
+  svchost.exe                    836 Services                   0     18,432 K
+  svchost.exe                    912 Services                   0     18,432 K
+  svchost.exe                    964 Services                   0     21,504 K
+  dwm.exe                       1024 Console                    1    132,000 K
+  svchost.exe                   1048 Services                   0     18,432 K
+  svchost.exe                   1100 Services                   0     18,432 K
+  svchost.exe                   1168 Services                   0     15,360 K
+  taskhostw.exe                 1400 Console                    1     12,800 K
+  RuntimeBroker.exe             1560 Console                    1     28,000 K
+  spoolsv.exe                   1800 Services                   0     18,000 K
+  LanmanServer.exe              2200 Services                   0     14,000 K
+  LanmanWorkstation.exe         2400 Services                   0     10,000 K
+  explorer.exe                  2848 Console                    1    145,000 K
+  cmd.exe                       5120 Console                    1      5,200 K
+  conhost.exe                   5132 Console                    1     18,400 K
+
+PS  [74/200]> tasklist
+  
+  Image Name                     PID Session Name        Session#    Mem Usage
+  ========================= ======== ================ =========== ============
+  System Idle Process              0 Services                   0         16 K
+  System                           4 Services                   0        288 K
+  Registry                       108 Services                   0      8,192 K
+  smss.exe                       340 Services                   0      2,048 K
+  csrss.exe                      472 Services                   0      9,216 K
+  wininit.exe                    548 Services                   0      7,168 K
+  csrss.exe                      560 Console                    1     10,240 K
+  winlogon.exe                   596 Console                    1     13,312 K
+  services.exe                   620 Services                   0     14,336 K
+  lsass.exe                      636 Services                   0     20,480 K
+  svchost.exe                    784 Services                   0     18,432 K
+  svchost.exe                    836 Services                   0     18,432 K
+  svchost.exe                    912 Services                   0     18,432 K
+  svchost.exe                    964 Services                   0     21,504 K
+  dwm.exe                       1024 Console                    1    132,000 K
+  svchost.exe                   1048 Services                   0     18,432 K
+  svchost.exe                   1100 Services                   0     18,432 K
+  svchost.exe                   1168 Services                   0     15,360 K
+  taskhostw.exe                 1400 Console                    1     12,800 K
+  RuntimeBroker.exe             1560 Console                    1     28,000 K
+  spoolsv.exe                   1800 Services                   0     18,000 K
+  LanmanServer.exe              2200 Services                   0     14,000 K
+  LanmanWorkstation.exe         2400 Services                   0     10,000 K
+  explorer.exe                  2848 Console                    1    145,000 K
+  cmd.exe                       5120 Console                    1      5,200 K
+  conhost.exe                   5132 Console                    1     18,400 K
+
+CMD [75/200]> tasklist /v
+  
+  Image Name                     PID Session Name        Session#    Mem Usage Status          User Name                          CPU Time Window Title
+  ========================= ======== ================ =========== ============ =============== ================================== ======== ================================================================
+  System Idle Process              0 Services                   0         16 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  System                           4 Services                   0        288 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  Registry                       108 Services                   0      8,192 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  smss.exe                       340 Services                   0      2,048 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  csrss.exe                      472 Services                   0      9,216 K Running         NT AUTHORITY\SYSTEM                 0:00:02 N/A
+  wininit.exe                    548 Services                   0      7,168 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  csrss.exe                      560 Console                    1     10,240 K Running         NT AUTHORITY\SYSTEM                 0:00:01 N/A
+  winlogon.exe                   596 Console                    1     13,312 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  services.exe                   620 Services                   0     14,336 K Running         NT AUTHORITY\SYSTEM                 0:00:01 N/A
+  lsass.exe                      636 Services                   0     20,480 K Running         NT AUTHORITY\SYSTEM                 0:00:03 N/A
+  svchost.exe                    784 Services                   0     18,432 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  svchost.exe                    836 Services                   0     18,432 K Running         NT AUTHORITY\NetworkService         0:00:00 N/A
+  svchost.exe                    912 Services                   0     18,432 K Running         NT AUTHORITY\LocalService           0:00:00 N/A
+  svchost.exe                    964 Services                   0     21,504 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  dwm.exe                       1024 Console                    1    132,000 K Running         Window Manager\DWM-1                0:00:08 DWM
+  svchost.exe                   1048 Services                   0     18,432 K Running         NT AUTHORITY\LocalService           0:00:00 N/A
+  svchost.exe                   1100 Services                   0     18,432 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  svchost.exe                   1168 Services                   0     15,360 K Running         NT AUTHORITY\LocalService           0:00:00 N/A
+  taskhostw.exe                 1400 Console                    1     12,800 K Running         NT AUTHORITY\SYSTEM                 0:00:00 Task Host Window
+  RuntimeBroker.exe             1560 Console                    1     28,000 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   1800 Services                   0     18,000 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  LanmanServer.exe              2200 Services                   0     14,000 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  LanmanWorkstation.exe         2400 Services                   0     10,000 K Running         NT AUTHORITY\NetworkService         0:00:00 N/A
+  explorer.exe                  2848 Console                    1    145,000 K Running         SRV-CMD-COH\Administrator           0:00:12 Windows Explorer
+  cmd.exe                       5120 Console                    1      5,200 K Running         SRV-CMD-COH\Administrator           0:00:00 Command Prompt
+  conhost.exe                   5132 Console                    1     18,400 K Running         SRV-CMD-COH\Administrator           0:00:00 Console Window Host
+
+PS  [76/200]> tasklist /v
+  
+  Image Name                     PID Session Name        Session#    Mem Usage Status          User Name                          CPU Time Window Title
+  ========================= ======== ================ =========== ============ =============== ================================== ======== ================================================================
+  System Idle Process              0 Services                   0         16 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  System                           4 Services                   0        288 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  Registry                       108 Services                   0      8,192 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  smss.exe                       340 Services                   0      2,048 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  csrss.exe                      472 Services                   0      9,216 K Running         NT AUTHORITY\SYSTEM                 0:00:02 N/A
+  wininit.exe                    548 Services                   0      7,168 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  csrss.exe                      560 Console                    1     10,240 K Running         NT AUTHORITY\SYSTEM                 0:00:01 N/A
+  winlogon.exe                   596 Console                    1     13,312 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  services.exe                   620 Services                   0     14,336 K Running         NT AUTHORITY\SYSTEM                 0:00:01 N/A
+  lsass.exe                      636 Services                   0     20,480 K Running         NT AUTHORITY\SYSTEM                 0:00:03 N/A
+  svchost.exe                    784 Services                   0     18,432 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  svchost.exe                    836 Services                   0     18,432 K Running         NT AUTHORITY\NetworkService         0:00:00 N/A
+  svchost.exe                    912 Services                   0     18,432 K Running         NT AUTHORITY\LocalService           0:00:00 N/A
+  svchost.exe                    964 Services                   0     21,504 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  dwm.exe                       1024 Console                    1    132,000 K Running         Window Manager\DWM-1                0:00:08 DWM
+  svchost.exe                   1048 Services                   0     18,432 K Running         NT AUTHORITY\LocalService           0:00:00 N/A
+  svchost.exe                   1100 Services                   0     18,432 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  svchost.exe                   1168 Services                   0     15,360 K Running         NT AUTHORITY\LocalService           0:00:00 N/A
+  taskhostw.exe                 1400 Console                    1     12,800 K Running         NT AUTHORITY\SYSTEM                 0:00:00 Task Host Window
+  RuntimeBroker.exe             1560 Console                    1     28,000 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   1800 Services                   0     18,000 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  LanmanServer.exe              2200 Services                   0     14,000 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  LanmanWorkstation.exe         2400 Services                   0     10,000 K Running         NT AUTHORITY\NetworkService         0:00:00 N/A
+  explorer.exe                  2848 Console                    1    145,000 K Running         SRV-CMD-COH\Administrator           0:00:12 Windows Explorer
+  cmd.exe                       5120 Console                    1      5,200 K Running         SRV-CMD-COH\Administrator           0:00:00 Command Prompt
+  conhost.exe                   5132 Console                    1     18,400 K Running         SRV-CMD-COH\Administrator           0:00:00 Console Window Host
+
+CMD [77/200]> tasklist /fo csv /nh
+  "System Idle Process","0","Services","0","16 K"
+  "System","4","Services","0","288 K"
+  "Registry","108","Services","0","8,192 K"
+  "smss.exe","340","Services","0","2,048 K"
+  "csrss.exe","472","Services","0","9,216 K"
+  "wininit.exe","548","Services","0","7,168 K"
+  "csrss.exe","560","Console","1","10,240 K"
+  "winlogon.exe","596","Console","1","13,312 K"
+  "services.exe","620","Services","0","14,336 K"
+  "lsass.exe","636","Services","0","20,480 K"
+  "svchost.exe","784","Services","0","18,432 K"
+  "svchost.exe","836","Services","0","18,432 K"
+  "svchost.exe","912","Services","0","18,432 K"
+  "svchost.exe","964","Services","0","21,504 K"
+  "dwm.exe","1024","Console","1","132,000 K"
+  "svchost.exe","1048","Services","0","18,432 K"
+  "svchost.exe","1100","Services","0","18,432 K"
+  "svchost.exe","1168","Services","0","15,360 K"
+  "taskhostw.exe","1400","Console","1","12,800 K"
+  "RuntimeBroker.exe","1560","Console","1","28,000 K"
+  "spoolsv.exe","1800","Services","0","18,000 K"
+  "LanmanServer.exe","2200","Services","0","14,000 K"
+  "LanmanWorkstation.exe","2400","Services","0","10,000 K"
+  "explorer.exe","2848","Console","1","145,000 K"
+  "cmd.exe","5120","Console","1","5,200 K"
+  "conhost.exe","5132","Console","1","18,400 K"
+
+PS  [78/200]> tasklist /fo csv /nh
+  "System Idle Process","0","Services","0","16 K"
+  "System","4","Services","0","288 K"
+  "Registry","108","Services","0","8,192 K"
+  "smss.exe","340","Services","0","2,048 K"
+  "csrss.exe","472","Services","0","9,216 K"
+  "wininit.exe","548","Services","0","7,168 K"
+  "csrss.exe","560","Console","1","10,240 K"
+  "winlogon.exe","596","Console","1","13,312 K"
+  "services.exe","620","Services","0","14,336 K"
+  "lsass.exe","636","Services","0","20,480 K"
+  "svchost.exe","784","Services","0","18,432 K"
+  "svchost.exe","836","Services","0","18,432 K"
+  "svchost.exe","912","Services","0","18,432 K"
+  "svchost.exe","964","Services","0","21,504 K"
+  "dwm.exe","1024","Console","1","132,000 K"
+  "svchost.exe","1048","Services","0","18,432 K"
+  "svchost.exe","1100","Services","0","18,432 K"
+  "svchost.exe","1168","Services","0","15,360 K"
+  "taskhostw.exe","1400","Console","1","12,800 K"
+  "RuntimeBroker.exe","1560","Console","1","28,000 K"
+  "spoolsv.exe","1800","Services","0","18,000 K"
+  "LanmanServer.exe","2200","Services","0","14,000 K"
+  "LanmanWorkstation.exe","2400","Services","0","10,000 K"
+  "explorer.exe","2848","Console","1","145,000 K"
+  "cmd.exe","5120","Console","1","5,200 K"
+  "conhost.exe","5132","Console","1","18,400 K"
+
+CMD [79/200]> tasklist /fi "imagename eq svchost.exe"
+  
+  Image Name                     PID Session Name        Session#    Mem Usage
+  ========================= ======== ================ =========== ============
+  svchost.exe                    784 Services                   0     18,432 K
+  svchost.exe                    836 Services                   0     18,432 K
+  svchost.exe                    912 Services                   0     18,432 K
+  svchost.exe                    964 Services                   0     21,504 K
+  svchost.exe                   1048 Services                   0     18,432 K
+  svchost.exe                   1100 Services                   0     18,432 K
+  svchost.exe                   1168 Services                   0     15,360 K
+
+PS  [80/200]> tasklist /fi "imagename eq svchost.exe"
+  
+  Image Name                     PID Session Name        Session#    Mem Usage
+  ========================= ======== ================ =========== ============
+  svchost.exe                    784 Services                   0     18,432 K
+  svchost.exe                    836 Services                   0     18,432 K
+  svchost.exe                    912 Services                   0     18,432 K
+  svchost.exe                    964 Services                   0     21,504 K
+  svchost.exe                   1048 Services                   0     18,432 K
+  svchost.exe                   1100 Services                   0     18,432 K
+  svchost.exe                   1168 Services                   0     15,360 K
+
+
+--- [81] § services ---
+CMD [81/200]> sc query
+  
+  SERVICE_NAME: Tcpip
+          TYPE               : 1  KERNEL_DRIVER
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Afd
+          TYPE               : 1  KERNEL_DRIVER
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Dhcp
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Dnscache
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: NetBT
+          TYPE               : 1  KERNEL_DRIVER
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: RpcSs
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: RpcEptMapper
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: SamSs
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: LanmanServer
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: LanmanWorkstation
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: mpssvc
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: EventLog
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: W32Time
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: CryptSvc
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Winmgmt
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: winlogon
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Spooler
+          TYPE               : 10  WIN32_OWN_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Schedule
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: AudioSrv
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Themes
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+
+PS  [82/200]> sc query
+<empty>
+
+CMD [83/200]> sc query Spooler
+  
+  SERVICE_NAME: Spooler
+          TYPE               : 10  WIN32_OWN_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+
+PS  [84/200]> sc query Spooler
+<empty>
+
+CMD [85/200]> sc qc Spooler
+  [SC] QueryServiceConfig SUCCESS
+  
+  SERVICE_NAME: Spooler
+          TYPE               : 10  WIN32_OWN_PROCESS
+          START_TYPE         : 2   AUTO_START
+          ERROR_CONTROL      : 1   NORMAL
+          BINARY_PATH_NAME   : C:\Windows\System32\spoolsv.exe
+          LOAD_ORDER_GROUP   :
+          TAG                : 0
+          DISPLAY_NAME       : Print Spooler
+          DEPENDENCIES       : RpcSs
+          SERVICE_START_NAME : NT AUTHORITY\SYSTEM
+
+PS  [86/200]> sc qc Spooler
+<empty>
+
+CMD [87/200]> net start
+  These Windows services are started:
+  
+     Ancillary Function Driver for Winsock
+     Cryptographic Services
+     DHCP Client
+     DNS Client
+     NetBT
+     Print Spooler
+     Remote Procedure Call (RPC)
+     RPC Endpoint Mapper
+     Security Accounts Manager
+     Server
+     Task Scheduler
+     TCP/IP Protocol Driver
+     Themes
+     Windows Audio
+     Windows Defender Firewall
+     Windows Event Log
+     Windows Logon Application
+     Windows Management Instrumentation
+     Windows Time
+     Workstation
+  
+  The command completed successfully.
+  
+
+PS  [88/200]> net start
+  These Windows services are started:
+  
+     Ancillary Function Driver for Winsock
+     Cryptographic Services
+     DHCP Client
+     DNS Client
+     NetBT
+     Print Spooler
+     Remote Procedure Call (RPC)
+     RPC Endpoint Mapper
+     Security Accounts Manager
+     Server
+     Task Scheduler
+     TCP/IP Protocol Driver
+     Themes
+     Windows Audio
+     Windows Defender Firewall
+     Windows Event Log
+     Windows Logon Application
+     Windows Management Instrumentation
+     Windows Time
+     Workstation
+  
+  The command completed successfully.
+  
+
+CMD [89/200]> net config workstation
+  The syntax of this command is:
+  
+  NET CONFIG [...]
+
+PS  [90/200]> net config workstation
+  The syntax of this command is:
+  
+  NET CONFIG [...]
+
+CMD [91/200]> net statistics workstation
+  The syntax of this command is:
+  
+  NET STATISTICS [...]
+
+PS  [92/200]> net statistics workstation
+  The syntax of this command is:
+  
+  NET STATISTICS [...]
+
+CMD [93/200]> net view
+  The syntax of this command is:
+  
+  NET VIEW [...]
+
+PS  [94/200]> net view
+  The syntax of this command is:
+  
+  NET VIEW [...]
+
+
+--- [95] § network info ---
+CMD [95/200]> ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+PS  [96/200]> ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+CMD [97/200]> ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : SRV-CMD-COH
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-05
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-06
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-07
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-08
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+PS  [98/200]> ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : SRV-CMD-COH
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-05
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-06
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-07
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-08
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+CMD [99/200]> ipconfig /displaydns
+  Windows IP Configuration
+  
+    Record Name . . . . . : (no entries)
+
+PS  [100/200]> ipconfig /displaydns
+  Windows IP Configuration
+  
+    Record Name . . . . . : (no entries)
+
+CMD [101/200]> getmac
+  Physical Address  Transport Name    
+  ================= ==================
+  02-00-00-00-00-05 Media disconnected
+  02-00-00-00-00-06 Media disconnected
+  02-00-00-00-00-07 Media disconnected
+  02-00-00-00-00-08 Media disconnected
+
+PS  [102/200]> getmac
+  Physical Address  Transport Name    
+  ================= ==================
+  02-00-00-00-00-05 Media disconnected
+  02-00-00-00-00-06 Media disconnected
+  02-00-00-00-00-07 Media disconnected
+  02-00-00-00-00-08 Media disconnected
+
+CMD [103/200]> getmac /fo csv /nh
+  "02-00-00-00-00-05","Media disconnected"
+  "02-00-00-00-00-06","Media disconnected"
+  "02-00-00-00-00-07","Media disconnected"
+  "02-00-00-00-00-08","Media disconnected"
+
+PS  [104/200]> getmac /fo csv /nh
+  "02-00-00-00-00-05","Media disconnected"
+  "02-00-00-00-00-06","Media disconnected"
+  "02-00-00-00-00-07","Media disconnected"
+  "02-00-00-00-00-08","Media disconnected"
+
+CMD [105/200]> arp -a
+  No ARP Entries Found.
+
+PS  [106/200]> arp -a
+  No ARP Entries Found.
+
+CMD [107/200]> route print
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+PS  [108/200]> route print
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+CMD [109/200]> route print -4
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+PS  [110/200]> route print -4
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 06 ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 07 ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 08 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+  ===========================================================================
+  Persistent Routes:
+    None
+
+CMD [111/200]> netstat
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+PS  [112/200]> netstat
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+CMD [113/200]> netstat -a
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+PS  [114/200]> netstat -a
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+CMD [115/200]> netstat -n
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+PS  [116/200]> netstat -n
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+CMD [117/200]> netstat -ano
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+PS  [118/200]> netstat -ano
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
+    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+
+CMD [119/200]> nbtstat -n
+  
+      Node IpAddress: [0.0.0.0] Scope Id: []
+  
+                         NetBIOS Local Name Table
+  
+         Name               Type         Status
+      ---------------------------------------------
+      SRV-CMD-COH      <00>  UNIQUE      Registered
+      WORKGROUP        <00>  GROUP       Registered
+  
+
+PS  [120/200]> nbtstat -n
+  
+      Node IpAddress: [0.0.0.0] Scope Id: []
+  
+                         NetBIOS Local Name Table
+  
+         Name               Type         Status
+      ---------------------------------------------
+      SRV-CMD-COH      <00>  UNIQUE      Registered
+      WORKGROUP        <00>  GROUP       Registered
+  
+
+CMD [121/200]> netsh interface show interface
+  
+  Admin State    State          Type             Interface Name
+  -------------------------------------------------------------------------
+  Enabled        Disconnected   Dedicated        Ethernet 0
+  Enabled        Disconnected   Dedicated        Ethernet 1
+  Enabled        Disconnected   Dedicated        Ethernet 2
+  Enabled        Disconnected   Dedicated        Ethernet 3
+  
+
+PS  [122/200]> netsh interface show interface
+  
+  Admin State    State          Type             Interface Name
+  -------------------------------------------------------------------------
+  Enabled        Disconnected   Dedicated        Ethernet 0
+  Enabled        Disconnected   Dedicated        Ethernet 1
+  Enabled        Disconnected   Dedicated        Ethernet 2
+  Enabled        Disconnected   Dedicated        Ethernet 3
+  
+
+CMD [123/200]> netsh interface ipv4 show addresses
+  Configuration for interface "Ethernet 0"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+  Configuration for interface "Ethernet 1"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+  Configuration for interface "Ethernet 2"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+  Configuration for interface "Ethernet 3"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+
+PS  [124/200]> netsh interface ipv4 show addresses
+  Configuration for interface "Ethernet 0"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+  Configuration for interface "Ethernet 1"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+  Configuration for interface "Ethernet 2"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+  Configuration for interface "Ethernet 3"
+      DHCP enabled:                         Yes
+      InterfaceMetric:                      25
+      Register with which suffix:           Primary only
+  
+
+CMD [125/200]> netsh advfirewall show allprofiles
+  Ok.
+
+PS  [126/200]> netsh advfirewall show allprofiles
+  Ok.
+
+CMD [127/200]> netsh advfirewall firewall show rule name=all
+  No rules match the specified criteria.
+
+PS  [128/200]> netsh advfirewall firewall show rule name=all
+  No rules match the specified criteria.
+
+CMD [129/200]> ping -n 1 127.0.0.1
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+
+PS  [130/200]> ping -n 1 127.0.0.1
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+
+CMD [131/200]> ping -n 1 localhost
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+
+PS  [132/200]> ping -n 1 localhost
+  
+  Pinging 127.0.0.1 with 32 bytes of data:
+  PING: transmit failed. General failure.
+  
+  Ping statistics for 127.0.0.1:
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+
+CMD [133/200]> tracert -h 3 127.0.0.1
+  Unable to resolve target system name 127.0.0.1.
+
+PS  [134/200]> tracert -h 3 127.0.0.1
+  Unable to resolve target system name 127.0.0.1.
+
+CMD [135/200]> nslookup localhost
+  ** server can't find localhost: REFUSED
+
+PS  [136/200]> nslookup localhost
+  ** server can't find localhost: REFUSED
+
+CMD [137/200]> nslookup 127.0.0.1
+  ** server can't find 127.0.0.1: REFUSED
+
+PS  [138/200]> nslookup 127.0.0.1
+  ** server can't find 127: REFUSED
+
+CMD [139/200]> nslookup example.com
+  ** server can't find example.com: REFUSED
+
+PS  [140/200]> nslookup example.com
+  ** server can't find example.com: REFUSED
+
+
+--- [141] § registry ---
+CMD [141/200]> reg query HKCU\Software
+  
+  HKCU\Software
+  
+
+PS  [142/200]> reg query HKCU\Software
+  
+  HKCU\Software
+  
+
+CMD [143/200]> reg query HKLM\Software
+  
+  HKLM\Software
+  
+
+PS  [144/200]> reg query HKLM\Software
+  
+  HKLM\Software
+  
+
+CMD [145/200]> reg add HKCU\Software\CmdCoh /v K /t REG_SZ /d cmdval /f
+  The operation completed successfully.
+
+PS  [146/200]> reg add HKCU\Software\CmdCoh /v K /t REG_SZ /d psval /f
+  The operation completed successfully.
+
+CMD [147/200]> reg query HKCU\Software\CmdCoh
+  
+  HKCU\Software\CmdCoh
+  
+
+PS  [148/200]> reg query HKCU\Software\CmdCoh
+  
+  HKCU\Software\CmdCoh
+  
+
+CMD [149/200]> reg query HKCU\Software\CmdCoh /v K
+  
+  HKCU\Software\CmdCoh
+  
+
+PS  [150/200]> reg query HKCU\Software\CmdCoh /v K
+  
+  HKCU\Software\CmdCoh
+  
+
+CMD [151/200]> reg delete HKCU\Software\CmdCoh /f
+  The operation completed successfully.
+
+PS  [152/200]> reg delete HKCU\Software\CmdCoh /f
+  The operation completed successfully.
+
+
+--- [153] § accounts ---
+CMD [153/200]> net user
+  
+  User accounts for \\SRV-CMD-COH
+  
+  ------------------------------------------------------------
+  Administrator           Guest                   DefaultAccount          
+  User                    
+  ------------------------------------------------------------
+  The command completed successfully.
+
+PS  [154/200]> net user
+  
+  User accounts for \\SRV-CMD-COH
+  
+  ------------------------------------------------------------
+  Administrator           Guest                   DefaultAccount          
+  User                    
+  ------------------------------------------------------------
+  The command completed successfully.
+
+CMD [155/200]> net user Administrator
+  User name                    Administrator
+  Full Name                    
+  Comment                      Built-in account for administering the computer/domain
+  User's comment
+  Country/region code          000 (System Default)
+  Account active               Yes
+  Account expires              Never
+  
+  Password last set            5/15/2026
+  Password expires             Never
+  Password changeable          5/15/2026
+  Password required            Yes
+  User may change password     Yes
+  
+  Workstations allowed         All
+  Logon script
+  User profile
+  Home directory
+  Last logon                   Never
+  
+  Logon hours allowed          All
+  
+  Local Group Memberships      *Administrators
+  Global Group memberships     *None
+  The command completed successfully.
+
+PS  [156/200]> net user Administrator
+  User name                    Administrator
+  Full Name                    
+  Comment                      Built-in account for administering the computer/domain
+  User's comment
+  Country/region code          000 (System Default)
+  Account active               Yes
+  Account expires              Never
+  
+  Password last set            5/15/2026
+  Password expires             Never
+  Password changeable          5/15/2026
+  Password required            Yes
+  User may change password     Yes
+  
+  Workstations allowed         All
+  Logon script
+  User profile
+  Home directory
+  Last logon                   Never
+  
+  Logon hours allowed          All
+  
+  Local Group Memberships      *Administrators
+  Global Group memberships     *None
+  The command completed successfully.
+
+CMD [157/200]> net localgroup
+  
+  Aliases for \\SRV-CMD-COH
+  
+  ------------------------------------------------------------
+  *Administrators
+  *Users
+  *Guests
+  *Power Users
+  *Remote Desktop Users
+  *Network Configuration Operators
+  *Event Log Readers
+  ------------------------------------------------------------
+  The command completed successfully.
+
+PS  [158/200]> net localgroup
+  
+  Aliases for \\SRV-CMD-COH
+  
+  ------------------------------------------------------------
+  *Administrators
+  *Users
+  *Guests
+  *Power Users
+  *Remote Desktop Users
+  *Network Configuration Operators
+  *Event Log Readers
+  ------------------------------------------------------------
+  The command completed successfully.
+
+CMD [159/200]> net localgroup Administrators
+  Alias name     Administrators
+  Comment        Administrators have complete and unrestricted access to the computer/domain
+  
+  Members
+  
+  ------------------------------------------------------------
+  Administrator
+  ------------------------------------------------------------
+  The command completed successfully.
+
+PS  [160/200]> net localgroup Administrators
+  Alias name     Administrators
+  Comment        Administrators have complete and unrestricted access to the computer/domain
+  
+  Members
+  
+  ------------------------------------------------------------
+  Administrator
+  ------------------------------------------------------------
+  The command completed successfully.
+
+CMD [161/200]> net localgroup Users
+  Alias name     Users
+  Comment        Users are prevented from making accidental or intentional system-wide changes
+  
+  Members
+  
+  ------------------------------------------------------------
+  User
+  ------------------------------------------------------------
+  The command completed successfully.
+
+PS  [162/200]> net localgroup Users
+  Alias name     Users
+  Comment        Users are prevented from making accidental or intentional system-wide changes
+  
+  Members
+  
+  ------------------------------------------------------------
+  User
+  ------------------------------------------------------------
+  The command completed successfully.
+
+
+--- [163] § system info ---
+CMD [163/200]> systeminfo
+  Host Name:                 SRV-CMD-COH
+  OS Name:                   Microsoft Windows 10 Pro
+  OS Version:                10.0.22631 N/A Build 22631
+  OS Manufacturer:           Microsoft Corporation
+  OS Configuration:          Member Workstation
+  OS Build Type:             Multiprocessor Free
+  System Type:               x64-based PC
+  Network Card(s):           4 NIC(s) Installed.
+                             [01]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 0
+                                   Status:          Media disconnected
+                             [02]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 1
+                                   Status:          Media disconnected
+                             [03]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 2
+                                   Status:          Media disconnected
+                             [04]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 3
+                                   Status:          Media disconnected
+
+PS  [164/200]> systeminfo
+  Host Name:                 SRV-CMD-COH
+  OS Name:                   Microsoft Windows 10 Pro
+  OS Version:                10.0.22631 N/A Build 22631
+  OS Manufacturer:           Microsoft Corporation
+  OS Configuration:          Member Workstation
+  OS Build Type:             Multiprocessor Free
+  System Type:               x64-based PC
+  Network Card(s):           4 NIC(s) Installed.
+                             [01]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 0
+                                   Status:          Media disconnected
+                             [02]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 1
+                                   Status:          Media disconnected
+                             [03]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 2
+                                   Status:          Media disconnected
+                             [04]: Intel(R) Ethernet Connection
+                                   Connection Name: Ethernet 3
+                                   Status:          Media disconnected
+
+CMD [165/200]> wmic logicaldisk get name
+  Name  
+  C:    
+
+PS  [166/200]> wmic logicaldisk get name
+  Name  
+  C:    
+
+CMD [167/200]> wmic os get caption,version
+  Caption                              
+  Microsoft Windows 10 Enterprise      
+
+PS  [168/200]> wmic os get caption,version
+  Caption                              
+  Microsoft Windows 10 Enterprise      
+
+CMD [169/200]> wmic cpu get name
+  Name                                              
+  Intel(R) Core(TM) i7 CPU @ 2.50GHz                
+
+PS  [170/200]> wmic cpu get name
+  Name                                              
+  Intel(R) Core(TM) i7 CPU @ 2.50GHz                
+
+CMD [171/200]> vol C:
+   Volume in drive C has no label.
+   Volume Serial Number is 2B89-86BC
+
+PS  [172/200]> vol C:
+   Volume in drive C has no label.
+   Volume Serial Number is 2B89-86BC
+
+CMD [173/200]> chcp
+  Active code page: 65001
+
+PS  [174/200]> chcp
+  Active code page: 65001
+
+
+--- [175] § help / lookup ---
+CMD [175/200]> help
+  For more information on a specific command, type HELP command-name
+  ASSOC          Displays or modifies file extension associations.
+  ATTRIB         Displays or changes file attributes.
+  BREAK          Sets or clears extended CTRL+C checking.
+  BCDEDIT        Sets properties in boot database to control boot loading.
+  CACLS          Displays or modifies access control lists (ACLs) of files.
+  CALL           Calls one batch program from another.
+  CD             Displays the name of or changes the current directory.
+  CHCP           Displays or sets the active code page number.
+  CHDIR          Displays the name of or changes the current directory.
+  CHKDSK         Checks a disk and displays a status report.
+  CHKNTFS        Displays or modifies the checking of disk at boot time.
+  CLS            Clears the screen.
+  CMD            Starts a new instance of the Windows command interpreter.
+  COLOR          Sets the default console foreground and background colors.
+  COMP           Compares the contents of two files or sets of files.
+  COMPACT        Displays or alters the compression of files on NTFS partitions.
+  CONVERT        Converts FAT volumes to NTFS.  You cannot convert the
+                 current drive.
+  COPY           Copies one or more files to another location.
+  DATE           Displays or sets the date.
+  DEL            Deletes one or more files.
+  DIR            Displays a list of files and subdirectories in a directory.
+  DISKPART       Displays or configures Disk Partition properties.
+  DOSKEY         Edits command lines, recalls Windows commands, and
+                 creates macros.
+  DRIVERQUERY    Displays current device driver status and properties.
+  ECHO           Displays messages, or turns command echoing on or off.
+  ENDLOCAL       Ends localization of environment changes in a batch file.
+  ERASE          Deletes one or more files.
+  EXIT           Quits the CMD.EXE program (command interpreter).
+  FC             Compares two files or sets of files, and displays the
+                 differences between them.
+  FIND           Searches for a text string in a file or files.
+  FINDSTR        Searches for strings in files.
+  FOR            Runs a specified command for each file in a set of files.
+  FORMAT         Formats a disk for use with Windows.
+  FSUTIL         Displays or configures the file system properties.
+  FTYPE          Displays or modifies file types used in file extension
+                 associations.
+  GOTO           Directs the Windows command interpreter to a labeled line in
+                 a batch program.
+  GPRESULT       Displays Group Policy information for machine or user.
+  GRAFTABL       Enables Windows to display an extended character set in
+                 graphics mode.
+  HELP           Provides Help information for Windows commands.
+  ICACLS         Display, modify, backup, or restore ACLs for files and
+                 directories.
+  IF             Performs conditional processing in batch programs.
+  LABEL          Creates, changes, or deletes the volume label of a disk.
+  MD             Creates a directory.
+  MKDIR          Creates a directory.
+  MKLINK         Creates Symbolic Links and Hard Links
+  MODE           Configures a system device.
+  MORE           Displays output one screen at a time.
+  MOVE           Moves one or more files from one directory to another
+                 directory.
+  OPENFILES      Displays files opened by remote users for a file share.
+  PATH           Displays or sets a search path for executable files.
+  PAUSE          Suspends processing of a batch file and displays a message.
+  POPD           Restores the previous value of the current directory saved by
+                 PUSHD.
+  PRINT          Prints a text file.
+  PROMPT         Changes the Windows command prompt.
+  PUSHD          Saves the current directory then changes it.
+  RD             Removes a directory.
+  RECOVER        Recovers readable information from a bad or defective disk.
+  REM            Records comments (remarks) in batch files or CONFIG.SYS.
+  REN            Renames a file or files.
+  RENAME         Renames a file or files.
+  REPLACE        Replaces files.
+  RMDIR          Removes a directory.
+  ROBOCOPY       Advanced utility to copy files and directory trees
+  SET            Displays, sets, or removes Windows environment variables.
+  SETLOCAL       Begins localization of environment changes in a batch file.
+  SC             Displays or configures services (background processes).
+  SCHTASKS       Schedules commands and programs to run on a computer.
+  SHIFT          Shifts the position of replaceable parameters in batch files.
+  SHUTDOWN       Allows proper local or remote shutdown of machine.
+  SORT           Sorts input.
+  START          Starts a separate window to run a specified program or command.
+  SUBST          Associates a path with a drive letter.
+  SYSTEMINFO     Displays machine specific properties and configuration.
+  TASKLIST       Displays all currently running tasks including services.
+  TASKKILL       Kill or stop a running process or application.
+  TIME           Displays or sets the system time.
+  TITLE          Sets the window title for a CMD.EXE session.
+  TREE           Graphically displays the directory structure of a drive or
+                 path.
+  TYPE           Displays the contents of a text file.
+  VER            Displays the Windows version.
+  VERIFY         Tells Windows whether to verify that your files are written
+                 correctly to a disk.
+  VOL            Displays a disk volume label and serial number.
+  XCOPY          Copies files and directory trees.
+  WMIC           Displays WMI information inside interactive command shell.
+  
+  For more information on tools see the command-line reference in the online help.
+
+PS  [176/200]> help
+  TOPIC
+      PowerShell Help System
+  
+  SHORT DESCRIPTION
+      Use Get-Help <cmdlet> for cmdlet help.
+
+CMD [177/200]> help dir
+  This command is not supported by the help utility.  Try "dir /?".
+
+PS  [178/200]> help dir
+  NAME
+      dir
+  
+  SYNTAX
+      dir [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the dir cmdlet.
+
+CMD [179/200]> help copy
+  This command is not supported by the help utility.  Try "copy /?".
+
+PS  [180/200]> help copy
+  NAME
+      copy
+  
+  SYNTAX
+      copy [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the copy cmdlet.
+
+CMD [181/200]> help reg
+  This command is not supported by the help utility.  Try "reg /?".
+
+PS  [182/200]> help reg
+  NAME
+      reg
+  
+  SYNTAX
+      reg [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the reg cmdlet.
+
+CMD [183/200]> where cmd
+  INFO: Could not find files for the given pattern(s).
+
+PS  [184/200]> where cmd
+<empty>
+
+CMD [185/200]> where notepad
+  INFO: Could not find files for the given pattern(s).
+
+PS  [186/200]> where notepad
+<empty>
+
+
+--- [187] § ps-only utilities ---
+PS  [187/200]> Get-Command Get-ChildItem
+<empty>
+
+CMD [188/200]> Get-Command Get-ChildItem
+  'get-command' is not recognized as an internal or external command,
+  operable program or batch file.
+
+PS  [189/200]> gcm Get-Service
+<empty>
+
+CMD [190/200]> gcm Get-Service
+  'gcm' is not recognized as an internal or external command,
+  operable program or batch file.
+
+PS  [191/200]> Get-Alias dir
+  
+  Name  Definition     CommandType
+  ----  -------------  -----------
+  dir   get-childitem  Alias      
+  
+
+CMD [192/200]> Get-Alias dir
+  'get-alias' is not recognized as an internal or external command,
+  operable program or batch file.
+
+PS  [193/200]> Get-Help dir -ErrorAction SilentlyContinue
+  NAME
+      dir
+  
+  SYNTAX
+      dir [<CommonParameters>]
+  
+  DESCRIPTION
+      Displays help for the dir cmdlet.
+
+PS  [194/200]> $PSVersionTable
+  PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
+
+PS  [195/200]> Get-PSProvider
+  
+  Name         Capabilities                        Drives    
+  -----------  ----------------------------------  ----------
+  Alias        ShouldProcess                       Alias     
+  Environment  ShouldProcess                       Env       
+  FileSystem   Filter, ShouldProcess, Credentials  C, D      
+  Function     ShouldProcess                       Function  
+  Registry     ShouldProcess, Transactions         HKLM, HKCU
+  Variable     ShouldProcess                       Variable  
+  
+
+PS  [196/200]> Get-PSDrive
+  C  C:\
+  D  D:\
+  Env  
+  Variable  
+  Function  
+  HKLM  HKLM:\
+  HKCU  HKCU:\
+
+
+--- [197] § cleanup ---
+CMD [197/200]> rmdir /s /q C:\CmdCoh
+<empty>
+
+PS  [198/200]> rmdir /s /q C:\CmdCoh
+  The system cannot find the file specified.
+
+CMD [199/200]> dir C:\CmdCoh
+  File Not Found
+
+PS  [200/200]> dir C:\CmdCoh
+  ERROR: Cannot find path 'C:\CmdCoh' because it does not exist.

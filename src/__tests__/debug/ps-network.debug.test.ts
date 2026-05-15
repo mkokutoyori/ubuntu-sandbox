@@ -8,11 +8,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { runAndDump, type DebugCommandInput } from './_dump';
+import { runAndDump, createPSRunner, type DebugCommandInput } from './_dump';
 
 beforeEach(() => {
   resetCounters();
@@ -26,8 +25,8 @@ describe('debug — PowerShell networking', () => {
     const srv = new WindowsPC('windows-server', 'SRV-NET-DBG');
     pc.setCurrentUser('Administrator');
     srv.setCurrentUser('Administrator');
-    const psPc = new PowerShellExecutor(pc);
-    const psSrv = new PowerShellExecutor(srv);
+    const psPc = createPSRunner(pc);
+    const psSrv = createPSRunner(srv);
 
     const commands: DebugCommandInput[] = [
       // ── 1. adapters / IP configuration ────────────────────────────
@@ -116,50 +115,51 @@ describe('debug — PowerShell networking', () => {
       'Get-SmbShare -Name "DebugShare" -ErrorAction SilentlyContinue',
       'Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyContinue',
 
-      // ── 8. summary ────────────────────────────────────────────────
+      // ── 8. utility cmdlets / discovery ───────────────────────────
+      { section: 'discovery', cmd: 'Get-Command -Noun NetAdapter -ErrorAction SilentlyContinue | Select-Object -First 5' },
+      'Get-Command Get-NetAdapter -ErrorAction SilentlyContinue',
+      'gcm Get-NetIPAddress -ErrorAction SilentlyContinue',
+      'gcm Test-Connection -ErrorAction SilentlyContinue',
+      'Get-Alias ipconfig -ErrorAction SilentlyContinue',
+      'Get-Alias ping -ErrorAction SilentlyContinue',
+      'Get-Help Get-NetAdapter -ErrorAction SilentlyContinue',
+      'Get-Help Test-Connection -ErrorAction SilentlyContinue',
+      'Get-Member -InputObject (Get-NetAdapter | Select-Object -First 1) -ErrorAction SilentlyContinue',
+      'Get-NetAdapter | Get-Member -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType',
+
+      // ── 9. WMI / CIM ─────────────────────────────────────────────
+      { section: 'WMI / CIM (best-effort)',
+        cmd: 'Get-WmiObject -Class Win32_NetworkAdapter -ErrorAction SilentlyContinue | Select-Object -First 3 Name, Speed' },
+      'Get-CimInstance -ClassName Win32_NetworkAdapter -ErrorAction SilentlyContinue | Select-Object -First 3 Name, MACAddress',
+      'Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue | Select-Object -First 3 Description, IPAddress',
+
+      // ── 10. native commands as cmdlets ───────────────────────────
+      { section: 'native command coverage', cmd: 'systeminfo' },
+      'ver',
+      'whoami',
+      'whoami /user',
+      'net config workstation',
+      'net statistics workstation',
+      'net view',
+      'nbtstat -n',
+      'nbtstat -r',
+      'pathping localhost -ErrorAction SilentlyContinue',
+
+      // ── 11. summary ──────────────────────────────────────────────
       { section: 'summary', cmd: 'Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize' },
       'Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize',
       '(Get-NetAdapter).Count',
       '$env:COMPUTERNAME',
-    ];
-
-    await runAndDump('ps-network', commands, psPc,
-      'host=WIN-NET-DBG (windows-pc)');
-
-    // Secondary pass on the server.
-    const srvCommands: DebugCommandInput[] = [
-      { section: 'server', cmd: '$env:COMPUTERNAME' },
-      'Get-NetAdapter',
-      'Get-NetIPAddress',
-      'Test-Connection 127.0.0.1 -Count 1 -ErrorAction SilentlyContinue',
-      'Test-Connection 127.0.0.1 -Count 2 -ErrorAction SilentlyContinue',
-      'Test-Connection localhost -Count 1 -ErrorAction SilentlyContinue',
-      'Resolve-DnsName localhost -ErrorAction SilentlyContinue',
-      'Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue',
-      'Resolve-DnsName example.com -ErrorAction SilentlyContinue',
-      'ipconfig',
-      'ipconfig /all',
-      'ipconfig /displaydns',
-      'netstat',
-      'netstat -a',
-      'netstat -ano',
-      'arp -a',
-      'route print',
-      'route print -4',
       'hostname',
-      'getmac',
-      'Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object Name, MacAddress',
-      'Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object InterfaceAlias, IPAddress',
-      'Get-NetAdapter | Sort-Object Name | Select-Object Name, Status',
-      'Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize',
-      'Get-NetRoute -ErrorAction SilentlyContinue | Select-Object -First 5',
-      'Get-DnsClientServerAddress -ErrorAction SilentlyContinue',
-      '(Get-NetAdapter).Count',
-      '(Get-NetIPAddress).Count',
+      'Get-Date',
+      'Get-TimeZone -ErrorAction SilentlyContinue',
     ];
-    await runAndDump('ps-network-server', srvCommands, psSrv,
+
+    await runAndDump('ps-network-pc', commands, psPc,
+      'host=WIN-NET-DBG (windows-pc)');
+    await runAndDump('ps-network-server', commands, psSrv,
       'host=SRV-NET-DBG (windows-server)');
 
-    expect(commands.length + srvCommands.length).toBeGreaterThanOrEqual(100);
-  }, 120_000);
+    expect(commands.length).toBeGreaterThanOrEqual(100);
+  }, 240_000);
 });

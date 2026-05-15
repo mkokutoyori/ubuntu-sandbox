@@ -77,13 +77,27 @@ export class PSParser {
     this.tokens = tokens;
     this.pos = 0;
     this.skipTerminators();
+    // Top-level param() block (.ps1 files): `param([string]$X = "default")` at
+    // the very top of the file binds caller args before the body runs.
+    let paramBlock: PSParamBlock | null = null;
+    while (this.check(PSTokenType.LBRACKET)
+           && this.peekAt(1)?.type === PSTokenType.WORD) {
+      this.skipBracketAttribute();
+      this.skipTerminators();
+    }
+    if (this.checkValue(PSTokenType.WORD, 'param')) {
+      paramBlock = this.parseParamBlock();
+      this.skipTerminators();
+    }
     const body = this.parseStatementList();
     this.skipTerminators();
     if (!this.isAtEnd()) {
       const tok = this.peek();
       throw new PSParserError(`Unexpected token '${tok.value}' (${tok.type})`, tok.position);
     }
-    return makeProgram(body, tokens[0]?.position);
+    const program = makeProgram(body, tokens[0]?.position);
+    program.paramBlock = paramBlock;
+    return program;
   }
 
   // ─── Statement List ────────────────────────────────────────────────────────
@@ -364,6 +378,15 @@ export class PSParser {
       return this.parsePrimaryExpression();
     }
 
+    // Unary operator at statement start: `-not $cond`, `-bnot $x` etc. Lexed
+    // as a PARAMETER token because `-name` looks like a flag; here we treat
+    // it as a real unary expression so the runtime doesn't dispatch a `not`
+    // cmdlet.
+    if (tok.type === PSTokenType.PARAMETER
+        && (tok.value === 'not' || tok.value === 'bnot')) {
+      return this.parseExpression(0);
+    }
+
     // Command heads parse as expressions so binary operators (2+3, $_ * 10,
     // "a" -eq "b"), postfix ($x++, $x.Prop, $x[i]) and assignment-ops ($x+=1)
     // are consumed fully.
@@ -423,16 +446,46 @@ export class PSParser {
    */
   private parseCommandArgument(): PSExpression {
     const pos = this.pos_();
-    const first = this.parsePostfixExpression();
+    const first = this.parseCommandArgumentAtom();
     if (!this.check(PSTokenType.COMMA)) return first;
     // Comma-separated list → ArrayExpression
     const elements: PSStatement[] = [this.exprToStatement(first)];
     while (this.check(PSTokenType.COMMA)) {
       this.advance();
       if (this.isAtEnd() || this.isTerminator() || this.check(PSTokenType.PIPE)) break;
-      elements.push(this.exprToStatement(this.parsePostfixExpression()));
+      elements.push(this.exprToStatement(this.parseCommandArgumentAtom()));
     }
     return makeArrayExpr(elements, pos);
+  }
+
+  /**
+   * In command-argument position, a bare WORD token is a string literal
+   * ("bareword"), not a nested command invocation. Real PowerShell parses
+   * `Get-Alias ls` with `ls` as the string "ls" — even though `ls` is a
+   * registered alias, it doesn't get executed here.
+   *
+   * Anything that needs to be an expression (variable, sub-expression,
+   * array, quoted string, number, type-literal, …) goes through the normal
+   * postfix path.
+   */
+  private parseCommandArgumentAtom(): PSExpression {
+    const tok = this.peek();
+    if (tok.type === PSTokenType.WORD) {
+      const next = this.peekAt(1);
+      const nt   = next?.type;
+      const postfixFollows =
+        nt === PSTokenType.DOT ||
+        nt === PSTokenType.LBRACKET ||
+        nt === PSTokenType.LPAREN ||
+        nt === PSTokenType.INCREMENT ||
+        nt === PSTokenType.DECREMENT;
+      if (!postfixFollows) {
+        const pos = this.pos_();
+        this.advance();
+        return makeLiteral(tok.value, tok.value, 'string', pos);
+      }
+    }
+    return this.parsePostfixExpression();
   }
 
   // ─── Redirections ──────────────────────────────────────────────────────────

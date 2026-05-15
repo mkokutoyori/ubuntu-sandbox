@@ -51,6 +51,19 @@ export class CmdletRegistry {
     return names.sort();
   }
 
+  /** All registered cmdlet instances (deduped, for Get-Alias / Get-Command). */
+  cmdlets(): ICmdlet[] {
+    const seen = new Set<string>();
+    const out: ICmdlet[] = [];
+    for (const cmdlet of this.map.values()) {
+      if (!seen.has(cmdlet.name)) {
+        seen.add(cmdlet.name);
+        out.push(cmdlet);
+      }
+    }
+    return out;
+  }
+
   /** Total number of registered cmdlet entries (names + aliases). */
   get size(): number {
     return this.map.size;
