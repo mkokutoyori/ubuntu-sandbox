@@ -616,6 +616,18 @@ export class WindowsPC extends EndHost {
     const lower = cmd.toLowerCase();
     if (lower === 'systeminfo') return this.cmdSysteminfo();
     if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    // `net` is a multi-subcommand router — all its subhandlers are sync
+    // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
+    if (lower === 'net' && args.length > 0) {
+      const subCmd = args[0].toLowerCase();
+      const subArgs = args.slice(1);
+      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr };
+      if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
+      if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
+      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
+      if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
+    }
     const netCtx = this.buildNetContext();
     switch (lower) {
       case 'ipconfig': return cmdIpconfig(netCtx, args);
@@ -624,8 +636,6 @@ export class WindowsPC extends EndHost {
       case 'getmac':   return cmdGetmac(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
       case 'nslookup': return this.cmdNslookup(args);
-      // 'net' is multi-subcommand; its handler lives in executeCmdCommand
-      // and dispatches to net user / net localgroup / net start / net stop.
       // ping / tracert are async — no sync path.
       default: return null;
     }

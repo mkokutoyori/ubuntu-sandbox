@@ -60,3 +60,4 @@ export const GetmacCmdlet    = new NativeShim('getmac');
 export const SysteminfoCmdlet = new NativeShim('systeminfo');
 export const VerCmdlet       = new NativeShim('ver');
 export const NslookupCmdlet  = new NativeShim('nslookup');
+export const NetCmdlet       = new NativeShim('net');

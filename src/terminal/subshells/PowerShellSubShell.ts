@@ -22,17 +22,13 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 
 /**
  * Tokens that bypass the interpreter and go straight to the legacy
- * PowerShellExecutor. After Phase 4b only the genuinely async or
- * multi-subcommand native CLI tools remain:
- *   - `ping` / `tracert` — their handlers (cmdPing / cmdTracert) are async.
- *     Migrating them into ICmdlets would require an async tree-walker.
- *   - `net` — multi-subcommand router (`net user`, `net localgroup`,
- *     `net start`, `net stop`) that mutates state through different
- *     contexts; the executor's dispatch is more convenient than rebuilding
- *     it in an ICmdlet.
+ * PowerShellExecutor. After Phase 4 only `ping` / `tracert` remain —
+ * their handlers (cmdPing / cmdTracert) are async and the PSRuntime
+ * tree-walker is sync, so making them real ICmdlets is gated on an
+ * async-runtime conversion.
  *
- * Every other native (ipconfig / netsh / arp / route / getmac / systeminfo
- * / ver / nslookup) is now a real ICmdlet wired to
+ * Every other native (ipconfig / netsh / arp / route / getmac /
+ * systeminfo / ver / nslookup / net) is a real ICmdlet wired to
  * INetworkProvider.runSyncNativeCommand().
  *
  * PS-cmdlet aliases (ls / dir / cd / pwd / cat / type / cp / mv / rm /
@@ -40,7 +36,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
  * ICmdlets in the interpreter's core registry.
  */
 const DEVICE_ONLY_COMMANDS = new Set([
-  'ping', 'tracert', 'net',
+  'ping', 'tracert',
 ]);
 
 export class PowerShellSubShell implements ISubShell {
