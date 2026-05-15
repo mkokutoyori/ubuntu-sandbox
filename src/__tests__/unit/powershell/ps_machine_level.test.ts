@@ -64,7 +64,7 @@ describe('1. File System – Directories & Files', () => {
     expect(content.trim()).toBe('hello world');
   });
 
-  it.skip('New-Item throws on duplicate directory', async () => {
+  it('New-Item throws on duplicate directory', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await run(ps, 'New-Item -Path C:\\dup -ItemType Directory');

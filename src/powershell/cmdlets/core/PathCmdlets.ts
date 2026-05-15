@@ -172,8 +172,20 @@ export class GetContentCmdlet implements ICmdlet {
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    try { return fs.readFile(path); }
+    let content: string;
+    try { content = fs.readFile(path); }
     catch { return null; }
+    const tail       = ctx.named['tail']       !== undefined ? Number(ctx.named['tail'])       : undefined;
+    const totalCount = ctx.named['totalcount'] !== undefined ? Number(ctx.named['totalcount']) : undefined;
+    if (tail !== undefined || totalCount !== undefined) {
+      const lines = content.split(/\r?\n/);
+      // Trailing empty token from final newline — drop so slicing matches user
+      // intent (`-Tail 2` on "1\n2\n3\n4\n5\n" returns ["4","5"]).
+      if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+      if (tail !== undefined)       return lines.slice(Math.max(0, lines.length - tail)) as unknown as PSValue;
+      if (totalCount !== undefined) return lines.slice(0, totalCount) as unknown as PSValue;
+    }
+    return content;
   }
 }
 
@@ -228,9 +240,18 @@ export class NewItemCmdlet implements ICmdlet {
 
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
+    const force = ctx.named['force'] === true;
     if (itemType === 'directory' || itemType === 'dir') {
+      if (fs.exists(path) && !force) {
+        ctx.emitError(`New-Item : An item with the specified name '${path}' already exists.`);
+        return null;
+      }
       fs.createDir(path);
     } else {
+      if (fs.exists(path) && !force) {
+        ctx.emitError(`New-Item : The file '${path}' already exists.`);
+        return null;
+      }
       fs.createFile(path);
       if (value !== null) fs.writeFile(path, value);
     }
