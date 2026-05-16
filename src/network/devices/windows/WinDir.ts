@@ -63,11 +63,39 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
     return dirWildcard(ctx, absPath, wildcard);
   }
 
+  // `/b` — bare format: names only, no header / summary / . / .. .
+  // Equivalent in meaning to PowerShell `Get-ChildItem -Name`.
+  if (flags.has('bare')) {
+    return dirBare(ctx, absPath, flags.has('recursive'));
+  }
+
   if (flags.has('recursive')) {
     return dirRecursive(ctx, absPath, flags);
   }
 
   return dirSingle(ctx, absPath, flags);
+}
+
+/**
+ * `dir /b` — one name per line, no decoration. `dir /s /b` lists full
+ * absolute paths recursively. Sort order matches the normal listing
+ * (directories then files, each alphabetical) so it stays coherent
+ * with `Get-ChildItem -Name`.
+ */
+function dirBare(ctx: WinFileCommandContext, absPath: string, recursive: boolean): string {
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string) => {
+    const entries = ctx.fs.listDirectory(dir);
+    for (const { name, entry } of entries) {
+      out.push(recursive ? `${dir}\\${name}` : (prefix ? `${prefix}\\${name}` : name));
+      if (recursive && entry.type === 'directory') {
+        walk(`${dir}\\${name}`, '');
+      }
+    }
+  };
+  walk(absPath, '');
+  // Real cmd prints nothing (and sets errorlevel) when the dir is empty.
+  return out.join('\n');
 }
 
 function dirWildcard(ctx: WinFileCommandContext, absPath: string, pattern: string): string {

@@ -354,7 +354,9 @@ export class PSParser {
     while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE) && !this.isRedirection()) {
       if (this.check(PSTokenType.PARAMETER)) {
         parameters.push(this.parseCommandParameter());
-      } else if (this.canStartExpression()) {
+      } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)) {
+        // A `%`-led token here is a bareword argument (e.g. `echo
+        // %PATH%`); `%` is only ForEach-Object in command position.
         args.push(this.parseCommandArgument());
       } else {
         break;
@@ -390,6 +392,12 @@ export class PSParser {
     // cmdlet.
     if (tok.type === PSTokenType.PARAMETER
         && (tok.value === 'not' || tok.value === 'bnot')) {
+      return this.parseExpression(0);
+    }
+
+    // Statement / scriptblock-body starting with the unary comma operator
+    // (`,@($_, $_*2)`) is an expression, not a command named ",".
+    if (tok.type === PSTokenType.COMMA) {
       return this.parseExpression(0);
     }
 
@@ -476,6 +484,31 @@ export class PSParser {
    */
   private parseCommandArgumentAtom(): PSExpression {
     const tok = this.peek();
+    // A command argument that begins with `%` is a bareword (`echo
+    // %PATH%`, a literal `%`), NOT modulo / ForEach-Object — those only
+    // apply in expression / command position. Glue the adjacent run.
+    if (tok.type === PSTokenType.MODULO) {
+      const pos = this.pos_();
+      this.advance();
+      let value = '%';
+      let prevEnd = tok.position.offset + 1;
+      for (;;) {
+        const nxt = this.peek();
+        if (nxt.position.offset !== prevEnd) break;
+        if (nxt.type === PSTokenType.MODULO) value += '%';
+        else if (nxt.type === PSTokenType.DOT) value += '.';
+        else if (nxt.type === PSTokenType.MULTIPLY) value += '*';
+        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+        else break;
+        this.advance();
+        prevEnd = nxt.position.offset + (
+          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+            ? nxt.value.length : 1
+        );
+      }
+      return makeLiteral(value, value, 'string', pos);
+    }
     if (tok.type === PSTokenType.WORD) {
       const next = this.peekAt(1);
       const nt   = next?.type;
@@ -1280,6 +1313,15 @@ export class PSParser {
     if (this.checkValue(PSTokenType.PARAMETER, 'bnot')) {
       this.advance();
       return makeUnary('-bnot' as PSUnaryOperator, this.parseUnaryExpression(), pos);
+    }
+
+    // Unary comma — `,expr` is a single-element array wrapping expr
+    // (PowerShell idiom: `,$x`, `,@(1,2,3)` to emit an array as ONE
+    // pipeline item without unrolling). Modelled as a UnaryExpression so
+    // the array-literal evaluator (which flattens) doesn't unwrap it.
+    if (this.check(PSTokenType.COMMA)) {
+      this.advance();
+      return makeUnary(',' as PSUnaryOperator, this.parseUnaryExpression(), pos);
     }
 
     // Prefix ++ and --

@@ -1,0 +1,367 @@
+============================================================
+Shell debug transcript — utility-cmdlets-server
+Generated: 2026-05-16T13:05:14.407Z
+Engine: powershell
+host=SRV-UTILITY-CMDLETS (windows-server) — cmdlet attribute suite
+Total commands: 66
+============================================================
+
+
+--- [1] § New-Object / pscustomobject ---
+PS [1/66]> New-Object psobject -Property @{ Name="x"; Val=1 }
+<empty>
+
+PS [2/66]> New-Object -TypeName System.Collections.ArrayList
+<empty>
+
+PS [3/66]> $l = New-Object System.Collections.ArrayList; $l.Add(1) | Out-Null; $l.Add(2) | Out-Null; $l.Count
+  2
+
+PS [4/66]> [pscustomobject]@{ A=1; B=2; C=3 }
+  
+  A  B  C
+  -  -  -
+  1  2  3
+  
+
+PS [5/66]> [pscustomobject]@{ A=1; B=2 } | Get-Member -MemberType NoteProperty | Select-Object Name
+<empty>
+
+PS [6/66]> 1..3 | ForEach-Object { [pscustomobject]@{ Idx=$_; Square=$_*$_ } } | Format-Table -AutoSize
+  Idx             Square         
+  --------------- ---------------
+  1               1              
+  2               4              
+  3               9              
+
+PS [7/66]> $o = [pscustomobject]@{ X=10; Y=20 }; $o.X + $o.Y
+  30
+
+PS [8/66]> New-Object psobject -Property @{ a=1 } | ConvertTo-Json
+  {}
+
+
+--- [9] § Get-Date ---
+PS [9/66]> Get-Date -Format "yyyy-MM-dd"
+  2026-05-16
+
+PS [10/66]> Get-Date -Format "HH:mm"
+  13:05
+
+PS [11/66]> Get-Date -Format "dddd"
+  1616
+
+PS [12/66]> (Get-Date).Year -gt 2000
+  True
+
+PS [13/66]> (Get-Date).GetType().Name
+<empty>
+
+PS [14/66]> (Get-Date -Year 2020 -Month 6 -Day 15).Month
+  1
+
+PS [15/66]> (Get-Date).AddDays(7) -gt (Get-Date)
+  True
+
+PS [16/66]> (Get-Date).DayOfWeek
+  6
+
+PS [17/66]> Get-Date -Date '2024-01-15' -Format 'MM/dd/yyyy'
+  01/15/2024
+
+PS [18/66]> ((Get-Date).AddHours(-2)) -lt (Get-Date)
+  True
+
+PS [19/66]> (Get-Date) - (Get-Date).AddDays(-1) | Select-Object -ExpandProperty Days
+<empty>
+
+
+--- [20] § Get-Random ---
+PS [20/66]> Get-Random -Minimum 1 -Maximum 2
+  1
+
+PS [21/66]> (Get-Random -Minimum 0 -Maximum 1) -in 0,1
+  True
+
+PS [22/66]> Get-Random -SetSeed 42 -Minimum 1 -Maximum 100; Get-Random -SetSeed 42 -Minimum 1 -Maximum 100
+  3
+  6
+
+PS [23/66]> 1..10 | Get-Random -Count 3 | Measure-Object
+  
+  Count    : 1
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
+  False
+
+PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
+  0.7583693202832791
+
+PS [26/66]> Get-Random -InputObject 'a','b','c'
+  0.8637868017642696
+
+PS [27/66]> (1..1000 | Get-Random -Count 10 | Where-Object { $_ -ge 1 -and $_ -le 1000 } | Measure-Object).Count
+  0
+
+
+--- [28] § Set/Get/New/Clear-Variable ---
+PS [28/66]> Set-Variable -Name v1 -Value 42; Get-Variable -Name v1 -ValueOnly
+  42
+
+PS [29/66]> New-Variable -Name pi -Value 3.14159; $pi
+  3.14159
+
+PS [30/66]> Set-Variable greeting "hello"; (Get-Variable greeting).Value
+  hello
+
+PS [31/66]> Set-Variable -Name arr -Value (1..5); ($arr | Measure-Object -Sum).Sum
+  15
+
+PS [32/66]> New-Variable -Name k -Value 7; Set-Variable -Name k -Value ($k * 6); $k
+  42
+
+PS [33/66]> Clear-Variable -Name greeting; $null -eq $greeting
+  True
+
+PS [34/66]> Set-Variable -Name dyn -Value (Get-Service | Measure-Object).Count; $dyn -gt 0
+  True
+
+PS [35/66]> $x = 10; Set-Variable x 99; $x
+  99
+
+
+--- [36] § Get-Command / Get-Alias ---
+PS [36/66]> Get-Command Get-Process
+  
+  CommandType  Name         Version  Source                   
+  -----------  -----------  -------  -------------------------
+  Cmdlet       Get-Process  5.1.0    Microsoft.PowerShell.Core
+  
+
+PS [37/66]> Get-Command -Verb Get -CommandType Cmdlet | Select-Object -First 5 Name
+  
+  Name           
+  ---------------
+  Get-Acl        
+  Get-Alias      
+  Get-ChildItem  
+  Get-CimInstance
+  Get-Command    
+  
+
+PS [38/66]> Get-Command -Noun Object | Select-Object Name
+  
+  Name          
+  --------------
+  Compare-Object
+  Foreach-Object
+  Group-Object  
+  Measure-Object
+  New-Object    
+  Select-Object 
+  Sort-Object   
+  Tee-Object    
+  Where-Object  
+  
+
+PS [39/66]> Get-Command Get-* -CommandType Cmdlet | Measure-Object
+  
+  Count    : 37
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [40/66]> (Get-Command -CommandType Alias | Measure-Object).Count -gt 10
+  True
+
+PS [41/66]> Get-Command -Name Sort-Object | Select-Object Name, CommandType
+  
+  Name         CommandType
+  -----------  -----------
+  Sort-Object  Cmdlet     
+  
+
+PS [42/66]> Get-Alias ls
+  
+  Name  Definition     CommandType
+  ----  -------------  -----------
+  ls    get-childitem  Alias      
+  
+
+PS [43/66]> Get-Alias | Where-Object { $_.Definition -eq "get-childitem" } | Select-Object Name
+  
+  Name
+  ----
+  dir 
+  gci 
+  ls  
+  
+
+PS [44/66]> Get-Command -Verb Set -CommandType Cmdlet | Sort-Object Name | Select-Object -First 5 Name
+  
+  Name                      
+  --------------------------
+  Set-Acl                   
+  Set-Content               
+  Set-Date                  
+  Set-DnsClientServerAddress
+  Set-Item                  
+  
+
+PS [45/66]> Get-Command *Service* | Select-Object -First 5 Name
+  
+  Name         
+  -------------
+  Clear-Host   
+  Copy-Item    
+  Get-ChildItem
+  Get-Command  
+  Get-Content  
+  
+
+
+--- [46] § Get-Member ---
+PS [46/66]> (Get-Date) | Get-Member -MemberType Method | Select-Object -First 5 Name
+<empty>
+
+PS [47/66]> "text" | Get-Member -Name Substring
+  
+  Name  MemberType  Definition
+  ----  ----------  ----------
+  0     Property    string 0  
+  1     Property    string 1  
+  2     Property    string 2  
+  3     Property    string 3  
+  
+
+PS [48/66]> @(1,2,3) | Get-Member -MemberType Property | Select-Object -First 3 Name
+<empty>
+
+PS [49/66]> [pscustomobject]@{ q=1 } | Get-Member | Where-Object MemberType -EQ NoteProperty
+<empty>
+
+
+--- [50] § Write-Output / Out-Null ---
+PS [50/66]> Write-Output 1 2 3
+  1
+  2
+  3
+
+PS [51/66]> Write-Output (1..5) | Measure-Object -Sum
+  1
+  2
+  3
+  4
+  5
+
+PS [52/66]> Write-Output "single"
+  single
+
+PS [53/66]> 1..10 | Out-Null
+<empty>
+
+PS [54/66]> (1..10 | Out-Null) -eq $null
+  True
+
+PS [55/66]> Write-Output @(1,2,3),@(4,5,6)
+  1
+  2
+  3
+  4
+  5
+  6
+
+
+--- [56] § creative combos ---
+PS [56/66]> 1..5 | ForEach-Object { [pscustomobject]@{ N=$_; R=(Get-Random -SetSeed $_ -Minimum 0 -Maximum 10) } } | Sort-Object R
+  
+  N  R
+  -  -
+  2  2
+  3  5
+  4  6
+  5  6
+  1  7
+  
+
+PS [57/66]> Get-Command -Verb Get -CommandType Cmdlet | Group-Object { $_.Name.Split("-")[1].Length } | Sort-Object Name | Select-Object Name, Count
+  
+  Name  Count
+  ----  -----
+           37
+  
+
+PS [58/66]> 1..3 | ForEach-Object { New-Object psobject -Property @{ Index=$_; Stamp=(Get-Date -Format "yyyy") } } | Format-Table -AutoSize
+  
+  
+  
+  
+  
+
+PS [59/66]> Set-Variable -Name nums -Value (1..20); ($nums | Where-Object { $_ % 3 -eq 0 } | Measure-Object -Sum).Sum
+  63
+
+PS [60/66]> (Get-Command -CommandType Cmdlet | Select-Object -ExpandProperty Name | Sort-Object | Select-Object -First 5)
+  Add-Content
+  Add-LocalGroupMember
+  Add-VpnConnection
+  Arp
+  Chcp
+
+PS [61/66]> [pscustomobject]@{ when=(Get-Date -Format "yyyy-MM-dd"); rand=(Get-Random -SetSeed 1 -Maximum 100) } | ConvertTo-Json
+  {
+    "when": "2026-05-16",
+    "rand": 44
+  }
+
+PS [62/66]> Get-Alias | Group-Object Definition | Sort-Object Count -Descending | Select-Object -First 5 Name, Count
+  
+  Name           Count
+  -------------  -----
+  remove-item        6
+  get-content        3
+  set-location       3
+  copy-item          3
+  get-childitem      3
+  
+
+PS [63/66]> 1..10 | ForEach-Object { Get-Random -SetSeed $_ -Minimum 1 -Maximum 7 } | Group-Object | Sort-Object Name | Select-Object Name, Count
+  
+  Name  Count
+  ----  -----
+  1         4
+  3         1
+  4         2
+  5         2
+  6         1
+  
+
+PS [64/66]> Get-Command -Noun Object | Sort-Object Name | ForEach-Object { $_.Name } | Select-String "Object$"
+  
+  Line            Pattern  LineNumber
+  --------------  -------  ----------
+  Compare-Object  Object$           1
+  Foreach-Object  Object$           2
+  Group-Object    Object$           3
+  Measure-Object  Object$           4
+  New-Object      Object$           5
+  Select-Object   Object$           6
+  Sort-Object     Object$           7
+  Tee-Object      Object$           8
+  Where-Object    Object$           9
+  
+
+PS [65/66]> $total=0; 1..50 | ForEach-Object { Set-Variable -Name total -Value ($total + $_) }; $total
+  0
+
+PS [66/66]> New-Object psobject -Property @{ A=(1..5); B=(Get-Service|Measure-Object).Count } | ConvertTo-Json -Depth 2
+  {}

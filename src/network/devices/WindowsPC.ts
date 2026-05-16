@@ -226,6 +226,11 @@ export class WindowsPC extends EndHost {
 
   private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
 
+  /** Single source of truth for the simulated OS build, so `ver` reports
+   *  the same string from cmd and from the PowerShell native shim, and it
+   *  agrees with `systeminfo` (build 22631). */
+  private static readonly VER_STRING = '\nMicrosoft Windows [Version 10.0.22631.6649]';
+
   // ─── Hosts file ──────────────────────────────────────────────
 
   addHostsEntry(ip: string, hostname: string): void {
@@ -271,6 +276,27 @@ export class WindowsPC extends EndHost {
 
     // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
     trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();
+
+    // Command chaining: `a && b` (b iff a ok), `a || b` (b iff a failed),
+    // `a & b` (b always). Real cmd.exe semantics; needed so coherence
+    // probes like `cd <dir> && cd` behave like the actual shell.
+    const chain = this.splitCmdChain(trimmed);
+    if (chain.length > 1) {
+      const outputs: string[] = [];
+      let prevFailed = false;
+      for (const link of chain) {
+        const run =
+          link.op === '&'  ? true :
+          link.op === '&&' ? !prevFailed :
+          link.op === '||' ? prevFailed :
+          true; // first segment (op === '')
+        if (!run) continue;
+        const out = await this.executeCmdCommand(link.cmd);
+        if (out !== '') outputs.push(out);
+        prevFailed = this.cmdOutputIsError(out);
+      }
+      return outputs.join('\n');
+    }
 
     // Handle piped commands (but not inside redirects)
     if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
@@ -328,7 +354,7 @@ export class WindowsPC extends EndHost {
       case 'sort':    return cmdSort(fileCtx, args);
       case 'echo':    return args.join(' ');
       case 'cls':     return '';
-      case 'ver':     return '\nMicrosoft Windows [Version 10.0.22631.6649]';
+      case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
       case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
@@ -386,6 +412,58 @@ export class WindowsPC extends EndHost {
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
+  }
+
+  // ─── Command Chaining ─────────────────────────────────────────────
+
+  /**
+   * Split a command line into `&&` / `||` / `&`-separated links,
+   * respecting double quotes. A single `|` is a PIPE (left intact for
+   * the segment's own pipe handling); only `||` is a chain operator.
+   */
+  private splitCmdChain(line: string): Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> {
+    const links: Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> = [];
+    let buf = '';
+    let inQuote = false;
+    let pendingOp: '' | '&&' | '||' | '&' = '';
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; buf += c; continue; }
+      if (!inQuote) {
+        if (c === '&' && line[i + 1] === '&') {
+          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&&'; buf = ''; i++; continue;
+        }
+        if (c === '|' && line[i + 1] === '|') {
+          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '||'; buf = ''; i++; continue;
+        }
+        if (c === '&') {
+          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&'; buf = ''; continue;
+        }
+      }
+      buf += c;
+    }
+    links.push({ op: pendingOp, cmd: buf.trim() });
+    // Drop empty links (e.g. trailing `&`); keep at least one.
+    const cleaned = links.filter(l => l.cmd.length > 0);
+    return cleaned.length ? cleaned : [{ op: '', cmd: line.trim() }];
+  }
+
+  /** Heuristic: did a cmd produce an error (drives `&&` / `||`)? */
+  private cmdOutputIsError(out: string): boolean {
+    const s = out.trim().toLowerCase();
+    if (!s) return false;
+    return /^error:/.test(s)
+      || s.includes('the system cannot find the path specified')
+      || s.includes('the system cannot find the file specified')
+      || s.includes('is not recognized as an internal or external command')
+      || s.includes('access is denied')
+      || s.includes('the syntax of the command is incorrect')
+      || s.includes('the network path was not found')
+      || s.includes('a duplicate name exists')
+      || s.includes('the parameter is incorrect')
+      || s.includes('the filename, directory name, or volume label syntax is incorrect')
+      || s.includes('could not find')
+      || s.includes('cannot find');
   }
 
   // ─── Command Parsing ──────────────────────────────────────────────
@@ -702,12 +780,18 @@ export class WindowsPC extends EndHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     if (lower === 'systeminfo') return this.cmdSysteminfo();
-    if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;
     if (lower === 'vol')  return this.cmdVol(args);
     if (lower === 'chcp') return this.cmdChcp(args);
     if (lower === 'date') return this.cmdDate(args);
     if (lower === 'time') return this.cmdTime(args);
+    if (lower === 'sc' || lower === 'sc.exe') {
+      return cmdSc(
+        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() },
+        args,
+      );
+    }
     // `net` is a multi-subcommand router — all its subhandlers are sync
     // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
     if (lower === 'net' && args.length > 0) {
@@ -786,11 +870,8 @@ export class WindowsPC extends EndHost {
   private cmdVol(args: string[]): string {
     const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
     const letter = arg.charAt(0) || 'C';
-    // Deterministic serial so transcripts diff cleanly across runs of the same host.
-    let h = 0;
-    for (const c of this.hostname + ':' + letter) h = ((h * 31) + c.charCodeAt(0)) & 0xffffffff;
-    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
-    const serial = `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    // Single source of truth — same serial `dir` prints for this volume.
+    const serial = this.fs.getVolumeSerialNumber(letter);
     return [
       ` Volume in drive ${letter} has no label.`,
       ` Volume Serial Number is ${serial}`,

@@ -176,6 +176,22 @@ export class WindowsProcessManager {
     return result;
   }
 
+  /**
+   * Deterministic per-process "random" stat. Seeding by name+pid (both
+   * identical across two devices running the same script) makes Get-Process
+   * memory/handles reproducible AND coherent between the debug pc and
+   * server transcripts, instead of Math.random() drift.
+   */
+  private statFor(name: string, pid: number, salt: number, min: number, range: number): number {
+    let h = 2166136261 >>> 0;
+    const s = `${name}:${pid}:${salt}`;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return min + (h % range);
+  }
+
   // ─── Process Lifecycle ──────────────────────────────────────────
 
   allocatePid(): number {
@@ -195,10 +211,10 @@ export class WindowsProcessManager {
       session: opts.session ?? 'Services',
       sessionId: opts.sessionId ?? 0,
       owner,
-      handles: 50 + Math.floor(Math.random() * 200),
-      npmK: 4 + Math.floor(Math.random() * 10),
-      pmK: 2048 + Math.floor(Math.random() * 8192),
-      wsK: 4096 + Math.floor(Math.random() * 16384),
+      handles: this.statFor(name, pid, 0, 50, 200),
+      npmK:    this.statFor(name, pid, 1, 4, 10),
+      pmK:     this.statFor(name, pid, 2, 2048, 8192),
+      wsK:     this.statFor(name, pid, 3, 4096, 16384),
       cpuSec: 0,
       status: 'Running',
       windowTitle: '',

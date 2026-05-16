@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-server
-Generated: 2026-05-16T07:11:50.077Z
+Generated: 2026-05-16T13:05:20.350Z
 host=SRV-ENV-DBG (windows-server)
 Total commands: 103
 ============================================================
@@ -425,82 +425,9 @@ PS  [92/103]> gcm Set-Item
 
 PS  [93/103]> Get-Alias %
   
-  Name     Definition           CommandType
-  -------  -------------------  -----------
-  ?        where-object         Alias      
-  %        foreach-object       Alias      
-  ac       add-content          Alias      
-  cat      get-content          Alias      
-  cd       set-location         Alias      
-  chdir    set-location         Alias      
-  clear    clear-host           Alias      
-  clp      clear-itemproperty   Alias      
-  cls      clear-host           Alias      
-  clv      clear-variable       Alias      
-  compare  compare-object       Alias      
-  copy     copy-item            Alias      
-  cp       copy-item            Alias      
-  cpi      copy-item            Alias      
-  del      remove-item          Alias      
-  diff     compare-object       Alias      
-  dir      get-childitem        Alias      
-  echo     write-output         Alias      
-  erase    remove-item          Alias      
-  fl       format-list          Alias      
-  foreach  foreach-object       Alias      
-  ft       format-table         Alias      
-  fw       format-wide          Alias      
-  gal      get-alias            Alias      
-  gc       get-content          Alias      
-  gci      get-childitem        Alias      
-  gcm      get-command          Alias      
-  gi       get-item             Alias      
-  gl       get-location         Alias      
-  gm       get-member           Alias      
-  gp       get-itemproperty     Alias      
-  gps      get-process          Alias      
-  group    group-object         Alias      
-  gsv      get-service          Alias      
-  gu       get-unique           Alias      
-  gv       get-variable         Alias      
-  help     get-help             Alias      
-  icm      invoke-command       Alias      
-  iex      invoke-expression    Alias      
-  ipmo     import-module        Alias      
-  kill     stop-process         Alias      
-  ls       get-childitem        Alias      
-  md       mkdir                Alias      
-  measure  measure-object       Alias      
-  mi       move-item            Alias      
-  move     move-item            Alias      
-  mv       move-item            Alias      
-  ni       new-item             Alias      
-  nv       new-variable         Alias      
-  ps       get-process          Alias      
-  pwd      get-location         Alias      
-  rd       remove-item          Alias      
-  ren      rename-item          Alias      
-  ri       remove-item          Alias      
-  rm       remove-item          Alias      
-  rmdir    remove-item          Alias      
-  rni      rename-item          Alias      
-  rp       remove-itemproperty  Alias      
-  rv       remove-variable      Alias      
-  saps     start-process        Alias      
-  sasv     start-service        Alias      
-  sc       set-content          Alias      
-  select   select-object        Alias      
-  sl       set-location         Alias      
-  sleep    start-sleep          Alias      
-  sls      select-string        Alias      
-  sort     sort-object          Alias      
-  sp       set-itemproperty     Alias      
-  spps     stop-process         Alias      
-  spsv     stop-service         Alias      
-  sv       set-variable         Alias      
-  tee      tee-object           Alias      
-  type     get-content          Alias      
-  where    where-object         Alias      
+  Name  Definition      CommandType
+  ----  --------------  -----------
+  %     foreach-object  Alias      
   
 
 PS  [94/103]> Get-Variable PSVersionTable
