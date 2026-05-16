@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-filesystem-server
-Generated: 2026-05-16T07:31:15.402Z
+Generated: 2026-05-16T07:49:13.068Z
 host=SRV-FSC-DBG (windows-server)
 Total commands: 124
 ============================================================
@@ -12,22 +12,22 @@ CMD [1/124]> cd C:\
 
 CMD [2/124]> dir C:\
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          $Recycle.Bin
-  05/16/2026  07:31 AM    <DIR>          PerfLogs
-  05/16/2026  07:31 AM    <DIR>          Program Files
-  05/16/2026  07:31 AM    <DIR>          Program Files (x86)
-  05/16/2026  07:31 AM    <DIR>          ProgramData
-  05/16/2026  07:31 AM    <DIR>          System Volume Information
-  05/16/2026  07:31 AM    <DIR>          Users
-  05/16/2026  07:31 AM    <DIR>          Windows
-  05/16/2026  07:31 AM              9 numbers.txt
-  05/16/2026  07:31 AM              9 nums.txt
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          $Recycle.Bin
+  05/16/2026  07:49 AM    <DIR>          PerfLogs
+  05/16/2026  07:49 AM    <DIR>          Program Files
+  05/16/2026  07:49 AM    <DIR>          Program Files (x86)
+  05/16/2026  07:49 AM    <DIR>          ProgramData
+  05/16/2026  07:49 AM    <DIR>          System Volume Information
+  05/16/2026  07:49 AM    <DIR>          Users
+  05/16/2026  07:49 AM    <DIR>          Windows
+  05/16/2026  07:49 AM              9 numbers.txt
+  05/16/2026  07:49 AM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -38,48 +38,48 @@ PS  [4/124]> Get-ChildItem C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 7:31 AM          $Recycle.Bin             
-  d-----  5/16/2026 7:31 AM          PerfLogs                 
-  d-----  5/16/2026 7:31 AM          Program Files            
-  d-----  5/16/2026 7:31 AM          Program Files (x86)      
-  d-----  5/16/2026 7:31 AM          ProgramData              
-  d-----  5/16/2026 7:31 AM          System Volume Information
-  d-----  5/16/2026 7:31 AM          Users                    
-  d-----  5/16/2026 7:31 AM          Windows                  
-  -a----  5/16/2026 7:31 AM       9  numbers.txt              
-  -a----  5/16/2026 7:31 AM       9  nums.txt                 
+  d-----  5/16/2026 7:49 AM          $Recycle.Bin             
+  d-----  5/16/2026 7:49 AM          PerfLogs                 
+  d-----  5/16/2026 7:49 AM          Program Files            
+  d-----  5/16/2026 7:49 AM          Program Files (x86)      
+  d-----  5/16/2026 7:49 AM          ProgramData              
+  d-----  5/16/2026 7:49 AM          System Volume Information
+  d-----  5/16/2026 7:49 AM          Users                    
+  d-----  5/16/2026 7:49 AM          Windows                  
+  -a----  5/16/2026 7:49 AM       9  numbers.txt              
+  -a----  5/16/2026 7:49 AM       9  nums.txt                 
   
 
 PS  [5/124]> ls C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 7:31 AM          $Recycle.Bin             
-  d-----  5/16/2026 7:31 AM          PerfLogs                 
-  d-----  5/16/2026 7:31 AM          Program Files            
-  d-----  5/16/2026 7:31 AM          Program Files (x86)      
-  d-----  5/16/2026 7:31 AM          ProgramData              
-  d-----  5/16/2026 7:31 AM          System Volume Information
-  d-----  5/16/2026 7:31 AM          Users                    
-  d-----  5/16/2026 7:31 AM          Windows                  
-  -a----  5/16/2026 7:31 AM       9  numbers.txt              
-  -a----  5/16/2026 7:31 AM       9  nums.txt                 
+  d-----  5/16/2026 7:49 AM          $Recycle.Bin             
+  d-----  5/16/2026 7:49 AM          PerfLogs                 
+  d-----  5/16/2026 7:49 AM          Program Files            
+  d-----  5/16/2026 7:49 AM          Program Files (x86)      
+  d-----  5/16/2026 7:49 AM          ProgramData              
+  d-----  5/16/2026 7:49 AM          System Volume Information
+  d-----  5/16/2026 7:49 AM          Users                    
+  d-----  5/16/2026 7:49 AM          Windows                  
+  -a----  5/16/2026 7:49 AM       9  numbers.txt              
+  -a----  5/16/2026 7:49 AM       9  nums.txt                 
   
 
 PS  [6/124]> dir C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 7:31 AM          $Recycle.Bin             
-  d-----  5/16/2026 7:31 AM          PerfLogs                 
-  d-----  5/16/2026 7:31 AM          Program Files            
-  d-----  5/16/2026 7:31 AM          Program Files (x86)      
-  d-----  5/16/2026 7:31 AM          ProgramData              
-  d-----  5/16/2026 7:31 AM          System Volume Information
-  d-----  5/16/2026 7:31 AM          Users                    
-  d-----  5/16/2026 7:31 AM          Windows                  
-  -a----  5/16/2026 7:31 AM       9  numbers.txt              
-  -a----  5/16/2026 7:31 AM       9  nums.txt                 
+  d-----  5/16/2026 7:49 AM          $Recycle.Bin             
+  d-----  5/16/2026 7:49 AM          PerfLogs                 
+  d-----  5/16/2026 7:49 AM          Program Files            
+  d-----  5/16/2026 7:49 AM          Program Files (x86)      
+  d-----  5/16/2026 7:49 AM          ProgramData              
+  d-----  5/16/2026 7:49 AM          System Volume Information
+  d-----  5/16/2026 7:49 AM          Users                    
+  d-----  5/16/2026 7:49 AM          Windows                  
+  -a----  5/16/2026 7:49 AM       9  numbers.txt              
+  -a----  5/16/2026 7:49 AM       9  nums.txt                 
   
 
 CMD [7/124]> cd
@@ -108,7 +108,7 @@ CMD [11/124]> mkdir C:\CohFs
 <empty>
 
 CMD [12/124]> dir C:\ | findstr CohFs
-  05/16/2026  07:31 AM    <DIR>          CohFs
+  05/16/2026  07:49 AM    <DIR>          CohFs
 
 PS  [13/124]> Test-Path C:\CohFs
   True
@@ -134,8 +134,8 @@ PS  [19/124]> Get-ChildItem C:\CohFs
   
   Mode    LastWriteTime      Length  Name
   ------  -----------------  ------  ----
-  d-----  5/16/2026 7:31 AM          sub1
-  d-----  5/16/2026 7:31 AM          sub2
+  d-----  5/16/2026 7:49 AM          sub1
+  d-----  5/16/2026 7:49 AM          sub2
   
 
 PS  [20/124]> (Get-ChildItem C:\CohFs -Recurse -Directory).Count
@@ -159,32 +159,32 @@ PS  [22/124]> New-Item -Path C:\CohFs\fromPS\inner -ItemType Directory
 
 CMD [23/124]> dir C:\CohFs
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          fromPS
+  05/16/2026  07:49 AM    <DIR>          sub1
+  05/16/2026  07:49 AM    <DIR>          sub2
                  0 File(s) 0 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
 CMD [24/124]> dir C:\CohFs\fromPS
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs\fromPS
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          inner
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          inner
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
 
 CMD [25/124]> cd C:\CohFs\fromPS && cd
-  The system cannot find the path specified.
+  C:\CohFs\fromPS
 
 
 --- [26] § create file (cmd) → read (ps) ---
@@ -217,11 +217,11 @@ CMD [33/124]> type C:\CohFs\fromPs.txt
 
 CMD [34/124]> dir C:\CohFs\fromPs.txt
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -280,11 +280,11 @@ PS  [47/124]> Copy-Item C:\CohFs\fromPs.txt C:\CohFs\copyByPs.txt
 
 CMD [48/124]> dir C:\CohFs\copyByPs.txt
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM             13 copyByPs.txt
+  05/16/2026  07:49 AM             13 copyByPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -315,11 +315,11 @@ PS  [55/124]> Move-Item C:\CohFs\copyByPs.txt C:\CohFs\movedByPs.txt
 
 CMD [56/124]> dir C:\CohFs\movedByPs.txt
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM             13 movedByPs.txt
+  05/16/2026  07:49 AM             13 movedByPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -328,11 +328,11 @@ PS  [57/124]> Rename-Item C:\CohFs\movedByPs.txt renamedByPs.txt
 
 CMD [58/124]> dir C:\CohFs\renamedByPs.txt
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM             13 renamedByPs.txt
+  05/16/2026  07:49 AM             13 renamedByPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -356,89 +356,80 @@ CMD [62/124]> dir C:\CohFs\renamedByPs.txt
 --- [63] § listing equivalences ---
 CMD [63/124]> dir C:\CohFs
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          fromPS
+  05/16/2026  07:49 AM    <DIR>          sub1
+  05/16/2026  07:49 AM    <DIR>          sub2
+  05/16/2026  07:49 AM             15 fromCmd.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
 CMD [64/124]> dir C:\CohFs /b
-   Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
-  
-   Directory of C:\CohFs
-  
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
-                 3 File(s) 90 bytes
-                 5 Dir(s)  53,687,091,200 bytes free
+  fromPS
+  sub1
+  sub2
+  fromCmd.txt
+  fromPs.txt
+  log.txt
 
 CMD [65/124]> dir C:\CohFs /s
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          fromPS
+  05/16/2026  07:49 AM    <DIR>          sub1
+  05/16/2026  07:49 AM    <DIR>          sub2
+  05/16/2026  07:49 AM             15 fromCmd.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          inner
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          inner
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS\inner
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          nested
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          nested
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1\nested
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub2
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
@@ -448,47 +439,47 @@ CMD [65/124]> dir C:\CohFs /s
 
 CMD [66/124]> dir C:\CohFs /a
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          fromPS
+  05/16/2026  07:49 AM    <DIR>          sub1
+  05/16/2026  07:49 AM    <DIR>          sub2
+  05/16/2026  07:49 AM             15 fromCmd.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
 CMD [67/124]> dir C:\CohFs /od
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          fromPS
+  05/16/2026  07:49 AM    <DIR>          sub1
+  05/16/2026  07:49 AM    <DIR>          sub2
+  05/16/2026  07:49 AM             15 fromCmd.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
 CMD [68/124]> dir C:\CohFs *.txt
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
+  05/16/2026  07:49 AM             15 fromCmd.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             62 log.txt
                  3 File(s) 90 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -496,12 +487,12 @@ PS  [69/124]> Get-ChildItem C:\CohFs
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/16/2026 7:31 AM          fromPS     
-  d-----  5/16/2026 7:31 AM          sub1       
-  d-----  5/16/2026 7:31 AM          sub2       
-  -a----  5/16/2026 7:31 AM      15  fromCmd.txt
-  -a----  5/16/2026 7:31 AM      13  fromPs.txt 
-  -a----  5/16/2026 7:31 AM      62  log.txt    
+  d-----  5/16/2026 7:49 AM          fromPS     
+  d-----  5/16/2026 7:49 AM          sub1       
+  d-----  5/16/2026 7:49 AM          sub2       
+  -a----  5/16/2026 7:49 AM      15  fromCmd.txt
+  -a----  5/16/2026 7:49 AM      13  fromPs.txt 
+  -a----  5/16/2026 7:49 AM      62  log.txt    
   
 
 PS  [70/124]> Get-ChildItem C:\CohFs -Name
@@ -516,32 +507,32 @@ PS  [71/124]> Get-ChildItem C:\CohFs -Recurse
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  d-----  5/16/2026 7:31 AM          fromPS     
-  d-----  5/16/2026 7:31 AM          sub1       
-  d-----  5/16/2026 7:31 AM          sub2       
-  -a----  5/16/2026 7:31 AM      15  fromCmd.txt
-  -a----  5/16/2026 7:31 AM      13  fromPs.txt 
-  -a----  5/16/2026 7:31 AM      62  log.txt    
-  d-----  5/16/2026 7:31 AM          inner      
-  d-----  5/16/2026 7:31 AM          nested     
+  d-----  5/16/2026 7:49 AM          fromPS     
+  d-----  5/16/2026 7:49 AM          sub1       
+  d-----  5/16/2026 7:49 AM          sub2       
+  -a----  5/16/2026 7:49 AM      15  fromCmd.txt
+  -a----  5/16/2026 7:49 AM      13  fromPs.txt 
+  -a----  5/16/2026 7:49 AM      62  log.txt    
+  d-----  5/16/2026 7:49 AM          inner      
+  d-----  5/16/2026 7:49 AM          nested     
   
 
 PS  [72/124]> Get-ChildItem C:\CohFs -File
   
   Mode    LastWriteTime      Length  Name       
   ------  -----------------  ------  -----------
-  -a----  5/16/2026 7:31 AM      15  fromCmd.txt
-  -a----  5/16/2026 7:31 AM      13  fromPs.txt 
-  -a----  5/16/2026 7:31 AM      62  log.txt    
+  -a----  5/16/2026 7:49 AM      15  fromCmd.txt
+  -a----  5/16/2026 7:49 AM      13  fromPs.txt 
+  -a----  5/16/2026 7:49 AM      62  log.txt    
   
 
 PS  [73/124]> Get-ChildItem C:\CohFs -Directory
   
   Mode    LastWriteTime      Length  Name  
   ------  -----------------  ------  ------
-  d-----  5/16/2026 7:31 AM          fromPS
-  d-----  5/16/2026 7:31 AM          sub1  
-  d-----  5/16/2026 7:31 AM          sub2  
+  d-----  5/16/2026 7:49 AM          fromPS
+  d-----  5/16/2026 7:49 AM          sub1  
+  d-----  5/16/2026 7:49 AM          sub2  
   
 
 PS  [74/124]> Get-ChildItem C:\CohFs -Filter *.txt
@@ -550,9 +541,9 @@ PS  [74/124]> Get-ChildItem C:\CohFs -Filter *.txt
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/16/2026   7:31 AM             15 fromCmd.txt
-  -a----                5/16/2026   7:31 AM             13 fromPs.txt
-  -a----                5/16/2026   7:31 AM             62 log.txt
+  -a----                5/16/2026   7:49 AM             15 fromCmd.txt
+  -a----                5/16/2026   7:49 AM             13 fromPs.txt
+  -a----                5/16/2026   7:49 AM             62 log.txt
 
 PS  [75/124]> (Get-ChildItem C:\CohFs).Count
   6
@@ -800,57 +791,57 @@ CMD [118/124]> where cmd
 --- [119] § final state ---
 CMD [119/124]> dir C:\CohFs /s
    Volume in drive C has no label.
-   Volume Serial Number is A4E2-1B3F
+   Volume Serial Number is 22BF-D0A5
   
    Directory of C:\CohFs
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          fromPS
-  05/16/2026  07:31 AM    <DIR>          sub1
-  05/16/2026  07:31 AM    <DIR>          sub2
-  05/16/2026  07:31 AM              5 attr.txt
-  05/16/2026  07:31 AM             15 fromCmd.txt
-  05/16/2026  07:31 AM             13 fromPs.txt
-  05/16/2026  07:31 AM             62 log.txt
-  05/16/2026  07:31 AM             19 multi.txt
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          fromPS
+  05/16/2026  07:49 AM    <DIR>          sub1
+  05/16/2026  07:49 AM    <DIR>          sub2
+  05/16/2026  07:49 AM              5 attr.txt
+  05/16/2026  07:49 AM             15 fromCmd.txt
+  05/16/2026  07:49 AM             13 fromPs.txt
+  05/16/2026  07:49 AM             62 log.txt
+  05/16/2026  07:49 AM             19 multi.txt
                  5 File(s) 114 bytes
                  5 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          inner
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          inner
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS\inner
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
-  05/16/2026  07:31 AM    <DIR>          nested
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          nested
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1\nested
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub2
   
-  05/16/2026  07:31 AM    <DIR>          .
-  05/16/2026  07:31 AM    <DIR>          ..
+  05/16/2026  07:49 AM    <DIR>          .
+  05/16/2026  07:49 AM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   

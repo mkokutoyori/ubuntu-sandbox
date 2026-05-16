@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-server
-Generated: 2026-05-16T07:31:17.118Z
+Generated: 2026-05-16T07:49:15.422Z
 host=SRV-USR-COH (windows-server)
 Total commands: 105
 ============================================================

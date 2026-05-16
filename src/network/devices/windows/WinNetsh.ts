@@ -991,12 +991,20 @@ function handleDeleteRoute(ctx: WinCommandContext, joined: string): string {
 }
 
 function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
-  // delete address "Ethernet 0" addr=192.168.1.10
-  const match = joined.match(/address\s+"([^"]+)"\s+addr=(\d+\.\d+\.\d+\.\d+)/i)
-    || joined.match(/address\s+(?:name=)?(.+?)\s+addr=(\d+\.\d+\.\d+\.\d+)/i);
+  // Real netsh accepts the IP positionally OR as addr=/address=, and the
+  // interface name quoted/unquoted/name=. Mirror `add address` so a
+  // round-trip (`add address "Ethernet" <ip> <mask>` then
+  // `delete address "Ethernet" <ip>`) is coherent.
+  const IP4 = '\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}';
+  const match =
+       joined.match(new RegExp(`address\\s+"([^"]+)"\\s+(?:addr=|address=)?(${IP4})`, 'i'))
+    || joined.match(new RegExp(`address\\s+(?:name=)?(\\S+)\\s+(?:addr=|address=)?(${IP4})`, 'i'))
+    // No IP given → delete every address on the interface.
+    || joined.match(/address\s+"([^"]+)"\s*$/i)
+    || joined.match(/address\s+(?:name=)?(\S+)\s*$/i);
 
   if (!match) {
-    return 'Usage: netsh interface ip delete address "name" addr=<ip>';
+    return 'Usage: netsh interface ip delete address "name" [addr=]<ip>';
   }
 
   const ifName = match[1].trim();

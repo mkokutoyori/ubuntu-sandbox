@@ -52,7 +52,12 @@ export class WindowsFileSystem {
    */
   private lastTickMs = 0;
 
+  /** Host this FS belongs to — drives the (deterministic, per-machine)
+   *  volume serial so `vol` and `dir` agree and two machines differ. */
+  private readonly hostname: string;
+
   constructor(hostname: string = 'DESKTOP') {
+    this.hostname = hostname;
     this.initializeDefaultFS(hostname);
   }
 
@@ -753,8 +758,19 @@ export class WindowsFileSystem {
     return 53_687_091_200;
   }
 
-  getVolumeSerialNumber(): string {
-    return 'A4E2-1B3F';
+  /**
+   * Volume serial — single source of truth for both `dir` and `vol`.
+   * Deterministic per (hostname, drive): realistic (unique per machine)
+   * yet stable across runs, and identical no matter which command asks.
+   */
+  getVolumeSerialNumber(drive: string = 'C'): string {
+    const letter = (drive || 'C').toUpperCase().replace(/[:\\]+$/, '').charAt(0) || 'C';
+    let h = 0;
+    for (const ch of `${this.hostname}:${letter}`) {
+      h = ((h * 31) + ch.charCodeAt(0)) & 0xffffffff;
+    }
+    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    return `${hex.slice(0, 4)}-${hex.slice(4)}`;
   }
 
   // ─── ACL Operations ─────────────────────────────────────────────

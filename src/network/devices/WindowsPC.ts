@@ -272,6 +272,27 @@ export class WindowsPC extends EndHost {
     // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
     trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();
 
+    // Command chaining: `a && b` (b iff a ok), `a || b` (b iff a failed),
+    // `a & b` (b always). Real cmd.exe semantics; needed so coherence
+    // probes like `cd <dir> && cd` behave like the actual shell.
+    const chain = this.splitCmdChain(trimmed);
+    if (chain.length > 1) {
+      const outputs: string[] = [];
+      let prevFailed = false;
+      for (const link of chain) {
+        const run =
+          link.op === '&'  ? true :
+          link.op === '&&' ? !prevFailed :
+          link.op === '||' ? prevFailed :
+          true; // first segment (op === '')
+        if (!run) continue;
+        const out = await this.executeCmdCommand(link.cmd);
+        if (out !== '') outputs.push(out);
+        prevFailed = this.cmdOutputIsError(out);
+      }
+      return outputs.join('\n');
+    }
+
     // Handle piped commands (but not inside redirects)
     if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
       return this.executePipedCommand(trimmed);
@@ -386,6 +407,58 @@ export class WindowsPC extends EndHost {
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
+  }
+
+  // ─── Command Chaining ─────────────────────────────────────────────
+
+  /**
+   * Split a command line into `&&` / `||` / `&`-separated links,
+   * respecting double quotes. A single `|` is a PIPE (left intact for
+   * the segment's own pipe handling); only `||` is a chain operator.
+   */
+  private splitCmdChain(line: string): Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> {
+    const links: Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> = [];
+    let buf = '';
+    let inQuote = false;
+    let pendingOp: '' | '&&' | '||' | '&' = '';
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; buf += c; continue; }
+      if (!inQuote) {
+        if (c === '&' && line[i + 1] === '&') {
+          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&&'; buf = ''; i++; continue;
+        }
+        if (c === '|' && line[i + 1] === '|') {
+          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '||'; buf = ''; i++; continue;
+        }
+        if (c === '&') {
+          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&'; buf = ''; continue;
+        }
+      }
+      buf += c;
+    }
+    links.push({ op: pendingOp, cmd: buf.trim() });
+    // Drop empty links (e.g. trailing `&`); keep at least one.
+    const cleaned = links.filter(l => l.cmd.length > 0);
+    return cleaned.length ? cleaned : [{ op: '', cmd: line.trim() }];
+  }
+
+  /** Heuristic: did a cmd produce an error (drives `&&` / `||`)? */
+  private cmdOutputIsError(out: string): boolean {
+    const s = out.trim().toLowerCase();
+    if (!s) return false;
+    return /^error:/.test(s)
+      || s.includes('the system cannot find the path specified')
+      || s.includes('the system cannot find the file specified')
+      || s.includes('is not recognized as an internal or external command')
+      || s.includes('access is denied')
+      || s.includes('the syntax of the command is incorrect')
+      || s.includes('the network path was not found')
+      || s.includes('a duplicate name exists')
+      || s.includes('the parameter is incorrect')
+      || s.includes('the filename, directory name, or volume label syntax is incorrect')
+      || s.includes('could not find')
+      || s.includes('cannot find');
   }
 
   // ─── Command Parsing ──────────────────────────────────────────────
@@ -786,11 +859,8 @@ export class WindowsPC extends EndHost {
   private cmdVol(args: string[]): string {
     const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
     const letter = arg.charAt(0) || 'C';
-    // Deterministic serial so transcripts diff cleanly across runs of the same host.
-    let h = 0;
-    for (const c of this.hostname + ':' + letter) h = ((h * 31) + c.charCodeAt(0)) & 0xffffffff;
-    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
-    const serial = `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    // Single source of truth — same serial `dir` prints for this volume.
+    const serial = this.fs.getVolumeSerialNumber(letter);
     return [
       ` Volume in drive ${letter} has no label.`,
       ` Volume Serial Number is ${serial}`,
