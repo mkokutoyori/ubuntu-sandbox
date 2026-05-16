@@ -163,8 +163,6 @@ export abstract class EndHost extends Equipment {
   /** In-flight ARP solicitations for forwarding — dedup signal for
    *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
   private inFlightFwdARPs: Set<string> = new Set();
-  /** Pending ICMP echo replies: "srcIP-id-seq" → callback */
-  protected pendingPings: Map<string, PendingPing> = new Map();
   /** Monotonically increasing ICMP echo identifier */
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
@@ -358,6 +356,16 @@ export abstract class EndHost extends Equipment {
     this.icmpTimeouts++;
     this.getBus().publish({
       topic: 'host.icmp.echo-timeout',
+      payload: { ...this.hostRef(), ...payload },
+    });
+  }
+
+  /** Bus emission helper for ICMP echo failed (TTL exceeded / unreachable). */
+  protected emitIcmpEchoFailed(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; reason: string;
+  }): void {
+    this.getBus().publish({
+      topic: 'host.icmp.echo-failed',
       payload: { ...this.hostRef(), ...payload },
     });
   }
@@ -1101,57 +1109,48 @@ export abstract class EndHost extends Equipment {
     if (icmp.icmpType === 'echo-request') {
       this.sendEchoReply(portName, ipPkt, icmp);
     } else if (icmp.icmpType === 'echo-reply') {
-      const key = `${ipPkt.sourceIP}-${icmp.id}-${icmp.sequence}`;
-      const pending = this.pendingPings.get(key);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pendingPings.delete(key);
-        const rtt = performance.now() - pending.sentAt;
-        pending.resolve({
-          success: true,
-          rttMs: rtt,
-          ttl: ipPkt.ttl,
-          seq: icmp.sequence,
-          bytes: icmp.dataSize + 8, // ICMP header (8) + data
-          fromIP: ipPkt.sourceIP.toString(),
-        });
-        // Reactive: announce the reply.
-        this.emitIcmpEchoReply({
-          fromIp: ipPkt.sourceIP.toString(),
-          toIp: ipPkt.destinationIP.toString(),
-          id: icmp.id,
-          seq: icmp.sequence,
-          ttl: ipPkt.ttl,
-          rttMs: rtt,
-        });
-      }
+      // Phase 5.6: settle the awaiting `sendPing` promise via the bus.
+      // The awaiter computes its own rtt; we pass 0 as a sentinel so capture
+      // actors can still record the reply.
+      this.emitIcmpEchoReply({
+        fromIp: ipPkt.sourceIP.toString(),
+        toIp: ipPkt.destinationIP.toString(),
+        id: icmp.id,
+        seq: icmp.sequence,
+        ttl: ipPkt.ttl,
+        rttMs: 0,
+      });
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
       const reason = icmp.icmpType === 'time-exceeded'
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
         : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`;
 
-      // Correlate to a specific pending probe via the embedded original packet (P1.5).
-      // This allows multiple simultaneous probes (multi-probe per hop) to resolve independently.
+      // Phase 5.6: emit host.icmp.echo-failed so awaiting `sendPing` promises
+      // can settle through `waitForEvent`. Carries the original id/seq so the
+      // awaiter can filter precisely.
       if (icmp.originalPacket) {
         const origICMP = icmp.originalPacket.payload as ICMPPacket;
         if (origICMP && origICMP.type === 'icmp' && origICMP.icmpType === 'echo-request') {
-          const key = `${icmp.originalPacket.destinationIP}-${origICMP.id}-${origICMP.sequence}`;
-          const pending = this.pendingPings.get(key);
-          if (pending) {
-            clearTimeout(pending.timer);
-            this.pendingPings.delete(key);
-            pending.reject(reason);
-            return;
-          }
+          this.emitIcmpEchoFailed({
+            fromIp: ipPkt.sourceIP.toString(),
+            toIp: icmp.originalPacket.destinationIP.toString(),
+            id: origICMP.id,
+            seq: origICMP.sequence,
+            reason,
+          });
+          return;
         }
       }
 
-      // Fallback: no originalPacket or no match — reject all pending (e.g. single-probe path)
-      for (const [key, pending] of this.pendingPings) {
-        clearTimeout(pending.timer);
-        this.pendingPings.delete(key);
-        pending.reject(reason);
-      }
+      // Fallback: no original packet — emit a wildcard echo-failed
+      // (id=-1, seq=-1) so listeners can still observe a failure.
+      this.emitIcmpEchoFailed({
+        fromIp: ipPkt.sourceIP.toString(),
+        toIp: '',
+        id: -1,
+        seq: -1,
+        reason,
+      });
     } else if (icmp.icmpType === 'redirect' && icmp.gateway && icmp.originalPacket) {
       // RFC 792: host updates its routing table to use the new gateway for this destination
       const dest = icmp.originalPacket.destinationIP;
@@ -1244,6 +1243,7 @@ export abstract class EndHost extends Equipment {
       id: 0,
       sequence: 0,
       dataSize: 0,
+      originalPacket: offendingPkt,
     };
 
     const errorIP = createIPv4Packet(
@@ -1593,7 +1593,7 @@ export abstract class EndHost extends Equipment {
    * Send a single ICMP echo request encapsulated in IPv4 and wait for reply.
    * Returns PingResult with real measured RTT.
    */
-  protected sendPing(
+  protected async sendPing(
     portName: string,
     targetIP: IPAddress,
     targetMAC: MACAddress,
@@ -1602,70 +1602,77 @@ export abstract class EndHost extends Equipment {
     ttl?: number,
   ): Promise<PingResult> {
     const port = this.ports.get(portName);
-    if (!port) return Promise.reject('Port not found');
+    if (!port) throw new Error('Port not found');
     const myIP = port.getIPAddress();
-    if (!myIP) return Promise.reject('No IP configured');
+    if (!myIP) throw new Error('No IP configured');
 
     this.pingIdCounter++;
     const id = this.pingIdCounter;
 
-    return new Promise((resolve, reject) => {
-      const key = `${targetIP}-${id}-${seq}`;
-      const sentAt = performance.now();
+    const targetIpStr = targetIP.toString();
+    const sentAt = performance.now();
+    const useTtl = ttl ?? this.defaultTTL;
 
-      const timer = setTimeout(() => {
-        this.pendingPings.delete(key);
-        reject('timeout');
-      }, timeoutMs);
+    // Phase 5.6: settle through the bus instead of a pendingPings Map.
+    const replyPromise = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-reply',
+      (p) => p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq,
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
+    const failedPromise = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-failed',
+      (p) => p.deviceId === this.id
+        && (p.id === -1 || (p.id === id && p.seq === seq))
+        && (p.toIp === targetIpStr || p.toIp === ''),
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
 
-      this.pendingPings.set(key, { resolve, reject, timer, sentAt });
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType: 'echo-request', code: 0,
+      id, sequence: seq, dataSize: 56,
+    };
+    const icmpSize = 8 + 56;
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize);
 
-      // Build ICMP echo request
-      const icmp: ICMPPacket = {
-        type: 'icmp',
-        icmpType: 'echo-request',
-        code: 0,
-        id,
-        sequence: seq,
-        dataSize: 56, // Standard 56 bytes of data
-      };
-
-      const icmpSize = 8 + 56; // ICMP header (8) + data (56) = 64
-      const ipPkt = createIPv4Packet(
-        myIP,
-        targetIP,
-        IP_PROTO_ICMP,
-        ttl ?? this.defaultTTL,
-        icmp,
-        icmpSize,
-      );
-
-      // Reactive: announce the echo emission. Phase 5.5 will fold this
-      // into a `waitForEvent('host.icmp.echo-reply', ...)`.
-      this.emitIcmpEchoSent({
-        fromIp: myIP.toString(),
-        toIp: targetIP.toString(),
-        id, seq,
-        ttl: ttl ?? this.defaultTTL,
-        size: icmpSize,
-      });
-
-      // Firewall: filter outgoing initiated packets
-      const verdict = this.firewallFilter(portName, ipPkt, 'out');
-      if (verdict === 'drop' || verdict === 'reject') {
-        clearTimeout(timer);
-        this.pendingPings.delete(key);
-        reject('blocked by firewall');
-        return;
-      }
-
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(),
-        dstMAC: targetMAC,
-        etherType: ETHERTYPE_IPV4,
-        payload: ipPkt,
-      });
+    this.emitIcmpEchoSent({
+      fromIp: myIP.toString(), toIp: targetIpStr,
+      id, seq, ttl: useTtl, size: icmpSize,
     });
+
+    const verdict = this.firewallFilter(portName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') {
+      throw new Error('blocked by firewall');
+    }
+
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC: targetMAC,
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    });
+
+    try {
+      const winner = await Promise.race([
+        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
+        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
+      ]);
+      if (winner.kind === 'failed') throw new Error(winner.r.reason);
+      const rtt = performance.now() - sentAt;
+      return {
+        success: true,
+        rttMs: rtt,
+        ttl: winner.r.ttl,
+        seq,
+        bytes: icmpSize,
+        fromIP: targetIpStr,
+      };
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) {
+        this.emitIcmpEchoTimeout({ toIp: targetIpStr, id, seq });
+        throw new Error('timeout');
+      }
+      throw err;
+    }
   }
 
   // ─── Route Resolution (LPM — Longest Prefix Match) ──────────────
@@ -1821,7 +1828,9 @@ export abstract class EndHost extends Equipment {
         const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl);
         results.push(result);
       } catch (err: any) {
-        const errorMsg = typeof err === 'string' ? err : '';
+        const errorMsg = typeof err === 'string'
+          ? err
+          : (err instanceof Error ? err.message : String(err));
         results.push({
           success: false,
           rttMs: 0,
@@ -1874,47 +1883,63 @@ export abstract class EndHost extends Equipment {
         this.pingIdCounter++;
         const id = this.pingIdCounter;
         const seq = p + 1;
+        const targetIpStr = targetIP.toString();
+        const sentAt = performance.now();
 
-        const probe = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean; icmpCode?: number }>((resolve) => {
-          const key = `${targetIP}-${id}-${seq}`;
-          const sentAt = performance.now();
+        // Phase 5.6: traceroute also settles via the bus.
+        const replyP = waitForEvent(
+          this.getBus(),
+          'host.icmp.echo-reply',
+          (pl) => pl.deviceId === this.id && pl.fromIp === targetIpStr && pl.id === id && pl.seq === seq,
+          { timeoutMs, scheduler: this.getScheduler() },
+        );
+        const failP = waitForEvent(
+          this.getBus(),
+          'host.icmp.echo-failed',
+          (pl) => pl.deviceId === this.id && pl.id === id && pl.seq === seq,
+          { timeoutMs, scheduler: this.getScheduler() },
+        );
 
-          const timer = setTimeout(() => {
-            this.pendingPings.delete(key);
-            resolve({ timeout: true, reached: false });
-          }, timeoutMs);
+        const icmp: ICMPPacket = {
+          type: 'icmp', icmpType: 'echo-request', code: 0,
+          id, sequence: seq, dataSize: 56,
+        };
+        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
 
-          this.pendingPings.set(key, {
-            resolve: (pingResult) => {
-              clearTimeout(timer);
-              resolve({ ip: pingResult.fromIP, rttMs: pingResult.rttMs, timeout: false, reached: true });
-            },
-            reject: (reason) => {
-              clearTimeout(timer);
-              const match = reason.match(/from ([\d.]+)/);
-              const codeMatch = reason.match(/code (\d+)/);
-              const rtt = performance.now() - sentAt;
-              const isUnreachable = reason.includes('Destination unreachable');
-              const icmpCode = codeMatch ? parseInt(codeMatch[1], 10) : undefined;
-              resolve({ ip: match ? match[1] : undefined, rttMs: rtt, timeout: false, reached: false, unreachable: isUnreachable, icmpCode });
-            },
-            timer,
-            sentAt,
-          });
+        this.sendFrame(portName, {
+          srcMAC: route.port.getMAC(),
+          dstMAC: nextHopMAC,
+          etherType: ETHERTYPE_IPV4,
+          payload: ipPkt,
+        });
 
-          // Build ICMP with limited TTL
-          const icmp: ICMPPacket = {
-            type: 'icmp', icmpType: 'echo-request', code: 0,
-            id, sequence: seq, dataSize: 56,
-          };
-          const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
-
-          this.sendFrame(portName, {
-            srcMAC: route.port.getMAC(),
-            dstMAC: nextHopMAC,
-            etherType: ETHERTYPE_IPV4,
-            payload: ipPkt,
-          });
+        const probe = await Promise.race([
+          replyP.then((pl) => ({
+            ip: pl.fromIp,
+            rttMs: performance.now() - sentAt,
+            timeout: false, reached: true,
+            unreachable: undefined as boolean | undefined,
+            icmpCode: undefined as number | undefined,
+          })),
+          failP.then((pl) => {
+            const codeMatch = pl.reason.match(/code (\d+)/);
+            const isUnreachable = pl.reason.includes('Destination unreachable');
+            return {
+              ip: pl.fromIp,
+              rttMs: performance.now() - sentAt,
+              timeout: false, reached: false,
+              unreachable: isUnreachable,
+              icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
+            };
+          }),
+        ]).catch((err) => {
+          if (err instanceof WaitForEventTimeoutError) {
+            return { timeout: true, reached: false } as {
+              ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
+              unreachable?: boolean; icmpCode?: number;
+            };
+          }
+          throw err;
         });
 
         probes.push({
