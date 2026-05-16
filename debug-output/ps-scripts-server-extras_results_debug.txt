@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server-extras
-Generated: 2026-05-16T13:05:12.921Z
+Generated: 2026-05-16T22:51:39.436Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
@@ -29,12 +29,12 @@ PS [4/23]> Get-Content C:\ServerScripts\role.ps1
 PS [5/23]> & C:\ServerScripts\role.ps1
   Hostname = SRV-SCR-DBG
   User = Administrator
-  Date = 5/16/2026 1:05 PM
+  Date = 5/16/2026 10:51 PM
 
 PS [6/23]> . C:\ServerScripts\role.ps1
   Hostname = SRV-SCR-DBG
   User = Administrator
-  Date = 5/16/2026 1:05 PM
+  Date = 5/16/2026 10:51 PM
 
 PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
 <empty>

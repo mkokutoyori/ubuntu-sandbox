@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-cmd-commands-pc
-Generated: 2026-05-16T13:05:05.397Z
+Generated: 2026-05-16T22:51:30.942Z
 host=WIN-CMD-COH (windows-pc)
 Total commands: 200
 ============================================================
@@ -79,10 +79,10 @@ PS  [18/200]> date /t
   Sat 05/16/2026
 
 CMD [19/200]> time /t
-  1:05 PM
+  10:51 PM
 
 PS  [20/200]> time /t
-  1:05 PM
+  10:51 PM
 
 
 --- [21] § filesystem builtins ---
@@ -104,35 +104,35 @@ CMD [25/200]> dir C:\
   
    Directory of C:\
   
-  05/16/2026  01:05 PM    <DIR>          .
-  05/16/2026  01:05 PM    <DIR>          ..
-  05/16/2026  01:05 PM    <DIR>          $Recycle.Bin
-  05/16/2026  01:05 PM    <DIR>          PerfLogs
-  05/16/2026  01:05 PM    <DIR>          Program Files
-  05/16/2026  01:05 PM    <DIR>          Program Files (x86)
-  05/16/2026  01:05 PM    <DIR>          ProgramData
-  05/16/2026  01:05 PM    <DIR>          System Volume Information
-  05/16/2026  01:05 PM    <DIR>          Users
-  05/16/2026  01:05 PM    <DIR>          Windows
-  05/16/2026  01:05 PM              9 numbers.txt
-  05/16/2026  01:05 PM              9 nums.txt
+  05/16/2026  10:51 PM    <DIR>          .
+  05/16/2026  10:51 PM    <DIR>          ..
+  05/16/2026  10:51 PM    <DIR>          $Recycle.Bin
+  05/16/2026  10:51 PM    <DIR>          PerfLogs
+  05/16/2026  10:51 PM    <DIR>          Program Files
+  05/16/2026  10:51 PM    <DIR>          Program Files (x86)
+  05/16/2026  10:51 PM    <DIR>          ProgramData
+  05/16/2026  10:51 PM    <DIR>          System Volume Information
+  05/16/2026  10:51 PM    <DIR>          Users
+  05/16/2026  10:51 PM    <DIR>          Windows
+  05/16/2026  10:51 PM              9 numbers.txt
+  05/16/2026  10:51 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
 PS  [26/200]> dir C:\
   
-  Mode    LastWriteTime      Length  Name                     
-  ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 1:05 PM          $Recycle.Bin             
-  d-----  5/16/2026 1:05 PM          PerfLogs                 
-  d-----  5/16/2026 1:05 PM          Program Files            
-  d-----  5/16/2026 1:05 PM          Program Files (x86)      
-  d-----  5/16/2026 1:05 PM          ProgramData              
-  d-----  5/16/2026 1:05 PM          System Volume Information
-  d-----  5/16/2026 1:05 PM          Users                    
-  d-----  5/16/2026 1:05 PM          Windows                  
-  -a----  5/16/2026 1:05 PM       9  numbers.txt              
-  -a----  5/16/2026 1:05 PM       9  nums.txt                 
+  Mode    LastWriteTime       Length  Name                     
+  ------  ------------------  ------  -------------------------
+  d-----  5/16/2026 10:51 PM          $Recycle.Bin             
+  d-----  5/16/2026 10:51 PM          PerfLogs                 
+  d-----  5/16/2026 10:51 PM          Program Files            
+  d-----  5/16/2026 10:51 PM          Program Files (x86)      
+  d-----  5/16/2026 10:51 PM          ProgramData              
+  d-----  5/16/2026 10:51 PM          System Volume Information
+  d-----  5/16/2026 10:51 PM          Users                    
+  d-----  5/16/2026 10:51 PM          Windows                  
+  -a----  5/16/2026 10:51 PM       9  numbers.txt              
+  -a----  5/16/2026 10:51 PM       9  nums.txt                 
   
 
 CMD [27/200]> dir C:\ /b
@@ -153,13 +153,13 @@ PS  [28/200]> dir C:\ /b
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   1:05 PM                Program Files
-  d-----                5/16/2026   1:05 PM                Program Files (x86)
-  d-----                5/16/2026   1:05 PM                ProgramData
-  d-----                5/16/2026   1:05 PM                Users
-  d---s-                5/16/2026   1:05 PM                Windows
-  -a----                5/16/2026   1:05 PM              9 numbers.txt
-  -a----                5/16/2026   1:05 PM              9 nums.txt
+  d-----                5/16/2026  10:51 PM                Program Files
+  d-----                5/16/2026  10:51 PM                Program Files (x86)
+  d-----                5/16/2026  10:51 PM                ProgramData
+  d-----                5/16/2026  10:51 PM                Users
+  d---s-                5/16/2026  10:51 PM                Windows
+  -a----                5/16/2026  10:51 PM              9 numbers.txt
+  -a----                5/16/2026  10:51 PM              9 nums.txt
 
 CMD [29/200]> dir C:\ /s /b
   C:\\$Recycle.Bin
@@ -308,13 +308,13 @@ PS  [30/200]> dir C:\ /s /b
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   1:05 PM                Program Files
-  d-----                5/16/2026   1:05 PM                Program Files (x86)
-  d-----                5/16/2026   1:05 PM                ProgramData
-  d-----                5/16/2026   1:05 PM                Users
-  d---s-                5/16/2026   1:05 PM                Windows
-  -a----                5/16/2026   1:05 PM              9 numbers.txt
-  -a----                5/16/2026   1:05 PM              9 nums.txt
+  d-----                5/16/2026  10:51 PM                Program Files
+  d-----                5/16/2026  10:51 PM                Program Files (x86)
+  d-----                5/16/2026  10:51 PM                ProgramData
+  d-----                5/16/2026  10:51 PM                Users
+  d---s-                5/16/2026  10:51 PM                Windows
+  -a----                5/16/2026  10:51 PM              9 numbers.txt
+  -a----                5/16/2026  10:51 PM              9 nums.txt
 
 CMD [31/200]> dir C:\ /a
    Volume in drive C has no label.
@@ -322,18 +322,18 @@ CMD [31/200]> dir C:\ /a
   
    Directory of C:\
   
-  05/16/2026  01:05 PM    <DIR>          .
-  05/16/2026  01:05 PM    <DIR>          ..
-  05/16/2026  01:05 PM    <DIR>          $Recycle.Bin
-  05/16/2026  01:05 PM    <DIR>          PerfLogs
-  05/16/2026  01:05 PM    <DIR>          Program Files
-  05/16/2026  01:05 PM    <DIR>          Program Files (x86)
-  05/16/2026  01:05 PM    <DIR>          ProgramData
-  05/16/2026  01:05 PM    <DIR>          System Volume Information
-  05/16/2026  01:05 PM    <DIR>          Users
-  05/16/2026  01:05 PM    <DIR>          Windows
-  05/16/2026  01:05 PM              9 numbers.txt
-  05/16/2026  01:05 PM              9 nums.txt
+  05/16/2026  10:51 PM    <DIR>          .
+  05/16/2026  10:51 PM    <DIR>          ..
+  05/16/2026  10:51 PM    <DIR>          $Recycle.Bin
+  05/16/2026  10:51 PM    <DIR>          PerfLogs
+  05/16/2026  10:51 PM    <DIR>          Program Files
+  05/16/2026  10:51 PM    <DIR>          Program Files (x86)
+  05/16/2026  10:51 PM    <DIR>          ProgramData
+  05/16/2026  10:51 PM    <DIR>          System Volume Information
+  05/16/2026  10:51 PM    <DIR>          Users
+  05/16/2026  10:51 PM    <DIR>          Windows
+  05/16/2026  10:51 PM              9 numbers.txt
+  05/16/2026  10:51 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -343,13 +343,13 @@ PS  [32/200]> dir C:\ /a
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   1:05 PM                Program Files
-  d-----                5/16/2026   1:05 PM                Program Files (x86)
-  d-----                5/16/2026   1:05 PM                ProgramData
-  d-----                5/16/2026   1:05 PM                Users
-  d---s-                5/16/2026   1:05 PM                Windows
-  -a----                5/16/2026   1:05 PM              9 numbers.txt
-  -a----                5/16/2026   1:05 PM              9 nums.txt
+  d-----                5/16/2026  10:51 PM                Program Files
+  d-----                5/16/2026  10:51 PM                Program Files (x86)
+  d-----                5/16/2026  10:51 PM                ProgramData
+  d-----                5/16/2026  10:51 PM                Users
+  d---s-                5/16/2026  10:51 PM                Windows
+  -a----                5/16/2026  10:51 PM              9 numbers.txt
+  -a----                5/16/2026  10:51 PM              9 nums.txt
 
 CMD [33/200]> dir C:\ /o:n
    Volume in drive C has no label.
@@ -357,18 +357,18 @@ CMD [33/200]> dir C:\ /o:n
   
    Directory of C:\
   
-  05/16/2026  01:05 PM    <DIR>          .
-  05/16/2026  01:05 PM    <DIR>          ..
-  05/16/2026  01:05 PM    <DIR>          $Recycle.Bin
-  05/16/2026  01:05 PM    <DIR>          PerfLogs
-  05/16/2026  01:05 PM    <DIR>          Program Files
-  05/16/2026  01:05 PM    <DIR>          Program Files (x86)
-  05/16/2026  01:05 PM    <DIR>          ProgramData
-  05/16/2026  01:05 PM    <DIR>          System Volume Information
-  05/16/2026  01:05 PM    <DIR>          Users
-  05/16/2026  01:05 PM    <DIR>          Windows
-  05/16/2026  01:05 PM              9 numbers.txt
-  05/16/2026  01:05 PM              9 nums.txt
+  05/16/2026  10:51 PM    <DIR>          .
+  05/16/2026  10:51 PM    <DIR>          ..
+  05/16/2026  10:51 PM    <DIR>          $Recycle.Bin
+  05/16/2026  10:51 PM    <DIR>          PerfLogs
+  05/16/2026  10:51 PM    <DIR>          Program Files
+  05/16/2026  10:51 PM    <DIR>          Program Files (x86)
+  05/16/2026  10:51 PM    <DIR>          ProgramData
+  05/16/2026  10:51 PM    <DIR>          System Volume Information
+  05/16/2026  10:51 PM    <DIR>          Users
+  05/16/2026  10:51 PM    <DIR>          Windows
+  05/16/2026  10:51 PM              9 numbers.txt
+  05/16/2026  10:51 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -378,13 +378,13 @@ PS  [34/200]> dir C:\ /o:n
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   1:05 PM                Program Files
-  d-----                5/16/2026   1:05 PM                Program Files (x86)
-  d-----                5/16/2026   1:05 PM                ProgramData
-  d-----                5/16/2026   1:05 PM                Users
-  d---s-                5/16/2026   1:05 PM                Windows
-  -a----                5/16/2026   1:05 PM              9 numbers.txt
-  -a----                5/16/2026   1:05 PM              9 nums.txt
+  d-----                5/16/2026  10:51 PM                Program Files
+  d-----                5/16/2026  10:51 PM                Program Files (x86)
+  d-----                5/16/2026  10:51 PM                ProgramData
+  d-----                5/16/2026  10:51 PM                Users
+  d---s-                5/16/2026  10:51 PM                Windows
+  -a----                5/16/2026  10:51 PM              9 numbers.txt
+  -a----                5/16/2026  10:51 PM              9 nums.txt
 
 CMD [35/200]> dir C:\ *.sys
   File Not Found
@@ -395,13 +395,13 @@ PS  [36/200]> dir C:\ *.sys
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   1:05 PM                Program Files
-  d-----                5/16/2026   1:05 PM                Program Files (x86)
-  d-----                5/16/2026   1:05 PM                ProgramData
-  d-----                5/16/2026   1:05 PM                Users
-  d---s-                5/16/2026   1:05 PM                Windows
-  -a----                5/16/2026   1:05 PM              9 numbers.txt
-  -a----                5/16/2026   1:05 PM              9 nums.txt
+  d-----                5/16/2026  10:51 PM                Program Files
+  d-----                5/16/2026  10:51 PM                Program Files (x86)
+  d-----                5/16/2026  10:51 PM                ProgramData
+  d-----                5/16/2026  10:51 PM                Users
+  d---s-                5/16/2026  10:51 PM                Windows
+  -a----                5/16/2026  10:51 PM              9 numbers.txt
+  -a----                5/16/2026  10:51 PM              9 nums.txt
 
 
 --- [37] § create / inspect ---
