@@ -16,13 +16,20 @@ export class WriteOutputCmdlet implements ICmdlet {
   readonly aliases = ['echo'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const val = ctx.positional[0] ?? ctx.pipeInput ?? null;
-    if (Array.isArray(val)) {
-      for (const item of val) ctx.emit(psValueToString(item));
-    } else {
-      ctx.emit(psValueToString(val));
+    // Write-Output emits ONE item per positional arg (matches real PS).
+    // `echo hello world` writes two lines: "hello" then "world".
+    // Falls back to the pipeline input when there are no explicit args.
+    const args: PSValue[] = ctx.positional.length > 0
+      ? ctx.positional
+      : ctx.pipeInput !== undefined && ctx.pipeInput !== null
+        ? (Array.isArray(ctx.pipeInput) ? ctx.pipeInput : [ctx.pipeInput])
+        : [];
+    if (args.length === 0) { ctx.emit(''); return null; }
+    for (const item of args) {
+      if (Array.isArray(item)) for (const sub of item) ctx.emit(psValueToString(sub));
+      else ctx.emit(psValueToString(item));
     }
-    return val;
+    return args.length === 1 ? args[0] : args;
   }
 }
 

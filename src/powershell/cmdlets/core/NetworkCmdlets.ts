@@ -508,7 +508,13 @@ export class GetNetFirewallRuleCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const rules = requireNetwork(ctx).getFirewallRules();
+    const displayName = ctx.named['displayname'] !== undefined
+      ? psValueToString(ctx.named['displayname']).toLowerCase() : null;
+    const name = ctx.named['name'] !== undefined
+      ? psValueToString(ctx.named['name']).toLowerCase() : null;
+    const rules = requireNetwork(ctx).getFirewallRules()
+      .filter(r => !displayName || r.displayName?.toLowerCase() === displayName || r.name.toLowerCase() === displayName)
+      .filter(r => !name || r.name.toLowerCase() === name);
     return rules.map(r => ({
       Name: r.name,
       DisplayName: r.displayName,

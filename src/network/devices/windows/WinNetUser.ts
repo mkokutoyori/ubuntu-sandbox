@@ -56,13 +56,20 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
   const username = positional[0];
   if (!username) return 'The syntax of this command is:\n\nNET USER [username [password | *] [options]] [/DOMAIN]\n         username {password | *} /ADD [options] [/DOMAIN]\n         username [/DELETE] [/DOMAIN]';
 
-  // net user <name> /add
+  // net user <name> /add — accept additional flags in the same call so
+  // `net user foo "" /add /fullname:"X" /comment:"Y" /active:no` initialises
+  // every property atomically.
   if (flags.has('add')) {
     const password = positional[1] || '';
     const err = ctx.userManager.createUser(username, password);
     if (err) return `System error.\n\n${err}`;
-    // Add to Users group by default
     ctx.userManager.addGroupMember('Users', username);
+    for (const propKey of ['fullname', 'comment', 'active'] as const) {
+      if (flags.has(propKey)) {
+        const e = ctx.userManager.setUserProperty(username, propKey, flags.get(propKey)!);
+        if (e) return `System error.\n\n${e}`;
+      }
+    }
     return 'The command completed successfully.';
   }
 

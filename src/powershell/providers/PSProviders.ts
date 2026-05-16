@@ -159,6 +159,13 @@ export interface IRegistryProvider {
   newItem(path: string, force: boolean): string;
   removeItem(path: string, recurse: boolean): string;
   getItemProperty(path: string, name?: string): string;
+  /**
+   * Read registry values as a structured object: `{ propName: value, ... }`.
+   * Returns `null` when the path does not exist. Used by Get-ItemProperty to
+   * expose individual properties (`(Get-ItemProperty ...).PropName`) without
+   * parsing the human-readable formatted string.
+   */
+  getItemPropertyValues?(path: string): Record<string, string | number> | null;
   setItemProperty(path: string, name: string, value: string | number): string;
   removeItemProperty(path: string, name: string): string;
   getPSDrive(): string;
@@ -181,6 +188,12 @@ export interface IProcessProvider {
   listProcesses(nameFilter?: string): ProcessInfo[];
   getProcess(nameOrPid: string | number): ProcessInfo | null;
   killProcess(nameOrPid: string | number, force: boolean): string;
+  /**
+   * Spawn a new process. Used by `Start-Process` and cmd `start <prog>`
+   * so the device's process table is shared between both shells.
+   * Returns the new ProcessInfo (or `null` if the call was rejected).
+   */
+  startProcess?(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null;
 }
 
 export interface INetworkProvider {

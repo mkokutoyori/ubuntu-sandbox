@@ -175,13 +175,18 @@ export class StartProcessCmdlet implements ICmdlet {
       ctx.emitError('Start-Process requires -FilePath');
       return null;
     }
+    const argList = ctx.named['argumentlist'] ?? ctx.named['arguments'];
+    const argString = argList === undefined ? undefined
+      : Array.isArray(argList) ? argList.map(psValueToString).join(' ')
+      : psValueToString(argList);
+    // Derive a Windows-style image name from a bare command or a full path.
+    const leaf = filePath.replace(/^["']|["']$/g, '').split(/[\\/]/).pop() ?? filePath;
+    const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
+    const proc = ctx.providers.processes?.startProcess?.(imageName, { arguments: argString });
     if (ctx.named['passthru'] === true) {
-      // Mimic the PSObject Start-Process -PassThru hands back.
-      return {
-        Id: 0,
-        Name: filePath.replace(/\\/g, '/').split('/').pop() ?? filePath,
-        Path: filePath,
-      } as Record<string, PSValue>;
+      return proc
+        ? { Id: proc.pid, Name: proc.name, Path: filePath } as Record<string, PSValue>
+        : null;
     }
     return null;
   }

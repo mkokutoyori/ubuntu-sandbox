@@ -16,6 +16,14 @@
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
+import { fwRules, resolveAdapterName } from '@/network/devices/windows/WinNetsh';
+import { IPAddress, SubnetMask } from '@/network/core/types';
+
+type FwRow = {
+  name: string; displayName: string; enabled: boolean;
+  action: string; direction: string; protocol: string;
+  localPort: string; remotePort: string; description: string;
+};
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
@@ -154,7 +162,9 @@ class WindowsServiceAdapter implements IServiceProvider {
   }
   restartService(name: string): string {
     const stopRes = this.mgr().stopService(name, this.isAdmin());
-    if (stopRes && /error|denied|not/i.test(stopRes)) return stopRes;
+    // Real PowerShell Restart-Service tolerates a pre-stopped target: it
+    // just starts it. Only abort on permission errors or "service not found".
+    if (stopRes && /denied|does not exist/i.test(stopRes)) return stopRes;
     return this.mgr().startService(name, this.isAdmin());
   }
   setService(name: string, opts: { startType?: string; description?: string; displayName?: string; status?: string }): string {
@@ -230,6 +240,19 @@ class WindowsProcessAdapter implements IProcessProvider {
       return this.mgr().killProcess(nameOrPid, force, this.isAdmin());
     }
     return this.mgr().killByName(nameOrPid, force, this.isAdmin(), false);
+  }
+  startProcess(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null {
+    const mgr = this.mgr();
+    // Parent the new process to explorer.exe (interactive shell session).
+    const parent = mgr.getAllProcesses().find(p => p.name.toLowerCase() === 'explorer.exe');
+    const ppid = parent?.pid ?? 1;
+    const spawned = mgr.spawnProcess(
+      imageName,
+      ppid,
+      opts?.user ?? (this.pc as unknown as { getCurrentUser?: () => string }).getCurrentUser?.() ?? 'User',
+      { session: 'Console', sessionId: 1, commandLine: opts?.arguments },
+    );
+    return spawned ? toProcessInfo(spawned) : null;
   }
 }
 
@@ -361,6 +384,7 @@ class WindowsRegistryAdapter implements IRegistryProvider {
   newItem(path: string, force: boolean): string { return this.reg.newItem(path, force); }
   removeItem(path: string, recurse: boolean): string { return this.reg.removeItem(path, recurse); }
   getItemProperty(path: string, name?: string): string { return this.reg.getItemProperty(path, name); }
+  getItemPropertyValues(path: string) { return this.reg.getItemPropertyValues(path); }
   setItemProperty(path: string, name: string, value: string | number): string {
     return this.reg.setItemProperty(path, name, value);
   }
@@ -523,12 +547,35 @@ class WindowsNetworkAdapter implements INetworkProvider {
       const dest = ip.includes(':') ? '::/0' : '0.0.0.0/0';
       this.state.extraRoutes.set(dest, { ifAlias, nextHop: opts.gateway, metric: 256 });
     }
+    // Mirror onto the device port so cmd's `ipconfig` / `netsh ipv4 show
+    // addresses` see the same address PowerShell just added.
+    if (!ip.includes(':')) {
+      const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
+      const portName = resolveAdapterName(ifAlias, ports);
+      if (ports.has(portName)) {
+        const maskOctets = prefixToMaskOctets(prefixLength);
+        try {
+          (this.pc as unknown as { configureInterface: (n: string, ip: IPAddress, m: SubnetMask) => void })
+            .configureInterface(portName, new IPAddress(ip), new SubnetMask(maskOctets));
+        } catch { /* ignore — extraIPs already records the assignment */ }
+      }
+    }
   }
   removeIPAddress(ip: string): void {
     if (ip === '127.0.0.1' || ip === '::1') {
       throw new Error('Cannot remove loopback address.');
     }
+    const entry = this.state.extraIPs.get(ip.toLowerCase());
     this.state.extraIPs.delete(ip.toLowerCase());
+    // Also strip the address from the underlying device port so cmd's
+    // `ipconfig` no longer reports it. We only clear if the port currently
+    // carries that exact IP (matches netsh's `delete address` semantics).
+    if (entry && !ip.includes(':')) {
+      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown; clearIP: () => void }> }).ports;
+      const portName = resolveAdapterName(entry.ifAlias, ports as Map<string, unknown>);
+      const port = ports.get(portName);
+      if (port && String(port.getIPAddress()) === ip) port.clearIP();
+    }
   }
 
   // ─ Routes ───────────────────────────────────────────────────────────────
@@ -612,7 +659,20 @@ class WindowsNetworkAdapter implements INetworkProvider {
   isDHCPConfigured(): boolean { return false; }
   testConnection(): boolean   { return true; }
   resolveDns(): string[]      { return []; }
-  getTcpConnections()         { return []; }
+  getTcpConnections() {
+    const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }> } }).getSocketTable?.();
+    if (!table) return [];
+    return table.getAll()
+      .filter(s => s.protocol.toLowerCase() === 'tcp')
+      .map(s => ({
+        localAddress:  s.localAddress,
+        localPort:     s.localPort,
+        remoteAddress: s.state === 'LISTEN' ? '0.0.0.0' : s.remoteAddress,
+        remotePort:    s.state === 'LISTEN' ? 0 : s.remotePort,
+        state:         s.state === 'LISTEN' ? 'Listen' : s.state,
+        pid:           s.pid,
+      }));
+  }
 
   // ─ Firewall ─────────────────────────────────────────────────────────────
 
@@ -628,8 +688,30 @@ class WindowsNetworkAdapter implements INetworkProvider {
       { name: 'WinRM-HTTP-In-TCP',    displayName: 'Windows Remote Management',  enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '5985',  remotePort: 'Any', description: 'Built-in: WinRM' },
       { name: 'BlockTelemetry',       displayName: 'Block Windows Telemetry',    enabled: true,  action: 'Block', direction: 'Outbound', protocol: 'TCP', localPort: 'Any',   remotePort: '443', description: 'Built-in: Block Telemetry' },
     ];
-    const dynamic = Array.from(this.state.dynamicFirewallRules.values()).map(r => ({ ...r }));
-    return [...builtins, ...dynamic];
+    // Coherent view: dynamic rules added via PowerShell live in
+    // `state.dynamicFirewallRules`; cmd's `netsh advfirewall firewall add`
+    // pushes into the shared module-level `fwRules` array. We merge both
+    // sources by displayName so callers see a single coherent list.
+    const dynamicMap = new Map<string, FwRow>();
+    for (const r of this.state.dynamicFirewallRules.values()) {
+      dynamicMap.set((r.displayName ?? r.name).toLowerCase(), { ...r });
+    }
+    for (const r of fwRules) {
+      const key = r.name.toLowerCase();
+      if (dynamicMap.has(key)) continue;
+      dynamicMap.set(key, {
+        name: r.name,
+        displayName: r.name,
+        enabled: true,
+        action: r.action.charAt(0).toUpperCase() + r.action.slice(1),
+        direction: r.dir === 'out' ? 'Outbound' : 'Inbound',
+        protocol: r.protocol,
+        localPort: r.localport,
+        remotePort: 'Any',
+        description: '',
+      });
+    }
+    return [...builtins, ...dynamicMap.values()];
   }
   addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void {
     const displayName = rule.displayName ?? rule.name;
@@ -645,6 +727,19 @@ class WindowsNetworkAdapter implements INetworkProvider {
       remotePort: rule.remotePort ?? 'Any',
       description: rule.description ?? '',
     });
+    // Mirror into the cmd-visible store so `netsh advfirewall firewall show
+    // rule name="<n>"` can find the same rule.
+    if (!fwRules.some(r => r.name.toLowerCase() === rule.name.toLowerCase())) {
+      fwRules.push({
+        name:      rule.name,
+        dir:       rule.direction === 'Outbound' ? 'out' : 'in',
+        action:    rule.action.toLowerCase(),
+        protocol:  rule.protocol ?? 'TCP',
+        localport: rule.localPort ?? 'Any',
+        program:   '',
+        profile:   'any',
+      });
+    }
   }
   setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string {
     const key = name.toLowerCase();
@@ -656,7 +751,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   removeFirewallRule(name: string): string {
     const key = name.toLowerCase();
-    return this.state.dynamicFirewallRules.delete(key) ? '' : `No firewall rule named '${name}'.`;
+    const removed = this.state.dynamicFirewallRules.delete(key);
+    const i = fwRules.findIndex(r => r.name.toLowerCase() === name.toLowerCase());
+    if (i >= 0) fwRules.splice(i, 1);
+    return (removed || i >= 0) ? '' : `No firewall rule named '${name}'.`;
   }
 
   // ─ Adapter actions ──────────────────────────────────────────────────────
@@ -695,6 +793,13 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const m = this.pc as unknown as { runSyncNativeCommand?: (c: string, a: string[]) => string | null };
     return m.runSyncNativeCommand ? m.runSyncNativeCommand(cmd, args) : null;
   }
+}
+
+/** CIDR prefix length → 4-octet subnet mask. */
+function prefixToMaskOctets(prefix: number): number[] {
+  const bits = Math.max(0, Math.min(32, prefix));
+  const m = bits === 0 ? 0 : 0xFFFFFFFF << (32 - bits);
+  return [(m >>> 24) & 0xFF, (m >>> 16) & 0xFF, (m >>> 8) & 0xFF, m & 0xFF];
 }
 
 function notImpl(name: string): Error {
@@ -768,20 +873,28 @@ const SEEDED_TASKS: ScheduledTaskInfo[] = [
 ];
 
 class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
-  constructor(private readonly state: ScheduledTaskState) {}
+  /**
+   * Reads/writes go through the device's shared `scheduledTasks` map so
+   * cmd `schtasks` and PS `*-ScheduledTask` cmdlets observe identical state.
+   */
+  constructor(private readonly pc: WindowsPC) {}
+
+  private store(): Map<string, ScheduledTaskInfo> {
+    return (this.pc as unknown as { scheduledTasks: Map<string, ScheduledTaskInfo> }).scheduledTasks;
+  }
 
   listTasks(nameFilter?: string): ScheduledTaskInfo[] {
-    const all = Array.from(this.state.tasks.values());
+    const all = Array.from(this.store().values());
     return nameFilter
       ? all.filter(t => t.taskName.toLowerCase().includes(nameFilter.toLowerCase()))
       : all;
   }
   registerTask(task: ScheduledTaskInfo): string {
-    this.state.tasks.set(task.taskName.toLowerCase(), task);
+    this.store().set(task.taskName.toLowerCase(), task);
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
-    return this.state.tasks.delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
+    return this.store().delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
   }
 }
 
@@ -916,7 +1029,7 @@ export function createWindowsPSProviders(
     eventLog:       new WindowsEventLogAdapter(log),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(vpn),
-    scheduledTasks: new WindowsScheduledTaskAdapter(tasks),
+    scheduledTasks: new WindowsScheduledTaskAdapter(pc),
     disks:          new WindowsDiskAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),
   };

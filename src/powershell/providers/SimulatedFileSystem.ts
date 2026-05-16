@@ -55,7 +55,9 @@ export class SimulatedFileSystem implements IFileSystemProvider {
   appendFile(path: string, content: string): void {
     const key = this.norm(path);
     const existing = this.files.get(key) ?? '';
-    this.files.set(key, existing ? `${existing}\n${content}` : content);
+    // Plain concatenation — line semantics belong to the caller (Add-Content,
+    // cmd `echo >>`, etc.) so this provider behaves like a real filesystem.
+    this.files.set(key, existing + content);
   }
 
   listDir(path: string): DirEntry[] {

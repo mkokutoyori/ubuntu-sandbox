@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-network-pc
-Generated: 2026-05-15T16:52:33.006Z
+Generated: 2026-05-16T06:30:15.201Z
 host=WIN-NET-COH (windows-pc)
 Total commands: 102
 ============================================================
@@ -20,7 +20,7 @@ CMD [4/102]> echo %COMPUTERNAME%
   WIN-NET-COH
 
 PS  [5/102]> [Environment]::MachineName
-<empty>
+  WIN-NET-COH
 
 
 --- [6] § ipconfig vs Get-NetIPAddress ---
@@ -284,12 +284,12 @@ CMD [21/102]> netsh interface show interface
 
 PS  [22/102]> Get-NetAdapter | Select-Object Name, Status, MacAddress
   
-  
-  
-  
-  
-  
-  
+  Name  Status  MacAddress       
+  ----  ------  -----------------
+  eth0  Up      02:00:00:00:00:01
+  eth1  Up      02:00:00:00:00:02
+  eth2  Up      02:00:00:00:00:03
+  eth3  Up      02:00:00:00:00:04
   
 
 CMD [23/102]> netsh interface ipv4 show addresses
@@ -403,7 +403,7 @@ CMD [32/102]> ipconfig
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     IPv4 Address. . . . . . . . . . . : 192.168.99.10
+     IPv4 Address. . . . . . . . . . . : 192.168.88.10
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
   
@@ -426,8 +426,8 @@ CMD [32/102]> ipconfig
 CMD [33/102]> netsh interface ipv4 show addresses
   Configuration for interface "Ethernet 0"
       DHCP enabled:                         No
-      IP Address:                           192.168.99.10
-      Subnet Prefix:                        192.168.99.10/24 (mask 255.255.255.0)
+      IP Address:                           192.168.88.10
+      Subnet Prefix:                        192.168.88.10/24 (mask 255.255.255.0)
       InterfaceMetric:                      25
       Register with which suffix:           Primary only
   
@@ -456,9 +456,7 @@ CMD [35/102]> ipconfig
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     IPv4 Address. . . . . . . . . . . : 192.168.99.10
-     Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Default Gateway . . . . . . . . . : 
+     Media State . . . . . . . . . . . : Media disconnected
   
   Ethernet adapter Ethernet 1:
   
@@ -492,7 +490,7 @@ CMD [36/102]> route print
   ===========================================================================
   Active Routes:
   Network Destination        Netmask          Gateway         Interface  Metric
-    192.168.99.0             255.255.255.0    On-link         192.168.99.10  0
+    192.168.88.0             255.255.255.0    On-link         eth0           0
   ===========================================================================
   Persistent Routes:
     None
@@ -511,7 +509,7 @@ CMD [37/102]> route print -4
   ===========================================================================
   Active Routes:
   Network Destination        Netmask          Gateway         Interface  Metric
-    192.168.99.0             255.255.255.0    On-link         192.168.99.10  0
+    192.168.88.0             255.255.255.0    On-link         eth0           0
   ===========================================================================
   Persistent Routes:
     None
@@ -522,7 +520,6 @@ PS  [38/102]> Get-NetRoute -ErrorAction SilentlyContinue
   -----------------  ---------------------------  -------  -----------
   0.0.0.0/0          Ethernet                     0.0.0.0            0
   127.0.0.0/8        Loopback Pseudo-Interface 1  0.0.0.0          306
-  192.168.99.0/24    Ethernet                     0.0.0.0          256
   
 
 PS  [39/102]> Get-NetRoute | Sort-Object DestinationPrefix -ErrorAction SilentlyContinue | Select-Object -First 5
@@ -531,7 +528,6 @@ PS  [39/102]> Get-NetRoute | Sort-Object DestinationPrefix -ErrorAction Silently
   -----------------  ---------------------------  -------  -----------
   0.0.0.0/0          Ethernet                     0.0.0.0            0
   127.0.0.0/8        Loopback Pseudo-Interface 1  0.0.0.0          306
-  192.168.99.0/24    Ethernet                     0.0.0.0          256
   
 
 CMD [40/102]> route add 10.99.0.0 mask 255.255.0.0 192.168.1.254 metric 1
@@ -594,7 +590,28 @@ CMD [50/102]> netstat -n
 PS  [51/102]> Get-NetTCPConnection -ErrorAction SilentlyContinue | Select-Object -First 5
   
   LocalAddress  : 0.0.0.0
-  LocalPort     : 135
+  LocalPort     : 22
+  RemoteAddress : 0.0.0.0
+  RemotePort    : 0
+  State         : Listen
+  OwningProcess : 1088
+  
+  LocalAddress  : 0.0.0.0
+  LocalPort     : 3389
+  RemoteAddress : 0.0.0.0
+  RemotePort    : 0
+  State         : Listen
+  OwningProcess : 1096
+  
+  LocalAddress  : 0.0.0.0
+  LocalPort     : 445
+  RemoteAddress : 0.0.0.0
+  RemotePort    : 0
+  State         : Listen
+  OwningProcess : 4
+  
+  LocalAddress  : 0.0.0.0
+  LocalPort     : 139
   RemoteAddress : 0.0.0.0
   RemotePort    : 0
   State         : Listen
@@ -638,7 +655,13 @@ PS  [57/102]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
   
 
 PS  [58/102]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
-<empty>
+  
+  Name     : 1.0.0.127.in-addr.arpa
+  Type     : PTR
+  TTL      : 300
+  Section  : Answer
+  NameHost : localhost
+  
 
 PS  [59/102]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
   
@@ -691,8 +714,8 @@ CMD [65/102]> ping -n 2 localhost
 PS  [66/102]> Test-Connection 127.0.0.1 -Count 1 -ErrorAction SilentlyContinue
   
   Source      : localhost
-  Destination : 127
-  IPV4Address : 127
+  Destination : 127.0.0.1
+  IPV4Address : 127.0.0.1
   Bytes       : 32
   Time(ms)    : 1
   Status      : Success
@@ -725,7 +748,7 @@ CMD [69/102]> ping -n 1 8.8.8.8
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 PS  [70/102]> Test-NetConnection 127.0.0.1 -ErrorAction SilentlyContinue
-  ComputerName=127; RemoteAddress=127; RemotePort=0; InterfaceAlias=eth0; SourceAddress=0.0.0.0; PingSucceeded=True; PingReplyDetails=RoundtripTime=1; TcpTestSucceeded=False
+  ComputerName=127.0.0.1; RemoteAddress=127.0.0.1; RemotePort=0; InterfaceAlias=eth0; SourceAddress=0.0.0.0; PingSucceeded=True; PingReplyDetails=RoundtripTime=1; TcpTestSucceeded=False
 
 
 --- [71] § tracert ---
@@ -748,15 +771,9 @@ CMD [75/102]> netsh advfirewall firewall add rule name="CohFwCmd" dir=in action=
 
 PS  [76/102]> Get-NetFirewallRule -DisplayName "CohFwCmd" -ErrorAction SilentlyContinue
   
-  Name                  Enabled  Description                
-  --------------------  -------  ---------------------------
-  CoreNet-DHCP-In       True     Built-in: DHCP client      
-  CoreNet-DHCP-Out      True     Built-in: DHCP client      
-  CoreNet-DNS-Out       True     Built-in: DNS client       
-  FPS-ICMP4-ERQ-In      True     Built-in: ICMP echo request
-  RemoteDesktop-In-TCP  False    Built-in: RDP              
-  WinRM-HTTP-In-TCP     False    Built-in: WinRM            
-  BlockTelemetry        True     Built-in: Block Telemetry  
+  Name      Enabled  Description
+  --------  -------  -----------
+  CohFwCmd  True                
   
 
 CMD [77/102]> netsh advfirewall firewall delete rule name="CohFwCmd"
@@ -766,7 +783,16 @@ PS  [78/102]> New-NetFirewallRule -DisplayName "CohFwPs" -Direction Inbound -Act
 <empty>
 
 CMD [79/102]> netsh advfirewall firewall show rule name="CohFwPs"
-  No rules match the specified criteria.
+  
+  Rule Name:                            CohFwPs
+  ----------------------------------------------------------------------
+  Enabled:                              Yes
+  Direction:                            in
+  Profiles:                             any
+  Action:                               Allow
+  Protocol:                             TCP
+  LocalPort:                            9091
+  
 
 PS  [80/102]> Remove-NetFirewallRule -DisplayName "CohFwPs" -ErrorAction SilentlyContinue
 <empty>
@@ -818,61 +844,38 @@ PS  [84/102]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
 --- [85] § discovery ---
 PS  [85/102]> Get-Command -Noun NetAdapter -ErrorAction SilentlyContinue | Select-Object Name
   
-  Name             
-  -----------------
-  Write-Host       
-  Write-Output     
-  Write-Error      
-  Write-Warning    
-  ForEach-Object   
-  Where-Object     
-  Select-Object    
-  Sort-Object      
-  Measure-Object   
-  Group-Object     
-  Format-Table     
-  Format-List      
-  ConvertTo-Json   
-  ConvertFrom-Json 
-  Get-Date         
-  Set-Variable     
-  Get-Variable     
-  Remove-Variable  
-  Invoke-Expression
-  Test-Path        
+  Name              
+  ------------------
+  Get-Netadapter    
+  Enable-Netadapter 
+  Disable-Netadapter
+  Rename-Netadapter 
+  Restart-Netadapter
   
 
 PS  [86/102]> Get-Command -Noun NetIPAddress -ErrorAction SilentlyContinue | Select-Object Name
   
-  Name             
-  -----------------
-  Write-Host       
-  Write-Output     
-  Write-Error      
-  Write-Warning    
-  ForEach-Object   
-  Where-Object     
-  Select-Object    
-  Sort-Object      
-  Measure-Object   
-  Group-Object     
-  Format-Table     
-  Format-List      
-  ConvertTo-Json   
-  ConvertFrom-Json 
-  Get-Date         
-  Set-Variable     
-  Get-Variable     
-  Remove-Variable  
-  Invoke-Expression
-  Test-Path        
+  Name               
+  -------------------
+  Get-Netipaddress   
+  New-Netipaddress   
+  Remove-Netipaddress
+  Set-Netipaddress   
   
 
 PS  [87/102]> gcm Test-Connection
-<empty>
+  
+  Name             CommandType  Source
+  ---------------  -----------  ------
+  Test-Connection  Cmdlet             
+  
 
 PS  [88/102]> gcm Resolve-DnsName
-<empty>
+  
+  Name             CommandType  Source
+  ---------------  -----------  ------
+  Resolve-Dnsname  Cmdlet             
+  
 
 PS  [89/102]> Get-Alias ipconfig -ErrorAction SilentlyContinue
 <empty>
@@ -902,28 +905,20 @@ CMD [94/102]> help route
 
 --- [95] § summary ---
 CMD [95/102]> ipconfig | findstr IPv4
-     IPv4 Address. . . . . . . . . . . : 192.168.99.10
+<empty>
 
 PS  [96/102]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object IPAddress, InterfaceAlias
   
-  
-  
-  
-  
+  IPAddress  InterfaceAlias             
+  ---------  ---------------------------
+  127.0.0.1  Loopback Pseudo-Interface 1
   
 
 CMD [97/102]> netstat -an | find /c ":"
-  
-  Active Connections
-  
-    Proto  Local Address          Foreign Address        State
-    TCP    0.0.0.0:22            0.0.0.0:0             LISTENING
-    TCP    0.0.0.0:3389          0.0.0.0:0             LISTENING
-    TCP    0.0.0.0:445           0.0.0.0:0             LISTENING
-    TCP    0.0.0.0:139           0.0.0.0:0             LISTENING
+  4
 
 PS  [98/102]> (Get-NetTCPConnection -ErrorAction SilentlyContinue).Count
-  1
+  4
 
 PS  [99/102]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize
   Name            Count          
@@ -933,7 +928,7 @@ PS  [99/102]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -A
 PS  [100/102]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
   Name            Count          
   --------------- ---------------
-  IPv4            2              
+  IPv4            1              
   IPv6            1              
 
 CMD [101/102]> getmac | findstr -i :

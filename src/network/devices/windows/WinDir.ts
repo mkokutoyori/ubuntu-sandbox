@@ -13,7 +13,7 @@ import type { WinFileCommandContext } from './WinFileCommands';
 
 export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
   const flags = new Set<string>();
-  let targetPath: string | null = null;
+  const positionals: string[] = [];
 
   for (const arg of args) {
     const lower = arg.toLowerCase();
@@ -21,15 +21,46 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
     else if (lower === '/s') flags.add('recursive');
     else if (lower === '/b') flags.add('bare');
     else if (lower === '/?') return dirHelp();
-    else targetPath = arg;
+    // `/a` shows all attributes, `/a:<spec>` filters; `/o:<spec>` sorts.
+    // The simulator does not store dates per attribute filter, so we accept
+    // these flags as no-ops rather than failing with "File Not Found".
+    else if (lower === '/a' || lower.startsWith('/a:')) flags.add('all-attrs');
+    else if (lower === '/o' || lower.startsWith('/o:') || lower.startsWith('/od')) flags.add('sort');
+    else if (lower.startsWith('/')) continue;
+    else positionals.push(arg);
+  }
+
+  // First positional = directory (may be omitted), second = wildcard.
+  // `dir C:\CohFs *.txt` → dir=C:\CohFs, pattern=*.txt.
+  let targetPath: string | null = positionals[0] ?? null;
+  if (positionals.length >= 2 && /[*?]/.test(positionals[1])) {
+    targetPath = positionals[0];
+  }
+
+  // Split a `<dir> <pattern>` form: real cmd accepts both
+  // `dir C:\CohFs *.txt` (two args) and `dir C:\CohFs\*.txt` (one path).
+  let wildcard: string | null = null;
+  if (positionals.length >= 2 && /[*?]/.test(positionals[positionals.length - 1])) {
+    wildcard = positionals[positionals.length - 1];
+  } else if (targetPath && /[*?]/.test(targetPath)) {
+    const sep = Math.max(targetPath.lastIndexOf('\\'), targetPath.lastIndexOf('/'));
+    wildcard = targetPath.slice(sep + 1);
+    targetPath = sep >= 0 ? targetPath.slice(0, sep + 1) : ctx.cwd;
   }
 
   const absPath = targetPath
     ? ctx.fs.normalizePath(targetPath, ctx.cwd)
     : ctx.cwd;
 
+  // `dir <file>` is valid on real Windows: list the file as a one-row entry
+  // inside its parent directory. Only return "File Not Found" when nothing
+  // at that path exists.
   if (!ctx.fs.isDirectory(absPath)) {
-    return 'File Not Found';
+    if (!ctx.fs.exists(absPath)) return 'File Not Found';
+    return dirSingleFile(ctx, absPath);
+  }
+  if (wildcard) {
+    return dirWildcard(ctx, absPath, wildcard);
   }
 
   if (flags.has('recursive')) {
@@ -37,6 +68,57 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
   }
 
   return dirSingle(ctx, absPath, flags);
+}
+
+function dirWildcard(ctx: WinFileCommandContext, absPath: string, pattern: string): string {
+  const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+  const entries = ctx.fs.listDirectory(absPath).filter(e => re.test(e.name));
+  if (entries.length === 0) return 'File Not Found';
+  const lines: string[] = [];
+  lines.push(` Volume in drive ${absPath[0]} has no label.`);
+  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber()}`);
+  lines.push('');
+  lines.push(` Directory of ${absPath}`);
+  lines.push('');
+  let fileCount = 0;
+  let fileBytes = 0;
+  let dirCount  = 0;
+  for (const { name, entry } of entries) {
+    const date = formatDate(entry.mtime);
+    if (entry.type === 'directory') {
+      lines.push(`${date}    <DIR>          ${name}`);
+      dirCount++;
+    } else {
+      const sizeStr = entry.size.toLocaleString('en-US').padStart(14, ' ');
+      lines.push(`${date} ${sizeStr} ${name}`);
+      fileCount++;
+      fileBytes += entry.size;
+    }
+  }
+  lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
+  lines.push(`               ${dirCount} Dir(s)  53,687,091,200 bytes free`);
+  return lines.join('\n');
+}
+
+function dirSingleFile(ctx: WinFileCommandContext, absPath: string): string {
+  const lastSep = absPath.lastIndexOf('\\');
+  const parent  = lastSep > 1 ? absPath.slice(0, lastSep) : absPath.slice(0, lastSep + 1);
+  const leaf    = absPath.slice(lastSep + 1);
+  const entries = ctx.fs.listDirectory(parent);
+  const hit = entries.find(e => e.name.toLowerCase() === leaf.toLowerCase());
+  if (!hit) return 'File Not Found';
+  const lines: string[] = [];
+  lines.push(` Volume in drive ${absPath[0]} has no label.`);
+  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber()}`);
+  lines.push('');
+  lines.push(` Directory of ${parent}`);
+  lines.push('');
+  const date = formatDate(hit.entry.mtime);
+  const sizeStr = hit.entry.size.toLocaleString('en-US').padStart(14, ' ');
+  lines.push(`${date} ${sizeStr} ${hit.name}`);
+  lines.push(`               1 File(s) ${hit.entry.size.toLocaleString('en-US')} bytes`);
+  lines.push(`               0 Dir(s)  53,687,091,200 bytes free`);
+  return lines.join('\n');
 }
 
 function dirSingle(ctx: WinFileCommandContext, absPath: string, flags: Set<string>): string {

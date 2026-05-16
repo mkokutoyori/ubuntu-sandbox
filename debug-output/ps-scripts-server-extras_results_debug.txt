@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server-extras
-Generated: 2026-05-15T16:52:32.796Z
+Generated: 2026-05-16T06:30:17.070Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
@@ -21,13 +21,16 @@ PS [4/23]> Get-Content C:\ServerScripts\role.ps1
   "Hostname = $env:COMPUTERNAME"
   "User = $env:USERNAME"
   "Date = $(Get-Date)"
-  
 
 PS [5/23]> & C:\ServerScripts\role.ps1
-  Date = 5/15/2026 4:52 PM
+  Hostname = SRV-SCR-DBG
+  User = Administrator
+  Date = 5/16/2026 6:30 AM
 
 PS [6/23]> . C:\ServerScripts\role.ps1
-  Date = 5/15/2026 4:52 PM
+  Hostname = SRV-SCR-DBG
+  User = Administrator
+  Date = 5/16/2026 6:30 AM
 
 PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
 <empty>
@@ -35,18 +38,15 @@ PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service |
 PS [8/23]> Get-Content C:\ServerScripts\svcaudit.ps1
   Get-Service | Group-Object Status | ForEach-Object { "$($_.Name): $($_.Count)" }
   Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 5 Name, Status
-  
 
 PS [9/23]> & C:\ServerScripts\svcaudit.ps1
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  Running: 3
+  Stopped: 3
+  Name=Tcpip; Status=Running
+  Name=Afd; Status=Running
+  Name=Dhcp; Status=Running
+  Name=Dnscache; Status=Running
+  Name=NetBT; Status=Running
 
 PS [10/23]> Set-Content -Path C:\ServerScripts\users.ps1 -Value "param([string]`$Prefix = `"srv`")`n1..2 | ForEach-Object {`n  `$u = `"`$Prefix-acct`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created `$u`"`n}`n"
 <empty>
@@ -58,7 +58,6 @@ PS [11/23]> Get-Content C:\ServerScripts\users.ps1
     New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
     Write-Output "created $u"
   }
-  
 
 PS [12/23]> & C:\ServerScripts\users.ps1 -Prefix srv
   created srv-acct1
@@ -84,16 +83,23 @@ PS [16/23]> Get-Content C:\ServerScripts\report.ps1
   "User: $env:USERNAME"
   "Services running: $((Get-Service | Where-Object { $_.Status -eq 'Running' }).Count)"
   "Processes: $((Get-Process).Count)"
-  
 
 PS [17/23]> & C:\ServerScripts\report.ps1
+  == System report ==
+  Hostname: SRV-SCR-DBG
+  User: Administrator
+  Services running: 20
   Processes: 26
 
 PS [18/23]> Set-Content -Path C:\ServerScripts\inline.ps1 -Value "& { 1..5 | ForEach-Object { `"[`$_]`" } }`n"
 <empty>
 
 PS [19/23]> & C:\ServerScripts\inline.ps1
-  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=RangeExpression; start=type=LiteralExpression; value=1; raw=1; kind=number; position=offset=4; line=1; column=5; end=type=LiteralExpression; value=5; raw=5; kind=number; position=offset=7; line=1; column=8; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=ForEach-Object; position=offset=11; line=1; column=12; parameters=; arguments=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=LiteralExpression; value=[$_]; raw=[$_]; kind=expandable; position=offset=28; line=1; column=29; parameters=; arguments=; position=offset=28; line=1; column=29; position=offset=28; line=1; column=29; redirections=; position=offset=28; line=1; column=29; position=offset=28; line=1; column=29; position=offset=26; line=1; column=27; position=offset=11; line=1; column=12; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
+  [1]
+  [2]
+  [3]
+  [4]
+  [5]
 
 PS [20/23]> Get-ChildItem C:\ServerScripts | Format-Table Name, Length -AutoSize
   Name            Length         
