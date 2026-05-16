@@ -168,3 +168,40 @@ describe('`sc` service control is coherent in cmd and PowerShell', () => {
     expect(norm(cmdQc)).toContain('AUTO_START');
   });
 });
+
+describe('`echo > file` redirection is coherent in cmd and PowerShell', () => {
+  it('PS `>` writes the file with NO console echo (like cmd)', async () => {
+    const d = pc();
+    await d.executeCmdCommand('mkdir C:\\R');
+    const sh = ps(d);
+
+    // cmd: silent, file gets the content
+    expect(await d.executeCmdCommand('echo c-line > C:\\R\\c.txt')).toBe('');
+    expect((await d.executeCmdCommand('type C:\\R\\c.txt')).trim()).toBe('c-line');
+
+    // PS: also silent (no echoed object), file gets the content
+    expect((await sh.processLine('echo p-line > C:\\R\\p.txt')).output).toEqual([]);
+    expect((await sh.processLine('Get-Content C:\\R\\p.txt')).output).toEqual(['p-line']);
+  });
+
+  it('PS `>>` appends on a new line (no run-together)', async () => {
+    const d = pc();
+    await d.executeCmdCommand('mkdir C:\\R');
+    const sh = ps(d);
+    await sh.processLine('echo one > C:\\R\\a.txt');
+    await sh.processLine('echo two >> C:\\R\\a.txt');
+    expect((await sh.processLine('Get-Content C:\\R\\a.txt')).output).toEqual(['one', 'two']);
+  });
+
+  it('`2>` only redirects the error stream — stdout still prints', async () => {
+    const d = pc();
+    await d.executeCmdCommand('mkdir C:\\R');
+    const sh = ps(d);
+    expect((await sh.processLine('echo keepme 2> C:\\R\\e.txt')).output).toEqual(['keepme']);
+  });
+
+  it('a plain pipeline with no redirection still prints normally', async () => {
+    const sh = ps(pc());
+    expect((await sh.processLine('echo hello')).output).toEqual(['hello']);
+  });
+});

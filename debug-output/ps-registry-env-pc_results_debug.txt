@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-registry-env-pc
-Generated: 2026-05-16T08:12:27.786Z
+Generated: 2026-05-16T12:46:09.028Z
 Engine: powershell
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
@@ -490,10 +490,10 @@ PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  67967f86-34d9-4b5f-afce-9655a2df9aa0
+  593957dc-bf19-4f5b-8b15-baf01e9b324d
 
 PS [103/117]> [DateTime]::Now
-  5/16/2026 8:12 AM
+  5/16/2026 12:46 PM
 
 
 --- [104] § formatting ---
