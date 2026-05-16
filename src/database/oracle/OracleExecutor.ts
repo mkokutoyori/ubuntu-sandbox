@@ -44,6 +44,13 @@ export class OracleExecutor extends BaseExecutor {
   /** Track sequences that have had NEXTVAL called in this session */
   private _nextvalCalled: Set<string> = new Set();
 
+  /** Numeric transaction id (monotonic per executor; bumped on first DML). */
+  private _txIdCounter: number = 0;
+  /** Active tx id, valid only while _inTransaction === true. */
+  private _activeTxId: number = 0;
+  /** SQL*Plus / database session id (set by SQLPlusSession). */
+  private _sessionId: string = '0';
+
   constructor(
     storage: OracleStorage,
     catalog: OracleCatalog,
@@ -52,6 +59,67 @@ export class OracleExecutor extends BaseExecutor {
   ) {
     super(storage, catalog, context);
     this.instance = instance;
+  }
+
+  /** Bind this executor to a session id for the oracle.session.* / tx events. */
+  setSessionId(sessionId: string): void { this._sessionId = sessionId; }
+
+  private get bus() { return this.instance.getBus(); }
+  private get deviceId() { return this.instance.getDeviceId(); }
+  private get sid() { return this.instance.config.sid; }
+  private ref() { return { deviceId: this.deviceId, sid: this.sid, sessionId: this._sessionId }; }
+
+  private emitDml(stmt: Statement, rowsAffected: number): void {
+    const kind = stmt.type;
+    let table = '';
+    if (kind === 'InsertStatement' || kind === 'UpdateStatement' || kind === 'DeleteStatement') {
+      const s = stmt as unknown as { table?: { name?: string }; tableName?: string };
+      table = s.table?.name ?? s.tableName ?? '';
+    }
+    this.bus.publish({
+      topic: 'oracle.dml.executed',
+      payload: {
+        ...this.ref(),
+        schema: this.context.currentSchema,
+        table,
+        rowsAffected,
+      },
+    });
+  }
+
+  private emitDdl(kind: string, name: string): void {
+    this.bus.publish({
+      topic: 'oracle.ddl.executed',
+      payload: { ...this.ref(), schema: this.context.currentSchema, kind, name },
+    });
+  }
+
+  private emitTxnStarted(): void {
+    this.bus.publish({
+      topic: 'oracle.transaction.started',
+      payload: { ...this.ref(), txId: this._activeTxId },
+    });
+  }
+
+  private emitTxnCommitted(durationMs: number): void {
+    this.bus.publish({
+      topic: 'oracle.transaction.committed',
+      payload: { ...this.ref(), txId: this._activeTxId, durationMs },
+    });
+  }
+
+  private emitTxnRolledBack(): void {
+    this.bus.publish({
+      topic: 'oracle.transaction.rolled-back',
+      payload: { ...this.ref(), txId: this._activeTxId },
+    });
+  }
+
+  private emitError(code: number, message: string): void {
+    this.bus.publish({
+      topic: 'oracle.error.raised',
+      payload: { ...this.ref(), code, message },
+    });
   }
 
   /** Capture current row state of all tables for rollback */
@@ -87,12 +155,17 @@ export class OracleExecutor extends BaseExecutor {
     if (!this._inTransaction) {
       this._txnSnapshot = this.captureSnapshot();
       this._inTransaction = true;
+      this._activeTxId = ++this._txIdCounter;
+      this._txnStartedAt = performance.now();
+      this.emitTxnStarted();
     }
   }
+  private _txnStartedAt: number = 0;
 
   execute(statement: Statement): ResultSet {
     const result = this.executeStatement(statement);
     this.recordAuditForStatement(statement, 0);
+    this.emitForStatement(statement, result);
     return result;
   }
 
@@ -101,11 +174,29 @@ export class OracleExecutor extends BaseExecutor {
     try {
       const result = this.executeStatement(statement);
       this.recordAuditForStatement(statement, 0);
+      this.emitForStatement(statement, result);
       return result;
     } catch (e: unknown) {
       const code = e instanceof OracleError ? e.code : 600;
+      const message = e instanceof Error ? e.message : String(e);
       this.recordAuditForStatement(statement, code);
+      this.emitError(code, message);
       throw e;
+    }
+  }
+
+  /** Post-dispatch reactive emissions (DML rows, DDL kind/name). */
+  private emitForStatement(statement: Statement, result: ResultSet): void {
+    const t = statement.type;
+    if (t === 'InsertStatement' || t === 'UpdateStatement' || t === 'DeleteStatement') {
+      this.emitDml(statement, result.affectedRows ?? 0);
+      return;
+    }
+    const ddlKind = this.getActionName(statement);
+    if (ddlKind && t !== 'GrantStatement' && t !== 'RevokeStatement'
+        && t !== 'AlterSystemStatement' && t !== 'AlterDatabaseStatement') {
+      const obj = this.getObjInfo(statement);
+      this.emitDdl(ddlKind, obj.name ?? '');
     }
   }
 
@@ -226,9 +317,14 @@ export class OracleExecutor extends BaseExecutor {
   // ── Transaction control ──────────────────────────────────────────
 
   private executeCommit(): ResultSet {
+    const wasInTxn = this._inTransaction;
+    const startedAt = this._txnStartedAt;
     this._txnSnapshot = null;
     this._savepoints.clear();
     this._inTransaction = false;
+    if (wasInTxn) {
+      this.emitTxnCommitted(performance.now() - startedAt);
+    }
     return emptyResult('Commit complete.');
   }
 
@@ -251,9 +347,11 @@ export class OracleExecutor extends BaseExecutor {
     if (this._txnSnapshot) {
       this.restoreSnapshot(this._txnSnapshot);
     }
+    const wasInTxn = this._inTransaction;
     this._txnSnapshot = null;
     this._savepoints.clear();
     this._inTransaction = false;
+    if (wasInTxn) this.emitTxnRolledBack();
     return emptyResult('Rollback complete.');
   }
 

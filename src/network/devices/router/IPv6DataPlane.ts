@@ -8,6 +8,9 @@
 
 import type { Port } from '../../hardware/Port';
 import type { RouterCounters } from '../Router';
+import type { IEventBus } from '@/events/EventBus';
+import type { IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress,
   NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation,
@@ -42,17 +45,11 @@ export interface NeighborCacheEntry {
   timestamp: number;
 }
 
-interface PendingNDP {
-  resolve: (mac: MACAddress) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
 interface QueuedIPv6Packet {
   frame: IPv6Packet;
   outIface: string;
   nextHopIP: IPv6Address;
-  timer: ReturnType<typeof setTimeout>;
+  timer: symbol;
 }
 
 export interface RAConfig {
@@ -79,6 +76,10 @@ export interface IPv6RouterContext {
   getPorts(): Map<string, Port>;
   sendFrame(iface: string, frame: EthernetFrame): void;
   getCounters(): RouterCounters;
+  /** Reactive bus accessor (Phase 5.10 — NDP learn emissions). */
+  getBus(): IEventBus;
+  /** Scheduler accessor (Phase 5.10 — RA intervals run through TimerSet). */
+  getScheduler(): IScheduler;
 }
 
 // ─── IPv6 Data Plane ────────────────────────────────────────────
@@ -86,14 +87,27 @@ export interface IPv6RouterContext {
 export class IPv6DataPlane {
   private routingTable: IPv6RouteEntry[] = [];
   private neighborCache: Map<string, NeighborCacheEntry> = new Map();
-  private pendingNDPs: Map<string, PendingNDP[]> = new Map();
+  /** Dedup signal for in-flight NDP solicitations (Phase 5.9, replaces
+   *  the pendingNDPs Map which only carried the same dedup semantics). */
+  private inFlightNDPs: Set<string> = new Set();
   private packetQueue: QueuedIPv6Packet[] = [];
   private readonly defaultHopLimit = 64;
   private enabled = false;
   private raConfig: Map<string, RAConfig> = new Map();
-  private raTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
+  /** Per-interface RA interval timers — scheduler tokens (Phase 5.10). */
+  private raTimers: Map<string, symbol> = new Map();
+  /** TimerSet bound to the injected scheduler. */
+  private readonly timers = new TimerSet(() => this.ctx.getScheduler());
 
   constructor(private readonly ctx: IPv6RouterContext) {}
+
+  /** Bus emission helper for NDP entry learned (Phase 5.10). */
+  private emitNdpLearned(payload: { ip: string; mac: string; iface: string }): void {
+    this.ctx.getBus().publish({
+      topic: 'host.ndp.entry-learned',
+      payload: { deviceId: this.ctx.id, hostname: this.ctx.name, ...payload },
+    });
+  }
 
   // ─── IPv6 Routing State ─────────────────────────────────────────
 
@@ -327,6 +341,11 @@ export class IPv6DataPlane {
         isRouter: false,
         timestamp: Date.now(),
       });
+      this.emitNdpLearned({
+        ip: ipv6.sourceIP.toString(),
+        mac: srcLLOpt.address.toString(),
+        iface: inPort,
+      });
     }
 
     const na = createNeighborAdvertisement(ns.targetAddress, port.getMAC(), {
@@ -375,16 +394,9 @@ export class IPv6DataPlane {
       isRouter: na.routerFlag,
       timestamp: Date.now(),
     });
+    this.emitNdpLearned({ ip: key, mac: mac.toString(), iface: inPort });
 
-    const pending = this.pendingNDPs.get(key);
-    if (pending) {
-      for (const p of pending) {
-        clearTimeout(p.timer);
-        p.resolve(mac);
-      }
-      this.pendingNDPs.delete(key);
-    }
-
+    this.inFlightNDPs.delete(key);
     this.flushPacketQueue(na.targetAddress, mac);
   }
 
@@ -405,6 +417,11 @@ export class IPv6DataPlane {
         state: 'stale',
         isRouter: false,
         timestamp: Date.now(),
+      });
+      this.emitNdpLearned({
+        ip: ipv6.sourceIP.toString(),
+        mac: srcLLOpt.address.toString(),
+        iface: inPort,
       });
     }
 
@@ -429,15 +446,15 @@ export class IPv6DataPlane {
 
     const existingTimer = this.raTimers.get(ifName);
     if (existingTimer) {
-      clearInterval(existingTimer);
+      this.timers.clear(existingTimer);
       this.raTimers.delete(ifName);
     }
 
     if (newConfig.enabled && this.enabled) {
-      const timer = setInterval(() => {
+      const token = this.timers.setInterval(() => {
         this.sendRouterAdvertisement(ifName, null);
       }, newConfig.interval);
-      this.raTimers.set(ifName, timer);
+      this.raTimers.set(ifName, token);
     }
   }
 
@@ -605,17 +622,18 @@ export class IPv6DataPlane {
   // ─── NDP Resolution + Packet Queue ────────────────────────────
 
   private queueAndResolve(pkt: IPv6Packet, iface: string, nextHopIP: IPv6Address, port: Port): void {
-    const timer = setTimeout(() => {
+    const timer = this.timers.setTimeout(() => {
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
+      this.inFlightNDPs.delete(nextHopIP.toString());
     }, 2000);
 
     this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
 
     const key = nextHopIP.toString();
-    if (!this.pendingNDPs.has(key)) {
-      this.pendingNDPs.set(key, []);
+    if (!this.inFlightNDPs.has(key)) {
+      this.inFlightNDPs.add(key);
 
       const srcIP = port.getLinkLocalIPv6();
       if (!srcIP) return;
@@ -642,9 +660,10 @@ export class IPv6DataPlane {
   private flushPacketQueue(resolvedIP: IPv6Address, resolvedMAC: MACAddress): void {
     const ready = this.packetQueue.filter(q => q.nextHopIP.equals(resolvedIP));
     this.packetQueue = this.packetQueue.filter(q => !q.nextHopIP.equals(resolvedIP));
+    this.inFlightNDPs.delete(resolvedIP.toString());
 
     for (const q of ready) {
-      clearTimeout(q.timer);
+      this.timers.clear(q.timer);
       const outPort = this.ctx.getPorts().get(q.outIface);
       if (outPort) {
         this.ctx.getCounters().ipForwDatagrams++;

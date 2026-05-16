@@ -18,7 +18,7 @@ import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/Outp
 import { completeInput } from '@/terminal/core/TabCompletionHelper';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
-import { RmanSubShell } from '@/terminal/subshells/RmanSubShell';
+import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
@@ -690,7 +690,7 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private enterRman(args: string[]): void {
     try {
-      const { subShell, banner } = RmanSubShell.create(args);
+      const { subShell, banner } = ReactiveRmanSubShell.create(this.device, args);
       this.activeSubShell = subShell;
 
       for (const line of banner) this.addLine(line);

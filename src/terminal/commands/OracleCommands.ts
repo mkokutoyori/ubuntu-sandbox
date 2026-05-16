@@ -6,7 +6,7 @@
  */
 
 import type { Equipment } from '@/network';
-import { getOracleDatabase, initOracleFilesystem, syncAlertLogToDevice } from './database';
+import { getOracleDatabase, initOracleFilesystem } from './database';
 import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from './OracleConfig';
 
 /** Callback to append a line to the terminal. */
@@ -124,10 +124,8 @@ export function handleLsnrctl(
     }
   }
 
-  // Sync alert log to VFS after listener operations
-  if (subcommand === 'START' || subcommand === 'STOP') {
-    syncAlertLogToDevice(device, db.instance.getAlertLog());
-  }
+  // Phase 7c: OracleFilesystemSync (auto-attached by getOracleDatabase)
+  // materialises the alert log via the bus — no manual sync here.
 }
 
 /**
