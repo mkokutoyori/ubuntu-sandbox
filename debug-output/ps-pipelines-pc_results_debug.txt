@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-16T22:57:38.129Z
+Generated: 2026-05-16T23:01:58.099Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -286,7 +286,9 @@ PS [37/111]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descend
 PS [38/111]> 1..20 | Group-Object { $_ % 3 } | Format-Table Name, Count -AutoSize
   Name            Count          
   --------------- ---------------
-                  20             
+  0               6              
+  1               7              
+  2               7              
 
 PS [39/111]> "alpha","beta","gamma","delta","epsilon" | Group-Object Length
   

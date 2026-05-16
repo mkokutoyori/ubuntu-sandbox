@@ -420,14 +420,26 @@ export class GroupObjectCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const input = toArray(ctx.pipeInput);
-    const props = stringArgs(ctx.positional, ctx.named, 'property');
     const noElement = isTruthy(ctx.named['noelement'] ?? false);
+
+    const keyArg = ctx.named['property'] ?? ctx.positional[0];
+    const sb = isScriptBlockVal(keyArg) ? (keyArg as PSScriptBlock) : null;
+    const props = sb ? [] : stringArgs(ctx.positional, ctx.named, 'property');
+
+    const keyOf = (item: PSValue): string => {
+      if (sb) return psValueToString(ctx.invokeBlock(sb, item));
+      if (props.length === 0) return psValueToString(item);
+      // Multi-property keys join with ", " (matches real Group-Object).
+      const rec = item as Record<string, PSValue>;
+      return props.map(p => {
+        const k = Object.keys(rec).find(x => x.toLowerCase() === p.toLowerCase());
+        return psValueToString(k ? rec[k] : null);
+      }).join(', ');
+    };
 
     const groups: Record<string, PSValue[]> = {};
     for (const item of input) {
-      const key = props.length
-        ? psValueToString((item as Record<string, PSValue>)[props[0]] ?? null)
-        : psValueToString(item);
+      const key = keyOf(item);
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     }
@@ -639,15 +651,49 @@ export class GetMemberCmdlet implements ICmdlet {
   readonly aliases = ['gm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const input = toArray(ctx.pipeInput);
+    const input = toArray(ctx.named['inputobject'] ?? ctx.pipeInput);
     if (input.length === 0) return [];
-    const sample = input[0] as Record<string, PSValue>;
+    const sample = input[0];
     const filter = ctx.named['membertype'] ? psValueToString(ctx.named['membertype']).toLowerCase() : null;
+    const nameF  = ctx.named['name'] ? psValueToString(ctx.named['name']).toLowerCase() : null;
 
-    return Object.keys(sample).map(key => {
-      const type = typeof sample[key] === 'function' ? 'Method' : 'Property';
-      if (filter && type.toLowerCase() !== filter) return null;
-      return { Name: key, MemberType: type, Definition: `${typeof sample[key]} ${key}` } as Record<string, PSValue>;
-    }).filter(Boolean) as PSValue[];
+    type Mem = { Name: string; MemberType: string; Definition: string };
+    let members: Mem[];
+
+    if (typeof sample === 'string') {
+      // .NET System.String surface — enough that `"x" | Get-Member -Name
+      // Substring` resolves (was dumping per-char index "properties").
+      members = [
+        { Name: 'Length', MemberType: 'Property', Definition: 'int Length {get;}' },
+        ...['Contains', 'EndsWith', 'IndexOf', 'Insert', 'PadLeft', 'PadRight',
+            'Remove', 'Replace', 'Split', 'StartsWith', 'Substring', 'ToCharArray',
+            'ToLower', 'ToUpper', 'Trim', 'TrimEnd', 'TrimStart']
+          .map(m => ({ Name: m, MemberType: 'Method', Definition: `string ${m}()` })),
+      ];
+    } else if (typeof sample === 'number' || typeof sample === 'boolean') {
+      members = ['CompareTo', 'Equals', 'GetHashCode', 'GetType', 'ToString']
+        .map(m => ({ Name: m, MemberType: 'Method', Definition: `${typeof sample} ${m}()` }));
+    } else if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) {
+      const rec = sample as Record<string, PSValue>;
+      members = Object.keys(rec)
+        .filter(k => !k.startsWith('__'))
+        .map(k => typeof rec[k] === 'function'
+          ? { Name: k, MemberType: 'Method',   Definition: `System.Object ${k}()` }
+          : { Name: k, MemberType: 'Property', Definition: `${typeof rec[k]} ${k}` });
+    } else {
+      members = [];
+    }
+
+    // The sim can't distinguish a hashtable from a [pscustomobject], so
+    // members are reported as Property; treat a NoteProperty request as a
+    // match for Property too.
+    const matchType = (mt: string) =>
+      !filter || mt.toLowerCase() === filter ||
+      (filter === 'noteproperty' && mt === 'Property');
+
+    return members
+      .filter(m => matchType(m.MemberType))
+      .filter(m => !nameF || m.Name.toLowerCase() === nameF)
+      .map(m => ({ ...m })) as PSValue[];
   }
 }

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — select-object-pc
-Generated: 2026-05-16T22:57:38.940Z
+Generated: 2026-05-16T23:02:00.732Z
 Engine: powershell
 host=WIN-SELECT-OBJECT (windows-pc) — cmdlet attribute suite
 Total commands: 64

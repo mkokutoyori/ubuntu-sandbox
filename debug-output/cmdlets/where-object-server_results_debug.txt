@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — where-object-server
-Generated: 2026-05-16T22:57:27.186Z
+Generated: 2026-05-16T23:01:49.078Z
 Engine: powershell
 host=SRV-WHERE-OBJECT (windows-server) — cmdlet attribute suite
 Total commands: 58
@@ -557,7 +557,17 @@ PS [57/58]> Get-Process | Where-Object { $_.Name } | Group-Object { $_.Name.Leng
   
   Name  Count
   ----  -----
-           26
+  3         2
+  4         1
+  5         3
+  6         1
+  7        10
+  8         4
+  9         1
+  12        1
+  13        1
+  17        1
+  19        1
   
 
 PS [58/58]> 1..50 | Where-Object { $_ -notin (1..10) } | Select-Object -First 5

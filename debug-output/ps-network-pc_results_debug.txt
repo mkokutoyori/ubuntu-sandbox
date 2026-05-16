@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-pc
-Generated: 2026-05-16T22:57:31.506Z
+Generated: 2026-05-16T23:01:52.781Z
 Engine: powershell
 host=WIN-NET-DBG (windows-pc)
 Total commands: 101
@@ -672,7 +672,16 @@ PS [79/101]> Get-Help Test-Connection -ErrorAction SilentlyContinue
       Displays help for the Test-Connection cmdlet.
 
 PS [80/101]> Get-Member -InputObject (Get-NetAdapter | Select-Object -First 1) -ErrorAction SilentlyContinue
-<empty>
+  
+  Name                  MemberType  Definition                 
+  --------------------  ----------  ---------------------------
+  Name                  Property    string Name                
+  InterfaceDescription  Property    string InterfaceDescription
+  ifIndex               Property    number ifIndex             
+  Status                Property    string Status              
+  MacAddress            Property    string MacAddress          
+  LinkSpeed             Property    string LinkSpeed           
+  
 
 PS [81/101]> Get-NetAdapter | Get-Member -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType
   
@@ -796,12 +805,12 @@ PS [100/101]> Get-Date
   Year        : 2026
   Month       : 5
   Day         : 16
-  Hour        : 22
-  Minute      : 57
-  Second      : 31
-  Millisecond : 580
+  Hour        : 23
+  Minute      : 1
+  Second      : 52
+  Millisecond : 852
   DayOfWeek   : 6
-  Ticks       : 1778972251580
+  Ticks       : 1778972512852
   
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue

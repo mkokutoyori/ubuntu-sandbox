@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — format-cmdlets-pc
-Generated: 2026-05-16T22:57:36.157Z
+Generated: 2026-05-16T23:01:58.776Z
 Engine: powershell
 host=WIN-FORMAT-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 56
@@ -409,46 +409,65 @@ PS [37/56]> Get-Service | Select-Object -First 1 | Get-Member -MemberType Proper
   
 
 PS [38/56]> 'hello' | Get-Member -MemberType Method | Select-Object -First 5 Name
-<empty>
+  
+  Name    
+  --------
+  Contains
+  EndsWith
+  IndexOf 
+  Insert  
+  PadLeft 
+  
 
 PS [39/56]> 'hello' | Get-Member -Name Length
   
-  Name  MemberType  Definition
-  ----  ----------  ----------
-  0     Property    string 0  
-  1     Property    string 1  
-  2     Property    string 2  
-  3     Property    string 3  
-  4     Property    string 4  
+  Name    MemberType  Definition       
+  ------  ----------  -----------------
+  Length  Property    int Length {get;}
   
 
 PS [40/56]> (1..5) | Get-Member | Select-Object -First 3 Name, MemberType
-<empty>
+  
+  Name         MemberType
+  -----------  ----------
+  CompareTo    Method    
+  Equals       Method    
+  GetHashCode  Method    
+  
 
 PS [41/56]> Get-Member -InputObject (Get-Date) -MemberType Property | Select-Object -First 5 Name
-<empty>
+  
+  Name  
+  ------
+  Year  
+  Month 
+  Day   
+  Hour  
+  Minute
+  
 
 PS [42/56]> 42 | Get-Member | Select-Object -First 3 Name
-<empty>
+  
+  Name       
+  -----------
+  CompareTo  
+  Equals     
+  GetHashCode
+  
 
 PS [43/56]> [pscustomobject]@{ A=1; B=2 } | Get-Member -MemberType NoteProperty
-<empty>
+  
+  Name  MemberType  Definition
+  ----  ----------  ----------
+  A     Property    number A  
+  B     Property    number B  
+  
 
 PS [44/56]> Get-Service Spooler | Get-Member -Name Status
   
-  Name                 MemberType  Definition                 
-  -------------------  ----------  ---------------------------
-  Status               Property    string Status              
-  Name                 Property    string Name                
-  DisplayName          Property    string DisplayName         
-  Description          Property    string Description         
-  ServiceType          Property    string ServiceType         
-  StartType            Property    string StartType           
-  BinaryPath           Property    string BinaryPath          
-  Account              Property    string Account             
-  DependentServices    Property    object DependentServices   
-  ServicesDependedOn   Property    object ServicesDependedOn  
-  CanPauseAndContinue  Property    boolean CanPauseAndContinue
+  Name    MemberType  Definition   
+  ------  ----------  -------------
+  Status  Property    string Status
   
 
 

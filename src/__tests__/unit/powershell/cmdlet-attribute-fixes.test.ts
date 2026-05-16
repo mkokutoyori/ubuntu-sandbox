@@ -216,6 +216,35 @@ describe('Set-Content — array / pipeline input is one value per line', () => {
   });
 });
 
+describe('Group-Object scriptblock key / Get-Member -Name & NoteProperty', () => {
+  it('Group-Object { scriptblock } groups by the evaluated key', async () => {
+    const out = await run(shell(),
+      "'aa','bb','ccc','d' | Group-Object { $_.Length } | Select-Object Name, Count | Sort-Object Name");
+    expect(out.join('\n')).toMatch(/\b1\b/);
+    expect(out.join('\n')).toMatch(/\b2\b/);
+    expect(out.join('\n')).toMatch(/\b3\b/);
+  });
+  it('Group-Object scriptblock yields more than one group', async () => {
+    expect(await j(shell(),
+      "(1..10 | Group-Object { $_ % 3 } | Measure-Object).Count")).toBe('3');
+  });
+  it('Get-Member -MemberType NoteProperty lists pscustomobject props', async () => {
+    const out = await j(shell(),
+      '[pscustomobject]@{ A=1; B=2 } | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name');
+    expect(out.split('\n').sort()).toEqual(['A', 'B']);
+  });
+  it('Get-Member -Name resolves a string method (not char indices)', async () => {
+    const out = await j(shell(), '"text" | Get-Member -Name Substring');
+    expect(out).toMatch(/Substring/);
+    expect(out).not.toMatch(/\b0\s+Property/);
+  });
+  it('hashtable Get-Member -MemberType Property still works', async () => {
+    const out = await run(shell(),
+      '@{A=1;B=2} | Get-Member -MemberType Property | Select-Object -ExpandProperty Name');
+    expect(out.sort()).toEqual(['A', 'B']);
+  });
+});
+
 describe('New-Object -Property / Get-Date components & format tokens', () => {
   it('New-Object psobject -Property seeds NoteProperties', async () => {
     expect(await j(shell(),

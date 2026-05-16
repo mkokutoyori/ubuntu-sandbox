@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — utility-cmdlets-server
-Generated: 2026-05-16T22:58:12.494Z
+Generated: 2026-05-16T23:02:33.408Z
 Engine: powershell
 host=SRV-UTILITY-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 66
@@ -29,7 +29,12 @@ PS [4/66]> [pscustomobject]@{ A=1; B=2; C=3 }
   
 
 PS [5/66]> [pscustomobject]@{ A=1; B=2 } | Get-Member -MemberType NoteProperty | Select-Object Name
-<empty>
+  
+  Name
+  ----
+  A   
+  B   
+  
 
 PS [6/66]> 1..3 | ForEach-Object { [pscustomobject]@{ Idx=$_; Square=$_*$_ } } | Format-Table -AutoSize
   Idx             Square         
@@ -52,7 +57,7 @@ PS [9/66]> Get-Date -Format "yyyy-MM-dd"
   2026-05-16
 
 PS [10/66]> Get-Date -Format "HH:mm"
-  22:58
+  23:02
 
 PS [11/66]> Get-Date -Format "dddd"
   Saturday
@@ -107,11 +112,11 @@ PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
   True
 
 PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
-  59
-  79
-  82
-  88
-  97
+  14
+  22
+  40
+  84
+  86
 
 PS [26/66]> Get-Random -InputObject 'a','b','c'
   a
@@ -245,12 +250,9 @@ PS [46/66]> (Get-Date) | Get-Member -MemberType Method | Select-Object -First 5 
 
 PS [47/66]> "text" | Get-Member -Name Substring
   
-  Name  MemberType  Definition
-  ----  ----------  ----------
-  0     Property    string 0  
-  1     Property    string 1  
-  2     Property    string 2  
-  3     Property    string 3  
+  Name       MemberType  Definition        
+  ---------  ----------  ------------------
+  Substring  Method      string Substring()
   
 
 PS [48/66]> @(1,2,3) | Get-Member -MemberType Property | Select-Object -First 3 Name
@@ -307,7 +309,22 @@ PS [57/66]> Get-Command -Verb Get -CommandType Cmdlet | Group-Object { $_.Name.S
   
   Name  Count
   ----  -----
-           37
+  3         1
+  4         4
+  5         1
+  6         5
+  7         5
+  8         5
+  9         2
+  10        3
+  11        1
+  12        2
+  13        2
+  15        1
+  16        2
+  18        1
+  20        1
+  22        1
   
 
 PS [58/66]> 1..3 | ForEach-Object { New-Object psobject -Property @{ Index=$_; Stamp=(Get-Date -Format "yyyy") } } | Format-Table -AutoSize

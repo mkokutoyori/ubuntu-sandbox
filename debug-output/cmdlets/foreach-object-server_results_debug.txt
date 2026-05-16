@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — foreach-object-server
-Generated: 2026-05-16T22:57:41.436Z
+Generated: 2026-05-16T23:02:01.732Z
 Engine: powershell
 host=SRV-FOREACH-OBJECT (windows-server) — cmdlet attribute suite
 Total commands: 55
@@ -354,7 +354,12 @@ PS [52/55]> Get-Process | Select-Object -First 8 | ForEach-Object { $_.Name } | 
   
   Name  Count
   ----  -----
-            8
+  4         1
+  5         2
+  6         1
+  7         1
+  8         2
+  19        1
   
 
 PS [53/55]> 1..20 | ForEach-Object -Begin { $even=@(); $odd=@() } -Process { if ($_ % 2) { $odd+=$_ } else { $even+=$_ } } -End { "even=$($even -join ","); odd=$($odd -join ",")" }
