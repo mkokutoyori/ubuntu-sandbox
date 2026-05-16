@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — where-object-server
-Generated: 2026-05-16T23:19:03.322Z
+Generated: 2026-05-16T23:22:39.565Z
 Engine: powershell
 host=SRV-WHERE-OBJECT (windows-server) — cmdlet attribute suite
 Total commands: 58

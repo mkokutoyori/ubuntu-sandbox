@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — where-object-pc
-Generated: 2026-05-16T23:19:03.266Z
+Generated: 2026-05-16T23:22:39.512Z
 Engine: powershell
 host=WIN-WHERE-OBJECT (windows-pc) — cmdlet attribute suite
 Total commands: 58
