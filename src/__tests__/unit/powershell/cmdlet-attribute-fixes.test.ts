@@ -272,6 +272,16 @@ describe('ForEach-Object — shared -Begin/-Process/-End scope', () => {
       '1..20 | ForEach-Object -Begin { $c=0 } -Process { $c++ } -End { "n=$c" }'))
       .toEqual(['n=20']);
   });
+  it('conditional counter — $c++ inside if is voidable', async () => {
+    expect(await run(shell(),
+      '1..20 | ForEach-Object -Begin { $c=0 } -Process { if ($_ % 7 -eq 0) { $c++ } } -End { "n=$c" }'))
+      .toEqual(['n=2']);
+  });
+  it('if branch that produces a value still emits it', async () => {
+    expect(await run(shell(),
+      "1..4 | ForEach-Object { if ($_ % 2 -eq 0) { \"even$_\" } }"))
+      .toEqual(['even2', 'even4']);
+  });
   it('plain -Process block still streams per item', async () => {
     expect(await run(shell(), '1..3 | ForEach-Object { $_ * 2 }')).toEqual(['2', '4', '6']);
   });

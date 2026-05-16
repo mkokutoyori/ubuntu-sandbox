@@ -550,19 +550,20 @@ export class PSRuntime {
   // ── Statement dispatcher ───────────────────────────────────────────────────
 
   execStatement(node: PSStatement, env: PSEnvironment): PSValue {
+    let result: PSValue;
     switch (node.type) {
-      case 'PipelineStatement':   return this.execPipelineStmt(node as PSPipelineStatement, env);
-      case 'AssignmentStatement': return this.execAssignment(node as PSAssignmentStatement, env);
-      case 'IfStatement':         return this.execIf(node as PSIfStatement, env);
-      case 'WhileStatement':      return this.execWhile(node as PSWhileStatement, env);
-      case 'DoWhileStatement':    return this.execDoWhile(node as PSDoWhileStatement, env);
-      case 'DoUntilStatement':    return this.execDoUntil(node as PSDoUntilStatement, env);
-      case 'ForStatement':        return this.execFor(node as PSForStatement, env);
-      case 'ForeachStatement':    return this.execForeach(node as PSForeachStatement, env);
-      case 'SwitchStatement':     return this.execSwitch(node as PSSwitchStatement, env);
-      case 'TryStatement':        return this.execTry(node as PSTryStatement, env);
-      case 'FunctionDefinition':  return this.execFunctionDef(node as PSFunctionDefinition, env);
-      case 'ClassDefinition':     return this.execClassDef(node as PSClassDefinition, env);
+      case 'PipelineStatement':   result = this.execPipelineStmt(node as PSPipelineStatement, env); break;
+      case 'AssignmentStatement': result = this.execAssignment(node as PSAssignmentStatement, env); break;
+      case 'IfStatement':         result = this.execIf(node as PSIfStatement, env); break;
+      case 'WhileStatement':      result = this.execWhile(node as PSWhileStatement, env); break;
+      case 'DoWhileStatement':    result = this.execDoWhile(node as PSDoWhileStatement, env); break;
+      case 'DoUntilStatement':    result = this.execDoUntil(node as PSDoUntilStatement, env); break;
+      case 'ForStatement':        result = this.execFor(node as PSForStatement, env); break;
+      case 'ForeachStatement':    result = this.execForeach(node as PSForeachStatement, env); break;
+      case 'SwitchStatement':     result = this.execSwitch(node as PSSwitchStatement, env); break;
+      case 'TryStatement':        result = this.execTry(node as PSTryStatement, env); break;
+      case 'FunctionDefinition':  result = this.execFunctionDef(node as PSFunctionDefinition, env); break;
+      case 'ClassDefinition':     result = this.execClassDef(node as PSClassDefinition, env); break;
       case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
       case 'BreakStatement':      throw new BreakSignal((node as PSBreakStatement).label ?? undefined);
       case 'ContinueStatement':   throw new ContinueSignal((node as PSContinueStatement).label ?? undefined);
@@ -570,7 +571,34 @@ export class PSRuntime {
       case 'TrapStatement':       return null; // collected by execStatementList
       default:                    return null;
     }
+    // Track pipeline voidability for runBlockCapture. Assignments and
+    // `$x++`/`$x+=1` are voidable in PowerShell; an if/loop/switch/try is
+    // voidable iff the last inner statement it ran was — so for those we
+    // PRESERVE the flag the recursive execStatement already set.
+    switch (node.type) {
+      case 'AssignmentStatement':
+        this.lastStmtVoid = true; break;
+      case 'PipelineStatement': {
+        const p = node as PSPipelineStatement;
+        this.lastStmtVoid = p.pipeline.commands.length === 1
+          && p.pipeline.commands[0].parameters.length === 0
+          && p.pipeline.commands[0].arguments.length === 0
+          && (p.pipeline.commands[0].name as { type?: string })?.type === 'AssignmentStatement';
+        break;
+      }
+      case 'IfStatement':      case 'WhileStatement':   case 'DoWhileStatement':
+      case 'DoUntilStatement': case 'ForStatement':     case 'ForeachStatement':
+      case 'SwitchStatement':  case 'TryStatement':
+        break; // preserve inner statement's voidability
+      default:
+        this.lastStmtVoid = false;
+    }
+    return result;
   }
+
+  /** Set by execStatement: was the last executed statement voidable
+   *  (assignment / `$x++`)? Consumed only at the runBlockCapture boundary. */
+  private lastStmtVoid = false;
 
   // ── Assignment ─────────────────────────────────────────────────────────────
 
@@ -1747,17 +1775,10 @@ export class PSRuntime {
       const linesBefore = this.outputLines.length;
       const result = this.execStatement(stmt, env);
       const didEmit = this.outputLines.length > linesBefore;
-      // `$c++` / `$c += 1` written as a statement parse as a single-command
-      // pipeline whose head expression is an AssignmentStatement node. Like
-      // PowerShell, those are voidable — they must not feed the pipeline.
-      const isVoidAssign =
-        stmt.type === 'PipelineStatement'
-        && (stmt as PSPipelineStatement).pipeline.commands.length === 1
-        && (() => {
-          const c = (stmt as PSPipelineStatement).pipeline.commands[0];
-          return c.parameters.length === 0 && c.arguments.length === 0
-            && (c.name as { type?: string })?.type === 'AssignmentStatement';
-        })();
+      // `$c++` / `$c += 1` (even nested in an if/loop whose taken branch
+      // ends in one) are voidable in PowerShell — they must not feed the
+      // pipeline. execStatement tracks this via lastStmtVoid.
+      const isVoidAssign = this.lastStmtVoid;
       // Non-assignment, non-definition statements that didn't emit via cmdlet → collect value
       if (!didEmit && result !== null && result !== undefined
           && !isVoidAssign
