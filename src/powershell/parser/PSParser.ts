@@ -362,9 +362,11 @@ export class PSParser {
     while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE) && !this.isRedirection()) {
       if (this.check(PSTokenType.PARAMETER)) {
         parameters.push(this.parseCommandParameter());
-      } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)) {
-        // A `%`-led token here is a bareword argument (e.g. `echo
-        // %PATH%`); `%` is only ForEach-Object in command position.
+      } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)
+                 || this.check(PSTokenType.MULTIPLY)) {
+        // A `%`- or `*`-led token here is a bareword argument (`echo
+        // %PATH%`, `Select-Object *`, `Get-Service *Tcp*`); `%`/`*` are
+        // only operators in expression position.
         args.push(this.parseCommandArgument());
       } else {
         break;
@@ -465,8 +467,13 @@ export class PSParser {
     // If next token can be a value (not another param, not a terminator, not a pipe)
     // and the param name is NOT a known operator used standalone
     let value: PSExpression | null = null;
-    if (!PS_OPERATOR_PARAMS.has(name) && this.canStartExpression()
+    if (!PS_OPERATOR_PARAMS.has(name)
+        && (this.canStartExpression()
+            || this.check(PSTokenType.MULTIPLY)
+            || this.check(PSTokenType.MODULO))
         && !this.isTerminator() && !this.check(PSTokenType.PIPE)) {
+      // A `*`/`%`-led value is a wildcard/bareword (`-Filter *.jpg`,
+      // `-Path %TEMP%`), not an operator.
       value = this.parseCommandArgument();
     }
 
@@ -528,6 +535,31 @@ export class PSParser {
         if (nxt.type === PSTokenType.MODULO) value += '%';
         else if (nxt.type === PSTokenType.DOT) value += '.';
         else if (nxt.type === PSTokenType.MULTIPLY) value += '*';
+        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+        else break;
+        this.advance();
+        prevEnd = nxt.position.offset + (
+          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+            ? nxt.value.length : 1
+        );
+      }
+      return makeLiteral(value, value, 'string', pos);
+    }
+    // A command argument that begins with `*` is a wildcard bareword
+    // (`Select-Object *`, `Format-List *`, `*.txt`, `*Service*`), NOT
+    // multiplication — that only applies in expression position. Glue the
+    // adjacent run into one string token.
+    if (tok.type === PSTokenType.MULTIPLY) {
+      const pos = this.pos_();
+      this.advance();
+      let value = '*';
+      let prevEnd = tok.position.offset + 1;
+      for (;;) {
+        const nxt = this.peek();
+        if (nxt.position.offset !== prevEnd) break;
+        if (nxt.type === PSTokenType.MULTIPLY) value += '*';
+        else if (nxt.type === PSTokenType.DOT) value += '.';
         else if (nxt.type === PSTokenType.WORD) value += nxt.value;
         else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
         else break;

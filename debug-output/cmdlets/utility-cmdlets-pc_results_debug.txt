@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — utility-cmdlets-pc
-Generated: 2026-05-16T23:12:23.701Z
+Generated: 2026-05-16T23:26:54.653Z
 Engine: powershell
 host=WIN-UTILITY-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 66
@@ -57,7 +57,7 @@ PS [9/66]> Get-Date -Format "yyyy-MM-dd"
   2026-05-16
 
 PS [10/66]> Get-Date -Format "HH:mm"
-  23:12
+  23:26
 
 PS [11/66]> Get-Date -Format "dddd"
   Saturday
@@ -112,11 +112,11 @@ PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
   True
 
 PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
-  14
-  15
-  22
-  49
-  69
+  34
+  54
+  60
+  86
+  99
 
 PS [26/66]> Get-Random -InputObject 'a','b','c'
   c
@@ -234,13 +234,13 @@ PS [44/66]> Get-Command -Verb Set -CommandType Cmdlet | Sort-Object Name | Selec
 
 PS [45/66]> Get-Command *Service* | Select-Object -First 5 Name
   
-  Name         
-  -------------
-  Clear-Host   
-  Copy-Item    
-  Get-ChildItem
-  Get-Command  
-  Get-Content  
+  Name           
+  ---------------
+  Get-Service    
+  New-Service    
+  Remove-Service 
+  Restart-Service
+  Resume-Service 
   
 
 

@@ -216,6 +216,41 @@ describe('Set-Content — array / pipeline input is one value per line', () => {
   });
 });
 
+describe('Format-Table / Format-List — calculated props, *, headers', () => {
+  it('Format-Table calculated property runs the scriptblock (no AST dump)', async () => {
+    const out = await j(shell(),
+      'Get-Process | Sort-Object WS -Descending | Select-Object -First 3 | ' +
+      'Format-Table Name, @{N="MB";E={[math]::Round($_.WS/1KB,1)}}');
+    expect(out).toMatch(/\bMB\b/);
+    expect(out).not.toMatch(/ScriptBlock|StatementList|paramBlock/);
+  });
+  it('Format-Table * expands to the object keys', async () => {
+    const out = await j(shell(),
+      '1..2 | ForEach-Object { [pscustomobject]@{ A=$_; B=$_*$_ } } | Format-Table *');
+    expect(out).toMatch(/\bA\b/);
+    expect(out).toMatch(/\bB\b/);
+    expect(out.split('\n')[0]).not.toBe('*');
+  });
+  it('Format-Table -HideTableHeaders omits the header row', async () => {
+    const out = await j(shell(),
+      'Get-Service | Select-Object -First 2 Name, Status | Format-Table Name, Status -HideTableHeaders');
+    expect(out).not.toMatch(/^Name/);
+    expect(out).toMatch(/Tcpip/);
+  });
+  it('Format-List * expands to all properties (not literal "* :")', async () => {
+    const out = await j(shell(),
+      '[pscustomobject]@{ Alpha=1; Beta=2 } | Format-List *');
+    expect(out).toMatch(/Alpha : 1/);
+    expect(out).toMatch(/Beta : 2/);
+    expect(out).not.toMatch(/^\* :/m);
+  });
+  it('Format-List calculated property is evaluated', async () => {
+    const out = await j(shell(),
+      '[pscustomobject]@{ X=4 } | Format-List @{N="Double";E={$_.X*2}}');
+    expect(out).toMatch(/Double : 8/);
+  });
+});
+
 describe('ForEach-Object — shared -Begin/-Process/-End scope', () => {
   it('Begin/Process/End accumulator (sum)', async () => {
     expect(await run(shell(),

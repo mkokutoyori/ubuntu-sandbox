@@ -37,6 +37,54 @@ function flattenProps(items: PSValue[]): PSValue[] {
   return out;
 }
 
+/** A resolved display column: a header name + a per-item value getter. */
+type ColSpec = { name: string; get: (item: PSValue) => PSValue };
+
+function pickProp(item: PSValue, name: string): PSValue {
+  if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+    const rec = item as Record<string, PSValue>;
+    const k = Object.keys(rec).find(x => x.toLowerCase() === name.toLowerCase());
+    return k !== undefined ? (rec[k] ?? '') : '';
+  }
+  return name.toLowerCase() === 'value' ? item : '';
+}
+
+/**
+ * Resolve Format-* / Select-style column args into ordered ColSpecs.
+ * Handles plain names, `*` (expand to the sample's keys) and calculated
+ * properties `@{ Name/N/Label/L = …; Expression/E = {scriptblock|name} }`.
+ */
+function resolveColumns(raw: PSValue[], sample: PSValue, ctx: CmdletContext): ColSpec[] {
+  const sampleKeys = sample !== null && typeof sample === 'object' && !Array.isArray(sample)
+    ? Object.keys(sample as Record<string, PSValue>)
+    : [];
+  const cols: ColSpec[] = [];
+  for (const p of raw) {
+    if (typeof p === 'string' || typeof p === 'number') {
+      const s = String(p);
+      if (s === '*') {
+        for (const k of sampleKeys) cols.push({ name: k, get: it => pickProp(it, k) });
+      } else {
+        cols.push({ name: s, get: it => pickProp(it, s) });
+      }
+    } else if (p !== null && typeof p === 'object' && !Array.isArray(p)) {
+      const h = p as Record<string, PSValue>;
+      const name = psValueToString(
+        h['Name'] ?? h['name'] ?? h['N'] ?? h['n'] ??
+        h['Label'] ?? h['label'] ?? h['L'] ?? h['l'] ?? '');
+      const expr = h['Expression'] ?? h['expression'] ?? h['E'] ?? h['e'];
+      if (!name) continue;
+      if (isScriptBlockVal(expr)) {
+        cols.push({ name, get: it => ctx.invokeBlock(expr as PSScriptBlock, it) });
+      } else {
+        const pn = psValueToString(expr);
+        cols.push({ name, get: it => pickProp(it, pn) });
+      }
+    }
+  }
+  return cols;
+}
+
 function stringArgs(pos: PSValue[], named: Record<string, PSValue>, key: string): string[] {
   const src = named[key] ?? (pos.length > 0 ? pos : null);
   if (!src) return [];
@@ -276,10 +324,17 @@ export class SelectObjectCmdlet implements ICmdlet {
     type Col =
       | { kind: 'prop'; name: string }
       | { kind: 'calc'; name: string; expr: PSScriptBlock };
+    const sampleKeys = items[0] !== null && typeof items[0] === 'object' && !Array.isArray(items[0])
+      ? Object.keys(items[0] as Record<string, PSValue>)
+      : [];
     const cols: Col[] = [];
     for (const p of rawProps) {
       if (typeof p === 'string') {
-        cols.push({ kind: 'prop', name: p });
+        if (p === '*') {
+          for (const k of sampleKeys) cols.push({ kind: 'prop', name: k });
+        } else {
+          cols.push({ kind: 'prop', name: p });
+        }
       } else if (p && typeof p === 'object' && !Array.isArray(p)) {
         const h = p as Record<string, PSValue>;
         const name = psValueToString(h['Name'] ?? h['name'] ?? h['N'] ?? h['n'] ?? '');
@@ -555,26 +610,24 @@ export class FormatTableCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
     if (items.length === 0) return '';
-    const rawProps = stringArgs(ctx.positional, ctx.named, 'property');
-    const props = rawProps.length ? rawProps : null;
     const sample = items[0];
-    const keys = props ?? (
-      sample && typeof sample === 'object' && !Array.isArray(sample)
+    const rawProps = flattenProps(ctx.named['property'] !== undefined
+      ? toArray(ctx.named['property'])
+      : ctx.positional);
+    let cols = resolveColumns(rawProps, sample, ctx);
+    if (cols.length === 0) {
+      const keys = sample !== null && typeof sample === 'object' && !Array.isArray(sample)
         ? Object.keys(sample as Record<string, PSValue>)
-        : ['Value']
-    );
+        : ['Value'];
+      cols = keys.map(k => ({ name: k, get: (it: PSValue) => pickProp(it, k) }));
+    }
+    const hideHeaders = ctx.named['hidetableheaders'] === true;
     const colWidth = 15;
-    const header = keys.map(k => k.padEnd(colWidth)).join(' ');
-    const sep    = keys.map(() => '-'.repeat(colWidth)).join(' ');
-    const rows   = items.map(item => {
-      const src = item && typeof item === 'object' && !Array.isArray(item)
-        ? item as Record<string, PSValue> : { Value: item };
-      return keys.map(k => {
-        const val = src[Object.keys(src).find(x => x.toLowerCase() === k.toLowerCase()) ?? k] ?? '';
-        return psValueToString(val).padEnd(colWidth);
-      }).join(' ');
-    });
-    return [header, sep, ...rows].join('\n');
+    const header = cols.map(c => c.name.padEnd(colWidth)).join(' ');
+    const sep    = cols.map(() => '-'.repeat(colWidth)).join(' ');
+    const rows   = items.map(item =>
+      cols.map(c => psValueToString(c.get(item) ?? '').padEnd(colWidth)).join(' '));
+    return (hideHeaders ? rows : [header, sep, ...rows]).join('\n');
   }
 }
 
@@ -585,16 +638,17 @@ export class FormatListCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
-    const propFilter = stringArgs(ctx.positional, ctx.named, 'property');
+    const rawProps = flattenProps(ctx.named['property'] !== undefined
+      ? toArray(ctx.named['property'])
+      : ctx.positional);
     return items.map(item => {
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
+      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
         const src = item as Record<string, PSValue>;
-        const keys = Object.keys(src);
-        const lcMap = new Map(keys.map(k => [k.toLowerCase(), k]));
-        const picked = propFilter.length
-          ? propFilter.map(p => [p, src[lcMap.get(p.toLowerCase()) ?? p] ?? ''] as [string, PSValue])
-          : keys.map(k => [k, src[k]] as [string, PSValue]);
-        return picked.map(([k, v]) => `${k} : ${psValueToString(v)}`).join('\n');
+        let cols = resolveColumns(rawProps, item, ctx);
+        if (cols.length === 0) {
+          cols = Object.keys(src).map(k => ({ name: k, get: (it: PSValue) => pickProp(it, k) }));
+        }
+        return cols.map(c => `${c.name} : ${psValueToString(c.get(item) ?? '')}`).join('\n');
       }
       return psValueToString(item);
     }).join('\n\n');

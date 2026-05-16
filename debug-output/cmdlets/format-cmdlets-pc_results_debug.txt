@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — format-cmdlets-pc
-Generated: 2026-05-16T23:12:27.218Z
+Generated: 2026-05-16T23:27:32.820Z
 Engine: powershell
 host=WIN-FORMAT-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 56
@@ -83,8 +83,6 @@ PS [6/56]> Get-Process | Select-Object -First 8 | Format-Table Name, WS -GroupBy
   winlogon        13631488       
 
 PS [7/56]> Get-Service | Select-Object -First 6 | Format-Table Name, Status -HideTableHeaders
-  Name            Status         
-  --------------- ---------------
   Tcpip           Running        
   Afd             Running        
   Dhcp            Running        
@@ -107,13 +105,13 @@ PS [8/56]> Get-ChildItem C:\ | Format-Table Name, Mode, Length -AutoSize
   nums.txt        -a----          9              
 
 PS [9/56]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 | Format-Table Name, @{N="MB";E={[math]::Round($_.WS/1KB,1)}}
-  Name            N=MB; E=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=InvocationExpression; callee=type=StaticMemberExpression; typeName=math; member=Round; position=offset=105; line=1; column=106; arguments=type=BinaryExpression; operator=/; left=type=MemberExpression; object=type=VariableExpression; name=_; scope=; varName=_; position=offset=113; line=1; column=114; member=WS; computed=False; position=offset=115; line=1; column=116; right=type=LiteralExpression; value=1024; raw=1KB; kind=number; position=offset=119; line=1; column=120; position=offset=115; line=1; column=116 type=LiteralExpression; value=1; raw=1; kind=number; position=offset=123; line=1; column=124; position=offset=105; line=1; column=106; parameters=; arguments=; position=offset=99; line=1; column=100; position=offset=99; line=1; column=100; redirections=; position=offset=99; line=1; column=100; position=offset=99; line=1; column=100; position=offset=98; line=1; column=99
+  Name            MB             
   --------------- ---------------
-  explorer                       
-  dwm                            
-  RuntimeBroker                  
-  svchost                        
-  lsass                          
+  explorer        145000         
+  dwm             132000         
+  RuntimeBroker   28000          
+  svchost         21504          
+  lsass           20480          
 
 PS [10/56]> 1..5 | ForEach-Object { [pscustomobject]@{ N=$_; Sq=$_*$_; Cube=$_*$_*$_ } } | Format-Table -AutoSize
   N               Sq              Cube           
@@ -131,13 +129,11 @@ PS [11/56]> Get-Service | Group-Object Status | Format-Table Name, Count -AutoSi
   Stopped         2              
 
 PS [12/56]> Get-Process | Select-Object -First 3 | Format-Table * 
-  
-  *
-  -
-   
-   
-   
-  
+  Handles         NPM(K)          PM(K)           WS(K)           CPU(s)          CPU             WS              PM              NPM             VM              WorkingSet      Id              SI              ProcessName     Name            Status          Owner          
+  --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- ---------------
+  0               4               0               16              0               0               16384           8               4096            32              16384           0               0               System Idle Process System Idle Process Running         NT AUTHORITY\SYSTEM
+  100             4               0               288             0.5             0.5             294912          144             4096            576             294912          4               0               System          System          Running         NT AUTHORITY\SYSTEM
+  48              4               4               8192            0               0               8388608         4096            4096            16384           8388608         108             0               Registry        Registry        Running         NT AUTHORITY\SYSTEM
 
 PS [13/56]> 'a','bb','ccc' | ForEach-Object { [pscustomobject]@{ S=$_; L=$_.Length } } | Format-Table -AutoSize
   S               L              
@@ -192,11 +188,23 @@ PS [17/56]> Get-Service | Select-Object -First 2 | Format-List Name, Status, Sta
   DisplayName : Ancillary Function Driver for Winsock
 
 PS [18/56]> Get-ChildItem C:\ | Select-Object -First 2 | Format-List *
+  Name : $Recycle.Bin
+  FullName : C:\\$Recycle.Bin
+  Extension : 
+  BaseName : $Recycle.Bin
+  Length : 
+  Mode : d-----
+  PSIsContainer : True
+  LastWriteTime : 5/16/2026 11:27 PM
   
-  * : 
-  
-  * : 
-  
+  Name : PerfLogs
+  FullName : C:\\PerfLogs
+  Extension : 
+  BaseName : PerfLogs
+  Length : 
+  Mode : d-----
+  PSIsContainer : True
+  LastWriteTime : 5/16/2026 11:27 PM
 
 PS [19/56]> Get-Process | Select-Object -First 2 | Format-List Name, Id
   Name : System Idle Process
@@ -219,51 +227,17 @@ PS [21/56]> (Get-Service | Select-Object -First 1 | Format-List | Out-String).Le
   True
 
 PS [22/56]> Get-Service Spooler | Format-List *
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
+  Status : Running
+  Name : Spooler
+  DisplayName : Print Spooler
+  Description : Loads files to memory for later printing
+  ServiceType : WIN32_OWN_PROCESS
+  StartType : Automatic
+  BinaryPath : C:\Windows\System32\spoolsv.exe
+  Account : NT AUTHORITY\SYSTEM
+  DependentServices : RpcSs
+  ServicesDependedOn : RpcSs
+  CanPauseAndContinue : True
 
 
 --- [23] § Format-Wide ---

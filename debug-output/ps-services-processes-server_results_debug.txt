@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-server
-Generated: 2026-05-16T23:12:26.005Z
+Generated: 2026-05-16T23:26:54.969Z
 Engine: powershell
 host=SRV-SVC-DBG (windows-server)
 Total commands: 104
@@ -772,7 +772,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 9:12 PM
+  TimeCreated  : 5/16/2026 9:26 PM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -780,7 +780,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 5:12 PM
+  TimeCreated  : 5/16/2026 5:26 PM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -788,7 +788,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/16/2026 11:12 AM
+  TimeCreated  : 5/16/2026 11:26 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -796,7 +796,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/15/2026 11:12 PM
+  TimeCreated  : 5/15/2026 11:26 PM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1006
   
@@ -804,7 +804,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/14/2026 11:12 PM
+  TimeCreated  : 5/14/2026 11:26 PM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1005
   
@@ -815,7 +815,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/15/2026 11:12 PM
+  TimeCreated  : 5/15/2026 11:26 PM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1015
   
@@ -823,7 +823,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/13/2026 11:12 PM
+  TimeCreated  : 5/13/2026 11:26 PM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1014
   
@@ -831,7 +831,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/11/2026 11:12 PM
+  TimeCreated  : 5/11/2026 11:26 PM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1013
   
@@ -839,7 +839,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/9/2026 11:12 PM
+  TimeCreated  : 5/9/2026 11:26 PM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1012
   
@@ -847,7 +847,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/6/2026 11:12 PM
+  TimeCreated  : 5/6/2026 11:26 PM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1011
   
@@ -940,51 +940,17 @@ PS [97/104]> Get-Process | Measure-Object -Property Handles -Sum -Average
   
 
 PS [98/104]> Get-Service -Name Spooler | Format-List *
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
-  * : 
-  
+  Status : Running
+  Name : Spooler
+  DisplayName : Print Spooler
+  Description : Loads files to memory for later printing
+  ServiceType : WIN32_OWN_PROCESS
+  StartType : Automatic
+  BinaryPath : C:\Windows\System32\spoolsv.exe
+  Account : NT AUTHORITY\SYSTEM
+  DependentServices : RpcSs
+  ServicesDependedOn : RpcSs
+  CanPauseAndContinue : True
 
 PS [99/104]> Stop-Service -Name bthserv -ErrorAction SilentlyContinue
   The service has not been started.
