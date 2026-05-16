@@ -8,6 +8,7 @@
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -47,11 +48,36 @@ export class OracleInstance {
   private _archiveLogMode: boolean;
   private _pidCounter: number = 1000;
 
+  // ── Reactive (Phase 7) ───────────────────────────────────────────
+  /** Bus override; defaults to the global singleton at publish time. */
+  private _bus: IEventBus | null = null;
+  /** deviceId scoping the events emitted by this instance. */
+  private _deviceId: string = 'default';
+
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };
     this._archiveLogMode = this.config.archiveLogMode;
     this.initParameters();
     this.initRedoLogs();
+  }
+
+  /** Inject (or replace) the bus this instance publishes to. */
+  setEventBus(bus: IEventBus | null): void { this._bus = bus; }
+  /** Set the deviceId scoping all `oracle.*` events from this instance. */
+  setDeviceId(deviceId: string): void { this._deviceId = deviceId; }
+
+  private getBus(): IEventBus { return this._bus ?? getDefaultEventBus(); }
+  private ref() { return { deviceId: this._deviceId, sid: this.config.sid }; }
+
+  /** Centralised state transition — emits oracle.instance.state-changed. */
+  private transitionTo(newState: InstanceState): void {
+    const oldState = this._state;
+    if (oldState === newState) return;
+    this._state = newState;
+    this.getBus().publish({
+      topic: 'oracle.instance.state-changed',
+      payload: { ...this.ref(), oldState, newState },
+    });
   }
 
   // ── State management ─────────────────────────────────────────────
@@ -78,7 +104,7 @@ export class OracleInstance {
     output.push('');
 
     // NOMOUNT
-    this._state = 'NOMOUNT';
+    this.transitionTo('NOMOUNT');
     this.startBackgroundProcesses();
     output.push(`Total System Global Area  ${this.config.sgaTarget} bytes`);
     output.push(`Fixed Size                  2.0M bytes`);
@@ -92,14 +118,14 @@ export class OracleInstance {
     }
 
     // MOUNT
-    this._state = 'MOUNT';
+    this.transitionTo('MOUNT');
     output.push(`Database mounted.`);
     this.logAlert('Database mounted');
 
     if (mode === 'MOUNT') return output;
 
     // OPEN
-    this._state = 'OPEN';
+    this.transitionTo('OPEN');
     this._redoLogGroups[0].status = 'CURRENT';
     output.push(`Database opened.`);
     this.logAlert('Database opened');
@@ -134,7 +160,15 @@ export class OracleInstance {
     output.push('ORACLE instance shut down.');
     this.logAlert('Instance shut down');
 
-    this._state = 'SHUTDOWN';
+    // Emit background-process-stopped for each running process BEFORE we
+    // tear them down, so subscribers can clean up the device process table.
+    for (const p of this._backgroundProcesses) {
+      this.getBus().publish({
+        topic: 'oracle.instance.background-process-stopped',
+        payload: { ...this.ref(), name: p.name, pid: p.pid },
+      });
+    }
+    this.transitionTo('SHUTDOWN');
     this._startupTime = null;
     this._backgroundProcesses = [];
     for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
@@ -161,6 +195,12 @@ export class OracleInstance {
     this._backgroundProcesses = procs.map(([name, description]) => ({
       name, pid: this._pidCounter++, description,
     }));
+    for (const p of this._backgroundProcesses) {
+      this.getBus().publish({
+        topic: 'oracle.instance.background-process-started',
+        payload: { ...this.ref(), name: p.name, pid: p.pid, description: p.description },
+      });
+    }
   }
 
   getBackgroundProcesses(): BackgroundProcess[] {
@@ -186,11 +226,28 @@ export class OracleInstance {
       currentGroup.sequence = this._redoSequence;
     }
     this._redoSequence++;
+    const oldGroupNum = this._currentRedoGroup;
     this._currentRedoGroup = (this._currentRedoGroup % this._redoLogGroups.length) + 1;
     const nextGroup = this._redoLogGroups[this._currentRedoGroup - 1];
     nextGroup.status = 'CURRENT';
     nextGroup.sequence = this._redoSequence;
     this.logAlert(`Thread 1 advanced to log sequence ${this._redoSequence}`);
+    this.getBus().publish({
+      topic: 'oracle.instance.redo-log-switched',
+      payload: {
+        ...this.ref(),
+        oldGroup: oldGroupNum,
+        newGroup: this._currentRedoGroup,
+        sequence: this._redoSequence,
+      },
+    });
+    if (this._archiveLogMode) {
+      const archivePath = `${ORACLE_CONFIG.BASE}/archivelog/1_${this._redoSequence - 1}_arc.arc`;
+      this.getBus().publish({
+        topic: 'oracle.archive-log.created',
+        payload: { ...this.ref(), sequence: this._redoSequence - 1, path: archivePath },
+      });
+    }
     return `System altered.`;
   }
 
@@ -311,6 +368,7 @@ export class OracleInstance {
   setParameter(name: string, value: string, scope?: 'MEMORY' | 'SPFILE' | 'BOTH'): void {
     const key = name.toLowerCase();
     const effectiveScope = scope ?? 'BOTH';
+    const oldValue = this._parameters.get(key);
     if (effectiveScope === 'MEMORY' || effectiveScope === 'BOTH') {
       this._parameters.set(key, value);
     }
@@ -318,6 +376,10 @@ export class OracleInstance {
       this._spfileParams.set(key, value);
     }
     this._modifiedParams.add(key);
+    this.getBus().publish({
+      topic: 'oracle.instance.parameter-changed',
+      payload: { ...this.ref(), key, oldValue, newValue: value, scope: effectiveScope },
+    });
   }
 
   getAllParameters(): Map<string, string> {
@@ -349,7 +411,12 @@ export class OracleInstance {
 
   private logAlert(message: string): void {
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    this._alertLog.push(`${ts}: ${message}`);
+    const line = `${ts}: ${message}`;
+    this._alertLog.push(line);
+    this.getBus().publish({
+      topic: 'oracle.instance.alert-log-entry-added',
+      payload: { ...this.ref(), line },
+    });
   }
 
   getAlertLog(): string[] {
