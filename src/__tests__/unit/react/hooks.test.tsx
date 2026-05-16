@@ -13,11 +13,13 @@ import { renderHook, act } from '@testing-library/react';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { MACAddress } from '@/network/core/types';
 import { WritableSignal } from '@/events/Signal';
 import {
   useSignal, useDevices, useDevice,
   useArpTable, useHostStats, useBusEvents,
+  useNatStats, useIPSecStats, useDhcpServerStats,
 } from '@/react/hooks';
 
 describe('Phase 6 — React hooks', () => {
@@ -119,5 +121,29 @@ describe('Phase 6 — React hooks', () => {
   it('useArpTable returns empty array for unknown devices', () => {
     const { result } = renderHook(() => useArpTable('unknown-id'));
     expect(result.current).toEqual([]);
+  });
+
+  it('useNatStats reads NATEngine.observables.stats from a CiscoRouter', () => {
+    let r1!: CiscoRouter;
+    act(() => { r1 = new CiscoRouter('R1'); r1.setEventBus(bus); });
+    const { result } = renderHook(() => useNatStats(r1.getId()));
+    expect(result.current.sessionCount).toBe(0);
+    expect(result.current.hits).toBe(0);
+  });
+
+  it('useIPSecStats falls back to empty when IPSec engine not configured', () => {
+    let r1!: CiscoRouter;
+    act(() => { r1 = new CiscoRouter('R2'); r1.setEventBus(bus); });
+    const { result } = renderHook(() => useIPSecStats(r1.getId()));
+    expect(result.current.running).toBe(false);
+    expect(result.current.activeIkeSAs).toBe(0);
+  });
+
+  it('useDhcpServerStats reads the router DHCP server signal store', () => {
+    let r1!: CiscoRouter;
+    act(() => { r1 = new CiscoRouter('R3'); r1.setEventBus(bus); });
+    const { result } = renderHook(() => useDhcpServerStats(r1.getId()));
+    expect(result.current.running).toBe(false);
+    expect(result.current.poolCount).toBe(0);
   });
 });
