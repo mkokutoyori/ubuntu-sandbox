@@ -42,12 +42,6 @@ export interface NeighborCacheEntry {
   timestamp: number;
 }
 
-interface PendingNDP {
-  resolve: (mac: MACAddress) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
 interface QueuedIPv6Packet {
   frame: IPv6Packet;
   outIface: string;
@@ -86,7 +80,9 @@ export interface IPv6RouterContext {
 export class IPv6DataPlane {
   private routingTable: IPv6RouteEntry[] = [];
   private neighborCache: Map<string, NeighborCacheEntry> = new Map();
-  private pendingNDPs: Map<string, PendingNDP[]> = new Map();
+  /** Dedup signal for in-flight NDP solicitations (Phase 5.9, replaces
+   *  the pendingNDPs Map which only carried the same dedup semantics). */
+  private inFlightNDPs: Set<string> = new Set();
   private packetQueue: QueuedIPv6Packet[] = [];
   private readonly defaultHopLimit = 64;
   private enabled = false;
@@ -376,15 +372,7 @@ export class IPv6DataPlane {
       timestamp: Date.now(),
     });
 
-    const pending = this.pendingNDPs.get(key);
-    if (pending) {
-      for (const p of pending) {
-        clearTimeout(p.timer);
-        p.resolve(mac);
-      }
-      this.pendingNDPs.delete(key);
-    }
-
+    this.inFlightNDPs.delete(key);
     this.flushPacketQueue(na.targetAddress, mac);
   }
 
@@ -609,13 +597,14 @@ export class IPv6DataPlane {
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
+      this.inFlightNDPs.delete(nextHopIP.toString());
     }, 2000);
 
     this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
 
     const key = nextHopIP.toString();
-    if (!this.pendingNDPs.has(key)) {
-      this.pendingNDPs.set(key, []);
+    if (!this.inFlightNDPs.has(key)) {
+      this.inFlightNDPs.add(key);
 
       const srcIP = port.getLinkLocalIPv6();
       if (!srcIP) return;
@@ -642,6 +631,7 @@ export class IPv6DataPlane {
   private flushPacketQueue(resolvedIP: IPv6Address, resolvedMAC: MACAddress): void {
     const ready = this.packetQueue.filter(q => q.nextHopIP.equals(resolvedIP));
     this.packetQueue = this.packetQueue.filter(q => !q.nextHopIP.equals(resolvedIP));
+    this.inFlightNDPs.delete(resolvedIP.toString());
 
     for (const q of ready) {
       clearTimeout(q.timer);
