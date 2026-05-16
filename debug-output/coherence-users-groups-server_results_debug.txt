@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-server
-Generated: 2026-05-16T06:30:18.469Z
+Generated: 2026-05-16T07:11:49.427Z
 host=SRV-USR-COH (windows-server)
 Total commands: 105
 ============================================================
@@ -190,7 +190,11 @@ PS  [24/105]> (Get-LocalUser -Name carol).Description
 
 --- [25] § New-LocalUser (ps) → net user (cmd) ---
 PS  [25/105]> New-LocalUser -Name dave -NoPassword -FullName "Dave PS"
-  Name=dave; FullName=Dave PS; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1005; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  dave  True                
+  
 
 CMD [26/105]> net user dave
   User name                    dave
@@ -223,7 +227,11 @@ CMD [27/105]> net user | findstr dave
   carol                   dave                    
 
 PS  [28/105]> New-LocalUser -Name erin -NoPassword -Description "From PS"
-  Name=erin; FullName=; Description=From PS; SID=S-1-5-21-3623811015-3361044348-30300820-1006; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  erin  True     From PS    
+  
 
 CMD [29/105]> net user erin
   User name                    erin
@@ -253,7 +261,11 @@ CMD [29/105]> net user erin
   The command completed successfully.
 
 PS  [30/105]> New-LocalUser -Name frank -NoPassword
-  Name=frank; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1007; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  frank  True                
+  
 
 CMD [31/105]> net user frank
   User name                    frank
@@ -601,37 +613,37 @@ PS  [90/105]> Get-Command -Noun LocalUser -ErrorAction SilentlyContinue | Select
   
   Name             
   -----------------
-  Get-Localuser    
-  New-Localuser    
-  Set-Localuser    
-  Remove-Localuser 
-  Enable-Localuser 
-  Disable-Localuser
-  Rename-Localuser 
+  Disable-LocalUser
+  Enable-LocalUser 
+  Get-LocalUser    
+  New-LocalUser    
+  Remove-LocalUser 
+  Rename-LocalUser 
+  Set-LocalUser    
   
 
 PS  [91/105]> Get-Command -Noun LocalGroup -ErrorAction SilentlyContinue | Select-Object Name
   
   Name             
   -----------------
-  Get-Localgroup   
-  New-Localgroup   
-  Remove-Localgroup
-  Rename-Localgroup
+  Get-LocalGroup   
+  New-LocalGroup   
+  Remove-LocalGroup
+  Rename-LocalGroup
   
 
 PS  [92/105]> gcm New-LocalUser
   
-  Name           CommandType  Source
-  -------------  -----------  ------
-  New-Localuser  Cmdlet             
+  CommandType  Name           Version  Source                   
+  -----------  -------------  -------  -------------------------
+  Cmdlet       New-LocalUser  5.1.0    Microsoft.PowerShell.Core
   
 
 PS  [93/105]> gcm Add-LocalGroupMember
   
-  Name                  CommandType  Source
-  --------------------  -----------  ------
-  Add-Localgroupmember  Cmdlet             
+  CommandType  Name                  Version  Source                   
+  -----------  --------------------  -------  -------------------------
+  Cmdlet       Add-LocalGroupMember  5.1.0    Microsoft.PowerShell.Core
   
 
 PS  [94/105]> Get-Alias whoami

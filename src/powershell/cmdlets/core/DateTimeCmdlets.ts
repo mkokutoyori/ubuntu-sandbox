@@ -69,6 +69,7 @@ function formatDate(d: Date, fmt: string): string {
 
 export class NewTimespanCmdlet implements ICmdlet {
   readonly name = 'new-timespan';
+  readonly displayName = 'New-TimeSpan';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

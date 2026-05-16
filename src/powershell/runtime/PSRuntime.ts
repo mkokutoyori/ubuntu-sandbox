@@ -237,7 +237,40 @@ export class PSRuntime {
       for (const item of arr) this.outputLines.push(psValueToString(item));
       return;
     }
+    // A single plain object (e.g. Measure-Object's result, Get-Item, a
+    // custom [pscustomobject]) should render through the same default
+    // formatter — ≤4 props → table, >4 props → list — instead of the
+    // inline `Key=Value; ...` form.
+    if (result !== null && typeof result === 'object' && !Array.isArray(result)
+        && !this.isScriptBlock(result)
+        && Object.keys(result as Record<string, unknown>).length > 0
+        && !this.hasInternalSentinel(result as Record<string, unknown>)
+        && this.allScalarValues(result as Record<string, unknown>)) {
+      const formatted = formatDefault([result as Record<string, unknown>]);
+      if (formatted) { this.outputLines.push(formatted); return; }
+    }
     this.outputLines.push(psValueToString(result));
+  }
+
+  /** True when an object carries a runtime sentinel key (collection
+   *  wrappers, queues, stacks) that must not be table-formatted. */
+  private hasInternalSentinel(obj: Record<string, unknown>): boolean {
+    return '__list__' in obj || '__type__' in obj || '__items__' in obj
+        || 'SecureString' in obj;
+  }
+
+  /** Only auto-table/list a single object when every value is a scalar
+   *  (string/number/bool/null/Date). Objects with nested records/arrays
+   *  (Get-Acl's Access, etc.) keep the richer psValueToString rendering. */
+  private allScalarValues(obj: Record<string, unknown>): boolean {
+    for (const v of Object.values(obj)) {
+      if (v === null || v === undefined) continue;
+      const t = typeof v;
+      if (t === 'string' || t === 'number' || t === 'boolean') continue;
+      if (v instanceof Date) continue;
+      return false;
+    }
+    return true;
   }
 
   /** Parse + cache. Identical source strings re-use the same PSProgram. */
@@ -309,6 +342,46 @@ export class PSRuntime {
   /** Register a script file's content for dot-sourcing simulation. */
   registerScript(path: string, content: string): void {
     this.scriptRegistry.set(path.toLowerCase(), content);
+  }
+
+  /**
+   * Canonical command names + aliases for Tab-completion. Pulls straight
+   * from the live registry so new cmdlets are completable without
+   * touching a static list (open/closed).
+   */
+  listCommandNames(): string[] {
+    const out = new Set<string>();
+    for (const c of this.registry.cmdlets()) {
+      out.add(c.displayName ?? this.titleCase(c.name));
+      for (const a of c.aliases) out.add(a);
+    }
+    return [...out].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }
+
+  private titleCase(raw: string): string {
+    return raw.split('-')
+      .map(seg => seg
+        ? seg.replace(/(^|[^a-z])([a-z])/g, (_, p: string, ch: string) => p + ch.toUpperCase())
+        : seg)
+      .join('-');
+  }
+
+  /** Variable names currently in scope, for `$x<Tab>` completion. */
+  listVariableNames(): string[] {
+    const snap = this.global.snapshot();
+    return Object.keys(snap);
+  }
+
+  /**
+   * Declared parameter names for a cmdlet (resolved by name or alias),
+   * for `-<Tab>` completion. Pulls ICmdlet.parameters when the cmdlet
+   * declares it (open/closed — no central table). Always returns [] for
+   * unknown commands; the sub-shell layers the common parameters on top.
+   */
+  getCommandParameters(name: string): string[] {
+    const cmdlet = this.registry.resolve(name.toLowerCase());
+    const declared = cmdlet?.parameters;
+    return declared ? [...declared] : [];
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -1924,7 +1997,13 @@ export class PSRuntime {
       callCmdlet: (name, pos, namedP, pipe, env2) =>
         self.dispatchCmdlet(name, pos, namedP, pipe, env2),
       listCmdlets: () =>
-        self.registry.cmdlets().map(c => ({ name: c.name, aliases: c.aliases })),
+        self.registry.cmdlets().map(c => ({
+          name: c.name,
+          aliases: c.aliases,
+          displayName: c.displayName,
+          module: c.module,
+          description: c.description,
+        })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
     };
 
@@ -2123,11 +2202,18 @@ export class PSRuntime {
     if (typeof obj === 'object') {
       const rec = obj as Record<string, PSValue>;
 
-      // Direct function property (e.g. static type entries, PSValidateAttribute, etc.)
-      // Check for the property BEFORE applying generic method dispatch, to avoid
-      // the hashtable 'add'/'remove' switch shadowing stored function values.
+      // Direct property wins over synthetic collection members. This keeps
+      // `(... | Measure-Object).Count` returning the Count *property* (e.g.
+      // 240) instead of the hashtable key-count (the 6 fields of the
+      // result object). Real PowerShell resolves declared properties
+      // before the generic ICollection.Count / .Keys / .Values members.
       const directKey = Object.keys(rec).find(k => k.toLowerCase() === member);
-      if (directKey !== undefined && typeof rec[directKey] === 'function') return rec[directKey];
+      if (directKey !== undefined) {
+        const shadowing = member === 'count' || member === 'keys'
+          || member === 'values' || member === 'clear' || member === 'add'
+          || member === 'remove' || member === 'clone';
+        if (typeof rec[directKey] === 'function' || shadowing) return rec[directKey];
+      }
 
       // Hashtable/dictionary methods
       switch (member) {

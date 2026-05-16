@@ -36,6 +36,7 @@ function taskToPSObject(t: ScheduledTaskInfo): Record<string, PSValue> {
 
 export class GetScheduledTaskCmdlet implements ICmdlet {
   readonly name = 'get-scheduledtask';
+  readonly displayName = 'Get-ScheduledTask';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -51,6 +52,7 @@ export class GetScheduledTaskCmdlet implements ICmdlet {
 
 export class RegisterScheduledTaskCmdlet implements ICmdlet {
   readonly name = 'register-scheduledtask';
+  readonly displayName = 'Register-ScheduledTask';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -67,6 +69,7 @@ export class RegisterScheduledTaskCmdlet implements ICmdlet {
 
 export class UnregisterScheduledTaskCmdlet implements ICmdlet {
   readonly name = 'unregister-scheduledtask';
+  readonly displayName = 'Unregister-ScheduledTask';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -85,11 +88,13 @@ export class UnregisterScheduledTaskCmdlet implements ICmdlet {
 
 export class NewScheduledTaskTriggerCmdlet implements ICmdlet {
   readonly name = 'new-scheduledtasktrigger';
+  readonly displayName = 'New-ScheduledTaskTrigger';
   readonly aliases = [] as const;
   execute(): PSValue { return null; }
 }
 export class NewScheduledTaskActionCmdlet implements ICmdlet {
   readonly name = 'new-scheduledtaskaction';
+  readonly displayName = 'New-ScheduledTaskAction';
   readonly aliases = [] as const;
   execute(): PSValue { return null; }
 }
@@ -133,6 +138,7 @@ export class GetVolumeCmdlet implements ICmdlet {
 
 export class GetCimInstanceCmdlet implements ICmdlet {
   readonly name = 'get-ciminstance';
+  readonly displayName = 'Get-CimInstance';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

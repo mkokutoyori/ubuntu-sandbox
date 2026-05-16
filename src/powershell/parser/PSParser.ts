@@ -487,8 +487,28 @@ export class PSParser {
         nt === PSTokenType.DECREMENT;
       if (!postfixFollows) {
         const pos = this.pos_();
-        this.advance();
-        return makeLiteral(tok.value, tok.value, 'string', pos);
+        const startTok = this.advance();
+        // Bareword wildcard / extension glue: `Get-*`, `*.txt`, `file?.log`,
+        // `Get-Foo*Bar`. The lexer breaks at MULTIPLY/QUESTION/DOT, but in
+        // command-argument position consecutive tokens with no whitespace
+        // between them form a single bareword string.
+        let value = startTok.value;
+        let prevEnd = startTok.position.offset + startTok.value.length;
+        for (;;) {
+          const nxt = this.peek();
+          if (nxt.position.offset !== prevEnd) break;
+          if (nxt.type === PSTokenType.MULTIPLY) value += '*';
+          else if (nxt.type === PSTokenType.DOT) value += '.';
+          else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+          else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+          else break;
+          this.advance();
+          prevEnd = nxt.position.offset + (
+            nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+              ? nxt.value.length : 1
+          );
+        }
+        return makeLiteral(value, value, 'string', pos);
       }
     }
     return this.parsePostfixExpression();

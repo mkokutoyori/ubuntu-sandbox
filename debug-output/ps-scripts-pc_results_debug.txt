@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-pc
-Generated: 2026-05-16T06:30:17.009Z
+Generated: 2026-05-16T07:11:47.903Z
 Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
@@ -9,7 +9,11 @@ Total commands: 77
 
 --- [1] § prepare scripts dir ---
 PS [1/77]> New-Item -Path C:\Scripts -ItemType Directory -Force
-  Name=C:\Scripts; FullName=C:\Scripts; ItemType=directory
+  
+  Name        FullName    ItemType 
+  ----------  ----------  ---------
+  C:\Scripts  C:\Scripts  directory
+  
 
 PS [2/77]> Test-Path C:\Scripts
   True
@@ -122,15 +126,22 @@ PS [25/77]> Get-ChildItem C:\BulkOut
   
   Mode    LastWriteTime      Length  Name     
   ------  -----------------  ------  ---------
-  -a----  5/16/2026 6:30 AM       5  item1.txt
-  -a----  5/16/2026 6:30 AM       5  item2.txt
-  -a----  5/16/2026 6:30 AM       5  item3.txt
-  -a----  5/16/2026 6:30 AM       5  item4.txt
-  -a----  5/16/2026 6:30 AM       5  item5.txt
+  -a----  5/16/2026 7:11 AM       5  item1.txt
+  -a----  5/16/2026 7:11 AM       5  item2.txt
+  -a----  5/16/2026 7:11 AM       5  item3.txt
+  -a----  5/16/2026 7:11 AM       5  item4.txt
+  -a----  5/16/2026 7:11 AM       5  item5.txt
   
 
 PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
-  Count=5; Sum=25; Average=; Minimum=; Maximum=; Property=Length
+  
+  Count    : 5
+  Sum      : 25
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : Length
+  
 
 PS [27/77]> & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
   10
@@ -139,16 +150,16 @@ PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
   
   Mode    LastWriteTime      Length  Name      
   ------  -----------------  ------  ----------
-  -a----  5/16/2026 6:30 AM       5  item1.txt 
-  -a----  5/16/2026 6:30 AM       6  item10.txt
-  -a----  5/16/2026 6:30 AM       5  item2.txt 
-  -a----  5/16/2026 6:30 AM       5  item3.txt 
-  -a----  5/16/2026 6:30 AM       5  item4.txt 
-  -a----  5/16/2026 6:30 AM       5  item5.txt 
-  -a----  5/16/2026 6:30 AM       5  item6.txt 
-  -a----  5/16/2026 6:30 AM       5  item7.txt 
-  -a----  5/16/2026 6:30 AM       5  item8.txt 
-  -a----  5/16/2026 6:30 AM       5  item9.txt 
+  -a----  5/16/2026 7:11 AM       5  item1.txt 
+  -a----  5/16/2026 7:11 AM       6  item10.txt
+  -a----  5/16/2026 7:11 AM       5  item2.txt 
+  -a----  5/16/2026 7:11 AM       5  item3.txt 
+  -a----  5/16/2026 7:11 AM       5  item4.txt 
+  -a----  5/16/2026 7:11 AM       5  item5.txt 
+  -a----  5/16/2026 7:11 AM       5  item6.txt 
+  -a----  5/16/2026 7:11 AM       5  item7.txt 
+  -a----  5/16/2026 7:11 AM       5  item8.txt 
+  -a----  5/16/2026 7:11 AM       5  item9.txt 
   
 
 PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
@@ -327,10 +338,24 @@ PS [56/77]> Get-ChildItem C:\Scripts | ForEach-Object { "$($_.Name) -> $($_.Leng
   users.ps1 -> 188 bytes
 
 PS [57/77]> Get-ChildItem C:\BulkOut2 | Measure-Object Length -Sum -Average -Max -Min
-  Count=10; Sum=51; Average=5.1; Minimum=5; Maximum=6; Property=Length
+  
+  Count    : 10
+  Sum      : 51
+  Average  : 5.1
+  Minimum  : 5
+  Maximum  : 6
+  Property : Length
+  
 
 PS [58/77]> Get-ChildItem C:\BulkOut2 | ForEach-Object { Get-Content $_.FullName } | Measure-Object
-  Count=10; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 10
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 
 --- [59] § error paths ---
@@ -390,10 +415,24 @@ PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Wh
   Hello, c!
 
 PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
-  Count=3; Sum=600; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 3
+  Sum      : 600
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [73/77]> & { "x","y","z" } | Measure-Object
-  Count=3; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 3
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 
 --- [74] § cleanup ---

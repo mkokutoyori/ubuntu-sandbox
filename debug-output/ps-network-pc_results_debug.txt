@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-pc
-Generated: 2026-05-16T06:30:14.018Z
+Generated: 2026-05-16T07:11:42.932Z
 Engine: powershell
 host=WIN-NET-DBG (windows-pc)
 Total commands: 101
@@ -615,34 +615,34 @@ PS [71/101]> Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyCont
 --- [72] § discovery ---
 PS [72/101]> Get-Command -Noun NetAdapter -ErrorAction SilentlyContinue | Select-Object -First 5
   
-  Name                CommandType  Source
-  ------------------  -----------  ------
-  Get-Netadapter      Cmdlet             
-  Enable-Netadapter   Cmdlet             
-  Disable-Netadapter  Cmdlet             
-  Rename-Netadapter   Cmdlet             
-  Restart-Netadapter  Cmdlet             
+  CommandType  Name                Version  Source                   
+  -----------  ------------------  -------  -------------------------
+  Cmdlet       Disable-NetAdapter  5.1.0    Microsoft.PowerShell.Core
+  Cmdlet       Enable-NetAdapter   5.1.0    Microsoft.PowerShell.Core
+  Cmdlet       Get-NetAdapter      5.1.0    Microsoft.PowerShell.Core
+  Cmdlet       Rename-NetAdapter   5.1.0    Microsoft.PowerShell.Core
+  Cmdlet       Restart-NetAdapter  5.1.0    Microsoft.PowerShell.Core
   
 
 PS [73/101]> Get-Command Get-NetAdapter -ErrorAction SilentlyContinue
   
-  Name            CommandType  Source
-  --------------  -----------  ------
-  Get-Netadapter  Cmdlet             
+  CommandType  Name            Version  Source                   
+  -----------  --------------  -------  -------------------------
+  Cmdlet       Get-NetAdapter  5.1.0    Microsoft.PowerShell.Core
   
 
 PS [74/101]> gcm Get-NetIPAddress -ErrorAction SilentlyContinue
   
-  Name              CommandType  Source
-  ----------------  -----------  ------
-  Get-Netipaddress  Cmdlet             
+  CommandType  Name              Version  Source                   
+  -----------  ----------------  -------  -------------------------
+  Cmdlet       Get-NetIPAddress  5.1.0    Microsoft.PowerShell.Core
   
 
 PS [75/101]> gcm Test-Connection -ErrorAction SilentlyContinue
   
-  Name             CommandType  Source
-  ---------------  -----------  ------
-  Test-Connection  Cmdlet             
+  CommandType  Name             Version  Source                   
+  -----------  ---------------  -------  -------------------------
+  Cmdlet       Test-Connection  5.1.0    Microsoft.PowerShell.Core
   
 
 PS [76/101]> Get-Alias ipconfig -ErrorAction SilentlyContinue
@@ -793,7 +793,17 @@ PS [99/101]> hostname
   WIN-NET-DBG
 
 PS [100/101]> Get-Date
-  5/16/2026 6:30 AM
+  
+  Year        : 2026
+  Month       : 5
+  Day         : 16
+  Hour        : 7
+  Minute      : 11
+  Second      : 43
+  Millisecond : 4
+  DayOfWeek   : 6
+  Ticks       : 1778915503004
+  
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
 <empty>

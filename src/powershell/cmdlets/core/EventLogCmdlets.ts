@@ -37,6 +37,7 @@ function entryToPSObject(e: EventLogEntryInfo): Record<string, PSValue> {
 
 export class GetEventLogCmdlet implements ICmdlet {
   readonly name = 'get-eventlog';
+  readonly displayName = 'Get-EventLog';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -61,6 +62,7 @@ export class GetEventLogCmdlet implements ICmdlet {
 
 export class WriteEventLogCmdlet implements ICmdlet {
   readonly name = 'write-eventlog';
+  readonly displayName = 'Write-EventLog';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -83,6 +85,7 @@ export class WriteEventLogCmdlet implements ICmdlet {
 
 export class ClearEventLogCmdlet implements ICmdlet {
   readonly name = 'clear-eventlog';
+  readonly displayName = 'Clear-EventLog';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -99,6 +102,7 @@ export class ClearEventLogCmdlet implements ICmdlet {
 
 export class NewEventLogCmdlet implements ICmdlet {
   readonly name = 'new-eventlog';
+  readonly displayName = 'New-EventLog';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -119,6 +123,7 @@ export class NewEventLogCmdlet implements ICmdlet {
 
 export class LimitEventLogCmdlet implements ICmdlet {
   readonly name = 'limit-eventlog';
+  readonly displayName = 'Limit-EventLog';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -135,6 +140,7 @@ export class LimitEventLogCmdlet implements ICmdlet {
 
 export class GetWinEventCmdlet implements ICmdlet {
   readonly name = 'get-winevent';
+  readonly displayName = 'Get-WinEvent';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

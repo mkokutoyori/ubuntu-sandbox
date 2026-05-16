@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-registry-env-pc
-Generated: 2026-05-16T06:30:20.455Z
+Generated: 2026-05-16T07:11:51.419Z
 Engine: powershell
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
@@ -157,10 +157,18 @@ PS [26/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI -Name "H
 <empty>
 
 PS [27/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
-  Version=1.0.0; Build=42; InstallPath=C:\DebugSim; Enabled=1
+  
+  Version  Build  InstallPath  Enabled
+  -------  -----  -----------  -------
+  1.0.0       42  C:\DebugSim        1
+  
 
 PS [28/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "Version"
-  Version=1.0.0
+  
+  Version
+  -------
+  1.0.0  
+  
 
 PS [29/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).Version
   1.0.0
@@ -169,7 +177,11 @@ PS [30/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).Build
   42
 
 PS [31/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings
-  Theme=dark; Lang=fr-FR
+  
+  Theme  Lang 
+  -----  -----
+  dark   fr-FR
+  
 
 PS [32/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI | Format-List
   Width : 1920
@@ -187,7 +199,11 @@ PS [35/117]> Remove-ItemProperty -Path HKCU:\Software\DebugSim -Name "Enabled" -
 <empty>
 
 PS [36/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
-  Version=1.0.0; Build=42; InstallPath=C:\DebugSim
+  
+  Version  Build  InstallPath
+  -------  -----  -----------
+  1.0.0       42  C:\DebugSim
+  
 
 PS [37/117]> Clear-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -ErrorAction SilentlyContinue
 <empty>
@@ -352,10 +368,21 @@ PS [70/117]> $nums.Length
   10
 
 PS [71/117]> $nums | Measure-Object -Sum -Average -Min -Max
-  Count=10; Sum=55; Average=5.5; Minimum=1; Maximum=10; Property=
+  
+  Count    : 10
+  Sum      : 55
+  Average  : 5.5
+  Minimum  : 1
+  Maximum  : 10
+  Property : 
+  
 
 PS [72/117]> $hash = @{ a = 1; b = 2; c = 3 }; $hash
-  a=1; b=2; c=3
+  
+  a  b  c
+  -  -  -
+  1  2  3
+  
 
 PS [73/117]> $hash.a
   1
@@ -385,7 +412,11 @@ PS [79/117]> $arr.Length
   3
 
 PS [80/117]> Get-Variable -Name x -ErrorAction SilentlyContinue
-  Name=x; Value=42
+  
+  Name  Value
+  ----  -----
+  x        42
+  
 
 PS [81/117]> Get-Variable | Where-Object { $_.Name -like "x*" }
 <empty>
@@ -406,7 +437,11 @@ PS [86/117]> $z
 <empty>
 
 PS [87/117]> $obj = [pscustomobject]@{ Name="alice"; Age=30 }; $obj
-  Name=alice; Age=30
+  
+  Name   Age
+  -----  ---
+  alice   30
+  
 
 PS [88/117]> $obj.Name
   alice
@@ -455,10 +490,10 @@ PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  c8d20623-d73f-45c7-a27b-0df2291ac58f
+  27bb58db-06e7-4125-91c9-90b7fc89f532
 
 PS [103/117]> [DateTime]::Now
-  5/16/2026 6:30 AM
+  5/16/2026 7:11 AM
 
 
 --- [104] § formatting ---

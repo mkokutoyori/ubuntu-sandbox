@@ -50,6 +50,7 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
 
 export class GetNetAdapterCmdlet implements ICmdlet {
   readonly name = 'get-netadapter';
+  readonly displayName = 'Get-NetAdapter';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -74,6 +75,7 @@ export class GetNetAdapterCmdlet implements ICmdlet {
 
 export class GetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'get-netipaddress';
+  readonly displayName = 'Get-NetIPAddress';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -125,6 +127,7 @@ export class TestConnectionCmdlet implements ICmdlet {
 
 export class ResolveDnsNameCmdlet implements ICmdlet {
   readonly name = 'resolve-dnsname';
+  readonly displayName = 'Resolve-DnsName';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -171,6 +174,7 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
 
 export class GetNetIPConfigurationCmdlet implements ICmdlet {
   readonly name = 'get-netipconfiguration';
+  readonly displayName = 'Get-NetIPConfiguration';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -201,6 +205,7 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
 
 export class GetNetRouteCmdlet implements ICmdlet {
   readonly name = 'get-netroute';
+  readonly displayName = 'Get-NetRoute';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -216,6 +221,7 @@ export class GetNetRouteCmdlet implements ICmdlet {
 
 export class GetNetTCPConnectionCmdlet implements ICmdlet {
   readonly name = 'get-nettcpconnection';
+  readonly displayName = 'Get-NetTCPConnection';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -244,6 +250,7 @@ export class GetNetTCPConnectionCmdlet implements ICmdlet {
 
 export class NewNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'new-netipaddress';
+  readonly displayName = 'New-NetIPAddress';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -270,6 +277,7 @@ export class NewNetIPAddressCmdlet implements ICmdlet {
 
 export class RemoveNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'remove-netipaddress';
+  readonly displayName = 'Remove-NetIPAddress';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -290,6 +298,7 @@ export class RemoveNetIPAddressCmdlet implements ICmdlet {
 
 export class NewNetRouteCmdlet implements ICmdlet {
   readonly name = 'new-netroute';
+  readonly displayName = 'New-NetRoute';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -309,6 +318,7 @@ export class NewNetRouteCmdlet implements ICmdlet {
 
 export class RemoveNetRouteCmdlet implements ICmdlet {
   readonly name = 'remove-netroute';
+  readonly displayName = 'Remove-NetRoute';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -325,6 +335,7 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
 
 export class SetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'set-netipaddress';
+  readonly displayName = 'Set-NetIPAddress';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -341,6 +352,7 @@ export class SetNetIPAddressCmdlet implements ICmdlet {
 
 export class SetNetRouteCmdlet implements ICmdlet {
   readonly name = 'set-netroute';
+  readonly displayName = 'Set-NetRoute';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -361,6 +373,7 @@ export class SetNetRouteCmdlet implements ICmdlet {
 
 export class RestartNetAdapterCmdlet implements ICmdlet {
   readonly name = 'restart-netadapter';
+  readonly displayName = 'Restart-NetAdapter';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -406,6 +419,7 @@ export class TestNetConnectionCmdlet implements ICmdlet {
 
 export class EnableNetAdapterCmdlet implements ICmdlet {
   readonly name = 'enable-netadapter';
+  readonly displayName = 'Enable-NetAdapter';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -419,6 +433,7 @@ export class EnableNetAdapterCmdlet implements ICmdlet {
 
 export class DisableNetAdapterCmdlet implements ICmdlet {
   readonly name = 'disable-netadapter';
+  readonly displayName = 'Disable-NetAdapter';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -432,6 +447,7 @@ export class DisableNetAdapterCmdlet implements ICmdlet {
 
 export class RenameNetAdapterCmdlet implements ICmdlet {
   readonly name = 'rename-netadapter';
+  readonly displayName = 'Rename-NetAdapter';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -451,6 +467,7 @@ export class RenameNetAdapterCmdlet implements ICmdlet {
 
 export class GetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly name = 'get-dnsclientserveraddress';
+  readonly displayName = 'Get-DnsClientServerAddress';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -473,6 +490,7 @@ export class GetDnsClientServerAddressCmdlet implements ICmdlet {
 
 export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly name = 'set-dnsclientserveraddress';
+  readonly displayName = 'Set-DnsClientServerAddress';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -492,6 +510,7 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
 
 export class ClearDnsClientCacheCmdlet implements ICmdlet {
   readonly name = 'clear-dnsclientcache';
+  readonly displayName = 'Clear-DnsClientCache';
   readonly aliases = [] as const;
 
   execute(): PSValue {
@@ -505,6 +524,7 @@ export class ClearDnsClientCacheCmdlet implements ICmdlet {
 
 export class GetNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'get-netfirewallrule';
+  readonly displayName = 'Get-NetFirewallRule';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -531,6 +551,7 @@ export class GetNetFirewallRuleCmdlet implements ICmdlet {
 
 export class NewNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'new-netfirewallrule';
+  readonly displayName = 'New-NetFirewallRule';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -575,17 +596,20 @@ abstract class FirewallToggleCmdlet implements ICmdlet {
 
 export class EnableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
   readonly name = 'enable-netfirewallrule';
+  readonly displayName = 'Enable-NetFirewallRule';
   readonly aliases = [] as const;
   protected enabled = true;
 }
 export class DisableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
   readonly name = 'disable-netfirewallrule';
+  readonly displayName = 'Disable-NetFirewallRule';
   readonly aliases = [] as const;
   protected enabled = false;
 }
 
 export class SetNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'set-netfirewallrule';
+  readonly displayName = 'Set-NetFirewallRule';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -603,6 +627,7 @@ export class SetNetFirewallRuleCmdlet implements ICmdlet {
 
 export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'remove-netfirewallrule';
+  readonly displayName = 'Remove-NetFirewallRule';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -619,6 +644,7 @@ export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
 
 export class GetNetConnectionProfileCmdlet implements ICmdlet {
   readonly name = 'get-netconnectionprofile';
+  readonly displayName = 'Get-NetConnectionProfile';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -637,6 +663,7 @@ export class GetNetConnectionProfileCmdlet implements ICmdlet {
 
 export class SetNetConnectionProfileCmdlet implements ICmdlet {
   readonly name = 'set-netconnectionprofile';
+  readonly displayName = 'Set-NetConnectionProfile';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

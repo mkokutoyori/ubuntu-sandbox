@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-network-pc
-Generated: 2026-05-16T06:30:15.201Z
+Generated: 2026-05-16T07:11:44.348Z
 host=WIN-NET-COH (windows-pc)
 Total commands: 102
 ============================================================
@@ -846,35 +846,35 @@ PS  [85/102]> Get-Command -Noun NetAdapter -ErrorAction SilentlyContinue | Selec
   
   Name              
   ------------------
-  Get-Netadapter    
-  Enable-Netadapter 
-  Disable-Netadapter
-  Rename-Netadapter 
-  Restart-Netadapter
+  Disable-NetAdapter
+  Enable-NetAdapter 
+  Get-NetAdapter    
+  Rename-NetAdapter 
+  Restart-NetAdapter
   
 
 PS  [86/102]> Get-Command -Noun NetIPAddress -ErrorAction SilentlyContinue | Select-Object Name
   
   Name               
   -------------------
-  Get-Netipaddress   
-  New-Netipaddress   
-  Remove-Netipaddress
-  Set-Netipaddress   
+  Get-NetIPAddress   
+  New-NetIPAddress   
+  Remove-NetIPAddress
+  Set-NetIPAddress   
   
 
 PS  [87/102]> gcm Test-Connection
   
-  Name             CommandType  Source
-  ---------------  -----------  ------
-  Test-Connection  Cmdlet             
+  CommandType  Name             Version  Source                   
+  -----------  ---------------  -------  -------------------------
+  Cmdlet       Test-Connection  5.1.0    Microsoft.PowerShell.Core
   
 
 PS  [88/102]> gcm Resolve-DnsName
   
-  Name             CommandType  Source
-  ---------------  -----------  ------
-  Resolve-Dnsname  Cmdlet             
+  CommandType  Name             Version  Source                   
+  -----------  ---------------  -------  -------------------------
+  Cmdlet       Resolve-DnsName  5.1.0    Microsoft.PowerShell.Core
   
 
 PS  [89/102]> Get-Alias ipconfig -ErrorAction SilentlyContinue

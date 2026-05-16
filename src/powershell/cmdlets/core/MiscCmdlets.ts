@@ -14,6 +14,7 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 export class NewObjectCmdlet implements ICmdlet {
   readonly name = 'new-object';
+  readonly parameters = ['TypeName', 'ArgumentList', 'Property', 'ComObject', 'Strict'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -52,6 +53,7 @@ export class NewObjectCmdlet implements ICmdlet {
 
 export class GetRandomCmdlet implements ICmdlet {
   readonly name = 'get-random';
+  readonly parameters = ['Maximum', 'Minimum', 'SetSeed', 'InputObject', 'Count'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -66,6 +68,7 @@ export class GetRandomCmdlet implements ICmdlet {
 
 export class InvokeExpressionCmdlet implements ICmdlet {
   readonly name = 'invoke-expression';
+  readonly parameters = ['Command'] as const;
   readonly aliases = ['iex'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -79,6 +82,7 @@ export class InvokeExpressionCmdlet implements ICmdlet {
 
 export class ConvertToSecureStringCmdlet implements ICmdlet {
   readonly name = 'convertto-securestring';
+  readonly displayName = 'ConvertTo-SecureString';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -91,6 +95,7 @@ export class ConvertToSecureStringCmdlet implements ICmdlet {
 
 export class GetHelpCmdlet implements ICmdlet {
   readonly name = 'get-help';
+  readonly parameters = ['Name', 'Path', 'Category', 'Component', 'Functionality', 'Role', 'Detailed', 'Full', 'Examples', 'Parameter', 'Online', 'ShowWindow'] as const;
   readonly aliases = ['help'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -108,22 +113,53 @@ export class GetHelpCmdlet implements ICmdlet {
 
 export class GetCommandCmdlet implements ICmdlet {
   readonly name = 'get-command';
+  readonly parameters = ['Name', 'Verb', 'Noun', 'Module', 'CommandType', 'TotalCount', 'Syntax', 'ArgumentList', 'All', 'ListImported', 'ShowCommandInfo', 'ParameterName', 'ParameterType'] as const;
   readonly aliases = ['gcm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const nameFilter = (ctx.named['name'] ?? ctx.positional[0]) !== undefined
-      ? psValueToString(ctx.named['name'] ?? ctx.positional[0]) : null;
+    // Enumerate every registered cmdlet — Get-Command's whole point is
+    // discoverability, so we go straight to the registry instead of a
+    // hard-coded subset. Each cmdlet supplies its own canonical
+    // PascalCase displayName (open/closed: no central naming dictionary).
+    const all = ctx.runtime.listCmdlets();
+
+    type Row = {
+      CommandType: 'Cmdlet' | 'Alias' | 'Function';
+      Name: string;
+      Version: string;
+      Source: string;
+      Definition?: string;
+    };
+    const rows: Row[] = [];
+    for (const c of all) {
+      const display = c.displayName ?? titleCaseCmdletName(c.name);
+      const source  = c.module ?? 'Microsoft.PowerShell.Core';
+      rows.push({
+        CommandType: 'Cmdlet',
+        Name: display,
+        Version: '5.1.0',
+        Source: source,
+      });
+      for (const a of c.aliases) {
+        rows.push({
+          CommandType: 'Alias',
+          Name: a,
+          Version: '',
+          Source: '',
+          Definition: display,
+        });
+      }
+    }
+
+    // -Name (positional or named): wildcard / exact, matched against the
+    // display name. -Verb / -Noun split on the first dash.
+    const nameRaw    = ctx.named['name'] ?? ctx.positional[0];
+    const nameFilter = nameRaw !== undefined && nameRaw !== null && nameRaw !== ''
+      ? psValueToString(nameRaw) : null;
     const verbFilter = ctx.named['verb'] ? psValueToString(ctx.named['verb']) : null;
     const nounFilter = ctx.named['noun'] ? psValueToString(ctx.named['noun']) : null;
 
-    // Source of truth: the live cmdlet registry. Each entry becomes one PS
-    // command record with a canonical title-cased display name.
-    const all = ctx.runtime.listCmdlets().map(c => ({
-      raw:  c.name,
-      name: titleCaseCmdletName(c.name),
-    }));
-
-    const matches = (display: string): boolean => {
+    const nameMatches = (display: string): boolean => {
       const lower = display.toLowerCase();
       const dash  = display.indexOf('-');
       const verb  = dash > 0 ? display.slice(0, dash).toLowerCase() : '';
@@ -134,9 +170,29 @@ export class GetCommandCmdlet implements ICmdlet {
       return true;
     };
 
-    return all
-      .filter(c => matches(c.name))
-      .map(c => ({ Name: c.name, CommandType: 'Cmdlet', Source: '' }) as Record<string, PSValue>);
+    const filtered = (nameFilter || verbFilter || nounFilter)
+      ? rows.filter(r => nameMatches(r.Name))
+      : rows;
+
+    // -CommandType filter
+    const typeRaw = ctx.named['commandtype'];
+    const typeFilter = typeRaw ? psValueToString(typeRaw).toLowerCase() : null;
+    const byType = typeFilter
+      ? filtered.filter(r => r.CommandType.toLowerCase() === typeFilter)
+      : filtered;
+
+    byType.sort((a, b) => a.Name.toLowerCase().localeCompare(b.Name.toLowerCase()));
+
+    // De-duplicate by (CommandType, Name).
+    const seen = new Set<string>();
+    const unique = byType.filter(r => {
+      const key = `${r.CommandType}::${r.Name.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return unique as unknown as Record<string, PSValue>[];
   }
 }
 
@@ -242,6 +298,7 @@ export class WaitJobCmdlet implements ICmdlet {
 
 export class SetLocationCmdlet implements ICmdlet {
   readonly name = 'set-location';
+  readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
   readonly aliases = ['cd', 'chdir', 'sl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -257,6 +314,7 @@ export class SetLocationCmdlet implements ICmdlet {
 
 export class GetLocationCmdlet implements ICmdlet {
   readonly name = 'get-location';
+  readonly parameters = ['PSProvider', 'PSDrive', 'Stack', 'StackName'] as const;
   readonly aliases = ['pwd', 'gl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -270,6 +328,7 @@ export class GetLocationCmdlet implements ICmdlet {
 
 export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
+  readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -288,6 +347,7 @@ export class NewPSDriveCmdlet implements ICmdlet {
 
 export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
+  readonly displayName = 'Get-PSDrive';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -370,6 +430,7 @@ function wildcardToRegex(pattern: string): RegExp {
 
 export class GetPSProviderCmdlet implements ICmdlet {
   readonly name = 'get-psprovider';
+  readonly displayName = 'Get-PSProvider';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

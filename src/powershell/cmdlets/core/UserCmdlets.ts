@@ -57,6 +57,7 @@ function pickName(ctx: CmdletContext, paramName = 'name'): string | string[] | n
 
 export class GetLocalUserCmdlet implements ICmdlet {
   readonly name = 'get-localuser';
+  readonly displayName = 'Get-LocalUser';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -83,6 +84,7 @@ export class GetLocalUserCmdlet implements ICmdlet {
 
 export class NewLocalUserCmdlet implements ICmdlet {
   readonly name = 'new-localuser';
+  readonly displayName = 'New-LocalUser';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -106,6 +108,7 @@ export class NewLocalUserCmdlet implements ICmdlet {
 
 export class SetLocalUserCmdlet implements ICmdlet {
   readonly name = 'set-localuser';
+  readonly displayName = 'Set-LocalUser';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -147,21 +150,25 @@ abstract class UserActionCmdlet implements ICmdlet {
 
 export class RemoveLocalUserCmdlet extends UserActionCmdlet {
   readonly name = 'remove-localuser';
+  readonly displayName = 'Remove-LocalUser';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, n: string) { return u.removeUser(n); }
 }
 export class EnableLocalUserCmdlet extends UserActionCmdlet {
   readonly name = 'enable-localuser';
+  readonly displayName = 'Enable-LocalUser';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, n: string) { return u.enableUser(n); }
 }
 export class DisableLocalUserCmdlet extends UserActionCmdlet {
   readonly name = 'disable-localuser';
+  readonly displayName = 'Disable-LocalUser';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, n: string) { return u.disableUser(n); }
 }
 export class RenameLocalUserCmdlet implements ICmdlet {
   readonly name = 'rename-localuser';
+  readonly displayName = 'Rename-LocalUser';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -182,6 +189,7 @@ export class RenameLocalUserCmdlet implements ICmdlet {
 
 export class GetLocalGroupCmdlet implements ICmdlet {
   readonly name = 'get-localgroup';
+  readonly displayName = 'Get-LocalGroup';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -201,6 +209,7 @@ export class GetLocalGroupCmdlet implements ICmdlet {
 
 export class NewLocalGroupCmdlet implements ICmdlet {
   readonly name = 'new-localgroup';
+  readonly displayName = 'New-LocalGroup';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -217,6 +226,7 @@ export class NewLocalGroupCmdlet implements ICmdlet {
 
 export class RemoveLocalGroupCmdlet implements ICmdlet {
   readonly name = 'remove-localgroup';
+  readonly displayName = 'Remove-LocalGroup';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -258,17 +268,20 @@ abstract class GroupMemberCmdlet implements ICmdlet {
 
 export class AddLocalGroupMemberCmdlet extends GroupMemberCmdlet {
   readonly name = 'add-localgroupmember';
+  readonly displayName = 'Add-LocalGroupMember';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, g: string, m: string) { return u.addGroupMember(g, m); }
 }
 export class RemoveLocalGroupMemberCmdlet extends GroupMemberCmdlet {
   readonly name = 'remove-localgroupmember';
+  readonly displayName = 'Remove-LocalGroupMember';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, g: string, m: string) { return u.removeGroupMember(g, m); }
 }
 
 export class RenameLocalGroupCmdlet implements ICmdlet {
   readonly name = 'rename-localgroup';
+  readonly displayName = 'Rename-LocalGroup';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -281,6 +294,7 @@ export class RenameLocalGroupCmdlet implements ICmdlet {
 
 export class GetLocalGroupMemberCmdlet implements ICmdlet {
   readonly name = 'get-localgroupmember';
+  readonly displayName = 'Get-LocalGroupMember';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-pc
-Generated: 2026-05-16T06:30:16.745Z
+Generated: 2026-05-16T07:11:45.126Z
 Engine: powershell
 host=WIN-SVC-DBG (windows-pc)
 Total commands: 104
@@ -519,10 +519,24 @@ PS [53/104]> Get-Process | Select-Object Id, ProcessName, Handles, WS, CPU | Sor
   
 
 PS [54/104]> Get-Process | Measure-Object -Property CPU -Sum
-  Count=26; Sum=35.900000000000006; Average=; Minimum=; Maximum=; Property=CPU
+  
+  Count    : 26
+  Sum      : 35.900000000000006
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : CPU
+  
 
 PS [55/104]> Get-Process | Measure-Object -Property WS -Sum -Average -Max
-  Count=26; Sum=0; Average=; Minimum=; Maximum=; Property=WS
+  
+  Count    : 26
+  Sum      : 0
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : WS
+  
 
 PS [56/104]> ps
   
@@ -597,7 +611,7 @@ PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-       91       6      9  13054       0  5136  notepad    
+      204       4      7  19362       0  5136  notepad    
   
 
 PS [60/104]> Start-Process -FilePath calc.exe
@@ -607,7 +621,7 @@ PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      217       8      7   7660       0  5140  calc       
+       89       6      4   8435       0  5140  calc       
   
 
 PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
@@ -632,9 +646,9 @@ PS [68/104]> Get-Process -Name notepad
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      169       9      9  12996       0  5144  notepad    
-      233       9      3  12071       0  5148  notepad    
-      233       5      5  15254       0  5152  notepad    
+      154      12      8  19402       0  5144  notepad    
+      180      10      8  11912       0  5148  notepad    
+       87       8      2  10477       0  5152  notepad    
   
 
 PS [69/104]> Get-Process -Name notepad | Stop-Process
@@ -655,13 +669,20 @@ PS [71/104]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Objec
   Dnscache        Running         DNS Client     
 
 PS [72/104]> Get-Service | Group-Object StartType | ForEach-Object { "$($_.Name): $($_.Count)" }
-  Boot: 3
-  System: 3
-  Automatic: 3
-  Manual: 3
+  Boot: 1
+  System: 2
+  Automatic: 18
+  Manual: 1
 
 PS [73/104]> Get-Service | Where-Object { $_.Status -eq "Running" -and $_.StartType -eq "Automatic" } | Measure-Object
-  Count=17; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 17
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [74/104]> Get-Process | Where-Object { $_.WS -gt 0 } | Sort-Object WS -Descending | Select-Object -First 3 | Format-List Name, Id, WS, CPU
 <empty>
@@ -738,7 +759,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 4:30 AM
+  TimeCreated  : 5/16/2026 5:11 AM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -746,7 +767,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 12:30 AM
+  TimeCreated  : 5/16/2026 1:11 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -754,7 +775,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 6:30 PM
+  TimeCreated  : 5/15/2026 7:11 PM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -762,7 +783,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/15/2026 6:30 AM
+  TimeCreated  : 5/15/2026 7:11 AM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1006
   
@@ -770,7 +791,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/14/2026 6:30 AM
+  TimeCreated  : 5/14/2026 7:11 AM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1005
   
@@ -781,7 +802,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/15/2026 6:30 AM
+  TimeCreated  : 5/15/2026 7:11 AM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1015
   
@@ -789,7 +810,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/13/2026 6:30 AM
+  TimeCreated  : 5/13/2026 7:11 AM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1014
   
@@ -797,7 +818,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/11/2026 6:30 AM
+  TimeCreated  : 5/11/2026 7:11 AM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1013
   
@@ -805,7 +826,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/9/2026 6:30 AM
+  TimeCreated  : 5/9/2026 7:11 AM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1012
   
@@ -813,7 +834,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/6/2026 6:30 AM
+  TimeCreated  : 5/6/2026 7:11 AM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1011
   
@@ -860,7 +881,7 @@ PS [88/104]> Get-ScheduledTask | Where-Object { $_.State -eq "Ready" }
   
 
 PS [89/104]> (Get-ScheduledTask | Measure-Object).Count
-  6
+  4
 
 PS [90/104]> Register-ScheduledTask -TaskName "DebugTask1" -Action (New-ScheduledTaskAction -Execute "calc.exe") -Trigger (New-ScheduledTaskTrigger -Daily -At "09:00") -Force
   \DebugTask1
@@ -896,7 +917,14 @@ PS [96/104]> Get-Service | Group-Object Status | Sort-Object Name
   
 
 PS [97/104]> Get-Process | Measure-Object -Property Handles -Sum -Average
-  Count=26; Sum=10848; Average=417.2307692307692; Minimum=; Maximum=; Property=Handles
+  
+  Count    : 26
+  Sum      : 10848
+  Average  : 417.2307692307692
+  Minimum  : 
+  Maximum  : 
+  Property : Handles
+  
 
 PS [98/104]> Get-Service -Name Spooler | Format-List *
   

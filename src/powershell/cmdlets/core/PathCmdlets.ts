@@ -24,6 +24,7 @@ function requireRegistryProvider(path: string): void {
 
 export class SplitPathCmdlet implements ICmdlet {
   readonly name = 'split-path';
+  readonly parameters = ['Path', 'LiteralPath', 'Qualifier', 'NoQualifier', 'Parent', 'Leaf', 'LeafBase', 'Extension', 'Resolve', 'IsAbsolute'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -54,6 +55,7 @@ export class SplitPathCmdlet implements ICmdlet {
 
 export class JoinPathCmdlet implements ICmdlet {
   readonly name = 'join-path';
+  readonly parameters = ['Path', 'ChildPath', 'AdditionalChildPath', 'Resolve'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -72,6 +74,7 @@ export class JoinPathCmdlet implements ICmdlet {
 
 export class TestPathCmdlet implements ICmdlet {
   readonly name = 'test-path';
+  readonly parameters = ['Path', 'LiteralPath', 'PathType', 'Filter', 'Include', 'Exclude', 'IsValid', 'Newer', 'OlderThan'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -94,6 +97,7 @@ export class TestPathCmdlet implements ICmdlet {
 
 export class ResolvePathCmdlet implements ICmdlet {
   readonly name = 'resolve-path';
+  readonly parameters = ['Path', 'LiteralPath', 'Relative', 'RelativeBasePath'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -109,6 +113,8 @@ export class ResolvePathCmdlet implements ICmdlet {
 
 export class GetChildItemCmdlet implements ICmdlet {
   readonly name = 'get-childitem';
+  readonly parameters = ['Path', 'LiteralPath', 'Filter', 'Include', 'Exclude', 'Recurse', 'Depth', 'Force', 'Name', 'Attributes', 'Directory', 'File', 'Hidden', 'ReadOnly', 'System'] as const;
+  readonly displayName = 'Get-ChildItem';
   readonly aliases = ['ls', 'dir', 'gci'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -189,6 +195,7 @@ export class GetChildItemCmdlet implements ICmdlet {
 
 export class GetContentCmdlet implements ICmdlet {
   readonly name = 'get-content';
+  readonly parameters = ['Path', 'LiteralPath', 'ReadCount', 'TotalCount', 'Tail', 'Filter', 'Include', 'Exclude', 'Force', 'Raw', 'Encoding', 'Delimiter', 'Wait', 'Stream'] as const;
   readonly aliases = ['cat', 'type', 'gc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -225,6 +232,7 @@ export class GetContentCmdlet implements ICmdlet {
 
 export class SetContentCmdlet implements ICmdlet {
   readonly name = 'set-content';
+  readonly parameters = ['Path', 'LiteralPath', 'Value', 'Force', 'Encoding', 'PassThru', 'NoNewline', 'Stream', 'Filter', 'Include', 'Exclude'] as const;
   readonly aliases = ['sc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -241,6 +249,7 @@ export class SetContentCmdlet implements ICmdlet {
 
 export class AddContentCmdlet implements ICmdlet {
   readonly name = 'add-content';
+  readonly parameters = ['Path', 'LiteralPath', 'Value', 'Force', 'Encoding', 'PassThru', 'NoNewline', 'Stream', 'Filter', 'Include', 'Exclude'] as const;
   readonly aliases = ['ac'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -263,6 +272,7 @@ export class AddContentCmdlet implements ICmdlet {
 
 export class NewItemCmdlet implements ICmdlet {
   readonly name = 'new-item';
+  readonly parameters = ['Path', 'Name', 'ItemType', 'Value', 'Force'] as const;
   readonly aliases = ['ni'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -301,6 +311,7 @@ export class NewItemCmdlet implements ICmdlet {
 
 export class RemoveItemCmdlet implements ICmdlet {
   readonly name = 'remove-item';
+  readonly parameters = ['Path', 'LiteralPath', 'Filter', 'Include', 'Exclude', 'Recurse', 'Force', 'Stream'] as const;
   readonly aliases = ['rm', 'del', 'ri', 'rmdir', 'erase', 'rd'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -330,6 +341,7 @@ export class RemoveItemCmdlet implements ICmdlet {
 
 export class CopyItemCmdlet implements ICmdlet {
   readonly name = 'copy-item';
+  readonly parameters = ['Path', 'LiteralPath', 'Destination', 'Filter', 'Include', 'Exclude', 'Recurse', 'Force', 'PassThru', 'Container'] as const;
   readonly aliases = ['cp', 'copy', 'cpi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -346,6 +358,7 @@ export class CopyItemCmdlet implements ICmdlet {
 
 export class MoveItemCmdlet implements ICmdlet {
   readonly name = 'move-item';
+  readonly parameters = ['Path', 'LiteralPath', 'Destination', 'Filter', 'Include', 'Exclude', 'Force', 'PassThru'] as const;
   readonly aliases = ['mv', 'move', 'mi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -363,6 +376,7 @@ export class MoveItemCmdlet implements ICmdlet {
 
 export class RenameItemCmdlet implements ICmdlet {
   readonly name = 'rename-item';
+  readonly parameters = ['Path', 'LiteralPath', 'NewName', 'Force', 'PassThru'] as const;
   readonly aliases = ['ren', 'rni'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -386,6 +400,7 @@ export class RenameItemCmdlet implements ICmdlet {
 
 export class MkdirCmdlet implements ICmdlet {
   readonly name = 'mkdir';
+  readonly parameters = ['Path', 'Name', 'ItemType', 'Value', 'Force'] as const;
   readonly aliases = ['md'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -402,6 +417,7 @@ export class MkdirCmdlet implements ICmdlet {
 
 export class OutFileCmdlet implements ICmdlet {
   readonly name = 'out-file';
+  readonly parameters = ['FilePath', 'LiteralPath', 'Encoding', 'Append', 'Force', 'NoClobber', 'Width', 'NoNewline'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -437,6 +453,8 @@ function joinPathPositionals(ctx: CmdletContext): string {
 
 export class GetItemPropertyCmdlet implements ICmdlet {
   readonly name = 'get-itemproperty';
+  readonly parameters = ['Path', 'LiteralPath', 'Name', 'Filter', 'Include', 'Exclude'] as const;
+  readonly displayName = 'Get-ItemProperty';
   readonly aliases = ['gp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -470,6 +488,8 @@ export class GetItemPropertyCmdlet implements ICmdlet {
 
 export class SetItemPropertyCmdlet implements ICmdlet {
   readonly name = 'set-itemproperty';
+  readonly parameters = ['Path', 'LiteralPath', 'Name', 'Value', 'Force', 'PassThru', 'Type'] as const;
+  readonly displayName = 'Set-ItemProperty';
   readonly aliases = ['sp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -488,6 +508,8 @@ export class SetItemPropertyCmdlet implements ICmdlet {
 
 export class RemoveItemPropertyCmdlet implements ICmdlet {
   readonly name = 'remove-itemproperty';
+  readonly parameters = ['Path', 'LiteralPath', 'Name', 'Force', 'Include', 'Exclude', 'Filter'] as const;
+  readonly displayName = 'Remove-ItemProperty';
   readonly aliases = ['rp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -510,6 +532,7 @@ export class RemoveItemPropertyCmdlet implements ICmdlet {
  */
 export class ClearItemPropertyCmdlet implements ICmdlet {
   readonly name = 'clear-itemproperty';
+  readonly parameters = ['Path', 'LiteralPath', 'Name', 'Force', 'Include', 'Exclude', 'Filter'] as const;
   readonly aliases = ['clp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -536,6 +559,7 @@ export class ClearItemPropertyCmdlet implements ICmdlet {
 
 export class GetItemCmdlet implements ICmdlet {
   readonly name = 'get-item';
+  readonly parameters = ['Path', 'LiteralPath', 'Filter', 'Include', 'Exclude', 'Force', 'Stream'] as const;
   readonly aliases = ['gi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -614,6 +638,7 @@ function titleCaseAttribute(a: string): string {
 
 export class SetItemCmdlet implements ICmdlet {
   readonly name = 'set-item';
+  readonly parameters = ['Path', 'LiteralPath', 'Value', 'Force', 'PassThru', 'Type'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -647,6 +672,7 @@ export class SetItemCmdlet implements ICmdlet {
 
 export class GetAclCmdlet implements ICmdlet {
   readonly name = 'get-acl';
+  readonly parameters = ['Path', 'LiteralPath', 'InputObject', 'Audit', 'Filter', 'Include', 'Exclude'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -676,6 +702,7 @@ export class GetAclCmdlet implements ICmdlet {
 
 export class SetAclCmdlet implements ICmdlet {
   readonly name = 'set-acl';
+  readonly parameters = ['Path', 'LiteralPath', 'AclObject', 'InputObject', 'Passthru'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

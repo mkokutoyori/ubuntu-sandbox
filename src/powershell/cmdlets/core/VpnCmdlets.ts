@@ -34,6 +34,7 @@ function toPSObject(c: VpnConnectionInfo): Record<string, PSValue> {
 
 export class AddVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'add-vpnconnection';
+  readonly displayName = 'Add-VpnConnection';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -59,6 +60,7 @@ export class AddVpnConnectionCmdlet implements ICmdlet {
 
 export class GetVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'get-vpnconnection';
+  readonly displayName = 'Get-VpnConnection';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -81,6 +83,7 @@ export class GetVpnConnectionCmdlet implements ICmdlet {
 
 export class SetVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'set-vpnconnection';
+  readonly displayName = 'Set-VpnConnection';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -104,6 +107,7 @@ export class SetVpnConnectionCmdlet implements ICmdlet {
 
 export class RemoveVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'remove-vpnconnection';
+  readonly displayName = 'Remove-VpnConnection';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

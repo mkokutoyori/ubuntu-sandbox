@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-server
-Generated: 2026-05-16T06:30:21.542Z
+Generated: 2026-05-16T07:11:50.077Z
 host=SRV-ENV-DBG (windows-server)
 Total commands: 103
 ============================================================
@@ -115,7 +115,11 @@ PS  [25/103]> $env:DBG_FROM_CMD
   hello
 
 PS  [26/103]> Get-Item Env:DBG_FROM_CMD
-  Name=DBG_FROM_CMD; Value=hello
+  
+  Name          Value
+  ------------  -----
+  DBG_FROM_CMD  hello
+  
 
 CMD [27/103]> set DBG_FROM_CMD=updated
 <empty>
@@ -247,7 +251,11 @@ CMD [60/103]> reg query HKCU\Software\CohReg
   
 
 PS  [61/103]> Get-ItemProperty -Path HKCU:\Software\CohReg
-  Version=1.0.0; Build=42
+  
+  Version  Build
+  -------  -----
+  1.0.0       42
+  
 
 PS  [62/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Version
   1.0.0
@@ -395,24 +403,24 @@ PS  [90/103]> Get-Command -Noun ItemProperty -ErrorAction SilentlyContinue | Sel
   
   Name               
   -------------------
-  Get-Itemproperty   
-  Set-Itemproperty   
-  Remove-Itemproperty
   Clear-Itemproperty 
+  Get-ItemProperty   
+  Remove-ItemProperty
+  Set-ItemProperty   
   
 
 PS  [91/103]> gcm Get-ItemProperty
   
-  Name              CommandType  Source
-  ----------------  -----------  ------
-  Get-Itemproperty  Cmdlet             
+  CommandType  Name              Version  Source                   
+  -----------  ----------------  -------  -------------------------
+  Cmdlet       Get-ItemProperty  5.1.0    Microsoft.PowerShell.Core
   
 
 PS  [92/103]> gcm Set-Item
   
-  Name      CommandType  Source
-  --------  -----------  ------
-  Set-Item  Cmdlet             
+  CommandType  Name      Version  Source                   
+  -----------  --------  -------  -------------------------
+  Cmdlet       Set-Item  5.1.0    Microsoft.PowerShell.Core
   
 
 PS  [93/103]> Get-Alias %

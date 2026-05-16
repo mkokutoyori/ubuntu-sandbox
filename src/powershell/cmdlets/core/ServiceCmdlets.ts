@@ -118,6 +118,7 @@ function asPSObjects(list: ServiceInfo[]): PSValue {
 export class GetServiceCmdlet implements ICmdlet {
   readonly name = 'get-service';
   readonly aliases = ['gsv'] as const;
+  readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);
@@ -138,8 +139,12 @@ export class GetServiceCmdlet implements ICmdlet {
       // Wildcard support — `Get-Service "spo*"` filters by name + display.
       if (/[*?]/.test(n)) {
         const pat = new RegExp('^' + n.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+        let matched = 0;
         for (const s of svc.listServices()) {
-          if (pat.test(s.name) || pat.test(s.displayName)) out.push(s);
+          if (pat.test(s.name) || pat.test(s.displayName)) { out.push(s); matched++; }
+        }
+        if (matched === 0) {
+          ctx.emitError(`Cannot find any service with service name '${n}'.`);
         }
         continue;
       }
@@ -156,6 +161,7 @@ export class GetServiceCmdlet implements ICmdlet {
 abstract class ServiceActionCmdlet implements ICmdlet {
   abstract readonly name: string;
   abstract readonly aliases: readonly string[];
+  readonly parameters = ['Name', 'DisplayName', 'InputObject', 'Force', 'PassThru'] as const;
   protected abstract act(svc: IServiceProvider, name: string): string;
 
   execute(ctx: CmdletContext): PSValue {
@@ -209,6 +215,7 @@ export class ResumeServiceCmdlet extends ServiceActionCmdlet {
 export class SetServiceCmdlet implements ICmdlet {
   readonly name = 'set-service';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'DisplayName', 'Description', 'StartupType', 'Status', 'Credential', 'PassThru'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);

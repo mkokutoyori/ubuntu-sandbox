@@ -43,8 +43,17 @@ export interface IRuntimeRef {
   /**
    * List every (canonical) registered cmdlet — used by Get-Command and
    * Get-Alias to enumerate the registry without leaking the implementation.
+   * Each cmdlet supplies its own displayName/module/description via the
+   * ICmdlet interface (open/closed: new cmdlets just declare these
+   * properties, no central dictionary to maintain).
    */
-  listCmdlets(): readonly { name: string; aliases: readonly string[] }[];
+  listCmdlets(): readonly {
+    name: string;
+    aliases: readonly string[];
+    displayName?: string;
+    module?: string;
+    description?: string;
+  }[];
   /** Enumerate the host's environment variables (for `Get-ChildItem Env:`). */
   listEnvVars(): Array<{ Name: string; Value: string }>;
 }

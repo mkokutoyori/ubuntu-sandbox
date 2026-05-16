@@ -49,6 +49,7 @@ function asPSObjects(list: ProcessInfo[]): PSValue {
 export class GetProcessCmdlet implements ICmdlet {
   readonly name = 'get-process';
   readonly aliases = ['gps', 'ps'] as const;
+  readonly parameters = ['Name', 'Id', 'IncludeUserName', 'ComputerName', 'Module', 'FileVersionInfo'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const procs = requireProcesses(ctx);
@@ -97,6 +98,7 @@ export class GetProcessCmdlet implements ICmdlet {
 export class StopProcessCmdlet implements ICmdlet {
   readonly name = 'stop-process';
   readonly aliases = ['kill', 'spps'] as const;
+  readonly parameters = ['Name', 'Id', 'InputObject', 'Force', 'PassThru'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const procs = requireProcesses(ctx);
@@ -166,6 +168,7 @@ function emitMsg(ctx: CmdletContext, msg: string): void {
 export class StartProcessCmdlet implements ICmdlet {
   readonly name = 'start-process';
   readonly aliases = ['saps'] as const;
+  readonly parameters = ['FilePath', 'ArgumentList', 'WorkingDirectory', 'NoNewWindow', 'Wait', 'PassThru', 'Verb', 'WindowStyle'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filePath = psValueToString(

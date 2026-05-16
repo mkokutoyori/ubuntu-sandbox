@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server-extras
-Generated: 2026-05-16T06:30:17.070Z
+Generated: 2026-05-16T07:11:47.950Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
@@ -9,7 +9,11 @@ Total commands: 23
 
 --- [1] § server (windows-server) ---
 PS [1/23]> New-Item -Path C:\ServerScripts -ItemType Directory -Force
-  Name=C:\ServerScripts; FullName=C:\ServerScripts; ItemType=directory
+  
+  Name              FullName          ItemType 
+  ----------------  ----------------  ---------
+  C:\ServerScripts  C:\ServerScripts  directory
+  
 
 PS [2/23]> Test-Path C:\ServerScripts
   True
@@ -25,12 +29,12 @@ PS [4/23]> Get-Content C:\ServerScripts\role.ps1
 PS [5/23]> & C:\ServerScripts\role.ps1
   Hostname = SRV-SCR-DBG
   User = Administrator
-  Date = 5/16/2026 6:30 AM
+  Date = 5/16/2026 7:11 AM
 
 PS [6/23]> . C:\ServerScripts\role.ps1
   Hostname = SRV-SCR-DBG
   User = Administrator
-  Date = 5/16/2026 6:30 AM
+  Date = 5/16/2026 7:11 AM
 
 PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
 <empty>
@@ -40,8 +44,8 @@ PS [8/23]> Get-Content C:\ServerScripts\svcaudit.ps1
   Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 5 Name, Status
 
 PS [9/23]> & C:\ServerScripts\svcaudit.ps1
-  Running: 3
-  Stopped: 3
+  Running: 20
+  Stopped: 2
   Name=Tcpip; Status=Running
   Name=Afd; Status=Running
   Name=Dhcp; Status=Running
