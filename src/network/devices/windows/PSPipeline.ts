@@ -296,9 +296,10 @@ export function selectObject(objects: PSObject[], args: string): PSObject[] {
       expandProp = tokens[++i];
     } else if (t === '-unique') {
       unique = true;
-    } else if (!t.startsWith('-') && !properties) {
-      // Bare property names
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      // Bare property names — accumulate across multiple tokens (e.g. "Name, Id, Type")
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
@@ -543,6 +544,33 @@ export function selectString(objects: PSObject[], args: string): PSObject[] {
 // ─── Formatters ──────────────────────────────────────────────────
 
 /**
+ * Render a single property value the way real PowerShell does for the
+ * default `Out-Default` / `Format-Table` / `Format-List` pipeline:
+ *   - Date  → en-US short date + short time, e.g. "5/15/2026 11:10 AM"
+ *   - bool  → "True" / "False"
+ *   - null / undefined → "" (empty cell)
+ *   - everything else → String(value)
+ */
+export function renderPSCellValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  if (value instanceof Date) {
+    // PowerShell short date + short time, en-US culture.
+    // Example: "5/15/2026 11:10 AM"
+    const m  = value.getMonth() + 1;
+    const d  = value.getDate();
+    const y  = value.getFullYear();
+    const h24 = value.getHours();
+    const min = value.getMinutes();
+    const tt  = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
+  }
+  return String(value);
+}
+
+/**
  * Format-Table: format PSObject[] as an aligned table with headers.
  *
  * Supports:
@@ -567,13 +595,29 @@ export function formatTable(objects: PSObject[], args: string): string {
       i--;
     } else if (t === '-autosize') {
       // AutoSize is the default behavior
-    } else if (!t.startsWith('-') && !properties) {
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      // Bare property names accumulate across multiple tokens
+      // (e.g. `Format-Table Name, Description` → ["Name,", "Description"]).
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
   // Determine columns
   const columns = properties || Object.keys(objects[0]);
+
+  // Cell-render helper that suppresses Length on directory rows
+  // (matches PS native FormatPS1XML behaviour for FileSystem).
+  const cellValue = (obj: PSObject, col: string): { raw: unknown; text: string } => {
+    const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
+    const raw = obj[key];
+    if (col.toLowerCase() === 'length') {
+      const modeKey = Object.keys(obj).find(k => k.toLowerCase() === 'mode');
+      const mode = modeKey ? String(obj[modeKey] ?? '') : '';
+      if (mode.startsWith('d')) return { raw: null, text: '' };
+    }
+    return { raw, text: renderPSCellValue(raw) };
+  };
 
   // Calculate column widths
   const widths: Record<string, number> = {};
@@ -582,9 +626,8 @@ export function formatTable(objects: PSObject[], args: string): string {
   }
   for (const obj of objects) {
     for (const col of columns) {
-      const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
-      const val = String(obj[key] ?? '');
-      widths[col] = Math.max(widths[col], val.length);
+      const { text } = cellValue(obj, col);
+      widths[col] = Math.max(widths[col], text.length);
     }
   }
 
@@ -598,11 +641,10 @@ export function formatTable(objects: PSObject[], args: string): string {
 
   for (const obj of objects) {
     const row = columns.map(col => {
-      const key = Object.keys(obj).find(k => k.toLowerCase() === col.toLowerCase()) || col;
-      const val = String(obj[key] ?? '');
-      // Right-align numbers
-      if (typeof obj[key] === 'number') return val.padStart(widths[col]);
-      return val.padEnd(widths[col]);
+      const { raw, text } = cellValue(obj, col);
+      // Right-align numbers and Date values (PS convention)
+      if (typeof raw === 'number' || raw instanceof Date) return text.padStart(widths[col]);
+      return text.padEnd(widths[col]);
     }).join('  ');
     lines.push(row);
   }
@@ -633,8 +675,9 @@ export function formatList(objects: PSObject[], args: string): string {
         i++;
       }
       i--;
-    } else if (!t.startsWith('-') && !properties) {
-      properties = tokens[i].split(',').map(s => s.trim()).filter(Boolean);
+    } else if (!t.startsWith('-')) {
+      if (!properties) properties = [];
+      properties.push(...tokens[i].split(',').map(s => s.trim()).filter(Boolean));
     }
   }
 
@@ -644,7 +687,7 @@ export function formatList(objects: PSObject[], args: string): string {
     const maxKeyLen = Math.max(...keys.map(k => k.length));
     const pairs = keys.map(k => {
       const key = Object.keys(obj).find(ok => ok.toLowerCase() === k.toLowerCase()) || k;
-      return `${k.padEnd(maxKeyLen)} : ${String(obj[key] ?? '')}`;
+      return `${k.padEnd(maxKeyLen)} : ${renderPSCellValue(obj[key])}`;
     });
     blocks.push(pairs.join('\n'));
   }
@@ -655,12 +698,65 @@ export function formatList(objects: PSObject[], args: string): string {
 /**
  * Default formatter: use Format-Table for 4 or fewer properties,
  * Format-List for more (matches real PS behavior).
+ *
+ * Well-known shapes (Service, Process, FileInfo, NetIPAddress, ...) keep
+ * the columns real PowerShell shows by default even when the underlying
+ * object has many more properties — driven in real PS by
+ * `Format.ps1xml`; we approximate here with a static lookup.
  */
 export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
-  const propCount = Object.keys(objects[0]).length;
-  if (propCount <= 4) return formatTable(objects, '');
+  const keys = Object.keys(objects[0]);
+  const defaultCols = pickDefaultColumns(keys);
+  if (defaultCols) {
+    return formatTable(objects, defaultCols.join(', '));
+  }
+  if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+/**
+ * If the object shape matches a well-known type (Service / Process /
+ * NetAdapter / NetIPAddress / DirectoryEntry), return the canonical
+ * default columns. Otherwise null.
+ */
+function pickDefaultColumns(keys: string[]): string[] | null {
+  const lower = new Set(keys.map((k) => k.toLowerCase()));
+  // Service object: Status / Name / DisplayName
+  if (lower.has('status') && lower.has('name') && lower.has('displayname')) {
+    return ['Status', 'Name', 'DisplayName'];
+  }
+  // Process object: Handles, NPM(K), PM(K), WS(K), CPU(s), Id, ProcessName
+  if (lower.has('handles') && lower.has('id') && lower.has('processname')) {
+    return ['Handles', 'NPM(K)', 'PM(K)', 'WS(K)', 'CPU(s)', 'Id', 'ProcessName'];
+  }
+  // NetAdapter: Name, InterfaceDescription, Status, MacAddress
+  if (lower.has('macaddress') && lower.has('status') && lower.has('name') && lower.has('interfacedescription')) {
+    return ['Name', 'InterfaceDescription', 'Status', 'MacAddress', 'LinkSpeed'];
+  }
+  // NetIPAddress: IPAddress, InterfaceAlias, AddressFamily, PrefixLength
+  if (lower.has('ipaddress') && lower.has('interfacealias') && lower.has('addressfamily')) {
+    return ['IPAddress', 'InterfaceAlias', 'AddressFamily', 'PrefixLength'];
+  }
+  // LocalUser: Name, Enabled, Description
+  if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {
+    return ['Name', 'Enabled', 'Description'];
+  }
+  // PSDrive: Name, Used (GB), Free (GB), Provider, Root
+  if (lower.has('provider') && lower.has('root') && lower.has('name')) {
+    return ['Name', 'Used', 'Free', 'Provider', 'Root'];
+  }
+  // DirectoryEntry from Get-ChildItem: Mode, LastWriteTime, Length, Name
+  if (lower.has('mode') && lower.has('lastwritetime') && lower.has('name')) {
+    return ['Mode', 'LastWriteTime', 'Length', 'Name'];
+  }
+  // PathInfo from Get-Location / pwd: real PS shows only the Path column
+  // (Drive / Provider / ProviderPath stay accessible as properties).
+  if (lower.has('path') && lower.has('providerpath') && lower.has('provider')
+      && keys.length <= 4) {
+    return ['Path'];
+  }
+  return null;
 }
 
 /**
@@ -777,7 +873,10 @@ export function applyPipelineStage(
       const values = objects.map(obj => {
         const key = Object.keys(obj).find(k => k.toLowerCase() === propName.toLowerCase());
         const val = key !== undefined ? obj[key] : null;
-        return val !== null && val !== undefined ? String(val) : '';
+        if (val === null || val === undefined) return '';
+        if (val === true) return 'True';
+        if (val === false) return 'False';
+        return String(val);
       }).filter(v => v !== '');
       return { output: [], formatted: values.join('\n') };
     }

@@ -4,6 +4,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
@@ -12,7 +13,7 @@ import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdR
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -31,6 +32,11 @@ const STDIN_COMMANDS = new Set([
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
+  /**
+   * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
+   * and surfaced to outgoing SSH connections that honour `ssh -A`.
+   */
+  readonly sshAgent: SshAgent = new SshAgent();
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
@@ -497,6 +503,7 @@ export class LinuxCommandExecutor {
       case 'who': return { output: cmdWho(c), exitCode: 0 };
       case 'w': return { output: cmdW(c), exitCode: 0 };
       case 'last': return { output: cmdLast(c, args), exitCode: 0 };
+      case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'getent': {
         if (args[0] === 'hosts') return this.handleGetentHosts(args.slice(1));
         return { output: cmdGetent(c, args), exitCode: 0 };
@@ -737,6 +744,8 @@ export class LinuxCommandExecutor {
         if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
         return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
       }
+      case 'ssh-add':
+        return this.handleSshAdd(args);
       case 'xargs': {
         if (!stdin) return { output: '', exitCode: 0 };
         const xCmd = args[0] || 'echo';
@@ -762,6 +771,81 @@ export class LinuxCommandExecutor {
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
       case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+
+      // Non-interactive fallbacks for commands the GUI normally routes to
+      // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
+      // SSH there is no TTY, so these commands behave like their batch
+      // counterparts: silent for editors, version banners for CLIs.
+      case 'nano':
+      case 'vi':
+      case 'vim': {
+        // `nano file` opens (or creates) the file in the editor. In batch
+        // mode we honour the "create if missing" behaviour so that
+        // subsequent SSH commands can write to it.
+        const target = args.find((a) => !a.startsWith('-'));
+        if (target) {
+          const abs = this.vfs.normalizePath(target, this.cwd);
+          if (!this.vfs.exists(abs)) {
+            this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
+      case 'clear':
+      case 'reset':
+        return { output: '', exitCode: 0 };
+      case 'sqlplus': {
+        if (args.includes('-V') || args.includes('-version')) {
+          return {
+            output:
+              'SQL*Plus: Release 19.0.0.0.0 - Production on ' +
+              new Date().toUTCString(),
+            exitCode: 0,
+          };
+        }
+        return {
+          output:
+            'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
+            'ERROR:\nORA-12162: TNS:net service name is incorrectly specified\n\n' +
+            'SP2-0157: unable to CONNECT to ORACLE after 3 attempts, exiting SQL*Plus',
+          exitCode: 1,
+        };
+      }
+      case 'rman':
+        return {
+          output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
+          exitCode: 0,
+        };
+      case 'lsnrctl': {
+        if (args[0] === 'version') {
+          return {
+            output:
+              'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+            exitCode: 0,
+          };
+        }
+        return {
+          output: 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
+          exitCode: 0,
+        };
+      }
+      case 'tnsping': {
+        const target = args[0] || '';
+        return {
+          output:
+            `TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production\n` +
+            (target ? `TNS-03505: Failed to resolve name "${target}"` : ''),
+          exitCode: target ? 1 : 0,
+        };
+      }
+      case 'dbca':
+      case 'orapwd':
+      case 'adrci':
+        return {
+          output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
+          exitCode: 0,
+        };
+
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
       case 'readlink': return { output: args.filter(a => !a.startsWith('-'))[0] || '', exitCode: 0 };
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
@@ -916,6 +1000,84 @@ export class LinuxCommandExecutor {
   }
 
   // ─── su handler ──────────────────────────────────────────────────
+
+  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
+    const home =
+      this.userMgr.currentUid === 0
+        ? '/root'
+        : `/home/${this.userMgr.currentUser}`;
+
+    // `-D` — delete all identities.
+    if (args.includes('-D')) {
+      this.sshAgent.removeAll();
+      return { output: 'All identities removed.', exitCode: 0 };
+    }
+
+    // `-d <path>` — delete a single identity (or default if none given).
+    const dIdx = args.indexOf('-d');
+    if (dIdx >= 0) {
+      const path =
+        args[dIdx + 1] && !args[dIdx + 1].startsWith('-')
+          ? args[dIdx + 1]
+          : `${home}/.ssh/id_ed25519`;
+      const removed = this.sshAgent.remove(path);
+      return removed
+        ? { output: `Identity removed: ${path}`, exitCode: 0 }
+        : { output: 'Could not remove identity: not loaded', exitCode: 1 };
+    }
+
+    // `-l` — short fingerprint listing.
+    if (args.includes('-l')) {
+      const keys = this.sshAgent.list();
+      if (keys.length === 0) {
+        return { output: 'The agent has no identities.', exitCode: 1 };
+      }
+      const lines = keys.map(
+        (k) => `${k.bits} ${k.fingerprint} ${k.path} (${k.algorithm})`,
+      );
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
+
+    // `-L` — long form (public-key material). Pedagogical stub.
+    if (args.includes('-L')) {
+      const keys = this.sshAgent.list();
+      if (keys.length === 0) {
+        return { output: 'The agent has no identities.', exitCode: 1 };
+      }
+      const lines = keys.map(
+        (k) => `ssh-${k.algorithm.toLowerCase()} ${k.material.replace(/\n/g, '')} ${k.comment}`,
+      );
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
+
+    // Default — load identities listed in args, or fall back to discovery.
+    const explicit = args.filter((a) => !a.startsWith('-'));
+    if (explicit.length > 0) {
+      const lines: string[] = [];
+      let anyFailed = false;
+      for (const path of explicit) {
+        if (this.sshAgent.add(path, this.vfs)) {
+          lines.push(`Identity added: ${path}`);
+        } else {
+          lines.push(`Could not open key file ${path}: No such file or directory`);
+          anyFailed = true;
+        }
+      }
+      return { output: lines.join('\n'), exitCode: anyFailed ? 1 : 0 };
+    }
+
+    const added = this.sshAgent.addAll(home, this.vfs);
+    if (added.length === 0) {
+      return {
+        output: `Could not open a connection to your authentication agent.`,
+        exitCode: 2,
+      };
+    }
+    return {
+      output: added.map((p) => `Identity added: ${p}`).join('\n'),
+      exitCode: 0,
+    };
+  }
 
   private handleSu(args: string[]): { output: string; exitCode: number } {
     let loginShell = false;
@@ -1363,7 +1525,7 @@ export class LinuxCommandExecutor {
       'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
       'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
       // Users and groups
-      'id', 'whoami', 'groups', 'who', 'w', 'last', 'hostname', 'uname', 'sleep', 'kill',
+      'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
       'useradd', 'usermod', 'userdel', 'passwd', 'chpasswd', 'chage',
       'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',

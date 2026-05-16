@@ -61,9 +61,8 @@ import {
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
-import type { ISftpServer } from '../protocols/sftp/ISftpServer';
-import { LinuxSftpFSAdapter, LinuxSftpUserAuthAdapter } from '../protocols/sftp/LinuxSftpAdapter';
-import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
+import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -122,8 +121,39 @@ export abstract class LinuxMachine extends EndHost {
     this.registerCoreCommands();
     this.registerDeviceCommands();
 
-    // 5. TCP SFTP server on port 22
-    this.listenTcp(22, (conn) => registerSftpHandler(conn, this.getSftpServer()));
+    // 5. Initialise SSH server config files on first boot:
+    //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
+    //    Also seed /etc/motd and /etc/issue.net so SSH greeters and the
+    //    pre-auth Banner have realistic content.
+    this.initSshFiles();
+
+    // 6. TCP SSH server on port 22 — handles SSH auth + SFTP subsystem
+    //    in one place.  Replaces the legacy SFTP-only handler.
+    this.listenTcp(22, (conn) => {
+      // Pass the real client IP so the syslogger / throttler / event-bus
+      // subscribers see the actual source — not the hardcoded 0.0.0.0
+      // bind address.
+      this.getSshServerHandler().register(conn, conn.remoteIp);
+    });
+  }
+
+  /** Persist SSH server configuration + host key + MOTD on the VFS. */
+  private initSshFiles(): void {
+    // Instantiating the context as a side effect creates the files.
+    this.getSshServerContext();
+    const vfs = this.executor.vfs;
+    if (!vfs.exists('/etc/motd')) {
+      vfs.writeFile(
+        '/etc/motd',
+        `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`,
+        0,
+        0,
+        0o022,
+      );
+    }
+    if (!vfs.exists('/etc/issue.net')) {
+      vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
+    }
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
@@ -196,17 +226,47 @@ export abstract class LinuxMachine extends EndHost {
     };
   }
 
+  /** Cached SSH server context — replaced on `systemctl restart sshd`. */
+  private _sshContext: LinuxSshServerContext | null = null;
+  /** Unsubscribe hook for the service-manager lifecycle listener. */
+  private _sshLifecycleOff: (() => void) | null = null;
+
   /**
-   * Expose this machine as an SFTP server.
-   * Called by SftpServerResolver when a remote client connects to this device's IP.
+   * Return the cached `LinuxSshServerContext`, creating it on first use.
+   * Subscribes to the service manager so that `systemctl restart sshd`
+   * (or `reload`) reloads /etc/ssh/sshd_config and refreshes the context.
+   *
+   * BRD SSH-07-R6.
    */
-  getSftpServer(): ISftpServer {
-    return {
-      vfs:         new LinuxSftpFSAdapter(this.executor.vfs),
-      userMgr:     new LinuxSftpUserAuthAdapter(this.executor.userMgr),
-      hostname:    this.profile.hostname,
-      socketTable: this.socketTable,
-    };
+  getSshServerContext(): LinuxSshServerContext {
+    if (this._sshContext) return this._sshContext;
+    this._sshContext = new LinuxSshServerContext(
+      this.executor.vfs,
+      this.executor.userMgr,
+      this.profile.hostname,
+      {},
+      this.executor,
+      // Route incoming SSH exec commands through the full pipeline so
+      // `ip`, `arp`, `ping`, `systemctl`, etc. are available.
+      (line: string) => this.executeCommand(line),
+    );
+    this._sshLifecycleOff?.();
+    this._sshLifecycleOff = this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'ssh' && name !== 'sshd') return;
+      if (event === 'restart' || event === 'reload') {
+        this._sshContext = this._sshContext?.reloadConfig() ?? null;
+      }
+    });
+    return this._sshContext;
+  }
+
+  /**
+   * Build a SshServerHandler ready to be hooked onto a TcpConnection.
+   * The handler captures the current cached context, so config reloads
+   * triggered by `systemctl restart sshd` apply to subsequent connections.
+   */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   // ─── Terminal entry point ────────────────────────────────────────────

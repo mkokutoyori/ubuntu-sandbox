@@ -139,6 +139,35 @@ export class PSEventLogProvider {
     return lines.join('\n') + '\n';
   }
 
+  /**
+   * Structured accessor used by the new ICmdlet path. Same filtering as
+   * getEventLog() but returns the raw entries instead of a formatted string.
+   */
+  getEntriesStructured(logName: string, opts: { newest?: number; entryType?: string; source?: string } = {}): EventLogEntry[] | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return null;
+    let entries = [...meta.entries].reverse();
+    if (opts.entryType) {
+      const et = opts.entryType.toLowerCase();
+      entries = entries.filter(e => e.entryType.toLowerCase() === et);
+    }
+    if (opts.source) {
+      const src = opts.source.toLowerCase();
+      entries = entries.filter(e => e.source.toLowerCase().includes(src));
+    }
+    if (opts.newest !== undefined) entries = entries.slice(0, opts.newest);
+    return entries;
+  }
+
+  /** All known logs as structured metadata. */
+  getAllLogsStructured(): Array<{ logName: string; entries: number; maxSizeKB: number }> {
+    return Array.from(this.logs.values()).map(m => ({
+      logName: m.logName,
+      entries: m.entries.length,
+      maxSizeKB: m.maxSizeKB,
+    }));
+  }
+
   getEventLog(logName: string, opts: { newest?: number; entryType?: string; source?: string }): string {
     const key = logName.toLowerCase();
     const meta = this.logs.get(key);

@@ -1,0 +1,227 @@
+/**
+ * Concrete SFTP command implementations.
+ *
+ * Each command depends only on the role interface it actually needs
+ * (Interface Segregation). Tests can substitute minimal fakes.
+ *
+ * Reference: DESIGN-SSH-SFTP.md sections 8.2 + 9.1.
+ */
+
+import { type Result, err, ok, propagateErr } from '../Result';
+import type {
+  ISftpCommand,
+  SftpCommandContext,
+  SftpRequestPayload,
+} from './ISftpCommand';
+import type { SftpDirEntry, SftpFileAttrs } from './ISftpFileSystem';
+
+const requirePath = (req: SftpRequestPayload): Result<string> =>
+  req.path !== undefined
+    ? ok(req.path)
+    : err({ kind: 'INVALID_ARGUMENT', message: `${req.op}: missing path` });
+
+export class SftpGetCommand implements ISftpCommand<{ content: string }> {
+  readonly op = 'get';
+  execute(
+    req: SftpRequestPayload,
+    ctx: SftpCommandContext,
+  ): Result<{ content: string }> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    const stat = ctx.vfs.stat(path);
+    if (!stat.ok) return propagateErr(stat);
+    const content = ctx.vfs.readFile(path);
+    if (!content.ok) return propagateErr(content);
+    return ok({ content: content.value });
+  }
+}
+
+export class SftpPutCommand implements ISftpCommand<void> {
+  readonly op = 'put';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    if (req.content === undefined) {
+      return err({ kind: 'INVALID_ARGUMENT', message: 'put: missing content' });
+    }
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    return ctx.vfs.writeFile(path, req.content);
+  }
+}
+
+export class SftpLsCommand
+  implements ISftpCommand<{ entries: readonly SftpDirEntry[] }>
+{
+  readonly op = 'ls';
+  execute(
+    req: SftpRequestPayload,
+    ctx: SftpCommandContext,
+  ): Result<{ entries: readonly SftpDirEntry[] }> {
+    const target = ctx.vfs.normalizePath(req.path ?? '.', ctx.cwd);
+    const entries = ctx.vfs.listDirectory(target);
+    if (!entries.ok) return propagateErr(entries);
+    return ok({ entries: entries.value });
+  }
+}
+
+export class SftpMkdirCommand implements ISftpCommand<void> {
+  readonly op = 'mkdir';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    const parent = path.replace(/\/[^/]+\/?$/, '') || '/';
+    if (!ctx.vfs.exists(parent)) {
+      return err({
+        kind: 'IO_ERROR',
+        message: `mkdir ${path}: parent ${parent} does not exist`,
+      });
+    }
+    return ctx.vfs.mkdir(path);
+  }
+}
+
+export class SftpRmCommand implements ISftpCommand<void> {
+  readonly op = 'rm';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    return ctx.vfs.deleteFile(path);
+  }
+}
+
+export class SftpRmdirCommand implements ISftpCommand<void> {
+  readonly op = 'rmdir';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    return ctx.vfs.rmdir(path);
+  }
+}
+
+export class SftpRenameCommand implements ISftpCommand<void> {
+  readonly op = 'rename';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    if (req.src === undefined || req.dst === undefined) {
+      return err({
+        kind: 'INVALID_ARGUMENT',
+        message: 'rename: missing src or dst',
+      });
+    }
+    const src = ctx.vfs.normalizePath(req.src, ctx.cwd);
+    const dst = ctx.vfs.normalizePath(req.dst, ctx.cwd);
+    if (ctx.vfs.exists(dst)) {
+      return err({
+        kind: 'IO_ERROR',
+        message: `rename: destination ${dst} already exists`,
+      });
+    }
+    return ctx.vfs.rename(src, dst);
+  }
+}
+
+export class SftpChmodCommand implements ISftpCommand<void> {
+  readonly op = 'chmod';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    if (req.mode === undefined) {
+      return err({ kind: 'INVALID_ARGUMENT', message: 'chmod: missing mode' });
+    }
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    return ctx.vfs.setPermissions(path, req.mode);
+  }
+}
+
+export class SftpChownCommand implements ISftpCommand<void> {
+  readonly op = 'chown';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    if (req.uid === undefined || req.gid === undefined) {
+      return err({
+        kind: 'INVALID_ARGUMENT',
+        message: 'chown: missing uid/gid',
+      });
+    }
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    return ctx.vfs.setOwner(path, req.uid, req.gid);
+  }
+}
+
+export class SftpVersionCommand
+  implements ISftpCommand<{ protocolVersion: number }>
+{
+  readonly op = 'version';
+  execute(): Result<{ protocolVersion: number }> {
+    // SFTP-02: announce protocol version 3 (OpenSSH-compatible).
+    return ok({ protocolVersion: 3 });
+  }
+}
+
+export interface SftpDiskUsage {
+  readonly totalBytes: number;
+  readonly usedBytes: number;
+  readonly availableBytes: number;
+}
+
+export class SftpDfCommand implements ISftpCommand<SftpDiskUsage> {
+  readonly op = 'df';
+  // Simulator does not track real allocations; report a stable fake usage
+  // proportional to the number of entries below the queried path. Returns
+  // values in bytes; the sub-shell formats them with -h on demand.
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<SftpDiskUsage> {
+    const path = req.path
+      ? ctx.vfs.normalizePath(req.path, ctx.cwd)
+      : ctx.cwd;
+    if (!ctx.vfs.exists(path)) {
+      return err({ kind: 'IO_ERROR', message: `${path}: no such file or directory` });
+    }
+    const totalBytes = 20 * 1024 * 1024 * 1024; // 20 GB
+    const usedBytes = 4 * 1024 * 1024 * 1024; //  4 GB
+    return ok({
+      totalBytes,
+      usedBytes,
+      availableBytes: totalBytes - usedBytes,
+    });
+  }
+}
+
+export class SftpPwdCommand implements ISftpCommand<{ cwd: string }> {
+  readonly op = 'pwd';
+  execute(_req: SftpRequestPayload, ctx: SftpCommandContext): Result<{ cwd: string }> {
+    return ok({ cwd: ctx.cwd });
+  }
+}
+
+export class SftpCdCommand implements ISftpCommand<{ cwd: string }> {
+  readonly op = 'cd';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<{ cwd: string }> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const target = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    if (!ctx.vfs.exists(target)) {
+      return err({ kind: 'IO_ERROR', message: `${target}: No such file or directory` });
+    }
+    if (ctx.vfs.getEntryType(target) !== 'directory') {
+      return err({ kind: 'IO_ERROR', message: `${target}: Not a directory` });
+    }
+    return ok({ cwd: target });
+  }
+}
+
+export class SftpStatCommand implements ISftpCommand<SftpFileAttrs> {
+  readonly op = 'stat';
+  execute(
+    req: SftpRequestPayload,
+    ctx: SftpCommandContext,
+  ): Result<SftpFileAttrs> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    return ctx.vfs.stat(path);
+  }
+}

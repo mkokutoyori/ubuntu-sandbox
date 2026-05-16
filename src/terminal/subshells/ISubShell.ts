@@ -36,6 +36,15 @@ export interface ISubShell {
    */
   processLine(line: string): SubShellResult | Promise<SubShellResult>;
 
+  /**
+   * Tab-completion candidates for the current input line. The owning
+   * session decides how to apply them (single match → complete inline,
+   * many → list). Optional: sub-shells without completion can omit it.
+   * Implementations return the full candidate token(s), not just the
+   * suffix, so the session's existing completeInput helper can diff.
+   */
+  getCompletions?(line: string): string[];
+
   /** Clean up resources when the sub-shell exits. */
   dispose(): void;
 }

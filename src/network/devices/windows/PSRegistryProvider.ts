@@ -117,6 +117,13 @@ function buildHKCU(): RegistryKey {
   const currentVersion = makeKey('CurrentVersion');
   windows.subkeys.set('currentversion', currentVersion);
 
+  // HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings
+  const internetSettings = makeKey('Internet Settings');
+  currentVersion.subkeys.set('internet settings', internetSettings);
+  seedValue(internetSettings, 'ProxyEnable', 0);
+  seedValue(internetSettings, 'ProxyServer', '');
+  seedValue(internetSettings, 'ProxyOverride', '<local>');
+
   // HKCU:\Environment
   const env = makeKey('Environment');
   root.subkeys.set('environment', env);
@@ -340,6 +347,30 @@ export class PSRegistryProvider {
     }
     lines.push('');
     return lines.join('\n');
+  }
+
+  /**
+   * Structured accessor used by the PowerShell cmdlet to build a PS object
+   * whose own properties match registry value names. Preserves casing of the
+   * stored names so `(Get-ItemProperty ...).Version` resolves naturally.
+   */
+  getItemPropertyValues(path: string): Record<string, string | number> | null {
+    const parsed = parseRegistryPath(path);
+    if (!parsed) return null;
+    const key = this.navigateTo(parsed);
+    if (!key) return null;
+    const out: Record<string, string | number> = {};
+    for (const [, val] of key.values) out[val.name] = val.value;
+    return out;
+  }
+
+  /** List immediate subkey names (preserving their original casing). */
+  listSubkeyNames(path: string): string[] {
+    const parsed = parseRegistryPath(path);
+    if (!parsed) return [];
+    const key = this.navigateTo(parsed);
+    if (!key) return [];
+    return Array.from(key.subkeys.values()).map(k => k.name);
   }
 
   setItemProperty(path: string, name: string, value: string | number): string {

@@ -17,20 +17,22 @@
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
-import type { ISftpServer } from '../protocols/sftp/ISftpServer';
-import { WindowsSftpFSAdapter, WindowsSftpUserAuthAdapter } from '../protocols/sftp/WindowsSftpAdapter';
-import { registerSftpHandler } from '../protocols/sftp/SftpServerHandler';
+import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
+import { PSRegistryProvider } from './windows/PSRegistryProvider';
+import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
+import { cmdGetmac } from './windows/WinGetmac';
 import { cmdTracert } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
@@ -50,6 +52,44 @@ import {
   cmdXcopy, cmdSort,
 } from './windows/WinFileCommands';
 
+/**
+ * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
+ * Returns the active flags and the literal patterns. Multi-token patterns
+ * separated by spaces are split into individual `OR` patterns to mirror real
+ * `findstr` behaviour (use `/C:"..."` to force a single literal substring).
+ */
+function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: boolean; invert: boolean; count: boolean } {
+  const tokens = filter.split(/\s+/).slice(1);
+  let ignoreCase = false;
+  let invert = false;
+  let count = false;
+  let cLiteral: string | null = null;
+  const positional: string[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.toLowerCase() === '/i') { ignoreCase = true; continue; }
+    if (t.toLowerCase() === '/v') { invert = true; continue; }
+    if (t.toLowerCase() === '/c')  { count = true; continue; }
+    if (/^\/c:/i.test(t)) {
+      cLiteral = t.slice(3).replace(/^"|"$/g, '');
+      continue;
+    }
+    if (t.startsWith('"')) {
+      let str = t.slice(1);
+      while (i < tokens.length - 1 && !str.endsWith('"')) { i++; str += ' ' + tokens[i]; }
+      if (str.endsWith('"')) str = str.slice(0, -1);
+      positional.push(str);
+      continue;
+    }
+    positional.push(t);
+  }
+
+  if (cLiteral !== null) return { patterns: [cLiteral], ignoreCase, invert, count };
+  // Bareword multi-token form: each token is a separate literal (OR semantics).
+  return { patterns: positional, ignoreCase, invert, count };
+}
+
 export class WindowsPC extends EndHost {
   protected readonly defaultTTL = 128;
   /** DHCP event log for Windows Event Viewer */
@@ -62,6 +102,14 @@ export class WindowsPC extends EndHost {
   private cwd: string = 'C:\\Users\\User';
   /** Environment variables */
   private env: Map<string, string> = new Map();
+  /** Exposes the env map so subshells (PS / cmd) share the same source.
+   *  Reads are case-insensitive on Windows. */
+  getEnvVars(): Map<string, string> { return this.env; }
+  getEnvVar(name: string): string | undefined {
+    const u = name.toUpperCase();
+    for (const [k, v] of this.env) if (k.toUpperCase() === u) return v;
+    return undefined;
+  }
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
   /** DHCP client trace flag */
@@ -74,6 +122,41 @@ export class WindowsPC extends EndHost {
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
   private procMgr: WindowsProcessManager;
+
+  // ── Per-device transitional state (Phase 4 relocation) ──────────────────
+  // These maps + provider instances used to live as private fields on
+  // PowerShellExecutor. Moving them to the device makes them visible to
+  // any consumer (the interpreter, future Get-* cmdlets, the executor's
+  // own handlers via shared references) without going through the
+  // executor as the source of truth.
+  /** Additional IP addresses (added via New-NetIPAddress). */
+  readonly extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
+  /** Extra routes (added via New-NetRoute). */
+  readonly extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  /** Adapter overrides: status / display name. */
+  readonly adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
+  /** Dynamic firewall rules (added via New-NetFirewallRule). */
+  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> = new Map();
+  /** Network connection profiles: ifIndex → category. */
+  readonly networkProfiles: Map<number, string> = new Map();
+  /** VPN connections: lowercase name → details. */
+  readonly vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> = new Map();
+  /** In-memory registry hive (HKLM / HKCU). */
+  readonly registry: PSRegistryProvider = new PSRegistryProvider();
+
+  /**
+   * Shared scheduled-task table. Both `schtasks` (cmd) and the Get/Register/
+   * Unregister-ScheduledTask cmdlets read and write here so a task created
+   * from one shell is visible from the other.
+   */
+  readonly scheduledTasks: Map<string, { taskName: string; taskPath: string; state: string }> = new Map([
+    ['googleupdatetaskuser',           { taskName: 'GoogleUpdateTaskUser',            taskPath: '\\',                         state: 'Ready' }],
+    ['onedrive standalone update task',{ taskName: 'OneDrive Standalone Update Task', taskPath: '\\',                         state: 'Ready' }],
+    ['.net framework ngen v4.0.30319', { taskName: '.NET Framework NGEN v4.0.30319',  taskPath: '\\Microsoft\\Windows\\.NET', state: 'Ready' }],
+    ['simtesttask',                    { taskName: 'SimTestTask',                     taskPath: '\\',                         state: 'Ready' }],
+  ]);
+  /** Event-log store. */
+  readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -96,21 +179,24 @@ export class WindowsPC extends EndHost {
     // NetBIOS Session Service (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
 
-    // TCP SFTP server on port 22
-    this.listenTcp(22, (conn) => registerSftpHandler(conn, this.getSftpServer()));
+    // Persist SSH server config + host key under C:\ProgramData\ssh\ on
+    // first boot so OpenSSH-for-Windows files are visible from the shell.
+    this.getSshServerContext();
+
+    // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
+    this.listenTcp(22, (conn) => {
+      this.getSshServerHandler().register(conn, '0.0.0.0');
+    });
   }
 
-  /**
-   * Expose this machine as an SFTP server.
-   * Uses OpenSSH-for-Windows path convention: /C:/Users/User/...
-   */
-  getSftpServer(): ISftpServer {
-    return {
-      vfs:         new WindowsSftpFSAdapter(this.fs),
-      userMgr:     new WindowsSftpUserAuthAdapter(this.userMgr),
-      hostname:    this.hostname,
-      socketTable: this.socketTable,
-    };
+  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  getSshServerContext(): WindowsSshServerContext {
+    return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname);
+  }
+
+  /** Build a SshServerHandler ready to be hooked onto a TcpConnection. */
+  getSshServerHandler(): SshServerHandler {
+    return new SshServerHandler(this.getSshServerContext());
   }
 
   private createPorts(): void {
@@ -248,10 +334,23 @@ export class WindowsPC extends EndHost {
       case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
       case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
       case 'runas':   return this.cmdRunas(args);
+      case 'vol':     return this.cmdVol(args);
+      case 'chcp':    return this.cmdChcp(args);
+      case 'date':    return this.cmdDate(args);
+      case 'time':    return this.cmdTime(args);
+      case 'start':   return this.cmdStart(args);
+      case 'setx':    return this.cmdSetx(args);
+      case 'schtasks': return this.cmdSchtasks(args);
+      case 'nbtstat': return this.cmdNbtstat(args);
+      case 'wmic':    return this.cmdWmic(args);
+      case 'reg':     return this.cmdReg(args);
     }
 
-    // net user / net localgroup / net start / net stop
-    if (cmd === 'net' && args.length > 0) {
+    // net user / net localgroup / net start / net stop / net help
+    if (cmd === 'net') {
+      if (args.length === 0) {
+        return 'The syntax of this command is:\n\nNET\n    [ ACCOUNTS | COMPUTER | CONFIG | CONTINUE | FILE | GROUP | HELP |\n      HELPMSG | LOCALGROUP | PAUSE | SESSION | SHARE | START |\n      STATISTICS | STOP | TIME | USE | USER | VIEW ]';
+      }
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
       const netCtx2 = { hostname: this.hostname, userManager: this.userMgr };
@@ -260,6 +359,14 @@ export class WindowsPC extends EndHost {
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
+      if (subCmd === 'help' || subCmd === '/?' || subCmd === '-?') {
+        const topic = (subArgs[0] ?? '').toLowerCase();
+        if (!topic) {
+          return 'The following commands are available:\n\nNET ACCOUNTS         NET HELPMSG       NET STATISTICS\nNET COMPUTER         NET LOCALGROUP    NET STOP\nNET CONFIG           NET PAUSE         NET TIME\nNET CONTINUE         NET SESSION       NET USE\nNET FILE             NET SHARE         NET USER\nNET GROUP            NET START         NET VIEW\nNET HELP             NET HELPMSG       NET HELP SERVICES';
+        }
+        return `The syntax of this command is:\n\nNET ${topic.toUpperCase()} [...]`;
+      }
+      return `The syntax of this command is:\n\nNET ${subCmd.toUpperCase()} [...]`;
     }
 
     // Network commands (use network context)
@@ -270,6 +377,7 @@ export class WindowsPC extends EndHost {
       case 'netsh':    return cmdNetsh(netCtx, args);
       case 'ping':     return cmdPing(netCtx, args);
       case 'arp':      return cmdArp(netCtx, args);
+      case 'getmac':   return cmdGetmac(netCtx, args);
       case 'tracert':
       case 'traceroute': return cmdTracert(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
@@ -345,19 +453,27 @@ export class WindowsPC extends EndHost {
       const filterCmd = filterParts[0].toLowerCase();
 
       if (filterCmd === 'findstr') {
-        const pattern = filterParts.slice(1).join(' ').replace(/"/g, '');
+        const { patterns, ignoreCase, invert, count } = parseFindstrFilter(filter);
         const lines = output.split('\n');
-        output = lines.filter(l => l.toLowerCase().includes(pattern.toLowerCase())).join('\n');
+        const matches = (line: string): boolean => {
+          const haystack = ignoreCase ? line.toLowerCase() : line;
+          return patterns.some(p => haystack.includes(ignoreCase ? p.toLowerCase() : p));
+        };
+        const filtered = lines.filter(l => invert ? !matches(l) : matches(l));
+        output = count ? String(filtered.length) : filtered.join('\n');
       } else if (filterCmd === 'grep') {
         const pattern = filterParts[filterParts.length - 1];
         const lines = output.split('\n');
         output = lines.filter(l => l.includes(pattern)).join('\n');
       } else if (filterCmd === 'find') {
-        const quoteMatch = filter.match(/find\s+"([^"]+)"/i);
+        const ci = /\s\/i(\s|$)/i.test(' ' + filter);
+        const cnt = /\s\/c(\s|$)/i.test(' ' + filter);
+        const quoteMatch = filter.match(/find\s+(?:\/[a-z]\s+)*"([^"]+)"/i);
         if (quoteMatch) {
           const pattern = quoteMatch[1];
           const lines = output.split('\n');
-          output = lines.filter(l => l.includes(pattern)).join('\n');
+          const matched = lines.filter(l => ci ? l.toLowerCase().includes(pattern.toLowerCase()) : l.includes(pattern));
+          output = cnt ? String(matched.length) : matched.join('\n');
         }
       } else if (filterCmd === 'more') {
         // Passthrough in simulation
@@ -376,7 +492,7 @@ export class WindowsPC extends EndHost {
       // Command completion
       const prefix = (parts[0] || '').toLowerCase();
       const commands = [
-        'help', 'ipconfig', 'netsh', 'ping', 'arp', 'tracert', 'route',
+        'help', 'ipconfig', 'netsh', 'ping', 'arp', 'getmac', 'tracert', 'route',
         'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
         'netstat', 'dir', 'cd', 'mkdir', 'md', 'rmdir', 'rd', 'type',
         'copy', 'move', 'ren', 'rename', 'del', 'erase', 'echo', 'set',
@@ -574,6 +690,49 @@ export class WindowsPC extends EndHost {
 
   // ─── systeminfo ────────────────────────────────────────────────
 
+  /**
+   * Run a synchronous native CLI command (ipconfig / netsh / arp / route /
+   * getmac / systeminfo / ver / net) directly. Used by the interpreter's
+   * native-command cmdlets so they can deliver real output without going
+   * through the async PowerShellExecutor pipeline.
+   *
+   * Returns null when the command is async (ping / tracert) or unknown —
+   * callers fall back to executeCmdCommand() in that case.
+   */
+  runSyncNativeCommand(cmd: string, args: string[]): string | null {
+    const lower = cmd.toLowerCase();
+    if (lower === 'systeminfo') return this.cmdSysteminfo();
+    if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    if (lower === 'hostname') return this.hostname;
+    if (lower === 'vol')  return this.cmdVol(args);
+    if (lower === 'chcp') return this.cmdChcp(args);
+    if (lower === 'date') return this.cmdDate(args);
+    if (lower === 'time') return this.cmdTime(args);
+    // `net` is a multi-subcommand router — all its subhandlers are sync
+    // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
+    if (lower === 'net' && args.length > 0) {
+      const subCmd = args[0].toLowerCase();
+      const subArgs = args.slice(1);
+      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr };
+      if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
+      if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
+      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
+      if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
+    }
+    const netCtx = this.buildNetContext();
+    switch (lower) {
+      case 'ipconfig': return cmdIpconfig(netCtx, args);
+      case 'netsh':    return cmdNetsh(netCtx, args);
+      case 'arp':      return cmdArp(netCtx, args);
+      case 'getmac':   return cmdGetmac(netCtx, args);
+      case 'route':    return cmdRoute(netCtx, args);
+      case 'nslookup': return this.cmdNslookup(args);
+      // ping / tracert are async — no sync path.
+      default: return null;
+    }
+  }
+
   private cmdSysteminfo(): string {
     const lines: string[] = [];
     lines.push(`Host Name:                 ${this.hostname}`);
@@ -608,10 +767,266 @@ export class WindowsPC extends EndHost {
   getFileSystem(): WindowsFileSystem { return this.fs; }
   getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
+  setCwd(path: string): void { this.cwd = path; }
   getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
     const cfg = this.dnsConfig.get(ifName);
     return cfg ? [...cfg.servers] : [];
+  }
+
+  setDnsServers(ifName: string, servers: string[]): void {
+    this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  /**
+   * vol — print volume label + serial.  Real cmd output:
+   *   Volume in drive C has no label.
+   *   Volume Serial Number is XXXX-XXXX
+   */
+  private cmdVol(args: string[]): string {
+    const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
+    const letter = arg.charAt(0) || 'C';
+    // Deterministic serial so transcripts diff cleanly across runs of the same host.
+    let h = 0;
+    for (const c of this.hostname + ':' + letter) h = ((h * 31) + c.charCodeAt(0)) & 0xffffffff;
+    const hex = (Math.abs(h) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    const serial = `${hex.slice(0, 4)}-${hex.slice(4)}`;
+    return [
+      ` Volume in drive ${letter} has no label.`,
+      ` Volume Serial Number is ${serial}`,
+    ].join('\n');
+  }
+
+  /** chcp — print/set active code page.  Defaults to 65001 (UTF-8). */
+  private cmdChcp(args: string[]): string {
+    if (args.length === 0) return 'Active code page: 65001';
+    const cp = parseInt(args[0], 10);
+    if (isNaN(cp)) return 'Invalid code page';
+    return `Active code page: ${cp}`;
+  }
+
+  /** date /t — print today's date in MM/DD/YYYY (en-US). */
+  private cmdDate(args: string[]): string {
+    const wantOnly = args.includes('/t') || args.includes('/T');
+    void wantOnly;
+    const d = new Date();
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dow = days[d.getDay()];
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dow} ${mm}/${dd}/${yyyy}`;
+  }
+
+  /** time /t — print current time in h:mm AM/PM (en-US). */
+  private cmdTime(_args: string[]): string {
+    const d = new Date();
+    const h24 = d.getHours();
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const tt = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${min} ${tt}`;
+  }
+
+  /** `start <program>` — simulator stub: returns silently (real cmd
+   *  detaches a new process and returns immediately). */
+  /**
+   * `start <command>` — launch a program in a new session. Spawns into the
+   * shared process manager so both `tasklist` and `Get-Process` see it.
+   * Returns an empty string on success (matches cmd.exe semantics).
+   */
+  private cmdStart(args: string[]): string {
+    // Strip cmd-style flags (/B, /WAIT, /MIN, ...) and the optional "title"
+    // argument that precedes the executable.
+    const filtered = args.filter(a => !a.startsWith('/'));
+    if (filtered.length === 0) return '';
+    let target = filtered[0].replace(/^["']|["']$/g, '');
+    // `start "title" prog ...` form: drop the title token.
+    if (filtered.length >= 2 && /^"[^"]*"$/.test(args.find(a => /^"[^"]*"$/.test(a)) ?? '')) {
+      target = filtered[1].replace(/^["']|["']$/g, '');
+    }
+    if (!target) return '';
+    const leaf = target.split(/[\\/]/).pop() ?? target;
+    const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
+    const parent = this.procMgr.getAllProcesses().find(p => p.name.toLowerCase() === 'explorer.exe');
+    const ppid = parent?.pid ?? 1;
+    this.procMgr.spawnProcess(imageName, ppid, this.userMgr.currentUser, {
+      session: 'Console', sessionId: 1,
+    });
+    return '';
+  }
+
+  /** `setx VAR VALUE [/M]` — persists an environment variable. */
+  private cmdSetx(args: string[]): string {
+    const machine = args.some(a => a.toUpperCase() === '/M');
+    const filtered = args.filter(a => a.toUpperCase() !== '/M');
+    if (filtered.length < 2) {
+      return 'ERROR: Invalid syntax. Type "SETX /?" for usage.';
+    }
+    const name = filtered[0];
+    const value = filtered.slice(1).join(' ').replace(/^"(.*)"$/, '$1');
+    this.env.set(name, value);
+    return machine
+      ? `SUCCESS: Specified value was saved.`
+      : `SUCCESS: Specified value was saved.`;
+  }
+
+  /**
+   * `schtasks` — query/create/delete entries in the shared
+   * `scheduledTasks` map so PowerShell's `Get-ScheduledTask` and
+   * `Register-ScheduledTask` see the same data.
+   */
+  private cmdSchtasks(args: string[]): string {
+    const action = args[0]?.toLowerCase();
+    const flagIdx = (name: string) => args.findIndex(a => a.toLowerCase() === name);
+    const tn      = (() => { const i = flagIdx('/tn'); return i >= 0 ? args[i + 1] : undefined; })();
+
+    if (action === '/query') {
+      const filtered = tn
+        ? Array.from(this.scheduledTasks.values()).filter(t => t.taskName.toLowerCase() === tn.toLowerCase())
+        : Array.from(this.scheduledTasks.values());
+      const lines = [
+        'Folder: \\',
+        'TaskName                                 Next Run Time          Status',
+        '======================================== ====================== ===============',
+      ];
+      for (const t of filtered) {
+        lines.push(`${t.taskName.padEnd(40)} N/A                    ${t.state}`);
+      }
+      return lines.join('\n');
+    }
+    if (action === '/create') {
+      if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+      this.scheduledTasks.set(tn.toLowerCase(), { taskName: tn, taskPath: '\\', state: 'Ready' });
+      return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
+    }
+    if (action === '/delete') {
+      if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+      const removed = this.scheduledTasks.delete(tn.toLowerCase());
+      return removed
+        ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
+        : `ERROR: The system cannot find the file specified.`;
+    }
+    if (action === '/run' || action === '/end' || action === '/change') {
+      return 'SUCCESS: The scheduled task was created/modified successfully.';
+    }
+    return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
+  }
+
+  /** `nbtstat -n / -a / -A` — returns a minimal local NetBIOS name table. */
+  private cmdNbtstat(args: string[]): string {
+    const flag = args[0]?.toLowerCase();
+    if (flag === '-n') {
+      return [
+        '',
+        '    Node IpAddress: [0.0.0.0] Scope Id: []',
+        '',
+        '                       NetBIOS Local Name Table',
+        '',
+        '       Name               Type         Status',
+        '    ---------------------------------------------',
+        `    ${this.hostname.toUpperCase().padEnd(16)} <00>  UNIQUE      Registered`,
+        `    WORKGROUP        <00>  GROUP       Registered`,
+        '',
+      ].join('\n');
+    }
+    return 'NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]';
+  }
+
+  /** `wmic logicaldisk get name` / minimal WMI stub. */
+  private cmdWmic(args: string[]): string {
+    if (args.length === 0) return 'wmic:root\\cli>';
+    const joined = args.join(' ').toLowerCase();
+    if (joined.includes('logicaldisk') && joined.includes('get name')) {
+      return 'Name  \nC:    ';
+    }
+    if (joined.includes('os get caption')) {
+      return 'Caption                              \nMicrosoft Windows 10 Enterprise      ';
+    }
+    if (joined.includes('cpu get name')) {
+      return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
+    }
+    return '';
+  }
+
+  /** `reg query | add | delete` — bridges cmd.exe's reg.exe to the
+   *  PowerShell registry provider so changes made from cmd are visible
+   *  from `Get-ItemProperty HKCU:\…` in PS (and vice versa). */
+  private cmdReg(args: string[]): string {
+    if (args.length === 0) {
+      return 'ERROR: Invalid syntax. Type "REG /?" for usage.';
+    }
+    const action = args[0].toLowerCase();
+    const rawKey = args[1] ?? '';
+    // `reg.exe` uses unprefixed HKCU\..., PS provider expects HKCU:\...
+    const psKey = rawKey.replace(/^(HKCU|HKLM|HKCR|HKU|HKCC)\\/i, '$1:\\');
+    if (action === 'query') {
+      if (!this.registry.testPath(psKey)) {
+        return 'ERROR: The system was unable to find the specified registry key or value.';
+      }
+      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
+      const recurse = args.some(a => a.toLowerCase() === '/s');
+      const valueFilter = vIdx >= 0 ? args[vIdx + 1] : undefined;
+      return this.formatRegQuery(rawKey, psKey, valueFilter, recurse);
+    }
+    if (action === 'add') {
+      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
+      const tIdx = args.findIndex(a => a.toLowerCase() === '/t');
+      const dIdx = args.findIndex(a => a.toLowerCase() === '/d');
+      this.registry.newItem(psKey, true);
+      if (vIdx >= 0) {
+        const valueName = args[vIdx + 1];
+        const data: string | number = dIdx >= 0
+          ? args[dIdx + 1].replace(/^"(.*)"$/, '$1')
+          : '';
+        const typ = tIdx >= 0 ? args[tIdx + 1].toUpperCase() : 'REG_SZ';
+        const coerced: string | number = typ === 'REG_DWORD' ? Number(data) : data;
+        this.registry.setItemProperty(psKey, valueName, coerced);
+      }
+      return 'The operation completed successfully.';
+    }
+    if (action === 'delete') {
+      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
+      if (vIdx >= 0) {
+        this.registry.removeItemProperty(psKey, args[vIdx + 1]);
+      } else {
+        this.registry.removeItem(psKey, true);
+      }
+      return 'The operation completed successfully.';
+    }
+    return 'ERROR: Invalid syntax.';
+  }
+
+  /**
+   * Render a `reg query` result in the canonical reg.exe layout:
+   *   <RootKey>\<Sub>\<Sub>
+   *       Name    REG_TYPE    Value
+   * Optionally filters to a single value (`/v Name`) or recurses (`/s`).
+   */
+  private formatRegQuery(rawKey: string, psKey: string, valueFilter: string | undefined, recurse: boolean): string {
+    const lines: string[] = [];
+    const visit = (currentRaw: string, currentPs: string): void => {
+      const values = this.registry.getItemPropertyValues(currentPs);
+      const subkeys = this.registry.listSubkeyNames(currentPs);
+      lines.push('');
+      lines.push(currentRaw);
+      if (values) {
+        for (const [name, val] of Object.entries(values)) {
+          if (valueFilter && name.toLowerCase() !== valueFilter.toLowerCase()) continue;
+          const t = typeof val === 'number' ? 'REG_DWORD' : 'REG_SZ';
+          const v = typeof val === 'number' ? `0x${val.toString(16)}` : String(val);
+          lines.push(`    ${name}    ${t}    ${v}`);
+        }
+      }
+      if (recurse) {
+        for (const sub of subkeys) {
+          visit(`${currentRaw}\\${sub}`, `${currentPs}\\${sub}`);
+        }
+      }
+    };
+    visit(rawKey, psKey);
+    lines.push('');
+    return lines.join('\n');
   }
 
   /** nslookup command implementation for Windows */

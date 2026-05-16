@@ -157,6 +157,15 @@ export class WindowsFileSystem {
       ['C:\\Windows\\regedit.exe', '', 360448, ['system']],
       ['C:\\Windows\\write.exe', '', 10752, ['system']],
       ['C:\\Windows\\win.ini', '; for 16-bit app support\n[fonts]\n[extensions]\n[mci extensions]\n[files]\n[Mail]\nMAPI=1\n', 92, ['hidden']],
+      // DLL files in System32
+      ['C:\\Windows\\System32\\ntdll.dll', '', 2027520, ['system']],
+      ['C:\\Windows\\System32\\kernel32.dll', '', 1248768, ['system']],
+      ['C:\\Windows\\System32\\user32.dll', '', 1671168, ['system']],
+      ['C:\\Windows\\System32\\msvcrt.dll', '', 822272, ['system']],
+      ['C:\\Windows\\System32\\advapi32.dll', '', 696320, ['system']],
+      ['C:\\Windows\\System32\\shell32.dll', '', 23224832, ['system']],
+      ['C:\\Windows\\System32\\ole32.dll', '', 1503232, ['system']],
+      ['C:\\Windows\\System32\\gdi32.dll', '', 483328, ['system']],
       ['C:\\Windows\\System32\\config\\SYSTEM', '', 26214400, ['system', 'hidden']],
       ['C:\\Windows\\System32\\config\\SOFTWARE', '', 104857600, ['system', 'hidden']],
       ['C:\\Windows\\System32\\config\\SAM', '', 262144, ['system', 'hidden']],
@@ -228,21 +237,45 @@ export class WindowsFileSystem {
       }
     }
 
-    // Mark system directories as hidden/system
-    const systemDirs = ['C:\\PerfLogs', 'C:\\Windows'];
-    for (const sd of systemDirs) {
+    // Pre-populated sample data files used by tests and demonstrations
+    const dataFiles: Array<[string, string]> = [
+      ['C:\\nums.txt', '1\n2\n3\n4\n5'],
+      ['C:\\numbers.txt', '1\n2\n3\n4\n5'],
+    ];
+    for (const [filePath, content] of dataFiles) {
+      this.createFile(filePath, content);
+    }
+
+    // Hidden/system directories at C:\
+    const hiddenRootDirs = ['C:\\$Recycle.Bin', 'C:\\System Volume Information'];
+    for (const hd of hiddenRootDirs) {
+      this.mkdirp(hd);
+      const entry = this.resolve(hd);
+      if (entry) { entry.attributes.add('hidden'); entry.attributes.add('system'); }
+    }
+
+    // Mark PerfLogs as hidden/system (Windows hides it by default)
+    // C:\Windows is NOT hidden — it's visible in normal directory listings
+    const hiddenSystemDirs = ['C:\\PerfLogs'];
+    for (const sd of hiddenSystemDirs) {
       const entry = this.resolve(sd);
       if (entry) {
         entry.attributes.add('system');
         entry.attributes.add('hidden');
       }
     }
+    // Windows is a system dir but NOT hidden
+    const windowsEntry = this.resolve('C:\\Windows');
+    if (windowsEntry) windowsEntry.attributes.add('system');
   }
 
   // ─── Entry Creation ──────────────────────────────────────────────
 
   private createEntry(name: string, type: WinFileType): WinFSEntry {
     const now = new Date();
+    // Mimic real Windows: newly created files get the archive bit set.
+    const attributes = new Set<string>();
+    if (type === 'file') attributes.add('archive');
     return {
       name,
       type,
@@ -251,7 +284,7 @@ export class WindowsFileSystem {
       size: 0,
       mtime: now,
       ctime: now,
-      attributes: new Set(),
+      attributes,
       owner: 'BUILTIN\\Administrators',
       acl: [],
     };
@@ -477,6 +510,8 @@ export class WindowsFileSystem {
       entry.content += content;
       entry.size = entry.content.length;
       entry.mtime = new Date();
+      // Modification re-asserts the archive bit (Windows semantics).
+      entry.attributes.add('archive');
       return { ok: true };
     }
     // File doesn't exist yet → create it

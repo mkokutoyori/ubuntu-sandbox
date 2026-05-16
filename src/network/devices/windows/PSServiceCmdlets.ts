@@ -33,6 +33,16 @@ export function psGetService(ctx: PSServiceContext, args: string[]): string {
   const statusFilter = params.get('status');
   const include = params.get('include');
   const exclude = params.get('exclude');
+  const computerName = params.get('computername');
+  const dependentServices = params.has('dependentservices');
+  const requiredServices = params.has('requiredservices');
+
+  if (computerName) {
+    return psError('Get-Service',
+      'Get-Service : Remoting to a remote computer is not supported in this simulator.',
+      'NotImplemented: (:) [Get-Service], NotSupportedException',
+      'RemotingNotSupported,Microsoft.PowerShell.Commands.GetServiceCommand');
+  }
 
   if (name) {
     // Support wildcard matching
@@ -41,6 +51,10 @@ export function psGetService(ctx: PSServiceContext, args: string[]): string {
       let services = ctx.serviceManager.getAllServices().filter(s => pattern.test(s.name));
       if (statusFilter) {
         services = services.filter(s => s.state.toLowerCase() === statusFilter.toLowerCase());
+      }
+      if (exclude) {
+        const excPattern = wildcardToRegex(exclude);
+        services = services.filter(s => !excPattern.test(s.name));
       }
       if (services.length === 0) {
         return psError('Get-Service',
@@ -58,6 +72,19 @@ export function psGetService(ctx: PSServiceContext, args: string[]): string {
         `ObjectNotFound: (${name}:String) [Get-Service], ServiceCommandException`,
         'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.GetServiceCommand');
     }
+
+    if (dependentServices) {
+      const deps = ctx.serviceManager.getDependents(svc.name);
+      return formatServiceTable(deps);
+    }
+
+    if (requiredServices) {
+      const reqs = svc.dependencies
+        .map(d => ctx.serviceManager.getService(d))
+        .filter((s): s is WindowsService => s !== undefined);
+      return formatServiceTable(reqs);
+    }
+
     // Append extended properties so property accessors (.Status, .StartType, etc.) work
     return formatServiceTable([svc]) + formatServiceExtended(svc);
   }
@@ -100,6 +127,7 @@ export function psStartService(ctx: PSServiceContext, args: string[]): string {
   const params = parsePSArgs(args);
   const name = params.get('name') || params.get('_positional') || '';
   const passThru = params.has('passthru');
+  const whatIf = params.has('whatif');
   if (!name) {
     return psError('Start-Service',
       `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
@@ -113,6 +141,10 @@ export function psStartService(ctx: PSServiceContext, args: string[]): string {
       `Cannot find any service with service name '${name}'.`,
       `ObjectNotFound: (${name}:String) [Start-Service], ServiceCommandException`,
       'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.StartServiceCommand');
+  }
+
+  if (whatIf) {
+    return `What if: Performing the operation "Start-Service" on target "${svc.displayName} (${svc.name})".`;
   }
 
   if (!ctx.isAdmin) {
@@ -151,6 +183,7 @@ export function psStopService(ctx: PSServiceContext, args: string[]): string {
   const name = params.get('name') || params.get('_positional') || '';
   const passThru = params.has('passthru');
   const force = params.has('force');
+  const whatIf = params.has('whatif');
   if (!name) {
     return psError('Stop-Service',
       `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
@@ -164,6 +197,10 @@ export function psStopService(ctx: PSServiceContext, args: string[]): string {
       `Cannot find any service with service name '${name}'.`,
       `ObjectNotFound: (${name}:String) [Stop-Service], ServiceCommandException`,
       'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.StopServiceCommand');
+  }
+
+  if (whatIf) {
+    return `What if: Performing the operation "Stop-Service" on target "${svc.displayName} (${svc.name})".`;
   }
 
   if (!ctx.isAdmin) {
@@ -207,6 +244,7 @@ export function psRestartService(ctx: PSServiceContext, args: string[]): string 
   const name = params.get('name') || params.get('_positional') || '';
   const passThru = params.has('passthru');
   const force = params.has('force');
+  const whatIf = params.has('whatif');
   if (!name) {
     return psError('Restart-Service',
       `Cannot validate argument on parameter 'Name'. The argument is null or empty.`,
@@ -220,6 +258,10 @@ export function psRestartService(ctx: PSServiceContext, args: string[]): string 
       `Cannot find any service with service name '${name}'.`,
       `ObjectNotFound: (${name}:String) [Restart-Service], ServiceCommandException`,
       'NoServiceFoundForGivenName,Microsoft.PowerShell.Commands.RestartServiceCommand');
+  }
+
+  if (whatIf) {
+    return `What if: Performing the operation "Restart-Service" on target "${svc.displayName} (${svc.name})".`;
   }
 
   if (!ctx.isAdmin) {

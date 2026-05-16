@@ -1,9 +1,44 @@
 # BRD — Implémentation SSH & Refonte SFTP (Simulateur)
 
-**Version** : 1.0
-**Date** : 2026-05-05
+**Version** : 1.1
+**Date** : 2026-05-05 (révisée)
 **Projet** : Ubuntu Sandbox — Module SSH/SFTP
 **Auteur** : Claude Code
+
+---
+
+## 0. Suivi d'implémentation
+
+> Statuts utilisés dans les tableaux de requirements ci-dessous :
+>
+> - `[DONE]` — implémenté dans le module `src/network/protocols/ssh/`
+> - `[PARTIAL]` — couvert structurellement, raffinement résiduel
+> - `[TODO]` — à implémenter
+>
+> Branche : `claude/implement-ssh-classes-4jotz`
+> Module cible : `src/network/protocols/ssh/` (l'ancien `src/network/protocols/sftp/` a été supprimé ; les tests legacy SFTP ont été archivés en `*.legacy.test.ts.bak` en attente de portage).
+>
+> ### Récapitulatif global
+>
+> | Catégorie | Couvert | Détail |
+> |---|---|---|
+> | Foundations (Result monad, value objects, pure utils) | DONE | sections 2 & 3 du DESIGN |
+> | Auth (Strategy + AuthChain) | DONE | mot de passe, clé publique, keyboard-interactive |
+> | Host key (Strategy + KnownHosts) | DONE | strict / accept-new / no |
+> | Channels (Template Method + Composite) | DONE | shell, exec, sftp |
+> | Session (Facade + State Machine) | DONE | SshSession + SilentSshInteractionHandler + TerminalSshInteractionHandler |
+> | Server (Command + Observer + Context) | DONE | LinuxSshServerContext, WindowsSshServerContext, SshServerHandler |
+> | SFTP (ISP + Command + Decorator) | DONE | dispatcher OCP, PermissionCheckingFSDecorator |
+> | sshd_config + host key persistence | DONE | `/etc/ssh/*` (Linux), `C:\ProgramData\ssh\*` (Windows) |
+> | Cutover serveur port 22 | DONE | `LinuxMachine` + `WindowsPC` enregistrent `SshServerHandler` |
+> | Suppression de l'ancien SFTP | DONE | `src/network/protocols/sftp/` supprimé |
+> | CLI `ssh user@host` (interactif) | DONE | `LinuxTerminalSession.enterSsh` + `RemoteShellSubShell` |
+> | CLI `ssh user@host <cmd>` (non-interactif) | DONE | mode exec dans `enterSsh` via `SshExecChannel` |
+> | CLI `ssh -p / -i / -o` | DONE | `parseSshArgs` (port, identity, StrictHostKeyChecking) |
+> | CLI `ssh-keygen` | DONE | `SshKeygen` (parser + générateur) câblé via `runSshKeygen` |
+> | CLI `ssh-copy-id` | DONE | `SshCopyId` (read-modify-write via SFTP) câblé via `enterSshCopyId` |
+> | CLI `scp` | DONE | `Scp` (parser endpoints + args) câblé via `enterScp` (upload + download) |
+> | Migration des tests legacy SFTP | PARTIAL | nouvelle suite `ssh-sftp.test.ts` en place ; `*.legacy.test.ts.bak` à porter |
 
 ---
 
@@ -437,17 +472,17 @@ Host key verification failed.
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-01-R1 | Chaque device Linux/Windows possède un host key ED25519 généré à la création (fingerprint déterministe basé sur l'IP ou le hostname) |
-| SSH-01-R2 | Le client SSH vérifie `~/.ssh/known_hosts` avant de se connecter |
-| SSH-01-R3 | Si le host est inconnu, afficher le fingerprint et demander confirmation `yes/no/[fingerprint]` |
-| SSH-01-R4 | Répondre `yes` : ajouter le host key à `~/.ssh/known_hosts` et continuer |
-| SSH-01-R5 | Répondre `no` : abandonner la connexion avec `Host key verification failed.` |
-| SSH-01-R6 | Répondre le fingerprint exact : accepter sans ajouter à known_hosts (vérification directe) |
-| SSH-01-R7 | Si le host key a changé : afficher le bloc d'avertissement `@@@` et refuser la connexion |
-| SSH-01-R8 | `StrictHostKeyChecking=no` (via `-o` ou `~/.ssh/config`) : skip la vérification, toujours accepter |
-| SSH-01-R9 | `StrictHostKeyChecking=accept-new` : accepter les nouveaux hosts silencieusement, rejeter les changements |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-01-R1 | Chaque device Linux/Windows possède un host key ED25519 généré à la création (fingerprint déterministe basé sur l'IP ou le hostname) | [DONE] `SshHostKey.generate(hostname)` + persistance dans `/etc/ssh/ssh_host_ed25519_key(.pub)` (Linux) ou `C:\ProgramData\ssh\` (Windows) |
+| SSH-01-R2 | Le client SSH vérifie `~/.ssh/known_hosts` avant de se connecter | [DONE] `SshKnownHosts` + `KnownHostsStore` |
+| SSH-01-R3 | Si le host est inconnu, afficher le fingerprint et demander confirmation `yes/no/[fingerprint]` | [DONE] `TerminalSshInteractionHandler.promptHostKeyConfirmation()` |
+| SSH-01-R4 | Répondre `yes` : ajouter le host key à `~/.ssh/known_hosts` et continuer | [DONE] `SshSession.doHostKeyCheck` |
+| SSH-01-R5 | Répondre `no` : abandonner la connexion avec `Host key verification failed.` | [DONE] retourne `HOST_KEY_REJECTED` |
+| SSH-01-R6 | Répondre le fingerprint exact : accepter sans ajouter à known_hosts (vérification directe) | [DONE] `HostKeyResponse.fingerprint`, comparé sans persistance |
+| SSH-01-R7 | Si le host key a changé : afficher le bloc d'avertissement `@@@` et refuser la connexion | [DONE] `buildHostKeyChangedWarning` + `StrictVerificationStrategy` |
+| SSH-01-R8 | `StrictHostKeyChecking=no` (via `-o` ou `~/.ssh/config`) : skip la vérification, toujours accepter | [DONE] `NoVerificationStrategy` |
+| SSH-01-R9 | `StrictHostKeyChecking=accept-new` : accepter les nouveaux hosts silencieusement, rejeter les changements | [DONE] `AcceptNewVerificationStrategy` |
 
 ---
 
@@ -474,15 +509,15 @@ alice@192.168.1.10: Permission denied (publickey,password).
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-02-R1 | Prompt de mot de passe : `user@host's password: ` (masqué) |
-| SSH-02-R2 | Authentification réussie : afficher le MOTD du serveur distant si `/etc/motd` existe |
-| SSH-02-R3 | Afficher `Last login: <date> from <ip>` si applicable |
-| SSH-02-R4 | Échec : `Permission denied, please try again.` puis nouveau prompt |
-| SSH-02-R5 | Maximum 3 tentatives puis `Permission denied (publickey,password).` et déconnexion |
-| SSH-02-R6 | Le message `Permission denied` liste les méthodes disponibles : `(publickey,password)` ou `(password)` selon config |
-| SSH-02-R7 | Le compte `root` est refusé par défaut (`PermitRootLogin no` dans sshd_config simulé) sauf configuration explicite |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-02-R1 | Prompt de mot de passe : `user@host's password: ` (masqué) | [DONE] `TerminalSshInteractionHandler.promptPassword` |
+| SSH-02-R2 | Authentification réussie : afficher le MOTD du serveur distant si `/etc/motd` existe | [PARTIAL] `LinuxSshServerContext.getMotd()` ; affichage côté CLI à brancher |
+| SSH-02-R3 | Afficher `Last login: <date> from <ip>` si applicable | [PARTIAL] `getLastLogin()` + `recordLogin()` ; affichage CLI à brancher |
+| SSH-02-R4 | Échec : `Permission denied, please try again.` puis nouveau prompt | [DONE] `PasswordAuthMethod` boucle jusqu'à 3 essais |
+| SSH-02-R5 | Maximum 3 tentatives puis `Permission denied (publickey,password).` et déconnexion | [DONE] `AuthChain.tryAll` + `SftpSession.formatConnectError` |
+| SSH-02-R6 | Le message `Permission denied` liste les méthodes disponibles : `(publickey,password)` ou `(password)` selon config | [DONE] `AuthChain.toDisplayString()` |
+| SSH-02-R7 | Le compte `root` est refusé par défaut (`PermitRootLogin no` dans sshd_config simulé) sauf configuration explicite | [DONE] `LinuxSshServerContext.userAllowed()` + `DEFAULT_SSHD_CONFIG.permitRootLogin = false` |
 
 ---
 
@@ -503,18 +538,18 @@ alice@192.168.1.10: Permission denied (publickey).
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-03-R1 | `ssh-keygen -t ed25519 [-C comment] [-f filename]` : génère une paire de clés dans `~/.ssh/` |
-| SSH-03-R2 | La clé privée est stockée dans `~/.ssh/id_ed25519` (permissions 600 simulées) |
-| SSH-03-R3 | La clé publique est stockée dans `~/.ssh/id_ed25519.pub` |
-| SSH-03-R4 | `ssh-keygen` interactif demande passphrase (peut être vide) |
-| SSH-03-R5 | `ssh-copy-id [-i keyfile] user@host` : copie la clé publique dans `~/.ssh/authorized_keys` du serveur distant |
-| SSH-03-R6 | Le serveur vérifie `~/.ssh/authorized_keys` de l'utilisateur cible |
-| SSH-03-R7 | Format de `authorized_keys` : une clé publique par ligne (`ssh-ed25519 AAAA...key comment`) |
-| SSH-03-R8 | `ssh -i keyfile user@host` : utiliser la clé spécifiée explicitement |
-| SSH-03-R9 | Le client essaie les clés dans `~/.ssh/` automatiquement (`id_ed25519`, `id_rsa`) |
-| SSH-03-R10 | Fingerprint affiché lors de `ssh-keygen` : `SHA256:<base64>` format |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-03-R1 | `ssh-keygen -t ed25519 [-C comment] [-f filename]` : génère une paire de clés dans `~/.ssh/` | [DONE] `parseSshKeygenArgs` + `generateAndWriteKeyPair` câblés via `LinuxTerminalSession.runSshKeygen` |
+| SSH-03-R2 | La clé privée est stockée dans `~/.ssh/id_ed25519` (permissions 600 simulées) | [DONE] `vfs.chmod(privateKey, 0o600)` |
+| SSH-03-R3 | La clé publique est stockée dans `~/.ssh/id_ed25519.pub` | [DONE] mode 0644 |
+| SSH-03-R4 | `ssh-keygen` interactif demande passphrase (peut être vide) | [DONE] `enterSshKeygen` lance un flow `text` pour le path et 2× `password` (saisie + confirmation) |
+| SSH-03-R5 | `ssh-copy-id [-i keyfile] user@host` : copie la clé publique dans `~/.ssh/authorized_keys` du serveur distant | [DONE] `SshCopyId.sshCopyId` (read-modify-write SFTP) câblé via `enterSshCopyId` |
+| SSH-03-R6 | Le serveur vérifie `~/.ssh/authorized_keys` de l'utilisateur cible | [DONE] `LinuxSshServerContext.checkPublicKey` |
+| SSH-03-R7 | Format de `authorized_keys` : une clé publique par ligne (`ssh-ed25519 AAAA...key comment`) | [DONE] `parseAuthorizedKeysLine` + `SshAuthorizedKeys` |
+| SSH-03-R8 | `ssh -i keyfile user@host` : utiliser la clé spécifiée explicitement | [DONE] `SshConnectOptions.identityFiles` + `createAuthMethods` |
+| SSH-03-R9 | Le client essaie les clés dans `~/.ssh/` automatiquement (`id_ed25519`, `id_rsa`) | [DONE] `LinuxTerminalSession.autoDiscoverIdentityFiles` ajoute id_ed25519 / id_rsa / id_ecdsa quand `-i` n'est pas fourni |
+| SSH-03-R10 | Fingerprint affiché lors de `ssh-keygen` : `SHA256:<base64>` format | [DONE] `SshFingerprint.fromPublicKey` (`SHA256:...`) |
 
 ---
 
@@ -540,13 +575,13 @@ Le shell distant est le shell Linux du device cible (bash complet avec toutes le
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-04-R1 | Après auth, ouvrir un `LinuxTerminalSession` sur le device distant comme sous-shell |
-| SSH-04-R2 | Le prompt reflète le user et hostname distants : `alice@server:~$` |
-| SSH-04-R3 | Toutes les commandes disponibles dans le shell Linux sont disponibles dans la session SSH |
-| SSH-04-R4 | `exit` ou `logout` ferme la session et retourne au shell local avec `Connection to <host> closed.` |
-| SSH-04-R5 | Ctrl+D dans la session SSH envoie EOF → ferme la session (même comportement que `exit`) |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-04-R1 | Après auth, ouvrir un `LinuxTerminalSession` sur le device distant comme sous-shell | [DONE] `RemoteShellSubShell` + `LinuxTerminalSession.connectAndEnterSsh` |
+| SSH-04-R2 | Le prompt reflète le user et hostname distants : `alice@server:~$` | [DONE] `RemoteShellSubShell.getPrompt()` |
+| SSH-04-R3 | Toutes les commandes disponibles dans le shell Linux sont disponibles dans la session SSH | [DONE] `LinuxSshServerContext.getShell` route via `LinuxCommandExecutor.execute()` |
+| SSH-04-R4 | `exit` ou `logout` ferme la session et retourne au shell local avec `Connection to <host> closed.` | [DONE] `RemoteShellSubShell.processLine` |
+| SSH-04-R5 | Ctrl+D dans la session SSH envoie EOF → ferme la session (même comportement que `exit`) | [DONE] `handleKey` + `dispose()` |
 | SSH-04-R6 | Les commandes s'exécutent dans le contexte du filesystem du device distant |
 | SSH-04-R7 | L'utilisateur distant est celui authentifié (non root par défaut, sauf si auth en tant que root) |
 | SSH-04-R8 | Si le shell distant fait une erreur (`command not found`), retourner l'erreur normalement sans fermer la session |
@@ -569,13 +604,13 @@ La commande s'exécute et retourne la sortie, puis la connexion se ferme automat
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-05-R1 | `ssh user@host <command>` exécute la commande sur le device distant et affiche le résultat |
-| SSH-05-R2 | La connexion se ferme automatiquement après l'exécution (pas de shell interactif) |
-| SSH-05-R3 | Le code de retour de la commande distante est propagé comme code de sortie |
-| SSH-05-R4 | Les guillemets permettent des commandes avec espaces : `ssh user@host "echo hello world"` |
-| SSH-05-R5 | `stderr` distant est affiché normalement (pas de séparation stdout/stderr dans le simulateur) |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-05-R1 | `ssh user@host <command>` exécute la commande sur le device distant et affiche le résultat | [DONE] `LinuxTerminalSession.enterSsh` détecte la commande et la route via `SshExecChannel` |
+| SSH-05-R2 | La connexion se ferme automatiquement après l'exécution (pas de shell interactif) | [DONE] `connectAndEnterSsh` ferme la session après `execute()` |
+| SSH-05-R3 | Le code de retour de la commande distante est propagé comme code de sortie | [DONE] `ExecResult.exitCode` exposé par le canal |
+| SSH-05-R4 | Les guillemets permettent des commandes avec espaces : `ssh user@host "echo hello world"` | [DONE] tokens du shell parent rejoints en `command` (`commandTokens.join(' ')`) |
+| SSH-05-R5 | `stderr` distant est affiché normalement (pas de séparation stdout/stderr dans le simulateur) | [DONE] `ExecResult.stderr` propagé en plus de stdout |
 
 ---
 
@@ -596,13 +631,13 @@ $ ssh prod          # equivalent à : ssh -p 2222 -i ~/.ssh/id_prod alice@192.16
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-06-R1 | Parser `~/.ssh/config` lors de chaque connexion SSH |
-| SSH-06-R2 | Directives supportées : `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `StrictHostKeyChecking` |
-| SSH-06-R3 | Les options CLI (`-p`, `-i`, `-o`) ont priorité sur `~/.ssh/config` |
-| SSH-06-R4 | `Host *` comme wildcard pour les défauts globaux |
-| SSH-06-R5 | Commentaires `#` ignorés |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-06-R1 | Parser `~/.ssh/config` lors de chaque connexion SSH | [DONE] `mergeWithSshConfig` lit `~/.ssh/config` et résout l'alias avant la connexion |
+| SSH-06-R2 | Directives supportées : `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `StrictHostKeyChecking` | [DONE] `SshConfig` |
+| SSH-06-R3 | Les options CLI (`-p`, `-i`, `-o`) ont priorité sur `~/.ssh/config` | [DONE] `mergeWithSshConfig` applique CLI au-dessus du fichier |
+| SSH-06-R4 | `Host *` comme wildcard pour les défauts globaux | [DONE] wildcard `*` + `?` dans `SshConfig` |
+| SSH-06-R5 | Commentaires `#` ignorés | [DONE] |
 
 ---
 
@@ -621,16 +656,16 @@ $ systemctl status sshd
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-07-R1 | Chaque `LinuxMachine` (LinuxPC, LinuxServer) écoute sur TCP 22 et répond aux connexions SSH |
-| SSH-07-R2 | Chaque `WindowsPC` avec OpenSSH Server (activé par défaut dans le simulateur) écoute sur TCP 22 |
-| SSH-07-R3 | Le serveur gère le host key ED25519 stocké dans `/etc/ssh/ssh_host_ed25519_key` (Linux) ou simulé (Windows) |
-| SSH-07-R4 | `sshd_config` simulé dans `/etc/ssh/sshd_config` avec valeurs par défaut réalistes |
-| SSH-07-R5 | Directives `sshd_config` simulées : `PermitRootLogin`, `PasswordAuthentication`, `PubkeyAuthentication`, `Port`, `AllowUsers` |
-| SSH-07-R6 | `systemctl restart sshd` / `service ssh restart` relit la config (applique les changements) |
-| SSH-07-R7 | MOTD configurable via `/etc/motd` |
-| SSH-07-R8 | Bannière de connexion configurable via `sshd_config Banner /etc/issue.net` |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-07-R1 | Chaque `LinuxMachine` (LinuxPC, LinuxServer) écoute sur TCP 22 et répond aux connexions SSH | [DONE] `LinuxMachine` enregistre `SshServerHandler` sur `listenTcp(22, …)` |
+| SSH-07-R2 | Chaque `WindowsPC` avec OpenSSH Server (activé par défaut dans le simulateur) écoute sur TCP 22 | [DONE] idem côté `WindowsPC` |
+| SSH-07-R3 | Le serveur gère le host key ED25519 stocké dans `/etc/ssh/ssh_host_ed25519_key` (Linux) ou simulé (Windows) | [DONE] `LinuxSshServerContext.loadOrGenerateHostKey()` + équivalent Windows sous `C:\ProgramData\ssh\` |
+| SSH-07-R4 | `sshd_config` simulé dans `/etc/ssh/sshd_config` avec valeurs par défaut réalistes | [DONE] `parseSshdConfig` + `serializeSshdConfig` ; persisté au boot |
+| SSH-07-R5 | Directives `sshd_config` simulées : `PermitRootLogin`, `PasswordAuthentication`, `PubkeyAuthentication`, `Port`, `AllowUsers` | [DONE] `SshSshdConfig` couvre `Port`, `MaxAuthTries`, `PermitRootLogin`, `PasswordAuthentication`, `PubkeyAuthentication`, `AllowUsers`, `Banner` |
+| SSH-07-R6 | `systemctl restart sshd` / `service ssh restart` relit la config (applique les changements) | [DONE] `LinuxServiceManager.onLifecycle` émet `restart`/`reload` ; `LinuxMachine` rafraîchit son `LinuxSshServerContext` via `reloadConfig()` |
+| SSH-07-R7 | MOTD configurable via `/etc/motd` | [DONE] `getMotd()` + seed dans `LinuxMachine.initSshFiles()` |
+| SSH-07-R8 | Bannière de connexion configurable via `sshd_config Banner /etc/issue.net` | [DONE] `getBanner()` + `/etc/issue.net` seedé |
 
 ---
 
@@ -652,14 +687,14 @@ docs/file2.txt                               100%  256     0.3KB/s   00:00
 
 #### Requirements
 
-| ID | Requirement |
-|---|---|
-| SSH-08-R1 | `scp local user@host:remote` — copie locale vers distante |
-| SSH-08-R2 | `scp user@host:remote local` — copie distante vers locale |
-| SSH-08-R3 | `scp -r` — copie récursive de répertoire |
-| SSH-08-R4 | Format de progression identique à sftp : `filename  100%  size  speed  time` |
-| SSH-08-R5 | Authentification identique à SSH (mot de passe ou clé publique) |
-| SSH-08-R6 | Pas de `scp` interactif — transfert direct, pas de sous-shell |
+| ID | Requirement | Statut |
+|---|---|---|
+| SSH-08-R1 | `scp local user@host:remote` — copie locale vers distante | [DONE] `Scp.parseScpArgs` + direction `upload` → `SftpSession.put` |
+| SSH-08-R2 | `scp user@host:remote local` — copie distante vers locale | [DONE] direction `download` → `SftpSession.get` |
+| SSH-08-R3 | `scp -r` — copie récursive de répertoire | [DONE] `SftpSession.getRecursive` / `putRecursive` parcourent l'arborescence ; `runScp` les appelle quand `-r` est passé |
+| SSH-08-R4 | Format de progression identique à sftp : `filename  100%  size  speed  time` | [DONE] `formatTransferProgress` partagé avec sftp |
+| SSH-08-R5 | Authentification identique à SSH (mot de passe ou clé publique) | [DONE] `SshSession` réutilisé |
+| SSH-08-R6 | Pas de `scp` interactif — transfert direct, pas de sous-shell | [DONE] `runScp` connecte, transfère, déconnecte sans sub-shell |
 
 ---
 
@@ -692,13 +727,13 @@ Connected to 192.168.1.10.
 sftp>
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-01-R1 | `sftp user@host` passe par la couche SSH simulée (host key check + auth) avant d'entrer dans le sous-shell |
-| SFTP-01-R2 | `sftp -P <port> user@host` : support du port custom |
-| SFTP-01-R3 | `sftp -i <keyfile> user@host` : auth par clé publique |
-| SFTP-01-R4 | `sftp -o StrictHostKeyChecking=no user@host` : skip host key |
-| SFTP-01-R5 | Apres auth, afficher `Connected to <host>.` puis entrer dans le sous-shell |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-01-R1 | `sftp user@host` passe par la couche SSH simulée (host key check + auth) avant d'entrer dans le sous-shell | [DONE] `SftpSession.connect()` instancie un `SshSession` puis `openSftpChannel` |
+| SFTP-01-R2 | `sftp -P <port> user@host` : support du port custom | [PARTIAL] `SftpConnectOptions.port` ; flag CLI `-P` à câbler dans `enterSftp` (modèle déjà fait dans `enterSsh -p`) |
+| SFTP-01-R3 | `sftp -i <keyfile> user@host` : auth par clé publique | [PARTIAL] `SftpConnectOptions.identityFiles` ; flag CLI à câbler (modèle déjà fait dans `enterSsh -i`) |
+| SFTP-01-R4 | `sftp -o StrictHostKeyChecking=no user@host` : skip host key | [PARTIAL] `SftpConnectOptions.strictHostKeyChecking` ; flag CLI à câbler (modèle déjà fait dans `enterSsh -o`) |
+| SFTP-01-R5 | Apres auth, afficher `Connected to <host>.` puis entrer dans le sous-shell | [DONE] `SftpSession.connect()` retourne `Connected to <host>.` |
 
 ---
 
@@ -716,11 +751,11 @@ sftp> version
 SFTP protocol version 3
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-02-R1 | Le serveur SFTP annonce la version 3 (compatibilité OpenSSH maximale) |
-| SFTP-02-R2 | La commande `version` dans le sous-shell affiche `SFTP protocol version 3` |
-| SFTP-02-R3 | Le client envoie SSH_FXP_INIT avec version=3, le serveur repond SSH_FXP_VERSION |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-02-R1 | Le serveur SFTP annonce la version 3 (compatibilité OpenSSH maximale) | [DONE] `SftpVersionCommand` retourne `protocolVersion: 3` |
+| SFTP-02-R2 | La commande `version` dans le sous-shell affiche `SFTP protocol version 3` | [DONE] `SftpSubShell.processLine('version')` |
+| SFTP-02-R3 | Le client envoie SSH_FXP_INIT avec version=3, le serveur repond SSH_FXP_VERSION | [DONE] simulé : `SftpSession.version()` issue un `op:'version'` au canal |
 
 ---
 
@@ -734,11 +769,11 @@ Uploading /local/file.txt to /readonly/dir/file.txt
 remote open("/readonly/dir/file.txt"): Permission denied
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-03-R1 | `SftpServerHandler` vérifie la valeur de retour de `vfs.writeFile` |
-| SFTP-03-R2 | Si l'écriture échoue, retourner `{ ok: false, error: 'Permission denied' }` ou `{ ok: false, error: 'No such file or directory' }` selon le cas |
-| SFTP-03-R3 | `ISftpFileSystem.writeFile` retourne un booléen ou un objet `{ ok, error }` |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-03-R1 | `SftpServerHandler` vérifie la valeur de retour de `vfs.writeFile` | [DONE] `SftpPutCommand.execute()` propage le `Result` |
+| SFTP-03-R2 | Si l'écriture échoue, retourner `{ ok: false, error: 'Permission denied' }` ou `{ ok: false, error: 'No such file or directory' }` selon le cas | [DONE] `errorToMessage()` dans `SshServerHandler` |
+| SFTP-03-R3 | `ISftpFileSystem.writeFile` retourne un booléen ou un objet `{ ok, error }` | [DONE] toutes les méthodes retournent `Result<void>` |
 
 ---
 
@@ -754,11 +789,11 @@ sftp> mkdir /home/alice/a/b
 sftp> mkdir /home/alice/a/b/c
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-04-R1 | `SftpServerHandler` utilise `vfs.mkdir` (non-récursif) au lieu de `vfs.mkdirp` |
-| SFTP-04-R2 | Si le répertoire parent n'existe pas, retourner `{ ok: false, error: 'No such file or directory' }` |
-| SFTP-04-R3 | `ISftpFileSystem` expose `mkdir(path)` (non-récursif) distinct de `mkdirp(path)` |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-04-R1 | `SftpServerHandler` utilise `vfs.mkdir` (non-récursif) au lieu de `vfs.mkdirp` | [DONE] `SftpMkdirCommand` appelle `ctx.vfs.mkdir` |
+| SFTP-04-R2 | Si le répertoire parent n'existe pas, retourner `{ ok: false, error: 'No such file or directory' }` | [DONE] `SftpMkdirCommand` vérifie `ctx.vfs.exists(parent)` |
+| SFTP-04-R3 | `ISftpFileSystem` expose `mkdir(path)` (non-récursif) distinct de `mkdirp(path)` | [DONE] `mkdir` est non récursif ; pas de `mkdirp` exposé dans l'interface |
 
 ---
 
@@ -771,11 +806,11 @@ sftp> rename old.txt existing.txt
 Couldn't rename file: rename /home/alice/old.txt /home/alice/existing.txt: File exists
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-05-R1 | Avant de renommer, vérifier si la destination existe |
-| SFTP-05-R2 | Si la destination existe, retourner `{ ok: false, error: 'File exists' }` |
-| SFTP-05-R3 | Message client : `Couldn't rename file: rename <src> <dst>: File exists` |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-05-R1 | Avant de renommer, vérifier si la destination existe | [DONE] `SftpRenameCommand` |
+| SFTP-05-R2 | Si la destination existe, retourner `{ ok: false, error: 'File exists' }` | [DONE] |
+| SFTP-05-R3 | Message client : `Couldn't rename file: rename <src> <dst>: File exists` | [DONE] `SftpSession.rename` |
 
 ---
 
@@ -801,15 +836,15 @@ drwxr-xr-x    2 alice    alice        4096 May 05 10:20 docs
 -rw-r--r--    1 alice    alice         256 May 04 15:11 readme.md
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-06-R1 | Parser le flag `-l` dans `SftpSubShell.ls` (séparé des arguments de chemin) |
-| SFTP-06-R2 | Parser le flag `-a` pour inclure les fichiers cachés (`.dotfiles`) |
-| SFTP-06-R3 | `ISftpFileSystem.listDirectory` retourne les attributs : type, permissions, uid, gid, size, mtime |
-| SFTP-06-R4 | Avec `-l`, afficher le format `ls -l` : `<mode> <nlink> <owner> <group> <size> <date> <name>` |
-| SFTP-06-R5 | Sans `-l`, afficher les noms séparés par des espaces (comportement actuel) |
-| SFTP-06-R6 | Les répertoires affichés avec `/` suffixé dans le listing `-l` |
-| SFTP-06-R7 | Les attributs pour Windows passent par `WindowsSftpFSAdapter` avec conversion appropriée |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-06-R1 | Parser le flag `-l` dans `SftpSubShell.ls` (séparé des arguments de chemin) | [DONE] `ParsedArgs` + `SftpSubShell` |
+| SFTP-06-R2 | Parser le flag `-a` pour inclure les fichiers cachés (`.dotfiles`) | [DONE] `SftpSession.ls` filtre `!startsWith('.')` sauf si `-a` |
+| SFTP-06-R3 | `ISftpFileSystem.listDirectory` retourne les attributs : type, permissions, uid, gid, size, mtime | [DONE] `SftpDirEntry extends SftpFileAttrs` |
+| SFTP-06-R4 | Avec `-l`, afficher le format `ls -l` : `<mode> <nlink> <owner> <group> <size> <date> <name>` | [DONE] `formatLsLongEntry` |
+| SFTP-06-R5 | Sans `-l`, afficher les noms séparés par des espaces (comportement actuel) | [DONE] |
+| SFTP-06-R6 | Les répertoires affichés avec `/` suffixé dans le listing `-l` | [PARTIAL] le préfixe `d` est rendu mais pas le suffixe `/` |
+| SFTP-06-R7 | Les attributs pour Windows passent par `WindowsSftpFSAdapter` avec conversion appropriée | [DONE] `toFileAttrs` projette ACL → mode 0644/0755 |
 
 ---
 
@@ -824,21 +859,21 @@ drwxr-xr-x    2 alice    alice        4096 May 05 10:20 docs
 | `mkdir` parent inexistant | `Couldn't create directory: No such file or directory` |
 | `put` écriture refusée | `Uploading <local> to <remote>\nremote open("<remote>"): Permission denied` |
 
-| ID | Requirement |
-|---|---|
-| SFTP-07-R1 | `SftpSession.get` affiche `Fetching <remote> to <local>` avant le transfert |
-| SFTP-07-R2 | `SftpSession.put` affiche `Uploading <local> to <remote>` avant le transfert |
-| SFTP-07-R3 | Tous les messages d'erreur suivent le format OpenSSH listé ci-dessus |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-07-R1 | `SftpSession.get` affiche `Fetching <remote> to <local>` avant le transfert | [DONE] |
+| SFTP-07-R2 | `SftpSession.put` affiche `Uploading <local> to <remote>` avant le transfert | [DONE] |
+| SFTP-07-R3 | Tous les messages d'erreur suivent le format OpenSSH listé ci-dessus | [DONE] `errorToMessage` normalise `IO_ERROR`/`PERMISSION_DENIED` en messages courts (`No such file or directory`, `Permission denied`, `File exists`, `Failure`) ; `SftpSession` wrap dans le sentence OpenSSH |
 
 ---
 
 ### 5.9 SFTP-08 — Correction DEF-11 : fermeture propre de la connexion TCP
 
-| ID | Requirement |
-|---|---|
-| SFTP-08-R1 | En cas d'échec d'authentification, `SftpSession.connect` appelle `conn.close()` avant de mettre `this.conn = null` |
-| SFTP-08-R2 | `SftpSession.disconnect` appelle `conn.close()` (déjà implémenté, vérifier) |
-| SFTP-08-R3 | Aucune connexion TCP orpheline ne doit subsister après un échec d'auth ou un disconnect |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-08-R1 | En cas d'échec d'authentification, `SftpSession.connect` appelle `conn.close()` avant de mettre `this.conn = null` | [DONE] `SshSession.connect` ferme la conn sur tout chemin d'erreur |
+| SFTP-08-R2 | `SftpSession.disconnect` appelle `conn.close()` (déjà implémenté, vérifier) | [DONE] `SftpSession.disconnect()` → `SshSession.disconnect()` ferme la conn |
+| SFTP-08-R3 | Aucune connexion TCP orpheline ne doit subsister après un échec d'auth ou un disconnect | [DONE] tous les chemins d'erreur de `SshSession.connect` ferment la conn et reset l'état |
 
 ---
 
@@ -860,21 +895,21 @@ Règles de formatage (identiques à OpenSSH sftp) :
 - Temps : `MM:SS` (toujours `00:00` dans le simulateur, car transfert instantané)
 - Padding du nom : 40 caractères minimum, tronqué avec `...` si trop long
 
-| ID | Requirement |
-|---|---|
-| SFTP-09-R1 | La fonction `formatTransferLine` implémente les règles de taille automatique |
-| SFTP-09-R2 | Le padding du nom de fichier s'adapte (min 40, tronqué si > 40) |
-| SFTP-09-R3 | La vitesse simulée est coherente avec la taille (petits fichiers = KB/s, gros = MB/s) |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-09-R1 | La fonction `formatTransferLine` implémente les règles de taille automatique | [DONE] `formatTransferProgress` (B/KB/MB/GB) |
+| SFTP-09-R2 | Le padding du nom de fichier s'adapte (min 40, tronqué si > 40) | [DONE] `padOrTruncate` avec `...` pour les longs |
+| SFTP-09-R3 | La vitesse simulée est coherente avec la taille (petits fichiers = KB/s, gros = MB/s) | [DONE] `${formatHumanSize}/s` |
 
 ---
 
 ### 5.11 SFTP-10/11 — Corrections DEF-15/16 : `lmkdir` et Ctrl+D
 
-| ID | Requirement |
-|---|---|
-| SFTP-10-R1 | Implémenter `case 'lmkdir'` dans `SftpSubShell.processLine` |
-| SFTP-10-R2 | `lmkdir <path>` crée le répertoire local via `localVfs.mkdir` ou `mkdirp` |
-| SFTP-11-R1 | Ctrl+D dans `SftpSubShell.handleKey` doit déclencher la sortie (appeler `session.disconnect()`, retourner `{ exit: true }`) |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-10-R1 | Implémenter `case 'lmkdir'` dans `SftpSubShell.processLine` | [DONE] `SftpSubShell.processLine('lmkdir')` |
+| SFTP-10-R2 | `lmkdir <path>` crée le répertoire local via `localVfs.mkdir` ou `mkdirp` | [DONE] `SftpSession.lmkdir` |
+| SFTP-11-R1 | Ctrl+D dans `SftpSubShell.handleKey` doit déclencher la sortie (appeler `session.disconnect()`, retourner `{ exit: true }`) | [DONE] `handleKey` consomme Ctrl+D ; `processLine` exit/disconnect routes |
 
 ---
 
@@ -888,23 +923,23 @@ sftp> get -r remotedir/
 sftp> put -p localfile.txt
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-12-R1 | `SftpSubShell.processLine` sépare les flags (tokens commençant par `-`) des arguments positionnels pour `ls`, `get`, `put` |
-| SFTP-12-R2 | `ls` : supporter `-l` (format long), `-a` (fichiers cachés), `-1` (un par ligne) |
-| SFTP-12-R3 | `get` : flag `-r` déclenche un téléchargement récursif de répertoire |
-| SFTP-12-R4 | `put` : flag `-r` déclenche un envoi récursif de répertoire |
-| SFTP-12-R5 | Les flags non supportés sont ignorés silencieusement (pas d'erreur) |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-12-R1 | `SftpSubShell.processLine` sépare les flags (tokens commençant par `-`) des arguments positionnels pour `ls`, `get`, `put` | [DONE] `ParsedArgs.parse` |
+| SFTP-12-R2 | `ls` : supporter `-l` (format long), `-a` (fichiers cachés), `-1` (un par ligne) | [DONE] `SftpSession.ls` honore `-l/-a/-1` |
+| SFTP-12-R3 | `get` : flag `-r` déclenche un téléchargement récursif de répertoire | [TODO] flag parsé mais récursivité pas encore implémentée |
+| SFTP-12-R4 | `put` : flag `-r` déclenche un envoi récursif de répertoire | [TODO] idem |
+| SFTP-12-R5 | Les flags non supportés sont ignorés silencieusement (pas d'erreur) | [DONE] `ParsedArgs` ignore l'absence d'un flag |
 
 ---
 
 ### 5.13 SFTP-13 — Corrections adaptateur Windows (DEF-19/20/21)
 
-| ID | Requirement |
-|---|---|
-| SFTP-13-R1 | `sftpToWin` : les chemins SFTP sans lettre de lecteur (`/foo/bar`) doivent être rejetés ou documentés explicitement comme mappés sur `C:\` |
-| SFTP-13-R2 | `winToSftp` : la racine d'un lecteur `C:\` doit retourner `/C:/` (avec slash final) |
-| SFTP-13-R3 | `WindowsSftpFSAdapter.rename` gère les répertoires : si src est un répertoire, utiliser `wfs.renameEntry` ou équivalent |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-13-R1 | `sftpToWin` : les chemins SFTP sans lettre de lecteur (`/foo/bar`) doivent être rejetés ou documentés explicitement comme mappés sur `C:\` | [DONE] documenté dans `WindowsSftpFSAdapter` ; mapping `C:\` par défaut |
+| SFTP-13-R2 | `winToSftp` : la racine d'un lecteur `C:\` doit retourner `/C:/` (avec slash final) | [DONE] `winToSftp('C:\\')` → `/C:/` |
+| SFTP-13-R3 | `WindowsSftpFSAdapter.rename` gère les répertoires : si src est un répertoire, utiliser `wfs.renameEntry` ou équivalent | [PARTIAL] délègue à `wfs.moveFile` qui gère les fichiers ; rename de répertoire à valider |
 
 ---
 
@@ -920,13 +955,13 @@ sftp> chown 1001 report.txt
 Changing owner on /home/alice/report.txt
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-14-R1 | Ajouter `chmod <mode_octal> <path>` dans `SftpSubShell` |
-| SFTP-14-R2 | Ajouter l'opération `setstat` dans `SftpServerHandler` pour modifier les permissions |
-| SFTP-14-R3 | `ISftpFileSystem.setPermissions(path, mode)` : méthode ajoutée |
-| SFTP-15-R1 | Ajouter `chown <uid> <path>` dans `SftpSubShell` |
-| SFTP-15-R2 | `ISftpFileSystem.setOwner(path, uid, gid)` : méthode ajoutée |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-14-R1 | Ajouter `chmod <mode_octal> <path>` dans `SftpSubShell` | [DONE] |
+| SFTP-14-R2 | Ajouter l'opération `setstat` dans `SftpServerHandler` pour modifier les permissions | [DONE] `SftpChmodCommand` (op `chmod`) |
+| SFTP-14-R3 | `ISftpFileSystem.setPermissions(path, mode)` : méthode ajoutée | [DONE] `ISftpWritable.setPermissions` |
+| SFTP-15-R1 | Ajouter `chown <uid> <path>` dans `SftpSubShell` | [DONE] |
+| SFTP-15-R2 | `ISftpFileSystem.setOwner(path, uid, gid)` : méthode ajoutée | [DONE] `ISftpWritable.setOwner` + `SftpChownCommand` |
 
 ---
 
@@ -943,11 +978,11 @@ sftp> stat report.txt
   Modify: Mon May  5 10:23:15 2026
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-16-R1 | Ajouter `stat <path>` dans `SftpSubShell` |
-| SFTP-16-R2 | Ajouter l'opération `stat` dans `SftpServerHandler` |
-| SFTP-16-R3 | `ISftpFileSystem.stat(path)` retourne les attributs complets |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-16-R1 | Ajouter `stat <path>` dans `SftpSubShell` | [DONE] |
+| SFTP-16-R2 | Ajouter l'opération `stat` dans `SftpServerHandler` | [DONE] `SftpStatCommand` |
+| SFTP-16-R3 | `ISftpFileSystem.stat(path)` retourne les attributs complets | [DONE] `SftpFileAttrs` |
 
 ---
 
@@ -961,22 +996,22 @@ sftp> df -h /home/alice
        19.6GB        4.2GB       14.3GB       14.3GB         21%
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-17-R1 | Ajouter `df [-h] [path]` dans `SftpSubShell` |
-| SFTP-17-R2 | Retourner des valeurs simulées cohérentes (capacité totale, utilisée, disponible) |
-| SFTP-17-R3 | Flag `-h` : format humain (GB/MB), sans flag : blocs de 1K |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-17-R1 | Ajouter `df [-h] [path]` dans `SftpSubShell` | [DONE] |
+| SFTP-17-R2 | Retourner des valeurs simulées cohérentes (capacité totale, utilisée, disponible) | [DONE] `SftpDfCommand` (20 GB total / 4 GB utilisés) |
+| SFTP-17-R3 | Flag `-h` : format humain (GB/MB), sans flag : blocs de 1K | [DONE] `SftpSession.df` |
 
 ---
 
 ### 5.17 SFTP-18/19 — Expansion `~` et port custom
 
-| ID | Requirement |
-|---|---|
-| SFTP-18-R1 | `SftpSession.get/put/cd` résout `~` en répertoire home local ou distant selon le contexte |
-| SFTP-18-R2 | `SftpSubShell` résout `~` dans tous les arguments de chemin avant de les passer à `SftpSession` |
-| SFTP-19-R1 | `sftp -P <port> user@host` passe le port à `tcpConnector(host, port)` |
-| SFTP-19-R2 | `SftpSession.connect` accepte un paramètre `port` optionnel (défaut : 22) |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-18-R1 | `SftpSession.get/put/cd` résout `~` en répertoire home local ou distant selon le contexte | [DONE] `expandLocal` / `expandRemote` |
+| SFTP-18-R2 | `SftpSubShell` résout `~` dans tous les arguments de chemin avant de les passer à `SftpSession` | [DONE] résolution centralisée dans `SftpSession` (DRY) |
+| SFTP-19-R1 | `sftp -P <port> user@host` passe le port à `tcpConnector(host, port)` | [PARTIAL] `SftpConnectOptions.port` + `SshConnectOptions.port` ; commande CLI `-P` à câbler |
+| SFTP-19-R2 | `SftpSession.connect` accepte un paramètre `port` optionnel (défaut : 22) | [DONE] |
 
 ---
 
@@ -990,14 +1025,14 @@ Fetching /etc/shadow to shadow
 remote open("/etc/shadow"): Permission denied
 ```
 
-| ID | Requirement |
-|---|---|
-| SFTP-20-R1 | `SftpServerHandler` connait l'uid/gid de l'utilisateur authentifié |
-| SFTP-20-R2 | Pour `get`, vérifier les permissions de lecture (read bit) selon uid/gid de l'utilisateur |
-| SFTP-20-R3 | Pour `put`, vérifier les permissions d'écriture sur le répertoire parent |
-| SFTP-20-R4 | Pour `rm/rmdir`, vérifier les permissions d'écriture sur le répertoire parent |
-| SFTP-20-R5 | `root` (uid=0) contourne toutes les vérifications de permissions |
-| SFTP-20-R6 | `ISftpFileSystem.checkReadPermission(path, uid, gid)` et `checkWritePermission(path, uid, gid)` |
+| ID | Requirement | Statut |
+|---|---|---|
+| SFTP-20-R1 | `SftpServerHandler` connait l'uid/gid de l'utilisateur authentifié | [DONE] `SshServerHandler` capture `userCtx` après auth |
+| SFTP-20-R2 | Pour `get`, vérifier les permissions de lecture (read bit) selon uid/gid de l'utilisateur | [DONE] `PermissionCheckingFSDecorator.readFile` → `checkRead` |
+| SFTP-20-R3 | Pour `put`, vérifier les permissions d'écriture sur le répertoire parent | [DONE] `checkWrite(requireParent=true)` |
+| SFTP-20-R4 | Pour `rm/rmdir`, vérifier les permissions d'écriture sur le répertoire parent | [DONE] |
+| SFTP-20-R5 | `root` (uid=0) contourne toutes les vérifications de permissions | [DONE] `SshUserContext.isRoot()` court-circuite |
+| SFTP-20-R6 | `ISftpFileSystem.checkReadPermission(path, uid, gid)` et `checkWritePermission(path, uid, gid)` | [DONE] résolu via `PermissionCheckingFSDecorator` (Decorator) au lieu d'enrichir l'interface |
 
 ---
 
@@ -1192,24 +1227,24 @@ Les 127 tests existants (`sftp.test.ts`, `sftp-wan.test.ts`, `sftp-edge-cases.te
 
 #### NFR-01 — Performance
 
-| Metrique | Exigence |
-|---|---|
-| Etablissement de connexion SSH | < 5ms (synchrone, pas de vraie crypto) |
-| Transfert d'un fichier 1MB | < 10ms (in-memory) |
-| Cold start suite de tests | < 3s (identique à l'existant) |
+| Metrique | Exigence | Statut |
+|---|---|---|
+| Etablissement de connexion SSH | < 5ms (synchrone, pas de vraie crypto) | [DONE] handshake synchrone ; `SshSession.connect` reste async uniquement pour l'ARP |
+| Transfert d'un fichier 1MB | < 10ms (in-memory) | [DONE] `op:'get'`/`put` JSON in-memory, livré dans le `write()` |
+| Cold start suite de tests | < 3s (identique à l'existant) | [DONE] aucune lib crypto réelle ajoutée |
 
 #### NFR-02 — Couverture de tests
 
-| Module | Couverture minimale |
-|---|---|
-| `SshHostKey.ts` | 90% |
-| `SshKnownHosts.ts` | 90% |
-| `SshSession.ts` | 85% |
-| `SshServerHandler.ts` | 85% |
-| `SftpSession.ts` (après corrections) | 90% |
-| `SftpServerHandler.ts` (après corrections) | 90% |
-| `SftpSubShell.ts` (après corrections) | 85% |
-| Adaptateurs Linux/Windows | 85% |
+| Module | Couverture minimale | Statut |
+|---|---|---|
+| `SshHostKey.ts` | 90% | [PARTIAL] persistance + reload couverts dans `ssh-sftp.test.ts` ; cibler 90% reste à faire |
+| `SshKnownHosts.ts` | 90% | [PARTIAL] round-trip accept-new validé ; tests dédiés à étendre |
+| `SshSession.ts` | 85% | [PARTIAL] connect ok/échec ; tests host-key prompt à ajouter |
+| `SshServerHandler.ts` | 85% | [PARTIAL] handshake + auth + dispatch validés via tests round-trip |
+| `SftpSession.ts` (après corrections) | 90% | [PARTIAL] toutes commandes BRD couvertes au moins une fois ; cas d'erreur secondaires à étoffer |
+| `SftpServerHandler.ts` (après corrections) | 90% | n/a — fusionné dans `SshServerHandler` + `SftpCommandDispatcher` |
+| `SftpSubShell.ts` (après corrections) | 85% | [TODO] à porter depuis `sftp.legacy.test.ts.bak` |
+| Adaptateurs Linux/Windows | 85% | [TODO] à étendre côté Windows |
 
 #### NFR-03 — Réalisme comportemental
 

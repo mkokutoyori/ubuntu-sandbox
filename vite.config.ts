@@ -7,7 +7,7 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    host: "::",
+    host: '127.0.0.1',
     port: 8080,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
@@ -26,5 +26,19 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      include: ['src/network/protocols/ssh/**/*.ts'],
+      exclude: ['**/*.d.ts', '**/__tests__/**'],
+      thresholds: {
+        // Analysis doc P7: keep the SSH core honest as new features land.
+        lines: 85,
+        functions: 85,
+        statements: 85,
+        branches: 75,
+      },
+    },
   },
 }));

@@ -468,13 +468,9 @@ export class PSLexer {
     // -= assignment
     if (next === '=') { this.advance(); return psToken(PSTokenType.MINUS_ASSIGN, '-=', start); }
 
-    // -- decrement or end-of-params marker
+    // -- is always the decrement operator in PowerShell (no GNU-style end-of-params).
     if (next === '-') {
       this.advance();
-      // If followed by another char (not word), it's DECREMENT
-      if (!this.eof() && (this.ch() === ' ' || this.ch() === '\t' || this.ch() === '\n' || this.ch() === ';')) {
-        return psToken(PSTokenType.PARAMETER, '-', start); // end-of-params
-      }
       return psToken(PSTokenType.DECREMENT, '--', start);
     }
 
@@ -619,7 +615,7 @@ export class PSLexer {
       return psToken(PSTokenType.NUMBER, value, start);
     }
 
-    // Check if digit is '2' and followed by '>' → redirect 2> / 2>>
+    // Check if digit is '2' and followed by '>' → redirect 2> / 2>> / 2>&1
     if (first_ === '2' && this.peek1() === '>') {
       this.advance(); // skip 2
       this.advance(); // skip >
@@ -627,18 +623,43 @@ export class PSLexer {
         this.advance();
         return psToken(PSTokenType.REDIRECT_ERR_APPEND, '2>>', start);
       }
-      // 2>&1 — merge stderr to stdout
+      // 2>&1 — merge stderr to stdout: consume &1
+      if (!this.eof() && this.ch() === '&') {
+        const saved = this.pos;
+        this.advance(); // skip &
+        if (!this.eof() && this.isDigit(this.ch())) {
+          this.advance(); // skip stream number (e.g. 1)
+          return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>&1', start);
+        }
+        this.pos = saved; // restore if &N pattern not found
+      }
       return psToken(PSTokenType.REDIRECT_ERR_OUT, '2>', start);
     }
 
     // Integer or float
+    const savedPos = this.pos;
     while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
+
+    // IPv4-style literals (e.g. 127.0.0.1) — when the digits are followed by
+    // ".N.N.N", emit a single WORD rather than splitting into 3 numbers, so
+    // command arguments stay intact.
+    if (!this.eof() && this.ch() === '.' && this.peek1() !== undefined && this.isDigit(this.peek1()!)
+        && this.looksLikeIPv4FromHere(value)) {
+      let ip = value;
+      // Consume up to three additional ".N+" groups.
+      while (!this.eof() && this.ch() === '.' && this.peek1() !== undefined && this.isDigit(this.peek1()!)) {
+        ip += this.ch(); this.advance();
+        while (!this.eof() && this.isDigit(this.ch())) { ip += this.ch(); this.advance(); }
+      }
+      return psToken(PSTokenType.WORD, ip, start);
+    }
 
     // Decimal part
     if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
       value += '.'; this.advance();
       while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
     }
+    void savedPos;
 
     // Exponent
     if (!this.eof() && (this.ch() === 'e' || this.ch() === 'E')) {
@@ -659,6 +680,26 @@ export class PSLexer {
     }
 
     return psToken(PSTokenType.NUMBER, value, start);
+  }
+
+  /**
+   * From the current scanner position (just after digits), check whether the
+   * upcoming `.N(.N)*` sequence forms an IPv4-like literal worth keeping
+   * together. Requires at least one more `.N` group and a total of at least
+   * three dots (so plain decimals like `1.5` keep being numbers).
+   */
+  private looksLikeIPv4FromHere(prefix: string): boolean {
+    if (!/^\d+$/.test(prefix)) return false;
+    let i = this.pos;
+    let dots = 0;
+    while (i < this.input.length) {
+      if (this.input[i] === '.' && i + 1 < this.input.length && this.isDigit(this.input[i + 1])) {
+        dots++;
+        i++;
+        while (i < this.input.length && this.isDigit(this.input[i])) i++;
+      } else break;
+    }
+    return dots >= 3;
   }
 
   // ─── Word / Keyword / Path ────────────────────────────────────────────────

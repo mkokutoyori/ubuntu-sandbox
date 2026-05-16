@@ -1,0 +1,660 @@
+============================================================
+Shell debug transcript — ps-registry-env-pc
+Generated: 2026-05-16T07:11:51.419Z
+Engine: powershell
+host=WIN-REG-DBG (windows-pc)
+Total commands: 117
+============================================================
+
+
+--- [1] § registry navigation ---
+PS [1/117]> Get-PSDrive | Where-Object { $_.Provider -like "*Registry*" }
+  
+  Name  Used  Free  Provider  Root  
+  ----  ----  ----  --------  ------
+  HKLM     0     0  Registry  HKLM:\
+  HKCU     0     0  Registry  HKCU:\
+  
+
+PS [2/117]> Test-Path HKCU:\
+  True
+
+PS [3/117]> Test-Path HKLM:\
+  True
+
+PS [4/117]> Test-Path HKCU:\Software
+  True
+
+PS [5/117]> Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
+  
+      Hive: HKCU:\Software
+  
+  Name                           Property
+  ----                           --------
+  Microsoft                      
+
+PS [6/117]> Get-ChildItem HKLM:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
+  
+      Hive: HKLM:\Software
+  
+  Name                           Property
+  ----                           --------
+  Microsoft                      
+  Classes                        
+  Policies                       
+  WOW6432Node                    
+
+PS [7/117]> Get-ChildItem HKCU:\Software\Microsoft -ErrorAction SilentlyContinue | Select-Object -First 5
+  
+      Hive: HKCU:\Software\Microsoft
+  
+  Name                           Property
+  ----                           --------
+  Windows                        
+
+PS [8/117]> Get-Item HKCU:\Software -ErrorAction SilentlyContinue
+  
+      Hive: HKCU:\
+  
+  Name                           Property
+  ----                           --------
+  Software                       (1 subkeys, 0 values) [HKCU:\Software]
+
+PS [9/117]> (Get-Item HKCU:\Software).Name
+<empty>
+
+
+--- [10] § create & read keys ---
+PS [10/117]> New-Item -Path HKCU:\Software\DebugSim -Force
+  
+  
+      Hive: HKCU:\Software
+  
+  Name                           Property
+  ----                           --------
+  DebugSim                      
+  
+
+PS [11/117]> Test-Path HKCU:\Software\DebugSim
+  True
+
+PS [12/117]> New-Item -Path HKCU:\Software\DebugSim\Settings -Force
+  
+  
+      Hive: HKCU:\Software\DebugSim
+  
+  Name                           Property
+  ----                           --------
+  Settings                      
+  
+
+PS [13/117]> New-Item -Path HKCU:\Software\DebugSim\Settings\UI -Force
+  
+  
+      Hive: HKCU:\Software\DebugSim\Settings
+  
+  Name                           Property
+  ----                           --------
+  UI                            
+  
+
+PS [14/117]> New-Item -Path HKCU:\Software\DebugSim\Settings\Logs -Force
+  
+  
+      Hive: HKCU:\Software\DebugSim\Settings
+  
+  Name                           Property
+  ----                           --------
+  Logs                          
+  
+
+PS [15/117]> Get-ChildItem HKCU:\Software\DebugSim
+  
+      Hive: HKCU:\Software\DebugSim
+  
+  Name                           Property
+  ----                           --------
+  Settings                       
+
+PS [16/117]> Get-ChildItem HKCU:\Software\DebugSim -Recurse
+  
+      Hive: HKCU:\Software\DebugSim
+  
+  Name                           Property
+  ----                           --------
+  Settings                       
+
+PS [17/117]> (Get-ChildItem HKCU:\Software\DebugSim).Count
+<empty>
+
+PS [18/117]> (Get-ChildItem HKCU:\Software\DebugSim -Recurse).Count
+<empty>
+
+
+--- [19] § property values ---
+PS [19/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim -Name "Version" -Value "1.0.0"
+<empty>
+
+PS [20/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim -Name "Build" -Value 42 -Type DWord
+<empty>
+
+PS [21/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -Value "C:\DebugSim"
+<empty>
+
+PS [22/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim -Name "Enabled" -Value 1 -Type DWord
+<empty>
+
+PS [23/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim\Settings -Name "Theme" -Value "dark"
+<empty>
+
+PS [24/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim\Settings -Name "Lang" -Value "fr-FR"
+<empty>
+
+PS [25/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI -Name "Width" -Value 1920 -Type DWord
+<empty>
+
+PS [26/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI -Name "Height" -Value 1080 -Type DWord
+<empty>
+
+PS [27/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
+  
+  Version  Build  InstallPath  Enabled
+  -------  -----  -----------  -------
+  1.0.0       42  C:\DebugSim        1
+  
+
+PS [28/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "Version"
+  
+  Version
+  -------
+  1.0.0  
+  
+
+PS [29/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).Version
+  1.0.0
+
+PS [30/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).Build
+  42
+
+PS [31/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings
+  
+  Theme  Lang 
+  -----  -----
+  dark   fr-FR
+  
+
+PS [32/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI | Format-List
+  Width : 1920
+  Height : 1080
+
+
+--- [33] § rename & delete values ---
+PS [33/117]> Rename-ItemProperty -Path HKCU:\Software\DebugSim -Name "Build" -NewName "BuildNumber" -ErrorAction SilentlyContinue
+<empty>
+
+PS [34/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "BuildNumber" -ErrorAction SilentlyContinue
+<empty>
+
+PS [35/117]> Remove-ItemProperty -Path HKCU:\Software\DebugSim -Name "Enabled" -ErrorAction SilentlyContinue
+<empty>
+
+PS [36/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
+  
+  Version  Build  InstallPath
+  -------  -----  -----------
+  1.0.0       42  C:\DebugSim
+  
+
+PS [37/117]> Clear-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -ErrorAction SilentlyContinue
+<empty>
+
+PS [38/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).InstallPath
+<empty>
+
+
+--- [39] § environment variables ---
+PS [39/117]> Get-ChildItem Env:
+  
+  Name                    Value                                                  
+  ----------------------  -------------------------------------------------------
+  USERNAME                Administrator                                          
+  COMPUTERNAME            WIN-REG-DBG                                            
+  USERPROFILE             C:\Users\Administrator                                 
+  SYSTEMROOT              C:\Windows                                             
+  WINDIR                  C:\Windows                                             
+  TEMP                    C:\Users\User\AppData\Local\Temp                       
+  TMP                     C:\Users\User\AppData\Local\Temp                       
+  PATH                    C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+  HOMEDRIVE               C:                                                     
+  HOMEPATH                \Users\Administrator                                   
+  PROCESSOR_ARCHITECTURE  AMD64                                                  
+  OS                      Windows_NT                                             
+  COMSPEC                 C:\Windows\System32\cmd.exe                            
+  APPDATA                 C:\Users\user\AppData\Roaming                          
+  LOCALAPPDATA            C:\Users\user\AppData\Local                            
+  PROGRAMFILES            C:\Program Files                                       
+  PROGRAMFILES(X86)       C:\Program Files (x86)                                 
+  PROGRAMDATA             C:\ProgramData                                         
+  PATHEXT                 .COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC                 
+  NUMBER_OF_PROCESSORS    4                                                      
+  USERDOMAIN              WORKGROUP                                              
+  LOGONSERVER             \\WIN-REG-DBG                                          
+  SESSIONNAME             Console                                                
+  SYSTEMDRIVE             C:                                                     
+  PUBLIC                  C:\Users\Public                                        
+  ALLUSERSPROFILE         C:\ProgramData                                         
+  
+
+PS [40/117]> Get-ChildItem Env: | Sort-Object Name | Select-Object -First 5
+  
+  Name             Value                        
+  ---------------  -----------------------------
+  ALLUSERSPROFILE  C:\ProgramData               
+  APPDATA          C:\Users\user\AppData\Roaming
+  COMPUTERNAME     WIN-REG-DBG                  
+  COMSPEC          C:\Windows\System32\cmd.exe  
+  HOMEDRIVE        C:                           
+  
+
+PS [41/117]> Get-ChildItem Env: | Sort-Object Name | Select-Object -Last 5
+  
+  Name         Value                           
+  -----------  --------------------------------
+  TMP          C:\Users\User\AppData\Local\Temp
+  USERDOMAIN   WORKGROUP                       
+  USERNAME     Administrator                   
+  USERPROFILE  C:\Users\Administrator          
+  WINDIR       C:\Windows                      
+  
+
+PS [42/117]> (Get-ChildItem Env:).Count
+  26
+
+PS [43/117]> $env:Path
+  C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem
+
+PS [44/117]> $env:SystemRoot
+  C:\Windows
+
+PS [45/117]> $env:USERNAME
+  Administrator
+
+PS [46/117]> $env:COMPUTERNAME
+  WIN-REG-DBG
+
+PS [47/117]> $env:TEMP
+  C:\Users\User\AppData\Local\Temp
+
+PS [48/117]> $env:Path -split ";" | Select-Object -First 3
+  C:\Windows\System32
+  C:\Windows
+  C:\Windows\System32\Wbem
+
+PS [49/117]> ($env:Path -split ";").Count
+  3
+
+PS [50/117]> Set-Item -Path Env:DEBUG_SIM -Value "1"
+<empty>
+
+PS [51/117]> $env:DEBUG_SIM
+  1
+
+PS [52/117]> Set-Item -Path Env:DEBUG_LABEL -Value "first"
+<empty>
+
+PS [53/117]> $env:DEBUG_LABEL
+  first
+
+PS [54/117]> Set-Item -Path Env:DEBUG_LABEL -Value "second"
+<empty>
+
+PS [55/117]> $env:DEBUG_LABEL
+  second
+
+PS [56/117]> Remove-Item Env:DEBUG_LABEL
+<empty>
+
+PS [57/117]> $env:DEBUG_LABEL
+<empty>
+
+PS [58/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", "process-scope", "Process")
+<empty>
+
+PS [59/117]> [System.Environment]::GetEnvironmentVariable("DBG_PROC", "Process")
+  process-scope
+
+PS [60/117]> [System.Environment]::SetEnvironmentVariable("DBG_USR", "user-scope", "User")
+<empty>
+
+PS [61/117]> [System.Environment]::GetEnvironmentVariable("DBG_USR", "User")
+  user-scope
+
+PS [62/117]> [System.Environment]::SetEnvironmentVariable("DBG_MCH", "machine-scope", "Machine")
+<empty>
+
+PS [63/117]> [System.Environment]::GetEnvironmentVariable("DBG_MCH", "Machine")
+  machine-scope
+
+PS [64/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", $null, "Process")
+<empty>
+
+PS [65/117]> [System.Environment]::SetEnvironmentVariable("DBG_USR", $null, "User")
+<empty>
+
+PS [66/117]> [System.Environment]::SetEnvironmentVariable("DBG_MCH", $null, "Machine")
+<empty>
+
+
+--- [67] § variables ---
+PS [67/117]> $x = 42; $x
+  42
+
+PS [68/117]> $y = "hello world"; $y
+  hello world
+
+PS [69/117]> $nums = 1..10; $nums
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+
+PS [70/117]> $nums.Length
+  10
+
+PS [71/117]> $nums | Measure-Object -Sum -Average -Min -Max
+  
+  Count    : 10
+  Sum      : 55
+  Average  : 5.5
+  Minimum  : 1
+  Maximum  : 10
+  Property : 
+  
+
+PS [72/117]> $hash = @{ a = 1; b = 2; c = 3 }; $hash
+  
+  a  b  c
+  -  -  -
+  1  2  3
+  
+
+PS [73/117]> $hash.a
+  1
+
+PS [74/117]> $hash.Keys
+  a
+  b
+  c
+
+PS [75/117]> $hash.Values
+  1
+  2
+  3
+
+PS [76/117]> $arr = @("alpha","beta","gamma"); $arr
+  alpha
+  beta
+  gamma
+
+PS [77/117]> $arr[0]
+  alpha
+
+PS [78/117]> $arr[-1]
+  gamma
+
+PS [79/117]> $arr.Length
+  3
+
+PS [80/117]> Get-Variable -Name x -ErrorAction SilentlyContinue
+  
+  Name  Value
+  ----  -----
+  x        42
+  
+
+PS [81/117]> Get-Variable | Where-Object { $_.Name -like "x*" }
+<empty>
+
+PS [82/117]> (Get-Variable).Count
+<empty>
+
+PS [83/117]> Set-Variable -Name z -Value 99
+<empty>
+
+PS [84/117]> $z
+  99
+
+PS [85/117]> Remove-Variable -Name z -ErrorAction SilentlyContinue
+<empty>
+
+PS [86/117]> $z
+<empty>
+
+PS [87/117]> $obj = [pscustomobject]@{ Name="alice"; Age=30 }; $obj
+  
+  Name   Age
+  -----  ---
+  alice   30
+  
+
+PS [88/117]> $obj.Name
+  alice
+
+PS [89/117]> $obj.Age
+  30
+
+
+--- [90] § casting ---
+PS [90/117]> [int]"42"
+  42
+
+PS [91/117]> [double]"3.14"
+  3.14
+
+PS [92/117]> [bool]"true"
+  True
+
+PS [93/117]> [string]42
+  42
+
+PS [94/117]> [datetime]"2024-01-15"
+  1/15/2024 12:00 AM
+
+PS [95/117]> "abc".ToUpper()
+  ABC
+
+PS [96/117]> "abc".Length
+  3
+
+PS [97/117]> "alpha,beta,gamma".Split(",")
+  alpha
+  beta
+  gamma
+
+PS [98/117]> "alpha-beta".Replace("-","_")
+  alpha_beta
+
+PS [99/117]> [Math]::Pow(2,10)
+  1024
+
+PS [100/117]> [Math]::PI
+  3.141592653589793
+
+PS [101/117]> [Math]::Sqrt(16)
+  4
+
+PS [102/117]> [Guid]::NewGuid()
+  27bb58db-06e7-4125-91c9-90b7fc89f532
+
+PS [103/117]> [DateTime]::Now
+  5/16/2026 7:11 AM
+
+
+--- [104] § formatting ---
+PS [104/117]> Get-Process | Select-Object -First 3 | Format-Table
+  Handles         NPM(K)          PM(K)           WS(K)           CPU(s)          CPU             Id              SI              ProcessName     Name            Status          Owner          
+  --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- ---------------
+  0               4               0               16              0               0               0               0               System Idle Process System Idle Process Running         NT AUTHORITY\SYSTEM
+  100             4               0               288             0.5             0.5             4               0               System          System          Running         NT AUTHORITY\SYSTEM
+  48              4               4               8192            0               0               108             0               Registry        Registry        Running         NT AUTHORITY\SYSTEM
+
+PS [105/117]> Get-Process | Select-Object -First 3 | Format-List
+  Handles : 0
+  NPM(K) : 4
+  PM(K) : 0
+  WS(K) : 16
+  CPU(s) : 0
+  CPU : 0
+  Id : 0
+  SI : 0
+  ProcessName : System Idle Process
+  Name : System Idle Process
+  Status : Running
+  Owner : NT AUTHORITY\SYSTEM
+  
+  Handles : 100
+  NPM(K) : 4
+  PM(K) : 0
+  WS(K) : 288
+  CPU(s) : 0.5
+  CPU : 0.5
+  Id : 4
+  SI : 0
+  ProcessName : System
+  Name : System
+  Status : Running
+  Owner : NT AUTHORITY\SYSTEM
+  
+  Handles : 48
+  NPM(K) : 4
+  PM(K) : 4
+  WS(K) : 8192
+  CPU(s) : 0
+  CPU : 0
+  Id : 108
+  SI : 0
+  ProcessName : Registry
+  Name : Registry
+  Status : Running
+  Owner : NT AUTHORITY\SYSTEM
+
+PS [106/117]> Get-Process | Select-Object -First 3 | Format-List Name, Id, CPU
+  Name : System Idle Process
+  Id : 0
+  CPU : 0
+  
+  Name : System
+  Id : 4
+  CPU : 0.5
+  
+  Name : Registry
+  Id : 108
+  CPU : 0
+
+PS [107/117]> Get-Process | Select-Object -First 3 | Format-Table Name, Id, CPU -AutoSize
+  Name            Id              CPU            
+  --------------- --------------- ---------------
+  System Idle Process 0               0              
+  System          4               0.5            
+  Registry        108             0              
+
+PS [108/117]> Get-Process | Select-Object -First 3 | Out-String
+  Handles=0; NPM(K)=4; PM(K)=0; WS(K)=16; CPU(s)=0; CPU=0; Id=0; SI=0; ProcessName=System Idle Process; Name=System Idle Process; Status=Running; Owner=NT AUTHORITY\SYSTEM Handles=100; NPM(K)=4; PM(K)=0; WS(K)=288; CPU(s)=0.5; CPU=0.5; Id=4; SI=0; ProcessName=System; Name=System; Status=Running; Owner=NT AUTHORITY\SYSTEM Handles=48; NPM(K)=4; PM(K)=4; WS(K)=8192; CPU(s)=0; CPU=0; Id=108; SI=0; ProcessName=Registry; Name=Registry; Status=Running; Owner=NT AUTHORITY\SYSTEM
+
+PS [109/117]> Get-Process | Select-Object -First 3 | ConvertTo-Json
+  [
+    {
+      "Handles": 0,
+      "NPM(K)": 4,
+      "PM(K)": 0,
+      "WS(K)": 16,
+      "CPU(s)": 0,
+      "CPU": 0,
+      "Id": 0,
+      "SI": 0,
+      "ProcessName": "System Idle Process",
+      "Name": "System Idle Process",
+      "Status": "Running",
+      "Owner": "NT AUTHORITY\\SYSTEM"
+    },
+    {
+      "Handles": 100,
+      "NPM(K)": 4,
+      "PM(K)": 0,
+      "WS(K)": 288,
+      "CPU(s)": 0.5,
+      "CPU": 0.5,
+      "Id": 4,
+      "SI": 0,
+      "ProcessName": "System",
+      "Name": "System",
+      "Status": "Running",
+      "Owner": "NT AUTHORITY\\SYSTEM"
+    },
+    {
+      "Handles": 48,
+      "NPM(K)": 4,
+      "PM(K)": 4,
+      "WS(K)": 8192,
+      "CPU(s)": 0,
+      "CPU": 0,
+      "Id": 108,
+      "SI": 0,
+      "ProcessName": "Registry",
+      "Name": "Registry",
+      "Status": "Running",
+      "Owner": "NT AUTHORITY\\SYSTEM"
+    }
+  ]
+
+PS [110/117]> Get-Process | Select-Object -First 3 | ConvertTo-Csv
+  #TYPE Hashtable
+  "Handles","NPM(K)","PM(K)","WS(K)","CPU(s)","CPU","Id","SI","ProcessName","Name","Status","Owner"
+  "0","4","0","16","0","0","0","0","System Idle Process","System Idle Process","Running","NT AUTHORITY\SYSTEM"
+  "100","4","0","288","0.5","0.5","4","0","System","System","Running","NT AUTHORITY\SYSTEM"
+  "48","4","4","8192","0","0","108","0","Registry","Registry","Running","NT AUTHORITY\SYSTEM"
+
+PS [111/117]> Get-Process | Select-Object -First 3 -Property Name, Id | ConvertTo-Json
+  [
+    {
+      "Name": "System Idle Process",
+      "Id": 0
+    },
+    {
+      "Name": "System",
+      "Id": 4
+    },
+    {
+      "Name": "Registry",
+      "Id": 108
+    }
+  ]
+
+PS [112/117]> "hello", "world" | Out-String
+  hello world
+
+PS [113/117]> @{ a=1; b=2 } | ConvertTo-Json
+  {
+    "a": 1,
+    "b": 2
+  }
+
+
+--- [114] § cleanup ---
+PS [114/117]> Remove-Item HKCU:\Software\DebugSim -Recurse -ErrorAction SilentlyContinue
+<empty>
+
+PS [115/117]> Test-Path HKCU:\Software\DebugSim
+  False
+
+PS [116/117]> Remove-Item Env:DEBUG_SIM -ErrorAction SilentlyContinue
+<empty>
+
+PS [117/117]> $env:DEBUG_SIM
+<empty>

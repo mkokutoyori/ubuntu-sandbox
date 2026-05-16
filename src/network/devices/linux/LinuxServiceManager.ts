@@ -241,9 +241,17 @@ const SERVER_UNITS: DefaultUnit[] = [
   },
 ];
 
+export type ServiceLifecycleEvent = 'start' | 'stop' | 'restart' | 'reload';
+export type ServiceLifecycleListener = (
+  event: ServiceLifecycleEvent,
+  serviceName: string,
+) => void;
+
 export class LinuxServiceManager {
   /** Loaded units indexed by short name (without .service suffix). */
   private units = new Map<string, ServiceUnit>();
+  /** Lifecycle listeners (BRD SSH-07-R6: sshd reloads its config on restart). */
+  private listeners: ServiceLifecycleListener[] = [];
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -255,6 +263,18 @@ export class LinuxServiceManager {
     this.startEnabledServices();
   }
 
+  /** Subscribe to service lifecycle changes. Returns an unsubscribe handle. */
+  onLifecycle(listener: ServiceLifecycleListener): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  private emitLifecycle(event: ServiceLifecycleEvent, name: string): void {
+    for (const l of this.listeners) l(event, name);
+  }
+
   // ─── Public API ───────────────────────────────────────────────────
 
   /** Start a service. Spawns its main process if not already active. */
@@ -263,7 +283,9 @@ export class LinuxServiceManager {
     if (!unit.ok) return unit;
     const u = unit.unit;
     if (u.state === 'active') return { ok: true };
-    return this.activate(u);
+    const r = this.activate(u);
+    if (r.ok) this.emitLifecycle('start', u.name);
+    return r;
   }
 
   /** Stop a service. Kills its main process if running. */
@@ -274,14 +296,18 @@ export class LinuxServiceManager {
     if (u.state !== 'active' && u.state !== 'activating') {
       return { ok: true };
     }
-    return this.deactivate(u);
+    const r = this.deactivate(u);
+    if (r.ok) this.emitLifecycle('stop', u.name);
+    return r;
   }
 
   /** Stop then start a service in a single operation. */
   restart(name: string): OperationResult {
     const stopRes = this.stop(name);
     if (!stopRes.ok) return stopRes;
-    return this.start(name);
+    const start = this.start(name);
+    if (start.ok) this.emitLifecycle('restart', name);
+    return start;
   }
 
   /** Send SIGHUP (or run ExecReload) to the main process. */
@@ -296,6 +322,7 @@ export class LinuxServiceManager {
       return { ok: false, error: `${name}.service: Refusing to reload: ExecReload= is not set.` };
     }
     this.processMgr.kill(u.mainPid, 'SIGHUP');
+    this.emitLifecycle('reload', u.name);
     return { ok: true };
   }
 

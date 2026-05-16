@@ -1,0 +1,449 @@
+============================================================
+Shell debug transcript — ps-scripts-server
+Generated: 2026-05-16T07:11:47.940Z
+Engine: powershell
+host=SRV-SCR-DBG (windows-server)
+Total commands: 77
+============================================================
+
+
+--- [1] § prepare scripts dir ---
+PS [1/77]> New-Item -Path C:\Scripts -ItemType Directory -Force
+  
+  Name        FullName    ItemType 
+  ----------  ----------  ---------
+  C:\Scripts  C:\Scripts  directory
+  
+
+PS [2/77]> Test-Path C:\Scripts
+  True
+
+PS [3/77]> Get-ChildItem C:\Scripts
+<empty>
+
+
+--- [4] § hello.ps1 ---
+PS [4/77]> Set-Content -Path C:\Scripts\hello.ps1 -Value "`$name = if (`$args.Count -gt 0) { `$args[0] } else { `"world`" }`nWrite-Output `"Hello, `$name!`"`n"
+<empty>
+
+PS [5/77]> Test-Path C:\Scripts\hello.ps1
+  True
+
+PS [6/77]> Get-Content C:\Scripts\hello.ps1
+  $name = if ($args.Count -gt 0) { $args[0] } else { "world" }
+  Write-Output "Hello, $name!"
+
+PS [7/77]> . C:\Scripts\hello.ps1
+  Hello, world!
+
+PS [8/77]> & C:\Scripts\hello.ps1 PowerShell
+  Hello, PowerShell!
+
+PS [9/77]> powershell -File C:\Scripts\hello.ps1 -ErrorAction SilentlyContinue
+<empty>
+
+
+--- [10] § sum.ps1 ---
+PS [10/77]> Set-Content -Path C:\Scripts\sum.ps1 -Value "param([int[]]`$Numbers = (1..10))`n`$total = 0`nforeach (`$n in `$Numbers) { `$total += `$n }`n`"Total = `$total`"`n"
+<empty>
+
+PS [11/77]> Get-Content C:\Scripts\sum.ps1
+  param([int[]]$Numbers = (1..10))
+  $total = 0
+  foreach ($n in $Numbers) { $total += $n }
+  "Total = $total"
+
+PS [12/77]> & C:\Scripts\sum.ps1
+  Total = 55
+
+PS [13/77]> & C:\Scripts\sum.ps1 -Numbers 5,10,15,20
+  Total = 50
+
+PS [14/77]> & C:\Scripts\sum.ps1 -Numbers (1..100)
+  Total = 5050
+
+
+--- [15] § users.ps1 ---
+PS [15/77]> Set-Content -Path C:\Scripts\users.ps1 -Value "param([string]`$Prefix = `"auto`")`n1..3 | ForEach-Object {`n  `$u = `"`$Prefix-user`$_`"`n  New-LocalUser -Name `$u -NoPassword -ErrorAction SilentlyContinue | Out-Null`n  Write-Output `"created `$u`"`n}`n"
+<empty>
+
+PS [16/77]> Get-Content C:\Scripts\users.ps1
+  param([string]$Prefix = "auto")
+  1..3 | ForEach-Object {
+    $u = "$Prefix-user$_"
+    New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
+    Write-Output "created $u"
+  }
+
+PS [17/77]> & C:\Scripts\users.ps1 -Prefix dbg
+  created dbg-user1
+  created dbg-user2
+  created dbg-user3
+
+PS [18/77]> Get-LocalUser | Where-Object { $_.Name -like "dbg-*" }
+  
+  Name       Enabled  Description
+  ---------  -------  -----------
+  dbg-user1  True                
+  dbg-user2  True                
+  dbg-user3  True                
+  
+
+PS [19/77]> & C:\Scripts\users.ps1 -Prefix qa
+  created qa-user1
+  created qa-user2
+  created qa-user3
+
+PS [20/77]> Get-LocalUser | Where-Object { $_.Name -like "qa-*" }
+  
+  Name      Enabled  Description
+  --------  -------  -----------
+  qa-user1  True                
+  qa-user2  True                
+  qa-user3  True                
+  
+
+PS [21/77]> "dbg-user1","dbg-user2","dbg-user3","qa-user1","qa-user2","qa-user3" | ForEach-Object { Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue }
+<empty>
+
+
+--- [22] § files.ps1 ---
+PS [22/77]> Set-Content -Path C:\Scripts\files.ps1 -Value "param([string]`$Dir = `"C:\BulkOut`", [int]`$Count = 5)`nNew-Item -Path `$Dir -ItemType Directory -Force | Out-Null`n1..`$Count | ForEach-Object {`n  Set-Content -Path (Join-Path `$Dir `"item`$_.txt`") -Value `"row `$_`"`n}`nGet-ChildItem `$Dir | Measure-Object | Select-Object -ExpandProperty Count`n"
+<empty>
+
+PS [23/77]> Get-Content C:\Scripts\files.ps1
+  param([string]$Dir = "C:\BulkOut", [int]$Count = 5)
+  New-Item -Path $Dir -ItemType Directory -Force | Out-Null
+  1..$Count | ForEach-Object {
+    Set-Content -Path (Join-Path $Dir "item$_.txt") -Value "row $_"
+  }
+  Get-ChildItem $Dir | Measure-Object | Select-Object -ExpandProperty Count
+
+PS [24/77]> & C:\Scripts\files.ps1
+  5
+
+PS [25/77]> Get-ChildItem C:\BulkOut
+  
+  Mode    LastWriteTime      Length  Name     
+  ------  -----------------  ------  ---------
+  -a----  5/16/2026 7:11 AM       5  item1.txt
+  -a----  5/16/2026 7:11 AM       5  item2.txt
+  -a----  5/16/2026 7:11 AM       5  item3.txt
+  -a----  5/16/2026 7:11 AM       5  item4.txt
+  -a----  5/16/2026 7:11 AM       5  item5.txt
+  
+
+PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
+  
+  Count    : 5
+  Sum      : 25
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : Length
+  
+
+PS [27/77]> & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
+  10
+
+PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
+  
+  Mode    LastWriteTime      Length  Name      
+  ------  -----------------  ------  ----------
+  -a----  5/16/2026 7:11 AM       5  item1.txt 
+  -a----  5/16/2026 7:11 AM       6  item10.txt
+  -a----  5/16/2026 7:11 AM       5  item2.txt 
+  -a----  5/16/2026 7:11 AM       5  item3.txt 
+  -a----  5/16/2026 7:11 AM       5  item4.txt 
+  -a----  5/16/2026 7:11 AM       5  item5.txt 
+  -a----  5/16/2026 7:11 AM       5  item6.txt 
+  -a----  5/16/2026 7:11 AM       5  item7.txt 
+  -a----  5/16/2026 7:11 AM       5  item8.txt 
+  -a----  5/16/2026 7:11 AM       5  item9.txt 
+  
+
+PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
+  10
+
+
+--- [30] § fn.ps1 (functions) ---
+PS [30/77]> Set-Content -Path C:\Scripts\fn.ps1 -Value "function Get-Greeting {`n  param([string]`$Who = `"world`", [string]`$Lang = `"en`")`n  switch (`$Lang) {`n    `"fr`" { `"Bonjour, `$Who!`" }`n    `"es`" { `"Hola, `$Who!`" }`n    default { `"Hello, `$Who!`" }`n  }`n}`nGet-Greeting -Who Alice -Lang fr`nGet-Greeting -Who Bob -Lang es`nGet-Greeting -Who Carol`n"
+<empty>
+
+PS [31/77]> Get-Content C:\Scripts\fn.ps1
+  function Get-Greeting {
+    param([string]$Who = "world", [string]$Lang = "en")
+    switch ($Lang) {
+      "fr" { "Bonjour, $Who!" }
+      "es" { "Hola, $Who!" }
+      default { "Hello, $Who!" }
+    }
+  }
+  Get-Greeting -Who Alice -Lang fr
+  Get-Greeting -Who Bob -Lang es
+  Get-Greeting -Who Carol
+
+PS [32/77]> . C:\Scripts\fn.ps1
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+
+PS [33/77]> Get-Greeting -Who "Eve"
+  Hello, Eve!
+
+PS [34/77]> Get-Greeting -Who "Frank" -Lang fr
+  Bonjour, Frank!
+
+PS [35/77]> Get-Greeting -Who "Grace" -Lang es
+  Hola, Grace!
+
+
+--- [36] § pipeline.ps1 ---
+PS [36/77]> Set-Content -Path C:\Scripts\pipeline.ps1 -Value "param([string]`$Path = `"C:\BulkOut`")`nGet-ChildItem `$Path -ErrorAction SilentlyContinue |`n  Where-Object { -not `$_.PSIsContainer } |`n  Sort-Object Length -Descending |`n  Select-Object -First 3 -Property Name, Length`n"
+<empty>
+
+PS [37/77]> Get-Content C:\Scripts\pipeline.ps1
+  param([string]$Path = "C:\BulkOut")
+  Get-ChildItem $Path -ErrorAction SilentlyContinue |
+    Where-Object { -not $_.PSIsContainer } |
+    Sort-Object Length -Descending |
+    Select-Object -First 3 -Property Name, Length
+
+PS [38/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut2
+  
+  Name        Length
+  ----------  ------
+  item10.txt       6
+  item1.txt        5
+  item2.txt        5
+  
+
+PS [39/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut
+  
+  Name       Length
+  ---------  ------
+  item1.txt       5
+  item2.txt       5
+  item3.txt       5
+  
+
+
+--- [40] § try.ps1 ---
+PS [40/77]> Set-Content -Path C:\Scripts\try.ps1 -Value "try {`n  Get-Item C:\ghost-file -ErrorAction Stop`n} catch {`n  `"caught: `$(`$_.Exception.Message)`"`n} finally {`n  `"done`"`n}`n"
+<empty>
+
+PS [41/77]> Get-Content C:\Scripts\try.ps1
+  try {
+    Get-Item C:\ghost-file -ErrorAction Stop
+  } catch {
+    "caught: $($_.Exception.Message)"
+  } finally {
+    "done"
+  }
+
+PS [42/77]> & C:\Scripts\try.ps1
+  ERROR: Cannot find path 'C:\ghost-file' because it does not exist.
+
+
+--- [43] § inline scriptblocks ---
+PS [43/77]> & { Write-Output "inline-1"; Write-Output "inline-2" }
+  inline-1
+  inline-2
+
+PS [44/77]> & { param($n) 1..$n } 5
+  1
+  2
+  3
+  4
+  5
+
+PS [45/77]> $sb = { param($x) $x * $x }; & $sb 7
+  49
+
+PS [46/77]> $sb2 = { param($a,$b) $a + $b }; & $sb2 10 20
+  30
+
+PS [47/77]> & { Get-Process | Select-Object -First 2 Name }
+  
+  Name               
+  -------------------
+  System Idle Process
+  System             
+  
+
+PS [48/77]> & { Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 2 Name, Status }
+  
+  Name   Status 
+  -----  -------
+  Tcpip  Running
+  Afd    Running
+  
+
+
+--- [49] § multi-script composition ---
+PS [49/77]> . C:\Scripts\fn.ps1; "Alpha","Beta","Gamma" | ForEach-Object { Get-Greeting -Who $_ -Lang fr }
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+  Bonjour, Alpha!
+  Bonjour, Beta!
+  Bonjour, Gamma!
+
+PS [50/77]> . C:\Scripts\fn.ps1; 1..3 | ForEach-Object { Get-Greeting -Who "Bot$_" }
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+  Hello, Bot1!
+  Hello, Bot2!
+  Hello, Bot3!
+
+PS [51/77]> & C:\Scripts\sum.ps1 -Numbers (1..1000)
+  Total = 500500
+
+PS [52/77]> & C:\Scripts\sum.ps1 -Numbers ((1..10) | Where-Object { $_ % 2 -eq 0 })
+  Total = 30
+
+
+--- [53] § state probes ---
+PS [53/77]> Get-ChildItem C:\Scripts | Format-Table Name, Length -AutoSize
+  Name            Length         
+  --------------- ---------------
+  files.ps1       281            
+  fn.ps1          279            
+  hello.ps1       90             
+  pipeline.ps1    214            
+  sum.ps1         103            
+  try.ps1         118            
+  users.ps1       188            
+
+PS [54/77]> (Get-ChildItem C:\Scripts).Count
+  7
+
+PS [55/77]> Get-ChildItem C:\Scripts | Sort-Object Name | Select-Object -ExpandProperty Name
+  files.ps1
+  fn.ps1
+  hello.ps1
+  pipeline.ps1
+  sum.ps1
+  try.ps1
+  users.ps1
+
+PS [56/77]> Get-ChildItem C:\Scripts | ForEach-Object { "$($_.Name) -> $($_.Length) bytes" }
+  files.ps1 -> 281 bytes
+  fn.ps1 -> 279 bytes
+  hello.ps1 -> 90 bytes
+  pipeline.ps1 -> 214 bytes
+  sum.ps1 -> 103 bytes
+  try.ps1 -> 118 bytes
+  users.ps1 -> 188 bytes
+
+PS [57/77]> Get-ChildItem C:\BulkOut2 | Measure-Object Length -Sum -Average -Max -Min
+  
+  Count    : 10
+  Sum      : 51
+  Average  : 5.1
+  Minimum  : 5
+  Maximum  : 6
+  Property : Length
+  
+
+PS [58/77]> Get-ChildItem C:\BulkOut2 | ForEach-Object { Get-Content $_.FullName } | Measure-Object
+  
+  Count    : 10
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+
+--- [59] § error paths ---
+PS [59/77]> & C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
+<empty>
+
+PS [60/77]> . C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
+<empty>
+
+PS [61/77]> try { & C:\Scripts\missing.ps1 } catch { "missing-caught: $($_.Exception.Message)" }
+  missing-caught: The term 'c:\scripts\missing.ps1' is not recognized as a cmdlet, function, script file, or operable program.
+
+
+--- [62] § extra invocations ---
+PS [62/77]> & C:\Scripts\hello.ps1
+  Hello, world!
+
+PS [63/77]> & C:\Scripts\hello.ps1 alice
+  Hello, alice!
+
+PS [64/77]> & C:\Scripts\hello.ps1 bob
+  Hello, bob!
+
+PS [65/77]> & C:\Scripts\sum.ps1 -Numbers 10,20
+  Total = 30
+
+PS [66/77]> & C:\Scripts\sum.ps1 -Numbers 1,2,3
+  Total = 6
+
+PS [67/77]> & C:\Scripts\sum.ps1 -Numbers ((1..50) | Where-Object { $_ % 3 -eq 0 })
+  Total = 408
+
+PS [68/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "World"
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+  Hello, World!
+
+PS [69/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Monde" -Lang fr
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+  Bonjour, Monde!
+
+PS [70/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Mundo" -Lang es
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+  Hola, Mundo!
+
+PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Who $_ }
+  Bonjour, Alice!
+  Hola, Bob!
+  Hello, Carol!
+  Hello, a!
+  Hello, b!
+  Hello, c!
+
+PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
+  
+  Count    : 3
+  Sum      : 600
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [73/77]> & { "x","y","z" } | Measure-Object
+  
+  Count    : 3
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+
+--- [74] § cleanup ---
+PS [74/77]> Remove-Item C:\BulkOut -Recurse -Force -ErrorAction SilentlyContinue
+<empty>
+
+PS [75/77]> Remove-Item C:\BulkOut2 -Recurse -Force -ErrorAction SilentlyContinue
+<empty>
+
+PS [76/77]> Remove-Item C:\Scripts -Recurse -Force
+<empty>
+
+PS [77/77]> Test-Path C:\Scripts
+  False
