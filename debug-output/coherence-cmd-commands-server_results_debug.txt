@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-cmd-commands-server
-Generated: 2026-05-16T17:54:16.761Z
+Generated: 2026-05-16T19:08:33.325Z
 host=SRV-CMD-COH (windows-server)
 Total commands: 200
 ============================================================
@@ -80,10 +80,10 @@ PS  [18/200]> date /t
   Sat 05/16/2026
 
 CMD [19/200]> time /t
-  5:54 PM
+  7:08 PM
 
 PS  [20/200]> time /t
-  5:54 PM
+  7:08 PM
 
 
 --- [21] § filesystem builtins ---
@@ -105,18 +105,18 @@ CMD [25/200]> dir C:\
   
    Directory of C:\
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          $Recycle.Bin
-  05/16/2026  05:54 PM    <DIR>          PerfLogs
-  05/16/2026  05:54 PM    <DIR>          Program Files
-  05/16/2026  05:54 PM    <DIR>          Program Files (x86)
-  05/16/2026  05:54 PM    <DIR>          ProgramData
-  05/16/2026  05:54 PM    <DIR>          System Volume Information
-  05/16/2026  05:54 PM    <DIR>          Users
-  05/16/2026  05:54 PM    <DIR>          Windows
-  05/16/2026  05:54 PM              9 numbers.txt
-  05/16/2026  05:54 PM              9 nums.txt
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          $Recycle.Bin
+  05/16/2026  07:08 PM    <DIR>          PerfLogs
+  05/16/2026  07:08 PM    <DIR>          Program Files
+  05/16/2026  07:08 PM    <DIR>          Program Files (x86)
+  05/16/2026  07:08 PM    <DIR>          ProgramData
+  05/16/2026  07:08 PM    <DIR>          System Volume Information
+  05/16/2026  07:08 PM    <DIR>          Users
+  05/16/2026  07:08 PM    <DIR>          Windows
+  05/16/2026  07:08 PM              9 numbers.txt
+  05/16/2026  07:08 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -124,16 +124,16 @@ PS  [26/200]> dir C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 5:54 PM          $Recycle.Bin             
-  d-----  5/16/2026 5:54 PM          PerfLogs                 
-  d-----  5/16/2026 5:54 PM          Program Files            
-  d-----  5/16/2026 5:54 PM          Program Files (x86)      
-  d-----  5/16/2026 5:54 PM          ProgramData              
-  d-----  5/16/2026 5:54 PM          System Volume Information
-  d-----  5/16/2026 5:54 PM          Users                    
-  d-----  5/16/2026 5:54 PM          Windows                  
-  -a----  5/16/2026 5:54 PM       9  numbers.txt              
-  -a----  5/16/2026 5:54 PM       9  nums.txt                 
+  d-----  5/16/2026 7:08 PM          $Recycle.Bin             
+  d-----  5/16/2026 7:08 PM          PerfLogs                 
+  d-----  5/16/2026 7:08 PM          Program Files            
+  d-----  5/16/2026 7:08 PM          Program Files (x86)      
+  d-----  5/16/2026 7:08 PM          ProgramData              
+  d-----  5/16/2026 7:08 PM          System Volume Information
+  d-----  5/16/2026 7:08 PM          Users                    
+  d-----  5/16/2026 7:08 PM          Windows                  
+  -a----  5/16/2026 7:08 PM       9  numbers.txt              
+  -a----  5/16/2026 7:08 PM       9  nums.txt                 
   
 
 CMD [27/200]> dir C:\ /b
@@ -142,18 +142,18 @@ CMD [27/200]> dir C:\ /b
   
    Directory of C:\
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          $Recycle.Bin
-  05/16/2026  05:54 PM    <DIR>          PerfLogs
-  05/16/2026  05:54 PM    <DIR>          Program Files
-  05/16/2026  05:54 PM    <DIR>          Program Files (x86)
-  05/16/2026  05:54 PM    <DIR>          ProgramData
-  05/16/2026  05:54 PM    <DIR>          System Volume Information
-  05/16/2026  05:54 PM    <DIR>          Users
-  05/16/2026  05:54 PM    <DIR>          Windows
-  05/16/2026  05:54 PM              9 numbers.txt
-  05/16/2026  05:54 PM              9 nums.txt
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          $Recycle.Bin
+  05/16/2026  07:08 PM    <DIR>          PerfLogs
+  05/16/2026  07:08 PM    <DIR>          Program Files
+  05/16/2026  07:08 PM    <DIR>          Program Files (x86)
+  05/16/2026  07:08 PM    <DIR>          ProgramData
+  05/16/2026  07:08 PM    <DIR>          System Volume Information
+  05/16/2026  07:08 PM    <DIR>          Users
+  05/16/2026  07:08 PM    <DIR>          Windows
+  05/16/2026  07:08 PM              9 numbers.txt
+  05/16/2026  07:08 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -163,13 +163,13 @@ PS  [28/200]> dir C:\ /b
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   5:54 PM                Program Files
-  d-----                5/16/2026   5:54 PM                Program Files (x86)
-  d-----                5/16/2026   5:54 PM                ProgramData
-  d-----                5/16/2026   5:54 PM                Users
-  d---s-                5/16/2026   5:54 PM                Windows
-  -a----                5/16/2026   5:54 PM              9 numbers.txt
-  -a----                5/16/2026   5:54 PM              9 nums.txt
+  d-----                5/16/2026   7:08 PM                Program Files
+  d-----                5/16/2026   7:08 PM                Program Files (x86)
+  d-----                5/16/2026   7:08 PM                ProgramData
+  d-----                5/16/2026   7:08 PM                Users
+  d---s-                5/16/2026   7:08 PM                Windows
+  -a----                5/16/2026   7:08 PM              9 numbers.txt
+  -a----                5/16/2026   7:08 PM              9 nums.txt
 
 CMD [29/200]> dir C:\ /s /b
    Volume in drive C has no label.
@@ -177,567 +177,567 @@ CMD [29/200]> dir C:\ /s /b
   
    Directory of C:\
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          $Recycle.Bin
-  05/16/2026  05:54 PM    <DIR>          PerfLogs
-  05/16/2026  05:54 PM    <DIR>          Program Files
-  05/16/2026  05:54 PM    <DIR>          Program Files (x86)
-  05/16/2026  05:54 PM    <DIR>          ProgramData
-  05/16/2026  05:54 PM    <DIR>          System Volume Information
-  05/16/2026  05:54 PM    <DIR>          Users
-  05/16/2026  05:54 PM    <DIR>          Windows
-  05/16/2026  05:54 PM              9 numbers.txt
-  05/16/2026  05:54 PM              9 nums.txt
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          $Recycle.Bin
+  05/16/2026  07:08 PM    <DIR>          PerfLogs
+  05/16/2026  07:08 PM    <DIR>          Program Files
+  05/16/2026  07:08 PM    <DIR>          Program Files (x86)
+  05/16/2026  07:08 PM    <DIR>          ProgramData
+  05/16/2026  07:08 PM    <DIR>          System Volume Information
+  05/16/2026  07:08 PM    <DIR>          Users
+  05/16/2026  07:08 PM    <DIR>          Windows
+  05/16/2026  07:08 PM              9 numbers.txt
+  05/16/2026  07:08 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\$Recycle.Bin
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\PerfLogs
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Common Files
-  05/16/2026  05:54 PM    <DIR>          Internet Explorer
-  05/16/2026  05:54 PM    <DIR>          Windows Defender
-  05/16/2026  05:54 PM    <DIR>          Windows NT
-  05/16/2026  05:54 PM            174 desktop.ini
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Common Files
+  05/16/2026  07:08 PM    <DIR>          Internet Explorer
+  05/16/2026  07:08 PM    <DIR>          Windows Defender
+  05/16/2026  07:08 PM    <DIR>          Windows NT
+  05/16/2026  07:08 PM            174 desktop.ini
                  1 File(s) 174 bytes
                  6 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files\Common Files
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files\Internet Explorer
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files\Windows Defender
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files\Windows NT
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files (x86)
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Common Files
-  05/16/2026  05:54 PM    <DIR>          Internet Explorer
-  05/16/2026  05:54 PM            174 desktop.ini
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Common Files
+  05/16/2026  07:08 PM    <DIR>          Internet Explorer
+  05/16/2026  07:08 PM            174 desktop.ini
                  1 File(s) 174 bytes
                  4 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files (x86)\Common Files
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Program Files (x86)\Internet Explorer
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\ProgramData
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          ssh
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          ssh
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\ProgramData\ssh
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM            114 ssh_host_ed25519_key
-  05/16/2026  05:54 PM             56 ssh_host_ed25519_key.pub
-  05/16/2026  05:54 PM            302 sshd_config
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM            114 ssh_host_ed25519_key
+  05/16/2026  07:08 PM             56 ssh_host_ed25519_key.pub
+  05/16/2026  07:08 PM            302 sshd_config
                  3 File(s) 472 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\System Volume Information
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Default
-  05/16/2026  05:54 PM    <DIR>          Public
-  05/16/2026  05:54 PM    <DIR>          User
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Default
+  05/16/2026  07:08 PM    <DIR>          Public
+  05/16/2026  07:08 PM    <DIR>          User
                  0 File(s) 0 bytes
                  5 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\Default
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\Public
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          AppData
-  05/16/2026  05:54 PM    <DIR>          Contacts
-  05/16/2026  05:54 PM    <DIR>          Desktop
-  05/16/2026  05:54 PM    <DIR>          Documents
-  05/16/2026  05:54 PM    <DIR>          Downloads
-  05/16/2026  05:54 PM    <DIR>          Favorites
-  05/16/2026  05:54 PM    <DIR>          Links
-  05/16/2026  05:54 PM    <DIR>          Music
-  05/16/2026  05:54 PM    <DIR>          OneDrive
-  05/16/2026  05:54 PM    <DIR>          Pictures
-  05/16/2026  05:54 PM    <DIR>          Saved Games
-  05/16/2026  05:54 PM    <DIR>          Searches
-  05/16/2026  05:54 PM    <DIR>          Videos
-  05/16/2026  05:54 PM      3,145,728 NTUSER.DAT
-  05/16/2026  05:54 PM        524,288 ntuser.dat.LOG1
-  05/16/2026  05:54 PM             20 ntuser.ini
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          AppData
+  05/16/2026  07:08 PM    <DIR>          Contacts
+  05/16/2026  07:08 PM    <DIR>          Desktop
+  05/16/2026  07:08 PM    <DIR>          Documents
+  05/16/2026  07:08 PM    <DIR>          Downloads
+  05/16/2026  07:08 PM    <DIR>          Favorites
+  05/16/2026  07:08 PM    <DIR>          Links
+  05/16/2026  07:08 PM    <DIR>          Music
+  05/16/2026  07:08 PM    <DIR>          OneDrive
+  05/16/2026  07:08 PM    <DIR>          Pictures
+  05/16/2026  07:08 PM    <DIR>          Saved Games
+  05/16/2026  07:08 PM    <DIR>          Searches
+  05/16/2026  07:08 PM    <DIR>          Videos
+  05/16/2026  07:08 PM      3,145,728 NTUSER.DAT
+  05/16/2026  07:08 PM        524,288 ntuser.dat.LOG1
+  05/16/2026  07:08 PM             20 ntuser.ini
                  3 File(s) 3,670,036 bytes
                  15 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\AppData
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Local
-  05/16/2026  05:54 PM    <DIR>          Roaming
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Local
+  05/16/2026  07:08 PM    <DIR>          Roaming
                  0 File(s) 0 bytes
                  4 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\AppData\Local
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Microsoft
-  05/16/2026  05:54 PM    <DIR>          Temp
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Microsoft
+  05/16/2026  07:08 PM    <DIR>          Temp
                  0 File(s) 0 bytes
                  4 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\AppData\Local\Microsoft
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\AppData\Local\Temp
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\AppData\Roaming
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Microsoft
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Microsoft
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\AppData\Roaming\Microsoft
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Contacts
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Desktop
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM            282 desktop.ini
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM            282 desktop.ini
                  1 File(s) 282 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Documents
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM            282 desktop.ini
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM            282 desktop.ini
                  1 File(s) 282 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Downloads
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Favorites
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Links
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Music
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\OneDrive
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Documents
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Documents
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\OneDrive\Documents
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Pictures
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Saved Games
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Searches
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Users\User\Videos
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Boot
-  05/16/2026  05:54 PM    <DIR>          Cursors
-  05/16/2026  05:54 PM    <DIR>          Fonts
-  05/16/2026  05:54 PM    <DIR>          Globalization
-  05/16/2026  05:54 PM    <DIR>          Help
-  05/16/2026  05:54 PM    <DIR>          INF
-  05/16/2026  05:54 PM    <DIR>          Logs
-  05/16/2026  05:54 PM    <DIR>          Microsoft.NET
-  05/16/2026  05:54 PM    <DIR>          Panther
-  05/16/2026  05:54 PM    <DIR>          Prefetch
-  05/16/2026  05:54 PM    <DIR>          System32
-  05/16/2026  05:54 PM    <DIR>          SysWOW64
-  05/16/2026  05:54 PM    <DIR>          Temp
-  05/16/2026  05:54 PM    <DIR>          WinSxS
-  05/16/2026  05:54 PM      4,883,944 explorer.exe
-  05/16/2026  05:54 PM        201,216 notepad.exe
-  05/16/2026  05:54 PM        360,448 regedit.exe
-  05/16/2026  05:54 PM             92 win.ini
-  05/16/2026  05:54 PM         10,752 write.exe
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Boot
+  05/16/2026  07:08 PM    <DIR>          Cursors
+  05/16/2026  07:08 PM    <DIR>          Fonts
+  05/16/2026  07:08 PM    <DIR>          Globalization
+  05/16/2026  07:08 PM    <DIR>          Help
+  05/16/2026  07:08 PM    <DIR>          INF
+  05/16/2026  07:08 PM    <DIR>          Logs
+  05/16/2026  07:08 PM    <DIR>          Microsoft.NET
+  05/16/2026  07:08 PM    <DIR>          Panther
+  05/16/2026  07:08 PM    <DIR>          Prefetch
+  05/16/2026  07:08 PM    <DIR>          System32
+  05/16/2026  07:08 PM    <DIR>          SysWOW64
+  05/16/2026  07:08 PM    <DIR>          Temp
+  05/16/2026  07:08 PM    <DIR>          WinSxS
+  05/16/2026  07:08 PM      4,883,944 explorer.exe
+  05/16/2026  07:08 PM        201,216 notepad.exe
+  05/16/2026  07:08 PM        360,448 regedit.exe
+  05/16/2026  07:08 PM             92 win.ini
+  05/16/2026  07:08 PM         10,752 write.exe
                  5 File(s) 5,456,452 bytes
                  16 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Boot
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Cursors
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Fonts
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Globalization
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Help
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\INF
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Logs
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Microsoft.NET
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          Framework64
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          Framework64
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Microsoft.NET\Framework64
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Panther
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Prefetch
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          config
-  05/16/2026  05:54 PM    <DIR>          drivers
-  05/16/2026  05:54 PM    <DIR>          oobe
-  05/16/2026  05:54 PM    <DIR>          Tasks
-  05/16/2026  05:54 PM    <DIR>          wbem
-  05/16/2026  05:54 PM    <DIR>          WindowsPowerShell
-  05/16/2026  05:54 PM        696,320 advapi32.dll
-  05/16/2026  05:54 PM         15,872 attrib.exe
-  05/16/2026  05:54 PM         26,112 calc.exe
-  05/16/2026  05:54 PM        289,792 cmd.exe
-  05/16/2026  05:54 PM        862,208 conhost.exe
-  05/16/2026  05:54 PM          6,144 csrss.exe
-  05/16/2026  05:54 PM         20,480 ctfmon.exe
-  05/16/2026  05:54 PM        280,064 dism.exe
-  05/16/2026  05:54 PM         92,672 dwm.exe
-  05/16/2026  05:54 PM      4,883,944 explorer.exe
-  05/16/2026  05:54 PM         32,256 findstr.exe
-  05/16/2026  05:54 PM         45,056 fontdrvhost.exe
-  05/16/2026  05:54 PM        483,328 gdi32.dll
-  05/16/2026  05:54 PM         11,264 hostname.exe
-  05/16/2026  05:54 PM         26,624 ipconfig.exe
-  05/16/2026  05:54 PM      1,248,768 kernel32.dll
-  05/16/2026  05:54 PM         58,880 lsass.exe
-  05/16/2026  05:54 PM        147,968 mmc.exe
-  05/16/2026  05:54 PM          6,656 mspaint.exe
-  05/16/2026  05:54 PM        822,272 msvcrt.dll
-  05/16/2026  05:54 PM         62,464 net.exe
-  05/16/2026  05:54 PM        196,608 net1.exe
-  05/16/2026  05:54 PM         96,768 netsh.exe
-  05/16/2026  05:54 PM        201,216 notepad.exe
-  05/16/2026  05:54 PM         80,896 nslookup.exe
-  05/16/2026  05:54 PM      2,027,520 ntdll.dll
-  05/16/2026  05:54 PM      1,503,232 ole32.dll
-  05/16/2026  05:54 PM         22,528 ping.exe
-  05/16/2026  05:54 PM        360,448 regedit.exe
-  05/16/2026  05:54 PM        126,464 RuntimeBroker.exe
-  05/16/2026  05:54 PM         73,728 sc.exe
-  05/16/2026  05:54 PM         72,192 services.exe
-  05/16/2026  05:54 PM         19,456 sfc.exe
-  05/16/2026  05:54 PM     23,224,832 shell32.dll
-  05/16/2026  05:54 PM         28,672 shutdown.exe
-  05/16/2026  05:54 PM         81,920 sihost.exe
-  05/16/2026  05:54 PM        107,008 smss.exe
-  05/16/2026  05:54 PM         69,632 spoolsv.exe
-  05/16/2026  05:54 PM         51,768 svchost.exe
-  05/16/2026  05:54 PM         82,944 taskhostw.exe
-  05/16/2026  05:54 PM         80,384 taskkill.exe
-  05/16/2026  05:54 PM         79,872 tasklist.exe
-  05/16/2026  05:54 PM        368,128 taskmgr.exe
-  05/16/2026  05:54 PM         13,312 tracert.exe
-  05/16/2026  05:54 PM      1,671,168 user32.dll
-  05/16/2026  05:54 PM         22,016 where.exe
-  05/16/2026  05:54 PM         39,936 wininit.exe
-  05/16/2026  05:54 PM        620,544 winlogon.exe
-  05/16/2026  05:54 PM         51,712 xcopy.exe
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          config
+  05/16/2026  07:08 PM    <DIR>          drivers
+  05/16/2026  07:08 PM    <DIR>          oobe
+  05/16/2026  07:08 PM    <DIR>          Tasks
+  05/16/2026  07:08 PM    <DIR>          wbem
+  05/16/2026  07:08 PM    <DIR>          WindowsPowerShell
+  05/16/2026  07:08 PM        696,320 advapi32.dll
+  05/16/2026  07:08 PM         15,872 attrib.exe
+  05/16/2026  07:08 PM         26,112 calc.exe
+  05/16/2026  07:08 PM        289,792 cmd.exe
+  05/16/2026  07:08 PM        862,208 conhost.exe
+  05/16/2026  07:08 PM          6,144 csrss.exe
+  05/16/2026  07:08 PM         20,480 ctfmon.exe
+  05/16/2026  07:08 PM        280,064 dism.exe
+  05/16/2026  07:08 PM         92,672 dwm.exe
+  05/16/2026  07:08 PM      4,883,944 explorer.exe
+  05/16/2026  07:08 PM         32,256 findstr.exe
+  05/16/2026  07:08 PM         45,056 fontdrvhost.exe
+  05/16/2026  07:08 PM        483,328 gdi32.dll
+  05/16/2026  07:08 PM         11,264 hostname.exe
+  05/16/2026  07:08 PM         26,624 ipconfig.exe
+  05/16/2026  07:08 PM      1,248,768 kernel32.dll
+  05/16/2026  07:08 PM         58,880 lsass.exe
+  05/16/2026  07:08 PM        147,968 mmc.exe
+  05/16/2026  07:08 PM          6,656 mspaint.exe
+  05/16/2026  07:08 PM        822,272 msvcrt.dll
+  05/16/2026  07:08 PM         62,464 net.exe
+  05/16/2026  07:08 PM        196,608 net1.exe
+  05/16/2026  07:08 PM         96,768 netsh.exe
+  05/16/2026  07:08 PM        201,216 notepad.exe
+  05/16/2026  07:08 PM         80,896 nslookup.exe
+  05/16/2026  07:08 PM      2,027,520 ntdll.dll
+  05/16/2026  07:08 PM      1,503,232 ole32.dll
+  05/16/2026  07:08 PM         22,528 ping.exe
+  05/16/2026  07:08 PM        360,448 regedit.exe
+  05/16/2026  07:08 PM        126,464 RuntimeBroker.exe
+  05/16/2026  07:08 PM         73,728 sc.exe
+  05/16/2026  07:08 PM         72,192 services.exe
+  05/16/2026  07:08 PM         19,456 sfc.exe
+  05/16/2026  07:08 PM     23,224,832 shell32.dll
+  05/16/2026  07:08 PM         28,672 shutdown.exe
+  05/16/2026  07:08 PM         81,920 sihost.exe
+  05/16/2026  07:08 PM        107,008 smss.exe
+  05/16/2026  07:08 PM         69,632 spoolsv.exe
+  05/16/2026  07:08 PM         51,768 svchost.exe
+  05/16/2026  07:08 PM         82,944 taskhostw.exe
+  05/16/2026  07:08 PM         80,384 taskkill.exe
+  05/16/2026  07:08 PM         79,872 tasklist.exe
+  05/16/2026  07:08 PM        368,128 taskmgr.exe
+  05/16/2026  07:08 PM         13,312 tracert.exe
+  05/16/2026  07:08 PM      1,671,168 user32.dll
+  05/16/2026  07:08 PM         22,016 where.exe
+  05/16/2026  07:08 PM         39,936 wininit.exe
+  05/16/2026  07:08 PM        620,544 winlogon.exe
+  05/16/2026  07:08 PM         51,712 xcopy.exe
                  49 File(s) 41,494,048 bytes
                  8 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\config
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM        262,144 SAM
-  05/16/2026  05:54 PM        262,144 SECURITY
-  05/16/2026  05:54 PM    104,857,600 SOFTWARE
-  05/16/2026  05:54 PM     26,214,400 SYSTEM
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM        262,144 SAM
+  05/16/2026  07:08 PM        262,144 SECURITY
+  05/16/2026  07:08 PM    104,857,600 SOFTWARE
+  05/16/2026  07:08 PM     26,214,400 SYSTEM
                  4 File(s) 131,596,288 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\drivers
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          etc
-  05/16/2026  05:54 PM        562,176 afd.sys
-  05/16/2026  05:54 PM        299,008 netbt.sys
-  05/16/2026  05:54 PM      2,437,120 tcpip.sys
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          etc
+  05/16/2026  07:08 PM        562,176 afd.sys
+  05/16/2026  07:08 PM        299,008 netbt.sys
+  05/16/2026  07:08 PM      2,437,120 tcpip.sys
                  3 File(s) 3,298,304 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\drivers\etc
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM            824 hosts
-  05/16/2026  05:54 PM            407 networks
-  05/16/2026  05:54 PM          1,795 protocol
-  05/16/2026  05:54 PM         17,463 services
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM            824 hosts
+  05/16/2026  07:08 PM            407 networks
+  05/16/2026  07:08 PM          1,795 protocol
+  05/16/2026  07:08 PM         17,463 services
                  4 File(s) 20,489 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\oobe
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\Tasks
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\wbem
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM         47,104 wmic.exe
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM         47,104 wmic.exe
                  1 File(s) 47,104 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\WindowsPowerShell
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          v1.0
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          v1.0
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\System32\WindowsPowerShell\v1.0
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM        452,608 powershell.exe
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM        452,608 powershell.exe
                  1 File(s) 452,608 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\SysWOW64
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\Temp
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\Windows\WinSxS
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
@@ -751,13 +751,13 @@ PS  [30/200]> dir C:\ /s /b
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   5:54 PM                Program Files
-  d-----                5/16/2026   5:54 PM                Program Files (x86)
-  d-----                5/16/2026   5:54 PM                ProgramData
-  d-----                5/16/2026   5:54 PM                Users
-  d---s-                5/16/2026   5:54 PM                Windows
-  -a----                5/16/2026   5:54 PM              9 numbers.txt
-  -a----                5/16/2026   5:54 PM              9 nums.txt
+  d-----                5/16/2026   7:08 PM                Program Files
+  d-----                5/16/2026   7:08 PM                Program Files (x86)
+  d-----                5/16/2026   7:08 PM                ProgramData
+  d-----                5/16/2026   7:08 PM                Users
+  d---s-                5/16/2026   7:08 PM                Windows
+  -a----                5/16/2026   7:08 PM              9 numbers.txt
+  -a----                5/16/2026   7:08 PM              9 nums.txt
 
 CMD [31/200]> dir C:\ /a
    Volume in drive C has no label.
@@ -765,18 +765,18 @@ CMD [31/200]> dir C:\ /a
   
    Directory of C:\
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          $Recycle.Bin
-  05/16/2026  05:54 PM    <DIR>          PerfLogs
-  05/16/2026  05:54 PM    <DIR>          Program Files
-  05/16/2026  05:54 PM    <DIR>          Program Files (x86)
-  05/16/2026  05:54 PM    <DIR>          ProgramData
-  05/16/2026  05:54 PM    <DIR>          System Volume Information
-  05/16/2026  05:54 PM    <DIR>          Users
-  05/16/2026  05:54 PM    <DIR>          Windows
-  05/16/2026  05:54 PM              9 numbers.txt
-  05/16/2026  05:54 PM              9 nums.txt
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          $Recycle.Bin
+  05/16/2026  07:08 PM    <DIR>          PerfLogs
+  05/16/2026  07:08 PM    <DIR>          Program Files
+  05/16/2026  07:08 PM    <DIR>          Program Files (x86)
+  05/16/2026  07:08 PM    <DIR>          ProgramData
+  05/16/2026  07:08 PM    <DIR>          System Volume Information
+  05/16/2026  07:08 PM    <DIR>          Users
+  05/16/2026  07:08 PM    <DIR>          Windows
+  05/16/2026  07:08 PM              9 numbers.txt
+  05/16/2026  07:08 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -786,13 +786,13 @@ PS  [32/200]> dir C:\ /a
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   5:54 PM                Program Files
-  d-----                5/16/2026   5:54 PM                Program Files (x86)
-  d-----                5/16/2026   5:54 PM                ProgramData
-  d-----                5/16/2026   5:54 PM                Users
-  d---s-                5/16/2026   5:54 PM                Windows
-  -a----                5/16/2026   5:54 PM              9 numbers.txt
-  -a----                5/16/2026   5:54 PM              9 nums.txt
+  d-----                5/16/2026   7:08 PM                Program Files
+  d-----                5/16/2026   7:08 PM                Program Files (x86)
+  d-----                5/16/2026   7:08 PM                ProgramData
+  d-----                5/16/2026   7:08 PM                Users
+  d---s-                5/16/2026   7:08 PM                Windows
+  -a----                5/16/2026   7:08 PM              9 numbers.txt
+  -a----                5/16/2026   7:08 PM              9 nums.txt
 
 CMD [33/200]> dir C:\ /o:n
    Volume in drive C has no label.
@@ -800,18 +800,18 @@ CMD [33/200]> dir C:\ /o:n
   
    Directory of C:\
   
-  05/16/2026  05:54 PM    <DIR>          .
-  05/16/2026  05:54 PM    <DIR>          ..
-  05/16/2026  05:54 PM    <DIR>          $Recycle.Bin
-  05/16/2026  05:54 PM    <DIR>          PerfLogs
-  05/16/2026  05:54 PM    <DIR>          Program Files
-  05/16/2026  05:54 PM    <DIR>          Program Files (x86)
-  05/16/2026  05:54 PM    <DIR>          ProgramData
-  05/16/2026  05:54 PM    <DIR>          System Volume Information
-  05/16/2026  05:54 PM    <DIR>          Users
-  05/16/2026  05:54 PM    <DIR>          Windows
-  05/16/2026  05:54 PM              9 numbers.txt
-  05/16/2026  05:54 PM              9 nums.txt
+  05/16/2026  07:08 PM    <DIR>          .
+  05/16/2026  07:08 PM    <DIR>          ..
+  05/16/2026  07:08 PM    <DIR>          $Recycle.Bin
+  05/16/2026  07:08 PM    <DIR>          PerfLogs
+  05/16/2026  07:08 PM    <DIR>          Program Files
+  05/16/2026  07:08 PM    <DIR>          Program Files (x86)
+  05/16/2026  07:08 PM    <DIR>          ProgramData
+  05/16/2026  07:08 PM    <DIR>          System Volume Information
+  05/16/2026  07:08 PM    <DIR>          Users
+  05/16/2026  07:08 PM    <DIR>          Windows
+  05/16/2026  07:08 PM              9 numbers.txt
+  05/16/2026  07:08 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -821,13 +821,13 @@ PS  [34/200]> dir C:\ /o:n
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   5:54 PM                Program Files
-  d-----                5/16/2026   5:54 PM                Program Files (x86)
-  d-----                5/16/2026   5:54 PM                ProgramData
-  d-----                5/16/2026   5:54 PM                Users
-  d---s-                5/16/2026   5:54 PM                Windows
-  -a----                5/16/2026   5:54 PM              9 numbers.txt
-  -a----                5/16/2026   5:54 PM              9 nums.txt
+  d-----                5/16/2026   7:08 PM                Program Files
+  d-----                5/16/2026   7:08 PM                Program Files (x86)
+  d-----                5/16/2026   7:08 PM                ProgramData
+  d-----                5/16/2026   7:08 PM                Users
+  d---s-                5/16/2026   7:08 PM                Windows
+  -a----                5/16/2026   7:08 PM              9 numbers.txt
+  -a----                5/16/2026   7:08 PM              9 nums.txt
 
 CMD [35/200]> dir C:\ *.sys
   File Not Found
@@ -838,13 +838,13 @@ PS  [36/200]> dir C:\ *.sys
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   5:54 PM                Program Files
-  d-----                5/16/2026   5:54 PM                Program Files (x86)
-  d-----                5/16/2026   5:54 PM                ProgramData
-  d-----                5/16/2026   5:54 PM                Users
-  d---s-                5/16/2026   5:54 PM                Windows
-  -a----                5/16/2026   5:54 PM              9 numbers.txt
-  -a----                5/16/2026   5:54 PM              9 nums.txt
+  d-----                5/16/2026   7:08 PM                Program Files
+  d-----                5/16/2026   7:08 PM                Program Files (x86)
+  d-----                5/16/2026   7:08 PM                ProgramData
+  d-----                5/16/2026   7:08 PM                Users
+  d---s-                5/16/2026   7:08 PM                Windows
+  -a----                5/16/2026   7:08 PM              9 numbers.txt
+  -a----                5/16/2026   7:08 PM              9 nums.txt
 
 
 --- [37] § create / inspect ---

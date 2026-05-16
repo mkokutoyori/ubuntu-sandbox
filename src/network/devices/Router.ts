@@ -199,6 +199,8 @@ export abstract class Router extends Equipment {
       getPorts: () => this.ports,
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getCounters: () => this.counters,
+      getBus: () => this.getBus(),
+      getScheduler: () => this.getRouterScheduler(),
     });
     this.ospfIntegration = new RouterOSPFIntegration({
       id: this.id,
