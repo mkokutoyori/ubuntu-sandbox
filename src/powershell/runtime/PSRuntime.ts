@@ -2186,6 +2186,17 @@ export class PSRuntime {
         const parts = String(val).split('.').map(Number);
         return { Major: parts[0]??0, Minor: parts[1]??0, Build: parts[2]??-1, Revision: parts[3]??-1, ToString: () => String(val) } as unknown as PSValue;
       }
+      case 'pscustomobject': case 'psobject':
+      case 'system.management.automation.pscustomobject': {
+        // Tag the object so Get-Member can report its members as
+        // NoteProperty (a plain hashtable reports Property). Non-enumerable
+        // so Object.keys / JSON.stringify / toEqual are unaffected.
+        if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+          Object.defineProperty(val, '__pscustomobject__',
+            { value: true, enumerable: false, configurable: true });
+        }
+        return val;
+      }
       default:        return val;
     }
   }

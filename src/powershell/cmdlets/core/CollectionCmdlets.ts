@@ -733,21 +733,20 @@ export class GetMemberCmdlet implements ICmdlet {
         .map(m => ({ Name: m, MemberType: 'Method', Definition: `${typeof sample} ${m}()` }));
     } else if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) {
       const rec = sample as Record<string, PSValue>;
+      // A [pscustomobject] exposes NoteProperty members; a plain hashtable
+      // exposes Property members (psCast tags the former).
+      const propKind = (rec as Record<string, unknown>).__pscustomobject__
+        ? 'NoteProperty' : 'Property';
       members = Object.keys(rec)
         .filter(k => !k.startsWith('__'))
         .map(k => typeof rec[k] === 'function'
           ? { Name: k, MemberType: 'Method',   Definition: `System.Object ${k}()` }
-          : { Name: k, MemberType: 'Property', Definition: `${typeof rec[k]} ${k}` });
+          : { Name: k, MemberType: propKind,   Definition: `${typeof rec[k]} ${k}` });
     } else {
       members = [];
     }
 
-    // The sim can't distinguish a hashtable from a [pscustomobject], so
-    // members are reported as Property; treat a NoteProperty request as a
-    // match for Property too.
-    const matchType = (mt: string) =>
-      !filter || mt.toLowerCase() === filter ||
-      (filter === 'noteproperty' && mt === 'Property');
+    const matchType = (mt: string) => !filter || mt.toLowerCase() === filter;
 
     return members
       .filter(m => matchType(m.MemberType))

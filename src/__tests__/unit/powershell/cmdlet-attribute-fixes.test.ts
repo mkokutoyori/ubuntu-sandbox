@@ -319,6 +319,16 @@ describe('Group-Object scriptblock key / Get-Member -Name & NoteProperty', () =>
       '@{A=1;B=2} | Get-Member -MemberType Property | Select-Object -ExpandProperty Name');
     expect(out.sort()).toEqual(['A', 'B']);
   });
+  it('pscustomobject members are NoteProperty (Where-Object MemberType)', async () => {
+    const out = await run(shell(),
+      '[pscustomobject]@{ q=1; r=2 } | Get-Member | Where-Object MemberType -EQ NoteProperty | Select-Object -ExpandProperty Name');
+    expect(out.sort()).toEqual(['q', 'r']);
+  });
+  it('hashtable members are NOT NoteProperty', async () => {
+    const out = await run(shell(),
+      '@{ q=1 } | Get-Member | Where-Object MemberType -EQ NoteProperty');
+    expect(out).toEqual([]);
+  });
 });
 
 describe('New-Object -Property / Get-Date components & format tokens', () => {
