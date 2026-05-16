@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-pc
-Generated: 2026-05-16T06:38:47.818Z
+Generated: 2026-05-16T06:44:17.068Z
 host=WIN-USR-COH (windows-pc)
 Total commands: 105
 ============================================================
@@ -179,13 +179,13 @@ CMD [21/105]> net user bob "" /add /fullname:"Bob Builder"
   The command completed successfully.
 
 PS  [22/105]> (Get-LocalUser -Name bob).FullName
-<empty>
+  Bob Builder
 
 CMD [23/105]> net user carol "" /add /comment:"QA tester"
   The command completed successfully.
 
 PS  [24/105]> (Get-LocalUser -Name carol).Description
-<empty>
+  QA tester
 
 
 --- [25] § New-LocalUser (ps) → net user (cmd) ---
@@ -326,25 +326,26 @@ PS  [40/105]> Set-LocalUser -Name bob -FullName "Robert PS-Set"
 <empty>
 
 CMD [41/105]> net user bob | findstr /i "Full Name"
-<empty>
+  Full Name                    Robert PS-Set
 
 PS  [42/105]> Set-LocalUser -Name bob -Description "Set from PS"
 <empty>
 
 CMD [43/105]> net user bob | findstr /i Comment
-<empty>
+  Comment                      Set from PS
+  User's comment
 
 PS  [44/105]> Disable-LocalUser -Name carol -ErrorAction SilentlyContinue
 <empty>
 
 CMD [45/105]> net user carol | findstr /i "Account active"
-<empty>
+  Account active               No
 
 PS  [46/105]> Enable-LocalUser -Name carol -ErrorAction SilentlyContinue
 <empty>
 
 CMD [47/105]> net user carol | findstr /i "Account active"
-<empty>
+  Account active               Yes
 
 
 --- [48] § create groups ---
@@ -561,7 +562,7 @@ PS  [85/105]> Get-LocalUser | Sort-Object Name
   Administrator   True     Built-in account for administering the computer/domain  
   alice           True     lead dev                                                
   bob             True     Set from PS                                             
-  carol           True                                                             
+  carol           True     QA tester                                               
   DefaultAccount  False    A user account managed by the system.                   
   erin            True     From PS                                                 
   Guest           False    Built-in account for guest access to the computer/domain
@@ -610,494 +611,25 @@ PS  [89/105]> (Get-LocalGroup).Count
 --- [90] § discovery ---
 PS  [90/105]> Get-Command -Noun LocalUser -ErrorAction SilentlyContinue | Select-Object Name
   
-  Name                      
-  --------------------------
-  ?                         
-  %                         
-  ac                        
-  Add-Content               
-  Add-LocalGroupMember      
-  Add-VpnConnection         
-  Arp                       
-  cat                       
-  cd                        
-  Chcp                      
-  chdir                     
-  clear                     
-  Clear-DnsClientCache      
-  Clear-EventLog            
-  Clear-Host                
-  Clear-Variable            
-  cls                       
-  clv                       
-  compare                   
-  Compare-Object            
-  Convertfrom-Csv           
-  Convertfrom-Json          
-  Convertto-Csv             
-  Convertto-Json            
-  ConvertTo-SecureString    
-  copy                      
-  Copy-Item                 
-  cp                        
-  cpi                       
-  del                       
-  diff                      
-  dir                       
-  Disable-LocalUser         
-  Disable-NetAdapter        
-  Disable-NetFirewallRule   
-  echo                      
-  Enable-LocalUser          
-  Enable-NetAdapter         
-  Enable-NetFirewallRule    
-  erase                     
-  fl                        
-  foreach                   
-  Foreach-Object            
-  Format-Custom             
-  Format-List               
-  Format-Table              
-  Format-Wide               
-  ft                        
-  fw                        
-  gal                       
-  gc                        
-  gci                       
-  gcm                       
-  Get-Acl                   
-  Get-Alias                 
-  Get-ChildItem             
-  Get-CimInstance           
-  Get-Command               
-  Get-Content               
-  Get-Date                  
-  Get-Disk                  
-  Get-DnsClientServerAddress
-  Get-EventLog              
-  Get-Help                  
-  Get-Item                  
-  Get-ItemProperty          
-  Get-LocalGroup            
-  Get-LocalGroupMember      
-  Get-LocalUser             
-  Get-Location              
-  Get-Member                
-  Get-Module                
-  Get-NetAdapter            
-  Get-NetConnectionProfile  
-  Get-NetFirewallRule       
-  Get-NetIPAddress          
-  Get-NetIPConfiguration    
-  Get-NetRoute              
-  Get-NetTCPConnection      
-  Get-Process               
-  Get-PSDrive               
-  Get-PSProvider            
-  Get-Random                
-  Get-ScheduledTask         
-  Get-Service               
-  Get-Unique                
-  Get-Variable              
-  Get-Volume                
-  Get-VpnConnection         
-  Get-WinEvent              
-  Getmac                    
-  gi                        
-  gl                        
-  gm                        
-  gp                        
-  gps                       
-  group                     
-  Group-Object              
-  gsv                       
-  gu                        
-  gv                        
-  help                      
-  Hostname                  
-  icm                       
-  iex                       
-  Import-Module             
-  Invoke-Command            
-  Invoke-Expression         
-  Ipconfig                  
-  ipmo                      
-  Join-Path                 
-  kill                      
-  Limit-EventLog            
-  ls                        
-  md                        
-  measure                   
-  Measure-Object            
-  mi                        
-  Mkdir                     
-  move                      
-  Move-Item                 
-  mv                        
-  Net                       
-  Netsh                     
-  New-EventLog              
-  New-Item                  
-  New-LocalGroup            
-  New-LocalUser             
-  New-NetFirewallRule       
-  New-NetIPAddress          
-  New-NetRoute              
-  New-Object                
-  New-PSDrive               
-  New-ScheduledTaskAction   
-  New-ScheduledTaskTrigger  
-  New-Service               
-  New-TimeSpan              
-  New-Variable              
-  ni                        
-  Nslookup                  
-  nv                        
-  Out-File                  
-  Out-Host                  
-  Out-Null                  
-  Out-Printer               
-  Out-String                
-  ps                        
-  pwd                       
-  rd                        
-  Receive-Job               
-  Register-ScheduledTask    
-  Remove-Item               
-  Remove-ItemProperty       
-  Remove-LocalGroup         
-  Remove-LocalGroupMember   
-  Remove-LocalUser          
-  Remove-NetFirewallRule    
-  Remove-NetIPAddress       
-  Remove-NetRoute           
-  Remove-Service            
-  Remove-Variable           
-  Remove-VpnConnection      
-  ren                       
-  Rename-Item               
-  Rename-LocalGroup         
-  Rename-LocalUser          
-  Rename-NetAdapter         
-  Resolve-DnsName           
-  Resolve-Path              
-  Restart-NetAdapter        
-  Restart-Service           
-  Resume-Service            
-  ri                        
-  rm                        
-  rmdir                     
-  rni                       
-  Route                     
-  rp                        
-  rv                        
-  saps                      
-  sasv                      
-  sc                        
-  select                    
-  Select-Object             
-  Select-String             
-  Set-Acl                   
-  Set-Content               
-  Set-Date                  
-  Set-DnsClientServerAddress
-  Set-Item                  
-  Set-ItemProperty          
-  Set-LocalUser             
-  Set-Location              
-  Set-NetConnectionProfile  
-  Set-NetFirewallRule       
-  Set-NetIPAddress          
-  Set-NetRoute              
-  Set-Service               
-  Set-Variable              
-  Set-VpnConnection         
-  sl                        
-  sleep                     
-  sls                       
-  sort                      
-  Sort-Object               
-  sp                        
-  Split-Path                
-  spps                      
-  spsv                      
-  Start-Job                 
-  Start-Process             
-  Start-Service             
-  Start-Sleep               
-  Stop-Process              
-  Stop-Service              
-  Suspend-Service           
-  sv                        
-  Systeminfo                
-  tee                       
-  Tee-Object                
-  Test-Connection           
-  Test-Netconnection        
-  Test-Path                 
-  type                      
-  Unregister-ScheduledTask  
-  Ver                       
-  Vol                       
-  Wait-Job                  
-  where                     
-  Where-Object              
-  Whoami                    
-  Write-Debug               
-  Write-Error               
-  Write-EventLog            
-  Write-Host                
-  Write-Information         
-  Write-Output              
-  Write-Progress            
-  Write-Verbose             
-  Write-Warning             
+  Name             
+  -----------------
+  Disable-LocalUser
+  Enable-LocalUser 
+  Get-LocalUser    
+  New-LocalUser    
+  Remove-LocalUser 
+  Rename-LocalUser 
+  Set-LocalUser    
   
 
 PS  [91/105]> Get-Command -Noun LocalGroup -ErrorAction SilentlyContinue | Select-Object Name
   
-  Name                      
-  --------------------------
-  ?                         
-  %                         
-  ac                        
-  Add-Content               
-  Add-LocalGroupMember      
-  Add-VpnConnection         
-  Arp                       
-  cat                       
-  cd                        
-  Chcp                      
-  chdir                     
-  clear                     
-  Clear-DnsClientCache      
-  Clear-EventLog            
-  Clear-Host                
-  Clear-Variable            
-  cls                       
-  clv                       
-  compare                   
-  Compare-Object            
-  Convertfrom-Csv           
-  Convertfrom-Json          
-  Convertto-Csv             
-  Convertto-Json            
-  ConvertTo-SecureString    
-  copy                      
-  Copy-Item                 
-  cp                        
-  cpi                       
-  del                       
-  diff                      
-  dir                       
-  Disable-LocalUser         
-  Disable-NetAdapter        
-  Disable-NetFirewallRule   
-  echo                      
-  Enable-LocalUser          
-  Enable-NetAdapter         
-  Enable-NetFirewallRule    
-  erase                     
-  fl                        
-  foreach                   
-  Foreach-Object            
-  Format-Custom             
-  Format-List               
-  Format-Table              
-  Format-Wide               
-  ft                        
-  fw                        
-  gal                       
-  gc                        
-  gci                       
-  gcm                       
-  Get-Acl                   
-  Get-Alias                 
-  Get-ChildItem             
-  Get-CimInstance           
-  Get-Command               
-  Get-Content               
-  Get-Date                  
-  Get-Disk                  
-  Get-DnsClientServerAddress
-  Get-EventLog              
-  Get-Help                  
-  Get-Item                  
-  Get-ItemProperty          
-  Get-LocalGroup            
-  Get-LocalGroupMember      
-  Get-LocalUser             
-  Get-Location              
-  Get-Member                
-  Get-Module                
-  Get-NetAdapter            
-  Get-NetConnectionProfile  
-  Get-NetFirewallRule       
-  Get-NetIPAddress          
-  Get-NetIPConfiguration    
-  Get-NetRoute              
-  Get-NetTCPConnection      
-  Get-Process               
-  Get-PSDrive               
-  Get-PSProvider            
-  Get-Random                
-  Get-ScheduledTask         
-  Get-Service               
-  Get-Unique                
-  Get-Variable              
-  Get-Volume                
-  Get-VpnConnection         
-  Get-WinEvent              
-  Getmac                    
-  gi                        
-  gl                        
-  gm                        
-  gp                        
-  gps                       
-  group                     
-  Group-Object              
-  gsv                       
-  gu                        
-  gv                        
-  help                      
-  Hostname                  
-  icm                       
-  iex                       
-  Import-Module             
-  Invoke-Command            
-  Invoke-Expression         
-  Ipconfig                  
-  ipmo                      
-  Join-Path                 
-  kill                      
-  Limit-EventLog            
-  ls                        
-  md                        
-  measure                   
-  Measure-Object            
-  mi                        
-  Mkdir                     
-  move                      
-  Move-Item                 
-  mv                        
-  Net                       
-  Netsh                     
-  New-EventLog              
-  New-Item                  
-  New-LocalGroup            
-  New-LocalUser             
-  New-NetFirewallRule       
-  New-NetIPAddress          
-  New-NetRoute              
-  New-Object                
-  New-PSDrive               
-  New-ScheduledTaskAction   
-  New-ScheduledTaskTrigger  
-  New-Service               
-  New-TimeSpan              
-  New-Variable              
-  ni                        
-  Nslookup                  
-  nv                        
-  Out-File                  
-  Out-Host                  
-  Out-Null                  
-  Out-Printer               
-  Out-String                
-  ps                        
-  pwd                       
-  rd                        
-  Receive-Job               
-  Register-ScheduledTask    
-  Remove-Item               
-  Remove-ItemProperty       
-  Remove-LocalGroup         
-  Remove-LocalGroupMember   
-  Remove-LocalUser          
-  Remove-NetFirewallRule    
-  Remove-NetIPAddress       
-  Remove-NetRoute           
-  Remove-Service            
-  Remove-Variable           
-  Remove-VpnConnection      
-  ren                       
-  Rename-Item               
-  Rename-LocalGroup         
-  Rename-LocalUser          
-  Rename-NetAdapter         
-  Resolve-DnsName           
-  Resolve-Path              
-  Restart-NetAdapter        
-  Restart-Service           
-  Resume-Service            
-  ri                        
-  rm                        
-  rmdir                     
-  rni                       
-  Route                     
-  rp                        
-  rv                        
-  saps                      
-  sasv                      
-  sc                        
-  select                    
-  Select-Object             
-  Select-String             
-  Set-Acl                   
-  Set-Content               
-  Set-Date                  
-  Set-DnsClientServerAddress
-  Set-Item                  
-  Set-ItemProperty          
-  Set-LocalUser             
-  Set-Location              
-  Set-NetConnectionProfile  
-  Set-NetFirewallRule       
-  Set-NetIPAddress          
-  Set-NetRoute              
-  Set-Service               
-  Set-Variable              
-  Set-VpnConnection         
-  sl                        
-  sleep                     
-  sls                       
-  sort                      
-  Sort-Object               
-  sp                        
-  Split-Path                
-  spps                      
-  spsv                      
-  Start-Job                 
-  Start-Process             
-  Start-Service             
-  Start-Sleep               
-  Stop-Process              
-  Stop-Service              
-  Suspend-Service           
-  sv                        
-  Systeminfo                
-  tee                       
-  Tee-Object                
-  Test-Connection           
-  Test-Netconnection        
-  Test-Path                 
-  type                      
-  Unregister-ScheduledTask  
-  Ver                       
-  Vol                       
-  Wait-Job                  
-  where                     
-  Where-Object              
-  Whoami                    
-  Write-Debug               
-  Write-Error               
-  Write-EventLog            
-  Write-Host                
-  Write-Information         
-  Write-Output              
-  Write-Progress            
-  Write-Verbose             
-  Write-Warning             
+  Name             
+  -----------------
+  Get-LocalGroup   
+  New-LocalGroup   
+  Remove-LocalGroup
+  Rename-LocalGroup
   
 
 PS  [92/105]> gcm New-LocalUser

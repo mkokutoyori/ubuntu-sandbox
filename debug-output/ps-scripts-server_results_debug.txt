@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server
-Generated: 2026-05-16T06:38:46.542Z
+Generated: 2026-05-16T06:44:15.760Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 77
@@ -32,7 +32,6 @@ PS [5/77]> Test-Path C:\Scripts\hello.ps1
 PS [6/77]> Get-Content C:\Scripts\hello.ps1
   $name = if ($args.Count -gt 0) { $args[0] } else { "world" }
   Write-Output "Hello, $name!"
-  
 
 PS [7/77]> . C:\Scripts\hello.ps1
   Hello, world!
@@ -53,7 +52,6 @@ PS [11/77]> Get-Content C:\Scripts\sum.ps1
   $total = 0
   foreach ($n in $Numbers) { $total += $n }
   "Total = $total"
-  
 
 PS [12/77]> & C:\Scripts\sum.ps1
   Total = 55
@@ -76,7 +74,6 @@ PS [16/77]> Get-Content C:\Scripts\users.ps1
     New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
     Write-Output "created $u"
   }
-  
 
 PS [17/77]> & C:\Scripts\users.ps1 -Prefix dbg
   created dbg-user1
@@ -121,7 +118,6 @@ PS [23/77]> Get-Content C:\Scripts\files.ps1
     Set-Content -Path (Join-Path $Dir "item$_.txt") -Value "row $_"
   }
   Get-ChildItem $Dir | Measure-Object | Select-Object -ExpandProperty Count
-  
 
 PS [24/77]> & C:\Scripts\files.ps1
   5
@@ -130,11 +126,11 @@ PS [25/77]> Get-ChildItem C:\BulkOut
   
   Mode    LastWriteTime      Length  Name     
   ------  -----------------  ------  ---------
-  -a----  5/16/2026 6:38 AM       5  item1.txt
-  -a----  5/16/2026 6:38 AM       5  item2.txt
-  -a----  5/16/2026 6:38 AM       5  item3.txt
-  -a----  5/16/2026 6:38 AM       5  item4.txt
-  -a----  5/16/2026 6:38 AM       5  item5.txt
+  -a----  5/16/2026 6:44 AM       5  item1.txt
+  -a----  5/16/2026 6:44 AM       5  item2.txt
+  -a----  5/16/2026 6:44 AM       5  item3.txt
+  -a----  5/16/2026 6:44 AM       5  item4.txt
+  -a----  5/16/2026 6:44 AM       5  item5.txt
   
 
 PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
@@ -154,16 +150,16 @@ PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
   
   Mode    LastWriteTime      Length  Name      
   ------  -----------------  ------  ----------
-  -a----  5/16/2026 6:38 AM       5  item1.txt 
-  -a----  5/16/2026 6:38 AM       6  item10.txt
-  -a----  5/16/2026 6:38 AM       5  item2.txt 
-  -a----  5/16/2026 6:38 AM       5  item3.txt 
-  -a----  5/16/2026 6:38 AM       5  item4.txt 
-  -a----  5/16/2026 6:38 AM       5  item5.txt 
-  -a----  5/16/2026 6:38 AM       5  item6.txt 
-  -a----  5/16/2026 6:38 AM       5  item7.txt 
-  -a----  5/16/2026 6:38 AM       5  item8.txt 
-  -a----  5/16/2026 6:38 AM       5  item9.txt 
+  -a----  5/16/2026 6:44 AM       5  item1.txt 
+  -a----  5/16/2026 6:44 AM       6  item10.txt
+  -a----  5/16/2026 6:44 AM       5  item2.txt 
+  -a----  5/16/2026 6:44 AM       5  item3.txt 
+  -a----  5/16/2026 6:44 AM       5  item4.txt 
+  -a----  5/16/2026 6:44 AM       5  item5.txt 
+  -a----  5/16/2026 6:44 AM       5  item6.txt 
+  -a----  5/16/2026 6:44 AM       5  item7.txt 
+  -a----  5/16/2026 6:44 AM       5  item8.txt 
+  -a----  5/16/2026 6:44 AM       5  item9.txt 
   
 
 PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
@@ -186,9 +182,10 @@ PS [31/77]> Get-Content C:\Scripts\fn.ps1
   Get-Greeting -Who Alice -Lang fr
   Get-Greeting -Who Bob -Lang es
   Get-Greeting -Who Carol
-  
 
 PS [32/77]> . C:\Scripts\fn.ps1
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
 
 PS [33/77]> Get-Greeting -Who "Eve"
@@ -211,7 +208,6 @@ PS [37/77]> Get-Content C:\Scripts\pipeline.ps1
     Where-Object { -not $_.PSIsContainer } |
     Sort-Object Length -Descending |
     Select-Object -First 3 -Property Name, Length
-  
 
 PS [38/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut2
   
@@ -244,7 +240,6 @@ PS [41/77]> Get-Content C:\Scripts\try.ps1
   } finally {
     "done"
   }
-  
 
 PS [42/77]> & C:\Scripts\try.ps1
   ERROR: Cannot find path 'C:\ghost-file' because it does not exist.
@@ -252,7 +247,8 @@ PS [42/77]> & C:\Scripts\try.ps1
 
 --- [43] § inline scriptblocks ---
 PS [43/77]> & { Write-Output "inline-1"; Write-Output "inline-2" }
-  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Write-Output; position=offset=4; line=1; column=5; parameters=; arguments=type=LiteralExpression; value=inline-1; raw=inline-1; kind=expandable; position=offset=17; line=1; column=18; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5 type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Write-Output; position=offset=29; line=1; column=30; parameters=; arguments=type=LiteralExpression; value=inline-2; raw=inline-2; kind=expandable; position=offset=42; line=1; column=43; position=offset=29; line=1; column=30; position=offset=29; line=1; column=30; redirections=; position=offset=29; line=1; column=30; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
+  inline-1
+  inline-2
 
 PS [44/77]> & { param($n) 1..$n } 5
   1
@@ -268,20 +264,34 @@ PS [46/77]> $sb2 = { param($a,$b) $a + $b }; & $sb2 10 20
   30
 
 PS [47/77]> & { Get-Process | Select-Object -First 2 Name }
-  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Process; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=18; line=1; column=19; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=39; line=1; column=40; position=offset=32; line=1; column=33; arguments=type=LiteralExpression; value=Name; raw=Name; kind=string; position=offset=41; line=1; column=42; position=offset=18; line=1; column=19; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
+  
+  Name               
+  -------------------
+  System Idle Process
+  System             
+  
 
 PS [48/77]> & { Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 2 Name, Status }
-  type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=CommandExpression; name=Get-Service; position=offset=4; line=1; column=5; parameters=; arguments=; position=offset=4; line=1; column=5 type=Command; name=type=CommandExpression; name=Where-Object; position=offset=18; line=1; column=19; parameters=; arguments=type=ScriptBlock; paramBlock=; beginBlock=; processBlock=; endBlock=; body=type=StatementList; statements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=BinaryExpression; operator=-eq; left=type=MemberExpression; object=type=VariableExpression; name=_; scope=; varName=_; position=offset=33; line=1; column=34; member=Status; computed=False; position=offset=35; line=1; column=36; right=type=LiteralExpression; value=Running; raw=Running; kind=expandable; position=offset=47; line=1; column=48; position=offset=35; line=1; column=36; parameters=; arguments=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; redirections=; position=offset=33; line=1; column=34; position=offset=33; line=1; column=34; position=offset=31; line=1; column=32; position=offset=18; line=1; column=19 type=Command; name=type=CommandExpression; name=Select-Object; position=offset=61; line=1; column=62; parameters=type=CommandParameter; name=first; value=type=LiteralExpression; value=2; raw=2; kind=number; position=offset=82; line=1; column=83; position=offset=75; line=1; column=76; arguments=type=ArrayExpression; elements=type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=LiteralExpression; value=Name; raw=Name; kind=string; position=offset=84; line=1; column=85; parameters=; arguments=; position=offset=84; line=1; column=85; position=offset=84; line=1; column=85; redirections=; position=offset=84; line=1; column=85 type=PipelineStatement; pipeline=type=Pipeline; commands=type=Command; name=type=LiteralExpression; value=Status; raw=Status; kind=string; position=offset=90; line=1; column=91; parameters=; arguments=; position=offset=90; line=1; column=91; position=offset=90; line=1; column=91; redirections=; position=offset=90; line=1; column=91; position=offset=84; line=1; column=85; position=offset=61; line=1; column=62; position=offset=4; line=1; column=5; redirections=; position=offset=4; line=1; column=5; position=offset=4; line=1; column=5; position=offset=2; line=1; column=3
+  
+  Name   Status 
+  -----  -------
+  Tcpip  Running
+  Afd    Running
+  
 
 
 --- [49] § multi-script composition ---
 PS [49/77]> . C:\Scripts\fn.ps1; "Alpha","Beta","Gamma" | ForEach-Object { Get-Greeting -Who $_ -Lang fr }
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
   Bonjour, Alpha!
   Bonjour, Beta!
   Bonjour, Gamma!
 
 PS [50/77]> . C:\Scripts\fn.ps1; 1..3 | ForEach-Object { Get-Greeting -Who "Bot$_" }
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
   Hello, Bot1!
   Hello, Bot2!
@@ -356,7 +366,7 @@ PS [60/77]> . C:\Scripts\does-not-exist.ps1 -ErrorAction SilentlyContinue
 <empty>
 
 PS [61/77]> try { & C:\Scripts\missing.ps1 } catch { "missing-caught: $($_.Exception.Message)" }
-  missing-caught: 
+  missing-caught: The term 'c:\scripts\missing.ps1' is not recognized as a cmdlet, function, script file, or operable program.
 
 
 --- [62] § extra invocations ---
@@ -379,18 +389,26 @@ PS [67/77]> & C:\Scripts\sum.ps1 -Numbers ((1..50) | Where-Object { $_ % 3 -eq 0
   Total = 408
 
 PS [68/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "World"
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
   Hello, World!
 
 PS [69/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Monde" -Lang fr
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
   Bonjour, Monde!
 
 PS [70/77]> . C:\Scripts\fn.ps1; Get-Greeting -Who "Mundo" -Lang es
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
   Hola, Mundo!
 
 PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Who $_ }
+  Bonjour, Alice!
+  Hola, Bob!
   Hello, Carol!
   Hello, a!
   Hello, b!
@@ -398,8 +416,8 @@ PS [71/77]> . C:\Scripts\fn.ps1; "a","b","c" | ForEach-Object { Get-Greeting -Wh
 
 PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
   
-  Count    : 1
-  Sum      : 0
+  Count    : 3
+  Sum      : 600
   Average  : 
   Minimum  : 
   Maximum  : 
@@ -408,7 +426,7 @@ PS [72/77]> & { 100, 200, 300 } | Measure-Object -Sum
 
 PS [73/77]> & { "x","y","z" } | Measure-Object
   
-  Count    : 1
+  Count    : 3
   Sum      : 
   Average  : 
   Minimum  : 
