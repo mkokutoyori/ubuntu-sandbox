@@ -45,6 +45,12 @@ export class NewObjectCmdlet implements ICmdlet {
       const user = psValueToString(Array.isArray(args) ? args[0] : args ?? '');
       return { UserName: user, Password: null } as Record<string, PSValue>;
     }
+    // psobject / pscustomobject (and the generic fallback) honour -Property,
+    // which seeds the new object's NoteProperties from a hashtable.
+    const prop = ctx.named['property'];
+    if (prop !== null && typeof prop === 'object' && !Array.isArray(prop)) {
+      return { ...(prop as Record<string, PSValue>) };
+    }
     return {} as Record<string, PSValue>;
   }
 }

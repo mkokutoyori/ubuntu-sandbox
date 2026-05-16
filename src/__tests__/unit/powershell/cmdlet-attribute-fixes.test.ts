@@ -216,6 +216,34 @@ describe('Set-Content — array / pipeline input is one value per line', () => {
   });
 });
 
+describe('New-Object -Property / Get-Date components & format tokens', () => {
+  it('New-Object psobject -Property seeds NoteProperties', async () => {
+    expect(await j(shell(),
+      'New-Object psobject -Property @{ a=1 } | ConvertTo-Json -Compress')).toBe('{"a":1}');
+  });
+  it('New-Object psobject -Property is usable downstream', async () => {
+    expect(await run(shell(),
+      '(New-Object psobject -Property @{ X=10; Y=20 }).X'))
+      .toEqual(['10']);
+  });
+  it('Get-Date -Year -Month -Day builds the requested date', async () => {
+    expect(await run(shell(), '(Get-Date -Year 2020 -Month 6 -Day 15).Month'))
+      .toEqual(['6']);
+  });
+  it('Get-Date -Format "dddd" yields the weekday name', async () => {
+    const out = (await run(shell(), 'Get-Date -Date "2024-01-15" -Format "dddd"'))[0];
+    expect(out).toBe('Monday');
+  });
+  it('Get-Date -Format "MMMM dd, yyyy" mixes name + numeric tokens', async () => {
+    expect(await run(shell(), 'Get-Date -Date "2024-01-15" -Format "MMMM dd, yyyy"'))
+      .toEqual(['January 15, 2024']);
+  });
+  it('Get-Date -Format "yyyy-MM-dd" still works (no token bleed)', async () => {
+    expect(await run(shell(), 'Get-Date -Date "2024-03-09" -Format "yyyy-MM-dd"'))
+      .toEqual(['2024-03-09']);
+  });
+});
+
 describe('Filesystem cmdlets — recurse copy / pipeline remove / -Force / Extension', () => {
   it('New-Item -Force creates missing parent directories', async () => {
     const s = shell();
