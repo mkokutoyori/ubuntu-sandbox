@@ -996,12 +996,15 @@ function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
   // round-trip (`add address "Ethernet" <ip> <mask>` then
   // `delete address "Ethernet" <ip>`) is coherent.
   const IP4 = '\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}';
+  // Interface names can contain spaces ("Ethernet 0") and the shell may
+  // have stripped quotes, so the name capture is a lazy `.+?`. The IP is
+  // accepted positionally OR as addr=/address= (mirrors `add address`).
   const match =
        joined.match(new RegExp(`address\\s+"([^"]+)"\\s+(?:addr=|address=)?(${IP4})`, 'i'))
-    || joined.match(new RegExp(`address\\s+(?:name=)?(\\S+)\\s+(?:addr=|address=)?(${IP4})`, 'i'))
+    || joined.match(new RegExp(`address\\s+(?:name=)?(.+?)\\s+(?:addr=|address=)?(${IP4})`, 'i'))
     // No IP given → delete every address on the interface.
     || joined.match(/address\s+"([^"]+)"\s*$/i)
-    || joined.match(/address\s+(?:name=)?(\S+)\s*$/i);
+    || joined.match(/address\s+(?:name=)?(.+?)\s*$/i);
 
   if (!match) {
     return 'Usage: netsh interface ip delete address "name" [addr=]<ip>';
