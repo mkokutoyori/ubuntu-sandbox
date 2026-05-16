@@ -124,3 +124,28 @@ describe('netsh add/delete address round-trips coherently with PS', () => {
       .not.toContain('192.168.50.10');
   });
 });
+
+describe('`ver` reports the same OS version in cmd and PowerShell', () => {
+  it('cmd ver === PS ver (and matches systeminfo build 22631)', async () => {
+    const d = pc();
+    const cmdVer = (await d.executeCmdCommand('ver')).trim();
+    const psVer = (await run(ps(d), 'ver')).trim();
+    expect(cmdVer).toContain('10.0.22631.6649');
+    expect(psVer).toContain('10.0.22631.6649');
+    expect(psVer.replace(/\s+/g, ' ')).toBe(cmdVer.replace(/\s+/g, ' '));
+    expect(await d.executeCmdCommand('systeminfo')).toContain('22631');
+  });
+});
+
+describe('`echo %VAR%` keeps each shell faithful', () => {
+  it('cmd expands %VAR%; PowerShell echoes the literal token', async () => {
+    const d = pc('WIN-ECHO');
+    expect(await d.executeCmdCommand('echo %COMPUTERNAME%')).toBe('WIN-ECHO');
+    const sh = ps(d);
+    expect((await sh.processLine('echo %COMPUTERNAME%')).output).toEqual(['%COMPUTERNAME%']);
+    expect((await sh.processLine('echo %PATH%')).output).toEqual(['%PATH%']);
+    // The `%` change must not break modulo or the ForEach-Object alias.
+    expect((await sh.processLine('17 % 5')).output).toEqual(['2']);
+    expect((await sh.processLine('1,2,3 | % { $_ * 10 }')).output).toEqual(['10', '20', '30']);
+  });
+});

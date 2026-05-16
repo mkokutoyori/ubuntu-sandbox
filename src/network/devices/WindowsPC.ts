@@ -226,6 +226,11 @@ export class WindowsPC extends EndHost {
 
   private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
 
+  /** Single source of truth for the simulated OS build, so `ver` reports
+   *  the same string from cmd and from the PowerShell native shim, and it
+   *  agrees with `systeminfo` (build 22631). */
+  private static readonly VER_STRING = '\nMicrosoft Windows [Version 10.0.22631.6649]';
+
   // ─── Hosts file ──────────────────────────────────────────────
 
   addHostsEntry(ip: string, hostname: string): void {
@@ -349,7 +354,7 @@ export class WindowsPC extends EndHost {
       case 'sort':    return cmdSort(fileCtx, args);
       case 'echo':    return args.join(' ');
       case 'cls':     return '';
-      case 'ver':     return '\nMicrosoft Windows [Version 10.0.22631.6649]';
+      case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
       case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
@@ -775,7 +780,7 @@ export class WindowsPC extends EndHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     if (lower === 'systeminfo') return this.cmdSysteminfo();
-    if (lower === 'ver') return '\nMicrosoft Windows [Version 10.0.19041.4412]\n';
+    if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;
     if (lower === 'vol')  return this.cmdVol(args);
     if (lower === 'chcp') return this.cmdChcp(args);

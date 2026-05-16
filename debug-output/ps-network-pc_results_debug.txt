@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-pc
-Generated: 2026-05-16T07:58:27.849Z
+Generated: 2026-05-16T08:05:26.021Z
 Engine: powershell
 host=WIN-NET-DBG (windows-pc)
 Total commands: 101
@@ -722,8 +722,7 @@ PS [85/101]> systeminfo
 
 PS [86/101]> ver
   
-  Microsoft Windows [Version 10.0.19041.4412]
-  
+  Microsoft Windows [Version 10.0.22631.6649]
 
 PS [87/101]> whoami
   win-net-dbg\administrator
@@ -797,12 +796,12 @@ PS [100/101]> Get-Date
   Year        : 2026
   Month       : 5
   Day         : 16
-  Hour        : 7
-  Minute      : 58
-  Second      : 27
-  Millisecond : 905
+  Hour        : 8
+  Minute      : 5
+  Second      : 26
+  Millisecond : 83
   DayOfWeek   : 6
-  Ticks       : 1778918307905
+  Ticks       : 1778918726083
   
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue

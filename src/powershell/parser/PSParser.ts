@@ -354,7 +354,9 @@ export class PSParser {
     while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE) && !this.isRedirection()) {
       if (this.check(PSTokenType.PARAMETER)) {
         parameters.push(this.parseCommandParameter());
-      } else if (this.canStartExpression()) {
+      } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)) {
+        // A `%`-led token here is a bareword argument (e.g. `echo
+        // %PATH%`); `%` is only ForEach-Object in command position.
         args.push(this.parseCommandArgument());
       } else {
         break;
@@ -476,6 +478,31 @@ export class PSParser {
    */
   private parseCommandArgumentAtom(): PSExpression {
     const tok = this.peek();
+    // A command argument that begins with `%` is a bareword (`echo
+    // %PATH%`, a literal `%`), NOT modulo / ForEach-Object — those only
+    // apply in expression / command position. Glue the adjacent run.
+    if (tok.type === PSTokenType.MODULO) {
+      const pos = this.pos_();
+      this.advance();
+      let value = '%';
+      let prevEnd = tok.position.offset + 1;
+      for (;;) {
+        const nxt = this.peek();
+        if (nxt.position.offset !== prevEnd) break;
+        if (nxt.type === PSTokenType.MODULO) value += '%';
+        else if (nxt.type === PSTokenType.DOT) value += '.';
+        else if (nxt.type === PSTokenType.MULTIPLY) value += '*';
+        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+        else break;
+        this.advance();
+        prevEnd = nxt.position.offset + (
+          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+            ? nxt.value.length : 1
+        );
+      }
+      return makeLiteral(value, value, 'string', pos);
+    }
     if (tok.type === PSTokenType.WORD) {
       const next = this.peekAt(1);
       const nt   = next?.type;
