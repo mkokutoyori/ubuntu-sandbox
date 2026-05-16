@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-pc
-Generated: 2026-05-16T07:11:45.126Z
+Generated: 2026-05-16T07:25:28.779Z
 Engine: powershell
 host=WIN-SVC-DBG (windows-pc)
 Total commands: 104
@@ -611,7 +611,7 @@ PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      204       4      7  19362       0  5136  notepad    
+      245      10      3   5078       0  5136  notepad    
   
 
 PS [60/104]> Start-Process -FilePath calc.exe
@@ -621,7 +621,7 @@ PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-       89       6      4   8435       0  5140  calc       
+      150      13      6   9229       0  5140  calc       
   
 
 PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
@@ -646,9 +646,9 @@ PS [68/104]> Get-Process -Name notepad
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      154      12      8  19402       0  5144  notepad    
-      180      10      8  11912       0  5148  notepad    
-       87       8      2  10477       0  5152  notepad    
+      144       7      5  15835       0  5144  notepad    
+      244       7      8  18871       0  5148  notepad    
+      219       4      7   9232       0  5152  notepad    
   
 
 PS [69/104]> Get-Process -Name notepad | Stop-Process
@@ -759,7 +759,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 5:11 AM
+  TimeCreated  : 5/16/2026 5:25 AM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -767,7 +767,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 1:11 AM
+  TimeCreated  : 5/16/2026 1:25 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -775,7 +775,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 7:11 PM
+  TimeCreated  : 5/15/2026 7:25 PM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -783,7 +783,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/15/2026 7:11 AM
+  TimeCreated  : 5/15/2026 7:25 AM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1006
   
@@ -791,7 +791,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/14/2026 7:11 AM
+  TimeCreated  : 5/14/2026 7:25 AM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1005
   
@@ -802,7 +802,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/15/2026 7:11 AM
+  TimeCreated  : 5/15/2026 7:25 AM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1015
   
@@ -810,7 +810,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/13/2026 7:11 AM
+  TimeCreated  : 5/13/2026 7:25 AM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1014
   
@@ -818,7 +818,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/11/2026 7:11 AM
+  TimeCreated  : 5/11/2026 7:25 AM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1013
   
@@ -826,7 +826,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/9/2026 7:11 AM
+  TimeCreated  : 5/9/2026 7:25 AM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1012
   
@@ -834,7 +834,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/6/2026 7:11 AM
+  TimeCreated  : 5/6/2026 7:25 AM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1011
   

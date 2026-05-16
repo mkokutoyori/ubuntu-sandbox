@@ -41,8 +41,27 @@ export class WindowsFileSystem {
   /** Root of each drive: key = uppercase drive letter with colon, e.g. 'C:' */
   private drives: Map<string, WinFSEntry> = new Map();
 
+  /**
+   * Last timestamp handed out by now(). The displayed clock still tracks
+   * wall-time (so LastWriteTime shows "today"), but successive writes are
+   * forced strictly increasing. Real disks don't guarantee that, however
+   * it makes `Sort-Object LastWriteTime` reflect creation order
+   * deterministically — without it, two devices running the SAME script
+   * (debug pc vs server transcripts) order same-minute files differently
+   * depending on sub-millisecond JIT timing.
+   */
+  private lastTickMs = 0;
+
   constructor(hostname: string = 'DESKTOP') {
     this.initializeDefaultFS(hostname);
+  }
+
+  /** Monotonic "now": wall-clock, but never equal to / behind the
+   *  previous call so file mtimes preserve creation order. */
+  private now(): Date {
+    const ms = Math.max(Date.now(), this.lastTickMs + 1);
+    this.lastTickMs = ms;
+    return new Date(ms);
   }
 
   // ─── Initialization ──────────────────────────────────────────────
@@ -272,7 +291,7 @@ export class WindowsFileSystem {
   // ─── Entry Creation ──────────────────────────────────────────────
 
   private createEntry(name: string, type: WinFileType): WinFSEntry {
-    const now = new Date();
+    const now = this.now();
     // Mimic real Windows: newly created files get the archive bit set.
     const attributes = new Set<string>();
     if (type === 'file') attributes.add('archive');
@@ -413,7 +432,7 @@ export class WindowsFileSystem {
     }
     const entry = this.createEntry(childName, 'directory');
     parent.children.set(key, entry);
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -436,7 +455,7 @@ export class WindowsFileSystem {
       if (!child) {
         child = this.createEntry(part, 'directory');
         current.children.set(key, child);
-        current.mtime = new Date();
+        current.mtime = this.now();
       }
       current = child;
     }
@@ -452,7 +471,7 @@ export class WindowsFileSystem {
     if (!pair) return { ok: false, error: 'Cannot remove root.' };
     const [parent, childName] = pair;
     parent.children.delete(childName.toLowerCase());
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -464,7 +483,7 @@ export class WindowsFileSystem {
     if (!pair) return { ok: false, error: 'Cannot remove root.' };
     const [parent, childName] = pair;
     parent.children.delete(childName.toLowerCase());
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -500,7 +519,7 @@ export class WindowsFileSystem {
     entry.content = content;
     entry.size = content.length;
     parent.children.set(key, entry);
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -509,7 +528,7 @@ export class WindowsFileSystem {
     if (entry && entry.type === 'file') {
       entry.content += content;
       entry.size = entry.content.length;
-      entry.mtime = new Date();
+      entry.mtime = this.now();
       // Modification re-asserts the archive bit (Windows semantics).
       entry.attributes.add('archive');
       return { ok: true };
@@ -534,7 +553,7 @@ export class WindowsFileSystem {
     if (!existing) return { ok: false, error: 'The system cannot find the file specified.' };
     if (existing.type === 'directory') return { ok: false, error: 'Access is denied.' };
     parent.children.delete(key);
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -547,7 +566,7 @@ export class WindowsFileSystem {
     const existing = parent.children.get(key);
     if (!existing) return { ok: false, error: 'The system cannot find the path specified.' };
     parent.children.delete(key);
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -595,7 +614,7 @@ export class WindowsFileSystem {
     if (srcPair) {
       const [srcParent, srcChildName] = srcPair;
       srcParent.children.delete(srcChildName.toLowerCase());
-      srcParent.mtime = new Date();
+      srcParent.mtime = this.now();
     }
     return { ok: true };
   }
@@ -616,7 +635,7 @@ export class WindowsFileSystem {
     parent.children.delete(oldKey);
     entry.name = newName;
     parent.children.set(newKey, entry);
-    parent.mtime = new Date();
+    parent.mtime = this.now();
     return { ok: true };
   }
 
@@ -638,7 +657,7 @@ export class WindowsFileSystem {
     for (const key of toDelete) {
       dir.children.delete(key);
     }
-    dir.mtime = new Date();
+    dir.mtime = this.now();
     return toDelete.length;
   }
 
