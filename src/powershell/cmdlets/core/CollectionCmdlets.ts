@@ -199,11 +199,15 @@ export class ForEachObjectCmdlet implements ICmdlet {
       else out.push(val);
     };
 
-    if (begin)  collect(ctx.invokeBlock(begin,  null));
+    // -Begin/-Process/-End (and every -Process iteration) share ONE scope so
+    // accumulators like `-Begin { $s=0 } -Process { $s+=$_ } -End { $s }`
+    // work, as they do in real PowerShell.
+    const scope = ctx.runtime.makeChildScope(ctx.env);
+    if (begin)  collect(ctx.runtime.invokeBlockInScope(begin,  scope, null));
     if (script) {
-      for (const item of input) collect(ctx.invokeBlock(script, item));
+      for (const item of input) collect(ctx.runtime.invokeBlockInScope(script, scope, item));
     }
-    if (end)    collect(ctx.invokeBlock(end,    null));
+    if (end)    collect(ctx.runtime.invokeBlockInScope(end,    scope, null));
 
     if (out.length === 0) return null;
     return out.length === 1 ? out[0] : out;

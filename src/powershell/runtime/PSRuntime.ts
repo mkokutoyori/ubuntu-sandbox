@@ -741,6 +741,38 @@ export class PSRuntime {
   }
 
   /**
+   * Run a script block's body directly in `scopeEnv` (no fresh child scope)
+   * with `$_`/`$PSItem` bound. ForEach-Object uses this so its
+   * -Begin/-Process/-End blocks (and every -Process iteration) share one
+   * scope — `$acc=0; … $acc+=$_` accumulates as it does in real PowerShell.
+   * The previous `$_`/`$PSItem` are saved and restored so the binding does
+   * not leak past the loop.
+   */
+  invokeBlockInScope(
+    block: PSScriptBlock,
+    scopeEnv: PSEnvironment,
+    dollarUnderscore: PSValue,
+  ): PSValue {
+    const prevU = scopeEnv.has('_') ? scopeEnv.get('_') : undefined;
+    const prevI = scopeEnv.has('PSItem') ? scopeEnv.get('PSItem') : undefined;
+    scopeEnv.set('_', dollarUnderscore);
+    scopeEnv.set('PSItem', dollarUnderscore);
+    try {
+      if (block.beginBlock)   this.execStatementList(block.beginBlock,   scopeEnv);
+      if (block.processBlock) this.execStatementList(block.processBlock, scopeEnv);
+      if (block.endBlock)     this.execStatementList(block.endBlock,     scopeEnv);
+      if (!block.body) return null;
+      return this.aggregateCaptured(this.runBlockCapture(block.body, scopeEnv));
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    } finally {
+      if (prevU === undefined) scopeEnv.delete('_');     else scopeEnv.set('_', prevU);
+      if (prevI === undefined) scopeEnv.delete('PSItem'); else scopeEnv.set('PSItem', prevI);
+    }
+  }
+
+  /**
    * Build a dynamic `[Environment]` / `[System.Environment]` static type that
    * delegates to the device-backed environment provider. Constructed per call
    * (cheap, just closures) so it always reflects the current provider state.
@@ -1715,8 +1747,20 @@ export class PSRuntime {
       const linesBefore = this.outputLines.length;
       const result = this.execStatement(stmt, env);
       const didEmit = this.outputLines.length > linesBefore;
+      // `$c++` / `$c += 1` written as a statement parse as a single-command
+      // pipeline whose head expression is an AssignmentStatement node. Like
+      // PowerShell, those are voidable — they must not feed the pipeline.
+      const isVoidAssign =
+        stmt.type === 'PipelineStatement'
+        && (stmt as PSPipelineStatement).pipeline.commands.length === 1
+        && (() => {
+          const c = (stmt as PSPipelineStatement).pipeline.commands[0];
+          return c.parameters.length === 0 && c.arguments.length === 0
+            && (c.name as { type?: string })?.type === 'AssignmentStatement';
+        })();
       // Non-assignment, non-definition statements that didn't emit via cmdlet → collect value
       if (!didEmit && result !== null && result !== undefined
+          && !isVoidAssign
           && stmt.type !== 'AssignmentStatement'
           && stmt.type !== 'FunctionDefinition') {
         if (Array.isArray(result)) captured.push(...result);
@@ -2027,6 +2071,9 @@ export class PSRuntime {
       setVariable:        (name, val) => self.global.set(name, val),
       invokeScriptBlock:  (block, namedV, posV, env2, $under) =>
         self.invokeScriptBlock(block, namedV, posV, env2, $under),
+      invokeBlockInScope: (block, scopeEnv, $under) =>
+        self.invokeBlockInScope(block, scopeEnv, $under),
+      makeChildScope:     (env2) => env2.createChild(),
       callCmdlet: (name, pos, namedP, pipe, env2) =>
         self.dispatchCmdlet(name, pos, namedP, pipe, env2),
       listCmdlets: () =>

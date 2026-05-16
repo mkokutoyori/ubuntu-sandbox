@@ -32,6 +32,17 @@ export interface IRuntimeRef {
     env: PSEnvironment,
     dollarUnderscore: PSValue,
   ): PSValue;
+  /**
+   * Run a script block's body directly in `scopeEnv` (no fresh child) with
+   * `$_` bound. Used by ForEach-Object so -Begin/-Process/-End share state.
+   */
+  invokeBlockInScope(
+    block: PSScriptBlock,
+    scopeEnv: PSEnvironment,
+    dollarUnderscore: PSValue,
+  ): PSValue;
+  /** Make a child scope of the given env (shared across multi-block cmdlets). */
+  makeChildScope(env: PSEnvironment): PSEnvironment;
   /** Dispatch a cmdlet call directly (for cmdlets that call other cmdlets). */
   callCmdlet(
     name: string,

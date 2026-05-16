@@ -216,6 +216,37 @@ describe('Set-Content — array / pipeline input is one value per line', () => {
   });
 });
 
+describe('ForEach-Object — shared -Begin/-Process/-End scope', () => {
+  it('Begin/Process/End accumulator (sum)', async () => {
+    expect(await run(shell(),
+      '1..10 | ForEach-Object -Begin { $s=0 } -Process { $s+=$_ } -End { $s }'))
+      .toEqual(['55']);
+  });
+  it('Begin/Process/End accumulator (product, interpolated)', async () => {
+    expect(await run(shell(),
+      '1..5 | ForEach-Object -Begin { $p=1 } -Process { $p*=$_ } -End { "product=$p" }'))
+      .toEqual(['product=120']);
+  });
+  it('array accumulator joined in -End', async () => {
+    expect(await run(shell(),
+      "1..4 | ForEach-Object -Begin { $a=@() } -Process { $a+=$_*$_ } -End { $a -join '+' }"))
+      .toEqual(['1+4+9+16']);
+  });
+  it('counter across iterations (post-increment is voidable)', async () => {
+    expect(await run(shell(),
+      '1..20 | ForEach-Object -Begin { $c=0 } -Process { $c++ } -End { "n=$c" }'))
+      .toEqual(['n=20']);
+  });
+  it('plain -Process block still streams per item', async () => {
+    expect(await run(shell(), '1..3 | ForEach-Object { $_ * 2 }')).toEqual(['2', '4', '6']);
+  });
+  it('inner $_ does not leak to the caller scope', async () => {
+    const s = shell();
+    await run(s, '1..3 | ForEach-Object { $_ } | Out-Null');
+    expect(await run(s, '$null -eq $_')).toEqual(['True']);
+  });
+});
+
 describe('Group-Object scriptblock key / Get-Member -Name & NoteProperty', () => {
   it('Group-Object { scriptblock } groups by the evaluated key', async () => {
     const out = await run(shell(),

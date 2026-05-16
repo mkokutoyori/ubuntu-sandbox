@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — conversion-cmdlets-server
-Generated: 2026-05-16T23:02:04.056Z
+Generated: 2026-05-16T23:12:30.685Z
 Engine: powershell
 host=SRV-CONVERSION-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 62

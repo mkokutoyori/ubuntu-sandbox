@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — format-cmdlets-server
-Generated: 2026-05-16T23:01:58.841Z
+Generated: 2026-05-16T23:12:27.283Z
 Engine: powershell
 host=SRV-FORMAT-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 56
