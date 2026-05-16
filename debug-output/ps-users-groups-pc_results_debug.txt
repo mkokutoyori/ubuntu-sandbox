@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-pc
-Generated: 2026-05-16T07:25:30.397Z
+Generated: 2026-05-16T07:31:17.436Z
 Engine: powershell
 host=WIN-USR-DBG (windows-pc)
 Total commands: 102
