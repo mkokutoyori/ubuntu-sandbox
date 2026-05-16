@@ -83,13 +83,6 @@ export interface PingResult {
   fromIP: string;
 }
 
-interface PendingPing {
-  resolve: (result: PingResult) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
-  sentAt: number; // performance.now() timestamp
-}
-
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
 export type NeighborState = 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe';
@@ -105,12 +98,6 @@ export interface NeighborCacheEntry {
   isRouter: boolean;
   /** Last reachability confirmation timestamp */
   timestamp: number;
-}
-
-interface PendingNDP {
-  resolve: (mac: MACAddress) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
 }
 
 // ─── IPv6 Routing Table Entry ────────────────────────────────────────
@@ -173,10 +160,6 @@ export abstract class EndHost extends Equipment {
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
   /** Neighbor cache: IPv6 string → { mac, iface, state, isRouter, timestamp } */
   protected neighborCache: Map<string, NeighborCacheEntry> = new Map();
-  /** Pending NDP resolutions: IPv6 string → callbacks[] */
-  protected pendingNDPs: Map<string, PendingNDP[]> = new Map();
-  /** Pending ICMPv6 echo replies: "srcIP-id-seq" → callback */
-  protected pendingPing6s: Map<string, PendingPing> = new Map();
   /** Monotonically increasing ICMPv6 echo identifier */
   protected ping6IdCounter: number = 0;
   /** Default IPv6 gateway (learned from RA or configured) */
@@ -386,6 +369,14 @@ export abstract class EndHost extends Equipment {
     this.getBus().publish({
       topic: 'host.arp.request-sent',
       payload: { ...this.hostRef(), iface, targetIp },
+    });
+  }
+
+  /** Bus emission helper for NDP entry learned (IPv6 equivalent of ARP learn). */
+  protected emitNdpLearned(payload: { ip: string; mac: string; iface: string }): void {
+    this.getBus().publish({
+      topic: 'host.ndp.entry-learned',
+      payload: { ...this.hostRef(), ...payload },
     });
   }
 
@@ -2181,21 +2172,17 @@ export abstract class EndHost extends Equipment {
   }
 
   private handleICMPv6EchoReply(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
-    const key = `${ipv6.sourceIP}-${icmpv6.id}-${icmpv6.sequence}`;
-    const pending = this.pendingPing6s.get(key);
-    if (pending) {
-      clearTimeout(pending.timer);
-      this.pendingPing6s.delete(key);
-      const rtt = performance.now() - pending.sentAt;
-      pending.resolve({
-        success: true,
-        rttMs: rtt,
-        ttl: ipv6.hopLimit,
-        seq: icmpv6.sequence || 0,
-        bytes: (icmpv6.dataSize || 56) + 8,
-        fromIP: ipv6.sourceIP.toString(),
-      });
-    }
+    // Phase 5.7: settle the awaiting `sendPing6` via the bus. The awaiter
+    // computes its own rtt; rttMs=0 is a sentinel here so capture actors
+    // can still record the reply.
+    this.emitIcmpEchoReply({
+      fromIp: ipv6.sourceIP.toString(),
+      toIp: ipv6.destinationIP.toString(),
+      id: icmpv6.id ?? 0,
+      seq: icmpv6.sequence ?? 0,
+      ttl: ipv6.hopLimit,
+      rttMs: 0,
+    });
   }
 
   private handleICMPv6Error(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
@@ -2203,11 +2190,14 @@ export abstract class EndHost extends Equipment {
       ? `Hop limit exceeded (from ${ipv6.sourceIP})`
       : `Destination unreachable (from ${ipv6.sourceIP})`;
 
-    for (const [key, pending] of this.pendingPing6s) {
-      clearTimeout(pending.timer);
-      this.pendingPing6s.delete(key);
-      pending.reject(reason);
-    }
+    // Phase 5.7: wildcard emission so any awaiting `sendPing6` settles.
+    this.emitIcmpEchoFailed({
+      fromIp: ipv6.sourceIP.toString(),
+      toIp: '',
+      id: -1,
+      seq: -1,
+      reason,
+    });
   }
 
   // ─── NDP: Neighbor Solicitation (RFC 4861 §7.2.3) ───────────────
@@ -2231,6 +2221,11 @@ export abstract class EndHost extends Equipment {
         state: 'stale',
         isRouter: false,
         timestamp: Date.now(),
+      });
+      this.emitNdpLearned({
+        ip: ipv6.sourceIP.toString(),
+        mac: srcLLOpt.address.toString(),
+        iface: portName,
       });
     }
 
@@ -2299,15 +2294,8 @@ export abstract class EndHost extends Equipment {
       timestamp: Date.now(),
     });
 
-    // Resolve pending NDP requests
-    const pending = this.pendingNDPs.get(key);
-    if (pending) {
-      for (const p of pending) {
-        clearTimeout(p.timer);
-        p.resolve(mac);
-      }
-      this.pendingNDPs.delete(key);
-    }
+    // Phase 5.7: resolveNDP awaits this event via the bus.
+    this.emitNdpLearned({ ip: key, mac: mac.toString(), iface: portName });
 
     Logger.debug(this.id, 'ndp:na-received',
       `${this.name}: learned ${na.targetAddress} -> ${mac}`);
@@ -2331,6 +2319,11 @@ export abstract class EndHost extends Equipment {
         state: 'reachable',
         isRouter: true,
         timestamp: Date.now(),
+      });
+      this.emitNdpLearned({
+        ip: ipv6.sourceIP.toString(),
+        mac: srcLLOpt.address.toString(),
+        iface: portName,
       });
     }
 
@@ -2379,57 +2372,49 @@ export abstract class EndHost extends Equipment {
    * Resolve an IPv6 address to a MAC address via NDP.
    * Returns cached result if available, otherwise sends NS and waits.
    */
-  protected resolveNDP(portName: string, targetIP: IPv6Address, timeoutMs: number = 2000): Promise<MACAddress> {
+  protected async resolveNDP(portName: string, targetIP: IPv6Address, timeoutMs: number = 2000): Promise<MACAddress> {
     const cached = this.neighborCache.get(targetIP.toString());
-    if (cached && cached.state === 'reachable') {
-      return Promise.resolve(cached.mac);
-    }
+    if (cached && cached.state === 'reachable') return cached.mac;
 
     const port = this.ports.get(portName);
-    if (!port || !port.isIPv6Enabled()) return Promise.reject('IPv6 not enabled');
+    if (!port || !port.isIPv6Enabled()) throw new Error('IPv6 not enabled');
 
     const srcIP = port.getLinkLocalIPv6();
-    if (!srcIP) return Promise.reject('No link-local address');
+    if (!srcIP) throw new Error('No link-local address');
 
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const pending = this.pendingNDPs.get(targetIP.toString());
-        if (pending) {
-          const idx = pending.findIndex(p => p.resolve === resolve);
-          if (idx !== -1) pending.splice(idx, 1);
-          if (pending.length === 0) this.pendingNDPs.delete(targetIP.toString());
-        }
-        reject('NDP timeout');
-      }, timeoutMs);
+    const targetIpStr = targetIP.toString();
+    const waitPromise = waitForEvent(
+      this.getBus(),
+      'host.ndp.entry-learned',
+      (p) => p.deviceId === this.id && p.ip === targetIpStr,
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
 
-      const key = targetIP.toString();
-      if (!this.pendingNDPs.has(key)) this.pendingNDPs.set(key, []);
-      this.pendingNDPs.get(key)!.push({ resolve, reject, timer });
+    const ns = createNeighborSolicitation(targetIP, port.getMAC());
+    const nsPkt = createIPv6Packet(
+      srcIP,
+      targetIP.toSolicitedNodeMulticast(),
+      IP_PROTO_ICMPV6,
+      255,
+      ns,
+      24,
+    );
+    const dstMAC = targetIP.toSolicitedNodeMulticast().toMulticastMAC();
 
-      // Build and send Neighbor Solicitation
-      const ns = createNeighborSolicitation(targetIP, port.getMAC());
-      const nsPkt = createIPv6Packet(
-        srcIP,
-        targetIP.toSolicitedNodeMulticast(), // Send to solicited-node multicast
-        IP_PROTO_ICMPV6,
-        255, // NDP hop limit must be 255
-        ns,
-        24, // NS size
-      );
-
-      // Destination MAC is multicast derived from target's solicited-node address
-      const dstMAC = targetIP.toSolicitedNodeMulticast().toMulticastMAC();
-
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(),
-        dstMAC,
-        etherType: ETHERTYPE_IPV6,
-        payload: nsPkt,
-      });
-
-      Logger.debug(this.id, 'ndp:ns-sent',
-        `${this.name}: NS for ${targetIP} sent`);
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC,
+      etherType: ETHERTYPE_IPV6, payload: nsPkt,
     });
+
+    Logger.debug(this.id, 'ndp:ns-sent', `${this.name}: NS for ${targetIP} sent`);
+
+    try {
+      const learned = await waitPromise;
+      return new MACAddress(learned.mac);
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) throw new Error('NDP timeout');
+      throw err;
+    }
   }
 
   // ─── IPv6 Route Resolution (LPM) ────────────────────────────────
@@ -2462,7 +2447,7 @@ export abstract class EndHost extends Equipment {
 
   // ─── Send IPv6 Ping ────────────────────────────────────────────
 
-  protected sendPing6(
+  protected async sendPing6(
     portName: string,
     targetIP: IPv6Address,
     targetMAC: MACAddress,
@@ -2470,47 +2455,64 @@ export abstract class EndHost extends Equipment {
     timeoutMs: number = 2000,
   ): Promise<PingResult> {
     const port = this.ports.get(portName);
-    if (!port || !port.isIPv6Enabled()) return Promise.reject('IPv6 not enabled');
+    if (!port || !port.isIPv6Enabled()) throw new Error('IPv6 not enabled');
 
-    // Determine source address
     const srcIP = targetIP.isLinkLocal()
       ? port.getLinkLocalIPv6()
       : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
 
-    if (!srcIP) return Promise.reject('No IPv6 address');
+    if (!srcIP) throw new Error('No IPv6 address');
 
     this.ping6IdCounter++;
     const id = this.ping6IdCounter;
 
-    return new Promise((resolve, reject) => {
-      const key = `${targetIP}-${id}-${seq}`;
-      const sentAt = performance.now();
+    const targetIpStr = targetIP.toString();
+    const sentAt = performance.now();
 
-      const timer = setTimeout(() => {
-        this.pendingPing6s.delete(key);
-        reject('timeout');
-      }, timeoutMs);
+    const replyPromise = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-reply',
+      (p) => p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq,
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
+    const failedPromise = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-failed',
+      (p) => p.deviceId === this.id
+        && (p.id === -1 || (p.id === id && p.seq === seq))
+        && (p.toIp === targetIpStr || p.toIp === ''),
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
 
-      this.pendingPing6s.set(key, { resolve, reject, timer, sentAt });
+    const icmpv6 = createICMPv6EchoRequest(id, seq, 56);
+    const ipPkt = createIPv6Packet(
+      srcIP, targetIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpv6, 64,
+    );
 
-      // Build ICMPv6 echo request
-      const icmpv6 = createICMPv6EchoRequest(id, seq, 56);
-      const ipPkt = createIPv6Packet(
-        srcIP,
-        targetIP,
-        IP_PROTO_ICMPV6,
-        this.defaultHopLimit,
-        icmpv6,
-        64, // 8 header + 56 data
-      );
-
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(),
-        dstMAC: targetMAC,
-        etherType: ETHERTYPE_IPV6,
-        payload: ipPkt,
-      });
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC: targetMAC,
+      etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
+
+    try {
+      const winner = await Promise.race([
+        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
+        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
+      ]);
+      if (winner.kind === 'failed') throw new Error(winner.r.reason);
+      const rtt = performance.now() - sentAt;
+      return {
+        success: true,
+        rttMs: rtt,
+        ttl: winner.r.ttl,
+        seq,
+        bytes: 64,
+        fromIP: targetIpStr,
+      };
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) throw new Error('timeout');
+      throw err;
+    }
   }
 
   // ─── High-level Ping6 (used by terminal commands) ───────────────
