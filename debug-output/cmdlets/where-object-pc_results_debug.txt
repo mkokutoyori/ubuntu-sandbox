@@ -1,0 +1,426 @@
+============================================================
+Shell debug transcript — where-object-pc
+Generated: 2026-05-16T13:05:12.648Z
+Engine: powershell
+host=WIN-WHERE-OBJECT (windows-pc) — cmdlet attribute suite
+Total commands: 58
+============================================================
+
+
+--- [1] § -FilterScript (numbers) ---
+PS [1/58]> 1..30 | Where-Object { $_ -gt 20 }
+  21
+  22
+  23
+  24
+  25
+  26
+  27
+  28
+  29
+  30
+
+PS [2/58]> 1..30 | Where-Object { $_ % 2 -eq 0 }
+  2
+  4
+  6
+  8
+  10
+  12
+  14
+  16
+  18
+  20
+  22
+  24
+  26
+  28
+  30
+
+PS [3/58]> 1..100 | Where-Object { $_ % 3 -eq 0 -and $_ % 5 -eq 0 }
+  15
+  30
+  45
+  60
+  75
+  90
+
+PS [4/58]> 1..100 | Where-Object { $_ % 7 -eq 0 -or $_ % 11 -eq 0 } | Select-Object -First 8
+  7
+  11
+  14
+  21
+  22
+  28
+  33
+  35
+
+PS [5/58]> 1..50 | Where-Object { -not ($_ % 2) }
+  2
+  4
+  6
+  8
+  10
+  12
+  14
+  16
+  18
+  20
+  22
+  24
+  26
+  28
+  30
+  32
+  34
+  36
+  38
+  40
+  42
+  44
+  46
+  48
+  50
+
+PS [6/58]> 1..50 | Where-Object { $_ -gt 10 -and $_ -lt 20 }
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+
+PS [7/58]> 1..1000 | Where-Object { [math]::Sqrt($_) -eq [math]::Floor([math]::Sqrt($_)) } | Select-Object -First 10
+  1
+  4
+  9
+  16
+  25
+  36
+  49
+  64
+  81
+  100
+
+PS [8/58]> 1..30 | Where-Object { $_ } 
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  20
+  21
+  22
+  23
+  24
+  25
+  26
+  27
+  28
+  29
+  30
+
+PS [9/58]> 0..5 | Where-Object { $_ }
+  1
+  2
+  3
+  4
+  5
+
+PS [10/58]> (1..200 | Where-Object { $_ % 13 -eq 0 }).Count
+  15
+
+
+--- [11] § -FilterScript (strings) ---
+PS [11/58]> 'apple','banana','avocado','cherry' | Where-Object { $_ -like 'a*' }
+  apple
+  avocado
+
+PS [12/58]> 'apple','banana','cherry','date' | Where-Object { $_.Length -gt 5 }
+  banana
+  cherry
+
+PS [13/58]> 'PowerShell','cmd','bash','zsh' | Where-Object { $_ -match 'sh' }
+  PowerShell
+  bash
+  zsh
+
+PS [14/58]> 'one','two','three','four' | Where-Object { $_.Contains('o') }
+  one
+  two
+  four
+
+PS [15/58]> 'a','bb','ccc','dddd' | Where-Object { $_.Length -ge 3 }
+  ccc
+  dddd
+
+PS [16/58]> @('  trim me  ','x') | Where-Object { $_.Trim().Length -gt 3 }
+    trim me  
+
+
+--- [17] § ? alias ---
+PS [17/58]> 1..20 | ? { $_ -gt 15 }
+  16
+  17
+  18
+  19
+  20
+
+PS [18/58]> 1..20 | ? { $_ % 4 -eq 0 } | % { $_ }
+  4
+  8
+  12
+  16
+  20
+
+PS [19/58]> Get-Service | ? { $_.Status -eq 'Running' } | Select-Object -First 3 Name
+  
+  Name 
+  -----
+  Tcpip
+  Afd  
+  Dhcp 
+  
+
+
+--- [20] § -EQ / -NE / -GT / -LT ---
+PS [20/58]> 1..10 | Where-Object Name -EQ 5
+<empty>
+
+PS [21/58]> Get-Service | Where-Object Status -EQ Running | Select-Object -First 5 Name, Status
+<empty>
+
+PS [22/58]> Get-Service | Where-Object Status -NE Running | Select-Object -First 5 Name, Status
+<empty>
+
+PS [23/58]> Get-Process | Where-Object WS -GT 0 | Select-Object -First 5 Name, WS
+<empty>
+
+PS [24/58]> Get-Process | Where-Object Id -GE 1000 | Select-Object -First 5 Name, Id
+<empty>
+
+PS [25/58]> Get-Process | Where-Object Id -LT 500 | Select-Object Name, Id
+<empty>
+
+PS [26/58]> Get-Process | Where-Object SI -LE 1 | Select-Object -First 5 Name, SI
+<empty>
+
+
+--- [27] § -Like / -NotLike / -Match ---
+PS [27/58]> Get-Service | Where-Object Name -Like "*o*" | Select-Object -First 5 Name
+<empty>
+
+PS [28/58]> Get-Service | Where-Object Name -NotLike "*x*" | Select-Object -First 5 Name
+<empty>
+
+PS [29/58]> Get-Process | Where-Object Name -Match "^s" | Select-Object -First 5 Name
+<empty>
+
+PS [30/58]> Get-Process | Where-Object Name -NotMatch "svc" | Select-Object -First 5 Name
+<empty>
+
+PS [31/58]> Get-ChildItem C:\ | Where-Object Name -Like "P*" | Select-Object Name
+<empty>
+
+
+--- [32] § -In / -Contains ---
+PS [32/58]> Get-Service | Where-Object Status -In @("Running","Stopped") | Select-Object -First 5 Name, Status
+<empty>
+
+PS [33/58]> 1..10 | Where-Object { $_ -in @(2,4,6,8) }
+  2
+  4
+  6
+  8
+
+PS [34/58]> @(1,2,3) | Where-Object { 2 -in $_ }
+<empty>
+
+PS [35/58]> 'red','green','blue' | Where-Object { 'green' -contains $_ }
+<empty>
+
+
+--- [36] § chained Where ---
+PS [36/58]> 1..100 | Where-Object { $_ -gt 10 } | Where-Object { $_ -lt 90 } | Where-Object { $_ % 5 -eq 0 }
+  15
+  20
+  25
+  30
+  35
+  40
+  45
+  50
+  55
+  60
+  65
+  70
+  75
+  80
+  85
+
+PS [37/58]> Get-Process | Where-Object { $_.WS -gt 0 } | Where-Object { $_.Name -match "s" } | Select-Object -First 5 Name, WS
+<empty>
+
+PS [38/58]> Get-Service | Where-Object { $_.Status -eq "Running" } | Where-Object { $_.Name.Length -le 6 } | Select-Object Name
+  
+  Name  
+  ------
+  Tcpip 
+  Afd   
+  Dhcp  
+  NetBT 
+  RpcSs 
+  SamSs 
+  mpssvc
+  Themes
+  
+
+PS [39/58]> 1..50 | Where-Object { $_ % 2 -eq 0 } | Where-Object { $_ -gt 20 } | Measure-Object -Sum
+  
+  Count    : 15
+  Sum      : 540
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+
+--- [40] § Where + other cmdlets ---
+PS [40/58]> Get-Process | Where-Object WS -GT 0 | Sort-Object WS -Descending | Select-Object -First 3 Name, WS
+<empty>
+
+PS [41/58]> Get-Service | Where-Object Status -EQ Running | Group-Object StartType | Select-Object Name, Count
+<empty>
+
+PS [42/58]> Get-Service | Where-Object Status -EQ Stopped | Measure-Object
+  
+  Count    : 0
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [43/58]> 1..100 | Where-Object { $_ % 4 -eq 0 } | ForEach-Object { $_ / 4 } | Measure-Object -Sum
+  
+  Count    : 25
+  Sum      : 325
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [44/58]> Get-ChildItem C:\ | Where-Object { $_.PSIsContainer } | Sort-Object Name | Select-Object -First 5 -ExpandProperty Name
+  $Recycle.Bin
+  PerfLogs
+  Program Files
+  Program Files (x86)
+  ProgramData
+
+PS [45/58]> Get-Process | Where-Object { $_.Name -like "s*" } | Group-Object Name | Where-Object { $_.Count -ge 1 } | Select-Object Name, Count
+  
+  Name                 Count
+  -------------------  -----
+  System Idle Process      1
+  System                   1
+  smss                     1
+  services                 1
+  svchost                  7
+  spoolsv                  1
+  
+
+PS [46/58]> (1..1000 | Where-Object { $_ % 9 -eq 0 } | Measure-Object -Sum).Sum
+  55944
+
+PS [47/58]> Get-Service | Where-Object { $_.DisplayName -match "Service" } | Select-Object -First 5 Name, DisplayName
+  
+  Name      DisplayName              
+  --------  -------------------------
+  CryptSvc  Cryptographic Services   
+  bthserv   Bluetooth Support Service
+  
+
+PS [48/58]> 1..20 | Where-Object { $_ -band 1 }
+  1
+  3
+  5
+  7
+  9
+  11
+  13
+  15
+  17
+  19
+
+PS [49/58]> Get-Process | Where-Object { $_.Id -gt 0 -and $_.WS -gt 0 } | Select-Object -First 5 Name
+<empty>
+
+PS [50/58]> Get-Service | ? Status -eq Running | ? { $_.Name -notmatch "[0-9]" } | Select-Object -First 5 Name
+<empty>
+
+PS [51/58]> @('aa','bbb','c','dddd') | Where-Object Length -GE 3
+<empty>
+
+PS [52/58]> 1..30 | Where-Object { ($_ -gt 5) -and ($_ -lt 25) -and ($_ % 2) } | Select-Object -First 6
+  7
+  9
+  11
+  13
+  15
+  17
+
+PS [53/58]> Get-Process | Where-Object { $_.WS -gt 0 } | Select-Object -ExpandProperty Name | Where-Object { $_ -match "^[a-m]" } | Sort-Object
+<empty>
+
+PS [54/58]> Get-Service | Where-Object { @("Running") -contains $_.Status } | Measure-Object
+  
+  Count    : 20
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [55/58]> 1..100 | Where-Object { $_ -as [int] -and $_ % 25 -eq 0 }
+  25
+  50
+  75
+  100
+
+PS [56/58]> Get-ChildItem C:\ | Where-Object Length -GT 0 | Select-Object Name, Length
+<empty>
+
+PS [57/58]> Get-Process | Where-Object { $_.Name } | Group-Object { $_.Name.Length } | Select-Object Name, Count | Sort-Object Name
+  
+  Name  Count
+  ----  -----
+           26
+  
+
+PS [58/58]> 1..50 | Where-Object { $_ -notin (1..10) } | Select-Object -First 5
+  11
+  12
+  13
+  14
+  15

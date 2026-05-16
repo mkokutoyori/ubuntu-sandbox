@@ -395,6 +395,12 @@ export class PSParser {
       return this.parseExpression(0);
     }
 
+    // Statement / scriptblock-body starting with the unary comma operator
+    // (`,@($_, $_*2)`) is an expression, not a command named ",".
+    if (tok.type === PSTokenType.COMMA) {
+      return this.parseExpression(0);
+    }
+
     // Command heads parse as expressions so binary operators (2+3, $_ * 10,
     // "a" -eq "b"), postfix ($x++, $x.Prop, $x[i]) and assignment-ops ($x+=1)
     // are consumed fully.
@@ -1307,6 +1313,15 @@ export class PSParser {
     if (this.checkValue(PSTokenType.PARAMETER, 'bnot')) {
       this.advance();
       return makeUnary('-bnot' as PSUnaryOperator, this.parseUnaryExpression(), pos);
+    }
+
+    // Unary comma — `,expr` is a single-element array wrapping expr
+    // (PowerShell idiom: `,$x`, `,@(1,2,3)` to emit an array as ONE
+    // pipeline item without unrolling). Modelled as a UnaryExpression so
+    // the array-literal evaluator (which flattens) doesn't unwrap it.
+    if (this.check(PSTokenType.COMMA)) {
+      this.advance();
+      return makeUnary(',' as PSUnaryOperator, this.parseUnaryExpression(), pos);
     }
 
     // Prefix ++ and --

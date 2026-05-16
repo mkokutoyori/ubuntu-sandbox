@@ -1100,6 +1100,10 @@ export class PSRuntime {
       case '-not': return !this.isTruthy(val);
       case '!':    return !this.isTruthy(val);
       case '-bnot':return ~(val as number);
+      // Unary comma: a single-element array wrapping the operand —
+      // even when the operand is itself an array (`(,@(1,2,3)).Count`
+      // is 1, not 3).
+      case ',':    return [val];
       default:     throw new PSRuntimeError(`Unknown unary operator: ${node.operator}`);
     }
   }

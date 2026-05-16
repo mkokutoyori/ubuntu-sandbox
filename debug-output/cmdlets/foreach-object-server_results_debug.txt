@@ -1,0 +1,426 @@
+============================================================
+Shell debug transcript — foreach-object-server
+Generated: 2026-05-16T13:05:15.270Z
+Engine: powershell
+host=SRV-FOREACH-OBJECT (windows-server) — cmdlet attribute suite
+Total commands: 55
+============================================================
+
+
+--- [1] § -Process / $_ ---
+PS [1/55]> 1..10 | ForEach-Object { $_ * 2 }
+  2
+  4
+  6
+  8
+  10
+  12
+  14
+  16
+  18
+  20
+
+PS [2/55]> 1..5 | ForEach-Object { "[$_]" }
+  [1]
+  [2]
+  [3]
+  [4]
+  [5]
+
+PS [3/55]> 1..5 | ForEach-Object { $_ * $_ } | ForEach-Object { $_ + 1 }
+  2
+  5
+  10
+  17
+  26
+
+PS [4/55]> 'a','b','c' | ForEach-Object { $_.ToUpper() }
+  A
+  B
+  C
+
+PS [5/55]> 'Hello','World' | ForEach-Object { $_.Substring(0,3) }
+  Hel
+  Wor
+
+PS [6/55]> 1..3 | ForEach-Object { $_; $_ * 10 }
+  1
+  10
+  2
+  20
+  3
+  30
+
+PS [7/55]> 1..3 | ForEach-Object { @($_, $_*$_, $_*$_*$_) }
+  1
+  1
+  1
+  2
+  4
+  8
+  3
+  9
+  27
+
+PS [8/55]> 1..4 | ForEach-Object { [pscustomobject]@{ N=$_; Sq=$_*$_ } }
+  
+  N  Sq
+  -  --
+  1   1
+  2   4
+  3   9
+  4  16
+  
+
+PS [9/55]> 1..5 | ForEach-Object { if ($_ % 2) { "odd:$_" } else { "even:$_" } }
+  odd:1
+  even:2
+  odd:3
+  even:4
+  odd:5
+
+PS [10/55]> (1..10 | ForEach-Object { $_ }) -join ","
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+
+
+--- [11] § % alias ---
+PS [11/55]> 1..6 | % { $_ * $_ }
+  1
+  4
+  9
+  16
+  25
+  36
+
+PS [12/55]> 'x','y','z' | % { $_.ToUpper() }
+  X
+  Y
+  Z
+
+PS [13/55]> 1..5 | % { $_ } | % { $_ + 100 }
+  101
+  102
+  103
+  104
+  105
+
+PS [14/55]> 1..20 | ? { $_ % 2 -eq 0 } | % { $_ / 2 }
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+
+
+--- [15] § -Begin / -End ---
+PS [15/55]> 1..10 | ForEach-Object -Begin { $s=0 } -Process { $s+=$_ } -End { $s }
+<empty>
+
+PS [16/55]> 1..5 | ForEach-Object -Begin { $p=1 } -Process { $p*=$_ } -End { "product=$p" }
+  product=
+
+PS [17/55]> 1..10 | ForEach-Object -Begin { $acc=@() } -Process { $acc+=$_*$_ } -End { $acc -join '+' }
+<empty>
+
+PS [18/55]> 1..100 | ForEach-Object -Begin { $c=0 } -Process { if ($_ % 7 -eq 0) { $c++ } } -End { "multiples of 7: $c" }
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  1
+  multiples of 7: 
+
+PS [19/55]> 'a','bb','ccc' | ForEach-Object -Begin { $t=0 } -Process { $t+=$_.Length } -End { $t }
+<empty>
+
+
+--- [20] § -MemberName ---
+PS [20/55]> Get-Process | Select-Object -First 5 | ForEach-Object -MemberName Name
+<empty>
+
+PS [21/55]> Get-Service | Select-Object -First 5 | ForEach-Object Name
+<empty>
+
+PS [22/55]> 'hello','world' | ForEach-Object -MemberName Length
+<empty>
+
+PS [23/55]> 'a-b-c','x-y' | ForEach-Object -MemberName Split -ArgumentList '-'
+<empty>
+
+PS [24/55]> 'Hello World' | ForEach-Object ToUpper
+<empty>
+
+PS [25/55]> Get-ChildItem C:\ | Select-Object -First 5 | ForEach-Object Name
+<empty>
+
+PS [26/55]> '  pad  ','  me  ' | ForEach-Object Trim
+<empty>
+
+
+--- [27] § -ArgumentList ---
+PS [27/55]> 'a,b,c','d,e' | ForEach-Object { $_.Split(',') } 
+  a
+  b
+  c
+  d
+  e
+
+PS [28/55]> 'one two three' | ForEach-Object -MemberName Split -ArgumentList ' '
+<empty>
+
+PS [29/55]> 1..3 | ForEach-Object { '{0:000}' -f $_ }
+  {0:000}
+  {0:000}
+  {0:000}
+
+
+--- [30] § nested ForEach ---
+PS [30/55]> 1..3 | ForEach-Object { $r=$_; 1..3 | ForEach-Object { "$r*$_=$($r*$_)" } }
+  1*1=1
+  1*2=2
+  1*3=3
+  2*1=2
+  2*2=4
+  2*3=6
+  3*1=3
+  3*2=6
+  3*3=9
+
+PS [31/55]> 1..3 | ForEach-Object { $o=$_; 1..2 | ForEach-Object { $o * $_ } }
+  1
+  2
+  2
+  4
+  3
+  6
+
+PS [32/55]> 'ab','cd' | ForEach-Object { $w=$_; 0..($w.Length-1) | ForEach-Object { $w[$_] } }
+<empty>
+
+PS [33/55]> 1..4 | ForEach-Object { ,(1..$_) } | ForEach-Object { ($_ | Measure-Object -Sum).Sum }
+  1
+  1
+  2
+  1
+  2
+  3
+  1
+  2
+  3
+  4
+
+
+--- [34] § ForEach + pipeline ---
+PS [34/55]> 1..50 | ForEach-Object { $_ * $_ } | Where-Object { $_ -gt 100 } | Select-Object -First 5
+  121
+  144
+  169
+  196
+  225
+
+PS [35/55]> 1..20 | ForEach-Object { $_ * 3 } | Sort-Object -Descending | Select-Object -First 5
+  60
+  57
+  54
+  51
+  48
+
+PS [36/55]> 1..30 | ForEach-Object { $_ % 4 } | Group-Object | Select-Object Name, Count
+  
+  Name  Count
+  ----  -----
+  0         7
+  1         8
+  2         8
+  3         7
+  
+
+PS [37/55]> 1..100 | ForEach-Object { $_ * $_ } | Measure-Object -Sum -Average
+  
+  Count    : 100
+  Sum      : 338350
+  Average  : 3383.5
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [38/55]> Get-Process | ForEach-Object { $_.WS } | Measure-Object -Sum -Maximum
+  
+  Count    : 0
+  Sum      : 0
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
+
+PS [39/55]> Get-Service | ForEach-Object { $_.Name.ToUpper() } | Sort-Object | Select-Object -First 5
+  AFD
+  AUDIOSRV
+  BTHSERV
+  CRYPTSVC
+  DHCP
+
+PS [40/55]> Get-Process | Select-Object -First 5 | ForEach-Object { "$($_.Name)=$($_.Id)" }
+  System Idle Process=0
+  System=4
+  Registry=108
+  smss=340
+  csrss=472
+
+PS [41/55]> 'apple','banana','cherry' | ForEach-Object { [pscustomobject]@{ Fruit=$_; Len=$_.Length } } | Sort-Object Len -Descending
+  
+  Fruit   Len
+  ------  ---
+  banana    6
+  cherry    6
+  apple     5
+  
+
+PS [42/55]> 1..10 | ForEach-Object { $_ } | Where-Object { $_ -gt 5 } | ForEach-Object { -$_ }
+  -Line : The term '-Line' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + -Line
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (-Line:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  ----- : The term '-----' is not recognized as the name of a cmdlet, function, script file, or operable
+  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  At line:1 char:1
+  + -----
+  + ~~~~~
+      + CategoryInfo          : ObjectNotFound: (-----:String) [], CommandNotFoundException
+      + FullyQualifiedErrorId : CommandNotFoundException
+  -1
+  -2
+  -3
+  -4
+  -5
+  -6
+  -7
+  -8
+  -9
+  -10
+
+PS [43/55]> Get-Service | Where-Object Status -EQ Running | ForEach-Object Name | Sort-Object | Select-Object -First 5
+<empty>
+
+PS [44/55]> 1..5 | ForEach-Object { $_ * $_ } | ForEach-Object -Begin { $sum=0 } -Process { $sum+=$_ } -End { "sum of squares=$sum" }
+  sum of squares=
+
+PS [45/55]> 1..3 | ForEach-Object { Get-Random -Minimum 0 -Maximum 1 }
+  0
+  0
+  0
+
+PS [46/55]> '2024-01-15','2023-12-31' | ForEach-Object { ([datetime]$_).Year }
+  2024
+  2023
+
+PS [47/55]> 1..6 | ForEach-Object { [math]::Pow(2,$_) }
+  2
+  4
+  8
+  16
+  32
+  64
+
+PS [48/55]> (1..10 | ForEach-Object { if ($_ -band 1) { $_ } }) -join ','
+  1
+  3
+  5
+  7
+  9
+
+PS [49/55]> Get-ChildItem C:\ | ForEach-Object { $_.Name } | Where-Object { $_ -match "^[A-P]" } | Sort-Object
+  numbers.txt
+  nums.txt
+  PerfLogs
+  Program Files
+  Program Files (x86)
+  ProgramData
+
+PS [50/55]> 1..4 | ForEach-Object { ,@($_, $_*2, $_*3) } | ForEach-Object { $_ -join "-" }
+  1
+  2
+  3
+  2
+  4
+  6
+  3
+  6
+  9
+  4
+  8
+  12
+
+PS [51/55]> "hello" | ForEach-Object { $_.ToCharArray() } | ForEach-Object { [int][char]$_ }
+<empty>
+
+PS [52/55]> Get-Process | Select-Object -First 8 | ForEach-Object { $_.Name } | Group-Object { $_.Length } | Select-Object Name, Count | Sort-Object Name
+  
+  Name  Count
+  ----  -----
+            8
+  
+
+PS [53/55]> 1..20 | ForEach-Object -Begin { $even=@(); $odd=@() } -Process { if ($_ % 2) { $odd+=$_ } else { $even+=$_ } } -End { "even=$($even -join ","); odd=$($odd -join ",")" }
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  20
+  even=
+  ); odd=
+  )
+
+PS [54/55]> 'a','bb','ccc','dddd' | ForEach-Object { $_ * 2 }
+  aa
+  bbbb
+  cccccc
+  dddddddd
+
+PS [55/55]> 1..3 | ForEach-Object { New-Object psobject -Property @{ V = $_ } } | Select-Object -ExpandProperty V
+  
+  
+  

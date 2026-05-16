@@ -66,14 +66,20 @@ export function createCmdRunner(device: Equipment): ShellRunner {
 
 /**
  * Replay `commands` on the given shell runner and write the transcript.
+ *
+ * `subdir` writes under `debug-output/<subdir>/` instead of the flat
+ * `debug-output/` root — used to keep the per-cmdlet attribute suites
+ * in their own dedicated folder.
  */
 export async function runAndDump(
   label: string,
   commands: readonly DebugCommandInput[],
   shell: ShellRunner,
   extraHeader?: string,
+  subdir?: string,
 ): Promise<void> {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const outDir = subdir ? path.join(OUTPUT_DIR, subdir) : OUTPUT_DIR;
+  fs.mkdirSync(outDir, { recursive: true });
   const lines: string[] = [];
   lines.push('============================================================');
   lines.push(`Shell debug transcript — ${label}`);
@@ -116,7 +122,7 @@ export async function runAndDump(
     lines.push('');
   }
 
-  const outPath = path.join(OUTPUT_DIR, `${label}_results_debug.txt`);
+  const outPath = path.join(outDir, `${label}_results_debug.txt`);
   fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
 }
 
