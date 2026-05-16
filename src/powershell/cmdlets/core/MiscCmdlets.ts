@@ -107,31 +107,6 @@ export class GetHelpCmdlet implements ICmdlet {
 
 // ─── Get-Command ──────────────────────────────────────────────────────────
 
-/**
- * Default capitalize-first fallback for Get-Command's display name when
- * an ICmdlet hasn't supplied its own `displayName`. Each cmdlet owns
- * its canonical PascalCase form via the ICmdlet.displayName property
- * (open/closed: no central dictionary to keep in sync).
- */
-function defaultPascalName(lower: string): string {
-  if (!/[a-z]/.test(lower)) return lower;
-  return lower.split('-')
-    .map(seg => seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)
-    .join('-');
-}
-
-function wildcardOrSubstringMatches(name: string, filter: string): boolean {
-  if (/[*?]/.test(filter)) {
-    const pat = new RegExp('^' + filter
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.') + '$', 'i');
-    return pat.test(name);
-  }
-  // No wildcard → exact (case-insensitive) match, matching real PS.
-  return name.toLowerCase() === filter.toLowerCase();
-}
-
 export class GetCommandCmdlet implements ICmdlet {
   readonly name = 'get-command';
   readonly aliases = ['gcm'] as const;
@@ -139,11 +114,10 @@ export class GetCommandCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     // Enumerate every registered cmdlet — Get-Command's whole point is
     // discoverability, so we go straight to the registry instead of a
-    // hard-coded subset.
+    // hard-coded subset. Each cmdlet supplies its own canonical
+    // PascalCase displayName (open/closed: no central naming dictionary).
     const all = ctx.runtime.listCmdlets();
 
-    // Build {canonical name, aliases, commandType} entries, then expand
-    // aliases as their own CommandType=Alias rows (mirroring real PS).
     type Row = {
       CommandType: 'Cmdlet' | 'Alias' | 'Function';
       Name: string;
@@ -153,7 +127,7 @@ export class GetCommandCmdlet implements ICmdlet {
     };
     const rows: Row[] = [];
     for (const c of all) {
-      const display = c.displayName ?? defaultPascalName(c.name);
+      const display = c.displayName ?? titleCaseCmdletName(c.name);
       const source  = c.module ?? 'Microsoft.PowerShell.Core';
       rows.push({
         CommandType: 'Cmdlet',
@@ -172,31 +146,39 @@ export class GetCommandCmdlet implements ICmdlet {
       }
     }
 
-    // User-defined functions surface as Function rows.
-    // (We can't enumerate functions without an additional hook; skip for now.)
+    // -Name (positional or named): wildcard / exact, matched against the
+    // display name. -Verb / -Noun split on the first dash.
+    const nameRaw    = ctx.named['name'] ?? ctx.positional[0];
+    const nameFilter = nameRaw !== undefined && nameRaw !== null && nameRaw !== ''
+      ? psValueToString(nameRaw) : null;
+    const verbFilter = ctx.named['verb'] ? psValueToString(ctx.named['verb']) : null;
+    const nounFilter = ctx.named['noun'] ? psValueToString(ctx.named['noun']) : null;
 
-    // Filter by -Name (positional or named) — wildcards supported, otherwise
-    // exact case-insensitive match.
-    const nameRaw = ctx.named['name'] ?? ctx.positional[0];
-    const filtered = nameRaw !== undefined && nameRaw !== null && nameRaw !== ''
-      ? (Array.isArray(nameRaw) ? nameRaw.map(psValueToString) : [psValueToString(nameRaw)])
-        .flatMap(f => rows.filter(r => wildcardOrSubstringMatches(r.Name, f)))
+    const nameMatches = (display: string): boolean => {
+      const lower = display.toLowerCase();
+      const dash  = display.indexOf('-');
+      const verb  = dash > 0 ? display.slice(0, dash).toLowerCase() : '';
+      const noun  = dash > 0 ? display.slice(dash + 1).toLowerCase() : lower;
+      if (nameFilter && !wildcardLike(lower, nameFilter.toLowerCase())) return false;
+      if (verbFilter && !wildcardLike(verb,  verbFilter.toLowerCase())) return false;
+      if (nounFilter && !wildcardLike(noun,  nounFilter.toLowerCase())) return false;
+      return true;
+    };
+
+    const filtered = (nameFilter || verbFilter || nounFilter)
+      ? rows.filter(r => nameMatches(r.Name))
       : rows;
 
-    // Filter by -CommandType
+    // -CommandType filter
     const typeRaw = ctx.named['commandtype'];
     const typeFilter = typeRaw ? psValueToString(typeRaw).toLowerCase() : null;
     const byType = typeFilter
       ? filtered.filter(r => r.CommandType.toLowerCase() === typeFilter)
       : filtered;
 
-    // Sort by Name, case-insensitive — matches the discoverable order
-    // users expect from `Get-Command | Out-String`.
     byType.sort((a, b) => a.Name.toLowerCase().localeCompare(b.Name.toLowerCase()));
 
-    // De-duplicate by (CommandType, Name): the same alias may be
-    // registered against multiple cmdlets (e.g. `?` appears for both
-    // Where-Object and an internal use).
+    // De-duplicate by (CommandType, Name).
     const seen = new Set<string>();
     const unique = byType.filter(r => {
       const key = `${r.CommandType}::${r.Name.toLowerCase()}`;
@@ -207,6 +189,21 @@ export class GetCommandCmdlet implements ICmdlet {
 
     return unique as unknown as Record<string, PSValue>[];
   }
+}
+
+/** Convert a registry name like 'get-itemproperty' to 'Get-ItemProperty'. */
+function titleCaseCmdletName(raw: string): string {
+  return raw.split('-')
+    .map(segment => segment.length === 0 ? '' :
+      segment.replace(/(^|[^a-z])([a-z])/g, (_, prefix: string, ch: string) => prefix + ch.toUpperCase()))
+    .join('-');
+}
+
+/** PowerShell-style match: literal substring OR `*?` wildcard (Like operator). */
+function wildcardLike(value: string, pattern: string): boolean {
+  if (!pattern.includes('*') && !pattern.includes('?')) return value === pattern;
+  const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(re).test(value);
 }
 
 // ─── Get-Module ───────────────────────────────────────────────────────────
@@ -349,19 +346,28 @@ export class GetPSDriveCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
     const drives = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    const shape = (d: PSValue): Record<string, PSValue> => {
+      const rec = d as Record<string, PSValue>;
+      return {
+        Name:     rec['Name'],
+        Used:     rec['Used'] ?? '',
+        Free:     rec['Free'] ?? '',
+        Provider: rec['Provider'] ?? inferProvider(String(rec['Root'] ?? '')),
+        Root:     rec['Root'],
+      } as Record<string, PSValue>;
+    };
     if (nameFilter) {
       const drive = drives[nameFilter];
-      if (drive) {
-        const d = drive as Record<string, PSValue>;
-        ctx.emit(`${d['Name']}  ${d['Root']}`);
-        return drive;
-      }
-      return null;
+      return drive ? shape(drive) : null;
     }
-    const all = Object.values(drives);
-    for (const d of all) ctx.emit(`${(d as Record<string, PSValue>)['Name']}  ${(d as Record<string, PSValue>)['Root']}`);
-    return all.length === 1 ? all[0] : all;
+    return Object.values(drives).map(shape);
   }
+}
+
+function inferProvider(root: string): string {
+  if (/^[A-Za-z]:\\?$/.test(root)) return 'FileSystem';
+  if (/^HK/i.test(root))           return 'Registry';
+  return '';
 }
 
 // ─── Clear-Host ───────────────────────────────────────────────────────────

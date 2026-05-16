@@ -52,6 +52,44 @@ import {
   cmdXcopy, cmdSort,
 } from './windows/WinFileCommands';
 
+/**
+ * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
+ * Returns the active flags and the literal patterns. Multi-token patterns
+ * separated by spaces are split into individual `OR` patterns to mirror real
+ * `findstr` behaviour (use `/C:"..."` to force a single literal substring).
+ */
+function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: boolean; invert: boolean; count: boolean } {
+  const tokens = filter.split(/\s+/).slice(1);
+  let ignoreCase = false;
+  let invert = false;
+  let count = false;
+  let cLiteral: string | null = null;
+  const positional: string[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.toLowerCase() === '/i') { ignoreCase = true; continue; }
+    if (t.toLowerCase() === '/v') { invert = true; continue; }
+    if (t.toLowerCase() === '/c')  { count = true; continue; }
+    if (/^\/c:/i.test(t)) {
+      cLiteral = t.slice(3).replace(/^"|"$/g, '');
+      continue;
+    }
+    if (t.startsWith('"')) {
+      let str = t.slice(1);
+      while (i < tokens.length - 1 && !str.endsWith('"')) { i++; str += ' ' + tokens[i]; }
+      if (str.endsWith('"')) str = str.slice(0, -1);
+      positional.push(str);
+      continue;
+    }
+    positional.push(t);
+  }
+
+  if (cLiteral !== null) return { patterns: [cLiteral], ignoreCase, invert, count };
+  // Bareword multi-token form: each token is a separate literal (OR semantics).
+  return { patterns: positional, ignoreCase, invert, count };
+}
+
 export class WindowsPC extends EndHost {
   protected readonly defaultTTL = 128;
   /** DHCP event log for Windows Event Viewer */
@@ -105,6 +143,18 @@ export class WindowsPC extends EndHost {
   readonly vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> = new Map();
   /** In-memory registry hive (HKLM / HKCU). */
   readonly registry: PSRegistryProvider = new PSRegistryProvider();
+
+  /**
+   * Shared scheduled-task table. Both `schtasks` (cmd) and the Get/Register/
+   * Unregister-ScheduledTask cmdlets read and write here so a task created
+   * from one shell is visible from the other.
+   */
+  readonly scheduledTasks: Map<string, { taskName: string; taskPath: string; state: string }> = new Map([
+    ['googleupdatetaskuser',           { taskName: 'GoogleUpdateTaskUser',            taskPath: '\\',                         state: 'Ready' }],
+    ['onedrive standalone update task',{ taskName: 'OneDrive Standalone Update Task', taskPath: '\\',                         state: 'Ready' }],
+    ['.net framework ngen v4.0.30319', { taskName: '.NET Framework NGEN v4.0.30319',  taskPath: '\\Microsoft\\Windows\\.NET', state: 'Ready' }],
+    ['simtesttask',                    { taskName: 'SimTestTask',                     taskPath: '\\',                         state: 'Ready' }],
+  ]);
   /** Event-log store. */
   readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
 
@@ -403,19 +453,27 @@ export class WindowsPC extends EndHost {
       const filterCmd = filterParts[0].toLowerCase();
 
       if (filterCmd === 'findstr') {
-        const pattern = filterParts.slice(1).join(' ').replace(/"/g, '');
+        const { patterns, ignoreCase, invert, count } = parseFindstrFilter(filter);
         const lines = output.split('\n');
-        output = lines.filter(l => l.toLowerCase().includes(pattern.toLowerCase())).join('\n');
+        const matches = (line: string): boolean => {
+          const haystack = ignoreCase ? line.toLowerCase() : line;
+          return patterns.some(p => haystack.includes(ignoreCase ? p.toLowerCase() : p));
+        };
+        const filtered = lines.filter(l => invert ? !matches(l) : matches(l));
+        output = count ? String(filtered.length) : filtered.join('\n');
       } else if (filterCmd === 'grep') {
         const pattern = filterParts[filterParts.length - 1];
         const lines = output.split('\n');
         output = lines.filter(l => l.includes(pattern)).join('\n');
       } else if (filterCmd === 'find') {
-        const quoteMatch = filter.match(/find\s+"([^"]+)"/i);
+        const ci = /\s\/i(\s|$)/i.test(' ' + filter);
+        const cnt = /\s\/c(\s|$)/i.test(' ' + filter);
+        const quoteMatch = filter.match(/find\s+(?:\/[a-z]\s+)*"([^"]+)"/i);
         if (quoteMatch) {
           const pattern = quoteMatch[1];
           const lines = output.split('\n');
-          output = lines.filter(l => l.includes(pattern)).join('\n');
+          const matched = lines.filter(l => ci ? l.toLowerCase().includes(pattern.toLowerCase()) : l.includes(pattern));
+          output = cnt ? String(matched.length) : matched.join('\n');
         }
       } else if (filterCmd === 'more') {
         // Passthrough in simulation
@@ -772,7 +830,29 @@ export class WindowsPC extends EndHost {
 
   /** `start <program>` — simulator stub: returns silently (real cmd
    *  detaches a new process and returns immediately). */
-  private cmdStart(_args: string[]): string {
+  /**
+   * `start <command>` — launch a program in a new session. Spawns into the
+   * shared process manager so both `tasklist` and `Get-Process` see it.
+   * Returns an empty string on success (matches cmd.exe semantics).
+   */
+  private cmdStart(args: string[]): string {
+    // Strip cmd-style flags (/B, /WAIT, /MIN, ...) and the optional "title"
+    // argument that precedes the executable.
+    const filtered = args.filter(a => !a.startsWith('/'));
+    if (filtered.length === 0) return '';
+    let target = filtered[0].replace(/^["']|["']$/g, '');
+    // `start "title" prog ...` form: drop the title token.
+    if (filtered.length >= 2 && /^"[^"]*"$/.test(args.find(a => /^"[^"]*"$/.test(a)) ?? '')) {
+      target = filtered[1].replace(/^["']|["']$/g, '');
+    }
+    if (!target) return '';
+    const leaf = target.split(/[\\/]/).pop() ?? target;
+    const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
+    const parent = this.procMgr.getAllProcesses().find(p => p.name.toLowerCase() === 'explorer.exe');
+    const ppid = parent?.pid ?? 1;
+    this.procMgr.spawnProcess(imageName, ppid, this.userMgr.currentUser, {
+      session: 'Console', sessionId: 1,
+    });
     return '';
   }
 
@@ -791,17 +871,43 @@ export class WindowsPC extends EndHost {
       : `SUCCESS: Specified value was saved.`;
   }
 
-  /** `schtasks /query [/tn NAME]` — minimal stub: empty task list. */
+  /**
+   * `schtasks` — query/create/delete entries in the shared
+   * `scheduledTasks` map so PowerShell's `Get-ScheduledTask` and
+   * `Register-ScheduledTask` see the same data.
+   */
   private cmdSchtasks(args: string[]): string {
     const action = args[0]?.toLowerCase();
+    const flagIdx = (name: string) => args.findIndex(a => a.toLowerCase() === name);
+    const tn      = (() => { const i = flagIdx('/tn'); return i >= 0 ? args[i + 1] : undefined; })();
+
     if (action === '/query') {
-      return [
+      const filtered = tn
+        ? Array.from(this.scheduledTasks.values()).filter(t => t.taskName.toLowerCase() === tn.toLowerCase())
+        : Array.from(this.scheduledTasks.values());
+      const lines = [
         'Folder: \\',
         'TaskName                                 Next Run Time          Status',
         '======================================== ====================== ===============',
-      ].join('\n');
+      ];
+      for (const t of filtered) {
+        lines.push(`${t.taskName.padEnd(40)} N/A                    ${t.state}`);
+      }
+      return lines.join('\n');
     }
-    if (action === '/create' || action === '/delete' || action === '/run' || action === '/end') {
+    if (action === '/create') {
+      if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+      this.scheduledTasks.set(tn.toLowerCase(), { taskName: tn, taskPath: '\\', state: 'Ready' });
+      return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
+    }
+    if (action === '/delete') {
+      if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+      const removed = this.scheduledTasks.delete(tn.toLowerCase());
+      return removed
+        ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
+        : `ERROR: The system cannot find the file specified.`;
+    }
+    if (action === '/run' || action === '/end' || action === '/change') {
       return 'SUCCESS: The scheduled task was created/modified successfully.';
     }
     return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
@@ -858,10 +964,10 @@ export class WindowsPC extends EndHost {
       if (!this.registry.testPath(psKey)) {
         return 'ERROR: The system was unable to find the specified registry key or value.';
       }
-      const text = this.registry.getChildItem(psKey);
-      return text && !/Cannot find path/i.test(text)
-        ? text
-        : `\n${rawKey}\n`;
+      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
+      const recurse = args.some(a => a.toLowerCase() === '/s');
+      const valueFilter = vIdx >= 0 ? args[vIdx + 1] : undefined;
+      return this.formatRegQuery(rawKey, psKey, valueFilter, recurse);
     }
     if (action === 'add') {
       const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
@@ -889,6 +995,38 @@ export class WindowsPC extends EndHost {
       return 'The operation completed successfully.';
     }
     return 'ERROR: Invalid syntax.';
+  }
+
+  /**
+   * Render a `reg query` result in the canonical reg.exe layout:
+   *   <RootKey>\<Sub>\<Sub>
+   *       Name    REG_TYPE    Value
+   * Optionally filters to a single value (`/v Name`) or recurses (`/s`).
+   */
+  private formatRegQuery(rawKey: string, psKey: string, valueFilter: string | undefined, recurse: boolean): string {
+    const lines: string[] = [];
+    const visit = (currentRaw: string, currentPs: string): void => {
+      const values = this.registry.getItemPropertyValues(currentPs);
+      const subkeys = this.registry.listSubkeyNames(currentPs);
+      lines.push('');
+      lines.push(currentRaw);
+      if (values) {
+        for (const [name, val] of Object.entries(values)) {
+          if (valueFilter && name.toLowerCase() !== valueFilter.toLowerCase()) continue;
+          const t = typeof val === 'number' ? 'REG_DWORD' : 'REG_SZ';
+          const v = typeof val === 'number' ? `0x${val.toString(16)}` : String(val);
+          lines.push(`    ${name}    ${t}    ${v}`);
+        }
+      }
+      if (recurse) {
+        for (const sub of subkeys) {
+          visit(`${currentRaw}\\${sub}`, `${currentPs}\\${sub}`);
+        }
+      }
+    };
+    visit(rawKey, psKey);
+    lines.push('');
+    return lines.join('\n');
   }
 
   /** nslookup command implementation for Windows */

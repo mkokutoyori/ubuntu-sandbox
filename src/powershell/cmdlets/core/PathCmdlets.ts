@@ -116,6 +116,9 @@ export class GetChildItemCmdlet implements ICmdlet {
     const path    = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '.');
     const filter  = ctx.named['filter']  ? psValueToString(ctx.named['filter'])  : null;
     const recurse = ctx.named['recurse'] === true || ctx.named['recurse'] === 'true';
+    const onlyFiles = ctx.named['file']      === true;
+    const onlyDirs  = ctx.named['directory'] === true;
+    const nameOnly  = ctx.named['name']      === true;
 
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
@@ -170,6 +173,15 @@ export class GetChildItemCmdlet implements ICmdlet {
       const pat = new RegExp(`^${filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
       items = items.filter(item => pat.test(psValueToString((item as Record<string, PSValue>)['Name'])));
     }
+    if (onlyFiles) {
+      items = items.filter(item => !(item as Record<string, PSValue>)['PSIsContainer']);
+    }
+    if (onlyDirs) {
+      items = items.filter(item => (item as Record<string, PSValue>)['PSIsContainer']);
+    }
+    if (nameOnly) {
+      return items.map(item => (item as Record<string, PSValue>)['Name']) as PSValue;
+    }
     return items;
   }
 }
@@ -187,17 +199,26 @@ export class GetContentCmdlet implements ICmdlet {
     let content: string;
     try { content = fs.readFile(path); }
     catch { return null; }
+    const raw = ctx.named['raw'] === true || ctx.named['raw'] === 'true';
+    if (raw) return content;
+
+    // PowerShell Get-Content returns one PSValue per line. The trailing empty
+    // token from a final newline is dropped so `.Count` matches user intent.
+    const lines = content.split(/\r?\n/);
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
     const tail       = ctx.named['tail']       !== undefined ? Number(ctx.named['tail'])       : undefined;
     const totalCount = ctx.named['totalcount'] !== undefined ? Number(ctx.named['totalcount']) : undefined;
-    if (tail !== undefined || totalCount !== undefined) {
-      const lines = content.split(/\r?\n/);
-      // Trailing empty token from final newline — drop so slicing matches user
-      // intent (`-Tail 2` on "1\n2\n3\n4\n5\n" returns ["4","5"]).
-      if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-      if (tail !== undefined)       return lines.slice(Math.max(0, lines.length - tail)) as unknown as PSValue;
-      if (totalCount !== undefined) return lines.slice(0, totalCount) as unknown as PSValue;
-    }
-    return content;
+    const sliced = tail !== undefined
+      ? lines.slice(Math.max(0, lines.length - tail))
+      : totalCount !== undefined
+        ? lines.slice(0, totalCount)
+        : lines;
+    // PowerShell unwraps single-element arrays produced by Get-Content so
+    // `$x = Get-Content single-line.txt` yields a string; `.Count` still
+    // works on the array form when content has multiple lines.
+    if (sliced.length === 1) return sliced[0] as PSValue;
+    return sliced as unknown as PSValue;
   }
 }
 
@@ -225,10 +246,16 @@ export class AddContentCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
-    const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '');
+    const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    fs.appendFile(path, value);
+    const lines = Array.isArray(raw) ? raw.map(v => psValueToString(v)) : [psValueToString(raw)];
+    // PowerShell Add-Content treats each input value as a line and ensures the
+    // file ends with a trailing newline so subsequent appends start fresh.
+    const existing = (() => { try { return fs.readFile(path); } catch { return ''; } })();
+    const needsLeadingNl = existing.length > 0 && !/[\r\n]$/.test(existing);
+    const payload = (needsLeadingNl ? '\n' : '') + lines.join('\n') + '\n';
+    fs.appendFile(path, payload);
     return null;
   }
 }
@@ -280,6 +307,13 @@ export class RemoveItemCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const path    = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const recurse = ctx.named['recurse'] === true;
+
+    // Env:VAR — clear the variable on the environment provider.
+    const envMatch = /^env:(.+)$/i.exec(path);
+    if (envMatch) {
+      ctx.providers.environment?.remove(envMatch[1]);
+      return null;
+    }
 
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
@@ -412,7 +446,24 @@ export class GetItemPropertyCmdlet implements ICmdlet {
     const name = ctx.named['name'] ? psValueToString(ctx.named['name']) : undefined;
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
-      return ctx.providers.registry.getItemProperty(path, name);
+      const reg = ctx.providers.registry;
+      if (reg.getItemPropertyValues) {
+        const values = reg.getItemPropertyValues(path);
+        if (values === null) {
+          ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+          return null;
+        }
+        if (name) {
+          const key = Object.keys(values).find(k => k.toLowerCase() === name.toLowerCase());
+          if (!key) {
+            ctx.emitError(`Property '${name}' does not exist at path '${path}'.`);
+            return null;
+          }
+          return { [key]: values[key] } as Record<string, PSValue>;
+        }
+        return values as Record<string, PSValue>;
+      }
+      return reg.getItemProperty(path, name);
     }
     requireRegistryProvider(path); // throws "not recognized" — fallback to executor for FS attrs
     return null;
@@ -455,6 +506,34 @@ export class RemoveItemPropertyCmdlet implements ICmdlet {
   }
 }
 
+/**
+ * `Clear-ItemProperty` — reset a registry value to its type-default (empty
+ * string for REG_SZ, 0 for REG_DWORD) without removing the value itself.
+ * Implemented on top of `setItemProperty` so it works against any registry
+ * provider that supports writes.
+ */
+export class ClearItemPropertyCmdlet implements ICmdlet {
+  readonly name = 'clear-itemproperty';
+  readonly aliases = ['clp'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
+    if (!isRegistryPath(path)) {
+      ctx.emitError(`Clear-ItemProperty : Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
+    if (!ctx.providers.registry) requireRegistryProvider(path);
+    const reg = ctx.providers.registry;
+    const existing = reg.getItemPropertyValues?.(path);
+    const current = existing
+      ? existing[Object.keys(existing).find(k => k.toLowerCase() === name.toLowerCase()) ?? '']
+      : undefined;
+    const cleared: string | number = typeof current === 'number' ? 0 : '';
+    return reg.setItemProperty(path, name, cleared);
+  }
+}
+
 // ─── Get-Item / Set-Item ────────────────────────────────────────────────────
 // Read / overwrite a filesystem entry. Registry paths fall through to the
 // existing item-property cmdlets.
@@ -490,14 +569,51 @@ export class GetItemCmdlet implements ICmdlet {
     }
     const isDir = fs.isDirectory(path);
     const baseName = path.replace(/\\$/, '').split(/[\\/]/).pop() ?? path;
+    const stat = lookupDirEntry(fs, path);
+    const attrs = stat?.attributes ?? new Set<string>(isDir ? ['directory'] : ['archive']);
     return {
       Name:          baseName,
       FullName:      path,
       PSIsContainer: isDir,
-      Mode:          isDir ? 'd-----' : '-a----',
-      Length:        isDir ? 0 : (fs.readFile(path) || '').length,
+      Mode:          renderModeFromAttributes(attrs, isDir),
+      Length:        isDir ? 0 : (stat?.size ?? (fs.readFile(path) || '').length),
+      LastWriteTime: stat?.mtime ?? null,
+      Attributes:    Array.from(attrs).map(a => titleCaseAttribute(a)).join(', '),
+      IsReadOnly:    attrs.has('readonly'),
     } as Record<string, PSValue>;
   }
+}
+
+/** Find the entry record for a file by listing its parent directory. */
+function lookupDirEntry(
+  fs: NonNullable<CmdletContext['providers']['filesystem']>,
+  path: string,
+): { size: number; mtime: Date; attributes: Set<string> } | null {
+  const norm = path.replace(/[\\/]+$/, '');
+  const lastSep = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
+  const parent = lastSep > 1 ? norm.slice(0, lastSep) : norm.slice(0, lastSep + 1);
+  const leaf   = lastSep >= 0 ? norm.slice(lastSep + 1) : norm;
+  try {
+    const entries = fs.listDir(parent || '.');
+    const hit = entries.find(e => e.name.toLowerCase() === leaf.toLowerCase());
+    if (!hit) return null;
+    return { size: hit.size, mtime: hit.mtime, attributes: hit.attributes ?? new Set() };
+  } catch { return null; }
+}
+
+function renderModeFromAttributes(attrs: Set<string>, isDir: boolean): string {
+  const d = isDir          ? 'd' : '-';
+  const a = attrs.has('archive')  ? 'a' : '-';
+  const r = attrs.has('readonly') ? 'r' : '-';
+  const h = attrs.has('hidden')   ? 'h' : '-';
+  const s = attrs.has('system')   ? 's' : '-';
+  const l = '-';
+  return d + a + r + h + s + l;
+}
+
+function titleCaseAttribute(a: string): string {
+  if (a === 'readonly') return 'ReadOnly';
+  return a.charAt(0).toUpperCase() + a.slice(1);
 }
 
 export class SetItemCmdlet implements ICmdlet {
@@ -508,6 +624,18 @@ export class SetItemCmdlet implements ICmdlet {
     const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
     const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? '');
     if (!path) { ctx.emitError('Set-Item requires -Path'); return null; }
+    // Env:VAR — write through to the environment provider so cmd subshells
+    // see the same variable.
+    const envMatch = /^env:(.+)$/i.exec(path);
+    if (envMatch) {
+      const name = envMatch[1];
+      if (!ctx.providers.environment) {
+        ctx.emitError(`Set-Item : Cannot find drive 'Env'.`);
+        return null;
+      }
+      ctx.providers.environment.set(name, value);
+      return null;
+    }
     if (isRegistryPath(path)) {
       // Defer to legacy executor (which has rich registry-Set-Item behaviour).
       throw new PSRuntimeError('Set-Item on registry paths is not recognized in this provider context');

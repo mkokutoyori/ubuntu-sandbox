@@ -637,13 +637,29 @@ export class PSLexer {
     }
 
     // Integer or float
+    const savedPos = this.pos;
     while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
+
+    // IPv4-style literals (e.g. 127.0.0.1) — when the digits are followed by
+    // ".N.N.N", emit a single WORD rather than splitting into 3 numbers, so
+    // command arguments stay intact.
+    if (!this.eof() && this.ch() === '.' && this.peek1() !== undefined && this.isDigit(this.peek1()!)
+        && this.looksLikeIPv4FromHere(value)) {
+      let ip = value;
+      // Consume up to three additional ".N+" groups.
+      while (!this.eof() && this.ch() === '.' && this.peek1() !== undefined && this.isDigit(this.peek1()!)) {
+        ip += this.ch(); this.advance();
+        while (!this.eof() && this.isDigit(this.ch())) { ip += this.ch(); this.advance(); }
+      }
+      return psToken(PSTokenType.WORD, ip, start);
+    }
 
     // Decimal part
     if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
       value += '.'; this.advance();
       while (!this.eof() && this.isDigit(this.ch())) { value += this.ch(); this.advance(); }
     }
+    void savedPos;
 
     // Exponent
     if (!this.eof() && (this.ch() === 'e' || this.ch() === 'E')) {
@@ -664,6 +680,26 @@ export class PSLexer {
     }
 
     return psToken(PSTokenType.NUMBER, value, start);
+  }
+
+  /**
+   * From the current scanner position (just after digits), check whether the
+   * upcoming `.N(.N)*` sequence forms an IPv4-like literal worth keeping
+   * together. Requires at least one more `.N` group and a total of at least
+   * three dots (so plain decimals like `1.5` keep being numbers).
+   */
+  private looksLikeIPv4FromHere(prefix: string): boolean {
+    if (!/^\d+$/.test(prefix)) return false;
+    let i = this.pos;
+    let dots = 0;
+    while (i < this.input.length) {
+      if (this.input[i] === '.' && i + 1 < this.input.length && this.isDigit(this.input[i + 1])) {
+        dots++;
+        i++;
+        while (i < this.input.length && this.isDigit(this.input[i])) i++;
+      } else break;
+    }
+    return dots >= 3;
   }
 
   // ─── Word / Keyword / Path ────────────────────────────────────────────────

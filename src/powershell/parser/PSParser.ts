@@ -373,9 +373,15 @@ export class PSParser {
     const tok = this.peek();
 
     if (tok.type === PSTokenType.AMPERSAND) {
-      // & $var or & "script.ps1"
+      // & $var, & "script.ps1", or & { scriptblock }. For a literal scriptblock
+      // we mark the node so the runtime invokes it rather than treating it as
+      // a value (the parser is the only place where this distinction is
+      // visible — a bare `{ ... }` reaches execCommand with the same AST).
       this.advance();
-      return this.parsePrimaryExpression();
+      const expr = this.parsePrimaryExpression();
+      if (expr.type === 'ScriptBlock')
+        (expr as unknown as Record<string, unknown>).__invoke__ = true;
+      return expr;
     }
 
     // Unary operator at statement start: `-not $cond`, `-bnot $x` etc. Lexed

@@ -21,6 +21,22 @@ function toArray(val: PSValue): PSValue[] {
   return Array.isArray(val) ? val : [val];
 }
 
+/**
+ * Flatten a list of positional arguments into a flat list of property
+ * specifications. `Select-Object Name, Status` reaches the cmdlet with
+ * positional[0] = ['Name','Status'] (one array arg) — without flattening
+ * the cmdlet would treat the whole array as a single non-string property
+ * and silently produce empty result objects.
+ */
+function flattenProps(items: PSValue[]): PSValue[] {
+  const out: PSValue[] = [];
+  for (const it of items) {
+    if (Array.isArray(it)) out.push(...flattenProps(it as PSValue[]));
+    else if (it !== null && it !== undefined) out.push(it);
+  }
+  return out;
+}
+
 function stringArgs(pos: PSValue[], named: Record<string, PSValue>, key: string): string[] {
   const src = named[key] ?? (pos.length > 0 ? pos : null);
   if (!src) return [];
@@ -97,9 +113,9 @@ export class SelectObjectCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const input      = toArray(ctx.pipeInput);
-    const rawProps   = ctx.named['property'] !== undefined
+    const rawProps   = flattenProps(ctx.named['property'] !== undefined
       ? toArray(ctx.named['property'])
-      : ctx.positional.length > 0 ? ctx.positional : [];
+      : ctx.positional);
     const first      = ctx.named['first']  !== undefined ? Number(ctx.named['first'])  : undefined;
     const last       = ctx.named['last']   !== undefined ? Number(ctx.named['last'])   : undefined;
     const skip       = ctx.named['skip']   !== undefined ? Number(ctx.named['skip'])   : 0;
@@ -214,20 +230,20 @@ export class MeasureObjectCmdlet implements ICmdlet {
     const input = toArray(ctx.pipeInput);
     const props = stringArgs(ctx.positional, ctx.named, 'property');
     // Numeric values for Sum/Average/Min/Max (a property, or the item
-    // itself when no -Property given).
-    const nums = input.map(item => {
-      const v = props.length ? (item as Record<string, PSValue>)[props[0]] : item;
-      return Number(v);
-    }).filter(n => !isNaN(n));
+    // itself when no -Property given). Count, below, is the number of
+    // input objects — NOT just the numeric ones — so
+    // `Get-Command | Measure-Object` reports every command.
+    const rawValues = input.map(item =>
+      props.length ? (item as Record<string, PSValue>)[props[0]] : item,
+    );
+    const nums = rawValues.map(v => Number(v)).filter(n => !isNaN(n));
 
-    // Count is the number of input objects — NOT just the numeric ones.
-    // `Get-Command | Measure-Object` must report every command.
+    const wantSum = isTruthy(ctx.named['sum']     ?? false);
+    const wantAvg = isTruthy(ctx.named['average'] ?? false);
+    const wantMin = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);
+    const wantMax = isTruthy(ctx.named['maximum'] ?? ctx.named['max'] ?? false);
+
     const result: Record<string, PSValue> = { Count: input.length };
-    const wantSum  = isTruthy(ctx.named['sum']     ?? false);
-    const wantAvg  = isTruthy(ctx.named['average'] ?? false);
-    const wantMin  = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);
-    const wantMax  = isTruthy(ctx.named['maximum'] ?? ctx.named['max'] ?? false);
-
     result['Sum']     = wantSum  ? nums.reduce((a, b) => a + b, 0) : null;
     result['Average'] = wantAvg  ? (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null) : null;
     result['Minimum'] = wantMin  ? (nums.length ? Math.min(...nums) : null) : null;

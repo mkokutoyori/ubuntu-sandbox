@@ -20,6 +20,28 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/** Compile a PowerShell-style wildcard (`*`, `?`) into a case-insensitive regex. */
+function wildcardRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+/**
+ * Map PowerShell's user-visible `-StartupType` values onto the canonical
+ * `ServiceStartType` enum the device service manager understands. Mirrors
+ * the legacy executor's typeMap so cmd and PS end up with identical state.
+ */
+function normalizeStartupType(raw: string): string {
+  const k = raw.toLowerCase();
+  if (k === 'automatic')              return 'Automatic';
+  if (k === 'automaticdelayedstart')  return 'AutomaticDelayedStart';
+  if (k === 'manual' || k === 'demand') return 'Manual';
+  if (k === 'disabled')               return 'Disabled';
+  if (k === 'boot')                   return 'Boot';
+  if (k === 'system')                 return 'System';
+  return raw;
+}
+
 function requireServices(ctx: CmdletContext): IServiceProvider {
   if (!ctx.providers.services) {
     // PowerShellSubShell.isFallbackError catches "not recognized" and falls
@@ -99,6 +121,14 @@ export class GetServiceCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);
+    // -DisplayName filter (wildcard-capable). Applied before -Name so the
+    // two parameters compose cleanly when both are present.
+    const displayPattern = ctx.named['displayname'] !== undefined
+      ? psValueToString(ctx.named['displayname']) : null;
+    if (displayPattern !== null) {
+      const pat = wildcardRegex(displayPattern);
+      return asPSObjects(svc.listServices().filter(s => pat.test(s.displayName)));
+    }
     const name = pickServiceName(ctx);
     if (name === null) return asPSObjects(svc.listServices());
 
@@ -192,7 +222,11 @@ export class SetServiceCmdlet implements ICmdlet {
       return null;
     }
     const opts: { startType?: string; description?: string; displayName?: string; status?: string } = {};
-    if (ctx.named['starttype']   !== undefined) opts.startType   = psValueToString(ctx.named['starttype']);
+    // Set-Service exposes the parameter as `-StartupType`; lower-case key in
+    // ctx.named is therefore `startuptype` (matches the real PowerShell name).
+    // Accept the historical alias `starttype` too.
+    const startupRaw = ctx.named['startuptype'] ?? ctx.named['starttype'];
+    if (startupRaw !== undefined)              opts.startType   = normalizeStartupType(psValueToString(startupRaw));
     if (ctx.named['description'] !== undefined) opts.description = psValueToString(ctx.named['description']);
     if (ctx.named['displayname'] !== undefined) opts.displayName = psValueToString(ctx.named['displayname']);
     if (ctx.named['status']      !== undefined) opts.status      = psValueToString(ctx.named['status']);
