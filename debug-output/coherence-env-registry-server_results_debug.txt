@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-server
-Generated: 2026-05-16T06:44:17.714Z
+Generated: 2026-05-16T06:47:26.589Z
 host=SRV-ENV-DBG (windows-server)
 Total commands: 103
 ============================================================

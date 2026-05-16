@@ -750,6 +750,12 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('mode') && lower.has('lastwritetime') && lower.has('name')) {
     return ['Mode', 'LastWriteTime', 'Length', 'Name'];
   }
+  // PathInfo from Get-Location / pwd: real PS shows only the Path column
+  // (Drive / Provider / ProviderPath stay accessible as properties).
+  if (lower.has('path') && lower.has('providerpath') && lower.has('provider')
+      && keys.length <= 4) {
+    return ['Path'];
+  }
   return null;
 }
 

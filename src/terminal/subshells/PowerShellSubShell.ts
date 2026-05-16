@@ -136,7 +136,8 @@ export class PowerShellSubShell implements ISubShell {
       return { output: [], exit: false, prompt: this.getPrompt(), clearScreen: true };
     }
 
-    // Sync cwd to PS executor
+    // Sync cwd to PS executor BEFORE the command runs (so relative paths
+    // resolve from the right place).
     this.psExecutor.setCwd((this.device as any).getCwd());
 
     // Execute the PowerShell command via the interpreter first, then fall back
@@ -147,6 +148,11 @@ export class PowerShellSubShell implements ISubShell {
     const output = (result !== null && result !== undefined && result !== '')
       ? result.split('\n')
       : [];
+
+    // Re-sync AFTER the command: Set-Location / cd / Push-Location change
+    // the device cwd, and the prompt must reflect the *new* directory
+    // immediately — not lag a command behind.
+    this.psExecutor.setCwd((this.device as any).getCwd());
 
     return {
       output,

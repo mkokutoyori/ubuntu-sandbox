@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-pc
-Generated: 2026-05-16T06:44:15.737Z
+Generated: 2026-05-16T06:47:25.815Z
 host=WIN-SP-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -751,7 +751,7 @@ CMD [39/102]> tasklist
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0      5,331 K
+  spoolsv.exe                   5136 Services                   0     17,307 K
 
 CMD [40/102]> tasklist /v
   
@@ -782,7 +782,7 @@ CMD [40/102]> tasklist /v
   explorer.exe                  2848 Console                    1    145,000 K Running         WIN-SP-DBG\Administrator            0:00:12 Windows Explorer
   cmd.exe                       5120 Console                    1      5,200 K Running         WIN-SP-DBG\Administrator            0:00:00 Command Prompt
   conhost.exe                   5132 Console                    1     18,400 K Running         WIN-SP-DBG\Administrator            0:00:00 Console Window Host
-  spoolsv.exe                   5136 Services                   0      5,331 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   5136 Services                   0     17,307 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
 
 CMD [41/102]> tasklist /fo csv /nh
   "System Idle Process","0","Services","0","16 K"
@@ -810,7 +810,7 @@ CMD [41/102]> tasklist /fo csv /nh
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","5,331 K"
+  "spoolsv.exe","5136","Services","0","17,307 K"
 
 PS  [42/102]> Get-Process
   
@@ -841,7 +841,7 @@ PS  [42/102]> Get-Process
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-      215      11      5    5331                   0  5136  spoolsv            
+       73       6      4   17307                   0  5136  spoolsv            
   
 
 PS  [43/102]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
@@ -906,7 +906,7 @@ PS  [45/102]> ps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-      215      11      5    5331                   0  5136  spoolsv            
+       73       6      4   17307                   0  5136  spoolsv            
   
 
 PS  [46/102]> gps
@@ -938,7 +938,7 @@ PS  [46/102]> gps
      2100      65     64  145000                12.3  2848  explorer           
        48       3      3    5200                 0.1  5120  cmd                
       180      10     10   18400                 0.3  5132  conhost            
-      215      11      5    5331                   0  5136  spoolsv            
+       73       6      4   17307                   0  5136  spoolsv            
   
 
 
@@ -950,13 +950,13 @@ CMD [48/102]> tasklist /fi "imagename eq notepad.exe"
   
   Image Name                     PID Session Name        Session#    Mem Usage
   ========================= ======== ================ =========== ============
-  notepad.exe                   5140 Console                    1     11,483 K
+  notepad.exe                   5140 Console                    1      4,901 K
 
 PS  [49/102]> Get-Process -Name notepad -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      202      10      7  11483       0  5140  notepad    
+       70      10      3   4901       0  5140  notepad    
   
 
 CMD [50/102]> start calc.exe
@@ -966,7 +966,7 @@ PS  [51/102]> Get-Process -Name calc -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      248      13      7  14067       0  5144  calc       
+       68       4      5   6973       0  5144  calc       
   
 
 
@@ -978,8 +978,8 @@ CMD [53/102]> tasklist /fi "imagename eq notepad.exe"
   
   Image Name                     PID Session Name        Session#    Mem Usage
   ========================= ======== ================ =========== ============
-  notepad.exe                   5140 Console                    1     11,483 K
-  notepad.exe                   5148 Console                    1      9,202 K
+  notepad.exe                   5140 Console                    1      4,901 K
+  notepad.exe                   5148 Console                    1      7,440 K
 
 PS  [54/102]> Start-Process -FilePath cmd.exe
 <empty>
@@ -989,7 +989,7 @@ CMD [55/102]> tasklist /fi "imagename eq cmd.exe"
   Image Name                     PID Session Name        Session#    Mem Usage
   ========================= ======== ================ =========== ============
   cmd.exe                       5120 Console                    1      5,200 K
-  cmd.exe                       5152 Console                    1     12,414 K
+  cmd.exe                       5152 Console                    1      9,067 K
 
 
 --- [56] § taskkill (cmd) → check (ps) ---
@@ -1042,7 +1042,7 @@ PS  [65/102]> Get-Process -Name notepad | Select-Object -First 1 Id, Name
   
 
 CMD [66/102]> tasklist /fi "imagename eq notepad.exe" /fo csv /nh
-  "notepad.exe","5156","Console","1","13,372 K"
+  "notepad.exe","5156","Console","1","10,925 K"
 
 CMD [67/102]> taskkill /im notepad.exe /f
   SUCCESS: The process "notepad.exe" with PID 5156 has been terminated.
@@ -1118,7 +1118,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 4:44 AM
+  TimeCreated  : 5/16/2026 4:47 AM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -1126,7 +1126,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 12:44 AM
+  TimeCreated  : 5/16/2026 12:47 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -1134,7 +1134,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 6:44 PM
+  TimeCreated  : 5/15/2026 6:47 PM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
