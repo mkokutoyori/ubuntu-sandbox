@@ -666,21 +666,50 @@ export class PSRuntime {
   }
 
   private execPipelineStmt(node: PSPipelineStatement, env: PSEnvironment): PSValue {
+    if (node.redirections.length === 0) {
+      return this.execPipeline(node.pipeline, env);
+    }
+    // The pipeline's success stream is whatever it emits to outputLines
+    // (Write-Output etc. emit there during execution). Snapshot first so a
+    // stdout redirect can divert that stream to the file instead of the
+    // console — real PowerShell: `echo x > f.txt` prints nothing.
+    const before = this.outputLines.length;
     const result = this.execPipeline(node.pipeline, env);
+    const emitted = this.outputLines.slice(before);
+    let stdoutRedirected = false;
+
     for (const redir of node.redirections) {
       if (!redir.target) continue;
       const filePath = psValueToString(this.evalExpr(redir.target, env));
       if (!filePath) continue;
       const fs = this.providers.filesystem;
       if (!fs) continue;
-      const content = Array.isArray(result)
-        ? (result as PSValue[]).map(v => psValueToString(v)).join('\n')
-        : psValueToString(result);
-      if (redir.op === '>>' || redir.op === '2>>' || redir.op === '*>>') {
-        fs.appendFile(filePath, content);
-      } else {
-        fs.writeFile(filePath, content);
-      }
+
+      const isStdout = redir.op === '>' || redir.op === '>>'
+        || redir.op === '*>' || redir.op === '*>>';
+      const isAppend = redir.op === '>>' || redir.op === '2>>' || redir.op === '*>>';
+
+      // Prefer the actual emitted stream; fall back to the return value
+      // for cmdlets that return without emitting.
+      const lines = emitted.length > 0
+        ? emitted
+        : (Array.isArray(result)
+            ? (result as PSValue[]).map(v => psValueToString(v))
+            : result === null || result === undefined ? [] : [psValueToString(result)]);
+      // PowerShell terminates the redirected content with a newline, so
+      // successive `>>` appends land on their own lines.
+      const content = lines.length ? lines.join('\n') + '\n' : '';
+
+      if (isAppend) fs.appendFile(filePath, content);
+      else          fs.writeFile(filePath, content);
+
+      if (isStdout) stdoutRedirected = true;
+    }
+
+    // Remove the diverted lines from the console stream.
+    if (stdoutRedirected) {
+      this.outputLines.length = before;
+      return null;
     }
     return result;
   }
@@ -1071,6 +1100,10 @@ export class PSRuntime {
       case '-not': return !this.isTruthy(val);
       case '!':    return !this.isTruthy(val);
       case '-bnot':return ~(val as number);
+      // Unary comma: a single-element array wrapping the operand —
+      // even when the operand is itself an array (`(,@(1,2,3)).Count`
+      // is 1, not 3).
+      case ',':    return [val];
       default:     throw new PSRuntimeError(`Unknown unary operator: ${node.operator}`);
     }
   }

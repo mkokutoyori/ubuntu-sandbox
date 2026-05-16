@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-network-server
-Generated: 2026-05-16T19:48:58.721Z
+Generated: 2026-05-16T13:05:11.685Z
 host=SRV-NET-COH (windows-server)
 Total commands: 102
 ============================================================
@@ -383,14 +383,10 @@ PS  [28/102]> Get-NetIPAddress -ErrorAction SilentlyContinue | Where-Object { $_
   
 
 CMD [29/102]> netsh interface ipv4 delete address "Ethernet" 192.168.99.10
-  Usage: netsh interface ip delete address "name" addr=<ip>
+  Ok.
 
 PS  [30/102]> Get-NetIPAddress -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -like "192.168.99.*" }
-  
-  IPAddress      InterfaceAlias  AddressFamily  PrefixLength
-  -------------  --------------  -------------  ------------
-  192.168.99.10  eth0            IPv4                     24
-  
+<empty>
 
 
 --- [31] § New-NetIPAddress (ps) → cmd ---

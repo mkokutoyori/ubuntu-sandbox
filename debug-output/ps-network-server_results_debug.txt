@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-server
-Generated: 2026-05-16T19:48:56.419Z
+Generated: 2026-05-16T13:05:11.844Z
 Engine: powershell
 host=SRV-NET-DBG (windows-server)
 Total commands: 101
@@ -722,8 +722,7 @@ PS [85/101]> systeminfo
 
 PS [86/101]> ver
   
-  Microsoft Windows [Version 10.0.19041.4412]
-  
+  Microsoft Windows [Version 10.0.22631.6649]
 
 PS [87/101]> whoami
   srv-net-dbg\administrator
@@ -797,12 +796,12 @@ PS [100/101]> Get-Date
   Year        : 2026
   Month       : 5
   Day         : 16
-  Hour        : 19
-  Minute      : 48
-  Second      : 56
-  Millisecond : 430
+  Hour        : 13
+  Minute      : 5
+  Second      : 11
+  Millisecond : 858
   DayOfWeek   : 6
-  Ticks       : 1778960936430
+  Ticks       : 1778936711858
   
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
