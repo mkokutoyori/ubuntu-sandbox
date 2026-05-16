@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-server
-Generated: 2026-05-16T17:50:30.864Z
+Generated: 2026-05-16T18:01:34.023Z
 host=SRV-SP-DBG (windows-server)
 Total commands: 102
 ============================================================
@@ -1118,7 +1118,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 3:50 PM
+  TimeCreated  : 5/16/2026 4:01 PM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -1126,7 +1126,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 11:50 AM
+  TimeCreated  : 5/16/2026 12:01 PM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -1134,7 +1134,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/16/2026 5:50 AM
+  TimeCreated  : 5/16/2026 6:01 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   

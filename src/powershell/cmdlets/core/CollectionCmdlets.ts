@@ -591,10 +591,31 @@ export class FormatWideCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
-    const cols  = Number(ctx.named['column'] ?? ctx.named['columns'] ?? 4);
+    const cols  = Number(ctx.named['column'] ?? ctx.named['columns'] ?? 4) || 4;
+    // -Property (positional or named): the single column to display.
+    // Default for objects is the canonical display prop (Name) or first
+    // key — NOT the whole "Key=Value;" object dump.
+    const propArg = stringArgs(ctx.positional, ctx.named, 'property');
+    const prop = propArg.length ? propArg[0] : null;
+
+    const cellOf = (v: PSValue): string => {
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        const rec = v as Record<string, PSValue>;
+        if (prop) {
+          const k = Object.keys(rec).find(x => x.toLowerCase() === prop.toLowerCase());
+          return psValueToString(k !== undefined ? rec[k] : '');
+        }
+        const nameK = Object.keys(rec).find(x => x.toLowerCase() === 'name');
+        return psValueToString(nameK !== undefined ? rec[nameK] : (Object.values(rec)[0] ?? ''));
+      }
+      return psValueToString(v);
+    };
+
+    const cells = items.map(cellOf);
+    const width = Math.max(1, ...cells.map(c => c.length)) + 2;
     const lines: string[] = [];
-    for (let i = 0; i < items.length; i += cols) {
-      lines.push(items.slice(i, i + cols).map(v => psValueToString(v).padEnd(18)).join(' '));
+    for (let i = 0; i < cells.length; i += cols) {
+      lines.push(cells.slice(i, i + cols).map(c => c.padEnd(width)).join('').replace(/\s+$/, ''));
     }
     return lines.join('\n');
   }

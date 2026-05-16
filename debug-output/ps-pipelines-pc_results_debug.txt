@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-16T17:50:32.426Z
+Generated: 2026-05-16T18:01:34.252Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -706,10 +706,17 @@ PS [106/111]> Get-Process | Select-Object -First 3 | Out-Null
 <empty>
 
 PS [107/111]> Get-Process | Select-Object -First 3 Name | Out-String
-  Name=System Idle Process Name=System Name=Registry
+  
+  Name           
+  ---------------
+  System Idle Process
+  System         
+  Registry       
+  
 
 PS [108/111]> "hello" | Out-String -Stream
   hello
+  
 
 PS [109/111]> Write-Output "stream-1"; Write-Output "stream-2"
   stream-1

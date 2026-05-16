@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — foreach-object-server
-Generated: 2026-05-16T17:50:36.108Z
+Generated: 2026-05-16T18:01:39.555Z
 Engine: powershell
 host=SRV-FOREACH-OBJECT (windows-server) — cmdlet attribute suite
 Total commands: 55
