@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-server
-Generated: 2026-05-16T13:21:19.028Z
+Generated: 2026-05-16T17:46:24.557Z
 Engine: powershell
 host=SRV-PIPE-DBG (windows-server)
 Total commands: 111

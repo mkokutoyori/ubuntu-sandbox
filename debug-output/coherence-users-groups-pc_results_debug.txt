@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-pc
-Generated: 2026-05-16T13:21:20.573Z
+Generated: 2026-05-16T17:46:24.508Z
 host=WIN-USR-COH (windows-pc)
 Total commands: 105
 ============================================================
