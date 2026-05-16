@@ -59,7 +59,7 @@ export interface OracleArchiveLogCreatedPayload extends OracleDeviceRef {
   path: string;
 }
 
-// ── Session / transaction / DML / DDL (future use by adapters) ─────────
+// ── Session / transaction / DML / DDL ──────────────────────────────────
 
 export interface OracleSessionConnectedPayload extends OracleDeviceRef {
   sessionId: string;
@@ -69,6 +69,40 @@ export interface OracleSessionConnectedPayload extends OracleDeviceRef {
 
 export interface OracleSessionDisconnectedPayload extends OracleDeviceRef {
   sessionId: string;
+}
+
+export interface OracleSessionRef extends OracleDeviceRef {
+  sessionId: string;
+}
+
+export interface OracleTxnStartedPayload extends OracleSessionRef {
+  txId: number;
+}
+
+export interface OracleTxnCommittedPayload extends OracleSessionRef {
+  txId: number;
+  durationMs: number;
+}
+
+export interface OracleTxnRolledBackPayload extends OracleSessionRef {
+  txId: number;
+}
+
+export interface OracleDmlExecutedPayload extends OracleSessionRef {
+  schema: string;
+  table: string;
+  rowsAffected: number;
+}
+
+export interface OracleDdlExecutedPayload extends OracleSessionRef {
+  schema: string;
+  kind: string;
+  name: string;
+}
+
+export interface OracleErrorRaisedPayload extends OracleSessionRef {
+  code: number;
+  message: string;
 }
 
 // ── Discriminated union ────────────────────────────────────────────────
@@ -82,4 +116,10 @@ export type OracleDomainEvent =
   | { topic: 'oracle.instance.redo-log-switched';        payload: OracleRedoLogSwitchedPayload }
   | { topic: 'oracle.archive-log.created';               payload: OracleArchiveLogCreatedPayload }
   | { topic: 'oracle.session.connected';                 payload: OracleSessionConnectedPayload }
-  | { topic: 'oracle.session.disconnected';              payload: OracleSessionDisconnectedPayload };
+  | { topic: 'oracle.session.disconnected';              payload: OracleSessionDisconnectedPayload }
+  | { topic: 'oracle.transaction.started';               payload: OracleTxnStartedPayload }
+  | { topic: 'oracle.transaction.committed';             payload: OracleTxnCommittedPayload }
+  | { topic: 'oracle.transaction.rolled-back';           payload: OracleTxnRolledBackPayload }
+  | { topic: 'oracle.dml.executed';                      payload: OracleDmlExecutedPayload }
+  | { topic: 'oracle.ddl.executed';                      payload: OracleDdlExecutedPayload }
+  | { topic: 'oracle.error.raised';                      payload: OracleErrorRaisedPayload };

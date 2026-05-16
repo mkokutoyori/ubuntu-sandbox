@@ -66,7 +66,11 @@ export class OracleInstance {
   /** Set the deviceId scoping all `oracle.*` events from this instance. */
   setDeviceId(deviceId: string): void { this._deviceId = deviceId; }
 
-  private getBus(): IEventBus { return this._bus ?? getDefaultEventBus(); }
+  /** Public bus accessor — used by OracleExecutor / SQLPlusSession to
+   *  reuse the same bus binding as the instance. */
+  getBus(): IEventBus { return this._bus ?? getDefaultEventBus(); }
+  /** Public deviceId accessor. */
+  getDeviceId(): string { return this._deviceId; }
   private ref() { return { deviceId: this._deviceId, sid: this.config.sid }; }
 
   /** Centralised state transition — emits oracle.instance.state-changed. */
