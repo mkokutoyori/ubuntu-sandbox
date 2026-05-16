@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-16T18:01:34.252Z
+Generated: 2026-05-16T19:11:23.193Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -623,7 +623,7 @@ PS [92/111]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Objec
 PS [93/111]> New-Item -Path C:\PipeTest -ItemType Directory -Force | Out-Null; 1..10 | ForEach-Object { Set-Content -Path "C:\PipeTest\f$_.txt" -Value "row $_" }; Get-ChildItem C:\PipeTest | Measure-Object Length -Sum
   
   Count    : 10
-  Sum      : 51
+  Sum      : 61
   Average  : 
   Minimum  : 
   Maximum  : 
@@ -634,9 +634,9 @@ PS [94/111]> Get-ChildItem C:\PipeTest | Sort-Object Length -Descending | Select
   
   Name     Length
   -------  ------
-  f10.txt       6
-  f1.txt        5
-  f2.txt        5
+  f10.txt       7
+  f1.txt        6
+  f2.txt        6
   
 
 PS [95/111]> Get-ChildItem C:\PipeTest | ForEach-Object { (Get-Content $_.FullName) } | Sort-Object | Get-Unique
@@ -654,8 +654,8 @@ PS [95/111]> Get-ChildItem C:\PipeTest | ForEach-Object { (Get-Content $_.FullNa
 PS [96/111]> Get-ChildItem C:\PipeTest -Recurse | Where-Object { $_.Length -gt 0 } | Measure-Object Length -Sum -Average
   
   Count    : 10
-  Sum      : 51
-  Average  : 5.1
+  Sum      : 61
+  Average  : 6.1
   Minimum  : 
   Maximum  : 
   Property : Length
@@ -665,9 +665,9 @@ PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$
   
   N        L
   -------  -
-  f10.txt  6
-  f1.txt   5
-  f2.txt   5
+  f10.txt  7
+  f1.txt   6
+  f2.txt   6
   
 
 PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure-Object | Select-Object Count

@@ -237,10 +237,17 @@ export class SetContentCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
-    const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '');
+    const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    fs.writeFile(path, value);
+    // PowerShell Set-Content treats each input value as its own line; an
+    // array/pipeline writes one value per line (NOT space-joined).
+    const lines = Array.isArray(raw) ? raw.map(v => psValueToString(v)) : [psValueToString(raw)];
+    const noNewline = ctx.named['nonewline'] === true || ctx.named['nonewline'] === 'true';
+    fs.writeFile(path, lines.join('\n') + (noNewline ? '' : '\n'));
+    if (ctx.named['passthru'] === true || ctx.named['passthru'] === 'true') {
+      return lines.length === 1 ? lines[0] : (lines as unknown as PSValue);
+    }
     return null;
   }
 }

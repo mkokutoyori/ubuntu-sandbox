@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — foreach-object-pc
-Generated: 2026-05-16T18:01:39.520Z
+Generated: 2026-05-16T19:11:27.615Z
 Engine: powershell
 host=WIN-FOREACH-OBJECT (windows-pc) — cmdlet attribute suite
 Total commands: 55

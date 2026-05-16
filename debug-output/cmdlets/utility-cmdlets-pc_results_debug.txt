@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — utility-cmdlets-pc
-Generated: 2026-05-16T18:01:32.517Z
+Generated: 2026-05-16T19:11:18.174Z
 Engine: powershell
 host=WIN-UTILITY-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 66
@@ -46,7 +46,7 @@ PS [9/66]> Get-Date -Format "yyyy-MM-dd"
   2026-05-16
 
 PS [10/66]> Get-Date -Format "HH:mm"
-  18:01
+  19:11
 
 PS [11/66]> Get-Date -Format "dddd"
   1616
@@ -101,14 +101,14 @@ PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
   True
 
 PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
-  13
+  8
+  41
   62
-  65
-  82
-  91
+  75
+  78
 
 PS [26/66]> Get-Random -InputObject 'a','b','c'
-  c
+  a
 
 PS [27/66]> (1..1000 | Get-Random -Count 10 | Where-Object { $_ -ge 1 -and $_ -le 1000 } | Measure-Object).Count
   10

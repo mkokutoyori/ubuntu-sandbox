@@ -189,6 +189,33 @@ describe('Format-Wide / Out-String', () => {
   });
 });
 
+describe('Set-Content — array / pipeline input is one value per line', () => {
+  it('1..20 | Set-Content writes 20 lines (not space-joined)', async () => {
+    const s = shell();
+    await run(s, '1..20 | Set-Content C:\\nums.txt');
+    expect(await run(s, 'Get-Content C:\\nums.txt -Tail 3')).toEqual(['18', '19', '20']);
+  });
+  it('Get-Content of the written file has the right Count', async () => {
+    const s = shell();
+    await run(s, '1..20 | Set-Content C:\\nums.txt');
+    expect(await j(s, '(Get-Content C:\\nums.txt).Count')).toBe('20');
+  });
+  it('scalar value still writes a single line', async () => {
+    const s = shell();
+    await run(s, "Set-Content C:\\one.txt -Value 'hello'");
+    expect(await run(s, 'Get-Content C:\\one.txt')).toEqual(['hello']);
+  });
+  it('-NoNewline omits the trailing newline', async () => {
+    const s = shell();
+    await run(s, "'ab' | Set-Content C:\\nn.txt -NoNewline");
+    expect(await run(s, 'Get-Content C:\\nn.txt -Raw')).toEqual(['ab']);
+  });
+  it('-PassThru echoes the written values', async () => {
+    expect(await run(shell(), "'x','y' | Set-Content C:\\pt.txt -PassThru"))
+      .toEqual(['x', 'y']);
+  });
+});
+
 describe('Get-Random — -InputObject / -Count / -SetSeed', () => {
   it('-SetSeed is reproducible', async () => {
     const s = shell();

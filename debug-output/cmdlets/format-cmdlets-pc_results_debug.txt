@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — format-cmdlets-pc
-Generated: 2026-05-16T18:01:33.579Z
+Generated: 2026-05-16T19:11:23.804Z
 Engine: powershell
 host=WIN-FORMAT-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 56
