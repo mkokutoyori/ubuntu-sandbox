@@ -100,6 +100,20 @@ export interface HostIcmpUnreachablePayload extends HostDeviceRef {
   code: 'host-unreachable' | 'net-unreachable' | 'port-unreachable' | 'ttl-exceeded';
 }
 
+/**
+ * Emitted when an in-flight ICMP echo request is invalidated by a returning
+ * ICMP error packet (TTL exceeded / destination unreachable). Used by
+ * `sendPing` to settle the awaiting promise via `waitForEvent` instead of a
+ * pendingPings callback (Phase 5.6).
+ */
+export interface HostIcmpEchoFailedPayload extends HostDeviceRef {
+  fromIp: string;   // sender of the ICMP error
+  toIp: string;     // original echo-request destination
+  id: number;
+  seq: number;
+  reason: string;
+}
+
 // ── TCP ────────────────────────────────────────────────────────────────
 
 export interface HostTcpListenerStartedPayload extends HostDeviceRef {
@@ -158,6 +172,7 @@ export type HostDomainEvent =
   | { topic: 'host.icmp.echo-sent'; payload: HostIcmpEchoSentPayload }
   | { topic: 'host.icmp.echo-reply'; payload: HostIcmpEchoReplyPayload }
   | { topic: 'host.icmp.echo-timeout'; payload: HostIcmpEchoTimeoutPayload }
+  | { topic: 'host.icmp.echo-failed'; payload: HostIcmpEchoFailedPayload }
   | { topic: 'host.icmp.unreachable'; payload: HostIcmpUnreachablePayload }
   | { topic: 'host.tcp.listener-started'; payload: HostTcpListenerStartedPayload }
   | { topic: 'host.tcp.listener-stopped'; payload: HostTcpListenerStoppedPayload }
