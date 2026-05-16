@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-16T07:11:44.119Z
+Generated: 2026-05-16T12:55:17.131Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -274,25 +274,27 @@ PS [36/111]> Get-Process | Sort-Object -Property CPU -Descending | Select-Object
 
 PS [37/111]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descending | Select-Object -First 5
   
-  Name                 Count  Group                                                                                                          
-  -------------------  -----  ---------------------------------------------------------------------------------------------------------------
-  svchost                  7  [object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object]
-  csrss                    2  [object Object],[object Object]                                                                                
-  System Idle Process      1  [object Object]                                                                                                
-  System                   1  [object Object]                                                                                                
-  Registry                 1  [object Object]                                                                                                
+  Name                 Count  Group                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+  -------------------  -----  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  svchost                  7  {Handles=400; NPM(K)=12; PM(K)=12; WS(K)=18432; CPU(s)=0.6; CPU=0.6; Id=784; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\SYSTEM, Handles=400; NPM(K)=12; PM(K)=12; WS(K)=18432; CPU(s)=0.6; CPU=0.6; Id=836; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\NetworkService, Handles=400; NPM(K)=12; PM(K)=12; WS(K)=18432; CPU(s)=0.6; CPU=0.6; Id=912; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\LocalService, Handles=450; NPM(K)=14; PM(K)=14; WS(K)=21504; CPU(s)=0.9; CPU=0.9; Id=964; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\SYSTEM, Handles=400; NPM(K)=12; PM(K)=12; WS(K)=18432; CPU(s)=0.6; CPU=0.6; Id=1048; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\LocalService, Handles=400; NPM(K)=12; PM(K)=12; WS(K)=18432; CPU(s)=0.6; CPU=0.6; Id=1100; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\SYSTEM, Handles=350; NPM(K)=10; PM(K)=10; WS(K)=15360; CPU(s)=0.3; CPU=0.3; Id=1168; SI=0; ProcessName=svchost; Name=svchost; Status=Running; Owner=NT AUTHORITY\LocalService}
+  csrss                    2  {Handles=590; NPM(K)=4; PM(K)=4; WS(K)=9216; CPU(s)=2.1; CPU=2.1; Id=472; SI=0; ProcessName=csrss; Name=csrss; Status=Running; Owner=NT AUTHORITY\SYSTEM, Handles=468; NPM(K)=4; PM(K)=5; WS(K)=10240; CPU(s)=1.2; CPU=1.2; Id=560; SI=1; ProcessName=csrss; Name=csrss; Status=Running; Owner=NT AUTHORITY\SYSTEM}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+  System Idle Process      1  {Handles=0; NPM(K)=4; PM(K)=0; WS(K)=16; CPU(s)=0; CPU=0; Id=0; SI=0; ProcessName=System Idle Process; Name=System Idle Process; Status=Running; Owner=NT AUTHORITY\SYSTEM}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+  System                   1  {Handles=100; NPM(K)=4; PM(K)=0; WS(K)=288; CPU(s)=0.5; CPU=0.5; Id=4; SI=0; ProcessName=System; Name=System; Status=Running; Owner=NT AUTHORITY\SYSTEM}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+  Registry                 1  {Handles=48; NPM(K)=4; PM(K)=4; WS(K)=8192; CPU(s)=0; CPU=0; Id=108; SI=0; ProcessName=Registry; Name=Registry; Status=Running; Owner=NT AUTHORITY\SYSTEM}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
   
 
 PS [38/111]> 1..20 | Group-Object { $_ % 3 } | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-                  20             
+  
+  Name  Count
+  ----  -----
+           20
+  
 
 PS [39/111]> "alpha","beta","gamma","delta","epsilon" | Group-Object Length
   
-  Name  Count  Group                         
-  ----  -----  ------------------------------
-            5  alpha,beta,gamma,delta,epsilon
+  Name  Count  Group                               
+  ----  -----  ------------------------------------
+            5  {alpha, beta, gamma, delta, epsilon}
   
 
 PS [40/111]> Get-Service | Group-Object Status | ForEach-Object { "$($_.Name): $($_.Count)" }
@@ -592,13 +594,15 @@ PS [90/111]> if ($false) { "yes" } elseif ($true) { "elif" } else { "no" }
 
 --- [91] § composed real-world ---
 PS [91/111]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 -Property Name, Id, @{ N="MB"; E={ [int]($_.WS/1MB) } } | Format-Table -AutoSize
-  Name            Id              MB             
-  --------------- --------------- ---------------
-  System Idle Process 0               0              
-  System          4               0              
-  Registry        108             0              
-  smss            340             0              
-  csrss           472             0              
+  
+  Name                 Id   MB
+  -------------------  ---  --
+  System Idle Process    0   0
+  System                 4   0
+  Registry             108   0
+  smss                 340   0
+  csrss                472   0
+  
 
 PS [92/111]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | ForEach-Object { "[RUN] $($_.Name)" }
   [RUN] Afd

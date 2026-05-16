@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-server
-Generated: 2026-05-16T07:11:43.005Z
+Generated: 2026-05-16T12:55:14.540Z
 Engine: powershell
 host=SRV-NET-DBG (windows-server)
 Total commands: 101
@@ -19,12 +19,14 @@ PS [1/101]> Get-NetAdapter
   
 
 PS [2/101]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -AutoSize
-  Name            Status          MacAddress      LinkSpeed      
-  --------------- --------------- --------------- ---------------
-  eth0            Up              02:00:00:00:00:05 1 Gbps         
-  eth1            Up              02:00:00:00:00:06 1 Gbps         
-  eth2            Up              02:00:00:00:00:07 1 Gbps         
-  eth3            Up              02:00:00:00:00:08 1 Gbps         
+  
+  Name  Status  MacAddress         LinkSpeed
+  ----  ------  -----------------  ---------
+  eth0  Up      02:00:00:00:00:05  1 Gbps   
+  eth1  Up      02:00:00:00:00:06  1 Gbps   
+  eth2  Up      02:00:00:00:00:07  1 Gbps   
+  eth3  Up      02:00:00:00:00:08  1 Gbps   
+  
 
 PS [3/101]> Get-NetAdapter | Sort-Object Name
   
@@ -66,10 +68,12 @@ PS [8/101]> Get-NetIPAddress
   
 
 PS [9/101]> Get-NetIPAddress | Format-Table InterfaceAlias, IPAddress, AddressFamily, PrefixLength -AutoSize
-  InterfaceAlias  IPAddress       AddressFamily   PrefixLength   
-  --------------- --------------- --------------- ---------------
-  Loopback Pseudo-Interface 1 127.0.0.1       IPv4            8              
-  Loopback Pseudo-Interface 1 ::1             IPv6            128            
+  
+  InterfaceAlias               IPAddress  AddressFamily  PrefixLength
+  ---------------------------  ---------  -------------  ------------
+  Loopback Pseudo-Interface 1  127.0.0.1  IPv4                      8
+  Loopback Pseudo-Interface 1  ::1        IPv6                    128
+  
 
 PS [10/101]> Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue
   
@@ -114,7 +118,7 @@ PS [15/101]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
   InterfaceAlias       : eth1
   InterfaceDescription : eth1
@@ -123,7 +127,7 @@ PS [15/101]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
   InterfaceAlias       : eth2
   InterfaceDescription : eth2
@@ -132,7 +136,7 @@ PS [15/101]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
   InterfaceAlias       : eth3
   InterfaceDescription : eth3
@@ -141,7 +145,7 @@ PS [15/101]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
 
 PS [16/101]> Get-NetRoute -ErrorAction SilentlyContinue
@@ -164,10 +168,10 @@ PS [18/101]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
   
   InterfaceAlias  InterfaceIndex  AddressFamily  ServerAddresses
   --------------  --------------  -------------  ---------------
-  eth0                         1  IPv4                          
-  eth1                         2  IPv4                          
-  eth2                         3  IPv4                          
-  eth3                         4  IPv4                          
+  eth0                         1  IPv4           {}             
+  eth1                         2  IPv4           {}             
+  eth2                         3  IPv4           {}             
+  eth3                         4  IPv4           {}             
   
 
 
@@ -515,23 +519,29 @@ PS [54/101]> Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | ForEach-Obje
 <empty>
 
 PS [55/101]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  IPv4            1              
-  IPv6            1              
+  
+  Name  Count
+  ----  -----
+  IPv4      1
+  IPv6      1
+  
 
 PS [56/101]> Get-NetAdapter | Sort-Object Name | Select-Object Name, Status, MacAddress | Format-Table -AutoSize
-  Name            Status          MacAddress     
-  --------------- --------------- ---------------
-  eth0            Up              02:00:00:00:00:05
-  eth1            Up              02:00:00:00:00:06
-  eth2            Up              02:00:00:00:00:07
-  eth3            Up              02:00:00:00:00:08
+  
+  Name  Status  MacAddress       
+  ----  ------  -----------------
+  eth0  Up      02:00:00:00:00:05
+  eth1  Up      02:00:00:00:00:06
+  eth2  Up      02:00:00:00:00:07
+  eth3  Up      02:00:00:00:00:08
+  
 
 PS [57/101]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object IPAddress, InterfaceAlias, PrefixLength | Format-Table -AutoSize
-  IPAddress       InterfaceAlias  PrefixLength   
-  --------------- --------------- ---------------
-  127.0.0.1       Loopback Pseudo-Interface 1 8              
+  
+  IPAddress  InterfaceAlias               PrefixLength
+  ---------  ---------------------------  ------------
+  127.0.0.1  Loopback Pseudo-Interface 1             8
+  
 
 PS [58/101]> "127.0.0.1","localhost" | ForEach-Object { Test-Connection $_ -Count 1 -ErrorAction SilentlyContinue }
   
@@ -773,15 +783,19 @@ PS [94/101]> pathping localhost -ErrorAction SilentlyContinue
 
 --- [95] § summary ---
 PS [95/101]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  Up              4              
+  
+  Name  Count
+  ----  -----
+  Up        4
+  
 
 PS [96/101]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  IPv4            1              
-  IPv6            1              
+  
+  Name  Count
+  ----  -----
+  IPv4      1
+  IPv6      1
+  
 
 PS [97/101]> (Get-NetAdapter).Count
   4
@@ -793,17 +807,7 @@ PS [99/101]> hostname
   SRV-NET-DBG
 
 PS [100/101]> Get-Date
-  
-  Year        : 2026
-  Month       : 5
-  Day         : 16
-  Hour        : 7
-  Minute      : 11
-  Second      : 43
-  Millisecond : 23
-  DayOfWeek   : 6
-  Ticks       : 1778915503023
-  
+  5/16/2026 12:55 PM
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
 <empty>

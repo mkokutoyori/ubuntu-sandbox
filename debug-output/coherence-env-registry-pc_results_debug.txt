@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-pc
-Generated: 2026-05-16T07:11:50.046Z
+Generated: 2026-05-16T12:55:22.369Z
 host=WIN-ENV-DBG (windows-pc)
 Total commands: 103
 ============================================================
@@ -507,7 +507,15 @@ PS  [94/103]> Get-Variable PSVersionTable
   Name=PSVersionTable; Value=PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
 
 PS  [95/103]> $PSVersionTable
-  PSVersion=5.1.0; PSEdition=Desktop; BuildVersion=10.0.19041.1; CLRVersion=4.0.30319.42000; WSManStackVersion=3.0; PSCompatibleVersions=1.0 2.0 3.0 4.0 5.0 5.1.0; SerializationVersion=1.1.0.1
+  
+  PSVersion            : 5.1.0
+  PSEdition            : Desktop
+  BuildVersion         : 10.0.19041.1
+  CLRVersion           : 4.0.30319.42000
+  WSManStackVersion    : 3.0
+  PSCompatibleVersions : {1.0, 2.0, 3.0, 4.0, 5.0, 5.1.0}
+  SerializationVersion : 1.1.0.1
+  
 
 PS  [96/103]> Get-Help Set-ItemProperty -ErrorAction SilentlyContinue
   NAME

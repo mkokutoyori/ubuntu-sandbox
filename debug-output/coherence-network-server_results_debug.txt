@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-network-server
-Generated: 2026-05-16T07:11:44.484Z
+Generated: 2026-05-16T12:55:12.634Z
 host=SRV-NET-COH (windows-server)
 Total commands: 102
 ============================================================
@@ -103,10 +103,12 @@ PS  [8/102]> Get-NetIPAddress
   
 
 PS  [9/102]> Get-NetIPAddress | Format-Table InterfaceAlias, IPAddress, AddressFamily, PrefixLength -AutoSize
-  InterfaceAlias  IPAddress       AddressFamily   PrefixLength   
-  --------------- --------------- --------------- ---------------
-  Loopback Pseudo-Interface 1 127.0.0.1       IPv4            8              
-  Loopback Pseudo-Interface 1 ::1             IPv6            128            
+  
+  InterfaceAlias               IPAddress  AddressFamily  PrefixLength
+  ---------------------------  ---------  -------------  ------------
+  Loopback Pseudo-Interface 1  127.0.0.1  IPv4                      8
+  Loopback Pseudo-Interface 1  ::1        IPv6                    128
+  
 
 PS  [10/102]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   
@@ -117,7 +119,7 @@ PS  [10/102]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
   InterfaceAlias       : eth1
   InterfaceDescription : eth1
@@ -126,7 +128,7 @@ PS  [10/102]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
   InterfaceAlias       : eth2
   InterfaceDescription : eth2
@@ -135,7 +137,7 @@ PS  [10/102]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
   InterfaceAlias       : eth3
   InterfaceDescription : eth3
@@ -144,7 +146,7 @@ PS  [10/102]> Get-NetIPConfiguration -ErrorAction SilentlyContinue
   IPv6Address          : 
   IPv4DefaultGateway   : 
   DNSServer            : 
-  NetAdapter           : [object Object]
+  NetAdapter           : Status=Up
   
 
 PS  [11/102]> ipconfig
@@ -252,12 +254,14 @@ PS  [17/102]> Get-NetAdapter
   
 
 PS  [18/102]> Get-NetAdapter | Format-Table Name, Status, MacAddress, LinkSpeed -AutoSize
-  Name            Status          MacAddress      LinkSpeed      
-  --------------- --------------- --------------- ---------------
-  eth0            Up              02:00:00:00:00:05 1 Gbps         
-  eth1            Up              02:00:00:00:00:06 1 Gbps         
-  eth2            Up              02:00:00:00:00:07 1 Gbps         
-  eth3            Up              02:00:00:00:00:08 1 Gbps         
+  
+  Name  Status  MacAddress         LinkSpeed
+  ----  ------  -----------------  ---------
+  eth0  Up      02:00:00:00:00:05  1 Gbps   
+  eth1  Up      02:00:00:00:00:06  1 Gbps   
+  eth2  Up      02:00:00:00:00:07  1 Gbps   
+  eth3  Up      02:00:00:00:00:08  1 Gbps   
+  
 
 PS  [19/102]> (Get-NetAdapter).Count
   4
@@ -821,10 +825,10 @@ PS  [82/102]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
   
   InterfaceAlias  InterfaceIndex  AddressFamily  ServerAddresses
   --------------  --------------  -------------  ---------------
-  eth0                         1  IPv4                          
-  eth1                         2  IPv4                          
-  eth2                         3  IPv4                          
-  eth3                         4  IPv4                          
+  eth0                         1  IPv4           {}             
+  eth1                         2  IPv4           {}             
+  eth2                         3  IPv4           {}             
+  eth3                         4  IPv4           {}             
   
 
 CMD [83/102]> netsh interface ipv4 set dnsservers "Ethernet" static 8.8.8.8 primary
@@ -834,10 +838,10 @@ PS  [84/102]> Get-DnsClientServerAddress -ErrorAction SilentlyContinue
   
   InterfaceAlias  InterfaceIndex  AddressFamily  ServerAddresses
   --------------  --------------  -------------  ---------------
-  eth0                         1  IPv4                          
-  eth1                         2  IPv4                          
-  eth2                         3  IPv4                          
-  eth3                         4  IPv4                          
+  eth0                         1  IPv4           {}             
+  eth1                         2  IPv4           {}             
+  eth2                         3  IPv4           {}             
+  eth3                         4  IPv4           {}             
   
 
 
@@ -921,15 +925,19 @@ PS  [98/102]> (Get-NetTCPConnection -ErrorAction SilentlyContinue).Count
   4
 
 PS  [99/102]> Get-NetAdapter | Group-Object Status | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  Up              4              
+  
+  Name  Count
+  ----  -----
+  Up        4
+  
 
 PS  [100/102]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  IPv4            1              
-  IPv6            1              
+  
+  Name  Count
+  ----  -----
+  IPv4      1
+  IPv6      1
+  
 
 CMD [101/102]> getmac | findstr -i :
 <empty>

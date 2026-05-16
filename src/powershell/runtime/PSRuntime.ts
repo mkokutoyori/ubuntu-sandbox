@@ -229,7 +229,7 @@ export class PSRuntime {
       // Array of plain objects (all elements are non-null records with at
       // least one string-keyed field) → table format.
       const arr = result as PSValue[];
-      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v))) {
+      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date))) {
         const formatted = formatDefault(arr as Array<Record<string, unknown>>);
         if (formatted) this.outputLines.push(formatted);
         return;
@@ -240,8 +240,10 @@ export class PSRuntime {
     // A single plain object (e.g. Measure-Object's result, Get-Item, a
     // custom [pscustomobject]) should render through the same default
     // formatter — ≤4 props → table, >4 props → list — instead of the
-    // inline `Key=Value; ...` form.
+    // inline `Key=Value; ...` form. Date instances are scalar; let them
+    // fall through to psValueToString.
     if (result !== null && typeof result === 'object' && !Array.isArray(result)
+        && !(result instanceof Date)
         && !this.isScriptBlock(result)
         && Object.keys(result as Record<string, unknown>).length > 0
         && !this.hasInternalSentinel(result as Record<string, unknown>)
@@ -268,6 +270,10 @@ export class PSRuntime {
       const t = typeof v;
       if (t === 'string' || t === 'number' || t === 'boolean') continue;
       if (v instanceof Date) continue;
+      // Arrays render through renderObjectShort as `{a, b, c}` — that is a
+      // legitimate table cell, so allow them. Nested non-Date objects still
+      // disqualify the row (Get-Acl's Access keeps Format-List rendering).
+      if (Array.isArray(v)) continue;
       return false;
     }
     return true;

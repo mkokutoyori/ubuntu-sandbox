@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-server
-Generated: 2026-05-16T07:11:45.126Z
+Generated: 2026-05-16T12:55:13.453Z
 host=SRV-SP-DBG (windows-server)
 Total commands: 102
 ============================================================
@@ -485,30 +485,32 @@ PS  [4/102]> Get-Service
   
 
 PS  [5/102]> Get-Service | Format-Table Name, Status, StartType -AutoSize
-  Name            Status          StartType      
-  --------------- --------------- ---------------
-  Tcpip           Running         Boot           
-  Afd             Running         System         
-  Dhcp            Running         Automatic      
-  Dnscache        Running         Automatic      
-  NetBT           Running         System         
-  RpcSs           Running         Automatic      
-  RpcEptMapper    Running         Automatic      
-  SamSs           Running         Automatic      
-  LanmanServer    Running         Automatic      
-  LanmanWorkstation Running         Automatic      
-  mpssvc          Running         Automatic      
-  EventLog        Running         Automatic      
-  W32Time         Running         Automatic      
-  CryptSvc        Running         Automatic      
-  Winmgmt         Running         Automatic      
-  WinRM           Stopped         Manual         
-  bthserv         Stopped         Manual         
-  winlogon        Running         Automatic      
-  Spooler         Running         Automatic      
-  Schedule        Running         Automatic      
-  AudioSrv        Running         Automatic      
-  Themes          Running         Automatic      
+  
+  Name               Status   StartType
+  -----------------  -------  ---------
+  Tcpip              Running  Boot     
+  Afd                Running  System   
+  Dhcp               Running  Automatic
+  Dnscache           Running  Automatic
+  NetBT              Running  System   
+  RpcSs              Running  Automatic
+  RpcEptMapper       Running  Automatic
+  SamSs              Running  Automatic
+  LanmanServer       Running  Automatic
+  LanmanWorkstation  Running  Automatic
+  mpssvc             Running  Automatic
+  EventLog           Running  Automatic
+  W32Time            Running  Automatic
+  CryptSvc           Running  Automatic
+  Winmgmt            Running  Automatic
+  WinRM              Stopped  Manual   
+  bthserv            Stopped  Manual   
+  winlogon           Running  Automatic
+  Spooler            Running  Automatic
+  Schedule           Running  Automatic
+  AudioSrv           Running  Automatic
+  Themes             Running  Automatic
+  
 
 PS  [6/102]> (Get-Service).Count
   22
@@ -565,9 +567,11 @@ PS  [13/102]> (Get-Service -Name Spooler).Status
   Stopped
 
 PS  [14/102]> Get-Service Spooler | Format-List Name, Status, StartType
-  Name : Spooler
-  Status : Stopped
+  
+  Name      : Spooler
+  Status    : Stopped
   StartType : Automatic
+  
 
 
 --- [15] § Start-Service (ps) → sc query (cmd) ---
@@ -689,18 +693,22 @@ CMD [34/102]> sc query | findstr SERVICE_NAME
   SERVICE_NAME: Themes
 
 PS  [35/102]> Get-Service -Name "S*" | Format-Table Name, Status
-  Name            Status         
-  --------------- ---------------
-  SamSs           Running        
-  LanmanServer    Running        
-  Spooler         Running        
-  Schedule        Running        
+  
+  Name          Status 
+  ------------  -------
+  SamSs         Running
+  LanmanServer  Running
+  Spooler       Running
+  Schedule      Running
+  
 
 PS  [36/102]> Get-Service -Name "*log*" | Format-Table Name, Status
-  Name            Status         
-  --------------- ---------------
-  EventLog        Running        
-  winlogon        Running        
+  
+  Name      Status 
+  --------  -------
+  EventLog  Running
+  winlogon  Running
+  
 
 CMD [37/102]> sc query bthserv
   
@@ -751,7 +759,7 @@ CMD [39/102]> tasklist
   explorer.exe                  2848 Console                    1    145,000 K
   cmd.exe                       5120 Console                    1      5,200 K
   conhost.exe                   5132 Console                    1     18,400 K
-  spoolsv.exe                   5136 Services                   0      5,162 K
+  spoolsv.exe                   5136 Services                   0      9,334 K
 
 CMD [40/102]> tasklist /v
   
@@ -782,7 +790,7 @@ CMD [40/102]> tasklist /v
   explorer.exe                  2848 Console                    1    145,000 K Running         SRV-SP-DBG\Administrator            0:00:12 Windows Explorer
   cmd.exe                       5120 Console                    1      5,200 K Running         SRV-SP-DBG\Administrator            0:00:00 Command Prompt
   conhost.exe                   5132 Console                    1     18,400 K Running         SRV-SP-DBG\Administrator            0:00:00 Console Window Host
-  spoolsv.exe                   5136 Services                   0      5,162 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
+  spoolsv.exe                   5136 Services                   0      9,334 K Running         NT AUTHORITY\SYSTEM                 0:00:00 N/A
 
 CMD [41/102]> tasklist /fo csv /nh
   "System Idle Process","0","Services","0","16 K"
@@ -810,135 +818,137 @@ CMD [41/102]> tasklist /fo csv /nh
   "explorer.exe","2848","Console","1","145,000 K"
   "cmd.exe","5120","Console","1","5,200 K"
   "conhost.exe","5132","Console","1","18,400 K"
-  "spoolsv.exe","5136","Services","0","5,162 K"
+  "spoolsv.exe","5136","Services","0","9,334 K"
 
 PS  [42/102]> Get-Process
   
-  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)              Id    ProcessName        
-  -------  ------  -----  ------  ------------------  ----  -------------------
-        0       4      0      16                   0     0  System Idle Process
-      100       4      0     288                 0.5     4  System             
-       48       4      4    8192                   0   108  Registry           
-       56       4      1    2048                   0   340  smss               
-      590       4      4    9216                 2.1   472  csrss              
-      152       4      3    7168                   0   548  wininit            
-      468       4      5   10240                 1.2   560  csrss              
-      256       4      6   13312                 0.1   596  winlogon           
-      680       4      7   14336                 1.5   620  services           
-      820       4     10   20480                 3.2   636  lsass              
-      400      12     12   18432                 0.6   784  svchost            
-      400      12     12   18432                 0.6   836  svchost            
-      400      12     12   18432                 0.6   912  svchost            
-      450      14     14   21504  0.8999999999999999   964  svchost            
-      980      18     44  132000                 8.4  1024  dwm                
-      400      12     12   18432                 0.6  1048  svchost            
-      400      12     12   18432                 0.6  1100  svchost            
-      350      10     10   15360                 0.3  1168  svchost            
-      210       8      5   12800                 0.2  1400  taskhostw          
-      340      14     12   28000                 0.8  1560  RuntimeBroker      
-      320      10      6   14000                 0.3  2200  LanmanServer       
-      280       8      4   10000                 0.2  2400  LanmanWorkstation  
-     2100      65     64  145000                12.3  2848  explorer           
-       48       3      3    5200                 0.1  5120  cmd                
-      180      10     10   18400                 0.3  5132  conhost            
-      209       9      5    5162                   0  5136  spoolsv            
+  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)  Id    ProcessName        
+  -------  ------  -----  ------  ------  ----  -------------------
+        0       4      0      16       0     0  System Idle Process
+      100       4      0     288     0.5     4  System             
+       48       4      4    8192       0   108  Registry           
+       56       4      1    2048       0   340  smss               
+      590       4      4    9216     2.1   472  csrss              
+      152       4      3    7168       0   548  wininit            
+      468       4      5   10240     1.2   560  csrss              
+      256       4      6   13312     0.1   596  winlogon           
+      680       4      7   14336     1.5   620  services           
+      820       4     10   20480     3.2   636  lsass              
+      400      12     12   18432     0.6   784  svchost            
+      400      12     12   18432     0.6   836  svchost            
+      400      12     12   18432     0.6   912  svchost            
+      450      14     14   21504     0.9   964  svchost            
+      980      18     44  132000     8.4  1024  dwm                
+      400      12     12   18432     0.6  1048  svchost            
+      400      12     12   18432     0.6  1100  svchost            
+      350      10     10   15360     0.3  1168  svchost            
+      210       8      5   12800     0.2  1400  taskhostw          
+      340      14     12   28000     0.8  1560  RuntimeBroker      
+      320      10      6   14000     0.3  2200  LanmanServer       
+      280       8      4   10000     0.2  2400  LanmanWorkstation  
+     2100      65     64  145000    12.3  2848  explorer           
+       48       3      3    5200     0.1  5120  cmd                
+      180      10     10   18400     0.3  5132  conhost            
+      181       6      9    9334       0  5136  spoolsv            
   
 
 PS  [43/102]> Get-Process | Format-Table Id, ProcessName, CPU -AutoSize
-  Id              ProcessName     CPU            
-  --------------- --------------- ---------------
-  0               System Idle Process 0              
-  4               System          0.5            
-  108             Registry        0              
-  340             smss            0              
-  472             csrss           2.1            
-  548             wininit         0              
-  560             csrss           1.2            
-  596             winlogon        0.1            
-  620             services        1.5            
-  636             lsass           3.2            
-  784             svchost         0.6            
-  836             svchost         0.6            
-  912             svchost         0.6            
-  964             svchost         0.8999999999999999
-  1024            dwm             8.4            
-  1048            svchost         0.6            
-  1100            svchost         0.6            
-  1168            svchost         0.3            
-  1400            taskhostw       0.2            
-  1560            RuntimeBroker   0.8            
-  2200            LanmanServer    0.3            
-  2400            LanmanWorkstation 0.2            
-  2848            explorer        12.3           
-  5120            cmd             0.1            
-  5132            conhost         0.3            
-  5136            spoolsv         0              
+  
+  Id    ProcessName          CPU 
+  ----  -------------------  ----
+     0  System Idle Process     0
+     4  System                0.5
+   108  Registry                0
+   340  smss                    0
+   472  csrss                 2.1
+   548  wininit                 0
+   560  csrss                 1.2
+   596  winlogon              0.1
+   620  services              1.5
+   636  lsass                 3.2
+   784  svchost               0.6
+   836  svchost               0.6
+   912  svchost               0.6
+   964  svchost               0.9
+  1024  dwm                   8.4
+  1048  svchost               0.6
+  1100  svchost               0.6
+  1168  svchost               0.3
+  1400  taskhostw             0.2
+  1560  RuntimeBroker         0.8
+  2200  LanmanServer          0.3
+  2400  LanmanWorkstation     0.2
+  2848  explorer             12.3
+  5120  cmd                   0.1
+  5132  conhost               0.3
+  5136  spoolsv                 0
+  
 
 PS  [44/102]> (Get-Process).Count
   26
 
 PS  [45/102]> ps
   
-  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)              Id    ProcessName        
-  -------  ------  -----  ------  ------------------  ----  -------------------
-        0       4      0      16                   0     0  System Idle Process
-      100       4      0     288                 0.5     4  System             
-       48       4      4    8192                   0   108  Registry           
-       56       4      1    2048                   0   340  smss               
-      590       4      4    9216                 2.1   472  csrss              
-      152       4      3    7168                   0   548  wininit            
-      468       4      5   10240                 1.2   560  csrss              
-      256       4      6   13312                 0.1   596  winlogon           
-      680       4      7   14336                 1.5   620  services           
-      820       4     10   20480                 3.2   636  lsass              
-      400      12     12   18432                 0.6   784  svchost            
-      400      12     12   18432                 0.6   836  svchost            
-      400      12     12   18432                 0.6   912  svchost            
-      450      14     14   21504  0.8999999999999999   964  svchost            
-      980      18     44  132000                 8.4  1024  dwm                
-      400      12     12   18432                 0.6  1048  svchost            
-      400      12     12   18432                 0.6  1100  svchost            
-      350      10     10   15360                 0.3  1168  svchost            
-      210       8      5   12800                 0.2  1400  taskhostw          
-      340      14     12   28000                 0.8  1560  RuntimeBroker      
-      320      10      6   14000                 0.3  2200  LanmanServer       
-      280       8      4   10000                 0.2  2400  LanmanWorkstation  
-     2100      65     64  145000                12.3  2848  explorer           
-       48       3      3    5200                 0.1  5120  cmd                
-      180      10     10   18400                 0.3  5132  conhost            
-      209       9      5    5162                   0  5136  spoolsv            
+  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)  Id    ProcessName        
+  -------  ------  -----  ------  ------  ----  -------------------
+        0       4      0      16       0     0  System Idle Process
+      100       4      0     288     0.5     4  System             
+       48       4      4    8192       0   108  Registry           
+       56       4      1    2048       0   340  smss               
+      590       4      4    9216     2.1   472  csrss              
+      152       4      3    7168       0   548  wininit            
+      468       4      5   10240     1.2   560  csrss              
+      256       4      6   13312     0.1   596  winlogon           
+      680       4      7   14336     1.5   620  services           
+      820       4     10   20480     3.2   636  lsass              
+      400      12     12   18432     0.6   784  svchost            
+      400      12     12   18432     0.6   836  svchost            
+      400      12     12   18432     0.6   912  svchost            
+      450      14     14   21504     0.9   964  svchost            
+      980      18     44  132000     8.4  1024  dwm                
+      400      12     12   18432     0.6  1048  svchost            
+      400      12     12   18432     0.6  1100  svchost            
+      350      10     10   15360     0.3  1168  svchost            
+      210       8      5   12800     0.2  1400  taskhostw          
+      340      14     12   28000     0.8  1560  RuntimeBroker      
+      320      10      6   14000     0.3  2200  LanmanServer       
+      280       8      4   10000     0.2  2400  LanmanWorkstation  
+     2100      65     64  145000    12.3  2848  explorer           
+       48       3      3    5200     0.1  5120  cmd                
+      180      10     10   18400     0.3  5132  conhost            
+      181       6      9    9334       0  5136  spoolsv            
   
 
 PS  [46/102]> gps
   
-  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)              Id    ProcessName        
-  -------  ------  -----  ------  ------------------  ----  -------------------
-        0       4      0      16                   0     0  System Idle Process
-      100       4      0     288                 0.5     4  System             
-       48       4      4    8192                   0   108  Registry           
-       56       4      1    2048                   0   340  smss               
-      590       4      4    9216                 2.1   472  csrss              
-      152       4      3    7168                   0   548  wininit            
-      468       4      5   10240                 1.2   560  csrss              
-      256       4      6   13312                 0.1   596  winlogon           
-      680       4      7   14336                 1.5   620  services           
-      820       4     10   20480                 3.2   636  lsass              
-      400      12     12   18432                 0.6   784  svchost            
-      400      12     12   18432                 0.6   836  svchost            
-      400      12     12   18432                 0.6   912  svchost            
-      450      14     14   21504  0.8999999999999999   964  svchost            
-      980      18     44  132000                 8.4  1024  dwm                
-      400      12     12   18432                 0.6  1048  svchost            
-      400      12     12   18432                 0.6  1100  svchost            
-      350      10     10   15360                 0.3  1168  svchost            
-      210       8      5   12800                 0.2  1400  taskhostw          
-      340      14     12   28000                 0.8  1560  RuntimeBroker      
-      320      10      6   14000                 0.3  2200  LanmanServer       
-      280       8      4   10000                 0.2  2400  LanmanWorkstation  
-     2100      65     64  145000                12.3  2848  explorer           
-       48       3      3    5200                 0.1  5120  cmd                
-      180      10     10   18400                 0.3  5132  conhost            
-      209       9      5    5162                   0  5136  spoolsv            
+  Handles  NPM(K)  PM(K)  WS(K)   CPU(s)  Id    ProcessName        
+  -------  ------  -----  ------  ------  ----  -------------------
+        0       4      0      16       0     0  System Idle Process
+      100       4      0     288     0.5     4  System             
+       48       4      4    8192       0   108  Registry           
+       56       4      1    2048       0   340  smss               
+      590       4      4    9216     2.1   472  csrss              
+      152       4      3    7168       0   548  wininit            
+      468       4      5   10240     1.2   560  csrss              
+      256       4      6   13312     0.1   596  winlogon           
+      680       4      7   14336     1.5   620  services           
+      820       4     10   20480     3.2   636  lsass              
+      400      12     12   18432     0.6   784  svchost            
+      400      12     12   18432     0.6   836  svchost            
+      400      12     12   18432     0.6   912  svchost            
+      450      14     14   21504     0.9   964  svchost            
+      980      18     44  132000     8.4  1024  dwm                
+      400      12     12   18432     0.6  1048  svchost            
+      400      12     12   18432     0.6  1100  svchost            
+      350      10     10   15360     0.3  1168  svchost            
+      210       8      5   12800     0.2  1400  taskhostw          
+      340      14     12   28000     0.8  1560  RuntimeBroker      
+      320      10      6   14000     0.3  2200  LanmanServer       
+      280       8      4   10000     0.2  2400  LanmanWorkstation  
+     2100      65     64  145000    12.3  2848  explorer           
+       48       3      3    5200     0.1  5120  cmd                
+      180      10     10   18400     0.3  5132  conhost            
+      181       6      9    9334       0  5136  spoolsv            
   
 
 
@@ -950,13 +960,13 @@ CMD [48/102]> tasklist /fi "imagename eq notepad.exe"
   
   Image Name                     PID Session Name        Session#    Mem Usage
   ========================= ======== ================ =========== ============
-  notepad.exe                   5140 Console                    1     18,946 K
+  notepad.exe                   5140 Console                    1     17,784 K
 
 PS  [49/102]> Get-Process -Name notepad -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      216       6      7  18946       0  5140  notepad    
+      162       7      3  17784       0  5140  notepad    
   
 
 CMD [50/102]> start calc.exe
@@ -966,7 +976,7 @@ PS  [51/102]> Get-Process -Name calc -ErrorAction SilentlyContinue
   
   Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
   -------  ------  -----  -----  ------  ----  -----------
-      203      10      9  18989       0  5144  calc       
+      209       4      7  15150       0  5144  calc       
   
 
 
@@ -978,8 +988,8 @@ CMD [53/102]> tasklist /fi "imagename eq notepad.exe"
   
   Image Name                     PID Session Name        Session#    Mem Usage
   ========================= ======== ================ =========== ============
-  notepad.exe                   5140 Console                    1     18,946 K
-  notepad.exe                   5148 Console                    1     17,385 K
+  notepad.exe                   5140 Console                    1     17,784 K
+  notepad.exe                   5148 Console                    1     14,904 K
 
 PS  [54/102]> Start-Process -FilePath cmd.exe
 <empty>
@@ -989,7 +999,7 @@ CMD [55/102]> tasklist /fi "imagename eq cmd.exe"
   Image Name                     PID Session Name        Session#    Mem Usage
   ========================= ======== ================ =========== ============
   cmd.exe                       5120 Console                    1      5,200 K
-  cmd.exe                       5152 Console                    1      5,320 K
+  cmd.exe                       5152 Console                    1     18,168 K
 
 
 --- [56] § taskkill (cmd) → check (ps) ---
@@ -1042,7 +1052,7 @@ PS  [65/102]> Get-Process -Name notepad | Select-Object -First 1 Id, Name
   
 
 CMD [66/102]> tasklist /fi "imagename eq notepad.exe" /fo csv /nh
-  "notepad.exe","5156","Console","1","11,359 K"
+  "notepad.exe","5156","Console","1","12,807 K"
 
 CMD [67/102]> taskkill /im notepad.exe /f
   SUCCESS: The process "notepad.exe" with PID 5156 has been terminated.
@@ -1118,7 +1128,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 5:11 AM
+  TimeCreated  : 5/16/2026 10:55 AM
   Message      : The Event log service was started.
   RecordId     : 1030
   
@@ -1126,7 +1136,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 1:11 AM
+  TimeCreated  : 5/16/2026 6:55 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1029
   
@@ -1134,7 +1144,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 7:11 PM
+  TimeCreated  : 5/16/2026 12:55 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1028
   
@@ -1243,19 +1253,21 @@ PS  [97/102]> Get-Process | Measure-Object | Select-Object Count
   
 
 PS  [98/102]> Get-Service | Group-Object Status | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  Running         20             
-  Stopped         2              
+  
+  Name     Count
+  -------  -----
+  Running     20
+  Stopped      2
+  
 
 PS  [99/102]> Get-Service | Group-Object StartType | Sort-Object Count -Descending
   
-  Name       Count  Group                                                                                                                                                                                                                                                          
-  ---------  -----  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  Automatic     16  [object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object],[object Object]
-  Manual         3  [object Object],[object Object],[object Object]                                                                                                                                                                                                                
-  System         2  [object Object],[object Object]                                                                                                                                                                                                                                
-  Boot           1  [object Object]                                                                                                                                                                                                                                                
+  Name       Count  Group                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
+  ---------  -----  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Automatic     16  {Status=Running; Name=Dhcp; DisplayName=DHCP Client; Description=Registers and updates IP addresses and DNS records; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dhcp; Account=NT Authority\LocalService; DependentServices={Afd, Tcpip}; ServicesDependedOn={Afd, Tcpip}; CanPauseAndContinue=False, Status=Running; Name=Dnscache; DisplayName=DNS Client; Description=Caches DNS names and registers the full computer name; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k dnscache; Account=NT AUTHORITY\NetworkService; DependentServices={Tcpip}; ServicesDependedOn={Tcpip}; CanPauseAndContinue=False, Status=Running; Name=RpcSs; DisplayName=Remote Procedure Call (RPC); Description=The RPCSS service is the Service Control Manager for COM and DCOM servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpcss; Account=NT AUTHORITY\NetworkService; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=RpcEptMapper; DisplayName=RPC Endpoint Mapper; Description=Resolves RPC interfaces identifiers to transport endpoints; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k rpceptmapper; Account=NT AUTHORITY\NetworkService; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=SamSs; DisplayName=Security Accounts Manager; Description=Stores security information for local user accounts; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k samss; Account=NT AUTHORITY\SYSTEM; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Running; Name=LanmanServer; DisplayName=Server; Description=Supports file, print, and named-pipe sharing over the network; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanserver; Account=NT AUTHORITY\SYSTEM; DependentServices={SamSs}; ServicesDependedOn={SamSs}; CanPauseAndContinue=True, Status=Running; Name=LanmanWorkstation; DisplayName=Workstation; Description=Creates and maintains client network connections to remote servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k lanmanworkstation; Account=NT AUTHORITY\NetworkService; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=mpssvc; DisplayName=Windows Defender Firewall; Description=Helps protect your computer by preventing unauthorized users from gaining access; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k mpssvc; Account=NT AUTHORITY\LocalService; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Running; Name=EventLog; DisplayName=Windows Event Log; Description=Manages events and event logs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k eventlog; Account=NT AUTHORITY\LocalService; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=W32Time; DisplayName=Windows Time; Description=Maintains date and time synchronization on all clients and servers; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k w32time; Account=NT AUTHORITY\LocalService; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=CryptSvc; DisplayName=Cryptographic Services; Description=Provides cryptographic key management services; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k cryptsvc; Account=NT AUTHORITY\NetworkService; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Running; Name=Winmgmt; DisplayName=Windows Management Instrumentation; Description=Provides a common interface and object model for WMI; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winmgmt; Account=NT AUTHORITY\SYSTEM; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Running; Name=winlogon; DisplayName=Windows Logon Application; Description=Manages user logon and logoff; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k winlogon; Account=NT AUTHORITY\SYSTEM; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=Schedule; DisplayName=Task Scheduler; Description=Enables a user to configure and schedule automated tasks; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k schedule; Account=NT AUTHORITY\SYSTEM; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Running; Name=AudioSrv; DisplayName=Windows Audio; Description=Manages audio for Windows-based programs; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k audiosrv; Account=NT AUTHORITY\LocalService; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Running; Name=Themes; DisplayName=Themes; Description=Provides user experience theme management; ServiceType=WIN32_SHARE_PROCESS; StartType=Automatic; BinaryPath=C:\Windows\System32\svchost.exe -k themes; Account=NT AUTHORITY\SYSTEM; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False}
+  Manual         3  {Status=Stopped; Name=WinRM; DisplayName=Windows Remote Management (WS-Management); Description=Windows Remote Management (WinRM) service; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k winrm; Account=NT AUTHORITY\NetworkService; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=False, Status=Stopped; Name=bthserv; DisplayName=Bluetooth Support Service; Description=Supports Bluetooth HID devices and Audio; ServiceType=WIN32_SHARE_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\svchost.exe -k bthserv; Account=NT AUTHORITY\LocalService; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=Spooler; DisplayName=Print Spooler; Description=Loads files to memory for later printing; ServiceType=WIN32_OWN_PROCESS; StartType=Manual; BinaryPath=C:\Windows\System32\spoolsv.exe; Account=NT AUTHORITY\SYSTEM; DependentServices={RpcSs}; ServicesDependedOn={RpcSs}; CanPauseAndContinue=True}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+  System         2  {Status=Running; Name=Afd; DisplayName=Ancillary Function Driver for Winsock; Description=Winsock helper; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k afd; Account=; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False, Status=Running; Name=NetBT; DisplayName=NetBT; Description=NetBIOS over TCP/IP; ServiceType=KERNEL_DRIVER; StartType=System; BinaryPath=C:\Windows\System32\svchost.exe -k netbt; Account=; DependentServices={Tcpip}; ServicesDependedOn={Tcpip}; CanPauseAndContinue=False}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+  Boot           1  {Status=Running; Name=Tcpip; DisplayName=TCP/IP Protocol Driver; Description=TCP/IP Protocol Driver; ServiceType=KERNEL_DRIVER; StartType=Boot; BinaryPath=C:\Windows\System32\svchost.exe -k tcpip; Account=; DependentServices={}; ServicesDependedOn={}; CanPauseAndContinue=False}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
   
 
 CMD [100/102]> sc query | findstr STATE | find /c "RUNNING"

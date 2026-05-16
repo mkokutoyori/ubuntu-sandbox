@@ -13,6 +13,7 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { formatTable as renderTable, formatList as renderList } from '@/network/devices/windows/PSPipeline';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -384,29 +385,23 @@ export class FormatTableCmdlet implements ICmdlet {
   readonly parameters = ['Property', 'AutoSize', 'Wrap', 'GroupBy', 'HideTableHeaders', 'InputObject', 'Force', 'RepeatHeader'] as const;
   readonly aliases = ['ft'] as const;
 
+  /**
+   * Format-Table delegates to the canonical renderer in PSPipeline. Column
+   * widths are computed from actual content (not a hard-coded 15) so output
+   * matches what a real PowerShell session prints.
+   */
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
     if (items.length === 0) return '';
-    const rawProps = stringArgs(ctx.positional, ctx.named, 'property');
-    const props = rawProps.length ? rawProps : null;
-    const sample = items[0];
-    const keys = props ?? (
-      sample && typeof sample === 'object' && !Array.isArray(sample)
-        ? Object.keys(sample as Record<string, PSValue>)
-        : ['Value']
+    const objects = items.map(it =>
+      it && typeof it === 'object' && !Array.isArray(it)
+        ? it as Record<string, PSValue>
+        : { Value: it } as Record<string, PSValue>
     );
-    const colWidth = 15;
-    const header = keys.map(k => k.padEnd(colWidth)).join(' ');
-    const sep    = keys.map(() => '-'.repeat(colWidth)).join(' ');
-    const rows   = items.map(item => {
-      const src = item && typeof item === 'object' && !Array.isArray(item)
-        ? item as Record<string, PSValue> : { Value: item };
-      return keys.map(k => {
-        const val = src[Object.keys(src).find(x => x.toLowerCase() === k.toLowerCase()) ?? k] ?? '';
-        return psValueToString(val).padEnd(colWidth);
-      }).join(' ');
-    });
-    return [header, sep, ...rows].join('\n');
+    const props = stringArgs(ctx.positional, ctx.named, 'property');
+    const autoSize = ctx.named['autosize'] === true || ctx.named['autosize'] === 'true';
+    const args = (props.length ? props.join(', ') : '') + (autoSize ? ' -AutoSize' : '');
+    return renderTable(objects as Array<Record<string, unknown>>, args);
   }
 }
 
@@ -415,21 +410,24 @@ export class FormatListCmdlet implements ICmdlet {
   readonly parameters = ['Property', 'GroupBy', 'InputObject', 'Force', 'Expand'] as const;
   readonly aliases = ['fl'] as const;
 
+  /**
+   * Format-List delegates to the canonical renderer in PSPipeline so the
+   * `Key : Value` rows are right-padded to the longest key name (real PS
+   * alignment) instead of a single literal space before the colon.
+   */
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
-    const propFilter = stringArgs(ctx.positional, ctx.named, 'property');
-    return items.map(item => {
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const src = item as Record<string, PSValue>;
-        const keys = Object.keys(src);
-        const lcMap = new Map(keys.map(k => [k.toLowerCase(), k]));
-        const picked = propFilter.length
-          ? propFilter.map(p => [p, src[lcMap.get(p.toLowerCase()) ?? p] ?? ''] as [string, PSValue])
-          : keys.map(k => [k, src[k]] as [string, PSValue]);
-        return picked.map(([k, v]) => `${k} : ${psValueToString(v)}`).join('\n');
-      }
-      return psValueToString(item);
-    }).join('\n\n');
+    if (items.length === 0) return '';
+    const objects = items.filter(it => it && typeof it === 'object' && !Array.isArray(it))
+      .map(it => it as Record<string, PSValue>);
+    if (objects.length === 0) return items.map(psValueToString).join('\n');
+    // `Format-List *` expands to every property of the input, matching real
+    // PowerShell's wildcard property selector. Strip the literal `*` (and
+    // any explicit wildcards) before delegating to the renderer.
+    const rawProps = stringArgs(ctx.positional, ctx.named, 'property');
+    const wantAll  = rawProps.length === 0 || rawProps.some(p => p === '*');
+    if (wantAll) return renderList(objects as Array<Record<string, unknown>>, '');
+    return renderList(objects as Array<Record<string, unknown>>, rawProps.join(', '));
   }
 }
 

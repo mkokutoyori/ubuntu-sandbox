@@ -166,10 +166,10 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') return value;
   if (value instanceof Date) {
-    // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM"
-    const m  = value.getMonth() + 1;
-    const d  = value.getDate();
-    const y  = value.getFullYear();
+    // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM".
+    const m   = value.getMonth() + 1;
+    const d   = value.getDate();
+    const y   = value.getFullYear();
     const h24 = value.getHours();
     const min = value.getMinutes();
     const tt  = h24 >= 12 ? 'PM' : 'AM';

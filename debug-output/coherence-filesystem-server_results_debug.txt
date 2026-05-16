@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-filesystem-server
-Generated: 2026-05-16T07:11:44.133Z
+Generated: 2026-05-16T12:55:15.474Z
 host=SRV-FSC-DBG (windows-server)
 Total commands: 124
 ============================================================
@@ -16,18 +16,18 @@ CMD [2/124]> dir C:\
   
    Directory of C:\
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          $Recycle.Bin
-  05/16/2026  07:11 AM    <DIR>          PerfLogs
-  05/16/2026  07:11 AM    <DIR>          Program Files
-  05/16/2026  07:11 AM    <DIR>          Program Files (x86)
-  05/16/2026  07:11 AM    <DIR>          ProgramData
-  05/16/2026  07:11 AM    <DIR>          System Volume Information
-  05/16/2026  07:11 AM    <DIR>          Users
-  05/16/2026  07:11 AM    <DIR>          Windows
-  05/16/2026  07:11 AM              9 numbers.txt
-  05/16/2026  07:11 AM              9 nums.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          $Recycle.Bin
+  05/16/2026  12:55 PM    <DIR>          PerfLogs
+  05/16/2026  12:55 PM    <DIR>          Program Files
+  05/16/2026  12:55 PM    <DIR>          Program Files (x86)
+  05/16/2026  12:55 PM    <DIR>          ProgramData
+  05/16/2026  12:55 PM    <DIR>          System Volume Information
+  05/16/2026  12:55 PM    <DIR>          Users
+  05/16/2026  12:55 PM    <DIR>          Windows
+  05/16/2026  12:55 PM              9 numbers.txt
+  05/16/2026  12:55 PM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -36,50 +36,59 @@ PS  [3/124]> Set-Location C:\
 
 PS  [4/124]> Get-ChildItem C:\
   
-  Mode    LastWriteTime      Length  Name                     
-  ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 7:11 AM          $Recycle.Bin             
-  d-----  5/16/2026 7:11 AM          PerfLogs                 
-  d-----  5/16/2026 7:11 AM          Program Files            
-  d-----  5/16/2026 7:11 AM          Program Files (x86)      
-  d-----  5/16/2026 7:11 AM          ProgramData              
-  d-----  5/16/2026 7:11 AM          System Volume Information
-  d-----  5/16/2026 7:11 AM          Users                    
-  d-----  5/16/2026 7:11 AM          Windows                  
-  -a----  5/16/2026 7:11 AM       9  numbers.txt              
-  -a----  5/16/2026 7:11 AM       9  nums.txt                 
+  
+      Directory: C:\
+  
+  Mode    LastWriteTime       Length  Name                     
+  ------  ------------------  ------  -------------------------
+  d-----  5/16/2026 12:55 PM          $Recycle.Bin             
+  d-----  5/16/2026 12:55 PM          PerfLogs                 
+  d-----  5/16/2026 12:55 PM          Program Files            
+  d-----  5/16/2026 12:55 PM          Program Files (x86)      
+  d-----  5/16/2026 12:55 PM          ProgramData              
+  d-----  5/16/2026 12:55 PM          System Volume Information
+  d-----  5/16/2026 12:55 PM          Users                    
+  d-----  5/16/2026 12:55 PM          Windows                  
+  -a----  5/16/2026 12:55 PM       9  numbers.txt              
+  -a----  5/16/2026 12:55 PM       9  nums.txt                 
   
 
 PS  [5/124]> ls C:\
   
-  Mode    LastWriteTime      Length  Name                     
-  ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 7:11 AM          $Recycle.Bin             
-  d-----  5/16/2026 7:11 AM          PerfLogs                 
-  d-----  5/16/2026 7:11 AM          Program Files            
-  d-----  5/16/2026 7:11 AM          Program Files (x86)      
-  d-----  5/16/2026 7:11 AM          ProgramData              
-  d-----  5/16/2026 7:11 AM          System Volume Information
-  d-----  5/16/2026 7:11 AM          Users                    
-  d-----  5/16/2026 7:11 AM          Windows                  
-  -a----  5/16/2026 7:11 AM       9  numbers.txt              
-  -a----  5/16/2026 7:11 AM       9  nums.txt                 
+  
+      Directory: C:\
+  
+  Mode    LastWriteTime       Length  Name                     
+  ------  ------------------  ------  -------------------------
+  d-----  5/16/2026 12:55 PM          $Recycle.Bin             
+  d-----  5/16/2026 12:55 PM          PerfLogs                 
+  d-----  5/16/2026 12:55 PM          Program Files            
+  d-----  5/16/2026 12:55 PM          Program Files (x86)      
+  d-----  5/16/2026 12:55 PM          ProgramData              
+  d-----  5/16/2026 12:55 PM          System Volume Information
+  d-----  5/16/2026 12:55 PM          Users                    
+  d-----  5/16/2026 12:55 PM          Windows                  
+  -a----  5/16/2026 12:55 PM       9  numbers.txt              
+  -a----  5/16/2026 12:55 PM       9  nums.txt                 
   
 
 PS  [6/124]> dir C:\
   
-  Mode    LastWriteTime      Length  Name                     
-  ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 7:11 AM          $Recycle.Bin             
-  d-----  5/16/2026 7:11 AM          PerfLogs                 
-  d-----  5/16/2026 7:11 AM          Program Files            
-  d-----  5/16/2026 7:11 AM          Program Files (x86)      
-  d-----  5/16/2026 7:11 AM          ProgramData              
-  d-----  5/16/2026 7:11 AM          System Volume Information
-  d-----  5/16/2026 7:11 AM          Users                    
-  d-----  5/16/2026 7:11 AM          Windows                  
-  -a----  5/16/2026 7:11 AM       9  numbers.txt              
-  -a----  5/16/2026 7:11 AM       9  nums.txt                 
+  
+      Directory: C:\
+  
+  Mode    LastWriteTime       Length  Name                     
+  ------  ------------------  ------  -------------------------
+  d-----  5/16/2026 12:55 PM          $Recycle.Bin             
+  d-----  5/16/2026 12:55 PM          PerfLogs                 
+  d-----  5/16/2026 12:55 PM          Program Files            
+  d-----  5/16/2026 12:55 PM          Program Files (x86)      
+  d-----  5/16/2026 12:55 PM          ProgramData              
+  d-----  5/16/2026 12:55 PM          System Volume Information
+  d-----  5/16/2026 12:55 PM          Users                    
+  d-----  5/16/2026 12:55 PM          Windows                  
+  -a----  5/16/2026 12:55 PM       9  numbers.txt              
+  -a----  5/16/2026 12:55 PM       9  nums.txt                 
   
 
 CMD [7/124]> cd
@@ -108,15 +117,17 @@ CMD [11/124]> mkdir C:\CohFs
 <empty>
 
 CMD [12/124]> dir C:\ | findstr CohFs
-  05/16/2026  07:11 AM    <DIR>          CohFs
+  05/16/2026  12:55 PM    <DIR>          CohFs
 
 PS  [13/124]> Test-Path C:\CohFs
   True
 
 PS  [14/124]> Get-Item C:\CohFs | Format-List Name, FullName, Mode
-  Name : CohFs
+  
+  Name     : CohFs
   FullName : C:\CohFs
-  Mode : d-----
+  Mode     : d-----
+  
 
 PS  [15/124]> (Get-Item C:\CohFs).PSIsContainer
   True
@@ -132,10 +143,13 @@ CMD [18/124]> mkdir C:\CohFs\sub1\nested
 
 PS  [19/124]> Get-ChildItem C:\CohFs
   
-  Mode    LastWriteTime      Length  Name
-  ------  -----------------  ------  ----
-  d-----  5/16/2026 7:11 AM          sub1
-  d-----  5/16/2026 7:11 AM          sub2
+  
+      Directory: C:\CohFs
+  
+  Mode    LastWriteTime       Length  Name
+  ------  ------------------  ------  ----
+  d-----  5/16/2026 12:55 PM          sub1
+  d-----  5/16/2026 12:55 PM          sub2
   
 
 PS  [20/124]> (Get-ChildItem C:\CohFs -Recurse -Directory).Count
@@ -163,11 +177,11 @@ CMD [23/124]> dir C:\CohFs
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
                  0 File(s) 0 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
@@ -177,9 +191,9 @@ CMD [24/124]> dir C:\CohFs\fromPS
   
    Directory of C:\CohFs\fromPS
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          inner
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          inner
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
 
@@ -221,7 +235,7 @@ CMD [34/124]> dir C:\CohFs\fromPs.txt
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM             13 fromPs.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -284,7 +298,7 @@ CMD [48/124]> dir C:\CohFs\copyByPs.txt
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM             13 copyByPs.txt
+  05/16/2026  12:55 PM             13 copyByPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -319,7 +333,7 @@ CMD [56/124]> dir C:\CohFs\movedByPs.txt
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM             13 movedByPs.txt
+  05/16/2026  12:55 PM             13 movedByPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -332,7 +346,7 @@ CMD [58/124]> dir C:\CohFs\renamedByPs.txt
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM             13 renamedByPs.txt
+  05/16/2026  12:55 PM             13 renamedByPs.txt
                  1 File(s) 13 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
@@ -360,14 +374,14 @@ CMD [63/124]> dir C:\CohFs
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
@@ -377,14 +391,14 @@ CMD [64/124]> dir C:\CohFs /b
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
@@ -394,51 +408,51 @@ CMD [65/124]> dir C:\CohFs /s
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          inner
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          inner
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS\inner
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          nested
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          nested
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1\nested
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub2
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
@@ -452,14 +466,14 @@ CMD [66/124]> dir C:\CohFs /a
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
@@ -469,14 +483,14 @@ CMD [67/124]> dir C:\CohFs /od
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
                  3 File(s) 90 bytes
                  5 Dir(s)  53,687,091,200 bytes free
 
@@ -486,22 +500,25 @@ CMD [68/124]> dir C:\CohFs *.txt
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
                  3 File(s) 90 bytes
                  0 Dir(s)  53,687,091,200 bytes free
 
 PS  [69/124]> Get-ChildItem C:\CohFs
   
-  Mode    LastWriteTime      Length  Name       
-  ------  -----------------  ------  -----------
-  d-----  5/16/2026 7:11 AM          fromPS     
-  d-----  5/16/2026 7:11 AM          sub1       
-  d-----  5/16/2026 7:11 AM          sub2       
-  -a----  5/16/2026 7:11 AM      15  fromCmd.txt
-  -a----  5/16/2026 7:11 AM      13  fromPs.txt 
-  -a----  5/16/2026 7:11 AM      62  log.txt    
+  
+      Directory: C:\CohFs
+  
+  Mode    LastWriteTime       Length  Name       
+  ------  ------------------  ------  -----------
+  d-----  5/16/2026 12:55 PM          fromPS     
+  d-----  5/16/2026 12:55 PM          sub1       
+  d-----  5/16/2026 12:55 PM          sub2       
+  -a----  5/16/2026 12:55 PM      15  fromCmd.txt
+  -a----  5/16/2026 12:55 PM      13  fromPs.txt 
+  -a----  5/16/2026 12:55 PM      62  log.txt    
   
 
 PS  [70/124]> Get-ChildItem C:\CohFs -Name
@@ -514,34 +531,40 @@ PS  [70/124]> Get-ChildItem C:\CohFs -Name
 
 PS  [71/124]> Get-ChildItem C:\CohFs -Recurse
   
-  Mode    LastWriteTime      Length  Name       
-  ------  -----------------  ------  -----------
-  d-----  5/16/2026 7:11 AM          fromPS     
-  d-----  5/16/2026 7:11 AM          sub1       
-  d-----  5/16/2026 7:11 AM          sub2       
-  -a----  5/16/2026 7:11 AM      15  fromCmd.txt
-  -a----  5/16/2026 7:11 AM      13  fromPs.txt 
-  -a----  5/16/2026 7:11 AM      62  log.txt    
-  d-----  5/16/2026 7:11 AM          inner      
-  d-----  5/16/2026 7:11 AM          nested     
+  Mode    LastWriteTime       Length  Name       
+  ------  ------------------  ------  -----------
+  d-----  5/16/2026 12:55 PM          fromPS     
+  d-----  5/16/2026 12:55 PM          sub1       
+  d-----  5/16/2026 12:55 PM          sub2       
+  -a----  5/16/2026 12:55 PM      15  fromCmd.txt
+  -a----  5/16/2026 12:55 PM      13  fromPs.txt 
+  -a----  5/16/2026 12:55 PM      62  log.txt    
+  d-----  5/16/2026 12:55 PM          inner      
+  d-----  5/16/2026 12:55 PM          nested     
   
 
 PS  [72/124]> Get-ChildItem C:\CohFs -File
   
-  Mode    LastWriteTime      Length  Name       
-  ------  -----------------  ------  -----------
-  -a----  5/16/2026 7:11 AM      15  fromCmd.txt
-  -a----  5/16/2026 7:11 AM      13  fromPs.txt 
-  -a----  5/16/2026 7:11 AM      62  log.txt    
+  
+      Directory: C:\CohFs
+  
+  Mode    LastWriteTime       Length  Name       
+  ------  ------------------  ------  -----------
+  -a----  5/16/2026 12:55 PM      15  fromCmd.txt
+  -a----  5/16/2026 12:55 PM      13  fromPs.txt 
+  -a----  5/16/2026 12:55 PM      62  log.txt    
   
 
 PS  [73/124]> Get-ChildItem C:\CohFs -Directory
   
-  Mode    LastWriteTime      Length  Name  
-  ------  -----------------  ------  ------
-  d-----  5/16/2026 7:11 AM          fromPS
-  d-----  5/16/2026 7:11 AM          sub1  
-  d-----  5/16/2026 7:11 AM          sub2  
+  
+      Directory: C:\CohFs
+  
+  Mode    LastWriteTime       Length  Name  
+  ------  ------------------  ------  ------
+  d-----  5/16/2026 12:55 PM          fromPS
+  d-----  5/16/2026 12:55 PM          sub1  
+  d-----  5/16/2026 12:55 PM          sub2  
   
 
 PS  [74/124]> Get-ChildItem C:\CohFs -Filter *.txt
@@ -550,9 +573,9 @@ PS  [74/124]> Get-ChildItem C:\CohFs -Filter *.txt
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/16/2026   7:11 AM             15 fromCmd.txt
-  -a----                5/16/2026   7:11 AM             13 fromPs.txt
-  -a----                5/16/2026   7:11 AM             62 log.txt
+  -a----                5/16/2026  12:55 PM             15 fromCmd.txt
+  -a----                5/16/2026  12:55 PM             13 fromPs.txt
+  -a----                5/16/2026  12:55 PM             62 log.txt
 
 PS  [75/124]> (Get-ChildItem C:\CohFs).Count
   6
@@ -804,53 +827,53 @@ CMD [119/124]> dir C:\CohFs /s
   
    Directory of C:\CohFs
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          fromPS
-  05/16/2026  07:11 AM    <DIR>          sub1
-  05/16/2026  07:11 AM    <DIR>          sub2
-  05/16/2026  07:11 AM              5 attr.txt
-  05/16/2026  07:11 AM             15 fromCmd.txt
-  05/16/2026  07:11 AM             13 fromPs.txt
-  05/16/2026  07:11 AM             62 log.txt
-  05/16/2026  07:11 AM             19 multi.txt
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          fromPS
+  05/16/2026  12:55 PM    <DIR>          sub1
+  05/16/2026  12:55 PM    <DIR>          sub2
+  05/16/2026  12:55 PM              5 attr.txt
+  05/16/2026  12:55 PM             15 fromCmd.txt
+  05/16/2026  12:55 PM             13 fromPs.txt
+  05/16/2026  12:55 PM             62 log.txt
+  05/16/2026  12:55 PM             19 multi.txt
                  5 File(s) 114 bytes
                  5 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          inner
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          inner
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\fromPS\inner
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
-  05/16/2026  07:11 AM    <DIR>          nested
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          nested
                  0 File(s) 0 bytes
                  3 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub1\nested
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
    Directory of C:\CohFs\sub2
   
-  05/16/2026  07:11 AM    <DIR>          .
-  05/16/2026  07:11 AM    <DIR>          ..
+  05/16/2026  12:55 PM    <DIR>          .
+  05/16/2026  12:55 PM    <DIR>          ..
                  0 File(s) 0 bytes
                  2 Dir(s)  53,687,091,200 bytes free
   
@@ -859,18 +882,20 @@ CMD [119/124]> dir C:\CohFs /s
                  17 Dir(s)  53,687,091,200 bytes free
 
 PS  [120/124]> Get-ChildItem C:\CohFs -Recurse | Format-Table Mode, Length, Name -AutoSize
-  Mode            Length          Name           
-  --------------- --------------- ---------------
-  d-----                          fromPS         
-  d-----                          sub1           
-  d-----                          sub2           
-  -a----          5               attr.txt       
-  -a----          15              fromCmd.txt    
-  -a----          13              fromPs.txt     
-  -a----          62              log.txt        
-  -a----          19              multi.txt      
-  d-----                          inner          
-  d-----                          nested         
+  
+  Mode    Length  Name       
+  ------  ------  -----------
+  d-----          fromPS     
+  d-----          sub1       
+  d-----          sub2       
+  -a----       5  attr.txt   
+  -a----      15  fromCmd.txt
+  -a----      13  fromPs.txt 
+  -a----      62  log.txt    
+  -a----      19  multi.txt  
+  d-----          inner      
+  d-----          nested     
+  
 
 PS  [121/124]> Get-ChildItem C:\CohFs -Recurse -File | Measure-Object -Property Length -Sum
   

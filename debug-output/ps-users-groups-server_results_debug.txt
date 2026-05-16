@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-server
-Generated: 2026-05-16T07:11:48.467Z
+Generated: 2026-05-16T12:55:16.940Z
 Engine: powershell
 host=SRV-USR-DBG (windows-server)
 Total commands: 102
@@ -19,12 +19,14 @@ PS [1/102]> Get-LocalUser
   
 
 PS [2/102]> Get-LocalUser | Format-Table Name, Enabled, Description -AutoSize
-  Name            Enabled         Description    
-  --------------- --------------- ---------------
-  Administrator   True            Built-in account for administering the computer/domain
-  Guest           False           Built-in account for guest access to the computer/domain
-  DefaultAccount  False           A user account managed by the system.
-  User            True                           
+  
+  Name            Enabled  Description                                             
+  --------------  -------  --------------------------------------------------------
+  Administrator   True     Built-in account for administering the computer/domain  
+  Guest           False    Built-in account for guest access to the computer/domain
+  DefaultAccount  False    A user account managed by the system.                   
+  User            True                                                             
+  
 
 PS [3/102]> Get-LocalUser | Sort-Object Name
   
@@ -63,39 +65,41 @@ PS [7/102]> Get-LocalUser | Select-Object -ExpandProperty Name
 
 PS [8/102]> Get-LocalGroup
   
-  Name                             Description                                                                                     SID           Members      
-  -------------------------------  ----------------------------------------------------------------------------------------------  ------------  -------------
-  Administrators                   Administrators have complete and unrestricted access to the computer/domain                     S-1-5-32-544  Administrator
-  Users                            Users are prevented from making accidental or intentional system-wide changes                   S-1-5-32-545  User         
-  Guests                           Guests have the same access as members of the Users group by default                            S-1-5-32-546  Guest        
-  Power Users                      Power Users are included for backwards compatibility                                            S-1-5-32-547               
-  Remote Desktop Users             Members are granted the right to logon remotely                                                 S-1-5-32-555               
-  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features  S-1-5-32-556               
-  Event Log Readers                Members of this group can read event logs from local machine                                    S-1-5-32-573               
+  Name                             Description                                                                                   
+  -------------------------------  ----------------------------------------------------------------------------------------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
+  Users                            Users are prevented from making accidental or intentional system-wide changes                 
+  Guests                           Guests have the same access as members of the Users group by default                          
+  Power Users                      Power Users are included for backwards compatibility                                          
+  Remote Desktop Users             Members are granted the right to logon remotely                                               
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers                Members of this group can read event logs from local machine                                  
   
 
 PS [9/102]> Get-LocalGroup | Format-Table Name, Description -AutoSize
-  Name            Description    
-  --------------- ---------------
-  Administrators  Administrators have complete and unrestricted access to the computer/domain
-  Users           Users are prevented from making accidental or intentional system-wide changes
-  Guests          Guests have the same access as members of the Users group by default
-  Power Users     Power Users are included for backwards compatibility
-  Remote Desktop Users Members are granted the right to logon remotely
-  Network Configuration Operators Members can have some administrative privileges to manage configuration of networking features
-  Event Log Readers Members of this group can read event logs from local machine
+  
+  Name                             Description                                                                                   
+  -------------------------------  ----------------------------------------------------------------------------------------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
+  Users                            Users are prevented from making accidental or intentional system-wide changes                 
+  Guests                           Guests have the same access as members of the Users group by default                          
+  Power Users                      Power Users are included for backwards compatibility                                          
+  Remote Desktop Users             Members are granted the right to logon remotely                                               
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers                Members of this group can read event logs from local machine                                  
+  
 
 PS [10/102]> Get-LocalGroup | Sort-Object Name
   
-  Name                             Description                                                                                     SID           Members      
-  -------------------------------  ----------------------------------------------------------------------------------------------  ------------  -------------
-  Administrators                   Administrators have complete and unrestricted access to the computer/domain                     S-1-5-32-544  Administrator
-  Event Log Readers                Members of this group can read event logs from local machine                                    S-1-5-32-573               
-  Guests                           Guests have the same access as members of the Users group by default                            S-1-5-32-546  Guest        
-  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features  S-1-5-32-556               
-  Power Users                      Power Users are included for backwards compatibility                                            S-1-5-32-547               
-  Remote Desktop Users             Members are granted the right to logon remotely                                                 S-1-5-32-555               
-  Users                            Users are prevented from making accidental or intentional system-wide changes                   S-1-5-32-545  User         
+  Name                             Description                                                                                   
+  -------------------------------  ----------------------------------------------------------------------------------------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
+  Event Log Readers                Members of this group can read event logs from local machine                                  
+  Guests                           Guests have the same access as members of the Users group by default                          
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
+  Power Users                      Power Users are included for backwards compatibility                                          
+  Remote Desktop Users             Members are granted the right to logon remotely                                               
+  Users                            Users are prevented from making accidental or intentional system-wide changes                 
   
 
 PS [11/102]> (Get-LocalGroup).Count
@@ -332,57 +336,87 @@ PS [46/102]> Get-LocalUser -Name dave -ErrorAction SilentlyContinue
 
 --- [47] § create groups ---
 PS [47/102]> New-LocalGroup -Name Developers -Description "Dev team"
-  Name=Developers; Description=Dev team; SID=S-1-5-32-2016; Members=
+  
+  Name        Description
+  ----------  -----------
+  Developers  Dev team   
+  
 
 PS [48/102]> New-LocalGroup -Name QA -Description "QA team"
-  Name=QA; Description=QA team; SID=S-1-5-32-2017; Members=
+  
+  Name  Description
+  ----  -----------
+  QA    QA team    
+  
 
 PS [49/102]> New-LocalGroup -Name Ops
-  Name=Ops; Description=; SID=S-1-5-32-2018; Members=
+  
+  Name  Description
+  ----  -----------
+  Ops              
+  
 
 PS [50/102]> New-LocalGroup -Name Security
-  Name=Security; Description=; SID=S-1-5-32-2019; Members=
+  
+  Name      Description
+  --------  -----------
+  Security             
+  
 
 PS [51/102]> New-LocalGroup -Name Interns
-  Name=Interns; Description=; SID=S-1-5-32-2020; Members=
+  
+  Name     Description
+  -------  -----------
+  Interns             
+  
 
 PS [52/102]> New-LocalGroup -Name Contractors
-  Name=Contractors; Description=; SID=S-1-5-32-2021; Members=
+  
+  Name         Description
+  -----------  -----------
+  Contractors             
+  
 
 PS [53/102]> New-LocalGroup -Name Developers -ErrorAction SilentlyContinue
-  Name=Developers; Description=Dev team; SID=S-1-5-32-2016; Members=
+  
+  Name        Description
+  ----------  -----------
+  Developers  Dev team   
+  
 
 PS [54/102]> Get-LocalGroup | Where-Object { $_.Description }
   
-  Name                             Description                                                                                     SID            Members      
-  -------------------------------  ----------------------------------------------------------------------------------------------  -------------  -------------
-  Administrators                   Administrators have complete and unrestricted access to the computer/domain                     S-1-5-32-544   Administrator
-  Users                            Users are prevented from making accidental or intentional system-wide changes                   S-1-5-32-545   User         
-  Guests                           Guests have the same access as members of the Users group by default                            S-1-5-32-546   Guest        
-  Power Users                      Power Users are included for backwards compatibility                                            S-1-5-32-547                
-  Remote Desktop Users             Members are granted the right to logon remotely                                                 S-1-5-32-555                
-  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features  S-1-5-32-556                
-  Event Log Readers                Members of this group can read event logs from local machine                                    S-1-5-32-573                
-  Developers                       Dev team                                                                                        S-1-5-32-2016               
-  QA                               QA team                                                                                         S-1-5-32-2017               
+  Name                             Description                                                                                   
+  -------------------------------  ----------------------------------------------------------------------------------------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
+  Users                            Users are prevented from making accidental or intentional system-wide changes                 
+  Guests                           Guests have the same access as members of the Users group by default                          
+  Power Users                      Power Users are included for backwards compatibility                                          
+  Remote Desktop Users             Members are granted the right to logon remotely                                               
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers                Members of this group can read event logs from local machine                                  
+  Developers                       Dev team                                                                                      
+  QA                               QA team                                                                                       
   
 
 PS [55/102]> Get-LocalGroup | Sort-Object Name | Format-Table -AutoSize
-  Name            Description     SID             Members        
-  --------------- --------------- --------------- ---------------
-  Administrators  Administrators have complete and unrestricted access to the computer/domain S-1-5-32-544    Administrator  
-  Contractors                     S-1-5-32-2021                  
-  Developers      Dev team        S-1-5-32-2016                  
-  Event Log Readers Members of this group can read event logs from local machine S-1-5-32-573                   
-  Guests          Guests have the same access as members of the Users group by default S-1-5-32-546    Guest          
-  Interns                         S-1-5-32-2020                  
-  Network Configuration Operators Members can have some administrative privileges to manage configuration of networking features S-1-5-32-556                   
-  Ops                             S-1-5-32-2018                  
-  Power Users     Power Users are included for backwards compatibility S-1-5-32-547                   
-  QA              QA team         S-1-5-32-2017                  
-  Remote Desktop Users Members are granted the right to logon remotely S-1-5-32-555                   
-  Security                        S-1-5-32-2019                  
-  Users           Users are prevented from making accidental or intentional system-wide changes S-1-5-32-545    User           
+  
+  Name                             Description                                                                                     SID            Members        
+  -------------------------------  ----------------------------------------------------------------------------------------------  -------------  ---------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                     S-1-5-32-544   {Administrator}
+  Contractors                                                                                                                      S-1-5-32-2021  {}             
+  Developers                       Dev team                                                                                        S-1-5-32-2016  {}             
+  Event Log Readers                Members of this group can read event logs from local machine                                    S-1-5-32-573   {}             
+  Guests                           Guests have the same access as members of the Users group by default                            S-1-5-32-546   {Guest}        
+  Interns                                                                                                                          S-1-5-32-2020  {}             
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features  S-1-5-32-556   {}             
+  Ops                                                                                                                              S-1-5-32-2018  {}             
+  Power Users                      Power Users are included for backwards compatibility                                            S-1-5-32-547   {}             
+  QA                               QA team                                                                                         S-1-5-32-2017  {}             
+  Remote Desktop Users             Members are granted the right to logon remotely                                                 S-1-5-32-555   {}             
+  Security                                                                                                                         S-1-5-32-2019  {}             
+  Users                            Users are prevented from making accidental or intentional system-wide changes                   S-1-5-32-545   {User}         
+  
 
 
 --- [56] § membership ---
@@ -512,10 +546,12 @@ PS [81/102]> Get-LocalUser | Where-Object { $_.Enabled } | Sort-Object Name | Se
   
 
 PS [82/102]> Get-LocalUser | Group-Object Enabled | Format-Table Name, Count -AutoSize
-  Name            Count          
-  --------------- ---------------
-  True            15             
-  False           2              
+  
+  Name   Count
+  -----  -----
+  True      15
+  False      2
+  
 
 PS [83/102]> Get-LocalUser | ForEach-Object { "$($_.Name): $($_.Description)" }
   Administrator: Built-in account for administering the computer/domain
@@ -653,15 +689,15 @@ PS [98/102]> Get-LocalUser
 
 PS [99/102]> Get-LocalGroup
   
-  Name                             Description                                                                                     SID           Members      
-  -------------------------------  ----------------------------------------------------------------------------------------------  ------------  -------------
-  Administrators                   Administrators have complete and unrestricted access to the computer/domain                     S-1-5-32-544  Administrator
-  Users                            Users are prevented from making accidental or intentional system-wide changes                   S-1-5-32-545  User         
-  Guests                           Guests have the same access as members of the Users group by default                            S-1-5-32-546  Guest        
-  Power Users                      Power Users are included for backwards compatibility                                            S-1-5-32-547               
-  Remote Desktop Users             Members are granted the right to logon remotely                                                 S-1-5-32-555               
-  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features  S-1-5-32-556               
-  Event Log Readers                Members of this group can read event logs from local machine                                    S-1-5-32-573               
+  Name                             Description                                                                                   
+  -------------------------------  ----------------------------------------------------------------------------------------------
+  Administrators                   Administrators have complete and unrestricted access to the computer/domain                   
+  Users                            Users are prevented from making accidental or intentional system-wide changes                 
+  Guests                           Guests have the same access as members of the Users group by default                          
+  Power Users                      Power Users are included for backwards compatibility                                          
+  Remote Desktop Users             Members are granted the right to logon remotely                                               
+  Network Configuration Operators  Members can have some administrative privileges to manage configuration of networking features
+  Event Log Readers                Members of this group can read event logs from local machine                                  
   
 
 

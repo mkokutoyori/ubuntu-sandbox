@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-pc
-Generated: 2026-05-16T07:11:47.903Z
+Generated: 2026-05-16T12:55:16.175Z
 Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
@@ -124,13 +124,16 @@ PS [24/77]> & C:\Scripts\files.ps1
 
 PS [25/77]> Get-ChildItem C:\BulkOut
   
-  Mode    LastWriteTime      Length  Name     
-  ------  -----------------  ------  ---------
-  -a----  5/16/2026 7:11 AM       5  item1.txt
-  -a----  5/16/2026 7:11 AM       5  item2.txt
-  -a----  5/16/2026 7:11 AM       5  item3.txt
-  -a----  5/16/2026 7:11 AM       5  item4.txt
-  -a----  5/16/2026 7:11 AM       5  item5.txt
+  
+      Directory: C:\BulkOut
+  
+  Mode    LastWriteTime       Length  Name     
+  ------  ------------------  ------  ---------
+  -a----  5/16/2026 12:55 PM       5  item1.txt
+  -a----  5/16/2026 12:55 PM       5  item2.txt
+  -a----  5/16/2026 12:55 PM       5  item3.txt
+  -a----  5/16/2026 12:55 PM       5  item4.txt
+  -a----  5/16/2026 12:55 PM       5  item5.txt
   
 
 PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
@@ -148,18 +151,21 @@ PS [27/77]> & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
 
 PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
   
-  Mode    LastWriteTime      Length  Name      
-  ------  -----------------  ------  ----------
-  -a----  5/16/2026 7:11 AM       5  item1.txt 
-  -a----  5/16/2026 7:11 AM       6  item10.txt
-  -a----  5/16/2026 7:11 AM       5  item2.txt 
-  -a----  5/16/2026 7:11 AM       5  item3.txt 
-  -a----  5/16/2026 7:11 AM       5  item4.txt 
-  -a----  5/16/2026 7:11 AM       5  item5.txt 
-  -a----  5/16/2026 7:11 AM       5  item6.txt 
-  -a----  5/16/2026 7:11 AM       5  item7.txt 
-  -a----  5/16/2026 7:11 AM       5  item8.txt 
-  -a----  5/16/2026 7:11 AM       5  item9.txt 
+  
+      Directory: C:\BulkOut2
+  
+  Mode    LastWriteTime       Length  Name      
+  ------  ------------------  ------  ----------
+  -a----  5/16/2026 12:55 PM       5  item1.txt 
+  -a----  5/16/2026 12:55 PM       6  item10.txt
+  -a----  5/16/2026 12:55 PM       5  item2.txt 
+  -a----  5/16/2026 12:55 PM       5  item3.txt 
+  -a----  5/16/2026 12:55 PM       5  item4.txt 
+  -a----  5/16/2026 12:55 PM       5  item5.txt 
+  -a----  5/16/2026 12:55 PM       5  item6.txt 
+  -a----  5/16/2026 12:55 PM       5  item7.txt 
+  -a----  5/16/2026 12:55 PM       5  item8.txt 
+  -a----  5/16/2026 12:55 PM       5  item9.txt 
   
 
 PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
@@ -306,15 +312,17 @@ PS [52/77]> & C:\Scripts\sum.ps1 -Numbers ((1..10) | Where-Object { $_ % 2 -eq 0
 
 --- [53] § state probes ---
 PS [53/77]> Get-ChildItem C:\Scripts | Format-Table Name, Length -AutoSize
-  Name            Length         
-  --------------- ---------------
-  files.ps1       281            
-  fn.ps1          279            
-  hello.ps1       90             
-  pipeline.ps1    214            
-  sum.ps1         103            
-  try.ps1         118            
-  users.ps1       188            
+  
+  Name          Length
+  ------------  ------
+  files.ps1        281
+  fn.ps1           279
+  hello.ps1         90
+  pipeline.ps1     214
+  sum.ps1          103
+  try.ps1          118
+  users.ps1        188
+  
 
 PS [54/77]> (Get-ChildItem C:\Scripts).Count
   7
