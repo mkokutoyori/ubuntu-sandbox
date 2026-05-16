@@ -9,6 +9,12 @@ import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import {
+  OracleSignalStore,
+  makeReadonlyOracleObservables,
+  type OracleObservables,
+} from './observables';
+import { OracleSignalRefreshActor } from './actors/OracleSignalRefreshActor';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -53,18 +59,43 @@ export class OracleInstance {
   private _bus: IEventBus | null = null;
   /** deviceId scoping the events emitted by this instance. */
   private _deviceId: string = 'default';
+  /** Reactive signal store + read-only view exposed to UI consumers. */
+  private readonly _signalStore = new OracleSignalStore();
+  readonly observables: OracleObservables = makeReadonlyOracleObservables(this._signalStore);
+  /** Refresh actor bridging oracle.* events → signal store. (Re-)attached
+   *  whenever the bus or deviceId changes. */
+  private _refreshActor: OracleSignalRefreshActor | null = null;
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };
     this._archiveLogMode = this.config.archiveLogMode;
     this.initParameters();
     this.initRedoLogs();
+    // Attach the signal refresh actor immediately so observables work
+    // even when no explicit setEventBus/setDeviceId is called.
+    this.reattachRefreshActor();
   }
 
   /** Inject (or replace) the bus this instance publishes to. */
-  setEventBus(bus: IEventBus | null): void { this._bus = bus; }
+  setEventBus(bus: IEventBus | null): void {
+    this._bus = bus;
+    this.reattachRefreshActor();
+  }
   /** Set the deviceId scoping all `oracle.*` events from this instance. */
-  setDeviceId(deviceId: string): void { this._deviceId = deviceId; }
+  setDeviceId(deviceId: string): void {
+    this._deviceId = deviceId;
+    this.reattachRefreshActor();
+  }
+
+  /** (Re-)bind the refresh actor whenever bus / deviceId is updated. */
+  private reattachRefreshActor(): void {
+    if (this._refreshActor) {
+      this._refreshActor.stop();
+      this._refreshActor = null;
+    }
+    this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
+    this._refreshActor.start();
+  }
 
   /** Public bus accessor — used by OracleExecutor / SQLPlusSession to
    *  reuse the same bus binding as the instance. */

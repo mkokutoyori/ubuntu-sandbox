@@ -9,17 +9,15 @@ import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
-import { createSQLPlusSession, initOracleFilesystem, syncAlertLogToDevice, updateSpfileOnDevice, syncDatafilesToDevice, syncOracleProcessesToDevice } from '@/terminal/commands/database';
+import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
 
 export class SqlPlusSubShell implements ISubShell {
   private session: SQLPlusSession;
   private prompt: string;
-  private device: Equipment;
 
-  private constructor(session: SQLPlusSession, prompt: string, device: Equipment) {
+  private constructor(session: SQLPlusSession, prompt: string) {
     this.session = session;
     this.prompt = prompt;
-    this.device = device;
   }
 
   /**
@@ -38,7 +36,7 @@ export class SqlPlusSubShell implements ISubShell {
     const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
 
     return {
-      subShell: new SqlPlusSubShell(session, session.getPrompt(), device),
+      subShell: new SqlPlusSubShell(session, session.getPrompt()),
       banner,
       loginOutput,
     };
@@ -61,41 +59,18 @@ export class SqlPlusSubShell implements ISubShell {
     const result = this.session.processLine(line);
     this.prompt = result.prompt;
 
-    // Sync Oracle state to VFS after commands that may modify it
-    const upper = line.trim().toUpperCase();
-    if (upper.startsWith('STARTUP') || upper.startsWith('SHUTDOWN') ||
-        upper.startsWith('ALTER SYSTEM') || upper.startsWith('ALTER DATABASE') ||
-        upper.startsWith('CREATE TABLESPACE') || upper.startsWith('DROP TABLESPACE') ||
-        upper.startsWith('ALTER TABLESPACE') ||
-        upper.startsWith('CREATE TABLE') || upper.startsWith('DROP TABLE') ||
-        upper.startsWith('TRUNCATE')) {
-      this.syncToVFS();
-    }
+    // Phase 7c: the OracleFilesystemSync adapter (auto-attached by
+    // getOracleDatabase) now materialises alert log, spfile, datafiles
+    // and processes by subscribing to oracle.* bus events. No manual
+    // post-execute sync needed.
 
-    // Detect CLEAR SCREEN command
     const isClear = /^CLEAR\s+SCR/i.test(line.trim());
-
     return {
       output: result.output,
       exit: result.exit,
       prompt: result.prompt,
       clearScreen: isClear,
     };
-  }
-
-  /** Sync dynamic Oracle state (alert log, spfile, datafiles) back to the virtual filesystem. */
-  private syncToVFS(): void {
-    try {
-      const db = this.session.getDatabase();
-      if (db) {
-        syncAlertLogToDevice(this.device, db.instance.getAlertLog());
-        updateSpfileOnDevice(this.device, db.instance.getSpfileParameters());
-        syncDatafilesToDevice(this.device, db);
-        syncOracleProcessesToDevice(this.device, db);
-      }
-    } catch {
-      // Silently ignore sync errors — VFS may not be initialized
-    }
   }
 
   dispose(): void {

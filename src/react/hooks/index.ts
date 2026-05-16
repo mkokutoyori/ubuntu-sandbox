@@ -30,3 +30,10 @@ export {
   useDhcpServerLeases,
   useDhcpServerStats,
 } from './useDhcp';
+export {
+  useOracleInstanceState,
+  useOracleProcesses,
+  useOracleAlertLog,
+  useOracleSessions,
+  useOracleStats,
+} from './useOracle';
