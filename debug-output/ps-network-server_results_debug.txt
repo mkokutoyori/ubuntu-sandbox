@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-server
-Generated: 2026-05-15T16:52:33.576Z
+Generated: 2026-05-16T06:30:14.113Z
 Engine: powershell
 host=SRV-NET-DBG (windows-server)
 Total commands: 101
@@ -344,8 +344,8 @@ PS [31/101]> Test-Connection localhost -Count 1 -ErrorAction SilentlyContinue
 PS [32/101]> Test-Connection 127.0.0.1 -Count 1 -ErrorAction SilentlyContinue
   
   Source      : localhost
-  Destination : 127
-  IPV4Address : 127
+  Destination : 127.0.0.1
+  IPV4Address : 127.0.0.1
   Bytes       : 32
   Time(ms)    : 1
   Status      : Success
@@ -371,8 +371,8 @@ PS [33/101]> Test-Connection localhost -Count 2 -ErrorAction SilentlyContinue
 PS [34/101]> Test-Connection 8.8.8.8 -Count 1 -ErrorAction SilentlyContinue
   
   Source      : localhost
-  Destination : 8.8
-  IPV4Address : 8.8
+  Destination : 8.8.8.8
+  IPV4Address : 8.8.8.8
   Bytes       : 32
   Time(ms)    : 1
   Status      : Success
@@ -392,7 +392,7 @@ PS [36/101]> Test-NetConnection localhost -ErrorAction SilentlyContinue
   ComputerName=localhost; RemoteAddress=localhost; RemotePort=0; InterfaceAlias=eth0; SourceAddress=0.0.0.0; PingSucceeded=True; PingReplyDetails=RoundtripTime=1; TcpTestSucceeded=False
 
 PS [37/101]> Test-NetConnection 127.0.0.1 -Port 80 -ErrorAction SilentlyContinue
-  ComputerName=127; RemoteAddress=127; RemotePort=80; InterfaceAlias=eth0; SourceAddress=0.0.0.0; PingSucceeded=True; PingReplyDetails=RoundtripTime=1; TcpTestSucceeded=True
+  ComputerName=127.0.0.1; RemoteAddress=127.0.0.1; RemotePort=80; InterfaceAlias=eth0; SourceAddress=0.0.0.0; PingSucceeded=True; PingReplyDetails=RoundtripTime=1; TcpTestSucceeded=True
 
 PS [38/101]> ping localhost
   
@@ -453,7 +453,13 @@ PS [44/101]> Resolve-DnsName localhost -ErrorAction SilentlyContinue
   
 
 PS [45/101]> Resolve-DnsName 127.0.0.1 -ErrorAction SilentlyContinue
-<empty>
+  
+  Name     : 1.0.0.127.in-addr.arpa
+  Type     : PTR
+  TTL      : 300
+  Section  : Answer
+  NameHost : localhost
+  
 
 PS [46/101]> Resolve-DnsName example.com -ErrorAction SilentlyContinue
   
@@ -495,7 +501,7 @@ PS [50/101]> nslookup localhost
   ** server can't find localhost: REFUSED
 
 PS [51/101]> nslookup 127.0.0.1
-  ** server can't find 127: REFUSED
+  ** server can't find 127.0.0.1: REFUSED
 
 PS [52/101]> Clear-DnsClientCache -ErrorAction SilentlyContinue
 <empty>
@@ -515,17 +521,17 @@ PS [55/101]> Get-NetIPAddress | Group-Object AddressFamily | Format-Table Name, 
   IPv6            1              
 
 PS [56/101]> Get-NetAdapter | Sort-Object Name | Select-Object Name, Status, MacAddress | Format-Table -AutoSize
-  
-  
-  
-  
-  
-  
+  Name            Status          MacAddress     
+  --------------- --------------- ---------------
+  eth0            Up              02:00:00:00:00:05
+  eth1            Up              02:00:00:00:00:06
+  eth2            Up              02:00:00:00:00:07
+  eth3            Up              02:00:00:00:00:08
 
 PS [57/101]> Get-NetIPAddress | Where-Object { $_.AddressFamily -eq "IPv4" } | Select-Object IPAddress, InterfaceAlias, PrefixLength | Format-Table -AutoSize
-  
-  
-  
+  IPAddress       InterfaceAlias  PrefixLength   
+  --------------- --------------- ---------------
+  127.0.0.1       Loopback Pseudo-Interface 1 8              
 
 PS [58/101]> "127.0.0.1","localhost" | ForEach-Object { Test-Connection $_ -Count 1 -ErrorAction SilentlyContinue }
   
@@ -580,16 +586,9 @@ PS [64/101]> New-NetFirewallRule -DisplayName "DebugRule" -Direction Inbound -Ac
 
 PS [65/101]> Get-NetFirewallRule -DisplayName "DebugRule" -ErrorAction SilentlyContinue
   
-  Name                  Enabled  Description                
-  --------------------  -------  ---------------------------
-  CoreNet-DHCP-In       True     Built-in: DHCP client      
-  CoreNet-DHCP-Out      True     Built-in: DHCP client      
-  CoreNet-DNS-Out       True     Built-in: DNS client       
-  FPS-ICMP4-ERQ-In      True     Built-in: ICMP echo request
-  RemoteDesktop-In-TCP  False    Built-in: RDP              
-  WinRM-HTTP-In-TCP     False    Built-in: WinRM            
-  BlockTelemetry        True     Built-in: Block Telemetry  
-  DebugRule             True                                
+  Name       Enabled  Description
+  ---------  -------  -----------
+  DebugRule  True                
   
 
 PS [66/101]> Remove-NetFirewallRule -DisplayName "DebugRule" -ErrorAction SilentlyContinue
@@ -616,23 +615,35 @@ PS [71/101]> Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyCont
 --- [72] § discovery ---
 PS [72/101]> Get-Command -Noun NetAdapter -ErrorAction SilentlyContinue | Select-Object -First 5
   
-  Name            CommandType  Source
-  --------------  -----------  ------
-  Write-Host      Cmdlet             
-  Write-Output    Cmdlet             
-  Write-Error     Cmdlet             
-  Write-Warning   Cmdlet             
-  ForEach-Object  Cmdlet             
+  Name                CommandType  Source
+  ------------------  -----------  ------
+  Get-Netadapter      Cmdlet             
+  Enable-Netadapter   Cmdlet             
+  Disable-Netadapter  Cmdlet             
+  Rename-Netadapter   Cmdlet             
+  Restart-Netadapter  Cmdlet             
   
 
 PS [73/101]> Get-Command Get-NetAdapter -ErrorAction SilentlyContinue
-<empty>
+  
+  Name            CommandType  Source
+  --------------  -----------  ------
+  Get-Netadapter  Cmdlet             
+  
 
 PS [74/101]> gcm Get-NetIPAddress -ErrorAction SilentlyContinue
-<empty>
+  
+  Name              CommandType  Source
+  ----------------  -----------  ------
+  Get-Netipaddress  Cmdlet             
+  
 
 PS [75/101]> gcm Test-Connection -ErrorAction SilentlyContinue
-<empty>
+  
+  Name             CommandType  Source
+  ---------------  -----------  ------
+  Test-Connection  Cmdlet             
+  
 
 PS [76/101]> Get-Alias ipconfig -ErrorAction SilentlyContinue
 <empty>
@@ -665,13 +676,13 @@ PS [80/101]> Get-Member -InputObject (Get-NetAdapter | Select-Object -First 1) -
 
 PS [81/101]> Get-NetAdapter | Get-Member -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType
   
-  
-  
-  
-  
-  
-  
-  
+  Name                  MemberType
+  --------------------  ----------
+  Name                  Property  
+  InterfaceDescription  Property  
+  ifIndex               Property  
+  Status                Property  
+  MacAddress            Property  
   
 
 
@@ -782,7 +793,7 @@ PS [99/101]> hostname
   SRV-NET-DBG
 
 PS [100/101]> Get-Date
-  5/15/2026 4:52 PM
+  5/16/2026 6:30 AM
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
 <empty>

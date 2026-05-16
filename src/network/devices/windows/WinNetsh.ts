@@ -2403,8 +2403,14 @@ function handleNetshBridge(ctx: WinCommandContext, args: string[]): string {
 
 // ─── netsh advfirewall ───────────────────────────────────────────────
 
-interface FwRule { name: string; dir: string; action: string; protocol: string; localport: string; program: string; profile: string; }
-const fwRules: FwRule[] = []; // module-level, accumulates across tests (sequential by design)
+/**
+ * Shared firewall rule store: both cmd's `netsh advfirewall firewall add` and
+ * PowerShell's `New-NetFirewallRule` write here so the two surfaces stay
+ * coherent (a rule added from cmd is visible from `Get-NetFirewallRule`, and
+ * vice versa). Module-level singleton — accumulates across tests by design.
+ */
+export interface FwRule { name: string; dir: string; action: string; protocol: string; localport: string; program: string; profile: string; }
+export const fwRules: FwRule[] = [];
 
 const NETSH_ADVFW_HELP = `The following commands are available:
 
@@ -2741,7 +2747,7 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function resolveAdapterName(name: string, ports: Map<string, any>): string {
+export function resolveAdapterName(name: string, ports: Map<string, any>): string {
   if (ports.has(name)) return name;
   // "Ethernet 2" → "eth2", "Ethernet0" → "eth0"
   const ethMatch = name.match(/^Ethernet\s*(\d+)$/i);

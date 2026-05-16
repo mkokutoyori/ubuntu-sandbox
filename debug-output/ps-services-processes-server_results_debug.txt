@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-server
-Generated: 2026-05-15T16:52:32.166Z
+Generated: 2026-05-16T06:30:16.804Z
 Engine: powershell
 host=SRV-SVC-DBG (windows-server)
 Total commands: 104
@@ -231,30 +231,9 @@ PS [16/104]> gsv Spooler
 
 PS [17/104]> Get-Service -DisplayName "Print Spooler"
   
-  Status   Name               DisplayName                              
-  -------  -----------------  -----------------------------------------
-  Running  Tcpip              TCP/IP Protocol Driver                   
-  Running  Afd                Ancillary Function Driver for Winsock    
-  Running  Dhcp               DHCP Client                              
-  Running  Dnscache           DNS Client                               
-  Running  NetBT              NetBT                                    
-  Running  RpcSs              Remote Procedure Call (RPC)              
-  Running  RpcEptMapper       RPC Endpoint Mapper                      
-  Running  SamSs              Security Accounts Manager                
-  Running  LanmanServer       Server                                   
-  Running  LanmanWorkstation  Workstation                              
-  Running  mpssvc             Windows Defender Firewall                
-  Running  EventLog           Windows Event Log                        
-  Running  W32Time            Windows Time                             
-  Running  CryptSvc           Cryptographic Services                   
-  Running  Winmgmt            Windows Management Instrumentation       
-  Stopped  WinRM              Windows Remote Management (WS-Management)
-  Stopped  bthserv            Bluetooth Support Service                
-  Running  winlogon           Windows Logon Application                
-  Running  Spooler            Print Spooler                            
-  Running  Schedule           Task Scheduler                           
-  Running  AudioSrv           Windows Audio                            
-  Running  Themes             Themes                                   
+  Status   Name     DisplayName  
+  -------  -------  -------------
+  Running  Spooler  Print Spooler
   
 
 PS [18/104]> Get-Service -Name "S*"
@@ -277,24 +256,24 @@ PS [19/104]> Get-Service -Name "*log*"
 
 PS [20/104]> Get-Service | Select-Object -First 5 Name, Status
   
-  
-  
-  
-  
-  
-  
-  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
   
 
 PS [21/104]> Get-Service | Select-Object -Last 5 Name, Status
   
-  
-  
-  
-  
-  
-  
-  
+  Name      Status 
+  --------  -------
+  winlogon  Running
+  Spooler   Running
+  Schedule  Running
+  AudioSrv  Running
+  Themes    Running
   
 
 PS [22/104]> (Get-Service -Name Spooler).Status
@@ -351,13 +330,13 @@ PS [38/104]> Set-Service -Name bthserv -StartupType Disabled
 <empty>
 
 PS [39/104]> (Get-Service -Name bthserv).StartType
-  Manual
+  Disabled
 
 PS [40/104]> Set-Service -Name bthserv -StartupType Automatic
 <empty>
 
 PS [41/104]> (Get-Service -Name bthserv).StartType
-  Manual
+  Automatic
 
 PS [42/104]> Stop-Service -Name winlogon -ErrorAction SilentlyContinue
   Cannot stop winlogon: This is a critical system service.
@@ -439,13 +418,13 @@ PS [45/104]> Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
 
 PS [46/104]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 Name, Id, WS
   
-  
-  
-  
-  
-  
-  
-  
+  Name                 Id   WS
+  -------------------  ---  --
+  System Idle Process    0    
+  System                 4    
+  Registry             108    
+  smss                 340    
+  csrss                472    
   
 
 PS [47/104]> Get-Process | Where-Object { $_.CPU -gt 0 }
@@ -525,25 +504,25 @@ PS [52/104]> Get-Process | Group-Object ProcessName | Sort-Object Count -Descend
 
 PS [53/104]> Get-Process | Select-Object Id, ProcessName, Handles, WS, CPU | Sort-Object CPU -Descending | Select-Object -First 10
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName  
+  -------  ------  -----  -----  ------  ----  -------------
+     2100                                2848  explorer     
+      980                                1024  dwm          
+      820                                 636  lsass        
+      590                                 472  csrss        
+      680                                 620  services     
+      468                                 560  csrss        
+      450                                 964  svchost      
+      340                                1560  RuntimeBroker
+      400                                 784  svchost      
+      400                                 836  svchost      
   
 
 PS [54/104]> Get-Process | Measure-Object -Property CPU -Sum
   Count=26; Sum=35.900000000000006; Average=; Minimum=; Maximum=; Property=CPU
 
 PS [55/104]> Get-Process | Measure-Object -Property WS -Sum -Average -Max
-  Count=0; Sum=0; Average=; Minimum=; Maximum=; Property=WS
+  Count=26; Sum=0; Average=; Minimum=; Maximum=; Property=WS
 
 PS [56/104]> ps
   
@@ -615,22 +594,30 @@ PS [58/104]> Start-Process notepad.exe
 <empty>
 
 PS [59/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
-<empty>
+  
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
+  -------  ------  -----  -----  ------  ----  -----------
+      143      11      5  17438       0  5136  notepad    
+  
 
 PS [60/104]> Start-Process -FilePath calc.exe
 <empty>
 
 PS [61/104]> Get-Process -Name calc -ErrorAction SilentlyContinue
-<empty>
+  
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
+  -------  ------  -----  -----  ------  ----  -----------
+      189      13      8   9761       0  5140  calc       
+  
 
 PS [62/104]> Stop-Process -Name notepad -ErrorAction SilentlyContinue
-<empty>
+  SUCCESS: The process "notepad.exe" with PID 5136 has been terminated.
 
 PS [63/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
 <empty>
 
 PS [64/104]> Stop-Process -Name calc -ErrorAction SilentlyContinue
-<empty>
+  SUCCESS: The process "calc.exe" with PID 5140 has been terminated.
 
 PS [65/104]> Start-Process notepad.exe
 <empty>
@@ -642,10 +629,16 @@ PS [67/104]> Start-Process notepad.exe
 <empty>
 
 PS [68/104]> Get-Process -Name notepad
-  ERROR: Cannot find a process with the name "notepad".
+  
+  Handles  NPM(K)  PM(K)  WS(K)  CPU(s)  Id    ProcessName
+  -------  ------  -----  -----  ------  ----  -----------
+       73       6      6   6007       0  5144  notepad    
+      206      13      7  14883       0  5148  notepad    
+      184      12      2  14928       0  5152  notepad    
+  
 
 PS [69/104]> Get-Process -Name notepad | Stop-Process
-  ERROR: Cannot find a process with the name "notepad".
+<empty>
 
 PS [70/104]> Get-Process -Name notepad -ErrorAction SilentlyContinue
 <empty>
@@ -668,7 +661,7 @@ PS [72/104]> Get-Service | Group-Object StartType | ForEach-Object { "$($_.Name)
   Manual: 3
 
 PS [73/104]> Get-Service | Where-Object { $_.Status -eq "Running" -and $_.StartType -eq "Automatic" } | Measure-Object
-  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
+  Count=17; Sum=; Average=; Minimum=; Maximum=; Property=
 
 PS [74/104]> Get-Process | Where-Object { $_.WS -gt 0 } | Sort-Object WS -Descending | Select-Object -First 3 | Format-List Name, Id, WS, CPU
 <empty>
@@ -704,7 +697,7 @@ PS [77/104]> "Spooler","bthserv","wuauserv" | ForEach-Object { Get-Service -Name
   Name            Status          StartType      
   --------------- --------------- ---------------
   Spooler         Running         Automatic      
-  bthserv         Stopped         Manual         
+  bthserv         Stopped         Automatic      
 
 PS [78/104]> Get-Service | ForEach-Object { [pscustomobject]@{ N=$_.Name; S=$_.Status } } | Sort-Object N | Select-Object -First 5
   
@@ -745,7 +738,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/15/2026 2:52 PM
+  TimeCreated  : 5/16/2026 4:30 AM
   Message      : The Event log service was started.
   RecordId     : 1030
   
@@ -753,7 +746,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/15/2026 10:52 AM
+  TimeCreated  : 5/16/2026 12:30 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1029
   
@@ -761,7 +754,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/15/2026 4:52 AM
+  TimeCreated  : 5/15/2026 6:30 PM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1028
   
@@ -769,7 +762,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/14/2026 4:52 PM
+  TimeCreated  : 5/15/2026 6:30 AM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1027
   
@@ -777,7 +770,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/13/2026 4:52 PM
+  TimeCreated  : 5/14/2026 6:30 AM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1026
   
@@ -788,7 +781,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/14/2026 4:52 PM
+  TimeCreated  : 5/15/2026 6:30 AM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1036
   
@@ -796,7 +789,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/12/2026 4:52 PM
+  TimeCreated  : 5/13/2026 6:30 AM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1035
   
@@ -804,7 +797,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/10/2026 4:52 PM
+  TimeCreated  : 5/11/2026 6:30 AM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1034
   
@@ -812,7 +805,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/8/2026 4:52 PM
+  TimeCreated  : 5/9/2026 6:30 AM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1033
   
@@ -820,7 +813,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/5/2026 4:52 PM
+  TimeCreated  : 5/6/2026 6:30 AM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1032
   
@@ -966,24 +959,24 @@ PS [100/104]> Get-Service | Where-Object { $_.DisplayName -match "Print" }
 
 PS [101/104]> Get-Service | Sort-Object DisplayName | Select-Object -First 5 DisplayName, Name, Status
   
-  
-  
-  
-  
-  
-  
-  
+  Status   Name      DisplayName                          
+  -------  --------  -------------------------------------
+  Running  Afd       Ancillary Function Driver for Winsock
+  Stopped  bthserv   Bluetooth Support Service            
+  Running  CryptSvc  Cryptographic Services               
+  Running  Dhcp      DHCP Client                          
+  Running  Dnscache  DNS Client                           
   
 
 PS [102/104]> Get-Process | Where-Object { $_.Name -like "s*" } | Select-Object Name, Id -First 5
   
-  
-  
-  
-  
-  
-  
-  
+  Name                 Id 
+  -------------------  ---
+  System Idle Process    0
+  System                 4
+  smss                 340
+  services             620
+  svchost              784
   
 
 PS [103/104]> Get-Process | Sort-Object Id | Select-Object -First 5
@@ -999,11 +992,11 @@ PS [103/104]> Get-Process | Sort-Object Id | Select-Object -First 5
 
 PS [104/104]> Get-Process | Where-Object { $_.Handles -gt 100 } | Select-Object Name, Id, Handles -First 5
   
-  
-  
-  
-  
-  
-  
-  
+  Name      Id   Handles
+  --------  ---  -------
+  csrss     472      590
+  wininit   548      152
+  csrss     560      468
+  winlogon  596      256
+  services  620      680
   

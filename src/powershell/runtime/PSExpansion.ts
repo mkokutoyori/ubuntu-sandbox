@@ -13,6 +13,13 @@ import type { PSEnvironment, PSValue } from './PSEnvironment';
 /** Callback type for evaluating a $(…) sub-expression string. */
 export type SubExprEvaluator = (code: string) => PSValue;
 
+/**
+ * Optional variable resolver. Receives the raw token (e.g. "env:COMPUTERNAME"
+ * or "x") and returns its value. When omitted, the built-in resolver looks
+ * the name up directly in `env` (with limited scope handling).
+ */
+export type VariableResolver = (token: string, env: PSEnvironment) => PSValue;
+
 // ─── Backtick escape table ────────────────────────────────────────────────────
 
 const BACKTICK: Record<string, string> = {
@@ -44,6 +51,7 @@ export function expandString(
   raw: string,
   env: PSEnvironment,
   evalSubExpr?: SubExprEvaluator,
+  resolver: VariableResolver = resolveVar,
 ): string {
   let result = '';
   let i = 0;
@@ -83,7 +91,7 @@ export function expandString(
         const close = raw.indexOf('}', i + 1);
         if (close !== -1) {
           const name = raw.slice(i + 1, close);
-          result += psValueToString(resolveVar(name, env));
+          result += psValueToString(resolver(name, env));
           i = close + 1;
           continue;
         }
@@ -102,10 +110,10 @@ export function expandString(
           let k = j + 1;
           while (k < raw.length && isIdentChar(raw[k])) k++;
           const scopedName = raw.slice(i, k);
-          result += psValueToString(resolveVar(scopedName, env));
+          result += psValueToString(resolver(scopedName, env));
           i = k;
         } else {
-          result += psValueToString(resolveVar(part, env));
+          result += psValueToString(resolver(part, env));
           i = j;
         }
         continue;

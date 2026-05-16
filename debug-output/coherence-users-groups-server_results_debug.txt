@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-server
-Generated: 2026-05-15T16:52:36.573Z
+Generated: 2026-05-16T06:30:18.469Z
 host=SRV-USR-COH (windows-server)
 Total commands: 105
 ============================================================
@@ -84,9 +84,9 @@ CMD [11/105]> net user Administrator
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/15/2026
+  Password last set            5/16/2026
   Password expires             Never
-  Password changeable          5/15/2026
+  Password changeable          5/16/2026
   Password required            Yes
   User may change password     Yes
   
@@ -147,9 +147,9 @@ CMD [18/105]> net user alice
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/15/2026
+  Password last set            5/16/2026
   Password expires             Never
-  Password changeable          5/15/2026
+  Password changeable          5/16/2026
   Password required            Yes
   User may change password     Yes
   
@@ -179,13 +179,13 @@ CMD [21/105]> net user bob "" /add /fullname:"Bob Builder"
   The command completed successfully.
 
 PS  [22/105]> (Get-LocalUser -Name bob).FullName
-<empty>
+  Bob Builder
 
 CMD [23/105]> net user carol "" /add /comment:"QA tester"
   The command completed successfully.
 
 PS  [24/105]> (Get-LocalUser -Name carol).Description
-<empty>
+  QA tester
 
 
 --- [25] § New-LocalUser (ps) → net user (cmd) ---
@@ -201,9 +201,9 @@ CMD [26/105]> net user dave
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/15/2026
+  Password last set            5/16/2026
   Password expires             Never
-  Password changeable          5/15/2026
+  Password changeable          5/16/2026
   Password required            Yes
   User may change password     Yes
   
@@ -234,9 +234,9 @@ CMD [29/105]> net user erin
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/15/2026
+  Password last set            5/16/2026
   Password expires             Never
-  Password changeable          5/15/2026
+  Password changeable          5/16/2026
   Password required            Yes
   User may change password     Yes
   
@@ -264,9 +264,9 @@ CMD [31/105]> net user frank
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/15/2026
+  Password last set            5/16/2026
   Password expires             Never
-  Password changeable          5/15/2026
+  Password changeable          5/16/2026
   Password required            Yes
   User may change password     Yes
   
@@ -314,25 +314,26 @@ PS  [40/105]> Set-LocalUser -Name bob -FullName "Robert PS-Set"
 <empty>
 
 CMD [41/105]> net user bob | findstr /i "Full Name"
-<empty>
+  Full Name                    Robert PS-Set
 
 PS  [42/105]> Set-LocalUser -Name bob -Description "Set from PS"
 <empty>
 
 CMD [43/105]> net user bob | findstr /i Comment
-<empty>
+  Comment                      Set from PS
+  User's comment
 
 PS  [44/105]> Disable-LocalUser -Name carol -ErrorAction SilentlyContinue
 <empty>
 
 CMD [45/105]> net user carol | findstr /i "Account active"
-<empty>
+  Account active               No
 
 PS  [46/105]> Enable-LocalUser -Name carol -ErrorAction SilentlyContinue
 <empty>
 
 CMD [47/105]> net user carol | findstr /i "Account active"
-<empty>
+  Account active               Yes
 
 
 --- [48] § create groups ---
@@ -549,7 +550,7 @@ PS  [85/105]> Get-LocalUser | Sort-Object Name
   Administrator   True     Built-in account for administering the computer/domain  
   alice           True     lead dev                                                
   bob             True     Set from PS                                             
-  carol           True                                                             
+  carol           True     QA tester                                               
   DefaultAccount  False    A user account managed by the system.                   
   erin            True     From PS                                                 
   Guest           False    Built-in account for guest access to the computer/domain
@@ -600,59 +601,38 @@ PS  [90/105]> Get-Command -Noun LocalUser -ErrorAction SilentlyContinue | Select
   
   Name             
   -----------------
-  Write-Host       
-  Write-Output     
-  Write-Error      
-  Write-Warning    
-  ForEach-Object   
-  Where-Object     
-  Select-Object    
-  Sort-Object      
-  Measure-Object   
-  Group-Object     
-  Format-Table     
-  Format-List      
-  ConvertTo-Json   
-  ConvertFrom-Json 
-  Get-Date         
-  Set-Variable     
-  Get-Variable     
-  Remove-Variable  
-  Invoke-Expression
-  Test-Path        
+  Get-Localuser    
+  New-Localuser    
+  Set-Localuser    
+  Remove-Localuser 
+  Enable-Localuser 
+  Disable-Localuser
+  Rename-Localuser 
   
 
 PS  [91/105]> Get-Command -Noun LocalGroup -ErrorAction SilentlyContinue | Select-Object Name
   
   Name             
   -----------------
-  Write-Host       
-  Write-Output     
-  Write-Error      
-  Write-Warning    
-  ForEach-Object   
-  Where-Object     
-  Select-Object    
-  Sort-Object      
-  Measure-Object   
-  Group-Object     
-  Format-Table     
-  Format-List      
-  ConvertTo-Json   
-  ConvertFrom-Json 
-  Get-Date         
-  Set-Variable     
-  Get-Variable     
-  Remove-Variable  
-  Invoke-Expression
-  Test-Path        
+  Get-Localgroup   
+  New-Localgroup   
+  Remove-Localgroup
+  Rename-Localgroup
   
 
 PS  [92/105]> gcm New-LocalUser
-<empty>
+  
+  Name           CommandType  Source
+  -------------  -----------  ------
+  New-Localuser  Cmdlet             
+  
 
 PS  [93/105]> gcm Add-LocalGroupMember
-<empty>
+  
+  Name                  CommandType  Source
+  --------------------  -----------  ------
+  Add-Localgroupmember  Cmdlet             
+  
 
 PS  [94/105]> Get-Alias whoami
   ERROR: Get-Alias : Cannot find alias because alias with name 'whoami' does not exist.

@@ -533,7 +533,12 @@ export class PSRuntime {
 
     if (node.operator === '=') { writeVar(varName, rhs); return rhs; }
 
-    const current = ((scope === 'global' || scope === 'script') ? env.getGlobal(varName) : env.get(varName)) as number ?? 0;
+    const readCurrent = (): PSValue => {
+      if (scope === 'env') return this.providers.environment?.get(varName) ?? '';
+      if (scope === 'global' || scope === 'script') return env.getGlobal(varName);
+      return env.get(varName);
+    };
+    const current = readCurrent() ?? 0;
     const result = this.applyCompound(node.operator, current, rhs);
     updateVar(varName, result);
     return result;
@@ -620,6 +625,81 @@ export class PSRuntime {
     return null;
   }
 
+  /**
+   * Dot-source a script block: run every body statement in `env` (no child
+   * scope) and aggregate emitted values, matching real PowerShell where every
+   * statement in a script contributes to the output pipeline.
+   */
+  private dotSourceScriptBlock(block: PSScriptBlock, env: PSEnvironment): PSValue {
+    if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
+    if (block.processBlock) this.execStatementList(block.processBlock, env);
+    if (block.endBlock)     this.execStatementList(block.endBlock,     env);
+    if (!block.body) return null;
+    return this.aggregateCaptured(this.runBlockCapture(block.body, env));
+  }
+
+  /**
+   * Build a dynamic `[Environment]` / `[System.Environment]` static type that
+   * delegates to the device-backed environment provider. Constructed per call
+   * (cheap, just closures) so it always reflects the current provider state.
+   */
+  private buildEnvironmentType(): Record<string, PSValue> {
+    const provider = this.providers.environment;
+    const lookup = (name: string): string => {
+      if (provider) {
+        const v = provider.get(name);
+        if (v !== undefined && v !== null) return String(v);
+      }
+      if (this.envVarHook) {
+        const v = this.envVarHook(name);
+        if (v !== null) return v;
+      }
+      return process.env[name.toUpperCase()] ?? '';
+    };
+    // Property-style entries are eager scalars (computed at access time so the
+    // freshest provider state is used). Method-style entries are functions
+    // that the runtime invokes through InvocationExpression.
+    return {
+      username:               lookup('USERNAME') as PSValue,
+      machinename:            lookup('COMPUTERNAME') as PSValue,
+      userdomainname:         (lookup('USERDOMAIN') || lookup('COMPUTERNAME')) as PSValue,
+      osversion:              { Platform: 'Win32NT', Version: '10.0.22631' } as Record<string, PSValue>,
+      newline:                '\r\n' as PSValue,
+      currentdirectory:       'C:\\' as PSValue,
+      processorcount:         (Number(lookup('NUMBER_OF_PROCESSORS')) || 1) as PSValue,
+      tickcount:              Date.now() as PSValue,
+      is64bitoperatingsystem: true as PSValue,
+      is64bitprocess:         true as PSValue,
+      getenvironmentvariable: (name: PSValue, _target?: PSValue) => lookup(String(name)),
+      setenvironmentvariable: (name: PSValue, value: PSValue, _target?: PSValue) => {
+        const n = String(name);
+        if (value === null || value === undefined) provider?.remove(n);
+        else provider?.set(n, String(value));
+        return null;
+      },
+      getenvironmentvariables: () => {
+        const out: Record<string, PSValue> = {};
+        for (const e of (provider?.list() ?? [])) out[e.Name] = e.Value;
+        return out;
+      },
+      getfolderpath: (folder: PSValue) => {
+        const which = String(folder).toLowerCase();
+        if (which.includes('userprofile') || which.includes('user'))    return lookup('USERPROFILE');
+        if (which.includes('appdata'))                                  return lookup('APPDATA');
+        if (which.includes('local'))                                    return lookup('LOCALAPPDATA');
+        if (which.includes('windows') || which.includes('system'))      return lookup('SYSTEMROOT');
+        if (which.includes('program'))                                  return lookup('PROGRAMFILES');
+        return '';
+      },
+    };
+  }
+
+  /** Reduce captured statement values into a single PSValue (null / scalar / array). */
+  private aggregateCaptured(captured: PSValue[]): PSValue {
+    if (captured.length === 0) return null;
+    return captured.length === 1 ? captured[0] : captured;
+  }
+
   invokeScriptBlock(
     block: PSScriptBlock,
     namedArgs: Record<string, PSValue>,
@@ -668,7 +748,11 @@ export class PSRuntime {
     childEnv.set('args', remainingArgs);
 
     try {
-      return this.execScriptBlock(block, childEnv);
+      if (block.beginBlock)   this.execStatementList(block.beginBlock,   childEnv);
+      if (block.processBlock) this.execStatementList(block.processBlock, childEnv);
+      if (block.endBlock)     this.execStatementList(block.endBlock,     childEnv);
+      if (block.body) return this.aggregateCaptured(this.runBlockCapture(block.body, childEnv));
+      return null;
     } catch (e) {
       if (e instanceof ReturnSignal) return e.value;
       throw e;
@@ -726,10 +810,43 @@ export class PSRuntime {
   }
 
   private expandDoubleQuotedString(raw: string, env: PSEnvironment): string {
-    return expandString(raw, env, (code) => {
-      const ast = this.parseCached(code);
-      return this.execProgram(ast, env);
-    });
+    return expandString(
+      raw,
+      env,
+      (code) => {
+        const ast = this.parseCached(code);
+        return this.execProgram(ast, env);
+      },
+      (token, scope) => this.resolveExpansionVar(token, scope),
+    );
+  }
+
+  /**
+   * Resolve a variable token from inside a double-quoted string. Honors the
+   * same scope qualifiers as $name VariableExpression evaluation so that
+   * "$env:COMPUTERNAME" and "$($env:USERNAME)" both go through the device's
+   * environment provider rather than falling back to process.env.
+   */
+  private resolveExpansionVar(token: string, env: PSEnvironment): PSValue {
+    const colon = token.indexOf(':');
+    if (colon === -1) {
+      const val = env.get(token);
+      return val === undefined ? null : val;
+    }
+    const scope   = token.slice(0, colon).toLowerCase();
+    const varName = token.slice(colon + 1);
+    if (scope === 'env') {
+      const fromProvider = this.providers.environment?.get(varName);
+      if (fromProvider !== undefined) return fromProvider;
+      if (this.envVarHook) {
+        const v = this.envVarHook(varName);
+        if (v !== null) return v;
+      }
+      return process.env[varName.toUpperCase()] ?? null;
+    }
+    if (scope === 'global' || scope === 'script') return env.getGlobal(varName);
+    if (scope === 'local')                        return env.get(varName) ?? null;
+    return env.get(varName) ?? null;
   }
 
   private evalVariable(node: PSVariableExpression, env: PSEnvironment): PSValue {
@@ -938,6 +1055,10 @@ export class PSRuntime {
 
   private evalStaticMember(node: PSStaticMemberExpression, env: PSEnvironment): PSValue {
     const tname = node.typeName.toLowerCase();
+    if (tname === 'environment' || tname === 'system.environment') {
+      const dyn = this.buildEnvironmentType();
+      return this.getMember(dyn as PSValue, node.member.toLowerCase());
+    }
     const typeObj = STATIC_TYPES[tname]
       // Generic list fallback: List[T] for any T
       ?? (tname.match(/^(system\.collections\.generic\.list|collections\.generic\.list)\[.+\]$/)
@@ -1163,7 +1284,12 @@ export class PSRuntime {
 
   private makeErrorRecord(e: unknown): Record<string, PSValue> {
     const msg = e instanceof Error ? e.message : String(e);
-    return { Message: msg, Exception: msg, FullyQualifiedErrorId: 'RuntimeException' } as Record<string, PSValue>;
+    return {
+      Message: msg,
+      Exception: { Message: msg } as Record<string, PSValue>,
+      CategoryInfo: { Category: 'NotSpecified' } as Record<string, PSValue>,
+      FullyQualifiedErrorId: 'RuntimeException',
+    } as Record<string, PSValue>;
   }
 
   private execFunctionDef(node: PSFunctionDefinition, env: PSEnvironment): PSValue {
@@ -1311,14 +1437,14 @@ export class PSRuntime {
       return varVal;
     }
 
-    // ScriptBlock in name position (e.g. & { ... } or dot-sourced block)
+    // ScriptBlock in name position. Invoke only when the parser flagged it
+    // via `& { ... }`, or when it has parameters / arguments / pipe input;
+    // a bare `{ ... }` reaching this point (e.g. as an array element) is a
+    // ScriptBlock VALUE that must not be auto-invoked.
     if (nameNode.type === 'ScriptBlock') {
-      // A bare { } with no parameters, no arguments, and no pipe input is a
-      // VALUE (the ScriptBlock object itself) — it is NOT invoked.
-      // It gets invoked only when piped into or called with & / parameters.
-      if (node.parameters.length === 0 && node.arguments.length === 0 && pipeInput === undefined) {
+      const marked = (nameNode as unknown as Record<string, unknown>).__invoke__ === true;
+      if (!marked && node.parameters.length === 0 && node.arguments.length === 0 && pipeInput === undefined)
         return nameNode as unknown as PSValue;
-      }
       const positional: PSValue[] = [];
       const named: Record<string, PSValue> = {};
       for (const p of node.parameters)
@@ -1379,8 +1505,7 @@ export class PSRuntime {
       const dotSource = lname === '.';
       const target = positional.shift() ?? null;
       if (this.isScriptBlock(target)) {
-        // dot-source: execute in current scope (not child)
-        if (dotSource) return this.execScriptBlock(target as PSScriptBlock, env);
+        if (dotSource) return this.dotSourceScriptBlock(target as PSScriptBlock, env);
         return this.invokeScriptBlock(target as PSScriptBlock, named, positional, env, pipeInput);
       }
       const tname = psValueToString(target ?? '').toLowerCase();
@@ -1410,7 +1535,7 @@ export class PSRuntime {
               else env.set(pname, null);
             }
           }
-          return this.execStatementList(ast.body, env);
+          return this.aggregateCaptured(this.runBlockCapture(ast.body, env));
         }
         // No registered script — silently return null (file not found in simulator)
         return null;

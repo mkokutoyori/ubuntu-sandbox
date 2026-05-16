@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-pc
-Generated: 2026-05-15T16:52:39.272Z
+Generated: 2026-05-16T06:30:21.505Z
 host=WIN-ENV-DBG (windows-pc)
 Total commands: 103
 ============================================================
@@ -89,7 +89,7 @@ PS  [17/103]> whoami
   win-env-dbg\administrator
 
 PS  [18/103]> [Environment]::UserName
-<empty>
+  Administrator
 
 CMD [19/103]> hostname
   WIN-ENV-DBG
@@ -98,7 +98,7 @@ PS  [20/103]> hostname
   WIN-ENV-DBG
 
 PS  [21/103]> [Environment]::MachineName
-<empty>
+  WIN-ENV-DBG
 
 
 --- [22] § set (cmd) → read (ps) ---
@@ -135,13 +135,13 @@ PS  [31/103]> Set-Item -Path Env:DBG_FROM_PS -Value "world"
 <empty>
 
 PS  [32/103]> $env:DBG_FROM_PS
-<empty>
+  world
 
 CMD [33/103]> echo %DBG_FROM_PS%
-  %DBG_FROM_PS%
+  world
 
 CMD [34/103]> set DBG_FROM_PS
-  Environment variable DBG_FROM_PS not defined
+  DBG_FROM_PS=world
 
 PS  [35/103]> $env:DBG_FROM_PS = "world2"
 <empty>
@@ -153,7 +153,7 @@ PS  [37/103]> Remove-Item Env:DBG_FROM_PS
 <empty>
 
 CMD [38/103]> echo %DBG_FROM_PS%
-  world2
+  %DBG_FROM_PS%
 
 
 --- [39] § PATH manipulation ---
@@ -170,7 +170,7 @@ CMD [42/103]> echo %PATH%
   C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\AddedByCmd
 
 CMD [43/103]> set PATH | findstr AddedByPs
-  Path=0;C:\AddedByPs
+  Path=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\AddedByCmd;C:\AddedByPs
 
 
 --- [44] § setx (persistent best-effort) ---
@@ -178,7 +178,7 @@ CMD [44/103]> setx DBG_PERSIST_CMD "persist-from-cmd"
   SUCCESS: Specified value was saved.
 
 PS  [45/103]> [Environment]::GetEnvironmentVariable("DBG_PERSIST_CMD","User")
-<empty>
+  persist-from-cmd
 
 PS  [46/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS","persist-from-ps","User")
 <empty>
@@ -198,11 +198,8 @@ PS  [49/103]> [Environment]::SetEnvironmentVariable("DBG_PERSIST_PS",$null,"User
 --- [50] § baseline registry ---
 CMD [50/103]> reg query HKCU\Software
   
-      Hive: HKCU:\Software
+  HKCU\Software
   
-  Name                           Property
-  ----                           --------
-  Microsoft                      
 
 PS  [51/103]> Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Select-Object -First 5
   
@@ -220,14 +217,8 @@ PS  [53/103]> Test-Path HKLM:\Software
 
 CMD [54/103]> reg query HKLM\Software
   
-      Hive: HKLM:\Software
+  HKLM\Software
   
-  Name                           Property
-  ----                           --------
-  Microsoft                      
-  Classes                        
-  Policies                       
-  WOW6432Node                    
 
 
 --- [55] § reg add (cmd) → read (ps) ---
@@ -251,19 +242,18 @@ CMD [59/103]> reg add HKCU\Software\CohReg /v Build /t REG_DWORD /d 42 /f
 CMD [60/103]> reg query HKCU\Software\CohReg
   
   HKCU\Software\CohReg
+      Version    REG_SZ    1.0.0
+      Build    REG_DWORD    0x2a
   
 
 PS  [61/103]> Get-ItemProperty -Path HKCU:\Software\CohReg
-  
-  Version             : 1.0.0
-  Build               : 42
-  
+  Version=1.0.0; Build=42
 
 PS  [62/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Version
-<empty>
+  1.0.0
 
 PS  [63/103]> (Get-ItemProperty -Path HKCU:\Software\CohReg).Build
-<empty>
+  42
 
 
 --- [64] § Set-ItemProperty (ps) → read (cmd) ---
@@ -276,16 +266,22 @@ PS  [65/103]> Set-ItemProperty -Path HKCU:\Software\CohReg -Name "Enabled" -Valu
 CMD [66/103]> reg query HKCU\Software\CohReg /v InstallPath
   
   HKCU\Software\CohReg
+      InstallPath    REG_SZ    C:\CohReg
   
 
 CMD [67/103]> reg query HKCU\Software\CohReg /v Enabled
   
   HKCU\Software\CohReg
+      Enabled    REG_DWORD    0x1
   
 
 CMD [68/103]> reg query HKCU\Software\CohReg
   
   HKCU\Software\CohReg
+      Version    REG_SZ    1.0.0
+      Build    REG_DWORD    0x2a
+      InstallPath    REG_SZ    C:\CohReg
+      Enabled    REG_DWORD    0x1
   
 
 
@@ -306,21 +302,27 @@ PS  [70/103]> Set-ItemProperty -Path HKCU:\Software\CohReg\Sub -Name "Lang" -Val
 CMD [71/103]> reg query HKCU\Software\CohReg\Sub /v Lang
   
   HKCU\Software\CohReg\Sub
+      Lang    REG_SZ    fr-FR
   
 
 CMD [72/103]> reg add HKCU\Software\CohReg\Sub /v Theme /t REG_SZ /d "dark" /f
   The operation completed successfully.
 
 PS  [73/103]> (Get-ItemProperty HKCU:\Software\CohReg\Sub).Theme
-<empty>
+  dark
 
 CMD [74/103]> reg query HKCU\Software\CohReg /s
   
-      Hive: HKCU:\Software\CohReg
+  HKCU\Software\CohReg
+      Version    REG_SZ    1.0.0
+      Build    REG_DWORD    0x2a
+      InstallPath    REG_SZ    C:\CohReg
+      Enabled    REG_DWORD    0x1
   
-  Name                           Property
-  ----                           --------
-  Sub                            Lang, Theme
+  HKCU\Software\CohReg\Sub
+      Lang    REG_SZ    fr-FR
+      Theme    REG_SZ    dark
+  
 
 PS  [75/103]> Get-ChildItem HKCU:\Software\CohReg -Recurse
   
@@ -360,6 +362,7 @@ PS  [82/103]> Clear-ItemProperty -Path HKCU:\Software\CohReg -Name "InstallPath"
 CMD [83/103]> reg query HKCU\Software\CohReg /v InstallPath
   
   HKCU\Software\CohReg
+      InstallPath    REG_SZ    
   
 
 
@@ -368,7 +371,7 @@ CMD [84/103]> reg add HKLM\Software\CohReg /v Site /t REG_SZ /d "main" /f
   The operation completed successfully.
 
 PS  [85/103]> (Get-ItemProperty HKLM:\Software\CohReg).Site
-<empty>
+  main
 
 PS  [86/103]> Set-ItemProperty -Path HKLM:\Software\CohReg -Name "Tier" -Value "prod"
 <empty>
@@ -376,6 +379,8 @@ PS  [86/103]> Set-ItemProperty -Path HKLM:\Software\CohReg -Name "Tier" -Value "
 CMD [87/103]> reg query HKLM\Software\CohReg
   
   HKLM\Software\CohReg
+      Site    REG_SZ    main
+      Tier    REG_SZ    prod
   
 
 CMD [88/103]> reg delete HKLM\Software\CohReg /f
@@ -388,20 +393,27 @@ PS  [89/103]> Test-Path HKLM:\Software\CohReg
 --- [90] § discovery ---
 PS  [90/103]> Get-Command -Noun ItemProperty -ErrorAction SilentlyContinue | Select-Object -First 5 Name
   
-  Name          
-  --------------
-  Write-Host    
-  Write-Output  
-  Write-Error   
-  Write-Warning 
-  ForEach-Object
+  Name               
+  -------------------
+  Get-Itemproperty   
+  Set-Itemproperty   
+  Remove-Itemproperty
+  Clear-Itemproperty 
   
 
 PS  [91/103]> gcm Get-ItemProperty
-<empty>
+  
+  Name              CommandType  Source
+  ----------------  -----------  ------
+  Get-Itemproperty  Cmdlet             
+  
 
 PS  [92/103]> gcm Set-Item
-<empty>
+  
+  Name      CommandType  Source
+  --------  -----------  ------
+  Set-Item  Cmdlet             
+  
 
 PS  [93/103]> Get-Alias %
   
@@ -414,6 +426,7 @@ PS  [93/103]> Get-Alias %
   cd       set-location         Alias      
   chdir    set-location         Alias      
   clear    clear-host           Alias      
+  clp      clear-itemproperty   Alias      
   cls      clear-host           Alias      
   clv      clear-variable       Alias      
   compare  compare-object       Alias      

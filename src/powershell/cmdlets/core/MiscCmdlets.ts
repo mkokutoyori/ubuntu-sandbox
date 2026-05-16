@@ -111,20 +111,48 @@ export class GetCommandCmdlet implements ICmdlet {
   readonly aliases = ['gcm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const nameFilter = ctx.positional[0] ? psValueToString(ctx.positional[0]) : null;
-    // Return a minimal list — full list comes from registry when wired
-    const stubs = [
-      'Write-Host', 'Write-Output', 'Write-Error', 'Write-Warning',
-      'ForEach-Object', 'Where-Object', 'Select-Object', 'Sort-Object',
-      'Measure-Object', 'Group-Object', 'Format-Table', 'Format-List',
-      'ConvertTo-Json', 'ConvertFrom-Json', 'Get-Date', 'Set-Variable',
-      'Get-Variable', 'Remove-Variable', 'Invoke-Expression', 'Test-Path',
-    ];
-    const filtered = nameFilter
-      ? stubs.filter(n => n.toLowerCase().includes(nameFilter.toLowerCase()))
-      : stubs;
-    return filtered.map(n => ({ Name: n, CommandType: 'Cmdlet', Source: '' }) as Record<string, PSValue>);
+    const nameFilter = (ctx.named['name'] ?? ctx.positional[0]) !== undefined
+      ? psValueToString(ctx.named['name'] ?? ctx.positional[0]) : null;
+    const verbFilter = ctx.named['verb'] ? psValueToString(ctx.named['verb']) : null;
+    const nounFilter = ctx.named['noun'] ? psValueToString(ctx.named['noun']) : null;
+
+    // Source of truth: the live cmdlet registry. Each entry becomes one PS
+    // command record with a canonical title-cased display name.
+    const all = ctx.runtime.listCmdlets().map(c => ({
+      raw:  c.name,
+      name: titleCaseCmdletName(c.name),
+    }));
+
+    const matches = (display: string): boolean => {
+      const lower = display.toLowerCase();
+      const dash  = display.indexOf('-');
+      const verb  = dash > 0 ? display.slice(0, dash).toLowerCase() : '';
+      const noun  = dash > 0 ? display.slice(dash + 1).toLowerCase() : lower;
+      if (nameFilter && !wildcardLike(lower, nameFilter.toLowerCase())) return false;
+      if (verbFilter && !wildcardLike(verb,  verbFilter.toLowerCase())) return false;
+      if (nounFilter && !wildcardLike(noun,  nounFilter.toLowerCase())) return false;
+      return true;
+    };
+
+    return all
+      .filter(c => matches(c.name))
+      .map(c => ({ Name: c.name, CommandType: 'Cmdlet', Source: '' }) as Record<string, PSValue>);
   }
+}
+
+/** Convert a registry name like 'get-itemproperty' to 'Get-ItemProperty'. */
+function titleCaseCmdletName(raw: string): string {
+  return raw.split('-')
+    .map(segment => segment.length === 0 ? '' :
+      segment.replace(/(^|[^a-z])([a-z])/g, (_, prefix: string, ch: string) => prefix + ch.toUpperCase()))
+    .join('-');
+}
+
+/** PowerShell-style match: literal substring OR `*?` wildcard (Like operator). */
+function wildcardLike(value: string, pattern: string): boolean {
+  if (!pattern.includes('*') && !pattern.includes('?')) return value === pattern;
+  const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(re).test(value);
 }
 
 // ─── Get-Module ───────────────────────────────────────────────────────────
@@ -265,19 +293,28 @@ export class GetPSDriveCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
     const drives = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    const shape = (d: PSValue): Record<string, PSValue> => {
+      const rec = d as Record<string, PSValue>;
+      return {
+        Name:     rec['Name'],
+        Used:     rec['Used'] ?? '',
+        Free:     rec['Free'] ?? '',
+        Provider: rec['Provider'] ?? inferProvider(String(rec['Root'] ?? '')),
+        Root:     rec['Root'],
+      } as Record<string, PSValue>;
+    };
     if (nameFilter) {
       const drive = drives[nameFilter];
-      if (drive) {
-        const d = drive as Record<string, PSValue>;
-        ctx.emit(`${d['Name']}  ${d['Root']}`);
-        return drive;
-      }
-      return null;
+      return drive ? shape(drive) : null;
     }
-    const all = Object.values(drives);
-    for (const d of all) ctx.emit(`${(d as Record<string, PSValue>)['Name']}  ${(d as Record<string, PSValue>)['Root']}`);
-    return all.length === 1 ? all[0] : all;
+    return Object.values(drives).map(shape);
   }
+}
+
+function inferProvider(root: string): string {
+  if (/^[A-Za-z]:\\?$/.test(root)) return 'FileSystem';
+  if (/^HK/i.test(root))           return 'Registry';
+  return '';
 }
 
 // ─── Clear-Host ───────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-pc
-Generated: 2026-05-15T16:52:35.950Z
+Generated: 2026-05-16T06:30:19.061Z
 Engine: powershell
 host=WIN-USR-DBG (windows-pc)
 Total commands: 102
@@ -211,26 +211,26 @@ PS [35/102]> Get-LocalUser | Where-Object { $_.Description }
 
 PS [36/102]> Get-LocalUser | Select-Object Name, Description, Enabled | Sort-Object Name
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  Name            Enabled  Description                                             
+  --------------  -------  --------------------------------------------------------
+  Administrator   True     Built-in account for administering the computer/domain  
+  alice           True                                                             
+  bob             True                                                             
+  carol           True     QA tester                                               
+  dave            True                                                             
+  DefaultAccount  False    A user account managed by the system.                   
+  erin            True                                                             
+  frank           True                                                             
+  grace           True                                                             
+  Guest           False    Built-in account for guest access to the computer/domain
+  heidi           True                                                             
+  ivan            True                                                             
+  judy            True                                                             
+  powerUser1      True                                                             
+  powerUser2      True                                                             
+  powerUser3      True     with desc                                               
+  User            True                                                             
+  weakPw          True                                                             
   
 
 PS [37/102]> Get-LocalUser -Name "ghost-user" -ErrorAction SilentlyContinue
@@ -538,7 +538,15 @@ PS [91/102]> function New-DevUser { param($Name) New-LocalUser -Name $Name -NoPa
 <empty>
 
 PS [92/102]> "kate","leo","mary","nina","oscar" | ForEach-Object { New-DevUser -Name $_ }
-<empty>
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  kate   True                
+  leo    True                
+  mary   True                
+  nina   True                
+  oscar  True                
+  
 
 PS [93/102]> Get-LocalGroupMember -Group Developers | Sort-Object Name
   

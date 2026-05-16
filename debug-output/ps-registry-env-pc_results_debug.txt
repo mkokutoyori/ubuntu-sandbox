@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-registry-env-pc
-Generated: 2026-05-15T16:52:37.498Z
+Generated: 2026-05-16T06:30:20.455Z
 Engine: powershell
 host=WIN-REG-DBG (windows-pc)
 Total commands: 117
@@ -9,13 +9,12 @@ Total commands: 117
 
 --- [1] § registry navigation ---
 PS [1/117]> Get-PSDrive | Where-Object { $_.Provider -like "*Registry*" }
-  C  C:\
-  D  D:\
-  Env  
-  Variable  
-  Function  
-  HKLM  HKLM:\
-  HKCU  HKCU:\
+  
+  Name  Used  Free  Provider  Root  
+  ----  ----  ----  --------  ------
+  HKLM     0     0  Registry  HKLM:\
+  HKCU     0     0  Registry  HKCU:\
+  
 
 PS [2/117]> Test-Path HKCU:\
   True
@@ -158,35 +157,23 @@ PS [26/117]> Set-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI -Name "H
 <empty>
 
 PS [27/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
-  
-  Version             : 1.0.0
-  Build               : 42
-  InstallPath         : C:\DebugSim
-  Enabled             : 1
-  
+  Version=1.0.0; Build=42; InstallPath=C:\DebugSim; Enabled=1
 
 PS [28/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "Version"
-  
-  Version             : 1.0.0
-  
+  Version=1.0.0
 
 PS [29/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).Version
-<empty>
+  1.0.0
 
 PS [30/117]> (Get-ItemProperty -Path HKCU:\Software\DebugSim).Build
-<empty>
+  42
 
 PS [31/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings
-  
-  Theme               : dark
-  Lang                : fr-FR
-  
+  Theme=dark; Lang=fr-FR
 
 PS [32/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim\Settings\UI | Format-List
-  
-  Width               : 1920
-  Height              : 1080
-  
+  Width : 1920
+  Height : 1080
 
 
 --- [33] § rename & delete values ---
@@ -194,17 +181,13 @@ PS [33/117]> Rename-ItemProperty -Path HKCU:\Software\DebugSim -Name "Build" -Ne
 <empty>
 
 PS [34/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim -Name "BuildNumber" -ErrorAction SilentlyContinue
-  Get-ItemProperty : Property 'BuildNumber' does not exist at path 'HKCU:\Software\DebugSim'.
+<empty>
 
 PS [35/117]> Remove-ItemProperty -Path HKCU:\Software\DebugSim -Name "Enabled" -ErrorAction SilentlyContinue
 <empty>
 
 PS [36/117]> Get-ItemProperty -Path HKCU:\Software\DebugSim
-  
-  Version             : 1.0.0
-  Build               : 42
-  InstallPath         : C:\DebugSim
-  
+  Version=1.0.0; Build=42; InstallPath=C:\DebugSim
 
 PS [37/117]> Clear-ItemProperty -Path HKCU:\Software\DebugSim -Name "InstallPath" -ErrorAction SilentlyContinue
 <empty>
@@ -298,19 +281,19 @@ PS [50/117]> Set-Item -Path Env:DEBUG_SIM -Value "1"
 <empty>
 
 PS [51/117]> $env:DEBUG_SIM
-<empty>
+  1
 
 PS [52/117]> Set-Item -Path Env:DEBUG_LABEL -Value "first"
 <empty>
 
 PS [53/117]> $env:DEBUG_LABEL
-<empty>
+  first
 
 PS [54/117]> Set-Item -Path Env:DEBUG_LABEL -Value "second"
 <empty>
 
 PS [55/117]> $env:DEBUG_LABEL
-<empty>
+  second
 
 PS [56/117]> Remove-Item Env:DEBUG_LABEL
 <empty>
@@ -322,19 +305,19 @@ PS [58/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", "process-s
 <empty>
 
 PS [59/117]> [System.Environment]::GetEnvironmentVariable("DBG_PROC", "Process")
-<empty>
+  process-scope
 
 PS [60/117]> [System.Environment]::SetEnvironmentVariable("DBG_USR", "user-scope", "User")
 <empty>
 
 PS [61/117]> [System.Environment]::GetEnvironmentVariable("DBG_USR", "User")
-<empty>
+  user-scope
 
 PS [62/117]> [System.Environment]::SetEnvironmentVariable("DBG_MCH", "machine-scope", "Machine")
 <empty>
 
 PS [63/117]> [System.Environment]::GetEnvironmentVariable("DBG_MCH", "Machine")
-<empty>
+  machine-scope
 
 PS [64/117]> [System.Environment]::SetEnvironmentVariable("DBG_PROC", $null, "Process")
 <empty>
@@ -472,10 +455,10 @@ PS [101/117]> [Math]::Sqrt(16)
   4
 
 PS [102/117]> [Guid]::NewGuid()
-  6f1600a6-e8cf-4989-ad76-ce45d13a1394
+  c8d20623-d73f-45c7-a27b-0df2291ac58f
 
 PS [103/117]> [DateTime]::Now
-  5/15/2026 4:52 PM
+  5/16/2026 6:30 AM
 
 
 --- [104] § formatting ---

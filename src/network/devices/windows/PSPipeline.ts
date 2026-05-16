@@ -742,6 +742,10 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {
     return ['Name', 'Enabled', 'Description'];
   }
+  // PSDrive: Name, Used (GB), Free (GB), Provider, Root
+  if (lower.has('provider') && lower.has('root') && lower.has('name')) {
+    return ['Name', 'Used', 'Free', 'Provider', 'Root'];
+  }
   // DirectoryEntry from Get-ChildItem: Mode, LastWriteTime, Length, Name
   if (lower.has('mode') && lower.has('lastwritetime') && lower.has('name')) {
     return ['Mode', 'LastWriteTime', 'Length', 'Name'];
