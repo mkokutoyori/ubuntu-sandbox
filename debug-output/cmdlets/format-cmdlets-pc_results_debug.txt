@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — format-cmdlets-pc
-Generated: 2026-05-16T23:27:32.820Z
+Generated: 2026-05-16T23:59:19.070Z
 Engine: powershell
 host=WIN-FORMAT-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 56
@@ -195,7 +195,7 @@ PS [18/56]> Get-ChildItem C:\ | Select-Object -First 2 | Format-List *
   Length : 
   Mode : d-----
   PSIsContainer : True
-  LastWriteTime : 5/16/2026 11:27 PM
+  LastWriteTime : 5/16/2026 11:59 PM
   
   Name : PerfLogs
   FullName : C:\\PerfLogs
@@ -204,7 +204,7 @@ PS [18/56]> Get-ChildItem C:\ | Select-Object -First 2 | Format-List *
   Length : 
   Mode : d-----
   PSIsContainer : True
-  LastWriteTime : 5/16/2026 11:27 PM
+  LastWriteTime : 5/16/2026 11:59 PM
 
 PS [19/56]> Get-Process | Select-Object -First 2 | Format-List Name, Id
   Name : System Idle Process
@@ -431,10 +431,10 @@ PS [42/56]> 42 | Get-Member | Select-Object -First 3 Name
 
 PS [43/56]> [pscustomobject]@{ A=1; B=2 } | Get-Member -MemberType NoteProperty
   
-  Name  MemberType  Definition
-  ----  ----------  ----------
-  A     Property    number A  
-  B     Property    number B  
+  Name  MemberType    Definition
+  ----  ------------  ----------
+  A     NoteProperty  number A  
+  B     NoteProperty  number B  
   
 
 PS [44/56]> Get-Service Spooler | Get-Member -Name Status

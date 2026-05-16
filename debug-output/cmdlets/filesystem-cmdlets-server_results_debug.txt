@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — filesystem-cmdlets-server
-Generated: 2026-05-16T23:26:55.488Z
+Generated: 2026-05-16T23:59:20.449Z
 Engine: powershell
 host=SRV-FILESYSTEM-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 78
@@ -64,42 +64,42 @@ PS [13/78]> Get-ChildItem C:\Lab
   
   Mode    LastWriteTime       Length  Name     
   ------  ------------------  ------  ---------
-  d-----  5/16/2026 11:26 PM          d2       
-  d-----  5/16/2026 11:26 PM          sub1     
-  d-----  5/16/2026 11:26 PM          sub2     
-  -a----  5/16/2026 11:26 PM       2  file1.txt
-  -a----  5/16/2026 11:26 PM       3  file2.txt
-  -a----  5/16/2026 11:26 PM       4  file3.txt
-  -a----  5/16/2026 11:26 PM       5  file4.txt
-  -a----  5/16/2026 11:26 PM       6  file5.txt
-  -a----  5/16/2026 11:26 PM       7  file6.txt
-  -a----  5/16/2026 11:26 PM       5  fresh.txt
-  -a----  5/16/2026 11:26 PM       7  readme.md
-  -a----  5/16/2026 11:26 PM       1  x.txt    
+  d-----  5/16/2026 11:59 PM          d2       
+  d-----  5/16/2026 11:59 PM          sub1     
+  d-----  5/16/2026 11:59 PM          sub2     
+  -a----  5/16/2026 11:59 PM       2  file1.txt
+  -a----  5/16/2026 11:59 PM       3  file2.txt
+  -a----  5/16/2026 11:59 PM       4  file3.txt
+  -a----  5/16/2026 11:59 PM       5  file4.txt
+  -a----  5/16/2026 11:59 PM       6  file5.txt
+  -a----  5/16/2026 11:59 PM       7  file6.txt
+  -a----  5/16/2026 11:59 PM       5  fresh.txt
+  -a----  5/16/2026 11:59 PM       7  readme.md
+  -a----  5/16/2026 11:59 PM       1  x.txt    
   
 
 PS [14/78]> Get-ChildItem C:\Lab -File
   
   Mode    LastWriteTime       Length  Name     
   ------  ------------------  ------  ---------
-  -a----  5/16/2026 11:26 PM       2  file1.txt
-  -a----  5/16/2026 11:26 PM       3  file2.txt
-  -a----  5/16/2026 11:26 PM       4  file3.txt
-  -a----  5/16/2026 11:26 PM       5  file4.txt
-  -a----  5/16/2026 11:26 PM       6  file5.txt
-  -a----  5/16/2026 11:26 PM       7  file6.txt
-  -a----  5/16/2026 11:26 PM       5  fresh.txt
-  -a----  5/16/2026 11:26 PM       7  readme.md
-  -a----  5/16/2026 11:26 PM       1  x.txt    
+  -a----  5/16/2026 11:59 PM       2  file1.txt
+  -a----  5/16/2026 11:59 PM       3  file2.txt
+  -a----  5/16/2026 11:59 PM       4  file3.txt
+  -a----  5/16/2026 11:59 PM       5  file4.txt
+  -a----  5/16/2026 11:59 PM       6  file5.txt
+  -a----  5/16/2026 11:59 PM       7  file6.txt
+  -a----  5/16/2026 11:59 PM       5  fresh.txt
+  -a----  5/16/2026 11:59 PM       7  readme.md
+  -a----  5/16/2026 11:59 PM       1  x.txt    
   
 
 PS [15/78]> Get-ChildItem C:\Lab -Directory
   
   Mode    LastWriteTime       Length  Name
   ------  ------------------  ------  ----
-  d-----  5/16/2026 11:26 PM          d2  
-  d-----  5/16/2026 11:26 PM          sub1
-  d-----  5/16/2026 11:26 PM          sub2
+  d-----  5/16/2026 11:59 PM          d2  
+  d-----  5/16/2026 11:59 PM          sub1
+  d-----  5/16/2026 11:59 PM          sub2
   
 
 PS [16/78]> Get-ChildItem C:\Lab -Name
@@ -120,62 +120,62 @@ PS [17/78]> Get-ChildItem C:\Lab -Filter *.txt
   
   Mode    LastWriteTime       Length  Name     
   ------  ------------------  ------  ---------
-  -a----  5/16/2026 11:26 PM       2  file1.txt
-  -a----  5/16/2026 11:26 PM       3  file2.txt
-  -a----  5/16/2026 11:26 PM       4  file3.txt
-  -a----  5/16/2026 11:26 PM       5  file4.txt
-  -a----  5/16/2026 11:26 PM       6  file5.txt
-  -a----  5/16/2026 11:26 PM       7  file6.txt
-  -a----  5/16/2026 11:26 PM       5  fresh.txt
-  -a----  5/16/2026 11:26 PM       1  x.txt    
+  -a----  5/16/2026 11:59 PM       2  file1.txt
+  -a----  5/16/2026 11:59 PM       3  file2.txt
+  -a----  5/16/2026 11:59 PM       4  file3.txt
+  -a----  5/16/2026 11:59 PM       5  file4.txt
+  -a----  5/16/2026 11:59 PM       6  file5.txt
+  -a----  5/16/2026 11:59 PM       7  file6.txt
+  -a----  5/16/2026 11:59 PM       5  fresh.txt
+  -a----  5/16/2026 11:59 PM       1  x.txt    
   
 
 PS [18/78]> Get-ChildItem C:\Lab -Recurse
   
   Mode    LastWriteTime       Length  Name      
   ------  ------------------  ------  ----------
-  d-----  5/16/2026 11:26 PM          d2        
-  d-----  5/16/2026 11:26 PM          sub1      
-  d-----  5/16/2026 11:26 PM          sub2      
-  -a----  5/16/2026 11:26 PM       2  file1.txt 
-  -a----  5/16/2026 11:26 PM       3  file2.txt 
-  -a----  5/16/2026 11:26 PM       4  file3.txt 
-  -a----  5/16/2026 11:26 PM       5  file4.txt 
-  -a----  5/16/2026 11:26 PM       6  file5.txt 
-  -a----  5/16/2026 11:26 PM       7  file6.txt 
-  -a----  5/16/2026 11:26 PM       5  fresh.txt 
-  -a----  5/16/2026 11:26 PM       7  readme.md 
-  -a----  5/16/2026 11:26 PM       1  x.txt     
-  d-----  5/16/2026 11:26 PM          deep      
-  -a----  5/16/2026 11:26 PM      17  inner.log 
-  -a----  5/16/2026 11:26 PM      13  nested.txt
+  d-----  5/16/2026 11:59 PM          d2        
+  d-----  5/16/2026 11:59 PM          sub1      
+  d-----  5/16/2026 11:59 PM          sub2      
+  -a----  5/16/2026 11:59 PM       2  file1.txt 
+  -a----  5/16/2026 11:59 PM       3  file2.txt 
+  -a----  5/16/2026 11:59 PM       4  file3.txt 
+  -a----  5/16/2026 11:59 PM       5  file4.txt 
+  -a----  5/16/2026 11:59 PM       6  file5.txt 
+  -a----  5/16/2026 11:59 PM       7  file6.txt 
+  -a----  5/16/2026 11:59 PM       5  fresh.txt 
+  -a----  5/16/2026 11:59 PM       7  readme.md 
+  -a----  5/16/2026 11:59 PM       1  x.txt     
+  d-----  5/16/2026 11:59 PM          deep      
+  -a----  5/16/2026 11:59 PM      17  inner.log 
+  -a----  5/16/2026 11:59 PM      13  nested.txt
   
 
 PS [19/78]> Get-ChildItem C:\Lab -Recurse -File
   
   Mode    LastWriteTime       Length  Name      
   ------  ------------------  ------  ----------
-  -a----  5/16/2026 11:26 PM       2  file1.txt 
-  -a----  5/16/2026 11:26 PM       3  file2.txt 
-  -a----  5/16/2026 11:26 PM       4  file3.txt 
-  -a----  5/16/2026 11:26 PM       5  file4.txt 
-  -a----  5/16/2026 11:26 PM       6  file5.txt 
-  -a----  5/16/2026 11:26 PM       7  file6.txt 
-  -a----  5/16/2026 11:26 PM       5  fresh.txt 
-  -a----  5/16/2026 11:26 PM       7  readme.md 
-  -a----  5/16/2026 11:26 PM       1  x.txt     
-  -a----  5/16/2026 11:26 PM      17  inner.log 
-  -a----  5/16/2026 11:26 PM      13  nested.txt
+  -a----  5/16/2026 11:59 PM       2  file1.txt 
+  -a----  5/16/2026 11:59 PM       3  file2.txt 
+  -a----  5/16/2026 11:59 PM       4  file3.txt 
+  -a----  5/16/2026 11:59 PM       5  file4.txt 
+  -a----  5/16/2026 11:59 PM       6  file5.txt 
+  -a----  5/16/2026 11:59 PM       7  file6.txt 
+  -a----  5/16/2026 11:59 PM       5  fresh.txt 
+  -a----  5/16/2026 11:59 PM       7  readme.md 
+  -a----  5/16/2026 11:59 PM       1  x.txt     
+  -a----  5/16/2026 11:59 PM      17  inner.log 
+  -a----  5/16/2026 11:59 PM      13  nested.txt
   
 
 PS [20/78]> Get-ChildItem C:\Lab -Recurse -Directory
   
   Mode    LastWriteTime       Length  Name
   ------  ------------------  ------  ----
-  d-----  5/16/2026 11:26 PM          d2  
-  d-----  5/16/2026 11:26 PM          sub1
-  d-----  5/16/2026 11:26 PM          sub2
-  d-----  5/16/2026 11:26 PM          deep
+  d-----  5/16/2026 11:59 PM          d2  
+  d-----  5/16/2026 11:59 PM          sub1
+  d-----  5/16/2026 11:59 PM          sub2
+  d-----  5/16/2026 11:59 PM          deep
   
 
 PS [21/78]> Get-ChildItem C:\Lab -Recurse -Filter *.txt | Select-Object -ExpandProperty Name
@@ -193,39 +193,39 @@ PS [22/78]> Get-ChildItem C:\Lab -Include *.txt -Recurse
   
   Mode    LastWriteTime       Length  Name      
   ------  ------------------  ------  ----------
-  d-----  5/16/2026 11:26 PM          d2        
-  d-----  5/16/2026 11:26 PM          sub1      
-  d-----  5/16/2026 11:26 PM          sub2      
-  -a----  5/16/2026 11:26 PM       2  file1.txt 
-  -a----  5/16/2026 11:26 PM       3  file2.txt 
-  -a----  5/16/2026 11:26 PM       4  file3.txt 
-  -a----  5/16/2026 11:26 PM       5  file4.txt 
-  -a----  5/16/2026 11:26 PM       6  file5.txt 
-  -a----  5/16/2026 11:26 PM       7  file6.txt 
-  -a----  5/16/2026 11:26 PM       5  fresh.txt 
-  -a----  5/16/2026 11:26 PM       7  readme.md 
-  -a----  5/16/2026 11:26 PM       1  x.txt     
-  d-----  5/16/2026 11:26 PM          deep      
-  -a----  5/16/2026 11:26 PM      17  inner.log 
-  -a----  5/16/2026 11:26 PM      13  nested.txt
+  d-----  5/16/2026 11:59 PM          d2        
+  d-----  5/16/2026 11:59 PM          sub1      
+  d-----  5/16/2026 11:59 PM          sub2      
+  -a----  5/16/2026 11:59 PM       2  file1.txt 
+  -a----  5/16/2026 11:59 PM       3  file2.txt 
+  -a----  5/16/2026 11:59 PM       4  file3.txt 
+  -a----  5/16/2026 11:59 PM       5  file4.txt 
+  -a----  5/16/2026 11:59 PM       6  file5.txt 
+  -a----  5/16/2026 11:59 PM       7  file6.txt 
+  -a----  5/16/2026 11:59 PM       5  fresh.txt 
+  -a----  5/16/2026 11:59 PM       7  readme.md 
+  -a----  5/16/2026 11:59 PM       1  x.txt     
+  d-----  5/16/2026 11:59 PM          deep      
+  -a----  5/16/2026 11:59 PM      17  inner.log 
+  -a----  5/16/2026 11:59 PM      13  nested.txt
   
 
 PS [23/78]> Get-ChildItem C:\Lab -Force
   
   Mode    LastWriteTime       Length  Name     
   ------  ------------------  ------  ---------
-  d-----  5/16/2026 11:26 PM          d2       
-  d-----  5/16/2026 11:26 PM          sub1     
-  d-----  5/16/2026 11:26 PM          sub2     
-  -a----  5/16/2026 11:26 PM       2  file1.txt
-  -a----  5/16/2026 11:26 PM       3  file2.txt
-  -a----  5/16/2026 11:26 PM       4  file3.txt
-  -a----  5/16/2026 11:26 PM       5  file4.txt
-  -a----  5/16/2026 11:26 PM       6  file5.txt
-  -a----  5/16/2026 11:26 PM       7  file6.txt
-  -a----  5/16/2026 11:26 PM       5  fresh.txt
-  -a----  5/16/2026 11:26 PM       7  readme.md
-  -a----  5/16/2026 11:26 PM       1  x.txt    
+  d-----  5/16/2026 11:59 PM          d2       
+  d-----  5/16/2026 11:59 PM          sub1     
+  d-----  5/16/2026 11:59 PM          sub2     
+  -a----  5/16/2026 11:59 PM       2  file1.txt
+  -a----  5/16/2026 11:59 PM       3  file2.txt
+  -a----  5/16/2026 11:59 PM       4  file3.txt
+  -a----  5/16/2026 11:59 PM       5  file4.txt
+  -a----  5/16/2026 11:59 PM       6  file5.txt
+  -a----  5/16/2026 11:59 PM       7  file6.txt
+  -a----  5/16/2026 11:59 PM       5  fresh.txt
+  -a----  5/16/2026 11:59 PM       7  readme.md
+  -a----  5/16/2026 11:59 PM       1  x.txt    
   
 
 PS [24/78]> Get-ChildItem C:\Lab -Recurse | Where-Object { -not $_.PSIsContainer } | Measure-Object
@@ -282,21 +282,21 @@ PS [30/78]> Get-ChildItem C:\Lab -Recurse -Depth 1
   
   Mode    LastWriteTime       Length  Name      
   ------  ------------------  ------  ----------
-  d-----  5/16/2026 11:26 PM          d2        
-  d-----  5/16/2026 11:26 PM          sub1      
-  d-----  5/16/2026 11:26 PM          sub2      
-  -a----  5/16/2026 11:26 PM       2  file1.txt 
-  -a----  5/16/2026 11:26 PM       3  file2.txt 
-  -a----  5/16/2026 11:26 PM       4  file3.txt 
-  -a----  5/16/2026 11:26 PM       5  file4.txt 
-  -a----  5/16/2026 11:26 PM       6  file5.txt 
-  -a----  5/16/2026 11:26 PM       7  file6.txt 
-  -a----  5/16/2026 11:26 PM       5  fresh.txt 
-  -a----  5/16/2026 11:26 PM       7  readme.md 
-  -a----  5/16/2026 11:26 PM       1  x.txt     
-  d-----  5/16/2026 11:26 PM          deep      
-  -a----  5/16/2026 11:26 PM      17  inner.log 
-  -a----  5/16/2026 11:26 PM      13  nested.txt
+  d-----  5/16/2026 11:59 PM          d2        
+  d-----  5/16/2026 11:59 PM          sub1      
+  d-----  5/16/2026 11:59 PM          sub2      
+  -a----  5/16/2026 11:59 PM       2  file1.txt 
+  -a----  5/16/2026 11:59 PM       3  file2.txt 
+  -a----  5/16/2026 11:59 PM       4  file3.txt 
+  -a----  5/16/2026 11:59 PM       5  file4.txt 
+  -a----  5/16/2026 11:59 PM       6  file5.txt 
+  -a----  5/16/2026 11:59 PM       7  file6.txt 
+  -a----  5/16/2026 11:59 PM       5  fresh.txt 
+  -a----  5/16/2026 11:59 PM       7  readme.md 
+  -a----  5/16/2026 11:59 PM       1  x.txt     
+  d-----  5/16/2026 11:59 PM          deep      
+  -a----  5/16/2026 11:59 PM      17  inner.log 
+  -a----  5/16/2026 11:59 PM      13  nested.txt
   
 
 
