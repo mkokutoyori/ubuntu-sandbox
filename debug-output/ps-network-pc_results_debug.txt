@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-pc
-Generated: 2026-05-15T16:52:33.523Z
+Generated: 2026-05-16T06:38:43.151Z
 Engine: powershell
 host=WIN-NET-DBG (windows-pc)
 Total commands: 101
@@ -616,23 +616,55 @@ PS [71/101]> Remove-SmbShare -Name "DebugShare" -Force -ErrorAction SilentlyCont
 --- [72] § discovery ---
 PS [72/101]> Get-Command -Noun NetAdapter -ErrorAction SilentlyContinue | Select-Object -First 5
   
-  Name            CommandType  Source
-  --------------  -----------  ------
-  Write-Host      Cmdlet             
-  Write-Output    Cmdlet             
-  Write-Error     Cmdlet             
-  Write-Warning   Cmdlet             
-  ForEach-Object  Cmdlet             
+  CommandType : Alias
+  Name        : ?
+  Version     : 
+  Source      : 
+  Definition  : Where-Object
+  
+  CommandType : Alias
+  Name        : %
+  Version     : 
+  Source      : 
+  Definition  : Foreach-Object
+  
+  CommandType : Alias
+  Name        : ac
+  Version     : 
+  Source      : 
+  Definition  : Add-Content
+  
+  CommandType : Cmdlet
+  Name        : Add-Content
+  Version     : 5.1.0
+  Source      : Microsoft.PowerShell.Core
+  
+  CommandType : Cmdlet
+  Name        : Add-LocalGroupMember
+  Version     : 5.1.0
+  Source      : Microsoft.PowerShell.Core
   
 
 PS [73/101]> Get-Command Get-NetAdapter -ErrorAction SilentlyContinue
-<empty>
+  
+  CommandType  Name            Version  Source                   
+  -----------  --------------  -------  -------------------------
+  Cmdlet       Get-NetAdapter  5.1.0    Microsoft.PowerShell.Core
+  
 
 PS [74/101]> gcm Get-NetIPAddress -ErrorAction SilentlyContinue
-<empty>
+  
+  CommandType  Name              Version  Source                   
+  -----------  ----------------  -------  -------------------------
+  Cmdlet       Get-NetIPAddress  5.1.0    Microsoft.PowerShell.Core
+  
 
 PS [75/101]> gcm Test-Connection -ErrorAction SilentlyContinue
-<empty>
+  
+  CommandType  Name             Version  Source                   
+  -----------  ---------------  -------  -------------------------
+  Cmdlet       Test-Connection  5.1.0    Microsoft.PowerShell.Core
+  
 
 PS [76/101]> Get-Alias ipconfig -ErrorAction SilentlyContinue
 <empty>
@@ -782,7 +814,17 @@ PS [99/101]> hostname
   WIN-NET-DBG
 
 PS [100/101]> Get-Date
-  5/15/2026 4:52 PM
+  
+  Year        : 2026
+  Month       : 5
+  Day         : 16
+  Hour        : 6
+  Minute      : 38
+  Second      : 43
+  Millisecond : 210
+  DayOfWeek   : 6
+  Ticks       : 1778913523210
+  
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue
 <empty>

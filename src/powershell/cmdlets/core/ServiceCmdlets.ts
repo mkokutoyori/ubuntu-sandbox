@@ -108,8 +108,12 @@ export class GetServiceCmdlet implements ICmdlet {
       // Wildcard support — `Get-Service "spo*"` filters by name + display.
       if (/[*?]/.test(n)) {
         const pat = new RegExp('^' + n.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+        let matched = 0;
         for (const s of svc.listServices()) {
-          if (pat.test(s.name) || pat.test(s.displayName)) out.push(s);
+          if (pat.test(s.name) || pat.test(s.displayName)) { out.push(s); matched++; }
+        }
+        if (matched === 0) {
+          ctx.emitError(`Cannot find any service with service name '${n}'.`);
         }
         continue;
       }

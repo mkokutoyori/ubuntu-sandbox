@@ -79,6 +79,7 @@ export class InvokeExpressionCmdlet implements ICmdlet {
 
 export class ConvertToSecureStringCmdlet implements ICmdlet {
   readonly name = 'convertto-securestring';
+  readonly displayName = 'ConvertTo-SecureString';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -106,24 +107,105 @@ export class GetHelpCmdlet implements ICmdlet {
 
 // ─── Get-Command ──────────────────────────────────────────────────────────
 
+/**
+ * Default capitalize-first fallback for Get-Command's display name when
+ * an ICmdlet hasn't supplied its own `displayName`. Each cmdlet owns
+ * its canonical PascalCase form via the ICmdlet.displayName property
+ * (open/closed: no central dictionary to keep in sync).
+ */
+function defaultPascalName(lower: string): string {
+  if (!/[a-z]/.test(lower)) return lower;
+  return lower.split('-')
+    .map(seg => seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)
+    .join('-');
+}
+
+function wildcardOrSubstringMatches(name: string, filter: string): boolean {
+  if (/[*?]/.test(filter)) {
+    const pat = new RegExp('^' + filter
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.') + '$', 'i');
+    return pat.test(name);
+  }
+  // No wildcard → exact (case-insensitive) match, matching real PS.
+  return name.toLowerCase() === filter.toLowerCase();
+}
+
 export class GetCommandCmdlet implements ICmdlet {
   readonly name = 'get-command';
   readonly aliases = ['gcm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const nameFilter = ctx.positional[0] ? psValueToString(ctx.positional[0]) : null;
-    // Return a minimal list — full list comes from registry when wired
-    const stubs = [
-      'Write-Host', 'Write-Output', 'Write-Error', 'Write-Warning',
-      'ForEach-Object', 'Where-Object', 'Select-Object', 'Sort-Object',
-      'Measure-Object', 'Group-Object', 'Format-Table', 'Format-List',
-      'ConvertTo-Json', 'ConvertFrom-Json', 'Get-Date', 'Set-Variable',
-      'Get-Variable', 'Remove-Variable', 'Invoke-Expression', 'Test-Path',
-    ];
-    const filtered = nameFilter
-      ? stubs.filter(n => n.toLowerCase().includes(nameFilter.toLowerCase()))
-      : stubs;
-    return filtered.map(n => ({ Name: n, CommandType: 'Cmdlet', Source: '' }) as Record<string, PSValue>);
+    // Enumerate every registered cmdlet — Get-Command's whole point is
+    // discoverability, so we go straight to the registry instead of a
+    // hard-coded subset.
+    const all = ctx.runtime.listCmdlets();
+
+    // Build {canonical name, aliases, commandType} entries, then expand
+    // aliases as their own CommandType=Alias rows (mirroring real PS).
+    type Row = {
+      CommandType: 'Cmdlet' | 'Alias' | 'Function';
+      Name: string;
+      Version: string;
+      Source: string;
+      Definition?: string;
+    };
+    const rows: Row[] = [];
+    for (const c of all) {
+      const display = c.displayName ?? defaultPascalName(c.name);
+      const source  = c.module ?? 'Microsoft.PowerShell.Core';
+      rows.push({
+        CommandType: 'Cmdlet',
+        Name: display,
+        Version: '5.1.0',
+        Source: source,
+      });
+      for (const a of c.aliases) {
+        rows.push({
+          CommandType: 'Alias',
+          Name: a,
+          Version: '',
+          Source: '',
+          Definition: display,
+        });
+      }
+    }
+
+    // User-defined functions surface as Function rows.
+    // (We can't enumerate functions without an additional hook; skip for now.)
+
+    // Filter by -Name (positional or named) — wildcards supported, otherwise
+    // exact case-insensitive match.
+    const nameRaw = ctx.named['name'] ?? ctx.positional[0];
+    const filtered = nameRaw !== undefined && nameRaw !== null && nameRaw !== ''
+      ? (Array.isArray(nameRaw) ? nameRaw.map(psValueToString) : [psValueToString(nameRaw)])
+        .flatMap(f => rows.filter(r => wildcardOrSubstringMatches(r.Name, f)))
+      : rows;
+
+    // Filter by -CommandType
+    const typeRaw = ctx.named['commandtype'];
+    const typeFilter = typeRaw ? psValueToString(typeRaw).toLowerCase() : null;
+    const byType = typeFilter
+      ? filtered.filter(r => r.CommandType.toLowerCase() === typeFilter)
+      : filtered;
+
+    // Sort by Name, case-insensitive — matches the discoverable order
+    // users expect from `Get-Command | Out-String`.
+    byType.sort((a, b) => a.Name.toLowerCase().localeCompare(b.Name.toLowerCase()));
+
+    // De-duplicate by (CommandType, Name): the same alias may be
+    // registered against multiple cmdlets (e.g. `?` appears for both
+    // Where-Object and an internal use).
+    const seen = new Set<string>();
+    const unique = byType.filter(r => {
+      const key = `${r.CommandType}::${r.Name.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return unique as unknown as Record<string, PSValue>[];
   }
 }
 
@@ -242,6 +324,7 @@ export class GetLocationCmdlet implements ICmdlet {
 
 export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
+  readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -260,6 +343,7 @@ export class NewPSDriveCmdlet implements ICmdlet {
 
 export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
+  readonly displayName = 'Get-PSDrive';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -333,6 +417,7 @@ function wildcardToRegex(pattern: string): RegExp {
 
 export class GetPSProviderCmdlet implements ICmdlet {
   readonly name = 'get-psprovider';
+  readonly displayName = 'Get-PSProvider';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

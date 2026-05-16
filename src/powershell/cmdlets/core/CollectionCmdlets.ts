@@ -213,12 +213,16 @@ export class MeasureObjectCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const input = toArray(ctx.pipeInput);
     const props = stringArgs(ctx.positional, ctx.named, 'property');
-    const nums  = input.map(item => {
+    // Numeric values for Sum/Average/Min/Max (a property, or the item
+    // itself when no -Property given).
+    const nums = input.map(item => {
       const v = props.length ? (item as Record<string, PSValue>)[props[0]] : item;
       return Number(v);
     }).filter(n => !isNaN(n));
 
-    const result: Record<string, PSValue> = { Count: nums.length };
+    // Count is the number of input objects — NOT just the numeric ones.
+    // `Get-Command | Measure-Object` must report every command.
+    const result: Record<string, PSValue> = { Count: input.length };
     const wantSum  = isTruthy(ctx.named['sum']     ?? false);
     const wantAvg  = isTruthy(ctx.named['average'] ?? false);
     const wantMin  = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);

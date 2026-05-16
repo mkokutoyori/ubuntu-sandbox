@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-15T16:52:34.623Z
+Generated: 2026-05-16T06:38:46.097Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -16,13 +16,34 @@ PS [1/111]> 1..5
   5
 
 PS [2/111]> 1..10 | Measure-Object -Sum
-  Count=10; Sum=55; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 10
+  Sum      : 55
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [3/111]> 1..10 | Measure-Object -Sum -Average -Min -Max
-  Count=10; Sum=55; Average=5.5; Minimum=1; Maximum=10; Property=
+  
+  Count    : 10
+  Sum      : 55
+  Average  : 5.5
+  Minimum  : 1
+  Maximum  : 10
+  Property : 
+  
 
 PS [4/111]> 1..100 | Where-Object { $_ % 2 -eq 0 } | Measure-Object -Sum
-  Count=50; Sum=2550; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 50
+  Sum      : 2550
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [5/111]> 1..50 | Where-Object { $_ % 3 -eq 0 -and $_ % 5 -eq 0 }
   15
@@ -278,8 +299,8 @@ PS [39/111]> "alpha","beta","gamma","delta","epsilon" | Group-Object Length
   
 
 PS [40/111]> Get-Service | Group-Object Status | ForEach-Object { "$($_.Name): $($_.Count)" }
-  Running: 3
-  Stopped: 3
+  Running: 20
+  Stopped: 2
 
 
 --- [41] § Select-Object ---
@@ -390,19 +411,54 @@ PS [49/111]> "a","b","c" | Select-Object @{ N="L"; E={ $_ } }, @{ N="U"; E={ $_.
 
 --- [50] § Measure-Object on strings ---
 PS [50/111]> "hello world" | Measure-Object -Word -Character -Line
-  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 1
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [51/111]> Get-Content (Join-Path $env:TEMP "doesnotexist") -ErrorAction SilentlyContinue | Measure-Object
-  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 0
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [52/111]> "line1`nline2`nline3" -split "`n" | Measure-Object
-  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 1
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [53/111]> "red","green","blue" | Measure-Object -Character
-  Count=0; Sum=; Average=; Minimum=; Maximum=; Property=
+  
+  Count    : 3
+  Sum      : 
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : 
+  
 
 PS [54/111]> "x","y","z","x","y" | Group-Object | Measure-Object -Property Count -Sum
-  Count=3; Sum=5; Average=; Minimum=; Maximum=; Property=Count
+  
+  Count    : 3
+  Sum      : 5
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : Count
+  
 
 
 --- [55] § operators ---
@@ -422,7 +478,11 @@ PS [59/111]> "abc-123-xyz" -match "(\w+)-(\d+)-(\w+)"
   True
 
 PS [60/111]> $Matches
-  0=abc-123-xyz; 1=abc; 2=123; 3=xyz
+  
+  0            1    2    3  
+  -----------  ---  ---  ---
+  abc-123-xyz  abc  123  xyz
+  
 
 PS [61/111]> "a","b","c","d" -contains "b"
   True
@@ -468,7 +528,11 @@ PS [73/111]> @("a","b","c") -join "-"
 
 --- [74] § splatting & functions ---
 PS [74/111]> $p = @{ Path = "C:\Splat"; ItemType = "Directory"; Force = $true }; New-Item @p
-  Name=C:\Splat; FullName=C:\Splat; ItemType=directory
+  
+  Name      FullName  ItemType 
+  --------  --------  ---------
+  C:\Splat  C:\Splat  directory
+  
 
 PS [75/111]> Test-Path C:\Splat
   True
@@ -562,7 +626,14 @@ PS [92/111]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Objec
   [RUN] Winmgmt
 
 PS [93/111]> New-Item -Path C:\PipeTest -ItemType Directory -Force | Out-Null; 1..10 | ForEach-Object { Set-Content -Path "C:\PipeTest\f$_.txt" -Value "row $_" }; Get-ChildItem C:\PipeTest | Measure-Object Length -Sum
-  Count=10; Sum=51; Average=; Minimum=; Maximum=; Property=Length
+  
+  Count    : 10
+  Sum      : 51
+  Average  : 
+  Minimum  : 
+  Maximum  : 
+  Property : Length
+  
 
 PS [94/111]> Get-ChildItem C:\PipeTest | Sort-Object Length -Descending | Select-Object -First 3 Name, Length
   
@@ -586,7 +657,14 @@ PS [95/111]> Get-ChildItem C:\PipeTest | ForEach-Object { (Get-Content $_.FullNa
   row 9
 
 PS [96/111]> Get-ChildItem C:\PipeTest -Recurse | Where-Object { $_.Length -gt 0 } | Measure-Object Length -Sum -Average
-  Count=10; Sum=51; Average=5.1; Minimum=; Maximum=; Property=Length
+  
+  Count    : 10
+  Sum      : 51
+  Average  : 5.1
+  Minimum  : 
+  Maximum  : 
+  Property : Length
+  
 
 PS [97/111]> Get-ChildItem C:\PipeTest | ForEach-Object { [pscustomobject]@{ N=$_.Name; L=$_.Length } } | Sort-Object L -Descending | Select-Object -First 3
   
@@ -601,7 +679,7 @@ PS [98/111]> Get-ChildItem C:\PipeTest | Tee-Object -Variable allFiles | Measure
   
   Count
   -----
-      0
+     10
   
 
 PS [99/111]> $allFiles.Count

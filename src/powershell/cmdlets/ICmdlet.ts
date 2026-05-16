@@ -20,6 +20,22 @@ export interface ICmdlet {
   readonly aliases: readonly string[];
 
   /**
+   * Canonical PascalCase display name surfaced by `Get-Command` (e.g.
+   * `Get-ChildItem` for the registry key `get-childitem`). Cmdlets with
+   * compound nouns or unusual casing (PSDrive, NetIPAddress, CimInstance,
+   * ...) should declare this so the discovery view stays consistent
+   * without a central naming dictionary. When omitted, Get-Command falls
+   * back to a simple per-segment capitalize-first algorithm.
+   */
+  readonly displayName?: string;
+
+  /** Optional one-line summary surfaced by `Get-Help <Name>` / `Get-Command`. */
+  readonly description?: string;
+
+  /** Optional source/module label surfaced by `Get-Command` ("Source"). */
+  readonly module?: string;
+
+  /**
    * Execute the cmdlet and return a value (or null/void).
    * To write multiple values to the output stream, call ctx.emit() for each.
    * The return value is treated as the pipeline output of this cmdlet.

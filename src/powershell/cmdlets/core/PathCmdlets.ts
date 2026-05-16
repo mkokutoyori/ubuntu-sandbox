@@ -109,6 +109,7 @@ export class ResolvePathCmdlet implements ICmdlet {
 
 export class GetChildItemCmdlet implements ICmdlet {
   readonly name = 'get-childitem';
+  readonly displayName = 'Get-ChildItem';
   readonly aliases = ['ls', 'dir', 'gci'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -403,6 +404,7 @@ function joinPathPositionals(ctx: CmdletContext): string {
 
 export class GetItemPropertyCmdlet implements ICmdlet {
   readonly name = 'get-itemproperty';
+  readonly displayName = 'Get-ItemProperty';
   readonly aliases = ['gp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -419,6 +421,7 @@ export class GetItemPropertyCmdlet implements ICmdlet {
 
 export class SetItemPropertyCmdlet implements ICmdlet {
   readonly name = 'set-itemproperty';
+  readonly displayName = 'Set-ItemProperty';
   readonly aliases = ['sp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -437,6 +440,7 @@ export class SetItemPropertyCmdlet implements ICmdlet {
 
 export class RemoveItemPropertyCmdlet implements ICmdlet {
   readonly name = 'remove-itemproperty';
+  readonly displayName = 'Remove-ItemProperty';
   readonly aliases = ['rp'] as const;
 
   execute(ctx: CmdletContext): PSValue {

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-pc
-Generated: 2026-05-15T16:52:35.950Z
+Generated: 2026-05-16T06:38:47.523Z
 Engine: powershell
 host=WIN-USR-DBG (windows-pc)
 Total commands: 102
@@ -118,51 +118,111 @@ PS [13/102]> Get-LocalGroupMember -Group Users
 
 --- [14] § create users ---
 PS [14/102]> New-LocalUser -Name alice -NoPassword
-  Name=alice; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1002; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  alice  True                
+  
 
 PS [15/102]> New-LocalUser -Name bob -NoPassword -FullName "Bob Builder"
-  Name=bob; FullName=Bob Builder; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1003; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  bob   True                
+  
 
 PS [16/102]> New-LocalUser -Name carol -NoPassword -Description "QA tester"
-  Name=carol; FullName=; Description=QA tester; SID=S-1-5-21-3623811015-3361044348-30300820-1004; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  carol  True     QA tester  
+  
 
 PS [17/102]> New-LocalUser -Name dave -NoPassword
-  Name=dave; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1005; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  dave  True                
+  
 
 PS [18/102]> New-LocalUser -Name erin -NoPassword
-  Name=erin; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1006; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  erin  True                
+  
 
 PS [19/102]> New-LocalUser -Name frank -NoPassword
-  Name=frank; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1007; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  frank  True                
+  
 
 PS [20/102]> New-LocalUser -Name grace -NoPassword
-  Name=grace; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1008; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  grace  True                
+  
 
 PS [21/102]> New-LocalUser -Name heidi -NoPassword
-  Name=heidi; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1009; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  heidi  True                
+  
 
 PS [22/102]> New-LocalUser -Name ivan -NoPassword
-  Name=ivan; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1010; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  ivan  True                
+  
 
 PS [23/102]> New-LocalUser -Name judy -NoPassword
-  Name=judy; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1011; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name  Enabled  Description
+  ----  -------  -----------
+  judy  True                
+  
 
 
 --- [24] § create users with password ---
 PS [24/102]> $pw = ConvertTo-SecureString "P@ssw0rd1" -AsPlainText -Force; New-LocalUser -Name "powerUser1" -Password $pw
-  Name=powerUser1; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1012; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name        Enabled  Description
+  ----------  -------  -----------
+  powerUser1  True                
+  
 
 PS [25/102]> $pw = ConvertTo-SecureString "P@ssw0rd2" -AsPlainText -Force; New-LocalUser -Name "powerUser2" -Password $pw -FullName "Power Two"
-  Name=powerUser2; FullName=Power Two; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1013; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name        Enabled  Description
+  ----------  -------  -----------
+  powerUser2  True                
+  
 
 PS [26/102]> $pw = ConvertTo-SecureString "P@ssw0rd3" -AsPlainText -Force; New-LocalUser -Name "powerUser3" -Password $pw -Description "with desc"
-  Name=powerUser3; FullName=; Description=with desc; SID=S-1-5-21-3623811015-3361044348-30300820-1014; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name        Enabled  Description
+  ----------  -------  -----------
+  powerUser3  True     with desc  
+  
 
 PS [27/102]> $pw = ConvertTo-SecureString "1" -AsPlainText -Force; New-LocalUser -Name "weakPw" -Password $pw -ErrorAction SilentlyContinue
-  Name=weakPw; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1015; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name    Enabled  Description
+  ------  -------  -----------
+  weakPw  True                
+  
 
 PS [28/102]> New-LocalUser -Name alice -NoPassword -ErrorAction SilentlyContinue
-  Name=alice; FullName=; Description=; SID=S-1-5-21-3623811015-3361044348-30300820-1002; Enabled=True; PasswordRequired=True; LastLogon=
+  
+  Name   Enabled  Description
+  -----  -------  -----------
+  alice  True                
+  
 
 
 --- [29] § inspect users ---
@@ -510,10 +570,10 @@ PS [86/102]> Get-LocalUser | Sort-Object Name -Descending | Select-Object -First
   
 
 PS [87/102]> (Get-LocalUser | Measure-Object).Count
-  6
+  17
 
 PS [88/102]> (Get-LocalGroup | Measure-Object).Count
-  6
+  12
 
 PS [89/102]> Get-LocalGroup | ForEach-Object { $g = $_.Name; Get-LocalGroupMember -Group $g | ForEach-Object { "$g <- $($_.Name)" } }
   Administrators <- Administrator
