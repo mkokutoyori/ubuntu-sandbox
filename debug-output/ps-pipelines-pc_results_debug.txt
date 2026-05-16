@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-pipelines-pc
-Generated: 2026-05-16T13:05:15.955Z
+Generated: 2026-05-16T17:50:32.426Z
 Engine: powershell
 host=WIN-PIPE-DBG (windows-pc)
 Total commands: 111
@@ -314,9 +314,9 @@ PS [42/111]> Get-Process | Select-Object -First 3 -Property Name, Id, @{ Name="k
   
   Name                 Id   kbWS
   -------------------  ---  ----
-  System Idle Process    0     0
-  System                 4     0
-  Registry             108     0
+  System Idle Process    0    16
+  System                 4   288
+  Registry             108  8192
   
 
 PS [43/111]> Get-Process | Select-Object -First 5 -Property Name, @{ N="UpperName"; E={ $_.Name.ToUpper() } }
@@ -518,9 +518,7 @@ PS [72/111]> "alpha,beta,gamma" -split ","
   alpha,beta,gamma
 
 PS [73/111]> @("a","b","c") -join "-"
-  a
-  b
-  c
+  a-b-c
 
 
 --- [74] § splatting & functions ---
@@ -594,11 +592,11 @@ PS [90/111]> if ($false) { "yes" } elseif ($true) { "elif" } else { "no" }
 PS [91/111]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 -Property Name, Id, @{ N="MB"; E={ [int]($_.WS/1MB) } } | Format-Table -AutoSize
   Name            Id              MB             
   --------------- --------------- ---------------
-  System Idle Process 0               0              
-  System          4               0              
-  Registry        108             0              
-  smss            340             0              
-  csrss           472             0              
+  explorer        2848            141            
+  dwm             1024            128            
+  RuntimeBroker   1560            27             
+  svchost         964             21             
+  lsass           636             20             
 
 PS [92/111]> Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object Name | ForEach-Object { "[RUN] $($_.Name)" }
   [RUN] Afd

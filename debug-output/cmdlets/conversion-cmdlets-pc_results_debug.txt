@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — conversion-cmdlets-pc
-Generated: 2026-05-16T13:05:21.724Z
+Generated: 2026-05-16T17:50:37.153Z
 Engine: powershell
 host=WIN-CONVERSION-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 62
@@ -400,7 +400,15 @@ PS [53/62]> Get-Process | ForEach-Object { $_.SI } | Sort-Object | Get-Unique
 
 --- [54] § creative combos ---
 PS [54/62]> Get-Service | Select-Object -First 5 Name, Status | ConvertTo-Json -Compress | ConvertFrom-Json | Where-Object Status -EQ Running
-<empty>
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
 
 PS [55/62]> Get-Process | Select-Object -First 5 Name, Id | ConvertTo-Csv -NoTypeInformation | ConvertFrom-Csv | Sort-Object { [int]$_.Id } | Select-Object -First 3
   
@@ -453,10 +461,10 @@ PS [60/62]> '{ "nums": [5,3,8,1,9] }' | ConvertFrom-Json | ForEach-Object { $_.n
 
 PS [61/62]> Get-Process | Select-Object -First 4 Name, WS | ConvertTo-Csv -NoTypeInformation -Delimiter "|"
   "Name","WS"
-  "System Idle Process",""
-  "System",""
-  "Registry",""
-  "smss",""
+  "System Idle Process","16384"
+  "System","294912"
+  "Registry","8388608"
+  "smss","2097152"
 
 PS [62/62]> 'red,1','green,2','blue,3' | ForEach-Object { $_ } | ConvertFrom-Csv -Header Color,Rank | Sort-Object { [int]$_.Rank } -Descending
   

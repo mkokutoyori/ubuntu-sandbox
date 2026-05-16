@@ -291,6 +291,14 @@ export class PSParser {
       || t === PSTokenType.TYPE
       || t === PSTokenType.NOT
       || t === PSTokenType.SPLATTED
+      // Leading unary minus / plus before a value (`-Age -5`, `+$n`):
+      // PowerShell binds `-5` as the parameter value, not a new switch.
+      || ((t === PSTokenType.MINUS || t === PSTokenType.PLUS)
+          && (() => {
+            const n = this.peekAt(1)?.type;
+            return n === PSTokenType.NUMBER || n === PSTokenType.VARIABLE
+              || n === PSTokenType.LPAREN;
+          })())
       || (t === PSTokenType.PARAMETER && (v === 'not' || PS_OPERATOR_PARAMS.has(v)))
       || (t === PSTokenType.WORD && v !== 'else' && v !== 'elseif' && v !== 'catch'
           && v !== 'finally' && v !== 'default' && v !== 'end' && v !== 'process' && v !== 'begin');
@@ -401,6 +409,13 @@ export class PSParser {
       return this.parseExpression(0);
     }
 
+    // Leading unary minus / plus (`-$x`, `-$_`, `+$n`) is an expression,
+    // NOT a command named "-" — there are no commands named "-"/"+".
+    // `Sort-Object { -$_ }` and bare `-$x` depend on this.
+    if (tok.type === PSTokenType.MINUS || tok.type === PSTokenType.PLUS) {
+      return this.parseExpression(0);
+    }
+
     // Command heads parse as expressions so binary operators (2+3, $_ * 10,
     // "a" -eq "b"), postfix ($x++, $x.Prop, $x[i]) and assignment-ops ($x+=1)
     // are consumed fully.
@@ -427,10 +442,15 @@ export class PSParser {
       return { type: 'CommandExpression', name: tok.value, position: pos };
     }
 
-    // Parenthesized / array / type-literal expressions: parse as expressions,
-    // again stopping before a top-level comma.
+    // Parenthesized / array / type-literal expression as a statement /
+    // pipeline head: parse the FULL expression (minPrec 0) so trailing
+    // binary operators bind — `(1,2,3) -join ","`, `(1..5) -join "-"`,
+    // `@(...) -replace ...`, `(...) -split ...`, etc. Using COMMA_PREC
+    // here excluded all operators with precedence ≤ comma (-join /
+    // -split / -replace / comparisons), leaving them mis-parsed as
+    // command parameters.
     if (tok.type === PSTokenType.LPAREN || tok.type === PSTokenType.AT || tok.type === PSTokenType.TYPE) {
-      return this.parseExpression(COMMA_PREC);
+      return this.parseExpression(0);
     }
 
     this.advance();
@@ -484,6 +504,16 @@ export class PSParser {
    */
   private parseCommandArgumentAtom(): PSExpression {
     const tok = this.peek();
+    // A command-argument value beginning with unary `-`/`+` (`-Age -5`,
+    // `-Minimum -10`, `-n -$x`) — parse the full unary expression;
+    // parsePostfixExpression alone can't consume the prefix sign.
+    if ((tok.type === PSTokenType.MINUS || tok.type === PSTokenType.PLUS)) {
+      const n = this.peekAt(1)?.type;
+      if (n === PSTokenType.NUMBER || n === PSTokenType.VARIABLE
+          || n === PSTokenType.LPAREN) {
+        return this.parseUnaryExpression();
+      }
+    }
     // A command argument that begins with `%` is a bareword (`echo
     // %PATH%`, a literal `%`), NOT modulo / ForEach-Object — those only
     // apply in expression / command position. Glue the adjacent run.

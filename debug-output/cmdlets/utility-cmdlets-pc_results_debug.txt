@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — utility-cmdlets-pc
-Generated: 2026-05-16T13:05:14.341Z
+Generated: 2026-05-16T17:50:31.794Z
 Engine: powershell
 host=WIN-UTILITY-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 66
@@ -46,7 +46,7 @@ PS [9/66]> Get-Date -Format "yyyy-MM-dd"
   2026-05-16
 
 PS [10/66]> Get-Date -Format "HH:mm"
-  13:05
+  17:50
 
 PS [11/66]> Get-Date -Format "dddd"
   1616
@@ -84,8 +84,8 @@ PS [21/66]> (Get-Random -Minimum 0 -Maximum 1) -in 0,1
   True
 
 PS [22/66]> Get-Random -SetSeed 42 -Minimum 1 -Maximum 100; Get-Random -SetSeed 42 -Minimum 1 -Maximum 100
-  13
-  77
+  19
+  88
 
 PS [23/66]> 1..10 | Get-Random -Count 3 | Measure-Object
   
@@ -101,10 +101,10 @@ PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
   False
 
 PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
-  0.5769345517042868
+  0.0882257995858402
 
 PS [26/66]> Get-Random -InputObject 'a','b','c'
-  0.12028638767250799
+  0.979712415744175
 
 PS [27/66]> (1..1000 | Get-Random -Count 10 | Where-Object { $_ -ge 1 -and $_ -le 1000 } | Measure-Object).Count
   0
@@ -286,11 +286,11 @@ PS [56/66]> 1..5 | ForEach-Object { [pscustomobject]@{ N=$_; R=(Get-Random -SetS
   
   N  R
   -  -
-  3  4
-  2  5
-  1  7
-  5  8
-  4  9
+  2  0
+  3  5
+  4  7
+  1  9
+  5  9
   
 
 PS [57/66]> Get-Command -Verb Get -CommandType Cmdlet | Group-Object { $_.Name.Split("-")[1].Length } | Sort-Object Name | Select-Object Name, Count
@@ -320,7 +320,7 @@ PS [60/66]> (Get-Command -CommandType Cmdlet | Select-Object -ExpandProperty Nam
 PS [61/66]> [pscustomobject]@{ when=(Get-Date -Format "yyyy-MM-dd"); rand=(Get-Random -SetSeed 1 -Maximum 100) } | ConvertTo-Json
   {
     "when": "2026-05-16",
-    "rand": 69
+    "rand": 61
   }
 
 PS [62/66]> Get-Alias | Group-Object Definition | Sort-Object Count -Descending | Select-Object -First 5 Name, Count
@@ -338,10 +338,12 @@ PS [63/66]> 1..10 | ForEach-Object { Get-Random -SetSeed $_ -Minimum 1 -Maximum 
   
   Name  Count
   ----  -----
+  1         2
   2         1
-  3         2
-  4         4
+  3         1
+  4         2
   5         3
+  6         1
   
 
 PS [64/66]> Get-Command -Noun Object | Sort-Object Name | ForEach-Object { $_.Name } | Select-String "Object$"

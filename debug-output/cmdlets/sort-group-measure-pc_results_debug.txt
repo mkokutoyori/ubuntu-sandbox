@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — sort-group-measure-pc
-Generated: 2026-05-16T13:05:18.181Z
+Generated: 2026-05-16T17:50:33.777Z
 Engine: powershell
 host=WIN-SORT-GROUP-MEASURE (windows-pc) — cmdlet attribute suite
 Total commands: 65
@@ -59,30 +59,26 @@ PS [7/65]> 'a','A','b','B' | Sort-Object -CaseSensitive
   B
 
 PS [8/65]> 1..20 | Sort-Object { -$_ }
-  
-  Line
-  ----
-  1   
-  2   
-  3   
-  4   
-  5   
-  6   
-  7   
-  8   
-  9   
-  10  
-  11  
-  12  
-  13  
-  14  
-  15  
-  16  
-  17  
-  18  
-  19  
-  20  
-  
+  20
+  19
+  18
+  17
+  16
+  15
+  14
+  13
+  12
+  11
+  10
+  9
+  8
+  7
+  6
+  5
+  4
+  3
+  2
+  1
 
 PS [9/65]> 1..20 | Sort-Object { $_ % 3 }
   3
@@ -107,16 +103,16 @@ PS [9/65]> 1..20 | Sort-Object { $_ % 3 }
   20
 
 PS [10/65]> 'one','three','seven','to' | Sort-Object Length
-  one
-  seven
-  three
   to
+  one
+  three
+  seven
 
 PS [11/65]> 'one','three','seven','to' | Sort-Object Length, { $_ }
+  to
   one
   seven
   three
-  to
 
 PS [12/65]> 10,2,33,4 | Sort-Object { [int]$_ }
   2
@@ -128,13 +124,13 @@ PS [12/65]> 10,2,33,4 | Sort-Object { [int]$_ }
 --- [13] § Sort -Property / -Top / -Bottom ---
 PS [13/65]> Get-Process | Sort-Object WS -Descending | Select-Object -First 5 Name, WS
   
-  Name                 WS
-  -------------------  --
-  System Idle Process    
-  System                 
-  Registry               
-  smss                   
-  csrss                  
+  Name           WS       
+  -------------  ---------
+  explorer       148480000
+  dwm            135168000
+  RuntimeBroker   28672000
+  svchost         22020096
+  lsass           20971520
   
 
 PS [14/65]> Get-Process | Sort-Object Name | Select-Object -First 5 -ExpandProperty Name
@@ -146,78 +142,32 @@ PS [14/65]> Get-Process | Sort-Object Name | Select-Object -First 5 -ExpandPrope
 
 PS [15/65]> Get-Process | Sort-Object WS -Top 3 | Select-Object Name, WS
   
-  Name                 WS
-  -------------------  --
-  System Idle Process    
-  System                 
-  Registry               
-  smss                   
-  csrss                  
-  wininit                
-  csrss                  
-  winlogon               
-  services               
-  lsass                  
-  svchost                
-  svchost                
-  svchost                
-  svchost                
-  dwm                    
-  svchost                
-  svchost                
-  svchost                
-  taskhostw              
-  RuntimeBroker          
-  spoolsv                
-  LanmanServer           
-  LanmanWorkstation      
-  explorer               
-  cmd                    
-  conhost                
+  Name                 WS     
+  -------------------  -------
+  System Idle Process    16384
+  System                294912
+  smss                 2097152
   
 
 PS [16/65]> Get-Process | Sort-Object WS -Bottom 3 | Select-Object Name, WS
   
-  Name                 WS
-  -------------------  --
-  System Idle Process    
-  System                 
-  Registry               
-  smss                   
-  csrss                  
-  wininit                
-  csrss                  
-  winlogon               
-  services               
-  lsass                  
-  svchost                
-  svchost                
-  svchost                
-  svchost                
-  dwm                    
-  svchost                
-  svchost                
-  svchost                
-  taskhostw              
-  RuntimeBroker          
-  spoolsv                
-  LanmanServer           
-  LanmanWorkstation      
-  explorer               
-  cmd                    
-  conhost                
+  Name           WS       
+  -------------  ---------
+  RuntimeBroker   28672000
+  dwm            135168000
+  explorer       148480000
   
 
 PS [17/65]> Get-Service | Sort-Object Status, Name | Select-Object -First 6 Name, Status
   
   Name      Status 
   --------  -------
-  Tcpip     Running
   Afd       Running
+  AudioSrv  Running
+  CryptSvc  Running
   Dhcp      Running
   Dnscache  Running
-  NetBT     Running
-  RpcSs     Running
+  EventLog  Running
   
 
 PS [18/65]> Get-Service | Sort-Object -Property Status -Descending | Select-Object -First 5 Name, Status
@@ -244,11 +194,11 @@ PS [19/65]> Get-ChildItem C:\ | Sort-Object Length -Descending | Select-Object -
 
 PS [20/65]> Get-Process | Sort-Object @{Expression="WS";Descending=$true} | Select-Object -First 3 Name, WS
   
-  Name                 WS
-  -------------------  --
-  System Idle Process    
-  System                 
-  Registry               
+  Name                 WS     
+  -------------------  -------
+  System Idle Process    16384
+  System                294912
+  Registry             8388608
   
 
 PS [21/65]> Get-Process | Sort-Object Name -Unique | Select-Object -First 5 -ExpandProperty Name
@@ -414,10 +364,10 @@ PS [41/65]> 10,20,30,40 | Measure-Object -Maximum -Minimum
 PS [42/65]> Get-Process | Measure-Object WS -Sum -Average -Maximum
   
   Count    : 26
-  Sum      : 0
-  Average  : 
+  Sum      : 612065280
+  Average  : 23540972.307692308
   Minimum  : 
-  Maximum  : 
+  Maximum  : 148480000
   Property : WS
   
 
@@ -432,7 +382,7 @@ PS [43/65]> Get-Process | Measure-Object Id -Minimum -Maximum
   
 
 PS [44/65]> (Get-Process | Measure-Object WS -Sum).Sum
-  0
+  612065280
 
 PS [45/65]> Get-Service | Measure-Object
   
@@ -445,7 +395,7 @@ PS [45/65]> Get-Service | Measure-Object
   
 
 PS [46/65]> (Get-Service | Where-Object Status -EQ Running | Measure-Object).Count
-  0
+  20
 
 PS [47/65]> Get-ChildItem C:\ -File | Measure-Object Length -Sum -Average
   
@@ -567,10 +517,10 @@ PS [58/65]> 1..50 | Group-Object { $_ % 7 } | Measure-Object Count -Sum -Average
 PS [59/65]> Get-Process | Sort-Object WS -Descending | Select-Object -First 10 | Measure-Object WS -Sum -Average -Maximum
   
   Count    : 10
-  Sum      : 0
-  Average  : 
+  Sum      : 449683456
+  Average  : 44968345.6
   Minimum  : 
-  Maximum  : 
+  Maximum  : 148480000
   Property : WS
   
 
@@ -587,8 +537,8 @@ PS [61/65]> Get-Service | Sort-Object Status, Name -Descending | Group-Object St
   
   Name     Count
   -------  -----
-  Running     20
   Stopped      2
+  Running     20
   
 
 PS [62/65]> 1..100 | Where-Object { $_ % 2 } | Sort-Object -Descending | Select-Object -First 5 | Measure-Object -Sum
@@ -609,11 +559,7 @@ PS [63/65]> Get-Process | Group-Object { [math]::Floor($_.WS/10KB) } | Sort-Obje
   
 
 PS [64/65]> (1..20 | Sort-Object -Descending | Select-Object -First 5) -join "->"
-  20
-  19
-  18
-  17
-  16
+  20->19->18->17->16
 
 PS [65/65]> Get-ChildItem C:\ | Group-Object { $_.Mode[0] } | Select-Object Name, Count
   

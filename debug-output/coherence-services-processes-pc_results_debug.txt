@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-pc
-Generated: 2026-05-16T13:05:16.556Z
+Generated: 2026-05-16T17:50:30.814Z
 host=WIN-SP-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -1118,7 +1118,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 11:05 AM
+  TimeCreated  : 5/16/2026 3:50 PM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -1126,7 +1126,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 7:05 AM
+  TimeCreated  : 5/16/2026 11:50 AM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -1134,7 +1134,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/16/2026 1:05 AM
+  TimeCreated  : 5/16/2026 5:50 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -1263,11 +1263,11 @@ CMD [100/102]> sc query | findstr STATE | find /c "RUNNING"
 
 PS  [101/102]> Get-Process | Sort-Object WS -Descending | Select-Object -First 3 Name, Id, WS
   
-  Name                 Id   WS
-  -------------------  ---  --
-  System Idle Process    0    
-  System                 4    
-  Registry             108    
+  Name           Id    WS       
+  -------------  ----  ---------
+  explorer       2848  148480000
+  dwm            1024  135168000
+  RuntimeBroker  1560   28672000
   
 
 CMD [102/102]> tasklist /fo csv /nh | find /c ","

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — where-object-server
-Generated: 2026-05-16T13:05:12.700Z
+Generated: 2026-05-16T17:50:29.545Z
 Engine: powershell
 host=SRV-WHERE-OBJECT (windows-server) — cmdlet attribute suite
 Total commands: 58
@@ -205,44 +205,136 @@ PS [20/58]> 1..10 | Where-Object Name -EQ 5
 <empty>
 
 PS [21/58]> Get-Service | Where-Object Status -EQ Running | Select-Object -First 5 Name, Status
-<empty>
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
 
 PS [22/58]> Get-Service | Where-Object Status -NE Running | Select-Object -First 5 Name, Status
-<empty>
+  
+  Name     Status 
+  -------  -------
+  WinRM    Stopped
+  bthserv  Stopped
+  
 
 PS [23/58]> Get-Process | Where-Object WS -GT 0 | Select-Object -First 5 Name, WS
-<empty>
+  
+  Name                 WS     
+  -------------------  -------
+  System Idle Process    16384
+  System                294912
+  Registry             8388608
+  smss                 2097152
+  csrss                9437184
+  
 
 PS [24/58]> Get-Process | Where-Object Id -GE 1000 | Select-Object -First 5 Name, Id
-<empty>
+  
+  Name       Id  
+  ---------  ----
+  dwm        1024
+  svchost    1048
+  svchost    1100
+  svchost    1168
+  taskhostw  1400
+  
 
 PS [25/58]> Get-Process | Where-Object Id -LT 500 | Select-Object Name, Id
-<empty>
+  
+  Name                 Id 
+  -------------------  ---
+  System Idle Process    0
+  System                 4
+  Registry             108
+  smss                 340
+  csrss                472
+  
 
 PS [26/58]> Get-Process | Where-Object SI -LE 1 | Select-Object -First 5 Name, SI
-<empty>
+  
+  Name                 SI
+  -------------------  --
+  System Idle Process   0
+  System                0
+  Registry              0
+  smss                  0
+  csrss                 0
+  
 
 
 --- [27] § -Like / -NotLike / -Match ---
 PS [27/58]> Get-Service | Where-Object Name -Like "*o*" | Select-Object -First 5 Name
-<empty>
+  
+  Name             
+  -----------------
+  LanmanWorkstation
+  EventLog         
+  winlogon         
+  Spooler          
+  AudioSrv         
+  
 
 PS [28/58]> Get-Service | Where-Object Name -NotLike "*x*" | Select-Object -First 5 Name
-<empty>
+  
+  Name    
+  --------
+  Tcpip   
+  Afd     
+  Dhcp    
+  Dnscache
+  NetBT   
+  
 
 PS [29/58]> Get-Process | Where-Object Name -Match "^s" | Select-Object -First 5 Name
-<empty>
+  
+  Name               
+  -------------------
+  System Idle Process
+  System             
+  smss               
+  services           
+  svchost            
+  
 
 PS [30/58]> Get-Process | Where-Object Name -NotMatch "svc" | Select-Object -First 5 Name
-<empty>
+  
+  Name               
+  -------------------
+  System Idle Process
+  System             
+  Registry           
+  smss               
+  csrss              
+  
 
 PS [31/58]> Get-ChildItem C:\ | Where-Object Name -Like "P*" | Select-Object Name
-<empty>
+  
+  Name               
+  -------------------
+  PerfLogs           
+  Program Files      
+  Program Files (x86)
+  ProgramData        
+  
 
 
 --- [32] § -In / -Contains ---
 PS [32/58]> Get-Service | Where-Object Status -In @("Running","Stopped") | Select-Object -First 5 Name, Status
-<empty>
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
 
 PS [33/58]> 1..10 | Where-Object { $_ -in @(2,4,6,8) }
   2
@@ -276,7 +368,15 @@ PS [36/58]> 1..100 | Where-Object { $_ -gt 10 } | Where-Object { $_ -lt 90 } | W
   85
 
 PS [37/58]> Get-Process | Where-Object { $_.WS -gt 0 } | Where-Object { $_.Name -match "s" } | Select-Object -First 5 Name, WS
-<empty>
+  
+  Name                 WS     
+  -------------------  -------
+  System Idle Process    16384
+  System                294912
+  Registry             8388608
+  smss                 2097152
+  csrss                9437184
+  
 
 PS [38/58]> Get-Service | Where-Object { $_.Status -eq "Running" } | Where-Object { $_.Name.Length -le 6 } | Select-Object Name
   
@@ -305,14 +405,26 @@ PS [39/58]> 1..50 | Where-Object { $_ % 2 -eq 0 } | Where-Object { $_ -gt 20 } |
 
 --- [40] § Where + other cmdlets ---
 PS [40/58]> Get-Process | Where-Object WS -GT 0 | Sort-Object WS -Descending | Select-Object -First 3 Name, WS
-<empty>
+  
+  Name           WS       
+  -------------  ---------
+  explorer       148480000
+  dwm            135168000
+  RuntimeBroker   28672000
+  
 
 PS [41/58]> Get-Service | Where-Object Status -EQ Running | Group-Object StartType | Select-Object Name, Count
-<empty>
+  
+  Name       Count
+  ---------  -----
+  Boot           1
+  System         2
+  Automatic     17
+  
 
 PS [42/58]> Get-Service | Where-Object Status -EQ Stopped | Measure-Object
   
-  Count    : 0
+  Count    : 2
   Sum      : 
   Average  : 
   Minimum  : 
@@ -373,13 +485,30 @@ PS [48/58]> 1..20 | Where-Object { $_ -band 1 }
   19
 
 PS [49/58]> Get-Process | Where-Object { $_.Id -gt 0 -and $_.WS -gt 0 } | Select-Object -First 5 Name
-<empty>
+  
+  Name    
+  --------
+  System  
+  Registry
+  smss    
+  csrss   
+  wininit 
+  
 
 PS [50/58]> Get-Service | ? Status -eq Running | ? { $_.Name -notmatch "[0-9]" } | Select-Object -First 5 Name
-<empty>
+  
+  Name    
+  --------
+  Tcpip   
+  Afd     
+  Dhcp    
+  Dnscache
+  NetBT   
+  
 
 PS [51/58]> @('aa','bbb','c','dddd') | Where-Object Length -GE 3
-<empty>
+  bbb
+  dddd
 
 PS [52/58]> 1..30 | Where-Object { ($_ -gt 5) -and ($_ -lt 25) -and ($_ % 2) } | Select-Object -First 6
   7
@@ -390,7 +519,15 @@ PS [52/58]> 1..30 | Where-Object { ($_ -gt 5) -and ($_ -lt 25) -and ($_ % 2) } |
   17
 
 PS [53/58]> Get-Process | Where-Object { $_.WS -gt 0 } | Select-Object -ExpandProperty Name | Where-Object { $_ -match "^[a-m]" } | Sort-Object
-<empty>
+  cmd
+  conhost
+  csrss
+  csrss
+  dwm
+  explorer
+  LanmanServer
+  LanmanWorkstation
+  lsass
 
 PS [54/58]> Get-Service | Where-Object { @("Running") -contains $_.Status } | Measure-Object
   
@@ -409,7 +546,12 @@ PS [55/58]> 1..100 | Where-Object { $_ -as [int] -and $_ % 25 -eq 0 }
   100
 
 PS [56/58]> Get-ChildItem C:\ | Where-Object Length -GT 0 | Select-Object Name, Length
-<empty>
+  
+  Name         Length
+  -----------  ------
+  numbers.txt       9
+  nums.txt          9
+  
 
 PS [57/58]> Get-Process | Where-Object { $_.Name } | Group-Object { $_.Name.Length } | Select-Object Name, Count | Sort-Object Name
   
