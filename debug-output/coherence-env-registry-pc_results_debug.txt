@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-env-registry-pc
-Generated: 2026-05-16T06:47:26.555Z
+Generated: 2026-05-16T07:00:56.424Z
 host=WIN-ENV-DBG (windows-pc)
 Total commands: 103
 ============================================================

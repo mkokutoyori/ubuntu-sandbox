@@ -344,6 +344,28 @@ export class PSRuntime {
     this.scriptRegistry.set(path.toLowerCase(), content);
   }
 
+  /**
+   * Canonical command names + aliases for Tab-completion. Pulls straight
+   * from the live registry so new cmdlets are completable without
+   * touching a static list (open/closed).
+   */
+  listCommandNames(): string[] {
+    const out = new Set<string>();
+    for (const c of this.registry.cmdlets()) {
+      out.add(c.displayName ?? this.titleCase(c.name));
+      for (const a of c.aliases) out.add(a);
+    }
+    return [...out].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }
+
+  private titleCase(raw: string): string {
+    return raw.split('-')
+      .map(seg => seg
+        ? seg.replace(/(^|[^a-z])([a-z])/g, (_, p: string, ch: string) => p + ch.toUpperCase())
+        : seg)
+      .join('-');
+  }
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /** Execute a PowerShell script. Pipeline output is collected and returned as a string. */

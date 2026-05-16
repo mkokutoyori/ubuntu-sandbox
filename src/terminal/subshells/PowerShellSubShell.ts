@@ -212,6 +212,54 @@ export class PowerShellSubShell implements ISubShell {
     return String(e);
   }
 
+  /**
+   * PowerShell-style Tab completion.
+   *  - First token (command position): every cmdlet name + alias from
+   *    the live registry, prefix-matched case-insensitively.
+   *  - Later tokens (argument position): filesystem path completion off
+   *    the device's current directory — directories get a trailing `\`
+   *    so the user can keep tabbing deeper, exactly like real PS.
+   *
+   * Returns FULL candidate tokens (not just the suffix) so the session's
+   * completeInput helper can diff against the last whitespace word.
+   */
+  getCompletions(line: string): string[] {
+    const trimmed = line.trimStart();
+    const parts = trimmed.split(/\s+/);
+    const onFirstToken = parts.length <= 1 && !/\s$/.test(line);
+
+    if (onFirstToken) {
+      const prefix = (parts[0] ?? '').toLowerCase();
+      return this.interp.listCommandNames()
+        .filter(n => n.toLowerCase().startsWith(prefix));
+    }
+
+    // Argument position → path completion. Complete the last token.
+    const lastArg = /\s$/.test(line) ? '' : (parts[parts.length - 1] ?? '');
+    if (!(this.device instanceof WindowsPC)) return [];
+    const fs  = this.device.getFileSystem();
+    const cwd = this.device.getCwd();
+
+    // Strip optional surrounding quote (PS quotes paths with spaces).
+    const quote = lastArg.startsWith('"') || lastArg.startsWith("'")
+      ? lastArg[0] : '';
+    const bare = quote ? lastArg.slice(1) : lastArg;
+
+    const sep = Math.max(bare.lastIndexOf('\\'), bare.lastIndexOf('/'));
+    const dirPart = sep >= 0 ? bare.slice(0, sep) : '';
+    const namePart = sep >= 0 ? bare.slice(sep + 1) : bare;
+    const absDir = fs.normalizePath(dirPart || '.', cwd);
+
+    const names = fs.getCompletions(absDir, namePart);
+    return names.map(n => {
+      const isDir = fs.isDirectory(
+        fs.normalizePath((dirPart ? dirPart + '\\' : '') + n, cwd),
+      );
+      const full = (dirPart ? dirPart + '\\' : '') + n + (isDir ? '\\' : '');
+      return quote ? quote + full : full;
+    });
+  }
+
   dispose(): void {
     // No resources to clean up
   }

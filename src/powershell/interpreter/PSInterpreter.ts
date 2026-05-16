@@ -70,6 +70,11 @@ export class PSInterpreter {
     this.runtime.setVariable(name, value);
   }
 
+  /** All completable command names + aliases (for Tab completion). */
+  listCommandNames(): string[] {
+    return this.runtime.listCommandNames();
+  }
+
   // ── Hooks (forwarded to the runtime) ──────────────────────────────────────
 
   get testPathHook(): ((path: string) => boolean) | null {

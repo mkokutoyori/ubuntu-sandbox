@@ -18,7 +18,6 @@ import {
 } from './TerminalSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
-import { PS_CMDLETS_LIST } from '@/network/devices/windows/PSConstants';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { CmdSubShell } from '@/terminal/subshells/CmdSubShell';
@@ -410,21 +409,21 @@ export class WindowsTerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   private onSubShellTab(): void {
-    // PowerShell cmdlet completion
-    if (this.activeSubShell instanceof PowerShellSubShell) {
-      const parts = this._inputBuf.trimStart().split(/\s+/);
-      if (parts.length <= 1) {
-        const prefix = (parts[0] || '').toLowerCase();
-        const matches = PS_CMDLETS_LIST.filter(c => c.toLowerCase().startsWith(prefix));
-        const result = completeInputCaseInsensitive(this._inputBuf, matches, 20);
-        this._inputBuf = result.input;
-        this.tabSuggestions = result.suggestions;
-        this.notify();
-        return;
-      }
+    // Sub-shells own their completion logic (open/closed): PowerShell
+    // completes the full cmdlet registry + device filesystem paths,
+    // cmd.exe completes its builtins + paths, etc.
+    const sub = this.activeSubShell;
+    if (sub && typeof sub.getCompletions === 'function') {
+      const completions = sub.getCompletions(this._inputBuf);
+      if (completions.length === 0) return;
+      const result = completeInputCaseInsensitive(this._inputBuf, completions, 50);
+      this._inputBuf = result.input;
+      this.tabSuggestions = result.suggestions;
+      this.notify();
+      return;
     }
 
-    // Fall back to device completions for file paths
+    // Fall back to device completions for sub-shells without their own.
     const completions = this.device.getCompletions(this._inputBuf);
     if (completions.length === 0) return;
 
