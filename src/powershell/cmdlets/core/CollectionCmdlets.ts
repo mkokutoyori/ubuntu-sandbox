@@ -53,6 +53,7 @@ function stringArgs(pos: PSValue[], named: Record<string, PSValue>, key: string)
 
 export class WhereObjectCmdlet implements ICmdlet {
   readonly name = 'where-object';
+  readonly parameters = ['FilterScript', 'InputObject', 'Property', 'Value', 'EQ', 'NE', 'GT', 'GE', 'LT', 'LE', 'Like', 'NotLike', 'Match', 'NotMatch', 'Contains', 'NotContains', 'In', 'NotIn', 'Is', 'IsNot', 'Not'] as const;
   readonly aliases = ['where', '?'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -79,6 +80,7 @@ function isTruthy(val: PSValue): boolean {
 
 export class ForEachObjectCmdlet implements ICmdlet {
   readonly name = 'foreach-object';
+  readonly parameters = ['Process', 'InputObject', 'Begin', 'End', 'MemberName', 'ArgumentList'] as const;
   readonly aliases = ['foreach', '%'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -109,6 +111,7 @@ export class ForEachObjectCmdlet implements ICmdlet {
 
 export class SelectObjectCmdlet implements ICmdlet {
   readonly name = 'select-object';
+  readonly parameters = ['Property', 'ExcludeProperty', 'ExpandProperty', 'InputObject', 'First', 'Last', 'Skip', 'SkipLast', 'Index', 'Unique', 'Wait'] as const;
   readonly aliases = ['select'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -181,6 +184,7 @@ export class SelectObjectCmdlet implements ICmdlet {
 
 export class SortObjectCmdlet implements ICmdlet {
   readonly name = 'sort-object';
+  readonly parameters = ['Property', 'InputObject', 'Descending', 'Unique', 'CaseSensitive', 'Culture', 'Stable', 'Top', 'Bottom'] as const;
   readonly aliases = ['sort'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -224,6 +228,7 @@ export class SortObjectCmdlet implements ICmdlet {
 
 export class MeasureObjectCmdlet implements ICmdlet {
   readonly name = 'measure-object';
+  readonly parameters = ['Property', 'InputObject', 'Sum', 'Average', 'Maximum', 'Minimum', 'StandardDeviation', 'Line', 'Word', 'Character', 'AllStats'] as const;
   readonly aliases = ['measure'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -258,6 +263,7 @@ export class MeasureObjectCmdlet implements ICmdlet {
 
 export class GroupObjectCmdlet implements ICmdlet {
   readonly name = 'group-object';
+  readonly parameters = ['Property', 'InputObject', 'NoElement', 'AsHashTable', 'AsString', 'CaseSensitive', 'Culture'] as const;
   readonly aliases = ['group'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -304,6 +310,7 @@ export class GetUniqueCmdlet implements ICmdlet {
 
 export class TeeObjectCmdlet implements ICmdlet {
   readonly name = 'tee-object';
+  readonly parameters = ['FilePath', 'LiteralPath', 'InputObject', 'Append', 'Variable'] as const;
   readonly aliases = ['tee'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -317,6 +324,7 @@ export class TeeObjectCmdlet implements ICmdlet {
 
 export class CompareObjectCmdlet implements ICmdlet {
   readonly name = 'compare-object';
+  readonly parameters = ['ReferenceObject', 'DifferenceObject', 'Property', 'IncludeEqual', 'ExcludeDifferent', 'PassThru', 'CaseSensitive'] as const;
   readonly aliases = ['diff', 'compare'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -341,6 +349,7 @@ export class CompareObjectCmdlet implements ICmdlet {
 
 export class SelectStringCmdlet implements ICmdlet {
   readonly name = 'select-string';
+  readonly parameters = ['Pattern', 'Path', 'LiteralPath', 'InputObject', 'SimpleMatch', 'CaseSensitive', 'Quiet', 'List', 'NotMatch', 'AllMatches', 'Context'] as const;
   readonly aliases = ['sls'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -372,6 +381,7 @@ export class SelectStringCmdlet implements ICmdlet {
 
 export class FormatTableCmdlet implements ICmdlet {
   readonly name = 'format-table';
+  readonly parameters = ['Property', 'AutoSize', 'Wrap', 'GroupBy', 'HideTableHeaders', 'InputObject', 'Force', 'RepeatHeader'] as const;
   readonly aliases = ['ft'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -402,6 +412,7 @@ export class FormatTableCmdlet implements ICmdlet {
 
 export class FormatListCmdlet implements ICmdlet {
   readonly name = 'format-list';
+  readonly parameters = ['Property', 'GroupBy', 'InputObject', 'Force', 'Expand'] as const;
   readonly aliases = ['fl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -451,6 +462,7 @@ export class FormatCustomCmdlet implements ICmdlet {
 
 export class GetMemberCmdlet implements ICmdlet {
   readonly name = 'get-member';
+  readonly parameters = ['Name', 'InputObject', 'MemberType', 'Static', 'Force', 'View'] as const;
   readonly aliases = ['gm'] as const;
 
   execute(ctx: CmdletContext): PSValue {

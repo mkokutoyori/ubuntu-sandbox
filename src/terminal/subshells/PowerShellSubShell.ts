@@ -213,51 +213,146 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   /**
-   * PowerShell-style Tab completion.
-   *  - First token (command position): every cmdlet name + alias from
-   *    the live registry, prefix-matched case-insensitively.
-   *  - Later tokens (argument position): filesystem path completion off
-   *    the device's current directory — directories get a trailing `\`
-   *    so the user can keep tabbing deeper, exactly like real PS.
+   * PowerShell-grade Tab completion. Returns FULL candidate tokens so the
+   * session can replace the trailing word and cycle through them.
    *
-   * Returns FULL candidate tokens (not just the suffix) so the session's
-   * completeInput helper can diff against the last whitespace word.
+   * Context is resolved like the real shell:
+   *   $var<Tab>      → variable names in scope (+ automatic variables)
+   *   cmd -Pa<Tab>   → that cmdlet's parameters + the common parameters
+   *   <verb-noun>    → cmdlet names + aliases (command position, also the
+   *                    token right after `|`, `;`, `&`, `(`, `{`)
+   *   anything else  → device filesystem path completion (dirs get `\`,
+   *                    paths with spaces are quoted)
    */
   getCompletions(line: string): string[] {
-    const trimmed = line.trimStart();
-    const parts = trimmed.split(/\s+/);
-    const onFirstToken = parts.length <= 1 && !/\s$/.test(line);
+    const endsWithSpace = /\s$/.test(line);
+    // Current token = trailing run of non-whitespace (empty after a space).
+    const tokMatch = /(\S*)$/.exec(line);
+    const token = endsWithSpace ? '' : (tokMatch ? tokMatch[1] : '');
 
-    if (onFirstToken) {
-      const prefix = (parts[0] ?? '').toLowerCase();
-      return this.interp.listCommandNames()
-        .filter(n => n.toLowerCase().startsWith(prefix));
+    // Segment = everything after the last unquoted pipeline/scope break,
+    // so `Get-Process | gp<Tab>` still treats `gp` as a command.
+    const seg = this.currentSegment(line);
+    const segTokens = seg.trim().length ? seg.trim().split(/\s+/) : [];
+    const commandWord = segTokens[0] ?? '';
+    const onCommandPosition =
+      segTokens.length === 0 ||
+      (segTokens.length === 1 && !endsWithSpace);
+
+    // 1) Variable completion ($name / $env:name).
+    if (token.startsWith('$')) {
+      return this.completeVariable(token);
     }
 
-    // Argument position → path completion. Complete the last token.
-    const lastArg = /\s$/.test(line) ? '' : (parts[parts.length - 1] ?? '');
+    // 2) Parameter completion (-Name), only in argument position.
+    if (token.startsWith('-') && !onCommandPosition) {
+      return this.completeParameter(commandWord, token);
+    }
+
+    // 3) Command-name completion.
+    if (onCommandPosition) {
+      const prefix = token.toLowerCase();
+      return this.interp.listCommandNames()
+        .filter(n => n.toLowerCase().startsWith(prefix))
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    }
+
+    // 4) Filesystem path completion.
+    return this.completePath(token);
+  }
+
+  /** Substring after the last unquoted `| ; & ( { ` separator. */
+  private currentSegment(line: string): string {
+    let depth = 0, q = '', start = 0;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) { if (c === q) q = ''; continue; }
+      if (c === '"' || c === "'") { q = c; continue; }
+      if (c === '(' || c === '{') { depth++; start = i + 1; continue; }
+      if (c === ')' || c === '}') { depth = Math.max(0, depth - 1); continue; }
+      if (c === '|' || c === ';' || c === '&') start = i + 1;
+    }
+    return line.slice(start);
+  }
+
+  private completeVariable(token: string): string[] {
+    // Keep an optional scope prefix ($env:, $script:, $global:).
+    const m = /^\$((?:env|script|global|local|using|private):)?(.*)$/i.exec(token);
+    if (!m) return [];
+    const scope = m[1] ?? '';
+    const stem = (m[2] ?? '').toLowerCase();
+    const AUTO = [
+      '$_', '$args', '$error', '$false', '$true', '$null', '$input',
+      '$home', '$host', '$pid', '$pwd', '$profile', '$psitem',
+      '$pscommandpath', '$psscriptroot', '$psversiontable', '$lastexitcode',
+      '$matches', '$foreach', '$switch', '$this', '$ofs',
+    ];
+    if (scope) {
+      const names = scope.toLowerCase() === 'env:'
+        ? this.envNames()
+        : this.interp.listVariableNames();
+      return names
+        .filter(n => n.toLowerCase().startsWith(stem))
+        .map(n => `$${scope}${n}`)
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    }
+    const live = this.interp.listVariableNames().map(n => `$${n}`);
+    const pool = [...new Set([...AUTO, ...live])];
+    return pool
+      .filter(v => v.toLowerCase().startsWith(`$${stem}`))
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }
+
+  private envNames(): string[] {
+    if (!(this.device instanceof WindowsPC)) return [];
+    try {
+      return [...this.device.getEnvVars().keys()];
+    } catch { return []; }
+  }
+
+  private completeParameter(commandWord: string, token: string): string[] {
+    const stem = token.slice(1).toLowerCase(); // drop leading '-'
+    const COMMON = [
+      'Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction',
+      'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable',
+      'OutBuffer', 'PipelineVariable', 'WhatIf', 'Confirm',
+    ];
+    const declared = commandWord
+      ? this.interp.getCommandParameters(commandWord)
+      : [];
+    const pool = [...new Set([...declared, ...COMMON])];
+    return pool
+      .filter(p => p.toLowerCase().startsWith(stem))
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(p => `-${p}`);
+  }
+
+  private completePath(token: string): string[] {
     if (!(this.device instanceof WindowsPC)) return [];
     const fs  = this.device.getFileSystem();
     const cwd = this.device.getCwd();
 
-    // Strip optional surrounding quote (PS quotes paths with spaces).
-    const quote = lastArg.startsWith('"') || lastArg.startsWith("'")
-      ? lastArg[0] : '';
-    const bare = quote ? lastArg.slice(1) : lastArg;
+    const quote = token.startsWith('"') || token.startsWith("'")
+      ? token[0] : '';
+    const bare = quote ? token.slice(1).replace(/["']$/, '') : token;
 
     const sep = Math.max(bare.lastIndexOf('\\'), bare.lastIndexOf('/'));
-    const dirPart = sep >= 0 ? bare.slice(0, sep) : '';
+    const dirPart  = sep >= 0 ? bare.slice(0, sep) : '';
     const namePart = sep >= 0 ? bare.slice(sep + 1) : bare;
-    const absDir = fs.normalizePath(dirPart || '.', cwd);
+    const absDir   = fs.normalizePath(dirPart || '.', cwd);
 
     const names = fs.getCompletions(absDir, namePart);
-    return names.map(n => {
-      const isDir = fs.isDirectory(
-        fs.normalizePath((dirPart ? dirPart + '\\' : '') + n, cwd),
-      );
-      const full = (dirPart ? dirPart + '\\' : '') + n + (isDir ? '\\' : '');
-      return quote ? quote + full : full;
-    });
+    return names
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(n => {
+        const isDir = fs.isDirectory(
+          fs.normalizePath((dirPart ? dirPart + '\\' : '') + n, cwd),
+        );
+        const full = (dirPart ? dirPart + '\\' : '') + n + (isDir ? '\\' : '');
+        // PowerShell wraps paths containing spaces in single quotes.
+        if (quote) return quote + full + (isDir ? '' : quote);
+        return /\s/.test(full) ? `'${full}'` : full;
+      });
   }
 
   dispose(): void {

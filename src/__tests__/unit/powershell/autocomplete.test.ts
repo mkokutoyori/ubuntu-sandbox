@@ -94,35 +94,121 @@ describe('Filesystem path completion', () => {
   });
 });
 
-describe('Session Tab key wires through to the sub-shell', () => {
-  it('single cmdlet match completes inline with a trailing space', () => {
-    const pc = new WindowsPC('windows-pc', 'WIN');
-    pc.setCurrentUser('Administrator');
-    const session = new WindowsTerminalSession('t1', pc) as unknown as {
-      enterPowerShell(): void;
-      setInputBuf(v: string): void;
-      getInputBuf(): string;
-      onSubShellTab(): void;
-    };
-    session.enterPowerShell();
-    session.setInputBuf('Get-Childi');
-    session.onSubShellTab();
-    expect(session.getInputBuf()).toBe('Get-ChildItem ');
+type SessionHandle = {
+  enterPowerShell(): void;
+  setInputBuf(v: string): void;
+  getInputBuf(): string;
+  onSubShellTab(reverse?: boolean): void;
+};
+
+function psSession(): SessionHandle {
+  const pc = new WindowsPC('windows-pc', 'WIN');
+  pc.setCurrentUser('Administrator');
+  const s = new WindowsTerminalSession('t1', pc) as unknown as SessionHandle;
+  s.enterPowerShell();
+  return s;
+}
+
+describe('Session Tab key — PowerShell-style cycling', () => {
+  it('unique cmdlet completes inline with NO trailing space (like real PS)', () => {
+    const s = psSession();
+    s.setInputBuf('Get-Childi');
+    s.onSubShellTab();
+    expect(s.getInputBuf()).toBe('Get-ChildItem');
   });
 
-  it('ambiguous prefix extends to the common prefix', () => {
-    const pc = new WindowsPC('windows-pc', 'WIN');
-    pc.setCurrentUser('Administrator');
-    const session = new WindowsTerminalSession('t1', pc) as unknown as {
-      enterPowerShell(): void;
-      setInputBuf(v: string): void;
-      getInputBuf(): string;
-      onSubShellTab(): void;
-    };
-    session.enterPowerShell();
-    session.setInputBuf('Get-LocalGr');
-    session.onSubShellTab();
-    // Get-LocalGroup / Get-LocalGroupMember share the "Get-LocalGroup" prefix
-    expect(session.getInputBuf().toLowerCase()).toContain('get-localgroup');
+  it('first Tab inserts the first match; repeated Tab cycles forward', () => {
+    const s = psSession();
+    s.setInputBuf('Get-LocalGr');
+    s.onSubShellTab();
+    const first = s.getInputBuf();
+    expect(first.toLowerCase().startsWith('get-localgroup')).toBe(true);
+    s.onSubShellTab();
+    const second = s.getInputBuf();
+    expect(second).not.toBe(first);
+    expect(second.toLowerCase().startsWith('get-localgroup')).toBe(true);
+  });
+
+  it('Shift+Tab cycles backward to the previous candidate', () => {
+    const s = psSession();
+    s.setInputBuf('Get-LocalGr');
+    s.onSubShellTab();        // -> candidate[0]
+    const a = s.getInputBuf();
+    s.onSubShellTab();        // -> candidate[1]
+    const b = s.getInputBuf();
+    s.onSubShellTab(true);    // back -> candidate[0]
+    expect(s.getInputBuf()).toBe(a);
+    expect(b).not.toBe(a);
+  });
+
+  it('keeps the prefix before the completed token intact', () => {
+    const s = psSession();
+    s.setInputBuf('Get-Process | Where-Object Na');
+    s.onSubShellTab();
+    expect(s.getInputBuf().startsWith('Get-Process | Where-Object ')).toBe(true);
+  });
+});
+
+describe('Variable completion', () => {
+  it('$ + prefix completes a user-defined variable', async () => {
+    const sh = setup();
+    await sh.processLine('$myFavoriteVar = 42');
+    const c = sh.getCompletions!('$myFav');
+    expect(c.map(x => x.toLowerCase())).toContain('$myfavoritevar');
+  });
+
+  it('completes automatic variables', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('$tr');
+    expect(c).toContain('$true');
+  });
+
+  it('$env: scope completes environment variables', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('$env:COMPUTERN');
+    expect(c.some(x => x.toLowerCase().startsWith('$env:computern'))).toBe(true);
+  });
+});
+
+describe('Parameter completion', () => {
+  it('-<prefix> completes a cmdlet declared parameter', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('Get-Process -N');
+    expect(c).toContain('-Name');
+  });
+
+  it('always offers the common parameters', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('Get-ChildItem -Err');
+    expect(c).toContain('-ErrorAction');
+  });
+
+  it('a lone dash lists many parameters', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('Get-Service -');
+    expect(c).toContain('-Name');
+    expect(c).toContain('-DisplayName');
+    expect(c.length).toBeGreaterThan(5);
+  });
+
+  it('does NOT treat a leading dash in command position as a parameter', async () => {
+    const sh = setup();
+    // first token starting with '-' is not a parameter context
+    const c = sh.getCompletions!('-No');
+    expect(c.every(x => !x.startsWith('-'))).toBe(true);
+  });
+});
+
+describe('Pipeline-aware command position', () => {
+  it('token right after a pipe completes as a command', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('Get-Process | Sort-Ob');
+    expect(c).toContain('Sort-Object');
+  });
+
+  it('token after a semicolon completes as a command', async () => {
+    const sh = setup();
+    const c = sh.getCompletions!('$x = 1; Get-Pro');
+    expect(c).toContain('Get-Process');
   });
 });

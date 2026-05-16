@@ -39,6 +39,21 @@ export class WindowsTerminalSession extends TerminalSession {
   bannerCleared: boolean = false;
   tabSuggestions: string[] | null = null;
 
+  /**
+   * Active Tab-completion cycle (PowerShell classic console behaviour:
+   * repeated Tab walks the candidate list, replacing the token inline;
+   * Shift+Tab walks backwards). Reset whenever a non-Tab key is pressed
+   * or the input no longer matches what we last inserted.
+   */
+  private completion: {
+    candidates: string[];
+    index: number;
+    /** Input text before the token being replaced. */
+    prefix: string;
+    /** The full _inputBuf we last wrote (to detect "Tab again"). */
+    applied: string;
+  } | null = null;
+
   private readonly _flowFormatter = new PlainOutputFormatter();
   private _onRequestClose?: () => void;
   private _onShellModeChange?: (mode: 'cmd' | 'powershell') => void;
@@ -390,15 +405,16 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Tab completion in sub-shell
+    // Tab completion in sub-shell (Shift+Tab cycles backwards, like PS).
     if (e.key === 'Tab') {
-      this.onSubShellTab();
+      this.onSubShellTab(e.shiftKey);
       return true;
     }
 
-    // Clear tab suggestions on non-Tab key
-    if (e.key !== 'Tab' && this.tabSuggestions) {
+    // Any non-Tab key ends a completion cycle and clears the suggestions.
+    if (this.tabSuggestions || this.completion) {
       this.tabSuggestions = null;
+      this.completion = null;
       this.notify();
     }
 
@@ -408,17 +424,46 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Tab completion ──────────────────────────────────────────────
 
-  private onSubShellTab(): void {
-    // Sub-shells own their completion logic (open/closed): PowerShell
-    // completes the full cmdlet registry + device filesystem paths,
-    // cmd.exe completes its builtins + paths, etc.
+  private onSubShellTab(reverse: boolean = false): void {
     const sub = this.activeSubShell;
+
+    // Sub-shells that own their completion logic (PowerShell) get the
+    // real PS console experience: Tab inserts the first match, repeated
+    // Tab cycles forward, Shift+Tab cycles backward.
     if (sub && typeof sub.getCompletions === 'function') {
-      const completions = sub.getCompletions(this._inputBuf);
-      if (completions.length === 0) return;
-      const result = completeInputCaseInsensitive(this._inputBuf, completions, 50);
-      this._inputBuf = result.input;
-      this.tabSuggestions = result.suggestions;
+      // Continuing an existing cycle? (Tab pressed again with no edits.)
+      if (this.completion && this.completion.applied === this._inputBuf
+          && this.completion.candidates.length > 1) {
+        const n = this.completion.candidates.length;
+        this.completion.index =
+          (this.completion.index + (reverse ? -1 : 1) + n) % n;
+        const next = this.completion.candidates[this.completion.index];
+        this._inputBuf = this.completion.prefix + next;
+        this.completion.applied = this._inputBuf;
+        this.tabSuggestions = this.completion.candidates.length > 1
+          ? this.completion.candidates : null;
+        this.notify();
+        return;
+      }
+
+      // Fresh completion.
+      const candidates = sub.getCompletions(this._inputBuf);
+      if (candidates.length === 0) { this.completion = null; return; }
+
+      // The token we replace is the trailing run of non-whitespace
+      // (matches how PowerShellSubShell.getCompletions tokenizes).
+      const m = /(\S*)$/.exec(this._inputBuf);
+      const prefix = this._inputBuf.slice(0, this._inputBuf.length - (m ? m[1].length : 0));
+
+      const first = reverse ? candidates[candidates.length - 1] : candidates[0];
+      this._inputBuf = prefix + first;
+      this.completion = {
+        candidates,
+        index: reverse ? candidates.length - 1 : 0,
+        prefix,
+        applied: this._inputBuf,
+      };
+      this.tabSuggestions = candidates.length > 1 ? candidates : null;
       this.notify();
       return;
     }

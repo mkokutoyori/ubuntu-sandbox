@@ -36,6 +36,15 @@ export interface ICmdlet {
   readonly module?: string;
 
   /**
+   * Declared parameter names (without the leading dash, canonical case)
+   * for `-<Tab>` completion — e.g. ['Name', 'Id', 'IncludeUserName'].
+   * Open/closed: a cmdlet opts in by declaring this; the shell always
+   * layers PowerShell's common parameters on top, so omitting it just
+   * means only the common parameters complete.
+   */
+  readonly parameters?: readonly string[];
+
+  /**
    * Execute the cmdlet and return a value (or null/void).
    * To write multiple values to the output stream, call ctx.emit() for each.
    * The return value is treated as the pipeline output of this cmdlet.

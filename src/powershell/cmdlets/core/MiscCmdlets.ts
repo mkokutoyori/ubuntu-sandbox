@@ -14,6 +14,7 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 export class NewObjectCmdlet implements ICmdlet {
   readonly name = 'new-object';
+  readonly parameters = ['TypeName', 'ArgumentList', 'Property', 'ComObject', 'Strict'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -52,6 +53,7 @@ export class NewObjectCmdlet implements ICmdlet {
 
 export class GetRandomCmdlet implements ICmdlet {
   readonly name = 'get-random';
+  readonly parameters = ['Maximum', 'Minimum', 'SetSeed', 'InputObject', 'Count'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -66,6 +68,7 @@ export class GetRandomCmdlet implements ICmdlet {
 
 export class InvokeExpressionCmdlet implements ICmdlet {
   readonly name = 'invoke-expression';
+  readonly parameters = ['Command'] as const;
   readonly aliases = ['iex'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -92,6 +95,7 @@ export class ConvertToSecureStringCmdlet implements ICmdlet {
 
 export class GetHelpCmdlet implements ICmdlet {
   readonly name = 'get-help';
+  readonly parameters = ['Name', 'Path', 'Category', 'Component', 'Functionality', 'Role', 'Detailed', 'Full', 'Examples', 'Parameter', 'Online', 'ShowWindow'] as const;
   readonly aliases = ['help'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -109,6 +113,7 @@ export class GetHelpCmdlet implements ICmdlet {
 
 export class GetCommandCmdlet implements ICmdlet {
   readonly name = 'get-command';
+  readonly parameters = ['Name', 'Verb', 'Noun', 'Module', 'CommandType', 'TotalCount', 'Syntax', 'ArgumentList', 'All', 'ListImported', 'ShowCommandInfo', 'ParameterName', 'ParameterType'] as const;
   readonly aliases = ['gcm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -293,6 +298,7 @@ export class WaitJobCmdlet implements ICmdlet {
 
 export class SetLocationCmdlet implements ICmdlet {
   readonly name = 'set-location';
+  readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
   readonly aliases = ['cd', 'chdir', 'sl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -308,6 +314,7 @@ export class SetLocationCmdlet implements ICmdlet {
 
 export class GetLocationCmdlet implements ICmdlet {
   readonly name = 'get-location';
+  readonly parameters = ['PSProvider', 'PSDrive', 'Stack', 'StackName'] as const;
   readonly aliases = ['pwd', 'gl'] as const;
 
   execute(ctx: CmdletContext): PSValue {

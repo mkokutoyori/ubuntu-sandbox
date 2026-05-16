@@ -366,6 +366,24 @@ export class PSRuntime {
       .join('-');
   }
 
+  /** Variable names currently in scope, for `$x<Tab>` completion. */
+  listVariableNames(): string[] {
+    const snap = this.global.snapshot();
+    return Object.keys(snap);
+  }
+
+  /**
+   * Declared parameter names for a cmdlet (resolved by name or alias),
+   * for `-<Tab>` completion. Pulls ICmdlet.parameters when the cmdlet
+   * declares it (open/closed — no central table). Always returns [] for
+   * unknown commands; the sub-shell layers the common parameters on top.
+   */
+  getCommandParameters(name: string): string[] {
+    const cmdlet = this.registry.resolve(name.toLowerCase());
+    const declared = cmdlet?.parameters;
+    return declared ? [...declared] : [];
+  }
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /** Execute a PowerShell script. Pipeline output is collected and returned as a string. */

@@ -14,6 +14,7 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 export class SetVariableCmdlet implements ICmdlet {
   readonly name = 'set-variable';
+  readonly parameters = ['Name', 'Value', 'Description', 'Option', 'Force', 'Visibility', 'PassThru', 'Scope'] as const;
   readonly aliases = ['sv'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -28,6 +29,7 @@ export class SetVariableCmdlet implements ICmdlet {
 
 export class GetVariableCmdlet implements ICmdlet {
   readonly name = 'get-variable';
+  readonly parameters = ['Name', 'ValueOnly', 'Include', 'Exclude', 'Scope'] as const;
   readonly aliases = ['gv'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -43,6 +45,7 @@ export class GetVariableCmdlet implements ICmdlet {
 
 export class ClearVariableCmdlet implements ICmdlet {
   readonly name = 'clear-variable';
+  readonly parameters = ['Name', 'Include', 'Exclude', 'Force', 'PassThru', 'Scope'] as const;
   readonly aliases = ['clv'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -56,6 +59,7 @@ export class ClearVariableCmdlet implements ICmdlet {
 
 export class RemoveVariableCmdlet implements ICmdlet {
   readonly name = 'remove-variable';
+  readonly parameters = ['Name', 'Include', 'Exclude', 'Force', 'Scope'] as const;
   readonly aliases = ['rv'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -69,6 +73,7 @@ export class RemoveVariableCmdlet implements ICmdlet {
 
 export class NewVariableCmdlet implements ICmdlet {
   readonly name = 'new-variable';
+  readonly parameters = ['Name', 'Value', 'Description', 'Option', 'Visibility', 'Force', 'PassThru', 'Scope'] as const;
   readonly aliases = ['nv'] as const;
 
   execute(ctx: CmdletContext): PSValue {
