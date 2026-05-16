@@ -9,9 +9,14 @@ import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from './OracleConfig';
+import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
+import { getDefaultEventBus } from '@/events/EventBus';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 /** Per-device Oracle database instances. */
 const oracleInstances: Map<string, OracleDatabase> = new Map();
+/** Per-device FS sync adapter — Phase 7c replaces the manual *ToDevice helpers. */
+const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -21,9 +26,20 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
   let db = oracleInstances.get(deviceId);
   if (!db) {
     db = new OracleDatabase();
-    // Auto-start the instance to OPEN state
+    // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
+    // (state-changed, background-process-started, alert log) is materialised
+    // by the FS sync adapter without manual *ToDevice helper calls.
+    db.instance.setEventBus(getDefaultEventBus());
+    db.instance.setDeviceId(deviceId);
+
+    const sync = new OracleFilesystemSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    sync.start();
+    oracleFsSyncs.set(deviceId, sync);
+
     db.instance.startup('OPEN');
-    // Install demo schemas
     installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
   }
@@ -90,7 +106,19 @@ export function createSQLPlusSession(
 /**
  * Remove the Oracle database for a device (cleanup).
  */
+/**
+ * Look up an existing Oracle database for a device WITHOUT creating one.
+ * Returns undefined if no instance has been started yet — used by the
+ * Oracle React hooks so they can safely return their empty fallback
+ * before the user opens SQL*Plus.
+ */
+export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | undefined {
+  return oracleInstances.get(deviceId);
+}
+
 export function removeOracleDatabase(deviceId: string): void {
+  oracleFsSyncs.get(deviceId)?.stop();
+  oracleFsSyncs.delete(deviceId);
   oracleInstances.delete(deviceId);
 }
 
@@ -100,6 +128,8 @@ export function removeOracleDatabase(deviceId: string): void {
  * and the filesystem-initialized tracking set.
  */
 export function resetAllOracleInstances(): void {
+  for (const sync of oracleFsSyncs.values()) sync.stop();
+  oracleFsSyncs.clear();
   oracleInstances.clear();
   oracleFilesystemInitialized.clear();
 }

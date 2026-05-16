@@ -37,6 +37,9 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
+import { TimerSet } from '@/events/TimerSet';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
@@ -113,12 +116,6 @@ interface ARPEntry {
   type: 'dynamic' | 'static';
 }
 
-interface PendingARP {
-  resolve: (mac: MACAddress) => void;
-  reject: (reason: string) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
 /** Packets waiting for ARP resolution */
 interface QueuedPacket {
   frame: IPv4Packet;
@@ -137,7 +134,6 @@ export abstract class Router extends Equipment {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
-  private pendingARPs: Map<string, PendingARP[]> = new Map();
   private packetQueue: QueuedPacket[] = [];
   private readonly defaultTTL = 255; // Cisco/Huawei default
   private readonly interfaceMTU = 1500; // Standard Ethernet MTU
@@ -162,22 +158,7 @@ export abstract class Router extends Equipment {
   // ── Interface Descriptions ──────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
 
-  // ── Pending Pings (for router-initiated ping) ─────────────
-  private pendingPings: Map<string, {
-    resolve: (result: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void;
-    reject: (reason: string) => void;
-    timer: ReturnType<typeof setTimeout>;
-    sentAt: number;
-  }> = new Map();
   private pingIdCounter = 1;
-
-  // ── Pending Traceroute Hops (for router-initiated traceroute) ──
-  private pendingTraceHops: Map<string, {
-    resolve: (result: { ip: string; rttMs: number; reached: boolean; unreachable?: boolean }) => void;
-    timeout: () => void;
-    timer: ReturnType<typeof setTimeout>;
-    sentAt: number;
-  }> = new Map();
 
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
@@ -190,6 +171,13 @@ export abstract class Router extends Equipment {
 
   // ── NAT Engine ───────────────────────────────────────────────
   private natEngine = new NATEngine();
+
+  // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
+  private routerScheduler: IScheduler | null = null;
+  protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
+  /** In-flight ARP solicitations for forwarding — dedup signal that replaces
+   *  pendingARPs use as a "request-already-sent" check (Phase 5.8). */
+  private inFlightFwdARPs: Set<string> = new Set();
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -211,6 +199,8 @@ export abstract class Router extends Equipment {
       getPorts: () => this.ports,
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getCounters: () => this.counters,
+      getBus: () => this.getBus(),
+      getScheduler: () => this.getRouterScheduler(),
     });
     this.ospfIntegration = new RouterOSPFIntegration({
       id: this.id,
@@ -257,6 +247,73 @@ export abstract class Router extends Equipment {
         }
       });
     }
+  }
+
+  // ─── Reactive (Phase 5.8) ─────────────────────────────────────
+
+  /** Inject (or replace) the scheduler used by routerTimers and waitForEvent. */
+  setScheduler(scheduler: IScheduler | null): void {
+    this.routerScheduler = scheduler;
+  }
+
+  /** Return the active scheduler — injected one, or the singleton default. */
+  protected getRouterScheduler(): IScheduler {
+    return this.routerScheduler ?? getDefaultScheduler();
+  }
+
+  /** Identity payload for host.* events emitted by this router. */
+  protected routerRef(): { deviceId: string; hostname?: string } {
+    return { deviceId: this.id, hostname: this.name };
+  }
+
+  protected emitArpLearned(payload: {
+    ip: string; mac: string; iface: string; source: 'reply' | 'gratuitous' | 'request' | 'static';
+  }): void {
+    this.getBus().publish({
+      topic: 'host.arp.entry-learned',
+      payload: { ...this.routerRef(), ...payload },
+    });
+  }
+
+  protected emitArpRequestSent(iface: string, targetIp: string): void {
+    this.getBus().publish({
+      topic: 'host.arp.request-sent',
+      payload: { ...this.routerRef(), iface, targetIp },
+    });
+  }
+
+  protected emitIcmpEchoSent(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; ttl: number; size: number;
+  }): void {
+    this.getBus().publish({
+      topic: 'host.icmp.echo-sent',
+      payload: { ...this.routerRef(), ...payload },
+    });
+  }
+
+  protected emitIcmpEchoReply(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; ttl: number; rttMs: number;
+  }): void {
+    this.getBus().publish({
+      topic: 'host.icmp.echo-reply',
+      payload: { ...this.routerRef(), ...payload },
+    });
+  }
+
+  protected emitIcmpEchoTimeout(payload: { toIp: string; id: number; seq: number }): void {
+    this.getBus().publish({
+      topic: 'host.icmp.echo-timeout',
+      payload: { ...this.routerRef(), ...payload },
+    });
+  }
+
+  protected emitIcmpEchoFailed(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; reason: string;
+  }): void {
+    this.getBus().publish({
+      topic: 'host.icmp.echo-failed',
+      payload: { ...this.routerRef(), ...payload },
+    });
   }
 
   /**
@@ -538,6 +595,12 @@ export abstract class Router extends Equipment {
       this.arpTable.set(arp.senderIP.toString(), {
         mac: arp.senderMAC, iface: portName, timestamp: Date.now(), type: 'dynamic',
       });
+      this.emitArpLearned({
+        ip: arp.senderIP.toString(),
+        mac: arp.senderMAC.toString(),
+        iface: portName,
+        source: arp.operation === 'request' ? 'request' : 'reply',
+      });
     }
 
     if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
@@ -551,12 +614,8 @@ export abstract class Router extends Equipment {
         etherType: ETHERTYPE_ARP, payload: reply,
       });
     } else if (arp.operation === 'reply') {
-      const key = arp.senderIP.toString();
-      const pending = this.pendingARPs.get(key);
-      if (pending) {
-        for (const p of pending) { clearTimeout(p.timer); p.resolve(arp.senderMAC); }
-        this.pendingARPs.delete(key);
-      }
+      // Phase 5.8: callers awaiting resolution use waitForEvent('host.arp.entry-learned').
+      // The receive handler just flushes the packet queue waiting on this IP.
       this.flushPacketQueue(arp.senderIP, arp.senderMAC);
     }
   }
@@ -750,54 +809,36 @@ export abstract class Router extends Equipment {
           }
         }
       } else if (icmp.icmpType === 'echo-reply') {
-        // Match against pending pings (router-initiated)
-        const pingKey = `ping-${icmp.id}-${icmp.sequence}`;
-        const pending = this.pendingPings.get(pingKey);
-        if (pending) {
-          clearTimeout(pending.timer);
-          this.pendingPings.delete(pingKey);
-          const rtt = performance.now() - pending.sentAt;
-          pending.resolve({
-            success: true,
-            rttMs: rtt,
-            ttl: ipPkt.ttl,
-            seq: icmp.sequence,
-            fromIP: ipPkt.sourceIP.toString(),
-          });
-          return;
-        }
-        // Also match against pending traceroute hops (final destination reached)
-        const traceKey = `trace-${icmp.id}-${icmp.sequence}`;
-        const tracePending = this.pendingTraceHops.get(traceKey);
-        if (tracePending) {
-          clearTimeout(tracePending.timer);
-          this.pendingTraceHops.delete(traceKey);
-          const rtt = performance.now() - tracePending.sentAt;
-          tracePending.resolve({ ip: ipPkt.sourceIP.toString(), rttMs: rtt, reached: true });
-        }
+        // Phase 5.8/5.9: settle awaiting _sendPing / traceroute via the bus.
+        this.emitIcmpEchoReply({
+          fromIp: ipPkt.sourceIP.toString(),
+          toIp: ipPkt.destinationIP.toString(),
+          id: icmp.id, seq: icmp.sequence, ttl: ipPkt.ttl, rttMs: 0,
+        });
       } else if (icmp.icmpType === 'time-exceeded') {
-        // Router received ICMP Time Exceeded in response to a traceroute probe.
-        // Correlate via the original packet embedded in the ICMP error.
-        const traceKey = this._traceKeyFromICMPError(icmp);
-        if (traceKey) {
-          const tracePending = this.pendingTraceHops.get(traceKey);
-          if (tracePending) {
-            clearTimeout(tracePending.timer);
-            this.pendingTraceHops.delete(traceKey);
-            const rtt = performance.now() - tracePending.sentAt;
-            tracePending.resolve({ ip: ipPkt.sourceIP.toString(), rttMs: rtt, reached: false });
+        // Phase 5.9: emit echo-failed correlated by id/seq of the original packet.
+        if (icmp.originalPacket) {
+          const origICMP = icmp.originalPacket.payload as ICMPPacket;
+          if (origICMP && origICMP.type === 'icmp' && origICMP.icmpType === 'echo-request') {
+            this.emitIcmpEchoFailed({
+              fromIp: ipPkt.sourceIP.toString(),
+              toIp: icmp.originalPacket.destinationIP.toString(),
+              id: origICMP.id, seq: origICMP.sequence,
+              reason: `Time to live exceeded (from ${ipPkt.sourceIP})`,
+            });
           }
         }
       } else if (icmp.icmpType === 'destination-unreachable' && icmp.code !== 4) {
         // Non-PMTU destination-unreachable: could be a traceroute reaching a dead end.
-        const traceKey = this._traceKeyFromICMPError(icmp);
-        if (traceKey) {
-          const tracePending = this.pendingTraceHops.get(traceKey);
-          if (tracePending) {
-            clearTimeout(tracePending.timer);
-            this.pendingTraceHops.delete(traceKey);
-            const rtt = performance.now() - tracePending.sentAt;
-            tracePending.resolve({ ip: ipPkt.sourceIP.toString(), rttMs: rtt, reached: false, unreachable: true });
+        if (icmp.originalPacket) {
+          const origICMP = icmp.originalPacket.payload as ICMPPacket;
+          if (origICMP && origICMP.type === 'icmp' && origICMP.icmpType === 'echo-request') {
+            this.emitIcmpEchoFailed({
+              fromIp: ipPkt.sourceIP.toString(),
+              toIp: icmp.originalPacket.destinationIP.toString(),
+              id: origICMP.id, seq: origICMP.sequence,
+              reason: `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`,
+            });
           }
         }
       }
@@ -1069,23 +1110,25 @@ export abstract class Router extends Equipment {
   // ─── ARP Resolution + Packet Queue ────────────────────────────
 
   private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port): void {
+    const key = nextHopIP.toString();
     const timer = setTimeout(() => {
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
+      this.inFlightFwdARPs.delete(key);
     }, 2000);
 
     this.packetQueue.push({ frame: pkt, outIface: iface, nextHopIP, timer });
 
-    const key = nextHopIP.toString();
-    if (!this.pendingARPs.has(key)) {
-      this.pendingARPs.set(key, []);
+    if (!this.inFlightFwdARPs.has(key)) {
+      this.inFlightFwdARPs.add(key);
       const myIP = port.getIPAddress()!;
       const arpReq: ARPPacket = {
         type: 'arp', operation: 'request',
         senderMAC: port.getMAC(), senderIP: myIP,
         targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
       };
+      this.emitArpRequestSent(iface, key);
       this.sendFrame(iface, {
         srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
         etherType: ETHERTYPE_ARP, payload: arpReq,
@@ -1096,6 +1139,7 @@ export abstract class Router extends Equipment {
   private flushPacketQueue(resolvedIP: IPAddress, resolvedMAC: MACAddress): void {
     const ready = this.packetQueue.filter(q => q.nextHopIP.equals(resolvedIP));
     this.packetQueue = this.packetQueue.filter(q => !q.nextHopIP.equals(resolvedIP));
+    this.inFlightFwdARPs.delete(resolvedIP.toString());
 
     for (const q of ready) {
       clearTimeout(q.timer);
@@ -1259,14 +1303,6 @@ export abstract class Router extends Equipment {
     return results;
   }
 
-  /** @internal Extract trace-${id}-${seq} key from an ICMP error's embedded original packet. */
-  private _traceKeyFromICMPError(icmp: ICMPPacket): string | undefined {
-    if (!icmp.originalPacket) return undefined;
-    const orig = icmp.originalPacket.payload as ICMPPacket;
-    if (!orig || orig.type !== 'icmp' || orig.icmpType !== 'echo-request') return undefined;
-    return `trace-${orig.id}-${orig.sequence}`;
-  }
-
   /**
    * Execute a traceroute from this router to `targetIP`.
    * Used by Cisco IOS `traceroute` and Huawei VRP `tracert` CLI commands.
@@ -1306,35 +1342,57 @@ export abstract class Router extends Equipment {
         this.pingIdCounter++;
         const id = this.pingIdCounter;
         const seq = p + 1;
+        const targetIpStr = targetIP.toString();
+        const sentAt = performance.now();
 
-        const probe = await new Promise<{ ip?: string; rttMs?: number; timeout: boolean; reached: boolean; unreachable?: boolean }>((resolve) => {
-          const key = `trace-${id}-${seq}`;
-          const sentAt = performance.now();
+        // Phase 5.9: traceroute settles via the bus.
+        const replyP = waitForEvent(
+          this.getBus(),
+          'host.icmp.echo-reply',
+          (pl) => pl.deviceId === this.id && pl.fromIp === targetIpStr && pl.id === id && pl.seq === seq,
+          { timeoutMs, scheduler: this.getRouterScheduler() },
+        );
+        const failP = waitForEvent(
+          this.getBus(),
+          'host.icmp.echo-failed',
+          (pl) => pl.deviceId === this.id && pl.id === id && pl.seq === seq,
+          { timeoutMs, scheduler: this.getRouterScheduler() },
+        );
 
-          const timer = setTimeout(() => {
-            this.pendingTraceHops.delete(key);
-            resolve({ timeout: true, reached: false });
-          }, timeoutMs);
+        const icmp: ICMPPacket = {
+          type: 'icmp', icmpType: 'echo-request', code: 0,
+          id, sequence: seq, dataSize: 56,
+        };
+        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
 
-          this.pendingTraceHops.set(key, {
-            resolve: (r) => resolve({ ip: r.ip, rttMs: r.rttMs, timeout: false, reached: r.reached, unreachable: r.unreachable }),
-            timeout: () => { clearTimeout(timer); resolve({ timeout: true, reached: false }); },
-            timer,
-            sentAt,
-          });
+        this.sendFrame(route.iface, {
+          srcMAC: outPort.getMAC(),
+          dstMAC: nextHopMAC!,
+          etherType: ETHERTYPE_IPV4,
+          payload: ipPkt,
+        });
 
-          const icmp: ICMPPacket = {
-            type: 'icmp', icmpType: 'echo-request', code: 0,
-            id, sequence: seq, dataSize: 56,
-          };
-          const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
-
-          this.sendFrame(route.iface, {
-            srcMAC: outPort.getMAC(),
-            dstMAC: nextHopMAC!,
-            etherType: ETHERTYPE_IPV4,
-            payload: ipPkt,
-          });
+        const probe = await Promise.race([
+          replyP.then((pl) => ({
+            ip: pl.fromIp,
+            rttMs: performance.now() - sentAt,
+            timeout: false, reached: true,
+            unreachable: undefined as boolean | undefined,
+          })),
+          failP.then((pl) => ({
+            ip: pl.fromIp,
+            rttMs: performance.now() - sentAt,
+            timeout: false, reached: false,
+            unreachable: pl.reason.includes('Destination unreachable'),
+          })),
+        ]).catch((err) => {
+          if (err instanceof WaitForEventTimeoutError) {
+            return { timeout: true, reached: false } as {
+              ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
+              unreachable?: boolean;
+            };
+          }
+          throw err;
         });
 
         probes.push({
@@ -1367,99 +1425,129 @@ export abstract class Router extends Equipment {
   }
 
   /** @internal Resolve ARP for ping, returns MAC or null on timeout */
-  private _resolveARPForPing(iface: string, port: Port, nextHopIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
-    return new Promise((resolve) => {
-      const myIP = port.getIPAddress()!;
-      const key = nextHopIP.toString();
+  private async _resolveARPForPing(iface: string, port: Port, nextHopIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) return cached.mac;
 
-      const timer = setTimeout(() => {
-        // Clean up pending entry
-        const pending = this.pendingARPs.get(key);
-        if (pending) {
-          const idx = pending.findIndex(p => p.timer === timer);
-          if (idx >= 0) pending.splice(idx, 1);
-          if (pending.length === 0) this.pendingARPs.delete(key);
-        }
-        resolve(null);
-      }, timeoutMs);
+    const myIP = port.getIPAddress()!;
+    const key = nextHopIP.toString();
 
-      const entry = {
-        resolve: (mac: MACAddress) => resolve(mac),
-        reject: () => resolve(null),
-        timer,
-      };
+    // Phase 5.8: await the reactive learn event instead of a pendingARPs callback.
+    const waitPromise = waitForEvent(
+      this.getBus(),
+      'host.arp.entry-learned',
+      (p) => p.deviceId === this.id && p.ip === key,
+      { timeoutMs, scheduler: this.getRouterScheduler() },
+    );
 
-      // Register in pendingARPs so the ARP reply handler resolves it
-      if (!this.pendingARPs.has(key)) {
-        this.pendingARPs.set(key, []);
-      }
-      this.pendingARPs.get(key)!.push(entry);
-
-      // Send ARP request
-      const arpReq: ARPPacket = {
-        type: 'arp', operation: 'request',
-        senderMAC: port.getMAC(), senderIP: myIP,
-        targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
-      };
-      this.sendFrame(iface, {
-        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP, payload: arpReq,
-      });
+    const arpReq: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: port.getMAC(), senderIP: myIP,
+      targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
+    };
+    this.emitArpRequestSent(iface, key);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP, payload: arpReq,
     });
+
+    try {
+      const learned = await waitPromise;
+      return new MACAddress(learned.mac);
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) return null;
+      throw err;
+    }
   }
 
   /** @internal Send a single ping and wait for reply */
-  private _sendPing(
+  private async _sendPing(
     iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
     dstMAC: MACAddress, seq: number, timeoutMs: number,
   ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
     this.pingIdCounter++;
     const id = this.pingIdCounter;
 
-    return new Promise((resolve, reject) => {
-      const key = `ping-${id}-${seq}`;
-      const sentAt = performance.now();
+    const targetIpStr = targetIP.toString();
+    const sentAt = performance.now();
 
-      const timer = setTimeout(() => {
-        this.pendingPings.delete(key);
-        reject('timeout');
-      }, timeoutMs);
+    // Phase 5.8: settle via the reactive bus instead of pendingPings.
+    const replyPromise = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-reply',
+      (p) => p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq,
+      { timeoutMs, scheduler: this.getRouterScheduler() },
+    );
+    const failedPromise = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-failed',
+      (p) => p.deviceId === this.id
+        && (p.id === -1 || (p.id === id && p.seq === seq))
+        && (p.toIp === targetIpStr || p.toIp === ''),
+      { timeoutMs, scheduler: this.getRouterScheduler() },
+    );
 
-      this.pendingPings.set(key, { resolve, reject, timer, sentAt });
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType: 'echo-request', code: 0,
+      id, sequence: seq, dataSize: 92,
+    };
+    const icmpSize = 8 + 92;
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
 
-      // Build ICMP echo request
-      const icmp: ICMPPacket = {
-        type: 'icmp', icmpType: 'echo-request', code: 0,
-        id, sequence: seq, dataSize: 92, // 100 - 8 = 92 bytes of data (Cisco sends 100-byte ICMP)
-      };
+    this.emitIcmpEchoSent({
+      fromIp: myIP.toString(), toIp: targetIpStr,
+      id, seq, ttl: this.defaultTTL, size: icmpSize,
+    });
 
-      const icmpSize = 8 + 92;
-      const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
-
-      // IPSec outbound processing for locally-originated packets
-      if (this.ipsecEngine) {
-        const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
-        if (entry) {
-          const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
-          if (encPkts) {
-            for (const p of encPkts) {
-              this.sendFrame(iface, {
-                srcMAC: port.getMAC(), dstMAC: dstMAC,
-                etherType: ETHERTYPE_IPV4, payload: p,
-              });
-            }
-            return;
+    // IPSec outbound processing for locally-originated packets
+    if (this.ipsecEngine) {
+      const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
+      if (entry) {
+        const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
+        if (encPkts) {
+          for (const p of encPkts) {
+            this.sendFrame(iface, {
+              srcMAC: port.getMAC(), dstMAC,
+              etherType: ETHERTYPE_IPV4, payload: p,
+            });
           }
-          // IPSec processing failed — packet dropped, will timeout
-          return;
         }
+        // If processOutbound returned null, packet is dropped — the timeout
+        // will reject. Either way, fall through to the wait below.
+      } else {
+        this.sendFrame(iface, {
+          srcMAC: port.getMAC(), dstMAC,
+          etherType: ETHERTYPE_IPV4, payload: ipPkt,
+        });
       }
-
+    } else {
       this.sendFrame(iface, {
-        srcMAC: port.getMAC(), dstMAC: dstMAC,
+        srcMAC: port.getMAC(), dstMAC,
         etherType: ETHERTYPE_IPV4, payload: ipPkt,
       });
-    });
+    }
+
+    try {
+      const winner = await Promise.race([
+        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
+        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
+      ]);
+      if (winner.kind === 'failed') throw new Error(winner.r.reason);
+      const rtt = performance.now() - sentAt;
+      return {
+        success: true,
+        rttMs: rtt,
+        ttl: winner.r.ttl,
+        seq,
+        fromIP: targetIpStr,
+      };
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) {
+        this.emitIcmpEchoTimeout({ toIp: targetIpStr, id, seq });
+        throw new Error('timeout');
+      }
+      throw err;
+    }
   }
 
   /** @internal Used by CLI shells for NAT configuration */

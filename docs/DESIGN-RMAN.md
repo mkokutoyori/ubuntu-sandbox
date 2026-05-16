@@ -1,0 +1,3493 @@
+# DESIGN — Architecture Technique RMAN (Recovery Manager)
+
+**Version** : 1.0  
+**Date** : 2026-05-05  
+**Projet** : Ubuntu Sandbox — Module Oracle RMAN  
+**Auteur** : Claude Code  
+**Reference** : BRD-SSH-SFTP.md (precedent), OracleInstance.ts, RmanSubShell.ts
+
+---
+
+## Table des matieres
+
+1. [Vue d'ensemble architecturale](#1-vue-densemble-architecturale)
+2. [Fondations : Result monad + RmanError](#2-fondations--result-monad--rmanerror)
+3. [Value Objects et utilitaires purs (FP)](#3-value-objects-et-utilitaires-purs-fp)
+4. [Backup Catalog — Repository + Factory](#4-backup-catalog--repository--factory)
+5. [Canaux de sauvegarde — Composite + Strategy](#5-canaux-de-sauvegarde--composite--strategy)
+6. [Politique de retention — Strategy Pattern](#6-politique-de-retention--strategy-pattern)
+7. [Commandes RMAN — Command Pattern + Open/Closed](#7-commandes-rman--command-pattern--openclosed)
+8. [Session RMAN — Facade + State Machine + Builder](#8-session-rman--facade--state-machine--builder)
+9. [Integration : OracleInstance, VFS, SubShell](#9-integration--oracleinstance-vfs-subshell)
+10. [Flux complets et scenarios](#10-flux-complets-et-scenarios)
+11. [Recapitulatif des principes appliques](#11-recapitulatif-des-principes-appliques)
+
+---
+
+## 1. Vue d'ensemble architecturale
+
+### 1.1 Diagramme de couches
+
+```
++-------------------------------------------------------------------------+
+|                        COUCHE PRESENTATION                              |
+|  RmanSubShell (refactorise)   LinuxTerminalSession (wiring)             |
+|  (ISubShell — prompt, multi-ligne, RUN-block, script @file)             |
++--------------------------------+----------------------------------------+
+                                 |  depend via IRmanSession
++--------------------------------v----------------------------------------+
+|                       COUCHE SESSION (Facade)                           |
+|                                                                         |
+|   RmanSession (IRmanSession)                                            |
+|   - connect(target) / disconnect()                                      |
+|   - execute(command: string): RmanOutput                                |
+|   - executeScript(lines: string[]): RmanOutput                          |
+|   - getConfig(): RmanConfig                                             |
+|   - getState(): RmanSessionState                                        |
++--------+-------------------+--------------------------------------------+
+         |                   |
++--------v-------+  +--------v-----------+  +-----------------------------+
+|  SCRIPT LAYER  |  |  COMMAND LAYER     |  |  CONFIG LAYER               |
+|                |  |                    |  |                             |
+| RmanScript     |  | IRmanCommand<T>    |  | RmanConfig (immutable)      |
+| Parser         |  | - BackupCmd        |  | RmanConfigStore             |
+| (multi-line,   |  | - RestoreCmd       |  | ConfigureCommand            |
+|  RUN {})       |  | - RecoverCmd       |  | ShowCommand                 |
+|                |  | - ListCmd          |  |                             |
++--------+-------+  | - ReportCmd        |  +----+------------------------+
+         |          | - CrosscheckCmd    |       |
+         |          | - DeleteCmd        |       |
+         |          | - CatalogCmd       |       |
+         |          | RmanCmdDispatcher  |       |
+         |          +--------+-----------+       |
+         |                   |                   |
++--------v-------------------v-------------------v------------------------+
+|                     COUCHE METIER RMAN                                  |
+|                                                                         |
+|   RmanCommandContext                                                    |
+|   - catalog: IRmanCatalogRepository                                     |
+|   - channels: ChannelPool                                               |
+|   - retentionEngine: RmanRetentionEngine                                |
+|   - oracleCtx: IRmanOracleContext                                       |
+|   - config: RmanConfig                                                  |
+|   - eventBus: IRmanEventBus                                             |
++--------+-------------------+--------------------------------------------+
+         |                   |
++--------v-------+  +--------v-----------+  +-----------------------------+
+| CATALOG LAYER  |  |  CHANNEL LAYER     |  |  RETENTION LAYER            |
+|                |  |                    |  |                             |
+| IRmanCatalog   |  | IBackupChannel     |  | IRetentionPolicy            |
+| Repository     |  | - DiskChannel      |  | - RedundancyPolicy          |
+|                |  | - SbtChannel       |  | - RecoveryWindowPolicy      |
+| BackupSet      |  | ChannelAllocator   |  | - NonePolicy                |
+| BackupPiece    |  | ChannelPool        |  | RmanRetentionEngine         |
+| ArchivedLog    |  | (Composite)        |  | (pure functions)            |
+| ImageCopy      |  +--------------------+  +-----------------------------+
++--------+-------+
+         |  depends via IRmanOracleContext
++--------v----------------------------------------------------------------+
+|                   COUCHE ORACLE / FILESYSTEM                            |
+|                                                                         |
+|   IRmanOracleContext                                                    |
+|     +-- LinuxRmanContext  --> OracleInstance + VirtualFileSystem        |
+|                                                                         |
+|   OracleInstance  (state machine: SHUTDOWN/NOMOUNT/MOUNT/OPEN)         |
+|   VirtualFileSystem  (backup pieces physically ecrites sur VFS)        |
++-------------------------------------------------------------------------+
+```
+
+### 1.2 Defauts identifies dans l'implementation actuelle
+
+L'analyse de `RmanSubShell.ts` (382 lignes) revele les defauts suivants :
+
+| ID | Composant | Defaut | Impact |
+|---|---|---|---|
+| DEF-RMAN-01 | RmanSubShell | Aucun backup catalog — chaque session repart de zero | Irrealiste : `LIST BACKUP` ne montre jamais les backups precedents |
+| DEF-RMAN-02 | RmanSubShell | `SHOW ALL` retourne des strings hardcodees | CONFIGURE n'a aucun effet |
+| DEF-RMAN-03 | RmanSubShell | `BACKUP DATABASE` genere un piece name aleatoire mais n'ecrit rien sur le VFS | `CROSSCHECK` ne peut pas valider |
+| DEF-RMAN-04 | RmanSubShell | Pas de `BACKUP INCREMENTAL LEVEL 0/1` | Commande RMAN fondamentale absente |
+| DEF-RMAN-05 | RmanSubShell | Pas de clause `FORMAT`, `TAG`, `MAXPIECESIZE` | Syntaxe RMAN incomplete |
+| DEF-RMAN-06 | RmanSubShell | Pas de commandes `CONFIGURE` | Politique de retention non parametrable |
+| DEF-RMAN-07 | RmanSubShell | Pas de `ALLOCATE CHANNEL` / `RELEASE CHANNEL` | Gestion des canaux absente |
+| DEF-RMAN-08 | RmanSubShell | `LIST BACKUP` montre des donnees statiques codees en dur | Incoherent avec les backups effectues |
+| DEF-RMAN-09 | RmanSubShell | `RESTORE`/`RECOVER` sans controle de l'etat de l'instance | Sur un vrai RMAN, RESTORE necessite MOUNT |
+| DEF-RMAN-10 | RmanSubShell | Commandes mono-ligne uniquement | `BACKUP DATABASE PLUS ARCHIVELOG DELETE INPUT;` impossible |
+| DEF-RMAN-11 | RmanSubShell | Pas de blocs `RUN { ... }` | Scritps RMAN impossibles |
+| DEF-RMAN-12 | RmanSubShell | `CROSSCHECK BACKUP` ne verifie pas le VFS | Retourne toujours "AVAILABLE" |
+| DEF-RMAN-13 | RmanSubShell | `DELETE EXPIRED/OBSOLETE` ne supprime rien | Retourne "no obsolete backups found" en dur |
+| DEF-RMAN-14 | RmanSubShell | Pas de support `BACKUP CURRENT CONTROLFILE` | Sauvegarde du controlfile absente |
+| DEF-RMAN-15 | RmanSubShell | Pas de `BACKUP VALIDATE` | Verification sans ecriture absente |
+| DEF-RMAN-16 | RmanSubShell | Pas de `CATALOG DATAFILECOPY/BACKUPPIECE` | Re-enregistrement de pieces absent |
+| DEF-RMAN-17 | RmanSubShell | Pas de `DUPLICATE DATABASE` | Clone de base absent |
+| DEF-RMAN-18 | RmanSubShell | Pas de recovery base sur SCN ou timestamp | `RECOVER DATABASE UNTIL SCN` absent |
+| DEF-RMAN-19 | RmanSubShell | `CONNECT TARGET` n'interroge pas `OracleInstance` | Pas de validation de l'etat de l'instance |
+| DEF-RMAN-20 | RmanSubShell | `BACKUP ARCHIVELOG ALL DELETE INPUT` ignore le `DELETE INPUT` | Les archivelogs ne sont pas supprimes apres backup |
+
+### 1.3 Objectifs de la refonte
+
+1. **Realisme** : chaque commande RMAN produit un effet observable — les pieces s'ecrivent sur le VFS, le catalog se met a jour, `LIST BACKUP` reflète l'historique.
+2. **Open/Closed** : ajouter une nouvelle commande RMAN = implementer `IRmanCommand<T>` et l'enregistrer dans le dispatcher — zero modification du code existant.
+3. **Testabilite** : `IRmanOracleContext` et `IRmanCatalogRepository` sont injectables ; les tests n'ont pas besoin d'une instance Oracle complete.
+4. **Immutabilite** : `RmanConfig`, `BackupSet`, `BackupPiece`, `Scn` — tous immuables.
+5. **Programmation fonctionnelle** : `RmanRetentionEngine`, `RmanPureUtils` — fonctions pures sans effet de bord.
+6. **State machine explicite** : `RmanSessionState` discriminated union ; les transitions sont visibles et testables.
+
+### 1.4 Perimetres hors-scope
+
+- Vraie cryptographie pour `BACKUP ENCRYPTION` (simule avec marqueur textuel)
+- Sauvegarde sur bande physique (SBT simule uniquement)
+- `DUPLICATE DATABASE TO standby` via reseau (hors perimetre simulateur)
+- Recovery Catalog sur base separee (catalog en memoire uniquement)
+
+---
+
+## 2. Fondations : Result monad + RmanError
+
+### 2.1 Pourquoi une monade Result ?
+
+L'implementation actuelle de `RmanSubShell` retourne des `string[]` ou des messages codes en dur, sans distinction entre succes et echec. Cela rend impossible :
+- la propagation d'erreurs typees depuis les couches profondes
+- le test unitaire des cas d'echec sans capturer stdout
+- la composition de commandes (`RUN {}` blocs) avec gestion d'erreur propre
+
+La monade `Result<T, E>` est le fondement de toute l'architecture.
+
+### 2.2 Le type Result<T, E> (module partage avec SSH)
+
+```typescript
+// src/network/protocols/ssh/result.ts  (deja existant apres implementation SSH)
+// src/database/oracle/rman/result.ts   (re-export ou import direct)
+
+export type Result<T, E = RmanError> =
+  | { readonly ok: true;  readonly value: T }
+  | { readonly ok: false; readonly error: E }
+
+// Constructeurs
+export const ok  = <T>(value: T): Result<T, never> => ({ ok: true, value })
+export const err = <E>(error: E): Result<never, E> => ({ ok: false, error })
+
+// Combinateurs — programmation fonctionnelle pure
+export const map = <T, U, E>(
+  r: Result<T, E>,
+  f: (v: T) => U
+): Result<U, E> =>
+  r.ok ? ok(f(r.value)) : r
+
+export const flatMap = <T, U, E>(
+  r: Result<T, E>,
+  f: (v: T) => Result<U, E>
+): Result<U, E> =>
+  r.ok ? f(r.value) : r
+
+export const mapError = <T, E, F>(
+  r: Result<T, E>,
+  f: (e: E) => F
+): Result<T, F> =>
+  r.ok ? r : err(f(r.error))
+
+export const getOrElse = <T, E>(
+  r: Result<T, E>,
+  fallback: T
+): T =>
+  r.ok ? r.value : fallback
+
+export const match = <T, E, U>(
+  r: Result<T, E>,
+  onOk: (v: T) => U,
+  onErr: (e: E) => U
+): U =>
+  r.ok ? onOk(r.value) : onErr(r.error)
+
+// Accumulation — sequencer plusieurs Result en une passe
+export const sequence = <T, E>(
+  results: ReadonlyArray<Result<T, E>>
+): Result<ReadonlyArray<T>, E> => {
+  const values: T[] = []
+  for (const r of results) {
+    if (!r.ok) return r
+    values.push(r.value)
+  }
+  return ok(values)
+}
+```
+
+### 2.3 RmanError — union discriminee
+
+Chaque code d'erreur RMAN officiel (RMAN-XXXXX) est modelise comme un variant distinct, garantissant l'exhaustivite au point de sortie :
+
+```typescript
+// src/database/oracle/rman/RmanError.ts
+
+export type RmanErrorCode =
+  // Erreurs de session / connexion
+  | 'RMAN_03002'   // failure of command at line N
+  | 'RMAN_03009'   // failure of allocate command on channel
+  | 'RMAN_06004'   // oracle error from target database: ORA-01034
+  | 'RMAN_06023'   // no backup or copy of datafile N found to restore
+  | 'RMAN_06059'   // expected archived log not found
+  | 'RMAN_08003'   // piece N expired
+  | 'RMAN_08120'   // unable to find archive log
+  // Erreurs de configuration
+  | 'RMAN_06550'   // retention policy conflict
+  // Erreurs de parsing / syntaxe
+  | 'RMAN_00558'   // error encountered while parsing input command
+  | 'RMAN_01009'   // syntax error: found X
+  | 'RMAN_01007'   // at line N column M file: standard input
+  // Erreurs de validation pre-execution
+  | 'DB_NOT_OPEN'        // commande requiert instance OPEN
+  | 'DB_NOT_MOUNT'       // commande requiert instance au moins MOUNT
+  | 'DB_NOT_CONNECTED'   // pas de connexion TARGET active
+  | 'NO_BACKUP_FOUND'    // aucun backup satisfait les criteres
+  | 'CHANNEL_FAILED'     // canal de sauvegarde en echec
+  | 'VFS_WRITE_ERROR'    // erreur d'ecriture sur le VFS
+  | 'VFS_READ_ERROR'     // erreur de lecture sur le VFS
+  | 'INVALID_FORMAT'     // format de piece invalide
+  | 'CATALOG_CORRUPT'    // incoherence dans le catalog interne
+
+export interface RmanError {
+  readonly code: RmanErrorCode
+  readonly message: string
+  readonly line?: number
+  /** Stack RMAN (RMAN-00571 + RMAN-00569 + code principal) */
+  readonly stack: readonly string[]
+}
+
+// Constructeur helper — genere le stack RMAN realiste
+export function makeRmanError(
+  code: RmanErrorCode,
+  message: string,
+  line?: number
+): RmanError {
+  return {
+    code,
+    message,
+    line,
+    stack: [
+      'RMAN-00571: ===========================================================',
+      'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+      'RMAN-00571: ===========================================================',
+      `RMAN-03002: failure of ${message.split(':')[0]} command at ${
+        line !== undefined ? `line ${line}` : 'standard input'
+      }`,
+      `${code.replace('_', '-')}: ${message}`,
+    ],
+  }
+}
+```
+
+### 2.4 RmanOutput — sortie structuree d'une commande
+
+Toute commande RMAN produit un `RmanOutput` : les lignes texte a afficher + metadata de la commande executee.
+
+```typescript
+// src/database/oracle/rman/RmanOutput.ts
+
+export interface RmanOutput {
+  /** Lignes a afficher dans le terminal (incluant les lignes blanches) */
+  readonly lines: readonly string[]
+  /** true = la session doit se fermer apres cet output */
+  readonly exit: boolean
+  /** Nombre de backup sets crees (0 si pas une commande de backup) */
+  readonly backupSetsCreated: number
+  /** Nombre de fichiers restaures (0 si pas une commande de restore) */
+  readonly filesRestored: number
+  /** Duree simulee en secondes */
+  readonly elapsedSeconds: number
+}
+
+export const emptyOutput: RmanOutput = {
+  lines: [],
+  exit: false,
+  backupSetsCreated: 0,
+  filesRestored: 0,
+  elapsedSeconds: 0,
+}
+
+export function outputLines(
+  lines: readonly string[],
+  opts?: Partial<Omit<RmanOutput, 'lines'>>
+): RmanOutput {
+  return { ...emptyOutput, lines, ...opts }
+}
+
+export function outputError(error: RmanError): RmanOutput {
+  return outputLines(error.stack)
+}
+```
+
+### 2.5 Diagramme de dependances des types fondamentaux
+
+```
+Result<T, E>       (type generique — zero dependance)
+     |
+     +--- RmanError          (code + message + stack)
+     |       |
+     |       +--- makeRmanError()   (constructeur helper pur)
+     |
+     +--- RmanOutput         (lignes + metadata)
+             |
+             +--- outputLines()     (constructeur helper pur)
+             +--- outputError()     (conversion RmanError -> RmanOutput)
+```
+
+Toutes ces definitions sont des **types purs** : aucun import de classe concrete, aucun effet de bord. Elles peuvent etre importees par n'importe quelle couche sans risque de couplage circulaire.
+
+---
+
+## 3. Value Objects et utilitaires purs (FP)
+
+### 3.1 Principes des Value Objects
+
+Un Value Object est :
+- **immuable** — aucune methode ne modifie ses champs
+- **compare par valeur** — deux objets avec les memes champs sont egaux
+- **autonome** — porte sa propre logique de validation et de comparaison
+
+Dans RMAN, les entites suivantes sont des Value Objects : `Scn`, `RmanTag`, `BackupKey`, `DbId`, `RmanTimestamp`.
+
+### 3.2 Scn — System Change Number
+
+Le SCN est la notion de temps logique d'Oracle. Il doit etre opaque, comparable et serialisable.
+
+```typescript
+// src/database/oracle/rman/values/Scn.ts
+
+export type Scn = Readonly<{ readonly _tag: 'Scn'; readonly value: number }>
+
+export const Scn = {
+  of(n: number): Scn {
+    if (!Number.isInteger(n) || n < 0) {
+      throw new RangeError(`SCN must be a non-negative integer, got: ${n}`)
+    }
+    return Object.freeze({ _tag: 'Scn', value: n })
+  },
+
+  zero: Object.freeze({ _tag: 'Scn' as const, value: 0 }),
+
+  compare(a: Scn, b: Scn): number {
+    return a.value - b.value
+  },
+
+  lt(a: Scn, b: Scn): boolean { return a.value < b.value },
+  lte(a: Scn, b: Scn): boolean { return a.value <= b.value },
+  eq(a: Scn, b: Scn): boolean { return a.value === b.value },
+
+  toString(scn: Scn): string { return scn.value.toString() },
+
+  fromString(s: string): Scn | null {
+    const n = parseInt(s, 10)
+    return isNaN(n) || n < 0 ? null : Scn.of(n)
+  },
+}
+```
+
+### 3.3 RmanTag — etiquette de backup
+
+Le TAG identifie un backup set de maniere unique et lisible. Format Oracle : `TAGYYYYMMDDTHHMMSS` ou personnalise.
+
+```typescript
+// src/database/oracle/rman/values/RmanTag.ts
+
+export type RmanTag = Readonly<{ readonly _tag: 'RmanTag'; readonly value: string }>
+
+const TAG_REGEX = /^[A-Za-z0-9_\-\.]{1,30}$/
+
+export const RmanTag = {
+  of(value: string): RmanTag {
+    const v = value.trim().toUpperCase()
+    if (!TAG_REGEX.test(v)) {
+      throw new Error(`Invalid RMAN tag format: "${value}" (max 30 alphanum/underscore chars)`)
+    }
+    return Object.freeze({ _tag: 'RmanTag', value: v })
+  },
+
+  /** Genere un tag Oracle standard base sur la date courante */
+  generate(now: Date): RmanTag {
+    const y  = now.getFullYear()
+    const mo = String(now.getMonth() + 1).padStart(2, '0')
+    const d  = String(now.getDate()).padStart(2, '0')
+    const h  = String(now.getHours()).padStart(2, '0')
+    const mi = String(now.getMinutes()).padStart(2, '0')
+    const s  = String(now.getSeconds()).padStart(2, '0')
+    return RmanTag.of(`TAG${y}${mo}${d}T${h}${mi}${s}`)
+  },
+
+  toString(t: RmanTag): string { return t.value },
+}
+```
+
+### 3.4 BackupKey — cle primaire d'un backup set
+
+```typescript
+// src/database/oracle/rman/values/BackupKey.ts
+
+export type BackupKey = Readonly<{ readonly _tag: 'BackupKey'; readonly value: number }>
+
+let _keyCounter = 1
+
+export const BackupKey = {
+  next(): BackupKey {
+    return Object.freeze({ _tag: 'BackupKey', value: _keyCounter++ })
+  },
+
+  of(n: number): BackupKey {
+    return Object.freeze({ _tag: 'BackupKey', value: n })
+  },
+
+  toString(k: BackupKey): string { return String(k.value) },
+
+  /** Remet le compteur a une valeur donnee (pour les tests uniquement) */
+  _resetForTests(n = 1): void { _keyCounter = n },
+}
+```
+
+### 3.5 DbId — identifiant Oracle de la base
+
+```typescript
+// src/database/oracle/rman/values/DbId.ts
+
+export type DbId = Readonly<{ readonly _tag: 'DbId'; readonly value: number }>
+
+export const DbId = {
+  of(n: number): DbId {
+    if (!Number.isInteger(n) || n < 1) {
+      throw new RangeError(`DBID must be a positive integer`)
+    }
+    return Object.freeze({ _tag: 'DbId', value: n })
+  },
+
+  /** DBID simulee deterministe a partir du nom de la base (fnv32) */
+  fromDbName(name: string): DbId {
+    let h = 0x811c9dc5
+    for (let i = 0; i < name.length; i++) {
+      h ^= name.charCodeAt(i)
+      h = (h * 0x01000193) >>> 0
+    }
+    return DbId.of(h || 1)
+  },
+
+  toString(id: DbId): string { return String(id.value) },
+}
+```
+
+### 3.6 RmanPureUtils — fonctions pures sans effet de bord
+
+Ce module regroupe toutes les fonctions de calcul, formatage et parsing qui n'ont aucun effet de bord. Conforme au principe de separation des preoccupations : la logique metier pure est separee des effets (I/O, VFS, Date).
+
+```typescript
+// src/database/oracle/rman/RmanPureUtils.ts
+
+import type { Scn } from './values/Scn'
+import type { RmanTag } from './values/RmanTag'
+
+// ─── Formatage de la taille ───────────────────────────────────────────────
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0'
+  if (bytes < 1024) return `${bytes}B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(2)}K`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb.toFixed(2)}M`
+  const gb = mb / 1024
+  return `${gb.toFixed(2)}G`
+}
+
+// ─── Formatage du temps ecoule ────────────────────────────────────────────
+
+export function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return [h, m, s].map(n => String(n).padStart(2, '0')).join(':')
+}
+
+// ─── Formatage de la date Oracle ──────────────────────────────────────────
+
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN',
+                'JUL','AUG','SEP','OCT','NOV','DEC']
+
+export function formatOracleDate(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0')
+  const mon = MONTHS[d.getMonth()]
+  const y   = d.getFullYear()
+  const h   = String(d.getHours()).padStart(2, '0')
+  const mi  = String(d.getMinutes()).padStart(2, '0')
+  const s   = String(d.getSeconds()).padStart(2, '0')
+  return `${day}-${mon}-${y} ${h}:${mi}:${s}`
+}
+
+// ─── Generation du nom de piece ───────────────────────────────────────────
+
+/**
+ * Genere un chemin de backup piece conforme au format Oracle.
+ * %d = db_name, %s = set count, %p = piece number, %t = timestamp
+ * %F = auto-unique name (ORCL-1234567890-20260505-01.bkp)
+ */
+export function expandPieceFormat(
+  fmt: string,
+  ctx: {
+    dbName:    string
+    setCount:  number
+    pieceNum:  number
+    timestamp: number
+    tag:       string
+  }
+): string {
+  return fmt
+    .replace(/%d/gi, ctx.dbName.toUpperCase())
+    .replace(/%s/gi, String(ctx.setCount).padStart(8, '0'))
+    .replace(/%p/gi, String(ctx.pieceNum).padStart(2, '0'))
+    .replace(/%t/gi, String(ctx.timestamp))
+    .replace(/%T/gi, String(ctx.timestamp))
+    .replace(/%g/gi, '1')
+    .replace(/%F/gi,
+      `${ctx.dbName.toUpperCase()}-${ctx.timestamp}-${
+        String(ctx.setCount).padStart(8, '0')
+      }-${String(ctx.pieceNum).padStart(2, '0')}`)
+}
+
+/** Format par defaut si aucun FORMAT n'est specifie dans CONFIGURE */
+export const DEFAULT_PIECE_FORMAT = '/u01/app/oracle/fast_recovery_area/%d/%F.bkp'
+
+// ─── Calcul de la duree simulee ───────────────────────────────────────────
+
+/**
+ * Simule une duree de backup realiste en fonction de la taille en octets.
+ * ~100 MB/s pour DISK, ~50 MB/s pour SBT.
+ */
+export function simulateBackupSeconds(bytes: number, deviceType: 'DISK' | 'SBT'): number {
+  const throughput = deviceType === 'DISK' ? 100 * 1024 * 1024 : 50 * 1024 * 1024
+  return Math.max(1, Math.ceil(bytes / throughput))
+}
+
+// ─── Parsing du checkpoint SCN ───────────────────────────────────────────
+
+/**
+ * Renvoie le SCN de checkpoint le plus ancien parmi les datafiles —
+ * represente le SCN minimum jusqu'auquel on peut recuperer.
+ */
+export function computeMinCkpScn(ckpScns: ReadonlyArray<Scn>): Scn | null {
+  if (ckpScns.length === 0) return null
+  return ckpScns.reduce((min, s) =>
+    s.value < min.value ? s : min
+  )
+}
+
+// ─── Validation de tag ────────────────────────────────────────────────────
+
+export function isValidTag(s: string): boolean {
+  return /^[A-Za-z0-9_\-\.]{1,30}$/.test(s)
+}
+
+// ─── Padding pour les tableaux LIST BACKUP ────────────────────────────────
+
+export function padRight(s: string, width: number): string {
+  return s.length >= width ? s : s + ' '.repeat(width - s.length)
+}
+
+export function padLeft(s: string, width: number): string {
+  return s.length >= width ? s : ' '.repeat(width - s.length) + s
+}
+```
+
+### 3.7 Diagramme des Value Objects
+
+```
+RmanPureUtils (module de fonctions pures — zero classe)
+  formatBytes()        formatElapsed()     formatOracleDate()
+  expandPieceFormat()  simulateBackupSeconds()
+  computeMinCkpScn()   padRight()          padLeft()
+
+  +--------- utilise ---------> Scn
+  +--------- utilise ---------> RmanTag
+
+Scn            (value object — comparable, serialisable)
+RmanTag        (value object — 30 chars max, uppercase)
+BackupKey      (value object — auto-incrementing integer)
+DbId           (value object — FNV-32 hash du db_name)
+```
+
+Invariant cle : **aucun de ces types n'importe depuis le DOM, le VFS, ou une classe Oracle**. Ils sont testables en isolation totale avec `vitest`.
+
+---
+
+## 4. Backup Catalog — Repository + Factory
+
+### 4.1 Pourquoi le pattern Repository ?
+
+Le catalog RMAN (aussi appele "RMAN Repository") est le coeur de toute session RMAN. Il enregistre chaque backup set, chaque piece, chaque archived log et chaque image copy. Dans l'implementation actuelle, ce catalog n'existe pas — tout est recalcule a la volee ou code en dur.
+
+Le **Repository Pattern** (DDD) isole la persistence du domaine : les commandes RMAN travaillent avec l'interface `IRmanCatalogRepository` sans savoir si les donnees viennent de la memoire, d'un fichier JSON, ou d'une vraie base Oracle.
+
+### 4.2 Entites du catalog — Value Objects immuables
+
+```typescript
+// src/database/oracle/rman/catalog/types.ts
+
+import type { Scn }       from '../values/Scn'
+import type { RmanTag }   from '../values/RmanTag'
+import type { BackupKey } from '../values/BackupKey'
+import type { DbId }      from '../values/DbId'
+
+// ─── BackupPiece ──────────────────────────────────────────────────────────
+
+export interface BackupPiece {
+  readonly bpKey:       number
+  readonly bsKey:       number       // FK vers BackupSet
+  readonly pieceNum:    number       // 1..N
+  readonly handle:      string       // chemin complet sur le VFS
+  readonly tag:         RmanTag
+  readonly deviceType:  'DISK' | 'SBT'
+  readonly sizeBytes:   number
+  readonly compressed:  boolean
+  readonly encrypted:   boolean
+  readonly status:      'AVAILABLE' | 'EXPIRED' | 'DELETED'
+  readonly completionTime: Date
+}
+
+// ─── BackupSet ────────────────────────────────────────────────────────────
+
+export type BackupType = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1_DIFF' | 'INCREMENTAL_1_CUM'
+export type BackupObject = 'DATABASE' | 'TABLESPACE' | 'DATAFILE' | 'ARCHIVELOG' | 'CONTROLFILE' | 'SPFILE'
+
+export interface BackupSet {
+  readonly bsKey:          BackupKey
+  readonly dbId:           DbId
+  readonly backupType:     BackupType
+  readonly backupObject:   BackupObject
+  readonly objectNames:    readonly string[]  // tablespace names, datafile paths, etc.
+  readonly tag:            RmanTag
+  readonly ckpScn:         Scn                // SCN de checkpoint au moment du backup
+  readonly ckpTime:        Date
+  readonly completionTime: Date
+  readonly elapsedSeconds: number
+  readonly sizeBytes:      number
+  readonly compressed:     boolean
+  readonly encrypted:      boolean
+  readonly deviceType:     'DISK' | 'SBT'
+  readonly pieces:         readonly BackupPiece[]
+  readonly status:         'AVAILABLE' | 'EXPIRED' | 'OBSOLETE' | 'DELETED'
+  /** true = backup specifie avec KEEP clause */
+  readonly keepForever:    boolean
+}
+
+// ─── ArchivedLog ──────────────────────────────────────────────────────────
+
+export interface ArchivedLog {
+  readonly recid:        number
+  readonly stamp:        number        // Oracle internal timestamp
+  readonly name:         string        // chemin complet
+  readonly thread:       number        // 1 (single instance)
+  readonly sequence:     number
+  readonly firstScn:     Scn
+  readonly firstTime:    Date
+  readonly nextScn:      Scn
+  readonly nextTime:     Date
+  readonly sizeBytes:    number
+  readonly status:       'A' | 'D'    // Available / Deleted
+  readonly backedUp:     boolean
+}
+
+// ─── DatafileCopy ─────────────────────────────────────────────────────────
+
+export interface DatafileCopy {
+  readonly recid:        number
+  readonly name:         string
+  readonly fileNum:      number        // datafile # (1=SYSTEM, 2=SYSAUX, ...)
+  readonly ckpScn:       Scn
+  readonly ckpTime:      Date
+  readonly sizeBytes:    number
+  readonly status:       'A' | 'X'    // Available / Expired
+  readonly completionTime: Date
+  readonly tag:          RmanTag | null
+}
+```
+
+### 4.3 Interface du Repository
+
+Segregation d'interface (ISP) : le repository est decoupage en operations de lecture et d'ecriture. Les commandes `LIST`/`REPORT` n'ont besoin que des methodes de lecture.
+
+```typescript
+// src/database/oracle/rman/catalog/IRmanCatalogRepository.ts
+
+import type { BackupSet, BackupPiece, ArchivedLog, DatafileCopy, BackupType } from './types'
+import type { BackupKey } from '../values/BackupKey'
+import type { Scn }       from '../values/Scn'
+import type { RmanTag }   from '../values/RmanTag'
+
+// ─── Lecture ─────────────────────────────────────────────────────────────
+
+export interface IRmanCatalogReader {
+  getAllBackupSets(): readonly BackupSet[]
+  getBackupSet(key: BackupKey): BackupSet | null
+  findBackupSetsByTag(tag: RmanTag): readonly BackupSet[]
+  findBackupSetsByType(type: BackupType): readonly BackupSet[]
+  /** Retourne les backup sets disponibles pour restaurer jusqu'au SCN donne */
+  findBackupSetsForScn(targetScn: Scn): readonly BackupSet[]
+  getArchivedLogs(): readonly ArchivedLog[]
+  getArchivedLogBySequence(seq: number): ArchivedLog | null
+  getArchivedLogsForRecovery(fromScn: Scn, toScn: Scn): readonly ArchivedLog[]
+  getDatafileCopies(): readonly DatafileCopy[]
+}
+
+// ─── Ecriture ─────────────────────────────────────────────────────────────
+
+export interface IRmanCatalogWriter {
+  addBackupSet(bs: BackupSet): void
+  updateBackupSetStatus(key: BackupKey, status: BackupSet['status']): void
+  addArchivedLog(log: ArchivedLog): void
+  deleteArchivedLog(recid: number): void
+  addDatafileCopy(copy: DatafileCopy): void
+  updateDatafileCopyStatus(recid: number, status: DatafileCopy['status']): void
+  /** Vide completement le catalog (tests uniquement) */
+  clear(): void
+}
+
+// ─── Interface complete ───────────────────────────────────────────────────
+
+export interface IRmanCatalogRepository
+  extends IRmanCatalogReader, IRmanCatalogWriter {}
+```
+
+### 4.4 Implementation InMemoryRmanCatalog
+
+```typescript
+// src/database/oracle/rman/catalog/InMemoryRmanCatalog.ts
+
+import type { IRmanCatalogRepository } from './IRmanCatalogRepository'
+import type { BackupSet, ArchivedLog, DatafileCopy, BackupType } from './types'
+import type { BackupKey } from '../values/BackupKey'
+import type { Scn }       from '../values/Scn'
+import type { RmanTag }   from '../values/RmanTag'
+
+export class InMemoryRmanCatalog implements IRmanCatalogRepository {
+  private readonly backupSets   = new Map<number, BackupSet>()
+  private readonly archivedLogs = new Map<number, ArchivedLog>()
+  private readonly dfCopies     = new Map<number, DatafileCopy>()
+
+  // ── Lecture ────────────────────────────────────────────────────────────
+
+  getAllBackupSets(): readonly BackupSet[] {
+    return [...this.backupSets.values()]
+  }
+
+  getBackupSet(key: BackupKey): BackupSet | null {
+    return this.backupSets.get(key.value) ?? null
+  }
+
+  findBackupSetsByTag(tag: RmanTag): readonly BackupSet[] {
+    return [...this.backupSets.values()]
+      .filter(bs => bs.tag.value === tag.value)
+  }
+
+  findBackupSetsByType(type: BackupType): readonly BackupSet[] {
+    return [...this.backupSets.values()]
+      .filter(bs => bs.backupType === type)
+  }
+
+  findBackupSetsForScn(targetScn: Scn): readonly BackupSet[] {
+    // Retourne les full + incrementaux dont le ckpScn <= targetScn
+    return [...this.backupSets.values()]
+      .filter(bs =>
+        bs.status === 'AVAILABLE' &&
+        bs.ckpScn.value <= targetScn.value &&
+        (bs.backupObject === 'DATABASE' ||
+         bs.backupObject === 'DATAFILE' ||
+         bs.backupObject === 'TABLESPACE')
+      )
+      .sort((a, b) => a.ckpScn.value - b.ckpScn.value)
+  }
+
+  getArchivedLogs(): readonly ArchivedLog[] {
+    return [...this.archivedLogs.values()]
+  }
+
+  getArchivedLogBySequence(seq: number): ArchivedLog | null {
+    for (const log of this.archivedLogs.values()) {
+      if (log.sequence === seq) return log
+    }
+    return null
+  }
+
+  getArchivedLogsForRecovery(fromScn: Scn, toScn: Scn): readonly ArchivedLog[] {
+    return [...this.archivedLogs.values()]
+      .filter(l =>
+        l.status === 'A' &&
+        l.firstScn.value >= fromScn.value &&
+        l.nextScn.value  <= toScn.value
+      )
+      .sort((a, b) => a.sequence - b.sequence)
+  }
+
+  getDatafileCopies(): readonly DatafileCopy[] {
+    return [...this.dfCopies.values()]
+  }
+
+  // ── Ecriture ───────────────────────────────────────────────────────────
+
+  addBackupSet(bs: BackupSet): void {
+    this.backupSets.set(bs.bsKey.value, bs)
+  }
+
+  updateBackupSetStatus(key: BackupKey, status: BackupSet['status']): void {
+    const existing = this.backupSets.get(key.value)
+    if (existing) {
+      this.backupSets.set(key.value, { ...existing, status })
+    }
+  }
+
+  addArchivedLog(log: ArchivedLog): void {
+    this.archivedLogs.set(log.recid, log)
+  }
+
+  deleteArchivedLog(recid: number): void {
+    const log = this.archivedLogs.get(recid)
+    if (log) this.archivedLogs.set(recid, { ...log, status: 'D' })
+  }
+
+  addDatafileCopy(copy: DatafileCopy): void {
+    this.dfCopies.set(copy.recid, copy)
+  }
+
+  updateDatafileCopyStatus(recid: number, status: DatafileCopy['status']): void {
+    const existing = this.dfCopies.get(recid)
+    if (existing) this.dfCopies.set(recid, { ...existing, status })
+  }
+
+  clear(): void {
+    this.backupSets.clear()
+    this.archivedLogs.clear()
+    this.dfCopies.clear()
+  }
+}
+```
+
+### 4.5 BackupSetFactory — Factory Pattern
+
+La creation d'un `BackupSet` necessite plusieurs parametres calcules (taille, SCN, tag...). Le Factory Pattern encapsule cette logique et garantit que chaque `BackupSet` est coherent des sa creation.
+
+```typescript
+// src/database/oracle/rman/catalog/BackupSetFactory.ts
+
+import type { BackupSet, BackupPiece, BackupType, BackupObject } from './types'
+import { BackupKey }     from '../values/BackupKey'
+import { RmanTag }       from '../values/RmanTag'
+import { Scn }           from '../values/Scn'
+import type { DbId }     from '../values/DbId'
+
+export interface BackupSetInput {
+  dbId:           DbId
+  backupType:     BackupType
+  backupObject:   BackupObject
+  objectNames:    readonly string[]
+  tag?:           string
+  ckpScn:         number
+  ckpTime:        Date
+  completionTime: Date
+  elapsedSeconds: number
+  sizeBytes:      number
+  compressed:     boolean
+  encrypted:      boolean
+  deviceType:     'DISK' | 'SBT'
+  pieces:         readonly BackupPiece[]
+  keepForever?:   boolean
+}
+
+export function createBackupSet(input: BackupSetInput): BackupSet {
+  const key = BackupKey.next()
+  const tag = input.tag
+    ? RmanTag.of(input.tag)
+    : RmanTag.generate(input.completionTime)
+
+  return Object.freeze({
+    bsKey:          key,
+    dbId:           input.dbId,
+    backupType:     input.backupType,
+    backupObject:   input.backupObject,
+    objectNames:    Object.freeze([...input.objectNames]),
+    tag,
+    ckpScn:         Scn.of(input.ckpScn),
+    ckpTime:        input.ckpTime,
+    completionTime: input.completionTime,
+    elapsedSeconds: input.elapsedSeconds,
+    sizeBytes:      input.sizeBytes,
+    compressed:     input.compressed,
+    encrypted:      input.encrypted,
+    deviceType:     input.deviceType,
+    pieces:         Object.freeze([...input.pieces]),
+    status:         'AVAILABLE' as const,
+    keepForever:    input.keepForever ?? false,
+  })
+}
+```
+
+### 4.6 Diagramme de classe du catalog
+
+```
+IRmanCatalogRepository
+  extends IRmanCatalogReader
+  extends IRmanCatalogWriter
+         |
+         v
+InMemoryRmanCatalog   (Map<number, BackupSet>, Map<number, ArchivedLog>)
+
+BackupSetFactory.createBackupSet(input) --> BackupSet (immuable, Object.freeze)
+                                         --> BackupPiece[] (immuable)
+
+BackupSet       1 --* BackupPiece    (pieces embeddees, pas de FK externe)
+BackupSet       *--1 DbId
+BackupSet       *--1 RmanTag
+BackupSet       *--1 Scn (ckpScn)
+
+ArchivedLog     *--1 Scn (firstScn, nextScn)
+DatafileCopy    *--1 Scn (ckpScn)
+DatafileCopy    *--0..1 RmanTag
+```
+
+### 4.7 Principe Repository : separation domaine / persistence
+
+```
+COMMAND LAYER            DOMAIN                  PERSISTENCE
+    |                      |                          |
+BackupCommand  ------>  IRmanCatalogRepository  <---- InMemoryRmanCatalog
+    |                      |                          |
+ListCommand    ------>  IRmanCatalogReader       <---- (meme impl.)
+    |                                                 |
+                   Test doubles possible :            |
+                   MockRmanCatalog()                  |
+                   (sans VFS, sans Oracle)            |
+```
+
+Le catalog est **injecte** dans chaque commande via `RmanCommandContext` (section 7). Aucune commande ne connait `InMemoryRmanCatalog` directement — DIP respecte.
+
+---
+
+## 5. Canaux de sauvegarde — Composite + Strategy
+
+### 5.1 Modele de canal RMAN
+
+Un **canal** (channel) est l'unite de travail RMAN : il represente une connexion a un device type (DISK ou SBT/tape) sur lequel les backup pieces sont ecrites. Les canaux sont alloues avant un backup (automatiquement ou manuellement dans un bloc `RUN {}`), et liberes a la fin.
+
+Caracteristiques reelles d'un canal Oracle :
+- Parallelisme : N canaux = N pieces ecrites simultanement (simule sequentiellement ici)
+- Chaque canal porte un SID Oracle unique
+- Un canal DISK ecrit sur le filesystem local
+- Un canal SBT utilise la Media Management Library (bande, OSB, etc.)
+
+### 5.2 Strategy Pattern — IBackupDeviceStrategy
+
+```typescript
+// src/database/oracle/rman/channels/IBackupDeviceStrategy.ts
+
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+
+export interface BackupWriteRequest {
+  readonly handle:    string    // chemin/identifiant de la piece
+  readonly content:   string    // contenu simule (metadata textuelle)
+  readonly sizeHint:  number    // taille en octets (pour simulation)
+}
+
+export interface BackupReadRequest {
+  readonly handle: string
+}
+
+/**
+ * Strategie d'acces au device de sauvegarde.
+ * DISK ecrit sur le VFS ; SBT simule un media manager.
+ */
+export interface IBackupDeviceStrategy {
+  readonly deviceType: 'DISK' | 'SBT'
+
+  /** Ecrit une piece de backup. Retourne l'handle confirme. */
+  writePiece(req: BackupWriteRequest): Result<string, RmanError>
+
+  /** Verifie qu'une piece existe (pour CROSSCHECK). */
+  pieceExists(handle: string): boolean
+
+  /** Supprime une piece (pour DELETE). */
+  deletePiece(handle: string): Result<void, RmanError>
+}
+```
+
+### 5.3 DiskDeviceStrategy — ecriture sur VFS
+
+```typescript
+// src/database/oracle/rman/channels/DiskDeviceStrategy.ts
+
+import type { IBackupDeviceStrategy, BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import { ok, err } from '../result'
+import { makeRmanError } from '../RmanError'
+import type { IRmanOracleContext } from '../integration/IRmanOracleContext'
+
+export class DiskDeviceStrategy implements IBackupDeviceStrategy {
+  readonly deviceType = 'DISK' as const
+
+  constructor(private readonly ctx: IRmanOracleContext) {}
+
+  writePiece(req: BackupWriteRequest): Result<string, RmanError> {
+    // Cree les repertoires intermediaires si necessaire
+    const dir = req.handle.substring(0, req.handle.lastIndexOf('/'))
+    this.ctx.mkdirp(dir)
+
+    const written = this.ctx.writeFile(req.handle, this.buildPieceContent(req))
+    if (!written) {
+      return err(makeRmanError('VFS_WRITE_ERROR',
+        `writePiece: cannot write to ${req.handle}`))
+    }
+    return ok(req.handle)
+  }
+
+  pieceExists(handle: string): boolean {
+    return this.ctx.fileExists(handle)
+  }
+
+  deletePiece(handle: string): Result<void, RmanError> {
+    const deleted = this.ctx.deleteFile(handle)
+    if (!deleted) {
+      return err(makeRmanError('VFS_WRITE_ERROR',
+        `deletePiece: cannot delete ${handle}`))
+    }
+    return ok(undefined)
+  }
+
+  private buildPieceContent(req: BackupWriteRequest): string {
+    // Contenu simule : entete Oracle backup piece
+    return [
+      `RMAN BACKUP PIECE`,
+      `Handle: ${req.handle}`,
+      `Size: ${req.sizeHint} bytes`,
+      `Created: ${new Date().toISOString()}`,
+      `[Binary backup data — ${req.sizeHint} bytes]`,
+    ].join('\n')
+  }
+}
+```
+
+### 5.4 SbtDeviceStrategy — simulation media manager
+
+```typescript
+// src/database/oracle/rman/channels/SbtDeviceStrategy.ts
+
+import type { IBackupDeviceStrategy, BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import { ok } from '../result'
+
+/**
+ * SBT (System Backup to Tape) — simule un media manager.
+ * Les pieces SBT sont enregistrees en memoire (pas de VFS).
+ * Reproduit le comportement d'Oracle Secure Backup ou NetBackup.
+ */
+export class SbtDeviceStrategy implements IBackupDeviceStrategy {
+  readonly deviceType = 'SBT' as const
+  private readonly _pieces = new Map<string, { size: number; created: Date }>()
+
+  writePiece(req: BackupWriteRequest): Result<string, RmanError> {
+    this._pieces.set(req.handle, { size: req.sizeHint, created: new Date() })
+    return ok(req.handle)
+  }
+
+  pieceExists(handle: string): boolean {
+    return this._pieces.has(handle)
+  }
+
+  deletePiece(handle: string): Result<void, RmanError> {
+    this._pieces.delete(handle)
+    return ok(undefined)
+  }
+}
+```
+
+### 5.5 IBackupChannel — interface d'un canal
+
+```typescript
+// src/database/oracle/rman/channels/IBackupChannel.ts
+
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import type { BackupPiece } from '../catalog/types'
+import type { BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Scn } from '../values/Scn'
+
+export interface ChannelAllocationOptions {
+  readonly name:        string           // ex. 'ORA_DISK_1'
+  readonly deviceType:  'DISK' | 'SBT'
+  readonly format?:     string           // format de piece (%d, %s, %p, %t)
+  readonly maxpiecesize?: number         // bytes
+  readonly parallelism?: number          // nb de pieces en parallele
+}
+
+export interface IBackupChannel {
+  readonly name:       string
+  readonly deviceType: 'DISK' | 'SBT'
+  readonly sid:        number            // SID Oracle simule
+  readonly isAllocated: boolean
+
+  /** Alloue le canal (ouvre une connexion) */
+  allocate(): Result<void, RmanError>
+
+  /** Ecrit une piece et retourne les metadata de la piece */
+  writePiece(
+    req: BackupWriteRequest,
+    pieceNum: number,
+    bsKey: number,
+    ckpScn: Scn,
+  ): Result<BackupPiece, RmanError>
+
+  /** Verifie qu'une piece existe (CROSSCHECK) */
+  crosscheck(handle: string): 'AVAILABLE' | 'EXPIRED'
+
+  /** Supprime une piece du device */
+  deletePiece(handle: string): Result<void, RmanError>
+
+  /** Libere le canal */
+  release(): void
+
+  /** Representation pour l'affichage (ex. "channel ORA_DISK_1: SID=142 device type=DISK") */
+  toStatusLine(): string
+}
+```
+
+### 5.6 ConcreteBackupChannel — implementation
+
+```typescript
+// src/database/oracle/rman/channels/ConcreteBackupChannel.ts
+
+import type { IBackupChannel, ChannelAllocationOptions } from './IBackupChannel'
+import type { IBackupDeviceStrategy, BackupWriteRequest } from './IBackupDeviceStrategy'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import type { BackupPiece } from '../catalog/types'
+import type { Scn } from '../values/Scn'
+import type { RmanTag } from '../values/RmanTag'
+import { ok, err } from '../result'
+import { makeRmanError } from '../RmanError'
+
+let _sidCounter = 100
+
+export class ConcreteBackupChannel implements IBackupChannel {
+  readonly name:       string
+  readonly deviceType: 'DISK' | 'SBT'
+  readonly sid:        number
+  private _allocated   = false
+  private readonly _format: string
+  private readonly _strategy: IBackupDeviceStrategy
+
+  constructor(opts: ChannelAllocationOptions, strategy: IBackupDeviceStrategy) {
+    this.name       = opts.name
+    this.deviceType = opts.deviceType
+    this.sid        = _sidCounter++
+    this._format    = opts.format ?? ''
+    this._strategy  = strategy
+  }
+
+  get isAllocated(): boolean { return this._allocated }
+
+  allocate(): Result<void, RmanError> {
+    if (this._allocated) return ok(undefined)
+    this._allocated = true
+    return ok(undefined)
+  }
+
+  writePiece(
+    req: BackupWriteRequest,
+    pieceNum: number,
+    bsKey: number,
+    ckpScn: Scn,
+  ): Result<BackupPiece, RmanError> {
+    if (!this._allocated) {
+      return err(makeRmanError('RMAN_03009',
+        `allocate command on channel ${this.name}: channel not allocated`))
+    }
+
+    const result = this._strategy.writePiece(req)
+    if (!result.ok) return result
+
+    const piece: BackupPiece = {
+      bpKey:          bsKey * 100 + pieceNum,
+      bsKey,
+      pieceNum,
+      handle:         result.value,
+      tag:            { _tag: 'RmanTag', value: '' } as RmanTag,  // sera rempli par la commande
+      deviceType:     this.deviceType,
+      sizeBytes:      req.sizeHint,
+      compressed:     false,
+      encrypted:      false,
+      status:         'AVAILABLE',
+      completionTime: new Date(),
+    }
+    return ok(piece)
+  }
+
+  crosscheck(handle: string): 'AVAILABLE' | 'EXPIRED' {
+    return this._strategy.pieceExists(handle) ? 'AVAILABLE' : 'EXPIRED'
+  }
+
+  deletePiece(handle: string): Result<void, RmanError> {
+    return this._strategy.deletePiece(handle)
+  }
+
+  release(): void {
+    this._allocated = false
+  }
+
+  toStatusLine(): string {
+    return `channel ${this.name}: SID=${this.sid} device type=${this.deviceType}`
+  }
+}
+```
+
+### 5.7 ChannelPool — Composite Pattern
+
+Le `ChannelPool` gere une collection de canaux et permet les operations en lot : allouer tous les canaux d'un `RUN {}` bloc, ecrire en parallele (simule), liberer apres la commande.
+
+```typescript
+// src/database/oracle/rman/channels/ChannelPool.ts
+
+import type { IBackupChannel, ChannelAllocationOptions } from './IBackupChannel'
+import type { Result } from '../result'
+import type { RmanError } from '../RmanError'
+import { ok, err } from '../result'
+import { makeRmanError } from '../RmanError'
+import { sequence } from '../result'
+
+export class ChannelPool {
+  private readonly _channels: IBackupChannel[] = []
+
+  add(channel: IBackupChannel): void {
+    this._channels.push(channel)
+  }
+
+  /** Alloue tous les canaux. Arrete a la premiere erreur. */
+  allocateAll(): Result<readonly IBackupChannel[], RmanError> {
+    const results = this._channels.map(ch => ch.allocate().ok
+      ? { ok: true as const, value: ch }
+      : ch.allocate()
+    )
+    // Retourne les canaux ou la premiere erreur
+    for (const ch of this._channels) {
+      const r = ch.allocate()
+      if (!r.ok) return r
+    }
+    return ok([...this._channels])
+  }
+
+  /** Libere tous les canaux (appele en fin de bloc RUN ou de commande) */
+  releaseAll(): void {
+    for (const ch of this._channels) ch.release()
+  }
+
+  /** Premier canal disponible pour une operation (parallelisme simule = round-robin) */
+  getChannel(index = 0): IBackupChannel | null {
+    return this._channels[index % this._channels.length] ?? null
+  }
+
+  get count(): number { return this._channels.length }
+  get all(): readonly IBackupChannel[] { return [...this._channels] }
+  clear(): void { this._channels.length = 0 }
+}
+```
+
+### 5.8 ChannelAllocator — fabrique de canaux selon la configuration
+
+```typescript
+// src/database/oracle/rman/channels/ChannelAllocator.ts
+
+import { ConcreteBackupChannel } from './ConcreteBackupChannel'
+import { DiskDeviceStrategy }    from './DiskDeviceStrategy'
+import { SbtDeviceStrategy }     from './SbtDeviceStrategy'
+import { ChannelPool }           from './ChannelPool'
+import type { RmanConfig }       from '../config/RmanConfig'
+import type { IRmanOracleContext } from '../integration/IRmanOracleContext'
+
+export class ChannelAllocator {
+  constructor(
+    private readonly config: RmanConfig,
+    private readonly ctx: IRmanOracleContext,
+  ) {}
+
+  /**
+   * Cree un ChannelPool automatique base sur la configuration RMAN.
+   * Reproduit le comportement de CONFIGURE DEFAULT DEVICE TYPE et
+   * CONFIGURE DEVICE TYPE DISK PARALLELISM N.
+   */
+  createAutoPool(): ChannelPool {
+    const pool = new ChannelPool()
+    const parallelism = this.config.parallelism
+    const deviceType  = this.config.defaultDeviceType
+
+    for (let i = 1; i <= parallelism; i++) {
+      const strategy = deviceType === 'DISK'
+        ? new DiskDeviceStrategy(this.ctx)
+        : new SbtDeviceStrategy()
+
+      const channel = new ConcreteBackupChannel(
+        { name: `ORA_${deviceType}_${i}`, deviceType, format: this.config.pieceFormat },
+        strategy,
+      )
+      pool.add(channel)
+    }
+    return pool
+  }
+
+  /** Cree un canal unique avec des options explicites (bloc RUN ALLOCATE CHANNEL) */
+  createExplicitChannel(
+    name: string,
+    deviceType: 'DISK' | 'SBT',
+    format?: string,
+  ): ConcreteBackupChannel {
+    const strategy = deviceType === 'DISK'
+      ? new DiskDeviceStrategy(this.ctx)
+      : new SbtDeviceStrategy()
+    return new ConcreteBackupChannel({ name, deviceType, format }, strategy)
+  }
+}
+```
+
+### 5.9 Diagramme du sous-systeme canaux
+
+```
+ChannelAllocator
+  - createAutoPool()      --> ChannelPool (Composite)
+  - createExplicitChannel --> ConcreteBackupChannel
+
+ChannelPool (Composite)
+  +-- IBackupChannel[]
+  - allocateAll()  releaseAll()  getChannel()
+
+ConcreteBackupChannel implements IBackupChannel
+  |
+  +-- IBackupDeviceStrategy (Strategy)
+        |
+        +-- DiskDeviceStrategy   --> IRmanOracleContext.writeFile() / fileExists()
+        +-- SbtDeviceStrategy    --> Map<string, PieceInfo> (in-memory)
+
+Strategy Pattern : ajouter NFS, SMB, OSB = implementer IBackupDeviceStrategy
+                   zero modification dans ConcreteBackupChannel
+```
+
+---
+
+## 6. Politique de retention — Strategy Pattern
+
+### 6.1 Contexte Oracle
+
+La politique de retention RMAN (`CONFIGURE RETENTION POLICY`) determine quels backups sont consideres comme **obsoletes** et peuvent etre supprimes. Oracle supporte deux strategies mutuellement exclusives :
+
+- `REDUNDANCY n` : garde au moins N copies completes de chaque datafile
+- `RECOVERY WINDOW OF n DAYS` : garantit la possibilite de restaurer jusqu'a N jours en arriere
+- `NONE` : ne supprime rien (conservation indefinie)
+
+Le choix de la strategie n'impacte aucune autre logique — c'est le cas d'ecole du **Strategy Pattern**.
+
+### 6.2 RmanConfig — objet de configuration immuable
+
+La configuration RMAN est un objet de valeur. Chaque `CONFIGURE` produit un nouvel objet.
+
+```typescript
+// src/database/oracle/rman/config/RmanConfig.ts
+
+export type RetentionPolicyType = 'REDUNDANCY' | 'RECOVERY_WINDOW' | 'NONE'
+export type DeviceType          = 'DISK' | 'SBT'
+export type BackupTypeConfig    = 'BACKUPSET' | 'COPY'
+
+export interface RmanConfig {
+  readonly retentionPolicyType:  RetentionPolicyType
+  readonly retentionValue:       number     // redondance N ou fenetre N jours
+  readonly defaultDeviceType:    DeviceType
+  readonly parallelism:          number
+  readonly backupType:           BackupTypeConfig
+  readonly pieceFormat:          string     // format CONFIGURE ... FORMAT
+  readonly archivelogFormat:     string
+  readonly controlfileAutobackup: boolean
+  readonly controlfileAutobackupFormat: string
+  readonly compressionAlgorithm: 'BASIC' | 'LOW' | 'MEDIUM' | 'HIGH' | 'NONE'
+  readonly encryptionEnabled:    boolean
+  readonly encryptionAlgorithm:  'AES128' | 'AES192' | 'AES256'
+  readonly maxsetsize:           number     // 0 = UNLIMITED
+  readonly archivelogDeletionPolicy: 'NONE' | 'APPLIED ON ALL STANDBY' | 'SHIPPED TO ALL STANDBY'
+  readonly datafileBackupCopies: number
+  readonly archivelogBackupCopies: number
+  readonly backupOptimization:   boolean
+  readonly channel1Format?:      string     // CONFIGURE CHANNEL 1 FORMAT
+}
+
+export const DEFAULT_RMAN_CONFIG: RmanConfig = Object.freeze({
+  retentionPolicyType:          'REDUNDANCY',
+  retentionValue:               1,
+  defaultDeviceType:            'DISK',
+  parallelism:                  1,
+  backupType:                   'BACKUPSET',
+  pieceFormat:                  '%F',
+  archivelogFormat:             '%F',
+  controlfileAutobackup:        true,
+  controlfileAutobackupFormat:  '%F',
+  compressionAlgorithm:         'NONE',
+  encryptionEnabled:            false,
+  encryptionAlgorithm:          'AES128',
+  maxsetsize:                   0,
+  archivelogDeletionPolicy:     'NONE',
+  datafileBackupCopies:         1,
+  archivelogBackupCopies:       1,
+  backupOptimization:           false,
+})
+
+/** Produit un nouveau RmanConfig avec les champs modifies (immuable) */
+export function withConfig(
+  base: RmanConfig,
+  overrides: Partial<RmanConfig>
+): RmanConfig {
+  return Object.freeze({ ...base, ...overrides })
+}
+```
+
+### 6.3 IRetentionPolicy — interface Strategy
+
+```typescript
+// src/database/oracle/rman/retention/IRetentionPolicy.ts
+
+import type { BackupSet } from '../catalog/types'
+import type { Scn } from '../values/Scn'
+
+export interface RetentionContext {
+  /** Tous les backup sets disponibles dans le catalog */
+  readonly allBackupSets: readonly BackupSet[]
+  /** SCN courant de la base */
+  readonly currentScn: Scn
+  /** Date courante (injectee pour testabilite) */
+  readonly now: Date
+  /** Dbids des datafiles (pour calculer la couverture par fichier) */
+  readonly datafileCount: number
+}
+
+/**
+ * Calcule quels BackupSets sont obsoletes selon la politique.
+ * Fonction pure : RetentionContext en entree, ensemble de cles obsoletes en sortie.
+ */
+export interface IRetentionPolicy {
+  readonly type: string
+  /** Retourne les keys des backup sets obsoletes selon cette politique */
+  computeObsolete(ctx: RetentionContext): ReadonlySet<number>
+  /** Description lisible pour SHOW ALL */
+  toConfigString(): string
+}
+```
+
+### 6.4 RedundancyPolicy — REDUNDANCY N
+
+```typescript
+// src/database/oracle/rman/retention/RedundancyPolicy.ts
+
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+import type { BackupSet } from '../catalog/types'
+
+/**
+ * Strategie REDUNDANCY N :
+ * Pour chaque datafile, garde les N backups les plus recents.
+ * Tout backup plus ancien que le Neme est obsolete.
+ *
+ * Algorithme Oracle : trie par completionTime desc,
+ * marque comme obsolete tout backup au-dela du N-eme rang.
+ */
+export class RedundancyPolicy implements IRetentionPolicy {
+  readonly type = 'REDUNDANCY'
+
+  constructor(private readonly n: number) {}
+
+  computeObsolete(ctx: RetentionContext): ReadonlySet<number> {
+    const obsolete = new Set<number>()
+
+    // Filtre les backups de type DATABASE/DATAFILE/TABLESPACE (pas ARCHIVELOG)
+    const databaseBackups = ctx.allBackupSets
+      .filter(bs =>
+        bs.status === 'AVAILABLE' &&
+        !bs.keepForever &&
+        (bs.backupObject === 'DATABASE' ||
+         bs.backupObject === 'DATAFILE' ||
+         bs.backupObject === 'TABLESPACE')
+      )
+      .sort((a, b) => b.completionTime.getTime() - a.completionTime.getTime())
+
+    // Si on a plus de N backups, les plus anciens sont obsoletes
+    const toKeep = databaseBackups.slice(0, this.n)
+    const toKeepKeys = new Set(toKeep.map(bs => bs.bsKey.value))
+
+    for (const bs of databaseBackups) {
+      if (!toKeepKeys.has(bs.bsKey.value)) {
+        obsolete.add(bs.bsKey.value)
+      }
+    }
+    return obsolete
+  }
+
+  toConfigString(): string {
+    return `CONFIGURE RETENTION POLICY TO REDUNDANCY ${this.n};`
+  }
+}
+```
+
+### 6.5 RecoveryWindowPolicy — RECOVERY WINDOW OF N DAYS
+
+```typescript
+// src/database/oracle/rman/retention/RecoveryWindowPolicy.ts
+
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+
+/**
+ * Strategie RECOVERY WINDOW OF N DAYS :
+ * Tout backup qui n'est plus necessaire pour garantir la restauration
+ * jusqu'a (now - N jours) est obsolete.
+ *
+ * Un backup est "necessaire" si :
+ *   1. C'est le backup le plus recent avant la fenetre de recovery
+ *   2. Ou il est dans la fenetre de recovery
+ */
+export class RecoveryWindowPolicy implements IRetentionPolicy {
+  readonly type = 'RECOVERY_WINDOW'
+
+  constructor(private readonly days: number) {}
+
+  computeObsolete(ctx: RetentionContext): ReadonlySet<number> {
+    const obsolete = new Set<number>()
+    const cutoff = new Date(ctx.now.getTime() - this.days * 86_400_000)
+
+    const databaseBackups = ctx.allBackupSets
+      .filter(bs =>
+        bs.status === 'AVAILABLE' &&
+        !bs.keepForever &&
+        (bs.backupObject === 'DATABASE' ||
+         bs.backupObject === 'DATAFILE' ||
+         bs.backupObject === 'TABLESPACE')
+      )
+      .sort((a, b) => b.completionTime.getTime() - a.completionTime.getTime())
+
+    // Trouve le backup le plus recent qui couvre la fenetre
+    let foundAnchor = false
+    for (const bs of databaseBackups) {
+      if (!foundAnchor && bs.completionTime <= cutoff) {
+        // Ce backup est l'ancre — il est necessaire, tous les suivants sont obsoletes
+        foundAnchor = true
+        continue
+      }
+      if (foundAnchor) {
+        obsolete.add(bs.bsKey.value)
+      }
+    }
+    return obsolete
+  }
+
+  toConfigString(): string {
+    return `CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF ${this.days} DAYS;`
+  }
+}
+```
+
+### 6.6 NonePolicy et RetentionPolicyFactory
+
+```typescript
+// src/database/oracle/rman/retention/NonePolicy.ts
+
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+
+/** NONE : aucun backup n'est jamais obsolete */
+export class NonePolicy implements IRetentionPolicy {
+  readonly type = 'NONE'
+  computeObsolete(_ctx: RetentionContext): ReadonlySet<number> {
+    return new Set()
+  }
+  toConfigString(): string {
+    return 'CONFIGURE RETENTION POLICY TO NONE;'
+  }
+}
+
+// src/database/oracle/rman/retention/RetentionPolicyFactory.ts
+
+import type { RmanConfig } from '../config/RmanConfig'
+import type { IRetentionPolicy } from './IRetentionPolicy'
+import { RedundancyPolicy }    from './RedundancyPolicy'
+import { RecoveryWindowPolicy } from './RecoveryWindowPolicy'
+import { NonePolicy }          from './NonePolicy'
+
+export function createRetentionPolicy(config: RmanConfig): IRetentionPolicy {
+  switch (config.retentionPolicyType) {
+    case 'REDUNDANCY':      return new RedundancyPolicy(config.retentionValue)
+    case 'RECOVERY_WINDOW': return new RecoveryWindowPolicy(config.retentionValue)
+    case 'NONE':            return new NonePolicy()
+  }
+}
+```
+
+### 6.7 RmanRetentionEngine — orchestration pure
+
+```typescript
+// src/database/oracle/rman/retention/RmanRetentionEngine.ts
+
+import type { IRmanCatalogReader } from '../catalog/IRmanCatalogRepository'
+import type { IRetentionPolicy, RetentionContext } from './IRetentionPolicy'
+import type { BackupSet } from '../catalog/types'
+import type { Scn } from '../values/Scn'
+
+/**
+ * Moteur de retention — fonctions pures sans etat propre.
+ * Calcule les obsoletes, les expired, le rapport NEED BACKUP.
+ */
+export const RmanRetentionEngine = {
+
+  /** Retourne les BackupSets obsoletes selon la politique courante */
+  getObsolete(
+    catalog: IRmanCatalogReader,
+    policy: IRetentionPolicy,
+    currentScn: Scn,
+    now: Date,
+  ): readonly BackupSet[] {
+    const ctx: RetentionContext = {
+      allBackupSets: catalog.getAllBackupSets(),
+      currentScn,
+      now,
+      datafileCount: 4, // SYSTEM, SYSAUX, UNDOTBS, USERS
+    }
+    const obsoleteKeys = policy.computeObsolete(ctx)
+    return catalog.getAllBackupSets()
+      .filter(bs => obsoleteKeys.has(bs.bsKey.value))
+  },
+
+  /** Retourne les BackupSets marques EXPIRED (crosscheck a echoue) */
+  getExpired(catalog: IRmanCatalogReader): readonly BackupSet[] {
+    return catalog.getAllBackupSets().filter(bs => bs.status === 'EXPIRED')
+  },
+
+  /**
+   * REPORT NEED BACKUP : datafiles qui n'ont pas de backup recant
+   * selon la politique courante.
+   */
+  getFilesNeedingBackup(
+    catalog: IRmanCatalogReader,
+    policy: IRetentionPolicy,
+    currentScn: Scn,
+    now: Date,
+    datafiles: readonly { num: number; name: string; sizeBytes: number }[],
+  ): readonly { fileNum: number; backups: number; name: string }[] {
+    const allBs = catalog.getAllBackupSets()
+      .filter(bs => bs.status === 'AVAILABLE')
+
+    return datafiles
+      .map(df => {
+        const backupsForFile = allBs.filter(bs =>
+          bs.backupObject === 'DATABASE' ||
+          (bs.backupObject === 'DATAFILE' && bs.objectNames.includes(df.name)) ||
+          (bs.backupObject === 'TABLESPACE')
+        ).length
+
+        return { fileNum: df.num, backups: backupsForFile, name: df.name }
+      })
+      .filter(entry => {
+        if (policy.type === 'REDUNDANCY') return entry.backups === 0
+        return entry.backups === 0
+      })
+  },
+}
+```
+
+### 6.8 Diagramme Strategy de retention
+
+```
+IRetentionPolicy
+  +-- RedundancyPolicy(n)          CONFIGURE RETENTION POLICY TO REDUNDANCY N
+  +-- RecoveryWindowPolicy(days)   CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF N DAYS
+  +-- NonePolicy                   CONFIGURE RETENTION POLICY TO NONE
+
+RetentionPolicyFactory.createRetentionPolicy(config) --> IRetentionPolicy
+
+RmanRetentionEngine (module de fonctions pures)
+  getObsolete(catalog, policy, scn, now) --> BackupSet[]
+  getExpired(catalog)                    --> BackupSet[]
+  getFilesNeedingBackup(...)             --> FileNeedBackup[]
+
+Principe Open/Closed :
+  ajouter REDUNDANCY + RECOVERY WINDOW combine = nouvelle classe KeepWindowPolicy
+  zero modification dans RmanRetentionEngine ou dans les commandes
+```
+
+---
+
+## 7. Commandes RMAN — Command Pattern + Open/Closed
+
+### 7.1 Pourquoi le Command Pattern ?
+
+L'implementation actuelle de `RmanSubShell` est un `switch` monolithique de 300+ lignes. Ajouter une nouvelle commande (`BACKUP INCREMENTAL`) necessite modifier ce switch — violation directe de l'**Open/Closed Principle**.
+
+Avec le **Command Pattern** :
+- Chaque commande RMAN est une classe independante implementant `IRmanCommand`
+- `RmanCommandDispatcher` est un registre statique
+- Ajouter une commande = creer un fichier, l'enregistrer — zero modification ailleurs
+
+### 7.2 RmanCommandContext — contexte d'execution injecte
+
+```typescript
+// src/database/oracle/rman/commands/RmanCommandContext.ts
+
+import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository'
+import type { ChannelPool }            from '../channels/ChannelPool'
+import type { ChannelAllocator }       from '../channels/ChannelAllocator'
+import type { RmanConfig }             from '../config/RmanConfig'
+import type { IRetentionPolicy }       from '../retention/IRetentionPolicy'
+import type { RmanRetentionEngine }    from '../retention/RmanRetentionEngine'
+import type { IRmanOracleContext }     from '../integration/IRmanOracleContext'
+import type { IRmanEventBus }          from '../events/IRmanEventBus'
+import type { DbId }                   from '../values/DbId'
+import type { Scn }                    from '../values/Scn'
+
+/**
+ * Contexte immuable passe a chaque commande RMAN.
+ * Toutes les dependances sont des interfaces — DIP respecte.
+ */
+export interface RmanCommandContext {
+  readonly catalog:          IRmanCatalogRepository
+  readonly channelPool:      ChannelPool
+  readonly channelAllocator: ChannelAllocator
+  readonly config:           RmanConfig
+  readonly retentionPolicy:  IRetentionPolicy
+  readonly oracleCtx:        IRmanOracleContext
+  readonly eventBus:         IRmanEventBus
+  readonly dbId:             DbId
+  readonly currentScn:       Scn
+  readonly now:              Date
+  /** Met a jour la config (retourne nouvelle config immuable, stockee dans RmanSession) */
+  readonly updateConfig:     (fn: (c: RmanConfig) => RmanConfig) => void
+}
+```
+
+### 7.3 IRmanCommand<T> — interface generique
+
+```typescript
+// src/database/oracle/rman/commands/IRmanCommand.ts
+
+import type { Result }           from '../result'
+import type { RmanError }        from '../RmanError'
+import type { RmanOutput }       from '../RmanOutput'
+import type { RmanCommandContext } from './RmanCommandContext'
+
+/**
+ * Contrat de toute commande RMAN.
+ * T = type de la valeur de retour (void pour la plupart).
+ *
+ * La methode execute retourne un Result<RmanOutput, RmanError> :
+ * - ok(output)  = commande executee avec succes (peut contenir des warnings)
+ * - err(error)  = echec ; RmanSession affichera le stack d'erreur
+ */
+export interface IRmanCommand<T = void> {
+  /** Identifiant unique de la commande pour le registre */
+  readonly op: string
+
+  /**
+   * Execute la commande avec les arguments tokenises et le contexte injecte.
+   * @param tokens  Tableau de tokens (deja tokenise par RmanScriptParser)
+   * @param ctx     Contexte d'execution injecte
+   */
+  execute(
+    tokens: readonly string[],
+    ctx: RmanCommandContext,
+  ): Result<RmanOutput, RmanError>
+}
+```
+
+### 7.4 Commandes principales : catalogue des implementations
+
+#### BackupCommand — BACKUP DATABASE/TABLESPACE/ARCHIVELOG
+
+```typescript
+// src/database/oracle/rman/commands/BackupCommand.ts
+// op: 'BACKUP'
+
+// Syntaxe supportee :
+//   BACKUP [INCREMENTAL LEVEL 0|1] [CUMULATIVE]
+//          (DATABASE | TABLESPACE name,... | DATAFILE n,... |
+//           ARCHIVELOG ALL | ARCHIVELOG FROM SCN n | CURRENT CONTROLFILE | SPFILE)
+//          [TAG 'xxx'] [FORMAT 'fmt'] [MAXPIECESIZE n]
+//          [COMPRESSED] [ENCRYPTED] [DELETE INPUT]
+//          [VALIDATE]   (no-write check)
+//          [KEEP {FOREVER | UNTIL TIME 'date'}]
+//          [PLUS ARCHIVELOG [DELETE INPUT]]
+//
+// Exemple de sortie :
+//   Starting backup at 05-MAY-2026 14:23:01
+//   allocated channel: ORA_DISK_1
+//   channel ORA_DISK_1: SID=142 device type=DISK
+//   channel ORA_DISK_1: starting full datafile backup set
+//   channel ORA_DISK_1: specifying datafile(s) in backup set
+//   channel ORA_DISK_1: backing up database
+//   piece handle=/u01/app/oracle/fast_recovery_area/ORCL/ORCL-1234567890-20260505-01.bkp tag=TAG20260505T142301
+//   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+//   Finished backup at 05-MAY-2026 14:23:16
+```
+
+#### RestoreCommand — RESTORE DATABASE/TABLESPACE/DATAFILE
+
+```typescript
+// src/database/oracle/rman/commands/RestoreCommand.ts
+// op: 'RESTORE'
+
+// Pre-conditions verificees :
+//   - DB doit etre en MOUNT (pour RESTORE DATABASE)
+//   - DB peut etre OPEN pour RESTORE TABLESPACE OFFLINE
+//   - Au moins un BackupSet disponible dans le catalog
+//
+// Syntaxe supportee :
+//   RESTORE (DATABASE | TABLESPACE name | DATAFILE n)
+//           [FROM TAG 'xxx'] [UNTIL (SCN n | TIME 'date' | SEQUENCE n THREAD n)]
+//           [PREVIEW] [VALIDATE]
+//
+// Exemple de sortie :
+//   Starting restore at 05-MAY-2026 14:25:01
+//   using channel ORA_DISK_1
+//   channel ORA_DISK_1: starting datafile backup set restore
+//   channel ORA_DISK_1: restoring datafile 00001 to /u01/.../system01.dbf
+//   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
+//   Finished restore at 05-MAY-2026 14:25:26
+```
+
+#### RecoverCommand — RECOVER DATABASE/TABLESPACE
+
+```typescript
+// src/database/oracle/rman/commands/RecoverCommand.ts
+// op: 'RECOVER'
+
+// Pre-conditions :
+//   - DB en MOUNT (RECOVER DATABASE) ou tablespace offline (RECOVER TABLESPACE)
+//   - Des archivelogs disponibles dans le catalog depuis le dernier ckpScn
+//
+// Syntaxe :
+//   RECOVER (DATABASE | TABLESPACE name | DATAFILE n)
+//           [UNTIL (SCN n | TIME 'date' | CANCEL)]
+//           [USING BACKUP CONTROLFILE]
+//
+// Exemple :
+//   Starting recover at 05-MAY-2026 14:26:01
+//   using channel ORA_DISK_1
+//   starting media recovery
+//   archived log for thread 1 with sequence 42 is already on disk as file /u01/.../arch_1_42.arc
+//   media recovery complete, elapsed time: 00:00:03
+//   Finished recover at 05-MAY-2026 14:26:04
+```
+
+#### ListCommand — LIST BACKUP/ARCHIVELOG/COPY
+
+```typescript
+// src/database/oracle/rman/commands/ListCommand.ts
+// op: 'LIST'
+
+// Syntaxe :
+//   LIST BACKUP [SUMMARY | OF DATABASE | BY BACKUP | BY FILE]
+//   LIST COPY [OF DATABASE | OF TABLESPACE name]
+//   LIST ARCHIVELOG ALL
+//   LIST EXPIRED BACKUP
+//   LIST OBSOLETE
+//
+// Consulte IRmanCatalogReader uniquement — zero effet de bord.
+```
+
+#### ReportCommand — REPORT SCHEMA/NEED BACKUP/OBSOLETE
+
+```typescript
+// src/database/oracle/rman/commands/ReportCommand.ts
+// op: 'REPORT'
+
+// Syntaxe :
+//   REPORT SCHEMA
+//   REPORT NEED BACKUP [REDUNDANCY n | RECOVERY WINDOW n | DAYS n]
+//   REPORT OBSOLETE [REDUNDANCY n | RECOVERY WINDOW n | ORPHAN]
+//   REPORT UNRECOVERABLE
+```
+
+#### CrosscheckCommand — CROSSCHECK BACKUP/ARCHIVELOG
+
+```typescript
+// src/database/oracle/rman/commands/CrosscheckCommand.ts
+// op: 'CROSSCHECK'
+
+// Verifie l'existence physique de chaque piece sur le VFS via IBackupDeviceStrategy.
+// Met a jour le status 'AVAILABLE'|'EXPIRED' dans le catalog.
+//
+// Sortie :
+//   allocated channel: ORA_DISK_1
+//   crosschecked backup piece: found to be 'AVAILABLE'
+//   crosschecked backup piece: found to be 'EXPIRED'
+//   Crosschecked N objects
+```
+
+#### DeleteCommand — DELETE EXPIRED/OBSOLETE/BACKUPSET
+
+```typescript
+// src/database/oracle/rman/commands/DeleteCommand.ts
+// op: 'DELETE'
+
+// Syntaxe :
+//   DELETE [NOPROMPT] EXPIRED BACKUP
+//   DELETE [NOPROMPT] OBSOLETE
+//   DELETE [NOPROMPT] BACKUP TAG 'xxx'
+//   DELETE [NOPROMPT] BACKUPSET n
+//   DELETE [NOPROMPT] ARCHIVELOG ALL [BACKED UP n TIMES TO DEVICE TYPE DISK]
+//
+// Appelle IBackupDeviceStrategy.deletePiece() puis met a jour le catalog.
+```
+
+#### ConfigureCommand — CONFIGURE ...
+
+```typescript
+// src/database/oracle/rman/commands/ConfigureCommand.ts
+// op: 'CONFIGURE'
+
+// Syntaxe :
+//   CONFIGURE RETENTION POLICY TO (REDUNDANCY n | RECOVERY WINDOW OF n DAYS | NONE)
+//   CONFIGURE DEFAULT DEVICE TYPE TO (DISK | SBT)
+//   CONFIGURE DEVICE TYPE DISK PARALLELISM n BACKUP TYPE TO BACKUPSET
+//   CONFIGURE CONTROLFILE AUTOBACKUP (ON | OFF)
+//   CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO 'fmt'
+//   CONFIGURE COMPRESSION ALGORITHM 'ALG'
+//   CONFIGURE ENCRYPTION FOR DATABASE (ON | OFF)
+//   CONFIGURE MAXSETSIZE TO (n [K|M|G] | UNLIMITED)
+//   CONFIGURE BACKUP OPTIMIZATION (ON | OFF)
+//   CONFIGURE CHANNEL n DEVICE TYPE DISK FORMAT 'fmt'
+//   CONFIGURE ARCHIVELOG DELETION POLICY TO (NONE | APPLIED ON ALL STANDBY)
+//
+// Appelle ctx.updateConfig(c => withConfig(c, {...})) — immuabilite garantie.
+```
+
+#### ShowCommand — SHOW ALL/RETENTION POLICY/...
+
+```typescript
+// src/database/oracle/rman/commands/ShowCommand.ts
+// op: 'SHOW'
+
+// Syntaxe :
+//   SHOW ALL
+//   SHOW RETENTION POLICY
+//   SHOW DEFAULT DEVICE TYPE
+//   SHOW CONTROLFILE AUTOBACKUP
+//
+// Lit ctx.config et formate CONFIGURE statements.
+// Zero effet de bord — lecture pure.
+```
+
+#### ConnectCommand — CONNECT TARGET
+
+```typescript
+// src/database/oracle/rman/commands/ConnectCommand.ts
+// op: 'CONNECT'
+
+// Syntaxe :
+//   CONNECT TARGET [username/password@service | /]
+//
+// Valide l'etat de l'instance via IRmanOracleContext.getInstanceState().
+// Met a jour RmanSessionState (via ctx.updateConfig — ou plutot via RmanSession).
+```
+
+### 7.5 RmanCommandDispatcher — registre Open/Closed
+
+```typescript
+// src/database/oracle/rman/commands/RmanCommandDispatcher.ts
+
+import type { IRmanCommand }        from './IRmanCommand'
+import type { RmanCommandContext }  from './RmanCommandContext'
+import type { RmanOutput }          from '../RmanOutput'
+import type { Result }              from '../result'
+import type { RmanError }           from '../RmanError'
+import { err }                      from '../result'
+import { makeRmanError }            from '../RmanError'
+import { outputError }              from '../RmanOutput'
+
+export class RmanCommandDispatcher {
+  private readonly _registry = new Map<string, IRmanCommand<unknown>>()
+
+  register(command: IRmanCommand<unknown>): this {
+    this._registry.set(command.op.toUpperCase(), command)
+    return this
+  }
+
+  dispatch(
+    tokens: readonly string[],
+    ctx: RmanCommandContext,
+  ): Result<RmanOutput, RmanError> {
+    if (tokens.length === 0) {
+      return err(makeRmanError('RMAN_00558',
+        'error encountered while parsing input command'))
+    }
+
+    const op = tokens[0].toUpperCase()
+    const command = this._registry.get(op)
+
+    if (!command) {
+      return err(makeRmanError('RMAN_01009',
+        `syntax error: found identifier "${tokens[0]}"`, 1))
+    }
+
+    return command.execute(tokens, ctx) as Result<RmanOutput, RmanError>
+  }
+
+  /** Liste toutes les commandes enregistrees (pour HELP) */
+  getRegisteredOps(): readonly string[] {
+    return [...this._registry.keys()].sort()
+  }
+}
+
+// ─── Factory : dispatcher pre-configure avec toutes les commandes standard ──
+
+import { BackupCommand }     from './BackupCommand'
+import { RestoreCommand }    from './RestoreCommand'
+import { RecoverCommand }    from './RecoverCommand'
+import { ListCommand }       from './ListCommand'
+import { ReportCommand }     from './ReportCommand'
+import { CrosscheckCommand } from './CrosscheckCommand'
+import { DeleteCommand }     from './DeleteCommand'
+import { ConfigureCommand }  from './ConfigureCommand'
+import { ShowCommand }       from './ShowCommand'
+import { ConnectCommand }    from './ConnectCommand'
+import { CatalogCommand }    from './CatalogCommand'
+import { DuplicateCommand }  from './DuplicateCommand'
+import { ValidateCommand }   from './ValidateCommand'
+
+export function createDefaultDispatcher(): RmanCommandDispatcher {
+  return new RmanCommandDispatcher()
+    .register(new BackupCommand())
+    .register(new RestoreCommand())
+    .register(new RecoverCommand())
+    .register(new ListCommand())
+    .register(new ReportCommand())
+    .register(new CrosscheckCommand())
+    .register(new DeleteCommand())
+    .register(new ConfigureCommand())
+    .register(new ShowCommand())
+    .register(new ConnectCommand())
+    .register(new CatalogCommand())
+    .register(new DuplicateCommand())
+    .register(new ValidateCommand())
+}
+```
+
+### 7.6 Principe Open/Closed — illustration concrete
+
+```
+Avant (switch monolithique) :
+  Ajouter BACKUP VALIDATE --> modifier RmanSubShell.processLine() (risque de regression)
+
+Apres (Command + Registry) :
+  Ajouter BACKUP VALIDATE --> creer ValidateCommand.ts
+                          --> enregistrer dans createDefaultDispatcher()
+                          --> ZERO autre fichier modifie
+
+Extension : DUPLICATE DATABASE
+  createDefaultDispatcher().register(new DuplicateCommand())
+  DuplicateCommand.op = 'DUPLICATE'
+  Aucune modification dans RmanCommandDispatcher, RmanSession, RmanSubShell.
+```
+
+### 7.7 IRmanEventBus — Observer Pattern pour la progression
+
+```typescript
+// src/database/oracle/rman/events/IRmanEventBus.ts
+
+export type RmanEventType =
+  | 'CHANNEL_ALLOCATED'    // canal alloue
+  | 'BACKUP_STARTED'       // debut d'un backup set
+  | 'PIECE_WRITTEN'        // piece ecrite sur le device
+  | 'BACKUP_COMPLETED'     // backup set termine
+  | 'RESTORE_STARTED'      // debut d'une restauration
+  | 'FILE_RESTORED'        // un fichier restaure
+  | 'RESTORE_COMPLETED'    // restauration terminee
+  | 'RECOVERY_STARTED'     // debut de la recovery media
+  | 'ARCHIVELOG_APPLIED'   // un archivelog applique
+  | 'RECOVERY_COMPLETED'   // recovery terminee
+  | 'CROSSCHECK_RESULT'    // resultat crosscheck piece par piece
+  | 'DELETE_PERFORMED'     // backup supprime
+  | 'CONFIGURE_CHANGED'    // configuration RMAN modifiee
+  | 'ERROR'                // erreur non-fatale (warning)
+
+export interface RmanEvent {
+  readonly type:    RmanEventType
+  readonly message: string
+  readonly data?:   Record<string, unknown>
+}
+
+export interface IRmanEventBus {
+  emit(event: RmanEvent): void
+  /** Les commandes collectent les lignes de sortie via cet abonnement */
+  subscribe(handler: (event: RmanEvent) => void): () => void
+}
+
+/** Implementation simple en memoire — collecte les lignes pour l'affichage */
+export class InMemoryEventBus implements IRmanEventBus {
+  private readonly _handlers: Array<(e: RmanEvent) => void> = []
+
+  emit(event: RmanEvent): void {
+    for (const h of this._handlers) h(event)
+  }
+
+  subscribe(handler: (event: RmanEvent) => void): () => void {
+    this._handlers.push(handler)
+    return () => {
+      const idx = this._handlers.indexOf(handler)
+      if (idx >= 0) this._handlers.splice(idx, 1)
+    }
+  }
+}
+```
+
+### 7.8 Diagramme complet du Command Pattern
+
+```
+RmanCommandDispatcher  (registre de IRmanCommand)
+  dispatch(tokens, ctx) --> IRmanCommand.execute() --> Result<RmanOutput>
+
+IRmanCommand<T>
+  +-- BackupCommand     op='BACKUP'     Ecrit pieces sur VFS + catalog
+  +-- RestoreCommand    op='RESTORE'    Lit pieces du VFS + affiche lignes
+  +-- RecoverCommand    op='RECOVER'    Applique archivelogs
+  +-- ListCommand       op='LIST'       Lecture catalog only
+  +-- ReportCommand     op='REPORT'     Calcul pur (RetentionEngine)
+  +-- CrosscheckCommand op='CROSSCHECK' VFS check -> catalog update
+  +-- DeleteCommand     op='DELETE'     VFS delete + catalog update
+  +-- ConfigureCommand  op='CONFIGURE'  ctx.updateConfig()
+  +-- ShowCommand       op='SHOW'       Lecture config only
+  +-- ConnectCommand    op='CONNECT'    IRmanOracleContext.getInstanceState()
+  +-- CatalogCommand    op='CATALOG'    Ajoute pieces existantes au catalog
+  +-- DuplicateCommand  op='DUPLICATE'  Clone database
+  +-- ValidateCommand   op='VALIDATE'   Verifie sans ecrire
+
+Chaque commande injecte :  RmanCommandContext (catalog, channels, config, eventBus)
+Chaque commande retourne : Result<RmanOutput, RmanError>
+```
+
+---
+
+## 8. Session RMAN — Facade + State Machine + Builder
+
+### 8.1 Responsabilites de RmanSession
+
+`RmanSession` est la **Facade** du module RMAN. Elle orchestre :
+1. La machine a etats (idle → connecting → connected → running_job → disconnected)
+2. Le parsing multi-ligne et les blocs `RUN { }`
+3. La creation et l'injection du `RmanCommandContext`
+4. La gestion de la configuration (`RmanConfig` immuable)
+5. Le cycle de vie des canaux (allocation auto + liberation)
+
+Aucun appelant exterieur ne connait `RmanCommandDispatcher`, `ChannelPool`, `InMemoryRmanCatalog`, ou `IRetentionPolicy` directement.
+
+### 8.2 RmanSessionState — State Machine discriminee
+
+```typescript
+// src/database/oracle/rman/session/RmanSessionState.ts
+
+import type { DbId } from '../values/DbId'
+import type { Scn }  from '../values/Scn'
+import type { InstanceState } from '../../OracleInstance'
+
+export type RmanSessionState =
+  | {
+      readonly phase: 'idle'
+    }
+  | {
+      readonly phase:   'connecting'
+      readonly target:  string    // '/', 'sys/oracle@ORCL', etc.
+    }
+  | {
+      readonly phase:      'connected'
+      readonly dbId:       DbId
+      readonly dbName:     string
+      readonly dbMode:     InstanceState    // OPEN, MOUNT, NOMOUNT, SHUTDOWN
+      readonly currentScn: Scn
+      readonly connectedAt: Date
+    }
+  | {
+      readonly phase:     'running_job'
+      readonly jobId:     string
+      readonly command:   string
+      readonly startedAt: Date
+    }
+  | {
+      readonly phase:  'disconnected'
+      readonly reason: string
+    }
+
+// Transitions valides :
+//   idle           --> connecting       (CONNECT TARGET)
+//   connecting     --> connected        (auth OK)
+//   connecting     --> disconnected     (auth fail / instance SHUTDOWN)
+//   connected      --> running_job      (debut execution d'une commande)
+//   running_job    --> connected        (commande terminee)
+//   running_job    --> disconnected     (erreur fatale)
+//   connected      --> disconnected     (EXIT / QUIT / erreur)
+//   any            --> idle             (reset interne)
+```
+
+### 8.3 RmanConnectOptions + Builder Pattern
+
+```typescript
+// src/database/oracle/rman/session/RmanConnectOptions.ts
+
+export interface RmanConnectOptions {
+  readonly target:   string    // '/' ou 'user/pass@service'
+  readonly catalog?: string    // optionnel : 'user/pass@catalog'
+  readonly nocatalog: boolean  // RMAN NOCATALOG mode
+  readonly auxiliary?: string  // pour DUPLICATE DATABASE
+}
+
+// ─── Builder ──────────────────────────────────────────────────────────────
+
+export class RmanConnectOptionsBuilder {
+  private _target   = '/'
+  private _catalog: string | undefined
+  private _nocatalog = true
+  private _auxiliary: string | undefined
+
+  forTarget(target: string): this {
+    this._target = target
+    return this
+  }
+
+  withCatalog(catalog: string): this {
+    this._catalog   = catalog
+    this._nocatalog = false
+    return this
+  }
+
+  noAuxiliary(): this { return this }
+  withAuxiliary(aux: string): this {
+    this._auxiliary = aux
+    return this
+  }
+
+  build(): RmanConnectOptions {
+    return Object.freeze({
+      target:    this._target,
+      catalog:   this._catalog,
+      nocatalog: this._nocatalog,
+      auxiliary: this._auxiliary,
+    })
+  }
+}
+
+// Usage :
+// const opts = new RmanConnectOptionsBuilder()
+//   .forTarget('sys/oracle@ORCL')
+//   .build()
+```
+
+### 8.4 RmanScriptParser — multi-ligne et blocs RUN {}
+
+Oracle RMAN supporte les commandes multi-lignes et les blocs `RUN { }` :
+```
+RMAN> BACKUP DATABASE
+2> PLUS ARCHIVELOG
+3> DELETE INPUT;
+
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+3>   BACKUP DATABASE;
+4>   RELEASE CHANNEL c1;
+5> }
+```
+
+```typescript
+// src/database/oracle/rman/session/RmanScriptParser.ts
+
+export type ParsedScript =
+  | { readonly type: 'single';   readonly tokens: readonly string[] }
+  | { readonly type: 'run_block'; readonly statements: readonly (readonly string[])[] }
+  | { readonly type: 'incomplete' }   // besoin de plus d'input (multi-ligne)
+  | { readonly type: 'empty' }
+
+/**
+ * Parseur de script RMAN.
+ *
+ * Regles :
+ * - Une commande se termine par ';' ou par une ligne vide apres le premier token
+ * - Un bloc RUN { ... } est multi-lignes, se termine par '}'
+ * - Les commentaires '#' sont ignores
+ * - Les tokens sont split sur les espaces apres normalisation
+ */
+export class RmanScriptParser {
+  private _buffer: string[] = []
+  private _inRunBlock = false
+  private _runStatements: string[][] = []
+
+  /** Ajoute une ligne et retourne le script parse si complet, ou 'incomplete' */
+  feed(line: string): ParsedScript {
+    const cleaned = line.replace(/#.*$/, '').trim()
+
+    if (!cleaned) {
+      if (this._buffer.length === 0 && !this._inRunBlock) return { type: 'empty' }
+      // Ligne vide dans un contexte multi-ligne = peut terminer la commande
+      if (!this._inRunBlock && this._buffer.length > 0) {
+        return this._flush()
+      }
+      return { type: 'incomplete' }
+    }
+
+    // Debut de bloc RUN {
+    if (/^RUN\s*\{?$/i.test(cleaned) || (cleaned.toUpperCase().startsWith('RUN') && cleaned.endsWith('{'))) {
+      this._inRunBlock   = true
+      this._runStatements = []
+      this._buffer       = []
+      return { type: 'incomplete' }
+    }
+
+    // Fin de bloc RUN }
+    if (this._inRunBlock && cleaned === '}') {
+      this._inRunBlock = false
+      const stmts = this._runStatements.slice()
+      this._runStatements = []
+      return {
+        type: 'run_block',
+        statements: stmts.map(s => RmanScriptParser.tokenize(s.join(' '))),
+      }
+    }
+
+    // Dans un bloc RUN : accumule les statements jusqu'au ;
+    if (this._inRunBlock) {
+      this._buffer.push(cleaned)
+      if (cleaned.endsWith(';')) {
+        const stmt = this._buffer.join(' ').replace(/;$/, '').trim()
+        this._runStatements.push([stmt])
+        this._buffer = []
+      }
+      return { type: 'incomplete' }
+    }
+
+    // Commande normale : accumule jusqu'au ;
+    this._buffer.push(cleaned)
+    if (cleaned.endsWith(';')) {
+      return this._flush()
+    }
+
+    return { type: 'incomplete' }
+  }
+
+  private _flush(): ParsedScript {
+    const full = this._buffer.join(' ').replace(/;$/, '').trim()
+    this._buffer = []
+    if (!full) return { type: 'empty' }
+    return { type: 'single', tokens: RmanScriptParser.tokenize(full) }
+  }
+
+  /** Remet a zero l'etat du parseur */
+  reset(): void {
+    this._buffer      = []
+    this._inRunBlock  = false
+    this._runStatements = []
+  }
+
+  /** Indique si on attend encore des lignes (prompt '2>' au lieu de 'RMAN>') */
+  get isMultiLine(): boolean {
+    return this._buffer.length > 0 || this._inRunBlock
+  }
+
+  /** Tokenise une ligne RMAN en respectant les strings entre quotes */
+  static tokenize(line: string): readonly string[] {
+    const tokens: string[] = []
+    let current = ''
+    let inQuote: '"' | "'" | null = null
+
+    for (const ch of line) {
+      if (inQuote) {
+        if (ch === inQuote) { inQuote = null; tokens.push(current); current = '' }
+        else current += ch
+      } else if (ch === '"' || ch === "'") {
+        inQuote = ch
+      } else if (ch === ' ' || ch === '\t') {
+        if (current) { tokens.push(current); current = '' }
+      } else {
+        current += ch
+      }
+    }
+    if (current) tokens.push(current)
+    return tokens
+  }
+}
+```
+
+### 8.5 IRmanSession — interface publique (Facade)
+
+```typescript
+// src/database/oracle/rman/session/IRmanSession.ts
+
+import type { RmanOutput }       from '../RmanOutput'
+import type { RmanSessionState } from './RmanSessionState'
+import type { RmanConfig }       from '../config/RmanConfig'
+import type { RmanConnectOptions } from './RmanConnectOptions'
+
+export interface IRmanSession {
+  /** Etat courant de la machine a etats */
+  readonly state: RmanSessionState
+
+  /** Configuration RMAN courante (immuable) */
+  readonly config: RmanConfig
+
+  /**
+   * Execute une ligne d'input utilisateur.
+   * Gere le buffering multi-ligne en interne.
+   * Retourne null si la ligne est incomplete (prompt '2>').
+   */
+  processLine(line: string): RmanOutput | null
+
+  /** Connecte au target depuis la ligne de commande (rman target /) */
+  connectFromArgs(opts: RmanConnectOptions): RmanOutput
+
+  /** Retourne le prompt courant ('RMAN> ' ou '2> ') */
+  getPrompt(): string
+
+  /** true si la session doit se fermer */
+  isExited(): boolean
+
+  /** Libere toutes les ressources (canaux, catalog snapshot) */
+  dispose(): void
+}
+```
+
+### 8.6 RmanSession — implementation de la Facade
+
+```typescript
+// src/database/oracle/rman/session/RmanSession.ts
+
+import type { IRmanSession }          from './IRmanSession'
+import type { RmanSessionState }      from './RmanSessionState'
+import type { RmanConfig }            from '../config/RmanConfig'
+import type { RmanOutput }            from '../RmanOutput'
+import type { IRmanOracleContext }    from '../integration/IRmanOracleContext'
+import { DEFAULT_RMAN_CONFIG, withConfig } from '../config/RmanConfig'
+import { InMemoryRmanCatalog }        from '../catalog/InMemoryRmanCatalog'
+import { ChannelAllocator }           from '../channels/ChannelAllocator'
+import { ChannelPool }                from '../channels/ChannelPool'
+import { InMemoryEventBus }           from '../events/IRmanEventBus'
+import { createDefaultDispatcher }    from '../commands/RmanCommandDispatcher'
+import { RmanScriptParser }           from './RmanScriptParser'
+import { createRetentionPolicy }      from '../retention/RetentionPolicyFactory'
+import { DbId }                       from '../values/DbId'
+import { Scn }                        from '../values/Scn'
+import { outputLines, outputError }   from '../RmanOutput'
+import { match }                      from '../result'
+
+export class RmanSession implements IRmanSession {
+  private _state:   RmanSessionState = { phase: 'idle' }
+  private _config:  RmanConfig       = DEFAULT_RMAN_CONFIG
+  private _exited   = false
+
+  private readonly _catalog    = new InMemoryRmanCatalog()
+  private readonly _eventBus   = new InMemoryEventBus()
+  private readonly _dispatcher = createDefaultDispatcher()
+  private readonly _parser     = new RmanScriptParser()
+
+  constructor(private readonly _oracleCtx: IRmanOracleContext) {}
+
+  get state():  RmanSessionState { return this._state }
+  get config(): RmanConfig       { return this._config }
+
+  getPrompt(): string {
+    return this._parser.isMultiLine ? '2> ' : 'RMAN> '
+  }
+
+  isExited(): boolean { return this._exited }
+
+  connectFromArgs(opts: import('./RmanConnectOptions').RmanConnectOptions): RmanOutput {
+    const result = this._doConnect(opts.target)
+    return result
+  }
+
+  processLine(line: string): RmanOutput | null {
+    if (this._exited) return outputLines(['Recovery Manager complete.'], { exit: true })
+
+    // Commandes immediates (EXIT/QUIT sans ;)
+    const upper = line.trim().toUpperCase()
+    if (upper === 'EXIT' || upper === 'QUIT') {
+      this._exited = true
+      this._state = { phase: 'disconnected', reason: 'user exit' }
+      return outputLines(['Recovery Manager complete.'], { exit: true })
+    }
+
+    const parsed = this._parser.feed(line)
+
+    switch (parsed.type) {
+      case 'empty':
+        return outputLines([])
+
+      case 'incomplete':
+        return null  // signal a RmanSubShell : continuer la saisie, prompt '2>'
+
+      case 'single':
+        return this._executeTokens(parsed.tokens)
+
+      case 'run_block':
+        return this._executeRunBlock(parsed.statements)
+    }
+  }
+
+  private _executeTokens(tokens: readonly string[]): RmanOutput {
+    if (tokens.length === 0) return outputLines([])
+
+    const pool      = new ChannelAllocator(this._config, this._oracleCtx).createAutoPool()
+    const allocator = new ChannelAllocator(this._config, this._oracleCtx)
+    const ctx       = this._buildContext(pool, allocator)
+
+    const result = this._dispatcher.dispatch(tokens, ctx)
+    pool.releaseAll()
+
+    return match(result,
+      output => output,
+      error  => outputError(error),
+    )
+  }
+
+  private _executeRunBlock(
+    statements: readonly (readonly string[])[],
+  ): RmanOutput {
+    // Dans un bloc RUN, les canaux sont partages entre toutes les commandes
+    const pool      = new ChannelAllocator(this._config, this._oracleCtx).createAutoPool()
+    const allocator = new ChannelAllocator(this._config, this._oracleCtx)
+    const allLines: string[] = []
+
+    for (const tokens of statements) {
+      const ctx    = this._buildContext(pool, allocator)
+      const result = this._dispatcher.dispatch(tokens, ctx)
+
+      const output = match(result,
+        o => o,
+        e => outputError(e),
+      )
+      allLines.push(...output.lines)
+      if (output.exit) {
+        pool.releaseAll()
+        return outputLines(allLines, { exit: true })
+      }
+    }
+    pool.releaseAll()
+    return outputLines(allLines)
+  }
+
+  private _buildContext(
+    pool: ChannelPool,
+    allocator: ChannelAllocator,
+  ): import('../commands/RmanCommandContext').RmanCommandContext {
+    const state     = this._state
+    const dbId      = state.phase === 'connected' ? state.dbId  : DbId.fromDbName('ORCL')
+    const currentScn = state.phase === 'connected' ? state.currentScn : Scn.zero
+
+    return {
+      catalog:          this._catalog,
+      channelPool:      pool,
+      channelAllocator: allocator,
+      config:           this._config,
+      retentionPolicy:  createRetentionPolicy(this._config),
+      oracleCtx:        this._oracleCtx,
+      eventBus:         this._eventBus,
+      dbId,
+      currentScn,
+      now:              new Date(),
+      updateConfig:     (fn) => { this._config = fn(this._config) },
+    }
+  }
+
+  private _doConnect(target: string): RmanOutput {
+    this._state = { phase: 'connecting', target }
+    const instanceState = this._oracleCtx.getInstanceState()
+
+    if (instanceState === 'SHUTDOWN') {
+      this._state = { phase: 'disconnected', reason: 'instance not available' }
+      return outputLines([
+        'RMAN-00571: ===========================================================',
+        'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+        'RMAN-00571: ===========================================================',
+        'RMAN-03002: failure of connect command',
+        'RMAN-06004: oracle error from target database: ORA-01034: ORACLE not available',
+      ])
+    }
+
+    const dbName = this._oracleCtx.getDbName()
+    const dbId   = DbId.fromDbName(dbName)
+    const scn    = Scn.of(this._oracleCtx.getCurrentScn())
+
+    this._state = {
+      phase:       'connected',
+      dbId,
+      dbName,
+      dbMode:      instanceState,
+      currentScn:  scn,
+      connectedAt: new Date(),
+    }
+
+    return outputLines([
+      `connected to target database: ${dbName} (DBID=${dbId.value})`,
+      '',
+    ])
+  }
+
+  dispose(): void {
+    this._parser.reset()
+    this._catalog.clear()
+  }
+}
+```
+
+### 8.7 Diagramme de la Facade RmanSession
+
+```
+RmanSubShell (ISubShell)
+  |  processLine(line) --> RmanSession.processLine()
+  |
+  v
+RmanSession (IRmanSession)  <-- Facade
+  |  state: RmanSessionState (idle/connecting/connected/running_job/disconnected)
+  |  config: RmanConfig (immuable)
+  |  _parser: RmanScriptParser (multi-ligne + RUN {})
+  |  _dispatcher: RmanCommandDispatcher
+  |  _catalog: InMemoryRmanCatalog
+  |  _eventBus: InMemoryEventBus
+  |
+  +-- processLine(line) --> RmanScriptParser.feed()
+        |
+        +-- 'single'    --> _executeTokens()    --> dispatcher.dispatch()
+        +-- 'run_block' --> _executeRunBlock()  --> dispatcher.dispatch() x N
+        +-- 'incomplete'--> null (prompt '2>')
+        +-- 'empty'     --> outputLines([])
+
+State Machine transitions :
+  idle  --[CONNECT TARGET]-->  connecting  --[OK]--> connected
+  connected  --[command]-->  running_job  --[done]--> connected
+  connected  --[EXIT/QUIT]-->  disconnected
+  any  --[fatal error]-->  disconnected
+```
+
+---
+
+## 9. Integration : OracleInstance, VFS, SubShell
+
+### 9.1 IRmanOracleContext — Adapter Pattern
+
+`IRmanOracleContext` est le **pont d'integration** entre le module RMAN et le reste du simulateur (OracleInstance, VirtualFileSystem). Ce principe (Adapter + DIP) garantit :
+- Le module RMAN ne depends jamais directement d'`OracleInstance` ou de `VirtualFileSystem`
+- Les tests unitaires du module RMAN peuvent utiliser un contexte mock
+- Une future implémentation sur Windows (WindowsFileSystem) ne touche que l'adaptateur
+
+```typescript
+// src/database/oracle/rman/integration/IRmanOracleContext.ts
+
+import type { InstanceState } from '../../OracleInstance'
+import type { BackupSet }     from '../catalog/types'
+
+export interface DatafileInfo {
+  readonly num:       number    // 1=SYSTEM, 2=SYSAUX, 3=UNDOTBS1, 4=USERS
+  readonly name:      string    // chemin absolu sur le VFS
+  readonly sizeBytes: number
+  readonly tablespace: string
+  readonly checkpoint: number  // SCN du dernier checkpoint
+}
+
+export interface TablespaceInfo {
+  readonly name:      string
+  readonly datafiles: readonly DatafileInfo[]
+  readonly sizeBytes: number
+  readonly freeBytes: number
+}
+
+export interface ArchivedLogInfo {
+  readonly sequence:  number
+  readonly name:      string    // chemin absolu sur le VFS
+  readonly firstScn:  number
+  readonly nextScn:   number
+  readonly sizeBytes: number
+  readonly thread:    number
+}
+
+/**
+ * Contexte Oracle injecte dans RmanSession.
+ * Implementé par LinuxRmanContext (adaptateur vers OracleInstance + VirtualFileSystem).
+ * Testable via MockRmanOracleContext.
+ */
+export interface IRmanOracleContext {
+  // ── Etat de l'instance ────────────────────────────────────────────────
+  getInstanceState(): InstanceState
+  getDbName(): string
+  getDbId(): number
+  getCurrentScn(): number
+  isArchiveLogMode(): boolean
+
+  // ── Schema / datafiles ────────────────────────────────────────────────
+  getDatafiles(): readonly DatafileInfo[]
+  getTablespaces(): readonly TablespaceInfo[]
+  getArchivedLogs(): readonly ArchivedLogInfo[]
+
+  // ── Filesystem ────────────────────────────────────────────────────────
+  fileExists(path: string): boolean
+  readFile(path: string): string | null
+  writeFile(path: string, content: string): boolean
+  deleteFile(path: string): boolean
+  mkdirp(path: string): void
+  listDir(path: string): string[] | null
+
+  // ── Mutation d'etat Oracle ────────────────────────────────────────────
+  /** Archive le redo log courant et passe au suivant (ALTER SYSTEM ARCHIVE LOG CURRENT) */
+  archiveCurrentLog(): ArchivedLogInfo | null
+  /** Avance le SCN simule (apres une recovery) */
+  advanceScn(delta: number): void
+}
+```
+
+### 9.2 LinuxRmanContext — implementation concrete
+
+```typescript
+// src/database/oracle/rman/integration/LinuxRmanContext.ts
+
+import type { IRmanOracleContext, DatafileInfo, TablespaceInfo, ArchivedLogInfo }
+  from './IRmanOracleContext'
+import type { InstanceState }    from '../../OracleInstance'
+import type { OracleInstance }   from '../../OracleInstance'
+import type { VirtualFileSystem } from '../../../../network/devices/linux/VirtualFileSystem'
+import { ORACLE_CONFIG }         from '../../../../terminal/commands/OracleConfig'
+
+const ORADATA = `${ORACLE_CONFIG.BASE}/oradata`
+
+/**
+ * Adaptateur : mappe les methodes IRmanOracleContext vers OracleInstance + VirtualFileSystem.
+ * Respecte le Dependency Inversion : RmanSession depend de IRmanOracleContext, pas de cette classe.
+ */
+export class LinuxRmanContext implements IRmanOracleContext {
+  private _scn = 1892354  // SCN de depart realiste
+
+  constructor(
+    private readonly _instance: OracleInstance,
+    private readonly _vfs: VirtualFileSystem,
+  ) {}
+
+  // ── Etat de l'instance ────────────────────────────────────────────────
+
+  getInstanceState(): InstanceState { return this._instance.state }
+  getDbName(): string { return this._instance.config.sid }
+  getDbId(): number   { return this._deterministicDbId() }
+  getCurrentScn(): number { return this._scn }
+  isArchiveLogMode(): boolean { return this._instance.archiveLogMode }
+
+  // ── Schema / datafiles ────────────────────────────────────────────────
+
+  getDatafiles(): readonly DatafileInfo[] {
+    const sid   = this._instance.config.sid
+    const base  = `${ORADATA}/${sid}`
+    return [
+      { num: 1, name: `${base}/system01.dbf`,  sizeBytes: 838_860_800, tablespace: 'SYSTEM',  checkpoint: this._scn },
+      { num: 2, name: `${base}/sysaux01.dbf`,  sizeBytes: 576_716_800, tablespace: 'SYSAUX',  checkpoint: this._scn },
+      { num: 3, name: `${base}/undotbs01.dbf`, sizeBytes: 209_715_200, tablespace: 'UNDOTBS1', checkpoint: this._scn },
+      { num: 4, name: `${base}/users01.dbf`,   sizeBytes: 104_857_600, tablespace: 'USERS',   checkpoint: this._scn },
+    ]
+  }
+
+  getTablespaces(): readonly TablespaceInfo[] {
+    const dfs  = this.getDatafiles()
+    const ts   = new Map<string, DatafileInfo[]>()
+    for (const df of dfs) {
+      const arr = ts.get(df.tablespace) ?? []
+      arr.push(df)
+      ts.set(df.tablespace, arr)
+    }
+    return [...ts.entries()].map(([name, files]) => ({
+      name,
+      datafiles: files,
+      sizeBytes: files.reduce((s, f) => s + f.sizeBytes, 0),
+      freeBytes: Math.floor(files.reduce((s, f) => s + f.sizeBytes, 0) * 0.3),
+    }))
+  }
+
+  getArchivedLogs(): readonly ArchivedLogInfo[] {
+    const logs = this._instance.getRedoLogGroups()
+    const base = `${ORACLE_CONFIG.BASE}/archivelog`
+    return logs
+      .filter(g => g.status === 'INACTIVE' || g.status === 'ACTIVE')
+      .map((g, i) => ({
+        sequence:  g.sequence,
+        name:      `${base}/arch_1_${g.sequence}_${this._scn}.arc`,
+        firstScn:  this._scn - 1000 * (i + 1),
+        nextScn:   this._scn - 1000 * i,
+        sizeBytes: 50 * 1024 * 1024,
+        thread:    1,
+      }))
+  }
+
+  // ── Filesystem ────────────────────────────────────────────────────────
+
+  fileExists(path: string): boolean {
+    return this._vfs.getFile(path) !== undefined ||
+           this._vfs.getDirectory(path) !== undefined
+  }
+
+  readFile(path: string): string | null {
+    const f = this._vfs.getFile(path)
+    return f?.content ?? null
+  }
+
+  writeFile(path: string, content: string): boolean {
+    try {
+      this._vfs.writeFile(path, content, 'oracle')
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  deleteFile(path: string): boolean {
+    try {
+      this._vfs.deleteFile(path)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  mkdirp(path: string): void {
+    this._vfs.mkdirp(path, 'oracle')
+  }
+
+  listDir(path: string): string[] | null {
+    const dir = this._vfs.getDirectory(path)
+    return dir ? Object.keys(dir.children) : null
+  }
+
+  // ── Mutation d'etat Oracle ────────────────────────────────────────────
+
+  archiveCurrentLog(): ArchivedLogInfo | null {
+    if (!this._instance.archiveLogMode) return null
+    const result = this._instance.switchLogfile()
+    if (!result.startsWith('System altered')) return null
+    const seq  = this._instance.getRedoLogGroups()
+      .find(g => g.status === 'ACTIVE')?.sequence ?? 0
+    const base = `${ORACLE_CONFIG.BASE}/archivelog`
+    const name = `${base}/arch_1_${seq}_${this._scn}.arc`
+    this.mkdirp(base)
+    this.writeFile(name, `[Oracle archived log sequence ${seq}]`)
+    return {
+      sequence:  seq,
+      name,
+      firstScn:  this._scn - 1000,
+      nextScn:   this._scn,
+      sizeBytes: 50 * 1024 * 1024,
+      thread:    1,
+    }
+  }
+
+  advanceScn(delta: number): void {
+    this._scn += delta
+  }
+
+  private _deterministicDbId(): number {
+    let h = 0x811c9dc5
+    for (const c of this._instance.config.sid) {
+      h ^= c.charCodeAt(0)
+      h = (h * 0x01000193) >>> 0
+    }
+    return h || 1
+  }
+}
+```
+
+### 9.3 RmanSubShell refactorise — integration avec RmanSession
+
+```typescript
+// src/terminal/subshells/RmanSubShell.ts  (refactorise)
+
+import type { KeyEvent }     from '@/terminal/sessions/TerminalSession'
+import type { ISubShell, SubShellResult } from './ISubShell'
+import type { IRmanSession } from '@/database/oracle/rman/session/IRmanSession'
+
+/**
+ * RmanSubShell — pont entre ISubShell (UI) et IRmanSession (metier).
+ *
+ * Responsabilites :
+ *  - Gerait le buffering multi-ligne (prompt '2>')
+ *  - Convertit RmanOutput en SubShellResult
+ *  - Affiche le banner de demarrage
+ */
+export class RmanSubShell implements ISubShell {
+  private constructor(private readonly _session: IRmanSession) {}
+
+  static create(
+    session: IRmanSession,
+    connectOutput: import('@/database/oracle/rman/RmanOutput').RmanOutput,
+  ): { subShell: RmanSubShell; banner: string[] } {
+    return {
+      subShell: new RmanSubShell(session),
+      banner: [...connectOutput.lines],
+    }
+  }
+
+  getPrompt(): string {
+    return this._session.getPrompt()
+  }
+
+  handleKey(e: KeyEvent): boolean {
+    if (e.key === 'c' && e.ctrlKey) return true
+    return false
+  }
+
+  processLine(line: string): SubShellResult {
+    const output = this._session.processLine(line)
+
+    if (output === null) {
+      // Commande multi-ligne incomplete — continuer la saisie
+      return { output: [], exit: false, prompt: this._session.getPrompt() }
+    }
+
+    return {
+      output: [...output.lines],
+      exit:   output.exit,
+      prompt: output.exit ? '' : this._session.getPrompt(),
+    }
+  }
+
+  dispose(): void {
+    this._session.dispose()
+  }
+}
+```
+
+### 9.4 LinuxTerminalSession — wiring de la commande `rman`
+
+```typescript
+// Extrait de src/terminal/sessions/LinuxTerminalSession.ts
+
+// Dans la methode handleRmanCommand(args: string[]):
+
+handleRmanCommand(args: string[]): void {
+  const session = new RmanSession(
+    new LinuxRmanContext(this.device.oracleInstance, this.device.vfs)
+  )
+
+  // Traiter les arguments de la ligne de commande
+  // ex. "rman target /" ou "rman target sys/oracle@ORCL"
+  const opts = parseRmanArgs(args)
+
+  // Banner de demarrage
+  const banner = [
+    '',
+    `Recovery Manager: Release 19.0.0.0.0 - Production on ${formatOracleDate(new Date())}`,
+    '',
+    'Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.',
+    '',
+  ]
+
+  // Connexion automatique si TARGET specifie en argument
+  let connectOutput: RmanOutput | undefined
+  if (opts.target) {
+    connectOutput = session.connectFromArgs(opts)
+  }
+
+  const { subShell } = RmanSubShell.create(
+    session,
+    connectOutput ?? { lines: [], exit: false, backupSetsCreated: 0, filesRestored: 0, elapsedSeconds: 0 }
+  )
+
+  this.enterSubShell(subShell, [...banner, ...(connectOutput?.lines ?? [])])
+}
+```
+
+### 9.5 Diagramme d'integration complet
+
+```
+LinuxTerminalSession
+  |  handleRmanCommand(['target', '/'])
+  |
+  v
+RmanSubShell (ISubShell)
+  |  _session: IRmanSession
+  |
+  v
+RmanSession (IRmanSession)  <-- Facade
+  |  _oracleCtx: IRmanOracleContext (injected)
+  |
+  v
+LinuxRmanContext (IRmanOracleContext)  <-- Adapter
+  |  _instance: OracleInstance
+  |  _vfs: VirtualFileSystem
+  |
+  +-- getInstanceState()  --> OracleInstance.state
+  +-- getDatafiles()      --> calcule depuis config.sid
+  +-- writeFile(path, c)  --> VirtualFileSystem.writeFile()
+  +-- fileExists(path)    --> VirtualFileSystem.getFile()
+  +-- archiveCurrentLog() --> OracleInstance.switchLogfile()
+
+Test isolation :
+  MockRmanOracleContext  (zero OracleInstance, zero VFS)
+  InMemoryRmanCatalog    (deja zero dependance externe)
+  --> tests purs du module RMAN sans simulateur reseau
+```
+
+### 9.6 Structure de fichiers du module RMAN
+
+```
+src/database/oracle/rman/
+  result.ts
+  RmanError.ts
+  RmanOutput.ts
+  values/
+    Scn.ts
+    RmanTag.ts
+    BackupKey.ts
+    DbId.ts
+  config/
+    RmanConfig.ts
+  catalog/
+    types.ts
+    IRmanCatalogRepository.ts
+    InMemoryRmanCatalog.ts
+    BackupSetFactory.ts
+  channels/
+    IBackupDeviceStrategy.ts
+    DiskDeviceStrategy.ts
+    SbtDeviceStrategy.ts
+    IBackupChannel.ts
+    ConcreteBackupChannel.ts
+    ChannelPool.ts
+    ChannelAllocator.ts
+  retention/
+    IRetentionPolicy.ts
+    RedundancyPolicy.ts
+    RecoveryWindowPolicy.ts
+    NonePolicy.ts
+    RetentionPolicyFactory.ts
+    RmanRetentionEngine.ts
+  commands/
+    IRmanCommand.ts
+    RmanCommandContext.ts
+    RmanCommandDispatcher.ts
+    BackupCommand.ts
+    RestoreCommand.ts
+    RecoverCommand.ts
+    ListCommand.ts
+    ReportCommand.ts
+    CrosscheckCommand.ts
+    DeleteCommand.ts
+    ConfigureCommand.ts
+    ShowCommand.ts
+    ConnectCommand.ts
+    CatalogCommand.ts
+    DuplicateCommand.ts
+    ValidateCommand.ts
+  events/
+    IRmanEventBus.ts
+  session/
+    RmanSessionState.ts
+    RmanConnectOptions.ts
+    RmanScriptParser.ts
+    IRmanSession.ts
+    RmanSession.ts
+  integration/
+    IRmanOracleContext.ts
+    LinuxRmanContext.ts
+  RmanPureUtils.ts
+
+src/terminal/subshells/
+  RmanSubShell.ts           (refactorise — depend de IRmanSession)
+```
+
+---
+
+## 10. Flux complets et scenarios
+
+### 10.1 Flux 1 — BACKUP DATABASE (full)
+
+**Commande utilisateur** : `BACKUP DATABASE;`  
+**Pre-condition** : instance en `OPEN`, canal DISK_1 alloue automatiquement
+
+```
+Utilisateur          RmanSubShell    RmanSession       BackupCommand        LinuxRmanContext
+    |                    |               |                   |                    |
+    |--"BACKUP DATABASE;"|               |                   |                    |
+    |                    |--processLine->|                   |                    |
+    |                    |               |--parser.feed()    |                    |
+    |                    |               |  parsed.type='single'                  |
+    |                    |               |--_executeTokens() |                    |
+    |                    |               |--allocator        |                    |
+    |                    |               |  .createAutoPool()|                    |
+    |                    |               |--dispatcher       |                    |
+    |                    |               |  .dispatch()----->|                    |
+    |                    |               |                   |--ctx.oracleCtx     |
+    |                    |               |                   |  .getDatafiles()--->|
+    |                    |               |                   |<-DatafileInfo[4]---|
+    |                    |               |                   |                    |
+    |                    |               |                   |--pour chaque df:   |
+    |                    |               |                   |  channel.writePiece()
+    |                    |               |                   |  --> DiskDeviceStrategy.writePiece()
+    |                    |               |                   |  --> ctx.writeFile('/u01/.../piece.bkp')
+    |                    |               |                   |      --> VirtualFileSystem.writeFile()
+    |                    |               |                   |                    |
+    |                    |               |                   |--BackupSetFactory  |
+    |                    |               |                   |  .createBackupSet()|
+    |                    |               |                   |--catalog.addBackupSet()
+    |                    |               |                   |                    |
+    |                    |               |                   |--controlfile autobackup:
+    |                    |               |                   |  channel.writePiece('cf_autobackup.bkp')
+    |                    |               |                   |                    |
+    |                    |               |<---Result<RmanOutput>------------------|
+    |                    |               |--pool.releaseAll()|                    |
+    |                    |<--SubShellResult|                  |                    |
+    |<---affiche lignes---|               |                   |                    |
+
+Sortie terminale :
+  Starting backup at 05-MAY-2026 14:23:01
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=142 device type=DISK
+  channel ORA_DISK_1: starting full datafile backup set
+  channel ORA_DISK_1: specifying datafile(s) in backup set
+  channel ORA_DISK_1: backing up database
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/ORCL-1234567890-20260505-01.bkp
+    tag=TAG20260505T142301
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 05-MAY-2026 14:23:16
+
+  Starting Control File and SPFILE Autobackup at 05-MAY-2026 14:23:16
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/c-1234567890-20260505-00.bkp
+  Finished Control File and SPFILE Autobackup at 05-MAY-2026 14:23:17
+```
+
+### 10.2 Flux 2 — RESTORE DATABASE + RECOVER DATABASE (point-in-time)
+
+**Objectif** : restaurer jusqu'au SCN 1891000 (avant une erreur utilisateur)
+
+```
+# Etape 1 : fermer la base et la monter
+SQL> SHUTDOWN IMMEDIATE
+SQL> STARTUP MOUNT
+
+# Etape 2 : dans RMAN
+RMAN> RESTORE DATABASE UNTIL SCN 1891000;
+RMAN> RECOVER DATABASE UNTIL SCN 1891000;
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+```
+
+**Flux interne — RESTORE DATABASE UNTIL SCN 1891000** :
+
+```
+RestoreCommand.execute(tokens, ctx)
+  1. Verifie ctx.oracleCtx.getInstanceState() === 'MOUNT'  (sinon RMAN-03002)
+  2. Parse UNTIL SCN 1891000 --> targetScn = Scn.of(1891000)
+  3. catalog.findBackupSetsForScn(targetScn)
+     --> retourne les BackupSets dont ckpScn <= 1891000
+  4. Selectionne le BackupSet le plus recent < targetScn
+  5. Pour chaque piece du BackupSet :
+       channel.crosscheck(piece.handle)  --> 'AVAILABLE'
+       ctx.oracleCtx.writeFile(df.name, piece_content)
+       (simule la restauration du datafile depuis la piece)
+  6. Emet evenements : RESTORE_STARTED, FILE_RESTORED x4, RESTORE_COMPLETED
+  7. Retourne RmanOutput avec les lignes de log
+```
+
+**Flux interne — RECOVER DATABASE UNTIL SCN 1891000** :
+
+```
+RecoverCommand.execute(tokens, ctx)
+  1. Verifie ctx.oracleCtx.getInstanceState() === 'MOUNT'
+  2. Parse UNTIL SCN 1891000
+  3. Recupere le ckpScn du dernier backup restaure
+     (depuis catalog ou ctx.currentScn)
+  4. catalog.getArchivedLogsForRecovery(ckpScn, targetScn)
+     --> sequence 38, 39, 40, 41
+  5. Pour chaque archivelog en sequence :
+       verifie ctx.oracleCtx.fileExists(log.name)
+       emet ARCHIVELOG_APPLIED
+  6. ctx.oracleCtx.advanceScn(targetScn - currentScn)
+  7. Retourne RmanOutput :
+     "starting media recovery"
+     "archived log for thread 1 with sequence 38 is already on disk..."
+     ...
+     "media recovery complete, elapsed time: 00:00:03"
+```
+
+### 10.3 Flux 3 — Bloc RUN {} avec ALLOCATE CHANNEL explicite
+
+**Commande** :
+```
+RMAN> RUN {
+2>   ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '/u01/backup/%d_%s_%p.bkp';
+2>   BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'WEEKLY_FULL';
+2>   BACKUP ARCHIVELOG ALL DELETE INPUT;
+2>   RELEASE CHANNEL c1;
+2> }
+```
+
+**Flux interne** :
+
+```
+RmanSession.processLine("RUN {")
+  --> parser.feed("RUN {") --> ParsedScript { type: 'incomplete' }
+  --> retourne null (prompt '2>')
+
+processLine("  ALLOCATE CHANNEL c1 ...")
+  --> parser.feed() --> 'incomplete' (pas de ;)
+
+processLine("  BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'WEEKLY_FULL';")
+  --> parser.feed() --> accumule dans _runStatements
+
+processLine("  BACKUP ARCHIVELOG ALL DELETE INPUT;")
+  --> accumule dans _runStatements
+
+processLine("  RELEASE CHANNEL c1;")
+  --> accumule dans _runStatements
+
+processLine("}")
+  --> parser.feed("}") --> ParsedScript { type: 'run_block', statements: [...] }
+  --> _executeRunBlock(statements)
+      1. Cree UN pool partage pour tout le bloc
+      2. Execute ALLOCATE CHANNEL c1
+         --> pool.add(channelAllocator.createExplicitChannel('c1', 'DISK', fmt))
+      3. Execute BACKUP INCREMENTAL LEVEL 0
+         --> BackupCommand avec backupType='INCREMENTAL_0'
+         --> canal c1 du pool
+      4. Execute BACKUP ARCHIVELOG ALL DELETE INPUT
+         --> BackupCommand avec backupObject='ARCHIVELOG'
+         --> apres backup : supprime les archivelogs du VFS + catalog
+      5. Execute RELEASE CHANNEL c1
+         --> pool.getChannel('c1').release()
+      6. pool.releaseAll() a la fin du bloc
+```
+
+### 10.4 Flux 4 — CROSSCHECK + DELETE OBSOLETE
+
+```
+RMAN> CROSSCHECK BACKUP;
+  --> CrosscheckCommand.execute()
+      Pour chaque BackupSet dans catalog :
+        Pour chaque BackupPiece :
+          IBackupDeviceStrategy.pieceExists(piece.handle)
+          --> DiskDeviceStrategy: ctx.oracleCtx.fileExists()
+          Si false : catalog.updateBackupSetStatus(key, 'EXPIRED')
+                     emet CROSSCHECK_RESULT { available: false, handle: ... }
+
+  Sortie :
+    allocated channel: ORA_DISK_1
+    channel ORA_DISK_1: SID=142 device type=DISK
+    crosschecked backup piece: found to be 'AVAILABLE'   x3
+    crosschecked backup piece: found to be 'EXPIRED'     x1
+    Crosschecked 4 objects
+
+RMAN> DELETE NOPROMPT OBSOLETE;
+  --> DeleteCommand.execute()
+      1. createRetentionPolicy(config) --> RedundancyPolicy(1)
+      2. RmanRetentionEngine.getObsolete(catalog, policy, scn, now)
+         --> retourne les BackupSets obsoletes (garde seulement N=1)
+      3. Pour chaque BackupSet obsolete :
+           Pour chaque piece :
+             IBackupDeviceStrategy.deletePiece(handle)
+             --> ctx.oracleCtx.deleteFile(handle)
+           catalog.updateBackupSetStatus(key, 'DELETED')
+           emet DELETE_PERFORMED
+
+  Sortie :
+    RMAN retention policy will be applied to the command
+    RMAN retention policy is set to redundancy 1
+    using channel ORA_DISK_1
+    Deleting the following obsolete backups and copies:
+    Type                 Key    Completion Time    Filename/Handle
+    -------------------- ------ ------------------ --------------------
+    Backup Set           1      04-MAY-2026 10:00  /u01/.../piece_01.bkp
+    deleted backup piece: /u01/.../piece_01.bkp
+    Deleted 1 objects
+```
+
+### 10.5 Flux 5 — CONFIGURE et SHOW ALL
+
+```
+RMAN> CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
+  --> ConfigureCommand.execute()
+      Parse: RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS
+      ctx.updateConfig(c => withConfig(c, {
+        retentionPolicyType: 'RECOVERY_WINDOW',
+        retentionValue: 7
+      }))
+      Retourne : "new RMAN configuration parameters:"
+                 "CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;"
+
+RMAN> CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO BACKUPSET;
+  --> ctx.updateConfig(c => withConfig(c, { parallelism: 2, defaultDeviceType: 'DISK' }))
+      Retourne : "CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO BACKUPSET;"
+
+RMAN> SHOW ALL;
+  --> ShowCommand.execute()
+      Lit ctx.config (l'objet RmanConfig immuable courant)
+      Formate chaque parametre en CONFIGURE statement
+      Ajoute "# default" si valeur == DEFAULT_RMAN_CONFIG[param]
+
+  Sortie :
+    RMAN configuration parameters for database with db_unique_name ORCL are:
+    CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
+    CONFIGURE BACKUP OPTIMIZATION OFF; # default
+    CONFIGURE DEFAULT DEVICE TYPE TO DISK; # default
+    CONFIGURE CONTROLFILE AUTOBACKUP ON;
+    CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO BACKUPSET;
+    ...
+```
+
+---
+
+## 11. Recapitulatif des principes appliques
+
+### 11.1 Tableau des patterns de conception
+
+| Pattern | Ou | Benefice |
+|---|---|---|
+| **Result Monad (FP)** | `result.ts`, toutes les commandes | Erreurs typees, pas de try/catch, composition garantie |
+| **Discriminated Union** | `RmanSessionState`, `RmanErrorCode`, `ParsedScript` | Exhaustivite verifiee par le compilateur, zero cas non-traite |
+| **Value Object** | `Scn`, `RmanTag`, `BackupKey`, `DbId`, `BackupSet`, `RmanConfig` | Immutabilite, comparaison par valeur, thread-safety |
+| **Pure Functions (FP)** | `RmanPureUtils`, `RmanRetentionEngine` | Testabilite parfaite (zero mock), determinisme, composabilite |
+| **Repository** | `IRmanCatalogRepository`, `InMemoryRmanCatalog` | Separation persistence/domaine, testable avec in-memory impl |
+| **Factory** | `BackupSetFactory.createBackupSet()`, `createDefaultDispatcher()` | Garantit la coherence a la creation, encapsule la complexite |
+| **Strategy** | `IBackupDeviceStrategy` (DISK/SBT), `IRetentionPolicy` (REDUNDANCY/WINDOW/NONE) | Algorithmes interchangeables, Open/Closed respecte |
+| **Composite** | `ChannelPool` | Traitement uniforme d'une collection de canaux (allocate/release) |
+| **Command** | `IRmanCommand`, `RmanCommandDispatcher` | Open/Closed : ajouter une commande = 1 fichier, 1 ligne d'enregistrement |
+| **Facade** | `RmanSession` | Cache la complexite interne (dispatcher, parser, catalog, canaux) |
+| **State Machine** | `RmanSessionState` (discriminated union) | Transitions explicites, impossibilite d'etre dans un etat invalide |
+| **Builder** | `RmanConnectOptionsBuilder` | Construction lisible d'objets avec de nombreux parametres optionnels |
+| **Adapter** | `LinuxRmanContext` | Decouple le module RMAN de OracleInstance + VirtualFileSystem |
+| **Observer** | `IRmanEventBus`, `InMemoryEventBus` | Progression du backup/restore sans couplage direct |
+| **Template Method** | Via le flux BACKUP (allocate → write pieces → update catalog → autobackup) | Sequence immuable, points d'extension aux etapes |
+
+### 11.2 Principes SOLID appliques
+
+#### S — Single Responsibility Principle
+
+Chaque classe a une seule raison de changer :
+- `RmanScriptParser` : uniquement le parsing (tokenization, multi-ligne, RUN {})
+- `InMemoryRmanCatalog` : uniquement la persistence en memoire du catalog
+- `DiskDeviceStrategy` : uniquement l'ecriture/lecture sur le VFS
+- `RedundancyPolicy` : uniquement le calcul de l'obsolescence par redondance
+- `BackupSetFactory` : uniquement la creation coherente de BackupSet
+
+#### O — Open/Closed Principle
+
+```
+Extension sans modification :
+  Nouvelle commande RMAN  --> creer XxxCommand.ts, enregistrer dans createDefaultDispatcher()
+  Nouveau device type     --> creer XxxDeviceStrategy.ts, implementer IBackupDeviceStrategy
+  Nouvelle retention      --> creer XxxRetentionPolicy.ts, ajouter dans RetentionPolicyFactory
+  Nouveau contexte Oracle --> creer WindowsRmanContext.ts, implementer IRmanOracleContext
+```
+
+#### L — Liskov Substitution Principle
+
+```
+Toute IRmanOracleContext peut remplacer LinuxRmanContext sans changer RmanSession.
+Toute IRetentionPolicy peut remplacer RedundancyPolicy sans changer RmanRetentionEngine.
+Toute IBackupDeviceStrategy peut remplacer DiskDeviceStrategy sans changer ConcreteBackupChannel.
+```
+
+#### I — Interface Segregation Principle
+
+```
+IRmanCatalogRepository = IRmanCatalogReader + IRmanCatalogWriter
+  --> ListCommand n'a besoin que de IRmanCatalogReader (lecture seule)
+  --> BackupCommand n'a besoin que de IRmanCatalogWriter pour addBackupSet()
+  --> CrosscheckCommand utilise les deux
+
+IBackupDeviceStrategy = writePiece + pieceExists + deletePiece
+  --> 3 methodes cohesives, pas de methodes imposees inutilement
+
+IRmanSession = processLine + connectFromArgs + getPrompt + isExited + dispose
+  --> RmanSubShell ne voit que cette interface, pas RmanSession concrete
+```
+
+#### D — Dependency Inversion Principle
+
+```
+Couche haute (RmanSession) --> depend de IRmanCatalogRepository (interface)
+                           --> depend de IRmanOracleContext (interface)
+                           --> depend de IRetentionPolicy (interface)
+                           --> depend de IRmanEventBus (interface)
+
+Couche basse (InMemoryRmanCatalog, LinuxRmanContext) --> implementent les interfaces
+
+Aucune dependance vers le haut : LinuxRmanContext ne connait pas RmanSession.
+```
+
+### 11.3 Garanties de programmation fonctionnelle
+
+| Propriete | Mecanisme | Verification |
+|---|---|---|
+| **Immutabilite** | `Object.freeze()` sur tous les Value Objects | Erreur runtime si mutation tentee |
+| **Fonctions pures** | `RmanPureUtils` et `RmanRetentionEngine` sans `this`, sans side effects | Tests sans mock |
+| **Monade Result** | `map/flatMap/match` au lieu de try/catch | Pas d'exception non geree |
+| **Composition** | `sequence()`, `flatMap()` pour chainer les operatins | Propagation automatique des erreurs |
+| **Separation FP/OOP** | Modules de fonctions pures + classes pour l'etat | Logique testable sans instanciation |
+
+### 11.4 Couverture des defauts identifies (section 1.2)
+
+| DEF | Defaut | Solution dans ce design |
+|---|---|---|
+| DEF-RMAN-01 | Pas de catalog persistant | `InMemoryRmanCatalog` + `BackupSetFactory` (section 4) |
+| DEF-RMAN-02 | `SHOW ALL` hardcode | `ShowCommand` lit `RmanConfig` immuable (section 7) |
+| DEF-RMAN-03 | Pieces non ecrites sur VFS | `DiskDeviceStrategy.writePiece()` --> VFS (section 5) |
+| DEF-RMAN-04 | Pas d'INCREMENTAL | `BackupCommand` : parse `LEVEL 0/1`, `BackupType` enum (section 7) |
+| DEF-RMAN-05 | Pas de FORMAT/TAG | `BackupCommand` : parse clauses, `expandPieceFormat()` (sections 3, 7) |
+| DEF-RMAN-06 | Pas de CONFIGURE | `ConfigureCommand` + `withConfig()` immuable (sections 6, 7) |
+| DEF-RMAN-07 | Pas de canaux | `ChannelPool` + `ChannelAllocator` (section 5) |
+| DEF-RMAN-08 | LIST statique | `ListCommand` lit `IRmanCatalogReader` (sections 4, 7) |
+| DEF-RMAN-09 | RESTORE sans check | `RestoreCommand` verifie `getInstanceState() === 'MOUNT'` (section 7) |
+| DEF-RMAN-10 | Mono-ligne seulement | `RmanScriptParser` multi-ligne avec buffering (section 8) |
+| DEF-RMAN-11 | Pas de RUN {} | `RmanScriptParser` : detection et execution de blocs RUN (section 8) |
+| DEF-RMAN-12 | CROSSCHECK fictif | `CrosscheckCommand` --> `IBackupDeviceStrategy.pieceExists()` (sections 5, 7) |
+| DEF-RMAN-13 | DELETE ne fait rien | `DeleteCommand` --> `deletePiece()` + `updateBackupSetStatus()` (sections 5, 7) |
+| DEF-RMAN-14 | Pas de BACKUP CONTROLFILE | `BackupCommand` : `BackupObject = 'CONTROLFILE'` (section 7) |
+| DEF-RMAN-15 | Pas de BACKUP VALIDATE | `ValidateCommand` (section 7) |
+| DEF-RMAN-16 | Pas de CATALOG | `CatalogCommand` (section 7) |
+| DEF-RMAN-17 | Pas de DUPLICATE | `DuplicateCommand` (section 7) |
+| DEF-RMAN-18 | Pas de SCN/time recovery | `RecoverCommand` : parse `UNTIL SCN n` / `UNTIL TIME 'date'` (sections 7, 10) |
+| DEF-RMAN-19 | CONNECT non valide | `ConnectCommand` --> `IRmanOracleContext.getInstanceState()` (sections 7, 9) |
+| DEF-RMAN-20 | DELETE INPUT ignore | `BackupCommand` : flag `deleteInput` supprime les archivelogs apres backup (section 7) |
+
+### 11.5 Guide d'implementation (ordre recommande)
+
+L'ordre de developpement suit la pyramide de dependances — chaque couche est testable avant de construire la suivante :
+
+```
+Phase 1 — Fondations (zero dependance externe)
+  result.ts  RmanError.ts  RmanOutput.ts
+  values/: Scn.ts  RmanTag.ts  BackupKey.ts  DbId.ts
+  RmanPureUtils.ts
+  config/RmanConfig.ts
+
+Phase 2 — Catalog (depend uniquement des fondations)
+  catalog/types.ts
+  catalog/IRmanCatalogRepository.ts
+  catalog/InMemoryRmanCatalog.ts
+  catalog/BackupSetFactory.ts
+
+Phase 3 — Canaux et retention (depend du catalog)
+  retention/: IRetentionPolicy + 3 implementations + factory + engine
+  channels/: IBackupDeviceStrategy + DiskDevice + SbtDevice
+             IBackupChannel + ConcreteBackupChannel
+             ChannelPool + ChannelAllocator
+
+Phase 4 — Commandes (depend de tout le reste)
+  commands/: IRmanCommand + RmanCommandContext + RmanCommandDispatcher
+             13 commandes implementations
+
+Phase 5 — Session (orchestration)
+  session/: RmanSessionState + RmanConnectOptions + RmanScriptParser
+            IRmanSession + RmanSession
+
+Phase 6 — Integration (depend du simulateur)
+  integration/IRmanOracleContext.ts
+  integration/LinuxRmanContext.ts
+
+Phase 7 — Wiring (depend de toutes les couches)
+  RmanSubShell.ts (refactorise)
+  LinuxTerminalSession.ts (wiring de la commande rman)
+
+Phase 8 — Tests
+  rman-core.test.ts    (Phases 1-3 : fonctions pures, catalog, retention)
+  rman-commands.test.ts (Phase 4 : chaque commande avec MockOracleContext)
+  rman-session.test.ts  (Phase 5 : scripts multi-lignes, blocs RUN)
+  rman-integration.test.ts (Phases 6-7 : avec OracleInstance + VFS reels)
+```
+
+---
+
+*Document genere par Claude Code — Ubuntu Sandbox v1.0*  
+*Toute modification doit etre accompagnee d'une mise a jour de la table de couverture (section 11.4)*
+

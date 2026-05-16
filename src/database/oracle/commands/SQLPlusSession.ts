@@ -156,7 +156,20 @@ export class SQLPlusSession {
           timing: this.settings.timing,
           autoCommit: this.settings.autocommit,
         });
+        // Phase 7: bind sessionId for oracle.session.*/transaction.*/dml.*/ddl.* events.
+        this.executor.setSessionId(String(this.sid));
       }
+      // Phase 7: emit oracle.session.connected on the same bus as the instance.
+      this.db.instance.getBus().publish({
+        topic: 'oracle.session.connected',
+        payload: {
+          deviceId: this.db.instance.getDeviceId(),
+          sid: this.db.instance.config.sid,
+          sessionId: String(this.sid),
+          schema: this.currentUser,
+          role: asSysdba ? 'SYSDBA' : undefined,
+        },
+      });
 
       output.push('Connected.');
     } catch (err: unknown) {
@@ -171,6 +184,15 @@ export class SQLPlusSession {
   disconnect(): void {
     if (this.connected && this.sid) {
       this.db.disconnect(this.sid);
+      // Phase 7: announce the disconnect on the bus.
+      this.db.instance.getBus().publish({
+        topic: 'oracle.session.disconnected',
+        payload: {
+          deviceId: this.db.instance.getDeviceId(),
+          sid: this.db.instance.config.sid,
+          sessionId: String(this.sid),
+        },
+      });
     }
     this.executor = null;
     this.sid = 0;

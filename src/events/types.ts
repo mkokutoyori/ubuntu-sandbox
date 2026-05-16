@@ -27,6 +27,7 @@ import type { RipDomainEvent } from '@/network/rip/events';
 import type { DhcpDomainEvent } from '@/network/dhcp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
+import type { OracleDomainEvent } from '@/database/oracle/events';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-cutting
@@ -238,7 +239,9 @@ export type DomainEvent =
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
   // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)
-  | HostDomainEvent;
+  | HostDomainEvent
+  // Oracle DBMS (sub-union, see src/database/oracle/events.ts)
+  | OracleDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 
