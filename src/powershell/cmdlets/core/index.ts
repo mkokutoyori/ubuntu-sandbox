@@ -91,7 +91,7 @@ import {
 import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet,
   GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
-  NetCmdlet, VolCmdlet, ChcpCmdlet,
+  NetCmdlet, VolCmdlet, ChcpCmdlet, ScCmdlet, ScExeCmdlet,
 } from './NativeShimCmdlets';
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
@@ -306,4 +306,6 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(NetCmdlet);
   registry.register(VolCmdlet);
   registry.register(ChcpCmdlet);
+  registry.register(ScCmdlet);
+  registry.register(ScExeCmdlet);
 }

@@ -63,3 +63,9 @@ export const NslookupCmdlet  = new NativeShim('nslookup');
 export const NetCmdlet       = new NativeShim('net');
 export const VolCmdlet       = new NativeShim('vol');
 export const ChcpCmdlet      = new NativeShim('chcp');
+// `sc` is canonically the Set-Content alias in PowerShell, but this
+// simulator exposes cmd service-control tools bare in PS for
+// cmd↔PS coherence (same as `net` / `netsh`). `sc.exe` is the
+// always-correct explicit form.
+export const ScCmdlet        = new NativeShim('sc');
+export const ScExeCmdlet     = new NativeShim('sc.exe');

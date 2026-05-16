@@ -786,6 +786,12 @@ export class WindowsPC extends EndHost {
     if (lower === 'chcp') return this.cmdChcp(args);
     if (lower === 'date') return this.cmdDate(args);
     if (lower === 'time') return this.cmdTime(args);
+    if (lower === 'sc' || lower === 'sc.exe') {
+      return cmdSc(
+        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() },
+        args,
+      );
+    }
     // `net` is a multi-subcommand router — all its subhandlers are sync
     // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
     if (lower === 'net' && args.length > 0) {

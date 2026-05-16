@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-cmd-commands-pc
-Generated: 2026-05-16T08:05:24.526Z
+Generated: 2026-05-16T08:12:14.645Z
 host=WIN-CMD-COH (windows-pc)
 Total commands: 200
 ============================================================
@@ -79,10 +79,10 @@ PS  [18/200]> date /t
   Sat 05/16/2026
 
 CMD [19/200]> time /t
-  8:05 AM
+  8:12 AM
 
 PS  [20/200]> time /t
-  8:05 AM
+  8:12 AM
 
 
 --- [21] § filesystem builtins ---
@@ -104,18 +104,18 @@ CMD [25/200]> dir C:\
   
    Directory of C:\
   
-  05/16/2026  08:05 AM    <DIR>          .
-  05/16/2026  08:05 AM    <DIR>          ..
-  05/16/2026  08:05 AM    <DIR>          $Recycle.Bin
-  05/16/2026  08:05 AM    <DIR>          PerfLogs
-  05/16/2026  08:05 AM    <DIR>          Program Files
-  05/16/2026  08:05 AM    <DIR>          Program Files (x86)
-  05/16/2026  08:05 AM    <DIR>          ProgramData
-  05/16/2026  08:05 AM    <DIR>          System Volume Information
-  05/16/2026  08:05 AM    <DIR>          Users
-  05/16/2026  08:05 AM    <DIR>          Windows
-  05/16/2026  08:05 AM              9 numbers.txt
-  05/16/2026  08:05 AM              9 nums.txt
+  05/16/2026  08:12 AM    <DIR>          .
+  05/16/2026  08:12 AM    <DIR>          ..
+  05/16/2026  08:12 AM    <DIR>          $Recycle.Bin
+  05/16/2026  08:12 AM    <DIR>          PerfLogs
+  05/16/2026  08:12 AM    <DIR>          Program Files
+  05/16/2026  08:12 AM    <DIR>          Program Files (x86)
+  05/16/2026  08:12 AM    <DIR>          ProgramData
+  05/16/2026  08:12 AM    <DIR>          System Volume Information
+  05/16/2026  08:12 AM    <DIR>          Users
+  05/16/2026  08:12 AM    <DIR>          Windows
+  05/16/2026  08:12 AM              9 numbers.txt
+  05/16/2026  08:12 AM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -123,16 +123,16 @@ PS  [26/200]> dir C:\
   
   Mode    LastWriteTime      Length  Name                     
   ------  -----------------  ------  -------------------------
-  d-----  5/16/2026 8:05 AM          $Recycle.Bin             
-  d-----  5/16/2026 8:05 AM          PerfLogs                 
-  d-----  5/16/2026 8:05 AM          Program Files            
-  d-----  5/16/2026 8:05 AM          Program Files (x86)      
-  d-----  5/16/2026 8:05 AM          ProgramData              
-  d-----  5/16/2026 8:05 AM          System Volume Information
-  d-----  5/16/2026 8:05 AM          Users                    
-  d-----  5/16/2026 8:05 AM          Windows                  
-  -a----  5/16/2026 8:05 AM       9  numbers.txt              
-  -a----  5/16/2026 8:05 AM       9  nums.txt                 
+  d-----  5/16/2026 8:12 AM          $Recycle.Bin             
+  d-----  5/16/2026 8:12 AM          PerfLogs                 
+  d-----  5/16/2026 8:12 AM          Program Files            
+  d-----  5/16/2026 8:12 AM          Program Files (x86)      
+  d-----  5/16/2026 8:12 AM          ProgramData              
+  d-----  5/16/2026 8:12 AM          System Volume Information
+  d-----  5/16/2026 8:12 AM          Users                    
+  d-----  5/16/2026 8:12 AM          Windows                  
+  -a----  5/16/2026 8:12 AM       9  numbers.txt              
+  -a----  5/16/2026 8:12 AM       9  nums.txt                 
   
 
 CMD [27/200]> dir C:\ /b
@@ -153,13 +153,13 @@ PS  [28/200]> dir C:\ /b
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   8:05 AM                Program Files
-  d-----                5/16/2026   8:05 AM                Program Files (x86)
-  d-----                5/16/2026   8:05 AM                ProgramData
-  d-----                5/16/2026   8:05 AM                Users
-  d---s-                5/16/2026   8:05 AM                Windows
-  -a----                5/16/2026   8:05 AM              9 numbers.txt
-  -a----                5/16/2026   8:05 AM              9 nums.txt
+  d-----                5/16/2026   8:12 AM                Program Files
+  d-----                5/16/2026   8:12 AM                Program Files (x86)
+  d-----                5/16/2026   8:12 AM                ProgramData
+  d-----                5/16/2026   8:12 AM                Users
+  d---s-                5/16/2026   8:12 AM                Windows
+  -a----                5/16/2026   8:12 AM              9 numbers.txt
+  -a----                5/16/2026   8:12 AM              9 nums.txt
 
 CMD [29/200]> dir C:\ /s /b
   C:\\$Recycle.Bin
@@ -308,13 +308,13 @@ PS  [30/200]> dir C:\ /s /b
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   8:05 AM                Program Files
-  d-----                5/16/2026   8:05 AM                Program Files (x86)
-  d-----                5/16/2026   8:05 AM                ProgramData
-  d-----                5/16/2026   8:05 AM                Users
-  d---s-                5/16/2026   8:05 AM                Windows
-  -a----                5/16/2026   8:05 AM              9 numbers.txt
-  -a----                5/16/2026   8:05 AM              9 nums.txt
+  d-----                5/16/2026   8:12 AM                Program Files
+  d-----                5/16/2026   8:12 AM                Program Files (x86)
+  d-----                5/16/2026   8:12 AM                ProgramData
+  d-----                5/16/2026   8:12 AM                Users
+  d---s-                5/16/2026   8:12 AM                Windows
+  -a----                5/16/2026   8:12 AM              9 numbers.txt
+  -a----                5/16/2026   8:12 AM              9 nums.txt
 
 CMD [31/200]> dir C:\ /a
    Volume in drive C has no label.
@@ -322,18 +322,18 @@ CMD [31/200]> dir C:\ /a
   
    Directory of C:\
   
-  05/16/2026  08:05 AM    <DIR>          .
-  05/16/2026  08:05 AM    <DIR>          ..
-  05/16/2026  08:05 AM    <DIR>          $Recycle.Bin
-  05/16/2026  08:05 AM    <DIR>          PerfLogs
-  05/16/2026  08:05 AM    <DIR>          Program Files
-  05/16/2026  08:05 AM    <DIR>          Program Files (x86)
-  05/16/2026  08:05 AM    <DIR>          ProgramData
-  05/16/2026  08:05 AM    <DIR>          System Volume Information
-  05/16/2026  08:05 AM    <DIR>          Users
-  05/16/2026  08:05 AM    <DIR>          Windows
-  05/16/2026  08:05 AM              9 numbers.txt
-  05/16/2026  08:05 AM              9 nums.txt
+  05/16/2026  08:12 AM    <DIR>          .
+  05/16/2026  08:12 AM    <DIR>          ..
+  05/16/2026  08:12 AM    <DIR>          $Recycle.Bin
+  05/16/2026  08:12 AM    <DIR>          PerfLogs
+  05/16/2026  08:12 AM    <DIR>          Program Files
+  05/16/2026  08:12 AM    <DIR>          Program Files (x86)
+  05/16/2026  08:12 AM    <DIR>          ProgramData
+  05/16/2026  08:12 AM    <DIR>          System Volume Information
+  05/16/2026  08:12 AM    <DIR>          Users
+  05/16/2026  08:12 AM    <DIR>          Windows
+  05/16/2026  08:12 AM              9 numbers.txt
+  05/16/2026  08:12 AM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -343,13 +343,13 @@ PS  [32/200]> dir C:\ /a
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   8:05 AM                Program Files
-  d-----                5/16/2026   8:05 AM                Program Files (x86)
-  d-----                5/16/2026   8:05 AM                ProgramData
-  d-----                5/16/2026   8:05 AM                Users
-  d---s-                5/16/2026   8:05 AM                Windows
-  -a----                5/16/2026   8:05 AM              9 numbers.txt
-  -a----                5/16/2026   8:05 AM              9 nums.txt
+  d-----                5/16/2026   8:12 AM                Program Files
+  d-----                5/16/2026   8:12 AM                Program Files (x86)
+  d-----                5/16/2026   8:12 AM                ProgramData
+  d-----                5/16/2026   8:12 AM                Users
+  d---s-                5/16/2026   8:12 AM                Windows
+  -a----                5/16/2026   8:12 AM              9 numbers.txt
+  -a----                5/16/2026   8:12 AM              9 nums.txt
 
 CMD [33/200]> dir C:\ /o:n
    Volume in drive C has no label.
@@ -357,18 +357,18 @@ CMD [33/200]> dir C:\ /o:n
   
    Directory of C:\
   
-  05/16/2026  08:05 AM    <DIR>          .
-  05/16/2026  08:05 AM    <DIR>          ..
-  05/16/2026  08:05 AM    <DIR>          $Recycle.Bin
-  05/16/2026  08:05 AM    <DIR>          PerfLogs
-  05/16/2026  08:05 AM    <DIR>          Program Files
-  05/16/2026  08:05 AM    <DIR>          Program Files (x86)
-  05/16/2026  08:05 AM    <DIR>          ProgramData
-  05/16/2026  08:05 AM    <DIR>          System Volume Information
-  05/16/2026  08:05 AM    <DIR>          Users
-  05/16/2026  08:05 AM    <DIR>          Windows
-  05/16/2026  08:05 AM              9 numbers.txt
-  05/16/2026  08:05 AM              9 nums.txt
+  05/16/2026  08:12 AM    <DIR>          .
+  05/16/2026  08:12 AM    <DIR>          ..
+  05/16/2026  08:12 AM    <DIR>          $Recycle.Bin
+  05/16/2026  08:12 AM    <DIR>          PerfLogs
+  05/16/2026  08:12 AM    <DIR>          Program Files
+  05/16/2026  08:12 AM    <DIR>          Program Files (x86)
+  05/16/2026  08:12 AM    <DIR>          ProgramData
+  05/16/2026  08:12 AM    <DIR>          System Volume Information
+  05/16/2026  08:12 AM    <DIR>          Users
+  05/16/2026  08:12 AM    <DIR>          Windows
+  05/16/2026  08:12 AM              9 numbers.txt
+  05/16/2026  08:12 AM              9 nums.txt
                  2 File(s) 18 bytes
                  10 Dir(s)  53,687,091,200 bytes free
 
@@ -378,13 +378,13 @@ PS  [34/200]> dir C:\ /o:n
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   8:05 AM                Program Files
-  d-----                5/16/2026   8:05 AM                Program Files (x86)
-  d-----                5/16/2026   8:05 AM                ProgramData
-  d-----                5/16/2026   8:05 AM                Users
-  d---s-                5/16/2026   8:05 AM                Windows
-  -a----                5/16/2026   8:05 AM              9 numbers.txt
-  -a----                5/16/2026   8:05 AM              9 nums.txt
+  d-----                5/16/2026   8:12 AM                Program Files
+  d-----                5/16/2026   8:12 AM                Program Files (x86)
+  d-----                5/16/2026   8:12 AM                ProgramData
+  d-----                5/16/2026   8:12 AM                Users
+  d---s-                5/16/2026   8:12 AM                Windows
+  -a----                5/16/2026   8:12 AM              9 numbers.txt
+  -a----                5/16/2026   8:12 AM              9 nums.txt
 
 CMD [35/200]> dir C:\ *.sys
   File Not Found
@@ -395,13 +395,13 @@ PS  [36/200]> dir C:\ *.sys
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  d-----                5/16/2026   8:05 AM                Program Files
-  d-----                5/16/2026   8:05 AM                Program Files (x86)
-  d-----                5/16/2026   8:05 AM                ProgramData
-  d-----                5/16/2026   8:05 AM                Users
-  d---s-                5/16/2026   8:05 AM                Windows
-  -a----                5/16/2026   8:05 AM              9 numbers.txt
-  -a----                5/16/2026   8:05 AM              9 nums.txt
+  d-----                5/16/2026   8:12 AM                Program Files
+  d-----                5/16/2026   8:12 AM                Program Files (x86)
+  d-----                5/16/2026   8:12 AM                ProgramData
+  d-----                5/16/2026   8:12 AM                Users
+  d---s-                5/16/2026   8:12 AM                Windows
+  -a----                5/16/2026   8:12 AM              9 numbers.txt
+  -a----                5/16/2026   8:12 AM              9 nums.txt
 
 
 --- [37] § create / inspect ---
@@ -970,7 +970,205 @@ CMD [81/200]> sc query
           WAIT_HINT          : 0x0
 
 PS  [82/200]> sc query
-<empty>
+  
+  SERVICE_NAME: Tcpip
+          TYPE               : 1  KERNEL_DRIVER
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Afd
+          TYPE               : 1  KERNEL_DRIVER
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Dhcp
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Dnscache
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: NetBT
+          TYPE               : 1  KERNEL_DRIVER
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: RpcSs
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: RpcEptMapper
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: SamSs
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: LanmanServer
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: LanmanWorkstation
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: mpssvc
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: EventLog
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: W32Time
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: CryptSvc
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Winmgmt
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: winlogon
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Spooler
+          TYPE               : 10  WIN32_OWN_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Schedule
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: AudioSrv
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
+  
+  
+  SERVICE_NAME: Themes
+          TYPE               : 20  WIN32_SHARE_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
 
 CMD [83/200]> sc query Spooler
   
@@ -984,7 +1182,15 @@ CMD [83/200]> sc query Spooler
           WAIT_HINT          : 0x0
 
 PS  [84/200]> sc query Spooler
-<empty>
+  
+  SERVICE_NAME: Spooler
+          TYPE               : 10  WIN32_OWN_PROCESS
+          STATE              : 4  RUNNING
+                                  (STOPPABLE, PAUSABLE, ACCEPTS_SHUTDOWN)
+          WIN32_EXIT_CODE    : 0  (0x0)
+          SERVICE_EXIT_CODE  : 0  (0x0)
+          CHECKPOINT         : 0x0
+          WAIT_HINT          : 0x0
 
 CMD [85/200]> sc qc Spooler
   [SC] QueryServiceConfig SUCCESS
@@ -1001,7 +1207,18 @@ CMD [85/200]> sc qc Spooler
           SERVICE_START_NAME : NT AUTHORITY\SYSTEM
 
 PS  [86/200]> sc qc Spooler
-<empty>
+  [SC] QueryServiceConfig SUCCESS
+  
+  SERVICE_NAME: Spooler
+          TYPE               : 10  WIN32_OWN_PROCESS
+          START_TYPE         : 2   AUTO_START
+          ERROR_CONTROL      : 1   NORMAL
+          BINARY_PATH_NAME   : C:\Windows\System32\spoolsv.exe
+          LOAD_ORDER_GROUP   :
+          TAG                : 0
+          DISPLAY_NAME       : Print Spooler
+          DEPENDENCIES       : RpcSs
+          SERVICE_START_NAME : NT AUTHORITY\SYSTEM
 
 CMD [87/200]> net start
   These Windows services are started:

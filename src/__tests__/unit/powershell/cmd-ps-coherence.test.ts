@@ -149,3 +149,22 @@ describe('`echo %VAR%` keeps each shell faithful', () => {
     expect((await sh.processLine('1,2,3 | % { $_ * 10 }')).output).toEqual(['10', '20', '30']);
   });
 });
+
+describe('`sc` service control is coherent in cmd and PowerShell', () => {
+  it('sc query / sc.exe query / sc qc match cmd', async () => {
+    const d = pc();
+    const sh = ps(d);
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+    const cmdQ = await d.executeCmdCommand('sc query Spooler');
+    expect(norm(cmdQ)).toContain('SERVICE_NAME: Spooler');
+    expect(norm(cmdQ)).toContain('RUNNING');
+
+    expect(norm(await run(sh, 'sc query Spooler'))).toBe(norm(cmdQ));
+    expect(norm(await run(sh, 'sc.exe query Spooler'))).toBe(norm(cmdQ));
+
+    const cmdQc = await d.executeCmdCommand('sc qc Spooler');
+    expect(norm(await run(sh, 'sc qc Spooler'))).toBe(norm(cmdQc));
+    expect(norm(cmdQc)).toContain('AUTO_START');
+  });
+});
