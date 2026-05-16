@@ -216,6 +216,41 @@ describe('Set-Content — array / pipeline input is one value per line', () => {
   });
 });
 
+describe('Filesystem cmdlets — recurse copy / pipeline remove / -Force / Extension', () => {
+  it('New-Item -Force creates missing parent directories', async () => {
+    const s = shell();
+    await run(s, 'New-Item C:\\Lab\\tmp\\a.txt -ItemType File -Force | Out-Null');
+    expect(await j(s, 'Test-Path C:\\Lab\\tmp\\a.txt')).toBe('True');
+  });
+  it('Get-ChildItem | Remove-Item removes piped files', async () => {
+    const s = shell();
+    await run(s, 'New-Item C:\\W -ItemType Directory -Force | Out-Null');
+    await run(s, '1..3 | ForEach-Object { New-Item "C:\\W\\f$_.txt" -ItemType File -Force | Out-Null }');
+    await run(s, 'Get-ChildItem C:\\W -Filter f*.txt | Remove-Item');
+    expect(await j(s, '(Get-ChildItem C:\\W).Count')).toBe('0');
+  });
+  it('Copy-Item -Recurse copies a directory tree', async () => {
+    const s = shell();
+    await run(s, 'New-Item C:\\Src\\inner -ItemType Directory -Force | Out-Null');
+    await run(s, 'Set-Content C:\\Src\\top.txt -Value "a"');
+    await run(s, 'Set-Content C:\\Src\\inner\\deep.txt -Value "b"');
+    await run(s, 'Copy-Item C:\\Src C:\\Dst -Recurse');
+    expect(await j(s, 'Test-Path C:\\Dst\\inner\\deep.txt')).toBe('True');
+    expect(await run(s, 'Get-Content C:\\Dst\\top.txt')).toEqual(['a']);
+  });
+  it('Get-ChildItem objects expose Extension for Group-Object', async () => {
+    const s = shell();
+    await run(s, 'New-Item C:\\G -ItemType Directory -Force | Out-Null');
+    await run(s, 'Set-Content C:\\G\\a.txt -Value 1');
+    await run(s, 'Set-Content C:\\G\\b.txt -Value 2');
+    await run(s, 'Set-Content C:\\G\\c.log -Value 3');
+    const out = await j(s,
+      'Get-ChildItem C:\\G -File | Group-Object Extension | Select-Object Name, Count');
+    expect(out).toMatch(/\.txt/);
+    expect(out).toMatch(/\.log/);
+  });
+});
+
 describe('Get-Random — -InputObject / -Count / -SetSeed', () => {
   it('-SetSeed is reproducible', async () => {
     const s = shell();

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — filesystem-cmdlets-server
-Generated: 2026-05-16T19:11:52.350Z
+Generated: 2026-05-16T22:54:04.010Z
 Engine: powershell
 host=SRV-FILESYSTEM-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 78
@@ -62,44 +62,44 @@ PS [12/78]> (New-Item -Path C:\Lab\x.txt -ItemType File -Value "v").FullName
 --- [13] § Get-ChildItem ---
 PS [13/78]> Get-ChildItem C:\Lab
   
-  Mode    LastWriteTime      Length  Name     
-  ------  -----------------  ------  ---------
-  d-----  5/16/2026 7:11 PM          d2       
-  d-----  5/16/2026 7:11 PM          sub1     
-  d-----  5/16/2026 7:11 PM          sub2     
-  -a----  5/16/2026 7:11 PM       2  file1.txt
-  -a----  5/16/2026 7:11 PM       3  file2.txt
-  -a----  5/16/2026 7:11 PM       4  file3.txt
-  -a----  5/16/2026 7:11 PM       5  file4.txt
-  -a----  5/16/2026 7:11 PM       6  file5.txt
-  -a----  5/16/2026 7:11 PM       7  file6.txt
-  -a----  5/16/2026 7:11 PM       5  fresh.txt
-  -a----  5/16/2026 7:11 PM       7  readme.md
-  -a----  5/16/2026 7:11 PM       1  x.txt    
+  Mode    LastWriteTime       Length  Name     
+  ------  ------------------  ------  ---------
+  d-----  5/16/2026 10:54 PM          d2       
+  d-----  5/16/2026 10:54 PM          sub1     
+  d-----  5/16/2026 10:54 PM          sub2     
+  -a----  5/16/2026 10:54 PM       2  file1.txt
+  -a----  5/16/2026 10:54 PM       3  file2.txt
+  -a----  5/16/2026 10:54 PM       4  file3.txt
+  -a----  5/16/2026 10:54 PM       5  file4.txt
+  -a----  5/16/2026 10:54 PM       6  file5.txt
+  -a----  5/16/2026 10:54 PM       7  file6.txt
+  -a----  5/16/2026 10:54 PM       5  fresh.txt
+  -a----  5/16/2026 10:54 PM       7  readme.md
+  -a----  5/16/2026 10:54 PM       1  x.txt    
   
 
 PS [14/78]> Get-ChildItem C:\Lab -File
   
-  Mode    LastWriteTime      Length  Name     
-  ------  -----------------  ------  ---------
-  -a----  5/16/2026 7:11 PM       2  file1.txt
-  -a----  5/16/2026 7:11 PM       3  file2.txt
-  -a----  5/16/2026 7:11 PM       4  file3.txt
-  -a----  5/16/2026 7:11 PM       5  file4.txt
-  -a----  5/16/2026 7:11 PM       6  file5.txt
-  -a----  5/16/2026 7:11 PM       7  file6.txt
-  -a----  5/16/2026 7:11 PM       5  fresh.txt
-  -a----  5/16/2026 7:11 PM       7  readme.md
-  -a----  5/16/2026 7:11 PM       1  x.txt    
+  Mode    LastWriteTime       Length  Name     
+  ------  ------------------  ------  ---------
+  -a----  5/16/2026 10:54 PM       2  file1.txt
+  -a----  5/16/2026 10:54 PM       3  file2.txt
+  -a----  5/16/2026 10:54 PM       4  file3.txt
+  -a----  5/16/2026 10:54 PM       5  file4.txt
+  -a----  5/16/2026 10:54 PM       6  file5.txt
+  -a----  5/16/2026 10:54 PM       7  file6.txt
+  -a----  5/16/2026 10:54 PM       5  fresh.txt
+  -a----  5/16/2026 10:54 PM       7  readme.md
+  -a----  5/16/2026 10:54 PM       1  x.txt    
   
 
 PS [15/78]> Get-ChildItem C:\Lab -Directory
   
-  Mode    LastWriteTime      Length  Name
-  ------  -----------------  ------  ----
-  d-----  5/16/2026 7:11 PM          d2  
-  d-----  5/16/2026 7:11 PM          sub1
-  d-----  5/16/2026 7:11 PM          sub2
+  Mode    LastWriteTime       Length  Name
+  ------  ------------------  ------  ----
+  d-----  5/16/2026 10:54 PM          d2  
+  d-----  5/16/2026 10:54 PM          sub1
+  d-----  5/16/2026 10:54 PM          sub2
   
 
 PS [16/78]> Get-ChildItem C:\Lab -Name
@@ -122,61 +122,61 @@ PS [17/78]> Get-ChildItem C:\Lab -Filter *.txt
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/16/2026   7:11 PM              2 file1.txt
-  -a----                5/16/2026   7:11 PM              3 file2.txt
-  -a----                5/16/2026   7:11 PM              4 file3.txt
-  -a----                5/16/2026   7:11 PM              5 file4.txt
-  -a----                5/16/2026   7:11 PM              6 file5.txt
-  -a----                5/16/2026   7:11 PM              7 file6.txt
-  -a----                5/16/2026   7:11 PM              5 fresh.txt
-  -a----                5/16/2026   7:11 PM              1 x.txt
+  -a----                5/16/2026  10:54 PM              2 file1.txt
+  -a----                5/16/2026  10:54 PM              3 file2.txt
+  -a----                5/16/2026  10:54 PM              4 file3.txt
+  -a----                5/16/2026  10:54 PM              5 file4.txt
+  -a----                5/16/2026  10:54 PM              6 file5.txt
+  -a----                5/16/2026  10:54 PM              7 file6.txt
+  -a----                5/16/2026  10:54 PM              5 fresh.txt
+  -a----                5/16/2026  10:54 PM              1 x.txt
 
 PS [18/78]> Get-ChildItem C:\Lab -Recurse
   
-  Mode    LastWriteTime      Length  Name      
-  ------  -----------------  ------  ----------
-  d-----  5/16/2026 7:11 PM          d2        
-  d-----  5/16/2026 7:11 PM          sub1      
-  d-----  5/16/2026 7:11 PM          sub2      
-  -a----  5/16/2026 7:11 PM       2  file1.txt 
-  -a----  5/16/2026 7:11 PM       3  file2.txt 
-  -a----  5/16/2026 7:11 PM       4  file3.txt 
-  -a----  5/16/2026 7:11 PM       5  file4.txt 
-  -a----  5/16/2026 7:11 PM       6  file5.txt 
-  -a----  5/16/2026 7:11 PM       7  file6.txt 
-  -a----  5/16/2026 7:11 PM       5  fresh.txt 
-  -a----  5/16/2026 7:11 PM       7  readme.md 
-  -a----  5/16/2026 7:11 PM       1  x.txt     
-  d-----  5/16/2026 7:11 PM          deep      
-  -a----  5/16/2026 7:11 PM      17  inner.log 
-  -a----  5/16/2026 7:11 PM      13  nested.txt
+  Mode    LastWriteTime       Length  Name      
+  ------  ------------------  ------  ----------
+  d-----  5/16/2026 10:54 PM          d2        
+  d-----  5/16/2026 10:54 PM          sub1      
+  d-----  5/16/2026 10:54 PM          sub2      
+  -a----  5/16/2026 10:54 PM       2  file1.txt 
+  -a----  5/16/2026 10:54 PM       3  file2.txt 
+  -a----  5/16/2026 10:54 PM       4  file3.txt 
+  -a----  5/16/2026 10:54 PM       5  file4.txt 
+  -a----  5/16/2026 10:54 PM       6  file5.txt 
+  -a----  5/16/2026 10:54 PM       7  file6.txt 
+  -a----  5/16/2026 10:54 PM       5  fresh.txt 
+  -a----  5/16/2026 10:54 PM       7  readme.md 
+  -a----  5/16/2026 10:54 PM       1  x.txt     
+  d-----  5/16/2026 10:54 PM          deep      
+  -a----  5/16/2026 10:54 PM      17  inner.log 
+  -a----  5/16/2026 10:54 PM      13  nested.txt
   
 
 PS [19/78]> Get-ChildItem C:\Lab -Recurse -File
   
-  Mode    LastWriteTime      Length  Name      
-  ------  -----------------  ------  ----------
-  -a----  5/16/2026 7:11 PM       2  file1.txt 
-  -a----  5/16/2026 7:11 PM       3  file2.txt 
-  -a----  5/16/2026 7:11 PM       4  file3.txt 
-  -a----  5/16/2026 7:11 PM       5  file4.txt 
-  -a----  5/16/2026 7:11 PM       6  file5.txt 
-  -a----  5/16/2026 7:11 PM       7  file6.txt 
-  -a----  5/16/2026 7:11 PM       5  fresh.txt 
-  -a----  5/16/2026 7:11 PM       7  readme.md 
-  -a----  5/16/2026 7:11 PM       1  x.txt     
-  -a----  5/16/2026 7:11 PM      17  inner.log 
-  -a----  5/16/2026 7:11 PM      13  nested.txt
+  Mode    LastWriteTime       Length  Name      
+  ------  ------------------  ------  ----------
+  -a----  5/16/2026 10:54 PM       2  file1.txt 
+  -a----  5/16/2026 10:54 PM       3  file2.txt 
+  -a----  5/16/2026 10:54 PM       4  file3.txt 
+  -a----  5/16/2026 10:54 PM       5  file4.txt 
+  -a----  5/16/2026 10:54 PM       6  file5.txt 
+  -a----  5/16/2026 10:54 PM       7  file6.txt 
+  -a----  5/16/2026 10:54 PM       5  fresh.txt 
+  -a----  5/16/2026 10:54 PM       7  readme.md 
+  -a----  5/16/2026 10:54 PM       1  x.txt     
+  -a----  5/16/2026 10:54 PM      17  inner.log 
+  -a----  5/16/2026 10:54 PM      13  nested.txt
   
 
 PS [20/78]> Get-ChildItem C:\Lab -Recurse -Directory
   
-  Mode    LastWriteTime      Length  Name
-  ------  -----------------  ------  ----
-  d-----  5/16/2026 7:11 PM          d2  
-  d-----  5/16/2026 7:11 PM          sub1
-  d-----  5/16/2026 7:11 PM          sub2
-  d-----  5/16/2026 7:11 PM          deep
+  Mode    LastWriteTime       Length  Name
+  ------  ------------------  ------  ----
+  d-----  5/16/2026 10:54 PM          d2  
+  d-----  5/16/2026 10:54 PM          sub1
+  d-----  5/16/2026 10:54 PM          sub2
+  d-----  5/16/2026 10:54 PM          deep
   
 
 PS [21/78]> Get-ChildItem C:\Lab -Recurse -Filter *.txt | Select-Object -ExpandProperty Name
@@ -198,37 +198,37 @@ PS [22/78]> Get-ChildItem C:\Lab -Include *.txt -Recurse
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/16/2026   7:11 PM              2 file1.txt
-  -a----                5/16/2026   7:11 PM              3 file2.txt
-  -a----                5/16/2026   7:11 PM              4 file3.txt
-  -a----                5/16/2026   7:11 PM              5 file4.txt
-  -a----                5/16/2026   7:11 PM              6 file5.txt
-  -a----                5/16/2026   7:11 PM              7 file6.txt
-  -a----                5/16/2026   7:11 PM              5 fresh.txt
-  -a----                5/16/2026   7:11 PM              1 x.txt
+  -a----                5/16/2026  10:54 PM              2 file1.txt
+  -a----                5/16/2026  10:54 PM              3 file2.txt
+  -a----                5/16/2026  10:54 PM              4 file3.txt
+  -a----                5/16/2026  10:54 PM              5 file4.txt
+  -a----                5/16/2026  10:54 PM              6 file5.txt
+  -a----                5/16/2026  10:54 PM              7 file6.txt
+  -a----                5/16/2026  10:54 PM              5 fresh.txt
+  -a----                5/16/2026  10:54 PM              1 x.txt
   
       Directory: C:\Lab\sub1\deep
   
   Mode                 LastWriteTime         Length Name
   ----                 -------------         ------ ----
-  -a----                5/16/2026   7:11 PM             13 nested.txt
+  -a----                5/16/2026  10:54 PM             13 nested.txt
 
 PS [23/78]> Get-ChildItem C:\Lab -Force
   
-  Mode    LastWriteTime      Length  Name     
-  ------  -----------------  ------  ---------
-  d-----  5/16/2026 7:11 PM          d2       
-  d-----  5/16/2026 7:11 PM          sub1     
-  d-----  5/16/2026 7:11 PM          sub2     
-  -a----  5/16/2026 7:11 PM       2  file1.txt
-  -a----  5/16/2026 7:11 PM       3  file2.txt
-  -a----  5/16/2026 7:11 PM       4  file3.txt
-  -a----  5/16/2026 7:11 PM       5  file4.txt
-  -a----  5/16/2026 7:11 PM       6  file5.txt
-  -a----  5/16/2026 7:11 PM       7  file6.txt
-  -a----  5/16/2026 7:11 PM       5  fresh.txt
-  -a----  5/16/2026 7:11 PM       7  readme.md
-  -a----  5/16/2026 7:11 PM       1  x.txt    
+  Mode    LastWriteTime       Length  Name     
+  ------  ------------------  ------  ---------
+  d-----  5/16/2026 10:54 PM          d2       
+  d-----  5/16/2026 10:54 PM          sub1     
+  d-----  5/16/2026 10:54 PM          sub2     
+  -a----  5/16/2026 10:54 PM       2  file1.txt
+  -a----  5/16/2026 10:54 PM       3  file2.txt
+  -a----  5/16/2026 10:54 PM       4  file3.txt
+  -a----  5/16/2026 10:54 PM       5  file4.txt
+  -a----  5/16/2026 10:54 PM       6  file5.txt
+  -a----  5/16/2026 10:54 PM       7  file6.txt
+  -a----  5/16/2026 10:54 PM       5  fresh.txt
+  -a----  5/16/2026 10:54 PM       7  readme.md
+  -a----  5/16/2026 10:54 PM       1  x.txt    
   
 
 PS [24/78]> Get-ChildItem C:\Lab -Recurse | Where-Object { -not $_.PSIsContainer } | Measure-Object
@@ -283,23 +283,23 @@ PS [29/78]> Get-ChildItem C:\Lab\*.txt
 
 PS [30/78]> Get-ChildItem C:\Lab -Recurse -Depth 1
   
-  Mode    LastWriteTime      Length  Name      
-  ------  -----------------  ------  ----------
-  d-----  5/16/2026 7:11 PM          d2        
-  d-----  5/16/2026 7:11 PM          sub1      
-  d-----  5/16/2026 7:11 PM          sub2      
-  -a----  5/16/2026 7:11 PM       2  file1.txt 
-  -a----  5/16/2026 7:11 PM       3  file2.txt 
-  -a----  5/16/2026 7:11 PM       4  file3.txt 
-  -a----  5/16/2026 7:11 PM       5  file4.txt 
-  -a----  5/16/2026 7:11 PM       6  file5.txt 
-  -a----  5/16/2026 7:11 PM       7  file6.txt 
-  -a----  5/16/2026 7:11 PM       5  fresh.txt 
-  -a----  5/16/2026 7:11 PM       7  readme.md 
-  -a----  5/16/2026 7:11 PM       1  x.txt     
-  d-----  5/16/2026 7:11 PM          deep      
-  -a----  5/16/2026 7:11 PM      17  inner.log 
-  -a----  5/16/2026 7:11 PM      13  nested.txt
+  Mode    LastWriteTime       Length  Name      
+  ------  ------------------  ------  ----------
+  d-----  5/16/2026 10:54 PM          d2        
+  d-----  5/16/2026 10:54 PM          sub1      
+  d-----  5/16/2026 10:54 PM          sub2      
+  -a----  5/16/2026 10:54 PM       2  file1.txt 
+  -a----  5/16/2026 10:54 PM       3  file2.txt 
+  -a----  5/16/2026 10:54 PM       4  file3.txt 
+  -a----  5/16/2026 10:54 PM       5  file4.txt 
+  -a----  5/16/2026 10:54 PM       6  file5.txt 
+  -a----  5/16/2026 10:54 PM       7  file6.txt 
+  -a----  5/16/2026 10:54 PM       5  fresh.txt 
+  -a----  5/16/2026 10:54 PM       7  readme.md 
+  -a----  5/16/2026 10:54 PM       1  x.txt     
+  d-----  5/16/2026 10:54 PM          deep      
+  -a----  5/16/2026 10:54 PM      17  inner.log 
+  -a----  5/16/2026 10:54 PM      13  nested.txt
   
 
 
@@ -387,7 +387,9 @@ PS [47/78]> Copy-Item C:\Lab\file1.txt C:\Lab\file1-copy.txt; Test-Path C:\Lab\f
   True
 
 PS [48/78]> Copy-Item C:\Lab\sub1 C:\Lab\sub1-copy -Recurse; Get-ChildItem C:\Lab\sub1-copy -Recurse -Name
-  Access is denied.
+  deep
+  inner.log
+  nested.txt
 
 PS [49/78]> Move-Item C:\Lab\file1-copy.txt C:\Lab\file1-moved.txt; Test-Path C:\Lab\file1-moved.txt
   True
@@ -399,10 +401,10 @@ PS [51/78]> Remove-Item C:\Lab\sub2 -Recurse -Force; Test-Path C:\Lab\sub2
   False
 
 PS [52/78]> Get-ChildItem C:\Lab -Filter file*.txt | Remove-Item; Get-ChildItem C:\Lab -Filter file*.txt
-  The directory is not empty.
+<empty>
 
 PS [53/78]> New-Item C:\Lab\tmp\a.txt -ItemType File -Force | Out-Null; Remove-Item C:\Lab\tmp -Recurse -Force; Test-Path C:\Lab\tmp
-  The system cannot find the path specified.
+  False
 
 
 --- [54] § path cmdlets ---
@@ -472,7 +474,9 @@ PS [70/78]> Get-ChildItem C:\Lab -Recurse -File | Group-Object Extension | Selec
   
   Name  Count
   ----  -----
-           15
+  .txt      8
+  .md       1
+  .log      2
   
 
 PS [71/78]> Get-ChildItem C:\Lab -Recurse -File | ForEach-Object { [pscustomobject]@{ File=$_.Name; Bytes=$_.Length } } | Sort-Object Bytes -Descending
@@ -482,30 +486,21 @@ PS [71/78]> Get-ChildItem C:\Lab -Recurse -File | ForEach-Object { [pscustomobje
   nums.txt       51
   acc.txt        19
   inner.log      17
+  inner.log      17
   nested.txt     13
-  file6.txt       7
+  nested.txt     13
   readme.md       7
-  file5.txt       6
   multi.txt       6
-  file4.txt       5
   fresh.txt       5
   nn.txt          5
-  file3.txt       4
-  file2.txt       3
-  file1.txt       2
   x.txt           1
   
 
 PS [72/78]> Get-ChildItem C:\Lab -Recurse -Name | Where-Object { $_ -match "\.txt$" } | Sort-Object
   acc.txt
-  file1.txt
-  file2.txt
-  file3.txt
-  file4.txt
-  file5.txt
-  file6.txt
   fresh.txt
   multi.txt
+  nested.txt
   nested.txt
   nn.txt
   nums.txt
@@ -513,9 +508,9 @@ PS [72/78]> Get-ChildItem C:\Lab -Recurse -Name | Where-Object { $_ -match "\.tx
 
 PS [73/78]> (Get-ChildItem C:\Lab -Recurse -File | Measure-Object Length -Sum -Average -Maximum)
   
-  Count    : 15
-  Sum      : 151
-  Average  : 10.066666666666666
+  Count    : 11
+  Sum      : 154
+  Average  : 14
   Minimum  : 
   Maximum  : 51
   Property : Length
@@ -525,12 +520,6 @@ PS [74/78]> Get-ChildItem C:\Lab -File | Select-Object Name, @{N="KB";E={[math]:
   Name            KB             
   --------------- ---------------
   acc.txt         0.019          
-  file1.txt       0.002          
-  file2.txt       0.003          
-  file3.txt       0.004          
-  file4.txt       0.005          
-  file5.txt       0.006          
-  file6.txt       0.007          
   fresh.txt       0.005          
   multi.txt       0.006          
   nn.txt          0.005          
@@ -540,7 +529,7 @@ PS [74/78]> Get-ChildItem C:\Lab -File | Select-Object Name, @{N="KB";E={[math]:
 
 PS [75/78]> Get-ChildItem C:\Lab -Recurse -File | ConvertTo-Json -Depth 1 | ConvertFrom-Json | Measure-Object
   
-  Count    : 15
+  Count    : 11
   Sum      : 
   Average  : 
   Minimum  : 
@@ -561,16 +550,11 @@ PS [76/78]> Get-Content C:\Lab\nums.txt | Where-Object { [int]$_ % 5 -eq 0 } | M
 PS [77/78]> Get-ChildItem C:\Lab -Directory | ForEach-Object { "$($_.Name): $((Get-ChildItem $_.FullName -Recurse -File | Measure-Object).Count) files" }
   d2: 0 files
   sub1: 2 files
+  sub1-copy: 2 files
 
 PS [78/78]> Get-ChildItem C:\Lab -Recurse -File | Select-Object FullName | ConvertTo-Csv -NoTypeInformation
   "FullName"
   "C:\Lab\acc.txt"
-  "C:\Lab\file1.txt"
-  "C:\Lab\file2.txt"
-  "C:\Lab\file3.txt"
-  "C:\Lab\file4.txt"
-  "C:\Lab\file5.txt"
-  "C:\Lab\file6.txt"
   "C:\Lab\fresh.txt"
   "C:\Lab\multi.txt"
   "C:\Lab\nn.txt"
@@ -579,3 +563,5 @@ PS [78/78]> Get-ChildItem C:\Lab -Recurse -File | Select-Object FullName | Conve
   "C:\Lab\x.txt"
   "C:\Lab\sub1\inner.log"
   "C:\Lab\sub1\deep\nested.txt"
+  "C:\Lab\sub1-copy\inner.log"
+  "C:\Lab\sub1-copy\deep\nested.txt"

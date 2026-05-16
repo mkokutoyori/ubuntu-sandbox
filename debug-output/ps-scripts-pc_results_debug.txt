@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-pc
-Generated: 2026-05-16T19:11:21.464Z
+Generated: 2026-05-16T22:53:31.512Z
 Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
@@ -128,13 +128,13 @@ PS [24/77]> & C:\Scripts\files.ps1
 
 PS [25/77]> Get-ChildItem C:\BulkOut
   
-  Mode    LastWriteTime      Length  Name     
-  ------  -----------------  ------  ---------
-  -a----  5/16/2026 7:11 PM       6  item1.txt
-  -a----  5/16/2026 7:11 PM       6  item2.txt
-  -a----  5/16/2026 7:11 PM       6  item3.txt
-  -a----  5/16/2026 7:11 PM       6  item4.txt
-  -a----  5/16/2026 7:11 PM       6  item5.txt
+  Mode    LastWriteTime       Length  Name     
+  ------  ------------------  ------  ---------
+  -a----  5/16/2026 10:53 PM       6  item1.txt
+  -a----  5/16/2026 10:53 PM       6  item2.txt
+  -a----  5/16/2026 10:53 PM       6  item3.txt
+  -a----  5/16/2026 10:53 PM       6  item4.txt
+  -a----  5/16/2026 10:53 PM       6  item5.txt
   
 
 PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
@@ -152,18 +152,18 @@ PS [27/77]> & C:\Scripts\files.ps1 -Dir C:\BulkOut2 -Count 10
 
 PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
   
-  Mode    LastWriteTime      Length  Name      
-  ------  -----------------  ------  ----------
-  -a----  5/16/2026 7:11 PM       6  item1.txt 
-  -a----  5/16/2026 7:11 PM       7  item10.txt
-  -a----  5/16/2026 7:11 PM       6  item2.txt 
-  -a----  5/16/2026 7:11 PM       6  item3.txt 
-  -a----  5/16/2026 7:11 PM       6  item4.txt 
-  -a----  5/16/2026 7:11 PM       6  item5.txt 
-  -a----  5/16/2026 7:11 PM       6  item6.txt 
-  -a----  5/16/2026 7:11 PM       6  item7.txt 
-  -a----  5/16/2026 7:11 PM       6  item8.txt 
-  -a----  5/16/2026 7:11 PM       6  item9.txt 
+  Mode    LastWriteTime       Length  Name      
+  ------  ------------------  ------  ----------
+  -a----  5/16/2026 10:53 PM       6  item1.txt 
+  -a----  5/16/2026 10:53 PM       7  item10.txt
+  -a----  5/16/2026 10:53 PM       6  item2.txt 
+  -a----  5/16/2026 10:53 PM       6  item3.txt 
+  -a----  5/16/2026 10:53 PM       6  item4.txt 
+  -a----  5/16/2026 10:53 PM       6  item5.txt 
+  -a----  5/16/2026 10:53 PM       6  item6.txt 
+  -a----  5/16/2026 10:53 PM       6  item7.txt 
+  -a----  5/16/2026 10:53 PM       6  item8.txt 
+  -a----  5/16/2026 10:53 PM       6  item9.txt 
   
 
 PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
