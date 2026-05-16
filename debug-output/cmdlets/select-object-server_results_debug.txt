@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — select-object-server
-Generated: 2026-05-16T22:51:50.438Z
+Generated: 2026-05-16T23:19:13.508Z
 Engine: powershell
 host=SRV-SELECT-OBJECT (windows-server) — cmdlet attribute suite
 Total commands: 64

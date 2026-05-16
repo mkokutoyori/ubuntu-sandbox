@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — sort-group-measure-server
-Generated: 2026-05-16T22:51:51.143Z
+Generated: 2026-05-16T23:19:11.713Z
 Engine: powershell
 host=SRV-SORT-GROUP-MEASURE (windows-server) — cmdlet attribute suite
 Total commands: 65
