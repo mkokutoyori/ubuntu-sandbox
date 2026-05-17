@@ -24,6 +24,11 @@ import {
 import {
   showClock, showUsers, showInventory, showProcessesCpu,
   showMemoryStatistics, showFlash, showPrivilege,
+  showCdp, showLldp, showSnmp, showNtpStatus, showNtpAssociations,
+  showLine, showIpSsh, showSshSessions, showHosts, showVrf, showBoot,
+  showRedundancy, showFileSystems, showCalendar, showTerminal,
+  showProcessesMemory, showBuffers, showTcpBrief, showSockets,
+  showStacks, showReload, showAaa, showEnvironment, showControllers,
 } from './cisco/CiscoCommonShow';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -242,6 +247,51 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show history', 'Display command history', () =>
       this.cmdHistory.slice(-20).join('\n'));
     trie.registerGreedy('terminal', 'Set terminal parameters', () => '');
+
+    // Generic device-info show family — missing on BOTH the Cisco
+    // router and switch, so it lives here in the shared base (DRY).
+    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus());
+    trie.registerGreedy('show ntp', 'Display NTP associations', () =>
+      showNtpAssociations());
+    trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
+      showCdp(a.join(' ')));
+    trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
+      showLldp(a.join(' ')));
+    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp());
+    trie.registerGreedy('show controllers', 'Display controller status', (a) =>
+      showControllers(a.join(' ')));
+    trie.registerGreedy('show environment', 'Display environment', () =>
+      showEnvironment());
+    trie.registerGreedy('show line', 'Display TTY lines', () => showLine());
+    trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
+    trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
+      showSshSessions());
+    trie.registerGreedy('show hosts', 'Display host cache', () => showHosts());
+    trie.register('show ip vrf', 'Display VRFs', () => showVrf());
+    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf());
+    trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
+    trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
+      showRedundancy());
+    trie.registerGreedy('show file', 'Display file systems', () =>
+      showFileSystems());
+    trie.register('show calendar', 'Display hardware calendar', () =>
+      showCalendar());
+    trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
+      showTerminal());
+    trie.register('show processes memory', 'Display per-process memory', () =>
+      showProcessesMemory());
+    trie.registerGreedy('show buffers', 'Display buffer pools', () =>
+      showBuffers());
+    trie.registerGreedy('show tcp', 'Display TCP connections', () =>
+      showTcpBrief());
+    trie.registerGreedy('show sockets', 'Display open sockets', () =>
+      showSockets());
+    trie.registerGreedy('show stacks', 'Display process stacks', () =>
+      showStacks());
+    trie.registerGreedy('show reload', 'Display reload schedule', () =>
+      showReload());
+    trie.registerGreedy('show aaa', 'Display AAA state', (a) =>
+      showAaa(a.join(' ')));
   }
 
   private registerCommonUserCommands(): void {

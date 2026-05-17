@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-05-17T10:30:08.677Z
+Generated: 2026-05-17T10:39:38.568Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -899,9 +899,9 @@ Total steps: 343
        ^
 
 [201/343] r1 R1> show controllers GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  show controllers GigabitEthernet0/0
-       ^
+  GigabitEthernet0/0 - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [202/343] r1 R1> show running-config interface GigabitEthernet0/0
   Building configuration...
@@ -944,9 +944,9 @@ Total steps: 343
        ^
 
 [209/343] r1 R1> show controllers GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  show controllers GigabitEthernet0/1
-       ^
+  GigabitEthernet0/1 - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [210/343] r1 R1> show running-config interface GigabitEthernet0/1
   Building configuration...
@@ -989,9 +989,9 @@ Total steps: 343
        ^
 
 [217/343] r1 R1> show controllers Loopback0
-  % Invalid input detected at '^' marker.
-  show controllers Loopback0
-       ^
+  Loopback0 - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [218/343] r1 R1> show running-config interface Loopback0
   % Invalid interface
@@ -1027,9 +1027,9 @@ Total steps: 343
        ^
 
 [225/343] r1 R1> show controllers Tunnel0
-  % Invalid input detected at '^' marker.
-  show controllers Tunnel0
-       ^
+  Tunnel0 - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [226/343] r1 R1> show running-config interface Tunnel0
   % Invalid interface
@@ -1330,32 +1330,45 @@ Total steps: 343
        ^
 
 [270/343] r1 R1# show snmp
-  % Invalid input detected at '^' marker.
-  show snmp
-       ^
+  Chassis: 0
+  0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Encoding errors
+  0 SNMP packets output
+      0 Too big errors
+      0 No such name errors
+  SNMP logging: disabled
 
 [271/343] r1 R1# show ntp status
-  % Invalid input detected at '^' marker.
-  show ntp status
-       ^
+  Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
-  % Invalid input detected at '^' marker.
-  show ntp associations
-       ^
+    address         ref clock       st   when   poll reach  delay  offset   disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [273/343] r1 R1# show clock
-  *10:30:08.000 UTC Sun May 17 2026
+  *10:39:38.000 UTC Sun May 17 2026
 
 [274/343] r1 R1# show cdp neighbors
-  % Invalid input detected at '^' marker.
-  show cdp neighbors
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [275/343] r1 R1# show lldp neighbors
-  % Invalid input detected at '^' marker.
-  show lldp neighbors
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [276/343] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1425,9 +1438,9 @@ Total steps: 343
                     ^
 
 [285/343] r1 R1# show controllers
-  % Invalid input detected at '^' marker.
-  show controllers
-       ^
+  Interface - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [286/343] r1 R1# show tech-support
   % Invalid input detected at '^' marker.
@@ -1439,44 +1452,54 @@ Total steps: 343
   PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
 
 [288/343] r1 R1# show environment
-  % Invalid input detected at '^' marker.
-  show environment
-       ^
+  SYSTEM TEMPERATURE is OK
+  Temperature value: 35C, state: GREEN
+  Power supply: OK
+  Fan: OK
 
 [289/343] r1 R1# show redundancy
-  % Invalid input detected at '^' marker.
-  show redundancy
-       ^
+  Redundant System Information :
+         Available system uptime = 0 minutes
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
 
 [290/343] r1 R1# show ip vrf
-  % Invalid input detected at '^' marker.
-  show ip vrf
-          ^
+    Name                             Default RD            Protocols   Interfaces
 
 [291/343] r1 R1# show vrf
-  % Invalid input detected at '^' marker.
-  show vrf
-       ^
+    Name                             Default RD            Protocols   Interfaces
 
 [292/343] r1 R1# show hosts
-  % Invalid input detected at '^' marker.
-  show hosts
-       ^
+  Default domain is not set
+  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+  
+  Host                      Port  Flags      Age Type   Address(es)
 
 [293/343] r1 R1# show ip ssh
-  % Invalid input detected at '^' marker.
-  show ip ssh
-          ^
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [294/343] r1 R1# show line
-  % Invalid input detected at '^' marker.
-  show line
-       ^
+     Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int
+  *    0 CTY              -    -      -    -    -      1       0     0/0       -
+       1 VTY              -    -      -    -    -      0       0     0/0       -
+       2 VTY              -    -      -    -    -      0       0     0/0       -
+       3 VTY              -    -      -    -    -      0       0     0/0       -
+       4 VTY              -    -      -    -    -      0       0     0/0       -
+       5 VTY              -    -      -    -    -      0       0     0/0       -
 
 [295/343] r1 R1# show terminal
-  % Invalid input detected at '^' marker.
-  show terminal
-       ^
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Baud rate (TX/RX) is 9600/9600
+  Status: PSI Enabled, Ready, Active
+  Editing is enabled.
+  History is enabled, history size is 20.
 
 [296/343] r1 R1# show aliases
   % Invalid input detected at '^' marker.

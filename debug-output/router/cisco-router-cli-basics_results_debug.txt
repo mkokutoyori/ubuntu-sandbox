@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-05-17T10:30:06.693Z
+Generated: 2026-05-17T10:39:39.124Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,12 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [4/482] r1 R1> show calendar
-  % Invalid input detected at '^' marker.
-  show calendar
-       ^
+  10:39:39 UTC Sun May 17 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -80,9 +78,10 @@ Total steps: 482
                      ^
 
 [10/482] r1 R1> show processes memory
-  % Invalid input detected at '^' marker.
-  show processes memory
-                 ^
+  Processor Pool Total:  134217728 Used:   41943040 Free:   92274688
+   PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process
+     0   0      40000       1000     200000          0          0 *Init*
+     1   0       1200        300       4096          0          0 Chunk Manager
 
 [11/482] r1 R1> show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -184,29 +183,41 @@ Total steps: 482
        ^
 
 [29/482] r1 R1> show cdp neighbors
-  % Invalid input detected at '^' marker.
-  show cdp neighbors
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [30/482] r1 R1> show cdp neighbors detail
-  % Invalid input detected at '^' marker.
-  show cdp neighbors detail
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [31/482] r1 R1> show cdp interface
-  % Invalid input detected at '^' marker.
-  show cdp interface
-       ^
+  CDP is not enabled on any interface
 
 [32/482] r1 R1> show lldp neighbors
-  % Invalid input detected at '^' marker.
-  show lldp neighbors
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [33/482] r1 R1> show lldp neighbors detail
-  % Invalid input detected at '^' marker.
-  show lldp neighbors detail
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [34/482] r1 R1> show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -257,19 +268,25 @@ Total steps: 482
        ^
 
 [42/482] r1 R1> show snmp
-  % Invalid input detected at '^' marker.
-  show snmp
-       ^
+  Chassis: 0
+  0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Encoding errors
+  0 SNMP packets output
+      0 Too big errors
+      0 No such name errors
+  SNMP logging: disabled
 
 [43/482] r1 R1> show ntp status
-  % Invalid input detected at '^' marker.
-  show ntp status
-       ^
+  Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
-  % Invalid input detected at '^' marker.
-  show ntp associations
-       ^
+    address         ref clock       st   when   poll reach  delay  offset   disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [45/482] r1 R1> show flash
   Directory of flash:/
@@ -280,19 +297,23 @@ Total steps: 482
   64016384 bytes total (46188544 bytes free)
 
 [46/482] r1 R1> show file systems
-  % Invalid input detected at '^' marker.
-  show file systems
-       ^
+  File Systems:
+  
+         Size(b)     Free(b)      Type  Flags  Prefixes
+  *    64016384    46188544     flash     rw   flash:
+         522232      522232     nvram     rw   nvram:
+              -           -    opaque     rw   system:
 
 [47/482] r1 R1> show controllers
-  % Invalid input detected at '^' marker.
-  show controllers
-       ^
+  Interface - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [48/482] r1 R1> show environment
-  % Invalid input detected at '^' marker.
-  show environment
-       ^
+  SYSTEM TEMPERATURE is OK
+  Temperature value: 35C, state: GREEN
+  Power supply: OK
+  Fan: OK
 
 [49/482] r1 R1> show platform
   % Invalid input detected at '^' marker.
@@ -310,82 +331,88 @@ Total steps: 482
        ^
 
 [52/482] r1 R1> show boot
-  % Invalid input detected at '^' marker.
-  show boot
-       ^
+  BOOT variable = flash:
+  CONFIG_FILE variable does not exist
+  BOOTLDR variable does not exist
+  Configuration register is 0x2102
 
 [53/482] r1 R1> show redundancy
-  % Invalid input detected at '^' marker.
-  show redundancy
-       ^
+  Redundant System Information :
+         Available system uptime = 0 minutes
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
 
 [54/482] r1 R1> show buffers
-  % Invalid input detected at '^' marker.
-  show buffers
-       ^
+  Buffer elements:
+       1119 in free list (1119 max allowed)
+  Public buffer pools:
+  Small buffers, 104 bytes (total 50, permanent 50, peak 50):
+       50 in free list (20 min, 150 max allowed)
 
 [55/482] r1 R1> show stacks
-  % Invalid input detected at '^' marker.
-  show stacks
-       ^
+  Minimum process stacks:
+  Free/Size   Name
+   5600/6000  Init
+  Interrupt level stacks:
+  Level    Called Unused/Size Name
 
 [56/482] r1 R1> show reload
-  % Invalid input detected at '^' marker.
-  show reload
-       ^
+  No reload is scheduled.
 
 [57/482] r1 R1> show tcp brief
-  % Invalid input detected at '^' marker.
-  show tcp brief
-       ^
+  TCB       Local Address           Foreign Address        (state)
 
 [58/482] r1 R1> show sockets
-  % Invalid input detected at '^' marker.
-  show sockets
-       ^
+  Proto    Local Address      Foreign Address      State
 
 [59/482] r1 R1> show vrf
-  % Invalid input detected at '^' marker.
-  show vrf
-       ^
+    Name                             Default RD            Protocols   Interfaces
 
 [60/482] r1 R1> show hosts
-  % Invalid input detected at '^' marker.
-  show hosts
-       ^
+  Default domain is not set
+  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+  
+  Host                      Port  Flags      Age Type   Address(es)
 
 [61/482] r1 R1> show ip ssh
-  % Invalid input detected at '^' marker.
-  show ip ssh
-          ^
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [62/482] r1 R1> show ssh
-  % Invalid input detected at '^' marker.
-  show ssh
-       ^
+  Connection Version Mode Encryption  Hmac        State            Username
+  %No SSHv2 server connections running.
 
 [63/482] r1 R1> show line
-  % Invalid input detected at '^' marker.
-  show line
-       ^
+     Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int
+  *    0 CTY              -    -      -    -    -      1       0     0/0       -
+       1 VTY              -    -      -    -    -      0       0     0/0       -
+       2 VTY              -    -      -    -    -      0       0     0/0       -
+       3 VTY              -    -      -    -    -      0       0     0/0       -
+       4 VTY              -    -      -    -    -      0       0     0/0       -
+       5 VTY              -    -      -    -    -      0       0     0/0       -
 
 [64/482] r1 R1> show terminal
-  % Invalid input detected at '^' marker.
-  show terminal
-       ^
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Baud rate (TX/RX) is 9600/9600
+  Status: PSI Enabled, Ready, Active
+  Editing is enabled.
+  History is enabled, history size is 20.
 
 [65/482] r1 R1> show privilege
   Current privilege level is 1
 
 [66/482] r1 R1> show aaa sessions
-  % Invalid input detected at '^' marker.
-  show aaa sessions
-       ^
+  Total sessions since last reload: 0
+  Session Id: 0   Unique Id: 0   User Name: N/A   IP Address: 0.0.0.0
 
 [67/482] r1 R1> show ip vrf
-  % Invalid input detected at '^' marker.
-  show ip vrf
-          ^
+    Name                             Default RD            Protocols   Interfaces
 
 [68/482] r1 R1> show tech-support
   % Invalid input detected at '^' marker.
@@ -418,8 +445,29 @@ Total steps: 482
     flash           Display flash filesystem
     privilege       Display current privilege level
     history         Display command history
-    arp             Display ARP table
+    ntp             Display NTP associations
+    cdp             Display CDP information
+    lldp            Display LLDP information
+    snmp            Display SNMP status
+    controllers     Display controller status
+    environment     Display environment
+    line            Display TTY lines
     ip              ip
+    ssh             Display SSH sessions
+    hosts           Display host cache
+    vrf             Display VRFs
+    boot            Display boot variables
+    redundancy      Display redundancy state
+    file            Display file systems
+    calendar        Display hardware calendar
+    terminal        Display terminal parameters
+    buffers         Display buffer pools
+    tcp             Display TCP connections
+    sockets         Display open sockets
+    stacks          Display process stacks
+    reload          Display reload schedule
+    aaa             Display AAA state
+    arp             Display ARP table
     running-config  Display running configuration
     counters        Display traffic counters
     debug           Display debugging flags
@@ -471,12 +519,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [81/482] r1 R1# show calendar
-  % Invalid input detected at '^' marker.
-  show calendar
-       ^
+  10:39:39 UTC Sun May 17 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -522,9 +568,10 @@ Total steps: 482
                      ^
 
 [87/482] r1 R1# show processes memory
-  % Invalid input detected at '^' marker.
-  show processes memory
-                 ^
+  Processor Pool Total:  134217728 Used:   41943040 Free:   92274688
+   PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process
+     0   0      40000       1000     200000          0          0 *Init*
+     1   0       1200        300       4096          0          0 Chunk Manager
 
 [88/482] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -626,29 +673,41 @@ Total steps: 482
        ^
 
 [106/482] r1 R1# show cdp neighbors
-  % Invalid input detected at '^' marker.
-  show cdp neighbors
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [107/482] r1 R1# show cdp neighbors detail
-  % Invalid input detected at '^' marker.
-  show cdp neighbors detail
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [108/482] r1 R1# show cdp interface
-  % Invalid input detected at '^' marker.
-  show cdp interface
-       ^
+  CDP is not enabled on any interface
 
 [109/482] r1 R1# show lldp neighbors
-  % Invalid input detected at '^' marker.
-  show lldp neighbors
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [110/482] r1 R1# show lldp neighbors detail
-  % Invalid input detected at '^' marker.
-  show lldp neighbors detail
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [111/482] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -699,19 +758,25 @@ Total steps: 482
        ^
 
 [119/482] r1 R1# show snmp
-  % Invalid input detected at '^' marker.
-  show snmp
-       ^
+  Chassis: 0
+  0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Encoding errors
+  0 SNMP packets output
+      0 Too big errors
+      0 No such name errors
+  SNMP logging: disabled
 
 [120/482] r1 R1# show ntp status
-  % Invalid input detected at '^' marker.
-  show ntp status
-       ^
+  Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
-  % Invalid input detected at '^' marker.
-  show ntp associations
-       ^
+    address         ref clock       st   when   poll reach  delay  offset   disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [122/482] r1 R1# show flash
   Directory of flash:/
@@ -722,19 +787,23 @@ Total steps: 482
   64016384 bytes total (46188544 bytes free)
 
 [123/482] r1 R1# show file systems
-  % Invalid input detected at '^' marker.
-  show file systems
-       ^
+  File Systems:
+  
+         Size(b)     Free(b)      Type  Flags  Prefixes
+  *    64016384    46188544     flash     rw   flash:
+         522232      522232     nvram     rw   nvram:
+              -           -    opaque     rw   system:
 
 [124/482] r1 R1# show controllers
-  % Invalid input detected at '^' marker.
-  show controllers
-       ^
+  Interface - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [125/482] r1 R1# show environment
-  % Invalid input detected at '^' marker.
-  show environment
-       ^
+  SYSTEM TEMPERATURE is OK
+  Temperature value: 35C, state: GREEN
+  Power supply: OK
+  Fan: OK
 
 [126/482] r1 R1# show platform
   % Invalid input detected at '^' marker.
@@ -752,82 +821,88 @@ Total steps: 482
        ^
 
 [129/482] r1 R1# show boot
-  % Invalid input detected at '^' marker.
-  show boot
-       ^
+  BOOT variable = flash:
+  CONFIG_FILE variable does not exist
+  BOOTLDR variable does not exist
+  Configuration register is 0x2102
 
 [130/482] r1 R1# show redundancy
-  % Invalid input detected at '^' marker.
-  show redundancy
-       ^
+  Redundant System Information :
+         Available system uptime = 0 minutes
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
 
 [131/482] r1 R1# show buffers
-  % Invalid input detected at '^' marker.
-  show buffers
-       ^
+  Buffer elements:
+       1119 in free list (1119 max allowed)
+  Public buffer pools:
+  Small buffers, 104 bytes (total 50, permanent 50, peak 50):
+       50 in free list (20 min, 150 max allowed)
 
 [132/482] r1 R1# show stacks
-  % Invalid input detected at '^' marker.
-  show stacks
-       ^
+  Minimum process stacks:
+  Free/Size   Name
+   5600/6000  Init
+  Interrupt level stacks:
+  Level    Called Unused/Size Name
 
 [133/482] r1 R1# show reload
-  % Invalid input detected at '^' marker.
-  show reload
-       ^
+  No reload is scheduled.
 
 [134/482] r1 R1# show tcp brief
-  % Invalid input detected at '^' marker.
-  show tcp brief
-       ^
+  TCB       Local Address           Foreign Address        (state)
 
 [135/482] r1 R1# show sockets
-  % Invalid input detected at '^' marker.
-  show sockets
-       ^
+  Proto    Local Address      Foreign Address      State
 
 [136/482] r1 R1# show vrf
-  % Invalid input detected at '^' marker.
-  show vrf
-       ^
+    Name                             Default RD            Protocols   Interfaces
 
 [137/482] r1 R1# show hosts
-  % Invalid input detected at '^' marker.
-  show hosts
-       ^
+  Default domain is not set
+  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+  
+  Host                      Port  Flags      Age Type   Address(es)
 
 [138/482] r1 R1# show ip ssh
-  % Invalid input detected at '^' marker.
-  show ip ssh
-          ^
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [139/482] r1 R1# show ssh
-  % Invalid input detected at '^' marker.
-  show ssh
-       ^
+  Connection Version Mode Encryption  Hmac        State            Username
+  %No SSHv2 server connections running.
 
 [140/482] r1 R1# show line
-  % Invalid input detected at '^' marker.
-  show line
-       ^
+     Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int
+  *    0 CTY              -    -      -    -    -      1       0     0/0       -
+       1 VTY              -    -      -    -    -      0       0     0/0       -
+       2 VTY              -    -      -    -    -      0       0     0/0       -
+       3 VTY              -    -      -    -    -      0       0     0/0       -
+       4 VTY              -    -      -    -    -      0       0     0/0       -
+       5 VTY              -    -      -    -    -      0       0     0/0       -
 
 [141/482] r1 R1# show terminal
-  % Invalid input detected at '^' marker.
-  show terminal
-       ^
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Baud rate (TX/RX) is 9600/9600
+  Status: PSI Enabled, Ready, Active
+  Editing is enabled.
+  History is enabled, history size is 20.
 
 [142/482] r1 R1# show privilege
   Current privilege level is 15
 
 [143/482] r1 R1# show aaa sessions
-  % Invalid input detected at '^' marker.
-  show aaa sessions
-       ^
+  Total sessions since last reload: 0
+  Session Id: 0   Unique Id: 0   User Name: N/A   IP Address: 0.0.0.0
 
 [144/482] r1 R1# show ip vrf
-  % Invalid input detected at '^' marker.
-  show ip vrf
-          ^
+    Name                             Default RD            Protocols   Interfaces
 
 [145/482] r1 R1# show tech-support
   % Invalid input detected at '^' marker.
@@ -845,9 +920,9 @@ Total steps: 482
        ^
 
 [148/482] r1 R1# show controllers GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  show controllers GigabitEthernet0/0
-       ^
+  GigabitEthernet0/0 - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [149/482] r1 R1# show interfaces GigabitEthernet0/0
   % Invalid input detected at '^' marker.
@@ -886,7 +961,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -895,7 +970,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -904,7 +979,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -913,7 +988,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -922,7 +997,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -933,7 +1008,7 @@ Total steps: 482
          ^
 
 [172/482] r1 R1(config)# do show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [173/482] r1 R1(config)# exit
 <empty>
@@ -2218,32 +2293,45 @@ Total steps: 482
        ^
 
 [409/482] r1 R1-EDGE# show snmp
-  % Invalid input detected at '^' marker.
-  show snmp
-       ^
+  Chassis: 0
+  0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Encoding errors
+  0 SNMP packets output
+      0 Too big errors
+      0 No such name errors
+  SNMP logging: disabled
 
 [410/482] r1 R1-EDGE# show ntp status
-  % Invalid input detected at '^' marker.
-  show ntp status
-       ^
+  Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
-  % Invalid input detected at '^' marker.
-  show ntp associations
-       ^
+    address         ref clock       st   when   poll reach  delay  offset   disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [412/482] r1 R1-EDGE# show clock
-  *10:30:06.000 UTC Sun May 17 2026
+  *10:39:39.000 UTC Sun May 17 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
-  % Invalid input detected at '^' marker.
-  show cdp neighbors
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [414/482] r1 R1-EDGE# show lldp neighbors
-  % Invalid input detected at '^' marker.
-  show lldp neighbors
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [415/482] r1 R1-EDGE# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -2313,9 +2401,9 @@ Total steps: 482
                     ^
 
 [424/482] r1 R1-EDGE# show controllers
-  % Invalid input detected at '^' marker.
-  show controllers
-       ^
+  Interface - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [425/482] r1 R1-EDGE# show tech-support
   % Invalid input detected at '^' marker.
@@ -2327,44 +2415,54 @@ Total steps: 482
   PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
 
 [427/482] r1 R1-EDGE# show environment
-  % Invalid input detected at '^' marker.
-  show environment
-       ^
+  SYSTEM TEMPERATURE is OK
+  Temperature value: 35C, state: GREEN
+  Power supply: OK
+  Fan: OK
 
 [428/482] r1 R1-EDGE# show redundancy
-  % Invalid input detected at '^' marker.
-  show redundancy
-       ^
+  Redundant System Information :
+         Available system uptime = 0 minutes
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
 
 [429/482] r1 R1-EDGE# show ip vrf
-  % Invalid input detected at '^' marker.
-  show ip vrf
-          ^
+    Name                             Default RD            Protocols   Interfaces
 
 [430/482] r1 R1-EDGE# show vrf
-  % Invalid input detected at '^' marker.
-  show vrf
-       ^
+    Name                             Default RD            Protocols   Interfaces
 
 [431/482] r1 R1-EDGE# show hosts
-  % Invalid input detected at '^' marker.
-  show hosts
-       ^
+  Default domain is not set
+  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+  
+  Host                      Port  Flags      Age Type   Address(es)
 
 [432/482] r1 R1-EDGE# show ip ssh
-  % Invalid input detected at '^' marker.
-  show ip ssh
-          ^
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [433/482] r1 R1-EDGE# show line
-  % Invalid input detected at '^' marker.
-  show line
-       ^
+     Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int
+  *    0 CTY              -    -      -    -    -      1       0     0/0       -
+       1 VTY              -    -      -    -    -      0       0     0/0       -
+       2 VTY              -    -      -    -    -      0       0     0/0       -
+       3 VTY              -    -      -    -    -      0       0     0/0       -
+       4 VTY              -    -      -    -    -      0       0     0/0       -
+       5 VTY              -    -      -    -    -      0       0     0/0       -
 
 [434/482] r1 R1-EDGE# show terminal
-  % Invalid input detected at '^' marker.
-  show terminal
-       ^
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Baud rate (TX/RX) is 9600/9600
+  Status: PSI Enabled, Ready, Active
+  Editing is enabled.
+  History is enabled, history size is 20.
 
 [435/482] r1 R1-EDGE# show aliases
   % Invalid input detected at '^' marker.

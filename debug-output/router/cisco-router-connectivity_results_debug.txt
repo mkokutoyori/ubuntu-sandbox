@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-connectivity
-Generated: 2026-05-17T10:30:06.690Z
+Generated: 2026-05-17T10:39:38.567Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
 Total steps: 313
@@ -235,13 +235,13 @@ Total steps: 313
 
 [42/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.672 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.174 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.187 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.695 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.133 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.170 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.174/0.344/0.672/0.232 ms
+  rtt min/avg/max/mdev = 0.133/0.333/0.695/0.257 ms
 
 [43/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
@@ -257,19 +257,19 @@ Total steps: 313
 
 [45/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.102 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.264 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.252 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.166 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.296 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.263 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.252/0.539/1.102/0.398 ms
+  rtt min/avg/max/mdev = 0.263/0.575/1.166/0.418 ms
 
 [46/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.397 ms  0.214 ms  0.170 ms
-   2  10.0.0.2 (10.0.0.2)  0.255 ms  0.143 ms  0.125 ms
-   3  192.168.2.10 (192.168.2.10)  0.316 ms  0.193 ms  0.166 ms
+   1  192.168.1.1 (192.168.1.1)  0.989 ms  0.181 ms  0.167 ms
+   2  10.0.0.2 (10.0.0.2)  0.306 ms  0.193 ms  0.155 ms
+   3  192.168.2.10 (192.168.2.10)  0.392 ms  0.212 ms  0.212 ms
 
 [47/313] win1 win1$ ping 192.168.1.10
   
@@ -381,13 +381,13 @@ Total steps: 313
 
 [65/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.091 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.063 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.064 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.126 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.068 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.066 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.063/0.073/0.091/0.013 ms
+  rtt min/avg/max/mdev = 0.066/0.087/0.126/0.028 ms
 
 [66/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
@@ -403,26 +403,26 @@ Total steps: 313
 
 [68/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.643 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.181 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.317 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.371 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.313 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.183 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.181/0.380/0.643/0.194 ms
+  rtt min/avg/max/mdev = 0.183/0.289/0.371/0.078 ms
 
 [69/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.184 ms  0.075 ms  0.064 ms
-   2  10.0.0.2 (10.0.0.2)  0.126 ms  0.234 ms  0.148 ms
-   3  192.168.2.10 (192.168.2.10)  0.195 ms  0.179 ms  0.160 ms
+   1  192.168.1.1 (192.168.1.1)  0.168 ms  0.173 ms  0.075 ms
+   2  10.0.0.2 (10.0.0.2)  0.163 ms  0.124 ms  0.112 ms
+   3  192.168.2.10 (192.168.2.10)  0.182 ms  0.154 ms  0.159 ms
 
 [70/313] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 192.168.1.10:
@@ -575,13 +575,13 @@ Total steps: 313
 
 [98/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.077 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.044 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.043 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.121 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.046 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.051 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.043/0.055/0.077/0.016 ms
+  rtt min/avg/max/mdev = 0.046/0.073/0.121/0.034 ms
 
 [99/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
@@ -597,19 +597,19 @@ Total steps: 313
 
 [101/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.449 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.124 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.123 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.368 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.172 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.116 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.123/0.232/0.449/0.154 ms
+  rtt min/avg/max/mdev = 0.116/0.219/0.368/0.108 ms
 
 [102/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.114 ms  0.088 ms  0.092 ms
-   2  10.0.0.2 (10.0.0.2)  0.085 ms  0.083 ms  0.071 ms
-   3  192.168.2.10 (192.168.2.10)  0.921 ms  0.127 ms  0.232 ms
+   1  192.168.1.1 (192.168.1.1)  0.073 ms  0.047 ms  0.043 ms
+   2  10.0.0.2 (10.0.0.2)  0.110 ms  0.085 ms  0.091 ms
+   3  192.168.2.10 (192.168.2.10)  0.110 ms  0.191 ms  1.179 ms
 
 [103/313] win1 win1$ ping 192.168.1.10
   
@@ -630,7 +630,7 @@ Total steps: 313
   
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    10.0.0.1
-     3    <1 ms    <1 ms    1 ms     192.168.1.10
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
   
   Trace complete.
 
@@ -755,13 +755,13 @@ Total steps: 313
 
 [131/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.065 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.046 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.052 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.098 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.047 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.048 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.046/0.054/0.065/0.008 ms
+  rtt min/avg/max/mdev = 0.047/0.065/0.098/0.024 ms
 
 [132/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
@@ -777,26 +777,26 @@ Total steps: 313
 
 [134/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.354 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.122 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.131 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.300 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.123 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.101 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.122/0.202/0.354/0.107 ms
+  rtt min/avg/max/mdev = 0.101/0.175/0.300/0.089 ms
 
 [135/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.072 ms  0.048 ms  0.042 ms
-   2  10.0.0.2 (10.0.0.2)  0.124 ms  0.072 ms  0.072 ms
-   3  192.168.2.10 (192.168.2.10)  0.161 ms  0.142 ms  0.112 ms
+   1  192.168.1.1 (192.168.1.1)  0.078 ms  0.047 ms  0.042 ms
+   2  10.0.0.2 (10.0.0.2)  0.075 ms  0.070 ms  0.068 ms
+   3  192.168.2.10 (192.168.2.10)  0.105 ms  0.144 ms  0.111 ms
 
 [136/313] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 192.168.1.10:
@@ -872,13 +872,13 @@ Total steps: 313
 
 [151/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.656 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.125 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.079 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.091 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.049 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.103 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.079/0.287/0.656/0.262 ms
+  rtt min/avg/max/mdev = 0.049/0.081/0.103/0.023 ms
 
 [152/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -889,7 +889,7 @@ Total steps: 313
 [153/313] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  192.168.1.10     02:00:00:00:00:09       5/18/2026, 10:30:54 AM  automatic
+  192.168.1.10     02:00:00:00:00:09       5/18/2026, 10:40:26 AM  automatic
 
 [154/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1383,7 +1383,7 @@ Total steps: 313
 [226/313] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  192.168.1.10     02:00:00:00:00:09       5/18/2026, 10:30:54 AM  automatic
+  192.168.1.10     02:00:00:00:00:09       5/18/2026, 10:40:26 AM  automatic
 
 [227/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1445,32 +1445,45 @@ Total steps: 313
        ^
 
 [240/313] r1 R1# show snmp
-  % Invalid input detected at '^' marker.
-  show snmp
-       ^
+  Chassis: 0
+  0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Encoding errors
+  0 SNMP packets output
+      0 Too big errors
+      0 No such name errors
+  SNMP logging: disabled
 
 [241/313] r1 R1# show ntp status
-  % Invalid input detected at '^' marker.
-  show ntp status
-       ^
+  Clock is unsynchronized, stratum 16, no reference clock
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [242/313] r1 R1# show ntp associations
-  % Invalid input detected at '^' marker.
-  show ntp associations
-       ^
+    address         ref clock       st   when   poll reach  delay  offset   disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [243/313] r1 R1# show clock
-  *10:31:00.000 UTC Sun May 17 2026
+  *10:40:32.000 UTC Sun May 17 2026
 
 [244/313] r1 R1# show cdp neighbors
-  % Invalid input detected at '^' marker.
-  show cdp neighbors
-       ^
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
 
 [245/313] r1 R1# show lldp neighbors
-  % Invalid input detected at '^' marker.
-  show lldp neighbors
-       ^
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
 
 [246/313] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1540,9 +1553,9 @@ Total steps: 313
                     ^
 
 [255/313] r1 R1# show controllers
-  % Invalid input detected at '^' marker.
-  show controllers
-       ^
+  Interface - controller status
+    Hardware is present and operational
+    0 carrier transitions
 
 [256/313] r1 R1# show tech-support
   % Invalid input detected at '^' marker.
@@ -1554,44 +1567,54 @@ Total steps: 313
   PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
 
 [258/313] r1 R1# show environment
-  % Invalid input detected at '^' marker.
-  show environment
-       ^
+  SYSTEM TEMPERATURE is OK
+  Temperature value: 35C, state: GREEN
+  Power supply: OK
+  Fan: OK
 
 [259/313] r1 R1# show redundancy
-  % Invalid input detected at '^' marker.
-  show redundancy
-       ^
+  Redundant System Information :
+         Available system uptime = 0 minutes
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
 
 [260/313] r1 R1# show ip vrf
-  % Invalid input detected at '^' marker.
-  show ip vrf
-          ^
+    Name                             Default RD            Protocols   Interfaces
 
 [261/313] r1 R1# show vrf
-  % Invalid input detected at '^' marker.
-  show vrf
-       ^
+    Name                             Default RD            Protocols   Interfaces
 
 [262/313] r1 R1# show hosts
-  % Invalid input detected at '^' marker.
-  show hosts
-       ^
+  Default domain is not set
+  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+  
+  Host                      Port  Flags      Age Type   Address(es)
 
 [263/313] r1 R1# show ip ssh
-  % Invalid input detected at '^' marker.
-  show ip ssh
-          ^
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [264/313] r1 R1# show line
-  % Invalid input detected at '^' marker.
-  show line
-       ^
+     Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int
+  *    0 CTY              -    -      -    -    -      1       0     0/0       -
+       1 VTY              -    -      -    -    -      0       0     0/0       -
+       2 VTY              -    -      -    -    -      0       0     0/0       -
+       3 VTY              -    -      -    -    -      0       0     0/0       -
+       4 VTY              -    -      -    -    -      0       0     0/0       -
+       5 VTY              -    -      -    -    -      0       0     0/0       -
 
 [265/313] r1 R1# show terminal
-  % Invalid input detected at '^' marker.
-  show terminal
-       ^
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Baud rate (TX/RX) is 9600/9600
+  Status: PSI Enabled, Ready, Active
+  Editing is enabled.
+  History is enabled, history size is 20.
 
 [266/313] r1 R1# show aliases
   % Invalid input detected at '^' marker.
