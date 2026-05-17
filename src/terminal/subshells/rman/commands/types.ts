@@ -26,6 +26,8 @@ export interface RmanCommandContext {
   readonly userChannels?: Map<string, ChannelHandle>;
   /** Optional rename map populated by SET NEWNAME FOR DATAFILE n TO '<path>'. */
   readonly setNewname?:  Map<number, string>;
+  /** Optional UNTIL binding populated by SET UNTIL TIME / SET UNTIL SCN. */
+  readonly setUntil?:    { untilTime?: string; untilScn?: number };
 }
 
 export interface IRmanCommand<T = void> {

@@ -28,10 +28,13 @@ interface RecoverOpts {
 export class RecoverCommand implements IRmanCommand<void> {
   readonly name = 'RECOVER';
 
-  execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], { engine, setUntil }: RmanCommandContext): Result<void, RmanError> {
     const scope = (args[0] ?? 'DATABASE').toUpperCase();
     const trailing = (scope === 'DATABASE' ? args[1] : args[2]) ?? '';
     const opts: RecoverOpts = {};
+    // Inherit any SET UNTIL TIME/SCN that ran earlier in the same RUN block.
+    if (setUntil?.untilTime) opts.untilTime = setUntil.untilTime;
+    if (setUntil?.untilScn !== undefined) opts.untilScn = setUntil.untilScn;
 
     if (scope === 'TABLESPACE') {
       const ts = (args[1] ?? '').toUpperCase();

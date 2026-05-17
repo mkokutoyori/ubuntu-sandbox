@@ -26,6 +26,8 @@ import { DuplicateCommand } from './DuplicateCommand';
 import { ChangeCommand } from './ChangeCommand';
 import { SetCommand } from './SetCommand';
 import { ValidateCommand } from './ValidateCommand';
+import { ConnectAuxiliaryCommand } from './ConnectAuxiliaryCommand';
+import { ResyncCatalogCommand } from './ResyncCatalogCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -126,7 +128,15 @@ export class RmanCommandDispatcher {
       { pattern: /^CHANGE BACKUPSET (\d+) AVAILABLE$/i,             command: new ChangeCommand('AVAILABLE')    },
       { pattern: /^CHANGE BACKUP TAG '([^']+)' DELETE$/i,           command: new ChangeCommand('DELETE_BY_TAG') },
       // SET NEWNAME (RUN-block binding consumed by RESTORE / DUPLICATE)
-      { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand() },
+      { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand('NEWNAME') },
+      // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
+      // the same RUN block
+      { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },
+      { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },
+      // CONNECT AUXILIARY — accepted no-op against the in-memory aux
+      { pattern: /^CONNECT AUXILIARY(.*)$/i,                        command: new ConnectAuxiliaryCommand() },
+      // RESYNC CATALOG — accepted no-op against the in-memory catalog
+      { pattern: /^RESYNC CATALOG$/i,                               command: new ResyncCatalogCommand() },
     );
   }
 }
