@@ -1,0 +1,293 @@
+============================================================
+Huawei switch debug transcript — huawei-security-mgmt
+Generated: 2026-05-17T00:14:45.488Z
+Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
+focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
+Total steps: 90
+============================================================
+
+
+--- [1] § STP baseline ---
+[1/90] sw <SW1> display stp
+  Error: Unrecognized command "display stp"
+
+[2/90] sw <SW1> display stp brief
+  Error: Unrecognized command "display stp brief"
+
+[3/90] sw <SW1> system-view
+  Enter system view, return user view with return command.
+
+[4/90] sw [SW1] sysname SW-SEC
+<empty>
+
+
+--- [5] § STP / RSTP / MSTP ---
+[5/90] sw [SW-SEC] stp mode rstp
+  Error: Unrecognized command "stp mode rstp"
+
+[6/90] sw [SW-SEC] stp enable
+  Error: Unrecognized command "stp enable"
+
+[7/90] sw [SW-SEC] stp priority 4096
+  Error: Unrecognized command "stp priority 4096"
+
+[8/90] sw [SW-SEC] stp root primary
+  Error: Unrecognized command "stp root primary"
+
+[9/90] sw [SW-SEC] stp mode mstp
+  Error: Unrecognized command "stp mode mstp"
+
+[10/90] sw [SW-SEC] stp region-configuration
+  Error: Unrecognized command "stp region-configuration"
+
+[11/90] sw [SW-SEC] region-name LAB
+  Error: Unrecognized command "region-name LAB"
+
+[12/90] sw [SW-SEC] instance 1 vlan 10
+  Error: Unrecognized command "instance 1 vlan 10"
+
+[13/90] sw [SW-SEC] instance 2 vlan 20
+  Error: Unrecognized command "instance 2 vlan 20"
+
+[14/90] sw [SW-SEC] active region-configuration
+  Error: Unrecognized command "active region-configuration"
+
+[15/90] sw [SW-SEC] quit
+<empty>
+
+[16/90] sw <SW-SEC> interface GigabitEthernet0/0/1
+  Error: Unrecognized command "interface GigabitEthernet0/0/1"
+
+[17/90] sw <SW-SEC> stp edged-port enable
+  Error: Unrecognized command "stp edged-port enable"
+
+[18/90] sw <SW-SEC> stp bpdu-protection
+  Error: Unrecognized command "stp bpdu-protection"
+
+[19/90] sw <SW-SEC> quit
+<empty>
+
+[20/90] sw <SW-SEC> stp bpdu-protection
+  Error: Unrecognized command "stp bpdu-protection"
+
+[21/90] sw <SW-SEC> interface GigabitEthernet0/0/23
+  Error: Unrecognized command "interface GigabitEthernet0/0/23"
+
+[22/90] sw <SW-SEC> stp cost 20000
+  Error: Unrecognized command "stp cost 20000"
+
+[23/90] sw <SW-SEC> stp port priority 64
+  Error: Unrecognized command "stp port priority 64"
+
+[24/90] sw <SW-SEC> quit
+<empty>
+
+[25/90] sw <SW-SEC> return
+<empty>
+
+[26/90] sw <SW-SEC> display stp
+  Error: Unrecognized command "display stp"
+
+[27/90] sw <SW-SEC> display stp interface GigabitEthernet0/0/1
+  Error: Unrecognized command "display stp interface GigabitEthernet0/0/1"
+
+
+--- [28] § port-security sticky MAC ---
+[28/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[29/90] sw [SW-SEC] interface GigabitEthernet0/0/2
+<empty>
+
+[30/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security enable
+  Error: Unrecognized command "port-security enable"
+
+[31/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security mac-address sticky
+  Error: Unrecognized command "port-security mac-address sticky"
+
+[32/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security max-mac-num 2
+  Error: Unrecognized command "port-security max-mac-num 2"
+
+[33/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security protect-action shutdown
+  Error: Unrecognized command "port-security protect-action shutdown"
+
+[34/90] sw [SW-SEC-GigabitEthernet0/0/2] quit
+<empty>
+
+[35/90] sw [SW-SEC] return
+<empty>
+
+[36/90] sw <SW-SEC> display port-security
+  Error: Unrecognized command "display port-security"
+
+
+--- [37] § DHCP snooping / IPSG / DAI ---
+[37/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[38/90] sw [SW-SEC] dhcp enable
+  Error: Unrecognized command "dhcp enable"
+
+[39/90] sw [SW-SEC] dhcp snooping enable
+  Error: Unrecognized command "dhcp snooping enable"
+
+[40/90] sw [SW-SEC] interface GigabitEthernet0/0/1
+<empty>
+
+[41/90] sw [SW-SEC-GigabitEthernet0/0/1] dhcp snooping enable
+  Error: Unrecognized command "dhcp snooping enable"
+
+[42/90] sw [SW-SEC-GigabitEthernet0/0/1] dhcp snooping trusted
+  Error: Unrecognized command "dhcp snooping trusted"
+
+[43/90] sw [SW-SEC-GigabitEthernet0/0/1] ip source check user-bind enable
+  Error: Unrecognized command "ip source check user-bind enable"
+
+[44/90] sw [SW-SEC-GigabitEthernet0/0/1] arp anti-attack check user-bind enable
+  Error: Unrecognized command "arp anti-attack check user-bind enable"
+
+[45/90] sw [SW-SEC-GigabitEthernet0/0/1] quit
+<empty>
+
+[46/90] sw [SW-SEC] return
+<empty>
+
+[47/90] sw <SW-SEC> display dhcp snooping
+  Error: Unrecognized command "display dhcp snooping"
+
+
+--- [48] § ACL ---
+[48/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[49/90] sw [SW-SEC] acl 3001
+  Error: Unrecognized command "acl 3001"
+
+[50/90] sw [SW-SEC] rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255
+  Error: Unrecognized command "rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255"
+
+[51/90] sw [SW-SEC] rule 10 deny ip
+  Error: Unrecognized command "rule 10 deny ip"
+
+[52/90] sw [SW-SEC] quit
+<empty>
+
+[53/90] sw <SW-SEC> acl name MGMT 2999
+  Error: Unrecognized command "acl name MGMT 2999"
+
+[54/90] sw <SW-SEC> rule permit source 10.0.0.0 0.0.0.255
+  Error: Unrecognized command "rule permit source 10.0.0.0 0.0.0.255"
+
+[55/90] sw <SW-SEC> quit
+<empty>
+
+[56/90] sw <SW-SEC> return
+<empty>
+
+[57/90] sw <SW-SEC> display acl all
+  Error: Unrecognized command "display acl all"
+
+[58/90] sw <SW-SEC> display acl 3001
+  Error: Unrecognized command "display acl 3001"
+
+
+--- [59] § AAA local users + SSH/Telnet ---
+[59/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[60/90] sw [SW-SEC] aaa
+  Error: Unrecognized command "aaa"
+
+[61/90] sw [SW-SEC] local-user admin password irreversible-cipher Huawei@123
+  Error: Unrecognized command "local-user admin password irreversible-cipher Huawei@123"
+
+[62/90] sw [SW-SEC] local-user admin privilege level 15
+  Error: Unrecognized command "local-user admin privilege level 15"
+
+[63/90] sw [SW-SEC] local-user admin service-type ssh telnet terminal
+  Error: Unrecognized command "local-user admin service-type ssh telnet terminal"
+
+[64/90] sw [SW-SEC] quit
+<empty>
+
+[65/90] sw <SW-SEC> stelnet server enable
+  Error: Unrecognized command "stelnet server enable"
+
+[66/90] sw <SW-SEC> ssh user admin authentication-type password
+  Error: Unrecognized command "ssh user admin authentication-type password"
+
+[67/90] sw <SW-SEC> user-interface vty 0 4
+  Error: Unrecognized command "user-interface vty 0 4"
+
+[68/90] sw <SW-SEC> authentication-mode aaa
+  Error: Unrecognized command "authentication-mode aaa"
+
+[69/90] sw <SW-SEC> protocol inbound ssh
+  Error: Unrecognized command "protocol inbound ssh"
+
+[70/90] sw <SW-SEC> quit
+<empty>
+
+[71/90] sw <SW-SEC> telnet server enable
+  Error: Unrecognized command "telnet server enable"
+
+[72/90] sw <SW-SEC> return
+<empty>
+
+[73/90] sw <SW-SEC> display ssh server status
+  Error: Unrecognized command "display ssh server status"
+
+[74/90] sw <SW-SEC> display local-user
+  Error: Unrecognized command "display local-user"
+
+
+--- [75] § SNMP / NTP / syslog / sFlow ---
+[75/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[76/90] sw [SW-SEC] snmp-agent sys-info version v2c v3
+  Error: Unrecognized command "snmp-agent sys-info version v2c v3"
+
+[77/90] sw [SW-SEC] snmp-agent community read cipher public
+  Error: Unrecognized command "snmp-agent community read cipher public"
+
+[78/90] sw [SW-SEC] snmp-agent target-host trap address udp-domain 10.0.0.250 params securityname public
+  Error: Unrecognized command "snmp-agent target-host trap address udp-domain 10.0.0.250 params securityname public"
+
+[79/90] sw [SW-SEC] ntp-service unicast-server 10.0.0.1
+  Error: Unrecognized command "ntp-service unicast-server 10.0.0.1"
+
+[80/90] sw [SW-SEC] clock timezone UTC add 00:00
+  Error: Unrecognized command "clock timezone UTC add 00:00"
+
+[81/90] sw [SW-SEC] info-center enable
+  Error: Unrecognized command "info-center enable"
+
+[82/90] sw [SW-SEC] info-center loghost 10.0.0.251
+  Error: Unrecognized command "info-center loghost 10.0.0.251"
+
+[83/90] sw [SW-SEC] sflow collector 1 ip 10.0.0.252
+  Error: Unrecognized command "sflow collector 1 ip 10.0.0.252"
+
+[84/90] sw [SW-SEC] return
+<empty>
+
+[85/90] sw <SW-SEC> display snmp-agent sys-info
+  Error: Unrecognized command "display snmp-agent sys-info"
+
+[86/90] sw <SW-SEC> display ntp-service status
+  Error: Unrecognized command "display ntp-service status"
+
+
+--- [87] § save / backup ---
+[87/90] sw <SW-SEC> save
+  Error: Unrecognized command "save"
+
+[88/90] sw <SW-SEC> display saved-configuration
+  Error: Unrecognized command "display saved-configuration"
+
+[89/90] sw <SW-SEC> display current-configuration | include snmp
+  Error: Unrecognized command "display current-configuration | include snmp"
+
+[90/90] sw <SW-SEC> reset saved-configuration
+  Error: Unrecognized command "reset saved-configuration"

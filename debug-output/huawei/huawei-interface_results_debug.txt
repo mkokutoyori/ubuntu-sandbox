@@ -1,0 +1,331 @@
+============================================================
+Huawei switch debug transcript — huawei-interface
+Generated: 2026-05-17T00:14:45.485Z
+Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
+focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
+Total steps: 74
+============================================================
+
+
+--- [1] § inventory ---
+[1/74] sw <SW1> display interface brief
+  Interface                     PHY     Protocol  InUti  OutUti
+  GigabitEthernet0/0/0          down    down      0%     0%
+  GigabitEthernet0/0/1          up      up        0%     0%
+  GigabitEthernet0/0/2          up      up        0%     0%
+  GigabitEthernet0/0/3          up      up        0%     0%
+  GigabitEthernet0/0/4          down    down      0%     0%
+  GigabitEthernet0/0/5          down    down      0%     0%
+  GigabitEthernet0/0/6          down    down      0%     0%
+  GigabitEthernet0/0/7          down    down      0%     0%
+  GigabitEthernet0/0/8          down    down      0%     0%
+  GigabitEthernet0/0/9          down    down      0%     0%
+  GigabitEthernet0/0/10         up      up        0%     0%
+  GigabitEthernet0/0/11         down    down      0%     0%
+  GigabitEthernet0/0/12         down    down      0%     0%
+  GigabitEthernet0/0/13         down    down      0%     0%
+  GigabitEthernet0/0/14         down    down      0%     0%
+  GigabitEthernet0/0/15         down    down      0%     0%
+  GigabitEthernet0/0/16         down    down      0%     0%
+  GigabitEthernet0/0/17         down    down      0%     0%
+  GigabitEthernet0/0/18         down    down      0%     0%
+  GigabitEthernet0/0/19         down    down      0%     0%
+  GigabitEthernet0/0/20         down    down      0%     0%
+  GigabitEthernet0/0/21         down    down      0%     0%
+  GigabitEthernet0/0/22         down    down      0%     0%
+  GigabitEthernet0/0/23         down    down      0%     0%
+
+[2/74] sw <SW1> display interface
+  Interface                     PHY     Protocol  InUti  OutUti
+  GigabitEthernet0/0/0          down    down      0%     0%
+  GigabitEthernet0/0/1          up      up        0%     0%
+  GigabitEthernet0/0/2          up      up        0%     0%
+  GigabitEthernet0/0/3          up      up        0%     0%
+  GigabitEthernet0/0/4          down    down      0%     0%
+  GigabitEthernet0/0/5          down    down      0%     0%
+  GigabitEthernet0/0/6          down    down      0%     0%
+  GigabitEthernet0/0/7          down    down      0%     0%
+  GigabitEthernet0/0/8          down    down      0%     0%
+  GigabitEthernet0/0/9          down    down      0%     0%
+  GigabitEthernet0/0/10         up      up        0%     0%
+  GigabitEthernet0/0/11         down    down      0%     0%
+  GigabitEthernet0/0/12         down    down      0%     0%
+  GigabitEthernet0/0/13         down    down      0%     0%
+  GigabitEthernet0/0/14         down    down      0%     0%
+  GigabitEthernet0/0/15         down    down      0%     0%
+  GigabitEthernet0/0/16         down    down      0%     0%
+  GigabitEthernet0/0/17         down    down      0%     0%
+  GigabitEthernet0/0/18         down    down      0%     0%
+  GigabitEthernet0/0/19         down    down      0%     0%
+  GigabitEthernet0/0/20         down    down      0%     0%
+  GigabitEthernet0/0/21         down    down      0%     0%
+  GigabitEthernet0/0/22         down    down      0%     0%
+  GigabitEthernet0/0/23         down    down      0%     0%
+
+[3/74] sw <SW1> display interface description
+  Error: Wrong parameter found at '^' position.
+
+[4/74] sw <SW1> display ip interface brief
+  Error: Unrecognized command "display ip interface brief"
+
+[5/74] sw <SW1> display port
+  Error: Unrecognized command "display port"
+
+
+--- [6] § physical config ---
+[6/74] sw <SW1> system-view
+  Enter system view, return user view with return command.
+
+[7/74] sw [SW1] sysname SW-INT
+<empty>
+
+[8/74] sw [SW-INT] interface GigabitEthernet0/0/1
+<empty>
+
+[9/74] sw [SW-INT-GigabitEthernet0/0/1] description >> uplink to L1 <<
+<empty>
+
+[10/74] sw [SW-INT-GigabitEthernet0/0/1] speed 1000
+  Error: Unrecognized command "speed 1000"
+
+[11/74] sw [SW-INT-GigabitEthernet0/0/1] duplex full
+  Error: Unrecognized command "duplex full"
+
+[12/74] sw [SW-INT-GigabitEthernet0/0/1] negotiation auto
+  Error: Unrecognized command "negotiation auto"
+
+[13/74] sw [SW-INT-GigabitEthernet0/0/1] flow-control
+  Error: Unrecognized command "flow-control"
+
+[14/74] sw [SW-INT-GigabitEthernet0/0/1] mtu 9216
+  Error: Unrecognized command "mtu 9216"
+
+[15/74] sw [SW-INT-GigabitEthernet0/0/1] jumboframe enable 9216
+  Error: Unrecognized command "jumboframe enable 9216"
+
+[16/74] sw [SW-INT-GigabitEthernet0/0/1] port-security enable
+  Error: Unrecognized command "port-security enable"
+
+[17/74] sw [SW-INT-GigabitEthernet0/0/1] port-security max-mac-num 5
+  Error: Unrecognized command "port-security max-mac-num 5"
+
+[18/74] sw [SW-INT-GigabitEthernet0/0/1] loopback-detect enable
+  Error: Unrecognized command "loopback-detect enable"
+
+[19/74] sw [SW-INT-GigabitEthernet0/0/1] display this
+  Error: Unrecognized command "display this"
+
+[20/74] sw [SW-INT-GigabitEthernet0/0/1] quit
+<empty>
+
+
+--- [21] § shutdown / state ---
+[21/74] sw [SW-INT] interface GigabitEthernet0/0/5
+<empty>
+
+[22/74] sw [SW-INT-GigabitEthernet0/0/5] shutdown
+<empty>
+
+[23/74] sw [SW-INT-GigabitEthernet0/0/5] quit
+<empty>
+
+[24/74] sw [SW-INT] display interface brief
+  Interface                     PHY     Protocol  InUti  OutUti
+  GigabitEthernet0/0/0          down    down      0%     0%
+  GigabitEthernet0/0/1          up      up        0%     0%
+  GigabitEthernet0/0/2          up      up        0%     0%
+  GigabitEthernet0/0/3          up      up        0%     0%
+  GigabitEthernet0/0/4          down    down      0%     0%
+  GigabitEthernet0/0/5          down    down      0%     0%
+  GigabitEthernet0/0/6          down    down      0%     0%
+  GigabitEthernet0/0/7          down    down      0%     0%
+  GigabitEthernet0/0/8          down    down      0%     0%
+  GigabitEthernet0/0/9          down    down      0%     0%
+  GigabitEthernet0/0/10         up      up        0%     0%
+  GigabitEthernet0/0/11         down    down      0%     0%
+  GigabitEthernet0/0/12         down    down      0%     0%
+  GigabitEthernet0/0/13         down    down      0%     0%
+  GigabitEthernet0/0/14         down    down      0%     0%
+  GigabitEthernet0/0/15         down    down      0%     0%
+  GigabitEthernet0/0/16         down    down      0%     0%
+  GigabitEthernet0/0/17         down    down      0%     0%
+  GigabitEthernet0/0/18         down    down      0%     0%
+  GigabitEthernet0/0/19         down    down      0%     0%
+  GigabitEthernet0/0/20         down    down      0%     0%
+  GigabitEthernet0/0/21         down    down      0%     0%
+  GigabitEthernet0/0/22         down    down      0%     0%
+  GigabitEthernet0/0/23         down    down      0%     0%
+
+[25/74] sw [SW-INT] interface GigabitEthernet0/0/5
+<empty>
+
+[26/74] sw [SW-INT-GigabitEthernet0/0/5] undo shutdown
+<empty>
+
+[27/74] sw [SW-INT-GigabitEthernet0/0/5] quit
+<empty>
+
+[28/74] sw [SW-INT] display interface GigabitEthernet0/0/5
+  GigabitEthernet0/0/5 current state : DOWN
+  Line protocol current state : DOWN
+  Description: 
+  The Maximum Transmit Unit is 1500
+  Internet protocol processing : disabled
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+
+--- [29] § range / port-group ---
+[29/74] sw [SW-INT] port-group pg1
+  Error: Unrecognized command "port-group pg1"
+
+[30/74] sw [SW-INT] group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9
+  Error: Unrecognized command "group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9"
+
+[31/74] sw [SW-INT] quit
+<empty>
+
+[32/74] sw <SW-INT> interface range GigabitEthernet0/0/6 to GigabitEthernet0/0/9
+  Error: Unrecognized command "interface range GigabitEthernet0/0/6 to GigabitEthernet0/0/9"
+
+[33/74] sw <SW-INT> shutdown
+  Error: Unrecognized command "shutdown"
+
+[34/74] sw <SW-INT> quit
+<empty>
+
+
+--- [35] § Eth-Trunk / LACP ---
+[35/74] sw <SW-INT> interface Eth-Trunk 1
+  Error: Unrecognized command "interface Eth-Trunk 1"
+
+[36/74] sw <SW-INT> mode lacp-static
+  Error: Unrecognized command "mode lacp-static"
+
+[37/74] sw <SW-INT> trunkport GigabitEthernet0/0/21
+  Error: Unrecognized command "trunkport GigabitEthernet0/0/21"
+
+[38/74] sw <SW-INT> trunkport GigabitEthernet0/0/22
+  Error: Unrecognized command "trunkport GigabitEthernet0/0/22"
+
+[39/74] sw <SW-INT> max active-linknumber 2
+  Error: Unrecognized command "max active-linknumber 2"
+
+[40/74] sw <SW-INT> least active-linknumber 1
+  Error: Unrecognized command "least active-linknumber 1"
+
+[41/74] sw <SW-INT> load-balance src-dst-mac
+  Error: Unrecognized command "load-balance src-dst-mac"
+
+[42/74] sw <SW-INT> display this
+  Error: Unrecognized command "display this"
+
+[43/74] sw <SW-INT> quit
+<empty>
+
+[44/74] sw <SW-INT> interface GigabitEthernet0/0/21
+  Error: Unrecognized command "interface GigabitEthernet0/0/21"
+
+[45/74] sw <SW-INT> eth-trunk 1
+  Error: Unrecognized command "eth-trunk 1"
+
+[46/74] sw <SW-INT> quit
+<empty>
+
+[47/74] sw <SW-INT> interface GigabitEthernet0/0/22
+  Error: Unrecognized command "interface GigabitEthernet0/0/22"
+
+[48/74] sw <SW-INT> eth-trunk 1
+  Error: Unrecognized command "eth-trunk 1"
+
+[49/74] sw <SW-INT> quit
+<empty>
+
+[50/74] sw <SW-INT> display eth-trunk 1
+  Error: Unrecognized command "display eth-trunk 1"
+
+[51/74] sw <SW-INT> display interface Eth-Trunk 1
+  Error: Wrong parameter found at '^' position.
+
+
+--- [52] § loopback / vlanif / null ---
+[52/74] sw <SW-INT> interface LoopBack0
+  Error: Unrecognized command "interface LoopBack0"
+
+[53/74] sw <SW-INT> ip address 10.0.0.1 255.255.255.255
+  Error: Unrecognized command "ip address 10.0.0.1 255.255.255.255"
+
+[54/74] sw <SW-INT> quit
+<empty>
+
+[55/74] sw <SW-INT> interface NULL0
+  Error: Unrecognized command "interface NULL0"
+
+[56/74] sw <SW-INT> quit
+<empty>
+
+
+--- [57] § port isolation ---
+[57/74] sw <SW-INT> interface GigabitEthernet0/0/3
+  Error: Unrecognized command "interface GigabitEthernet0/0/3"
+
+[58/74] sw <SW-INT> port-isolate enable group 1
+  Error: Unrecognized command "port-isolate enable group 1"
+
+[59/74] sw <SW-INT> quit
+<empty>
+
+[60/74] sw <SW-INT> interface GigabitEthernet0/0/4
+  Error: Unrecognized command "interface GigabitEthernet0/0/4"
+
+[61/74] sw <SW-INT> port-isolate enable group 1
+  Error: Unrecognized command "port-isolate enable group 1"
+
+[62/74] sw <SW-INT> quit
+<empty>
+
+
+--- [63] § storm / traffic control ---
+[63/74] sw <SW-INT> interface GigabitEthernet0/0/2
+  Error: Unrecognized command "interface GigabitEthernet0/0/2"
+
+[64/74] sw <SW-INT> storm-control broadcast min-rate 100 max-rate 200
+  Error: Unrecognized command "storm-control broadcast min-rate 100 max-rate 200"
+
+[65/74] sw <SW-INT> storm-control multicast min-rate 100 max-rate 200
+  Error: Unrecognized command "storm-control multicast min-rate 100 max-rate 200"
+
+[66/74] sw <SW-INT> broadcast-suppression 10
+  Error: Unrecognized command "broadcast-suppression 10"
+
+[67/74] sw <SW-INT> traffic-policy P1 inbound
+  Error: Unrecognized command "traffic-policy P1 inbound"
+
+[68/74] sw <SW-INT> quit
+<empty>
+
+[69/74] sw <SW-INT> return
+<empty>
+
+
+--- [70] § counters / diagnostics ---
+[70/74] sw <SW-INT> display interface GigabitEthernet0/0/1
+  GigabitEthernet0/0/1 current state : UP
+  Line protocol current state : UP
+  Description: >> uplink to L1 <<
+  The Maximum Transmit Unit is 1500
+  Internet protocol processing : disabled
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[71/74] sw <SW-INT> display interface GigabitEthernet0/0/1 | include rate
+  Error: Wrong parameter found at '^' position.
+
+[72/74] sw <SW-INT> reset counters interface GigabitEthernet0/0/1
+  Error: Unrecognized command "reset counters interface GigabitEthernet0/0/1"
+
+[73/74] sw <SW-INT> display counters inbound interface GigabitEthernet0/0/1
+  Error: Unrecognized command "display counters inbound interface GigabitEthernet0/0/1"
+
+[74/74] sw <SW-INT> display interface brief | include up
+  Error: Unrecognized command "display interface brief | include up"

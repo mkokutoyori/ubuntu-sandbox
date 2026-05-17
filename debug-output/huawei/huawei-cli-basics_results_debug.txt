@@ -1,0 +1,415 @@
+============================================================
+Huawei switch debug transcript — huawei-cli-basics
+Generated: 2026-05-17T00:14:45.994Z
+Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
+focus=VRP user/system-view navigation, help, abbreviations, undo
+Total steps: 70
+============================================================
+
+
+--- [1] § user view / version / clock ---
+[1/70] sw <SW1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          S5720-28X-LI-AC
+  CPLD Version:        1.0
+  BootROM Version:     1.0
+  SW1 uptime is 0 days, 0 hours, 0 minutes
+
+[2/70] sw <SW1> display clock
+  Error: Unrecognized command "display clock"
+
+[3/70] sw <SW1> display device
+  Error: Unrecognized command "display device"
+
+[4/70] sw <SW1> display users
+  Error: Unrecognized command "display users"
+
+[5/70] sw <SW1> display history-command
+  Error: Unrecognized command "display history-command"
+
+[6/70] sw <SW1> display cpu-usage
+  Error: Unrecognized command "display cpu-usage"
+
+[7/70] sw <SW1> display memory-usage
+  Error: Unrecognized command "display memory-usage"
+
+[8/70] sw <SW1> display saved-configuration
+  Error: Unrecognized command "display saved-configuration"
+
+[9/70] sw <SW1> display startup
+  Error: Unrecognized command "display startup"
+
+
+--- [10] § mode navigation ---
+[10/70] sw <SW1> system-view
+  Enter system view, return user view with return command.
+
+[11/70] sw [SW1] sysname SW-CORE
+<empty>
+
+[12/70] sw [SW-CORE] display this
+  Error: Unrecognized command "display this"
+
+[13/70] sw [SW-CORE] header shell information "Authorized access only"
+  Error: Unrecognized command "header shell information "Authorized access only""
+
+[14/70] sw [SW-CORE] interface GigabitEthernet0/0/1
+<empty>
+
+[15/70] sw [SW-CORE-GigabitEthernet0/0/1] display this
+  Error: Unrecognized command "display this"
+
+[16/70] sw [SW-CORE-GigabitEthernet0/0/1] quit
+<empty>
+
+[17/70] sw [SW-CORE] vlan 10
+<empty>
+
+[18/70] sw [SW-CORE-vlan10] quit
+<empty>
+
+[19/70] sw [SW-CORE] user-interface console 0
+  Error: Unrecognized command "user-interface console 0"
+
+[20/70] sw [SW-CORE] quit
+<empty>
+
+[21/70] sw <SW-CORE> aaa
+  Error: Unrecognized command "aaa"
+
+[22/70] sw <SW-CORE> quit
+<empty>
+
+[23/70] sw <SW-CORE> return
+<empty>
+
+[24/70] sw <SW-CORE> display current-configuration
+  #
+  sysname SW-CORE
+  #
+  vlan 10
+   name VLAN0010
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+
+--- [25] § abbreviations (Huawei allows unambiguous prefixes) ---
+[25/70] sw <SW-CORE> sys
+  Enter system view, return user view with return command.
+
+[26/70] sw [SW-CORE] sysn SW-EDGE
+<empty>
+
+[27/70] sw [SW-EDGE] dis cu
+  #
+  sysname SW-EDGE
+  #
+  vlan 10
+   name VLAN0010
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+[28/70] sw [SW-EDGE] q
+  Error: Unrecognized command "q"
+
+[29/70] sw [SW-EDGE] ret
+  Error: Unrecognized command "ret"
+
+[30/70] sw [SW-EDGE] disp version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          S5720-28X-LI-AC
+  CPLD Version:        1.0
+  BootROM Version:     1.0
+  SW-EDGE uptime is 0 days, 0 hours, 0 minutes
+
+[31/70] sw [SW-EDGE] dis clock
+  Error: Unrecognized command "dis clock"
+
+
+--- [32] § context help (?) ---
+[32/70] sw [SW-EDGE] display ?
+    version                Display VRP version information
+    vlan                   Display VLAN information
+    interface              Display interface details
+    mac-address            Display MAC address table
+    current-configuration  Display running configuration
+
+[33/70] sw [SW-EDGE] ?
+    display      display
+    sysname      Set system hostname
+    vlan         VLAN configuration
+    undo         Undo configuration
+    interface    Enter interface view
+    mac-address  MAC address configuration
+
+[34/70] sw [SW-EDGE] system-view
+  Error: Unrecognized command "system-view"
+
+[35/70] sw [SW-EDGE] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[36/70] sw [SW-EDGE] vlan ?
+    WORD  VLAN configuration
+    <cr>  
+
+[37/70] sw [SW-EDGE] stp ?
+  Error: Unrecognized command
+
+[38/70] sw [SW-EDGE] undo ?
+    WORD  Undo configuration
+    <cr>  
+
+[39/70] sw [SW-EDGE] return
+<empty>
+
+
+--- [40] § undo / negation ---
+[40/70] sw <SW-EDGE> system-view
+  Enter system view, return user view with return command.
+
+[41/70] sw [SW-EDGE] sysname TEMP
+<empty>
+
+[42/70] sw [TEMP] undo sysname
+  Error: Unrecognized command "undo sysname"
+
+[43/70] sw [TEMP] info-center enable
+  Error: Unrecognized command "info-center enable"
+
+[44/70] sw [TEMP] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[45/70] sw [TEMP] interface GigabitEthernet0/0/5
+<empty>
+
+[46/70] sw [TEMP-GigabitEthernet0/0/5] description test-port
+<empty>
+
+[47/70] sw [TEMP-GigabitEthernet0/0/5] undo description
+  Error: Unrecognized command "undo description"
+
+[48/70] sw [TEMP-GigabitEthernet0/0/5] shutdown
+<empty>
+
+[49/70] sw [TEMP-GigabitEthernet0/0/5] undo shutdown
+<empty>
+
+[50/70] sw [TEMP-GigabitEthernet0/0/5] quit
+<empty>
+
+[51/70] sw [TEMP] return
+<empty>
+
+
+--- [52] § display filtering / paging ---
+[52/70] sw <TEMP> display current-configuration | include vlan
+  Error: Unrecognized command "display current-configuration | include vlan"
+
+[53/70] sw <TEMP> display current-configuration | begin interface
+  Error: Unrecognized command "display current-configuration | begin interface"
+
+[54/70] sw <TEMP> display interface brief | exclude down
+  Error: Unrecognized command "display interface brief | exclude down"
+
+[55/70] sw <TEMP> screen-length 0 temporary
+  Error: Unrecognized command "screen-length 0 temporary"
+
+[56/70] sw <TEMP> display version | include VRP
+  Error: Unrecognized command "display version | include VRP"
+
+
+--- [57] § diagnostics ---
+[57/70] sw <TEMP> display diagnostic-information
+  Error: Unrecognized command "display diagnostic-information"
+
+[58/70] sw <TEMP> display alarm
+  Error: Unrecognized command "display alarm"
+
+[59/70] sw <TEMP> display logbuffer
+  Error: Unrecognized command "display logbuffer"
+
+[60/70] sw <TEMP> display trapbuffer
+  Error: Unrecognized command "display trapbuffer"
+
+[61/70] sw <TEMP> display elabel
+  Error: Unrecognized command "display elabel"
+
+[62/70] sw <TEMP> display patch-information
+  Error: Unrecognized command "display patch-information"
+
+[63/70] sw <TEMP> display license
+  Error: Unrecognized command "display license"
+
+
+--- [64] § save / reboot lifecycle ---
+[64/70] sw <TEMP> save
+  Error: Unrecognized command "save"
+
+[65/70] sw <TEMP> save force
+  Error: Unrecognized command "save force"
+
+[66/70] sw <TEMP> system-view
+  Enter system view, return user view with return command.
+
+[67/70] sw [TEMP] commit
+  Error: Unrecognized command "commit"
+
+[68/70] sw [TEMP] return
+<empty>
+
+[69/70] sw <TEMP> reset saved-configuration
+  Error: Unrecognized command "reset saved-configuration"
+
+[70/70] sw <TEMP> reboot
+  Error: Unrecognized command "reboot"
