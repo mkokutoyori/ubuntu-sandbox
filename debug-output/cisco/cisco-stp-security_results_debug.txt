@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-stp-security
-Generated: 2026-05-17T06:24:12.230Z
+Generated: 2026-05-17T06:25:06.027Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=STP/MST, port-security, DHCP snooping, ACL, AAA/SSH, SNMP
 Total steps: 74
@@ -55,9 +55,7 @@ Total steps: 74
   ---------------------- -------- --------- -------- ---------- ----------
 
 [4/74] sw SW1(config)# configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+<empty>
 
 [5/74] sw SW1(config)# hostname SW-SEC
 <empty>

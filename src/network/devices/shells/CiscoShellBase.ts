@@ -283,6 +283,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonConfigCommands(): void {
+    // `configure terminal` while already in config is an idempotent
+    // no-op (re-issuing it must not error mid-sequence).
+    this.configTrie.register('configure terminal', 'Already in global config', () => '');
+
     this.configTrie.registerGreedy('hostname', 'Set system hostname', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       this.d()._setHostnameInternal(args[0]);
