@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — conversion-cmdlets-pc
-Generated: 2026-05-17T05:39:18.348Z
+Generated: 2026-05-17T06:00:49.903Z
 Engine: powershell
 host=WIN-CONVERSION-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 62

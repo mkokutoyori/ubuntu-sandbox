@@ -15,6 +15,7 @@
 import { RmanEventBus } from '../reactive/RmanEventBus';
 import { createAggregations, type ReactiveAggregations, type SessionMetrics } from '../reactive/aggregations';
 import { ReactiveChannelPool } from '../channel/ReactiveChannelPool';
+import { RmanBusBridge } from '../RmanBusBridge';
 import { InMemoryRmanCatalog } from '../catalog/InMemoryRmanCatalog';
 import { RmanJobEngine } from '../job/RmanJobEngine';
 import { RmanCommandDispatcher } from '../commands/RmanCommandDispatcher';
@@ -50,6 +51,8 @@ export class RmanSession implements IRmanSession {
   readonly activeJob$:      RmanObservable<string | null>;
   readonly activeChannels$: RmanObservable<ReadonlySet<string>>;
   private readonly _aggregations: ReactiveAggregations;
+  private readonly _bridge?: RmanBusBridge;
+  readonly sessionId: string;
 
   constructor(
     private readonly _options: RmanSessionOptions,
@@ -69,6 +72,12 @@ export class RmanSession implements IRmanSession {
     this.metrics$         = this._aggregations.metrics$;
     this.activeJob$       = this._aggregations.activeJob$;
     this.activeChannels$  = this._aggregations.activeChannels$;
+
+    this.sessionId = _options.sessionId ?? `rman-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    if (_options.sharedBus) {
+      this._bridge = new RmanBusBridge(_options.sharedBus, this.sessionId, this.events$);
+      this._bridge.start();
+    }
   }
 
   get state(): RmanSessionState { return this._state; }
@@ -186,6 +195,7 @@ export class RmanSession implements IRmanSession {
     this._bus.emit({ type: 'DISCONNECTED' });
     for (const u of this._unsubs) u();
     this._aggregations.dispose();
+    this._bridge?.stop();
     this._pool.dispose();
     this._catalog.dispose();
     this._bus.dispose();

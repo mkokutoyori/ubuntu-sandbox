@@ -65,3 +65,19 @@ export { LinuxRmanContext } from './integration/LinuxRmanContext';
 
 // SubShell
 export { ReactiveRmanSubShell } from './ReactiveRmanSubShell';
+
+// Shared-bus integration
+export type {
+  RmanDomainEvent, RmanDomainEventTopic, RmanSessionRef,
+  RmanSessionStateChangedPayload, RmanConnectedPayload, RmanDisconnectedPayload,
+  RmanJobStartedPayload, RmanJobCompletedPayload, RmanJobFailedPayload,
+  RmanProgressUpdatedPayload, RmanBackupPieceCreatedPayload,
+  RmanBackupSetCompletePayload, RmanChannelAllocatedPayload,
+  RmanChannelReleasedPayload, RmanCatalogUpdatedPayload, RmanConfigChangedPayload,
+} from './events';
+export { RmanBusBridge } from './RmanBusBridge';
+export {
+  RmanSignalStore, EMPTY_RMAN_METRICS, makeReadonlyRmanObservables,
+  type RmanSessionVM, type RmanActiveJobVM, type RmanMetricsVM, type RmanObservables,
+} from './RmanSignalStore';
+export { RmanSignalRefreshActor } from './actors/RmanSignalRefreshActor';

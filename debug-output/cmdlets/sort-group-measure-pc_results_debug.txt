@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — sort-group-measure-pc
-Generated: 2026-05-17T05:39:16.650Z
+Generated: 2026-05-17T06:00:47.261Z
 Engine: powershell
 host=WIN-SORT-GROUP-MEASURE (windows-pc) — cmdlet attribute suite
 Total commands: 65
