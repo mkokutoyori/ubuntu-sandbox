@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-05-17T17:12:28.412Z
+Generated: 2026-05-17T17:16:30.857Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1076,9 +1076,7 @@ Total steps: 311
   end
 
 [205/311] r1 R1# show startup-config
-  % Invalid input detected at '^' marker.
-  show startup-config
-       ^
+  % startup-config is not present
 
 [206/311] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -1225,29 +1223,19 @@ Total steps: 311
   GigabitEthernet0/1   1     0               10.0.0.1/30        100   DR    0/0
 
 [217/311] r1 R1# show ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [218/311] r1 R1# show ip eigrp topology
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [219/311] r1 R1# show ip bgp
-  % Invalid input detected at '^' marker.
-  show ip bgp
-          ^
+  % BGP not active
 
 [220/311] r1 R1# show ip bgp summary
-  % Invalid input detected at '^' marker.
-  show ip bgp summary
-          ^
+  % BGP not active
 
 [221/311] r1 R1# show ip rip database
-  % Invalid input detected at '^' marker.
-  show ip rip database
-              ^
+<empty>
 
 [222/311] r1 R1# show ip nat translations
   No NAT translations.
@@ -1331,7 +1319,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *17:12:28.000 UTC Sun May 17 2026
+  *17:16:30.000 UTC Sun May 17 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1400,9 +1388,14 @@ Total steps: 311
   show history
 
 [249/311] r1 R1# show ip cef
-  % Invalid input detected at '^' marker.
-  show ip cef
-          ^
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  10.10.1.0/24         attached             Loopback1
+  10.10.2.0/24         attached             Loopback2
+  10.10.3.0/24         attached             Loopback3
+  10.10.4.0/24         attached             Loopback4
 
 [250/311] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

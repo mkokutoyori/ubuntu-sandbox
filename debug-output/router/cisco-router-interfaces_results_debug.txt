@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-05-17T17:12:29.415Z
+Generated: 2026-05-17T17:16:31.385Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1269,9 +1269,7 @@ Total steps: 343
   end
 
 [237/343] r1 R1# show startup-config
-  % Invalid input detected at '^' marker.
-  show startup-config
-       ^
+  % startup-config is not present
 
 [238/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -1393,29 +1391,19 @@ Total steps: 343
   % OSPF is not configured
 
 [249/343] r1 R1# show ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [250/343] r1 R1# show ip eigrp topology
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [251/343] r1 R1# show ip bgp
-  % Invalid input detected at '^' marker.
-  show ip bgp
-          ^
+  % BGP not active
 
 [252/343] r1 R1# show ip bgp summary
-  % Invalid input detected at '^' marker.
-  show ip bgp summary
-          ^
+  % BGP not active
 
 [253/343] r1 R1# show ip rip database
-  % Invalid input detected at '^' marker.
-  show ip rip database
-              ^
+<empty>
 
 [254/343] r1 R1# show ip nat translations
   No NAT translations.
@@ -1499,7 +1487,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *17:12:29.000 UTC Sun May 17 2026
+  *17:16:31.000 UTC Sun May 17 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1568,9 +1556,19 @@ Total steps: 343
   show history
 
 [281/343] r1 R1# show ip cef
-  % Invalid input detected at '^' marker.
-  show ip cef
-          ^
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.100.0/24     attached             GigabitEthernet0/0
+  10.255.255.1/32      attached             Loopback1
+  10.255.255.2/32      attached             Loopback2
+  10.255.255.3/32      attached             Loopback3
+  10.255.255.4/32      attached             Loopback4
+  10.255.255.5/32      attached             Loopback5
+  10.255.255.6/32      attached             Loopback6
+  10.255.255.7/32      attached             Loopback7
+  10.255.255.8/32      attached             Loopback8
+  172.31.0.1/32        attached             Loopback100
+  10.0.0.0/30          attached             GigabitEthernet0/1
 
 [282/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

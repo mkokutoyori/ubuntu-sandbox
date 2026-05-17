@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-05-17T17:12:29.437Z
+Generated: 2026-05-17T17:16:30.857Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1155,9 +1155,7 @@ Total steps: 370
   end
 
 [264/370] r1 R1(config)# show startup-config
-  % Invalid input detected at '^' marker.
-  show startup-config
-       ^
+  % startup-config is not present
 
 [265/370] r1 R1(config)# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -1253,29 +1251,19 @@ Total steps: 370
   % OSPF is not configured
 
 [276/370] r1 R1(config)# show ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [277/370] r1 R1(config)# show ip eigrp topology
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [278/370] r1 R1(config)# show ip bgp
-  % Invalid input detected at '^' marker.
-  show ip bgp
-          ^
+  % BGP not active
 
 [279/370] r1 R1(config)# show ip bgp summary
-  % Invalid input detected at '^' marker.
-  show ip bgp summary
-          ^
+  % BGP not active
 
 [280/370] r1 R1(config)# show ip rip database
-  % Invalid input detected at '^' marker.
-  show ip rip database
-              ^
+<empty>
 
 [281/370] r1 R1(config)# show ip nat translations
   No NAT translations.
@@ -1401,7 +1389,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *17:12:29.000 UTC Sun May 17 2026
+  *17:16:30.000 UTC Sun May 17 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1470,9 +1458,13 @@ Total steps: 370
   show history
 
 [308/370] r1 R1(config)# show ip cef
-  % Invalid input detected at '^' marker.
-  show ip cef
-          ^
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  1.1.1.1/32           attached             Loopback0
+  172.16.0.0/30        attached             Tunnel0
+  172.16.0.4/30        attached             Tunnel1
 
 [309/370] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

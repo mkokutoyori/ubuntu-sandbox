@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-05-17T17:12:28.937Z
+Generated: 2026-05-17T17:16:32.351Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -1089,9 +1089,10 @@ Total steps: 388
       Echo replies: 0
 
 [246/388] r1 R1> show ip cef
-  % Invalid input detected at '^' marker.
-  show ip cef
-          ^
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
 
 
 --- [247] § zone-based firewall ---
@@ -1360,9 +1361,7 @@ Total steps: 388
   end
 
 [282/388] r1 R1# show startup-config
-  % Invalid input detected at '^' marker.
-  show startup-config
-       ^
+  % startup-config is not present
 
 [283/388] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -1439,29 +1438,19 @@ Total steps: 388
   % OSPF is not configured
 
 [294/388] r1 R1# show ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [295/388] r1 R1# show ip eigrp topology
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [296/388] r1 R1# show ip bgp
-  % Invalid input detected at '^' marker.
-  show ip bgp
-          ^
+  % BGP not active
 
 [297/388] r1 R1# show ip bgp summary
-  % Invalid input detected at '^' marker.
-  show ip bgp summary
-          ^
+  % BGP not active
 
 [298/388] r1 R1# show ip rip database
-  % Invalid input detected at '^' marker.
-  show ip rip database
-              ^
+<empty>
 
 [299/388] r1 R1# show ip nat translations
   No NAT translations.
@@ -1705,7 +1694,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *17:12:28.000 UTC Sun May 17 2026
+  *17:16:32.000 UTC Sun May 17 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1774,9 +1763,10 @@ Total steps: 388
   show history
 
 [326/388] r1 R1# show ip cef
-  % Invalid input detected at '^' marker.
-  show ip cef
-          ^
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
 
 [327/388] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

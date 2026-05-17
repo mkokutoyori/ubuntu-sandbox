@@ -373,3 +373,45 @@ export function showIpInterfaceAll(router: Router): string {
   }
   return blocks.length ? blocks.join('\n') : 'No interfaces present.';
 }
+
+/** `show ip rip database` — real RIP RIB (configured + learned). */
+export function showIpRipDatabase(router: Router): string {
+  if (!router.isRIPEnabled()) return '';
+  const cfg = router.getRIPConfig();
+  const learned = router.getRIPRoutes();
+  const lines: string[] = [];
+  for (const net of cfg.networks) {
+    lines.push(`${net.network}/${net.mask.toCIDR()}    auto-summary`);
+    lines.push(`${net.network}/${net.mask.toCIDR()}`);
+    lines.push('    [1] directly connected, via configured network');
+  }
+  for (const [key, info] of learned) {
+    lines.push(`${key}`);
+    lines.push(`    [${info.metric}] via ${info.learnedFrom}, ` +
+      `${info.age}s${info.garbageCollect ? ', possibly down' : ''}`);
+  }
+  return lines.length ? lines.join('\n') : 'RIP routing database is empty';
+}
+
+/** `show ip cef` — real FIB derived from the routing table. */
+export function showIpCef(router: Router): string {
+  const rt = router.getRoutingTable();
+  const lines = ['Prefix               Next Hop             Interface'];
+  lines.push('0.0.0.0/0            no route');
+  for (const r of rt) {
+    const prefix = `${r.network}/${r.mask.toCIDR()}`;
+    const nh = r.nextHop ? String(r.nextHop) : 'attached';
+    lines.push(`${prefix.padEnd(21)}${nh.padEnd(21)}${r.iface}`);
+  }
+  return lines.join('\n');
+}
+
+/** `show ip bgp …` — honest state: no BGP process configured. */
+export function showBgpNotActive(): string {
+  return '% BGP not active';
+}
+
+/** `show ip eigrp …` — honest state: no EIGRP process configured. */
+export function showEigrpNotRunning(): string {
+  return '% EIGRP not running (no autonomous-system configured)';
+}

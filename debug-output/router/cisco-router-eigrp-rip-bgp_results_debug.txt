@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-05-17T17:12:30.492Z
+Generated: 2026-05-17T17:16:32.826Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -242,9 +242,30 @@ Total steps: 355
 <empty>
 
 [58/355] r1 R1> show ip rip database
-  % Invalid input detected at '^' marker.
-  show ip rip database
-              ^
+  10.1.0.0/8    auto-summary
+  10.1.0.0/8
+      [1] directly connected, via configured network
+  10.2.0.0/8    auto-summary
+  10.2.0.0/8
+      [1] directly connected, via configured network
+  10.3.0.0/8    auto-summary
+  10.3.0.0/8
+      [1] directly connected, via configured network
+  10.4.0.0/8    auto-summary
+  10.4.0.0/8
+      [1] directly connected, via configured network
+  10.5.0.0/8    auto-summary
+  10.5.0.0/8
+      [1] directly connected, via configured network
+  10.6.0.0/8    auto-summary
+  10.6.0.0/8
+      [1] directly connected, via configured network
+  192.168.1.0/24    auto-summary
+  192.168.1.0/24
+      [1] directly connected, via configured network
+  10.0.0.0/8    auto-summary
+  10.0.0.0/8
+      [1] directly connected, via configured network
 
 [59/355] r1 R1> show ip protocols
   Routing Protocol is "rip"
@@ -467,44 +488,28 @@ Total steps: 355
 <empty>
 
 [101/355] r1 R1> show ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [102/355] r1 R1> show ip eigrp neighbors detail
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors detail
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [103/355] r1 R1> show ip eigrp topology
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [104/355] r1 R1> show ip eigrp topology all-links
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology all-links
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [105/355] r1 R1> show ip eigrp interfaces
-  % Invalid input detected at '^' marker.
-  show ip eigrp interfaces
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [106/355] r1 R1> show ip eigrp interfaces detail
-  % Invalid input detected at '^' marker.
-  show ip eigrp interfaces detail
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [107/355] r1 R1> show ip eigrp traffic
-  % Invalid input detected at '^' marker.
-  show ip eigrp traffic
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [108/355] r1 R1> show ip eigrp accounting
-  % Invalid input detected at '^' marker.
-  show ip eigrp accounting
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [109/355] r1 R1> show ip route eigrp
   % Network not in table
@@ -1090,64 +1095,40 @@ Total steps: 355
 <empty>
 
 [224/355] r1 R1> show ip bgp
-  % Invalid input detected at '^' marker.
-  show ip bgp
-          ^
+  % BGP not active
 
 [225/355] r1 R1> show ip bgp summary
-  % Invalid input detected at '^' marker.
-  show ip bgp summary
-          ^
+  % BGP not active
 
 [226/355] r1 R1> show ip bgp neighbors
-  % Invalid input detected at '^' marker.
-  show ip bgp neighbors
-          ^
+  % BGP not active
 
 [227/355] r1 R1> show ip bgp neighbors 10.0.0.2 advertised-routes
-  % Invalid input detected at '^' marker.
-  show ip bgp neighbors 10.0.0.2 advertised-routes
-          ^
+  % BGP not active
 
 [228/355] r1 R1> show ip bgp neighbors 10.0.0.2 received-routes
-  % Invalid input detected at '^' marker.
-  show ip bgp neighbors 10.0.0.2 received-routes
-          ^
+  % BGP not active
 
 [229/355] r1 R1> show ip bgp neighbors 10.0.0.2 routes
-  % Invalid input detected at '^' marker.
-  show ip bgp neighbors 10.0.0.2 routes
-          ^
+  % BGP not active
 
 [230/355] r1 R1> show ip bgp 192.168.1.0
-  % Invalid input detected at '^' marker.
-  show ip bgp 192.168.1.0
-          ^
+  % BGP not active
 
 [231/355] r1 R1> show ip bgp paths
-  % Invalid input detected at '^' marker.
-  show ip bgp paths
-          ^
+  % BGP not active
 
 [232/355] r1 R1> show ip bgp community
-  % Invalid input detected at '^' marker.
-  show ip bgp community
-          ^
+  % BGP not active
 
 [233/355] r1 R1> show ip bgp cidr-only
-  % Invalid input detected at '^' marker.
-  show ip bgp cidr-only
-          ^
+  % BGP not active
 
 [234/355] r1 R1> show ip bgp regexp ^65001
-  % Invalid input detected at '^' marker.
-  show ip bgp regexp ^65001
-          ^
+  % BGP not active
 
 [235/355] r1 R1> show bgp ipv6 unicast
-  % Invalid input detected at '^' marker.
-  show bgp ipv6 unicast
-       ^
+  % BGP not active
 
 [236/355] r1 R1> show ip route bgp
   % Network not in table
@@ -1174,14 +1155,10 @@ Total steps: 355
     RIP learned routes: 0
 
 [238/355] r1 R1> show bgp all summary
-  % Invalid input detected at '^' marker.
-  show bgp all summary
-       ^
+  % BGP not active
 
 [239/355] r1 R1> show ip bgp vpnv4 all
-  % Invalid input detected at '^' marker.
-  show ip bgp vpnv4 all
-          ^
+  % BGP not active
 
 [240/355] r1 R1> clear ip bgp *
   % Invalid input detected at '^' marker.
@@ -1273,9 +1250,7 @@ Total steps: 355
   end
 
 [249/355] r1 R1# show startup-config
-  % Invalid input detected at '^' marker.
-  show startup-config
-       ^
+  % startup-config is not present
 
 [250/355] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -1370,29 +1345,42 @@ Total steps: 355
   % OSPF is not configured
 
 [261/355] r1 R1# show ip eigrp neighbors
-  % Invalid input detected at '^' marker.
-  show ip eigrp neighbors
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [262/355] r1 R1# show ip eigrp topology
-  % Invalid input detected at '^' marker.
-  show ip eigrp topology
-          ^
+  % EIGRP not running (no autonomous-system configured)
 
 [263/355] r1 R1# show ip bgp
-  % Invalid input detected at '^' marker.
-  show ip bgp
-          ^
+  % BGP not active
 
 [264/355] r1 R1# show ip bgp summary
-  % Invalid input detected at '^' marker.
-  show ip bgp summary
-          ^
+  % BGP not active
 
 [265/355] r1 R1# show ip rip database
-  % Invalid input detected at '^' marker.
-  show ip rip database
-              ^
+  10.1.0.0/8    auto-summary
+  10.1.0.0/8
+      [1] directly connected, via configured network
+  10.2.0.0/8    auto-summary
+  10.2.0.0/8
+      [1] directly connected, via configured network
+  10.3.0.0/8    auto-summary
+  10.3.0.0/8
+      [1] directly connected, via configured network
+  10.4.0.0/8    auto-summary
+  10.4.0.0/8
+      [1] directly connected, via configured network
+  10.5.0.0/8    auto-summary
+  10.5.0.0/8
+      [1] directly connected, via configured network
+  10.6.0.0/8    auto-summary
+  10.6.0.0/8
+      [1] directly connected, via configured network
+  192.168.1.0/24    auto-summary
+  192.168.1.0/24
+      [1] directly connected, via configured network
+  10.0.0.0/8    auto-summary
+  10.0.0.0/8
+      [1] directly connected, via configured network
 
 [266/355] r1 R1# show ip nat translations
   No NAT translations.
@@ -1476,7 +1464,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *17:12:30.000 UTC Sun May 17 2026
+  *17:16:32.000 UTC Sun May 17 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1545,9 +1533,10 @@ Total steps: 355
   show history
 
 [293/355] r1 R1# show ip cef
-  % Invalid input detected at '^' marker.
-  show ip cef
-          ^
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
 
 [294/355] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

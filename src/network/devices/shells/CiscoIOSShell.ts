@@ -178,7 +178,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected getPromptMap(): PromptMap { return CISCO_IOS_PROMPTS; }
 
-  protected onSave(): string { return 'Building configuration...\n[OK]'; }
+  /** Real saved configuration (null until first `write memory`). */
+  private startupConfig: string | null = null;
+
+  protected onSave(): string {
+    // Snapshot the REAL running-config so `show startup-config`
+    // reflects exactly what was saved (no fabricated content).
+    this.startupConfig = Show.showRunningConfig(this.d());
+    return 'Building configuration...\n[OK]';
+  }
 
   protected override cmdExit(): string {
     // Router: exit at user mode returns '' (no "Connection closed." like switch)
@@ -301,6 +309,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
+    trie.register('show startup-config', 'Display saved configuration', () =>
+      this.startupConfig ?? '% startup-config is not present');
+    trie.register('show configuration', 'Display saved configuration', () =>
+      this.startupConfig ?? '% startup-config is not present');
+    trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
+    trie.registerGreedy('show ip cef', 'Display CEF FIB', () => Show.showIpCef(getRouter()));
+    trie.registerGreedy('show ip bgp', 'Display BGP table', () => Show.showBgpNotActive());
+    trie.registerGreedy('show bgp', 'Display BGP table', () => Show.showBgpNotActive());
+    trie.registerGreedy('show ip eigrp', 'Display EIGRP state', () => Show.showEigrpNotRunning());
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));
     trie.register('show ip protocols', 'Display routing protocol status', () => Show.showIpProtocols(getRouter()));
