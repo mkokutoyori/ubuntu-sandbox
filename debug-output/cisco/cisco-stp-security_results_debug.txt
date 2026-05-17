@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-stp-security
-Generated: 2026-05-17T06:06:16.340Z
+Generated: 2026-05-17T06:11:51.679Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=STP/MST, port-security, DHCP snooping, ACL, AAA/SSH, SNMP
 Total steps: 74
@@ -49,9 +49,12 @@ Total steps: 74
   ^
 
 [3/74] sw SW1(config)# show spanning-tree summary
-  % Invalid input detected at '^' marker.
-  show spanning-tree summary
-                     ^
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
 
 [4/74] sw SW1(config)# configure terminal
   % Invalid input detected at '^' marker.
@@ -64,54 +67,34 @@ Total steps: 74
 
 --- [6] § STP mode / priority / root ---
 [6/74] sw SW-SEC(config)# spanning-tree mode rapid-pvst
-  % Invalid input detected at '^' marker.
-  spanning-tree mode rapid-pvst
-  ^
+<empty>
 
 [7/74] sw SW-SEC(config)# spanning-tree mode mst
-  % Invalid input detected at '^' marker.
-  spanning-tree mode mst
-  ^
+<empty>
 
 [8/74] sw SW-SEC(config)# spanning-tree mode pvst
-  % Invalid input detected at '^' marker.
-  spanning-tree mode pvst
-  ^
+<empty>
 
 [9/74] sw SW-SEC(config)# spanning-tree vlan 10 priority 4096
-  % Invalid input detected at '^' marker.
-  spanning-tree vlan 10 priority 4096
-  ^
+<empty>
 
 [10/74] sw SW-SEC(config)# spanning-tree vlan 10 root primary
-  % Invalid input detected at '^' marker.
-  spanning-tree vlan 10 root primary
-  ^
+<empty>
 
 [11/74] sw SW-SEC(config)# spanning-tree vlan 20 root secondary
-  % Invalid input detected at '^' marker.
-  spanning-tree vlan 20 root secondary
-  ^
+<empty>
 
 [12/74] sw SW-SEC(config)# spanning-tree extend system-id
-  % Invalid input detected at '^' marker.
-  spanning-tree extend system-id
-  ^
+<empty>
 
 [13/74] sw SW-SEC(config)# spanning-tree portfast default
-  % Invalid input detected at '^' marker.
-  spanning-tree portfast default
-  ^
+<empty>
 
 [14/74] sw SW-SEC(config)# spanning-tree portfast bpduguard default
-  % Invalid input detected at '^' marker.
-  spanning-tree portfast bpduguard default
-  ^
+<empty>
 
 [15/74] sw SW-SEC(config)# spanning-tree loopguard default
-  % Invalid input detected at '^' marker.
-  spanning-tree loopguard default
-  ^
+<empty>
 
 [16/74] sw SW-SEC(config)# do show spanning-tree
   VLAN0001
@@ -151,42 +134,42 @@ Total steps: 74
 
 --- [17] § MST region ---
 [17/74] sw SW-SEC(config)# spanning-tree mst configuration
-  % Invalid input detected at '^' marker.
-  spanning-tree mst configuration
-  ^
-
-[18/74] sw SW-SEC(config)# name LAB
-  % Invalid input detected at '^' marker.
-  name LAB
-  ^
-
-[19/74] sw SW-SEC(config)# revision 1
-  % Invalid input detected at '^' marker.
-  revision 1
-  ^
-
-[20/74] sw SW-SEC(config)# instance 1 vlan 10
-  % Invalid input detected at '^' marker.
-  instance 1 vlan 10
-  ^
-
-[21/74] sw SW-SEC(config)# instance 2 vlan 20
-  % Invalid input detected at '^' marker.
-  instance 2 vlan 20
-  ^
-
-[22/74] sw SW-SEC(config)# show current
-  % Invalid input detected at '^' marker.
-  show current
-       ^
-
-[23/74] sw SW-SEC(config)# exit
 <empty>
 
-[24/74] sw SW-SEC# do show spanning-tree mst configuration
-  % Invalid input detected at '^' marker.
-  do show spanning-tree mst configuration
-  ^
+[18/74] sw SW-SEC(config-mst)# name LAB
+<empty>
+
+[19/74] sw SW-SEC(config-mst)# revision 1
+<empty>
+
+[20/74] sw SW-SEC(config-mst)# instance 1 vlan 10
+<empty>
+
+[21/74] sw SW-SEC(config-mst)# instance 2 vlan 20
+<empty>
+
+[22/74] sw SW-SEC(config-mst)# show current
+  Name      [LAB]
+  Revision  1     Instances configured 3
+  -------------------------------------------------------------
+  Instance  Vlans mapped
+  --------  -------------------------------------------------
+  0         1-4094
+  1         vlan 10
+  2         vlan 20
+
+[23/74] sw SW-SEC(config-mst)# exit
+<empty>
+
+[24/74] sw SW-SEC(config)# do show spanning-tree mst configuration
+  Name      [LAB]
+  Revision  1     Instances configured 3
+  -------------------------------------------------------------
+  Instance  Vlans mapped
+  --------  -------------------------------------------------
+  0         1-4094
+  1         vlan 10
+  2         vlan 20
 
 
 --- [25] § STP per-interface ---
@@ -194,42 +177,34 @@ Total steps: 74
 <empty>
 
 [26/74] sw SW-SEC(config-if)# spanning-tree portfast
-  % Invalid input detected at '^' marker.
-  spanning-tree portfast
-  ^
+<empty>
 
 [27/74] sw SW-SEC(config-if)# spanning-tree bpduguard enable
-  % Invalid input detected at '^' marker.
-  spanning-tree bpduguard enable
-  ^
+<empty>
 
 [28/74] sw SW-SEC(config-if)# spanning-tree bpdufilter enable
-  % Invalid input detected at '^' marker.
-  spanning-tree bpdufilter enable
-  ^
+<empty>
 
 [29/74] sw SW-SEC(config-if)# spanning-tree cost 19
-  % Invalid input detected at '^' marker.
-  spanning-tree cost 19
-  ^
+<empty>
 
 [30/74] sw SW-SEC(config-if)# spanning-tree port-priority 64
-  % Invalid input detected at '^' marker.
-  spanning-tree port-priority 64
-  ^
+<empty>
 
 [31/74] sw SW-SEC(config-if)# spanning-tree guard root
-  % Invalid input detected at '^' marker.
-  spanning-tree guard root
-  ^
+<empty>
 
 [32/74] sw SW-SEC(config-if)# exit
 <empty>
 
 [33/74] sw SW-SEC(config)# do show spanning-tree interface FastEthernet0/1
-  % Invalid input detected at '^' marker.
-  show spanning-tree interface FastEthernet0/1
-                     ^
+  FastEthernet0/1
+  spanning-tree portfast
+  spanning-tree bpduguard enable
+  spanning-tree bpdufilter enable
+  spanning-tree cost 19
+  spanning-tree port-priority 64
+  spanning-tree guard root
 
 
 --- [34] § port-security ---

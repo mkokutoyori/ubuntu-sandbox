@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-vlan-interface
-Generated: 2026-05-17T06:06:16.834Z
+Generated: 2026-05-17T06:11:51.186Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=L2 VLAN lifecycle, access/trunk, voice, port-security, etherchannel
 Total steps: 64
@@ -165,9 +165,7 @@ Total steps: 64
              ^
 
 [40/64] sw SW-VLAN(config-if)# spanning-tree portfast
-  % Invalid input detected at '^' marker.
-  spanning-tree portfast
-  ^
+<empty>
 
 [41/64] sw SW-VLAN(config-if)# switchport port-security
   % Invalid input detected at '^' marker.

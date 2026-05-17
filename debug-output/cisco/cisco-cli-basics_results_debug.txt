@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-cli-basics
-Generated: 2026-05-17T06:06:16.340Z
+Generated: 2026-05-17T06:11:51.180Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=IOS user/priv/config nav, show family, do-prefix, pipes
 Total steps: 61
@@ -13,7 +13,7 @@ Total steps: 61
   SW1 uptime is 0 days, 0 hours
 
 [2/61] sw SW1> show clock
-  *06:06:16.000 UTC Sun May 17 2026
+  *06:11:51.000 UTC Sun May 17 2026
 
 [3/61] sw SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -66,7 +66,7 @@ Total steps: 61
 <empty>
 
 [14/61] sw SW-CORE(config)# do show clock
-  *06:06:16.000 UTC Sun May 17 2026
+  *06:11:51.000 UTC Sun May 17 2026
 
 [15/61] sw SW-CORE(config)# interface FastEthernet0/1
 <empty>
@@ -401,6 +401,7 @@ Total steps: 61
     spanning-tree   Display spanning tree state
     version         Display system information
     logging         Display syslog messages
+    current         Show pending MST config
 
 [32/61] sw SW-EDGE# ?
     enable     Enter privileged EXEC mode (already in)
@@ -421,7 +422,8 @@ Total steps: 61
     <cr>  
 
 [35/61] sw SW-EDGE(config)# spanning-tree ?
-  % Unrecognized command
+    mst   mst
+    <cr>  
 
 [36/61] sw SW-EDGE(config)# no ?
     hostname  Reset hostname

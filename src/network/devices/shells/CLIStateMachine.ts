@@ -132,6 +132,7 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config':      { parent: 'privileged' },
   'config-if':   { parent: 'config', clearOnExit: ['selectedInterface', 'selectedInterfaceRange'] },
   'config-vlan': { parent: 'config', clearOnExit: ['selectedVlan'] },
+  'config-mst':  { parent: 'config' },
 };
 
 // ─── Huawei VRP Mode Hierarchy ────────────────────────────────────

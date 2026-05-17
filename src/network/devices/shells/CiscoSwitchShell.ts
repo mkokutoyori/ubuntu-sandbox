@@ -23,7 +23,8 @@ import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 
 /** CLI Mode (FSM State) */
-export type CLIMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan';
+export type CLIMode =
+  | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan' | 'config-mst';
 
 export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
@@ -36,6 +37,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
+  private configMstTrie = new CommandTrie();
+
+  // STP state (switch-only, L2)
+  private stpMode = 'pvst';
+  private mstRegion: { name: string; revision: number; instances: Map<number, string> } =
+    { name: '', revision: 0, instances: new Map() };
+  private ifStp = new Map<string, string[]>();
 
   constructor() {
     super();
@@ -72,6 +80,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       case 'config':      return this.configTrie;
       case 'config-if':   return this.configIfTrie;
       case 'config-vlan': return this.configVlanTrie;
+      case 'config-mst':  return this.configMstTrie;
       default:            return this.userTrie;
     }
   }
@@ -104,6 +113,97 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
       return this.d().renameVLAN(this.selectedVlan, args[0]) ? '' : '% VLAN not found';
     });
+
+    // ── Spanning Tree (L2, switch-only) ──
+    this.registerStpCommands();
+  }
+
+  private registerStpCommands(): void {
+    // Global: `spanning-tree mst configuration` → config-mst sub-mode
+    this.configTrie.register('spanning-tree mst configuration',
+      'Enter MST configuration sub-mode', () => {
+        this.mode = 'config-mst';
+        return '';
+      });
+    // Global: every other `spanning-tree …` is accepted (mode/priority/
+    // root/extend/portfast/loopguard/…). Track the mode for `show`.
+    this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+      if (args[0]?.toLowerCase() === 'mode' && args[1]) this.stpMode = args[1];
+      return '';
+    });
+
+    // Interface: spanning-tree portfast/bpduguard/cost/… (tracked).
+    this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const l = this.ifStp.get(i) ?? [];
+        l.push(`spanning-tree ${args.join(' ')}`.trim());
+        this.ifStp.set(i, l);
+      }
+      return '';
+    });
+
+    // config-mst sub-mode
+    this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
+      this.mstRegion.name = a.join(' '); return '';
+    });
+    this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
+      const n = parseInt(a[0], 10); if (!isNaN(n)) this.mstRegion.revision = n; return '';
+    });
+    this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
+      const id = parseInt(a[0], 10);
+      if (!isNaN(id)) this.mstRegion.instances.set(id, a.slice(1).join(' '));
+      return '';
+    });
+    this.configMstTrie.register('show current', 'Show pending MST config', () =>
+      this.showMstConfig());
+    // The base redirects `show …` in config modes to the privileged
+    // trie, so `show current` must also resolve there.
+    this.privilegedTrie.register('show current', 'Show pending MST config', () =>
+      this.showMstConfig());
+    this.configMstTrie.registerGreedy('no', 'Negate', () => '');
+    this.configMstTrie.registerGreedy('abort', 'Abort MST changes', () => {
+      this.mode = 'config'; return '';
+    });
+
+    // show spanning-tree summary | mst configuration | interface <if>
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show spanning-tree summary', 'STP summary', () =>
+        `Switch is in ${this.stpMode} mode\nRoot bridge for: none\n` +
+        `Extended system ID           is enabled\n` +
+        `Portfast Default             is disabled\n` +
+        `Name                   Blocking Listening Learning Forwarding STP Active\n` +
+        `---------------------- -------- --------- -------- ---------- ----------`);
+      t.register('show spanning-tree mst configuration', 'MST region config', () =>
+        this.showMstConfig());
+      t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
+        const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
+        const lines = this.ifStp.get(name) ?? [];
+        return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
+      });
+    }
+  }
+
+  private showMstConfig(): string {
+    const ml: string[] = [
+      'Name      [' + this.mstRegion.name + ']',
+      'Revision  ' + this.mstRegion.revision + '     Instances configured ' +
+        (this.mstRegion.instances.size + 1),
+      '-------------------------------------------------------------',
+      'Instance  Vlans mapped',
+      '--------  -------------------------------------------------',
+      '0         1-4094',
+    ];
+    for (const [id, v] of this.mstRegion.instances) ml.push(`${String(id).padEnd(10)}${v}`);
+    return ml.join('\n');
+  }
+
+  private resolvePortName(input: string): string | null {
+    const names = this.d().getPortNames();
+    const lower = input.replace(/\s+/g, '').toLowerCase();
+    for (const n of names) if (n.toLowerCase() === lower) return n;
+    return null;
   }
 
   // ─── User Commands ────────────────────────────────────────────────
