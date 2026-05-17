@@ -119,6 +119,18 @@ describe('Huawei CLI — common display commands (switch & router, DRY)', () => 
   });
 });
 
+describe('Huawei CLI — system-view is idempotent', () => {
+  it('system-view from system view is a recognized no-op', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    await sw.executeCommand('system-view');
+    expect(sw.getPrompt()).toBe('[SW1]');
+    expect(await sw.executeCommand('system-view')).not.toMatch(/Unrecognized/);
+    expect(sw.getPrompt()).toBe('[SW1]');
+    // still functional afterwards
+    expect(await sw.executeCommand('vlan 10')).not.toMatch(/Unrecognized/);
+  });
+});
+
 describe('Huawei CLI — undo & display mac-address vlan', () => {
   it('undo description / sysname / info-center are recognized (no derail)', async () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);

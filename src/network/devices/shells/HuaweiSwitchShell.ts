@@ -274,6 +274,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
   // ─── Command Tree: System View ([hostname]) ───────────────────────
 
   private buildSystemCommands(): void {
+    // `system-view` from system view is an idempotent no-op (robustness:
+    // re-issuing it must not error mid-sequence).
+    this.systemTrie.register('system-view', 'Already in system view', () => '');
+
     // display + common management commands (available in system view too)
     this.registerDisplayCommands(this.systemTrie);
     this.registerCommonMgmt(this.systemTrie);
