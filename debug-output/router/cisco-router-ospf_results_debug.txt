@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-05-17T17:30:22.565Z
+Generated: 2026-05-17T17:36:51.402Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1284,14 +1284,10 @@ Total steps: 311
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [234/311] r1 R1# show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+  No tracked objects configured.
 
 [235/311] r1 R1# show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+  No IP SLA operations configured.
 
 [236/311] r1 R1# show policy-map interface
   % Invalid input detected at '^' marker.
@@ -1317,7 +1313,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *17:30:22.000 UTC Sun May 17 2026
+  *17:36:51.000 UTC Sun May 17 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1740,6 +1736,7 @@ Total steps: 311
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
     routing        Enable IP routing
@@ -1767,6 +1764,7 @@ Total steps: 311
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
 

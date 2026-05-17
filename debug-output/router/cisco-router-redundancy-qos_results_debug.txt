@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-05-17T17:30:24.071Z
+Generated: 2026-05-17T17:36:51.927Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -659,460 +659,447 @@ Total steps: 413
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [126/413] r1 R1(config)# track 1 interface GigabitEthernet0/1 line-protocol
-  % Invalid input detected at '^' marker.
-  track 1 interface GigabitEthernet0/1 line-protocol
-  ^
-
-[127/413] r1 R1(config)# delay up 10 down 20
-  % Invalid input detected at '^' marker.
-  delay up 10 down 20
-  ^
-
-[128/413] r1 R1(config)# exit
 <empty>
 
-[129/413] r1 R1# track 2 interface GigabitEthernet0/0 line-protocol
-  % Invalid input detected at '^' marker.
-  track 2 interface GigabitEthernet0/0 line-protocol
-  ^
-
-[130/413] r1 R1# delay up 10 down 20
-  % Invalid input detected at '^' marker.
-  delay up 10 down 20
-  ^
-
-[131/413] r1 R1# exit
+[127/413] r1 R1(config-track)# delay up 10 down 20
 <empty>
 
-[132/413] r1 R1> track 3 interface GigabitEthernet0/1 line-protocol
-  % Invalid input detected at '^' marker.
-  track 3 interface GigabitEthernet0/1 line-protocol
-  ^
-
-[133/413] r1 R1> delay up 10 down 20
-  % Invalid input detected at '^' marker.
-  delay up 10 down 20
-  ^
-
-[134/413] r1 R1> exit
+[128/413] r1 R1(config-track)# exit
 <empty>
 
-[135/413] r1 R1> track 4 interface GigabitEthernet0/0 line-protocol
-  % Invalid input detected at '^' marker.
-  track 4 interface GigabitEthernet0/0 line-protocol
-  ^
-
-[136/413] r1 R1> delay up 10 down 20
-  % Invalid input detected at '^' marker.
-  delay up 10 down 20
-  ^
-
-[137/413] r1 R1> exit
+[129/413] r1 R1(config)# track 2 interface GigabitEthernet0/0 line-protocol
 <empty>
 
-[138/413] r1 R1> track 5 interface GigabitEthernet0/1 line-protocol
-  % Invalid input detected at '^' marker.
-  track 5 interface GigabitEthernet0/1 line-protocol
-  ^
-
-[139/413] r1 R1> delay up 10 down 20
-  % Invalid input detected at '^' marker.
-  delay up 10 down 20
-  ^
-
-[140/413] r1 R1> exit
+[130/413] r1 R1(config-track)# delay up 10 down 20
 <empty>
 
-[141/413] r1 R1> track 10 ip route 10.0.0.0 255.0.0.0 reachability
-  % Invalid input detected at '^' marker.
-  track 10 ip route 10.0.0.0 255.0.0.0 reachability
-  ^
+[131/413] r1 R1(config-track)# exit
+<empty>
 
-[142/413] r1 R1> track 11 ip sla 1 reachability
+[132/413] r1 R1(config)# track 3 interface GigabitEthernet0/1 line-protocol
+<empty>
+
+[133/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[134/413] r1 R1(config-track)# exit
+<empty>
+
+[135/413] r1 R1(config)# track 4 interface GigabitEthernet0/0 line-protocol
+<empty>
+
+[136/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[137/413] r1 R1(config-track)# exit
+<empty>
+
+[138/413] r1 R1(config)# track 5 interface GigabitEthernet0/1 line-protocol
+<empty>
+
+[139/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[140/413] r1 R1(config-track)# exit
+<empty>
+
+[141/413] r1 R1(config)# track 10 ip route 10.0.0.0 255.0.0.0 reachability
+<empty>
+
+[142/413] r1 R1(config-track)# track 11 ip sla 1 reachability
   % Invalid input detected at '^' marker.
   track 11 ip sla 1 reachability
   ^
 
-[143/413] r1 R1> track 12 ip sla 1 state
+[143/413] r1 R1(config-track)# track 12 ip sla 1 state
   % Invalid input detected at '^' marker.
   track 12 ip sla 1 state
   ^
 
-[144/413] r1 R1> track 20 list boolean and
+[144/413] r1 R1(config-track)# track 20 list boolean and
   % Invalid input detected at '^' marker.
   track 20 list boolean and
   ^
 
-[145/413] r1 R1> object 1
-  % Invalid input detected at '^' marker.
-  object 1
-  ^
-
-[146/413] r1 R1> object 10
-  % Invalid input detected at '^' marker.
-  object 10
-  ^
-
-[147/413] r1 R1> exit
+[145/413] r1 R1(config-track)# object 1
 <empty>
 
-[148/413] r1 R1> track 21 list threshold weight
-  % Invalid input detected at '^' marker.
-  track 21 list threshold weight
-  ^
-
-[149/413] r1 R1> object 1 weight 10
-  % Invalid input detected at '^' marker.
-  object 1 weight 10
-  ^
-
-[150/413] r1 R1> object 10 weight 20
-  % Invalid input detected at '^' marker.
-  object 10 weight 20
-  ^
-
-[151/413] r1 R1> threshold weight up 25 down 10
-  % Invalid input detected at '^' marker.
-  threshold weight up 25 down 10
-  ^
-
-[152/413] r1 R1> exit
+[146/413] r1 R1(config-track)# object 10
 <empty>
 
-[153/413] r1 R1> track 22 stub-object
-  % Invalid input detected at '^' marker.
-  track 22 stub-object
-  ^
-
-[154/413] r1 R1> exit
+[147/413] r1 R1(config-track)# exit
 <empty>
 
-[155/413] r1 R1> end
+[148/413] r1 R1(config)# track 21 list threshold weight
 <empty>
 
-[156/413] r1 R1> show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+[149/413] r1 R1(config-track)# object 1 weight 10
+<empty>
 
-[157/413] r1 R1> show track brief
-  % Invalid input detected at '^' marker.
-  show track brief
-       ^
+[150/413] r1 R1(config-track)# object 10 weight 20
+<empty>
 
-[158/413] r1 R1> show track 1
-  % Invalid input detected at '^' marker.
-  show track 1
-       ^
+[151/413] r1 R1(config-track)# threshold weight up 25 down 10
+<empty>
+
+[152/413] r1 R1(config-track)# exit
+<empty>
+
+[153/413] r1 R1(config)# track 22 stub-object
+<empty>
+
+[154/413] r1 R1(config-track)# exit
+<empty>
+
+[155/413] r1 R1(config)# end
+<empty>
+
+[156/413] r1 R1# show track
+  Track 1
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 2
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 3
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 4
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 5
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 10
+    IP route 10.0.0.0 reachability
+    State is Up
+      1 Up
+      10 Up
+  Track 21
+    List threshold weight
+    State is Up
+      1 weight 10 Up
+      10 weight 20 Up
+  Track 22
+    Stub object
+    State is Down
+
+[157/413] r1 R1# show track brief
+  Track  Type                     State
+  1      interface-line           Up
+  2      interface-line           Up
+  3      interface-line           Up
+  4      interface-line           Up
+  5      interface-line           Up
+  10     route                    Up
+  21     list-threshold           Up
+  22     stub                     Down
+
+[158/413] r1 R1# show track 1
+  Track 1
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
 
 
 --- [159] § IP SLA + responder ---
-[159/413] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[159/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[160/413] r1 R1> ip sla 1
-  % Invalid input detected at '^' marker.
-  ip sla 1
-  ^
-
-[161/413] r1 R1> icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
-  ^
-
-[162/413] r1 R1> frequency 5
-  % Invalid input detected at '^' marker.
-  frequency 5
-  ^
-
-[163/413] r1 R1> threshold 200
-  % Invalid input detected at '^' marker.
-  threshold 200
-  ^
-
-[164/413] r1 R1> timeout 1000
-  % Invalid input detected at '^' marker.
-  timeout 1000
-  ^
-
-[165/413] r1 R1> tag WAN-PROBE
-  % Invalid input detected at '^' marker.
-  tag WAN-PROBE
-  ^
-
-[166/413] r1 R1> history enhanced interval 900 buckets 4
-  % Invalid input detected at '^' marker.
-  history enhanced interval 900 buckets 4
-  ^
-
-[167/413] r1 R1> exit
+[160/413] r1 R1(config)# ip sla 1
 <empty>
 
-[168/413] r1 R1> ip sla 2
-  % Invalid input detected at '^' marker.
-  ip sla 2
-  ^
-
-[169/413] r1 R1> udp-jitter 10.0.0.2 16384 codec g711alaw
-  % Invalid input detected at '^' marker.
-  udp-jitter 10.0.0.2 16384 codec g711alaw
-  ^
-
-[170/413] r1 R1> frequency 10
-  % Invalid input detected at '^' marker.
-  frequency 10
-  ^
-
-[171/413] r1 R1> exit
+[161/413] r1 R1(config-ip-sla)# icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
 <empty>
 
-[172/413] r1 R1> ip sla 3
-  % Invalid input detected at '^' marker.
-  ip sla 3
-  ^
-
-[173/413] r1 R1> tcp-connect 10.0.0.2 80
-  % Invalid input detected at '^' marker.
-  tcp-connect 10.0.0.2 80
-  ^
-
-[174/413] r1 R1> exit
+[162/413] r1 R1(config-ip-sla)# frequency 5
 <empty>
 
-[175/413] r1 R1> ip sla 4
-  % Invalid input detected at '^' marker.
-  ip sla 4
-  ^
-
-[176/413] r1 R1> http get http://10.0.0.2
-  % Invalid input detected at '^' marker.
-  http get http://10.0.0.2
-  ^
-
-[177/413] r1 R1> exit
+[163/413] r1 R1(config-ip-sla)# threshold 200
 <empty>
 
-[178/413] r1 R1> ip sla 5
-  % Invalid input detected at '^' marker.
-  ip sla 5
-  ^
-
-[179/413] r1 R1> dns lab.local name-server 8.8.8.8
-  % Invalid input detected at '^' marker.
-  dns lab.local name-server 8.8.8.8
-  ^
-
-[180/413] r1 R1> exit
+[164/413] r1 R1(config-ip-sla)# timeout 1000
 <empty>
 
-[181/413] r1 R1> ip sla schedule 1 life forever start-time now
-  % Invalid input detected at '^' marker.
-  ip sla schedule 1 life forever start-time now
-  ^
-
-[182/413] r1 R1> ip sla schedule 2 life 3600 start-time after 00:01:00
-  % Invalid input detected at '^' marker.
-  ip sla schedule 2 life 3600 start-time after 00:01:00
-  ^
-
-[183/413] r1 R1> ip sla group schedule 10 1,2,3 schedule-period 60 frequency 30 start-time now
-  % Invalid input detected at '^' marker.
-  ip sla group schedule 10 1,2,3 schedule-period 60 frequency 30 start-time now
-  ^
-
-[184/413] r1 R1> ip sla responder
-  % Invalid input detected at '^' marker.
-  ip sla responder
-  ^
-
-[185/413] r1 R1> ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
-  % Invalid input detected at '^' marker.
-  ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
-  ^
-
-[186/413] r1 R1> ip sla enable reaction-alerts
-  % Invalid input detected at '^' marker.
-  ip sla enable reaction-alerts
-  ^
-
-[187/413] r1 R1> ip sla reaction-configuration 1 react timeout threshold-type immediate action-type trapAndTrigger
-  % Invalid input detected at '^' marker.
-  ip sla reaction-configuration 1 react timeout threshold-type immediate action-type trapAndTrigger
-  ^
-
-[188/413] r1 R1> ip sla logging traps
-  % Invalid input detected at '^' marker.
-  ip sla logging traps
-  ^
-
-[189/413] r1 R1> end
+[165/413] r1 R1(config-ip-sla)# tag WAN-PROBE
 <empty>
 
-[190/413] r1 R1> show ip sla configuration
-  % Invalid input detected at '^' marker.
-  show ip sla configuration
-          ^
+[166/413] r1 R1(config-ip-sla)# history enhanced interval 900 buckets 4
+<empty>
 
-[191/413] r1 R1> show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+[167/413] r1 R1(config-ip-sla)# exit
+<empty>
 
-[192/413] r1 R1> show ip sla statistics aggregated
-  % Invalid input detected at '^' marker.
-  show ip sla statistics aggregated
-          ^
+[168/413] r1 R1(config)# ip sla 2
+<empty>
 
-[193/413] r1 R1> show ip sla responder
-  % Invalid input detected at '^' marker.
-  show ip sla responder
-          ^
+[169/413] r1 R1(config-ip-sla)# udp-jitter 10.0.0.2 16384 codec g711alaw
+<empty>
 
-[194/413] r1 R1> show ip sla application
-  % Invalid input detected at '^' marker.
-  show ip sla application
-          ^
+[170/413] r1 R1(config-ip-sla)# frequency 10
+<empty>
+
+[171/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[172/413] r1 R1(config)# ip sla 3
+<empty>
+
+[173/413] r1 R1(config-ip-sla)# tcp-connect 10.0.0.2 80
+<empty>
+
+[174/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[175/413] r1 R1(config)# ip sla 4
+<empty>
+
+[176/413] r1 R1(config-ip-sla)# http get http://10.0.0.2
+<empty>
+
+[177/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[178/413] r1 R1(config)# ip sla 5
+<empty>
+
+[179/413] r1 R1(config-ip-sla)# dns lab.local name-server 8.8.8.8
+<empty>
+
+[180/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[181/413] r1 R1(config)# ip sla schedule 1 life forever start-time now
+<empty>
+
+[182/413] r1 R1(config)# ip sla schedule 2 life 3600 start-time after 00:01:00
+<empty>
+
+[183/413] r1 R1(config)# ip sla group schedule 10 1,2,3 schedule-period 60 frequency 30 start-time now
+<empty>
+
+[184/413] r1 R1(config)# ip sla responder
+<empty>
+
+[185/413] r1 R1(config)# ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+<empty>
+
+[186/413] r1 R1(config)# ip sla enable reaction-alerts
+<empty>
+
+[187/413] r1 R1(config)# ip sla reaction-configuration 1 react timeout threshold-type immediate action-type trapAndTrigger
+<empty>
+
+[188/413] r1 R1(config)# ip sla logging traps
+<empty>
+
+[189/413] r1 R1(config)# end
+<empty>
+
+[190/413] r1 R1# show ip sla configuration
+  IP SLA Operation 1
+    Type of operation: icmp-echo
+    Target: 10.0.0.2
+    Frequency: 5 sec
+    Schedule: Active
+  IP SLA Operation 2
+    Type of operation: udp-jitter
+    Target: 10.0.0.2
+    Frequency: 10 sec
+    Schedule: Active
+  IP SLA Operation 3
+    Type of operation: tcp-connect
+    Target: 10.0.0.2
+    Frequency: 60 sec
+    Schedule: Active
+  IP SLA Operation 4
+    Type of operation: http
+    Target: http://10.0.0.2
+    Frequency: 60 sec
+    Schedule: Pending
+  IP SLA Operation 5
+    Type of operation: dns
+    Target: 8.8.8.8
+    Frequency: 60 sec
+    Schedule: Pending
+
+[191/413] r1 R1# show ip sla statistics
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 2
+    Type of operation: udp-jitter
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 3
+    Type of operation: tcp-connect
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 4
+    Type of operation: http
+    Latest operation state: Pending (unreachable)
+  IPSLA operation id: 5
+    Type of operation: dns
+    Latest operation state: Pending (unreachable)
+
+[192/413] r1 R1# show ip sla statistics aggregated
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 2
+    Type of operation: udp-jitter
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 3
+    Type of operation: tcp-connect
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 4
+    Type of operation: http
+    Latest operation state: Pending (unreachable)
+  IPSLA operation id: 5
+    Type of operation: dns
+    Latest operation state: Pending (unreachable)
+
+[193/413] r1 R1# show ip sla responder
+  IP SLA Responder is: Enabled
+
+[194/413] r1 R1# show ip sla application
+  IP SLA Operation 1
+    Type of operation: icmp-echo
+    Target: 10.0.0.2
+    Frequency: 5 sec
+    Schedule: Active
+  IP SLA Operation 2
+    Type of operation: udp-jitter
+    Target: 10.0.0.2
+    Frequency: 10 sec
+    Schedule: Active
+  IP SLA Operation 3
+    Type of operation: tcp-connect
+    Target: 10.0.0.2
+    Frequency: 60 sec
+    Schedule: Active
+  IP SLA Operation 4
+    Type of operation: http
+    Target: http://10.0.0.2
+    Frequency: 60 sec
+    Schedule: Pending
+  IP SLA Operation 5
+    Type of operation: dns
+    Target: 8.8.8.8
+    Frequency: 60 sec
+    Schedule: Pending
 
 
 --- [195] § BFD ---
-[195/413] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[195/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[196/413] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
+[196/413] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
 
-[197/413] r1 R1> bfd interval 100 min_rx 100 multiplier 3
-  % Invalid input detected at '^' marker.
-  bfd interval 100 min_rx 100 multiplier 3
-  ^
+[197/413] r1 R1(config-if)# bfd interval 100 min_rx 100 multiplier 3
+<empty>
 
-[198/413] r1 R1> bfd echo
-  % Invalid input detected at '^' marker.
-  bfd echo
-  ^
+[198/413] r1 R1(config-if)# bfd echo
+<empty>
 
-[199/413] r1 R1> no bfd echo
+[199/413] r1 R1(config-if)# no bfd echo
   % Invalid input detected at '^' marker.
   no bfd echo
-  ^
+     ^
 
-[200/413] r1 R1> exit
+[200/413] r1 R1(config-if)# exit
 <empty>
 
-[201/413] r1 R1> router ospf 1
-  % Invalid input detected at '^' marker.
-  router ospf 1
-  ^
-
-[202/413] r1 R1> bfd all-interfaces
-  % Invalid input detected at '^' marker.
-  bfd all-interfaces
-  ^
-
-[203/413] r1 R1> exit
+[201/413] r1 R1(config)# router ospf 1
 <empty>
 
-[204/413] r1 R1> ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
-  % Invalid input detected at '^' marker.
-  ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
-  ^
-
-[205/413] r1 R1> end
+[202/413] r1 R1(config-router)# bfd all-interfaces
 <empty>
 
-[206/413] r1 R1> show bfd neighbors
+[203/413] r1 R1(config-router)# exit
+<empty>
+
+[204/413] r1 R1(config)# ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+<empty>
+
+[205/413] r1 R1(config)# end
+<empty>
+
+[206/413] r1 R1# show bfd neighbors
   % Invalid input detected at '^' marker.
   show bfd neighbors
        ^
 
-[207/413] r1 R1> show bfd neighbors details
+[207/413] r1 R1# show bfd neighbors details
   % Invalid input detected at '^' marker.
   show bfd neighbors details
        ^
 
-[208/413] r1 R1> show bfd summary
+[208/413] r1 R1# show bfd summary
   % Invalid input detected at '^' marker.
   show bfd summary
        ^
 
 
 --- [209] § QoS — MQC class/policy ---
-[209/413] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[209/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[210/413] r1 R1> ip access-list extended VOICE
-  % Invalid input detected at '^' marker.
-  ip access-list extended VOICE
-  ^
-
-[211/413] r1 R1> permit udp any any range 16384 32767
-  % Invalid input detected at '^' marker.
-  permit udp any any range 16384 32767
-  ^
-
-[212/413] r1 R1> exit
+[210/413] r1 R1(config)# ip access-list extended VOICE
 <empty>
 
-[213/413] r1 R1> ip access-list extended VIDEO
-  % Invalid input detected at '^' marker.
-  ip access-list extended VIDEO
-  ^
-
-[214/413] r1 R1> permit tcp any any eq 1720
-  % Invalid input detected at '^' marker.
-  permit tcp any any eq 1720
-  ^
-
-[215/413] r1 R1> exit
+[211/413] r1 R1(config-ext-nacl)# permit udp any any range 16384 32767
 <empty>
 
-[216/413] r1 R1> class-map match-any CM-VOICE
+[212/413] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[213/413] r1 R1(config)# ip access-list extended VIDEO
+<empty>
+
+[214/413] r1 R1(config-ext-nacl)# permit tcp any any eq 1720
+<empty>
+
+[215/413] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[216/413] r1 R1(config)# class-map match-any CM-VOICE
   % Invalid input detected at '^' marker.
   class-map match-any CM-VOICE
   ^
 
-[217/413] r1 R1> match ip dscp ef
+[217/413] r1 R1(config)# match ip dscp ef
   % Invalid input detected at '^' marker.
   match ip dscp ef
   ^
 
-[218/413] r1 R1> match access-group name VOICE
+[218/413] r1 R1(config)# match access-group name VOICE
   % Invalid input detected at '^' marker.
   match access-group name VOICE
   ^
 
-[219/413] r1 R1> match protocol rtp
+[219/413] r1 R1(config)# match protocol rtp
   % Invalid input detected at '^' marker.
   match protocol rtp
   ^
 
-[220/413] r1 R1> exit
+[220/413] r1 R1(config)# exit
 <empty>
 
-[221/413] r1 R1> class-map match-all CM-VIDEO
+[221/413] r1 R1# class-map match-all CM-VIDEO
   % Invalid input detected at '^' marker.
   class-map match-all CM-VIDEO
   ^
 
-[222/413] r1 R1> match ip dscp af41
+[222/413] r1 R1# match ip dscp af41
   % Invalid input detected at '^' marker.
   match ip dscp af41
   ^
 
-[223/413] r1 R1> match access-group name VIDEO
+[223/413] r1 R1# match access-group name VIDEO
   % Invalid input detected at '^' marker.
   match access-group name VIDEO
   ^
 
-[224/413] r1 R1> exit
+[224/413] r1 R1# exit
 <empty>
 
 [225/413] r1 R1> class-map match-any CM-CRITICAL
@@ -1523,6 +1510,12 @@ Total steps: 413
   interface GigabitEthernet0/3
    shutdown
   !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
   end
 
@@ -1578,6 +1571,7 @@ Total steps: 413
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.9.0/24 [1/0] via 10.0.0.2
 
 [311/413] r1 R1# show ip route summary
   % Network not in table
@@ -1592,16 +1586,20 @@ Total steps: 413
   No ARP entries.
 
 [315/413] r1 R1# show ip ospf
-  % OSPF is not configured
+  Routing Process "ospf 1" with ID 192.168.1.2
+   Number of areas in this router is 0
+   Reference bandwidth unit is 100 mbps
+  
 
 [316/413] r1 R1# show ip ospf neighbor
-  % OSPF is not configured
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
 
 [317/413] r1 R1# show ip ospf database
-  % OSPF is not configured
+              OSPF Router with ID (192.168.1.2) (Process ID 1)
+  
 
 [318/413] r1 R1# show ip ospf interface brief
-  % OSPF is not configured
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
 
 [319/413] r1 R1# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
@@ -1639,10 +1637,16 @@ Total steps: 413
 <empty>
 
 [328/413] r1 R1# show access-lists
-<empty>
+  Extended IP access list VOICE
+      permit udp any any (0 matches)
+  Extended IP access list VIDEO
+      permit tcp any any eq 1720 (0 matches)
 
 [329/413] r1 R1# show ip access-lists
-<empty>
+  Extended IP access list VOICE
+      permit udp any any (0 matches)
+  Extended IP access list VIDEO
+      permit tcp any any eq 1720 (0 matches)
 
 [330/413] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1672,14 +1676,51 @@ Total steps: 413
   GigabitEthernet0/0 3   140     -   Y   Master  local           192.168.1.203
 
 [336/413] r1 R1# show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+  Track 1
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 2
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 3
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 4
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 5
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 10
+    IP route 10.0.0.0 reachability
+    State is Up
+      1 Up
+      10 Up
+  Track 21
+    List threshold weight
+    State is Up
+      1 weight 10 Up
+      10 weight 20 Up
+  Track 22
+    Stub object
+    State is Down
 
 [337/413] r1 R1# show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 2
+    Type of operation: udp-jitter
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 3
+    Type of operation: tcp-connect
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 4
+    Type of operation: http
+    Latest operation state: Pending (unreachable)
+  IPSLA operation id: 5
+    Type of operation: dns
+    Latest operation state: Pending (unreachable)
 
 [338/413] r1 R1# show policy-map interface
   % Invalid input detected at '^' marker.
@@ -1705,7 +1746,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *17:30:24.000 UTC Sun May 17 2026
+  *17:36:51.000 UTC Sun May 17 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1778,6 +1819,7 @@ Total steps: 413
   0.0.0.0/0            no route
   192.168.1.0/24       attached             GigabitEthernet0/0
   10.0.0.0/30          attached             GigabitEthernet0/1
+  192.168.9.0/24       10.0.0.2             GigabitEthernet0/1
 
 [352/413] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1919,6 +1961,12 @@ Total steps: 413
   interface GigabitEthernet0/3
    shutdown
   !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
   end
 
@@ -1941,10 +1989,15 @@ Total steps: 413
    shutdown
   interface GigabitEthernet0/3
    shutdown
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
   end
 
 [371/413] r1 R1(config)# show ip route | include via
-<empty>
+  S    192.168.9.0/24 [1/0] via 10.0.0.2
 
 [372/413] r1 R1(config)# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -2072,6 +2125,7 @@ Total steps: 413
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
     routing        Enable IP routing
@@ -2099,6 +2153,7 @@ Total steps: 413
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
 
@@ -2128,6 +2183,12 @@ Total steps: 413
   interface GigabitEthernet0/3
    shutdown
   !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
   end
 

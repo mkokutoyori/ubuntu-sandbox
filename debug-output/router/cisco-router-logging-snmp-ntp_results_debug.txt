@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-17T17:30:24.590Z
+Generated: 2026-05-17T17:36:53.361Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -551,7 +551,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *17:30:24.000 UTC Sun May 17 2026
+  *17:36:53.000 UTC Sun May 17 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -559,7 +559,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  17:30:24 UTC Sun May 17 2026
+  17:36:53 UTC Sun May 17 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1265,14 +1265,10 @@ Total steps: 322
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [245/322] r1 R1# show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+  No tracked objects configured.
 
 [246/322] r1 R1# show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+  No IP SLA operations configured.
 
 [247/322] r1 R1# show policy-map interface
   % Invalid input detected at '^' marker.
@@ -1298,7 +1294,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *17:30:24.000 UTC Sun May 17 2026
+  *17:36:53.000 UTC Sun May 17 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1674,6 +1670,7 @@ Total steps: 322
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
     routing        Enable IP routing
@@ -1701,6 +1698,7 @@ Total steps: 322
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
 

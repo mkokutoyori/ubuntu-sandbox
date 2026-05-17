@@ -32,7 +32,12 @@ import {
 import {
   buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
+import {
+  buildTrackSlaConfig, registerTrackSlaShow,
+} from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
+import { TrackRepository } from '../inspection/config/TrackRepository';
+import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -78,8 +83,17 @@ import {
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
-  /** Real config-driven HSRP state (router-only; switches are L2). */
+  /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private readonly fhrp = new FhrpRepository();
+  /** Real config-driven object-tracking & IP SLA state. */
+  private readonly track = new TrackRepository();
+  private readonly ipsla = new IpSlaRepository();
+  private selectedTrack: number | null = null;
+  private selectedIpSla: number | null = null;
+  getSelectedTrack(): number | null { return this.selectedTrack; }
+  setSelectedTrack(id: number | null): void { this.selectedTrack = id; }
+  getSelectedIpSla(): number | null { return this.selectedIpSla; }
+  setSelectedIpSla(id: number | null): void { this.selectedIpSla = id; }
   private selectedDHCPPool: string | null = null;
   private selectedACL: string | null = null;
   private selectedACLType: 'standard' | 'extended' | null = null;
@@ -102,6 +116,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configDhcpTrie = new CommandTrie();
+  private configTrackTrie = new CommandTrie();
+  private configIpSlaTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
   private configRouterOspfv3Trie = new CommandTrie();
@@ -214,6 +230,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-if': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-dhcp': return this.configDhcpTrie;
+      case 'config-track': return this.configTrackTrie;
+      case 'config-ipsla': return this.configIpSlaTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
@@ -237,6 +255,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     for (const f of fields) {
       if (f === 'selectedInterface') this.selectedInterface = null;
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
+      if (f === 'selectedTrack') this.selectedTrack = null;
+      if (f === 'selectedIpSla') this.selectedIpSla = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
       if (f === 'selectedACLType') this.selectedACLType = null;
       if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
@@ -281,6 +301,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigIfCommands(this.configIfTrie, this);
     buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
     buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
+      this.configIpSlaTrie, this, this.track, this.ipsla);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
@@ -318,6 +340,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     const getRouter = () => this.d();
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
+    registerTrackSlaShow(trie, this, this.track, this.ipsla);
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));

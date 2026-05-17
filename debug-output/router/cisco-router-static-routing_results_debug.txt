@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-05-17T17:30:23.571Z
+Generated: 2026-05-17T17:36:52.379Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -975,24 +975,16 @@ Total steps: 325
 <empty>
 
 [196/325] r1 R1> show ip sla configuration
-  % Invalid input detected at '^' marker.
-  show ip sla configuration
-          ^
+  No IP SLA operations configured.
 
 [197/325] r1 R1> show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+  No IP SLA operations configured.
 
 [198/325] r1 R1> show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+  No tracked objects configured.
 
 [199/325] r1 R1> show track 1
-  % Invalid input detected at '^' marker.
-  show track 1
-       ^
+  No tracked objects configured.
 
 
 --- [200] § admin distance / metrics ---
@@ -1441,14 +1433,10 @@ Total steps: 325
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [248/325] r1 R1# show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+  No tracked objects configured.
 
 [249/325] r1 R1# show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+  No IP SLA operations configured.
 
 [250/325] r1 R1# show policy-map interface
   % Invalid input detected at '^' marker.
@@ -1474,7 +1462,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *17:30:23.000 UTC Sun May 17 2026
+  *17:36:52.000 UTC Sun May 17 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2020,6 +2008,7 @@ Total steps: 325
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
     routing        Enable IP routing
@@ -2047,6 +2036,7 @@ Total steps: 325
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
 

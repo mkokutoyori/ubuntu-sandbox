@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-05-17T17:30:23.093Z
+Generated: 2026-05-17T17:36:51.897Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1354,14 +1354,10 @@ Total steps: 370
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [293/370] r1 R1(config)# show track
-  % Invalid input detected at '^' marker.
-  show track
-       ^
+  No tracked objects configured.
 
 [294/370] r1 R1(config)# show ip sla statistics
-  % Invalid input detected at '^' marker.
-  show ip sla statistics
-          ^
+  No IP SLA operations configured.
 
 [295/370] r1 R1(config)# show policy-map interface
   % Invalid input detected at '^' marker.
@@ -1387,7 +1383,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *17:30:23.000 UTC Sun May 17 2026
+  *17:36:51.000 UTC Sun May 17 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1801,6 +1797,7 @@ Total steps: 370
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
     routing        Enable IP routing
@@ -1828,6 +1825,7 @@ Total steps: 370
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
 
