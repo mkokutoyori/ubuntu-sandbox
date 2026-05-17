@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-lan-connectivity
-Generated: 2026-05-17T06:21:43.183Z
+Generated: 2026-05-17T06:24:11.724Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=L2 VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation
 Total steps: 57
@@ -157,32 +157,32 @@ Total steps: 57
 --- [34] § intra-VLAN ping (expect OK) ---
 [34/57] linux1 linux1$ ping -c 2 192.168.10.21
   PING 192.168.10.21 (192.168.10.21) 56(84) bytes of data.
-  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.617 ms
-  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.393 ms
+  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.513 ms
+  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.432 ms
   
   --- 192.168.10.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.393/1.005/1.617/0.612 ms
+  rtt min/avg/max/mdev = 0.432/0.972/1.513/0.540 ms
 
 [35/57] win1 win1$ ping -n 2 192.168.10.11
   
   Pinging 192.168.10.11 with 32 bytes of data:
-  Reply from 192.168.10.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.10.11: bytes=32 time=3ms TTL=64
   Reply from 192.168.10.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.10.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 3ms, Average = 2ms
 
 [36/57] linux2 linux2$ ping -c 2 192.168.20.22
   PING 192.168.20.22 (192.168.20.22) 56(84) bytes of data.
-  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.390 ms
-  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.255 ms
+  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.452 ms
+  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.179 ms
   
   --- 192.168.20.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.255/0.322/0.390/0.067 ms
+  rtt min/avg/max/mdev = 0.179/0.316/0.452/0.136 ms
 
 [37/57] win2 win2$ ping -n 2 192.168.20.12
   

@@ -114,12 +114,16 @@ export async function dumpCisco(
       if (options.resyncSwitchPerSection) {
         const sw = topology.devices['sw'];
         if (sw) {
-          // Reset to a known base (global config) so an intended
-          // rejection can't cascade into the next section.
+          // Reset to a known base so an intended rejection can't
+          // cascade into the next section. Skip the redundant tail
+          // when the section's own first switch step already does it.
+          const c = (step.on ?? 'sw') === 'sw' ? step.cmd.trim().toLowerCase() : '';
           try {
             await sw.executeCommand('end');
-            await sw.executeCommand('enable');
-            await sw.executeCommand('configure terminal');
+            if (c !== 'enable' && c !== 'en' && !/^conf/.test(c)) {
+              await sw.executeCommand('enable');
+            }
+            if (!/^conf/.test(c)) await sw.executeCommand('configure terminal');
           } catch { /* best effort */ }
         }
       }

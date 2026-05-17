@@ -48,6 +48,16 @@ describe('Cisco IOS — common show/util commands (switch & router, DRY)', () =>
     }
   });
 
+  it('switch+router: show history (shared) and switch show ip int br', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 26);
+    await sw.executeCommand('enable');
+    expect(await sw.executeCommand('show history')).not.toMatch(/Invalid input/);
+    expect(await sw.executeCommand('show ip interface brief')).not.toMatch(/Invalid input/);
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    expect(await r.executeCommand('show history')).not.toMatch(/Invalid input/);
+  });
+
   it('router: terminal length / banner shared too', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');

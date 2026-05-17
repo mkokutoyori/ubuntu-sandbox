@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-cli-basics
-Generated: 2026-05-17T06:21:43.180Z
+Generated: 2026-05-17T06:24:11.724Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=IOS user/priv/config nav, show family, do-prefix, pipes
 Total steps: 61
@@ -13,7 +13,7 @@ Total steps: 61
   SW1 uptime is 0 days, 0 hours
 
 [2/61] sw SW1> show clock
-  *06:21:43.000 UTC Sun May 17 2026
+  *06:24:11.000 UTC Sun May 17 2026
 
 [3/61] sw SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -22,9 +22,10 @@ Total steps: 61
     Interface    User               Mode         Idle     Peer Address
 
 [4/61] sw SW1> show history
-  % Invalid input detected at '^' marker.
+  show version
+  show clock
+  show users
   show history
-       ^
 
 [5/61] sw SW1> show inventory
   NAME: "SW1", DESCR: "Cisco Catalyst Switch"
@@ -66,7 +67,7 @@ Total steps: 61
 <empty>
 
 [14/61] sw SW-CORE(config)# do show clock
-  *06:21:43.000 UTC Sun May 17 2026
+  *06:24:11.000 UTC Sun May 17 2026
 
 [15/61] sw SW-CORE(config)# interface FastEthernet0/1
 <empty>
@@ -375,9 +376,8 @@ Total steps: 61
   end
 
 [30/61] sw SW-EDGE# sh ip int br
-  % Invalid input detected at '^' marker.
-  sh ip int br
-        ^
+  Interface              IP-Address      OK? Method Status                Protocol
+  Vlan1                  unassigned      YES unset  administratively down down
 
 
 --- [31] § context help (?) ---
@@ -389,6 +389,7 @@ Total steps: 61
     memory          Display memory statistics
     flash           Display flash filesystem
     privilege       Display current privilege level
+    history         Display command history
     arp             Display ARP table
     ip              ip
     mac             mac

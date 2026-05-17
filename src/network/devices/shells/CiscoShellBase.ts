@@ -29,6 +29,8 @@ import {
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
+  /** Recent commands for `show history` (shared switch + router). */
+  protected cmdHistory: string[] = [];
   protected deviceRef: TDevice | null = null;
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
@@ -93,6 +95,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
 
     const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
 
@@ -236,6 +239,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash());
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));
+    trie.register('show history', 'Display command history', () =>
+      this.cmdHistory.slice(-20).join('\n'));
     trie.registerGreedy('terminal', 'Set terminal parameters', () => '');
   }
 

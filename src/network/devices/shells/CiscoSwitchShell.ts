@@ -159,6 +159,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
     for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show ip interface brief', 'Display IP interface brief', () => {
+        // L2 switch: only SVIs/mgmt carry IPs (none by default here).
+        return [
+          'Interface              IP-Address      OK? Method Status                Protocol',
+          'Vlan1                  unassigned      YES unset  administratively down down',
+        ].join('\n');
+      });
       t.registerGreedy('show access-lists', 'Display ACLs', () => {
         if (this.acls.size === 0) return '';
         const out: string[] = [];
