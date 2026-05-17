@@ -82,3 +82,4 @@ export {
 } from './RmanSignalStore';
 export { RmanSignalRefreshActor } from './actors/RmanSignalRefreshActor';
 export { RmanLoggerActor } from './actors/RmanLoggerActor';
+export { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';

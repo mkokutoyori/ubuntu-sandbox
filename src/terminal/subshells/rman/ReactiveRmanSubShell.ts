@@ -21,22 +21,27 @@ import { rmanErrorMessage, type RmanError } from './core/RmanError';
 import { formatOracleDate } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
+import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
 import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
 export class ReactiveRmanSubShell implements ISubShell {
   private readonly _outputBuffer: string[] = [];
   private readonly _unsubs: Array<() => void> = [];
-  private readonly _loggerActor: RmanLoggerActor | null;
+  private readonly _loggerActor:   RmanLoggerActor | null;
+  private readonly _oracleWatcher: OracleInstanceWatcherActor | null;
   private _shouldExit = false;
   private _disposed   = false;
 
   private constructor(
     private readonly _session: IRmanSession,
     loggerActor: RmanLoggerActor | null = null,
+    oracleWatcher: OracleInstanceWatcherActor | null = null,
   ) {
-    this._loggerActor = loggerActor;
+    this._loggerActor   = loggerActor;
+    this._oracleWatcher = oracleWatcher;
     this._loggerActor?.start();
+    this._oracleWatcher?.start();
     this._wireEvents();
   }
 
@@ -82,9 +87,11 @@ export class ReactiveRmanSubShell implements ISubShell {
       banner.push('');
     }
 
-    const loggerActor = new RmanLoggerActor(bus, sessionId);
+    const loggerActor   = new RmanLoggerActor(bus, sessionId);
+    const deviceId      = (device as { id?: string }).id ?? '';
+    const oracleWatcher = deviceId ? new OracleInstanceWatcherActor(bus, deviceId, session) : null;
     return {
-      subShell: new ReactiveRmanSubShell(session, loggerActor),
+      subShell: new ReactiveRmanSubShell(session, loggerActor, oracleWatcher),
       banner,
     };
   }
@@ -128,6 +135,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     if (this._disposed) return;
     this._disposed = true;
     for (const u of this._unsubs) u();
+    this._oracleWatcher?.stop();
     this._loggerActor?.stop();
     this._session.dispose();
   }
