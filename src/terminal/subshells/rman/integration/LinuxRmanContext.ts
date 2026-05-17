@@ -4,6 +4,12 @@
  *
  * VFS writes go through the device's `writeFileFromEditor` which is the
  * stable cross-device file-write surface.
+ *
+ * When the device has a registered OracleDatabase (booted via sqlplus or
+ * the database commands), every accessor delegates to the live instance
+ * so dbName, datafile paths, and instance state stay in sync with the
+ * rest of the simulator. Without one, the context falls back to the
+ * canonical ORCL/OPEN defaults so RMAN remains usable on a plain device.
  */
 
 import { DbId } from '../values/DbId';
@@ -11,6 +17,8 @@ import { ok, err, type Result } from '../core/Result';
 import type { IRmanOracleContext, DatafileInfo, VfsAdapter } from './IRmanOracleContext';
 import type { Equipment } from '@/network';
 import type { RmanError } from '../core/RmanError';
+import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
+import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 
 /** Shape of an Equipment that exposes the optional readFile/deleteFile methods. */
 interface FsCapableEquipment {
@@ -19,37 +27,76 @@ interface FsCapableEquipment {
   deleteFile?(path: string): boolean;
 }
 
+const ORADATA_BASE = '/u01/app/oracle/oradata';
+const BACKUP_BASE  = '/u01/backup';
+
 export class LinuxRmanContext implements IRmanOracleContext {
   readonly dbId: DbId;
   readonly dbName: string;
   readonly vfs: VfsAdapter;
 
-  private constructor(private readonly _device: Equipment) {
+  private constructor(
+    private readonly _device: Equipment,
+    private readonly _oracle: OracleDatabase | null,
+  ) {
+    const sid = _oracle?.instance.config.sid ?? 'ORCL';
     this.dbId   = DbId.DEFAULT;
-    this.dbName = 'ORCL';
+    this.dbName = sid;
     this.vfs    = this._buildVfsAdapter();
   }
 
   static forDevice(device: Equipment): LinuxRmanContext {
-    return new LinuxRmanContext(device);
+    const oracle = (() => {
+      try { return getRegisteredOracleDatabase((device as { id?: string }).id ?? '') ?? null; }
+      catch { return null; }
+    })();
+    return new LinuxRmanContext(device, oracle);
+  }
+
+  /** Test-only: build a context with an explicit Oracle (skips the registry lookup). */
+  static withOracle(device: Equipment, oracle: OracleDatabase | null): LinuxRmanContext {
+    return new LinuxRmanContext(device, oracle);
   }
 
   getDatafiles(): ReadonlyArray<DatafileInfo> {
+    const sid = this.dbName;
+    const base = `${ORADATA_BASE}/${sid}`;
     return [
-      { fileNo: 1, path: '/u01/app/oracle/oradata/ORCL/system01.dbf',  sizeBytes: 838_860_800, tablespace: 'SYSTEM'   },
-      { fileNo: 2, path: '/u01/app/oracle/oradata/ORCL/sysaux01.dbf',  sizeBytes: 576_716_800, tablespace: 'SYSAUX'   },
-      { fileNo: 3, path: '/u01/app/oracle/oradata/ORCL/undotbs01.dbf', sizeBytes: 209_715_200, tablespace: 'UNDOTBS1' },
-      { fileNo: 4, path: '/u01/app/oracle/oradata/ORCL/users01.dbf',   sizeBytes: 104_857_600, tablespace: 'USERS'    },
+      { fileNo: 1, path: `${base}/system01.dbf`,  sizeBytes: 838_860_800, tablespace: 'SYSTEM'   },
+      { fileNo: 2, path: `${base}/sysaux01.dbf`,  sizeBytes: 576_716_800, tablespace: 'SYSAUX'   },
+      { fileNo: 3, path: `${base}/undotbs01.dbf`, sizeBytes: 209_715_200, tablespace: 'UNDOTBS1' },
+      { fileNo: 4, path: `${base}/users01.dbf`,   sizeBytes: 104_857_600, tablespace: 'USERS'    },
     ];
   }
 
   getSpfileParam(name: string): string | undefined {
+    const sid = this.dbName;
     const map: Record<string, string> = {
-      db_name:               this.dbName,
-      db_recovery_file_dest: '/u01/backup',
-      control_files:         '/u01/app/oracle/oradata/ORCL/control01.ctl',
+      db_name:               sid,
+      db_unique_name:        sid,
+      instance_name:         sid,
+      service_names:         this._oracle?.instance.config.serviceName ?? sid,
+      db_recovery_file_dest: BACKUP_BASE,
+      control_files:         `${ORADATA_BASE}/${sid}/control01.ctl`,
     };
     return map[name.toLowerCase()];
+  }
+
+  /** Live instance state — falls back to OPEN when no Oracle is registered. */
+  getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
+    return this._oracle?.instance.state ?? 'OPEN';
+  }
+
+  getControlFilePath(): string {
+    return `${ORADATA_BASE}/${this.dbName}/control01.ctl`;
+  }
+
+  getArchivelogPaths(): ReadonlyArray<string> {
+    const sid = this.dbName;
+    // Synthesised list — the real instance doesn't expose archived-log
+    // file paths directly; we mint a handful so DELETE INPUT has
+    // something to consume.
+    return [1, 2, 3].map(seq => `${BACKUP_BASE}/archivelog/arch_1_${seq}_${sid}.arc`);
   }
 
   private _buildVfsAdapter(): VfsAdapter {
