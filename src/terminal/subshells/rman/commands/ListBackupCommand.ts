@@ -35,13 +35,45 @@ function typeOf(s: BackupSet): string {
   }
 }
 
+export type ListVariant = 'SUMMARY' | 'DETAIL' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY';
+
 export class ListBackupCommand implements IRmanCommand<string[]> {
   readonly name = 'LIST BACKUP';
-  constructor(private readonly variant: 'SUMMARY' | 'DETAIL' = 'DETAIL') {}
+  constructor(private readonly variant: ListVariant = 'DETAIL') {}
 
-  execute(_args: string[], { catalog }: RmanCommandContext): Result<string[], RmanError> {
+  execute(_args: string[], { catalog, policy }: RmanCommandContext): Result<string[], RmanError> {
     const snap = catalog.listAll();
     if (!snap.ok) return snap;
+
+    if (this.variant === 'ARCHIVELOG') {
+      const arc = snap.value.sets.filter(s => s.type === 'ARCHIVELOG');
+      if (arc.length === 0) return ok(['', 'no archived log found', '']);
+      return ok(this._detail(arc));
+    }
+    if (this.variant === 'EXPIRED') {
+      const expired = snap.value.pieces.filter(p => p.status === 'EXPIRED');
+      if (expired.length === 0) return ok(['', 'no expired backups', '']);
+      const lines = ['', 'List of Expired Backups', '======================='];
+      for (const p of expired) lines.push(`  BP Key: ${p.key.bpKey}  Piece: ${p.path}`);
+      lines.push('');
+      return ok(lines);
+    }
+    if (this.variant === 'OBSOLETE') {
+      const obsolete = policy.findObsolete(snap.value.sets);
+      if (obsolete.length === 0) return ok(['', 'no obsolete backups found', '']);
+      return ok(this._detail(obsolete));
+    }
+    if (this.variant === 'COPY') {
+      const copies = snap.value.sets.filter(s => s.type === 'DATAFILECOPY');
+      if (copies.length === 0) return ok(['', 'specification does not match any datafile copy', '']);
+      const lines = ['', 'List of Datafile Copies', '======================='];
+      for (const s of copies) {
+        for (const p of s.pieces) lines.push(`  Key: ${s.bsKey}  Name: ${p.path}`);
+      }
+      lines.push('');
+      return ok(lines);
+    }
+
     const { sets } = snap.value;
     if (sets.length === 0) {
       return ok(['', 'List of Backups', '===============', 'no backup found in the repository', '']);
