@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-cli-basics
-Generated: 2026-05-17T06:02:24.063Z
+Generated: 2026-05-17T06:06:16.340Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=IOS user/priv/config nav, show family, do-prefix, pipes
 Total steps: 61
@@ -13,14 +13,13 @@ Total steps: 61
   SW1 uptime is 0 days, 0 hours
 
 [2/61] sw SW1> show clock
-  % Invalid input detected at '^' marker.
-  show clock
-       ^
+  *06:06:16.000 UTC Sun May 17 2026
 
 [3/61] sw SW1> show users
-  % Invalid input detected at '^' marker.
-  show users
-       ^
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
 
 [4/61] sw SW1> show history
   % Invalid input detected at '^' marker.
@@ -28,19 +27,19 @@ Total steps: 61
        ^
 
 [5/61] sw SW1> show inventory
-  % Invalid input detected at '^' marker.
-  show inventory
-       ^
+  NAME: "SW1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
 
 [6/61] sw SW1> show processes cpu
-  % Invalid input detected at '^' marker.
-  show processes cpu
-       ^
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [7/61] sw SW1> show memory statistics
-  % Invalid input detected at '^' marker.
-  show memory statistics
-       ^
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
 
 [8/61] sw SW1> show running-config
   % Invalid input detected at '^' marker.
@@ -58,9 +57,7 @@ Total steps: 61
 <empty>
 
 [11/61] sw SW1# show privilege
-  % Invalid input detected at '^' marker.
-  show privilege
-       ^
+  Current privilege level is 15
 
 [12/61] sw SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -69,9 +66,7 @@ Total steps: 61
 <empty>
 
 [14/61] sw SW-CORE(config)# do show clock
-  % Invalid input detected at '^' marker.
-  show clock
-       ^
+  *06:06:16.000 UTC Sun May 17 2026
 
 [15/61] sw SW-CORE(config)# interface FastEthernet0/1
 <empty>
@@ -389,6 +384,13 @@ Total steps: 61
 
 --- [31] § context help (?) ---
 [31/61] sw SW-EDGE# show ?
+    clock           Display the system clock
+    users           Display active lines
+    inventory       Display hardware inventory
+    processes       processes
+    memory          Display memory statistics
+    flash           Display flash filesystem
+    privilege       Display current privilege level
     arp             Display ARP table
     ip              ip
     mac             mac
@@ -407,6 +409,7 @@ Total steps: 61
     copy       copy
     write      Save running-config to startup-config
     show       show
+    terminal   Set terminal parameters
     clear      clear
     reload     Restart the switch
 
@@ -421,6 +424,8 @@ Total steps: 61
   % Unrecognized command
 
 [36/61] sw SW-EDGE(config)# no ?
+    hostname  Reset hostname
+    ip        ip
     arp       Remove ARP entry
     vlan      Delete a VLAN
     shutdown  Enable interface
@@ -437,19 +442,13 @@ Total steps: 61
 <empty>
 
 [40/61] sw TEMP(config)# no hostname
-  % Invalid input detected at '^' marker.
-  no hostname
-     ^
+<empty>
 
 [41/61] sw TEMP(config)# ip domain-lookup
-  % Invalid input detected at '^' marker.
-  ip domain-lookup
-     ^
+<empty>
 
 [42/61] sw TEMP(config)# no ip domain-lookup
-  % Invalid input detected at '^' marker.
-  no ip domain-lookup
-     ^
+<empty>
 
 [43/61] sw TEMP(config)# interface FastEthernet0/5
 <empty>
@@ -624,9 +623,7 @@ Total steps: 61
 <empty>
 
 [54/61] sw TEMP# terminal length 0
-  % Invalid input detected at '^' marker.
-  terminal length 0
-  ^
+<empty>
 
 
 --- [55] § banner / save / reload ---
@@ -634,9 +631,7 @@ Total steps: 61
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [56/61] sw TEMP(config)# banner motd # Authorized access only #
-  % Invalid input detected at '^' marker.
-  banner motd # Authorized access only #
-  ^
+<empty>
 
 [57/61] sw TEMP(config)# end
 <empty>
@@ -648,9 +643,12 @@ Total steps: 61
   [OK]
 
 [60/61] sw TEMP# show flash
-  % Invalid input detected at '^' marker.
-  show flash
-       ^
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
 
 [61/61] sw TEMP# reload
   System restarting...

@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-lan-connectivity
-Generated: 2026-05-17T06:02:23.596Z
+Generated: 2026-05-17T06:06:16.341Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=L2 VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation
 Total steps: 57
@@ -157,12 +157,12 @@ Total steps: 57
 --- [34] § intra-VLAN ping (expect OK) ---
 [34/57] linux1 linux1$ ping -c 2 192.168.10.21
   PING 192.168.10.21 (192.168.10.21) 56(84) bytes of data.
-  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.628 ms
-  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.428 ms
+  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.610 ms
+  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.481 ms
   
   --- 192.168.10.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.428/1.028/1.628/0.600 ms
+  rtt min/avg/max/mdev = 0.481/1.045/1.610/0.564 ms
 
 [35/57] win1 win1$ ping -n 2 192.168.10.11
   
@@ -177,12 +177,12 @@ Total steps: 57
 
 [36/57] linux2 linux2$ ping -c 2 192.168.20.22
   PING 192.168.20.22 (192.168.20.22) 56(84) bytes of data.
-  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.416 ms
-  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.173 ms
+  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.441 ms
+  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.185 ms
   
   --- 192.168.20.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.173/0.295/0.416/0.122 ms
+  rtt min/avg/max/mdev = 0.185/0.313/0.441/0.128 ms
 
 [37/57] win2 win2$ ping -n 2 192.168.20.12
   

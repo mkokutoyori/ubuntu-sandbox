@@ -21,6 +21,10 @@ import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter } from './cli-utils';
 import {
   registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
+import {
+  showClock, showUsers, showInventory, showProcessesCpu,
+  showMemoryStatistics, showFlash, showPrivilege,
+} from './cisco/CiscoCommonShow';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -217,12 +221,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Shared Command Registration ───────────────────────────────
 
+  /** IOS show/util commands common to every Cisco device + mode (DRY). */
+  private registerCommonShowCommands(trie: CommandTrie): void {
+    trie.register('show clock', 'Display the system clock', () => showClock());
+    trie.register('show users', 'Display active lines', () => showUsers());
+    trie.register('show inventory', 'Display hardware inventory', () =>
+      showInventory(this.d().getHostname()));
+    trie.register('show processes cpu', 'Display CPU utilisation', () =>
+      showProcessesCpu());
+    trie.registerGreedy('show memory', 'Display memory statistics', () =>
+      showMemoryStatistics());
+    trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash());
+    trie.register('show privilege', 'Display current privilege level', () =>
+      showPrivilege(this.mode === 'user' ? 1 : 15));
+    trie.registerGreedy('terminal', 'Set terminal parameters', () => '');
+  }
+
   private registerCommonUserCommands(): void {
     this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
       this.mode = 'privileged';
       return '';
     });
 
+    this.registerCommonShowCommands(this.userTrie);
     // ARP show commands (shared between router and switch)
     registerArpShowCommands(this.userTrie, () => this.d());
   }
@@ -248,6 +269,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return this.onSave();
     });
 
+    this.registerCommonShowCommands(this.privilegedTrie);
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
@@ -259,6 +281,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.d()._setHostnameInternal(args[0]);
       return '';
     });
+
+    // Common global-config no-ops (recognised; the sim has no datapath
+    // for these). Shared by switch + router.
+    this.configTrie.register('no hostname', 'Reset hostname', () => '');
+    this.configTrie.registerGreedy('ip domain-lookup', 'DNS lookup', () => '');
+    this.configTrie.registerGreedy('no ip domain-lookup', 'Disable DNS lookup', () => '');
+    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
+    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
+    this.configTrie.registerGreedy('banner', 'Set a banner', () => '');
+    this.configTrie.registerGreedy('logging', 'Logging configuration', () => '');
+    this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
+    this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
 
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());
