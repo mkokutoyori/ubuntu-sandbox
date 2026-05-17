@@ -6,7 +6,9 @@
  * read-model. The Router integration adapter is the only consumer.
  */
 import type { IProtocolEngine } from '../core/interfaces';
-import type { RoutingPeerLocator } from './RoutingPeerLocator';
+import type {
+  RoutingPeerLocator, RoutingDeviceContext,
+} from './RoutingPeerLocator';
 import type { RoutingObservables } from './observables';
 import type { ProtocolNeighborView, RibRoute } from './types';
 
@@ -24,6 +26,9 @@ export interface IRoutingProtocolEngine<TConfig> extends IProtocolEngine {
 
   /** Inject the topology seam used to discover real peers. */
   setPeerLocator(locator: RoutingPeerLocator): void;
+
+  /** Inject the device-side seam (own connected networks). */
+  setDeviceContext(ctx: RoutingDeviceContext): void;
 
   /**
    * Recompute adjacencies + routes from the current real config and

@@ -5,7 +5,31 @@
  * adjacencies only with peers that genuinely exist and run a
  * compatible protocol. SRP: discovery only, no protocol logic.
  */
+import type { IPAddress, SubnetMask } from '../core/types';
 import type { RoutingPeer } from './types';
+
+/** One directly-connected (configured) network on this device. */
+export interface ConnectedNetwork {
+  readonly network: IPAddress;
+  readonly mask: SubnetMask;
+  readonly iface: string;
+  /** The interface's own IP (used as next-hop by a learning peer). */
+  readonly localIp: IPAddress;
+}
+
+/**
+ * Device-side DI seam (mirrors RIPCallbacks): lets an engine read its
+ * own real connected networks without importing Router. SRP: data
+ * only.
+ */
+export interface RoutingDeviceContext {
+  connectedNetworks(): ConnectedNetwork[];
+}
+
+/** Device context that exposes nothing (isolated engine default). */
+export const NULL_DEVICE_CONTEXT: RoutingDeviceContext = {
+  connectedNetworks: () => [],
+};
 
 export interface RoutingPeerLocator {
   /**

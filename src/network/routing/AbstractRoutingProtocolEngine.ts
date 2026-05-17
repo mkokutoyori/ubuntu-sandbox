@@ -18,6 +18,7 @@ import type { IEventBus } from '@/events/EventBus';
 import type { IRoutingProtocolEngine } from './IRoutingProtocolEngine';
 import {
   type RoutingPeerLocator, NULL_PEER_LOCATOR,
+  type RoutingDeviceContext, NULL_DEVICE_CONTEXT,
 } from './RoutingPeerLocator';
 import {
   RoutingSignalStore, makeReadonlyRoutingObservables,
@@ -34,6 +35,7 @@ implements IRoutingProtocolEngine<TConfig> {
   protected readonly neighbors = new RoutingNeighborTable();
   private enabled = false;
   private locator: RoutingPeerLocator = NULL_PEER_LOCATOR;
+  protected deviceCtx: RoutingDeviceContext = NULL_DEVICE_CONTEXT;
   private bus: IEventBus | null = null;
   private routes: RibRoute[] = [];
 
@@ -85,6 +87,11 @@ implements IRoutingProtocolEngine<TConfig> {
 
   setPeerLocator(locator: RoutingPeerLocator): void {
     this.locator = locator;
+  }
+
+  /** Inject the device-side seam (own connected networks). */
+  setDeviceContext(ctx: RoutingDeviceContext): void {
+    this.deviceCtx = ctx;
   }
 
   /** Wire the reactive event bus (optional; observables work without). */
