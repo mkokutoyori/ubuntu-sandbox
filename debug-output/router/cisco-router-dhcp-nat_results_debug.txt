@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-05-17T17:36:52.872Z
+Generated: 2026-05-17T17:51:33.380Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -71,29 +71,19 @@ Total steps: 369
 <empty>
 
 [21/369] r1 R1(dhcp-config)# netbios-name-server 192.168.1.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.1.2
-  ^
+<empty>
 
 [22/369] r1 R1(dhcp-config)# option 150 ip 192.168.1.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.1.3
-  ^
+<empty>
 
 [23/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [24/369] r1 R1(dhcp-config)# bootfile boot1.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot1.bin
-  ^
+<empty>
 
 [25/369] r1 R1(dhcp-config)# next-server 192.168.1.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.1.4
-  ^
+<empty>
 
 [26/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -117,29 +107,19 @@ Total steps: 369
 <empty>
 
 [33/369] r1 R1(dhcp-config)# netbios-name-server 192.168.2.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.2.2
-  ^
+<empty>
 
 [34/369] r1 R1(dhcp-config)# option 150 ip 192.168.2.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.2.3
-  ^
+<empty>
 
 [35/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [36/369] r1 R1(dhcp-config)# bootfile boot2.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot2.bin
-  ^
+<empty>
 
 [37/369] r1 R1(dhcp-config)# next-server 192.168.2.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.2.4
-  ^
+<empty>
 
 [38/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -163,29 +143,19 @@ Total steps: 369
 <empty>
 
 [45/369] r1 R1(dhcp-config)# netbios-name-server 192.168.3.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.3.2
-  ^
+<empty>
 
 [46/369] r1 R1(dhcp-config)# option 150 ip 192.168.3.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.3.3
-  ^
+<empty>
 
 [47/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [48/369] r1 R1(dhcp-config)# bootfile boot3.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot3.bin
-  ^
+<empty>
 
 [49/369] r1 R1(dhcp-config)# next-server 192.168.3.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.3.4
-  ^
+<empty>
 
 [50/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -209,29 +179,19 @@ Total steps: 369
 <empty>
 
 [57/369] r1 R1(dhcp-config)# netbios-name-server 192.168.4.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.4.2
-  ^
+<empty>
 
 [58/369] r1 R1(dhcp-config)# option 150 ip 192.168.4.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.4.3
-  ^
+<empty>
 
 [59/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [60/369] r1 R1(dhcp-config)# bootfile boot4.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot4.bin
-  ^
+<empty>
 
 [61/369] r1 R1(dhcp-config)# next-server 192.168.4.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.4.4
-  ^
+<empty>
 
 [62/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -255,29 +215,19 @@ Total steps: 369
 <empty>
 
 [69/369] r1 R1(dhcp-config)# netbios-name-server 192.168.5.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.5.2
-  ^
+<empty>
 
 [70/369] r1 R1(dhcp-config)# option 150 ip 192.168.5.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.5.3
-  ^
+<empty>
 
 [71/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [72/369] r1 R1(dhcp-config)# bootfile boot5.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot5.bin
-  ^
+<empty>
 
 [73/369] r1 R1(dhcp-config)# next-server 192.168.5.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.5.4
-  ^
+<empty>
 
 [74/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -301,29 +251,19 @@ Total steps: 369
 <empty>
 
 [81/369] r1 R1(dhcp-config)# netbios-name-server 192.168.6.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.6.2
-  ^
+<empty>
 
 [82/369] r1 R1(dhcp-config)# option 150 ip 192.168.6.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.6.3
-  ^
+<empty>
 
 [83/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [84/369] r1 R1(dhcp-config)# bootfile boot6.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot6.bin
-  ^
+<empty>
 
 [85/369] r1 R1(dhcp-config)# next-server 192.168.6.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.6.4
-  ^
+<empty>
 
 [86/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -347,29 +287,19 @@ Total steps: 369
 <empty>
 
 [93/369] r1 R1(dhcp-config)# netbios-name-server 192.168.7.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.7.2
-  ^
+<empty>
 
 [94/369] r1 R1(dhcp-config)# option 150 ip 192.168.7.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.7.3
-  ^
+<empty>
 
 [95/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [96/369] r1 R1(dhcp-config)# bootfile boot7.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot7.bin
-  ^
+<empty>
 
 [97/369] r1 R1(dhcp-config)# next-server 192.168.7.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.7.4
-  ^
+<empty>
 
 [98/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -393,29 +323,19 @@ Total steps: 369
 <empty>
 
 [105/369] r1 R1(dhcp-config)# netbios-name-server 192.168.8.2
-  % Invalid input detected at '^' marker.
-  netbios-name-server 192.168.8.2
-  ^
+<empty>
 
 [106/369] r1 R1(dhcp-config)# option 150 ip 192.168.8.3
-  % Invalid input detected at '^' marker.
-  option 150 ip 192.168.8.3
-  ^
+<empty>
 
 [107/369] r1 R1(dhcp-config)# option 66 ascii tftp.lab.local
-  % Invalid input detected at '^' marker.
-  option 66 ascii tftp.lab.local
-  ^
+<empty>
 
 [108/369] r1 R1(dhcp-config)# bootfile boot8.bin
-  % Invalid input detected at '^' marker.
-  bootfile boot8.bin
-  ^
+<empty>
 
 [109/369] r1 R1(dhcp-config)# next-server 192.168.8.4
-  % Invalid input detected at '^' marker.
-  next-server 192.168.8.4
-  ^
+<empty>
 
 [110/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -424,24 +344,16 @@ Total steps: 369
 <empty>
 
 [112/369] r1 R1(dhcp-config)# host 192.168.1.50 255.255.255.0
-  % Invalid input detected at '^' marker.
-  host 192.168.1.50 255.255.255.0
-  ^
+<empty>
 
 [113/369] r1 R1(dhcp-config)# client-identifier 0100.1122.3344.55
-  % Invalid input detected at '^' marker.
-  client-identifier 0100.1122.3344.55
-                    ^
+<empty>
 
 [114/369] r1 R1(dhcp-config)# hardware-address 0011.2233.4455
-  % Invalid input detected at '^' marker.
-  hardware-address 0011.2233.4455
-  ^
+<empty>
 
 [115/369] r1 R1(dhcp-config)# client-name printer1
-  % Invalid input detected at '^' marker.
-  client-name printer1
-  ^
+<empty>
 
 [116/369] r1 R1(dhcp-config)# exit
 <empty>
@@ -469,6 +381,11 @@ Total steps: 369
     Domain Name      : vlan10.lab
     Lease Time       : 1 days
     Current Bindings : 0
+    Next Server      : 192.168.1.4
+    Bootfile         : boot1.bin
+    NetBIOS Server(s): 192.168.1.2
+    Option 150 (ip) : 192.168.1.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN20 :
     Network          : 192.168.2.0/24
@@ -477,6 +394,11 @@ Total steps: 369
     Domain Name      : vlan20.lab
     Lease Time       : 2 days
     Current Bindings : 0
+    Next Server      : 192.168.2.4
+    Bootfile         : boot2.bin
+    NetBIOS Server(s): 192.168.2.2
+    Option 150 (ip) : 192.168.2.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN30 :
     Network          : 192.168.3.0/24
@@ -485,6 +407,11 @@ Total steps: 369
     Domain Name      : vlan30.lab
     Lease Time       : 3 days
     Current Bindings : 0
+    Next Server      : 192.168.3.4
+    Bootfile         : boot3.bin
+    NetBIOS Server(s): 192.168.3.2
+    Option 150 (ip) : 192.168.3.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN40 :
     Network          : 192.168.4.0/24
@@ -493,6 +420,11 @@ Total steps: 369
     Domain Name      : vlan40.lab
     Lease Time       : 4 days
     Current Bindings : 0
+    Next Server      : 192.168.4.4
+    Bootfile         : boot4.bin
+    NetBIOS Server(s): 192.168.4.2
+    Option 150 (ip) : 192.168.4.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN50 :
     Network          : 192.168.5.0/24
@@ -501,6 +433,11 @@ Total steps: 369
     Domain Name      : vlan50.lab
     Lease Time       : 5 days
     Current Bindings : 0
+    Next Server      : 192.168.5.4
+    Bootfile         : boot5.bin
+    NetBIOS Server(s): 192.168.5.2
+    Option 150 (ip) : 192.168.5.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN60 :
     Network          : 192.168.6.0/24
@@ -509,6 +446,11 @@ Total steps: 369
     Domain Name      : vlan60.lab
     Lease Time       : 6 days
     Current Bindings : 0
+    Next Server      : 192.168.6.4
+    Bootfile         : boot6.bin
+    NetBIOS Server(s): 192.168.6.2
+    Option 150 (ip) : 192.168.6.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN70 :
     Network          : 192.168.7.0/24
@@ -517,6 +459,11 @@ Total steps: 369
     Domain Name      : vlan70.lab
     Lease Time       : 7 days
     Current Bindings : 0
+    Next Server      : 192.168.7.4
+    Bootfile         : boot7.bin
+    NetBIOS Server(s): 192.168.7.2
+    Option 150 (ip) : 192.168.7.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN80 :
     Network          : 192.168.8.0/24
@@ -525,6 +472,11 @@ Total steps: 369
     Domain Name      : vlan80.lab
     Lease Time       : 8 days
     Current Bindings : 0
+    Next Server      : 192.168.8.4
+    Bootfile         : boot8.bin
+    NetBIOS Server(s): 192.168.8.2
+    Option 150 (ip) : 192.168.8.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool RESERVED :
     Network          : not configured/?
@@ -533,13 +485,17 @@ Total steps: 369
     Domain Name      : not configured
     Lease Time       : 1 days
     Current Bindings : 0
+    Manual Binding   : 192.168.1.50/24
+    Hardware Address : 0011.2233.4455
+    Client Identifier: 0100.1122.3344.55
+    Client Name      : printer1
   
   Pool INFINITE :
     Network          : 172.16.0.0/16
     Default Router   : not configured
     DNS Server(s)    : not configured
     Domain Name      : not configured
-    Lease Time       : 0 seconds
+    Lease Time       : infinite
     Current Bindings : 0
 
 [123/369] r1 R1# show ip dhcp binding
@@ -636,7 +592,6 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
-   lease NaN
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
@@ -1386,7 +1341,6 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
-   lease NaN
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
@@ -1524,6 +1478,11 @@ Total steps: 369
     Domain Name      : vlan10.lab
     Lease Time       : 1 days
     Current Bindings : 0
+    Next Server      : 192.168.1.4
+    Bootfile         : boot1.bin
+    NetBIOS Server(s): 192.168.1.2
+    Option 150 (ip) : 192.168.1.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN20 :
     Network          : 192.168.2.0/24
@@ -1532,6 +1491,11 @@ Total steps: 369
     Domain Name      : vlan20.lab
     Lease Time       : 2 days
     Current Bindings : 0
+    Next Server      : 192.168.2.4
+    Bootfile         : boot2.bin
+    NetBIOS Server(s): 192.168.2.2
+    Option 150 (ip) : 192.168.2.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN30 :
     Network          : 192.168.3.0/24
@@ -1540,6 +1504,11 @@ Total steps: 369
     Domain Name      : vlan30.lab
     Lease Time       : 3 days
     Current Bindings : 0
+    Next Server      : 192.168.3.4
+    Bootfile         : boot3.bin
+    NetBIOS Server(s): 192.168.3.2
+    Option 150 (ip) : 192.168.3.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN40 :
     Network          : 192.168.4.0/24
@@ -1548,6 +1517,11 @@ Total steps: 369
     Domain Name      : vlan40.lab
     Lease Time       : 4 days
     Current Bindings : 0
+    Next Server      : 192.168.4.4
+    Bootfile         : boot4.bin
+    NetBIOS Server(s): 192.168.4.2
+    Option 150 (ip) : 192.168.4.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN50 :
     Network          : 192.168.5.0/24
@@ -1556,6 +1530,11 @@ Total steps: 369
     Domain Name      : vlan50.lab
     Lease Time       : 5 days
     Current Bindings : 0
+    Next Server      : 192.168.5.4
+    Bootfile         : boot5.bin
+    NetBIOS Server(s): 192.168.5.2
+    Option 150 (ip) : 192.168.5.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN60 :
     Network          : 192.168.6.0/24
@@ -1564,6 +1543,11 @@ Total steps: 369
     Domain Name      : vlan60.lab
     Lease Time       : 6 days
     Current Bindings : 0
+    Next Server      : 192.168.6.4
+    Bootfile         : boot6.bin
+    NetBIOS Server(s): 192.168.6.2
+    Option 150 (ip) : 192.168.6.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN70 :
     Network          : 192.168.7.0/24
@@ -1572,6 +1556,11 @@ Total steps: 369
     Domain Name      : vlan70.lab
     Lease Time       : 7 days
     Current Bindings : 0
+    Next Server      : 192.168.7.4
+    Bootfile         : boot7.bin
+    NetBIOS Server(s): 192.168.7.2
+    Option 150 (ip) : 192.168.7.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool VLAN80 :
     Network          : 192.168.8.0/24
@@ -1580,6 +1569,11 @@ Total steps: 369
     Domain Name      : vlan80.lab
     Lease Time       : 8 days
     Current Bindings : 0
+    Next Server      : 192.168.8.4
+    Bootfile         : boot8.bin
+    NetBIOS Server(s): 192.168.8.2
+    Option 150 (ip) : 192.168.8.3
+    Option 66 (ascii) : tftp.lab.local
   
   Pool RESERVED :
     Network          : not configured/?
@@ -1588,13 +1582,17 @@ Total steps: 369
     Domain Name      : not configured
     Lease Time       : 1 days
     Current Bindings : 0
+    Manual Binding   : 192.168.1.50/24
+    Hardware Address : 0011.2233.4455
+    Client Identifier: 0100.1122.3344.55
+    Client Name      : printer1
   
   Pool INFINITE :
     Network          : 172.16.0.0/16
     Default Router   : not configured
     DNS Server(s)    : not configured
     Domain Name      : not configured
-    Lease Time       : 0 seconds
+    Lease Time       : infinite
     Current Bindings : 0
 
 [284/369] r1 R1# show access-lists
@@ -1653,7 +1651,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *17:36:52.000 UTC Sun May 17 2026
+  *17:51:33.000 UTC Sun May 17 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1919,7 +1917,6 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
-   lease NaN
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
@@ -1999,7 +1996,6 @@ Total steps: 369
   ip dhcp pool RESERVED
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
-   lease NaN
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   interface GigabitEthernet0/0
@@ -2246,7 +2242,6 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
-   lease NaN
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !

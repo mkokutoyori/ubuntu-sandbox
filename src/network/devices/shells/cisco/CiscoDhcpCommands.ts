@@ -44,7 +44,12 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
 
   trie.registerGreedy('lease', 'Set DHCP lease duration', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
+    const pool = ctx.getSelectedDHCPPool();
+    if (!pool) return '% No DHCP pool selected';
+    if (args[0]?.toLowerCase() === 'infinite') {
+      ctx.r()._getDHCPServerInternal().configurePoolLeaseInfinite(pool);
+      return '';
+    }
     const leaseArgs = args.map(Number);
     let seconds = 0;
     if (leaseArgs.length >= 1) seconds += leaseArgs[0] * 86400; // days
@@ -59,6 +64,68 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
     if (args.length < 1) return '% Incomplete command.';
     if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
     ctx.r()._getDHCPServerInternal().addDenyPattern(ctx.getSelectedDHCPPool()!, args[0]);
+    return '';
+  });
+
+  // ── Pool sub-options → real DHCPServer pool state ──
+  const dhcp = () => ctx.r()._getDHCPServerInternal();
+  const pool = () => ctx.getSelectedDHCPPool();
+
+  trie.registerGreedy('next-server', 'Set boot/next server', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolNextServer(pool()!, args[0]);
+    return '';
+  });
+  trie.registerGreedy('bootfile', 'Set boot filename', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolBootfile(pool()!, args[0]);
+    return '';
+  });
+  trie.registerGreedy('netbios-name-server', 'Set NetBIOS name server(s)', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolNetbios(pool()!, args);
+    return '';
+  });
+  trie.registerGreedy('netbios-node-type', 'Set NetBIOS node type', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolNetbiosNodeType(pool()!, args[0]);
+    return '';
+  });
+  trie.registerGreedy('option', 'Set a raw DHCP option', (args) => {
+    // option <code> {ip|ascii|hex} <value…>
+    if (args.length < 3) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    const code = parseInt(args[0], 10);
+    const kind = args[1] === 'ascii' ? 'ascii' : args[1] === 'hex' ? 'hex' : 'ip';
+    dhcp().configurePoolOption(pool()!, code, kind, args.slice(2).join(' '));
+    return '';
+  });
+  trie.registerGreedy('host', 'Manual binding host address', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolManual(pool()!, 'host', args[0], args[1]);
+    return '';
+  });
+  trie.registerGreedy('hardware-address', 'Manual binding hardware address', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolManual(pool()!, 'hardwareAddress', args[0]);
+    return '';
+  });
+  trie.registerGreedy('client-identifier', 'Manual binding client identifier', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolManual(pool()!, 'clientIdentifier', args[0]);
+    return '';
+  });
+  trie.registerGreedy('client-name', 'Manual binding client name', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!pool()) return '% No DHCP pool selected';
+    dhcp().configurePoolManual(pool()!, 'clientName', args[0]);
     return '';
   });
 }

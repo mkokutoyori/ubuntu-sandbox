@@ -228,6 +228,62 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
+  configurePoolNextServer(name: string, ip: string): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.nextServer = ip;
+    return true;
+  }
+
+  configurePoolBootfile(name: string, file: string): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.bootfile = file;
+    return true;
+  }
+
+  configurePoolNetbios(name: string, servers: string[]): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.netbiosServers = servers;
+    return true;
+  }
+
+  configurePoolNetbiosNodeType(name: string, nodeType: string): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.netbiosNodeType = nodeType;
+    return true;
+  }
+
+  configurePoolLeaseInfinite(name: string): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.leaseInfinite = true;
+    return true;
+  }
+
+  configurePoolOption(
+    name: string, code: number, kind: 'ip' | 'ascii' | 'hex', value: string,
+  ): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    (pool.options ??= []).push({ code, kind, value });
+    return true;
+  }
+
+  configurePoolManual(
+    name: string, field: keyof NonNullable<DHCPPoolConfig['manual']>,
+    value: string, mask?: string,
+  ): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.manual ??= {};
+    pool.manual[field] = value;
+    if (field === 'host' && mask) pool.manual.hostMask = mask;
+    return true;
+  }
+
   isPoolComplete(name: string): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
@@ -873,7 +929,9 @@ export class DHCPServer implements IProtocolEngine {
     if (poolName) {
       const pool = this.pools.get(poolName);
       if (!pool) return `% Pool "${poolName}" not found.`;
-      if (!pool.network || !pool.mask) return `% Incomplete configuration - missing network statement for pool "${poolName}"`;
+      if ((!pool.network || !pool.mask) && !pool.manual?.host) {
+        return `% Incomplete configuration - missing network statement for pool "${poolName}"`;
+      }
       return this.formatSinglePool(pool);
     }
 
@@ -896,9 +954,33 @@ export class DHCPServer implements IProtocolEngine {
       `  Default Router   : ${pool.defaultRouter || 'not configured'}`,
       `  DNS Server(s)    : ${pool.dnsServers.length > 0 ? pool.dnsServers.join(', ') : 'not configured'}`,
       `  Domain Name      : ${pool.domainName || 'not configured'}`,
-      `  Lease Time       : ${leaseStr}`,
+      `  Lease Time       : ${pool.leaseInfinite ? 'infinite' : leaseStr}`,
       `  Current Bindings : ${this.countBindingsForPool(pool.name)}`,
     ];
+    if (pool.nextServer) lines.push(`  Next Server      : ${pool.nextServer}`);
+    if (pool.bootfile) lines.push(`  Bootfile         : ${pool.bootfile}`);
+    if (pool.netbiosServers?.length) {
+      lines.push(`  NetBIOS Server(s): ${pool.netbiosServers.join(', ')}`);
+    }
+    if (pool.netbiosNodeType) {
+      lines.push(`  NetBIOS Node Type: ${pool.netbiosNodeType}`);
+    }
+    for (const o of pool.options ?? []) {
+      lines.push(`  Option ${o.code} (${o.kind}) : ${o.value}`);
+    }
+    if (pool.manual?.host) {
+      lines.push(`  Manual Binding   : ${pool.manual.host}` +
+        (pool.manual.hostMask ? `/${this.maskToCIDR(pool.manual.hostMask)}` : ''));
+      if (pool.manual.hardwareAddress) {
+        lines.push(`  Hardware Address : ${pool.manual.hardwareAddress}`);
+      }
+      if (pool.manual.clientIdentifier) {
+        lines.push(`  Client Identifier: ${pool.manual.clientIdentifier}`);
+      }
+      if (pool.manual.clientName) {
+        lines.push(`  Client Name      : ${pool.manual.clientName}`);
+      }
+    }
     return lines.join('\n');
   }
 

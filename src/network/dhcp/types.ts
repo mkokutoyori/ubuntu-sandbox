@@ -52,6 +52,26 @@ export interface DHCPPoolConfig {
   renewalTime?: number;
   /** Option 59: T2 rebinding time in seconds (default: 87.5% of lease) */
   rebindingTime?: number;
+  /** Option 66 / siaddr — TFTP/next server (boot) */
+  nextServer?: string;
+  /** Option 67 — boot filename */
+  bootfile?: string;
+  /** Option 44 — NetBIOS (WINS) name servers */
+  netbiosServers?: string[];
+  /** Option 46 — NetBIOS node type (b/p/m/h) */
+  netbiosNodeType?: string;
+  /** true ⇒ lease never expires (`lease infinite`) */
+  leaseInfinite?: boolean;
+  /** Raw DHCP options configured via `option <code> …` */
+  options?: Array<{ code: number; kind: 'ip' | 'ascii' | 'hex'; value: string }>;
+  /** Manual single-host reservation pool (Cisco `host`/`hardware-address`/…) */
+  manual?: {
+    host?: string;
+    hostMask?: string;
+    hardwareAddress?: string;
+    clientIdentifier?: string;
+    clientName?: string;
+  };
 }
 
 // ─── DHCP Message Parameters (RFC 2131 §2, RFC 2132) ────────────────
